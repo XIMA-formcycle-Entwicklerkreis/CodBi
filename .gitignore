@@ -1,0 +1,75 @@
+xfc-server
+
+localization.ts
+constants.ts
+codbi-config-template.ts
+
+.project
+.metadata
+.classpath
+.buildpath
+.settings
+.recommenders
+*.bat
+*.war
+*.log*
+*.jar
+*.jsfdia
+*target/
+*.komodo*
+
+*.DS_Store
+
+## Node ##
+node_modules/
+.npm
+.eslintcache
+.grunt
+*.tsbuildinfo
+.node_repl_history
+.env
+.env.test
+**/dist/
+
+## Yarn ##
+**/.yarn/*
+!**/.yarn/patches
+!**/.yarn/releases
+!**/.yarn/plugins
+!**/.yarn/sdks
+.pnp.*
+
+## Windows ##
+*.bat
+
+## Eclipse ##
+.project
+.metadata
+.classpath
+.buildpath
+.settings
+.recommenders
+.factorypath
+/libraries
+/ucdetector_reports
+**/Servers/
+**/target/
+*.checkstyle
+*.recommenders
+
+### Intellij ###
+.idea
+.name
+*.iws
+*.iml
+*.ipr
+
+## macOS ##
+*.DS_Store
+
+## Java / Maven ##
+**/target/
+*.war
+
+## Visual Studio Code ##
+.vscode

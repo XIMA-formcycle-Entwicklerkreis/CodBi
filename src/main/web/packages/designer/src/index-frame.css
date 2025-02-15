@@ -1,0 +1,9 @@
+/*
+ CSS that will be added to the form designer
+ Can be used e.g. to style custom property editor in the properties panel
+ on the right hand side.
+*/
+
+@import "codbi-common/src/css/vars.css";
+
+@import "./css/frame.css";

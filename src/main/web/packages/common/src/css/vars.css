@@ -1,0 +1,4 @@
+/* Common CSS variables that should be available both in the form designer and the form. */
+:root, :host {
+  --dummy: #fff;
+}

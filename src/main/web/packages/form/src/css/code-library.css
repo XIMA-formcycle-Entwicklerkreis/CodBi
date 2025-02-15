@@ -1,0 +1,14 @@
+:root,
+:host {
+  --codbi-text-color: green;
+}
+
+.XMapContainer {
+  position: relative !important;
+}
+
+.xm-item-div {
+  .XItem {
+    color: var(--codbi-text-color);
+  }
+}

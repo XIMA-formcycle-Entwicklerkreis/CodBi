@@ -1,0 +1,32 @@
+{
+	"private": true,
+	"packageManager": "yarn@4.6.0",
+	"name": "codbi",
+	"version": "1.0.0-SNAPSHOT",
+	"stableVersion": "1.0.0",
+	"author": "XIMA-formcycle-Entwicklerkreis",
+	"license": "MIT",
+	"description": "formcycle plugin developed as a joint cooperation of the Bavarian formcycle developer community. Adds additional features to forms and the form designer. (client side script)",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev"
+	},
+	"workspaces": [
+		"packages/common",
+		"packages/designer",
+		"packages/form"
+	],
+	"scripts": {
+		"lint": "yarn workspaces foreach -Avp run lint",
+		"lint-apply": "yarn workspaces foreach -Avp run lint-apply",
+		"lint-apply-unsafe": "yarn workspaces foreach -Avp run lint-apply-unsafe",
+		"test": "yarn workspaces foreach -Avp run test",
+		"build": "yarn workspaces foreach -Avp run build",
+		"build-dev": "yarn workspaces foreach -Avp run build-dev"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "1.9.4",
+		"@types/node": "~22.9.0",
+		"typescript": "~5.7.3"
+	}
+}

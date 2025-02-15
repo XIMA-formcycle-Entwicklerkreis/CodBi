@@ -1,0 +1,37 @@
+{
+  "private": true,
+  "type": "module",
+  "name": "codbi-common",
+  "version": "1.0.0-SNAPSHOT",
+  "stableVersion": "1.0.0",
+  "main": "./src/index",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "require": "./dist/src/index.js"
+    },
+    "./src/css/vars.css": "./src/css/vars.css"
+  },
+  "scripts": {
+    "lint": "biome lint --config-path ../.. src __tests__",
+    "lint-apply": "biome lint --apply --config-path ../.. src __tests__",
+    "lint-apply-unsafe": "biome lint --apply-unsafe --config-path ../.. src __tests__",
+    "test": "tsc && jest"
+  },
+  "dependencies": {
+    "@de-xima/xima-common-js-dom": "^7.1.0",
+    "@de-xima/xima-common-js-lang": "^7.1.0",
+    "tslib": "~2.8.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@jest/globals": "~29.7.0",
+    "@types/jest": "~29.5.14",
+    "@typescript/lib-dom": "npm:@types/web@0.0.202",
+    "esbuild": "0.25.0",
+    "esbuild-jest": "~0.5.0",
+    "jest": "~29.7.0",
+    "jest-environment-jsdom": "~29.7.0",
+    "typescript": "~5.7.3"
+  }
+}

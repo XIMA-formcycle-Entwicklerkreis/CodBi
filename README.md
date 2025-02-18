@@ -31,8 +31,8 @@ well. The I18N keys and their default values are as follows:
 
 To add a new configuration template for the code library that the user can select in the form designer:
 
-* Open `src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/constants.properties` and a new
-  line with the technical name of the template.
+* Open `src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/codbi-config-template.properties`
+  and a new line with the technical name of the template.
 * Open each `src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/i18n_*.properties` and
   add a localized string for the new template for each language. (The key should be called
   `designer.property.config_template.option.NAME`).
@@ -159,8 +159,11 @@ They have an extension for Visual Studio Code.
 The folder `/home/awa/git/CodBi-Dev/src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/`
 contains several properties files:
 
-* `constants.properties` - Constant strings that are used in the Kotlin and TypeScript code.
+* `constants.properties` - Constant strings that are used in the Kotlin and TypeScript code. For example, contains
+  the technical names of the additional properties available in the form designer. 
 * `i18n_*.prpoerties` - Localized strings for the Kotlin and TypeScript code.
+* `codbi-config-template.properties` - List of available configuration templates for the code library. The key is an
+  arbitrary identifier, the value is used to identify the template. Usually key is equal to the value.
 
 These are needed by both the Kotlin and TypeScript code. To ensure consistency, the Maven build generates Kotlin files
 and TypeScript files from these properties files. To generate these files manually, run the `generate-sources` Maven

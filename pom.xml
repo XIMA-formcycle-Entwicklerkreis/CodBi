@@ -41,19 +41,6 @@
 		<url>https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/issues</url>
 	</issueManagement>
 
-	<distributionManagement>
-		<repository>
-			<id>central</id>
-			<name>xima-artifactory-releases</name>
-			<url>https://artifactory.xima-services.de/artifactory/libs-release</url>
-		</repository>
-		<snapshotRepository>
-			<id>snapshots</id>
-			<name>xima-artifactory-snapshots</name>
-			<url>https://artifactory.xima-services.de/artifactory/libs-snapshot</url>
-		</snapshotRepository>
-	</distributionManagement>
-
 	<properties>
 		<!-- General settings -->
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -153,6 +140,30 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
+
+	<!-- Maven repository provided by xima -->
+	<repositories>
+		<repository>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+			<id>xima</id>
+			<name>fc-plugin-dev</name>
+			<url>https://artifactory.xima-services.de/artifactory/fc-plugin-dev</url>
+		</repository>
+	</repositories>
+
+	<!-- Maven plugin repository provided by xima -->
+	<pluginRepositories>
+		<pluginRepository>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+			<id>xima</id>
+			<name>fc-plugin-dev</name>
+			<url>https://artifactory.xima-services.de/artifactory/fc-plugin-dev</url>
+		</pluginRepository>
+	</pluginRepositories>
 
 	<build>
 		<finalName>${project.artifactId}</finalName>

@@ -6,12 +6,12 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.RESOURCE_PATH_CODBI_CONFIG_TEMPLATE_SCRIPT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.RESOURCE_PATH_CODBI_CSS
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.RESOURCE_PATH_CODBI_SCRIPT
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.EMessageKey.PLUGIN_FORM_DESIGNER_RESOURCE_DESC
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.EMessageKey.PLUGIN_FORM_DESIGNER_RESOURCE_NAME
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.EMessageKey.*
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.interfaces.plugin.param.form.IPluginFormResourcesParams
 import de.xima.fc.interfaces.plugin.retval.form.IPluginFormResourceDescriptor
+import de.xima.fc.plugin.interfaces.IFCRemoteSyncPlugin
 import de.xima.fc.plugin.interfaces.form.IPluginFormResources
 import de.xima.fc.plugin.models.retval.form.DefaultPluginFormResourceDescriptor
 import de.xima.fc.workflow.UrlResourceDescriptor
@@ -24,7 +24,7 @@ import java.util.*
  *
  * @since 1.0.0
  */
-class CodbiFormResourcesPlugin : IPluginFormResources {
+class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
   internal companion object {
     @Volatile var formResources: Map<String, IPluginFormResourceDescriptor> = emptyMap()
   }
@@ -36,11 +36,11 @@ class CodbiFormResourcesPlugin : IPluginFormResources {
   }
 
   override fun getDisplayName(locale: Locale?): String {
-    return localize(PLUGIN_FORM_DESIGNER_RESOURCE_NAME, locale ?: Locale.ENGLISH)
+    return localize(PLUGIN_FORM_RESOURCES_NAME, locale ?: Locale.ENGLISH)
   }
 
   override fun getDescription(locale: Locale?): String {
-    return localize(PLUGIN_FORM_DESIGNER_RESOURCE_DESC, locale ?: Locale.ENGLISH)
+    return localize(PLUGIN_FORM_RESOURCES_DESC, locale ?: Locale.ENGLISH)
   }
 
   override fun initialize(initData: IPluginInitializeData?) {

@@ -102,10 +102,24 @@
 				<scope>import</scope>
 			</dependency>
 
+			<!-- Manage versions -->
+			<dependency>
+				<groupId>de.xima.fc</groupId>
+				<artifactId>fc-ms-metro-gui</artifactId>
+				<version>${xfc.version}</version>
+				<classifier>classes</classifier>
+			</dependency>
+
 			<dependency>
 				<groupId>jakarta.servlet</groupId>
 				<artifactId>jakarta.servlet-api</artifactId>
 				<version>${jakarta-servlet-api.version}</version>
+			</dependency>
+
+			<dependency>
+				<groupId>org.junit.jupiter</groupId>
+				<artifactId>junit-jupiter-engine</artifactId>
+				<version>${junit-jupiter.version}</version>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
@@ -114,7 +128,7 @@
 		<!-- formcycle plugin API -->
 		<dependency>
 			<groupId>de.xima.fc</groupId>
-			<artifactId>fc-logic</artifactId>
+			<artifactId>fc-plugin-common</artifactId>
 			<scope>provided</scope>
 		</dependency>
 
@@ -136,7 +150,13 @@
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter-engine</artifactId>
-			<version>${junit-jupiter.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- Additional formcycle classes for tests -->
+		<dependency>
+			<groupId>de.xima.fc</groupId>
+			<artifactId>fc-logic</artifactId>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
@@ -474,7 +494,7 @@
 									<provisions>
 										<provision>
 											<groupId>de.xima.fc</groupId>
-											<artifactId>fc-logic</artifactId>
+											<artifactId>fc-plugin-common</artifactId>
 										</provision>
 									</provisions>
 								</banProvidedDependencies>
@@ -925,6 +945,46 @@
 								</goals>
 								<configuration>
 									<skip>true</skip>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<!-- Enforce that no dependencies already provided by formcycle -->
+		<!-- (=fc-ms-metro-gui) are included in the final plugin JAR file. -->
+		<!-- Run with mvn enforcer:enforce -P enforce -->
+		<profile>
+			<id>enforce</id>
+			<dependencies>
+				<dependency>
+					<groupId>de.xima.fc</groupId>
+					<artifactId>fc-ms-metro-gui</artifactId>
+					<classifier>classes</classifier>
+					<scope>provided</scope>
+				</dependency>
+			</dependencies>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-enforcer-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>default-cli</id>
+								<configuration>
+									<rules>
+										<banProvidedDependencies>
+											<provisions>
+												<provision>
+													<groupId>de.xima.fc</groupId>
+													<artifactId>fc-ms-metro-gui</artifactId>
+													<classifier>classes</classifier>
+												</provision>
+											</provisions>
+										</banProvidedDependencies>
+									</rules>
 								</configuration>
 							</execution>
 						</executions>

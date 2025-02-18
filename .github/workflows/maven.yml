@@ -16,9 +16,7 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
     - name: Set up JDK 11
@@ -28,4 +26,16 @@ jobs:
         distribution: 'temurin'
         cache: maven
     - name: Build with Maven wrapper
-      run: ./mvnw -B verify --file pom.xml
+      run: ./mvnw -B clean verify -Denforcer.skip --file pom.xml
+  enforce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+      - name: Enforce Maven rules
+        run: ./mvnw -B enforcer:enforce -P enforce --file pom.xml

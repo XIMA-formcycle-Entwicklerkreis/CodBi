@@ -11,6 +11,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.EMessageK
 import de.xima.fc.form.common.models.XItemPropertyDesc
 import de.xima.fc.interfaces.plugin.param.form.IPluginFormPropertiesExtensionParams
 import de.xima.fc.interfaces.plugin.retval.form.IPluginFormPropertiesExtensionRetVal
+import de.xima.fc.plugin.interfaces.IFCRemoteSyncPlugin
 import de.xima.fc.plugin.interfaces.form.IPluginFormPropertiesExtension
 import java.util.*
 
@@ -22,7 +23,7 @@ import java.util.*
  *
  * @since 1.0.0
  */
-class CodbiFormPropertiesExtensionPlugin : IPluginFormPropertiesExtension {
+class CodbiFormPropertiesExtensionPlugin : IPluginFormPropertiesExtension, IFCRemoteSyncPlugin {
   override fun getName(): String {
     // We use a fixed string, not the name of this class via reflection
     // The class might be refactored, but the name must stay the same

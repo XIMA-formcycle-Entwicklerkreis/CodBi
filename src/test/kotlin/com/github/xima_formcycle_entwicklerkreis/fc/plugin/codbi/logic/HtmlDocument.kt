@@ -6,12 +6,12 @@ import com.hp.gagawa.java.elements.Head
 import com.hp.gagawa.java.elements.Html
 import de.xima.fc.common.dom.Gagawa.appendChild
 
-internal class HtmlDocument {
-  val html = Html()
-  val head = Head()
-  val body = Body()
-  val form = Form("/submit")
-
+internal data class HtmlDocument(
+    val html: Html = Html(),
+    val head: Head = Head(),
+    val body: Body = Body(),
+    val form: Form = Form("/submit")
+) {
   init {
     appendChild(html, head, body)
     appendChild(body, form)

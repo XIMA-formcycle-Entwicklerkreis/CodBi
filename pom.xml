@@ -238,6 +238,7 @@
 					<configuration>
 						<apiVersion>1.9</apiVersion>
 						<languageVersion>1.9</languageVersion>
+						<jvmTarget>11</jvmTarget>
 					</configuration>
 				</plugin>
 				<plugin>

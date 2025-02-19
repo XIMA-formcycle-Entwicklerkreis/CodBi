@@ -7,7 +7,7 @@ import java.util.Locale.GERMAN
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
-/** Tests for */
+/** Tests for I18N */
 class I18NTest {
   @Test
   fun localize_EMessageKey_Locale() {

@@ -1,93 +1,93 @@
 {
-	"folders": [
-		{
-			"name": "ROOT",
-			"path": "../../src/main/web"
-		},
-		{
-			"name": "common",
-			"path": "../../src/main/web/packages/common"
-		},
-		{
-			"name": "designer",
-			"path": "../../src/main/web/packages/designer"
-		},
-		{
-			"name": "form",
-			"path": "../../src/main/web/packages/form"
-		}
-	],
-	"extensions": {
-		"recommendations": [
-			"arcanis.vscode-zipfs",
-			"streetsidesoftware.code-spell-checker",
-			"firsttris.vscode-jest-runner",
-			"biomejs.biome"
-		]
-	},
-	"settings": {
+  "folders": [
+    {
+      "name": "ROOT",
+      "path": "../../src/main/web"
+    },
+    {
+      "name": "common",
+      "path": "../../src/main/web/packages/common"
+    },
+    {
+      "name": "designer",
+      "path": "../../src/main/web/packages/designer"
+    },
+    {
+      "name": "form",
+      "path": "../../src/main/web/packages/form"
+    }
+  ],
+  "extensions": {
+    "recommendations": [
+      "arcanis.vscode-zipfs",
+      "streetsidesoftware.code-spell-checker",
+      "firsttris.vscode-jest-runner",
+      "biomejs.biome"
+    ]
+  },
+  "settings": {
     "[css]": {
       "editor.defaultFormatter": "biomejs.biome"
     },
-		"[javascript]": {
-			"editor.defaultFormatter": "biomejs.biome"
-		},
-		"[typescript]": {
-			"editor.defaultFormatter": "biomejs.biome"
-		},
-		"[json]": {
-			"editor.defaultFormatter": "biomejs.biome"
-		},
-		"editor.formatOnSave": true,
-		"typescript.tsdk": ".yarn/sdks/typescript/lib",
-		"typescript.enablePromptUseWorkspaceTsdk": true,
-		"files.trimTrailingWhitespace": true,
-		"files.insertFinalNewline": true,
-		"javascript.preferences.importModuleSpecifierEnding": "js",
-		"typescript.preferences.importModuleSpecifierEnding": "js",
-		"jestrunner.enableYarnPnpSupport": true,
-		"editor.tabSize": 2,
-		"editor.insertSpaces": true,
-		"editor.rulers": [
-			{
-				"color": "#cccccc",
-				"column": 80
-			},
-			{
-				"color": "#aa0000",
-				"column": 120
-			}
-		],
-		"editor.codeActionsOnSave": {
-			"source.organizeImports": "never",
-			"source.fixAll": "never",
-			"source.fixAll.biome": "explicit"
-		},
-		"files.exclude": {
-			"**/.git": true,
-			"**/.svn": true,
-			"**/.hg": true,
-			"**/CVS": true,
-			"**/.DS_Store": true,
-			"**/.pnp.*": true,
-			".vim": true,
-			".vscode": true,
-			"esbuild.js": true,
-			"jest.config.js": true,
-			"postcss.config.js": true,
-			".browserslistrc": true,
-			"tsconfig.json": true,
-			"biome.json": true,
-			".yarnrc.yml": true,
-			"yarn.lock": true,
-			".yarn": true,
-			"dist": true,
-			"packages": true
-		},
-		"search.exclude": {
-			"**/.yarn": true,
-			"**/.pnp.*": true
-		},
+    "[javascript]": {
+      "editor.defaultFormatter": "biomejs.biome"
+    },
+    "[typescript]": {
+      "editor.defaultFormatter": "biomejs.biome"
+    },
+    "[json]": {
+      "editor.defaultFormatter": "biomejs.biome"
+    },
+    "editor.formatOnSave": true,
+    "typescript.tsdk": ".yarn/sdks/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true,
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+    "javascript.preferences.importModuleSpecifierEnding": "js",
+    "typescript.preferences.importModuleSpecifierEnding": "js",
+    "jestrunner.enableYarnPnpSupport": true,
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "editor.rulers": [
+      {
+        "color": "#cccccc",
+        "column": 80
+      },
+      {
+        "color": "#aa0000",
+        "column": 120
+      }
+    ],
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "never",
+      "source.fixAll": "never",
+      "source.fixAll.biome": "explicit"
+    },
+    "files.exclude": {
+      "**/.git": true,
+      "**/.svn": true,
+      "**/.hg": true,
+      "**/CVS": true,
+      "**/.DS_Store": true,
+      "**/.pnp.*": true,
+      ".vim": true,
+      ".vscode": true,
+      "esbuild.js": true,
+      "jest.config.js": true,
+      "postcss.config.js": true,
+      ".browserslistrc": true,
+      "tsconfig.json": true,
+      "biome.json": true,
+      ".yarnrc.yml": true,
+      "yarn.lock": true,
+      ".yarn": true,
+      "dist": true,
+      "packages": true
+    },
+    "search.exclude": {
+      "**/.yarn": true,
+      "**/.pnp.*": true
+    },
     "cSpell.customDictionaries": {
       "main": {
         "name": "workspace",
@@ -95,5 +95,5 @@
         "addWords": true
       }
     }
-	}
+  }
 }

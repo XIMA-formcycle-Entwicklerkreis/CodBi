@@ -48,9 +48,8 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
     renderProcessor.insertFormResourcePluginStyle("codbi-style", "codbi.css")
 
     // Insert the JavaScript for the selected configuration template
-    properties.configTemplate.run {
-      renderProcessor.insertFormResourcePluginScript(
-          "codbi-config-template", "config-template-${this.value}.js")
-    }
+    // Currently, a config template is required, but perhaps it should be possible to choose none?
+    renderProcessor.insertFormResourcePluginScript(
+        "codbi-config-template", "config-template-${properties.configTemplate.value}.js")
   }
 }

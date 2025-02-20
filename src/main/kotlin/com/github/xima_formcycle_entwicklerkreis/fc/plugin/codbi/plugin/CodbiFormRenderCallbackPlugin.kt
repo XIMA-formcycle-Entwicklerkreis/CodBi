@@ -33,6 +33,6 @@ class CodbiFormRenderCallbackPlugin : IPluginFormRenderCallback, IFCRemoteSyncPl
   }
 
   override fun createCallbacks(): Iterable<IFormRenderPluginCallback> {
-    return mutableListOf(FormRenderCallback)
+    return listOf(FormRenderCallback)
   }
 }

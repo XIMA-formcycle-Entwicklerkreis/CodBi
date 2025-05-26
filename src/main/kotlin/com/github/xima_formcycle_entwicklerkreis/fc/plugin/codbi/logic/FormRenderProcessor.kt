@@ -114,10 +114,10 @@ internal class FormRenderProcessor {
   }
 
   /**
-   * Creates an external script element with the given URL and ID.
+   * Creates an external script element of type module with the given URL and ID.
    *
    * ```html
-   * <script id="id" name="id" src="url></script>
+   * <script id="id" name="id" src="url" type = "module"></script>
    * ```
    *
    * @param id The value for the ID and name attributes of the script element.
@@ -129,6 +129,8 @@ internal class FormRenderProcessor {
     attr(script, "id", id)
     attr(script, "name", id)
     attr(script, "src", url)
+    attr(script, "type", "module")
+
     return script
   }
 

@@ -1,8 +1,12 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "noUnusedLocals": false,
+    "strictPropertyInitialization": false,
+    "downlevelIteration": true,
     "outDir": "dist",
     "types": ["@de-xima/fc-form-renderer/global"]
-  },
-  "include": ["src", "__tests__"]
+  }
 }

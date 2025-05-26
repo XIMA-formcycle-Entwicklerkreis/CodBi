@@ -1,10 +1,12 @@
-import type { ConfigTemplate } from "./js/global-scope.js";
-
+import type { ConfigTemplate } from "./js/global-scope";
+/**
+ * Gets the {@link ConfigTemplate }'s name.
+ *
+ * @returns The {@link ConfigTemplate }'s name. */
 export function createConfigTemplate(): ConfigTemplate {
-  return {
-    name: "default",
-  };
+  return { name: "default" };
 }
 
-console.log("Using config template -- default");
 window.codbi.configTemplate = createConfigTemplate();
+
+window.codbi.checkAttributes();

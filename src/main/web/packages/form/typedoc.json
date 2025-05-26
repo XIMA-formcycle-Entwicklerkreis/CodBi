@@ -1,0 +1,18 @@
+{
+  "entryPoints": ["./src/js/**/*.ts"],
+  "out": "./docs",
+  "name": "CodBi",
+
+  "exclude": ["./src/tests/**/*", "./node_modules"],
+  "theme": "default",
+  "plugin": ["@typhonjs-typedoc/ts-lib-docs/typedoc/ts-links/dom/2023"],
+  "hideGenerator": true,
+  "disableSources": false,
+  "tsconfig": "./tsconfig.json",
+  "options": {
+    "excludePrivate": true,
+    "excludeProtected": false,
+    "excludeExternals": false,
+    "disableOutputCheck": true
+  }
+}

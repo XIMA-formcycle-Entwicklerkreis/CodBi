@@ -13,6 +13,11 @@
     "ignoreUnknown": true,
     "maxSize": 4194304
   },
+  "javascript": {
+    "parser": {
+      "unsafeParameterDecoratorsEnabled": true
+    }
+  },
   "linter": {
     "enabled": true,
     "rules": {

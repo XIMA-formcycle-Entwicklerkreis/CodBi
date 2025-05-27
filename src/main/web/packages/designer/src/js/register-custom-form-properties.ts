@@ -6,7 +6,7 @@ import {
 import { parseBoolean, recordValues } from "@de-xima/xima-common-js-lang";
 
 import { CodbiConfigTemplate, Constants } from "codbi-common";
-
+import { SelectMultiSelectType } from "./MultiSelect";
 import { i18n } from "./i18n.js";
 
 const WhenCodBiEnabled: IPropertyDependencyDescriptor<
@@ -38,6 +38,19 @@ export function registerCustomFormProperties(): void {
     options: recordValues(CodbiConfigTemplate).map((configTemplateName) => ({
       text: i18n(`designer.property.config_template.option.${configTemplateName}`),
       value: configTemplateName,
+    })),
+    availableIf: WhenCodBiEnabled,
+  });
+
+  // Standard Configurations
+  registerCustomFormProperty({
+    editor: SelectMultiSelectType,
+    cat: Constants["designer.category.codbi_panel"],
+    property: Constants["designer.property.standards"],
+    label: i18n("designer.property.standards"),
+    options: recordValues(CodbiConfigTemplate).map((standardConfiguration) => ({
+      text: i18n(`designer.property.config_template.option.${standardConfiguration}`),
+      value: standardConfiguration,
     })),
     availableIf: WhenCodBiEnabled,
   });

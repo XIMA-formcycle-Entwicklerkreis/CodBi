@@ -564,7 +564,17 @@ export class CodBi implements CodbiGlobal {
         if (key === "FUNC") {
           for (const functionality of toLoad[key].split(",")) {
             if (!this.functionalities.has(functionality.trim())) {
-              await getJQuery().get(`${this.resourceBase}${functionality.trim().toLowerCase()}.js`);
+              // If functionality is missing...
+              await new Promise((resolve) => {
+                const toLoad = document.createElement("script");
+                toLoad.src = `${this.resourceBase}${functionality.trim().toLowerCase()}.js`;
+                toLoad.type = "module";
+                //toLoad.async = true;
+                toLoad.onload = (event) => {
+                  resolve(event);
+                };
+                document.head.appendChild(toLoad);
+              });
             }
           }
         } else {
@@ -574,7 +584,17 @@ export class CodBi implements CodbiGlobal {
 
           for (const ep of this.extractEPs(toLoad[key])) {
             if (!(ep.trim() in this.availableEPs)) {
-              await getJQuery().get(`${this.resourceBase}${ep.trim().toLowerCase()}.js`);
+              await new Promise((resolve) => {
+                const toLoad = document.createElement("script");
+                toLoad.src = `${this.resourceBase}${ep.trim().toLowerCase()}.js`;
+                toLoad.type = "module";
+                toLoad.async = true;
+                toLoad.onload = (event) => {
+                  resolve(event);
+                };
+
+                document.head.appendChild(toLoad);
+              });
             }
           }
         }
@@ -596,6 +616,7 @@ export class CodBi implements CodbiGlobal {
         }
       }
       // #endregion Apply attributes
+      this.checkAttributes();
     });
   }
   /**

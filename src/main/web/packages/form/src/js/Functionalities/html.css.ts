@@ -1,6 +1,5 @@
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
-import { REGEX } from "xdbc/src/DBC/REGEX";
 import { AE } from "xdbc/src/DBC/AE";
 /**
  * Provides the {@link HTML_Select_Injection.functionality }.
@@ -27,7 +26,6 @@ export class HTML_CSS {
   @DBC.ParamvalueProvider
   public static functionality(
     @AE.PRE(new TYPE("string"), undefined, undefined, "replacements")
-    @REGEX.PRE(REGEX.stdExp.cssSelector, "destination")
     @TYPE.PRE("string", "css")
     toLoad: { [key: string]: string | Array<string> },
     toProcess: Element,

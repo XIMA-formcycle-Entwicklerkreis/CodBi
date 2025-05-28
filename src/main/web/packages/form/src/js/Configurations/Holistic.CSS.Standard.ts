@@ -6,7 +6,7 @@
  * "**CodBi_CSS_Scheme**" > ACCENT | 65B22E, SHADOW | 000000, HIGHLIGHT | FF8C00, INPUT_BORDER | 66C430 and
  * "**CodBi_CSS_Darkmodescheme**" > ACCENT | 65B22E, SHADOW | FF8C00, HIGHLIGHT | FF8C00, INPUT_BORDER | 073507.
  * The values are hexadecimal color-codes without an alpha. The alpha will be varied by this configuration thus mustn't
- * be set.*/
+ * be set. */
 export function loadConfig(): void {
   const scheme = document.querySelector('[ data-name = "CodBi_CSS_Scheme"');
   const schemeDarkmode = document.querySelector('[ data-name = "CodBi_CSS_Darkmodescheme"');

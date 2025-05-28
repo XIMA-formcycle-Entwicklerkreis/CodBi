@@ -16,7 +16,7 @@
  *  Both {@link HTMLInputElement }s are restricted to HH:MM using following {@link RegExp }:
  *  ^(0[0-9]|1[0-9]|2[0-3]):(0[0-9]|[1-5][0-9])$.
  *  Both are formatted with Cleave to permit HH:MM only. */
-export function loadConfig(): void {
+function loadConfig(): void {
   // #region CodBi_DateFrame_1[-5]_...
   window.codbi.loadConfigs([
     {
@@ -256,3 +256,5 @@ export function loadConfig(): void {
   ]);
   // #endregion CodBi_TimeFrame_1[-5]_...
 }
+
+loadConfig();

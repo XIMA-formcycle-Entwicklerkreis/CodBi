@@ -31,3 +31,5 @@ export function loadConfig(): void {
   });
   // #endregion CodBi_HTML_Panel_Standard
 }
+
+loadConfig();

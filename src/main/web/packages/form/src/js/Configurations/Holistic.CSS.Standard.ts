@@ -234,3 +234,5 @@ export function loadConfig(): void {
       .replace(/\,/g, "§"),
   });
 }
+
+loadConfig();

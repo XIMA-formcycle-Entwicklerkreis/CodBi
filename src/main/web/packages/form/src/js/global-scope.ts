@@ -563,8 +563,8 @@ export class CodBi implements CodbiGlobal {
       for (const key in toLoad) {
         if (key === "FUNC") {
           for (const functionality of toLoad[key].split(",")) {
-            if (!this.functionalities.has(functionality)) {
-              await getJQuery().get(`${this.resourceBase}${functionality.toLowerCase()}.js`);
+            if (!this.functionalities.has(functionality.trim())) {
+              await getJQuery().get(`${this.resourceBase}${functionality.trim().toLowerCase()}.js`);
             }
           }
         } else {
@@ -573,7 +573,9 @@ export class CodBi implements CodbiGlobal {
           }
 
           for (const ep of this.extractEPs(toLoad[key])) {
-            await getJQuery().get(`${this.resourceBase}${ep.toLowerCase()}.js`);
+            if (!(ep.trim() in this.availableEPs)) {
+              await getJQuery().get(`${this.resourceBase}${ep.trim().toLowerCase()}.js`);
+            }
           }
         }
       }

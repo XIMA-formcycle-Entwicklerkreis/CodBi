@@ -4,11 +4,10 @@ import {
   type IPropertyDependencyDescriptor,
 } from "@de-xima/fc-form-designer";
 import { parseBoolean, recordValues } from "@de-xima/xima-common-js-lang";
-
 import { CodbiConfigTemplate, Constants } from "codbi-common";
-import { SelectMultiSelectType } from "./MultiSelect";
+import { MultiSelectType } from "./MultiSelect";
 import { i18n } from "./i18n.js";
-
+/** Defines whether the CodBi is enabled or not (for usage in {@link registerCustomFormProperties }).*/
 const WhenCodBiEnabled: IPropertyDependencyDescriptor<
   keyof IEditorMap,
   [(typeof Constants)["designer.property.enable_codbi"]]
@@ -16,10 +15,7 @@ const WhenCodBiEnabled: IPropertyDependencyDescriptor<
   dependencies: [Constants["designer.property.enable_codbi"]],
   test: (params) => parseBoolean(params.values[Constants["designer.property.enable_codbi"]]),
 };
-
-/**
- * Registers the custom properties for configuring the code library.
- */
+/** Registers the custom properties for configuring the code library. */
 export function registerCustomFormProperties(): void {
   // Whether the code library is enabled
   registerCustomFormProperty({
@@ -28,7 +24,6 @@ export function registerCustomFormProperties(): void {
     property: Constants["designer.property.enable_codbi"],
     label: i18n("designer.property.enable_codbi"),
   });
-
   // Configuration template
   registerCustomFormProperty({
     editor: "SelectEditor",
@@ -41,17 +36,12 @@ export function registerCustomFormProperties(): void {
     })),
     availableIf: WhenCodBiEnabled,
   });
-
   // Standard Configurations
   registerCustomFormProperty({
-    editor: SelectMultiSelectType,
+    editor: MultiSelectType,
     cat: Constants["designer.category.codbi_panel"],
     property: Constants["designer.property.standards"],
     label: i18n("designer.property.standards"),
-    options: recordValues(CodbiConfigTemplate).map((standardConfiguration) => ({
-      text: i18n(`designer.property.config_template.option.${standardConfiguration}`),
-      value: standardConfiguration,
-    })),
     availableIf: WhenCodBiEnabled,
   });
 }

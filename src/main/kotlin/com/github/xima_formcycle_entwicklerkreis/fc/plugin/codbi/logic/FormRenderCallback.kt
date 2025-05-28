@@ -24,7 +24,6 @@ import java.util.Stack
 internal object FormRenderCallback : IFormRenderPluginCallback {
   /** Stores all functionalities used by the form. */
   var usedFunctionalities: Set<String> = mutableSetOf<String>()
-
   /** Stores all **E**lement **P**laceholders used by the form. */
   var usedEPs: Set<String> = mutableSetOf<String>()
 
@@ -83,7 +82,7 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
   /**
    * Checks if the code library was enabled, and if so, takes the appropriate actions.
    *
-   * Determines the functionalities and **E**lement **P**laceholders that're referenced in any
+   * Determines the functionalities and **e**lement **p**laceholders that're referenced in any
    * XItem-Attribute.
    *
    * @param params The parameters of the form render callback, as provided by formcycle.
@@ -131,6 +130,9 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
    * Called when the code library was enabled. Inserts the required CSS and JavaScript resources;
    * and also takes the appropriate actions for the additional settings, such as adding data
    * attributes etc.
+   *
+   * Functionalities, **e**lement **p**laceholders & selected standard configurations are injected
+   * here.
    */
   private fun processCodeLib(
       renderProcessor: FormRenderProcessor,
@@ -151,6 +153,12 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
           "codbi-elementplaceholder-" + ep.replace(".", "-"), "$ep.js")
     }
     // endregion Inject used element placeholders
+    // region Inject selected standard configurations
+    for (standard in properties.standards.split(",")) {
+      renderProcessor.insertFormResourcePluginScript(
+          "codbi-standard-" + standard.trim().replace(".", "-"), standard.trim() + ".js")
+    }
+    // endregion Inject selected standard configurations
     // Insert the JavaScript for the selected configuration template
     // Currently, a config template is required, but perhaps it should be possible to choose none?
     renderProcessor.insertFormResourcePluginScript(

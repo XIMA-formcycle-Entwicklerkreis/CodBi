@@ -56,3 +56,5 @@ export function loadConfig(): void {
     AspectRatio: "4/3",
   });
 }
+
+loadConfig();

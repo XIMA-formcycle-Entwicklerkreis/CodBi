@@ -21,3 +21,5 @@ export function loadConfig(): void {
       .replace("}", ">")}`,
   });
 }
+
+loadConfig();

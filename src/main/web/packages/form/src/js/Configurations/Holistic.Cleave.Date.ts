@@ -7,3 +7,5 @@ export function loadConfig(): void {
     FUNC: "HTML.Input.Cleave",
   });
 }
+
+loadConfig();

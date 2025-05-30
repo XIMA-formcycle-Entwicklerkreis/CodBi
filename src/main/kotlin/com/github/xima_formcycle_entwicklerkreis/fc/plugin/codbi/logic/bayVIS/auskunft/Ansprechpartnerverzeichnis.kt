@@ -191,7 +191,7 @@ class CodBiBayVISAuskunftAnsprechpartnerverzeichnisAction : IPluginServletAction
    * of data and re-requesting after a certain amounts of hours.
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
-    if (buffer == null && (lastContact - System.currentTimeMillis()) / 3600000 <= hrsTillUpdate) {
+    if (buffer == null || (lastContact - System.currentTimeMillis()) / 3600000 <= hrsTillUpdate) {
       retrieveData()
     }
 

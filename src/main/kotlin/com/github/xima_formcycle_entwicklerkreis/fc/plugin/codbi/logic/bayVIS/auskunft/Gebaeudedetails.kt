@@ -138,7 +138,7 @@ class CodBiBayVISAuskunftGebaeudedetailsAction : IPluginServletAction {
     if (p0.headerMap["ID"] == null)
         return PluginServletActionRetVal(ServletResponse(EResponseType.HTML))
 
-    if (buffer[p0.headerMap["ID"]] == null &&
+    if (buffer[p0.headerMap["ID"]] == null ||
         (lastContact - System.currentTimeMillis()) / 3600000 <= hrsTillUpdate) {
       retrieveData(p0.headerMap["ID"]!!, p0.headerMap["GebaeudeID"]!!)
     }

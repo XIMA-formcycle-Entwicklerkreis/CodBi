@@ -52,7 +52,7 @@ internal class FormRenderProcessor {
    *
    * @param id The ID of the element to insert. Used to set the name and ID attributes of the
    *   inserted DOM element.
-   * @param filePath The path to the resource, must be one of the keys as returned by
+   * @param filePath The path to the resource, must be one of the keys as returned by the
    *   [CodbiFormResourcesPlugin.getResources].
    */
   fun insertFormResourcePluginScript(id: String, filePath: String) {

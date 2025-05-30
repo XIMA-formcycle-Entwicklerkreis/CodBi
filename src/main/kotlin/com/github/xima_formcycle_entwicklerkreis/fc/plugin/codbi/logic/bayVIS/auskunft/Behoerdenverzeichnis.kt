@@ -147,7 +147,7 @@ class CodBiBayVISAuskunftBehoerdenverzeichnisAction : IPluginServletAction {
     val serviceUrl = this.url
     var statusCode = -1
     // endregion Initialization
-    if (buffer == null && (lastContact - System.currentTimeMillis()) / 3600000 <= hrsTillUpdate) {
+    if (buffer == null || (lastContact - System.currentTimeMillis()) / 3600000 <= hrsTillUpdate) {
       retrieveData()
     }
 

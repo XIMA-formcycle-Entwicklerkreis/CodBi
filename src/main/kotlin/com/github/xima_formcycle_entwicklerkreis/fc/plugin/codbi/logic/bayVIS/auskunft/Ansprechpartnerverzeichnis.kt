@@ -70,7 +70,7 @@ class CodBiBayVISAuskunftAnsprechpartnerverzeichnisAction : IPluginServletAction
    * Stores the amount of hours that have to pass since a request to the BayVIS-API was made in
    * order to perform a re-request on request.
    */
-  protected var hrsTillUpdate: Int = 1
+  protected var hrsTillUpdate: Int = 18
 
   /** Stores the URL of the BayVIS-Endpoint */
   protected var url: String =
@@ -191,7 +191,7 @@ class CodBiBayVISAuskunftAnsprechpartnerverzeichnisAction : IPluginServletAction
    * of data and re-requesting after a certain amounts of hours.
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
-    if (buffer == null || (lastContact - System.currentTimeMillis()) / 3600000 <= hrsTillUpdate) {
+    if (buffer == null || (System.currentTimeMillis() - lastContact) / 3600000 >= hrsTillUpdate) {
       retrieveData()
     }
 

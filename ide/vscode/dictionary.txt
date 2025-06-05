@@ -15,12 +15,14 @@ Augsburger
 Ausbildung
 Auskunft
 Ausländerbehörde
+Auswahl
 authoritie's
 autoheader
 autoheadercss
 autoheaderlevel
 autoheadertitle
 Baiti
+bayvis
 behoerde
 Behoerden
 behoerdenart
@@ -85,6 +87,7 @@ Geduldeten
 generateheader
 gteq
 gültige
+Hauptansprechpartner
 hausanschrift
 Holostic
 Ihre
@@ -143,6 +146,7 @@ typhonjs
 verfügbar
 vorname
 Weiter
+Weitere
 wenn
 wrappercss
 xima

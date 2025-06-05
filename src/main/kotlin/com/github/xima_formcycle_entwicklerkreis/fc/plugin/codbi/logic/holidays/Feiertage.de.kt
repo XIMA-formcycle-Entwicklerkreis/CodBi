@@ -14,7 +14,6 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.nio.charset.StandardCharsets
-import org.slf4j.LoggerFactory
 
 /**
  * This servlet retrieves german holidays from **get.api-feiertage.de** acting as a cache for
@@ -37,7 +36,7 @@ class FeiertageDEAction : IPluginServletAction {
    * Stores the amount of hours that have to pass since a request to the Holdays-API was made in
    * order to perform a re-request on request.
    */
-  protected var hrsTillUpdate: Int = 1
+  protected var hrsTillUpdate: Int = 18
   /** Stores the time the BayVIS-API was lastly contacted. */
   protected var lastContact: Long = System.currentTimeMillis()
 
@@ -72,7 +71,7 @@ class FeiertageDEAction : IPluginServletAction {
       val connection = url.openConnection() as HttpURLConnection
 
       connection.setRequestMethod("GET")
-      LoggerFactory.getLogger(FeiertageDEAction::class.java).info("X2")
+
       statusCode = connection.getResponseCode()
       buffer[HolidaysRequest(years, states, augsburg, catholic)] =
           if (statusCode in 200..299) {
@@ -90,8 +89,7 @@ class FeiertageDEAction : IPluginServletAction {
 
             errorMessage
           }
-      LoggerFactory.getLogger(FeiertageDEAction::class.java)
-          .info("TTT:" + buffer[HolidaysRequest(years, states, augsburg, catholic)])
+
       connection.disconnect()
     } catch (e: IOException) {
       buffer[HolidaysRequest(years, states, augsburg, catholic)] =
@@ -142,25 +140,14 @@ class FeiertageDEAction : IPluginServletAction {
    * have passed.
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
-    LoggerFactory.getLogger(FeiertageDEAction::class.java)
-        .info(
-            "x1:" +
-                (buffer[
-                        HolidaysRequest(
-                            p0.headerMap["years"]!!,
-                            p0.headerMap["states"]!!,
-                            p0.headerMap["augsburg"]!!.toBoolean(),
-                            p0.headerMap["catholic"]!!.toBoolean())] == null)
-                    .toString())
-
     if (buffer[
         HolidaysRequest(
             p0.headerMap["years"]!!,
             p0.headerMap["states"]!!,
             p0.headerMap["augsburg"]!!.toBoolean(),
             p0.headerMap["catholic"]!!.toBoolean())] == null ||
-        (lastContact - System.currentTimeMillis()) / 3600000 <= hrsTillUpdate) {
-      LoggerFactory.getLogger(FeiertageDEAction::class.java).info("x1.1")
+        (System.currentTimeMillis() - lastContact) / 3600000 >= hrsTillUpdate) {
+
       retrieveData(
           p0.headerMap["years"]!!,
           p0.headerMap["states"]!!,

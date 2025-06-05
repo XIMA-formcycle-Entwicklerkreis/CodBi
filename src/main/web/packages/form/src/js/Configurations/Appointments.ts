@@ -255,6 +255,14 @@ function loadConfig(): void {
     },
   ]);
   // #endregion CodBi_TimeFrame_1[-5]_...
+  // #region H
+  // #region CodBi_BayVIS_Behoerde
+  window.codbi.loadConfig({
+    targets: ".CodBi_Holidays_Listing",
+    FUNC: "HTML.Select.Injection",
+    Values: "{ Date.Holidays > { V > CodBi_Holidays_States }; this_year ; this_year + 1 }",
+    ReClean: "TRUE",
+  });
 }
 
 loadConfig();

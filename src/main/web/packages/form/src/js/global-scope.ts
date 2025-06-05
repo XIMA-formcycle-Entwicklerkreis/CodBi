@@ -14,8 +14,13 @@ export interface CodbiGlobal {
   /** See {@link CodBi.registerFunctionality }. */
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   registerFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
+  /** See {@link CodBi.extendFunctionality }. */
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  extendFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
   /** See {@link CodBi.registerEP }. */
   registerEP(id: string, generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>): boolean;
+  /** See {@link CodBi.extendEP }. */
+  extendEP(id: string, generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>): boolean;
   /** See {@link CodBi.reportError }. */
   reportError(message: string): undefined;
   /** See {@link CodBi.loadConfig }. */
@@ -77,7 +82,7 @@ export class CodBi implements CodbiGlobal {
   /** Stores the current {@link checkAttributes } - {@link Promise }. */
   public currentAttributeCheck: Promise<boolean> | undefined;
   /**
-   * Registers an [E]lement [P]laceholder using the specified {@link string} as it's id.
+   * Registers an **e**lement **p**laceholder using the specified {@link string} as it's id.
    *
    * @param id        The {@link string } the placeholder should get as it's id.
    * @param generator The actual placeholder's (params: Array<string>) => Array<unknown>.
@@ -86,13 +91,67 @@ export class CodBi implements CodbiGlobal {
     id: string,
     generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>,
   ): boolean {
+    // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
+    id = id.toLowerCase();
+
     if (this.availableEPs[id]) {
-      console.log(`[E]lement [P]laceholder (${id}) is already registered. Replacement discarded.`);
+      console.log(`Element placeholder (${id}) is already registered. Replacement discarded.`);
 
       return false;
     }
 
     this.availableEPs[id] = generator;
+
+    return true;
+  }
+  /**
+   * Extends an given **e**lement **p**laceholder so that both the former one and the new one are invoked whereas the
+   * form one itself may also be an extension already.
+   * The value retrieved from the former **e**lement **p**laceholder will be passed to the new one which may further
+   * transform the resulting values.
+   * If an **e**lement **p**laceholder with the given **id** hasn't been registered yet the new one will be registered
+   * using * {@link CodBi.registerEP }.
+   *
+   * @param id        See {@link CodBi.registerEP }.
+   * @param generator See {@link CodBi.registerEP }.
+   *
+   * @returns **TRUE** if an extension took place or **FALSE** if a regular registration was performed. */
+  public extendEP(
+    id: string,
+    generator: (params: Array<string>, formerResult: Array<unknown>) => Array<unknown> | Promise<Array<unknown>>,
+  ): boolean {
+    // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
+    id = id.toLowerCase();
+
+    if (this.availableEPs[id] === undefined) {
+      this.reportInfo(`Element-Placeholder to extend (${id}) has not been registered. Extension discarded.`);
+
+      return false;
+    }
+
+    const formerEP = this.availableEPs[id];
+
+    this.availableEPs[id] = (params: Array<string>): Array<unknown> | Promise<Array<unknown>> => {
+      const resultFormerEP = formerEP(params);
+
+      if (Array.isArray(resultFormerEP)) {
+        return generator(params, resultFormerEP as Array<string>);
+      }
+
+      return new Promise<Array<unknown>>((resolve) => {
+        (resultFormerEP as Promise<Array<unknown>>).then((fromFormer: Array<unknown>) => {
+          const newResult = generator(params, fromFormer as Array<string>);
+
+          if (Array.isArray(newResult)) {
+            resolve(newResult);
+          } else {
+            (newResult as Promise<Array<unknown>>).then((fromNew: Array<unknown>) => {
+              resolve(fromNew);
+            });
+          }
+        });
+      });
+    };
 
     return true;
   }
@@ -175,10 +234,10 @@ export class CodBi implements CodbiGlobal {
     return parts.map((part) => part.trim());
   }
   /**
-   * Resolves nested [E]lement [P]laceholder within [E]lement [P]laceholder Parameter
+   * Resolves nested **e**lement **p**laceholder within **e**lement **p**laceholder Parameter
    * recursively ({@link CodBi.epSeparator }'s count of initiators determine the level of possible nesting).
    *
-   * @param params The [E]lement [P]laceholder Parameter to check for [E]lement [P]laceholder.
+   * @param params The **e**lement **p**laceholder Parameter to check for **e**lement **p**laceholder.
    *
    * @returns The resolved incoming "params". */
   public resolveEPParams(params: Array<string>): Promise<Array<string>> {
@@ -193,6 +252,8 @@ export class CodBi implements CodbiGlobal {
 
         if (outermostEP !== null) {
           // biome-ignore lint/style/noNonNullAssertion: <explanation>
+          outermostEP.keyPlaceholder = outermostEP.keyPlaceholder!.toLowerCase();
+          // biome-ignore lint/style/noNonNullAssertion: <explanation>
           if (this.availableEPs[outermostEP.keyPlaceholder!]) {
             cntPromises++;
             // The "candidate" is an EP, parameter are provided.
@@ -200,7 +261,7 @@ export class CodBi implements CodbiGlobal {
               .then((real) => {
                 // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
                 const epResult = this.availableEPs[outermostEP.keyPlaceholder!]!(real);
-                // If the [E]lement [Placeholder] is asynchronous...
+                // If the element placeholder is asynchronous...
                 if (epResult instanceof Promise) {
                   epResult
                     .then((real) => {
@@ -219,7 +280,7 @@ export class CodBi implements CodbiGlobal {
                       reject(X);
                     });
                 } else {
-                  // In case of a synchronous [E]lement [Placeholder]...
+                  // In case of a synchronous element placeholder...
                   if (epResult[0] !== undefined && typeof epResult[0] === "string") {
                     epResult[0] = (epResult[0] as string).trim();
                   }
@@ -235,11 +296,11 @@ export class CodBi implements CodbiGlobal {
                 reject(X);
               });
           }
-        } else if (this.availableEPs[candidate.trim()]) {
-          // If the [E]lement [P]laceholder is a parameterless one...
+        } else if (this.availableEPs[candidate.trim().toLowerCase()]) {
+          // If the element placeholder is a parameterless one...
           // The "candidate" is an EP, no parameter provided.
           // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-          const epResult = this.availableEPs[candidate.trim()]!(new Array<string>());
+          const epResult = this.availableEPs[candidate.trim().toLowerCase()]!(new Array<string>());
 
           if (epResult instanceof Promise) {
             cntPromises++;
@@ -262,10 +323,10 @@ export class CodBi implements CodbiGlobal {
                 reject(X);
               });
           } else {
-            // If there are no [E]lement [P]laceholder...
+            // If there are no element placeholder...
             let final: string | undefined =
               // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-              (this.availableEPs[candidate.trim()]!(new Array<string>()) as Array<unknown>)[0] as string;
+              (this.availableEPs[candidate.trim().toLowerCase()]!(new Array<string>()) as Array<unknown>)[0] as string;
 
             if (final !== undefined) {
               final = final.trim();
@@ -277,7 +338,7 @@ export class CodBi implements CodbiGlobal {
           result.push(candidate); // The "candidate" is not an EP.
         }
       }
-      // In case there're no [E]lement [P]laceholder at all.
+      // In case there're no element placeholder at all.
       if (cntPromises === 0) {
         resolve(result);
       }
@@ -310,7 +371,7 @@ export class CodBi implements CodbiGlobal {
 
                     if (outermostEP !== null) {
                       // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                      if (this.availableEPs[outermostEP!.keyPlaceholder!]) {
+                      if (this.availableEPs[outermostEP!.keyPlaceholder!.toLowerCase()]) {
                         cntPromises++;
 
                         this.resolveEPParams(
@@ -319,7 +380,7 @@ export class CodBi implements CodbiGlobal {
                         )
                           .then((real) => {
                             // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                            const epResult = this.availableEPs[outermostEP!.keyPlaceholder!]!(
+                            const epResult = this.availableEPs[outermostEP!.keyPlaceholder!.toLowerCase()]!(
                               // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
                               outermostEP!.params! === "" ? new Array<string>() : real,
                             );
@@ -367,7 +428,7 @@ export class CodBi implements CodbiGlobal {
 
               if (outermostEP !== null) {
                 // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                if (this.availableEPs[outermostEP!.keyPlaceholder!]) {
+                if (this.availableEPs[outermostEP!.keyPlaceholder!.toLowerCase()]) {
                   cntPromises++;
 
                   this.resolveEPParams(
@@ -375,11 +436,11 @@ export class CodBi implements CodbiGlobal {
                     this.splitUnbracedParams(outermostEP!.params!),
                   ).then((real) => {
                     // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                    const epResult = this.availableEPs[outermostEP!.keyPlaceholder!]!(
+                    const epResult = this.availableEPs[outermostEP!.keyPlaceholder!.toLowerCase()]!(
                       // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
                       outermostEP!.params === "" ? new Array<string>() : real,
                     );
-                    // If parameter is a single [E]lement [P]laceholder...
+                    // If parameter is a single element placeholder...
                     if (epResult instanceof Promise) {
                       epResult
                         .then((real) => {
@@ -393,7 +454,7 @@ export class CodBi implements CodbiGlobal {
                           reject(X);
                         });
                     } else {
-                      // If parameter is not an array and contains no [E]lement [P]laceholder...
+                      // If parameter is not an array and contains no element placeholder...
                       config[key] = epResult;
 
                       if (--cntPromises === 0) {
@@ -419,11 +480,14 @@ export class CodBi implements CodbiGlobal {
    * Invokes {@link CodBi.resolveEP } in order to retrieve the
    * given {@link elementPlaceholder }.
    *
-   * @param elementPlaceholder The Element-Placeholder to resolve.
+   * @param elementPlaceholder The **e**lement **p**laceholder to resolve (case insensitive).
    *
    * @returns A JSON ({ toResolve : ... }) containing the resolution result in
    *          it's property 'toResolve'.*/
   public retrieveEPValue(elementPlaceholder: string): { toResolve: unknown } {
+    // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
+    elementPlaceholder = elementPlaceholder.toLowerCase();
+
     const result = { toResolve: [elementPlaceholder] };
 
     this.resolveEP({ toResolve: [elementPlaceholder] });
@@ -467,22 +531,45 @@ export class CodBi implements CodbiGlobal {
 
     this.functionalities.set(id, init);
 
+    for (const element of document.querySelectorAll(`[data-cb-checked*="${id.toLowerCase()}"]`)) {
+      element.setAttribute("data-cb-checked", element.getAttribute("data-cb-checked").replace(id.toLowerCase(), ""));
+    }
+
     return true;
   }
   /**
-   * Not implemented yet.
+   * Extends a given functionality so that both the former one and the new one are invoked whereas the form one
+   * itself may also be an extension already.
+   * If a functionality with the given **id** hasn't been registered yet the new one will be registered using
+   * {@link CodBi.registerFunctionality }.
    *
-   * @param id
-   * @param init
-   * @returns
-   */
+   * @param id    See {@link CodBi.registerFunctionality }.
+   * @param init  See {@link CodBi.registerFunctionality }.
+   *
+   * @returns **TRUE** if an extension took place or **FALSE** if a regular registration was performed. */
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  public extendFunctionality(id: string, init: (toLoad: any) => any): boolean {
+  public extendFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean {
     if (!this.functionalities.has(id)) {
-      console.log(`Functionality to extend (${id}) is has not been registered. Extension discarded.`);
+      this.registerFunctionality(id, init);
+
+      this.reportInfo(`Functionality to extend (${id}) has not been registered. Registered as a new one instead.`);
 
       return false;
     }
+    const formerFunctionality = this.functionalities.get(id);
+
+    /*this.functionalities.set(id, init);
+
+    for (const element of document.querySelectorAll(`[data-cb-checked*="${id.toLowerCase()}"]`)) {
+      element.setAttribute("data-cb-checked", element.getAttribute("data-cb-checked").replace(id.toLowerCase(), ""));
+    }
+
+    this.checkAttributes();*/
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    this.functionalities.set(id, (toLoad: any, toProcess: Element) => {
+      formerFunctionality(toLoad, toProcess);
+      init(toLoad, toProcess);
+    });
 
     return true;
   }
@@ -492,7 +579,7 @@ export class CodBi implements CodbiGlobal {
    *
    * @param toExtractFrom The CodBi-Attributes's string to extract the **e**lement **p**laceholders from.
    *
-   * @return The listing of **E**lement **P**laceholders that were found in the string **toExtractFrom**. */
+   * @return The listing of **e**lement **P**laceholders that were found in the string **toExtractFrom**. */
   public extractEPs(toExtractFrom: string): string[] {
     const result: string[] = [];
     const segmentStartStack: number[] = []; // Indices of segments
@@ -544,7 +631,7 @@ export class CodBi implements CodbiGlobal {
   /**
    * Loads a configuration as a JSON by applying it to the {@link Element }s defined in it's targets attribute
    * (a tilde separated list of CSS-Selectors). All other properties define the tagged {@link Element }'s
-   * CodBi-Attributes (e.g. FUNC will become cbFUNC on the {@link Element }.
+   * CodBi-Attributes (e.g. **FUNC** will become **data-cb-FUNC** on the {@link Element }.
    *
    * Prior to applying the new attributes to the {@link Element }s the **FUNC** property of the **toLoad** will be
    * inspected in order to spot any functionalities that're not yet loaded and missing code fragments be loaded from
@@ -601,22 +688,51 @@ export class CodBi implements CodbiGlobal {
       }
       // #endregion Check dependencies
       // #region Apply attributes
+      const globals: { [key: string]: string } = {};
+
       for (const selTarget of toLoad.targets.split("~")) {
         for (const target of document.querySelectorAll(selTarget)) {
           if (target) {
-            target.removeAttribute("cbichecked");
-
+            // #region Check for global overrides.
             for (const key in toLoad) {
-              if (key !== "targets" && !target.hasAttribute(`cb${key}`)) {
-                // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                target.setAttribute(`cb${key}`, (toLoad as any)[key]);
+              if (key.toLowerCase() === "func") {
+                for (const functionality of toLoad[key].split(",")) {
+                  const specificGlobals = this.extractGlobalParameter(functionality.trim());
+
+                  if (specificGlobals) {
+                    for (const entry in specificGlobals) {
+                      globals[entry] = specificGlobals[entry];
+                    }
+                  }
+                }
+              }
+            }
+            // #endregion Check for global overrides.
+            for (const key in toLoad) {
+              if (key.toLowerCase() === "func" && target.hasAttribute("data-cb-func")) {
+                target.setAttribute(
+                  "data-cb-func",
+                  globals[key.toLowerCase()]
+                    ? `${globals[key.toLowerCase()]},${target.getAttribute("data-cb-func")}`
+                    : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                      `${(toLoad as any)[key]},${target.getAttribute("data-cb-func")}`,
+                );
+
+                continue;
+              }
+
+              if (key !== "targets" && !target.hasAttribute(`data-cb-${key}`)) {
+                target.setAttribute(
+                  `data-cb-${key}`,
+                  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                  globals[key.toLowerCase()] ? globals[key.toLowerCase()] : (toLoad as any)[key],
+                );
               }
             }
           }
         }
       }
       // #endregion Apply attributes
-      this.checkAttributes();
     });
   }
   /**
@@ -630,14 +746,13 @@ export class CodBi implements CodbiGlobal {
   }
   /**
    * Retrieves the Attributes out of the given {@link Element } "toExtractFrom" that are related
-   * to the CodBi ("cb"-prefixed).
-   * Those attributes may contain [E]lement [P]laceholder that are introduced by an
+   * to the CodBi (**data-cb-** prefixed).
+   * Those attributes may contain **e**lement **p**laceholder that are introduced by an
    * {@link DBC.nestingBraces.opening } brace. The placeholder and it's optional parameter are separated
    *
    * @param toExtractFrom The {@link Element } to extract the CodBi-Attributes from.
    *
-   * @returns The {[key: string]: unknown } containing the attribute names and values.
-   */
+   * @returns The {[key: string]: unknown } containing the attribute names and values. */
   protected extractCBAttributes(toExtractFrom: Element): { [key: string]: unknown } {
     const codbiAttributes: { [key: string]: unknown } = {};
 
@@ -646,11 +761,12 @@ export class CodBi implements CodbiGlobal {
       if (
         candidate.name.trim() !== "cbfunc" &&
         candidate.name.trim() !== "cbapply" &&
-        candidate.name[0] === "c" &&
-        candidate.name[1] === "b"
+        candidate.name.trim() !== "data-cb-func" &&
+        candidate.name.trim() !== "data-cb-apply" &&
+        candidate.name.substring(0, 8) === "data-cb-"
       ) {
         // Turn every attribute that contains a "," into a String-Array.
-        codbiAttributes[candidate.name.substring(2)] =
+        codbiAttributes[candidate.name.substring(8)] =
           candidate.value.indexOf(",") !== -1 && candidate.value[0] !== "^"
             ? candidate.value.split(",").map((str) => str.trim())
             : candidate.value.replace(/\^/g, "");
@@ -666,8 +782,7 @@ export class CodBi implements CodbiGlobal {
    * @param a The {[key: string]: unknown } to merge.
    * @param b The {[key: string]: unknown } to merge.
    *
-   * @returns "a" merged with "b".
-   */
+   * @returns "a" merged with "b". */
   protected mergeParameter(a: { [key: string]: unknown }, b: { [key: string]: unknown }): { [key: string]: unknown } {
     const result: { [key: string]: unknown } = a;
 
@@ -686,8 +801,7 @@ export class CodBi implements CodbiGlobal {
    *
    * @param namespace The {@link string }-prefix a global parameter has to be tagged with to be retrieved.
    *
-   * @param return The {[key : string] : string } of the requested global parameters.
-   */
+   * @param return The {[key : string] : string } of the requested global parameters. */
   protected extractGlobalParameter(namespace: string): { [key: string]: string | null } {
     const result: { [key: string]: string } = {};
 
@@ -755,9 +869,9 @@ export class CodBi implements CodbiGlobal {
     innerSVG.classList.add("CodBi_Logo", "CodBiLoader");
   }
   /**
-   * Removes all {@link Element }s of CSS-Class-"cCodBiLoader" out of the one "toRemoveFrom".
+   * Removes all {@link Element }s of CSS-Class-**cCodBiLoader** out of the one **toRemoveFrom**.
    *
-   * @param toRemoveFrom The {@link Element } all CSS-Class-"cCodBiLoader" shall be remove from. */
+   * @param toRemoveFrom The {@link Element } all CSS-Class-**cCodBiLoader** shall be remove from. */
   public removeLoaderAnim(toRemoveFrom: Element): void {
     const loaderAnimation = toRemoveFrom.parentElement?.querySelector(
       `.cCodBiLoader[cbFOR="${toRemoveFrom.getAttribute("data-name")}"]`,
@@ -771,54 +885,65 @@ export class CodBi implements CodbiGlobal {
   }
   /**
    * Processes all {@link Element }s that're tagged with a certain
-   * Attribute (cbFUNC) in order to activate CodBi-Functionalities.
-   * The Attribute "cbFUNC" is a CSV containing all CodBi-Functionalities to
+   * Attribute (**data-cb-FUNC**) in order to activate CodBi-Functionalities.
+   * The Attribute **data-cb-FUNC** is a CSV containing all CodBi-Functionalities to
    * activate.
    *
    * When having found an {@link Element } this methods will look for all
-   * attributes named "cb...". When activating a CodBi-Functionality for an
+   * attributes named **data-cb-...**. When activating a CodBi-Functionality for an
    * {@link Element } those attributes will be passed as a Key/Value-JSON to the
-   * functionality with the "cb"-prefix removed from the keys.
+   * functionality with the **data-cb-** prefix removed from the keys.
    *
    * This method also looks for global variables related to the functionality to be used. Those may be specified
    * in the GUI's "Variables" section and got to be prefixed with the functionality's name (using underscores
    * instead of dots separators however (e.g. Time.Frame >> Time_Frame)) followed by the variable's name without
-   * the "cb" prefix (e.g. Time_Frame_MaxField).
+   * the **data-cb-** prefix (e.g. Time_Frame_MaxField).
    * For being useful to define values that're common to multiple functionalities but still pertain the possibility
    * to overwrite those values when needed, global variables have the least precedence and will be overwritten by
    * the ones the {@link Element } has.
    *
-   * The attribute "cbAPPLY" may be used to apply all global variables and all attributes of the {@link Element }s to
-   * the ones specified by the CSS-Selector-TSV, which is this attribute's value (take care to use "data-org-name" in
-   * CSS-Attribute-Selectors in order for the application to also work in repetitive containers).
+   * The attribute **data-cb-APPLY** may be used to apply all global variables and all attributes of the
+   * {@link Element }s to the ones specified by the CSS-Selector-TSV, which is this attribute's value
+   * (take care to use **data-org-name** in CSS-Attribute-Selectors in order for the application to also work in
+   * repetitive containers).
    * Global variables and those received from the original {@link Element } may be overwritten simply by re-specifying
-   * the variable-attribute on the {@link Element}s "cbAPPLY" refers to where suitable.
+   * the variable-attribute on the {@link Element}s **data-cb-APPLY** refers to where suitable.
    *
-   * The "cbLoader"-Attribute, if set to "none" (case insensitive), does deactivate the loader-animation only, not
-   * the disabling if {@link HTMLInputElement }s as long as the tagged {@link Element } hasn't been processed.
+   * The **data-cb-Loader** attribute, if set to "none" (case insensitive), does deactivate the loader-animation only,
+   * not the disabling if {@link HTMLInputElement }s as long as the tagged {@link Element } hasn't been processed.
    *
-   * > **CAUTION: The suspension of processing will also result in delaying the disabling for input of all further elements.**
-   *
-   * > **All attributenames are case-insensitive.**
+   * > **CAUTION: The suspension of processing will also result in delaying the disabling for input of all further
+   * elements.**
    *
    * @throws A {@link CodBiError } when the processing of an {@link Element } throws one.
    *
    * @returns A {@link Promise < boolean >} that resolves a soon as all {@link Elements } where initially processed
-   *          and the application of functionalities as the retrieval of [E]element [P]laceholder values has been
+   *          and the application of functionalities as the retrieval of **e**lement **p**laceholder values has been
    *          triggered. */
   public checkAttributes(): Promise<boolean> {
     // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
     return (this.currentAttributeCheck = new Promise((resolve) => {
       this.checkingAttributes = true;
-
       let cntPromises = 0;
+      const toCheck = document.querySelectorAll("[data-cb-func]");
 
-      for (const toProcess of document.querySelectorAll("[cbFUNC]")) {
-        if (toProcess.hasAttribute("cbiChecked")) {
-          continue;
-        }
-        // biome-ignore lint/style/noNonNullAssertion: .querySelectorAll("[cbFUNC]") above.
-        for (const functionality of toProcess.getAttribute("cbFUNC")!.split(",")) {
+      for (const toProcess of document.querySelectorAll("[data-cb-func]")) {
+        // biome-ignore lint/style/noNonNullAssertion: .querySelectorAll("[data-cb-FUNC]") above.
+        for (const functionality of toProcess.getAttribute("data-cb-func")!.split(",")) {
+          // #region Process [data-cb-checked] in order to prevent double appliance of functionalities.
+          if (toProcess.hasAttribute("data-cb-checked")) {
+            if (toProcess.getAttribute("data-cb-checked").indexOf(functionality.toLowerCase()) !== -1) {
+              continue;
+            }
+
+            toProcess.setAttribute(
+              "data-cb-checked",
+              `${toProcess.getAttribute("data-cb-checked")} ${functionality.toLowerCase()}`,
+            );
+          } else {
+            toProcess.setAttribute("data-cb-checked", `${functionality.toLowerCase()}`);
+          }
+          // #region Process [data-cb-checked] in order to prevent double appliance of functionalities.
           // Assign taking global-variables into consideration.
           let codbiAttributes: { [key: string]: unknown } = this.mergeParameter(
             this.extractGlobalParameter(functionality),
@@ -828,11 +953,16 @@ export class CodBi implements CodbiGlobal {
           const toInvoke = this.functionalities.get(functionality.trim());
           // If the functionality is a registered one...
           if (toInvoke) {
-            // #region Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded, if not deactivated.
-            if (toProcess.getAttribute("cbLOADER")?.toLocaleLowerCase().trim() !== "none") {
+            // #region Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded,
+            // if not deactivated.
+            if (
+              toProcess.getAttribute("data-cb-LOADER")?.toLocaleLowerCase().trim() !== "none" &&
+              toProcess.tagName !== "HEAD"
+            ) {
               this.injectLoadingAnim(toProcess);
             }
-            // #endregion Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded, if not deactivated.
+            // #endregion Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded,
+            // if not deactivated.
             toProcess.classList.add("Processing", "CodBi");
 
             cntPromises++;
@@ -843,7 +973,13 @@ export class CodBi implements CodbiGlobal {
 
                 toInvoke(codbiAttributes, toProcess);
                 // #region Disable loading animation and remove logo when CodBi finished processing that element.
-                if (toProcess.getAttribute("cbLOADER")?.toLocaleLowerCase().trim() !== "none") {
+                if (
+                  toProcess
+                    .getAttribute(toProcess.hasAttribute("cbLOADER") ? "cbLOADER" : "data-cb-LOADER")
+                    ?.toLocaleLowerCase()
+                    .trim() !== "none" &&
+                  toProcess.tagName !== "HEAD"
+                ) {
                   this.removeLoaderAnim(toProcess);
                 }
                 // #endregion Disable loading animation and remove logo when CodBi finished processing that element.
@@ -865,9 +1001,9 @@ export class CodBi implements CodbiGlobal {
                 }
               });
             // #region Check if further application wanted.
-            if (toProcess.hasAttribute("cbAPPLY")) {
+            if (toProcess.hasAttribute("data-cb-APPLY")) {
               // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              for (const selector of toProcess.getAttribute("cbAPPLY")!.split("~")) {
+              for (const selector of toProcess.getAttribute("data-cb-APPLY")!.split("~")) {
                 this.apply(selector.trim(), (target) => {
                   let codbiAttributesLocal: { [key: string]: unknown } = {};
                   // Assign taking global-variables into consideration.
@@ -895,7 +1031,10 @@ export class CodBi implements CodbiGlobal {
 
                         toInvoke(codbiAttributesLocal, toApplyOn);
                         // #region Disable loading animation and remove logo when CodBi finished processing that element.
-                        if (toProcess.getAttribute("cbLOADER")?.toLocaleLowerCase().trim() !== "none") {
+                        if (
+                          toProcess.getAttribute("data-cb-LOADER")?.toLocaleLowerCase().trim() !== "none" &&
+                          toApplyOn.tagName !== "HEAD"
+                        ) {
                           this.removeLoaderAnim(toApplyOn);
                         }
 
@@ -925,18 +1064,31 @@ export class CodBi implements CodbiGlobal {
             // #endregion Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded, if not deactivated.
           }
         }
-
-        toProcess.setAttribute("cbiChecked", ""); // Tag the "HTMLElement" as processed.
       }
     }));
   }
+  // #region Info reporting
+  /** Stores the settings for information reporting. */
+  public settingsInfoReporting: {
+    log: boolean; // Whether to use {@link console }'s **info** method to display the error to the console.
+  } = { log: true };
+  /**
+   * Reports the informational {@link message } as defined in {@link CodBi.settingsErrorReporting }.
+   *
+   * @param message The information to report. */
+  public reportInfo(message: string): undefined {
+    if (this.settingsInfoReporting.log) {
+      console.info(`[[ CodBi / Info ] ${message}]`);
+    }
+  }
+  // #endregion Info reporting
   // #region Error reporting
   /** Stores the settings for error reporting. */
   public settingsErrorReporting: {
     throw: boolean; // Throw a CodBiError.
   } = { throw: true };
   /**
-   * Reports an error the given {@link message } as defined in {@link CodBi.settingsErrorReporting }.
+   * Reports an error specifying the given {@link message } as defined in {@link CodBi.settingsErrorReporting }.
    *
    * @param message The message describing the error. */
   public reportError(message: string): undefined {
@@ -1006,8 +1158,10 @@ export class CodBi implements CodbiGlobal {
 
     document.head.appendChild(style);
     // #endregion Inject style for elements that're currently being processed.
-    getJQuery()("FORM.xm-form").on("addRow", () => {
-      this.checkAttributes();
+    getJQuery()("FORM.xm-form").on("addRow", (c) => {
+      if (document.readyState === "complete") {
+        this.checkAttributes();
+      }
     });
   }
 }
@@ -1022,13 +1176,13 @@ export class CodBiError extends Error {
     super(`${message}`);
   }
 }
-/** A {@link CodBiError } to be thrown whenever an [E]lement [P]laceholder causes an {@link Error }. */
+/** A {@link CodBiError } to be thrown whenever an **e**lement **p**laceholder causes an {@link Error }. */
 export class EPCodBiError extends CodBiError {
   /**
    * Constructs this {@link EPCodBiError } by tagging this {@link CodBiError } as an {@link Error } caused by
-   * an [E]lement [P]laceholder.
+   * an **e**lement **p**laceholder.
    *
-   * @param placeholder The [E]lement [P]laceholder causing this {@link CodBiError }.
+   * @param placeholder The **e**lement **p**laceholder causing this {@link CodBiError }.
    * @param message     The {@link string } describing this {@link CodBiError }.
    */
   constructor(placeholder: string, message: string) {
@@ -1044,9 +1198,9 @@ export class EPCodBiError extends CodBiError {
  * {@link Date }.
  *
  * @param dateString  The {@link string } to convert.
- * @param formatting      The format of the "dateString" (e.g. DD/MM/YYYY).
+ * @param formatting  The format of the "dateString" (e.g. DD/MM/YYYY).
  *
- * @returns The {@link Date } corresponding to the given "dateString". */
+ * @returns The {@link Date } corresponding to the given **dateString**. */
 export function stringToDate(input: string, format: string = "dd-mm-yyyy"): Date | null {
   const formatting = format.toLowerCase();
   const parts = input.match(/(\d+)/g);

@@ -37,7 +37,7 @@ class CodBiBayVISAuskunftGebaeudedetailsAction : IPluginServletAction {
    * Stores the amount of hours that have to pass since a request to the BayVIS-API was made in
    * order to perform a re-request on request.
    */
-  protected var hrsTillUpdate: Int = 1
+  protected var hrsTillUpdate: Int = 18
 
   /** Stores the time the BayVIS-API was lastly contacted. */
   protected var lastContact: Long = System.currentTimeMillis()
@@ -139,7 +139,7 @@ class CodBiBayVISAuskunftGebaeudedetailsAction : IPluginServletAction {
         return PluginServletActionRetVal(ServletResponse(EResponseType.HTML))
 
     if (buffer[p0.headerMap["ID"]] == null ||
-        (lastContact - System.currentTimeMillis()) / 3600000 <= hrsTillUpdate) {
+        (System.currentTimeMillis() - lastContact) / 3600000 >= hrsTillUpdate) {
       retrieveData(p0.headerMap["ID"]!!, p0.headerMap["GebaeudeID"]!!)
     }
 

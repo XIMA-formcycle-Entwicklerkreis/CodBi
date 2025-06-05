@@ -30,9 +30,16 @@ class CodbiFormPropertiesExtensionPluginTest {
   @Test
   fun extendFormProperties() {
     val result = plugin.extendFormProperties(null)
-    assertEquals(2, result.additionalProperties.size)
+    assertEquals(3, result.additionalProperties.size)
+
     assertEquals("codbi-prop-enable", result.additionalProperties.get(0).name)
     assertEquals("0", result.additionalProperties.get(0).defaultValue)
+
+    assertEquals("codbi-prop-standards", result.additionalProperties.get(1).name)
+    assertEquals("Holistic.CSS.Standard", result.additionalProperties.get(1).defaultValue)
+
+    assertEquals("codbi-prop-config-template", result.additionalProperties.get(2).name)
+    assertEquals("default", result.additionalProperties.get(2).defaultValue)
   }
 
   @BeforeEach

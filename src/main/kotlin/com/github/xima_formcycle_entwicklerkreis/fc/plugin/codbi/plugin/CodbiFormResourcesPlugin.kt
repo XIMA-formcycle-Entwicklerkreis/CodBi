@@ -163,7 +163,7 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
         )
     val mimeType =
         when {
-          name.endsWith(".js") -> "application/javascript"
+          name.endsWith(".js") -> "text/javascript"
           name.endsWith(".css") -> "text/css"
           else -> "application/octet-stream"
         }

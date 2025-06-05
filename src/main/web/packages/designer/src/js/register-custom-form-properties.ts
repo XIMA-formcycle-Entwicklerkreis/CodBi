@@ -5,7 +5,7 @@ import {
 } from "@de-xima/fc-form-designer";
 import { parseBoolean, recordValues } from "@de-xima/xima-common-js-lang";
 import { CodbiConfigTemplate, Constants } from "codbi-common";
-import { MultiSelectType } from "./MultiSelect";
+import { MultiSelectType } from "./MultiSelect.js";
 import { i18n } from "./i18n.js";
 /** Defines whether the CodBi is enabled or not (for usage in {@link registerCustomFormProperties }).*/
 const WhenCodBiEnabled: IPropertyDependencyDescriptor<

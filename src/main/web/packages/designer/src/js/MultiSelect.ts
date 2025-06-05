@@ -1,6 +1,6 @@
 import { $, Callbacks, Editors, type IPropertyDescriptor, type TEditorCfg } from "@de-xima/fc-form-designer";
 /** Defines the type of {@link MultiSelect }. */
-export const MultiSelectType = "${groupId}:${artifactId}:MultiSelect";
+export const MultiSelectType = "com.github.xima_formcycle_entwicklerkreis.fc.plugin:fc-plugin-codbi:MultiSelect";
 /** Describes the {@link MultiSelectType }. */
 export interface IMultiSelectDescriptor extends IPropertyDescriptor<typeof MultiSelectType> {
   /** Stores the selected standard configurations */
@@ -15,7 +15,7 @@ declare module "@de-xima/fc-form-designer" {
       /** Stores the {@link MultiSelect }-Editor itself. */
       editor: MultiSelect;
       /** Stores the selected standard configurations CSV. */
-      property: string;
+      value: string;
     };
   }
 }

@@ -21,13 +21,7 @@ export default async () => {
     testPathIgnorePatterns: ["/dist/", "/node_modules/"],
     testRegex: "/__tests__/.*\\.spec\\.tsx?",
     transform: {
-      "^.+\\.tsx?$": [
-        "esbuild-jest",
-        {
-          sourcemap: true,
-          format: "cjs",
-        },
-      ],
+      "^.+\\.tsx?$": ["ts-jest", {}],
     },
     verbose: true,
   };

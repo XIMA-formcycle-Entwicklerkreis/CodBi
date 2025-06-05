@@ -61,7 +61,7 @@ class FormRenderCallbackTest {
     assertEquals("codbi-config-template", attr(script, "id"))
     assertEquals("codbi-config-template", attr(script, "name"))
     assertEquals(
-        "/xima-formcylce/ressource/-1/-1/plugin/form-resources/f140090d-d471-4650-8fef-8067e1e1dcdd/com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.CodbiFormResources/config-template-minimal.js",
+        "/xima-formcylce/ressource/-1/-1/plugin/form-resources/f140090d-d471-4650-8fef-8067e1e1dcdd/com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.CodbiFormResources/config-template-default.js",
         attr(script, "src"))
   }
 

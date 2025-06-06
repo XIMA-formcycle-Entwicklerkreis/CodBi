@@ -13,10 +13,23 @@ describe("registerCustomFormProperties", () => {
     TestState.customFormProperties = [];
     TestState.language = "en";
     registerCustomFormProperties();
-    expect(TestState.customFormProperties).toHaveLength(2);
+    expect(TestState.customFormProperties).toHaveLength(3);
+
     expect(TestState.customFormProperties[0]?.[0].editor).toBe("CheckboxEditor");
     expect(TestState.customFormProperties[0]?.[0].cat).toBe("codbi-cat-main");
     expect(TestState.customFormProperties[0]?.[0].property).toBe("codbi-prop-enable");
     expect(TestState.customFormProperties[0]?.[0].label).toBe("CodBi enabled");
+
+    expect(TestState.customFormProperties[1]?.[0].editor).toBe("SelectEditor");
+    expect(TestState.customFormProperties[1]?.[0].cat).toBe("codbi-cat-main");
+    expect(TestState.customFormProperties[1]?.[0].property).toBe("codbi-prop-config-template");
+    expect(TestState.customFormProperties[1]?.[0].label).toBe("Config template");
+
+    expect(TestState.customFormProperties[2]?.[0].editor).toBe(
+      "com.github.xima_formcycle_entwicklerkreis.fc.plugin:fc-plugin-codbi:MultiSelect",
+    );
+    expect(TestState.customFormProperties[2]?.[0].cat).toBe("codbi-cat-main");
+    expect(TestState.customFormProperties[2]?.[0].property).toBe("codbi-prop-standards");
+    expect(TestState.customFormProperties[2]?.[0].label).toBe("Standard Configurations");
   });
 });

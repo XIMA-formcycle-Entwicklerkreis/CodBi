@@ -17,6 +17,7 @@
 		"packages/form"
 	],
 	"scripts": {
+		"docs": "yarn workspaces foreach -Avp run docs",
 		"lint": "yarn workspaces foreach -Avp run lint",
 		"lint-apply": "yarn workspaces foreach -Avp run lint-apply",
 		"lint-apply-unsafe": "yarn workspaces foreach -Avp run lint-apply-unsafe",

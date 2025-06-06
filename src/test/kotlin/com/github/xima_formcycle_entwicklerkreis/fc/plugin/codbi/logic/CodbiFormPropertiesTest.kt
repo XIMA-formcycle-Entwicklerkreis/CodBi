@@ -31,8 +31,8 @@ class CodbiFormPropertiesTest {
     xFormProperties.setProperty("codbi-prop-config-template", "default")
     assertEquals(CodbiConfigTemplate.DEFAULT, props.configTemplate)
 
-    xFormProperties.setProperty("codbi-prop-config-template", "minimal")
-    assertEquals(CodbiConfigTemplate.MINIMAL, props.configTemplate)
+    xFormProperties.setProperty("codbi-prop-config-template", "xtensible")
+    assertEquals(CodbiConfigTemplate.XTENSIBLE, props.configTemplate)
 
     xFormProperties.setProperty("codbi-prop-config-template", "xxx")
     assertEquals(CodbiConfigTemplate.DEFAULT, props.configTemplate)

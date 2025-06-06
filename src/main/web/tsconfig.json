@@ -1,8 +1,19 @@
 {
   "compilerOptions": {
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "allowJs": false,
     "target": "ES5",
-    "lib": ["dom", "dom.iterable", "ES5", "ES2015.Core", "ES2015.Collection", "ES2015.Iterable", "ES2015.Promise"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "ES5",
+      "ES2015.Core",
+      "ES2015.Collection",
+      "ES2015.Iterable",
+      "ES2015.Promise",
+      "ES2017.TypedArrays"
+    ],
     "declaration": true,
     "importHelpers": true,
     "sourceMap": true,

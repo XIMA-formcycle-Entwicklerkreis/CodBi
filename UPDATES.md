@@ -1,0 +1,9 @@
+- Added BayVIS Standard configuration
+- Added BayVIS Demo in Standard configurations
+- Changed System-Attributnames and User-Attributenames to be conform to the W3C-Standard
+- Added Servlet for Holidays-API
+- Added Extension-Page in Demo-Form
+- Added Example-Javascript in Demo-Form
+- Added Content to the Holistics-Page
+- Made CodBi-Attributechecking more efficient
+- Added new classes to exclude elements from standard configuration appliance

@@ -5,6 +5,8 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_CONFIG_TEMPLATE_DEFAULT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_ENABLE_CODBI
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_ENABLE_CODBI_DEFAULT
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_STANDARDS
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.DESIGNER_PROPERTY_STANDARDS_DEFAULT
 import de.xima.fc.form.common.models.XFormProperties
 import java.util.Locale.ROOT
 
@@ -27,6 +29,10 @@ internal class CodbiFormProperties(private val properties: XFormProperties) {
             DESIGNER_PROPERTY_CONFIG_TEMPLATE,
             DESIGNER_PROPERTY_CONFIG_TEMPLATE_DEFAULT,
             { it.value })
+
+  /** The standard configurations to use. */
+  val standards
+    get(): String = stringProperty(DESIGNER_PROPERTY_STANDARDS, DESIGNER_PROPERTY_STANDARDS_DEFAULT)
 
   /**
    * Gets a boolean value at the given key from the form properties, falling back to the default if

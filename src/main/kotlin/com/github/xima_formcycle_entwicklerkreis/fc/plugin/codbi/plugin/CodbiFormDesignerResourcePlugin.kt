@@ -10,10 +10,13 @@ import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.param.form.IPluginFormDesignerResourceGetResourceParams
 import de.xima.fc.interfaces.workflow.IResourceDescriptor
 import de.xima.fc.plugin.interfaces.form.IPluginFormDesignerResource
+import de.xima.fc.workflow.ByteArrayResourceDescriptor
 import de.xima.fc.workflow.UrlResourceDescriptor
+import java.io.File
 import java.net.URI
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.*
+import org.json.JSONArray
 
 /**
  * Plugin that includes an additional CSS and JavaScript resource in the form designer.
@@ -27,6 +30,7 @@ import java.util.*
 class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
   @Volatile private var cssResource: IResourceDescriptor? = null
   @Volatile private var jsResource: IResourceDescriptor? = null
+  private val dirStandards: String = "./src/main/web/packages/form/src/js/Configurations"
 
   override fun getName(): String {
     // We use a fixed string, not the name of this class via reflection
@@ -49,6 +53,12 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
         else System.currentTimeMillis().toString()
     cssResource = createResource("designer-frame.css", RESOURCE_PATH_DESIGNER_FRAME_CSS, version)
     jsResource = createResource("designer.js", RESOURCE_PATH_DESIGNER_SCRIPT, version)
+    // region Inject available standard configuration via JS defining a global variable for them.
+    val fileListingString = getFileListingAsString()
+    jsResource =
+        createDynamicJsResource(
+            "designer.js", RESOURCE_PATH_DESIGNER_SCRIPT, version, fileListingString)
+    // endregion Inject available standard configuration via JS defining a global variable for them.
   }
 
   override fun getCssResource(
@@ -78,6 +88,64 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
   private fun createResource(name: String, path: String, version: String): IResourceDescriptor {
     val uri = URI("plugin:${PLUGIN_FORM_DESIGNER_RESOURCE_ID}/${name}?v=${version}")
     val clazz = CodbiFormDesignerResourcePlugin::class.java
+
     return UrlResourceDescriptor.forClasspathResource(clazz, path, uri, UTF_8)
+  }
+
+  /**
+   * Creates a dynamic JavaScript resource by reading an existing JS file and prepending a global
+   * variable containing the file listing.
+   */
+  private fun createDynamicJsResource(
+      name: String,
+      path: String,
+      version: String,
+      fileListing: String
+  ): IResourceDescriptor {
+    val uri = URI("plugin:${PLUGIN_FORM_DESIGNER_RESOURCE_ID}/${name}?v=${version}")
+    val clazz = CodbiFormDesignerResourcePlugin::class.java
+    // #region Retrieve original content.
+    val originalJsContentStream =
+        clazz.getResourceAsStream(path)
+            ?: throw IllegalStateException("Resource not found in classpath: $path")
+    val originalJsContent = originalJsContentStream.bufferedReader(UTF_8).use { it.readText() }
+    // #endregion Retrieve original content.
+    val escapedFileListing =
+        fileListing
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("'", "\\'")
+    // Prepend to original file code
+    val combinedJsContent =
+        """
+            window.CodbiPluginData = window.CodbiPluginData || {};
+            window.CodbiPluginData.fileListing = "$escapedFileListing";
+            $originalJsContent
+        """
+            .trimIndent()
+
+    return ByteArrayResourceDescriptor(uri, combinedJsContent.toByteArray(UTF_8), UTF_8)
+  }
+
+  /**
+   * Retrieves a listing of files from [dirStandards].
+   *
+   * @return The name of the files contained in [dirStandards].]
+   */
+  private fun getFileListingAsString(): String {
+    val directory = File(dirStandards)
+
+    if (!directory.exists() || !directory.isDirectory) {
+      println("WARNING: Following standard configuration directory was not found: ${dirStandards}")
+
+      return "[]"
+    }
+
+    val files = directory.listFiles()
+    val fileNames = files?.filter { it.isFile }?.map { it.name } ?: emptyList()
+
+    return JSONArray(fileNames).toString()
   }
 }

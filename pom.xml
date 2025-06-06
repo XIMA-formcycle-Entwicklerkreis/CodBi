@@ -785,6 +785,18 @@
 							<arguments>run lint</arguments>
 						</configuration>
 					</execution>
+					<!-- Generate TypeDoc -->
+					<execution>
+						<?m2e ignore?>
+						<id>docs</id>
+						<goals>
+							<goal>yarn</goal>
+						</goals>
+						<phase>package</phase>
+						<configuration>
+							<arguments>run docs</arguments>
+						</configuration>
+					</execution>
 				</executions>
 			</plugin>
 
@@ -941,6 +953,17 @@
 							<execution>
 								<?m2e ignore?>
 								<id>lint</id>
+								<goals>
+									<goal>yarn</goal>
+								</goals>
+								<configuration>
+									<skip>true</skip>
+								</configuration>
+							</execution>
+							<!-- Skip docs for dev build -->
+							<execution>
+								<?m2e ignore?>
+								<id>docs</id>
 								<goals>
 									<goal>yarn</goal>
 								</goals>

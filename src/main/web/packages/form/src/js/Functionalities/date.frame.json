@@ -1,0 +1,8 @@
+{
+  "Description": "/classes/Functionalities_date.frame.Date_Frame.html#functionality",
+  "Params": {
+    "MaxField": "CSS-Selector selecting the HTMLInputElement that takes the maximum date.",
+    "MsgMinInvalid": "The string to show as the error message when the minimum-HTMLInputElement's value is after the one in the maximum-HTMLInputElement.",
+    "MsgMaxInvalid": "The string to show as the error message when the maximumHTMLInputElement's value is before the one in the minimum-HTMLInputElement."
+  }
+}

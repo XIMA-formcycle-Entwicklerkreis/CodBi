@@ -1,3 +1,4 @@
+alues
 Anfangszeit
 Angabe
 Angefragte
@@ -9,6 +10,7 @@ Ansprechpartnerdetails
 Ansprechpartnerverzeichnis
 aspectratio
 Asylbewerbern
+Attributehelper
 Attributename
 attributenames
 Augsburger
@@ -45,6 +47,8 @@ cssafterheaderunfolded
 cssanimfadeinpanel
 cssanimfadeinpanelduration
 cssanimfadeinpaneleasing
+cssdisabled
+cssenabled
 cssheaderactive
 cssheaderhover
 cssheaderunfolded
@@ -69,6 +73,8 @@ Enddatum
 Endpunkt
 Endzeit
 enthalten
+entwicklerkreis
+eparated
 equalitypermitted
 errorpostfix
 errorprefix
@@ -80,6 +86,7 @@ Foto
 Fotocropper
 friedensfest
 führenden
+Functionalitydetails
 funktion
 Gebaeude
 Gebaeudedetails
@@ -95,6 +102,7 @@ Imagecropper
 Inhalt
 initialelement
 inkscape
+Inputmanager
 IPTY
 jahr
 katholic
@@ -119,6 +127,9 @@ nicht
 nötig
 noweekends
 Nullen
+Optioncontainer
+Optioninput
+Optiontext
 Ortsvorwahl
 parameterless
 Paramseparator
@@ -138,6 +149,7 @@ Startdatum
 Startzeit
 stellenbezeichnung
 Strasse
+svmanager
 telefon
 Telefonnummer
 Texteditor
@@ -145,6 +157,7 @@ Textinjector
 typhonjs
 verfügbar
 vorname
+waxcode
 Weiter
 Weitere
 wenn

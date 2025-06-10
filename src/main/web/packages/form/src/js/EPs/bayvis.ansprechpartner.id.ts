@@ -113,6 +113,10 @@ export class BayVIS_Ansprechpartner_ID {
           const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xmlResponse)[
             "ns2:ansprechpartner"
           ];
+          // If no response from endpoint (missing credentials)...
+          if (response === undefined) {
+            return;
+          }
 
           const jsonResponse = response.ap;
           const fullName = (params[0] as string).split(" ");

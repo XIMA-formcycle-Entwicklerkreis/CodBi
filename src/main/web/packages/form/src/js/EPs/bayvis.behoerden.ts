@@ -80,6 +80,10 @@ export class BayVIS_Behoerden {
           const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
             "ns2:behoerden"
           ];
+          // If no response from endpoint (missing credentials)...
+          if (response === undefined) {
+            return;
+          }
 
           result = response.behoerde;
 

@@ -67,6 +67,7 @@
 
 		<!-- Dependency versions -->
 		<jakarta-servlet-api.version>4.0.4</jakarta-servlet-api.version>
+		<jackson.version>2.15.2</jackson.version>
 
 		<!-- Plugins -->
 		<build-helper-maven-plugin.version>3.6.0</build-helper-maven-plugin.version>
@@ -121,6 +122,18 @@
 				<artifactId>junit-jupiter-engine</artifactId>
 				<version>${junit-jupiter.version}</version>
 			</dependency>
+
+			<dependency>
+				<groupId>com.fasterxml.jackson.module</groupId>
+				<artifactId>jackson-module-kotlin</artifactId>
+				<version>${jackson.version}</version>
+			</dependency>
+
+			<dependency>
+				<groupId>com.fasterxml.jackson.core</groupId>
+				<artifactId>jackson-annotations</artifactId>
+				<version>${jackson.version}</version>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 
@@ -158,6 +171,23 @@
 			<groupId>de.xima.fc</groupId>
 			<artifactId>fc-logic</artifactId>
 			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>com.fasterxml.jackson.module</groupId>
+			<artifactId>jackson-module-kotlin</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-databind</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-core</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.core</groupId>
+			<artifactId>jackson-annotations</artifactId>
 		</dependency>
 	</dependencies>
 

@@ -25,7 +25,7 @@ declare module "@de-xima/fc-form-designer" {
 
 /**
  * A plain {@link Editors.BaseEditor <typeof MultiSelectType>} retrieving it's  available options to display out of
- * {@link window..CodbiPluginData.fileListing } storing the made selections.
+ * {@link window..  CodbiPluginData.fileListing } storing the made selections.
  *
  * Primarily intended to be used for selecting CodBi's standard configurations that shall be included into a form. */
 export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
@@ -43,7 +43,6 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
   constructor(config: TEditorCfg<IMultiSelectDescriptor>) {
     // Note: the second argument is deprecated, we pass the empty string
     super(config, "", "text");
-
     // #region Retrieve available standard configurations
     // biome-ignore lint/suspicious/noExplicitAny: TODO
     const listing = JSON.parse((window as any).CodbiPluginData.fileListing).map((file: string) => {

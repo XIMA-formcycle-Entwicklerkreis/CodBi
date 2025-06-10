@@ -35,6 +35,16 @@ export class SVManager extends HTMLDivElement {
 
     this.render();
   }
+  public set backgroundImage(toSet: HTMLElement) {
+    toSet.style.position = "absolute";
+    toSet.style.width = "80%";
+    toSet.style.height = "100%";
+    toSet.style.opacity = ".1";
+    toSet.style.alignSelf = "anchor-center";
+    toSet.style.justifySelf = "anchor-center";
+    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
+    this.shadowRoot!.prepend(toSet);
+  }
   // #endregion Options
   /** Holds the CSS to apply to the {@link SVManager.cOptions } when this {@link SVManager } is
    * to be {@link SVManager.show }n. */
@@ -42,12 +52,33 @@ export class SVManager extends HTMLDivElement {
   /** Holds the CSS to apply to the {@link SVManager.cOptions } when this {@link SVManager } is
    * shall {@link SVManager.hide }. */
   protected cssDisabled: string;
-  /** States whether the {@link SVManager.cssEnabled } or {@link SVManager.cssDisabled } is being applied on this
-   * {@link HTMLDivElement }. */
-  protected enabled: boolean;
+  /** Gets a {@link boolean } stating whether the {@link SVManager.cssEnabled } or {@link SVManager.cssDisabled } is being applied on this
+   * {@link HTMLDivElement }.
+   *
+   * @returns This {@link SVManager } 's "enabled"-attribute value. */
+  @HasAttribute.cINVARIANT("enabled")
+  public get enabled(): boolean {
+    // biome-ignore lint/style/noNonNullAssertion: Checked by precondition.
+    return this.getAttribute("enabled")!.toLowerCase() === "true";
+  }
+  /**
+   * Sets this {@link SVManager } 's "enabled"-attribute value
+   *
+   * @param toSet The value This {@link SVManager } 's "enabled"-attribute shall be set to. */
+  public set enabled(toSet: boolean) {
+    this.setAttribute("enabled", toSet ? "true" : "false");
+  }
+  // #region Styling
   /** Holds the stylesheet that varies depending on whether this {@link SVManager } is currently {@link enabled } or
    * when {@link SVManager.cssEnabled } or {@link SVManager.cssDisabled } change. */
   protected variableStyle: HTMLStyleElement;
+  /** Holds the fade in animation for this {@link SVManager }. */
+  public cssFadeIN: string = `
+    @keyframes kfFadeIN_SVManager {
+        0%    { scale : 1.1 ; opacity : 0 ;}
+        100%  { scale : 1 ; opacity : .9 ;}}
+    div.---WaXCode.--SVManager { animation : kfFadeIN_SVManager .25s ease-in forwards ;}`;
+  // #endregion Styling
   // #region Targeting input-elements
   /** Stores the {@link HTMLInputElement } that is currently targeted.*/
   protected _target: HTMLInputElement | undefined;
@@ -59,18 +90,45 @@ export class SVManager extends HTMLDivElement {
     return this._target;
   }
   /**
-   * Sets the {@link SVManager._target }.
+   * Sets the {@link SVManager._target } and updates the checkboxes according to the functionalities mentioned in
+   * the {@link SVManager.target }.
    *
    * @param toSet The {@link SVManager._target }. */
   public set target(toSet: HTMLInputElement) {
     this._target = toSet;
+    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
+    for (const checkbox of this.shadowRoot!.querySelectorAll("input")) {
+      checkbox.checked =
+        this.target?.value
+          .toLowerCase()
+          // biome-ignore lint/style/noNonNullAssertion: Checkbox definitely has a parent and an Attribute "data-cb-option".
+          .indexOf(checkbox.parentElement!.getAttribute("data-cb-option")?.toLowerCase()!) !== -1;
+    }
   }
   // #endregion Targeting input-elements
+  // #region Info
+  /** Stores whether the cursor is currently within this {@link SVManager }.*/
+  protected _cursorIn: boolean = false;
+  /**
+   * Gets {@link SVManager._cursorIn }.
+   *
+   * @returns {@link SVManager._cursorIn }. */
+  public get cursorIn(): boolean {
+    return this._cursorIn;
+  }
+  // #endregion Info
   /**
    * Creates this {@link HTMLDivElement } by mapping it's properties to it's attributes and injecting a
    * needed stylesheet. */
   constructor() {
     super();
+    // #region Prevent anything from loosing focus when the SVManager is clicked.
+    this.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      event.stopPropagation();
+    });
+    // #endregion Prevent anything from loosing focus when the SVManager is clicked.
     // #region PRECONDITIONS
     new HasAttribute("options").check(this);
     // #endregion PRECONDITIONS
@@ -79,8 +137,10 @@ export class SVManager extends HTMLDivElement {
     this.separator = this.hasAttribute("separator") ? this.getAttribute("separator")! : ",";
     // biome-ignore lint/style/noNonNullAssertion: Passed precondition check.
     this.options = this.getAttribute("options")!.split(this.separator);
-    // biome-ignore lint/style/noNonNullAssertion: Attribute definitely set.
-    this.cssEnabled = this.hasAttribute("cssEnabled") ? this.getAttribute("cssEnabled")! : "display : flex ;";
+    this.cssEnabled = this.hasAttribute("cssEnabled")
+      ? // biome-ignore lint/style/noNonNullAssertion: Attribute definitely set.
+        this.getAttribute("cssEnabled")!
+      : "display : block ; background-image : linear-gradient( 130deg,rgba( 42, 123, 155, 1 ) 0%, rgba( 216, 216, 235, 1 ) 50%, rgba( 42, 123, 155, 1 ) 100% )";
     // biome-ignore lint/style/noNonNullAssertion: Attribute definitely set.
     this.cssDisabled = this.hasAttribute("cssDisabled") ? this.getAttribute("cssDisabled")! : "display : none ;";
     this.enabled = this.hasAttribute("enabled") ? this.getAttribute("enabled")?.toLowerCase() === "true" : false;
@@ -89,17 +149,17 @@ export class SVManager extends HTMLDivElement {
     this.classList.add("---WaXCode", "--SVManager");
 
     this.variableStyle = document.createElement("style");
-    this.variableStyle.innerHTML = `div.---WaXCode.--SVManager { ${this.enabled ? this.cssEnabled : this.cssDisabled}}`;
+    this.variableStyle.innerHTML = `${this.enabled ? this.cssEnabled : this.cssDisabled}}`;
 
     const style = document.createElement("style");
     style.innerHTML = `
         div.---WaXCode.--SVManager.--Option           { display : flex ;}
-        div.---WaXCode.--SVManager.--Option p         { background-color : transparent ; color : black ;}
+        div.---WaXCode.--SVManager.--Option p         { background-color : transparent ; color : black ; text-shadow : 0 0 .25em white ;}
         div.---WaXCode.--SVManager.--Option.-Selected { background-color : blue ; color : white ;}`;
 
     this.attachShadow({ mode: "open" });
-    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
-    this.shadowRoot!.appendChild(this.variableStyle);
+
+    this.variableStyle = this.appendChild(this.variableStyle);
     // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
     this.shadowRoot!.appendChild(style);
     // #endregion DOM preparations
@@ -125,6 +185,12 @@ export class SVManager extends HTMLDivElement {
           <p part = "Optiontext">${this._optionTransformer ? this._optionTransformer(option) : option}</p></div>`;
     }
     // #endregion Options injection
+    // #region Bind event handler
+    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
+    for (const checkbox of this.shadowRoot!.querySelectorAll('[part="Optioninput"]')) {
+      checkbox.addEventListener("click", this.onCheckbox.bind(this));
+    }
+    // #endregion Bind event handler
   }
   /**
    * Processes changes in {@link SVManager }'s system attributes.
@@ -154,9 +220,8 @@ export class SVManager extends HTMLDivElement {
         break;
 
       case "enabled":
-        this.variableStyle.innerHTML = `div.---WaXCode.--SVManager { ${
-          // biome-ignore lint/suspicious/noAssignInExpressions: More comprehensive.
-          (this.enabled = newValue.toLowerCase() === "true") ? this.cssDisabled : this.cssEnabled
+        this.variableStyle.innerHTML = `${this.cssFadeIN} div.---WaXCode.--SVManager { ${
+          newValue.toLowerCase() === "true" ? this.cssEnabled : this.cssDisabled
         }}`;
 
         break;
@@ -165,14 +230,14 @@ export class SVManager extends HTMLDivElement {
         this.cssEnabled = newValue;
 
         if (this.enabled) {
-          this.variableStyle.innerHTML = `div.---WaXCode.--SVManager { ${this.cssEnabled}}`;
+          this.variableStyle.innerHTML = `${this.cssFadeIN} div.---WaXCode.--SVManager { ${this.cssEnabled}}`;
         }
         break;
 
       case "cssdisabled":
         this.cssDisabled = newValue;
-        if (this.enabled) {
-          this.variableStyle.innerHTML = `div.---WaXCode.--SVManager { ${this.cssEnabled}}`;
+        if (!this.enabled) {
+          this.variableStyle.innerHTML = `${this.cssFadeIN} div.---WaXCode.--SVManager { ${this.cssDisabled}}`;
         }
         break;
     }
@@ -189,4 +254,25 @@ export class SVManager extends HTMLDivElement {
     return true;
   })();
   // #endregion Registration as custom element
+  // #region Checkbox handling
+  protected onCheckbox(event: Event): void {
+    // biome-ignore lint/style/noNonNullAssertion: Checkbox surely has a parent element.
+    const option = (event.target as HTMLElement).parentElement!.getAttribute("data-cb-option")!.toUpperCase();
+
+    if ((event.target as HTMLInputElement).checked) {
+      (this.target as HTMLInputElement).value += `,${option}`;
+    } else {
+      const targetValue = (this.target as HTMLInputElement).value;
+
+      (this.target as HTMLInputElement).value = targetValue
+        .toUpperCase()
+        .replace(
+          (targetValue.indexOf(`,${option}`) === -1 ? "" : ",") +
+            option +
+            (targetValue.indexOf(`,${option}`) === -1 ? "," : ""),
+          "",
+        );
+    }
+  }
+  // #endregion Checkbox handling
 }

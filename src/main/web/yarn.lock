@@ -3555,7 +3555,7 @@ __metadata:
     tslib: "npm:~2.8.1"
     typedoc: "npm:^0.28.4"
     typescript: "npm:~5.7.3"
-    xdbc: "npm:^1.0.97"
+    xdbc: "npm:^1.0.98"
   languageName: unknown
   linkType: soft
 
@@ -7704,14 +7704,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"xdbc@npm:^1.0.97":
-  version: 1.0.97
-  resolution: "xdbc@npm:1.0.97"
+"xdbc@npm:^1.0.98":
+  version: 1.0.98
+  resolution: "xdbc@npm:1.0.98"
   dependencies:
     "@types/reflect-metadata": "npm:^0.1.0"
     parcel: "npm:^2.14.4"
     reflect-metadata: "npm:^0.2.2"
-  checksum: 10c0/47238d66cd0371cbe90f12b0b360df0f230671f4a777f59ea4a072ac3df71cde54ea73e15c17cd4fb987ff14f0d7d4d3afc760c6305830c0d2aad2143694b5c7
+  checksum: 10c0/5eee2bc97d20c48515f20019bee1368bc57126faf539e3442ed4055749b34094cd2da9d812329ae7c31a541e8917eeb8f054bdaadaccc79dfef249d1e8e8b5ce
   languageName: node
   linkType: hard
 

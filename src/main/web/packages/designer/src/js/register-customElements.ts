@@ -85,6 +85,47 @@ export function registerCustomElements(): void {
                         svmanager.target = currentFunctionalityInput;
 
                         svmanager.enabled = true;
+                        // #region API Doc View
+                        const cDetails = document.createElement("div");
+
+                        cDetails.style.position = "absolute";
+                        cDetails.style.display = "none";
+                        cDetails.style.border = "solid";
+                        cDetails.style.padding = ".5em";
+                        cDetails.style.zIndex = "100";
+                        cDetails.style.backgroundColor = "white";
+                        cDetails.style.borderRadius = ".5em";
+                        cDetails.style.boxShadow = "0 0 .5em black";
+                        cDetails.style.left = "10vw";
+                        cDetails.style.top = "10vh";
+                        cDetails.style.width = "60vw";
+                        cDetails.style.height = "80vh";
+                        cDetails.style.display = "none";
+                        cDetails.style.padding = "0";
+
+                        cDetails.classList.add("---CodBi", "--Panel", "--APIDoc");
+
+                        cDetails.innerHTML = `<object id = "CodBi_APIDocViewer"></object>`;
+
+                        const cssDetails = document.createElement("style");
+
+                        cssDetails.innerHTML =
+                          "object#CodBi_APIDocViewer { width : 100% !important ; height : 100% !important ; border-radius : .5em ;}</style>";
+
+                        cDetails.prepend(cssDetails);
+                        document.body?.appendChild(cDetails);
+
+                        svmanager.onOptionChanged.push((newOption: string) => {
+                          console.log("IIIIIIIIII");
+                          (cDetails.querySelector("object") as HTMLObjectElement).setAttribute(
+                            "data",
+                            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                            `https://waxcode.net/x/CodBi${(window as any).CodbiPluginData.detFunctionalities[newOption.toLowerCase()].Description}`,
+                          );
+
+                          cDetails.style.display = "block";
+                        });
+                        // #endregion API Doc View
                         // #endregion Style SVManager including dimensions and target input setting
                       }
                     }
@@ -109,35 +150,6 @@ export function registerCustomElements(): void {
     const functionalities = JSON.parse((window as any).CodbiPluginData.fslFunctionalities).map((file: string) => {
       return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
     });
-
-    const cDetails = document.createElement("div");
-
-    cDetails.style.position = "absolute";
-    cDetails.style.display = "none";
-    cDetails.style.border = "solid";
-    cDetails.style.padding = ".5em";
-    cDetails.style.zIndex = "100";
-    cDetails.style.backgroundColor = "white";
-    cDetails.style.borderRadius = ".5em";
-    cDetails.style.boxShadow = "0 0 .5em black";
-    cDetails.style.left = "10vw";
-    cDetails.style.top = "10vh";
-    cDetails.style.width = "60vw";
-    cDetails.style.height = "80vh";
-    cDetails.style.display = "none";
-    cDetails.style.padding = "0";
-
-    cDetails.classList.add("CodBi", "Panel", "Functionalitydetails");
-
-    cDetails.innerHTML = `<object id = "CodBi_APIDocViewer"></object>`;
-
-    const cssDetails = document.createElement("style");
-
-    cssDetails.innerHTML =
-      "object#CodBi_APIDocViewer { width : 100% !important ; height : 100% !important ; border-radius : .5em ;}</style>";
-
-    cDetails.prepend(cssDetails);
-    document.body?.appendChild(cDetails);
 
     const cFunctionalities = document.createElement("div");
 
@@ -186,14 +198,6 @@ export function registerCustomElements(): void {
         (event.target! as HTMLElement)
           .parentElement!.querySelector("p")
           ?.classList.add("--CodBi_Autocomplete-SelectedFunctionality");
-
-        (cDetails.querySelector("object") as HTMLObjectElement).setAttribute(
-          "data",
-          // biome-ignore lint/style/noNonNullAssertion: <explanation>
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-          `https://waxcode.net/x/CodBi${(window as any).CodbiPluginData.detFunctionalities[selectedFunctionality()!.toLowerCase()].Description}`,
-        );
-        cDetails.style.display = "block";
       });
     }
 
@@ -467,13 +471,13 @@ export function registerCustomElements(): void {
                             // biome-ignore lint/suspicious/noExplicitAny: <explanation>
                             (window as any).CodbiPluginData.detFunctionalities[selectedFunctionality()!.toLowerCase()],
                           );
-                          cDetails.style.display = "block";
+                          /*cDetails.style.display = "block";
                           (cDetails.querySelector("object") as HTMLObjectElement).setAttribute(
                             "data",
                             // biome-ignore lint/style/noNonNullAssertion: <explanation>
                             // biome-ignore lint/suspicious/noExplicitAny: <explanation>
                             `https://waxcode.net/x/CodBi${(window as any).CodbiPluginData.detFunctionalities[selectedFunctionality()!.toLowerCase()].Description}`,
-                          );
+                          );*/
                         }
 
                         if (event.key === "ArrowUp") {

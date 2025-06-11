@@ -1,6 +1,5 @@
-export function CodBiSymbol(): string {
-  return `
-  <svg
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
    version="1.0"
    width="1020pt"
    height="1138pt"
@@ -380,5 +379,4 @@ export function CodBiSymbol(): string {
          sodipodi:nodetypes="ccccccccccccc" />
     </g>
   </g>
-</svg>`;
-}
+</svg>

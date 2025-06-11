@@ -13,6 +13,10 @@ import { HasAttribute } from "xdbc/src/DBC/HasAttribute";
  * Checking the boxes or navigating through the collection with the **up** and **down** arrow keys and using the
  * **enter** or **delete** keys, the {@link SVManager.target }ed's content can be modified. */
 export class SVManager extends HTMLDivElement {
+  // #region Events
+  /** Holds all event listener to notify whenever the currently selected option changes. */
+  public readonly onOptionChanged: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
+  // #endregion Events
   /** Holds the web-component definition of observed attributes. */
   static get observedAttributes(): Array<string> {
     return ["options", "separator", "cssEnabled", "cssDisabled", "enabled"];
@@ -153,9 +157,10 @@ export class SVManager extends HTMLDivElement {
 
     const style = document.createElement("style");
     style.innerHTML = `
-        div.---WaXCode.--SVManager.--Option           { display : flex ;}
-        div.---WaXCode.--SVManager.--Option p         { background-color : transparent ; color : black ; text-shadow : 0 0 .25em white ;}
-        div.---WaXCode.--SVManager.--Option.-Selected { background-color : blue ; color : white ;}`;
+        div.---WaXCode.--SVManager.--Option             { display : flex ;}
+        div.---WaXCode.--SVManager.--Option p           {
+          cursor : pointer ; background-color : transparent ; color : black ; text-shadow : 0 0 .25em white ;}
+        div.---WaXCode.--SVManager.--Option.-Current p  { background-color : blue ; color : white ;}`;
 
     this.attachShadow({ mode: "open" });
 
@@ -176,7 +181,7 @@ export class SVManager extends HTMLDivElement {
     for (const option of this.options) {
       // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
       this.shadowRoot!.innerHTML += `
-        <div  class           = "---WaXCode --SVManager --Option"
+        <div  class           = "---WaXCode --SVManager --Option ${this.options[0] === option ? "-Current" : ""}"
               part            = "Optioncontainer"
               data-cb-option  = "${option}">
           <input  part  = "Optioninput"
@@ -255,7 +260,33 @@ export class SVManager extends HTMLDivElement {
   })();
   // #endregion Registration as custom element
   // #region Checkbox handling
+  /**
+   * If the {@link SVManager.target } is defined, clicking a checkbox will either result in the corresponding
+   * functionality to be removed or added to the {@link SVManager.target }'s value.
+   *
+   * @param event The {@link Event }. */
   protected onCheckbox(event: Event): void {
+    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
+    const currentOption = this.shadowRoot!.querySelector(".---WaXCode.--SVManager.--Option.-Current");
+    console.log("F");
+    if (currentOption !== null) {
+      currentOption.classList.remove("-Current");
+      // biome-ignore lint/style/noNonNullAssertion: Paragraph surely has a parent element.
+      (event.target as HTMLElement).parentElement!.classList.add("-Current");
+
+      for (const handler of this.onOptionChanged) {
+        // biome-ignore lint/style/noNonNullAssertion: Paragraph surely has a parent element.
+        const newOption = (event.target as HTMLElement).parentElement!.getAttribute("data-cb-option");
+
+        if (newOption) {
+          handler(newOption);
+        }
+      }
+    }
+
+    if (this.target === undefined) {
+      return;
+    }
     // biome-ignore lint/style/noNonNullAssertion: Checkbox surely has a parent element.
     const option = (event.target as HTMLElement).parentElement!.getAttribute("data-cb-option")!.toUpperCase();
 

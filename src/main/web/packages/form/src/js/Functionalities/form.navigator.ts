@@ -8,15 +8,15 @@ import { getJQuery, getXUtil } from "@de-xima/fc-form-renderer";
 export class Form_Navigator {
   /**
    * The tagged {@link HTMLDivElement } will get navigation buttons that can be used to navigate the form.
-   * Multiple {@link HTMLDivElement } can implement the navigator (e.g. header & footer) with it's <button>s being synchronized when
-   * clicking the ones of one of the implemented navigators.
+   * Multiple {@link HTMLDivElement } can implement the navigator (e.g. header & footer) with it's
+   * {@link HTMLButtonElement}s being synchronized when clicking the ones of one of the implemented navigators.
    *
    * CSS Selectors:
-   * .---CodBi.--Form_Navigator.-Container.-NavButton             Any navigational <button>.
-   * .---CodBi.--Form_Navigator.-Container.-NavButton:first-child The first <button>.
-   * .---CodBi.--Form_Navigator.-Container.-NavButton:last-child  The last <button>.
-   * .---CodBi.--Form_Navigator.-Container.-NavButton.-current    The <button> showing corresponding to the current page.
-   * .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked    The <button>s that do not correspond to the current page.
+   * .---CodBi.--Form_Navigator.-Container.-NavButton             Any navigational {@link HTMLButtonElement}.
+   * .---CodBi.--Form_Navigator.-Container.-NavButton:first-child The first {@link HTMLButtonElement}.
+   * .---CodBi.--Form_Navigator.-Container.-NavButton:last-child  The last {@link HTMLButtonElement}.
+   * .---CodBi.--Form_Navigator.-Container.-NavButton.-current    The {@link HTMLButtonElement} showing corresponding to the current page.
+   * .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked    The {@link HTMLButtonElement}s that do not correspond to the current page.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */

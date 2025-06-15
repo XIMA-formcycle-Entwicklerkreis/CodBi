@@ -146,27 +146,46 @@ export function registerCustomElements(): void {
                     // #region Register each cell of class .r2
                     // biome-ignore lint/style/noNonNullAssertion: <explanation>
                     const cell = (added as HTMLElement).querySelector(".r2")! as HTMLElement;
-                    // #region Blends in the CudBi-Interface even when not clicked on another cell before.
+                    // #region  Blends in the CodBi-Interface even when not clicked on another cell before.
+                    //          A new <input> is then created when the current one looses focus without another cell
+                    //          having been clicked.
                     const cellObserver = new MutationObserver((mutationsList, observer) => {
                       for (const mutation of mutationsList) {
                         if (mutation.type === "childList") {
                           for (const added of mutation.addedNodes) {
-                            if ((added as HTMLElement).classList) {
-                              if ((added as HTMLElement).classList.contains("editor-text")) {
-                                svmanager.enabled = true;
-                                cDetails.style.display = "block";
+                            // Only if the <input> is for a [data-cb-func]-attributefield...
+                            if (
+                              added.parentElement?.parentElement?.querySelector(".r1")?.innerHTML.toLowerCase() ===
+                              "data-cb-func"
+                            ) {
+                              if ((added as HTMLElement).classList) {
+                                if ((added as HTMLElement).classList.contains("editor-text")) {
+                                  if (!svmanager.enabled) {
+                                    svmanager.enabled = true;
+                                  }
+                                  if (cDetails.style.display !== "block") {
+                                    cDetails.style.display = "block";
+                                  }
+                                }
                               }
                             }
+                            // #region Disable CodBi-Interface when this newly created <input> looses focus
+                            (added as HTMLElement).addEventListener("blur", (event) => {
+                              svmanager.enabled = false;
+                              cDetails.style.display = "none";
+                            });
+                            // #endregion Disable CodBi-Interface when this newly created <input> looses focus
                           }
                         }
                       }
                     });
-                    // #endregion Blends in the CudBi-Interface even when not clicked on another cell before.
                     cellObserver.observe(cell, {
                       childList: true, // Observe additions/removals of child nodes
                     });
+                    // #endregion Blends in the CodBi-Interface even when not clicked on another cell before.
+
                     if (registeredCells.includes(cell)) {
-                      //continue;
+                      continue;
                     }
 
                     registeredCells.push(cell);

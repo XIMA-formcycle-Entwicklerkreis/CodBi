@@ -482,6 +482,12 @@ export class SVManager extends HTMLDivElement {
    * @param event The {@link KeyboardEvent }. */
   protected onKeydownTarget(event: KeyboardEvent): void {
     this.lastKey = event.key;
+
+    if (event.key === "Delete") {
+      this.onInputTarget(event);
+
+      return;
+    }
     // #region Prevent target from loosing focus
     if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -532,12 +538,12 @@ export class SVManager extends HTMLDivElement {
     }
   }
   /**
+   * Sets {@link SVManager.newFocusTarget } to **true** in order for other methods to be able to recognize when
+   * the {@link SVManager.target } was focused prior to their invocation.
    *
-   * @param event
-   */
+   * @param event The {@link Event }. */
   protected onFocusTarget(event: Event): void {
     this.newFocusTarget = true;
-    console.log("First focus");
   }
   /**
    * Handles input on the {@link SVManager.target } filtering the available {@link SVManager.options } and
@@ -580,7 +586,12 @@ export class SVManager extends HTMLDivElement {
       return;
     }
 
-    if (event.type !== "selectionchange" && this.lastKey !== "Backspace" && remainingOptions.length === 1) {
+    if (
+      event.type !== "selectionchange" &&
+      this.lastKey !== "Backspace" &&
+      this.lastKey !== "Delete" &&
+      remainingOptions.length === 1
+    ) {
       (event.target as HTMLInputElement).value = (event.target as HTMLInputElement).value.replace(
         segmentContent,
         // biome-ignore lint/style/noNonNullAssertion: There is just one of the remainingOptions.

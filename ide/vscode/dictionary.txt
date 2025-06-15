@@ -139,6 +139,7 @@ Postleitzahl
 quelle
 rootext
 rootint
+Segmentcontent
 sein
 showblacklist
 skewable

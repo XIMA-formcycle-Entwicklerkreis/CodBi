@@ -330,30 +330,35 @@ export class SVManager extends HTMLDivElement {
         (this.target as HTMLInputElement).value +=
           `${(this.target as HTMLInputElement).value.length === 0 || (this.target as HTMLInputElement).value[(this.target as HTMLInputElement).value.length - 1] === "," ? "" : ", "}${option}`;
       } else {
-        if ((this.target as HTMLInputElement).selectionStart !== null) {
-          // #region Determine indices for replacement
-          // biome-ignore lint/style/noNonNullAssertion: Already checked.
-          let segmentStart = (this.target as HTMLInputElement).selectionStart!;
+        if ((this.target as HTMLInputElement).selectionStart === 0) {
+          (this.target as HTMLInputElement).value =
+            `${option}${(this.target as HTMLInputElement).value.length === 0 ? "" : ","}`;
+        } else {
+          if ((this.target as HTMLInputElement).selectionStart !== null) {
+            // #region Determine indices for replacement
+            // biome-ignore lint/style/noNonNullAssertion: Already checked.
+            let segmentStart = (this.target as HTMLInputElement).selectionStart!;
 
-          while ((this.target as HTMLInputElement).value[--segmentStart] !== this.separator && segmentStart !== 0) {}
-          // biome-ignore lint/style/noNonNullAssertion: Already checked.
-          let segmentEnd = (this.target as HTMLInputElement).selectionStart! - 1;
+            while ((this.target as HTMLInputElement).value[--segmentStart] !== this.separator && segmentStart !== 0) {}
+            // biome-ignore lint/style/noNonNullAssertion: Already checked.
+            let segmentEnd = (this.target as HTMLInputElement).selectionStart! - 1;
 
-          while (
-            (this.target as HTMLInputElement).value[++segmentEnd] !== this.separator &&
-            segmentEnd !== (this.target as HTMLInputElement).value.length
-          ) {}
-          // #endregion Determine indices for replacement
-          // #region Replace properly leaving the [separator] untouched
-          (this.target as HTMLInputElement).value = (this.target as HTMLInputElement).value.replace(
-            (this.target as HTMLInputElement).value.substring(
-              segmentStart + ((this.target as HTMLInputElement).value[segmentStart] === this.separator ? +1 : 0),
-              segmentEnd,
-            ),
-            option,
-          );
-          // #endregion Replace properly leaving the [separator] untouched
-          (this.target as HTMLInputElement).setSelectionRange(segmentEnd, segmentEnd);
+            while (
+              (this.target as HTMLInputElement).value[++segmentEnd] !== this.separator &&
+              segmentEnd !== (this.target as HTMLInputElement).value.length
+            ) {}
+            // #endregion Determine indices for replacement
+            // #region Replace properly leaving the [separator] untouched
+            (this.target as HTMLInputElement).value = (this.target as HTMLInputElement).value.replace(
+              (this.target as HTMLInputElement).value.substring(
+                segmentStart + ((this.target as HTMLInputElement).value[segmentStart] === this.separator ? +1 : 0),
+                segmentEnd,
+              ),
+              option,
+            );
+            // #endregion Replace properly leaving the [separator] untouched
+            (this.target as HTMLInputElement).setSelectionRange(segmentEnd, segmentEnd);
+          }
         }
       }
       // #endregion Add functionality
@@ -563,7 +568,6 @@ export class SVManager extends HTMLDivElement {
 
       return;
     }
-
     // #endregion If the [target] just received focus, show all available functionalities
     let segmentContent: string | undefined;
 

@@ -523,6 +523,9 @@ export class CodBi implements CodbiGlobal {
    */
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   public registerFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean {
+    // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
+    id = id.toLowerCase();
+
     if (this.functionalities.has(id)) {
       console.log(`Functionality (${id}) is already registered. Replacement discarded.`);
 
@@ -549,6 +552,9 @@ export class CodBi implements CodbiGlobal {
    * @returns **TRUE** if an extension took place or **FALSE** if a regular registration was performed. */
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   public extendFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean {
+    // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
+    id = id.toLowerCase();
+
     if (!this.functionalities.has(id)) {
       this.registerFunctionality(id, init);
 
@@ -650,7 +656,7 @@ export class CodBi implements CodbiGlobal {
       for (const key in toLoad) {
         if (key === "FUNC") {
           for (const functionality of toLoad[key].split(",")) {
-            if (!this.functionalities.has(functionality.trim())) {
+            if (!this.functionalities.has(functionality.toLowerCase().trim())) {
               // If functionality is missing...
               await new Promise((resolve) => {
                 const toLoad = document.createElement("script");
@@ -697,7 +703,7 @@ export class CodBi implements CodbiGlobal {
             for (const key in toLoad) {
               if (key.toLowerCase() === "func") {
                 for (const functionality of toLoad[key].split(",")) {
-                  const specificGlobals = this.extractGlobalParameter(functionality.trim());
+                  const specificGlobals = this.extractGlobalParameter(functionality.toLowerCase().trim());
 
                   if (specificGlobals) {
                     for (const entry in specificGlobals) {
@@ -950,7 +956,7 @@ export class CodBi implements CodbiGlobal {
             this.extractCBAttributes(toProcess),
           );
 
-          const toInvoke = this.functionalities.get(functionality.trim());
+          const toInvoke = this.functionalities.get(functionality.toLowerCase().trim());
           // If the functionality is a registered one...
           if (toInvoke) {
             // #region Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded,
@@ -1030,7 +1036,7 @@ export class CodBi implements CodbiGlobal {
                         toApplyOn.classList.add("CodBi", "Processing");
 
                         toInvoke(codbiAttributesLocal, toApplyOn);
-                        // #region Disable loading animation and remove logo when CodBi finished processing that element.
+                        // #region Disable loading animation when CodBi finished processing that element.
                         if (
                           toProcess.getAttribute("data-cb-LOADER")?.toLocaleLowerCase().trim() !== "none" &&
                           toApplyOn.tagName !== "HEAD"
@@ -1039,7 +1045,7 @@ export class CodBi implements CodbiGlobal {
                         }
 
                         toApplyOn.classList.remove("Processing");
-                        // #endregion Disable loading animation and remove logo when CodBi finished processing that element.
+                        // #endregion Disable loading animation when CodBi finished processing that element.
                         if (--cntPromises === 0) {
                           this.checkingAttributes = false;
 

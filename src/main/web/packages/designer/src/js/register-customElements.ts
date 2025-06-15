@@ -171,8 +171,10 @@ export function registerCustomElements(): void {
                             }
                             // #region Disable CodBi-Interface when this newly created <input> looses focus
                             (added as HTMLElement).addEventListener("blur", (event) => {
-                              svmanager.enabled = false;
-                              cDetails.style.display = "none";
+                              if (document.activeElement !== cDetails) {
+                                svmanager.enabled = false;
+                                cDetails.style.display = "none";
+                              }
                             });
                             // #endregion Disable CodBi-Interface when this newly created <input> looses focus
                           }
@@ -196,11 +198,10 @@ export function registerCustomElements(): void {
                       if (currentFunctionalityInput !== null) {
                         // #region Define hide SVManager and API-Docs on blur
                         currentFunctionalityInput.addEventListener("blur", () => {
-                          svmanager.enabled = false;
-                          cDetails.style.display = "none";
-                          currentFunctionalityInput.addEventListener("focus", (event) => {
-                            console.log("incoming input focused.");
-                          });
+                          if (document.activeElement !== cDetails) {
+                            svmanager.enabled = false;
+                            cDetails.style.display = "none";
+                          }
                         });
                         // #endregion Define hide SVManager and API-Docs on blur
                         currentFunctionalityInput.addEventListener("keydown", (event) => {

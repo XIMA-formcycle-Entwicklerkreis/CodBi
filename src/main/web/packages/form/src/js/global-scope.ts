@@ -850,7 +850,7 @@ export class CodBi implements CodbiGlobal {
     svg.style.margin = "2%";
     svg.innerHTML = CodBiLogo();
 
-    container.appendChild(svg);
+    //container.appendChild(svg);
     destination.parentElement.appendChild(container);
 
     const innerSVG: SVGSVGElement | null = svg.querySelector("svg");

@@ -171,6 +171,8 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             window.CodbiPluginData.fileListing          = "$escapedFileListing";
             window.CodbiPluginData.fslFunctionalities   = "$escapedFslFunctionalities";
             window.CodbiPluginData.detFunctionalities   = JSON.parse("$escapedDetFunctionalities");
+            window.CodbiPluginData.docsAPI              = window.CodbiPluginData.docsAPI || {};
+            window.CodbiPluginData.docsAPI.en           = "https://waxcode.net/x/CodBi";
 
             $originalJsContent
         """

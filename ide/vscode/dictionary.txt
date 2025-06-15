@@ -10,6 +10,7 @@ Ansprechpartnerdetails
 Ansprechpartnerverzeichnis
 aspectratio
 Asylbewerbern
+attributefield
 Attributehelper
 Attributename
 attributenames
@@ -139,6 +140,7 @@ Postleitzahl
 quelle
 rootext
 rootint
+Segmentcontent
 sein
 showblacklist
 skewable

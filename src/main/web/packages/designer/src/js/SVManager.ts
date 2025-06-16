@@ -4,6 +4,8 @@ import { EQ } from "xdbc/src/DBC/EQ";
 import { IF } from "xdbc/src/DBC/IF";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { HasAttribute } from "xdbc/src/DBC/HasAttribute";
+import { allByCssAs, allByCssHtml, byCssAs, byCssHtml } from "@de-xima/xima-common-js-dom";
+
 /**
  * A {@link HTMLDivElement } that manages the **s**eparated **v**alues within an {@link HTMLInputElement }
  * of type **text**.
@@ -44,8 +46,7 @@ export class SVManager extends HTMLDivElement {
   }
   // #endregion Options
   public get currentOption(): string {
-    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active and there is always a data-cb-option and current option.
-    return this.shadowRoot!.querySelector(".---WaXCode.--SVManager.--Option.-Current")!.getAttribute("data-cb-option")!;
+    return byCssHtml(".---WaXCode.--SVManager.--Option.-Current", this.shadowRoot ?? undefined)?.dataset.cbOption ?? "";
   }
   /** Stores the last {@link KeyboardEvent }'s **key** that passed through {@link SVManager.onKeydownTarget }. */
   protected lastKey: string | undefined;
@@ -61,8 +62,7 @@ export class SVManager extends HTMLDivElement {
    * @returns This {@link SVManager } 's "enabled"-attribute value. */
   @HasAttribute.cINVARIANT("enabled")
   public get enabled(): boolean {
-    // biome-ignore lint/style/noNonNullAssertion: Checked by precondition.
-    return this.getAttribute("enabled")!.toLowerCase() === "true";
+    return this.getAttribute("enabled")?.toLowerCase() === "true";
   }
   /**
    * Sets this {@link SVManager } 's "enabled"-attribute value
@@ -126,14 +126,12 @@ export class SVManager extends HTMLDivElement {
       // Check all options that're mentioned in the new {@link SVManager.target }.
       for (const checkbox of shadow.querySelectorAll("input")) {
         checkbox.checked =
-          this.target?.value
-            .toLowerCase()
-            // biome-ignore lint/style/noNonNullAssertion: Checkbox definitely has a parent and an Attribute "data-cb-option".
-            .indexOf(checkbox.parentElement!.getAttribute("data-cb-option")?.toLowerCase()!) !== -1;
+          this.target?.value.toLowerCase().indexOf(checkbox.parentElement?.dataset.cbOption?.toLowerCase() ?? "") !==
+          -1;
       }
       // Reenable all disabled options.
-      for (const option of shadow.querySelectorAll(".---WaXCode.--SVManager.--Option")) {
-        (option as HTMLElement).style.display = "flex";
+      for (const option of allByCssHtml(".---WaXCode.--SVManager.--Option", shadow)) {
+        option.style.display = "flex";
       }
       // #region Select first option as the current one
       const former = shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current");
@@ -177,17 +175,13 @@ export class SVManager extends HTMLDivElement {
     new HasAttribute("options").check(this);
     // #endregion PRECONDITIONS
     // #region Property mapping
-    // biome-ignore lint/style/noNonNullAssertion: Attribute definitely set.
-    this.separator = this.hasAttribute("separator") ? this.getAttribute("separator")! : ",";
-    // biome-ignore lint/style/noNonNullAssertion: Passed precondition check.
-    this.options = this.getAttribute("options")!.split(this.separator);
-    this.cssEnabled = this.hasAttribute("cssEnabled")
-      ? // biome-ignore lint/style/noNonNullAssertion: Attribute definitely set.
-        this.getAttribute("cssEnabled")!
-      : "display : block ; background-image : linear-gradient( 130deg,rgba( 42, 123, 155, 1 ) 0%, rgba( 216, 216, 235, 1 ) 50%, rgba( 42, 123, 155, 1 ) 100% )";
-    // biome-ignore lint/style/noNonNullAssertion: Attribute definitely set.
-    this.cssDisabled = this.hasAttribute("cssDisabled") ? this.getAttribute("cssDisabled")! : "display : none ;";
-    this.enabled = this.hasAttribute("enabled") ? this.getAttribute("enabled")?.toLowerCase() === "true" : false;
+    this.separator = this.getAttribute("separator") ?? ",";
+    this.options = this.getAttribute("options")?.split(this.separator) ?? [];
+    this.cssEnabled =
+      this.getAttribute("cssEnabled") ??
+      "display : block ; background-image : linear-gradient( 130deg,rgba( 42, 123, 155, 1 ) 0%, rgba( 216, 216, 235, 1 ) 50%, rgba( 42, 123, 155, 1 ) 100% )";
+    this.cssDisabled = this.getAttribute("cssDisabled") ?? "display : none ;";
+    this.enabled = this.getAttribute("enabled")?.toLowerCase() === "true";
     // #endregion Property mapping
     // #region DOM preparations
     this.classList.add("---WaXCode", "--SVManager");
@@ -209,22 +203,22 @@ export class SVManager extends HTMLDivElement {
     this.attachShadow({ mode: "open" });
 
     this.variableStyle = this.appendChild(this.variableStyle);
-    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
-    this.shadowRoot!.appendChild(style);
+    this.shadowRoot?.appendChild(style);
     // #endregion DOM preparations
 
     this.render();
   }
   /** Render's all {@link SVManager.options }. */
   protected render(): void {
-    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
-    for (const toRemove of this.shadowRoot!.querySelectorAll("div.---WaXCode.--SVManager.--Option")) {
+    if (this.shadowRoot === null) {
+      return;
+    }
+    for (const toRemove of this.shadowRoot.querySelectorAll("div.---WaXCode.--SVManager.--Option")) {
       toRemove.remove();
     }
     // #region Options injection
     for (const option of this.options) {
-      // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
-      this.shadowRoot!.innerHTML += `
+      this.shadowRoot.innerHTML += `
         <div  class           = "---WaXCode --SVManager --Option ${this.options[0] === option ? "-Current" : ""}"
               part            = "Optioncontainer"
               data-cb-option  = "${option}">
@@ -235,12 +229,10 @@ export class SVManager extends HTMLDivElement {
     }
     // #endregion Options injection
     // #region Bind event handler
-    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
-    for (const checkbox of this.shadowRoot!.querySelectorAll('[part="Optioninput"]')) {
+    for (const checkbox of this.shadowRoot.querySelectorAll('[part="Optioninput"]')) {
       checkbox.addEventListener("click", this.onCheckbox.bind(this));
     }
-    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
-    for (const option of this.shadowRoot!.querySelectorAll('[part="Optiontext"]')) {
+    for (const option of this.shadowRoot.querySelectorAll('[part="Optiontext"]')) {
       option.addEventListener("click", this.onOption.bind(this));
     }
     // #endregion Bind event handler
@@ -315,54 +307,50 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onCheckbox(event: Event): void {
-    if (this.target === undefined) {
+    if (!(this.target instanceof HTMLInputElement)) {
+      return;
+    }
+    if (!(event.target instanceof HTMLInputElement)) {
       return;
     }
 
     this.target.focus();
-    // biome-ignore lint/style/noNonNullAssertion: Checkbox surely has a parent element.
-    const option = (event.target as HTMLElement).parentElement!.getAttribute("data-cb-option")!.toUpperCase();
+    const option = event.target.parentElement?.getAttribute("data-cb-option")?.toUpperCase() ?? "";
 
-    if ((event.target as HTMLInputElement).checked) {
+    if (event.target.checked) {
       // #region Add functionality
       // If caret is at the end of the <input>...
-      if ((this.target as HTMLInputElement).selectionStart === 0) {
-        (this.target as HTMLInputElement).value =
-          `${option}${(this.target as HTMLInputElement).value.length === 0 ? "" : ","}`;
+      if (this.target.selectionStart === 0) {
+        this.target.value = `${option}${this.target.value.length === 0 ? "" : ","}`;
       } else {
-        if ((this.target as HTMLInputElement).selectionStart !== null) {
+        if (this.target.selectionStart !== null) {
           // #region Determine indices for replacement
-          // biome-ignore lint/style/noNonNullAssertion: Already checked.
-          let segmentStart = (this.target as HTMLInputElement).selectionStart!;
+          let segmentStart = this.target.selectionStart;
 
-          while ((this.target as HTMLInputElement).value[--segmentStart] !== this.separator && segmentStart !== 0) {}
-          // biome-ignore lint/style/noNonNullAssertion: Already checked.
-          let segmentEnd = (this.target as HTMLInputElement).selectionStart! - 1;
+          while (this.target.value[--segmentStart] !== this.separator && segmentStart !== 0) {}
+          let segmentEnd = this.target.selectionStart - 1;
 
-          while (
-            (this.target as HTMLInputElement).value[++segmentEnd] !== this.separator &&
-            segmentEnd !== (this.target as HTMLInputElement).value.length
-          ) {}
+          while (this.target.value[++segmentEnd] !== this.separator && segmentEnd !== this.target.value.length) {}
           // #endregion Determine indices for replacement
           // #region Replace properly leaving the [separator] untouched
-          (this.target as HTMLInputElement).value = (this.target as HTMLInputElement).value.replace(
-            (this.target as HTMLInputElement).value.substring(
-              segmentStart + ((this.target as HTMLInputElement).value[segmentStart] === this.separator ? +1 : 0),
+          this.target.value = this.target.value.replace(
+            this.target.value.substring(
+              segmentStart + (this.target.value[segmentStart] === this.separator ? +1 : 0),
               segmentEnd,
             ),
             `${option},`,
           );
           // #endregion Replace properly leaving the [separator] untouched
-          (this.target as HTMLInputElement).setSelectionRange(segmentEnd, segmentEnd);
+          this.target.setSelectionRange(segmentEnd, segmentEnd);
         }
       }
 
       // #endregion Add functionality
     } else {
       // #region Remove functionality
-      const targetValue = (this.target as HTMLInputElement).value;
+      const targetValue = this.target.value;
 
-      (this.target as HTMLInputElement).value = targetValue
+      this.target.value = targetValue
         .toUpperCase()
         .replace(
           (targetValue.indexOf(`,${option}`) === -1 ? "" : ",") +
@@ -380,13 +368,15 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onOption(event: Event): void {
-    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
-    const currentOption = this.shadowRoot!.querySelector(".---WaXCode.--SVManager.--Option.-Current");
+    if (!(event.target instanceof HTMLElement)) {
+      return;
+    }
+    const currentOption = this.shadowRoot?.querySelector(".---WaXCode.--SVManager.--Option.-Current") ?? null;
 
     if (currentOption !== null) {
       currentOption.classList.remove("-Current");
 
-      const newCurrentContainer = (event.target as HTMLElement).parentElement;
+      const newCurrentContainer = event.target.parentElement;
 
       if (newCurrentContainer) {
         newCurrentContainer.classList.add("-Current");
@@ -394,8 +384,7 @@ export class SVManager extends HTMLDivElement {
       }
 
       for (const handler of this.onOptionChanged) {
-        // biome-ignore lint/style/noNonNullAssertion: Paragraph surely has a parent element.
-        const newOption = (event.target as HTMLElement).parentElement!.getAttribute("data-cb-option");
+        const newOption = event.target.parentElement?.dataset.cbOption;
 
         if (newOption) {
           handler(newOption);
@@ -425,22 +414,20 @@ export class SVManager extends HTMLDivElement {
     const shadow = this.shadowRoot;
 
     if (shadow) {
-      let current: HTMLElement | null = shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current")
-        ?.previousElementSibling as HTMLElement;
+      let current = previousElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
 
       while (current != null && current.style.display === "none") {
-        current = current.previousElementSibling as HTMLElement;
+        current = previousElementSibling(current.previousElementSibling);
       }
 
       if (current === null || !current.hasAttribute("part")) {
         console.log("fC!", current);
-        const options = shadow.querySelectorAll(".---WaXCode.--SVManager.--Option");
+        const options = allByCssHtml(".---WaXCode.--SVManager.--Option", shadow);
 
-        // biome-ignore lint/style/noNonNullAssertion: Can't be undefined when .length - 1 .
-        current = options[options.length - 1]! as HTMLElement;
+        current = options[options.length - 1] ?? null;
 
         while (current !== null && current.style.display === "none") {
-          current = current.previousElementSibling as HTMLElement;
+          current = previousElementSibling(current);
         }
       }
 
@@ -457,18 +444,17 @@ export class SVManager extends HTMLDivElement {
     const shadow = this.shadowRoot;
 
     if (shadow) {
-      let current: HTMLElement | null = shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current")
-        ?.nextElementSibling as HTMLElement;
+      let current = nextElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
 
       while (current != null && current.style.display === "none") {
-        current = current.nextElementSibling as HTMLElement;
+        current = nextElementSibling(current.nextElementSibling);
       }
 
       if (current === null) {
         current = shadow.querySelector(".---WaXCode.--SVManager.--Option");
 
         while (current != null && current.style.display === "none") {
-          current = current.nextElementSibling as HTMLElement;
+          current = nextElementSibling(current.nextElementSibling);
         }
       }
 
@@ -505,18 +491,14 @@ export class SVManager extends HTMLDivElement {
           if (shadow) {
             const former = shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current");
 
-            // biome-ignore lint/style/noNonNullAssertion: There's always a next or previous visible option.
-            (event.key === "ArrowDown" ? this.nextVisibleOption! : this.previousVisibleOption!).classList.add(
-              "-Current",
-            );
+            const targetOption = event.key === "ArrowDown" ? this.nextVisibleOption : this.previousVisibleOption;
+            targetOption?.classList.add("-Current");
 
             former?.classList.remove("-Current");
 
             for (const handler of this.onOptionChanged) {
-              handler(
-                // biome-ignore lint/style/noNonNullAssertion: An option always has a data-cb-attribute.
-                shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current")?.getAttribute("data-cb-option")!,
-              );
+              const cbOption = byCssHtml(".---WaXCode.--SVManager.--Option.-Current", shadow)?.dataset.cbOptions;
+              handler(cbOption ?? "");
             }
           }
         }
@@ -527,11 +509,7 @@ export class SVManager extends HTMLDivElement {
           const shadow = this.shadowRoot;
 
           if (shadow) {
-            (
-              shadow.querySelector(
-                '.---WaXCode.--SVManager.--Option.-Current [ part = "Optioninput"]',
-              ) as HTMLInputElement
-            ).click();
+            byCssHtml('.---WaXCode.--SVManager.--Option.-Current [ part = "Optioninput"]', shadow)?.click();
           }
         }
 
@@ -553,13 +531,15 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onInputTarget(event: Event): void {
+    if (!(event.target instanceof HTMLInputElement)) {
+      return;
+    }
     // #region If the [target] just received focus, show all available functionalities
     if (this.newFocusTarget) {
       this.newFocusTarget = false;
 
       for (const handler of this.onOptionChanged) {
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        handler(this.options[0]!);
+        handler(this.options[0] ?? "");
       }
 
       return;
@@ -567,18 +547,12 @@ export class SVManager extends HTMLDivElement {
     // #endregion If the [target] just received focus, show all available functionalities
     let segmentContent: string | undefined;
 
-    if ((event.target as HTMLInputElement).value.toLowerCase().trim() === "data-cb-func") {
-      (event.target as HTMLInputElement).value = "";
+    if (event.target.value.toLowerCase().trim() === "data-cb-func") {
+      event.target.value = "";
     }
 
-    const remainingOptions = this.filter(
-      // biome-ignore lint/suspicious/noAssignInExpressions: More concise.
-      (segmentContent = determineSegmentcontent(
-        (event.target as HTMLInputElement).value,
-        this.separator,
-        (event.target as HTMLInputElement).selectionStart || 0,
-      )),
-    );
+    segmentContent = determineSegmentcontent(event.target.value, this.separator, event.target.selectionStart ?? 0);
+    const remainingOptions = this.filter(segmentContent);
 
     if (remainingOptions.length === 0) {
       this.enabled = false;
@@ -592,15 +566,10 @@ export class SVManager extends HTMLDivElement {
       this.lastKey !== "Delete" &&
       remainingOptions.length === 1
     ) {
-      (event.target as HTMLInputElement).value = (event.target as HTMLInputElement).value.replace(
-        segmentContent,
-        // biome-ignore lint/style/noNonNullAssertion: There is just one of the remainingOptions.
-        remainingOptions[0]!,
-      );
+      event.target.value = event.target.value.replace(segmentContent, remainingOptions[0] ?? "");
 
       for (const handler of this.onOptionChanged) {
-        // biome-ignore lint/style/noNonNullAssertion: There is just one of the remainingOptions.
-        handler(remainingOptions[0]!);
+        handler(remainingOptions[0] ?? "");
       }
     }
 
@@ -625,23 +594,23 @@ export class SVManager extends HTMLDivElement {
   public filter(filter: string): Array<string> {
     const hits = new Array<string>();
     let firstVisible: HTMLDivElement | undefined;
-    // biome-ignore lint/style/noNonNullAssertion: Shadow DOM is active.
-    for (const option of this.shadowRoot!.querySelectorAll(".---WaXCode.--SVManager.--Option")) {
-      // biome-ignore lint/style/noNonNullAssertion: The data-cb-option attribute is definitely present.
-      if (option.getAttribute("data-cb-option")!.indexOf(filter.toLowerCase()) === -1) {
-        (option as HTMLDivElement).style.display = "none";
+    const options = allByCssAs(".---WaXCode.--SVManager.--Option", HTMLDivElement, this.shadowRoot ?? undefined);
+    for (const option of options) {
+      const cbOption = option.dataset.cbOption ?? "";
+      if (cbOption.indexOf(filter.toLowerCase()) === -1) {
+        option.style.display = "none";
       } else {
         if (firstVisible === undefined) {
-          firstVisible = option as HTMLDivElement;
+          firstVisible = option;
         }
-        // biome-ignore lint/style/noNonNullAssertion: The data-cb-option attribute is definitely present.
-        hits.push(option.getAttribute("data-cb-option")!);
-        (option as HTMLDivElement).style.display = "flex";
+        hits.push(cbOption);
+        option.style.display = "flex";
       }
 
-      (option.querySelector('[ part = "Optioninput"]') as HTMLInputElement).checked =
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        this.target?.value.toLowerCase().indexOf(option.getAttribute("data-cb-option")!) !== -1;
+      const part = byCssAs('[ part = "Optioninput"]', HTMLInputElement, option);
+      if (part !== undefined) {
+        part.checked = this.target?.value.toLowerCase().indexOf(cbOption) !== -1;
+      }
     }
 
     firstVisible?.click();
@@ -670,8 +639,7 @@ export function determineSegmentcontent(separatedValues: string, delimiter: stri
   const firstCommaAfterCaret: number = separatedValues.indexOf(delimiter, caretPos);
 
   if (lastCommaBeforeCaret === -1 && firstCommaAfterCaret !== -1) {
-    // biome-ignore lint/style/noNonNullAssertion: There is at least one string.
-    return separatedValues.split(delimiter)[0]!.trim();
+    return separatedValues.split(delimiter)[0]?.trim() ?? "";
   }
 
   if (lastCommaBeforeCaret !== -1 && firstCommaAfterCaret === -1) {
@@ -685,3 +653,25 @@ export function determineSegmentcontent(separatedValues: string, delimiter: stri
   return separatedValues.substring(lastCommaBeforeCaret + 1, firstCommaAfterCaret).trim();
 }
 // #endregion Tools
+
+/**
+ * Gets the {@link HTMLElement.nextElementSibling next element sibling} of the given element when it is an HTMLElement.
+ * If not, returns null.
+ * @param element The element to get the next sibling of.
+ * @returns The next element sibling if it is an HTMLElement, otherwise null.
+ */
+function nextElementSibling(element: Element | null | undefined): HTMLElement | null {
+  const sibling = element?.nextElementSibling;
+  return sibling instanceof HTMLElement ? sibling : null;
+}
+
+/**
+ * Gets the {@link HTMLElement.previousElementSibling previous element sibling} of the given element when it is an HTMLElement.
+ * If not, returns null.
+ * @param element The element to get the previous sibling of.
+ * @returns The previous element sibling if it is an HTMLElement, otherwise null.
+ */
+function previousElementSibling(element: Element | null | undefined): HTMLElement | null {
+  const sibling = element?.previousElementSibling;
+  return sibling instanceof HTMLElement ? sibling : null;
+}

@@ -1,7 +1,6 @@
 import { registerCustomEditor } from "@de-xima/fc-form-designer";
 import { MultiSelect, MultiSelectType } from "./MultiSelect";
 import { SVManager } from "./SVManager.js";
-import { CodBiSymbol } from "../Symbol";
 /** Registers the {@link MultiSelect }-Editor via {@link registerCustomEditor }. */
 export function registerCustomElements(): void {
   registerCustomEditor(MultiSelectType, MultiSelect);
@@ -39,7 +38,6 @@ export function registerCustomElements(): void {
       svmanager.style.borderRadius = ".5em";
       svmanager.style.boxShadow = "0 0 .5em black";
       svmanager.style.overflowY = "auto";
-      svmanager.style.opacity = ".9";
       svmanager.backgroundImage = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg`;
       // #region Define SVManager layout update
       const updateLayoutSVManager = (cell: HTMLElement) => {
@@ -95,7 +93,7 @@ export function registerCustomElements(): void {
 
         @keyframes kfFadeIN_APIDoc {
           0% { scale : 1.1 ; opacity : 0 ;}
-          100% { scale : 1 ; opacity : 1 ;}}
+          100% { scale : 1 ; opacity : .9 ;}}
         .---CodBi.--Panel.--APIDoc  { animation : kfFadeIN_APIDoc .25s ease-in forwards ;}
         object#CodBi_APIDocViewer   { opacity : .8 ; width : 100% !important ; height : 100% !important ; border-radius : .5em ;}`;
 
@@ -226,6 +224,7 @@ export function registerCustomElements(): void {
                         updateLayoutCDetails();
                         // #region View corresponding API-Doc
                         svmanager.onOptionChanged.push((newOption: string) => {
+                          console.log("New Option right before changing API-Description:", newOption);
                           (cDetails.querySelector("object") as HTMLObjectElement).setAttribute(
                             "data",
                             // biome-ignore lint/suspicious/noExplicitAny: <explanation>

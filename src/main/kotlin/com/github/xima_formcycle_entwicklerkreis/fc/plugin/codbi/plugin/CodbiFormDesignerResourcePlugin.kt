@@ -75,9 +75,9 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     val fileListingString = getFileListingAsString(dirStandards)
     val fslFunctionalities =
         getFileListingAsString("./src/main/web/packages/form/src/js/Functionalities")
-    val detFunctionalities =
-        getDetailsForFunctionalities(
-            "./src/main/web/packages/form/src/js/Functionalities") // Call the new function
+    val fslElementplaceholder = getFileListingAsString("./src/main/web/packages/form/src/js/EPs")
+    val detFunctionalities = getDetails("./src/main/web/packages/form/src/js/Functionalities")
+    val detElementplaceholder = getDetails("./src/main/web/packages/form/src/js/EPs")
 
     jsResource =
         createDynamicJsResource(
@@ -86,7 +86,9 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             version,
             fileListingString,
             fslFunctionalities,
-            detFunctionalities)
+            detFunctionalities,
+            fslElementplaceholder,
+            detElementplaceholder)
     // endregion Inject available standard configuration via JS defining a global variable for them.
   }
 
@@ -133,7 +135,9 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
       version: String,
       fileListing: String,
       fslFunctionalities: String,
-      detFunctionalities: String
+      detFunctionalities: String,
+      fslElementplaceholder: String,
+      detElementplaceholder: String
   ): IResourceDescriptor {
     val uri = URI("plugin:${PLUGIN_FORM_DESIGNER_RESOURCE_ID}/${name}?v=${version}")
     val clazz = CodbiFormDesignerResourcePlugin::class.java
@@ -157,8 +161,22 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("'", "\\'")
+    val escapedFslElementplaceholder =
+        fslElementplaceholder
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("'", "\\'")
     val escapedDetFunctionalities =
         detFunctionalities
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("'", "\\'")
+    val escapedDetElementplaceholder =
+        detElementplaceholder
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")
             .replace("\n", "\\n")
@@ -167,12 +185,14 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     // Prepend to original file code
     val combinedJsContent =
         """
-            window.CodbiPluginData                      = window.CodbiPluginData || {};
-            window.CodbiPluginData.fileListing          = "$escapedFileListing";
-            window.CodbiPluginData.fslFunctionalities   = "$escapedFslFunctionalities";
-            window.CodbiPluginData.detFunctionalities   = JSON.parse("$escapedDetFunctionalities");
-            window.CodbiPluginData.docsAPI              = window.CodbiPluginData.docsAPI || {};
-            window.CodbiPluginData.docsAPI.en           = "https://waxcode.net/x/CodBi";
+            window.CodbiPluginData                          = window.CodbiPluginData || {};
+            window.CodbiPluginData.fileListing              = "$escapedFileListing";
+            window.CodbiPluginData.fslFunctionalities       = "$escapedFslFunctionalities";
+            window.CodbiPluginData.detFunctionalities       = JSON.parse("$escapedDetFunctionalities");
+            window.CodbiPluginData.fslElementplaceholder    = "$escapedFslElementplaceholder";
+            window.CodbiPluginData.detElementplaceholder    = JSON.parse("$escapedDetElementplaceholder");
+            window.CodbiPluginData.docsAPI                  = window.CodbiPluginData.docsAPI || {};
+            window.CodbiPluginData.docsAPI.en               = "https://waxcode.net/x/CodBi";
 
             $originalJsContent
         """
@@ -213,7 +233,7 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
    * @return A JSON string representing a map where keys are functionality names and values are the
    *   content of their corresponding .json files.
    */
-  private fun getDetailsForFunctionalities(toExtractFrom: String): String {
+  private fun getDetails(toExtractFrom: String): String {
     val directory = File(toExtractFrom)
 
     if (!directory.exists() || !directory.isDirectory) {
@@ -223,19 +243,18 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
       return "{}"
     }
     // region Generate JSON
-    val functionalityFiles =
-        directory.listFiles()?.filter { it.isFile && it.extension == "ts" } ?: emptyList()
+    val tsFiles = directory.listFiles()?.filter { it.isFile && it.extension == "ts" } ?: emptyList()
     val combinedJsonContent = mutableMapOf<String, Any>()
     val objectMapper = ObjectMapper().registerKotlinModule()
 
-    for (tsFile in functionalityFiles) {
-      val functionalityName = tsFile.nameWithoutExtension
-      val jsonFileName = "$functionalityName.json"
+    for (tsFile in tsFiles) {
+      val fileName = tsFile.nameWithoutExtension
+      val jsonFileName = "$fileName.json"
       val jsonFile = File(directory, jsonFileName)
 
       if (jsonFile.exists() && jsonFile.isFile) {
         try {
-          combinedJsonContent[functionalityName] =
+          combinedJsonContent[fileName] =
               objectMapper.readValue(jsonFile.readText(UTF_8), Any::class.java)
         } catch (X: Exception) {
           LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)

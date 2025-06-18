@@ -3,6 +3,7 @@ import { OR } from "xdbc/src/DBC/OR";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { IF } from "xdbc/src/DBC/IF";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { HasAttribute } from "xdbc/src/DBC/HasAttribute";
 import { allByCssAs, allByCssHtml, byCssAs, byCssHtml } from "@de-xima/xima-common-js-dom";
 
@@ -307,50 +308,44 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onCheckbox(event: Event): void {
-    if (!(this.target instanceof HTMLInputElement)) {
-      return;
-    }
-    if (!(event.target instanceof HTMLInputElement)) {
-      return;
-    }
+    // #region PRECONDITIONS
+    const target = new INSTANCE<HTMLInputElement>(HTMLInputElement).tsCheck(this.target);
+    const eventTarget = new INSTANCE<HTMLInputElement>(HTMLInputElement).tsCheck(event.target);
+    // #region PRECONDITIONS
+    target.focus();
+    const option = eventTarget.parentElement?.getAttribute("data-cb-option")?.toUpperCase() ?? "";
 
-    this.target.focus();
-    const option = event.target.parentElement?.getAttribute("data-cb-option")?.toUpperCase() ?? "";
-
-    if (event.target.checked) {
+    if (eventTarget.checked) {
       // #region Add functionality
       // If caret is at the end of the <input>...
-      if (this.target.selectionStart === 0) {
-        this.target.value = `${option}${this.target.value.length === 0 ? "" : ","}`;
+      if (target.selectionStart === 0) {
+        target.value = `${option}${target.value.length === 0 ? "" : ","}`;
       } else {
-        if (this.target.selectionStart !== null) {
+        if (target.selectionStart !== null) {
           // #region Determine indices for replacement
-          let segmentStart = this.target.selectionStart;
+          let segmentStart = target.selectionStart;
 
-          while (this.target.value[--segmentStart] !== this.separator && segmentStart !== 0) {}
-          let segmentEnd = this.target.selectionStart - 1;
+          while (target.value[--segmentStart] !== this.separator && segmentStart !== 0) {}
+          let segmentEnd = target.selectionStart - 1;
 
-          while (this.target.value[++segmentEnd] !== this.separator && segmentEnd !== this.target.value.length) {}
+          while (target.value[++segmentEnd] !== this.separator && segmentEnd !== target.value.length) {}
           // #endregion Determine indices for replacement
           // #region Replace properly leaving the [separator] untouched
-          this.target.value = this.target.value.replace(
-            this.target.value.substring(
-              segmentStart + (this.target.value[segmentStart] === this.separator ? +1 : 0),
-              segmentEnd,
-            ),
+          target.value = target.value.replace(
+            target.value.substring(segmentStart + (target.value[segmentStart] === this.separator ? +1 : 0), segmentEnd),
             `${option},`,
           );
           // #endregion Replace properly leaving the [separator] untouched
-          this.target.setSelectionRange(segmentEnd, segmentEnd);
+          target.setSelectionRange(segmentEnd, segmentEnd);
         }
       }
 
       // #endregion Add functionality
     } else {
       // #region Remove functionality
-      const targetValue = this.target.value;
+      const targetValue = target.value;
 
-      this.target.value = targetValue
+      target.value = targetValue
         .toUpperCase()
         .replace(
           (targetValue.indexOf(`,${option}`) === -1 ? "" : ",") +
@@ -368,15 +363,14 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onOption(event: Event): void {
-    if (!(event.target instanceof HTMLElement)) {
-      return;
-    }
+    // PRECONDITION
+    const eventTarget = new INSTANCE<HTMLInputElement>(HTMLInputElement).tsCheck(event.target);
     const currentOption = this.shadowRoot?.querySelector(".---WaXCode.--SVManager.--Option.-Current") ?? null;
 
     if (currentOption !== null) {
       currentOption.classList.remove("-Current");
 
-      const newCurrentContainer = event.target.parentElement;
+      const newCurrentContainer = eventTarget.parentElement;
 
       if (newCurrentContainer) {
         newCurrentContainer.classList.add("-Current");
@@ -384,7 +378,7 @@ export class SVManager extends HTMLDivElement {
       }
 
       for (const handler of this.onOptionChanged) {
-        const newOption = event.target.parentElement?.dataset.cbOption;
+        const newOption = eventTarget.parentElement?.dataset.cbOption;
 
         if (newOption) {
           handler(newOption);
@@ -497,7 +491,7 @@ export class SVManager extends HTMLDivElement {
             former?.classList.remove("-Current");
 
             for (const handler of this.onOptionChanged) {
-              const cbOption = byCssHtml(".---WaXCode.--SVManager.--Option.-Current", shadow)?.dataset.cbOptions;
+              const cbOption = byCssHtml(".---WaXCode.--SVManager.--Option.-Current", shadow)?.dataset.cbOption;
               handler(cbOption ?? "");
             }
           }
@@ -531,9 +525,8 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onInputTarget(event: Event): void {
-    if (!(event.target instanceof HTMLInputElement)) {
-      return;
-    }
+    // PRECONDITION
+    const eventTarget = new INSTANCE<HTMLInputElement>(HTMLInputElement).tsCheck(event.target);
     // #region If the [target] just received focus, show all available functionalities
     if (this.newFocusTarget) {
       this.newFocusTarget = false;
@@ -547,11 +540,11 @@ export class SVManager extends HTMLDivElement {
     // #endregion If the [target] just received focus, show all available functionalities
     let segmentContent: string | undefined;
 
-    if (event.target.value.toLowerCase().trim() === "data-cb-func") {
-      event.target.value = "";
+    if (eventTarget.value.toLowerCase().trim() === "data-cb-func") {
+      eventTarget.value = "";
     }
 
-    segmentContent = determineSegmentcontent(event.target.value, this.separator, event.target.selectionStart ?? 0);
+    segmentContent = determineSegmentcontent(eventTarget.value, this.separator, eventTarget.selectionStart ?? 0);
     const remainingOptions = this.filter(segmentContent);
 
     if (remainingOptions.length === 0) {
@@ -566,7 +559,7 @@ export class SVManager extends HTMLDivElement {
       this.lastKey !== "Delete" &&
       remainingOptions.length === 1
     ) {
-      event.target.value = event.target.value.replace(segmentContent, remainingOptions[0] ?? "");
+      eventTarget.value = eventTarget.value.replace(segmentContent, remainingOptions[0] ?? "");
 
       for (const handler of this.onOptionChanged) {
         handler(remainingOptions[0] ?? "");
@@ -652,8 +645,6 @@ export function determineSegmentcontent(separatedValues: string, delimiter: stri
 
   return separatedValues.substring(lastCommaBeforeCaret + 1, firstCommaAfterCaret).trim();
 }
-// #endregion Tools
-
 /**
  * Gets the {@link HTMLElement.nextElementSibling next element sibling} of the given element when it is an HTMLElement.
  * If not, returns null.
@@ -675,3 +666,4 @@ function previousElementSibling(element: Element | null | undefined): HTMLElemen
   const sibling = element?.previousElementSibling;
   return sibling instanceof HTMLElement ? sibling : null;
 }
+// #endregion Tools

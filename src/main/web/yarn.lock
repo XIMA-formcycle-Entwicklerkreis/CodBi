@@ -3555,7 +3555,7 @@ __metadata:
     tslib: "npm:~2.8.1"
     typedoc: "npm:^0.28.4"
     typescript: "npm:~5.7.3"
-    xdbc: "npm:^1.0.99"
+    xdbc: "npm:^1.0.105"
   languageName: unknown
   linkType: soft
 
@@ -7693,6 +7693,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"xdbc@npm:^1.0.105":
+  version: 1.0.105
+  resolution: "xdbc@npm:1.0.105"
+  dependencies:
+    "@types/reflect-metadata": "npm:^0.1.0"
+    parcel: "npm:^2.14.4"
+    reflect-metadata: "npm:^0.2.2"
+  checksum: 10c0/6d525c4a03423e39545495d25010dfafd8e87eb9c7b760cb28bd052432e05cf350011b2b9b9c724c879a96fcb6e80e3bcc157cfca311fff54c548c06e4f3aabf
+  languageName: node
+  linkType: hard
+
 "xdbc@npm:^1.0.95":
   version: 1.0.95
   resolution: "xdbc@npm:1.0.95"
@@ -7701,17 +7712,6 @@ __metadata:
     parcel: "npm:^2.14.4"
     reflect-metadata: "npm:^0.2.2"
   checksum: 10c0/e47c3c04f8e70c7363756c26719ffded65dab075908135834cc9a1f02d8453547f6a3ee8a13690a2f7bc7e5f8dfc68afd0bf9bf38516f32810033bcc758ca120
-  languageName: node
-  linkType: hard
-
-"xdbc@npm:^1.0.99":
-  version: 1.0.99
-  resolution: "xdbc@npm:1.0.99"
-  dependencies:
-    "@types/reflect-metadata": "npm:^0.1.0"
-    parcel: "npm:^2.14.4"
-    reflect-metadata: "npm:^0.2.2"
-  checksum: 10c0/1881dee4dd52e35840431d68b5197743eb7135a777b9df4396d88767fabbe8afbf1d6fe788a22ad135d67b6bb32d1d2eeef1d377df99b25db8f6c10a13596d21
   languageName: node
   linkType: hard
 

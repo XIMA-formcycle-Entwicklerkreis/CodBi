@@ -4,9 +4,9 @@ import { EQ } from "xdbc/src/DBC/EQ";
 import { IF } from "xdbc/src/DBC/IF";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { HasAttribute } from "xdbc/src/DBC/HasAttribute";
 import { allByCssAs, allByCssHtml, byCssAs, byCssHtml } from "@de-xima/xima-common-js-dom";
-
 /**
  * A {@link HTMLDivElement } that manages the **s**eparated **v**alues within an {@link HTMLInputElement }
  * of type **text**.
@@ -121,30 +121,31 @@ export class SVManager extends HTMLDivElement {
       this.onFocusTarget(new Event("focus"));
     }
 
-    const shadow = this.shadowRoot;
-
-    if (shadow) {
-      // Check all options that're mentioned in the new {@link SVManager.target }.
-      for (const checkbox of shadow.querySelectorAll("input")) {
-        checkbox.checked =
-          this.target?.value.toLowerCase().indexOf(checkbox.parentElement?.dataset.cbOption?.toLowerCase() ?? "") !==
-          -1;
-      }
-      // Reenable all disabled options.
-      for (const option of allByCssHtml(".---WaXCode.--SVManager.--Option", shadow)) {
-        option.style.display = "flex";
-      }
-      // #region Select first option as the current one
-      const former = shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current");
-      const optionElements = shadow.querySelectorAll(".---WaXCode.--SVManager.--Option");
-
-      if (optionElements[0] !== former) {
-        shadow.querySelectorAll(".---WaXCode.--SVManager.--Option")[0]?.classList.add("-Current");
-
-        former?.classList.remove("-Current");
-      }
-      // #endregion Select first option as the current one
+    const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+    // Check all options that're mentioned in the new {@link SVManager.target }.
+    for (const checkbox of shadow.querySelectorAll("input")) {
+      checkbox.checked =
+        this._target.value.toLowerCase().indexOf(checkbox.parentElement?.dataset.cbOption?.toLowerCase() ?? "") !== -1;
     }
+    // Reenable all disabled options.
+    for (const option of allByCssHtml(".---WaXCode.--SVManager.--Option", shadow)) {
+      option.style.display = "flex";
+    }
+    // #region Select first option as the current one
+    const former = DEFINED.tsCheck<HTMLDivElement>(
+      INSTANCE.tsCheck<HTMLDivElement>(
+        shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"),
+        HTMLDivElement,
+      ),
+    );
+    const optionElements = shadow.querySelectorAll(".---WaXCode.--SVManager.--Option");
+
+    if (optionElements[0] !== former) {
+      shadow.querySelectorAll(".---WaXCode.--SVManager.--Option")[0]?.classList.add("-Current");
+
+      former.classList.remove("-Current");
+    }
+    // #endregion Select first option as the current one
   }
   // #endregion Targeting input-elements
   // #region Info
@@ -204,22 +205,21 @@ export class SVManager extends HTMLDivElement {
     this.attachShadow({ mode: "open" });
 
     this.variableStyle = this.appendChild(this.variableStyle);
-    this.shadowRoot?.appendChild(style);
-    // #endregion DOM preparations
 
+    DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).appendChild(style);
+    // #endregion DOM preparations
     this.render();
   }
   /** Render's all {@link SVManager.options }. */
   protected render(): void {
-    if (this.shadowRoot === null) {
-      return;
-    }
-    for (const toRemove of this.shadowRoot.querySelectorAll("div.---WaXCode.--SVManager.--Option")) {
+    const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+
+    for (const toRemove of shadow.querySelectorAll("div.---WaXCode.--SVManager.--Option")) {
       toRemove.remove();
     }
     // #region Options injection
     for (const option of this.options) {
-      this.shadowRoot.innerHTML += `
+      shadow.innerHTML += `
         <div  class           = "---WaXCode --SVManager --Option ${this.options[0] === option ? "-Current" : ""}"
               part            = "Optioncontainer"
               data-cb-option  = "${option}">
@@ -230,10 +230,10 @@ export class SVManager extends HTMLDivElement {
     }
     // #endregion Options injection
     // #region Bind event handler
-    for (const checkbox of this.shadowRoot.querySelectorAll('[part="Optioninput"]')) {
+    for (const checkbox of shadow.querySelectorAll('[part="Optioninput"]')) {
       checkbox.addEventListener("click", this.onCheckbox.bind(this));
     }
-    for (const option of this.shadowRoot.querySelectorAll('[part="Optiontext"]')) {
+    for (const option of shadow.querySelectorAll('[part="Optiontext"]')) {
       option.addEventListener("click", this.onOption.bind(this));
     }
     // #endregion Bind event handler
@@ -308,11 +308,11 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onCheckbox(event: Event): void {
-    // #region PRECONDITIONS
-    const target = new INSTANCE<HTMLInputElement>(HTMLInputElement).tsCheck(this.target);
-    const eventTarget = new INSTANCE<HTMLInputElement>(HTMLInputElement).tsCheck(event.target);
-    // #region PRECONDITIONS
+    const target = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
+    const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+
     target.focus();
+
     const option = eventTarget.parentElement?.getAttribute("data-cb-option")?.toUpperCase() ?? "";
 
     if (eventTarget.checked) {
@@ -363,26 +363,28 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onOption(event: Event): void {
-    // PRECONDITION
-    const eventTarget = new INSTANCE<HTMLInputElement>(HTMLInputElement).tsCheck(event.target);
-    const currentOption = this.shadowRoot?.querySelector(".---WaXCode.--SVManager.--Option.-Current") ?? null;
+    const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+    const currentOption = INSTANCE.tsCheck<HTMLInputElement>(
+      DEFINED.tsCheck<Element>(
+        DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelector(".---WaXCode.--SVManager.--Option.-Current"),
+      ),
+      HTMLInputElement,
+    );
 
-    if (currentOption !== null) {
-      currentOption.classList.remove("-Current");
+    currentOption.classList.remove("-Current");
 
-      const newCurrentContainer = eventTarget.parentElement;
+    const newCurrentContainer = eventTarget.parentElement;
 
-      if (newCurrentContainer) {
-        newCurrentContainer.classList.add("-Current");
-        newCurrentContainer.scrollIntoView({ behavior: "smooth", inline: "center", block: "center" });
-      }
+    if (newCurrentContainer) {
+      newCurrentContainer.classList.add("-Current");
+      newCurrentContainer.scrollIntoView({ behavior: "smooth", inline: "center", block: "center" });
+    }
 
-      for (const handler of this.onOptionChanged) {
-        const newOption = eventTarget.parentElement?.dataset.cbOption;
+    for (const handler of this.onOptionChanged) {
+      const newOption = eventTarget.parentElement?.dataset.cbOption;
 
-        if (newOption) {
-          handler(newOption);
-        }
+      if (newOption) {
+        handler(newOption);
       }
     }
   }
@@ -405,57 +407,47 @@ export class SVManager extends HTMLDivElement {
    *
    * @returns The first visible option. */
   protected get previousVisibleOption(): HTMLElement | null | undefined {
-    const shadow = this.shadowRoot;
+    const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+    let current = previousElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
 
-    if (shadow) {
-      let current = previousElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
-
-      while (current != null && current.style.display === "none") {
-        current = previousElementSibling(current.previousElementSibling);
-      }
-
-      if (current === null || !current.hasAttribute("part")) {
-        console.log("fC!", current);
-        const options = allByCssHtml(".---WaXCode.--SVManager.--Option", shadow);
-
-        current = options[options.length - 1] ?? null;
-
-        while (current !== null && current.style.display === "none") {
-          current = previousElementSibling(current);
-        }
-      }
-
-      return current;
+    while (current != null && current.style.display === "none") {
+      current = previousElementSibling(current.previousElementSibling);
     }
 
-    return null;
+    if (current === null || !current.hasAttribute("part")) {
+      const options = allByCssHtml(".---WaXCode.--SVManager.--Option", shadow);
+
+      current = options[options.length - 1] ?? null;
+
+      while (current !== null && current.style.display === "none") {
+        current = previousElementSibling(current);
+      }
+    }
+
+    return current;
   }
   /**
    * Traverses the options from the current on returning the first one which's **style.display** is not **none**.
    *
    * @returns The first visible option. */
   protected get nextVisibleOption(): HTMLElement | null | undefined {
-    const shadow = this.shadowRoot;
+    const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
-    if (shadow) {
-      let current = nextElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
+    let current = nextElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
+
+    while (current != null && current.style.display === "none") {
+      current = nextElementSibling(current.nextElementSibling);
+    }
+
+    if (current === null) {
+      current = shadow.querySelector(".---WaXCode.--SVManager.--Option");
 
       while (current != null && current.style.display === "none") {
         current = nextElementSibling(current.nextElementSibling);
       }
-
-      if (current === null) {
-        current = shadow.querySelector(".---WaXCode.--SVManager.--Option");
-
-        while (current != null && current.style.display === "none") {
-          current = nextElementSibling(current.nextElementSibling);
-        }
-      }
-
-      return current;
     }
 
-    return null;
+    return current;
   }
   /**
    * Selects the next option.
@@ -480,31 +472,33 @@ export class SVManager extends HTMLDivElement {
       case "ArrowUp":
       case "ArrowDown":
         {
-          const shadow = this.shadowRoot;
+          const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+          const former = DEFINED.tsCheck<HTMLElement>(
+            INSTANCE.tsCheck<HTMLDivElement>(
+              shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"),
+              HTMLDivElement,
+            ),
+          );
+          const targetOption = DEFINED.tsCheck<HTMLElement>(
+            event.key === "ArrowDown" ? this.nextVisibleOption : this.previousVisibleOption,
+          );
 
-          if (shadow) {
-            const former = shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current");
+          targetOption.classList.add("-Current");
+          former.classList.remove("-Current");
 
-            const targetOption = event.key === "ArrowDown" ? this.nextVisibleOption : this.previousVisibleOption;
-            targetOption?.classList.add("-Current");
-
-            former?.classList.remove("-Current");
-
-            for (const handler of this.onOptionChanged) {
-              const cbOption = byCssHtml(".---WaXCode.--SVManager.--Option.-Current", shadow)?.dataset.cbOption;
-              handler(cbOption ?? "");
-            }
+          for (const handler of this.onOptionChanged) {
+            const cbOption = byCssHtml(".---WaXCode.--SVManager.--Option.-Current", shadow)?.dataset.cbOption;
+            handler(cbOption ?? "");
           }
         }
+
         break;
       // Select / Unselect
       case " ":
         {
-          const shadow = this.shadowRoot;
+          const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
-          if (shadow) {
-            byCssHtml('.---WaXCode.--SVManager.--Option.-Current [ part = "Optioninput"]', shadow)?.click();
-          }
+          byCssHtml('.---WaXCode.--SVManager.--Option.-Current [ part = "Optioninput"]', shadow)?.click();
         }
 
         break;
@@ -526,7 +520,7 @@ export class SVManager extends HTMLDivElement {
    * @param event The {@link Event }. */
   protected onInputTarget(event: Event): void {
     // PRECONDITION
-    const eventTarget = new INSTANCE<HTMLInputElement>(HTMLInputElement).tsCheck(event.target);
+    const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region If the [target] just received focus, show all available functionalities
     if (this.newFocusTarget) {
       this.newFocusTarget = false;
@@ -566,15 +560,15 @@ export class SVManager extends HTMLDivElement {
       }
     }
 
-    const shadow = this.shadowRoot;
+    const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
-    if (shadow) {
-      shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current")?.classList.remove("-Current");
-
-      shadow
-        .querySelector(`.---WaXCode.--SVManager.--Option[ data-cb-option = "${remainingOptions[0]}"]`)
-        ?.classList.add("-Current");
-    }
+    shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current")?.classList.remove("-Current");
+    DEFINED.tsCheck<HTMLElement>(
+      INSTANCE.tsCheck<HTMLDivElement>(
+        shadow.querySelector(`.---WaXCode.--SVManager.--Option[ data-cb-option = "${remainingOptions[0]}"]`),
+        HTMLDivElement,
+      ),
+    ).classList.add("-Current");
   }
   // #endregion Keyboard handling
   // #region Filtering
@@ -588,6 +582,7 @@ export class SVManager extends HTMLDivElement {
     const hits = new Array<string>();
     let firstVisible: HTMLDivElement | undefined;
     const options = allByCssAs(".---WaXCode.--SVManager.--Option", HTMLDivElement, this.shadowRoot ?? undefined);
+
     for (const option of options) {
       const cbOption = option.dataset.cbOption ?? "";
       if (cbOption.indexOf(filter.toLowerCase()) === -1) {
@@ -601,8 +596,9 @@ export class SVManager extends HTMLDivElement {
       }
 
       const part = byCssAs('[ part = "Optioninput"]', HTMLInputElement, option);
+
       if (part !== undefined) {
-        part.checked = this.target?.value.toLowerCase().indexOf(cbOption) !== -1;
+        part.checked = DEFINED.tsCheck<HTMLInputElement>(this.target).value.toLowerCase().indexOf(cbOption) !== -1;
       }
     }
 

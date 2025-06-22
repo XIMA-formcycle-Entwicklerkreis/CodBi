@@ -3,7 +3,7 @@ import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 /**
- * This [E]lement [P]laceholder retrieves the content of a URL.
+ * This **E**lement-**P**laceholder retrieves the content of a URL.
  *
  * Config Parameter:
  *  1. The URL to retrieve from.

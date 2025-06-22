@@ -6,7 +6,7 @@ import { GREATER } from "xdbc/src/DBC/GREATER";
 import { CodBiError } from "../global-scope.js";
 import { XMLParser } from "fast-xml-parser";
 /**
- * This Element-Placeholder retrieves the details of an authority's building specified by the provided ID from the
+ * This **E**lement-**P**laceholder retrieves the details of an authority's building specified by the provided ID from the
  * corresponding CodBi-Plugin servlet.
  *
  * Placeholder Parameter:

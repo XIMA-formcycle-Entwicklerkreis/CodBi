@@ -8,14 +8,9 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { HasAttribute } from "xdbc/src/DBC/HasAttribute";
 import { allByCssAs, allByCssHtml, byCssAs, byCssHtml } from "@de-xima/xima-common-js-dom";
 /**
- * A {@link HTMLDivElement } that manages the **s**eparated **v**alues within an {@link HTMLInputElement }
- * of type **text**.
- * It reflects the list of values within the {@link HTMLInputElement } {@link SVManager.target }ed using a collection
- * of {@link HTMLInputElement }s of type **checkbox** and {@link HTMLParagraphElement } contained in
- * {@link HTMLDivElement }s.
- * Checking the boxes or navigating through the collection with the **up** and **down** arrow keys and using the
- * **enter** or **delete** keys, the {@link SVManager.target }ed's content can be modified. */
-export class SVManager extends HTMLDivElement {
+ *  A {@link HTMLDivElement } that bound to an {@link HTMLInputElement } only allows one of a
+ *  certain set of {@link options }. */
+export class Optioninput extends HTMLDivElement {
   // #region Events
   /** Holds all event listener to notify whenever the currently selected option changes. */
   public readonly onOptionChanged: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
@@ -26,7 +21,25 @@ export class SVManager extends HTMLDivElement {
   }
   // #region Options
   /** Holds the {@link string }s that're the actual options. */
-  protected options: Array<string>;
+  protected _options: Array<string> = new Array<string>();
+  /**
+   * Gets the {@link Optioninput._options }.
+   *
+   * @returns The {@link Optioninput._options }. */
+  public get options(): Array<string> {
+    return this._options;
+  }
+  /**
+   * Sets the {@link OptionInput.options }.
+   *
+   * @param toSet The {@link optioninput.options }. */
+  public set options(toSet: Array<string>) {
+    this._options = toSet;
+
+    if (this._options.length !== 0) {
+      this.render();
+    }
+  }
   /** Holds the {@link string } the {@link SVManager.target }ed {@link HTMLInputElement }'s content shall
    * be split into. */
   protected separator: string;
@@ -34,79 +47,81 @@ export class SVManager extends HTMLDivElement {
    * the {@link this.options }. */
   protected _optionTransformer: ((toTransform: string) => string) | undefined;
   /**
-   * Sets the {@link SVManager._transformer }.
+   * Sets the {@link Optioninput._transformer }.
    *
-   * @param toSet The {@link SVManager._transformer }. */
+   * @param toSet The {@link Optioninput._transformer }. */
   public set optionTransformer(toSet: ((toTransform: string) => string) | undefined) {
     this._optionTransformer = toSet;
 
     this.render();
   }
   /**
-   *  Sets the URL to an image that shall be used as the CSS-Background-Image for the {@link SVmanager.options } panel.
+   *  Sets the URL to an image that shall be used as the CSS-Background-Image for the {@link Optioninput.options } panel.
    */
   public set backgroundImage(toSet: string) {
     this.cssEnabled = `background-color : #FFFFFFDD ; background-size : contain ; background-position : center ; background-repeat : no-repeat ; background-blend-mode : overlay ; display : block ; background-image : url("${toSet}"), linear-gradient( 130deg,rgba( 42, 123, 155, 1 ) 0%, rgba( 216, 216, 235, 1 ) 50%, rgba( 42, 123, 155, 1 ) 100% )`;
   }
   // #endregion Options
   public get currentOption(): string {
-    return byCssHtml(".---WaXCode.--SVManager.--Option.-Current", this.shadowRoot ?? undefined)?.dataset.cbOption ?? "";
+    return (
+      byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", this.shadowRoot ?? undefined)?.dataset.cbOption ?? ""
+    );
   }
-  /** Stores the last {@link KeyboardEvent }'s **key** that passed through {@link SVManager.onKeydownTarget }. */
+  /** Stores the last {@link KeyboardEvent }'s **key** that passed through {@link Optioninput.onKeydownTarget }. */
   protected lastKey: string | undefined;
-  /** Holds the CSS to apply to the {@link SVManager.cOptions } when this {@link SVManager } is
-   * to be {@link SVManager.show }n. */
+  /** Holds the CSS to apply to the {@link Optioninput.cOptions } when this {@link Optioninput } is
+   * to be {@link Optioninput.show }n. */
   protected cssEnabled: string;
-  /** Holds the CSS to apply to the {@link SVManager.cOptions } when this {@link SVManager } is
-   * shall {@link SVManager.hide }. */
+  /** Holds the CSS to apply to the {@link Optioninput.cOptions } when this {@link Optioninput } is
+   * shall {@link Optioninput.hide }. */
   protected cssDisabled: string;
-  /** Gets a {@link boolean } stating whether the {@link SVManager.cssEnabled } or {@link SVManager.cssDisabled } is being applied on this
+  /** Gets a {@link boolean } stating whether the {@link Optioninput.cssEnabled } or {@link Optioninput.cssDisabled } is being applied on this
    * {@link HTMLDivElement }.
    *
-   * @returns This {@link SVManager } 's "enabled"-attribute value. */
+   * @returns This {@link Optioninput } 's "enabled"-attribute value. */
   @HasAttribute.cINVARIANT("enabled")
   public get enabled(): boolean {
     return this.getAttribute("enabled")?.toLowerCase() === "true";
   }
   /**
-   * Sets this {@link SVManager } 's "enabled"-attribute value
+   * Sets this {@link Optioninput } 's "enabled"-attribute value
    *
-   * @param toSet The value This {@link SVManager } 's "enabled"-attribute shall be set to. */
+   * @param toSet The value This {@link Optioninput } 's "enabled"-attribute shall be set to. */
   public set enabled(toSet: boolean) {
     this.setAttribute("enabled", toSet ? "true" : "false");
   }
   // #region Styling
-  /** Holds the stylesheet that varies depending on whether this {@link SVManager } is currently
-   * {@link SVManager.enabled } or when {@link SVManager.cssEnabled } or {@link SVManager.cssDisabled } change. */
+  /** Holds the stylesheet that varies depending on whether this {@link Optioninput } is currently
+   * {@link Optioninput.enabled } or {@link Optioninput.cssEnabled } or {@link Optioninput.cssDisabled } change. */
   protected variableStyle: HTMLStyleElement;
-  /** Holds the fade in animation for this {@link SVManager }. */
+  /** Holds the fade in animation for this {@link Optioninput }. */
   public cssFadeIN: string = `
-    @keyframes kfFadeIN_SVManager {
+    @keyframes kfFadeIN_Optioninput {
         0%    { scale : 1.1 ; opacity : 0 ;}
         100%  { scale : 1 ; opacity : .9 ;}}
-    div.---WaXCode.--SVManager { animation : kfFadeIN_SVManager .25s ease-in forwards ;}`;
+    div.---WaXCode.--Optioninput { animation : kfFadeIN_Optioninput .25s ease-in forwards ;}`;
   // #endregion Styling
   // #region Targeting input-elements
   /** Stores the {@link HTMLInputElement } that is currently targeted.*/
   protected _target: HTMLInputElement | undefined;
   /**
-   * Gets the {@link SVManager._target }.
+   * Gets the {@link Optioninput._target }.
    *
-   * @returns The {@link SVManager._target }. */
+   * @returns The {@link Optioninput._target }. */
   public get target(): HTMLInputElement | undefined {
     return this._target;
   }
   /**
-   * Sets the {@link SVManager._target }, updates the checkboxes according to the functionalities mentioned in
-   * the {@link SVManager.target } and bind {@link SVManager.onKeyupTarget } & {@link SVManager.onKeydownTarget } to
-   * the {@link SVManager.target } **toSet** **keyup** & **keydown** events also removing the handler from the
-   * former {@link SVManager.target }.
+   * Sets the {@link Optioninput._target }, updates the checkboxes according to the functionalities mentioned in
+   * the {@link Optioninput.target } and bind {@link Optioninput.onKeyupTarget } & {@link Optioninput.onKeydownTarget }
+   * to the {@link Optioninput.target } **toSet** **keyup** & **keydown** events also removing the handler from the
+   * former {@link Optioninput.target }.
    *
-   * @param toSet The {@link SVManager._target }.
+   * @param toSet The {@link Optioninput._target }.
    *
-   * @throws  A {@link DBC.Infringement } if this {@link SVManager }'s {@link HTMLDivElement.shadowRoot } is not
-   *          defined or a query of **.---WaXCode.--SVManager.--Option.-Current** or
-   *          **.---WaXCode.--SVManager.--Option** does not return an {@link HTMLDivElement }.*/
+   * @throws  A {@link DBC.Infringement } if this {@link Optioninput }'s {@link HTMLDivElement.shadowRoot } is not
+   *          defined or a query of **.---WaXCode.--Optioninput.--Option.-Current** or
+   *          **.---WaXCode.--Optioninput.--Option**does not return an {@link HTMLDivElement }.*/
   public set target(toSet: HTMLInputElement) {
     if (this._target && this._target !== toSet) {
       this._target.removeEventListener("focus", this.onFocusTarget);
@@ -135,42 +150,35 @@ export class SVManager extends HTMLDivElement {
         this._target.value.toLowerCase().indexOf(checkbox.parentElement?.dataset.cbOption?.toLowerCase() ?? "") !== -1;
     }
     // Reenable all disabled options.
-    for (const option of allByCssHtml(".---WaXCode.--SVManager.--Option", shadow)) {
+    for (const option of allByCssHtml(".---WaXCode.--Optioninput.--Option", shadow)) {
       option.style.display = "flex";
     }
     // #region Select first option as the current one
-    const former = DEFINED.tsCheck<HTMLDivElement>(
-      INSTANCE.tsCheck<HTMLDivElement>(
-        shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"),
+    const former = shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current");
+
+    if (former !== null) {
+      const former = INSTANCE.tsCheck<HTMLDivElement>(
+        shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current"),
         HTMLDivElement,
-      ),
-    );
+      );
 
-    const optionElements = shadow.querySelectorAll(".---WaXCode.--SVManager.--Option");
+      const optionElements = shadow.querySelectorAll(".---WaXCode.--Optioninput.--Option");
 
-    if (optionElements[0] !== former) {
-      INSTANCE.tsCheck<HTMLDivElement>(
-        shadow.querySelector(".---WaXCode.--SVManager.--Option"),
-        HTMLDivElement,
-      ).classList.add("-Current");
+      if (optionElements[0] !== former) {
+        INSTANCE.tsCheck<HTMLDivElement>(
+          shadow.querySelector(".---WaXCode.--Optioninput.--Option"),
+          HTMLDivElement,
+        ).classList.add("-Current");
 
-      former.classList.remove("-Current");
+        former.classList.remove("-Current");
+      }
     }
     // #endregion Select first option as the current one
   }
   // #endregion Targeting input-elements
   // #region Info
-  /** Stores whether the cursor is currently within this {@link SVManager }.*/
-  protected _cursorIn: boolean = false;
-  /** Stores whether the {@link SVManager.target } is focused for the first time. */
+  /** Stores whether the {@link Optioninput.target } is focused for the first time. */
   protected newFocusTarget = false;
-  /**
-   * Gets {@link SVManager._cursorIn }.
-   *
-   * @returns {@link SVManager._cursorIn }. */
-  public get cursorIn(): boolean {
-    return this._cursorIn;
-  }
   // #endregion Info
   /**
    * Creates this {@link HTMLDivElement } by mapping it's properties to it's attributes and injecting a
@@ -188,6 +196,8 @@ export class SVManager extends HTMLDivElement {
     new HasAttribute("options").check(this);
     // #endregion PRECONDITIONS
     // #region Property mapping
+    this.attachShadow({ mode: "open" });
+
     this.separator = this.getAttribute("separator") ?? ",";
     this.options = this.getAttribute("options")?.split(this.separator) ?? [];
     this.cssEnabled =
@@ -197,23 +207,20 @@ export class SVManager extends HTMLDivElement {
     this.enabled = this.getAttribute("enabled")?.toLowerCase() === "true";
     // #endregion Property mapping
     // #region DOM preparations
-    this.classList.add("---WaXCode", "--SVManager");
+    this.classList.add("---WaXCode", "--Optioninput");
 
     this.variableStyle = document.createElement("style");
     this.variableStyle.innerHTML = `${this.enabled ? this.cssEnabled : this.cssDisabled}}`;
 
     const style = document.createElement("style");
     style.innerHTML = `
-        div.---WaXCode.--SVManager.--Option             { display : flex ; transition : .25s all ;}
-        div.---WaXCode.--SVManager.--Option input       { cursor : pointer ;}
-        div.---WaXCode.--SVManager.--Option p           {
+        div.---WaXCode.--Optioninput.--Option             { display : flex ; transition : .25s all ;}
+        div.---WaXCode.--Optioninput.--Option p           {
           cursor : pointer ; background-color : transparent ; color : black ; text-shadow : 0 0 .25em white ;}
-        div.---WaXCode.--SVManager.--Option.-Current    {
+        div.---WaXCode.--Optioninput.--Option.-Current    {
           border : solid ; border-radius : .5em ; border-color : darkorange ; box-shadow : 0 0 .5em black ;
           background-color : #FF8C00BB ;}
-        div.---WaXCode.--SVManager.--Option.-Current p  { color : white ;}`;
-
-    this.attachShadow({ mode: "open" });
+        div.---WaXCode.--Optioninput.--Option.-Current p  { color : white ;}`;
 
     this.variableStyle = this.appendChild(this.variableStyle);
 
@@ -221,22 +228,19 @@ export class SVManager extends HTMLDivElement {
     // #endregion DOM preparations
     this.render();
   }
-  /** Render's all {@link SVManager.options }. */
+  /** Render's all {@link Optioninput.options }. */
   protected render(): void {
     const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
-    for (const toRemove of shadow.querySelectorAll("div.---WaXCode.--SVManager.--Option")) {
+    for (const toRemove of shadow.querySelectorAll("div.---WaXCode.--Optioninput.--Option")) {
       toRemove.remove();
     }
     // #region Options injection
     for (const option of this.options) {
       shadow.innerHTML += `
-        <div  class           = "---WaXCode --SVManager --Option ${this.options[0] === option ? "-Current" : ""}"
+        <div  class           = "---WaXCode --Optioninput --Option ${this.options[0] === option ? "-Current" : ""}"
               part            = "Optioncontainer"
               data-cb-option  = "${option}">
-          <input  part  = "Optioninput"
-                  type  = "checkbox"></input>
-
           <p part = "Optiontext">${this._optionTransformer ? this._optionTransformer(option) : option}</p></div>`;
     }
     // #endregion Options injection
@@ -250,7 +254,7 @@ export class SVManager extends HTMLDivElement {
     // #endregion Bind event handler
   }
   /**
-   * Processes changes in the {@link SVManager }'s system attributes.
+   * Processes changes in the {@link Optioninput }'s system attributes.
    *
    * @param name      The changed attribute's name.
    * @param oldValue  The changed attribute's former value.
@@ -278,7 +282,7 @@ export class SVManager extends HTMLDivElement {
 
         break;
       case "enabled":
-        this.variableStyle.innerHTML = `${newValue.toLowerCase() === "true" ? this.cssFadeIN : ""} div.---WaXCode.--SVManager { ${
+        this.variableStyle.innerHTML = `${newValue.toLowerCase() === "true" ? this.cssFadeIN : ""} div.---WaXCode.--Optioninput { ${
           newValue.toLowerCase() === "true" ? this.cssEnabled : this.cssDisabled
         }}`;
 
@@ -287,14 +291,14 @@ export class SVManager extends HTMLDivElement {
         this.cssEnabled = newValue;
 
         if (this.enabled) {
-          this.variableStyle.innerHTML = `${this.cssFadeIN} div.---WaXCode.--SVManager { ${this.cssEnabled}}`;
+          this.variableStyle.innerHTML = `${this.cssFadeIN} div.---WaXCode.--Optioninput { ${this.cssEnabled}}`;
         }
 
         break;
       case "cssdisabled":
         this.cssDisabled = newValue;
         if (!this.enabled) {
-          this.variableStyle.innerHTML = `${this.cssFadeIN} div.---WaXCode.--SVManager { ${this.cssDisabled}}`;
+          this.variableStyle.innerHTML = `${this.cssFadeIN} div.---WaXCode.--Optioninput { ${this.cssDisabled}}`;
         }
 
         break;
@@ -302,20 +306,20 @@ export class SVManager extends HTMLDivElement {
   }
   // #region Registration as custom element
   /**
-   * States whether this {@link SVManager } was successfully registered as a custom element and performs
+   * States whether this {@link Optioninput } was successfully registered as a custom element and performs
    * the registration upon class usage.
    *
    * @throws See {@link window.customElements }'s **define** method. */
   public static registered: boolean = (() => {
-    customElements.define("xc-svmanager", SVManager, { extends: "div" });
+    customElements.define("xc-optioninput", Optioninput, { extends: "div" });
 
     return true;
   })();
   // #endregion Registration as custom element
   // #region Checkbox handling
   /**
-   * If the {@link SVManager.target } is defined, clicking a checkbox will either result in the corresponding
-   * functionality to be removed or added to the {@link SVManager.target }'s value.
+   * If the {@link Optioninput.target } is defined, clicking a checkbox will either result in the corresponding
+   * functionality to be removed or added to the {@link Optioninput.target }'s value.
    *
    * @param event The {@link Event }. */
   protected onCheckbox(event: Event): void {
@@ -370,14 +374,14 @@ export class SVManager extends HTMLDivElement {
   // #endregion Checkbox handling
   // #region Checkbox handling
   /**
-   * Selects the clicked option and fires the {@link SVManager.onOptionChanged } handlers.
+   * Selects the clicked option and fires the {@link Optioninput.onOptionChanged } handlers.
    *
    * @param event The {@link Event }. */
   protected onOption(event: Event): void {
     const eventTarget = INSTANCE.tsCheck<HTMLElement>(event.target, HTMLElement);
     const currentOption = INSTANCE.tsCheck<HTMLElement>(
       DEFINED.tsCheck<Element>(
-        DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelector(".---WaXCode.--SVManager.--Option.-Current"),
+        DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelector(".---WaXCode.--Optioninput.--Option.-Current"),
       ),
       HTMLElement,
     );
@@ -403,7 +407,7 @@ export class SVManager extends HTMLDivElement {
   // #region Keyboard handling
   /**
    * Prevents the {@link this.target } from loosing focus on hitting keys that're used to control
-   * this {@link SVManager }.
+   * this {@link Optioninput }.
    *
    * @param event The {@link KeyboardEvent }. */
   protected onKeyupTarget(event: KeyboardEvent): void {
@@ -419,14 +423,14 @@ export class SVManager extends HTMLDivElement {
    * @returns The first visible option. */
   protected get previousVisibleOption(): HTMLElement | null | undefined {
     const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
-    let current = previousElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
+    let current = previousElementSibling(shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current"));
 
     while (current != null && current.style.display === "none") {
       current = previousElementSibling(current.previousElementSibling);
     }
 
     if (current === null || !current.hasAttribute("part")) {
-      const options = allByCssHtml(".---WaXCode.--SVManager.--Option", shadow);
+      const options = allByCssHtml(".---WaXCode.--Optioninput.--Option", shadow);
 
       current = options[options.length - 1] ?? null;
 
@@ -444,14 +448,14 @@ export class SVManager extends HTMLDivElement {
   protected get nextVisibleOption(): HTMLElement | null | undefined {
     const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
-    let current = nextElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
+    let current = nextElementSibling(shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current"));
 
     while (current != null && current.style.display === "none") {
       current = nextElementSibling(current.nextElementSibling);
     }
 
     if (current === null) {
-      current = shadow.querySelector(".---WaXCode.--SVManager.--Option");
+      current = shadow.querySelector(".---WaXCode.--Optioninput.--Option");
 
       while (current != null && current.style.display === "none") {
         current = nextElementSibling(current.nextElementSibling);
@@ -463,7 +467,10 @@ export class SVManager extends HTMLDivElement {
   /**
    * Selects the next option.
    *
-   * @param event The {@link KeyboardEvent }. */
+   * @param event The {@link KeyboardEvent }.
+   *
+   * @throws A {@link DBC.Infringement } if a query for **.---WaXCode.--Optioninput.--Option.-Current** from this
+   * {@link Optioninput }'s {@link HTMLDivElement.shadowRoot } acquires **null**. */
   protected onKeydownTarget(event: KeyboardEvent): void {
     this.lastKey = event.key;
 
@@ -479,14 +486,15 @@ export class SVManager extends HTMLDivElement {
       event.stopImmediatePropagation();
     }
     // #endregion Prevent target from loosing focus
+    const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+
     switch (event.key) {
       case "ArrowUp":
       case "ArrowDown":
         {
-          const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
           const former = DEFINED.tsCheck<HTMLElement>(
             INSTANCE.tsCheck<HTMLDivElement>(
-              shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"),
+              shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current"),
               HTMLDivElement,
             ),
           );
@@ -498,34 +506,44 @@ export class SVManager extends HTMLDivElement {
           former.classList.remove("-Current");
 
           for (const handler of this.onOptionChanged) {
-            const cbOption = byCssHtml(".---WaXCode.--SVManager.--Option.-Current", shadow)?.dataset.cbOption;
-            handler(cbOption ?? "");
+            const cbOption = DEFINED.tsCheck<string>(
+              DEFINED.tsCheck<HTMLDivElement>(
+                INSTANCE.tsCheck<HTMLDivElement>(
+                  byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
+                  HTMLDivElement,
+                ),
+              ).dataset.cbOption,
+            );
+
+            handler(cbOption);
           }
         }
 
         break;
-      // Select / Unselect
       case " ":
-        {
-          const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
-
-          byCssHtml('.---WaXCode.--SVManager.--Option.-Current [ part = "Optioninput"]', shadow)?.click();
-        }
+        DEFINED.tsCheck<HTMLInputElement>(this.target).value = DEFINED.tsCheck<string>(
+          DEFINED.tsCheck<HTMLDivElement>(
+            INSTANCE.tsCheck<HTMLDivElement>(
+              byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
+              HTMLDivElement,
+            ),
+          ).dataset.cbOption,
+        );
 
         break;
     }
   }
   /**
-   * Sets {@link SVManager.newFocusTarget } to **true** in order for other methods to be able to recognize when
-   * the {@link SVManager.target } was focused prior to their invocation.
+   * Sets {@link Optioninput.newFocusTarget } to **true** in order for other methods to be able to recognize when
+   * the {@link Optioninput.target } was focused prior to their invocation.
    *
    * @param event The {@link Event }. */
   protected onFocusTarget(event: Event): void {
     this.newFocusTarget = true;
   }
   /**
-   * Handles input on the {@link SVManager.target } filtering the available {@link SVManager.options } and
-   * completing the option within the {@link SVManager.target } when one of the {@link SVManager.options } gets
+   * Handles input on the {@link Optioninput.target } filtering the available {@link Optioninput.options } and
+   * completing the option within the {@link Optioninput.target } when one of the {@link Optioninput.options } gets
    * definite.
    *
    * @param event The {@link Event }. */
@@ -543,14 +561,7 @@ export class SVManager extends HTMLDivElement {
       return;
     }
     // #endregion If the [target] just received focus, show all available functionalities
-    let segmentContent: string | undefined;
-
-    if (eventTarget.value.toLowerCase().trim() === "data-cb-func") {
-      eventTarget.value = "";
-    }
-
-    segmentContent = this.determineSegmentcontent(eventTarget.value, this.separator, eventTarget.selectionStart ?? 0);
-    const remainingOptions = this.filter(segmentContent);
+    const remainingOptions = this.filter(eventTarget.value);
 
     if (remainingOptions.length === 0) {
       this.enabled = false;
@@ -564,7 +575,7 @@ export class SVManager extends HTMLDivElement {
       this.lastKey !== "Delete" &&
       remainingOptions.length === 1
     ) {
-      eventTarget.value = eventTarget.value.replace(segmentContent, remainingOptions[0] ?? "");
+      eventTarget.value = remainingOptions[0] ?? "";
 
       for (const handler of this.onOptionChanged) {
         handler(remainingOptions[0] ?? "");
@@ -573,10 +584,10 @@ export class SVManager extends HTMLDivElement {
 
     const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
-    shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current")?.classList.remove("-Current");
+    shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current")?.classList.remove("-Current");
     DEFINED.tsCheck<HTMLElement>(
       INSTANCE.tsCheck<HTMLDivElement>(
-        shadow.querySelector(`.---WaXCode.--SVManager.--Option[ data-cb-option = "${remainingOptions[0]}"]`),
+        shadow.querySelector(`.---WaXCode.--Optioninput.--Option[ data-cb-option = "${remainingOptions[0]}"]`),
         HTMLDivElement,
       ),
     ).classList.add("-Current");
@@ -592,7 +603,7 @@ export class SVManager extends HTMLDivElement {
   public filter(filter: string): Array<string> {
     const hits = new Array<string>();
     let firstVisible: HTMLDivElement | undefined;
-    const options = allByCssAs(".---WaXCode.--SVManager.--Option", HTMLDivElement, this.shadowRoot ?? undefined);
+    const options = allByCssAs(".---WaXCode.--Optioninput.--Option", HTMLDivElement, this.shadowRoot ?? undefined);
 
     for (const option of options) {
       const cbOption = option.dataset.cbOption ?? "";
@@ -618,39 +629,6 @@ export class SVManager extends HTMLDivElement {
     return hits;
   }
   // #endregion Filtering
-  /**
-   * Determines the segment-content within a separated values {@link string } out of the specified **position**.
-   *
-   * @param separatedValues The {@link string } containing the separated values.
-   * @param delimiter       The {@link string } delimiting each segment.
-   * @param position        The current position within the segment.
-   *
-   * @returns The segment-content where the **position** is pointing at. */
-  protected determineSegmentcontent(separatedValues: string, delimiter: string, position: number = 0): string {
-    console.log("determineSegmentcontent");
-    const caretPos: number = position;
-
-    if (separatedValues.length === 0 || caretPos < 0 || caretPos > separatedValues.length) {
-      return "";
-    }
-
-    const lastCommaBeforeCaret: number = separatedValues.lastIndexOf(delimiter, caretPos - 1);
-    const firstCommaAfterCaret: number = separatedValues.indexOf(delimiter, caretPos);
-
-    if (lastCommaBeforeCaret === -1 && firstCommaAfterCaret !== -1) {
-      return separatedValues.split(delimiter)[0]?.trim() ?? "";
-    }
-
-    if (lastCommaBeforeCaret !== -1 && firstCommaAfterCaret === -1) {
-      return separatedValues.substring(lastCommaBeforeCaret + 1).trim();
-    }
-
-    if (lastCommaBeforeCaret === -1 || firstCommaAfterCaret === -1 || lastCommaBeforeCaret >= firstCommaAfterCaret) {
-      return separatedValues.trim();
-    }
-
-    return separatedValues.substring(lastCommaBeforeCaret + 1, firstCommaAfterCaret).trim();
-  }
 }
 // #region Tools
 /**

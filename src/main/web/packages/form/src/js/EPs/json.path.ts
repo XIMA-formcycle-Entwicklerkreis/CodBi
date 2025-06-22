@@ -4,7 +4,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { CodBiError } from "../global-scope.js";
 /**
- * This Element-Placeholder retrieves an {@link Object } at a specific path out of the one given in the
+ * This **E**lement-**P**laceholder retrieves an {@link Object } at a specific path out of the one given in the
  * first parameter.
  *
  * Placeholder Parameter:

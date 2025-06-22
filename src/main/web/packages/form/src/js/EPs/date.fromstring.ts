@@ -5,7 +5,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { stringToDate } from "../global-scope";
 /**
- * This Element-Placeholder turns a {@link String } into a {@link Date }.
+ * This **E**lement-**P**laceholder turns a {@link String } into a {@link Date }.
  *
  * Placeholder Parameter:
  *  - 1st:  The {@link String } to turn to a {@link Date}.

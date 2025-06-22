@@ -16,7 +16,7 @@ export class Date_NoWeekends {
    * manually.
    *
    * Config Parameter:
-   *  MsgNoWeekends:  The optional {@link string } to be shown when a weekend is entered.*/
+   *  - MsgNoWeekends:  The optional {@link string } to be shown when a weekend is entered.*/
   @DBC.ParamvalueProvider
   public static functionality(
     toLoad: { [key: string]: unknown },

@@ -12,14 +12,13 @@ import { BayVIS_Ansprechpartner_ID } from "./bayvis.ansprechpartner.id";
 import { XMLParser } from "fast-xml-parser";
 /**
  *
- * This Element-Placeholder retrieves details of a specific contact from the corresponding CodBi-Plugin servlet.
+ * This **Element**-**P**laceholder retrieves details of a specific contact from the corresponding CodBi-Plugin servlet.
  *
  * Placeholder Parameter:
- *  - 1st:      The BayVIS-URL where to retrieve the contact details from.
- *  - 2nd:      The ID of the contact who's details are to be retrieved.
+ *  - 1st:      The ID of the contact who's details are to be retrieved.
  *              Multiple IDs may be provided by using "/" as a divider (e.g. 12345 / 678901 ).
- *  - 3rd:      A property of the contact, like e.g. "nachname".
- *  - 3rd/4th:  The BayVIS-URL where to retrieve the contact directory from, if the 2nd parameter contains
+ *  - 2nd:      A property of the contact, like e.g. "nachname".
+ *  - 2nd/3rd:  The BayVIS-URL where to retrieve the contact directory from, if the 2nd parameter contains
  *              not just IDs but also names to look for.
  *
  *  - resolves  To either an

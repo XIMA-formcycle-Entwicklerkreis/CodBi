@@ -14,7 +14,7 @@ type ApiRequest = {
   catholic: boolean;
 };
 /**
- * This [E]lement [P]laceholder registers the "Date.Holidays"-EP that makes requests to "API-Feiertage.de" in order to
+ * This **E**lement **P**laceholder registers the "Date.Holidays"-EP that makes requests to "API-Feiertage.de" in order to
  * retrieve german holidays of all states.
  *
  * Config Parameter (order doesn't matter, case-insensitive):

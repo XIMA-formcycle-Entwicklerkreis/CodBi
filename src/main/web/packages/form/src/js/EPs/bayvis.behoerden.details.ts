@@ -7,11 +7,11 @@ import { GREATER } from "xdbc/src/DBC/GREATER";
 import { CodBiError } from "../global-scope";
 import { XMLParser } from "fast-xml-parser";
 /**
- * This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding
+ * This **E**lement-**P**laceholder retrieves the details of an authority specified by the provided ID from the corresponding
  * CodBi-Plugin servlet.
  *
  * Placeholder Parameter:
- *  - 1sr:  The ID of the authority to retrieve.
+ *  - 1st:  The ID of the authority to retrieve.
  *  - 2nd:  A property of the directory, like e.g. "bezeichnung".
  *
  *  - returns Either an {@link Array <{ bezeichnungBehoerde: string; behoerdeZuordnungen : object, behoerdenGebaeudeZuordnungen : object, behoerdenart : string, behoerdengruppe : string, bezeichnung : string, email : string, id : string, sortierreihenfolge : string}>}

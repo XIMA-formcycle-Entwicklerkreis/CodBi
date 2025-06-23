@@ -2,7 +2,7 @@ import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { CodBiError } from "../global-scope";
 /**
- * This [E]lement [P]laceholder acquires a global variable's value.
+ * This **E**lement-**P**laceholder acquires a global variable's value.
  *
  * Placeholder Parameter:
  *  The name of the global variable.

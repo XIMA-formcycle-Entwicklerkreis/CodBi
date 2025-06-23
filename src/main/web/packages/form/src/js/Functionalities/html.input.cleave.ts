@@ -14,10 +14,10 @@ export class HTML_Input_Cleave {
    * This functionality applies Cleave on an {@link HTMLInputElement }.
    *
    * Config Parameter:
-   *  - config      : The {@link CleaveOptions } to set instead of the other shorthand parameter.
-   *  - date        : The {@link CleaveOptions.date }.
-   *  - dateMin     : The {@link CleaveOptions.dateMin }.
-   *  - dateMax     : The {@link CleaveOptions.dateMax }.
+   *  - Config      : The {@link CleaveOptions } to set instead of the other shorthand parameter.
+   *  - Date        : The {@link CleaveOptions.date }.
+   *  - DateMin     : The {@link CleaveOptions.dateMin }.
+   *  - DateMax     : The {@link CleaveOptions.dateMax }.
    *  - Delimiter   : The {@link CleaveOptions.delimiter }.
    *  - DatePattern : The {@link CleaveOptions.datePattern }.
    *

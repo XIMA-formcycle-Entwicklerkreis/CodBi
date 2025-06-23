@@ -31,7 +31,7 @@ export class OnChange_Conditional {
    *  - DateFormat: A {@link string } specifying the format the candidate is of. If this parameter isn't undefined
    *                it triggers value of the tagged field transformation into a {@link Date } prior to compare it with
    *                the reference.
-   *  -
+   *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    *

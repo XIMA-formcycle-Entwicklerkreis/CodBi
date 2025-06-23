@@ -2,7 +2,7 @@ import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 /**
- * This [E]lement [P]laceholder turns a CSV-{@link String } into an {@link Array < string >}.
+ * This **E**lement **P**laceholder turns a CSV-{@link String } into an {@link Array < string >}.
  *
  * Config Parameter:
  *  1. The CSV-{@link String } to convert.

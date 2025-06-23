@@ -7,12 +7,11 @@ import { CodBiError } from "../global-scope.js";
 import { XMLParser } from "fast-xml-parser";
 /**
  *
- * This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from
+ * This **E**lement-**P**laceholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from
  * the corresponding CodBi-Plugin servlet.
  *
  * Placeholder Parameter:
- *  - 1st:  The BayVIS-URL where to retrieve the directory from.
- *  - 2nd:  An property of the directory, like e.g. "bezeichnung".
+ *  - 1st: An property of the directory, like e.g. "bezeichnung".
  *
  *  - returns Either an {@link Array <{ behoerdenart : string, behoerdengruppe : string, bezeichnung : string, email : string, id : string, sortierreihenfolge : string}>}
  *            or an {@link Array < string >}, if the 2nd parameter is specified.

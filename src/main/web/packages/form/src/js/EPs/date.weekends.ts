@@ -13,7 +13,7 @@ style.textContent = `
 document.head.appendChild(style);
 // #endregion Inject necessary CSS.
 /**
- * This [E]lement [P]laceholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the {@link Document.head }.
+ * This **E**lement-**P**laceholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the {@link Document.head }.
  *
  * The EP retrieves a {@link Array < string >} of all dates that're Weekends (Saturday & Sunday) between
  * two optional {@link Date }s that may be specified.

@@ -9,12 +9,11 @@ import { CodBiError } from "../global-scope";
 import { XMLParser } from "fast-xml-parser";
 /**
  *
- * This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from
+ * This **E**lement-**P**laceholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from
  * the corresponding CodBi-Plugin servlet.
  *
  * Placeholder Parameter:
- *  - 1st:  The BayVIS-URL where to retrieve the directory from.
- *  - 2nd:  A property of the directory, like e.g. "bezeichnung".
+ *  - 1st: A property of the directory, like e.g. "bezeichnung".
  *
  *  - returns Either an
  *            {@link Array <{ anrede: string; vorname: string; nachname: string; funktion: string;

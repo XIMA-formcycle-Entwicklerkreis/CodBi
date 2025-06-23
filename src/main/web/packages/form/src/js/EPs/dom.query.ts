@@ -1,7 +1,7 @@
 import { AE } from "xdbc/src/DBC/AE";
 import { EQ } from "xdbc/src/DBC/EQ";
 /**
- * This [E]lement [P]laceholder queries an {@link Element }.
+ * This **E**lement-**P**laceholder queries an {@link Element }.
  *
  * Placeholder Parameter:
  *  The CSS-Selector targeting the desired {@link Element }.

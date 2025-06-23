@@ -8,11 +8,10 @@ import { GREATER } from "xdbc/src/DBC/GREATER";
 import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
 import { XMLParser } from "fast-xml-parser";
 /**
- * This Element-Placeholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
+ * This **E**lement-**P**laceholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
  *
  * Placeholder Parameter:
- *  - 1st:  The BayVIS-URL where to retrieve the authority details from.
- *  - 2nd:  The ID of the authority to retrieve.
+ *  - 1st: The ID of the authority to retrieve.
  *
  *  - resolves to a {@link Array < string >} of authorities IDs with matching "bezeichnung".
  *

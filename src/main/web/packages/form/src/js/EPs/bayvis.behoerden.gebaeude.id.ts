@@ -7,11 +7,11 @@ import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
 import { GREATER } from "xdbc/src/DBC/GREATER";
 /**
  *
- * This Element-Placeholder retrieves the IDs of authoritie's buildings by the
+ * This **E**lement-**P**laceholder retrieves the IDs of authoritie's buildings by the
  * "bezeichnung" of the authority (case insensitive).
  *
  * Placeholder Parameter:
- *  - 1st:  The ID of the authority to retrieve.
+ *  - 1st: The ID of the authority to retrieve.
  *
  *  - resolves to a {@link Array < string >} with the building IDs that're references to the specified authority..
  *

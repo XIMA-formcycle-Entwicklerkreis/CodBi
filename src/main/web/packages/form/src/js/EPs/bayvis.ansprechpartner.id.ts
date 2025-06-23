@@ -10,12 +10,11 @@ import { XMLParser } from "fast-xml-parser";
 import { BayVIS_Ansprechpartner } from "./bayvis.ansprechpartner.js";
 /**
  *
- * This Element-Placeholder retrieves the ID of a contact by first- & last-name (order insensitive). If there're more than one contact
+ * This **E**lement-**P**laceholder retrieves the ID of a contact by first- & last-name (order insensitive). If there're more than one contact
  * with the same first- & last-name only the first hit will be returned.
  *
  * Placeholder Parameter:
- *  - 1st:  The BayVIS-URL where to retrieve the directory from.
- *  - 2nd:  The first- and last-name separated by a space (order- & case-insensitive).
+ *  - 1st: The first- and last-name separated by a space (order- & case-insensitive).
  *
  *  - resolves  To either an
  *              {@link Array <{ anrede: string; vorname: string; nachname: string; funktion: string;

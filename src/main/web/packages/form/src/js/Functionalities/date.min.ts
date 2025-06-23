@@ -13,12 +13,12 @@ export class Date_Min {
    * Registers the "Date.Min"-Functionality.
    *
    * Config Parameter:
-   *  - minimum:    The amount of years in the past the tagged {@link HTMLInputElement }'s entered {@link Date} got to be
+   *  - Minimum:    The amount of years in the past the tagged {@link HTMLInputElement }'s entered {@link Date} got to be
    *                in order to be valid as a {@link string}.
-   *  - msgHigher:  The error message to show if the "minimum" is not enough years in the past.
+   *  - MsgHigher:  The error message to show if the "minimum" is not enough years in the past.
    *                "[%MINIM_DATE%]" within that {@link string } will be replaced with
    *                the minimum {@link Date }-{@link String } that is valid.
-   *  - delimiter:  The {@link string} separating the day, month & year. */
+   *  - Delimiter:  The {@link string} separating the day, month & year. */
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "minimum")

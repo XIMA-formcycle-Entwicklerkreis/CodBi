@@ -14,10 +14,10 @@ export class HTML_Input_REGEX {
    * to the provided {@link RegExp } - "expression".
    *
    * Config Parameter:
-   *  - expression:       The {@link RegExp } - {@link string } the value of "toProcess" has to comply to.
-   *  - errorPrefix:      The first part of the error message {@link string } displayed prior to the "expression".
-   *  - errorPostfix:     The final part of the error message {@link string } displayed after  to the "expression".
-   *  - exposeExpression: Will expose the "expression" within the errormessage if set to a non empty {@link string }. */
+   *  - Expression:       The {@link RegExp } - {@link string } the value of "toProcess" has to comply to.
+   *  - ErrorPrefix:      The first part of the error message {@link string } displayed prior to the "expression".
+   *  - ErrorPostfix:     The final part of the error message {@link string } displayed after  to the "expression".
+   *  - ExposeExpression: Will expose the "expression" within the errormessage if set to a non empty {@link string }. */
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "expression")

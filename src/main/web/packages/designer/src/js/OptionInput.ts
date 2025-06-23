@@ -14,6 +14,8 @@ export class Optioninput extends HTMLDivElement {
   // #region Events
   /** Holds all event listener to notify whenever the currently selected option changes. */
   public readonly onOptionChanged: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
+  /** Holds all event listener to notify whenever an option was selected. */
+  public readonly onOptionSelected: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
   // #endregion Events
   /** Holds the web-component definition of observed attributes. */
   static get observedAttributes(): Array<string> {
@@ -54,6 +56,15 @@ export class Optioninput extends HTMLDivElement {
     this._optionTransformer = toSet;
 
     this.render();
+  }
+  /** Stores a ( toTransform : string ) => string to use before setting the {@link Optioninput.target }'s value. */
+  protected _targetOptionTransformer: ((toTransform: string) => string) | undefined;
+  /**
+   * Sets the {@link Optioninput._targetOptionTransformer }.
+   *
+   * @param toSet The {@link Optioninput._targetOptionTransformer }. */
+  public set targetOptionTransformer(toSet: ((toTransform: string) => string) | undefined) {
+    this._targetOptionTransformer = toSet;
   }
   /**
    *  Sets the URL to an image that shall be used as the CSS-Background-Image for the {@link Optioninput.options } panel.
@@ -521,14 +532,31 @@ export class Optioninput extends HTMLDivElement {
 
         break;
       case " ":
-        DEFINED.tsCheck<HTMLInputElement>(this.target).value = DEFINED.tsCheck<string>(
-          DEFINED.tsCheck<HTMLDivElement>(
-            INSTANCE.tsCheck<HTMLDivElement>(
-              byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
-              HTMLDivElement,
-            ),
-          ).dataset.cbOption,
-        );
+        {
+          const currentOption = DEFINED.tsCheck<string>(
+            DEFINED.tsCheck<HTMLDivElement>(
+              INSTANCE.tsCheck<HTMLDivElement>(
+                byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
+                HTMLDivElement,
+              ),
+            ).dataset.cbOption,
+          );
+
+          DEFINED.tsCheck<HTMLInputElement>(this.target).value = this._targetOptionTransformer
+            ? this._targetOptionTransformer(currentOption)
+            : DEFINED.tsCheck<string>(
+                DEFINED.tsCheck<HTMLDivElement>(
+                  INSTANCE.tsCheck<HTMLDivElement>(
+                    byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
+                    HTMLDivElement,
+                  ),
+                ).dataset.cbOption,
+              );
+
+          for (const handler of this.onOptionSelected) {
+            handler(currentOption);
+          }
+        }
 
         break;
     }

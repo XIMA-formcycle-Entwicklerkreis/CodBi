@@ -195,6 +195,10 @@ export class EPManager extends SVManager {
           this.countStrokes = 0;
           this.enteringEP = false;
           this.enabled = false;
+
+          for (const handler of this.onOptionSelected) {
+            handler(selectedOption ?? "");
+          }
         }
         // #endregion Inject selected option into the {@link SVManager.target } and close [enteringEP]-mode
       }

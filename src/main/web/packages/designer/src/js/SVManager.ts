@@ -19,6 +19,8 @@ export class SVManager extends HTMLDivElement {
   // #region Events
   /** Holds all event listener to notify whenever the currently selected option changes. */
   public readonly onOptionChanged: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
+  /** Holds all event listener to notify whenever an option was selected. */
+  public readonly onOptionSelected: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
   // #endregion Events
   /** Holds the web-component definition of observed attributes. */
   static get observedAttributes(): Array<string> {
@@ -510,6 +512,14 @@ export class SVManager extends HTMLDivElement {
           const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
           byCssHtml('.---WaXCode.--SVManager.--Option.-Current [ part = "Optioninput"]', shadow)?.click();
+        }
+
+        for (const handler of this.onOptionSelected) {
+          const cbOption = byCssHtml(
+            ".---WaXCode.--SVManager.--Option.-Current",
+            DEFINED.tsCheck<ShadowRoot>(this.shadowRoot),
+          )?.dataset.cbOption;
+          handler(cbOption ?? "");
         }
 
         break;

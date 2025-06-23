@@ -39,6 +39,38 @@ export function registerCustomElements(): void {
         document.querySelector('div[is="xc-optioninput"]'),
         Optioninput,
       );
+
+      optioninput.onOptionChanged.push((newOption: string) => {
+        const cDetailsObject = DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object"));
+        const functionality = newOption.substring(0, newOption.indexOf("/") - 1);
+
+        if (cDetailsObject.getAttribute("data")?.indexOf(functionality) === -1) {
+          cDetailsObject.setAttribute(
+            "data",
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            `${window.CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage] === undefined ? (window as any).CodbiPluginData.docsAPI.en : (window as any).CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage]}${(window as any).CodbiPluginData.detFunctionalities[functionality].Description}`,
+          );
+        }
+      });
+
+      optioninput.onOptionSelected.push((selectedOption: string) => {
+        cDetails.style.display = "none";
+
+        INSTANCE.tsCheck<HTMLElement>(
+          DEFINED.tsCheck<HTMLElement>(
+            DEFINED.tsCheck<HTMLElement>(DEFINED.tsCheck<HTMLElement>(optioninput.target).parentElement).parentElement,
+          ).querySelector(".r2"),
+          HTMLElement,
+        ).click();
+      });
+
+      epManager.onOptionSelected.push((selectedOption: string) => {
+        cDetails.style.display = "none";
+      });
+
+      optioninput.targetOptionTransformer = (toTransform: string) => {
+        return `data-cb-${toTransform.substring(toTransform.indexOf("/") + 1).trim()}`;
+      };
       // #region Style the functionality manager
       optioninput.optionTransformer = epManager.optionTransformer = (toTransform: string): string => {
         return toTransform.toUpperCase();
@@ -134,14 +166,14 @@ export function registerCustomElements(): void {
       // #endregion Remove loader when having loaded for the first time in session
       // #endregion Generation
       // #region Define API-Doc layout update
-      const updateLayoutCDetails = () => {
-        const rectSVManager = epManager.getBoundingClientRect();
-        const top = rectSVManager.top + (rectSVManager.height / 100) * 4.5;
+      const updateLayoutCDetails = (alignTo: HTMLElement) => {
+        const rectToAlignTo = alignTo.getBoundingClientRect();
+        const top = rectToAlignTo.top + (rectToAlignTo.height / 100) * 4.5;
 
-        cDetails.style.left = `${Math.ceil(rectSVManager.left + rectSVManager.width > window.innerWidth / 2 ? (window.innerWidth / 100) * 1 : rectSVManager.left + rectSVManager.width + (window.innerWidth / 100) * 1)}px`;
+        cDetails.style.left = `${Math.ceil(rectToAlignTo.left + rectToAlignTo.width > window.innerWidth / 2 ? (window.innerWidth / 100) * 1 : rectToAlignTo.left + rectToAlignTo.width + (window.innerWidth / 100) * 1)}px`;
         cDetails.style.top = `${top > window.innerHeight / 2 ? window.innerHeight / 2 : top}px`;
-        cDetails.style.width = `${Math.ceil(rectSVManager.left + rectSVManager.width > window.innerWidth / 2 ? rectSVManager.left - (window.innerWidth / 100) * 2 : window.innerWidth - rectSVManager.right - (window.innerWidth / 100) * 2)}px`;
-        cDetails.style.height = `${(rectSVManager.height < window.innerHeight / 2 ? window.innerHeight / 2 : rectSVManager.height) - (rectSVManager.height / 100) * 10}px`;
+        cDetails.style.width = `${Math.ceil(rectToAlignTo.left + rectToAlignTo.width > window.innerWidth / 2 ? rectToAlignTo.left - (window.innerWidth / 100) * 2 : window.innerWidth - rectToAlignTo.right - (window.innerWidth / 100) * 2)}px`;
+        cDetails.style.height = `${(rectToAlignTo.height < window.innerHeight / 2 ? window.innerHeight / 2 : rectToAlignTo.height) - (rectToAlignTo.height / 100) * 10}px`;
       };
       // #endregion Define API-Doc layout update
       // #endregion API-Documentation-Viewer
@@ -183,36 +215,54 @@ export function registerCustomElements(): void {
                             // #region Build Parameter-listing according to selected functionalities
                             const parameterListing: { [key: string]: Array<string> } = {};
 
-                            for (let functionality of cbFUNCs) {
-                              functionality = functionality.toLowerCase();
-                              parameterListing[functionality] = new Array<string>();
+                            for (let functionality of cbFUNCs.trim().split(",")) {
+                              // Process functionality only if it is not an empty string...
+                              if (/^(?!\s*$).*?\S.*$/.test(functionality)) {
+                                functionality = functionality.toLowerCase();
 
-                              console.log(
-                                "L:",
+                                parameterListing[functionality] = new Array<string>();
                                 // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                                (window.CodbiPluginData.detFunctionalities as any)[functionality].Parameter,
+                                for (const parameter in (window.CodbiPluginData.detFunctionalities as any)[
+                                  functionality
+                                ].Parameter) {
+                                  DEFINED.tsCheck<Array<string>>(parameterListing[functionality]).push(parameter);
+                                }
+                              }
+
+                              const functionalityParameter = new Array<string>();
+
+                              for (const functionality in parameterListing) {
+                                // biome-ignore lint/style/noNonNullAssertion: <explanation>
+                                for (const parameter of parameterListing[functionality]!) {
+                                  functionalityParameter.push(`${functionality} / ${parameter}`);
+                                }
+                              }
+                              // #endregion Build Parameter-listing according to selected functionalities
+                              optioninput.target = added;
+                              optioninput.enabled = true;
+                              optioninput.options = functionalityParameter;
+                              cDetails.style.display = "block";
+
+                              updateLayoutOptioninput(added);
+                              updateLayoutCDetails(optioninput);
+
+                              DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                                "data",
+                                // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                                `${window.CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage] === undefined ? (window as any).CodbiPluginData.docsAPI.en : (window as any).CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage]}${(window as any).CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)].Description}`,
                               );
-                              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                              for (const parameter of (window.CodbiPluginData.detFunctionalities as any)[functionality]
-                                .Parameter) {
-                                DEFINED.tsCheck<Array<string>>(parameterListing[functionality]).push(parameter);
-                              }
                             }
-
-                            const functionalityParameter = new Array<string>();
-
-                            for (const functionality in parameterListing.keys) {
-                              for (const parameter in parameterListing[functionality]) {
-                                functionalityParameter.push(`${functionality} / ${parameter}`);
-                              }
-                            }
-                            // #endregion Build Parameter-listing according to selected functionalities
-                            optioninput.target = added;
-                            optioninput.enabled = true;
-                            optioninput.options = functionalityParameter;
-
-                            updateLayoutOptioninput(added);
                           }
+
+                          if (event.key === "Escape") {
+                            optioninput.enabled = false;
+                            cDetails.style.display = "none";
+                          }
+                        });
+
+                        added.addEventListener("blur", (event) => {
+                          optioninput.enabled = false;
+                          cDetails.style.display = "none";
                         });
                       } else {
                         INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement).placeholder = "CodBi: ALT+F";
@@ -224,6 +274,13 @@ export function registerCustomElements(): void {
                             event.stopPropagation();
 
                             added.value = "data-cb-func";
+
+                            INSTANCE.tsCheck<HTMLElement>(
+                              DEFINED.tsCheck<HTMLElement>(
+                                DEFINED.tsCheck<HTMLElement>(added.parentElement).parentElement,
+                              ).querySelector(".r2"),
+                              HTMLElement,
+                            ).click();
                           }
                         });
                       }
@@ -343,7 +400,7 @@ export function registerCustomElements(): void {
                         cDetails.style.display = "block";
 
                         updateLayoutEPManager(cell);
-                        updateLayoutCDetails();
+                        updateLayoutCDetails(epManager);
                         // #endregion Style SVManager including dimensions and target input setting
                       }
                     } else {
@@ -376,7 +433,7 @@ export function registerCustomElements(): void {
                             cDetails.style.display = "block";
 
                             updateLayoutEPManager(cell);
-                            updateLayoutCDetails();
+                            updateLayoutCDetails(epManager);
 
                             if (!bound) {
                               bound = true;
@@ -384,6 +441,11 @@ export function registerCustomElements(): void {
                               epManager.target = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
                             }
                           }
+                        });
+
+                        currentFunctionalityParameterInput?.addEventListener("blur", (event) => {
+                          epManager.enabled = false;
+                          cDetails.style.display = "none";
                         });
                       }
                     }

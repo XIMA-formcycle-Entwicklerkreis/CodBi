@@ -442,6 +442,8 @@ export function registerCustomElements(): void {
                             }
                           }
                         });
+                        // Remove
+                        const l = 10 / 8;
 
                         currentFunctionalityParameterInput?.addEventListener("blur", (event) => {
                           epManager.enabled = false;

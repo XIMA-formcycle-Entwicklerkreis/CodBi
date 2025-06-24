@@ -1,12 +1,10 @@
 import { $, Callbacks, Editors, type IPropertyDescriptor, type TEditorCfg } from "@de-xima/fc-form-designer";
 import { parseString } from "@de-xima/xima-common-js-lang";
-
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
 /** Defines the type of {@link MultiSelect }. */
 export const MultiSelectType = "com.github.xima_formcycle_entwicklerkreis.fc.plugin:fc-plugin-codbi:MultiSelect";
-
 /** Describes the {@link MultiSelectType }. */
 export interface IMultiSelectDescriptor extends IPropertyDescriptor<typeof MultiSelectType> {}
-
 /** Augmenting **@de-xima/fc-form-designer** in order to add the {@link MultiSelectType } to {@link IEditorMap }.*/
 declare module "@de-xima/fc-form-designer" {
   export interface IEditorMap {
@@ -22,7 +20,6 @@ declare module "@de-xima/fc-form-designer" {
     };
   }
 }
-
 /**
  * A plain {@link Editors.BaseEditor <typeof MultiSelectType>} retrieving it's  available options to display out of
  * {@link window..  CodbiPluginData.fileListing } storing the made selections.
@@ -75,12 +72,10 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
       // #endregion Generate appropriate <input>s and <labels> for them.
     }
   }
-
   /** See {@link Editors.BaseEditor }'s **getElement**. */
   override getElement(): JQuery {
     return $(this._element);
   }
-
   /**
    * Generates a CSV of all selected standard configurations.
    *
@@ -96,7 +91,6 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
 
     return result.join();
   }
-
   /**
    * Clears all selections prior to setting the selected configurations according to the received **data**.
    *
@@ -107,13 +101,23 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
       element.checked = false;
     }
     // #endregion Clear selection.
-
+    // #region Clear marked standards globally
+    for (const detail in window.CodbiPluginData.detStandards) {
+      DEFINED.tsCheck(window.CodbiPluginData.detStandards[detail]).Active = false;
+    }
+    // #endregion Clear marked standards globally
     // #region Set according to [data].
     for (const standard of parseString(data).split(",")) {
       const element = this._element.querySelector(`[value="${standard.trim()}"]`);
+
       if (element instanceof HTMLInputElement) {
         element.checked = true;
       }
+      // #region Mark active Standards globally
+      if (window.CodbiPluginData.detStandards[standard]) {
+        DEFINED.tsCheck(window.CodbiPluginData.detStandards[standard]).Active = true;
+      }
+      // #endregion Mark active Standards globally
     }
     // #endregion Set according to [data].
   }

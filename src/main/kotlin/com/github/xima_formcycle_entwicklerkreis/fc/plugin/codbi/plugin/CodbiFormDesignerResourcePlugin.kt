@@ -78,6 +78,7 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     val fslElementplaceholder = getFileListingAsString("./src/main/web/packages/form/src/js/EPs")
     val detFunctionalities = getDetails("./src/main/web/packages/form/src/js/Functionalities")
     val detElementplaceholder = getDetails("./src/main/web/packages/form/src/js/EPs")
+    val detStandards = getDetails("./src/main/web/packages/form/src/js/Configurations")
 
     jsResource =
         createDynamicJsResource(
@@ -88,7 +89,8 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             fslFunctionalities,
             detFunctionalities,
             fslElementplaceholder,
-            detElementplaceholder)
+            detElementplaceholder,
+            detStandards)
     // endregion Inject available standard configuration via JS defining a global variable for them.
   }
 
@@ -137,7 +139,8 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
       fslFunctionalities: String,
       detFunctionalities: String,
       fslElementplaceholder: String,
-      detElementplaceholder: String
+      detElementplaceholder: String,
+      detStandards: String,
   ): IResourceDescriptor {
     val uri = URI("plugin:${PLUGIN_FORM_DESIGNER_RESOURCE_ID}/${name}?v=${version}")
     val clazz = CodbiFormDesignerResourcePlugin::class.java
@@ -182,6 +185,13 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("'", "\\'")
+    val escapedDetStandards =
+        detStandards
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("'", "\\'")
     // Prepend to original file code
     val combinedJsContent =
         """
@@ -191,6 +201,7 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             window.CodbiPluginData.detFunctionalities       = JSON.parse("$escapedDetFunctionalities");
             window.CodbiPluginData.fslElementplaceholder    = "$escapedFslElementplaceholder";
             window.CodbiPluginData.detElementplaceholder    = JSON.parse("$escapedDetElementplaceholder");
+            window.CodbiPluginData.detStandards             = JSON.parse("$escapedDetStandards");
             window.CodbiPluginData.docsAPI                  = window.CodbiPluginData.docsAPI || {};
             window.CodbiPluginData.docsAPI.en               = "https://waxcode.net/x/CodBi";
 

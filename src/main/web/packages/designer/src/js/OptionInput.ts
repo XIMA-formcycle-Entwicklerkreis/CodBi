@@ -73,6 +73,20 @@ export class Optioninput extends HTMLDivElement {
     this.cssEnabled = `background-color : #FFFFFFDD ; background-size : contain ; background-position : center ; background-repeat : no-repeat ; background-blend-mode : overlay ; display : block ; background-image : url("${toSet}"), linear-gradient( 130deg,rgba( 42, 123, 155, 1 ) 0%, rgba( 216, 216, 235, 1 ) 50%, rgba( 42, 123, 155, 1 ) 100% )`;
   }
   // #endregion Options
+  /**
+   * Gets the {@link HTMLElement } representing the currently set option.
+   *
+   * @return The {@link HTMLElement } representing the currently set option. */
+  public get currentOptionElement(): HTMLElement {
+    return INSTANCE.tsCheck<HTMLElement>(
+      DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelector(".---WaXCode.--Optioninput.--Option.-Current"),
+      HTMLElement,
+    );
+  }
+  /**
+   * Gets the name of the currently set option.
+   *
+   * @return The name of the currently set option. */
   public get currentOption(): string {
     return (
       byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", this.shadowRoot ?? undefined)?.dataset.cbOption ?? ""
@@ -432,7 +446,7 @@ export class Optioninput extends HTMLDivElement {
    * Traverses the options from the current on returning the first one which's **style.display** is not **none**.
    *
    * @returns The first visible option. */
-  protected get previousVisibleOption(): HTMLElement | null | undefined {
+  public get previousVisibleOption(): HTMLElement | null | undefined {
     const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
     let current = previousElementSibling(shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current"));
 
@@ -456,7 +470,7 @@ export class Optioninput extends HTMLDivElement {
    * Traverses the options from the current on returning the first one which's **style.display** is not **none**.
    *
    * @returns The first visible option. */
-  protected get nextVisibleOption(): HTMLElement | null | undefined {
+  public get nextVisibleOption(): HTMLElement | null | undefined {
     const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
     let current = nextElementSibling(shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current"));
@@ -482,7 +496,7 @@ export class Optioninput extends HTMLDivElement {
    *
    * @throws A {@link DBC.Infringement } if a query for **.---WaXCode.--Optioninput.--Option.-Current** from this
    * {@link Optioninput }'s {@link HTMLDivElement.shadowRoot } acquires **null**. */
-  protected onKeydownTarget(event: KeyboardEvent): void {
+  public onKeydownTarget(event: KeyboardEvent): void {
     this.lastKey = event.key;
 
     if (event.key === "Delete") {
@@ -575,7 +589,7 @@ export class Optioninput extends HTMLDivElement {
    * definite.
    *
    * @param event The {@link Event }. */
-  protected onInputTarget(event: Event): void {
+  public onInputTarget(event: Event): void {
     // PRECONDITION
     const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region If the [target] just received focus, show all available functionalities
@@ -609,16 +623,6 @@ export class Optioninput extends HTMLDivElement {
         handler(remainingOptions[0] ?? "");
       }
     }
-
-    const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
-
-    shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current")?.classList.remove("-Current");
-    DEFINED.tsCheck<HTMLElement>(
-      INSTANCE.tsCheck<HTMLDivElement>(
-        shadow.querySelector(`.---WaXCode.--Optioninput.--Option[ data-cb-option = "${remainingOptions[0]}"]`),
-        HTMLDivElement,
-      ),
-    ).classList.add("-Current");
   }
   // #endregion Keyboard handling
   // #region Filtering
@@ -635,7 +639,7 @@ export class Optioninput extends HTMLDivElement {
 
     for (const option of options) {
       const cbOption = option.dataset.cbOption ?? "";
-      if (cbOption.indexOf(filter.toLowerCase()) === -1) {
+      if (cbOption.toLowerCase().indexOf(filter.toLowerCase()) === -1) {
         option.style.display = "none";
       } else {
         if (firstVisible === undefined) {
@@ -653,6 +657,16 @@ export class Optioninput extends HTMLDivElement {
     }
 
     firstVisible?.click();
+
+    const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+
+    shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current")?.classList.remove("-Current");
+    DEFINED.tsCheck<HTMLElement>(
+      INSTANCE.tsCheck<HTMLDivElement>(
+        shadow.querySelector(`.---WaXCode.--Optioninput.--Option[ data-cb-option = "${hits[0]}"]`),
+        HTMLDivElement,
+      ),
+    ).classList.add("-Current");
 
     return hits;
   }

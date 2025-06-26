@@ -1,6 +1,7 @@
 import { $, Callbacks, Editors, type IPropertyDescriptor, type TEditorCfg } from "@de-xima/fc-form-designer";
 import { parseString } from "@de-xima/xima-common-js-lang";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 /** Defines the type of {@link MultiSelect }. */
 export const MultiSelectType = "com.github.xima_formcycle_entwicklerkreis.fc.plugin:fc-plugin-codbi:MultiSelect";
 /** Describes the {@link MultiSelectType }. */
@@ -59,9 +60,15 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
       newElement.setAttribute("id", `CodBi-StandardConfigSelector_${configuration}`);
       newElement.setAttribute("type", "checkbox");
       newElement.setAttribute("value", configuration);
-      newElement.addEventListener("click", () => {
+      newElement.addEventListener("click", (event) => {
         // Propagate the change.
         Callbacks["set-property"].fire(this.config.property, this.getValue(), this);
+        // #region Update status globally
+        DEFINED.tsCheck(window.CodbiPluginData.detStandards[configuration]).Active = INSTANCE.tsCheck<HTMLInputElement>(
+          event.target,
+          HTMLInputElement,
+        ).checked;
+        // #endregion Update status globally
       });
 
       newLabel.setAttribute("for", `CodBi-StandardConfigSelector_${configuration}`);

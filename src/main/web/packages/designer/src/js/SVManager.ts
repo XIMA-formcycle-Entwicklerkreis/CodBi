@@ -51,6 +51,10 @@ export class SVManager extends HTMLDivElement {
     this.cssEnabled = `background-color : #FFFFFFDD ; background-size : contain ; background-position : center ; background-repeat : no-repeat ; background-blend-mode : overlay ; display : block ; background-image : url("${toSet}"), linear-gradient( 130deg,rgba( 42, 123, 155, 1 ) 0%, rgba( 216, 216, 235, 1 ) 50%, rgba( 42, 123, 155, 1 ) 100% )`;
   }
   // #endregion Options
+  /**
+   * Gets the name of the currently set option.
+   *
+   * @return The name of the currently set option. */
   public get currentOption(): string {
     return byCssHtml(".---WaXCode.--SVManager.--Option.-Current", this.shadowRoot ?? undefined)?.dataset.cbOption ?? "";
   }

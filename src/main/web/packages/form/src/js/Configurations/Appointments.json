@@ -1,0 +1,26 @@
+{
+  "Description": "/functions/Configurations_Appointments.loadConfig.html",
+  "classes": {
+    "CodBi_DateFrame_1_Begin": "",
+    "CodBi_DateFrame_1_End": "",
+    "CodBi_DateFrame_2_Begin": "",
+    "CodBi_DateFrame_2_End": "",
+    "CodBi_DateFrame_3_Begin": "",
+    "CodBi_DateFrame_3_End": "",
+    "CodBi_DateFrame_4_Begin": "",
+    "CodBi_DateFrame_4_End": "",
+    "CodBi_DateFrame_5_Begin": "",
+    "CodBi_DateFrame_5_End": "",
+    "CodBi_TimeFrame_1_Begin": "",
+    "CodBi_TimeFrame_1_End": "",
+    "CodBi_TimeFrame_2_Begin": "",
+    "CodBi_TimeFrame_2_End": "",
+    "CodBi_TimeFrame_3_Begin": "",
+    "CodBi_TimeFrame_3_End": "",
+    "CodBi_TimeFrame_4_Begin": "",
+    "CodBi_TimeFrame_4_End": "",
+    "CodBi_TimeFrame_5_Begin": "",
+    "CodBi_TimeFrame_5_End": "",
+    "CodBi_Holidays_Listing": ""
+  }
+}

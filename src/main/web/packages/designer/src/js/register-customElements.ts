@@ -41,6 +41,10 @@ export function registerCustomElements(): void {
       );
 
       optioninput.onOptionChanged.push((newOption: string) => {
+        if (inTag) {
+          return;
+        }
+
         const cDetailsObject = DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object"));
         const functionality = newOption.substring(0, newOption.indexOf("/") - 1);
 
@@ -92,7 +96,7 @@ export function registerCustomElements(): void {
         epManager.style.maxHeight = `${window.innerHeight - Math.ceil(rectCell.bottom)}px`;
         epManager.style.top = `${Math.ceil(rectCell.bottom)}px`;
         epManager.style.left = `${Math.ceil(rectCell.right - epManager.getBoundingClientRect().width - (window.innerWidth / 100) * 2)}px`;
-        epManager.style.maxHeight = `${Math.ceil(window.innerHeight - rectCell.bottom)}px`;
+        epManager.style.maxHeight = `${Math.ceil(window.innerHeight - (window.innerHeight / 100) * 2 - rectCell.bottom)}px`;
       };
       // #endregion Define EPManager layout update
       // #region Define Optioninput layout update
@@ -102,7 +106,7 @@ export function registerCustomElements(): void {
         optioninput.style.maxHeight = `${window.innerHeight - Math.ceil(rectCell.bottom)}px`;
         optioninput.style.top = `${Math.ceil(rectCell.bottom)}px`;
         optioninput.style.left = `${Math.ceil(rectCell.right - optioninput.getBoundingClientRect().width - (window.innerWidth / 100) * 2)}px`;
-        optioninput.style.maxHeight = `${Math.ceil(window.innerHeight - rectCell.bottom)}px`;
+        optioninput.style.maxHeight = `${Math.ceil(window.innerHeight - (window.innerHeight / 100) * 2 - rectCell.bottom)}px`;
       };
       // #endregion Define Optioninput layout update
       // #region API-Documentation-Viewer
@@ -180,6 +184,8 @@ export function registerCustomElements(): void {
       // #endregion Style the functionality manager
       // #region Setup Attributes-Editor Monitoring
       let attributesEditorProcessed = false; // Set up processing just once.
+      const availableClasses = new Array<{ standard: string; name: string; description: string }>();
+      let inTag = false;
 
       for (const tabEditor of document.querySelectorAll('a[href="#tabsRight:extendedTab"]')) {
         tabEditor.addEventListener("click", (event) => {
@@ -188,7 +194,142 @@ export function registerCustomElements(): void {
             for (const mutation of mutationsList) {
               if (mutation.type === "childList") {
                 for (const added of mutation.addedNodes) {
+                  // #region Handle CSS-Class inout
+                  console.log("N", added.parentElement);
+                  const possibleTagify = DEFINED.tsCheck<HTMLElement>(added.parentElement);
+                  if (possibleTagify.classList.contains("tagify__input")) {
+                    let input: string | undefined;
+                    // #region Hide Interface
+                    possibleTagify.addEventListener("blur", (event) => {
+                      inTag = false;
+                      cDetails.style.display = "none";
+                      optioninput.enabled = false;
+                    });
+                    // #endregion Hide Interface
+                    possibleTagify.addEventListener("keyup", (event) => {
+                      if (input === undefined) {
+                        if (event.key === ".") {
+                          inTag = true;
+                          input = "";
+
+                          availableClasses.length = 0;
+
+                          for (const standard in window.CodbiPluginData.detStandards) {
+                            if (window.CodbiPluginData.detStandards[standard]?.Active) {
+                              for (const cssClass in window.CodbiPluginData.detStandards[standard].classes) {
+                                availableClasses.push({
+                                  standard: standard,
+                                  name: cssClass,
+                                  description: DEFINED.tsCheck(
+                                    window.CodbiPluginData.detStandards[standard].classes[cssClass],
+                                  ),
+                                });
+                              }
+                            }
+                          }
+
+                          optioninput.options = availableClasses.map(
+                            (cssClass) => `${cssClass.standard} / ${cssClass.name}`,
+                          );
+                          optioninput.enabled = true;
+                          optioninput.optionTransformer = undefined;
+
+                          const rectAdded = INSTANCE.tsCheck<HTMLElement>(
+                            added.parentElement,
+                            HTMLElement,
+                          ).getBoundingClientRect();
+
+                          optioninput.style.maxHeight = `${window.innerHeight - Math.ceil(rectAdded.bottom)}px`;
+                          optioninput.style.top = `${Math.ceil(rectAdded.bottom)}px`;
+                          optioninput.style.left = `${Math.ceil(rectAdded.right - optioninput.getBoundingClientRect().width - (window.innerWidth / 100) * 2)}px`;
+                          optioninput.style.maxHeight = `${Math.ceil(window.innerHeight - (window.innerHeight / 100) * 2 - rectAdded.bottom)}px`;
+
+                          cDetails.style.display = "block";
+
+                          updateLayoutCDetails(optioninput);
+                        }
+                      } else {
+                        if (event.key !== " ") {
+                          optioninput.onKeydownTarget(event);
+                          optioninput.currentOptionElement.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                            inline: "center",
+                          });
+                        }
+
+                        if (inTag && /^[a-zA-Z0-9_ ]$/.test(event.key)) {
+                          if (event.key === " ") {
+                            possibleTagify.innerHTML = optioninput.currentOption.substring(
+                              optioninput.currentOption.indexOf("/") + 1,
+                            );
+
+                            inTag = false;
+                            cDetails.style.display = "none";
+                            optioninput.enabled = false;
+
+                            return;
+                          }
+
+                          input += event.key;
+
+                          console.log("filter", input);
+                          optioninput.filter(input);
+                        }
+
+                        if (inTag) {
+                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                            "data",
+                            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                            `${window.CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage] === undefined ? (window as any).CodbiPluginData.docsAPI.en : (window as any).CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage]}${(window as any).CodbiPluginData.detStandards[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1).trim()].Description}`,
+                          );
+                        }
+                      }
+
+                      console.log("XX:", input);
+                    });
+                  }
+
+                  if (DEFINED.tsCheck(added.parentElement).classList.contains("tagify__input")) {
+                  }
+                  // #endregion Handle CSS-Class inout
                   if (added instanceof HTMLInputElement) {
+                    // #region Handle sole clicks on a [data-cb-func] value field
+                    if (
+                      INSTANCE.tsCheck<HTMLElement>(
+                        DEFINED.tsCheck<HTMLElement>(
+                          DEFINED.tsCheck<HTMLElement>(added.parentElement).parentElement,
+                        ).querySelector(".r1"),
+                        HTMLElement,
+                      ).innerHTML.toLowerCase() === "data-cb-func"
+                    ) {
+                      if (!epManager.enabled) {
+                        added.setSelectionRange(added.value.length, added.value.length);
+
+                        epManager.mode = "SV";
+                        epManager.target = INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement);
+                        epManager.enabled = true;
+
+                        updateLayoutEPManager(added);
+
+                        added.addEventListener("blur", (event) => {
+                          epManager.enabled = false;
+                          cDetails.style.display = "none";
+                        });
+
+                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                          "data",
+                          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                          `${window.CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage] === undefined ? (window as any).CodbiPluginData.docsAPI.en : (window as any).CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage]}${(window as any).CodbiPluginData.detFunctionalities[epManager.currentOption].Description}`,
+                        );
+                      }
+                      if (cDetails.style.display !== "block") {
+                        cDetails.style.display = "block";
+
+                        updateLayoutCDetails(epManager);
+                      }
+                    }
+                    // #endregion Handle sole clicks on a [data-cb-func] value field
                     const addedParent = DEFINED.tsCheck<HTMLElement>(added.parentElement);
 
                     if (added.classList.contains("editor-text") && addedParent.classList.contains("r1")) {
@@ -238,6 +379,9 @@ export function registerCustomElements(): void {
                                 }
                               }
                               // #endregion Build Parameter-listing according to selected functionalities
+                              optioninput.optionTransformer = (toTransform: string): string => {
+                                return toTransform.toUpperCase();
+                              };
                               optioninput.target = added;
                               optioninput.enabled = true;
                               optioninput.options = functionalityParameter;
@@ -285,13 +429,62 @@ export function registerCustomElements(): void {
                         });
                       }
                     }
+                    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+                    // biome-ignore lint/style/useSingleVarDeclarator: <explanation>
+                    const cell = added.parentElement!.parentElement!.querySelector(".r2")! as HTMLElement;
+                    if (
+                      added.parentElement?.parentElement?.querySelector(".r1")?.innerHTML.toLowerCase() !==
+                        "data-cb-apply" &&
+                      added.parentElement?.parentElement?.querySelector(".r1")?.innerHTML.indexOf("data-cb-") !== -1
+                    ) {
+                      const currentFunctionalityParameterInput = cell.querySelector("input");
+                      let bound = false;
+                      console.log("adding keydown handler");
+                      currentFunctionalityParameterInput?.addEventListener("keydown", (event) => {
+                        console.log("keydown");
+                        const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
+
+                        if (keyboardEvent.altKey && keyboardEvent.key === "e") {
+                          console.log("ALTe");
+                          keyboardEvent.preventDefault();
+                          keyboardEvent.stopImmediatePropagation();
+                          keyboardEvent.stopPropagation();
+
+                          epManager.mode = "EP";
+                          // First time load of APIDoc
+                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                            "data",
+                            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                            `${window.CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage] === undefined ? (window as any).CodbiPluginData.docsAPI.en : (window as any).CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage]}${(window as any).CodbiPluginData.detElementplaceholder[epManager.currentOption].Description}`,
+                          );
+
+                          epManager.enabled = true;
+                          epManager.enteringEP = true;
+                          cDetails.style.display = "block";
+
+                          updateLayoutEPManager(cell);
+                          updateLayoutCDetails(epManager);
+
+                          if (!bound) {
+                            bound = true;
+
+                            epManager.target = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+                          }
+                        }
+                      });
+
+                      currentFunctionalityParameterInput?.addEventListener("blur", (event) => {
+                        epManager.enabled = false;
+                        cDetails.style.display = "none";
+                      });
+                    }
                   }
                 }
               }
             }
           });
           // biome-ignore lint/style/noNonNullAssertion: Tab definitely exists.
-          paramCellObserver.observe(document.querySelector('[id="tabsRight:extendedTab"] .grid-canvas')!, {
+          paramCellObserver.observe(document.querySelector('[id="tabsRight:extendedTab"] .xm-editor-panel')!, {
             childList: true,
             subtree: true,
           });
@@ -404,52 +597,6 @@ export function registerCustomElements(): void {
                         // #endregion Style SVManager including dimensions and target input setting
                       }
                     } else {
-                      if (
-                        added.parentElement?.parentElement?.querySelector(".r1")?.innerHTML.toLowerCase() !==
-                          "data-cb-apply" &&
-                        added.parentElement?.parentElement?.querySelector(".r1")?.innerHTML.indexOf("data-cb-") !== -1
-                      ) {
-                        const currentFunctionalityParameterInput = cell.querySelector("input");
-                        let bound = false;
-
-                        currentFunctionalityParameterInput?.addEventListener("keydown", (event) => {
-                          const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
-
-                          if (keyboardEvent.altKey && keyboardEvent.key === "e") {
-                            keyboardEvent.preventDefault();
-                            keyboardEvent.stopImmediatePropagation();
-                            keyboardEvent.stopPropagation();
-
-                            epManager.mode = "EP";
-                            // First time load of APIDoc
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                              "data",
-                              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                              `${window.CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage] === undefined ? (window as any).CodbiPluginData.docsAPI.en : (window as any).CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage]}${(window as any).CodbiPluginData.detElementplaceholder[epManager.currentOption].Description}`,
-                            );
-
-                            epManager.enabled = true;
-                            epManager.enteringEP = true;
-                            cDetails.style.display = "block";
-
-                            updateLayoutEPManager(cell);
-                            updateLayoutCDetails(epManager);
-
-                            if (!bound) {
-                              bound = true;
-
-                              epManager.target = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
-                            }
-                          }
-                        });
-                        // Remove
-                        const l = 10 / 8;
-
-                        currentFunctionalityParameterInput?.addEventListener("blur", (event) => {
-                          epManager.enabled = false;
-                          cDetails.style.display = "none";
-                        });
-                      }
                     }
                     // #region View corresponding API-Doc
                     epManager.onOptionChanged.push((newOption: string) => {

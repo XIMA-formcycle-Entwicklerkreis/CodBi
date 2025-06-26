@@ -157,6 +157,7 @@ Startzeit
 stellenbezeichnung
 Strasse
 svmanager
+tagify
 telefon
 Telefonnummer
 Texteditor

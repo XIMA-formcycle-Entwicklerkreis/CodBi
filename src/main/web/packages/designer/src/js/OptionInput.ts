@@ -542,6 +542,12 @@ export class Optioninput extends HTMLDivElement {
 
             handler(cbOption);
           }
+
+          targetOption.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+            inline: "center",
+          });
         }
 
         break;

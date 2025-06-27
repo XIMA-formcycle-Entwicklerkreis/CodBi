@@ -168,6 +168,16 @@ export function registerCustomElements(): void {
 
       (cDetails.querySelector("object") as HTMLObjectElement).addEventListener("load", onFirstDocLoad);
       // #endregion Remove loader when having loaded for the first time in session
+      // #region Global variables listing
+      const globalVariables = new Array<string>();
+
+      for (const functionality in window.CodbiPluginData.detFunctionalities) {
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        for (const parameter in (window.CodbiPluginData.detFunctionalities as any)[functionality].Parameter) {
+          globalVariables.push(`${functionality.replace(/\./g, "_")}_${parameter}`);
+        }
+      }
+      // #endregion Global variables listing
       // #endregion Generation
       // #region Define API-Doc layout update
       const updateLayoutCDetails = (alignTo: HTMLElement) => {
@@ -186,6 +196,70 @@ export function registerCustomElements(): void {
       let attributesEditorProcessed = false; // Set up processing just once.
       const availableClasses = new Array<{ standard: string; name: string; description: string }>();
       let inTag = false;
+
+      for (const globalVarsEditor of document.querySelectorAll('a[href="#scriptForm:scriptTabs:varTab"]')) {
+        globalVarsEditor.addEventListener("click", (event) => {
+          const cellObserver = new MutationObserver((mutationsList, observer) => {
+            for (const mutation of mutationsList) {
+              if (mutation.type === "childList") {
+                for (const added of mutation.addedNodes) {
+                  if (
+                    added instanceof HTMLInputElement &&
+                    DEFINED.tsCheck<HTMLElement>(added.parentElement).classList.contains("r2")
+                  ) {
+                    added.placeholder = "CodBi: ALT + V";
+
+                    added.addEventListener("keydown", (event) => {
+                      if (event.altKey && event.key === "v") {
+                        optioninput.options = globalVariables;
+                        optioninput.enabled = true;
+                        optioninput.target = added;
+                        optioninput.optionTransformer = undefined;
+
+                        optioninput.onOptionChanged.push((newOption) => {
+                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                            "data",
+                            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                            `${window.CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage] === undefined ? (window as any).CodbiPluginData.docsAPI.en : (window as any).CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage]}${(window as any).CodbiPluginData.detFunctionalities[newOption.substring(0, newOption.lastIndexOf("_")).replace(/_/g, ".").trim()].Description}`,
+                          );
+                        });
+
+                        optioninput.onOptionSelected.push((newOption) => {
+                          added.value = added.value.replace("data-cb-", "");
+                        });
+
+                        const rectAdded = INSTANCE.tsCheck<HTMLElement>(
+                          added.parentElement,
+                          HTMLElement,
+                        ).getBoundingClientRect();
+
+                        optioninput.style.maxHeight = `${window.innerHeight - Math.ceil(rectAdded.bottom)}px`;
+                        optioninput.style.top = "5vh";
+                        optioninput.style.left = `${Math.ceil(rectAdded.left)}px`;
+                        optioninput.style.maxHeight = `${Math.ceil(rectAdded.top - (window.innerHeight / 100) * 7)}px`;
+
+                        cDetails.style.display = "block";
+
+                        updateLayoutCDetails(optioninput);
+                      }
+                    });
+
+                    added.addEventListener("blur", (event) => {
+                      cDetails.style.display = "none";
+                      optioninput.enabled = false;
+                    });
+                  }
+                }
+              }
+            }
+          });
+
+          cellObserver.observe(DEFINED.tsCheck(document.querySelector("#varseditor")), {
+            childList: true,
+            subtree: true,
+          });
+        });
+      }
 
       for (const tabEditor of document.querySelectorAll('a[href="#tabsRight:extendedTab"]')) {
         tabEditor.addEventListener("click", (event) => {

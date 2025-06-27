@@ -33,6 +33,10 @@ import org.slf4j.LoggerFactory
  * provides in the global variables **window.CodbiPluginData.fileListing**,
  * **window.CodbiPluginData.fslFunctionalities** and **window.CodbiPluginData.detFunctionalities**.
  *
+ * An interface to facilitate the input of CSS-Classes defined by the CodBi-Standardconfigurations
+ * that're currently selected is made possible through the data this plugin provides in the global
+ * variable **window.CodbiPluginData.detStandards**.
+ *
  * @since 1.0.0
  */
 class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {

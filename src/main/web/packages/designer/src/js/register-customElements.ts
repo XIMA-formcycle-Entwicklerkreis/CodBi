@@ -133,7 +133,21 @@ export function registerCustomElements(): void {
       // #endregion Styling
       cDetails.classList.add("---CodBi", "--Panel", "--APIDoc");
 
+      const scriptAPIManager = document.createElement("script");
+
+      scriptAPIManager.src = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.js`;
+
+      document.head.appendChild(scriptAPIManager);
+
+      const cssAPIManager = document.createElement("link");
+      cssAPIManager.rel = "stylesheet";
+      cssAPIManager.type = "text/css";
+      cssAPIManager.href = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.css`;
+
+      document.head.appendChild(cssAPIManager);
+
       cDetails.innerHTML = `
+        <cb-manager></cb-manager>
         <div class = "APIDocLoader"></div>
 
         <object id = "CodBi_APIDocViewer"></object>`;

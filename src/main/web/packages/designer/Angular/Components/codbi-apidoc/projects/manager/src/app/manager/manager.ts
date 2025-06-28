@@ -1,11 +1,10 @@
-import { Component } from '@angular/core';
+import "zone.js";
+import { Component } from "@angular/core";
 
 @Component({
-  selector: 'cb-manager',
+  selector: "cb-manager",
   imports: [],
-  templateUrl: './manager.html',
-  styleUrl: './manager.scss'
+  templateUrl: "./manager.html",
+  styleUrl: "./manager.scss",
 })
-export class Manager {
-
-}
+export class Manager {}

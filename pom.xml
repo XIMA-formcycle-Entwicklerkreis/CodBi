@@ -106,8 +106,10 @@
 			<!-- Manage versions -->
 			<dependency>
 				<groupId>de.xima.fc</groupId>
-				<artifactId>fc-plugin-common</artifactId> <version>${xfc.version}</version>
-				<scope>provided</scope> </dependency>
+				<artifactId>fc-plugin-common</artifactId>
+				<version>${xfc.version}</version>
+				<scope>provided</scope>
+			</dependency>
 
 			<dependency>
 				<groupId>de.xima.fc</groupId>

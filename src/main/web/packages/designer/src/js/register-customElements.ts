@@ -1,4 +1,4 @@
-import { registerCustomEditor } from "@de-xima/fc-form-designer";
+import { getJQuery, registerCustomEditor } from "@de-xima/fc-form-designer";
 import { MultiSelect, MultiSelectType } from "./MultiSelect";
 import { Optioninput } from "./OptionInput.js";
 import { SVManager } from "./SVManager.js";
@@ -168,8 +168,41 @@ export function registerCustomElements(): void {
 
       (cDetails.querySelector("object") as HTMLObjectElement).addEventListener("load", onFirstDocLoad);
       // #endregion Remove loader when having loaded for the first time in session
+      // #region Retrieve Local API Doc
+      const $ = getJQuery();
+
+      /*$.ajax({
+        url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
+        type: "GET",
+        headers: {
+          "X-Action": "Update",
+          "X-ToWrite": JSON.stringify({ functionalities: { gogo: { description: "dddd" } } }),
+        },
+        success: (response) => {
+          console.log(response);
+        },
+      });*/
+      $.ajax({
+        url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
+        type: "GET",
+        headers: {
+          "X-Action": "Retrieve",
+        },
+        success: (response) => {
+          console.log(response);
+        },
+      });
+      // #endregion Retrieve Local API Doc
       // #region Global variables listing
       const globalVariables = new Array<string>();
+
+      for (const standard in window.CodbiPluginData.detStandards) {
+        if (window.CodbiPluginData.detStandards[standard]?.globals) {
+          for (const global in window.CodbiPluginData.detStandards[standard].globals) {
+            globalVariables.push(`[ ${standard} ] ${global}`);
+          }
+        }
+      }
 
       for (const functionality in window.CodbiPluginData.detFunctionalities) {
         // biome-ignore lint/suspicious/noExplicitAny: <explanation>
@@ -225,7 +258,11 @@ export function registerCustomElements(): void {
                         });
 
                         optioninput.onOptionSelected.push((newOption) => {
-                          added.value = added.value.replace("data-cb-", "");
+                          if (added.value.indexOf("[") !== -1) {
+                            added.value = added.value.substring(2, added.value.indexOf("]") + 2);
+                          } else {
+                            added.value = added.value.replace("data-cb-", "");
+                          }
                         });
 
                         const rectAdded = INSTANCE.tsCheck<HTMLElement>(

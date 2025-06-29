@@ -16,6 +16,8 @@ export function registerCustomElements(): void {
   }
   // #region Register Attributehelper
   window.addEventListener("load", () => {
+    const baseURL: string = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
+
     if (SVManager.registered && EPManager.registered) {
       document.body.insertAdjacentHTML(
         "beforeend",
@@ -33,7 +35,7 @@ export function registerCustomElements(): void {
                 .join(",")}"></div>
         <div  is = "xc-optioninput"></div>`,
       );
-      const baseURL: string = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
+
       const epManager = INSTANCE.tsCheck<EPManager>(document.querySelector('div[is="xc-epmanager"]'), EPManager);
       const optioninput = INSTANCE.tsCheck<Optioninput>(
         document.querySelector('div[is="xc-optioninput"]'),
@@ -133,21 +135,7 @@ export function registerCustomElements(): void {
       // #endregion Styling
       cDetails.classList.add("---CodBi", "--Panel", "--APIDoc");
 
-      const scriptAPIManager = document.createElement("script");
-
-      scriptAPIManager.src = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.js`;
-
-      document.head.appendChild(scriptAPIManager);
-
-      const cssAPIManager = document.createElement("link");
-      cssAPIManager.rel = "stylesheet";
-      cssAPIManager.type = "text/css";
-      cssAPIManager.href = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.css`;
-
-      document.head.appendChild(cssAPIManager);
-
       cDetails.innerHTML = `
-        <cb-manager></cb-manager>
         <div class = "APIDocLoader"></div>
 
         <object id = "CodBi_APIDocViewer"></object>`;
@@ -196,6 +184,8 @@ export function registerCustomElements(): void {
           console.log(response);
         },
       });*/
+      let localAPIDoc = {};
+
       $.ajax({
         url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
         type: "GET",
@@ -203,7 +193,44 @@ export function registerCustomElements(): void {
           "X-Action": "Retrieve",
         },
         success: (response) => {
-          console.log(response);
+          localAPIDoc = response;
+
+          localAPIDoc = {
+            detFunctionalities: {
+              date: {
+                children: [{ frame: { Description: "sadsad" } }],
+              },
+            },
+          };
+
+          // #region Load and inject Angular local API-Documentation-Manager web component
+          const scriptAPIManager = document.createElement("script");
+
+          scriptAPIManager.src = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.js`;
+
+          document.head.appendChild(scriptAPIManager);
+
+          const cssAPIManager = document.createElement("link");
+          cssAPIManager.rel = "stylesheet";
+          cssAPIManager.type = "text/css";
+          cssAPIManager.href = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.css`;
+
+          document.head.appendChild(cssAPIManager);
+
+          document.body.insertAdjacentHTML(
+            "beforeend",
+            `
+        <style>
+          @keyframes kfFadeIN_cCodBi_LocalAPIDoc {
+            0% { left : -100vw ; opacity : 0 ; filter : blur( 1 );}
+            100% { left : 0vw ; opacity : .9 ; filter : blur( 0 );}}
+          #cCodBi_LocalAPIDoc { animation : kfFadeIN_cCodBi_LocalAPIDoc .5s ease-in forwards ; position : absolute ; left : 0vw ; top : 20vh ; width : 70vw ; height : 50vh ;}
+          #cCodBi_LocalAPIDoc cb-manager { display : block ; height : 100% ;}</style>
+        <div id = "cCodBi_LocalAPIDoc">
+          <cb-manager apidoc  = '${JSON.stringify(localAPIDoc)}'
+                      segment = "detFunctionalities"></cb-manager></div>`,
+          );
+          // #endregion Load and inject Angular local API-Documentation-Manager web component
         },
       });
       // #endregion Retrieve Local API Doc

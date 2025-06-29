@@ -1,0 +1,17 @@
+#CodBi_LocalAPIDoc {
+  display: grid ; grid-template-columns: 30% 70% ; margin-left: 2vw ; border-bottom-right-radius: .5em ;
+  border-top-right-radius: .5em ; box-shadow: 0 0 .5em black ; overflow: hidden ; height : 100% ; margin : 0 ;
+
+  .-panel.-left {
+    height : 100% ;
+
+    p-tree,
+    p-tree .p-tree.p-component .p-tree-root         { height: 95% ; min-height : 95% ; display : block ;}
+    p-tree .p-tree.p-component                      { height: 100% ; min-height : 100% ; display : block ;}
+    p-tree .p-tree.p-component .p-tree-node-content { max-width : 10% ;}
+
+    button.-add { font-size : 2em ; width : 100% ; border-top-right-radius: .25em ; border : solid ;
+                  box-shadow : -.5em 0 .5em black ; border-color : darkorange ;}}
+
+    p-tabs,
+    p-tabs p-tabpanels { height: 100% ; min-height: 100% ;}}

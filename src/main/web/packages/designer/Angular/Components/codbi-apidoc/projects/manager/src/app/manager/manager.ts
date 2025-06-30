@@ -1,5 +1,15 @@
 import "zone.js";
-import { Component, Inject, Input, ViewEncapsulation } from "@angular/core";
+// biome-ignore lint/style/useImportType: <explanation>
+import {
+  AfterViewInit,
+  ChangeDetectorRef,
+  Component,
+  type ElementRef,
+  Inject,
+  Input,
+  ViewChild,
+  ViewEncapsulation,
+} from "@angular/core";
 import { TabsModule } from "primeng/tabs";
 import { TreeModule } from "primeng/tree";
 // biome-ignore lint/style/useImportType: <explanation>
@@ -35,7 +45,18 @@ interface ApiDoc {
   styleUrl: "./manager.scss",
   encapsulation: ViewEncapsulation.None,
 })
-export class Manager {
+export class Manager implements AfterViewInit {
+  /** */
+  @ViewChild("CodBi_LocalAPIDoc_New_Panel_Add") CodBi_LocalAPIDoc_New_Panel_Add!: ElementRef;
+  /** */
+  @ViewChild("CodBi_LocalAPIDoc_New") CodBi_LocalAPIDoc_New!: ElementRef;
+  /** */
+  @ViewChild("CodBi_LocalAPIDoc_Add") CodBi_LocalAPIDoc_Add!: ElementRef;
+  /** */
+  @ViewChild("CodBi_LocalAPIDoc_New_Name") CodBi_LocalAPIDoc_New_Name!: ElementRef;
+  /** */
+  @ViewChild("CodBi_LocalAPIDoc_Tree") CodBi_LocalAPIDoc_Tree!: ElementRef;
+
   items: TreeNode[] = [
     {
       label: "Folder 1",
@@ -77,4 +98,42 @@ export class Manager {
 
     return result;
   }
+
+  protected addTreeNodes(path: string, addTo: TreeNode<{ label: string; children: TreeNode[] }>[]) {
+    console.log(path);
+    let currentNodelevel: TreeNode<{ label: string; children: TreeNode[] }>[] = addTo;
+
+    for (const part of path.split(".")) {
+      let existent = false;
+
+      for (const node of currentNodelevel) {
+        if (node.label === part) {
+          existent = true;
+        }
+      }
+
+      if (!existent) {
+        currentNodelevel.push({ label: part, children: [] });
+      }
+
+      currentNodelevel = currentNodelevel.find((candidate) => candidate.label === part).children;
+    }
+
+    console.log(addTo);
+  }
+
+  ngAfterViewInit() {
+    this.CodBi_LocalAPIDoc_New_Panel_Add.nativeElement.addEventListener("click", (event) => {
+      console.log(this.CodBi_LocalAPIDoc_New_Name);
+      this.addTreeNodes(this.CodBi_LocalAPIDoc_New_Name.nativeElement.value, this.items);
+      this.cdr.markForCheck();
+      this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "none";
+    });
+
+    this.CodBi_LocalAPIDoc_Add.nativeElement.addEventListener("click", (event) => {
+      this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "block";
+    });
+  }
+  // biome-ignore lint/style/noParameterProperties: <explanation>
+  constructor(private cdr: ChangeDetectorRef) {}
 }

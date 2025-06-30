@@ -1,8 +1,8 @@
 <div id = 'CodBi_LocalAPIDoc'>
     <div class = "-panel -left">
-        <p-tree [value]="items"  [filter]="true" filterPlaceholder="Lenient Filter"></p-tree>
+        <p-tree [value]="items"  [filter]="true" filterPlaceholder="Lenient Filter" #CodBi_LocalAPIDoc_Tree ></p-tree>
 
-        <button class = "-add">+</button></div>
+        <button class = "-add" #CodBi_LocalAPIDoc_Add>+</button></div>
 
     <p-tabs value="0">
         <p-tablist>
@@ -37,3 +37,11 @@
                     facilis est et expedita distinctio. Nam libero tempore, cum soluta nobis est eligendi optio cumque nihil
                     impedit quo minus.
                 </p></p-tabpanel></p-tabpanels></p-tabs></div>
+
+<div id = "CodBi_LocalAPIDoc_New" #CodBi_LocalAPIDoc_New >
+    <div id = "CodBi_LocalAPIDoc_New_Panel">
+        <label for = "CodBi_LocalAPIDoc_New_Panel_Name">Geben Sie den name {{segment == "detFunctionalities" ? "der Funktionalität" : "des Elementplatzhalters"}} ein</label>
+        <input  id      = "CodBi_LocalAPIDoc_New_Name" #CodBi_LocalAPIDoc_New_Name
+                type    = "text"/>
+
+        <button id = "CodBi_LocalAPIDoc_New_Panel_Add" #CodBi_LocalAPIDoc_New_Panel_Add >Hinzufügen</button></div></div>

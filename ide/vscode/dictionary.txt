@@ -71,6 +71,7 @@ dividertarget
 Durchwahl
 eine
 Elementplaceholder
+Elementplatzhalter
 Enddatum
 Endpunkt
 Endzeit
@@ -93,6 +94,7 @@ fromstring
 führenden
 Functionalitydetails
 funktion
+Funktionalitäten
 Gebaeude
 Gebaeudedetails
 Geduldeten
@@ -112,6 +114,7 @@ IPTY
 jahr
 katholic
 katholisch
+Konfigurationen
 Kontakt
 laceholder
 laceholders

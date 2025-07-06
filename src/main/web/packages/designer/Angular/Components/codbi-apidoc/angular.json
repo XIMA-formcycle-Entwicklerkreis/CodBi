@@ -27,6 +27,9 @@
                 "input": "projects/manager/public"
               }
             ],
+            "stylePreprocessorOptions": {
+              "includePaths": ["node_modules"]
+            },
             "styles": ["projects/manager/src/styles.scss"]
           },
           "configurations": {
@@ -34,8 +37,8 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "1024kB",
-                  "maximumError": "1MB"
+                  "maximumWarning": "2048kB",
+                  "maximumError": "2MB"
                 },
                 {
                   "type": "anyComponentStyle",
@@ -78,6 +81,11 @@
               {
                 "glob": "**/*",
                 "input": "projects/manager/public"
+              },
+              {
+                "glob": "**/*",
+                "input": "../../../node_modules/tinymce",
+                "output": "/tinymce/"
               }
             ],
             "styles": ["projects/manager/src/styles.scss"]

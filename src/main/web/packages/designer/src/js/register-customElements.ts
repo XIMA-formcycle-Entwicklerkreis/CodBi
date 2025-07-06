@@ -228,7 +228,9 @@ export function registerCustomElements(): void {
           #cCodBi_LocalAPIDoc cb-manager { display : block ; height : 100% ;}</style>
         <div id = "cCodBi_LocalAPIDoc">
           <cb-manager apidoc  = '${JSON.stringify(localAPIDoc)}'
-                      segment = "detFunctionalities"></cb-manager></div>`,
+                      segment = "detFunctionalities"
+                      resourceURL = "${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce"
+                      ></cb-manager></div>`,
           );
           // #endregion Load and inject Angular local API-Documentation-Manager web component
         },

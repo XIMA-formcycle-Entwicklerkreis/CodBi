@@ -3628,10 +3628,35 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@primeuix/styled@npm:^0.7.0":
+  version: 0.7.0
+  resolution: "@primeuix/styled@npm:0.7.0"
+  dependencies:
+    "@primeuix/utils": "npm:^0.6.0"
+  checksum: 10c0/ed6a153c9283c9336b7d1229b00257f48530d11b63d3bd29429a63120c6eac4e1379e72b84e7417f40efc08408a12fbffa3657a049400df8dcdbc8ed1a6b60e1
+  languageName: node
+  linkType: hard
+
+"@primeuix/themes@npm:^1.2.1":
+  version: 1.2.1
+  resolution: "@primeuix/themes@npm:1.2.1"
+  dependencies:
+    "@primeuix/styled": "npm:^0.7.0"
+  checksum: 10c0/2cb05ef87b291b3a7be8c7fc9390c6919c62863b91b075eae7dfc04f057ea70b7f9bc9f6db8af6f4501903a2ee428b8b24da3c9afcc6670db5fc03278fcd9e95
+  languageName: node
+  linkType: hard
+
 "@primeuix/utils@npm:^0.3.2":
   version: 0.3.2
   resolution: "@primeuix/utils@npm:0.3.2"
   checksum: 10c0/3ada284a982519c4e3cae9ed83e17dbae9d6e505a16b699fa37d69ca14e46350076389f70ef3a5b1a359ba6a0891299a20ec4f9a6ed330ab3bbda7d227e9b84f
+  languageName: node
+  linkType: hard
+
+"@primeuix/utils@npm:^0.6.0":
+  version: 0.6.0
+  resolution: "@primeuix/utils@npm:0.6.0"
+  checksum: 10c0/940926337890e3781785d9ab27a205bad6a6d975b5d6ebb095e8c285d3932824a61a4b6ce3ce9a1654cfcb03bf4e1206acdea4ce7b4c58ac71056145089f11b7
   languageName: node
   linkType: hard
 
@@ -4202,6 +4227,24 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@tinymce/tinymce-angular@npm:^9.0.0":
+  version: 9.0.0
+  resolution: "@tinymce/tinymce-angular@npm:9.0.0"
+  dependencies:
+    tslib: "npm:^2.3.0"
+  peerDependencies:
+    "@angular/common": ">=16.0.0"
+    "@angular/core": ">=16.0.0"
+    "@angular/forms": ">=16.0.0"
+    rxjs: ^7.4.0
+    tinymce: ^7.0.0 || ^6.0.0 || ^5.5.0
+  peerDependenciesMeta:
+    tinymce:
+      optional: true
+  checksum: 10c0/9caf7771a43cfe122d2906c11a3e13e76831b49fcc934628c8a7e9292018cd7abcd06b7db22b21887c49b376c4b8d8dd3b9e17871222d49e69543824c3bde4ca
+  languageName: node
+  linkType: hard
+
 "@tootallnate/once@npm:2":
   version: 2.0.0
   resolution: "@tootallnate/once@npm:2.0.0"
@@ -4347,6 +4390,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/fs-extra@npm:^11":
+  version: 11.0.4
+  resolution: "@types/fs-extra@npm:11.0.4"
+  dependencies:
+    "@types/jsonfile": "npm:*"
+    "@types/node": "npm:*"
+  checksum: 10c0/9e34f9b24ea464f3c0b18c3f8a82aefc36dc524cc720fc2b886e5465abc66486ff4e439ea3fb2c0acebf91f6d3f74e514f9983b1f02d4243706bdbb7511796ad
+  languageName: node
+  linkType: hard
+
 "@types/google.maps@npm:^3.49.2":
   version: 3.58.1
   resolution: "@types/google.maps@npm:3.58.1"
@@ -4461,6 +4514,15 @@ __metadata:
     "@types/tough-cookie": "npm:*"
     parse5: "npm:^7.0.0"
   checksum: 10c0/3d4b2a3eab145674ee6da482607c5e48977869109f0f62560bf91ae1a792c9e847ac7c6aaf243ed2e97333cb3c51aef314ffa54a19ef174b8f9592dfcb836b25
+  languageName: node
+  linkType: hard
+
+"@types/jsonfile@npm:*":
+  version: 6.1.4
+  resolution: "@types/jsonfile@npm:6.1.4"
+  dependencies:
+    "@types/node": "npm:*"
+  checksum: 10c0/b12d068b021e4078f6ac4441353965769be87acf15326173e2aea9f3bf8ead41bd0ad29421df5bbeb0123ec3fc02eb0a734481d52903704a1454a1845896b9eb
   languageName: node
   linkType: hard
 
@@ -5458,7 +5520,10 @@ __metadata:
     "@angular/platform-browser": "npm:^20.0.5"
     "@angular/router": "npm:^20.0.5"
     "@primeng/themes": "npm:^19.1.3"
+    "@primeuix/themes": "npm:^1.2.1"
+    "@types/fs-extra": "npm:^11"
     "@types/jasmine": "npm:~5.1.0"
+    fs-extra: "npm:^11.3.0"
     jasmine-core: "npm:~5.7.0"
     karma: "npm:~6.4.0"
     karma-chrome-launcher: "npm:~3.2.0"
@@ -5506,6 +5571,7 @@ __metadata:
     "@de-xima/fc-form-designer": "npm:8.3.3"
     "@de-xima/xima-common-js-lang": "npm:^7.1.0"
     "@jest/globals": "npm:~29.7.0"
+    "@tinymce/tinymce-angular": "npm:^9.0.0"
     "@types/jest": "npm:^29.5.14"
     "@types/node": "npm:~22.13.4"
     "@typescript/lib-dom": "npm:@types/web@0.0.202"
@@ -5518,6 +5584,7 @@ __metadata:
     jest-environment-jsdom: "npm:~29.7.0"
     postcss: "npm:~8.5.2"
     postcss-load-config: "npm:~6.0.1"
+    tinymce: "npm:^7.9.1"
     ts-jest: "npm:^29.3.4"
     tslib: "npm:~2.8.1"
     typedoc: "npm:^0.28.4"
@@ -6770,6 +6837,17 @@ __metadata:
   dependencies:
     "@braintree/uuid": "npm:^0.1.0"
   checksum: 10c0/73c9f38a16dc79eb97cd19ef34651930e5f6d5e912de0beaefbe7a7d14faa6cb06081d33872e1e981f8681125e30796c87511e0319bf70992c87f19bd06d760e
+  languageName: node
+  linkType: hard
+
+"fs-extra@npm:^11.3.0":
+  version: 11.3.0
+  resolution: "fs-extra@npm:11.3.0"
+  dependencies:
+    graceful-fs: "npm:^4.2.0"
+    jsonfile: "npm:^6.0.1"
+    universalify: "npm:^2.0.0"
+  checksum: 10c0/5f95e996186ff45463059feb115a22fb048bdaf7e487ecee8a8646c78ed8fdca63630e3077d4c16ce677051f5e60d3355a06f3cd61f3ca43f48cc58822a44d0a
   languageName: node
   linkType: hard
 
@@ -8168,6 +8246,19 @@ __metadata:
     graceful-fs:
       optional: true
   checksum: 10c0/7dc94b628d57a66b71fb1b79510d460d662eb975b5f876d723f81549c2e9cd316d58a2ddf742b2b93a4fa6b17b2accaf1a738a0e2ea114bdfb13a32e5377e480
+  languageName: node
+  linkType: hard
+
+"jsonfile@npm:^6.0.1":
+  version: 6.1.0
+  resolution: "jsonfile@npm:6.1.0"
+  dependencies:
+    graceful-fs: "npm:^4.1.6"
+    universalify: "npm:^2.0.0"
+  dependenciesMeta:
+    graceful-fs:
+      optional: true
+  checksum: 10c0/4f95b5e8a5622b1e9e8f33c96b7ef3158122f595998114d1e7f03985649ea99cb3cd99ce1ed1831ae94c8c8543ab45ebd044207612f31a56fd08462140e46865
   languageName: node
   linkType: hard
 
@@ -10964,6 +11055,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"tinymce@npm:^7.9.1":
+  version: 7.9.1
+  resolution: "tinymce@npm:7.9.1"
+  checksum: 10c0/eaf0c6c53c4726a3ad1e185dc2128adc77a24d73b516d3a6fa392dfad2b1f7ae46dd658d19dbc605df5d5ef41b32bacdb8e37333967d3af26603742c54ad2c8d
+  languageName: node
+  linkType: hard
+
 "tmp@npm:^0.0.33":
   version: 0.0.33
   resolution: "tmp@npm:0.0.33"
@@ -11262,6 +11360,13 @@ __metadata:
   version: 0.2.0
   resolution: "universalify@npm:0.2.0"
   checksum: 10c0/cedbe4d4ca3967edf24c0800cfc161c5a15e240dac28e3ce575c689abc11f2c81ccc6532c8752af3b40f9120fb5e454abecd359e164f4f6aa44c29cd37e194fe
+  languageName: node
+  linkType: hard
+
+"universalify@npm:^2.0.0":
+  version: 2.0.1
+  resolution: "universalify@npm:2.0.1"
+  checksum: 10c0/73e8ee3809041ca8b818efb141801a1004e3fc0002727f1531f4de613ea281b494a40909596dae4a042a4fb6cd385af5d4db2e137b1362e0e91384b828effd3a
   languageName: node
   linkType: hard
 

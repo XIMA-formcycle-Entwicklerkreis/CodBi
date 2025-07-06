@@ -1,26 +1,87 @@
+#CodBi_LocalAPIDoc.-submerged { .p-splitter-gutter { display : none ;}}
+#CodBi_LocalAPIDoc.-submerged { .p-tablist-active-bar { display : none ;}}
 #CodBi_LocalAPIDoc {
-  display: grid ; grid-template-columns: 30% 70% ; margin-left: 2vw ; border-bottom-right-radius: .5em ;
-  border-top-right-radius: .5em ; box-shadow: 0 0 .5em black ; overflow: hidden ; height : 100% ; margin : 0 ;
+  margin-left: 2vw ; border-bottom-right-radius: .5em ; border-top-right-radius: .5em ; box-shadow: 0 0 .5em black ;
+  overflow: hidden ; height : 100% ; margin : 0 ; width : 100% ;
+  background-image: linear-gradient( 90deg, #615b5bCC 0%, #FFFFFFFF 1% );
+
+  .tox .tox-editor-header { z-index: 0 ;}
+  .tox .tox-promotion     { display : none ;}
+
+  .p-tabpanels.p-component { overflow-y: auto ; padding-bottom : 10% ;}
+  /* #region Icon Fix */
+  [ icon = "pi pi-pencil"]::after { content: "\e942" ; font-family: 'primeicons'; cursor : pointer ;}
+  [ icon = "pi pi-check"]::after { content: "\e98c" ; font-family: 'primeicons'; cursor : pointer ;}
+  [ icon = "pi pi-times"]::after { content: "\e90b" ; font-family: 'primeicons'; cursor : pointer ;}
+  /* #endregion Icon Fix */
+
+  p-accordion-content                             { transition : .5s all ;}
+  [ data-p-active = "false"] p-accordion-content  { height : 0 ;}
+
+  #Splitter { width : 100 ; height: 100% ;}
+
+  #CodBi_LocalAPIDoc_RightPanel_AddParameter        { transition: .5s ; font-size: 2em ; width: 100% ;
+                                                      border-radius: .25em ; border: solid ;
+                                                      box-shadow: 0 0 .25em black ; border-color: darkorange ;
+                                                      cursor: pointer ; margin-top: 1em ; border-width: .05em ;}
+  #CodBi_LocalAPIDoc_RightPanel_AddParameter:hover  { box-shadow: 0 0 .5em darkorange ; color: darkorange ;}
+  #CodBi_LocalAPIDoc_RightPanel_AddParameter:active { scale: .9 ; box-shadow: -.5em 0 .5em red ;}
+
+  .flex.items-center.justify-center.gap-2 button {  font-size: 1.5em ; border: none ; background: transparent ;
+                                                    cursor : pointer ; transition: .25s ;}
+  .flex.items-center.justify-center.gap-2 button:hover { color: darkorange ;}
+  .flex.items-center.justify-center.gap-2 button:hover { color: red ;}
+
+  #CodBi_LocalAPIDoc_RightPanel_Notes_Text { width: 100% ; color: blue ; max-width: 100% ; font-style: italic ;}
+
+  p-tab,
+  .p-ripple.p-tab.p-component               { border-color: darkorange ; color: darkorange ;}
+  .p-ripple.p-tab.p-component:hover         { color: #10b981 ;}
+  .p-ripple.p-tab.p-component.p-tab-active  { color: #10b981 ;}
+
+  .p-splitter-gutter {  box-shadow: 0 0 .25em lightsteelblue ; background-color: white ; margin-left: .25em ;
+                        margin-right: .25em ;}
+
+  .p-tablist-active-bar { transition: 1s cubic-bezier( 0.35, 0, 0.25, 1 ); color: blue ; box-shadow: 0 0 .1em darkorange ;}
 
   .-panel.-left {
-    height: 100% ;
+    height: 100% ; width : 100% ;
 
     p-tree,
-    p-tree .p-tree.p-component .p-tree-root         { height: 95% ; min-height : 95% ; display : block ;}
-    p-tree .p-tree.p-component                      { height: 100% ; min-height : 100% ; display : block ;}
-    p-tree .p-tree.p-component .p-tree-node-content { max-width: 10% ;}
+    p-tree .p-tree.p-component .p-tree-root               { height: 95% ; min-height : 95% ; display : block ;}
+    p-tree .p-tree.p-component                            { height: 100% ; min-height : 100% ; display : block ;}
+    p-tree .p-tree.p-component .p-tree-node-content       { max-width: 10% ;}
+    p-tree .p-tree.p-component .p-tree-node-label,
+    p-tree .p-tree.p-component p-tree-node-toggle-button  { color: darkorange ;}
+    p-tree .p-tree-node-selectable                        { transition: color .25s ease-in ;}
+    p-tree .p-tree-node-selectable:hover                  { border-color: wheat ; border-left-style: solid ;
+                                                            border-radius: 0 ; background-color: transparent ;}
+    p-tree .p-tree-node-selected                          { border-color: darkorange ; border-left-style: solid ;
+                                                            border-radius: 0 ; background-color: transparent ;}
 
-    button.-add       { transition: .5s ; font-size: 2em ; width: 100% ; border-top-right-radius: .25em ; border: solid ;
-                        box-shadow: -.5em 0 .5em black ; border-color: darkorange ; cursor: pointer ;}
-    button.-add:hover  { scale: 1.1 ;}
-    button.-add:active { scale: .9 ;}}
+    button.-add       { transition: .5s ; font-size: 2em ; width: 100% ; border-top-right-radius: .25em ;
+                        border: solid ; box-shadow: -.5em 0 .5em black ; border-color: darkorange ;
+                        cursor: pointer ; border-left-style: none ; border-width: .05em ;}
+    button.-add:hover  { scale: 1.1 ; box-shadow: -.5em 0 .5em darkorange ; color: darkorange ;}
+    button.-add:active { scale: .9 ; box-shadow: -.5em 0 .5em red ;}}
 
     p-tabs,
-    p-tabs p-tabpanels { height: 100% ; min-height: 100% ;}}
+    p-tabs p-tabpanels { height: 100% ; min-height: 100% ; width : 100% ;}}
 
+@keyframes kfFadeIN_CodBi_LocalAPIDoc_New {
+  0%    { opacity: 0 ;}
+  100%  { opacity: 1 ;}}
 #CodBi_LocalAPIDoc_New {
-  position: absolute ; top: 0% ; border-radius: .5em ; left: 0% ; background-color: #000000AA ;
-  width: 100% ; height: 100% ; display: none ;
+  position: absolute ; top: 0% ; border-top-right-radius: .5em ; border-bottom-right-radius: .5em ; left: 0% ;
+  background-image: linear-gradient( 90deg, #000000CC 0%, #000000FF 1% ); width: 100% ; height: 100% ; display: none ;
+  animation : kfFadeIN_CodBi_LocalAPIDoc_New .5s ease-in forwards ;
+
+  .-close               { margin-left: auto ;}
+  .-close button        { background-color: red ; font-size: 2em; color: white ; border: none ;
+                          box-shadow: 0 0 .5em darkred ; border-top-right-radius: .5em ; border-bottom-left-radius: .5em ;
+                          cursor: pointer ; transition: .5s ;}
+  .-close button:hover  { box-shadow: 0 0 .5em white ;}
+  .-close button:active { scale: .9 ;}
 
   @keyframes kfFadeIN_CodBi_LocalAPIDoc_New_Panel {
   0%    { opacity: 0 ; scale : 0 ;}
@@ -28,16 +89,21 @@
   100%  { scale : 1 ;}}
   #CodBi_LocalAPIDoc_New_Panel {
     position: absolute ; left: 20% ; top: 40% ; border-radius: .5em ; padding: 1em ; border: solid ;
-    border-color: darkorange ; animation: kfFadeIN_CodBi_LocalAPIDoc_New_Panel 1s ease-in forwards ;
-    color: darkorange ; box-shadow: 0 0 .5em darkorange ;
+    border-color: darkorange ; animation: kfFadeIN_CodBi_LocalAPIDoc_New_Panel .25s ease-in forwards ;
+    color: darkorange ; box-shadow: 0 0 .5em darkorange ; background: #141414;
+    background: linear-gradient(148deg, darkgrey 0%, rgba(250, 245, 245, 1) 13%, rgba(242, 235, 235, 1) 51%, rgba(255, 255, 255, 1) 87%, darkgrey 100%);
+    z-index: 100 ;
 
-    label { margin-right: .5em ;}
+    label { margin-right: .5em ; color : black}
 
-    input { padding: .25em ; border-bottom-left-radius: .5em ; border-top-left-radius: .5em ; color : white ; width : 50em ;}
+    input { padding: .25em ; border-bottom-left-radius: .5em ; border-top-left-radius: .5em ; width : 50em ;}
 
     input,
-    button { background-color: transparent ; border: solid ; border-color: darkorange ; padding: .25em ; box-shadow: 0 0 .5em darkorange ;}
+    button {  background-color: transparent ; border: solid ; border-color: darkorange ; padding: .25em ;
+              box-shadow: 0 0 .5em darkorange ;}
 
-    button        { cursor: pointer ; transition: .5s ; color: darkorange ; border-color: darkorange ; border-top-right-radius: .5em ; border-bottom-right-radius: .5em ;}
-    button:hover  { scale: 1.1 ;}
+    button        { cursor: pointer ; transition: .5s ; border-color: darkorange ;
+                    border-top-right-radius: .5em ; border-bottom-right-radius: .5em ; background: #141414;
+                    background: linear-gradient(148deg, darkgrey 0%, rgba(250, 245, 245, 1) 13%, rgba(242, 235, 235, 1) 51%, rgba(255, 255, 255, 1) 87%, darkgrey 100%);}
+    button:hover  { scale: 1.1 ; color: darkorange ;}
     button:active { scale: .9 ;}}}

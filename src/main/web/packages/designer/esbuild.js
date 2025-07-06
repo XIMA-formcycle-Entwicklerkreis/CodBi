@@ -1,22 +1,16 @@
 import path from "node:path";
-import { exec } from "node:child_process"; // Import exec
-import { promisify } from "node:util"; // For using async/await with exec
-
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+import * as fs from "node:fs/promises";
 import * as esbuild from "esbuild";
 import { newEsBuildPostCssPlugin } from "@de-xima/esbuild-plugin-postcss";
+import fsExtra from "fs-extra";
 
-const execPromise = promisify(exec); // Create a promisified version of exec
-
+const execPromise = promisify(exec);
 const mode = (process.argv.find((x) => x.startsWith("--mode=")) ?? "--mode=production").substring(7);
-
 const outputDir = process.env.web_output_dir ?? "dist";
-
-// Define the path to your Angular web component's project root
-const angularWebComponentProjectRoot = path.resolve("Angular/Components", "codbi-apidoc");
-
-// Define the expected output paths *after* Angular's build
-// These paths should match what your Angular project's angular.json
-// produces, specifically the 'outputPath' property.
+const currentScriptDir = process.cwd();
+const angularWebComponentProjectRoot = path.resolve(currentScriptDir, "Angular/Components", "codbi-apidoc");
 const angularWebComponentSourceFile = path.resolve(
   angularWebComponentProjectRoot,
   "dist",
@@ -31,15 +25,22 @@ const angularWebComponentSourceFileCSS = path.resolve(
   "browser",
   "styles.css",
 );
+const tinymceSourceDir = path.resolve(currentScriptDir, "../../node_modules/tinymce");
+const tinymceOutputDir = path.join(outputDir, "tinymce");
+const fontLoaders = {
+  ".eot": "file",
+  ".woff": "file",
+  ".woff2": "file",
+  ".ttf": "file",
+  ".svg": "file",
+  ".css": "css",
+};
 
 async function buildAngularWebComponent() {
   console.log(`Building Angular web component in ${angularWebComponentProjectRoot}...`);
+
   try {
     const buildCommand = `ng build manager`;
-    // You might add more flags here if your Angular Elements build needs them,
-    // e.g., --output-hashing=none if you need predictable filenames.
-    // The --project flag is important if you have a multi-project Angular workspace.
-
     const { stdout, stderr } = await execPromise(buildCommand, { cwd: angularWebComponentProjectRoot });
 
     if (stdout) console.log(`Angular Build (stdout):\n${stdout}`);
@@ -48,17 +49,35 @@ async function buildAngularWebComponent() {
     console.log("Angular web component build completed successfully.");
   } catch (error) {
     console.error("Error building Angular web component:", error.message);
-    // You might want to exit the process or throw the error to stop further Esbuild steps
+
     process.exit(1);
   }
 }
 
-// --- Main Build Process ---
-(async () => {
-  // Step 1: Automatically build the Angular web component
-  await buildAngularWebComponent();
+async function copyTinyMCEAssets() {
+  console.log(`Copying TinyMCE assets from ${tinymceSourceDir} to ${tinymceOutputDir}...`);
 
-  // Step 2: Run your Esbuild processes, now using the compiled Angular output
+  try {
+    await fs.mkdir(outputDir, { recursive: true });
+    await fsExtra.emptyDir(tinymceOutputDir);
+    await fsExtra.copy(tinymceSourceDir, tinymceOutputDir, {
+      recursive: true, // Ensure all subdirectories are copied
+      overwrite: true, // Overwrite existing files
+    });
+    console.log("TinyMCE assets copied successfully.");
+  } catch (error) {
+    console.error("Error copying TinyMCE assets:", error.message);
+
+    process.exit(1);
+  }
+}
+
+(async () => {
+  console.log(`Cleaning output directory: ${outputDir}...`);
+
+  await fsExtra.emptyDir(outputDir);
+  await buildAngularWebComponent();
+  await copyTinyMCEAssets();
   await Promise.all([
     esbuild.build({
       bundle: true,
@@ -74,8 +93,10 @@ async function buildAngularWebComponent() {
         ".svg": "dataurl",
         ".template": "text",
         ".html": "text",
+        ...fontLoaders,
       },
     }),
+
     esbuild.build({
       bundle: true,
       entryPoints: ["src/index-frame.css"],
@@ -91,28 +112,33 @@ async function buildAngularWebComponent() {
         ".jpg": "file",
         ".gif": "file",
         ".svg": "file",
+        ...fontLoaders,
       },
       publicPath: "plugin-resource:",
     }),
+
     esbuild.build({
       bundle: true,
       drop: mode === "production" ? ["debugger"] : [],
-      entryPoints: [angularWebComponentSourceFile], // This now uses the *output* of `ng build`
+      entryPoints: [angularWebComponentSourceFile],
       logLevel: "info",
       minify: mode === "production",
       outfile: path.join(outputDir, "cb-manager.js"),
       sourcemap: mode === "production" ? false : "inline",
       target: mode === "production" ? "es6" : "esnext",
+      loader: { ...fontLoaders },
     }),
+
     esbuild.build({
       bundle: true,
       drop: mode === "production" ? ["debugger"] : [],
-      entryPoints: [angularWebComponentSourceFileCSS], // This also uses the *output* of `ng build`
+      entryPoints: [angularWebComponentSourceFileCSS],
       logLevel: "info",
       minify: mode === "production",
       outfile: path.join(outputDir, "cb-manager.css"),
       sourcemap: mode === "production" ? false : "inline",
       target: mode === "production" ? "es6" : "esnext",
+      loader: { ...fontLoaders },
     }),
   ]);
 

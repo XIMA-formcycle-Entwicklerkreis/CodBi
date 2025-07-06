@@ -19,7 +19,9 @@
   "dependencies": {
     "@de-xima/fc-form-designer": "8.3.3",
     "@de-xima/xima-common-js-lang": "^7.1.0",
+    "@tinymce/tinymce-angular": "^9.0.0",
     "codbi-common": "workspace:*",
+    "tinymce": "^7.9.1",
     "tslib": "~2.8.1",
     "xdbc": "^1.0.116"
   },

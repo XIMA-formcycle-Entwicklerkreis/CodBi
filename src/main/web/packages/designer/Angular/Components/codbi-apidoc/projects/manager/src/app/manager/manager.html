@@ -7,13 +7,21 @@
             <div class = "-panel -left">
                 <p-tree #CodBi_LocalAPIDoc_Tree
 
-                        [value]="activeTab === 'Functionality' ? items : activeTab === 'Elementplaceholder' ? itemsElementplaceholder : itemsStandard"
-                        [filter]="true"
+                        [value]         = "activeTab === 'Functionality' ? items : activeTab === 'Elementplaceholder' ? itemsElementplaceholder : itemsStandard"
+                        [filter]        = "true"
+                        [(selection)]   = currentlySelectedTreeNode
 
-                        selectionMode = "single"
-                        filterPlaceholder ="Suche"
+                        selectionMode       = "single"
+                        filterPlaceholder   ="Suche"
 
-                        (onNodeSelect)="onNodeSelect($event)"></p-tree>
+                        (onNodeSelect) = "onNodeSelect( $event )">
+                        <ng-template let-node pTemplate = "default">
+                            <div style = "display : flex ;">
+                                <p>{{ node.label }}</p>
+
+                                <button class = "--CB-LocalAPIDoc-RemoveTreeItem"
+
+                                        (click) = "onDeleteNode( $event )"></button></div></ng-template></p-tree>
 
                 <button class = "-add" #CodBi_LocalAPIDoc_Add>+</button></div></ng-template>
 
@@ -22,7 +30,12 @@
                 <p-tablist>
                     <p-tab value    = "Functionality">Funktionalitäten</p-tab>
                     <p-tab value    = "Elementplaceholder">Elementplatzhalter</p-tab>
-                    <p-tab value    = "Standard">Standard Konfigurationen</p-tab></p-tablist>
+                    <p-tab value    = "Standard">Standard Konfigurationen</p-tab>
+
+                    <div id = "CodBi_LocalAPIDoc_RightPanel_Options">
+                        <button id = "CodBi_LocalAPIDoc_RightPanel_Options_Sync"
+
+                                (click) = "enSync()"></button></div></p-tablist>
 
                 <p-tabpanels>
                     <p-tabpanel value="Functionality">
@@ -69,13 +82,13 @@
 
                             <p-accordion-panel value = "Notes">
                                 <p-accordion-header>Notizen</p-accordion-header>
+
                                 <p-accordion-content>
                                     <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
 
                                                 [(ngModel)] = "notes"
 
-                                                placeholder = "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind..."></textarea>
-                                </p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
+                                                placeholder = "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind..."></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
 
                     <p-tabpanel value="Elementplaceholder">
                         <p-accordion    [(value)]   = "activeAccordion"
@@ -120,7 +133,13 @@
 
                             <p-accordion-panel value="Notes">
                                 <p-accordion-header>Notizen</p-accordion-header>
-                                <p-accordion-content></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
+
+                                <p-accordion-content>
+                                    <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
+
+                                                [(ngModel)] = "notes"
+
+                                                placeholder = "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind..."></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
 
                     <p-tabpanel value="Standard">
                         <p-accordion    [(value)]   = "activeAccordion"
@@ -157,15 +176,33 @@
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
 
-                            <p-accordion-panel value="Parameter">
-                                <p-accordion-header>Parameter</p-accordion-header>
+                            <p-accordion-panel value="Globals">
+                                <p-accordion-header>Globale Parameter</p-accordion-header>
+
                                 <p-accordion-content>
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
-                                                    [ngTemplateOutletContext]   = "{ data: currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? currentlySelectedFunctionalityData.Parameter : [] : []}"></ng-container></p-accordion-content></p-accordion-panel>
+                                                    [ngTemplateOutletContext]   = "{
+                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Globals ? currentlySelectedFunctionalityData.Globals : [] : [],
+                                                        toAdd   : 'Globals'}"></ng-container></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value="Classes">
+                                <p-accordion-header>CSS Klassen</p-accordion-header>
+
+                                <p-accordion-content>
+                                    <ng-container   [ngTemplateOutlet]          = "tplParameter"
+                                                    [ngTemplateOutletContext]   = "{
+                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Classes ? currentlySelectedFunctionalityData.Classes : [] : [],
+                                                        toAdd   : 'Classes'}"></ng-container></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Notes">
                                 <p-accordion-header>Notizen</p-accordion-header>
-                                <p-accordion-content></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel></p-tabpanels></p-tabs></ng-template></p-splitter></div>
+
+                                <p-accordion-content>
+                                    <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
+
+                                                [(ngModel)] = "notes"
+
+                                                placeholder = "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind..."></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel></p-tabpanels></p-tabs></ng-template></p-splitter></div>
 
 <div id = "CodBi_LocalAPIDoc_New" #CodBi_LocalAPIDoc_New >
     <div id = "CodBi_LocalAPIDoc_New_Panel">
@@ -178,9 +215,10 @@
         <button id = "CodBi_LocalAPIDoc_New_Panel_Add" #CodBi_LocalAPIDoc_New_Panel_Add >Hinzufügen</button></div>
 
     <div class = "-close"><button #CodBi_LocalAPIDoc_New_Panel_Close>X</button></div></div>
-
+<!-- #endregion Templates -->
 <ng-template #tplParameter
-                let-data = "data">
+                let-data    = "data"
+                let-toAdd   = "toAdd">
     <p-table    [value] = "data"
 
                 editMode    = "row"
@@ -242,6 +280,19 @@
 
                                                     (click) = "onRowEditInit( parameter )"></button>
 
+                                            <button *ngIf = "!editing"
+
+                                                    pButton
+                                                    pRipple
+                                                    text
+                                                    rounded
+
+                                                    type        = "button"
+                                                    icon        = "pi pi-trash"
+                                                    severity    = "secondary"
+
+                                                    (click) = "onRowDelete( parameter )"></button>
+
                                             <button *ngIf = "editing"
 
                                                     pButton
@@ -254,7 +305,7 @@
                                                     severity    = "secondary"
                                                     icon        = "pi pi-check"
 
-                                                    (click) = "onRowEditSave( parameter, ri )"></button>
+                                                    (click) = "onRowEditSave( parameter, ri, toAdd )"></button>
 
                                             <button *ngIf = "editing"
 
@@ -272,4 +323,5 @@
 
     <button id = "CodBi_LocalAPIDoc_RightPanel_AddParameter"
 
-            (click) = "onClick_CodBi_LocalAPIDoc_RightPanel_AddParameter()">+</button></ng-template>
+            (click) = "onClick_CodBi_LocalAPIDoc_RightPanel_AddParameter( toAdd )">+</button></ng-template>
+<!-- #endregion Templates -->

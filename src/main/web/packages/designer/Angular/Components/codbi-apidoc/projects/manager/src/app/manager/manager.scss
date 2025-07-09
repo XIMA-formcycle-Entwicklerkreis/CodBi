@@ -9,12 +9,18 @@
   .tox .tox-promotion     { display : none ;}
 
   .p-tabpanels.p-component { overflow-y: auto ; padding-bottom : 10% ;}
+
+  .--CB-LocalAPIDoc-RemoveTreeItem         { margin-left: 1em ; border: none ; background-color: transparent ;
+                                            cursor: pointer ; transition: .5s ; opacity : 0 ; pointer-events: none ;}
+  .--CB-LocalAPIDoc-RemoveTreeItem:hover   { color: red ; scale: 1.1 ;}
+  .--CB-LocalAPIDoc-RemoveTreeItem:active  { color: red ; scale: .9 ;}
+  .--CB-LocalAPIDoc-RemoveTreeItem::after  { content: "\e93d" ; font-family: 'primeicons'; cursor : pointer ;}
   /* #region Icon Fix */
   [ icon = "pi pi-pencil"]::after { content: "\e942" ; font-family: 'primeicons'; cursor : pointer ;}
-  [ icon = "pi pi-check"]::after { content: "\e98c" ; font-family: 'primeicons'; cursor : pointer ;}
-  [ icon = "pi pi-times"]::after { content: "\e90b" ; font-family: 'primeicons'; cursor : pointer ;}
+  [ icon = "pi pi-check"]::after  { content: "\e98c" ; font-family: 'primeicons'; cursor : pointer ;}
+  [ icon = "pi pi-times"]::after  { content: "\e90b" ; font-family: 'primeicons'; cursor : pointer ;}
+  [ icon = "pi pi-trash"]::after  { content: "\e93d" ; font-family: 'primeicons'; cursor : pointer ;}
   /* #endregion Icon Fix */
-
   p-accordion-content                             { transition : .5s all ;}
   [ data-p-active = "false"] p-accordion-content  { height : 0 ;}
 
@@ -42,7 +48,17 @@
   .p-splitter-gutter {  box-shadow: 0 0 .25em lightsteelblue ; background-color: white ; margin-left: .25em ;
                         margin-right: .25em ;}
 
-  .p-tablist-active-bar { transition: 1s cubic-bezier( 0.35, 0, 0.25, 1 ); color: blue ; box-shadow: 0 0 .1em darkorange ;}
+  .p-tablist-active-bar { transition: 1s cubic-bezier( 0.35, 0, 0.25, 1 ); color: blue ; box-shadow: 0 0 .5em green ;}
+
+  #CodBi_LocalAPIDoc_RightPanel_Options { margin-left: auto ; display: flex ;}
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync        { cursor : pointer ; font-size: 1.5em ;
+                                                      margin-top: auto ; margin-bottom: auto ; transition: .5s ;
+                                                      background-color: transparent ; border: none ;
+                                                      text-shadow: 0 0 .1em darkorange ; cursor: pointer ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync::after { content: "\e9e6" ; font-family: 'primeicons'; }
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:hover  { scale: 1.1 ; text-shadow: 0 0 .5em darkorange ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:active { scale: .9 ;}
 
   .-panel.-left {
     height: 100% ; width : 100% ;
@@ -63,7 +79,9 @@
                         border: solid ; box-shadow: -.5em 0 .5em black ; border-color: darkorange ;
                         cursor: pointer ; border-left-style: none ; border-width: .05em ;}
     button.-add:hover  { scale: 1.1 ; box-shadow: -.5em 0 .5em darkorange ; color: darkorange ;}
-    button.-add:active { scale: .9 ; box-shadow: -.5em 0 .5em red ;}}
+    button.-add:active { scale: .9 ; box-shadow: -.5em 0 .5em red ;}
+
+    p-treenode:hover .--CB-LocalAPIDoc-RemoveTreeItem { opacity : 1 ; pointer-events: all ;}}
 
     p-tabs,
     p-tabs p-tabpanels { height: 100% ; min-height: 100% ; width : 100% ;}}

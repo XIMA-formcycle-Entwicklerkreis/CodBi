@@ -145,6 +145,7 @@ Paramseparator
 phonenumber
 postanschrift
 Postleitzahl
+primeicons
 primeng
 quelle
 rootext

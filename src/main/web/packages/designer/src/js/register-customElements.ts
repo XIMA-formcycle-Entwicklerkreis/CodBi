@@ -230,6 +230,7 @@ export function registerCustomElements(): void {
           <cb-manager apidoc  = '${JSON.stringify(localAPIDoc)}'
                       segment = "detFunctionalities"
                       resourceURL = "${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce"
+                      docPath = "CodbiPluginData"
                       ></cb-manager></div>`,
           );
           // #endregion Load and inject Angular local API-Documentation-Manager web component

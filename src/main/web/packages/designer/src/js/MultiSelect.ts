@@ -28,28 +28,39 @@ declare module "@de-xima/fc-form-designer" {
  * Primarily intended to be used for selecting CodBi's standard configurations that shall be included into a form. */
 export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
   /** Stores the container for this {@link MultiSelect }. */
-  private readonly _element: HTMLDivElement;
-
+  private _element: HTMLDivElement;
   /**
    * Creates a new {@link MultiSelect } by retrieving the available options from
    * {@link window..CodbiPluginData.fileListing } and generating an appropriate {@link HTMLInputElement } for each
    * entry there. Each {@link HTMLInputElement } will trigger a **set-property** from {@link Callbacks } when
    * clicked.
    *
-   * @param config - Configuration for this editor.
-   */
+   * @param config - Configuration for this editor. */
   constructor(config: TEditorCfg<IMultiSelectDescriptor>) {
     // Note: the second argument is deprecated, we pass the empty string
     super(config, "", "text");
+    // biome-ignore lint/suspicious/noExplicitAny: TODO
+    (window as any).CodbiPluginData.populateStandards = this.populateStandards.bind(this);
+
+    this._element = document.createElement("div");
+
+    this._element.setAttribute("id", "CodBi_Standardslisting");
+    this.populateStandards();
+  }
+  /** Populates the listing of standards. */
+  protected populateStandards(): void {
     // #region Retrieve available standard configurations
     // biome-ignore lint/suspicious/noExplicitAny: TODO
     const listing = JSON.parse((window as any).CodbiPluginData.fileListing).map((file: string) => {
       return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
     });
     // #endregion Retrieve available standard configurations
+    // #region Clear
+    const bufValue: string = this.getValue();
 
+    this._element.innerHTML = "";
+    // #endregion Clear
     // #region Generate and inject appropriate <input>s and <labels> for them.
-    this._element = document.createElement("div");
     this._element.style.whiteSpace = "nowrap";
     this._element.style.overflowX = "auto";
 
@@ -76,8 +87,9 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
 
       this._element.appendChild(newElement);
       this._element.appendChild(newLabel);
-      // #endregion Generate appropriate <input>s and <labels> for them.
     }
+    // #endregion Generate appropriate <input>s and <labels> for them.
+    this.setValue(bufValue);
   }
   /** See {@link Editors.BaseEditor }'s **getElement**. */
   override getElement(): JQuery {

@@ -1,3 +1,4 @@
+import { getJQuery } from "@de-xima/fc-form-designer";
 import "zone.js";
 // biome-ignore lint/style/useImportType: <explanation>
 import {
@@ -10,6 +11,7 @@ import {
   ViewChild,
   ViewEncapsulation,
   NgModule,
+  input,
 } from "@angular/core";
 import { TabsModule } from "primeng/tabs";
 // biome-ignore lint/style/useImportType: <explanation>
@@ -60,8 +62,8 @@ interface ApiDoc {
   detStandards: {
     [key: string]: {
       Description: string;
-      Globals: ApiParameter[];
-      Classes: ApiClass[];
+      globals: ApiParameter[];
+      classes: ApiClass[];
     };
   };
   detFunctionalities: { [key: string]: { Description: string; Parameter: ApiParameter[] } };
@@ -75,8 +77,8 @@ interface ApiDoc {
 interface nodeData {
   label: string;
   Description: string; // Ensure the casing matches 'Description'
-  Classes: ApiClass[];
-  Globals: ApiParameter[];
+  classes: ApiClass[];
+  globals: ApiParameter[];
   Parameter: ApiParameter[];
   Notes: string;
   // No need for 'children' here, as TreeNode itself has a 'children' property
@@ -152,11 +154,82 @@ export class Manager implements AfterViewInit {
     return this._docPath;
   }
 
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  toTreeNodes(toConvert: { [key: string]: any }): TreeNode[] {
+    const root: TreeNode[] = [];
+
+    const keys = Object.keys(toConvert);
+
+    for (const key of keys) {
+      const parts = key.split(".");
+      let currentLevel: TreeNode[] = root;
+      let parentNode: TreeNode | undefined = undefined;
+      let currentPathKey: string = ""; // To build the "0-1-2" key
+
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const existingNode = currentLevel.find((node) => node.label === part);
+
+        if (existingNode) {
+          parentNode = existingNode;
+          currentLevel = existingNode.children;
+          // Reconstruct currentPathKey for existing node based on its actual key
+          currentPathKey = existingNode.key || "";
+        } else {
+          const globals = [];
+
+          for (const gKey in toConvert[key].globals) {
+            globals.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
+          }
+
+          const classes = [];
+
+          for (const cKey in toConvert[key].classes) {
+            classes.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
+          }
+
+          const newNode: TreeNode = {
+            label: part,
+            data: {
+              Description: toConvert[key].Description,
+              Parameter: toConvert[key].Parameter,
+              globals: globals,
+              classes: classes,
+            },
+            children: [],
+            parent: parentNode,
+          };
+
+          // Determine the sibling index for the current part
+          const siblingIndex = currentLevel.length;
+
+          // Build the composite key
+          if (currentPathKey === "") {
+            newNode.key = siblingIndex.toString();
+          } else {
+            newNode.key = `${currentPathKey}-${siblingIndex}`;
+          }
+          currentPathKey = newNode.key; // Update for the next iteration
+
+          currentLevel.push(newNode);
+
+          parentNode = newNode;
+          currentLevel = newNode.children;
+        }
+      }
+    }
+
+    return root;
+  }
   @Input("apidoc")
   set apidoc(toSet: string) {
     this.apiDoc = JSON.parse(toSet);
 
-    console.log(this.apiDoc);
+    this.items = this.toTreeNodes(this.apiDoc.detFunctionalities);
+    this.itemsElementplaceholder = this.toTreeNodes(this.apiDoc.detElementplaceholder);
+    this.itemsStandard = this.toTreeNodes(this.apiDoc.detStandards);
+
+    console.log("n11112222", this.apiDoc, this.items, this.itemsElementplaceholder, this.itemsStandard);
   }
 
   protected _currentNodeData: nodeData | undefined;
@@ -214,9 +287,9 @@ export class Manager implements AfterViewInit {
           data: {
             // The 'data' property holds your custom data
             label: part, // Redundant if TreeNode.label is used, but good for consistency
-            Description: "<h2>Hier eine Beschreibung mitsamt Parameter und deren Beschreibung eintragen</h2>",
-            Globals: [],
-            Classes: [],
+            Description: "",
+            globals: [],
+            classes: [],
             Parameter: [],
             Notes: "Neu Erstellt",
           },
@@ -247,21 +320,31 @@ export class Manager implements AfterViewInit {
     const result = {};
 
     for (const node of toExtractFrom) {
-      result[`${base ? `${base}.` : ""}${node.label}`] = {
+      result[`${base ? `${base.toLowerCase()}.` : ""}${node.label.toLowerCase()}`] = {
         Description: node.data ? node.data.Description : "",
         Parameter: node.data ? this.arrayToObject(node.data.Parameter) : [],
       };
 
       if (node.children) {
-        const extractedChilds = this.convertNodes(node.children, node.label);
+        const extractedChilds = this.convertNodes(
+          node.children,
+          base === undefined ? node.label : `${base.toLowerCase()}.${node.label.toLowerCase()}`,
+        );
 
         for (const child in extractedChilds) {
-          result[child] = extractedChilds[child];
+          result[child.toLowerCase()] = extractedChilds[child];
         }
       }
     }
 
-    return result;
+    const finalResult = {};
+
+    for (const key in result) {
+      if (result[key].Description !== "") {
+        finalResult[key.toLowerCase()] = result[key];
+      }
+    }
+    return finalResult;
   }
 
   arrayToObject(toConvert: [{ Name: string; Description: string }]) {
@@ -279,12 +362,15 @@ export class Manager implements AfterViewInit {
     for (const node of toExtractFrom) {
       result[`${base ? `${base}.` : ""}${node.label}`] = {
         Description: node.data ? node.data.Description : "",
-        Globals: node.data ? this.arrayToObject(node.data.Globals) : [],
-        Classes: node.data ? this.arrayToObject(node.data.Classes) : [],
+        globals: node.data ? this.arrayToObject(node.data.globals) : [],
+        classes: node.data ? this.arrayToObject(node.data.classes) : [],
       };
 
       if (node.children) {
-        const extractedChilds = this.convertStandardNodes(node.children, node.label);
+        const extractedChilds = this.convertStandardNodes(
+          node.children,
+          base === undefined ? node.label : `${base}.${node.label}`,
+        );
 
         for (const child in extractedChilds) {
           result[child] = extractedChilds[child];
@@ -292,7 +378,14 @@ export class Manager implements AfterViewInit {
       }
     }
 
-    return result;
+    const finalResult = {};
+
+    for (const key in result) {
+      if (result[key].Description !== "") {
+        finalResult[key] = result[key];
+      }
+    }
+    return finalResult;
   }
 
   NodesToData() {
@@ -306,26 +399,84 @@ export class Manager implements AfterViewInit {
   }
 
   enrichData(destination, source) {
+    const result = {
+      fslFunctionalities: [],
+      fslElementplaceholder: [],
+      fileListing: [],
+    };
+
     for (const element in source.detFunctionalities) {
-      destination.detFunctionalities[element] = source.detFunctionalities[element];
+      document.querySelector('div[is = "xc-epmanager"]').setAttribute(
+        "options",
+        JSON.parse(
+          `${destination.fslFunctionalities.substring(0, destination.fslFunctionalities.length - 1)},\"${element}.ts\"]`,
+        )
+          .map((file: string) => {
+            return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+          })
+          .join(","),
+      );
+      result.fslFunctionalities.push(`${element}.ts`);
+      console.log("o", document.querySelector('div[is = "xc-epmanager"'));
+      destination.detFunctionalities[element.toLowerCase()] = source.detFunctionalities[element];
     }
     for (const element in source.detElementplaceholder) {
-      for (const key in source.detElementplaceholder[element]) {
-        source.detElementplaceholder[key] = source.detElementplaceholder[element][key];
-      }
+      document.querySelector('div[is = "xc-epmanager"]').setAttribute(
+        "epoptions",
+        JSON.parse(
+          `${destination.fslElementplaceholder.substring(0, destination.fslElementplaceholder.length - 1)},\"${element}.ts\"]`,
+        )
+          .map((file: string) => {
+            return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+          })
+          .join(","),
+      );
+      result.fslElementplaceholder.push(`${element}.ts`);
+      destination.detElementplaceholder[element] = source.detElementplaceholder[element];
     }
     for (const element in source.detStandards) {
-      for (const key in source.detStandards[element]) {
-        source.detStandards[key] = source.detStandards[element][key];
-      }
+      destination.fileListing = `${destination.fileListing.substring(0, destination.fileListing.length - 1)},\"${element}.ts\"]`;
+
+      result.fileListing.push(`${element}.ts`);
+      destination.detStandards[element] = source.detStandards[element];
     }
+
+    return {
+      fslFunctionalities: result.fslFunctionalities.join(","),
+      fslElementplaceholder: result.fslElementplaceholder.join(","),
+      fileListing: result.fileListing.join(","),
+    };
   }
 
-  enSync() {
-    console.log(this.NodesToData());
-    this.enrichData(window[this.docPath], this.NodesToData());
+  @Input()
+  public baseurl: string = "";
 
+  enSync() {
+    const localNodeData = this.NodesToData();
+    console.log(this.NodesToData());
+    const filelistings = this.enrichData(window[this.docPath], localNodeData);
+    console.log("filelistings", filelistings);
     console.log("F", this.docPath, window[this.docPath]);
+    window[this.docPath].populateStandards();
+    const $ = getJQuery();
+    $.ajax({
+      url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+      type: "GET",
+      headers: {
+        "X-Action": "Update",
+        "X-ToWrite": JSON.stringify({
+          fslFunctionalities: filelistings.fslFunctionalities,
+          detFunctionalities: localNodeData.detFunctionalities,
+          fslElementplaceholder: filelistings.fslElementplaceholder,
+          detElementplaceholder: localNodeData.detElementplaceholder,
+          detStandards: localNodeData.detStandards,
+          fileListing: filelistings.fileListing,
+        }),
+      },
+      success: (response) => {
+        console.log("OK", response);
+      },
+    });
   }
 
   bufferParameter: Map<number, ApiParameter> = new Map<number, ApiParameter>();
@@ -336,11 +487,12 @@ export class Manager implements AfterViewInit {
 
   onRowEditSave(product: ApiParameter, index: number, toAdd: string) {
     console.log("x", this.currentlySelectedFunctionalityData);
+
     (toAdd === undefined || toAdd.toLowerCase() === "parameter"
       ? this.currentlySelectedFunctionalityData.Parameter
       : toAdd.toLowerCase() === "classes"
-        ? this.currentlySelectedFunctionalityData.Classes
-        : this.currentlySelectedFunctionalityData.Globals)[index] = product;
+        ? this.currentlySelectedFunctionalityData.classes
+        : this.currentlySelectedFunctionalityData.globals)[index] = product;
   }
 
   onRowEditCancel(parameter: ApiParameter, index: number) {
@@ -480,8 +632,8 @@ export class Manager implements AfterViewInit {
     (toAdd === undefined || toAdd.toLowerCase() === "parameter"
       ? this.currentlySelectedFunctionalityData.Parameter
       : toAdd.toLowerCase() === "classes"
-        ? this.currentlySelectedFunctionalityData.Classes
-        : this.currentlySelectedFunctionalityData.Globals
+        ? this.currentlySelectedFunctionalityData.classes
+        : this.currentlySelectedFunctionalityData.globals
     ).push(new CommonApiParameter("Neuer Parameter...", "Keine Beschreibung..."));
   }
   // biome-ignore lint/style/noParameterProperties: <explanation>

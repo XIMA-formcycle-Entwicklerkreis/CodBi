@@ -3,6 +3,7 @@ import { MultiSelect, MultiSelectType } from "./MultiSelect";
 import { Optioninput } from "./OptionInput.js";
 import { SVManager } from "./SVManager.js";
 import { EPManager } from "./EPManager.js";
+import { REGEX } from "xdbc/src/DBC/REGEX";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 /** Registers the {@link MultiSelect }-Editor via {@link registerCustomEditor }. */
@@ -173,19 +174,6 @@ export function registerCustomElements(): void {
       // #region Retrieve Local API Doc
       const $ = getJQuery();
 
-      /*$.ajax({
-        url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
-        type: "GET",
-        headers: {
-          "X-Action": "Update",
-          "X-ToWrite": JSON.stringify({ functionalities: { gogo: { description: "dddd" } } }),
-        },
-        success: (response) => {
-          console.log(response);
-        },
-      });*/
-      let localAPIDoc = {};
-
       $.ajax({
         url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
         type: "GET",
@@ -193,15 +181,69 @@ export function registerCustomElements(): void {
           "X-Action": "Retrieve",
         },
         success: (response) => {
-          localAPIDoc = response;
+          for (const functionality in response.detFunctionalities) {
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            (window.CodbiPluginData.detFunctionalities as any)[functionality] =
+              response.detFunctionalities[functionality];
+          }
 
-          localAPIDoc = {
-            detFunctionalities: {
-              date: {
-                children: [{ frame: { Description: "sadsad" } }],
-              },
-            },
-          };
+          if (response.fslFunctionalities) {
+            console.log("RS", window.CodbiPluginData);
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            (window.CodbiPluginData.fslFunctionalities as any as string) =
+              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+              `${(window.CodbiPluginData.fslFunctionalities as any as string).substring(0, window.CodbiPluginData.fslFunctionalities.length - 1)},\"${response.fslFunctionalities}\"]`;
+          }
+
+          for (const placeholder in response.detElementplaceholder) {
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            (window.CodbiPluginData.detElementplaceholder as any)[placeholder] =
+              response.detElementplaceholder[placeholder];
+          }
+
+          if (response.fslElementplaceholder) {
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            (window.CodbiPluginData.fslElementplaceholder as any as string) =
+              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+              `${(window.CodbiPluginData.fslElementplaceholder as any as string).substring(0, window.CodbiPluginData.fslElementplaceholder.length - 1)},\"${response.fslElementplaceholder}\"]`;
+          }
+
+          if (response.detStandards) {
+            for (const key in response.detStandards) {
+              window.CodbiPluginData.detStandards[key] = response.detStandards[key];
+            }
+          }
+
+          if (response.fileListing) {
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            (window.CodbiPluginData.fileListing as any as string) =
+              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+              `${(window.CodbiPluginData.fileListing as any as string).substring(0, window.CodbiPluginData.fileListing.length - 1)},\"${response.fileListing}\"]`;
+          }
+          console.log("Q", window.CodbiPluginData);
+          setTimeout(() => {
+            window.CodbiPluginData.populateStandards();
+          });
+
+          INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
+            "options",
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            JSON.parse(window.CodbiPluginData.fslFunctionalities as any as string)
+              .map((file: string) => {
+                return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+              })
+              .join(","),
+          );
+
+          INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
+            "epoptions",
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            JSON.parse(window.CodbiPluginData.fslElementplaceholder as any as string)
+              .map((file: string) => {
+                return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+              })
+              .join(","),
+          );
 
           // #region Load and inject Angular local API-Documentation-Manager web component
           const scriptAPIManager = document.createElement("script");
@@ -227,8 +269,9 @@ export function registerCustomElements(): void {
           #cCodBi_LocalAPIDoc { animation : kfFadeIN_cCodBi_LocalAPIDoc .5s ease-in forwards ; position : absolute ; left : 0vw ; top : 20vh ; width : 70vw ; height : 50vh ;}
           #cCodBi_LocalAPIDoc cb-manager { display : block ; height : 100% ;}</style>
         <div id = "cCodBi_LocalAPIDoc">
-          <cb-manager apidoc  = '${JSON.stringify(localAPIDoc)}'
+          <cb-manager apidoc  = '${JSON.stringify(response)}'
                       segment = "detFunctionalities"
+                      baseURL = "${baseURL}"
                       resourceURL = "${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce"
                       docPath = "CodbiPluginData"
                       ></cb-manager></div>`,
@@ -237,24 +280,6 @@ export function registerCustomElements(): void {
         },
       });
       // #endregion Retrieve Local API Doc
-      // #region Global variables listing
-      const globalVariables = new Array<string>();
-
-      for (const standard in window.CodbiPluginData.detStandards) {
-        if (window.CodbiPluginData.detStandards[standard]?.globals) {
-          for (const global in window.CodbiPluginData.detStandards[standard].globals) {
-            globalVariables.push(`[ ${standard} ] ${global}`);
-          }
-        }
-      }
-
-      for (const functionality in window.CodbiPluginData.detFunctionalities) {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        for (const parameter in (window.CodbiPluginData.detFunctionalities as any)[functionality].Parameter) {
-          globalVariables.push(`${functionality.replace(/\./g, "_")}_${parameter}`);
-        }
-      }
-      // #endregion Global variables listing
       // #endregion Generation
       // #region Define API-Doc layout update
       const updateLayoutCDetails = (alignTo: HTMLElement) => {
@@ -288,6 +313,26 @@ export function registerCustomElements(): void {
 
                     added.addEventListener("keydown", (event) => {
                       if (event.altKey && event.key === "v") {
+                        // #region Global variables listing
+                        const globalVariables = new Array<string>();
+
+                        for (const standard in window.CodbiPluginData.detStandards) {
+                          if (window.CodbiPluginData.detStandards[standard]?.globals) {
+                            console.log("N1", standard);
+                            for (const global in window.CodbiPluginData.detStandards[standard].globals) {
+                              globalVariables.push(`[ ${standard} ] ${global}`);
+                            }
+                          }
+                        }
+
+                        for (const functionality in window.CodbiPluginData.detFunctionalities) {
+                          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                          for (const parameter in (window.CodbiPluginData.detFunctionalities as any)[functionality]
+                            .Parameter) {
+                            globalVariables.push(`${functionality.replace(/\./g, "_")}_${parameter}`);
+                          }
+                        }
+                        // #endregion Global variables listing
                         optioninput.options = globalVariables;
                         optioninput.enabled = true;
                         optioninput.target = added;
@@ -303,7 +348,7 @@ export function registerCustomElements(): void {
 
                         optioninput.onOptionSelected.push((newOption) => {
                           if (added.value.indexOf("[") !== -1) {
-                            added.value = added.value.substring(2, added.value.indexOf("]") + 2);
+                            added.value = added.value.substring(added.value.indexOf("]") + 2);
                           } else {
                             added.value = added.value.replace("data-cb-", "");
                           }
@@ -371,6 +416,7 @@ export function registerCustomElements(): void {
 
                           for (const standard in window.CodbiPluginData.detStandards) {
                             if (window.CodbiPluginData.detStandards[standard]?.Active) {
+                              console.log("O", standard, window.CodbiPluginData.detStandards[standard].classes);
                               for (const cssClass in window.CodbiPluginData.detStandards[standard].classes) {
                                 availableClasses.push({
                                   standard: standard,
@@ -755,11 +801,33 @@ export function registerCustomElements(): void {
                     }
                     // #region View corresponding API-Doc
                     epManager.onOptionChanged.push((newOption: string) => {
-                      DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                        "data",
+                      const baseDocURL =
                         // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                        `${window.CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage] === undefined ? (window as any).CodbiPluginData.docsAPI.en : (window as any).CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage]}${(window as any).CodbiPluginData[epManager.mode === "SV" ? "detFunctionalities" : "detElementplaceholder"][newOption.toLowerCase()].Description}`,
-                      );
+                        window.CodbiPluginData.docsAPI[(window.parent as any)[0].XFC_METADATA.currentLanguage] ===
+                        undefined
+                          ? // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                            (window as any).CodbiPluginData.docsAPI.en
+                          : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                            (window as any).CodbiPluginData.docsAPI[
+                              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                              (window.parent as any)[0].XFC_METADATA.currentLanguage
+                            ];
+                      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                      const description = (window as any).CodbiPluginData[
+                        epManager.mode === "SV" ? "detFunctionalities" : "detElementplaceholder"
+                      ][newOption.toLowerCase()].Description;
+
+                      if (description[0] === "/") {
+                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                          "data",
+                          `${baseDocURL}${description}`,
+                        );
+                      } else {
+                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).innerHTML = `
+                          <div style = "width: 100% ; height: 100% ; overflow : auto ;">
+                            ${description}</div>`;
+                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute("data", "");
+                      }
                     });
                     // #endregion View corresponding API-Doc
                     // #endregion Register each cell of class .r2

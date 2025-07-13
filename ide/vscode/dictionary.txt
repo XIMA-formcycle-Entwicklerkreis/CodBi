@@ -157,6 +157,7 @@ skewable
 sortiereihenfolge
 sortierreihenfolge
 Stadt
+Standardslisting
 Startdatum
 Startzeit
 stellenbezeichnung

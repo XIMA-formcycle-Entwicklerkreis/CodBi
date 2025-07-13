@@ -182,7 +182,7 @@
                                 <p-accordion-content>
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
                                                     [ngTemplateOutletContext]   = "{
-                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Globals ? currentlySelectedFunctionalityData.Globals : [] : [],
+                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.globals ? currentlySelectedFunctionalityData.globals : [] : [],
                                                         toAdd   : 'Globals'}"></ng-container></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Classes">
@@ -191,7 +191,7 @@
                                 <p-accordion-content>
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
                                                     [ngTemplateOutletContext]   = "{
-                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Classes ? currentlySelectedFunctionalityData.Classes : [] : [],
+                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.classes ? currentlySelectedFunctionalityData.classes : [] : [],
                                                         toAdd   : 'Classes'}"></ng-container></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Notes">

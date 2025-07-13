@@ -28,7 +28,7 @@ export class SVManager extends HTMLDivElement {
   }
   // #region Options
   /** Holds the {@link string }s that're the actual options. */
-  protected options: Array<string>;
+  public options: Array<string>;
   /** Holds the {@link string } the {@link SVManager.target }ed {@link HTMLInputElement }'s content shall
    * be split into. */
   protected separator: string;

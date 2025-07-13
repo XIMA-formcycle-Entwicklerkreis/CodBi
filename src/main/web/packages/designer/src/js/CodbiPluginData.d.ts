@@ -15,5 +15,6 @@ interface Window {
     fileListing: Array<string>;
     fslElementplaceholder: Array<string>;
     fslFunctionalities: Array<string>;
+    populateStandards: () => void;
   };
 }

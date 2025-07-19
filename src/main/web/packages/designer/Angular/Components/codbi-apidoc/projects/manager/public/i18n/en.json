@@ -1,0 +1,21 @@
+{
+  "Input.Label.Functionality": "Enter the name of the new functionality",
+  "Input.Label.Elementplaceholder": "Enter the name of the new element placeholder",
+  "Input.Label.Standard": "Enter the name of the new standard",
+  "Input.Label.Title": "Create New Element",
+  "Input.Label.Introduction": "This dialog allows you to create a new element. The element's name can be multi-part, separated by dots (e.g., my.new.placeholder). It must, however, adhere to standard naming conventions for identifiers. No local elements can be created with paths that are already assigned to a native CodBi element.",
+  "Input.Hint.AlreadyExistent": "This is the path of an already existing native CodBi-Element. Please choose a different name.",
+  "Input.Label.Outro.Header": "Share Your Elements - A Win for All!",
+  "Input.Label.Outro.GoodToGoLocal": "It's great that you're creating your own elements locally! We encourage you to <b>share them with the community</b>, as this is the best way to strengthen our library and thus enable everyone to create high quality standardized forms in an even easier and even more efficient manner.",
+  "Input.Label.Outro.ShareViaIssues": "If you want to share individual local CodBi elements, you can do so via <a href=\"https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/issues\" target = \"_blank\">GitHub</a> by creating an issue. This is a great way to get feedback and make your work visible. To do this, export the element to be shared via its options in the tree view and pack the JSON file along with the Type or JavaScript source code into a ZIP archive, which you can then attach to the issue.",
+  "Input.Label.Outro.AdvantagesOfSharing": "Advantages of Sharing",
+  "Input.Label.Outro.StrongerLibrary": "Stronger Library",
+  "Input.Label.Outro.StrongerLibrary.Details": "More variety and utility for everyone.",
+  "Input.Label.Outro.FasterDevelopment": "Faster Development",
+  "Input.Label.Outro.FasterDevelopment.Details": "Saves time as everyone can build on ready-made solutions.",
+  "Input.Label.Outro.Quality": "Higher Quality",
+  "Input.Label.Outro.Quality.Details": "The community continuously improves shared elements.",
+  "Input.Label.Outro.Knowledge": "Share your Knowledge",
+  "Input.Label.Outro.Knowledge.Details": "We all learn from each other.",
+  "Input.Label.Outro.NamingConvention": "Please use <b>existing categories</b>, which you can look up <a href = \"https://waxcode.net/x/CodBi/\" target = \"_blank\">here</a>. If possible, please classify your elements into existing categories."
+}

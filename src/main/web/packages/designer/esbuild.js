@@ -10,23 +10,18 @@ const execPromise = promisify(exec);
 const mode = (process.argv.find((x) => x.startsWith("--mode=")) ?? "--mode=production").substring(7);
 const outputDir = process.env.web_output_dir ?? "dist";
 const currentScriptDir = process.cwd();
+// --- Angular Web Component Paths ---
 const angularWebComponentProjectRoot = path.resolve(currentScriptDir, "Angular/Components", "codbi-apidoc");
-const angularWebComponentSourceFile = path.resolve(
-  angularWebComponentProjectRoot,
-  "dist",
-  "manager",
-  "browser",
-  "main.js",
-);
-const angularWebComponentSourceFileCSS = path.resolve(
-  angularWebComponentProjectRoot,
-  "dist",
-  "manager",
-  "browser",
-  "styles.css",
-);
+const angularWebComponentDistDir = path.resolve(angularWebComponentProjectRoot, "dist", "manager", "browser");
+const angularWebComponentSourceFile = path.resolve(angularWebComponentDistDir, "main.js");
+const angularWebComponentSourceFileCSS = path.resolve(angularWebComponentDistDir, "styles.css");
+// --- TinyMCE Paths ---
 const tinymceSourceDir = path.resolve(currentScriptDir, "../../node_modules/tinymce");
 const tinymceOutputDir = path.join(outputDir, "tinymce");
+// -- i18n / Local API Documentation Manager
+const i18nSourceDir = path.resolve(currentScriptDir, "Angular/Components/codbi-apidoc/projects/manager/public", "i18n");
+const i18nOutputDir = path.join(outputDir, "i18n/LocalAPIDocManager");
+
 const fontLoaders = {
   ".eot": "file",
   ".woff": "file",
@@ -47,8 +42,8 @@ async function buildAngularWebComponent() {
     if (stderr) console.error(`Angular Build (stderr):\n${stderr}`);
 
     console.log("Angular web component build completed successfully.");
-  } catch (error) {
-    console.error("Error building Angular web component:", error.message);
+  } catch (X) {
+    console.error("Error building Angular web component:", X.message);
 
     process.exit(1);
   }
@@ -60,13 +55,26 @@ async function copyTinyMCEAssets() {
   try {
     await fs.mkdir(outputDir, { recursive: true });
     await fsExtra.emptyDir(tinymceOutputDir);
-    await fsExtra.copy(tinymceSourceDir, tinymceOutputDir, {
-      recursive: true, // Ensure all subdirectories are copied
-      overwrite: true, // Overwrite existing files
-    });
+    await fsExtra.copy(tinymceSourceDir, tinymceOutputDir, { recursive: true, overwrite: true });
+
     console.log("TinyMCE assets copied successfully.");
-  } catch (error) {
-    console.error("Error copying TinyMCE assets:", error.message);
+  } catch (X) {
+    console.error("Error copying TinyMCE assets:", X.message);
+
+    process.exit(1);
+  }
+}
+
+async function copyI18nAssets() {
+  console.log(`Copying i18n assets from ${i18nSourceDir} to ${i18nOutputDir}...`);
+
+  try {
+    await fs.mkdir(i18nOutputDir, { recursive: true });
+    await fsExtra.emptyDir(i18nOutputDir);
+    await fsExtra.copy(i18nSourceDir, i18nOutputDir, { recursive: true, overwrite: true });
+    console.log("i18n assets copied successfully.");
+  } catch (X) {
+    console.error("Error copying i18n assets:", X.message);
 
     process.exit(1);
   }
@@ -78,6 +86,9 @@ async function copyTinyMCEAssets() {
   await fsExtra.emptyDir(outputDir);
   await buildAngularWebComponent();
   await copyTinyMCEAssets();
+
+  await copyI18nAssets();
+
   await Promise.all([
     esbuild.build({
       bundle: true,

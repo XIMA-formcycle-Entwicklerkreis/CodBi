@@ -1,29 +1,47 @@
-#CodBi_LocalAPIDoc.-submerged { .p-splitter-gutter { display : none ;}}
-#CodBi_LocalAPIDoc.-submerged { .p-tablist-active-bar { display : none ;}}
 #CodBi_LocalAPIDoc {
   margin-left: 2vw ; border-bottom-right-radius: .5em ; border-top-right-radius: .5em ; box-shadow: 0 0 .5em black ;
-  overflow: hidden ; height : 100% ; margin : 0 ; width : 100% ;
+  overflow: hidden ; height : 100% ; margin : 0 ; width : 100% ; transition: .5s all;
   background-image: linear-gradient( 90deg, #615b5bCC 0%, #FFFFFFFF 1% );
 
   .tox .tox-editor-header { z-index: 0 ;}
   .tox .tox-promotion     { display : none ;}
 
-  .p-tabpanels.p-component { overflow-y: auto ; padding-bottom : 10% ;}
+  p-tabs {
+    p-tablist { box-shadow: 0 0 .5em black ; margin-bottom: .25em ;}}
 
-  .--CB-LocalAPIDoc-RemoveTreeItem         { margin-left: 1em ; border: none ; background-color: transparent ;
-                                            cursor: pointer ; transition: .5s ; opacity : 0 ; pointer-events: none ;}
-  .--CB-LocalAPIDoc-RemoveTreeItem:hover   { color: red ; scale: 1.1 ;}
-  .--CB-LocalAPIDoc-RemoveTreeItem:active  { color: red ; scale: .9 ;}
-  .--CB-LocalAPIDoc-RemoveTreeItem::after  { content: "\e93d" ; font-family: 'primeicons'; cursor : pointer ;}
+  .p-tabpanels.p-component { overflow-y: auto ; padding-bottom : 10% ;}
+  // #region TreeView
+  // #region Nodeoptions
+  .--CB-LocalAPIDoc-RemoveTreeItem,
+  .--CB-LocalAPIDoc-ExportTreeItem,
+  .--CB-LocalAPIDoc-RenameTreeItem          { margin-left: 1em ; border: none ; background-color: transparent ;
+                                              cursor: pointer ; transition: .25s ; opacity : 0 ; scale : 0 ; pointer-events: none ;}
+  .--CB-LocalAPIDoc-RemoveTreeItem:hover,
+  .--CB-LocalAPIDoc-ExportTreeItem:hover,
+  .--CB-LocalAPIDoc-RenameTreeItem:hover    { color: red ; text-shadow : 0 0 .1em darkorange ;}
+  .--CB-LocalAPIDoc-RemoveTreeItem:active,
+  .--CB-LocalAPIDoc-ExportTreeItem:active,
+  .--CB-LocalAPIDoc-RenameTreeItem:active   { color: green ; scale: 0 ;}
+  .--CB-LocalAPIDoc-RemoveTreeItem::after   { content: "\e93d" ; font-family: 'primeicons'; cursor : pointer ;}
+  .--CB-LocalAPIDoc-ExportTreeItem::after   { content: "\e9f8" ; font-family: 'primeicons'; cursor : pointer ;}
+  .--CB-LocalAPIDoc-RenameTreeItem::after   { content: "\e942" ; font-family: 'primeicons'; cursor : pointer ;}
   /* #region Icon Fix */
   [ icon = "pi pi-pencil"]::after { content: "\e942" ; font-family: 'primeicons'; cursor : pointer ;}
   [ icon = "pi pi-check"]::after  { content: "\e98c" ; font-family: 'primeicons'; cursor : pointer ;}
   [ icon = "pi pi-times"]::after  { content: "\e90b" ; font-family: 'primeicons'; cursor : pointer ;}
   [ icon = "pi pi-trash"]::after  { content: "\e93d" ; font-family: 'primeicons'; cursor : pointer ;}
   /* #endregion Icon Fix */
+  // #endregion Nodeoptions
   p-accordion-content                             { transition : .5s all ;}
   [ data-p-active = "false"] p-accordion-content  { height : 0 ;}
 
+  @keyframes kfFadeIN_CodBi_LocalAPIDoc_Tree_Label {
+    90%   { scale: 1.1 ;}
+    100%  { box-shadow: 0 0 .25em red ; scale : 1 ;}}
+  #CodBi_LocalAPIDoc_Tree_Label input { border-radius: .5em ; padding: .25em ; color: red ; border: solid ;
+                                        border-width: thin ;
+                                        animation : kfFadeIN_CodBi_LocalAPIDoc_Tree_Label .25s ease-in forwards ;}
+  // #endregion TreeView
   #Splitter { width : 100 ; height: 100% ;}
 
   #CodBi_LocalAPIDoc_RightPanel_AddParameter        { transition: .5s ; font-size: 2em ; width: 100% ;
@@ -60,20 +78,50 @@
   #CodBi_LocalAPIDoc_RightPanel_Options_Sync:hover  { scale: 1.1 ; text-shadow: 0 0 .5em darkorange ;}
   #CodBi_LocalAPIDoc_RightPanel_Options_Sync:active { scale: .9 ;}
 
+  #CodBi_LocalAPIDoc_RightPanel_Options_Export        { cursor : pointer ; font-size: 1.5em ;
+                                                      margin-top: auto ; margin-bottom: auto ; transition: .5s ;
+                                                      background-color: transparent ; border: none ;
+                                                      text-shadow: 0 0 .1em darkorange ; cursor: pointer ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Export::after { content: "\e9f8" ; font-family: 'primeicons'; }
+  #CodBi_LocalAPIDoc_RightPanel_Options_Export:hover  { scale: 1.1 ; text-shadow: 0 0 .5em darkorange ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Export:active { scale: .9 ;}
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Import        { cursor : pointer ; font-size: 1.5em ;
+                                                      margin-top: auto ; margin-bottom: auto ; transition: .5s ;
+                                                      background-color: transparent ; border: none ;
+                                                      text-shadow: 0 0 .1em darkorange ; cursor: pointer ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Import::after { content: "\e9f9" ; font-family: 'primeicons'; }
+  #CodBi_LocalAPIDoc_RightPanel_Options_Import:hover  { scale: 1.1 ; text-shadow: 0 0 .5em darkorange ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Import:active { scale: .9 ;}
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel        { cursor: pointer ; transition: .5s ;border: none ;
+                                                            border-bottom-left-radius: .5em ; background: #141414 ;
+                                                            background: linear-gradient(148deg, #e11010, #ba3535 13%, #e67979 51%, #870808 87%, #660505);
+                                                            text-shadow: 0 0 .1em black ; box-shadow: 0 0 .5em black ;
+                                                            color : white ; font-size: 1.5em ; margin-left: .5em ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel:hover  { scale: 1.1 ; color: darkorange ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel:active { scale: .9 ;}
+
   .-panel.-left {
     height: 100% ; width : 100% ;
 
     p-tree,
-    p-tree .p-tree.p-component .p-tree-root               { height: 95% ; min-height : 95% ; display : block ;}
-    p-tree .p-tree.p-component                            { height: 100% ; min-height : 100% ; display : block ;}
-    p-tree .p-tree.p-component .p-tree-node-content       { max-width: 10% ;}
+    p-tree .p-tree.p-component .p-tree-root                           { height: 95% ; min-height : 95% ;
+                                                                        display : block ; margin-top: .5em ;}
+    p-tree .p-tree.p-component                                        { height: 100% ; min-height : 100% ;
+                                                                        max-width: 100% ; display : block ;}
+    p-tree .p-tree.p-component .p-tree-node-content                   { max-width: 10% ;}
     p-tree .p-tree.p-component .p-tree-node-label,
-    p-tree .p-tree.p-component p-tree-node-toggle-button  { color: darkorange ;}
-    p-tree .p-tree-node-selectable                        { transition: color .25s ease-in ;}
-    p-tree .p-tree-node-selectable:hover                  { border-color: wheat ; border-left-style: solid ;
-                                                            border-radius: 0 ; background-color: transparent ;}
-    p-tree .p-tree-node-selected                          { border-color: darkorange ; border-left-style: solid ;
-                                                            border-radius: 0 ; background-color: transparent ;}
+    p-tree .p-tree.p-component p-tree-node-toggle-button              { color: darkorange ;}
+    p-tree .p-tree-node-selectable                                    { transition: color .25s ease-in ;}
+    p-tree .p-tree-node-selectable:not( .p-tree-node-selected):hover  { border-color: wheat ;
+                                                                        border-left-style: solid ;
+                                                                        border-radius: 0 ;
+                                                                        background-color: transparent ;}
+    p-tree .p-tree-node-selected                                      { border-color: darkorange ;
+                                                                        border-left-style: solid ;
+                                                                        border-radius: 0 ;
+                                                                        background-color: transparent ;}
 
     button.-add       { transition: .5s ; font-size: 2em ; width: 100% ; border-top-right-radius: .25em ;
                         border: solid ; box-shadow: -.5em 0 .5em black ; border-color: darkorange ;
@@ -81,10 +129,23 @@
     button.-add:hover  { scale: 1.1 ; box-shadow: -.5em 0 .5em darkorange ; color: darkorange ;}
     button.-add:active { scale: .9 ; box-shadow: -.5em 0 .5em red ;}
 
-    p-treenode:hover .--CB-LocalAPIDoc-RemoveTreeItem { opacity : 1 ; pointer-events: all ;}}
+    p-treenode:hover .--CB-LocalAPIDoc-RemoveTreeItem,
+    p-treenode:hover .--CB-LocalAPIDoc-ExportTreeItem,
+    p-treenode:hover .--CB-LocalAPIDoc-RenameTreeItem { opacity : 1 ; scale : 1 ; pointer-events: all ;}}
 
     p-tabs,
-    p-tabs p-tabpanels { height: 100% ; min-height: 100% ; width : 100% ;}}
+    p-tabs p-tabpanels              { height: 100% ; min-height: 100% ; width : 100% ;}
+    p-tabs p-tabpanels p-tabpanel   { filter : blur( 1em ) ;}
+
+    @keyframes ksFadeIN_TabPanel {
+      0%  { filter: blur( 0 ) ; opacity : 0 ;}
+      50%  { filter: blur( 1em ) ; opacity: 1 ;}
+      100%  { filter: blur( 0 ) ;}}
+    p-tabs p-tabpanels .--active { animation: ksFadeIN_TabPanel .5s ease-in forwards ;}}
+#CodBi_LocalAPIDoc.-submerged { .p-splitter-gutter { display : none ;}}
+#CodBi_LocalAPIDoc.-submerged { .p-tablist-active-bar { display : none ;}}
+#CodBi_LocalAPIDoc.--closed   { transform: translateX( -100% ); opacity: 0 ;}
+#CodBi_LocalAPIDoc.--opened   { transform: translateX( 0 ); opacity: 1 ;}
 
 @keyframes kfFadeIN_CodBi_LocalAPIDoc_New {
   0%    { opacity: 0 ;}
@@ -92,11 +153,23 @@
 #CodBi_LocalAPIDoc_New {
   position: absolute ; top: 0% ; border-top-right-radius: .5em ; border-bottom-right-radius: .5em ; left: 0% ;
   background-image: linear-gradient( 90deg, #000000CC 0%, #000000FF 1% ); width: 100% ; height: 100% ; display: none ;
-  animation : kfFadeIN_CodBi_LocalAPIDoc_New .5s ease-in forwards ;
+  animation : kfFadeIN_CodBi_LocalAPIDoc_New .5s ease-in forwards ; overflow-y: auto ; scrollbar-width: none ;
+
+  @keyframes kfFadeIN_CodBi_LocalAPIDoc_New_Header {
+    0%    { opacity: 0 ;}
+    100%  { opacity: 1 ;}}
+  #CodBi_LocalAPIDoc_New_Header,
+  #CodBi_LocalAPIDoc_New_Outro    { color : white ; margin-left: auto ; margin-right: auto ; position: relative ;
+                                    left: 10% ; width: 50% ; top: 10% ; opacity : 0 ;
+                                    animation: kfFadeIN_CodBi_LocalAPIDoc_New_Header .5s .5s ease-in forwards ;}
+  #CodBi_LocalAPIDoc_New_Outro    {
+    top: 40% ; width: 100% ; margin-left: 0 ; left: 0 ;
+
+    #CodBi_LocalAPIDoc_New_Outro_NamingConvention { color: darkorange ;}}
 
   .-close               { margin-left: auto ;}
   .-close button        { background-color: red ; font-size: 2em; color: white ; border: none ;
-                          box-shadow: 0 0 .5em darkred ; border-top-right-radius: .5em ; border-bottom-left-radius: .5em ;
+                          box-shadow: 0 0 .5em darkred ; border-bottom-left-radius: .5em ;
                           cursor: pointer ; transition: .5s ;}
   .-close button:hover  { box-shadow: 0 0 .5em white ;}
   .-close button:active { scale: .9 ;}
@@ -110,9 +183,16 @@
     border-color: darkorange ; animation: kfFadeIN_CodBi_LocalAPIDoc_New_Panel .25s ease-in forwards ;
     color: darkorange ; box-shadow: 0 0 .5em darkorange ; background: #141414;
     background: linear-gradient(148deg, darkgrey 0%, rgba(250, 245, 245, 1) 13%, rgba(242, 235, 235, 1) 51%, rgba(255, 255, 255, 1) 87%, darkgrey 100%);
-    z-index: 100 ;
+    z-index: 100 ; display: flex ; max-width: 70% ;
 
-    label { margin-right: .5em ; color : black}
+    label { margin-right: .5em ; color : black ; margin: auto ; margin-right: 1em ;;}
+
+    #CodBi_LocalAPIDoc_New_Panel_InputArea {
+      max-width: 70% ;
+
+      #CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent { display: none ; color: red ;}
+
+      #CodBi_LocalAPIDoc_New_Name { max-width: 80% ;}}
 
     input { padding: .25em ; border-bottom-left-radius: .5em ; border-top-left-radius: .5em ; width : 50em ;}
 
@@ -121,7 +201,7 @@
               box-shadow: 0 0 .5em darkorange ;}
 
     button        { cursor: pointer ; transition: .5s ; border-color: darkorange ;
-                    border-top-right-radius: .5em ; border-bottom-right-radius: .5em ; background: #141414;
+                    border-left-style: none ; border-top-right-radius: .5em ; border-bottom-right-radius: .5em ;
                     background: linear-gradient(148deg, darkgrey 0%, rgba(250, 245, 245, 1) 13%, rgba(242, 235, 235, 1) 51%, rgba(255, 255, 255, 1) 87%, darkgrey 100%);}
-    button:hover  { scale: 1.1 ; color: darkorange ;}
+    button:hover  { scale: 1.1 ; color: darkorange ; border-left-style: solid ;}
     button:active { scale: .9 ;}}}

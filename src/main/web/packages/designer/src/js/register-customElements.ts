@@ -272,6 +272,10 @@ export function registerCustomElements(): void {
           <cb-manager apidoc  = '${JSON.stringify(response)}'
                       segment = "detFunctionalities"
                       baseURL = "${baseURL}"
+                      language = "${
+                        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                        (window.parent as any)[0].XFC_METADATA.currentLanguage
+                      }"
                       resourceURL = "${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce"
                       docPath = "CodbiPluginData"
                       ></cb-manager></div>`,

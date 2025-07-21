@@ -9,20 +9,20 @@
 
                         [value]         = "activeTab === 'Functionality' ? items : activeTab === 'Elementplaceholder' ? itemsElementplaceholder : itemsStandard"
                         [filter]        = "true"
-                        [(selection)]   = currentlySelectedTreeNode
+                        [(selection)]   = "currentlySelectedTreeNode"
 
                         selectionMode       = "single"
                         filterPlaceholder   = "Suche"
 
-                        (onNodeSelect) = "onNodeSelect( $event )">
+                        (onNodeSelect)   = "onNodeSelect( $event )">
                         <ng-template    let-node
 
                                         pTemplate = "default">
                             <div style = "display : flex ;">
                                 <div id = "CodBi_LocalAPIDoc_Tree_Label">
-                                    <p *ngIf = "!currentlySelectedTreeNodeEditing">{{ node.label }}</p>
+                                    <p *ngIf = "currentlySelectedTreeNode !== node || !currentlySelectedTreeNodeEditing">{{ node.label }}</p>
 
-                                    <input  *ngIf = "currentlySelectedTreeNodeEditing === true"
+                                    <input  *ngIf = "currentlySelectedTreeNode === node && currentlySelectedTreeNodeEditing === true"
 
                                             #CodBi_LocalAPIDoc_Tree_Rename_Input
 
@@ -31,19 +31,41 @@
                                             (keyup) = "onKeyupRenameInput( $event )"
                                             (blur)  = "onBlurRenameInput( $event )"/></div>
 
+                                <div>
+
+                                <div id = "CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent" #CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent >
+                                    <p>{{"Input.Hint.AlreadyExistent" | transloco }}</p></div>
+
                                 <button class = "--CB-LocalAPIDoc-RenameTreeItem"
 
-                                        (click) = "onRenameNode( $event )"></button>
+                                        (click) = "onRenameNode( $event );
 
-                                <button class = "--CB-LocalAPIDoc-ExportTreeItem"
+                                                   formerInput_CodBi_LocalAPIDoc_New_Name = node.label ;"></button></div>
 
-                                        (click) = "onExportNode( $event )"></button>
+                                <div><button class = "--CB-LocalAPIDoc-ExportTreeItem"
 
-                                <button class = "--CB-LocalAPIDoc-RemoveTreeItem"
+                                        (click) = "onExportNode( $event )"></button></div>
 
-                                        (click) = "onDeleteNode( $event )"></button></div></ng-template></p-tree>
+                                <div id = "CodBi_LocalAPIDoc_Tree_Label_Remove">
+                                    <button class = "--CB-LocalAPIDoc-RemoveTreeItem"
 
-                <button class = "-add" #CodBi_LocalAPIDoc_Add>+</button></div></ng-template>
+                                        (click) = "onDeleteNode( $event );
+
+                                                   CodBi_LocalAPIDoc_Tree_Label_Remove_Question.style.display = 'flex';"></button>
+
+                                    <div id = "CodBi_LocalAPIDoc_Tree_Label_Remove_Question" #CodBi_LocalAPIDoc_Tree_Label_Remove_Question >
+                                        <p>{{"Input.Hint.SureToDelete" | transloco }}</p>
+
+                                        <button id = "CodBi_LocalAPIDoc_Tree_Label_Remove_Question_Yes"
+
+                                                (click) = "onDeleteNode_OK( $event )"></button>
+                                        <button id = "CodBi_LocalAPIDoc_Tree_Label_Remove_Question_No"
+
+                                                (click) = "onDeleteNode_CANCEL( $event )"></button></div></div></div></ng-template></p-tree>
+
+                <button class = "-add" #CodBi_LocalAPIDoc_Add
+
+                        (click) = "onClick_CodBi_LocalAPIDoc_Add( $event )">+</button></div></ng-template>
 
         <ng-template id = "CodBi_LocalAPIDoc_RightPanel" #panel >
             <p-tabs [(value)]   = "activeTab"
@@ -255,6 +277,16 @@
         <h2>{{"Input.Label.Title" | transloco }}</h2>
 
         <p>{{"Input.Label.Introduction" | transloco }}</p>
+
+        <a id       = "CodBi_LocalAPIDoc_New_JoinUsOnGitHub"
+           href     = "https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev"
+           target   = "GitHub / CodBi Community">
+            <img    [src] = "baseurl + 'plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/assets/svg/GitHub.svg'"
+
+                    alt = "GitHub Logo"/>
+
+            <p>{{"Input.Label.JoinUsOnGitHub" | transloco }}</p>
+        </a>
 
         <div id = "CodBi_LocalAPIDoc_New_Outro">
             <h2>{{"Input.Label.Outro.Header" | transloco }}</h2>

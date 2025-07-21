@@ -15,6 +15,15 @@ const angularWebComponentProjectRoot = path.resolve(currentScriptDir, "Angular/C
 const angularWebComponentDistDir = path.resolve(angularWebComponentProjectRoot, "dist", "manager", "browser");
 const angularWebComponentSourceFile = path.resolve(angularWebComponentDistDir, "main.js");
 const angularWebComponentSourceFileCSS = path.resolve(angularWebComponentDistDir, "styles.css");
+const angularWebComponentSvgSourceDir = path.resolve(
+  angularWebComponentProjectRoot,
+  "projects",
+  "manager",
+  "src/app/manager",
+  "assets",
+  "Logos",
+);
+const angularWebComponentSvgOutputDir = path.join(outputDir, "assets", "svg");
 // --- TinyMCE Paths ---
 const tinymceSourceDir = path.resolve(currentScriptDir, "../../node_modules/tinymce");
 const tinymceOutputDir = path.join(outputDir, "tinymce");
@@ -80,14 +89,42 @@ async function copyI18nAssets() {
   }
 }
 
+async function copyAngularWebComponentSvgAssets() {
+  console.log(
+    `Copying Angular web component SVG assets from ${angularWebComponentSvgSourceDir} to ${angularWebComponentSvgOutputDir}...`,
+  );
+
+  try {
+    // Ensure the output directory for SVGs exists
+    await fs.mkdir(angularWebComponentSvgOutputDir, { recursive: true });
+    // Clear the destination directory before copying to ensure a clean copy
+    await fsExtra.emptyDir(angularWebComponentSvgOutputDir);
+    // Copy all contents from source to destination
+    await fsExtra.copy(angularWebComponentSvgSourceDir, angularWebComponentSvgOutputDir, {
+      recursive: true,
+      overwrite: true,
+    });
+    console.log("Angular web component SVG assets copied successfully.");
+  } catch (X) {
+    if (X.code === "ENOENT") {
+      console.warn(
+        `Warning: Angular web component SVG source directory not found: ${angularWebComponentSvgSourceDir}. Skipping SVG copy.`,
+      );
+    } else {
+      console.error("Error copying Angular web component SVG assets:", X.message);
+      process.exit(1);
+    }
+  }
+}
+
 (async () => {
   console.log(`Cleaning output directory: ${outputDir}...`);
 
   await fsExtra.emptyDir(outputDir);
   await buildAngularWebComponent();
   await copyTinyMCEAssets();
-
   await copyI18nAssets();
+  await copyAngularWebComponentSvgAssets();
 
   await Promise.all([
     esbuild.build({

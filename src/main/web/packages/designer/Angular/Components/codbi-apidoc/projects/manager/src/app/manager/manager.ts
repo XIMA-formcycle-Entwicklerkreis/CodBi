@@ -6,7 +6,7 @@ import {
   AfterViewInit,
   ChangeDetectorRef,
   Component,
-  type ElementRef,
+  ElementRef,
   Inject,
   Input,
   ViewChild,
@@ -239,7 +239,7 @@ interface SimplifiedNamedItem {
 export class Manager implements AfterViewInit {
   @Input() resourceurl: string | undefined;
   /** */
-  @ViewChild("CodBi_LocalAPIDoc") CodBi_LocalAPIDoc!: ElementRef;
+  @ViewChild("CodBi_LocalAPIDoc", { read: ElementRef }) CodBi_LocalAPIDoc!: ElementRef;
   /** */
   @ViewChild("CodBi_LocalAPIDoc_New_Panel_Add") CodBi_LocalAPIDoc_New_Panel_Add!: ElementRef;
   /** */
@@ -249,7 +249,7 @@ export class Manager implements AfterViewInit {
   /** */
   @ViewChild("CodBi_LocalAPIDoc_New_Name") CodBi_LocalAPIDoc_New_Name!: ElementRef;
   /** */
-  @ViewChild("CodBi_LocalAPIDoc_Tree") CodBi_LocalAPIDoc_Tree!: ElementRef;
+  @ViewChild("CodBi_LocalAPIDoc_Tree", { read: ElementRef }) CodBi_LocalAPIDoc_Tree!: ElementRef;
   /** */
   @ViewChild("CodBi_LocalAPIDoc_New_Panel_Close") CodBi_LocalAPIDoc_New_Panel_Close!: ElementRef;
   /** */
@@ -441,6 +441,220 @@ export class Manager implements AfterViewInit {
     }
   }
 
+  // #region Node Management
+  // #region New Node Dialog
+  /**
+   *
+   * @param event
+   */
+  protected onClick_CodBi_LocalAPIDoc_Add(event: Event) {
+    this.formerInput_CodBi_LocalAPIDoc_New_Name = "";
+    this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "flex";
+    (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.add("-submerged");
+    this.CodBi_LocalAPIDoc_New_Name.nativeElement.focus();
+  }
+  // #endregion New Node Dialog
+  // #region Removal
+  /** */
+  @ViewChild("CodBi_LocalAPIDoc_Tree_Label_Remove_Question") CodBi_LocalAPIDoc_Tree_Label_Remove_Question!: ElementRef;
+  /**
+   *
+   * @param nodes
+   * @param dataToRemove
+   * @returns
+   */
+  protected removeNodeRecursive(nodes: TreeNode[] | undefined, dataToRemove: TreeNode): TreeNode[] {
+    if (!nodes) {
+      return [];
+    }
+
+    const newNodes: TreeNode[] = [];
+
+    for (const node of nodes) {
+      if (node === dataToRemove) {
+        continue;
+      }
+
+      if (node.children && node.children.length > 0) {
+        const filteredChildren = this.removeNodeRecursive(node.children, dataToRemove);
+
+        node.children = filteredChildren;
+      }
+
+      newNodes.push(node);
+    }
+    console.log("JJJJJ", newNodes);
+    return newNodes;
+  }
+  /**
+   * Removes the node corresponding to the clicked remove button.
+   *
+   * @param event The {@link Event } received. */
+  protected onDeleteNode(event: Event) {
+    // #region Update the currently selected node to be the one corresponding to the clicked remove button.
+    const node = INSTANCE.tsCheck<HTMLElement>(event.target, HTMLElement).parentElement.parentElement.parentElement
+      .parentElement.parentElement;
+
+    node.click();
+    // #endregion Update the currently selected node to be the one corresponding to the clicked remove button.
+  }
+  /**
+   * Handles the event when the user confirms the deletion of a node.
+   *
+   * @param event The {@link Event } received.
+   */
+  protected onDeleteNode_OK(event: Event) {
+    this.CodBi_LocalAPIDoc_Tree_Label_Remove_Question.nativeElement.style.display = "none";
+
+    switch (this.activeTab) {
+      case "Functionality":
+        this.items = this.removeNodeRecursive(this.items, this._currentNode);
+
+        break;
+
+      case "Elementplaceholder":
+        this.itemsElementplaceholder = this.removeNodeRecursive(this.itemsElementplaceholder, this._currentNode);
+
+        break;
+
+      case "Standard":
+        this.itemsStandard = this.removeNodeRecursive(this.itemsStandard, this._currentNode);
+
+        break;
+    }
+  }
+  /**
+   * Handles the event when the user cancels the deletion of a node.
+   *
+   * @param event The {@link Event } received.
+   */
+  protected onDeleteNode_CANCEL(event: Event) {
+    this.CodBi_LocalAPIDoc_Tree_Label_Remove_Question.nativeElement.style.display = "none";
+  }
+  // #region Removal
+  // #region Renaming
+  /**
+   *  Provides access to the {@link HTMLParagraphElement } stating that the name chosen for renaming is already taken
+   *  by a native CodBi-Element. */
+  @ViewChild("CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent")
+  CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent!: ElementRef;
+  /**
+   * Updates the {@link Manager.currentlySelectedTerrNode }'s {@link TreeNode.label } and
+   * {@link Manager.currentlySelectedTreeNodeEditing } to false, ending editing mode, if the "Enter"-Key is pressed.
+   *
+   * @param event The received {@link KeyboardEvent }. */
+  protected onKeyupRenameInput(event: KeyboardEvent) {
+    const lowercaseInputControlValue = INSTANCE.tsCheck<HTMLInputElement>(
+      event.target,
+      HTMLInputElement,
+    ).value.toLowerCase();
+    // #region Remove hint that the name is already taken if not taken.
+    if (
+      !Object.keys(window.CodbiPluginData.detFunctionalities)
+        .map((e) => e.toLowerCase())
+        .includes(lowercaseInputControlValue) &&
+      !Object.keys(window.CodbiPluginData.detElementplaceholder)
+        .map((e) => e.toLowerCase())
+        .includes(lowercaseInputControlValue) &&
+      !Object.keys(window.CodbiPluginData.detStandards)
+        .map((e) => e.toLowerCase())
+        .includes(lowercaseInputControlValue)
+    ) {
+      this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "none";
+    }
+    // #endregion Remove hint that the name is already taken if not taken.
+    const inputControl = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+    // #region Suppress invalid characters.
+    if (inputControl.value !== "" && !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(inputControl.value)) {
+      inputControl.value = this.formerInput_CodBi_LocalAPIDoc_New_Name;
+    } else {
+      this.formerInput_CodBi_LocalAPIDoc_New_Name = inputControl.value;
+    }
+    // #endregion Suppress invalid characters.
+    if (event.key === "Enter") {
+      this.currentlySelectedTreeNode.label = TYPE.tsCheck<HTMLInputElement>(
+        event.target,
+        typeof HTMLInputElement,
+      ).value;
+      this.currentlySelectedTreeNodeEditing = false;
+    }
+  }
+  /**
+   *  Gets a {@link boolean } stating whether the {@link Manager.currentlySelectedTerrNode }'s {@link TreeNode.label }
+   *  is currently being edited or not. */
+  protected get currentlySelectedTreeNodeEditing() {
+    // #region Prevent access failures.
+    if (
+      this.currentlySelectedTreeNode === null ||
+      this.currentlySelectedTreeNode === undefined ||
+      this.currentlySelectedTreeNode.data === null
+    ) {
+      return false;
+    }
+    // #endregion Prevent access failures.
+    return this.currentlySelectedTreeNode.data.Editing === undefined
+      ? false
+      : this.currentlySelectedTreeNode.data.Editing;
+  }
+  /**
+   * Sets the {@link Manager.currentlySelectedTreeNode }'s {@link TreeNode.data.Editing } to the given value, stating
+   * whether the name of the node is currently being edited or not.
+   *
+   * @param toSet The {@link boolean } to set. */
+  protected set currentlySelectedTreeNodeEditing(toSet: boolean) {
+    if (this.currentlySelectedTreeNode) {
+      this.currentlySelectedTreeNode.data.Editing = toSet;
+    }
+  }
+  /**
+   * Initiates the renaming of the {@link Manager.currentlySelectedTreeNode } by toggling
+   * {@link Manager.currentlySelectedTreeNodeEditing } also focusing the {@link Manager.currentlySelectedTreeNode }.
+   *
+   * @param event The {@link Event } received. */
+  protected onRenameNode(event: Event) {
+    this.currentlySelectedTreeNodeEditing = !this.currentlySelectedTreeNodeEditing;
+
+    if (this.currentlySelectedTreeNodeEditing) {
+      setTimeout(() => {
+        this.CodBi_LocalAPIDoc_Tree_Rename_Input.nativeElement.focus();
+      });
+    }
+  }
+  /**
+   * Updates the {@link Manager.currentlySelectedTerrNode }'s {@link TreeNode.label } and
+   * {@link Manager.currentlySelectedTreeNodeEditing } to false, ending editing mode.
+   *
+   * @param event The {@link FocusEvent } received. */
+  protected onBlurRenameInput(event: FocusEvent) {
+    // #region Check against CodBi Data.
+    const lowercaseInputControlValue = INSTANCE.tsCheck<HTMLInputElement>(
+      event.target,
+      HTMLInputElement,
+    ).value.toLowerCase();
+
+    if (
+      Object.keys(window.CodbiPluginData.detFunctionalities)
+        .map((e) => e.toLowerCase())
+        .includes(lowercaseInputControlValue) ||
+      Object.keys(window.CodbiPluginData.detElementplaceholder)
+        .map((e) => e.toLowerCase())
+        .includes(lowercaseInputControlValue) ||
+      Object.keys(window.CodbiPluginData.detStandards)
+        .map((e) => e.toLowerCase())
+        .includes(lowercaseInputControlValue)
+    ) {
+      this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.top = `${this.CodBi_LocalAPIDoc_Tree.nativeElement.getBoundingClientRect().top - this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.getBoundingClientRect().height * 1.5}px`;
+      this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "block";
+
+      INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).focus();
+
+      return;
+    }
+    // #endregion Check against CodBi Data.
+    this.currentlySelectedTreeNode.label = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
+    this.currentlySelectedTreeNodeEditing = false;
+  }
+  // #endregion Renaming
   // #region Create New Element
   /**
    * The {@link HTMLParagraphElement } stating that the local CodBi-Element to created with the specified
@@ -464,12 +678,13 @@ export class Manager implements AfterViewInit {
     this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent.nativeElement.style.display = "none";
 
     const inputControl = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
-
+    // #region Suppress invalid characters.
     if (!/^([a-zA-Z_$][a-zA-Z0-9_$]*\.)*[a-zA-Z_$][a-zA-Z0-9_$]*(\.)?$/.test(inputControl.value)) {
       inputControl.value = this.formerInput_CodBi_LocalAPIDoc_New_Name;
     } else {
       this.formerInput_CodBi_LocalAPIDoc_New_Name = inputControl.value;
     }
+    // #endregion Suppress invalid characters.
   }
   /**
    * Removes any dots at the end of the input value of {@link Manager.CodBi_LocalAPIDoc_New_Name } prior to adding
@@ -487,18 +702,18 @@ export class Manager implements AfterViewInit {
     }
     // #endregion Remove trailing dot.
     // #region Check against CodBi Data.
-    const lowercaseInputControl = inputControl.value.toLowerCase();
+    const lowercaseInputControlValue = inputControl.value.toLowerCase();
 
     if (
       Object.keys(window.CodbiPluginData.detFunctionalities)
         .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControl) ||
+        .includes(lowercaseInputControlValue) ||
       Object.keys(window.CodbiPluginData.detElementplaceholder)
         .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControl) ||
+        .includes(lowercaseInputControlValue) ||
       Object.keys(window.CodbiPluginData.detStandards)
         .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControl)
+        .includes(lowercaseInputControlValue)
     ) {
       this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent.nativeElement.style.display = "block";
 
@@ -524,6 +739,7 @@ export class Manager implements AfterViewInit {
     // #endregion Close the dialog.
   }
   // #endregion Create New Element
+  // #endregion Node Management
   get notes() {
     return this.currentlySelectedFunctionalityData ? this.currentlySelectedFunctionalityData.Notes : "";
   }
@@ -737,76 +953,6 @@ export class Manager implements AfterViewInit {
     }
   }
 
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  removeNodeRecursive(nodes: TreeNode[] | undefined, dataToRemove: any): TreeNode[] {
-    if (!nodes) {
-      return []; // If no nodes, return empty array
-    }
-
-    const newNodes: TreeNode[] = [];
-
-    for (const node of nodes) {
-      // Check if the current node is the one to remove
-      if (node === dataToRemove) {
-        // Skip this node, effectively removing it
-        continue;
-      }
-
-      // If the node has children, recursively filter its children
-      if (node.children && node.children.length > 0) {
-        const filteredChildren = this.removeNodeRecursive(node.children, dataToRemove);
-        // Create a shallow copy of the node and update its children
-        node.children = filteredChildren;
-      }
-      // If no children or not the node to remove, keep the node as is (or a shallow copy)
-      newNodes.push(node);
-    }
-
-    return newNodes;
-  }
-  onDeleteNode(event: Event) {
-    switch (this.activeTab) {
-      case "Functionality":
-        this.items = this.removeNodeRecursive(this.items, this._currentNode);
-
-        break;
-
-      case "Elementplaceholder":
-        this.items = this.removeNodeRecursive(this.itemsElementplaceholder, this._currentNode);
-
-        break;
-
-      case "Standard":
-        this.items = this.removeNodeRecursive(this.itemsStandard, this._currentNode);
-
-        break;
-    }
-  }
-  // #region Renaming
-  /**
-   * Updates the {@link Manager.currentlySelectedTerrNode }'s {@link TreeNode.label } and
-   * {@link Manager.currentlySelectedTreeNodeEditing } to false, ending editing mode, if the "Enter"-Key is pressed.
-   *
-   * @param event The received {@link KeyboardEvent }. */
-  protected onKeyupRenameInput(event: KeyboardEvent) {
-    if (event.key === "Enter") {
-      this.currentlySelectedTreeNode.label = TYPE.tsCheck<HTMLInputElement>(
-        event.target,
-        typeof HTMLInputElement,
-      ).value;
-      this.currentlySelectedTreeNodeEditing = false;
-    }
-  }
-  /**
-   * Updates the {@link Manager.currentlySelectedTerrNode }'s {@link TreeNode.label } and
-   * {@link Manager.currentlySelectedTreeNodeEditing } to false, ending editing mode.
-   *
-   * @param event The {@link FocusEvent } received. */
-  protected onBlurRenameInput(event: FocusEvent) {
-    this.currentlySelectedTreeNode.label = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
-    this.currentlySelectedTreeNodeEditing = false;
-  }
-  // #endregion Renaming
   _currentlySelectedTreeNode: TreeNode;
 
   get currentlySelectedTreeNode(): TreeNode {
@@ -833,18 +979,6 @@ export class Manager implements AfterViewInit {
     console.log("i");
     //this._descriptionEditor = event.editor ;
   }
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  _currentNode: any;
-  /**
-   * Sets {@link Manager._currentNode } and {@link Manager._currentNodeData }.
-   *
-   * @param event The {@link TreeNodeSelectEvent }. */
-  onNodeSelect(event: TreeNodeSelectEvent) {
-    this._currentNode = event.node;
-    this._currentNodeData = event.node.data;
-  }
-
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   onTabChange(event: string | number) {
     console.log(event);
   }
@@ -914,6 +1048,12 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link Event } received. */
   protected onExportNode(event: Event) {
+    // #region Update the currently selected node to be the one corresponding to the clicked remove button.
+    const node = INSTANCE.tsCheck<HTMLElement>(event.target, HTMLElement).parentElement.parentElement.parentElement
+      .parentElement.parentElement;
+
+    node.click();
+    // #endregion Update the currently selected node to be the one corresponding to the clicked remove button.
     // #region Conversion
     const toExport: {
       detFunctionalities: object;
@@ -971,6 +1111,18 @@ export class Manager implements AfterViewInit {
   @Input() protected language: string = "de";
   // #endregion Internationalization
   // #region Basic Operations
+  // #region Tree View
+  /** Stores the currently selected {@link TreeNode }. */
+  protected _currentNode: TreeNode;
+  /**
+   * Sets {@link Manager._currentNode } and {@link Manager._currentNodeData }.
+   *
+   * @param event The {@link TreeNodeSelectEvent }. */
+  protected onNodeSelect(event: TreeNodeSelectEvent) {
+    this._currentNode = event.node;
+    this._currentNodeData = event.node.data;
+  }
+  // #endregion Tree View
   /** Closes the {@link Manager.CodBi_LocalAPIDoc } panel by adding the `--closed` class to it. */
   protected onClick_CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel() {
     this.CodBi_LocalAPIDoc.nativeElement.classList.add("--closed");
@@ -1194,53 +1346,15 @@ export class Manager implements AfterViewInit {
 
     return mergedTree;
   }
-  /**
-   *  Gets a {@link boolean } stating whether the {@link Manager.currentlySelectedTerrNode }'s {@link TreeNode.label }
-   *  is currently being edited or not. */
-  get currentlySelectedTreeNodeEditing() {
-    // #region Prevent access failures.
-    if (
-      this.currentlySelectedTreeNode === null ||
-      this.currentlySelectedTreeNode === undefined ||
-      this.currentlySelectedTreeNode.data === null
-    ) {
-      return false;
-    }
-    // #endregion Prevent access failures.
-    return this.currentlySelectedTreeNode.data.Editing === undefined
-      ? false
-      : this.currentlySelectedTreeNode.data.Editing;
-  }
 
-  set currentlySelectedTreeNodeEditing(toSet: boolean) {
-    console.log("L", this.currentlySelectedTreeNode);
-    if (this.currentlySelectedTreeNode) {
-      this.currentlySelectedTreeNode.data.Editing = toSet;
-    }
-  }
-
-  onRenameNode(event: Event) {
-    this.currentlySelectedTreeNodeEditing = !this.currentlySelectedTreeNodeEditing;
-
-    if (this.currentlySelectedTreeNodeEditing) {
-      setTimeout(() => {
-        this.CodBi_LocalAPIDoc_Tree_Rename_Input.nativeElement.focus();
-      });
-    }
-  }
   ngOnInit() {
     this.translocoService.setActiveLang(this.language);
   }
+
   ngAfterViewInit() {
     if (this.items && this.items.length > 0) {
       this.currentlySelectedTreeNode = this.items[0];
     }
-
-    this.CodBi_LocalAPIDoc_Add.nativeElement.addEventListener("click", (event) => {
-      this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "flex";
-      (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.add("-submerged");
-      this.CodBi_LocalAPIDoc_New_Name.nativeElement.focus();
-    });
 
     this.CodBi_LocalAPIDoc_New_Panel_Close.nativeElement.addEventListener("click", (event) => {
       this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "none";

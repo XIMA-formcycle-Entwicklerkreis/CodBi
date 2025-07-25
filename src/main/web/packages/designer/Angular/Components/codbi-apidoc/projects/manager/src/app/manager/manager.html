@@ -5,7 +5,7 @@
                 [style]         = "{ height: '100%', width : '100%' }">
         <ng-template #panel >
             <div class = "-panel -left">
-                <p-tree #CodBi_LocalAPIDoc_Tree
+                <p-tree id = "CodBi_LocalAPIDoc_Tree" #CodBi_LocalAPIDoc_Tree
 
                         [value]         = "activeTab === 'Functionality' ? items : activeTab === 'Elementplaceholder' ? itemsElementplaceholder : itemsStandard"
                         [filter]        = "true"
@@ -18,7 +18,8 @@
                         <ng-template    let-node
 
                                         pTemplate = "default">
-                            <div style = "display : flex ;">
+                            <div    id = "CodBi_LocalAPIDoc_Tree_Item"
+                                    style = "display : flex ;">
                                 <div id = "CodBi_LocalAPIDoc_Tree_Label">
                                     <p *ngIf = "currentlySelectedTreeNode !== node || !currentlySelectedTreeNodeEditing">{{ node.label }}</p>
 
@@ -28,13 +29,12 @@
 
                                             [value] = "node.label"
 
-                                            (keyup) = "onKeyupRenameInput( $event )"
-                                            (blur)  = "onBlurRenameInput( $event )"/></div>
-
-                                <div>
+                                            (keyup)         = "onKeyupRenameInput( $event )"
+                                            (blur)          = "onBlurRenameInput( $event )"
+                                            (keydown.enter) = "onBlurRenameInput( $event )"/></div><div>
 
                                 <div id = "CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent" #CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent >
-                                    <p>{{"Input.Hint.AlreadyExistent" | transloco }}</p></div>
+                                    <p>"{{ alreadyTakenName }}"{{"Input.Hint.AlreadyExistent" | transloco }}</p></div>
 
                                 <button class = "--CB-LocalAPIDoc-RenameTreeItem"
 
@@ -58,10 +58,14 @@
 
                                         <button id = "CodBi_LocalAPIDoc_Tree_Label_Remove_Question_Yes"
 
-                                                (click) = "onDeleteNode_OK( $event )"></button>
+                                                (click) = " onDeleteNode_OK( $event );
+
+                                                            CodBi_LocalAPIDoc_Tree_Label_Remove_Question.style.display = 'none';"></button>
                                         <button id = "CodBi_LocalAPIDoc_Tree_Label_Remove_Question_No"
 
-                                                (click) = "onDeleteNode_CANCEL( $event )"></button></div></div></div></ng-template></p-tree>
+                                                (click) = " onDeleteNode_CANCEL( $event );
+
+                                                            CodBi_LocalAPIDoc_Tree_Label_Remove_Question.style.display = 'none';"></button></div></div></div></ng-template></p-tree>
 
                 <button class = "-add" #CodBi_LocalAPIDoc_Add
 
@@ -79,7 +83,11 @@
                         <button id      = "CodBi_LocalAPIDoc_RightPanel_Options_Sync"
                                 tooltip = "Synchronize with server"
 
-                                (click) = "enSync()"></button>
+                                (click) = "enSync()"
+
+                                [ngClass] = "{
+                                    '--synced'  : synchronized,
+                                    '--syncing' : synchronizing }"></button>
 
                         <button id      = "CodBi_LocalAPIDoc_RightPanel_Options_Export"
                                 tooltip = "Export to file"
@@ -102,7 +110,10 @@
                 <p-tabpanels>
                     <p-tabpanel value   = "Functionality"
 
-                                [class] = "activeTab === 'Functionality' ? '--active' : '--inactive'">
+                                [class.--active]    = "activeTab === 'Functionality'"
+                                [class.--inactive]  = "activeTab !== 'Functionality'"
+                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef.local === undefined"
+                                [class.--blocked]   = "currentlySelectedTreeNode === undefined">
                         <p-accordion    [(value)]   = "activeAccordion"
                                         [multiple]  = "true">
                             <p-accordion-panel value = "Description">
@@ -112,14 +123,15 @@
                                     <div>
                                         <editor *ngIf="activeTab === 'Functionality'"
 
-                                                id = "editorDescription_Functionalities" #editorDescription_Functionalities
+                                                id          = "editorDescription_Functionalities" #editorDescription_Functionalities
+                                                licenseKey  = "gpl"
 
-                                                licenseKey      = "gpl"
+                                                (onInit)    = "onInitTinyMCE_Description( $event )"
+                                                (onBlur)    = "updateNodeToAPIDoc()"
 
-                                                (onInit)        = "onInitTinyMCE_Description( $event )"
                                                 [(ngModel)]     = "description"
                                                 [initialValue]  = "'<p>Hier die Beschreibung der Funktionalität eingeben...</p>'"
-                                                [init]="{
+                                                [init]          = "{
                                                     plugins                     :   'advlist autolink lists link image table code help wordcount ' +
                                                                                     'charmap preview anchor searchreplace visualblocks fullscreen ' +
                                                                                     'insertdatetime media emoticons autosave quickbars visualchars ',
@@ -171,6 +183,8 @@
                                                 licenseKey      = "gpl"
 
                                                 (onInit)        = "onInitTinyMCE_Description( $event )"
+                                                (onBlur)        = "updateNodeToAPIDoc()"
+
                                                 [(ngModel)]     = "description"
                                                 [initialValue]  = "'<p>Hier die Beschreibung des Elementplatzhalters eingeben...</p>'"
                                                 [init]="{
@@ -195,7 +209,7 @@
                                 <p-accordion-header>Parameter</p-accordion-header>
                                 <p-accordion-content>
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
-                                                    [ngTemplateOutletContext]   = "{ data: currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? currentlySelectedFunctionalityData.Parameter : [] : []}"></ng-container></p-accordion-content></p-accordion-panel>
+                                                    [ngTemplateOutletContext]   = "{ data: currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? toDescriptiveArray( currentlySelectedFunctionalityData.Parameter ) : [] : []}"></ng-container></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Notes">
                                 <p-accordion-header>Notizen</p-accordion-header>
@@ -224,6 +238,8 @@
                                                 licenseKey      = "gpl"
 
                                                 (onInit)        = "onInitTinyMCE_Description( $event )"
+                                                (onBlur)        = "updateNodeToAPIDoc()"
+
                                                 [(ngModel)]     = "description"
                                                 [initialValue]  = "'<p>Hier die Beschreibung der Standardkonfiguration eingeben...</p>'"
                                                 [init]="{

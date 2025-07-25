@@ -225,6 +225,13 @@ export class SVManager extends HTMLDivElement {
 
     DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).appendChild(style);
     // #endregion DOM preparations
+    // #region Provide Update via PluginData
+    window.CodbiPluginData.updateSVManager = (options: string) => {
+      this.options = JSON.parse(options).map((e: string) => e.replace(".ts", ""));
+
+      this.render();
+    };
+    // #endregion Provide Update via PluginData
     this.render();
   }
   /** Render's all {@link SVManager.options }. */

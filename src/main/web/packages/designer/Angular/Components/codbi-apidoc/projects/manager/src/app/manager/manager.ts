@@ -321,11 +321,17 @@ export class Manager implements AfterViewInit {
             classes.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
           }
 
+          const parameter = [];
+
+          for (const pKey in toConvert[key].Parameter) {
+            parameter.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
+          }
+
           const newNode: TreeNode = {
             label: part,
             data: {
               Description: toConvert[key].Description,
-              Parameter: toConvert[key].Parameter,
+              Parameter: parameter,
               globals: globals,
               classes: classes,
             },
@@ -362,6 +368,16 @@ export class Manager implements AfterViewInit {
     this.itemsElementplaceholder = this.toTreeNodes(this.apiDoc.detElementplaceholder);
     this.itemsStandard = this.toTreeNodes(this.apiDoc.detStandards);
 
+    for (const key in this.apiDoc.detFunctionalities) {
+      window.CodbiPluginData.detFunctionalities[key].local = true;
+    }
+    for (const key in this.apiDoc.detElementplaceholder) {
+      window.CodbiPluginData.detElementplaceholder[key].local = true;
+    }
+
+    for (const key in this.apiDoc.detStandards) {
+      window.CodbiPluginData.detStandards[key].local = true;
+    }
     console.log("n11112222", this.apiDoc, this.items, this.itemsElementplaceholder, this.itemsStandard);
   }
 
@@ -409,42 +425,11 @@ export class Manager implements AfterViewInit {
     return result;
   }
 
-  protected addTreeNodes(path: string, addTo: TreeNode<nodeData>[]) {
-    let currentNodelevel: TreeNode<nodeData>[] = addTo;
-
-    for (const part of path.split(".")) {
-      let existent = false;
-
-      for (const node of currentNodelevel) {
-        if (node.label === part) {
-          existent = true;
-        }
-      }
-
-      if (!existent) {
-        currentNodelevel.push({
-          label: part, // PrimeNG TreeNode has a top-level label
-          data: {
-            // The 'data' property holds your custom data
-            label: part, // Redundant if TreeNode.label is used, but good for consistency
-            Description: "",
-            globals: [],
-            classes: [],
-            Parameter: [],
-            Notes: "Neu Erstellt",
-          },
-          children: [], // Initialize children for the new node
-        });
-      }
-
-      currentNodelevel = currentNodelevel.find((candidate) => candidate.label === part).children;
-    }
-  }
-
   // #region Node Management
   // #region New Node Dialog
+  // #region Basic Operations
   /**
-   *
+   * Clears the {@link Manager.formerInput_CodBi_LocalAPIDoc_New_Name }
    * @param event
    */
   protected onClick_CodBi_LocalAPIDoc_Add(event: Event) {
@@ -453,6 +438,169 @@ export class Manager implements AfterViewInit {
     (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.add("-submerged");
     this.CodBi_LocalAPIDoc_New_Name.nativeElement.focus();
   }
+  // #endregion Basic Operations
+  // #region Create New Element
+  /**
+   * The {@link HTMLParagraphElement } stating that the local CodBi-Element to created with the specified
+   * {@link Manager.CodBi_LocalAPIDoc_New_Name } is already taken by a native CodBi-Element. */
+  @ViewChild("CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent")
+  /**
+   * References the {@link HTMLParagraphElement } stating that the name of a new element is already taken by a
+   * native CodBi-Element. This is used to inform the user. */
+  CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent!: ElementRef;
+  /** Simulates a click on {@link Manager.CodBi_LocalAPIDoc_New_Panel_Add } in order to add a new element. */
+  protected onEnter_CodBi_LocalAPIDoc_New_Name() {
+    this.CodBi_LocalAPIDoc_New_Panel_Add.nativeElement.click();
+  }
+  /**
+   * Adds the {@link TreeNode }s specified in the given path to the structure {@link toAddTo } inserting the new
+   * {@link TreeNodes } into already existing ones (case insensitive).
+   *
+   * @param path  The {@link TreeNodes } to create.
+   * @param addTo The structure the **path**'s {@link TreeNodes } shall be added to. */
+  protected addTreeNodes(path: string, addTo: TreeNode<nodeData>[]) {
+    let currentNodelevel: TreeNode<nodeData>[] = addTo;
+
+    for (const part of path.split(".")) {
+      let existent = false;
+      // #region Check for already existing nodes and insert accordingly
+      for (const node of currentNodelevel) {
+        if (node.label.toLowerCase() === part.toLowerCase()) {
+          existent = true;
+        }
+      }
+
+      if (!existent) {
+        currentNodelevel.push({
+          label: part,
+          data: {
+            label: part,
+            Description: "",
+            globals: [],
+            classes: [],
+            Parameter: [],
+            Notes: "Neu Erstellt",
+          },
+          children: [],
+        });
+      }
+      // #endregion Check for already existing nodes and insert accordingly
+      currentNodelevel = currentNodelevel.find(
+        (candidate) => candidate.label.toLowerCase() === part.toLowerCase(),
+      ).children;
+    }
+  }
+  /**
+   *
+   * @param functionalityName
+   * @returns
+   */
+
+  protected isFunctionalityNameTaken(functionalityName: string): boolean {
+    const lowerCaseName = functionalityName.toLowerCase();
+
+    return Object.keys(window.CodbiPluginData.detFunctionalities)
+      .map((e) => e.toLowerCase())
+      .includes(lowerCaseName);
+  }
+  /**
+   *
+   * @param elementPlaceholderName
+   * @returns
+   */
+  protected isElementPlaceholderNameTaken(elementPlaceholderName: string): boolean {
+    const lowerCaseName = elementPlaceholderName.toLowerCase();
+
+    return Object.keys(window.CodbiPluginData.detElementplaceholder)
+      .map((e) => e.toLowerCase())
+      .includes(lowerCaseName);
+  }
+  /**
+   *
+   */
+  protected isStandardNameTaken(standardName: string): boolean {
+    const lowerCaseName = standardName.toLowerCase();
+
+    return Object.keys(window.CodbiPluginData.detStandards)
+      .map((e) => e.toLowerCase())
+      .includes(lowerCaseName);
+  }
+  /**
+   * Determines whether the specified  **pathAndName** is already taken by a native CodBi-Element.
+   *
+   * @param pathAndName The **pathAndName** to the possibly already natively defined CodBi-Element.
+   *
+   * @returns **True** if the specified **pathAndName** is already taken, otherwise **false**. */
+  protected isNameTaken(pathAndName: string): boolean {
+    const lowerCaseName = pathAndName.toLowerCase();
+
+    return (
+      Object.keys(window.CodbiPluginData.detFunctionalities)
+        .map((e) => e.toLowerCase())
+        .includes(lowerCaseName) ||
+      Object.keys(window.CodbiPluginData.detElementplaceholder)
+        .map((e) => e.toLowerCase())
+        .includes(lowerCaseName) ||
+      Object.keys(window.CodbiPluginData.detStandards)
+        .map((e) => e.toLowerCase())
+        .includes(lowerCaseName)
+    );
+  }
+  /**
+   * Removes any dots at the end of the input value of {@link Manager.CodBi_LocalAPIDoc_New_Name } prior to adding
+   * the new element to the tree of the currently {@link Manager.activeTab }.
+   * After that closes the dialog. */
+  protected onClick_CodBi_LocalAPIDoc_New_Panel_Add() {
+    // #region Remove trailing dot.
+    const inputControl = INSTANCE.tsCheck<HTMLInputElement>(
+      this.CodBi_LocalAPIDoc_New_Name.nativeElement,
+      HTMLInputElement,
+    );
+
+    if (inputControl.value[inputControl.value.length - 1] === ".") {
+      inputControl.value = inputControl.value.substring(0, inputControl.value.length - 1);
+    }
+    // #endregion Remove trailing dot.
+    // #region Check against CodBi Data.
+    const lowercaseInputControlValue = inputControl.value.toLowerCase();
+
+    if (
+      Object.keys(window.CodbiPluginData.detFunctionalities)
+        .map((e) => e.toLowerCase())
+        .includes(lowercaseInputControlValue) ||
+      Object.keys(window.CodbiPluginData.detElementplaceholder)
+        .map((e) => e.toLowerCase())
+        .includes(lowercaseInputControlValue) ||
+      Object.keys(window.CodbiPluginData.detStandards)
+        .map((e) => e.toLowerCase())
+        .includes(lowercaseInputControlValue)
+    ) {
+      this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent.nativeElement.style.display = "block";
+
+      return;
+    }
+    // #endregion Check against CodBi Data.
+    // #region Add new element to the tree and update it.
+    this.addTreeNodes(
+      this.CodBi_LocalAPIDoc_New_Name.nativeElement.value,
+      this.activeTab === "Functionality"
+        ? this.items
+        : this.activeTab === "Elementplaceholder"
+          ? this.itemsElementplaceholder
+          : this.itemsStandard,
+    );
+
+    this.synchronized = false;
+
+    this.cdr.markForCheck();
+    // #endregion Add new element to the tree and update it.
+    // #region Close the dialog.
+    this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "none";
+
+    (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.remove("-submerged");
+    // #endregion Close the dialog.
+  }
+  // #endregion Create New Element
   // #endregion New Node Dialog
   // #region Removal
   /** */
@@ -501,8 +649,7 @@ export class Manager implements AfterViewInit {
   /**
    * Handles the event when the user confirms the deletion of a node.
    *
-   * @param event The {@link Event } received.
-   */
+   * @param event The {@link Event } received. */
   protected onDeleteNode_OK(event: Event) {
     this.CodBi_LocalAPIDoc_Tree_Label_Remove_Question.nativeElement.style.display = "none";
 
@@ -510,6 +657,16 @@ export class Manager implements AfterViewInit {
       case "Functionality":
         this.items = this.removeNodeRecursive(this.items, this._currentNode);
 
+        {
+          // #region Remove from FSL
+          const toFilter = JSON.parse(`{ "result": ${this.activeTabDocFSL}}`);
+
+          toFilter.result = toFilter.result.filter((e) => e !== `${this.currentlySelectedTreeNodePath}.ts`);
+          this.activeTabDocFSL = JSON.stringify(toFilter.result);
+
+          this.activeTabDocUpdater(this.activeTabDocFSL);
+          // #endregion Remove from FSL
+        }
         break;
 
       case "Elementplaceholder":
@@ -522,6 +679,8 @@ export class Manager implements AfterViewInit {
 
         break;
     }
+
+    this.synchronized = false;
   }
   /**
    * Handles the event when the user cancels the deletion of a node.
@@ -531,7 +690,7 @@ export class Manager implements AfterViewInit {
   protected onDeleteNode_CANCEL(event: Event) {
     this.CodBi_LocalAPIDoc_Tree_Label_Remove_Question.nativeElement.style.display = "none";
   }
-  // #region Removal
+  // #endregion Removal
   // #region Renaming
   /**
    *  Provides access to the {@link HTMLParagraphElement } stating that the name chosen for renaming is already taken
@@ -539,7 +698,7 @@ export class Manager implements AfterViewInit {
   @ViewChild("CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent")
   CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent!: ElementRef;
   /**
-   * Updates the {@link Manager.currentlySelectedTerrNode }'s {@link TreeNode.label } and
+   * Updates the {@link Manager.currentlySelectedTreeNode }'s {@link TreeNode.label } and
    * {@link Manager.currentlySelectedTreeNodeEditing } to false, ending editing mode, if the "Enter"-Key is pressed.
    *
    * @param event The received {@link KeyboardEvent }. */
@@ -548,21 +707,6 @@ export class Manager implements AfterViewInit {
       event.target,
       HTMLInputElement,
     ).value.toLowerCase();
-    // #region Remove hint that the name is already taken if not taken.
-    if (
-      !Object.keys(window.CodbiPluginData.detFunctionalities)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue) &&
-      !Object.keys(window.CodbiPluginData.detElementplaceholder)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue) &&
-      !Object.keys(window.CodbiPluginData.detStandards)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue)
-    ) {
-      this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "none";
-    }
-    // #endregion Remove hint that the name is already taken if not taken.
     const inputControl = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region Suppress invalid characters.
     if (inputControl.value !== "" && !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(inputControl.value)) {
@@ -612,6 +756,11 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link Event } received. */
   protected onRenameNode(event: Event) {
+    INSTANCE.tsCheck<HTMLElement>(
+      event.target,
+      HTMLElement,
+    ).parentElement.parentElement.parentElement.parentElement.parentElement.click();
+
     this.currentlySelectedTreeNodeEditing = !this.currentlySelectedTreeNodeEditing;
 
     if (this.currentlySelectedTreeNodeEditing) {
@@ -621,50 +770,273 @@ export class Manager implements AfterViewInit {
     }
   }
   /**
+   * Traverses up the tree from the given node, collecting all labels into a string,
+   * separated by dots, up to the root.
+   *
+   * @param node The starting {@link TreeNode}.
+   * @returns A string representing the path of labels, separated by dots.
+   */
+  protected getFullNodePath(node: TreeNode): string {
+    let path = node.label || "";
+    let parent = node.parent;
+
+    while (parent) {
+      path = `${parent.label}.${path}`;
+      parent = parent.parent;
+    }
+
+    return path;
+  }
+  /**
+   * Traverses a TreeNode array and returns all possible paths from the root to every node in the tree.
+   * A path is a dot-separated string of node labels.
+   *
+   * @param nodes The array of TreeNodes to traverse.
+   * @returns An array of strings, where each string is a full or partial path.
+   */
+  protected getTreePaths(nodes: TreeNode[]): string[] {
+    const allPaths: string[] = [];
+    const findPathsRecursive = (node: TreeNode, currentPath: string) => {
+      const newPath = currentPath ? `${currentPath}.${node.label}` : (node.label ?? "");
+
+      if (!node.children || node.children.length === 0) {
+        allPaths.push(newPath);
+      } else {
+        allPaths.push(newPath);
+      }
+
+      if (node.children && node.children.length > 0) {
+        for (const child of node.children) {
+          findPathsRecursive(child, newPath);
+        }
+      }
+    };
+
+    if (nodes) {
+      for (const node of nodes) {
+        findPathsRecursive(node, "");
+      }
+    }
+
+    return allPaths;
+  }
+  /**
+   * Finds a TreeNode within a given array of nodes based on a dot-separated path.
+   * The search is case-insensitive.
+   *
+   * @param nodes The array of TreeNodes to search in.
+   * @param pathParts The parts of the path to follow.
+   * @returns The found TreeNode, or `undefined` if not found.
+   */
+  private findNodeInTree(nodes: TreeNode[], pathParts: string[]): TreeNode | undefined {
+    if (!nodes) {
+      return undefined;
+    }
+    let currentNodes: TreeNode[] = nodes;
+    let foundNode: TreeNode | undefined = undefined;
+
+    for (const part of pathParts) {
+      foundNode = currentNodes.find((node) => node.label?.toLowerCase() === part.toLowerCase());
+      if (foundNode) {
+        currentNodes = foundNode.children || [];
+      } else {
+        return undefined; // Part of the path not found
+      }
+    }
+    return foundNode;
+  }
+  /**
+   * Finds a TreeNode within the component's trees (`items`, `itemsElementplaceholder`, `itemsStandard`)
+   * based on a dot-separated path.
+   *
+   * @param path The dot-separated path to the node (e.g., "date.frame.celsius").
+   * @returns The found TreeNode, or `undefined` if no node matches the path.
+   */
+  protected findNodeByPath(path: string): TreeNode | undefined {
+    const pathParts = path.split(".");
+
+    return (
+      this.findNodeInTree(this.items, pathParts) ||
+      this.findNodeInTree(this.itemsElementplaceholder, pathParts) ||
+      this.findNodeInTree(this.itemsStandard, pathParts)
+    );
+  }
+  /**
+   * Gets the full path of the currently selected tree node as a dot-separated string.
+   *
+   * @returns A string representing the full path of the currently selected tree node. */
+  public get currentlySelectedTreeNodePath(): string {
+    return this.getFullNodePath(this.currentlySelectedTreeNode);
+  }
+  /**
+   * Gets the currently selected tree node's API reference object corresponding to the {@link Manager.activeTab }.
+   *
+   * @returns The API reference object for the currently selected tree node.
+   */
+  public get currentlySelectedTreeNodeAPIRef() {
+    return this.activeTabDocRef[this.currentlySelectedTreeNodePath];
+  }
+  /**
+   * Converts a {@link TreeNode } to an object representation, suitable for API documentation.
+   *
+   * @param node The {@link TreeNode } to convert.
+   * @param type The type of the resulting object, which can be "Functionality", "Elementplaceholder", or "Standard".
+   *
+   * @returns The requested object representation of the {@link TreeNode }. */
+
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  convertSingleNode(node: TreeNode, type: "Functionality" | "Elementplaceholder" | "Standard"): any {
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    const result: any = {};
+
+    if (type === "Standard") {
+      result.Description = node.data ? node.data.Description : "";
+      result.globals = node.data ? this.arrayToObject(node.data.globals) : [];
+      result.classes = node.data ? this.arrayToObject(node.data.classes) : [];
+    } else {
+      result.Description = node.data ? node.data.Description : "";
+      result.Parameter = node.data ? this.arrayToObject(node.data.Parameter ? node.data.Parameter : []) : [];
+      result.globals = node.data ? this.arrayToObject(node.data.globals) : [];
+    }
+
+    return result;
+  }
+  /**
+   * Stores the path and name of an already taken local CodBi-Element in order to be able to display it in an
+   * error message. */
+  protected alreadyTakenName: string = "";
+  /**
+   * Gets the currently active tab's documentation reference object.
+   *
+   * @returns The documentation reference object for the active tab. */
+  public get activeTabDocRef(): object {
+    return window[this.docPath][
+      this.activeTab === "Functionality"
+        ? "detFunctionalities"
+        : this.activeTab === "Elementplaceholder"
+          ? "detElementplaceholder"
+          : "detStandards"
+    ];
+  }
+  /**
+   * Gets either the file listing, element placeholder, or functionality depending on the currently
+   * {@link Manager.activeTab }. */
+  public get activeTabDocFSL(): string {
+    return window[this.docPath][
+      this.activeTab === "Functionality"
+        ? "fslFunctionalities"
+        : this.activeTab === "Elementplaceholder"
+          ? "fslElementplaceholder"
+          : "fileListing"
+    ];
+  }
+  /**
+   * Gets the currently active external component updater.
+   *
+   * @returns The requested external component updater. */
+  public get activeTabDocUpdater(): (options: string | undefined) => void {
+    return window[this.docPath][
+      this.activeTab === "Functionality"
+        ? "updateSVManager"
+        : this.activeTab === "Elementplaceholder"
+          ? "updateEPManager"
+          : "updateStandards"
+    ];
+  }
+  /**
+   * Sets either the file listing, element placeholder, or functionality list depending on the currently
+   * {@link Manager.activeTab }. */
+  public set activeTabDocFSL(toSet: string) {
+    window[this.docPath][
+      this.activeTab === "Functionality"
+        ? "fslFunctionalities"
+        : this.activeTab === "Elementplaceholder"
+          ? "fslElementplaceholder"
+          : "fileListing"
+    ] = toSet;
+  }
+  /**
    * Updates the {@link Manager.currentlySelectedTerrNode }'s {@link TreeNode.label } and
    * {@link Manager.currentlySelectedTreeNodeEditing } to false, ending editing mode.
    *
-   * @param event The {@link FocusEvent } received. */
-  protected onBlurRenameInput(event: FocusEvent) {
+   * @param event The {@link Event } received. */
+  protected onBlurRenameInput(event: Event) {
     // #region Check against CodBi Data.
     const lowercaseInputControlValue = INSTANCE.tsCheck<HTMLInputElement>(
       event.target,
       HTMLInputElement,
     ).value.toLowerCase();
 
-    if (
-      Object.keys(window.CodbiPluginData.detFunctionalities)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue) ||
-      Object.keys(window.CodbiPluginData.detElementplaceholder)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue) ||
-      Object.keys(window.CodbiPluginData.detStandards)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue)
-    ) {
-      this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.top = `${this.CodBi_LocalAPIDoc_Tree.nativeElement.getBoundingClientRect().top - this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.getBoundingClientRect().height * 1.5}px`;
-      this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "block";
+    const labelInput = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
 
-      INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).focus();
+    this.currentlySelectedTreeNode.label = labelInput.value;
 
-      return;
+    for (const candidate of this.getTreePaths(
+      this.activeTab === "Functionality"
+        ? this.items
+        : this.activeTab === "Elementplaceholder"
+          ? this.itemsElementplaceholder
+          : this.itemsStandard,
+    )) {
+      if (
+        this.isNameTaken(candidate.toLowerCase()) &&
+        this.activeTabDocRef[candidate.toLowerCase()].local === undefined &&
+        this.findNodeByPath(candidate).data.Description !== ""
+      ) {
+        this.alreadyTakenName = candidate;
+        // #region Display appropriate error message.
+        this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.top = `${this.CodBi_LocalAPIDoc_Tree.nativeElement.getBoundingClientRect().top - this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.getBoundingClientRect().height * 1.5}px`;
+        this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "block";
+
+        INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).focus();
+
+        return;
+        // #endregion Display appropriate error message.
+      } else {
+        const currentlySelectedTreeNodePath = this.currentlySelectedTreeNodePath;
+
+        this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "none";
+        // #region Update API Doc in memory
+        // #region Remove former entry, if existent.
+        delete this.activeTabDocRef[
+          currentlySelectedTreeNodePath.replace(
+            this.currentlySelectedTreeNode.label,
+            this.currentlySelectedTreeNode.data.label,
+          )
+        ];
+        // #endregion Remove former entry, if existent.
+        this.activeTabDocRef[currentlySelectedTreeNodePath] = this.convertSingleNode(
+          this.currentlySelectedTreeNode,
+          this.activeTab,
+        );
+
+        const formerCurrentlySelectedTreeNodePath = currentlySelectedTreeNodePath.replace(
+          this.currentlySelectedTreeNode.label,
+          this.currentlySelectedTreeNode.data.label,
+        );
+
+        if (this.activeTabDocFSL.indexOf(formerCurrentlySelectedTreeNodePath.toLowerCase()) !== -1) {
+          this.activeTabDocFSL = this.activeTabDocFSL.replace(
+            formerCurrentlySelectedTreeNodePath.toLowerCase(),
+            currentlySelectedTreeNodePath,
+          );
+        }
+        // #endregion Update FSL if necessary
+        this.activeTabDocRef[this.currentlySelectedTreeNodePath].local = true;
+        // #endregion Update API Doc in memory
+        // Update the View of external components
+        this.activeTabDocUpdater(this.activeTabDocFSL);
+
+        this.synchronized = false;
+      }
     }
     // #endregion Check against CodBi Data.
-    this.currentlySelectedTreeNode.label = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
+    this.currentlySelectedTreeNode.data.label = this.currentlySelectedTreeNode.label =
+      INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
     this.currentlySelectedTreeNodeEditing = false;
   }
   // #endregion Renaming
   // #region Create New Element
-  /**
-   * The {@link HTMLParagraphElement } stating that the local CodBi-Element to created with the specified
-   * {@link Manager.CodBi_LocalAPIDoc_New_Name } is already taken by a native CodBi-Element. */
-  @ViewChild("CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent")
-  CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent!: ElementRef;
-  /** Simulates a click on {@link Manager.CodBi_LocalAPIDoc_New_Panel_Add } in order to add a new element. */
-  protected onEnter_CodBi_LocalAPIDoc_New_Name() {
-    this.CodBi_LocalAPIDoc_New_Panel_Add.nativeElement.click();
-  }
   /**
    * Stores the formerly inputted value of {@link Manager.CodBi_LocalAPIDoc_New_Name } in order to restore it
    * whenever an invalid character was entered. */
@@ -686,58 +1058,6 @@ export class Manager implements AfterViewInit {
     }
     // #endregion Suppress invalid characters.
   }
-  /**
-   * Removes any dots at the end of the input value of {@link Manager.CodBi_LocalAPIDoc_New_Name } prior to adding
-   * the new element to the tree of the currently {@link Manager.activeTab }.
-   * After that closes the dialog. */
-  protected onClick_CodBi_LocalAPIDoc_New_Panel_Add() {
-    // #region Remove trailing dot.
-    const inputControl = INSTANCE.tsCheck<HTMLInputElement>(
-      this.CodBi_LocalAPIDoc_New_Name.nativeElement,
-      HTMLInputElement,
-    );
-
-    if (inputControl.value[inputControl.value.length - 1] === ".") {
-      inputControl.value = inputControl.value.substring(0, inputControl.value.length - 1);
-    }
-    // #endregion Remove trailing dot.
-    // #region Check against CodBi Data.
-    const lowercaseInputControlValue = inputControl.value.toLowerCase();
-
-    if (
-      Object.keys(window.CodbiPluginData.detFunctionalities)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue) ||
-      Object.keys(window.CodbiPluginData.detElementplaceholder)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue) ||
-      Object.keys(window.CodbiPluginData.detStandards)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue)
-    ) {
-      this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent.nativeElement.style.display = "block";
-
-      return;
-    }
-    // #endregion Check against CodBi Data.
-    // #region Add new element to the tree and update it.
-    this.addTreeNodes(
-      this.CodBi_LocalAPIDoc_New_Name.nativeElement.value,
-      this.activeTab === "Functionality"
-        ? this.items
-        : this.activeTab === "Elementplaceholder"
-          ? this.itemsElementplaceholder
-          : this.itemsStandard,
-    );
-
-    this.cdr.markForCheck();
-    // #endregion Add new element to the tree and update it.
-    // #region Close the dialog.
-    this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "none";
-
-    (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.remove("-submerged");
-    // #endregion Close the dialog.
-  }
   // #endregion Create New Element
   // #endregion Node Management
   get notes() {
@@ -749,114 +1069,17 @@ export class Manager implements AfterViewInit {
     }
   }
 
-  arrayToObject(toConvert: [{ Name: string; Description: string }]) {
-    const result = {};
-
-    for (const element of toConvert) {
-      result[element.Name] = element.Description;
-    }
-
-    return result;
-  }
-  convertStandardNodes(toExtractFrom: TreeNode[], base: string | undefined = undefined): object {
-    const result = {};
-
-    for (const node of toExtractFrom) {
-      result[`${base ? `${base}.` : ""}${node.label}`] = {
-        Description: node.data ? node.data.Description : "",
-        globals: node.data ? this.arrayToObject(node.data.globals) : [],
-        classes: node.data ? this.arrayToObject(node.data.classes) : [],
-      };
-
-      if (node.children) {
-        const extractedChilds = this.convertStandardNodes(
-          node.children,
-          base === undefined ? node.label : `${base}.${node.label}`,
-        );
-
-        for (const child in extractedChilds) {
-          result[child] = extractedChilds[child];
-        }
-      }
-    }
-
-    const finalResult = {};
-
-    for (const key in result) {
-      if (result[key].Description !== "") {
-        finalResult[key] = result[key];
-      }
-    }
-    return finalResult;
-  }
-
-  NodesToData() {
-    const result: { detFunctionalities: object; detElementplaceholder: object; detStandards: object } = {
-      detFunctionalities: this.convertNodes(this.items),
-      detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
-      detStandards: this.convertStandardNodes(this.itemsStandard),
-    };
-
-    return result;
-  }
-
-  enrichData(destination, source) {
-    const result = {
-      fslFunctionalities: [],
-      fslElementplaceholder: [],
-      fileListing: [],
-    };
-
-    for (const element in source.detFunctionalities) {
-      document.querySelector('div[is = "xc-epmanager"]').setAttribute(
-        "options",
-        JSON.parse(
-          `${destination.fslFunctionalities.substring(0, destination.fslFunctionalities.length - 1)},\"${element}.ts\"]`,
-        )
-          .map((file: string) => {
-            return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-          })
-          .join(","),
-      );
-      result.fslFunctionalities.push(`${element}.ts`);
-      console.log("o", document.querySelector('div[is = "xc-epmanager"'));
-      destination.detFunctionalities[element.toLowerCase()] = source.detFunctionalities[element];
-    }
-    for (const element in source.detElementplaceholder) {
-      document.querySelector('div[is = "xc-epmanager"]').setAttribute(
-        "epoptions",
-        JSON.parse(
-          `${destination.fslElementplaceholder.substring(0, destination.fslElementplaceholder.length - 1)},\"${element}.ts\"]`,
-        )
-          .map((file: string) => {
-            return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-          })
-          .join(","),
-      );
-      result.fslElementplaceholder.push(`${element}.ts`);
-      destination.detElementplaceholder[element] = source.detElementplaceholder[element];
-    }
-    for (const element in source.detStandards) {
-      destination.fileListing = `${destination.fileListing.substring(0, destination.fileListing.length - 1)},\"${element}.ts\"]`;
-
-      result.fileListing.push(`${element}.ts`);
-      destination.detStandards[element] = source.detStandards[element];
-    }
-
-    return {
-      fslFunctionalities: result.fslFunctionalities.join(","),
-      fslElementplaceholder: result.fslElementplaceholder.join(","),
-      fileListing: result.fileListing.join(","),
-    };
-  }
-
   @Input()
   public baseurl: string = "";
   onImport() {
     this.CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue.nativeElement.click();
   }
   onExport() {
-    const localNodeData = this.NodesToData();
+    const localNodeData = {
+      detFunctionalities: this.convertNodes(this.items),
+      detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
+      detStandards: this.convertStandardNodes(this.itemsStandard),
+    };
     const filelistings = this.enrichData(window[this.docPath], localNodeData);
     const toExport = JSON.stringify({
       fslFunctionalities: filelistings.fslFunctionalities,
@@ -880,67 +1103,181 @@ export class Manager implements AfterViewInit {
 
     URL.revokeObjectURL(url);
   }
-  enSync() {
-    const localNodeData = this.NodesToData();
-    const filelistings = this.enrichData(window[this.docPath], localNodeData);
-    window[this.docPath].populateStandards();
+
+  // #region Synchronization
+  /** Stores a {@link boolean } stating whether this {@link Manager } is currently synchronized or not. */
+  public synchronized = true;
+  /** Stores a {@link boolean } stating whether this {@link Manager } is currently synchronizing or not. */
+  public synchronizing = false;
+  /**
+   * Converts an {@link Array } of { Name: string; Description: string }s into an {@link object } with
+   * which property's names are the **Name** of the objects in the array and they value their **Description**.
+   *
+   * @param toConvert The {@link Array } of { Name: string; Description: string }s to convert.
+   *
+   * @returns The requested {@link object }. */
+  arrayToObject(toConvert: [{ Name: string; Description: string }]) {
+    const result = {};
+
+    for (const element of toConvert) {
+      result[element.Name] = element.Description;
+    }
+
+    return result;
+  }
+  /**
+   * Convert a tree node reflecting a standard into an object reflecting one.
+   *
+   * @param toExtractFrom The {@link TreeNode } to get the data for the resulting object from.
+   * @param base          The parent's string path (for recursion only).
+   *
+   * @returns The object corresponding to the {@link TreeNode } {@link toExtractFrom }. */
+  convertStandardNodes(toExtractFrom: TreeNode[], base: string | undefined = undefined): object {
+    const result = {};
+    // #region Conversion
+    for (const node of toExtractFrom) {
+      result[`${base ? `${base}.` : ""}${node.label}`] = {
+        Description: node.data ? node.data.Description : "",
+        globals: node.data ? this.arrayToObject(node.data.globals) : [],
+        classes: node.data ? this.arrayToObject(node.data.classes) : [],
+      };
+
+      if (node.children) {
+        const extractedChildren = this.convertStandardNodes(
+          node.children,
+          base === undefined ? node.label : `${base}.${node.label}`,
+        );
+
+        for (const child in extractedChildren) {
+          result[child] = extractedChildren[child];
+        }
+      }
+    }
+    // #endregion Conversion
+    // #region Remove entries without a description.
+    const finalResult = {};
+
+    for (const key in result) {
+      if (result[key].Description !== "") {
+        finalResult[key] = result[key];
+      }
+    }
+    // #endregion Remove entries without a description.
+    return finalResult;
+  }
+  /**
+   * Joins the source API-Doc with the destination one.
+   *
+   * @param destination The source API-Doc.
+   * @param source      The destination API-Doc.
+   *
+   * @returns The FSLs of the functionalities, elementplaceholder and standards. */
+  enrichData(destination, source) {
+    const result = {
+      fslFunctionalities: [],
+      fslElementplaceholder: [],
+      fileListing: [],
+    };
+    // #region Functionalities
+    for (const element in source.detFunctionalities) {
+      document.querySelector('div[is = "xc-epmanager"]').setAttribute(
+        "options",
+        JSON.parse(
+          `${destination.fslFunctionalities.substring(0, destination.fslFunctionalities.length - 1)},\"${element}.ts\"]`,
+        )
+          .map((file: string) => {
+            return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+          })
+          .join(","),
+      );
+
+      result.fslFunctionalities.push(`${element}.ts`);
+
+      destination.detFunctionalities[element.toLowerCase()] = source.detFunctionalities[element];
+      destination.detFunctionalities[element.toLowerCase()].local = true;
+    }
+    // #endregion Functionalities
+    // #region Elementplaceholder
+    for (const element in source.detElementplaceholder) {
+      document.querySelector('div[is = "xc-epmanager"]').setAttribute(
+        "epoptions",
+        JSON.parse(
+          `${destination.fslElementplaceholder.substring(0, destination.fslElementplaceholder.length - 1)},\"${element}.ts\"]`,
+        )
+          .map((file: string) => {
+            return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+          })
+          .join(","),
+      );
+      result.fslElementplaceholder.push(`${element}.ts`);
+
+      destination.detElementplaceholder[element] = source.detElementplaceholder[element];
+      destination.detElementplaceholder[element].local = true;
+    }
+    // #endregion Elementplaceholder
+    // #region Standards
+    for (const element in source.detStandards) {
+      destination.fileListing = `${destination.fileListing.substring(0, destination.fileListing.length - 1)},\"${element}.ts\"]`;
+
+      result.fileListing.push(`${element}.ts`);
+      destination.detStandards[element] = source.detStandards[element];
+      destination.detStandards[element].local = true;
+    }
+    // #endregion Elementplaceholder
+    return {
+      fslFunctionalities: result.fslFunctionalities.join(","),
+      fslElementplaceholder: result.fslElementplaceholder.join(","),
+      fileListing: result.fileListing.join(","),
+    };
+  }
+  /**
+   *  Loads {@link Manager.items }, {@link Manager.itemsElementplaceholder} & {@link Manager.itemsStandard } up to
+   *  the CodBi-Plugin's storage using its middleware prior to setting {@link Manager.synchronized } and
+   *  {@link Manager.synchronizing } appropriately. */
+  protected enSync() {
+    // #region Generate data to sync.
+    const localNodeData = {
+      detFunctionalities: this.convertNodes(this.items),
+      detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
+      detStandards: this.convertStandardNodes(this.itemsStandard),
+    };
+    const fileListings = this.enrichData(window[this.docPath], localNodeData);
+    // #endregion Generate data to sync.
     const $ = getJQuery();
+
+    this.synchronizing = true;
+    // #region Sync
     $.ajax({
       url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
       type: "GET",
       headers: {
         "X-Action": "Update",
         "X-ToWrite": JSON.stringify({
-          fslFunctionalities: filelistings.fslFunctionalities,
+          fslFunctionalities: fileListings.fslFunctionalities,
           detFunctionalities: localNodeData.detFunctionalities,
-          fslElementplaceholder: filelistings.fslElementplaceholder,
+          fslElementplaceholder: fileListings.fslElementplaceholder,
           detElementplaceholder: localNodeData.detElementplaceholder,
           detStandards: localNodeData.detStandards,
-          fileListing: filelistings.fileListing,
+          fileListing: fileListings.fileListing,
         }),
       },
       success: (response) => {
-        console.log("OK", response);
+        this.synchronizing = false;
+        this.synchronized = true;
+
+        this.cdr.markForCheck();
       },
     });
+    // #endregion Sync
   }
-
-  bufferParameter: Map<number, ApiParameter> = new Map<number, ApiParameter>();
-  onRowEditInit(product: ApiParameter) {
-    console.log("-1", product);
-    this.bufferParameter[product.id] = new CommonApiParameter(product.Name, product.Description, product.id);
-  }
-
-  onRowEditSave(product: ApiParameter, index: number, toAdd: string) {
-    console.log("x", this.currentlySelectedFunctionalityData);
-
-    (toAdd === undefined || toAdd.toLowerCase() === "parameter"
-      ? this.currentlySelectedFunctionalityData.Parameter
-      : toAdd.toLowerCase() === "classes"
-        ? this.currentlySelectedFunctionalityData.classes
-        : this.currentlySelectedFunctionalityData.globals)[index] = product;
-  }
-
-  onRowEditCancel(parameter: ApiParameter, index: number) {
-    console.log("1", this._currentNodeData.Parameter[index]);
-    this._currentNodeData.Parameter[index] = this.bufferParameter[parameter.id];
-    console.log("2", this._currentNodeData.Parameter[index]);
-    this._currentNodeData = this._currentNodeData;
-  }
-
-  onRowDelete(parameter: ApiParameter) {
-    this._currentNodeData.Parameter = this._currentNodeData.Parameter.filter(
-      (candidate) => candidate.id !== parameter.id,
-    );
-  }
-
+  // #endregion Synchronization
   activeAccordion: string[] = ["Description"];
-  _activeTab: string | number = "Functionality";
+  _activeTab: "Functionality" | "Elementplaceholder" | "Standard" = "Functionality";
 
-  get activeTab() {
+  get activeTab(): "Functionality" | "Elementplaceholder" | "Standard" {
     return this._activeTab;
   }
-  set activeTab(toSet: string | number) {
+  set activeTab(toSet: "Functionality" | "Elementplaceholder" | "Standard") {
     if (this._activeTab !== toSet) {
       this._activeTab = toSet;
 
@@ -990,7 +1327,31 @@ export class Manager implements AfterViewInit {
     }
     for (const key in toImport.detStandards) {
     }
+
+    this.synchronized = false;
   }
+  // #region API-Doc Updates
+  /**
+   * Updates the API documentation for the specified {@link Manager.currentlySelectedTreeNode } **toUpdate**.
+   *
+   * @param toUpdate The {@link TreeNode } to update in the API documentation. */
+  protected updateNodeToAPIDoc() {
+    this.activeTabDocRef[this.currentlySelectedTreeNodePath] = this.convertSingleNode(
+      this.currentlySelectedTreeNode,
+      this.activeTab,
+    );
+    // #region Update FSL if necessary
+    if (this.activeTabDocFSL.indexOf(`"${this.currentlySelectedTreeNodePath.toLowerCase()}.ts"`) === -1) {
+      this.activeTabDocFSL = `${this.activeTabDocFSL.substring(0, this.activeTabDocFSL.length - 1)},\"${this.currentlySelectedTreeNodePath.toLowerCase()}.ts\"]`;
+    }
+    // #endregion Update FSL if necessary
+    this.activeTabDocRef[this.currentlySelectedTreeNodePath].local = true;
+
+    this.activeTabDocUpdater(this.activeTabDocFSL);
+
+    this.synchronized = false;
+  }
+  // #endregion API-Doc Updates
   // #region Exporting
   // #region Schematics
   /** The ZOD-Schema of a {@link TreeNode } needed by this {@link Manager }.*/
@@ -1049,10 +1410,10 @@ export class Manager implements AfterViewInit {
    * @param event The {@link Event } received. */
   protected onExportNode(event: Event) {
     // #region Update the currently selected node to be the one corresponding to the clicked remove button.
-    const node = INSTANCE.tsCheck<HTMLElement>(event.target, HTMLElement).parentElement.parentElement.parentElement
-      .parentElement.parentElement;
-
-    node.click();
+    INSTANCE.tsCheck<HTMLElement>(
+      event.target,
+      HTMLElement,
+    ).parentElement.parentElement.parentElement.parentElement.parentElement.click();
     // #endregion Update the currently selected node to be the one corresponding to the clicked remove button.
     // #region Conversion
     const toExport: {
@@ -1112,6 +1473,10 @@ export class Manager implements AfterViewInit {
   // #endregion Internationalization
   // #region Basic Operations
   // #region Tree View
+  // #region Watermark
+  /** Stores the URL to the watermark to use as the {@link Manager.CodBi_LocalAPIDoc_Tree }'s CSS-Background-Image. */
+  @Input() protected watermark: string = "";
+  // #endregion Watermark
   /** Stores the currently selected {@link TreeNode }. */
   protected _currentNode: TreeNode;
   /**
@@ -1352,6 +1717,9 @@ export class Manager implements AfterViewInit {
   }
 
   ngAfterViewInit() {
+    // #region Apply Watermark
+    this.CodBi_LocalAPIDoc_Tree.nativeElement.style.backgroundImage = `url('${this.watermark}')`;
+    // #endregion Apply Watermark
     if (this.items && this.items.length > 0) {
       this.currentlySelectedTreeNode = this.items[0];
     }
@@ -1405,4 +1773,74 @@ export class Manager implements AfterViewInit {
         : this.currentlySelectedFunctionalityData.globals
     ).push(new CommonApiParameter("Neuer Parameter...", "Keine Beschreibung..."));
   }
+  // #region Right Panel
+  // #region Parameter, Classes & Globals
+  /** Stores the actual data for restoring it on {@link onRowEditCancel }. */
+  bufferParameter: Map<number, ApiParameter> = new Map<number, ApiParameter>();
+  /**
+   * Initiates the editing of a row by buffering the current row's value in {@link bufferParameter }.
+   *
+   * @param toEdit The current row's value. */
+  onRowEditInit(toEdit: ApiParameter) {
+    this.bufferParameter[toEdit.id] = new CommonApiParameter(toEdit.Name, toEdit.Description, toEdit.id);
+  }
+  /**
+   * Handles the click on the Parameter's save row button.
+   *
+   * @param toSave          The actual data to save.
+   * @param index           The index of the edited row as passed by angular.
+   * @param typeOfDataToAdd The type of data to add, which is either "Classes", "Globals", "Parameter" or undefined (that will be treated the same as "Parameter"). */
+  onRowEditSave(toSave: ApiParameter, index: number, typeOfDataToAdd: "Classes" | "Globals" | "Parameter" | undefined) {
+    (typeOfDataToAdd === undefined || typeOfDataToAdd === "Parameter"
+      ? this.currentlySelectedFunctionalityData.Parameter
+      : typeOfDataToAdd.toLowerCase() === "classes"
+        ? this.currentlySelectedFunctionalityData.classes
+        : this.currentlySelectedFunctionalityData.globals)[index] = toSave;
+
+    this.updateNodeToAPIDoc();
+
+    this.synchronized = false;
+  }
+  /**
+   * Restores the current row|ss value from {@link Manager.bufferParameter } Prior to reassigning
+   * the {@link Manager._currentNodeData } in order to update the view.
+   *
+   * @param parameter The current row's value, which won't be used.
+   * @param index     The current row's index. */
+  onRowEditCancel(parameter: ApiParameter, index: number) {
+    this._currentNodeData.Parameter[index] = this.bufferParameter[parameter.id];
+    this._currentNodeData = this._currentNodeData;
+  }
+  /**
+   * Removes the current row from the {@link Manager._currentNode }'s {@link nodeData.Parameter }.
+   *
+   * @param parameter The current row's value, which won't be used. */
+  onRowDelete(parameter: ApiParameter) {
+    this._currentNodeData.Parameter = this._currentNodeData.Parameter.filter(
+      (candidate) => candidate.Name !== parameter.Name,
+    );
+
+    this._currentNodeData = this._currentNodeData;
+    this.synchronized = false;
+  }
+  /**
+   * Converts an object with keys and values into an array of objects,
+   * where each object has a 'Name' property for the key and a 'Description' property for the value.
+   *
+   * @param toConvert The object to convert.
+   * @returns An array of objects with 'Name' and 'Description' properties.
+   */
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  protected toDescriptiveArray(toConvert: { [key: string]: any }): { Name: string; Description: string }[] {
+    const result: { Name: string; Description: string }[] = [];
+
+    for (const key in toConvert) {
+      if (Object.prototype.hasOwnProperty.call(toConvert, key)) {
+        result.push({ Name: key, Description: String(toConvert[key]) });
+      }
+    }
+    return result;
+  }
+  // #endregion Parameter, Classes & Globals
+  // #endregion Right Panel
 }

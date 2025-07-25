@@ -3,6 +3,8 @@
   overflow: hidden ; height : 100% ; margin : 0 ; width : 100% ; transition: .5s all;
   background-image: linear-gradient( 90deg, #615b5bCC 0%, #FFFFFFFF 1% );
 
+  .p-splitter.p-component.p-splitter-horizontal { border-top-left-radius: 0 ; border-bottom-left-radius: 0 ;}
+
   .tox .tox-editor-header { z-index: 0 ;}
   .tox .tox-promotion     { display : none ;}
 
@@ -34,6 +36,9 @@
   // #endregion Nodeoptions
   p-accordion-content                             { transition : .5s all ;}
   [ data-p-active = "false"] p-accordion-content  { height : 0 ;}
+
+  #CodBi_LocalAPIDoc_Tree { background-size : contain; background-position : center; background-repeat : no-repeat;
+                            background-blend-mode : overlay; background-color : #FFFFFFEE ;}
 
   @keyframes kfFadeIN_CodBi_LocalAPIDoc_Tree_Label {
     90%   { scale: 1.1 ;}
@@ -70,13 +75,17 @@
 
   #CodBi_LocalAPIDoc_RightPanel_Options { margin-left: auto ; display: flex ;}
 
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync        { cursor : pointer ; font-size: 1.5em ;
-                                                      margin-top: auto ; margin-bottom: auto ; transition: .5s ;
-                                                      background-color: transparent ; border: none ;
-                                                      text-shadow: 0 0 .1em darkorange ; cursor: pointer ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync::after { content: "\e9e6" ; font-family: 'primeicons'; }
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:hover  { scale: 1.1 ; text-shadow: 0 0 .5em darkorange ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:active { scale: .9 ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync          { cursor : pointer ; font-size: 1.5em ; color: red ;
+                                                        margin-top: auto ; margin-bottom: auto ; transition: .5s ;
+                                                        background-color: transparent ; border: none ;
+                                                        text-shadow: 0 0 .1em darkorange ; cursor: pointer ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync::after   { content: "\e9e6" ; font-family: 'primeicons'; }
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:hover    { scale: 1.1 ; text-shadow: 0 0 .5em darkorange ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:active   { scale: .9 ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync.--synced { color: green ;}
+
+  @keyframes kfSyncing_CodBi_LocalAPIDoc_RightPanel_Options_Sync { 100% { transform: rotate( 360deg );}}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync.--syncing { animation: kfSyncing_CodBi_LocalAPIDoc_RightPanel_Options_Sync 1s infinite ;}
 
   #CodBi_LocalAPIDoc_RightPanel_Options_Export        { cursor : pointer ; font-size: 1.5em ;
                                                       margin-top: auto ; margin-bottom: auto ; transition: .5s ;
@@ -135,6 +144,8 @@
   .-panel.-left {
     height: 100% ; width : 100% ;
 
+    .p-inputtext.p-component.p-tree-filter-input,
+    .p-tree.p-component.p-tree-selectable                             { background-color: transparent ;}
     p-tree,
     p-tree .p-tree.p-component .p-tree-root                           { min-height : calc(100% - 3em) ;
                                                                         display : block ; margin-top: .5em ;}
@@ -164,14 +175,25 @@
     p-treenode:hover .--CB-LocalAPIDoc-RenameTreeItem { opacity : 1 ; scale : 1 ; pointer-events: all ;}}
 
     p-tabs,
-    p-tabs p-tabpanels              { height: 100% ; min-height: 100% ; width : 100% ;}
-    p-tabs p-tabpanels p-tabpanel   { filter : blur( 1em ) ;}
+    p-tabs p-tabpanels                        { height: 100% ; min-height: 100% ; width : 100% ;}
+    p-tabs p-tabpanels p-tabpanel             { filter : blur( 1em ) ; transition: 1s all ;}
+    p-tabs p-tabpanels p-tabpanel.--nameTaken,
+    p-tabs p-tabpanels p-tabpanel.--blocked   { pointer-events: none !important ; opacity: .5 !important ; filter: blur( .5em ) !important ;}
 
     @keyframes ksFadeIN_TabPanel {
       0%  { filter: blur( 0 ) ; opacity : 0 ;}
       50%  { filter: blur( 1em ) ; opacity: 1 ;}
       100%  { filter: blur( 0 ) ;}}
-    p-tabs p-tabpanels .--active { animation: ksFadeIN_TabPanel .5s ease-in forwards ;}}
+    p-tabs p-tabpanels .--active { animation: ksFadeIN_TabPanel .5s ease-in forwards ;}
+
+  @keyframes kfFadeIN_CodBi_LocalAPIDoc_Functionalities_Description_Taken {
+    0%    { opacity: 0 ; scale: 1.5 ;}
+    100%  { opacity: 1 ; scale: 1 ;}}
+  #CodBi_LocalAPIDoc_Functionalities_Description_Taken {  display: none ; border: solid ; padding: .5em ;
+                                                          border-radius: .5em ; position: absolute ;
+                                                          box-shadow: 0 0 .5em black ; border-color: darkorange ;
+                                                          top: 40% ; width: 80% ; left: 10% ;
+                                                          animation: kfFadeIN_CodBi_LocalAPIDoc_Functionalities_Description_Taken .5s ease-in forwards ;}}
 #CodBi_LocalAPIDoc.-submerged { .p-splitter-gutter { display : none ;}}
 #CodBi_LocalAPIDoc.-submerged { .p-tablist-active-bar { display : none ;}}
 #CodBi_LocalAPIDoc.--closed   { transform: translateX( -100% ); opacity: 0 ;}

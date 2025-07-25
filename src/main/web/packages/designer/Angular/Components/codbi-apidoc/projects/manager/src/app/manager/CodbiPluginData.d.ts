@@ -7,6 +7,7 @@ interface Window {
         Active: boolean;
         classes: { [key: string]: string };
         globals: { [key: string]: string };
+        local: boolean;
       };
     };
     detFunctionalities: [{ Description: string }];
@@ -16,5 +17,7 @@ interface Window {
     fslElementplaceholder: Array<string>;
     fslFunctionalities: Array<string>;
     populateStandards: () => void;
+    updateEPManager: (options: string) => void;
+    updateSVManager: (options: string) => void;
   };
 }

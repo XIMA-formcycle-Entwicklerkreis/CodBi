@@ -269,16 +269,16 @@ export function registerCustomElements(): void {
           #cCodBi_LocalAPIDoc { animation : kfFadeIN_cCodBi_LocalAPIDoc .5s ease-in forwards ; position : absolute ; left : 0vw ; top : 20vh ; width : 70vw ; height : 50vh ;}
           #cCodBi_LocalAPIDoc cb-manager { display : block ; height : 100% ;}</style>
         <div id = "cCodBi_LocalAPIDoc">
-          <cb-manager apidoc  = '${JSON.stringify(response)}'
-                      segment = "detFunctionalities"
-                      baseURL = "${baseURL}"
-                      language = "${
+          <cb-manager apidoc      = '${JSON.stringify(response)}'
+                      segment     = "detFunctionalities"
+                      baseURL     = "${baseURL}"
+                      language    = "${
                         // biome-ignore lint/suspicious/noExplicitAny: <explanation>
                         (window.parent as any)[0].XFC_METADATA.currentLanguage
                       }"
                       resourceURL = "${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce"
-                      docPath = "CodbiPluginData"
-                      ></cb-manager></div>`,
+                      docPath     = "CodbiPluginData"
+                      watermark   = "${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg"></cb-manager></div>`,
           );
           // #endregion Load and inject Angular local API-Documentation-Manager web component
         },

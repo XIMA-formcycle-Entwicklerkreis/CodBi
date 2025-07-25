@@ -94,6 +94,13 @@ export class EPManager extends SVManager {
     super();
 
     this._bufferOptions = this.options;
+    // #region Provide Update via PluginData
+    window.CodbiPluginData.updateEPManager = (options: string) => {
+      this.epOptions = JSON.parse(options).map((e: string) => e.replace(".ts", ""));
+
+      this.render();
+    };
+    // #endregion Provide Update via PluginData
   }
   /**
    * States whether this {@link EPManager } was successfully registered as a custom element and performs

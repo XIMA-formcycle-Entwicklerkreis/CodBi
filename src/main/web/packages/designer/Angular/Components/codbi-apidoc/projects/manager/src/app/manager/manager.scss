@@ -61,6 +61,11 @@
   .flex.items-center.justify-center.gap-2 button:hover { color: darkorange ;}
   .flex.items-center.justify-center.gap-2 button:hover { color: red ;}
 
+  .flex.items-center.justify-center.gap-2 .p-datatable-row-editor-save.--invalid { pointer-events: none ; opacity: .1 ;}
+
+  p-celleditor input            { transition: .25s ;}
+  p-celleditor input.--invalid  { border-color: red !important ; box-shadow: 0 0 .5em red !important ;}
+
   #CodBi_LocalAPIDoc_RightPanel_Notes_Text { width: 100% ; color: blue ; max-width: 100% ; font-style: italic ;}
 
   p-tab,

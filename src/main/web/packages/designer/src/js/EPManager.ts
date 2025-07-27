@@ -97,7 +97,10 @@ export class EPManager extends SVManager {
     // #region Provide Update via PluginData
     window.CodbiPluginData.updateEPManager = (options: string) => {
       this.epOptions = JSON.parse(options).map((e: string) => e.replace(".ts", ""));
-
+      // #region Invalidate mode so that on setting to EP it will rerender.
+      this.mode = "SV";
+      this.mode = "EP";
+      // #endregion Invalidate mode so that on setting to EP it will rerender.
       this.render();
     };
     // #endregion Provide Update via PluginData

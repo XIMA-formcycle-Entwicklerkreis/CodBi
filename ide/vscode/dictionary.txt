@@ -49,6 +49,7 @@ bullist
 cbapply
 cbfunc
 cbichecked
+celleditor
 charmap
 Codbi
 cssafterheader
@@ -72,6 +73,7 @@ Darkmodescheme
 darkorange
 datacallback
 datacallbackcode
+datatable
 Dateframe
 datemax
 datemin
@@ -160,13 +162,16 @@ Optioninput
 Optiontext
 Ortsvorwahl
 Parametercells
+Parameterdescription
 parameterless
+Parametername
 Paramseparator
 phonenumber
 postanschrift
 Postleitzahl
 primeicons
 primeng
+psaveeditablerow
 quelle
 quickbars
 quickform

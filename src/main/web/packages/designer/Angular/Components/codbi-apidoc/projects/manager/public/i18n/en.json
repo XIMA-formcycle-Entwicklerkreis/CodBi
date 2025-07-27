@@ -3,7 +3,7 @@
   "Input.Label.Elementplaceholder": "Enter the path and name of the new element placeholder",
   "Input.Label.Standard": "Enter the path and name of the new standard",
   "Input.Label.Title": "Create New Element",
-  "Input.Label.Introduction": "This dialog allows you to create the documantion for a local CodBi-Element. The element's name may be prefixed with a path that can be multi-part, separated by dots (e.g., path.to.my.new.element). It must, however, adhere to standard naming conventions for identifiers as no local elements with paths that are already assigned to a native CodBi element may be created .",
+  "Input.Label.Introduction": "This dialog allows you to create the documentation for a local CodBi-Element. The element's name may be prefixed with a path that can be multi-part, separated by dots (e.g., path.to.my.new.element). It must, however, adhere to standard naming conventions for identifiers as no local elements with paths that are already assigned to a native CodBi element may be created .",
   "Input.Hint.AlreadyExistent": ", with this name change, refers to an already existing native CodBi element because the local element also has a description. Please choose a different name.",
   "Input.Label.Outro.Header": "Share your local Elements - A Win for All!",
   "Input.Label.Outro.GoodToGoLocal": "It's great that you're creating your own elements locally! We encourage you to <b>share them with the community</b>, as this is the best way to strengthen our library and thus enable everyone to create high quality standardized forms in an even easier and even more efficient manner.",
@@ -21,5 +21,11 @@
   "Input.Label.JoinUsOnGitHub": "Join our user base on GitHub to share your local developments and support the community!",
   "Input.Hint.SureToDelete": "Sure?",
   "TinyMCE.TextInTakenNode": ", to which this description is assigned, is already taken for a native CodBi element. Please choose a different name for the CodBi element than",
-  "TinyMCE.TextInTakenNode.Rename": "Rename"
+  "TinyMCE.TextInTakenNode.Rename": "Rename",
+  "Input.Parameter.Name": "Name",
+  "Input.Parameter.Description": "Short Description",
+  "Input.Parameter.phName": "Enter the parameter's name...",
+  "Input.Parameter.phDescription": "Enter a short description for the parameter...",
+  "Input.Parameter.Name.Name": "Parametername",
+  "Input.Parameter.Name.Description": "Parameterdescription"
 }

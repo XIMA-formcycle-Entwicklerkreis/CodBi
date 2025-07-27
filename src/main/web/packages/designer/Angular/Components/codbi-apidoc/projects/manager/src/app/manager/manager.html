@@ -351,8 +351,8 @@
                 stripedRows >
         <ng-template #header >
             <tr>
-                <th style="width:50%">Name</th>
-                <th style="width:50%">Kurzbeschreibung</th></tr></ng-template>
+                <th style="width:50%">{{"Input.Parameter.Name" | transloco }}</th>
+                <th style="width:50%">{{"Input.Parameter.Description" | transloco }}</th></tr></ng-template>
 
                 <ng-template   #body
 
@@ -365,11 +365,15 @@
                                 <ng-template #input >
                                     <input  pInputText
 
+                                            [ngClass]       = "{'--invalid' : !currentNameValid }"
+                                            [placeholder]   = "'Input.Parameter.phName' | transloco"
+
                                             type        = "text"
-                                            placeholder = "Hier den Parameternamen eintragen..."
-                                            style       = "font-size : 1.5em ; width : 100% ; border-radius: .5em ; border : solid ; border-color: darkorange ; color: darkorange ; box-shadow: 0 0 .5em ;"
+                                            style       = "font-size : 1.5em ; width : 100% ; border-radius: .5em ; border : solid ; border-color: green ; color: darkorange ; box-shadow: 0 0 .5em green ;"
 
                                             [(ngModel)] = "parameter.Name"
+
+                                            (keyup) = "onKeyup_InputParametername( $event )"
 
                                             required /></ng-template>
 
@@ -379,9 +383,13 @@
                                             <ng-template #input >
                                                 <input  pInputText
 
+                                                        [ngClass]       = "{'--invalid' : !currentDescriptionValid }"
+                                                        [placeholder]   = "'Input.Parameter.phDescription' | transloco"
+
+                                                        (keyup) = "onKeyup_InputParameterdescription( $event )"
+
                                                         type        = "text"
-                                                        placeholder = "Hier die Beschreibung bzw. Kurzbeschreibung eintragen..."
-                                                        style       = "font-size : 1.5em ; width : 100% ; border-radius: .5em ; border : solid ; border-color: darkorange ; color: darkorange ; box-shadow: 0 0 .5em ;"
+                                                        style       = "font-size : 1.5em ; width : 100% ; border-radius: .5em ; border : solid ; border-color: green ; color: darkorange ; box-shadow: 0 0 .5em green ;"
 
                                                         [(ngModel)] = "parameter.Description"
 
@@ -418,6 +426,8 @@
                                                     (click) = "onRowDelete( parameter )"></button>
 
                                             <button *ngIf = "editing"
+
+                                                    [ngClass] = "{ '--invalid' : !currentNameValid || !currentDescriptionValid }"
 
                                                     pButton
                                                     pRipple

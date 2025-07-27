@@ -21,5 +21,11 @@
   "Input.Label.JoinUsOnGitHub": "Treten Sie unserer Community auf GitHub bei, um Ihre lokalen Entwicklungen zu teilen und damit die Gemeinde zu unterstützen!",
   "Input.Hint.SureToDelete": "Sicher?",
   "TinyMCE.TextInTakenNode": ", dem diese Beschreibeung zugeordnet ist, ist bereits für ein natives CodBi-Element vergeben. Bitte wählen Sie einen anderen Namen für das CodBi-Element als ",
-  "TinyMCE.TextInTakenNode.Rename": "Umbenennen"
+  "TinyMCE.TextInTakenNode.Rename": "Umbenennen",
+  "Input.Parameter.Name": "Name",
+  "Input.Parameter.Description": "Kurzbeschreibung",
+  "Input.Parameter.phName": "Hier den Namen des Parameters eintragen...",
+  "Input.Parameter.phDescription": "Hier die Kurzbeschreibung des Parameters eintragen...",
+  "Input.Parameter.Name.Name": "Parametername",
+  "Input.Parameter.Name.Description": "Parameterbeschreibung"
 }

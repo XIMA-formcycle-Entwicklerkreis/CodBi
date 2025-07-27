@@ -39,8 +39,7 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
   constructor(config: TEditorCfg<IMultiSelectDescriptor>) {
     // Note: the second argument is deprecated, we pass the empty string
     super(config, "", "text");
-    // biome-ignore lint/suspicious/noExplicitAny: TODO
-    (window as any).CodbiPluginData.populateStandards = this.populateStandards.bind(this);
+    window.CodbiPluginData.populateStandards = this.populateStandards.bind(this);
 
     this._element = document.createElement("div");
 

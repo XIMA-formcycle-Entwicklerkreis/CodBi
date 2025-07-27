@@ -582,7 +582,7 @@ export class Manager implements AfterViewInit {
     // #endregion Check against CodBi Data.
     // #region Add new element to the tree and update it.
     this.addTreeNodes(
-      this.CodBi_LocalAPIDoc_New_Name.nativeElement.value,
+      this.CodBi_LocalAPIDoc_New_Name.nativeElement.value.toLowerCase(),
       this.activeTab === "Functionality"
         ? this.items
         : this.activeTab === "Elementplaceholder"
@@ -655,13 +655,23 @@ export class Manager implements AfterViewInit {
 
     switch (this.activeTab) {
       case "Functionality":
-        this.items = this.removeNodeRecursive(this.items, this._currentNode);
-
         {
+          const paths = this.getTreePaths([this._currentNode]);
+
+          this.items = this.removeNodeRecursive(this.items, this._currentNode);
           // #region Remove from FSL
           const toFilter = JSON.parse(`{ "result": ${this.activeTabDocFSL}}`);
 
-          toFilter.result = toFilter.result.filter((e) => e !== `${this.currentlySelectedTreeNodePath}.ts`);
+          toFilter.result = toFilter.result.filter((e) => {
+            for (const toFilterOut of paths) {
+              if (e === `${toFilterOut}.ts`) {
+                return false;
+              }
+            }
+
+            return true;
+          });
+
           this.activeTabDocFSL = JSON.stringify(toFilter.result);
 
           this.activeTabDocUpdater(this.activeTabDocFSL);
@@ -670,12 +680,54 @@ export class Manager implements AfterViewInit {
         break;
 
       case "Elementplaceholder":
-        this.itemsElementplaceholder = this.removeNodeRecursive(this.itemsElementplaceholder, this._currentNode);
+        {
+          const paths = this.getTreePaths([this._currentNode]);
+
+          this.itemsElementplaceholder = this.removeNodeRecursive(this.itemsElementplaceholder, this._currentNode);
+          // #region Remove from FSL
+          const toFilter = JSON.parse(`{ "result": ${this.activeTabDocFSL}}`);
+
+          toFilter.result = toFilter.result.filter((e) => {
+            for (const toFilterOut of paths) {
+              if (e === `${toFilterOut}.ts`) {
+                return false;
+              }
+            }
+
+            return true;
+          });
+
+          this.activeTabDocFSL = JSON.stringify(toFilter.result);
+
+          this.activeTabDocUpdater(this.activeTabDocFSL);
+          // #endregion Remove from FSL
+        }
 
         break;
 
       case "Standard":
-        this.itemsStandard = this.removeNodeRecursive(this.itemsStandard, this._currentNode);
+        {
+          const paths = this.getTreePaths([this._currentNode]);
+
+          this.itemsElementplaceholder = this.removeNodeRecursive(this.itemsStandard, this._currentNode);
+          // #region Remove from FSL
+          const toFilter = JSON.parse(`{ "result": ${this.activeTabDocFSL}}`);
+
+          toFilter.result = toFilter.result.filter((e) => {
+            for (const toFilterOut of paths) {
+              if (e === `${toFilterOut}.ts`) {
+                return false;
+              }
+            }
+
+            return true;
+          });
+
+          this.activeTabDocFSL = JSON.stringify(toFilter.result);
+
+          this.activeTabDocUpdater(this.activeTabDocFSL);
+          // #endregion Remove from FSL
+        }
 
         break;
     }
@@ -940,7 +992,7 @@ export class Manager implements AfterViewInit {
         ? "updateSVManager"
         : this.activeTab === "Elementplaceholder"
           ? "updateEPManager"
-          : "updateStandards"
+          : "populateStandards"
     ];
   }
   /**
@@ -980,6 +1032,7 @@ export class Manager implements AfterViewInit {
     )) {
       if (
         this.isNameTaken(candidate.toLowerCase()) &&
+        this.activeTabDocRef[candidate.toLowerCase()] &&
         this.activeTabDocRef[candidate.toLowerCase()].local === undefined &&
         this.findNodeByPath(candidate).data.Description !== ""
       ) {
@@ -1010,13 +1063,14 @@ export class Manager implements AfterViewInit {
           this.activeTab,
         );
 
-        const formerCurrentlySelectedTreeNodePath = currentlySelectedTreeNodePath.replace(
-          this.currentlySelectedTreeNode.label,
-          this.currentlySelectedTreeNode.data.label,
-        );
-
-        if (this.activeTabDocFSL.indexOf(formerCurrentlySelectedTreeNodePath.toLowerCase()) !== -1) {
-          this.activeTabDocFSL = this.activeTabDocFSL.replace(
+        let formerCurrentlySelectedTreeNodePath = `${this.currentlySelectedTreeNodePath.substring(0, this.currentlySelectedTreeNodePath.lastIndexOf("."))}.${this.currentlySelectedTreeNode.data.label}`;
+        // #region Remove trailing dot in case element is a root one.
+        if (formerCurrentlySelectedTreeNodePath[0] === ".") {
+          formerCurrentlySelectedTreeNodePath = formerCurrentlySelectedTreeNodePath.substring(1);
+        }
+        // #endregion Remove trailing dot in case element is a root one.
+        if (this.activeTabDocFSL.indexOf(`${formerCurrentlySelectedTreeNodePath.toLowerCase()}.`) !== -1) {
+          this.activeTabDocFSL = this.activeTabDocFSL.replaceAll(
             formerCurrentlySelectedTreeNodePath.toLowerCase(),
             currentlySelectedTreeNodePath,
           );
@@ -1765,16 +1819,25 @@ export class Manager implements AfterViewInit {
     });
   }
 
+  // #region Right Panel
+  // #region Parameter, Classes & Globals
+  /**
+   *
+   * @param toAdd
+   */
   onClick_CodBi_LocalAPIDoc_RightPanel_AddParameter(toAdd: string) {
     (toAdd === undefined || toAdd.toLowerCase() === "parameter"
       ? this.currentlySelectedFunctionalityData.Parameter
       : toAdd.toLowerCase() === "classes"
         ? this.currentlySelectedFunctionalityData.classes
         : this.currentlySelectedFunctionalityData.globals
-    ).push(new CommonApiParameter("Neuer Parameter...", "Keine Beschreibung..."));
+    ).push(
+      new CommonApiParameter(
+        this.translocoService.translate("Input.Parameter.Name.Placeholder"),
+        this.translocoService.translate("Input.Parameter.Name.Description"),
+      ),
+    );
   }
-  // #region Right Panel
-  // #region Parameter, Classes & Globals
   /** Stores the actual data for restoring it on {@link onRowEditCancel }. */
   bufferParameter: Map<number, ApiParameter> = new Map<number, ApiParameter>();
   /**
@@ -1783,6 +1846,28 @@ export class Manager implements AfterViewInit {
    * @param toEdit The current row's value. */
   onRowEditInit(toEdit: ApiParameter) {
     this.bufferParameter[toEdit.id] = new CommonApiParameter(toEdit.Name, toEdit.Description, toEdit.id);
+  }
+  /** States whether the parameter/class/global variable - name, that is currently being edited, is a valid one or not.*/
+  protected currentNameValid = false;
+  /** States whether the parameter/class/global variable - description, that is currently being edited, is a valid one or not.*/
+  protected currentDescriptionValid = false;
+  /**
+   * Handles the setting of {@link Manager.currentNameValid }.
+   *
+   * @param event The {@link KeyboardEvent } received. */
+  protected onKeyup_InputParametername(event: KeyboardEvent) {
+    this.currentNameValid = REGEX.stdExp.property.test(
+      INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value,
+    );
+  }
+  /**
+   * Handles the setting of {@link Manager.currentDescriptionValid }.
+   *
+   * @param event The {@link KeyboardEvent } received. */
+  protected onKeyup_InputParameterdescription(event: KeyboardEvent) {
+    const value = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
+
+    this.currentDescriptionValid = value.length > 0 && value.length < 500;
   }
   /**
    * Handles the click on the Parameter's save row button.

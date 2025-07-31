@@ -78,14 +78,15 @@ class StructuredDataStoreAction : IPluginServletAction {
    * @return An IPluginServletActionRetVal containing the response.
    */
   public override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    loadDataFromFile()
-
     val mode = params.headerMap["X-Action"]
     val servletResponse = ServletResponse(EResponseType.JSON)
+
     servletResponse.encoding = StandardCharsets.UTF_8.name()
 
     when (mode?.uppercase()) {
       "RETRIEVE" -> {
+        loadDataFromFile()
+
         lock.read { servletResponse.value = documentation }
       }
       "UPDATE" -> {

@@ -7,14 +7,15 @@
             <div class = "-panel -left">
                 <p-tree id = "CodBi_LocalAPIDoc_Tree" #CodBi_LocalAPIDoc_Tree
 
-                        [value]         = "activeTab === 'Functionality' ? items : activeTab === 'Elementplaceholder' ? itemsElementplaceholder : itemsStandard"
-                        [filter]        = "true"
-                        [(selection)]   = "currentlySelectedTreeNode"
+                        [value]             = "activeTab === 'Functionality' ? items : activeTab === 'Elementplaceholder' ? itemsElementplaceholder : itemsStandard"
+                        [filter]            = "true"
+                        [(selection)]       = "currentlySelectedTreeNode"
+                        [filterPlaceholder] = "'TreeView.phFilter' | transloco"
+                        [emptyMessage]      = "'TreeView.EmptyMessage' | transloco"
 
-                        selectionMode       = "single"
-                        filterPlaceholder   = "Suche"
+                        selectionMode = "single"
 
-                        (onNodeSelect)   = "onNodeSelect( $event )">
+                        (onNodeSelect) = "onNodeSelect( $event )">
                         <ng-template    let-node
 
                                         pTemplate = "default">
@@ -75,13 +76,14 @@
             <p-tabs [(value)]   = "activeTab"
                     [lazy]      = "false">
                 <p-tablist>
-                    <p-tab value    = "Functionality">Funktionalitäten</p-tab>
-                    <p-tab value    = "Elementplaceholder">Elementplatzhalter</p-tab>
-                    <p-tab value    = "Standard">Standard Konfigurationen</p-tab>
+                    <p-tab value    = "Functionality">{{"RP.Tabs.Header.Functionalities" | transloco }}</p-tab>
+                    <p-tab value    = "Elementplaceholder">{{"RP.Tabs.Header.Elementplaceholder" | transloco }}</p-tab>
+                    <p-tab value    = "Standard">{{"RP.Tabs.Header.Standards" | transloco }}</p-tab>
 
                     <div id = "CodBi_LocalAPIDoc_RightPanel_Options">
                         <button id      = "CodBi_LocalAPIDoc_RightPanel_Options_Sync"
-                                tooltip = "Synchronize with server"
+
+                                [attr.title] = "'RP.Tabs.Header.Functions.Sync' | transloco"
 
                                 (click) = "enSync()"
 
@@ -89,16 +91,18 @@
                                     '--synced'  : synchronized,
                                     '--syncing' : synchronizing }"></button>
 
-                        <button id      = "CodBi_LocalAPIDoc_RightPanel_Options_Export"
-                                tooltip = "Export to file"
+                        <button id = "CodBi_LocalAPIDoc_RightPanel_Options_Export"
+
+                                [attr.title] = "'RP.Tabs.Header.Functions.Export' | transloco"
 
                                 (click) = "onExport()"></button>
 
-                        <button id      = "CodBi_LocalAPIDoc_RightPanel_Options_Import"
-                                tooltip = "Import from file"
+                        <button id = "CodBi_LocalAPIDoc_RightPanel_Options_Import"
+
+                                [attr.title] = "'RP.Tabs.Header.Functions.Import' | transloco"
 
                                 (click) = "onImport()">
-                            <input  id      = "CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue" #CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue
+                            <input  id = "CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue" #CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue
                                             type    = "file"
                                             accept  = ".json"
                                             style   = "display : none ;"/></button>
@@ -108,7 +112,7 @@
                                 (click) = "onClick_CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel()">X</button></div></p-tablist>
 
                 <p-tabpanels>
-                    <p-tabpanel value   = "Functionality"
+                    <p-tabpanel value = "Functionality"
 
                                 [class.--active]    = "activeTab === 'Functionality'"
                                 [class.--inactive]  = "activeTab !== 'Functionality'"
@@ -117,7 +121,7 @@
                         <p-accordion    [(value)]   = "activeAccordion"
                                         [multiple]  = "true">
                             <p-accordion-panel value = "Description">
-                                <p-accordion-header>Beschreibung</p-accordion-header>
+                                <p-accordion-header>{{"RP.Accordion.Captions.Description" | transloco }}</p-accordion-header>
 
                                 <p-accordion-content #CodBi_LocalAPIDoc_Functionalities_Description >
                                     <div>
@@ -130,7 +134,6 @@
                                                 (onBlur)    = "updateNodeToAPIDoc()"
 
                                                 [(ngModel)]     = "description"
-                                                [initialValue]  = "'<p>Hier die Beschreibung der Funktionalität eingeben...</p>'"
                                                 [init]          = "{
                                                     plugins                     :   'advlist autolink lists link image table code help wordcount ' +
                                                                                     'charmap preview anchor searchreplace visualblocks fullscreen ' +
@@ -142,9 +145,9 @@
                                                                                     'alignright alignjustify | bullist numlist outdent indent | ' +
                                                                                     'removeformat | media insertdatetime charmap emoticons anchor | ' +
                                                                                     'preview fullscreen visualchars | help',
-                                                    quickbars_selection_toolbar : 'bold italic underline | quicklink',
-                                                    quickbars_image_toolbar     : 'alignleft aligncenter alignright | imageoptions',
-                                                    quickbars_insert_toolbar    : 'quicktable quickimage quickform',
+                                                    quickbars_selection_toolbar :   'bold italic underline | quicklink',
+                                                    quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
+                                                    quickbars_insert_toolbar    :   'quicktable quickimage quickform',
                                                     height                      :   300,
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
@@ -157,22 +160,24 @@
                                                     [ngTemplateOutletContext]   = "{ data: currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? currentlySelectedFunctionalityData.Parameter : [] : []}"></ng-container></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value = "Notes">
-                                <p-accordion-header>Notizen</p-accordion-header>
+                                <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
 
                                 <p-accordion-content>
                                     <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
 
                                                 [(ngModel)] = "notes"
 
-                                                placeholder = "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind..."></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
+                                                [attr.placeholder] = "'RP.phNotes' | transloco"></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
 
                     <p-tabpanel value   = "Elementplaceholder"
 
-                                [class] = "activeTab === 'Elementplaceholder' ? '--active' : '--inactive'">
+                                [class]             = "activeTab === 'Elementplaceholder' ? '--active' : '--inactive'"
+                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef.local === undefined"
+                                [class.--blocked]   = "currentlySelectedTreeNode === undefined">
                         <p-accordion    [(value)]   = "activeAccordion"
                                         [multiple]  = "true">
                             <p-accordion-panel value = "Description">
-                                <p-accordion-header>Beschreibung</p-accordion-header>
+                                <p-accordion-header>{{"RP.Accordion.Captions.Description" | transloco }}</p-accordion-header>
 
                                 <p-accordion-content #CodBi_LocalAPIDoc_Elementplaceholder_Description >
                                     <div>
@@ -186,8 +191,7 @@
                                                 (onBlur)        = "updateNodeToAPIDoc()"
 
                                                 [(ngModel)]     = "description"
-                                                [initialValue]  = "'<p>Hier die Beschreibung des Elementplatzhalters eingeben...</p>'"
-                                                [init]="{
+                                                [init]          = "{
                                                     plugins                     :   'advlist autolink lists link image table code help wordcount ' +
                                                                                     'charmap preview anchor searchreplace visualblocks fullscreen ' +
                                                                                     'insertdatetime media emoticons autosave quickbars visualchars ',
@@ -198,9 +202,9 @@
                                                                                     'alignright alignjustify | bullist numlist outdent indent | ' +
                                                                                     'removeformat | media insertdatetime charmap emoticons anchor | ' +
                                                                                     'preview fullscreen visualchars | help',
-                                                    quickbars_selection_toolbar : 'bold italic underline | quicklink',
-                                                    quickbars_image_toolbar     : 'alignleft aligncenter alignright | imageoptions',
-                                                    quickbars_insert_toolbar    : 'quicktable quickimage quickform',
+                                                    quickbars_selection_toolbar :   'bold italic underline | quicklink',
+                                                    quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
+                                                    quickbars_insert_toolbar    :   'quicktable quickimage quickform',
                                                     height                      :   300,
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
@@ -212,7 +216,7 @@
                                                     [ngTemplateOutletContext]   = "{ data: currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? toDescriptiveArray( currentlySelectedFunctionalityData.Parameter ) : [] : []}"></ng-container></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Notes">
-                                <p-accordion-header>Notizen</p-accordion-header>
+                                <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
 
                                 <p-accordion-content>
                                     <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
@@ -223,26 +227,27 @@
 
                     <p-tabpanel value   = "Standard"
 
-                                [class] = "activeTab === 'Standard' ? '--active' : '--inactive'">
+                                [class]             = "activeTab === 'Standard' ? '--active' : '--inactive'"
+                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef.local === undefined"
+                                [class.--blocked]   = "currentlySelectedTreeNode === undefined">
                         <p-accordion    [(value)]   = "activeAccordion"
                                         [multiple]  = "true">
                             <p-accordion-panel value = "Description">
-                                <p-accordion-header>Beschreibung</p-accordion-header>
+                                <p-accordion-header>{{"RP.Accordion.Captions.Description" | transloco }}</p-accordion-header>
 
                                 <p-accordion-content #CodBi_LocalAPIDoc_Elementplaceholder_Description >
                                     <div>
-                                        <editor *ngIf="activeTab === 'Standard'"
+                                        <editor *ngIf = "activeTab === 'Standard'"
 
                                                 id = "editorDescription_Standard" #editorDescription_Standard
 
-                                                licenseKey      = "gpl"
+                                                licenseKey  = "gpl"
 
-                                                (onInit)        = "onInitTinyMCE_Description( $event )"
-                                                (onBlur)        = "updateNodeToAPIDoc()"
+                                                (onInit) = "onInitTinyMCE_Description( $event )"
+                                                (onBlur) = "updateNodeToAPIDoc()"
 
                                                 [(ngModel)]     = "description"
-                                                [initialValue]  = "'<p>Hier die Beschreibung der Standardkonfiguration eingeben...</p>'"
-                                                [init]="{
+                                                [init]          = "{
                                                     plugins                     :   'advlist autolink lists link image table code help wordcount ' +
                                                                                     'charmap preview anchor searchreplace visualblocks fullscreen ' +
                                                                                     'insertdatetime media emoticons autosave quickbars visualchars ',
@@ -253,15 +258,15 @@
                                                                                     'alignright alignjustify | bullist numlist outdent indent | ' +
                                                                                     'removeformat | media insertdatetime charmap emoticons anchor | ' +
                                                                                     'preview fullscreen visualchars | help',
-                                                    quickbars_selection_toolbar : 'bold italic underline | quicklink',
-                                                    quickbars_image_toolbar     : 'alignleft aligncenter alignright | imageoptions',
-                                                    quickbars_insert_toolbar    : 'quicktable quickimage quickform',
+                                                    quickbars_selection_toolbar :   'bold italic underline | quicklink',
+                                                    quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
+                                                    quickbars_insert_toolbar    :   'quicktable quickimage quickform',
                                                     height                      :   300,
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Globals">
-                                <p-accordion-header>Globale Parameter</p-accordion-header>
+                                <p-accordion-header>{{"RP.Accordion.Captions.Globals" | transloco }}</p-accordion-header>
 
                                 <p-accordion-content>
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
@@ -270,7 +275,7 @@
                                                         toAdd   : 'Globals'}"></ng-container></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Classes">
-                                <p-accordion-header>CSS Klassen</p-accordion-header>
+                                <p-accordion-header>{{"RP.Accordion.Captions.CSS" | transloco }}</p-accordion-header>
 
                                 <p-accordion-content>
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
@@ -279,7 +284,7 @@
                                                         toAdd   : 'Classes'}"></ng-container></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Notes">
-                                <p-accordion-header>Notizen</p-accordion-header>
+                                <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
 
                                 <p-accordion-content>
                                     <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
@@ -336,7 +341,7 @@
 
             <button id = "CodBi_LocalAPIDoc_New_Panel_Add" #CodBi_LocalAPIDoc_New_Panel_Add
 
-                    (click) = "onClick_CodBi_LocalAPIDoc_New_Panel_Add()">Hinzufügen</button></div></div>
+                    (click) = "onClick_CodBi_LocalAPIDoc_New_Panel_Add()">{{"Add.Panel.Button" | transloco }}</button></div></div>
 
     <div class = "-close"><button #CodBi_LocalAPIDoc_New_Panel_Close>X</button></div></div>
 <!-- #endregion Templates -->
@@ -367,6 +372,8 @@
 
                                             [ngClass]       = "{'--invalid' : !currentNameValid }"
                                             [placeholder]   = "'Input.Parameter.phName' | transloco"
+
+                                            [attr.typeToAdd] = "toAdd"
 
                                             type        = "text"
                                             style       = "font-size : 1.5em ; width : 100% ; border-radius: .5em ; border : solid ; border-color: green ; color: darkorange ; box-shadow: 0 0 .5em green ;"
@@ -453,7 +460,7 @@
                                                     type        = "button"
                                                     severity    = "secondary"
 
-                                                    (click) = "onRowEditCancel( parameter, ri )"></button></div></td></tr></ng-template></p-table>
+                                                    (click) = "onRowEditCancel( parameter, ri, toAdd )"></button></div></td></tr></ng-template></p-table>
 
     <button id = "CodBi_LocalAPIDoc_RightPanel_AddParameter"
 

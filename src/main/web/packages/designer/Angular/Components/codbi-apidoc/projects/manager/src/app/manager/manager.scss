@@ -1,273 +1,854 @@
 #CodBi_LocalAPIDoc {
-  margin-left: 2vw ; border-bottom-right-radius: .5em ; border-top-right-radius: .5em ; box-shadow: 0 0 .5em black ;
-  overflow: hidden ; height : 100% ; margin : 0 ; width : 100% ; transition: .5s all;
-  background-image: linear-gradient( 90deg, #615b5bCC 0%, #FFFFFFFF 1% );
+  margin-left: 2vw;
+  border-bottom-right-radius: .5em;
+  border-top-right-radius: .5em;
+  box-shadow: 0 0 .5em black;
+  overflow: hidden;
+  height: 100%;
+  margin: 0;
+  width: 100%;
+  transition: .5s all;
+  background-image: linear-gradient(90deg, #615b5bCC 0%, #FFFFFFFF 1%);
 
-  .p-splitter.p-component.p-splitter-horizontal { border-top-left-radius: 0 ; border-bottom-left-radius: 0 ;}
+  .p-splitter.p-component.p-splitter-horizontal {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+  }
 
-  .tox .tox-editor-header { z-index: 0 ;}
-  .tox .tox-promotion     { display : none ;}
+  .tox .tox-editor-header {
+    z-index: 0;
+  }
+
+  .tox .tox-promotion {
+    display: none;
+  }
 
   p-tabs {
-    p-tablist { box-shadow: 0 0 .5em black ; margin-bottom: .25em ;}}
+    p-tablist {
+      box-shadow: 0 0 .5em black;
+      margin-bottom: .25em;
+    }
+  }
 
-  .p-tabpanels.p-component { overflow-y: auto ; padding-bottom : 10% ;}
+  .p-tabpanels.p-component {
+    overflow-y: auto;
+    padding-bottom: 10%;
+  }
+
   // #region TreeView
   // #region Nodeoptions
   .--CB-LocalAPIDoc-RemoveTreeItem,
   .--CB-LocalAPIDoc-ExportTreeItem,
-  .--CB-LocalAPIDoc-RenameTreeItem          { margin-left: 1em ; border: none ; background-color: transparent ;
-                                              cursor: pointer ; transition: .25s ; opacity : 0 ; scale : 0 ; pointer-events: none ;}
+  .--CB-LocalAPIDoc-RenameTreeItem {
+    margin-left: 1em;
+    border: none;
+    background-color: transparent;
+    cursor: pointer;
+    transition: .25s;
+    opacity: 0;
+    scale: 0;
+    pointer-events: none;
+  }
+
   .--CB-LocalAPIDoc-RemoveTreeItem:hover,
   .--CB-LocalAPIDoc-ExportTreeItem:hover,
-  .--CB-LocalAPIDoc-RenameTreeItem:hover    { color: red ; text-shadow : 0 0 .1em darkorange ;}
+  .--CB-LocalAPIDoc-RenameTreeItem:hover {
+    color: red;
+    text-shadow: 0 0 .1em darkorange;
+  }
+
   .--CB-LocalAPIDoc-RemoveTreeItem:active,
   .--CB-LocalAPIDoc-ExportTreeItem:active,
-  .--CB-LocalAPIDoc-RenameTreeItem:active   { color: green ; scale: 0 ;}
-  .--CB-LocalAPIDoc-RemoveTreeItem::after   { content: "\e93d" ; font-family: 'primeicons'; cursor : pointer ;}
-  .--CB-LocalAPIDoc-ExportTreeItem::after   { content: "\e9f8" ; font-family: 'primeicons'; cursor : pointer ;}
-  .--CB-LocalAPIDoc-RenameTreeItem::after   { content: "\e942" ; font-family: 'primeicons'; cursor : pointer ;}
+  .--CB-LocalAPIDoc-RenameTreeItem:active {
+    color: green;
+    scale: 0;
+  }
+
+  .--CB-LocalAPIDoc-RemoveTreeItem::after {
+    content: "\e93d";
+    font-family: 'primeicons';
+    cursor: pointer;
+  }
+
+  .--CB-LocalAPIDoc-ExportTreeItem::after {
+    content: "\e9f8";
+    font-family: 'primeicons';
+    cursor: pointer;
+  }
+
+  .--CB-LocalAPIDoc-RenameTreeItem::after {
+    content: "\e942";
+    font-family: 'primeicons';
+    cursor: pointer;
+  }
+
   /* #region Icon Fix */
-  [ icon = "pi pi-pencil"]::after { content: "\e942" ; font-family: 'primeicons'; cursor : pointer ;}
-  [ icon = "pi pi-check"]::after  { content: "\e98c" ; font-family: 'primeicons'; cursor : pointer ;}
-  [ icon = "pi pi-times"]::after  { content: "\e90b" ; font-family: 'primeicons'; cursor : pointer ;}
-  [ icon = "pi pi-trash"]::after  { content: "\e93d" ; font-family: 'primeicons'; cursor : pointer ;}
+  [ icon="pi pi-pencil"]::after {
+    content: "\e942";
+    font-family: 'primeicons';
+    cursor: pointer;
+  }
+
+  [ icon="pi pi-check"]::after {
+    content: "\e98c";
+    font-family: 'primeicons';
+    cursor: pointer;
+  }
+
+  [ icon="pi pi-times"]::after {
+    content: "\e90b";
+    font-family: 'primeicons';
+    cursor: pointer;
+  }
+
+  [ icon="pi pi-trash"]::after {
+    content: "\e93d";
+    font-family: 'primeicons';
+    cursor: pointer;
+  }
+
   /* #endregion Icon Fix */
   // #endregion Nodeoptions
-  p-accordion-content                             { transition : .5s all ;}
-  [ data-p-active = "false"] p-accordion-content  { height : 0 ;}
+  p-accordion-content {
+    transition: .5s all;
+  }
 
-  #CodBi_LocalAPIDoc_Tree { background-size : contain; background-position : center; background-repeat : no-repeat;
-                            background-blend-mode : overlay; background-color : #FFFFFFEE ;}
+  [ data-p-active="false"] p-accordion-content {
+    height: 0;
+  }
+
+  #CodBi_LocalAPIDoc_Tree {
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-blend-mode: overlay;
+    background-color: #FFFFFFEE;
+  }
 
   @keyframes kfFadeIN_CodBi_LocalAPIDoc_Tree_Label {
-    90%   { scale: 1.1 ;}
-    100%  { box-shadow: 0 0 .25em red ; scale : 1 ;}}
-  #CodBi_LocalAPIDoc_Tree_Label input { border-radius: .5em ; padding: .25em ; color: red ; border: solid ;
-                                        border-width: thin ;
-                                        animation : kfFadeIN_CodBi_LocalAPIDoc_Tree_Label .25s ease-in forwards ;}
+    90% {
+      scale: 1.1;
+    }
+
+    100% {
+      box-shadow: 0 0 .25em red;
+      scale: 1;
+    }
+  }
+
+  #CodBi_LocalAPIDoc_Tree_Label input {
+    border-radius: .5em;
+    padding: .25em;
+    color: red;
+    border: solid;
+    border-width: thin;
+    animation: kfFadeIN_CodBi_LocalAPIDoc_Tree_Label .25s ease-in forwards;
+  }
+
   // #endregion TreeView
-  #Splitter { width : 100 ; height: 100% ;}
+  #Splitter {
+    width: 100;
+    height: 100%;
+  }
 
-  #CodBi_LocalAPIDoc_RightPanel_AddParameter        { transition: .5s ; font-size: 2em ; width: 100% ;
-                                                      border-radius: .25em ; border: solid ;
-                                                      box-shadow: 0 0 .25em black ; border-color: darkorange ;
-                                                      cursor: pointer ; margin-top: 1em ; border-width: .05em ;}
-  #CodBi_LocalAPIDoc_RightPanel_AddParameter:hover  { box-shadow: 0 0 .5em darkorange ; color: darkorange ;}
-  #CodBi_LocalAPIDoc_RightPanel_AddParameter:active { scale: .9 ; box-shadow: -.5em 0 .5em red ;}
+  #CodBi_LocalAPIDoc_RightPanel_AddParameter {
+    transition: .5s;
+    font-size: 2em;
+    width: 100%;
+    border-radius: .25em;
+    border: solid;
+    box-shadow: 0 0 .25em black;
+    border-color: darkorange;
+    cursor: pointer;
+    margin-top: 1em;
+    border-width: .05em;
+  }
 
-  .flex.items-center.justify-center.gap-2 button {  font-size: 1.5em ; border: none ; background: transparent ;
-                                                    cursor : pointer ; transition: .25s ;}
-  .flex.items-center.justify-center.gap-2 button:hover { color: darkorange ;}
-  .flex.items-center.justify-center.gap-2 button:hover { color: red ;}
+  #CodBi_LocalAPIDoc_RightPanel_AddParameter:hover {
+    box-shadow: 0 0 .5em darkorange;
+    color: darkorange;
+  }
 
-  .flex.items-center.justify-center.gap-2 .p-datatable-row-editor-save.--invalid { pointer-events: none ; opacity: .1 ;}
+  #CodBi_LocalAPIDoc_RightPanel_AddParameter:active {
+    scale: .9;
+    box-shadow: -.5em 0 .5em red;
+  }
 
-  p-celleditor input            { transition: .25s ;}
-  p-celleditor input.--invalid  { border-color: red !important ; box-shadow: 0 0 .5em red !important ;}
+  .flex.items-center.justify-center.gap-2 button {
+    font-size: 1.5em;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    transition: .25s;
+  }
 
-  #CodBi_LocalAPIDoc_RightPanel_Notes_Text { width: 100% ; color: blue ; max-width: 100% ; font-style: italic ;}
+  .flex.items-center.justify-center.gap-2 button:hover {
+    color: darkorange;
+  }
+
+  .flex.items-center.justify-center.gap-2 button:hover {
+    color: red;
+  }
+
+  .flex.items-center.justify-center.gap-2 .p-datatable-row-editor-save.--invalid {
+    pointer-events: none;
+    opacity: .1;
+  }
+
+  p-celleditor input {
+    transition: .25s;
+  }
+
+  p-celleditor input.--invalid {
+    border-color: red !important;
+    box-shadow: 0 0 .5em red !important;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Notes_Text {
+    width: 100%;
+    color: blue;
+    max-width: 100%;
+    font-style: italic;
+  }
 
   p-tab,
-  .p-ripple.p-tab.p-component               { border-color: darkorange ; color: darkorange ;}
-  .p-ripple.p-tab.p-component:hover         { color: #10b981 ;}
-  .p-ripple.p-tab.p-component.p-tab-active  { color: #10b981 ;}
+  .p-ripple.p-tab.p-component {
+    border-color: darkorange;
+    color: darkorange;
+  }
 
-  .p-splitter-gutter {  box-shadow: 0 0 .25em lightsteelblue ; background-color: white ; margin-left: .25em ;
-                        margin-right: .25em ;}
+  .p-ripple.p-tab.p-component:hover {
+    color: #10b981;
+  }
 
-  .p-tablist-active-bar { transition: 1s cubic-bezier( 0.35, 0, 0.25, 1 ); color: blue ; box-shadow: 0 0 .5em green ;}
+  .p-ripple.p-tab.p-component.p-tab-active {
+    color: #10b981;
+  }
 
-  #CodBi_LocalAPIDoc_RightPanel_Options { margin-left: auto ; display: flex ;}
+  .p-splitter-gutter {
+    box-shadow: 0 0 .25em lightsteelblue;
+    background-color: white;
+    margin-left: .25em;
+    margin-right: .25em;
+  }
 
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync          { cursor : pointer ; font-size: 1.5em ; color: red ;
-                                                        margin-top: auto ; margin-bottom: auto ; transition: .5s ;
-                                                        background-color: transparent ; border: none ;
-                                                        text-shadow: 0 0 .1em darkorange ; cursor: pointer ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync::after   { content: "\e9e6" ; font-family: 'primeicons'; }
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:hover    { scale: 1.1 ; text-shadow: 0 0 .5em darkorange ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:active   { scale: .9 ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync.--synced { color: green ;}
+  .p-tablist-active-bar {
+    transition: 1s cubic-bezier(0.35, 0, 0.25, 1);
+    color: blue;
+    box-shadow: 0 0 .5em green;
+  }
 
-  @keyframes kfSyncing_CodBi_LocalAPIDoc_RightPanel_Options_Sync { 100% { transform: rotate( 360deg );}}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Sync.--syncing { animation: kfSyncing_CodBi_LocalAPIDoc_RightPanel_Options_Sync 1s infinite ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options {
+    margin-left: auto;
+    display: flex;
+  }
 
-  #CodBi_LocalAPIDoc_RightPanel_Options_Export        { cursor : pointer ; font-size: 1.5em ;
-                                                      margin-top: auto ; margin-bottom: auto ; transition: .5s ;
-                                                      background-color: transparent ; border: none ;
-                                                      text-shadow: 0 0 .1em darkorange ; cursor: pointer ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Export::after { content: "\e9f8" ; font-family: 'primeicons'; }
-  #CodBi_LocalAPIDoc_RightPanel_Options_Export:hover  { scale: 1.1 ; text-shadow: 0 0 .5em darkorange ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Export:active { scale: .9 ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync {
+    cursor: pointer;
+    font-size: 1.5em;
+    color: red;
+    margin-top: auto;
+    margin-bottom: auto;
+    transition: .5s;
+    background-color: transparent;
+    border: none;
+    text-shadow: 0 0 .1em darkorange;
+    cursor: pointer;
+  }
 
-  #CodBi_LocalAPIDoc_RightPanel_Options_Import        { cursor : pointer ; font-size: 1.5em ;
-                                                      margin-top: auto ; margin-bottom: auto ; transition: .5s ;
-                                                      background-color: transparent ; border: none ;
-                                                      text-shadow: 0 0 .1em darkorange ; cursor: pointer ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Import::after { content: "\e9f9" ; font-family: 'primeicons'; }
-  #CodBi_LocalAPIDoc_RightPanel_Options_Import:hover  { scale: 1.1 ; text-shadow: 0 0 .5em darkorange ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_Import:active { scale: .9 ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync::after {
+    content: "\e9e6";
+    font-family: 'primeicons';
+  }
 
-  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel        { cursor: pointer ; transition: .5s ;border: none ;
-                                                            border-bottom-left-radius: .5em ; background: #141414 ;
-                                                            background: linear-gradient(148deg, #e11010, #ba3535 13%, #e67979 51%, #870808 87%, #660505);
-                                                            text-shadow: 0 0 .1em black ; box-shadow: 0 0 .5em black ;
-                                                            color : white ; font-size: 1.5em ; margin-left: .5em ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel:hover  { scale: 1.1 ; color: darkorange ;}
-  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel:active { scale: .9 ;}
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:hover {
+    scale: 1.1;
+    text-shadow: 0 0 .5em darkorange;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync:active {
+    scale: .9;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync.--synced {
+    color: green;
+  }
+
+  @keyframes kfSyncing_CodBi_LocalAPIDoc_RightPanel_Options_Sync {
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Sync.--syncing {
+    animation: kfSyncing_CodBi_LocalAPIDoc_RightPanel_Options_Sync 1s infinite;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Export {
+    cursor: pointer;
+    font-size: 1.5em;
+    margin-top: auto;
+    margin-bottom: auto;
+    transition: .5s;
+    background-color: transparent;
+    border: none;
+    text-shadow: 0 0 .1em darkorange;
+    cursor: pointer;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Export::after {
+    content: "\e9f8";
+    font-family: 'primeicons';
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Export:hover {
+    scale: 1.1;
+    text-shadow: 0 0 .5em darkorange;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Export:active {
+    scale: .9;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Import {
+    cursor: pointer;
+    font-size: 1.5em;
+    margin-top: auto;
+    margin-bottom: auto;
+    transition: .5s;
+    background-color: transparent;
+    border: none;
+    text-shadow: 0 0 .1em darkorange;
+    cursor: pointer;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Import::after {
+    content: "\e9f9";
+    font-family: 'primeicons';
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Import:hover {
+    scale: 1.1;
+    text-shadow: 0 0 .5em darkorange;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Import:active {
+    scale: .9;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel {
+    cursor: pointer;
+    transition: .5s;
+    border: none;
+    border-bottom-left-radius: .5em;
+    background: #141414;
+    background: linear-gradient(148deg, #e11010, #ba3535 13%, #e67979 51%, #870808 87%, #660505);
+    text-shadow: 0 0 .1em black;
+    box-shadow: 0 0 .5em black;
+    color: white;
+    font-size: 1.5em;
+    margin-left: .5em;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel:hover {
+    scale: 1.1;
+    color: darkorange;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel:active {
+    scale: .9;
+  }
 
   @keyframes kfFadeIN_CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent {
-    0%    { opacity: 0 ; scale : 2 ;}
-    100%  { opacity: 1 ; scale : 1 ;}}
-  #CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent { display: none ; position: absolute ; border: solid ;
-                                                              border-radius: 0.5em ; padding: 0.25em ; left: 0px ;
-                                                              margin-left: 1em ; background-color: darkred ;
-                                                              color: white ; border-color: darkorange ;
-                                                              box-shadow: 0 0 .25em black ; margin-bottom: .5em ;
-                                                              z-index: 10 ;
-                                                              animation: kfFadeIN_CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent .25s ease-in forwards ;}
+    0% {
+      opacity: 0;
+      scale: 2;
+    }
+
+    100% {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+
+  #CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent {
+    display: none;
+    position: absolute;
+    border: solid;
+    border-radius: 0.5em;
+    padding: 0.25em;
+    left: 0px;
+    margin-left: 1em;
+    background-color: darkred;
+    color: white;
+    border-color: darkorange;
+    box-shadow: 0 0 .25em black;
+    margin-bottom: .5em;
+    z-index: 10;
+    animation: kfFadeIN_CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent .25s ease-in forwards;
+  }
 
   #CodBi_LocalAPIDoc_Tree_Label_Remove {
     @keyframes kfFadeIN_CodBi_LocalAPIDoc_Tree_Label_Remove_Question {
-      0%    { opacity: 0 ; scale : 0 ;}
-      90%   { scale: 1.1 ;}
-      100%  { opacity: 1 ; scale : 1 ;}}
+      0% {
+        opacity: 0;
+        scale: 0;
+      }
+
+      90% {
+        scale: 1.1;
+      }
+
+      100% {
+        opacity: 1;
+        scale: 1;
+      }
+    }
+
     #CodBi_LocalAPIDoc_Tree_Label_Remove_Question {
-      display: none ; border: solid ; padding: .25em ; border-radius: .5em ; border-width: thin ;
-      box-shadow: 0 0 .25em darkorange ; animation: kfFadeIN_CodBi_LocalAPIDoc_Tree_Label_Remove_Question .25s ease-in forwards ;
+      display: none;
+      border: solid;
+      padding: .25em;
+      border-radius: .5em;
+      border-width: thin;
+      box-shadow: 0 0 .25em red;
+      animation: kfFadeIN_CodBi_LocalAPIDoc_Tree_Label_Remove_Question .25s ease-in forwards;
 
-      #CodBi_LocalAPIDoc_Tree_Label_Remove_Question_Yes::after  { content: "\e9a3" ; font-family: 'primeicons'; cursor : pointer ;}
-      #CodBi_LocalAPIDoc_Tree_Label_Remove_Question_No::after   { content: "\e9a4" ; font-family: 'primeicons'; cursor : pointer ;}
-      #CodBi_LocalAPIDoc_Tree_Label_Remove_Question_Yes:hover   { color: red ; }
-      #CodBi_LocalAPIDoc_Tree_Label_Remove_Question_No:hover    { color: green ; }
+      #CodBi_LocalAPIDoc_Tree_Label_Remove_Question_Yes::after {
+        content: "\e9a3";
+        font-family: 'primeicons';
+        cursor: pointer;
+      }
 
-      button        { border: none ; background-color: transparent ; cursor: pointer ; transition: .25s all ;
-                      color: darkorange ; }
-      button:hover  { filter: drop-shadow( 0 0 0 .25em darkorange ); scale: 1.1 ;}
-      button:active { scale: .9 ;}}}
+      #CodBi_LocalAPIDoc_Tree_Label_Remove_Question_No::after {
+        content: "\e9a4";
+        font-family: 'primeicons';
+        cursor: pointer;
+      }
+
+      #CodBi_LocalAPIDoc_Tree_Label_Remove_Question_Yes:hover {
+        color: red;
+      }
+
+      #CodBi_LocalAPIDoc_Tree_Label_Remove_Question_No:hover {
+        color: green;
+      }
+
+      button {
+        border: none;
+        background-color: transparent;
+        cursor: pointer;
+        transition: .25s all;
+        color: darkorange;
+      }
+
+      button:hover {
+        filter: drop-shadow(0 0 0 .25em darkorange);
+        scale: 1.1;
+      }
+
+      button:active {
+        scale: .9;
+      }
+    }
+  }
 
   .-panel.-left {
-    height: 100% ; width : 100% ;
+    height: 100%;
+    width: 100%;
 
     .p-inputtext.p-component.p-tree-filter-input,
-    .p-tree.p-component.p-tree-selectable                             { background-color: transparent ;}
-    p-tree,
-    p-tree .p-tree.p-component .p-tree-root                           { min-height : calc(100% - 3em) ;
-                                                                        display : block ; margin-top: .5em ;}
-    p-tree .p-tree.p-component                                        { height: 100% ; min-height : 100% ;
-                                                                        max-width: 100% ; display : block ;}
-    p-tree .p-tree.p-component .p-tree-node-content                   { max-width: 10% ;}
-    p-tree .p-tree.p-component .p-tree-node-label,
-    p-tree .p-tree.p-component p-tree-node-toggle-button              { color: darkorange ;}
-    p-tree .p-tree-node-selectable                                    { transition: color .25s ease-in ;}
-    p-tree .p-tree-node-selectable:not( .p-tree-node-selected):hover  { border-color: wheat ;
-                                                                        border-left-style: solid ;
-                                                                        border-radius: 0 ;
-                                                                        background-color: transparent ;}
-    p-tree .p-tree-node-selected                                      { border-color: darkorange ;
-                                                                        border-left-style: solid ;
-                                                                        border-radius: 0 ;
-                                                                        background-color: transparent ;}
+    .p-tree.p-component.p-tree-selectable {
+      background-color: transparent;
+    }
 
-    button.-add       { transition: .5s ; font-size: 2em ; width: 100% ; border-top-right-radius: .25em ;
-                        border: solid ; box-shadow: -.5em 0 .5em black ; border-color: darkorange ;
-                        cursor: pointer ; border-left-style: none ; border-width: .05em ;}
-    button.-add:hover  { scale: 1.1 ; box-shadow: -.5em 0 .5em darkorange ; color: darkorange ;}
-    button.-add:active { scale: .9 ; box-shadow: -.5em 0 .5em red ;}
+    p-tree,
+    p-tree .p-tree.p-component .p-tree-root {
+      min-height: calc(100% - 3em);
+      display: block;
+      margin-top: .5em;
+    }
+
+    p-tree .p-tree.p-component {
+      height: 100%;
+      min-height: 100%;
+      max-width: 100%;
+      display: block;
+    }
+
+    p-tree .p-tree.p-component .p-tree-node-content {
+      max-width: 10%;
+    }
+
+    p-tree .p-tree.p-component .p-tree-node-label,
+    p-tree .p-tree.p-component p-tree-node-toggle-button {
+      color: darkorange;
+    }
+
+    p-tree .p-tree-node-selectable {
+      transition: color .25s ease-in;
+    }
+
+    p-tree .p-tree-node-selectable:not(.p-tree-node-selected):hover {
+      border-color: wheat;
+      border-left-style: solid;
+      border-radius: 0;
+      background-color: transparent;
+    }
+
+    p-tree .p-tree-node-selected {
+      border-color: darkorange;
+      border-left-style: solid;
+      border-radius: 0;
+      background-color: transparent;
+    }
+
+    @keyframes kfFadeIN_Tree_EmptyMessage {
+      0% {
+        opacity: 0;
+        scale: 0;
+      }
+
+      90% {
+        scale: 1.1;
+      }
+
+      100% {
+        opacity: 1;
+        scale: 1;
+      }
+    }
+
+    .p-tree-empty-message {
+      margin-top: 25%;
+      font-weight: bolder;
+      text-shadow: 0 0 .25em darkorange;
+      font-size: 1.5em;
+      justify-self: center;
+      animation: kfFadeIN_Tree_EmptyMessage .25s ease-in forwards;
+    }
+
+    button.-add {
+      transition: .5s;
+      font-size: 2em;
+      width: 100%;
+      border-top-right-radius: .25em;
+      border: solid;
+      box-shadow: -.5em 0 .5em black;
+      border-color: darkorange;
+      cursor: pointer;
+      border-left-style: none;
+      border-width: .05em;
+    }
+
+    button.-add:hover {
+      scale: 1.1;
+      box-shadow: -.5em 0 .5em darkorange;
+      color: darkorange;
+    }
+
+    button.-add:active {
+      scale: .9;
+      box-shadow: -.5em 0 .5em red;
+    }
 
     p-treenode:hover .--CB-LocalAPIDoc-RemoveTreeItem,
     p-treenode:hover .--CB-LocalAPIDoc-ExportTreeItem,
-    p-treenode:hover .--CB-LocalAPIDoc-RenameTreeItem { opacity : 1 ; scale : 1 ; pointer-events: all ;}}
+    p-treenode:hover .--CB-LocalAPIDoc-RenameTreeItem {
+      opacity: 1;
+      scale: 1;
+      pointer-events: all;
+    }
+  }
 
-    p-tabs,
-    p-tabs p-tabpanels                        { height: 100% ; min-height: 100% ; width : 100% ;}
-    p-tabs p-tabpanels p-tabpanel             { filter : blur( 1em ) ; transition: 1s all ;}
-    p-tabs p-tabpanels p-tabpanel.--nameTaken,
-    p-tabs p-tabpanels p-tabpanel.--blocked   { pointer-events: none !important ; opacity: .5 !important ; filter: blur( .5em ) !important ;}
+  p-tabs,
+  p-tabs p-tabpanels {
+    height: 100%;
+    min-height: 100%;
+    width: 100%;
+  }
 
-    @keyframes ksFadeIN_TabPanel {
-      0%  { filter: blur( 0 ) ; opacity : 0 ;}
-      50%  { filter: blur( 1em ) ; opacity: 1 ;}
-      100%  { filter: blur( 0 ) ;}}
-    p-tabs p-tabpanels .--active { animation: ksFadeIN_TabPanel .5s ease-in forwards ;}
+  p-tabs p-tabpanels p-tabpanel {
+    filter: blur(1em);
+    transition: 1s all;
+  }
+
+  p-tabs p-tabpanels p-tabpanel.--nameTaken,
+  p-tabs p-tabpanels p-tabpanel.--blocked {
+    pointer-events: none !important;
+    opacity: .5 !important;
+    filter: blur(.5em) !important;
+  }
+
+  @keyframes ksFadeIN_TabPanel {
+    0% {
+      filter: blur(0);
+      opacity: 0;
+    }
+
+    50% {
+      filter: blur(1em);
+      opacity: 1;
+    }
+
+    100% {
+      filter: blur(0);
+    }
+  }
+
+  p-tabs p-tabpanels .--active {
+    animation: ksFadeIN_TabPanel .5s ease-in forwards;
+  }
 
   @keyframes kfFadeIN_CodBi_LocalAPIDoc_Functionalities_Description_Taken {
-    0%    { opacity: 0 ; scale: 1.5 ;}
-    100%  { opacity: 1 ; scale: 1 ;}}
-  #CodBi_LocalAPIDoc_Functionalities_Description_Taken {  display: none ; border: solid ; padding: .5em ;
-                                                          border-radius: .5em ; position: absolute ;
-                                                          box-shadow: 0 0 .5em black ; border-color: darkorange ;
-                                                          top: 40% ; width: 80% ; left: 10% ;
-                                                          animation: kfFadeIN_CodBi_LocalAPIDoc_Functionalities_Description_Taken .5s ease-in forwards ;}}
-#CodBi_LocalAPIDoc.-submerged { .p-splitter-gutter { display : none ;}}
-#CodBi_LocalAPIDoc.-submerged { .p-tablist-active-bar { display : none ;}}
-#CodBi_LocalAPIDoc.--closed   { transform: translateX( -100% ); opacity: 0 ;}
-#CodBi_LocalAPIDoc.--opened   { transform: translateX( 0 ); opacity: 1 ;}
+    0% {
+      opacity: 0;
+      scale: 1.5;
+    }
+
+    100% {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+
+  #CodBi_LocalAPIDoc_Functionalities_Description_Taken {
+    display: none;
+    border: solid;
+    padding: .5em;
+    border-radius: .5em;
+    position: absolute;
+    box-shadow: 0 0 .5em black;
+    border-color: darkorange;
+    top: 40%;
+    width: 80%;
+    left: 10%;
+    animation: kfFadeIN_CodBi_LocalAPIDoc_Functionalities_Description_Taken .5s ease-in forwards;
+  }
+}
+
+#CodBi_LocalAPIDoc.-submerged {
+  .p-splitter-gutter {
+    display: none;
+  }
+}
+
+#CodBi_LocalAPIDoc.-submerged {
+  .p-tablist-active-bar {
+    display: none;
+  }
+}
+
+#CodBi_LocalAPIDoc.--closed {
+  transform: translateX(-100%);
+  opacity: 0;
+}
+
+#CodBi_LocalAPIDoc.--opened {
+  transform: translateX(0);
+  opacity: 1;
+}
 
 @keyframes kfFadeIN_CodBi_LocalAPIDoc_New {
-  0%    { opacity: 0 ;}
-  100%  { opacity: 1 ;}}
+  0% {
+    opacity: 0;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
 #CodBi_LocalAPIDoc_New {
-  position: absolute ; top: 0% ; border-top-right-radius: .5em ; border-bottom-right-radius: .5em ; left: 0% ;
-  background-image: linear-gradient( 90deg, #000000CC 0%, #000000FF 1% ); width: 100% ; height: 100% ; display: none ;
-  animation : kfFadeIN_CodBi_LocalAPIDoc_New .5s ease-in forwards ; overflow-y: auto ; scrollbar-width: none ;
+  position: absolute;
+  top: 0%;
+  border-top-right-radius: .5em;
+  border-bottom-right-radius: .5em;
+  left: 0%;
+  background-image: linear-gradient(90deg, #000000CC 0%, #000000FF 1%);
+  width: 100%;
+  height: 100%;
+  display: none;
+  animation: kfFadeIN_CodBi_LocalAPIDoc_New .5s ease-in forwards;
+  overflow-y: auto;
+  scrollbar-width: none;
 
   @keyframes kfFadeIN_CodBi_LocalAPIDoc_New_Header {
-    0%    { opacity: 0 ;}
-    100%  { opacity: 1 ;}}
+    0% {
+      opacity: 0;
+    }
+
+    100% {
+      opacity: 1;
+    }
+  }
+
   #CodBi_LocalAPIDoc_New_Header,
-  #CodBi_LocalAPIDoc_New_Outro    { color : white ; margin-left: auto ; margin-right: auto ; position: relative ;
-                                    left: 10% ; width: 50% ; top: 10% ; opacity : 0 ; padding-bottom: 1em ;
-                                    animation: kfFadeIN_CodBi_LocalAPIDoc_New_Header .5s .5s ease-in forwards ;}
-  #CodBi_LocalAPIDoc_New_Outro    {
-    top: 20% ; width: 100% ; margin-left: 0 ; left: 0 ;
+  #CodBi_LocalAPIDoc_New_Outro {
+    color: white;
+    margin-left: auto;
+    margin-right: auto;
+    position: relative;
+    left: 10%;
+    width: 50%;
+    top: 10%;
+    opacity: 0;
+    padding-bottom: 1em;
+    animation: kfFadeIN_CodBi_LocalAPIDoc_New_Header .5s .5s ease-in forwards;
+  }
 
-    #CodBi_LocalAPIDoc_New_Outro_NamingConvention { color: darkorange ;}}
+  #CodBi_LocalAPIDoc_New_Outro {
+    top: 20%;
+    width: 100%;
+    margin-left: 0;
+    left: 0;
 
-  #CodBi_LocalAPIDoc_New_JoinUsOnGitHub:visited { color: white ;}
-  #CodBi_LocalAPIDoc_New_JoinUsOnGitHub:hover   { filter: drop-shadow( 0 0 .5em darkorange );}
+    #CodBi_LocalAPIDoc_New_Outro_NamingConvention {
+      color: darkorange;
+    }
+  }
+
+  #CodBi_LocalAPIDoc_New_JoinUsOnGitHub:visited {
+    color: white;
+  }
+
+  #CodBi_LocalAPIDoc_New_JoinUsOnGitHub:hover {
+    filter: drop-shadow(0 0 .5em darkorange);
+  }
+
   #CodBi_LocalAPIDoc_New_JoinUsOnGitHub {
-    display: flex ; position: relative ; top: 30% ; color : white ; transition: 1s all ; padding-bottom: 4em ;
+    display: flex;
+    position: relative;
+    top: 30%;
+    color: white;
+    transition: 1s all;
+    padding-bottom: 4em;
 
-    img { filter: invert( 1 ) drop-shadow( 0 0 .5em white ); height: 5em ; margin: 1em ; margin-left: 0 ;}
+    img {
+      filter: invert(1) drop-shadow(0 0 .5em white);
+      height: 5em;
+      margin: 1em;
+      margin-left: 0;
+    }
 
-    p { margin-top: auto ; margin-bottom: auto ; font-style: italic ;}}
+    p {
+      margin-top: auto;
+      margin-bottom: auto;
+      font-style: italic;
+    }
+  }
 
-  .-close               { margin-left: auto ;}
-  .-close button        { background-color: red ; font-size: 2em; color: white ; border: none ;
-                          box-shadow: 0 0 .5em darkred ; border-bottom-left-radius: .5em ;
-                          cursor: pointer ; transition: .5s ;}
-  .-close button:hover  { box-shadow: 0 0 .5em white ;}
-  .-close button:active { scale: .9 ;}
+  .-close {
+    margin-left: auto;
+  }
+
+  .-close button {
+    background-color: red;
+    font-size: 2em;
+    color: white;
+    border: none;
+    box-shadow: 0 0 .5em darkred;
+    border-bottom-left-radius: .5em;
+    cursor: pointer;
+    transition: .5s;
+  }
+
+  .-close button:hover {
+    box-shadow: 0 0 .5em white;
+  }
+
+  .-close button:active {
+    scale: .9;
+  }
 
   @keyframes kfFadeIN_CodBi_LocalAPIDoc_New_Panel {
-  0%    { opacity: 0 ; scale : 0 ;}
-  90%   { opacity: 1 ; scale: 1.1 ;}
-  100%  { scale : 1 ;}}
-  #CodBi_LocalAPIDoc_New_Panel {
-    position: absolute ; left: 20% ; top: 43% ; border-radius: .5em ; padding: 1em ; border: solid ;
-    border-color: darkorange ; animation: kfFadeIN_CodBi_LocalAPIDoc_New_Panel .25s ease-in forwards ;
-    color: darkorange ; box-shadow: 0 0 .5em darkorange ; background: #141414;
-    background: linear-gradient(148deg, darkgrey 0%, rgba(250, 245, 245, 1) 13%, rgba(242, 235, 235, 1) 51%, rgba(255, 255, 255, 1) 87%, darkgrey 100%);
-    z-index: 100 ; display: flex ; max-width: 70% ;
+    0% {
+      opacity: 0;
+      scale: 0;
+    }
 
-    label { margin-right: .5em ; color : black ; margin: auto ; margin-right: 1em ;;}
+    90% {
+      opacity: 1;
+      scale: 1.1;
+    }
+
+    100% {
+      scale: 1;
+    }
+  }
+
+  #CodBi_LocalAPIDoc_New_Panel {
+    position: absolute;
+    left: 20%;
+    top: 43%;
+    border-radius: .5em;
+    padding: 1em;
+    border: solid;
+    border-color: darkorange;
+    animation: kfFadeIN_CodBi_LocalAPIDoc_New_Panel .25s ease-in forwards;
+    color: darkorange;
+    box-shadow: 0 0 .5em darkorange;
+    background: #141414;
+    background: linear-gradient(148deg, darkgrey 0%, rgba(250, 245, 245, 1) 13%, rgba(242, 235, 235, 1) 51%, rgba(255, 255, 255, 1) 87%, darkgrey 100%);
+    z-index: 100;
+    display: flex;
+    max-width: 70%;
+
+    label {
+      margin-right: .5em;
+      color: black;
+      margin: auto;
+      margin-right: 1em;
+      ;
+    }
 
     #CodBi_LocalAPIDoc_New_Panel_InputArea {
-      max-width: 70% ;
+      max-width: 70%;
 
-      #CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent { display: none ; color: red ;}
+      #CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent {
+        display: none;
+        color: red;
+      }
 
-      #CodBi_LocalAPIDoc_New_Name { max-width: 80% ;}}
+      #CodBi_LocalAPIDoc_New_Name {
+        max-width: 80%;
+      }
+    }
 
-    input { padding: .25em ; border-bottom-left-radius: .5em ; border-top-left-radius: .5em ; width : 50em ;}
+    input {
+      padding: .25em;
+      border-bottom-left-radius: .5em;
+      border-top-left-radius: .5em;
+      width: 50em;
+    }
 
     input,
-    button {  background-color: transparent ; border: solid ; border-color: darkorange ; padding: .25em ;
-              box-shadow: 0 0 .5em darkorange ;}
+    button {
+      background-color: transparent;
+      border: solid;
+      border-color: darkorange;
+      padding: .25em;
+      box-shadow: 0 0 .5em darkorange;
+    }
 
-    button        { cursor: pointer ; transition: .5s ; border-color: darkorange ;
-                    border-left-style: none ; border-top-right-radius: .5em ; border-bottom-right-radius: .5em ;
-                    background: linear-gradient(148deg, darkgrey 0%, rgba(250, 245, 245, 1) 13%, rgba(242, 235, 235, 1) 51%, rgba(255, 255, 255, 1) 87%, darkgrey 100%);}
-    button:hover  { scale: 1.1 ; color: darkorange ; border-left-style: solid ;}
-    button:active { scale: .9 ;}}}
+    button {
+      cursor: pointer;
+      transition: .5s;
+      border-color: darkorange;
+      border-left-style: none;
+      border-top-right-radius: .5em;
+      border-bottom-right-radius: .5em;
+      background: linear-gradient(148deg, darkgrey 0%, rgba(250, 245, 245, 1) 13%, rgba(242, 235, 235, 1) 51%, rgba(255, 255, 255, 1) 87%, darkgrey 100%);
+    }
+
+    button:hover {
+      scale: 1.1;
+      color: darkorange;
+      border-left-style: solid;
+    }
+
+    button:active {
+      scale: .9;
+    }
+  }
+}

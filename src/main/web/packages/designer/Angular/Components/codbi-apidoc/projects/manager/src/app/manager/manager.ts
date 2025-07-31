@@ -146,7 +146,7 @@ interface InputDataItem {
   Parameter?: { [name: string]: string } | SimplifiedNamedItem[];
 }
 
-interface InputData {
+interface APIDocJSON {
   detStandards?: { [key: string]: InputDataItem };
   detFunctionalities?: { [key: string]: InputDataItem };
   detElementplaceholder?: { [key: string]: InputDataItem };
@@ -157,7 +157,7 @@ interface InputData {
 }
 
 // Define the new structure for the initial tree to merge into
-interface InitialTreeObject {
+interface MergeableTreeNodeAPIDOC {
   detStandards?: TreeNode[];
   detFunctionalities?: TreeNode[];
   detElementplaceholder?: TreeNode[];
@@ -301,40 +301,48 @@ export class Manager implements AfterViewInit {
 
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
-        const existingNode = currentLevel.find((node) => node.label === part);
+        const isLeaf = i === parts.length - 1;
+
+        // biome-ignore lint/style/useConst: <explanation>
+        let existingNode = currentLevel.find((node) => node.label === part);
 
         if (existingNode) {
           parentNode = existingNode;
           currentLevel = existingNode.children;
           // Reconstruct currentPathKey for existing node based on its actual key
           currentPathKey = existingNode.key || "";
+
+          // If it's an existing node and it's the leaf, update its data
+          if (isLeaf) {
+            existingNode.data = {
+              Description: toConvert[key].Description,
+              Parameter: [],
+              globals: [],
+              classes: [],
+            };
+
+            for (const pKey in toConvert[key].Parameter) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              existingNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
+            }
+            for (const gKey in toConvert[key].globals) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              existingNode.data.globals!.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
+            }
+            for (const cKey in toConvert[key].classes) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              existingNode.data.classes!.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
+            }
+          }
         } else {
-          const globals = [];
-
-          for (const gKey in toConvert[key].globals) {
-            globals.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
-          }
-
-          const classes = [];
-
-          for (const cKey in toConvert[key].classes) {
-            classes.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
-          }
-
-          const parameter = [];
-
-          for (const pKey in toConvert[key].Parameter) {
-            parameter.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
-          }
-
           const newNode: TreeNode = {
             label: part,
             data: {
-              Description: toConvert[key].Description,
-              Parameter: parameter,
-              globals: globals,
-              classes: classes,
-            },
+              Description: "",
+              Parameter: [],
+              globals: [],
+              classes: [],
+            }, // Initialize data as an empty object for non-leaf nodes
             children: [],
             parent: parentNode,
           };
@@ -349,6 +357,29 @@ export class Manager implements AfterViewInit {
             newNode.key = `${currentPathKey}-${siblingIndex}`;
           }
           currentPathKey = newNode.key; // Update for the next iteration
+
+          // Only assign Description, Parameter, globals, and classes if it's the leaf node
+          if (isLeaf) {
+            newNode.data = {
+              Description: toConvert[key].Description,
+              Parameter: [],
+              globals: [],
+              classes: [],
+            };
+
+            for (const pKey in toConvert[key].Parameter) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              newNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
+            }
+            for (const gKey in toConvert[key].globals) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              newNode.data.globals!.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
+            }
+            for (const cKey in toConvert[key].classes) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              newNode.data.classes!.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
+            }
+          }
 
           currentLevel.push(newNode);
 
@@ -365,6 +396,7 @@ export class Manager implements AfterViewInit {
     this.apiDoc = JSON.parse(toSet);
 
     this.items = this.toTreeNodes(this.apiDoc.detFunctionalities);
+    console.log("setapidoc", this.items, this.apiDoc.detFunctionalities);
     this.itemsElementplaceholder = this.toTreeNodes(this.apiDoc.detElementplaceholder);
     this.itemsStandard = this.toTreeNodes(this.apiDoc.detStandards);
 
@@ -590,6 +622,8 @@ export class Manager implements AfterViewInit {
           : this.itemsStandard,
     );
 
+    this._currentlySelectedTreeNode = this.activeTabItems[this.activeTabItems.length - 1];
+    this._currentNodeData = this.activeTabItems[this.activeTabItems.length - 1].data;
     this.synchronized = false;
 
     this.cdr.markForCheck();
@@ -709,7 +743,7 @@ export class Manager implements AfterViewInit {
         {
           const paths = this.getTreePaths([this._currentNode]);
 
-          this.itemsElementplaceholder = this.removeNodeRecursive(this.itemsStandard, this._currentNode);
+          this.itemsStandard = this.removeNodeRecursive(this.itemsStandard, this._currentNode);
           // #region Remove from FSL
           const toFilter = JSON.parse(`{ "result": ${this.activeTabDocFSL}}`);
 
@@ -730,6 +764,12 @@ export class Manager implements AfterViewInit {
         }
 
         break;
+    }
+
+    if (this.activeTabItems.length !== 0) {
+      this._currentlySelectedTreeNode = this.activeTabItems[this.activeTabItems.length - 1];
+    } else {
+      this._currentlySelectedTreeNode = undefined;
     }
 
     this.synchronized = false;
@@ -761,7 +801,7 @@ export class Manager implements AfterViewInit {
     ).value.toLowerCase();
     const inputControl = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region Suppress invalid characters.
-    if (inputControl.value !== "" && !/^[a-zA-Z_$][a-zA-Z0-9_$]*$/.test(inputControl.value)) {
+    if (inputControl.value !== "" && !/^[a-zA-Z0-9_$][a-zA-Z0-9_\-\,$]*$/.test(inputControl.value)) {
       inputControl.value = this.formerInput_CodBi_LocalAPIDoc_New_Name;
     } else {
       this.formerInput_CodBi_LocalAPIDoc_New_Name = inputControl.value;
@@ -1295,6 +1335,7 @@ export class Manager implements AfterViewInit {
       detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
       detStandards: this.convertStandardNodes(this.itemsStandard),
     };
+    console.log("localnodedata", localNodeData);
     const fileListings = this.enrichData(window[this.docPath], localNodeData);
     // #endregion Generate data to sync.
     const $ = getJQuery();
@@ -1326,23 +1367,6 @@ export class Manager implements AfterViewInit {
   }
   // #endregion Synchronization
   activeAccordion: string[] = ["Description"];
-  _activeTab: "Functionality" | "Elementplaceholder" | "Standard" = "Functionality";
-
-  get activeTab(): "Functionality" | "Elementplaceholder" | "Standard" {
-    return this._activeTab;
-  }
-  set activeTab(toSet: "Functionality" | "Elementplaceholder" | "Standard") {
-    if (this._activeTab !== toSet) {
-      this._activeTab = toSet;
-
-      this.currentlySelectedTreeNode =
-        this.activeTab === "Functionality"
-          ? this.items[0]
-          : this.activeTab === "Elementplaceholder"
-            ? this.itemsElementplaceholder[0]
-            : this.itemsStandard[0];
-    }
-  }
 
   _currentlySelectedTreeNode: TreeNode;
 
@@ -1447,16 +1471,51 @@ export class Manager implements AfterViewInit {
       }
     }
     // #endregion Conversion.
-    // #region Remove elements with no description.
-    const finalResult = {};
+    return result;
+  }
+  /**
+   * Returns the topmost parent {@link TreeNode } with just the children leading to the one **toIsolate**.
+   *
+   * @param toIsolate The {@link TreeNode } to isolate.
+   *
+   * @returns The requested {@link TreeNode }. */
+  protected isolateNode(toIsolate: TreeNode): TreeNode {
+    const path: TreeNode[] = [];
+    let currentNode: TreeNode | undefined = toIsolate;
 
-    for (const key in result) {
-      if (result[key].Description !== "") {
-        finalResult[key.toLowerCase()] = result[key];
+    while (currentNode) {
+      path.unshift(currentNode);
+      currentNode = currentNode.parent;
+    }
+
+    if (path.length === 0) {
+      return undefined;
+    }
+
+    let newRoot: TreeNode | undefined = undefined;
+    let currentNewNode: TreeNode | undefined = undefined;
+
+    for (let i = 0; i < path.length; i++) {
+      const originalNode = path[i];
+
+      const newNode: TreeNode = {
+        label: originalNode.label,
+        key: originalNode.key,
+        data: originalNode.data ? { ...originalNode.data } : undefined,
+        children: [...originalNode.children],
+      };
+
+      if (i === 0) {
+        newRoot = newNode;
+        currentNewNode = newNode;
+      } else if (currentNewNode) {
+        currentNewNode.children.push(newNode);
+        newNode.parent = currentNewNode;
+        currentNewNode = newNode;
       }
     }
-    // #endregion Remove elements with no description.
-    return finalResult;
+
+    return newRoot;
   }
   /**
    * Exports the {@link Manager.currentlySelectedTreeNode } into a JSON file.
@@ -1490,19 +1549,54 @@ export class Manager implements AfterViewInit {
 
     switch (this.activeTab) {
       case "Functionality":
-        toExport.detFunctionalities = this.convertNodes([toConvert]);
-        toExport.fslFunctionalities = [`${toConvert.label}.ts`];
+        toExport.detFunctionalities = this.convertNodes([this.isolateNode(toConvert)]);
+        // #region Build file-listing
+        {
+          const fsl = new Array<string>();
+
+          for (const key in toExport.detFunctionalities) {
+            if (toExport.detFunctionalities[key].Description !== "") {
+              fsl.push(`${key}.ts`);
+            }
+          }
+
+          toExport.fslFunctionalities = fsl;
+        }
+        // #endregion Build file-listing
         break;
 
       case "Elementplaceholder":
-        toExport.detElementplaceholder = this.convertNodes([toConvert]);
-        toExport.fslElementplaceholder = [`${toConvert.label}.ts`];
+        toExport.detElementplaceholder = this.convertNodes([this.isolateNode(toConvert)]);
+        // #region Build file-listing
+        {
+          const fsl = new Array<string>();
+
+          for (const key in toExport.detElementplaceholder) {
+            if (toExport.detFunctionalities[key].Description !== "") {
+              fsl.push(`${key}.ts`);
+            }
+          }
+
+          toExport.fslElementplaceholder = fsl;
+        }
+        // #endregion Build file-listing
         break;
 
       case "Standard":
-        toExport.detStandards = this.convertNodes([toConvert]);
-        toExport.fileListing = [`${toConvert.label}.ts`];
+        toExport.detStandards = this.convertNodes([this.isolateNode(toConvert)]);
+        // #region Build file-listing
+        {
+          const fsl = new Array<string>();
 
+          for (const key in toExport.detStandards) {
+            if (toExport.detFunctionalities[key].Description !== "") {
+              fsl.push(`${key}.ts`);
+            }
+          }
+
+          toExport.fileListing = fsl;
+        }
+        // #endregion Build file-listing
         break;
     }
     // #endregion Conversion
@@ -1538,6 +1632,7 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link TreeNodeSelectEvent }. */
   protected onNodeSelect(event: TreeNodeSelectEvent) {
+    console.log(this.currentlySelectedTreeNode);
     this._currentNode = event.node;
     this._currentNodeData = event.node.data;
   }
@@ -1550,10 +1645,13 @@ export class Manager implements AfterViewInit {
   protected cdr: ChangeDetectorRef;
   /** The {@link TranslocoService } used by this {@link Manager }. */
   protected translocoService: TranslocoService;
+  // #region Initialization
   /**
-   * Constructs this {@link Manager } by registering **ALT + C** as the hotkey for showing/hiding itself.
+   * Constructs this {@link Manager } by registering **ALT + C** as the hotkey for showing/hiding itself and
+   * setting the {@link Manager.cdr } as also the {@link Manager.translocoService }.
    *
-   * @param cdr The {@link Manager.cdr }. */
+   * @param cdr               The {@link Manager.cdr }.
+   * @param translocoService  The {@link Manager.translocoService }. */
   constructor(cdr: ChangeDetectorRef, translocoService: TranslocoService) {
     this.cdr = cdr;
     this.translocoService = translocoService;
@@ -1571,244 +1669,59 @@ export class Manager implements AfterViewInit {
     });
     // #endregion Hotkey Registration
   }
-  // #endregion Basic Operations
-  mergeDataIntoStructuredTree(incomingData: InputData, initialTreeObject: InitialTreeObject = {}): InitialTreeObject {
-    const mergedTree: InitialTreeObject = { ...initialTreeObject };
-
-    const getOrCreateNode = (nodes: TreeNode[], fullLabel: string): TreeNode => {
-      const parts = fullLabel.split(".");
-      let currentNodes = nodes;
-      let targetNode: TreeNode | undefined;
-
-      for (let i = 0; i < parts.length; i++) {
-        const labelPart = parts[i];
-        let node = currentNodes.find((n) => n.label === labelPart);
-
-        if (!node) {
-          node = { label: labelPart, children: [] };
-          currentNodes.push(node);
-        }
-
-        if (i === parts.length - 1) {
-          targetNode = node;
-        } else {
-          currentNodes = node.children;
-        }
-      }
-      // biome-ignore lint/style/noNonNullAssertion: <explanation>
-      return targetNode!;
-    };
-    /**
-     * Helper to process incoming collection (globals, classes, Parameter) into an array of objects
-     * on the target node's data. Each object in the array should ideally have a 'Name' property.
-     * Ensures the target property is always an array and avoids adding duplicate items.
-     * @param targetData The 'data' object of the TreeNode where the collection will be stored.
-     * @param propName The name of the property to store (e.g., 'globals').
-     * @param incomingCollection The raw incoming data for this property (can be array, object, etc.).
-     */
-    const processToArrayCollection = (
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      targetData: { [key: string]: any },
-      propName: "globals" | "classes" | "Parameter",
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      incomingCollection: any,
-    ) => {
-      // CRITICAL FIX: Ensure targetData[propName] is ALWAYS an array.
-      // If it's not an array (e.g., undefined, null, or a plain object from previous state),
-      // re-initialize it as an empty array.
-      if (!Array.isArray(targetData[propName])) {
-        targetData[propName] = [];
-      }
-      const currentArray = targetData[propName]; // This is now guaranteed to be an array
-
-      if (incomingCollection !== undefined && incomingCollection !== null) {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        const itemsToAdd: { Name?: string; Description?: string; [key: string]: any }[] = [];
-
-        if (Array.isArray(incomingCollection)) {
-          // If incoming is already an array of items (e.g., [{ Name: "foo", Description: "bar" }])
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-          // biome-ignore lint/complexity/noForEach: <explanation>
-          incomingCollection.forEach((item: any) => {
-            // Use 'any' here as items can be varied
-            if (typeof item === "object" && item !== null && item.Name !== undefined) {
-              itemsToAdd.push(item);
-            }
-          });
-        } else if (typeof incomingCollection === "object") {
-          // If incoming is a single object.
-          // It could be:
-          // 1. A single item structured like { Name: "foo", Description: "bar", ... }
-          // 2. A flat object of name:description pairs (e.g., { "Name1": "Desc1", "Name2": "Desc2" })
-
-          if (
-            incomingCollection.Name !== undefined &&
-            (incomingCollection.Description !== undefined || Object.keys(incomingCollection).length > 1)
-          ) {
-            // Case 1: It looks like a single item object with a 'Name'
-            // We include Description if it exists, or if there are other properties beyond just 'Name'
-            itemsToAdd.push(incomingCollection);
-          } else {
-            // Case 2: Assume it's a flat object of name:description pairs (e.g., { "Name1": "Desc1", "Name2": "Desc2" })
-            for (const nameKey in incomingCollection) {
-              if (Object.prototype.hasOwnProperty.call(incomingCollection, nameKey)) {
-                if (incomingCollection[nameKey] !== undefined && incomingCollection[nameKey] !== null) {
-                  itemsToAdd.push({ Name: nameKey, Description: String(incomingCollection[nameKey]) });
-                }
-              }
-            }
-          }
-        }
-
-        // Now, merge itemsToAdd into currentArray, avoiding duplicates by 'Name'
-        // biome-ignore lint/complexity/noForEach: <explanation>
-        itemsToAdd.forEach((newItem) => {
-          // Check if an item with the same 'Name' already exists in currentArray
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-          const exists = currentArray.some((existingItem: any) => existingItem.Name === newItem.Name);
-          if (!exists) {
-            currentArray.push(newItem);
-          } else {
-            // If it exists, we could optionally merge properties if the user wanted that.
-            // For now, "never overwritten" implies we don't modify existing array items.
-            // If the existing item in the array has the same name, we just skip adding the new one.
-          }
-        });
-      }
-    };
-
-    const processComplexSection = (
-      sectionName: "detStandards" | "detFunctionalities" | "detElementplaceholder",
-      dataSection: InputData["detStandards"] | InputData["detFunctionalities"] | InputData["detElementplaceholder"],
-    ) => {
-      if (!mergedTree[sectionName]) {
-        mergedTree[sectionName] = [];
-      }
-      // biome-ignore lint/style/noNonNullAssertion: <explanation>
-      const targetArray = mergedTree[sectionName]!;
-
-      for (const key in dataSection) {
-        if (Object.prototype.hasOwnProperty.call(dataSection, key)) {
-          const item = dataSection[key];
-
-          const itemNode = getOrCreateNode(targetArray, key);
-
-          // Store Description directly on itemNode
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-          if (item.Description !== undefined && (itemNode as any).Description === undefined) {
-            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-            (itemNode as any).Description = item.Description;
-          }
-
-          // Ensure itemNode.data exists for globals, classes, Parameter
-          if (!itemNode.data) {
-            itemNode.data = {};
-          }
-
-          // Process globals, classes, and Parameter into itemNode.data as arrays
-          processToArrayCollection(itemNode.data, "globals", item.globals);
-          processToArrayCollection(itemNode.data, "classes", item.classes);
-          processToArrayCollection(itemNode.data, "Parameter", item.Parameter);
-        }
-      }
-    };
-
-    const processSimpleSection = (
-      sectionName: "docsAPI" | "fileListing" | "fslElementplaceholder" | "fslFunctionalities",
-      dataSection:
-        | InputData["docsAPI"]
-        | InputData["fileListing"]
-        | InputData["fslElementplaceholder"]
-        | InputData["fslFunctionalities"],
-    ) => {
-      if (!mergedTree[sectionName]) {
-        mergedTree[sectionName] = [];
-      }
-      // biome-ignore lint/style/noNonNullAssertion: <explanation>
-      const targetArray = mergedTree[sectionName]!;
-
-      if (Array.isArray(dataSection)) {
-        // biome-ignore lint/complexity/noForEach: <explanation>
-        dataSection.forEach((item) => {
-          const itemNode = getOrCreateNode(targetArray, item);
-          if (!itemNode.data) {
-            itemNode.data = {};
-          }
-          if (itemNode.data.value === undefined) {
-            itemNode.data.value = item;
-          }
-        });
-      }
-    };
-
-    if (incomingData.detStandards) {
-      processComplexSection("detStandards", incomingData.detStandards);
-    }
-    if (incomingData.detFunctionalities) {
-      processComplexSection("detFunctionalities", incomingData.detFunctionalities);
-    }
-    if (incomingData.detElementplaceholder) {
-      processComplexSection("detElementplaceholder", incomingData.detElementplaceholder);
-    }
-    if (incomingData.docsAPI) {
-      processSimpleSection("docsAPI", incomingData.docsAPI);
-    }
-    if (incomingData.fileListing) {
-      processSimpleSection("fileListing", incomingData.fileListing);
-    }
-    if (incomingData.fslElementplaceholder) {
-      processSimpleSection("fslElementplaceholder", incomingData.fslElementplaceholder);
-    }
-    if (incomingData.fslFunctionalities) {
-      processSimpleSection("fslFunctionalities", incomingData.fslFunctionalities);
-    }
-
-    return mergedTree;
-  }
-
+  /** Initiates this {@link Manager } further by setting the {@link Manager.translocoService }'s active language
+   *  to {@link Manager.language }. */
   ngOnInit() {
     this.translocoService.setActiveLang(this.language);
   }
-
+  /**
+   * Initializes the view further by setting the watermark, registering the close dialog and the import
+   * file selection handler. */
   ngAfterViewInit() {
     // #region Apply Watermark
     this.CodBi_LocalAPIDoc_Tree.nativeElement.style.backgroundImage = `url('${this.watermark}')`;
     // #endregion Apply Watermark
+    // #region Preselect first node, if available.
     if (this.items && this.items.length > 0) {
       this.currentlySelectedTreeNode = this.items[0];
+      this._currentNodeData = this.currentlySelectedTreeNode.data;
     }
-
+    // #endregion Preselect first node, if available.
+    // #region Register close dialog handler.
     this.CodBi_LocalAPIDoc_New_Panel_Close.nativeElement.addEventListener("click", (event) => {
       this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "none";
       (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.remove("-submerged");
     });
-
+    // #endregion Register close dialog handler.
+    // #region Register file to import selected handler.
     this.CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue.nativeElement.addEventListener("change", (event) => {
-      console.log("ZX");
-      const file = (event.target as HTMLInputElement).files?.[0]; // Get the first selected file
+      const file = (event.target as HTMLInputElement).files?.[0];
 
       if (file) {
         const reader = new FileReader();
-        console.log("ZXFile", file);
         reader.onload = (e) => {
-          console.log("ZXLoaded");
           try {
             const fileContent = e.target?.result as string;
-            // Parse the JSON string back into JavaScript objects
-            const parsedData: InputData = JSON.parse(fileContent);
+            const parsedData: APIDocJSON = JSON.parse(fileContent);
 
             const convertedData = this.mergeDataIntoStructuredTree(parsedData, {
               detElementplaceholder: this.itemsElementplaceholder,
               detFunctionalities: this.items,
               detStandards: this.itemsStandard,
             });
-            console.log("N", parsedData, convertedData);
 
             this.itemsStandard = convertedData.detStandards;
             this.items = convertedData.detFunctionalities;
             this.itemsElementplaceholder = convertedData.detElementplaceholder;
 
-            console.log("Niconverted", convertedData);
+            const activeItems = this.activeTabItems;
+
+            if (activeItems.length !== 0) {
+              this.currentlySelectedTreeNode = activeItems[0];
+              this._currentNodeData = this.currentlySelectedTreeNode.data;
+            }
+
+            this.cdr.markForCheck();
           } catch (error) {
             console.error("Error parsing JSON file:", error);
           }
@@ -1817,26 +1730,91 @@ export class Manager implements AfterViewInit {
         reader.readAsText(file);
       }
     });
+    // #endregion Register file to import selected handler.
   }
-
+  // #endregion Initialization
+  // #endregion Basic Operations
   // #region Right Panel
+  // #region Tabs
+  /** Stores the name of the currently active tab. */
+  _activeTab: "Functionality" | "Elementplaceholder" | "Standard" = "Functionality";
+  /**
+   * Gets the name of the currently active tab.
+   *
+   * @returns The name of the currently active tab. */
+  get activeTab(): "Functionality" | "Elementplaceholder" | "Standard" {
+    return this._activeTab;
+  }
+  /**
+   * Gets the {@link TreeNode }s of the currently active tab.
+   *
+   * @returns The requested {@link TreeNode }s. */
+  protected get activeTabItems(): TreeNode[] {
+    return this.activeTab === "Functionality"
+      ? this.items
+      : this.activeTab === "Elementplaceholder"
+        ? this.itemsElementplaceholder
+        : this.itemsStandard;
+  }
+  /**
+   * Sets the currently selected tab.
+   *
+   * @param toSet The tab to set as currently active. */
+  set activeTab(toSet: "Functionality" | "Elementplaceholder" | "Standard") {
+    if (this._activeTab !== toSet) {
+      this._activeTab = toSet;
+
+      switch (this.activeTab) {
+        case "Functionality":
+          if (this.items.length === 0) {
+            return;
+          }
+
+          this.currentlySelectedTreeNode = this.items[0];
+
+          break;
+        case "Elementplaceholder":
+          if (this.itemsElementplaceholder.length === 0) {
+            return;
+          }
+
+          this.currentlySelectedTreeNode = this.itemsElementplaceholder[0];
+          break;
+        case "Standard":
+          if (this.itemsStandard.length === 0) {
+            return;
+          }
+
+          this.currentlySelectedTreeNode = this.itemsStandard[0];
+
+          break;
+      }
+
+      this._currentNodeData = this.currentlySelectedTreeNode.data;
+    }
+  }
+  // #endregion Tabs
   // #region Parameter, Classes & Globals
   /**
+   * Handles the click on the button to add a {@link Manager.CommonApiParameter }
+   * to the {@link currentlySelectedTreeNode }. This is used for adding parameter, classes and global variables.
    *
-   * @param toAdd
-   */
+   * @param toAdd States whether a new parameter, class or global variable shall be added. */
   onClick_CodBi_LocalAPIDoc_RightPanel_AddParameter(toAdd: string) {
-    (toAdd === undefined || toAdd.toLowerCase() === "parameter"
-      ? this.currentlySelectedFunctionalityData.Parameter
-      : toAdd.toLowerCase() === "classes"
-        ? this.currentlySelectedFunctionalityData.classes
-        : this.currentlySelectedFunctionalityData.globals
-    ).push(
+    if (this.currentlySelectedFunctionalityData === undefined) {
+      return;
+    }
+
+    const finalToAdd = toAdd === undefined || toAdd === "parameter" ? "Parameter" : toAdd.toLowerCase();
+
+    this.currentlySelectedTreeNode.data[finalToAdd].push(
       new CommonApiParameter(
-        this.translocoService.translate("Input.Parameter.Name.Placeholder"),
-        this.translocoService.translate("Input.Parameter.Name.Description"),
+        this.translocoService.translate("Input.Parameter.phName"),
+        this.translocoService.translate("Input.Parameter.phDescription"),
       ),
     );
+
+    this.synchronized = false;
   }
   /** Stores the actual data for restoring it on {@link onRowEditCancel }. */
   bufferParameter: Map<number, ApiParameter> = new Map<number, ApiParameter>();
@@ -1856,9 +1834,32 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link KeyboardEvent } received. */
   protected onKeyup_InputParametername(event: KeyboardEvent) {
-    this.currentNameValid = REGEX.stdExp.property.test(
-      INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value,
-    );
+    const inputControl = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+
+    this.currentNameValid = (
+      this.activeTab === "Elementplaceholder"
+        ? /^([a-zA-Z0-9_$][a-zA-Z0-9_\-\,$]*\.)*[a-zA-Z0-9_$][a-zA-Z0-9\-\,_$]*(\.)?$/
+        : REGEX.stdExp.property
+    ).test(inputControl.value);
+    // #region Check for already taken names
+    if (this.currentNameValid) {
+      let counter = 0;
+      for (const name of this.currentlySelectedTreeNode.data[
+        this.activeTab === "Functionality" || this.activeTab === "Elementplaceholder"
+          ? "Parameter"
+          : inputControl.getAttribute("typeToAdd").toLowerCase()
+      ]) {
+        if (name.Name === inputControl.value) {
+          counter++;
+        }
+
+        if (counter === 2) {
+          this.currentNameValid = false;
+          break;
+        }
+      }
+    }
+    // #endregion Check for already taken names
   }
   /**
    * Handles the setting of {@link Manager.currentDescriptionValid }.
@@ -1892,8 +1893,17 @@ export class Manager implements AfterViewInit {
    *
    * @param parameter The current row's value, which won't be used.
    * @param index     The current row's index. */
-  onRowEditCancel(parameter: ApiParameter, index: number) {
-    this._currentNodeData.Parameter[index] = this.bufferParameter[parameter.id];
+  onRowEditCancel(
+    parameter: ApiParameter,
+    index: number,
+    typeOfDataToAdd: "Classes" | "Globals" | "Parameter" | undefined,
+  ) {
+    (typeOfDataToAdd === undefined || typeOfDataToAdd === "Parameter"
+      ? this.currentlySelectedFunctionalityData.Parameter
+      : typeOfDataToAdd.toLowerCase() === "classes"
+        ? this.currentlySelectedFunctionalityData.classes
+        : this.currentlySelectedFunctionalityData.globals)[index] = this.bufferParameter[parameter.id];
+
     this._currentNodeData = this._currentNodeData;
   }
   /**
@@ -1920,12 +1930,237 @@ export class Manager implements AfterViewInit {
     const result: { Name: string; Description: string }[] = [];
 
     for (const key in toConvert) {
-      if (Object.prototype.hasOwnProperty.call(toConvert, key)) {
-        result.push({ Name: key, Description: String(toConvert[key]) });
+      if (!/^([0-9_$][0-9_\-\,$]*\.)*[0-9_$][0-9\-\,_$]*(\.)?$/.test(toConvert[key].Name)) {
+        toConvert[key].Name = key;
       }
     }
-    return result;
+
+    console.log("descriptive", result, toConvert);
+    return toConvert as { Name: string; Description: string }[];
   }
   // #endregion Parameter, Classes & Globals
   // #endregion Right Panel
+  // #region Importing
+  /**
+   * Imports incoming {@link APIDocJSON } data into already existent {@link MergeableTreeNodeAPIDOC } one.
+   *
+   * @param incomingData      The imported {@link APIDocJSON } to merge.
+   * @param initialTreeObject The {@link MergeableTreeNodeAPIDOC } data to import the **incomingData** into.
+   *
+   * @returns The resulting {@link MergeableTreeNodeAPIDOC } data. */
+  protected mergeDataIntoStructuredTree(
+    incomingData: APIDocJSON,
+    initialTreeObject: MergeableTreeNodeAPIDOC = {},
+  ): MergeableTreeNodeAPIDOC {
+    const mergedTree: MergeableTreeNodeAPIDOC = { ...initialTreeObject };
+    /**
+     * Finds or creates a hierarchical path of {@link TreeNode }s within a given array of nodes.
+     *
+     * This function traverses the **nodes** array (and its children) based on the
+     * dot-separated **fullLabel**. If a node in the path does not exist, it will be
+     * created and added to the appropriate **children** array.
+     *
+     * @param nodes     The array of {@link TreeNode }s to search within or add to. This {@link Array }
+     *                  (and its nested children arrays) will be modified in place if
+     *                  new nodes need to be created.
+     * @param fullLabel A dot-separated {@link string } representing the hierarchical path
+     *                  to the target node (e.g., "Root.Child.Grandchild").
+     *
+     * @returns The topmost parent {@link TreeNode} that was passed as an argument.
+     *          This will be the {@link TreeNode } corresponding to the last part of the **fullLabel**. */
+    const getOrCreateNode = (nodes: TreeNode[], fullLabel: string): TreeNode => {
+      const parts = fullLabel.split(".");
+      let currentNodes = nodes;
+      let targetNode: TreeNode | undefined;
+
+      for (let i = 0; i < parts.length; i++) {
+        const labelPart = parts[i];
+        let node = currentNodes.find((n) => n.label === labelPart);
+
+        if (!node) {
+          node = { label: labelPart, children: [] };
+          currentNodes.push(node);
+        }
+
+        if (i === parts.length - 1) {
+          targetNode = node;
+        } else {
+          currentNodes = node.children;
+        }
+      }
+
+      return DEFINED.tsCheck<TreeNode>(targetNode);
+    };
+    /**
+     * Helper to process incoming collection (globals, classes, Parameter) into an {@link Array } of objects
+     * on the target node's data. Each object in the {@link Array } should ideally have a **Name** property.
+     * Ensures the target property is always an {@link Array } and avoids adding duplicate items.
+     *
+     * @param targetData          The data object of the {@link TreeNode } where the collection will be stored.
+     * @param propName            The name of the property to store (e.g., 'globals').
+     * @param incomingCollection  The raw incoming data for this property (can be an {@link Array }, object, etc.). */
+    const processToArrayCollection = (
+      targetData: { [key: string]: Array<object> },
+      propName: "globals" | "classes" | "Parameter",
+      incomingCollection:
+        | Array<object>
+        | { Name: string | undefined; Description: string | undefined }
+        | { [name: string]: string }
+        | SimplifiedNamedItem[]
+        | undefined,
+    ) => {
+      if (!Array.isArray(targetData[propName])) {
+        targetData[propName] = [];
+      }
+
+      const currentArray = targetData[propName];
+
+      if (incomingCollection !== undefined && incomingCollection !== null) {
+        const itemsToAdd: { Name?: string; Description?: string; [key: string]: unknown }[] = [];
+        // If incoming is already an array of items (e.g., [{ Name: "foo", Description: "bar" }])
+        if (Array.isArray(incomingCollection)) {
+          for (const item of incomingCollection) {
+            if (
+              typeof item === "object" &&
+              item !== null &&
+              (item as { [key: string]: unknown; Name?: string; Description?: string }).Name !== undefined
+            ) {
+              itemsToAdd.push(item as { [key: string]: unknown; Name?: string; Description?: string });
+            }
+          }
+        } else if (typeof incomingCollection === "object") {
+          if (
+            incomingCollection.Name !== undefined &&
+            (incomingCollection.Description !== undefined || Object.keys(incomingCollection).length > 1)
+          ) {
+            itemsToAdd.push(incomingCollection);
+          } else {
+            for (const nameKey in incomingCollection) {
+              if (Object.prototype.hasOwnProperty.call(incomingCollection, nameKey)) {
+                if (incomingCollection[nameKey] !== undefined && incomingCollection[nameKey] !== null) {
+                  itemsToAdd.push({ Name: nameKey, Description: String(incomingCollection[nameKey]) });
+                }
+              }
+            }
+          }
+        }
+
+        for (const newItem of itemsToAdd) {
+          // #region Check if an item with the same name already exists in currentArray...
+          const exists = currentArray.some(
+            (existingItem: object) =>
+              ZOD.tsCheck<{ Name: string }>(
+                existingItem,
+                z.lazy(() =>
+                  z.object({
+                    Name: z.string(),
+                  }),
+                ),
+              ).Name === newItem.Name,
+          );
+          // #endregion Check if an item with the same name already exists in currentArray...
+          if (!exists) {
+            currentArray.push(newItem);
+          }
+        }
+      }
+    };
+    /**
+     * Processes a specific section of API documentation data and integrates it
+     * into a hierarchical tree structure.
+     *
+     * @param sectionName Specifies the top-level key within the resulting merged tree.
+     * @param dataSection The actual data object for the specified **sectionName** from
+     *                    the {@link APIDocJSON} structure. */
+    const processComplexSection = (
+      sectionName: "detStandards" | "detFunctionalities" | "detElementplaceholder",
+      dataSection: APIDocJSON["detStandards"] | APIDocJSON["detFunctionalities"] | APIDocJSON["detElementplaceholder"],
+    ) => {
+      if (!mergedTree[sectionName]) {
+        mergedTree[sectionName] = [];
+      }
+
+      const targetArray = DEFINED.tsCheck<TreeNode[]>(mergedTree[sectionName]);
+
+      for (const key in dataSection) {
+        if (Object.prototype.hasOwnProperty.call(dataSection, key)) {
+          const item = dataSection[key];
+          const itemNode = getOrCreateNode(targetArray, key);
+          // Store Description directly on itemNode
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          if (item.Description !== undefined && (itemNode as any).Description === undefined) {
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            (itemNode as any).Description = item.Description;
+          }
+          // Ensure itemNode.data exists for globals, classes, Parameter
+          if (!itemNode.data) {
+            itemNode.data = {
+              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+              Description: (itemNode as any).Description,
+            };
+          }
+
+          processToArrayCollection(itemNode.data, "globals", item.globals);
+          processToArrayCollection(itemNode.data, "classes", item.classes);
+          processToArrayCollection(itemNode.data, "Parameter", item.Parameter);
+        }
+      }
+    };
+
+    const processSimpleSection = (
+      sectionName: "docsAPI" | "fileListing" | "fslElementplaceholder" | "fslFunctionalities",
+      dataSection:
+        | APIDocJSON["docsAPI"]
+        | APIDocJSON["fileListing"]
+        | APIDocJSON["fslElementplaceholder"]
+        | APIDocJSON["fslFunctionalities"],
+    ) => {
+      if (!mergedTree[sectionName]) {
+        mergedTree[sectionName] = [];
+      }
+
+      const targetArray = DEFINED.tsCheck<TreeNode[]>(mergedTree[sectionName]);
+
+      if (Array.isArray(dataSection)) {
+        // biome-ignore lint/complexity/noForEach: <explanation>
+        dataSection.forEach((item) => {
+          const itemNode = getOrCreateNode(targetArray, item);
+          if (!itemNode.data) {
+            itemNode.data = {
+              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+              Description: (itemNode as any).Description,
+            };
+          }
+          if (itemNode.data.value === undefined) {
+            itemNode.data.value = item;
+          }
+        });
+      }
+    };
+
+    if (incomingData.detStandards) {
+      processComplexSection("detStandards", incomingData.detStandards);
+    }
+    if (incomingData.detFunctionalities) {
+      processComplexSection("detFunctionalities", incomingData.detFunctionalities);
+    }
+    if (incomingData.detElementplaceholder) {
+      processComplexSection("detElementplaceholder", incomingData.detElementplaceholder);
+    }
+    if (incomingData.docsAPI) {
+      processSimpleSection("docsAPI", incomingData.docsAPI);
+    }
+    if (incomingData.fileListing) {
+      processSimpleSection("fileListing", incomingData.fileListing);
+    }
+    if (incomingData.fslElementplaceholder) {
+      processSimpleSection("fslElementplaceholder", incomingData.fslElementplaceholder);
+    }
+    if (incomingData.fslFunctionalities) {
+      processSimpleSection("fslFunctionalities", incomingData.fslFunctionalities);
+    }
+
+    return mergedTree;
+  }
+  // #region Importing
 }

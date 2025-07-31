@@ -132,6 +132,7 @@ IPTY
 jahr
 katholic
 katholisch
+Klassen
 Konfigurationen
 können
 Kontakt

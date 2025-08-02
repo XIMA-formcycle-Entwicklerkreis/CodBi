@@ -3,7 +3,7 @@
   "Input.Label.Elementplaceholder": "Geben Sie den Namen inklusive Pfad des neuen Elementplatzhalters ein",
   "Input.Label.Standard": "Geben Sie den Namen inklusive Pfad des neuen Standards ein",
   "Input.Label.Title": "Neues Element erstellen",
-  "Input.Label.Introduction": "Dieses Dialogfeld ermöglicht es Ihnen, ein die Dokumentation zu einem lokalen CodBi-Element zu erstellen. Dem Namen des Elements kann ein mehrteiliger Pfad vorausgehen, durch Punkte getrennt (z.B. pfad.zu.neuem.element). Er muss jedoch den normalen Richtlinien zur Benennung von Bezeichnern entsprechen und es können auch keine lokalen Elemente mit Pfaden erstellt werden die bereits einem nativen CodBi-Element zugeordnet sind.",
+  "Input.Label.Introduction": "Dieses Dialogfeld ermöglicht es Ihnen, die Dokumentation zu einem lokalen CodBi-Element zu erstellen. Dem Namen des Elements kann ein mehrteiliger Pfad vorausgehen, durch Punkte getrennt (z.B. pfad.zu.neuem.element). Er muss jedoch den normalen Richtlinien zur Benennung von Bezeichnern entsprechen und es können auch keine lokalen Elemente mit Pfaden erstellt werden die bereits einem nativen CodBi-Element zugeordnet sind.",
   "Input.Hint.AlreadyExistent": " verweist mit dieser Namensänderung, dadurch dass das lokale Element auch eine Beschreibung aufweist, auf ein bereits existierendes natives CodBi-Element. Bitte wählen Sie einen anderen Namen.",
   "Input.Label.Outro.Header": "Teilen Sie Ihre lokalen Entwicklungen - Ein Gewinn für alle!",
   "Input.Label.Outro.GoodToGoLocal": "Es ist großartig, dass Sie eigene lokale Elemente erstellen! Wir ermutigen Sie, diese <b>mit der Community zu teilen</b>, denn das ist der beste Weg, unsere Bibliothek zu stärken und daran mitzuwirken die Erstellung hochwertiger und standardisierter Formulare noch einfacher, schneller und effizienter zu gestalten.",
@@ -41,5 +41,5 @@
   "RP.Tabs.Header.Functions.Import": "Von Datei importieren...",
   "RP.Tabs.Header.Functions.Export": "In Datei exportieren...",
   "RP.Tabs.Header.Functions.Sync": "Zum Server hochladen",
-  "RP.phNotes": "Here, notes can be recorded that are exclusively accessible via this interface and can only be stored (exported) from your own CodeBi storage..."
+  "RP.phNotes": "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind und nur um eigenen CodBi Speicher abgelegt also exportiert werden..."
 }

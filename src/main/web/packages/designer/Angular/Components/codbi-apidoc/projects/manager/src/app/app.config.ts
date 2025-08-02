@@ -34,7 +34,7 @@ import {
   provideTransloco, // <--- Import the default missing handler class
 } from "@ngneat/transloco";
 
-import { WebComponentTranslocoHttpLoader } from "./manager/manager";
+import { TranslocoHttpLoader } from "./manager/manager";
 
 import { routes } from "./app.routes";
 import Aura from "@primeuix/themes/aura";
@@ -103,7 +103,7 @@ export const appConfig: ApplicationConfig = {
     // provideRouter(routes), // Keep only if used
 
     provideHttpClient(withInterceptorsFromDi()), // Or provideHttpClient()
-    WebComponentTranslocoHttpLoader, // Assuming providedIn: 'root' is NOT set for the loader
+    TranslocoHttpLoader, // Assuming providedIn: 'root' is NOT set for the loader
 
     provideTransloco({
       config: translocoConfig({
@@ -119,9 +119,9 @@ export const appConfig: ApplicationConfig = {
         },
         // ... other configurations like fallbackLang, flatten, etc.
       }),
-      loader: WebComponentTranslocoHttpLoader, // Your loader
+      loader: TranslocoHttpLoader, // Your loader
     }),
-    { provide: TRANSLOCO_LOADER, useClass: WebComponentTranslocoHttpLoader },
+    { provide: TRANSLOCO_LOADER, useClass: TranslocoHttpLoader },
     {
       provide: TRANSLOCO_TRANSPILER,
       useFactory: () => {

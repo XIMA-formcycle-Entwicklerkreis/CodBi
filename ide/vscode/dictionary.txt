@@ -107,6 +107,7 @@ Fotocropper
 friedensfest
 fromstring
 führenden
+Functionalitie's
 Functionalitydetails
 funktion
 Funktionalitäten
@@ -151,6 +152,7 @@ msgmininvalid
 msgnoweekends
 nach
 nachname
+ngneat
 nicht
 Nodelevel
 nötig
@@ -172,6 +174,7 @@ postanschrift
 Postleitzahl
 primeicons
 primeng
+processment
 psaveeditablerow
 quelle
 quickbars
@@ -180,6 +183,7 @@ quickimage
 quicklink
 quicktable
 removeformat
+Resourceservlet
 resourceurl
 rootext
 rootint

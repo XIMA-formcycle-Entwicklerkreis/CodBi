@@ -109,8 +109,19 @@
 
   /* #endregion Icon Fix */
   // #endregion Nodeoptions
-  p-accordion-content {
+  @keyframes kfFadeIN_AccordionContent {
+    0% {
+      opacity: 0;
+    }
+
+    100% {
+      opacity: 1;
+    }
+  }
+
+  p-accordioncontent {
     transition: .5s all;
+    animation: kfFadeIN_AccordionContent 2s ease-in forwards;
   }
 
   [ data-p-active="false"] p-accordion-content {

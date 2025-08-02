@@ -119,7 +119,8 @@
                                 [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef.local === undefined"
                                 [class.--blocked]   = "currentlySelectedTreeNode === undefined">
                         <p-accordion    [(value)]   = "activeAccordion"
-                                        [multiple]  = "true">
+                                        [multiple]  = "true"
+                                        [transitionOptions]="'2000ms cubic-bezier(0.86, 0, 0.07, 1)'">
                             <p-accordion-panel value = "Description">
                                 <p-accordion-header>{{"RP.Accordion.Captions.Description" | transloco }}</p-accordion-header>
 
@@ -135,7 +136,7 @@
 
                                                 [(ngModel)]     = "description"
                                                 [init]          = "{
-                                                    plugins                     :   'advlist autolink lists link image table code help wordcount ' +
+                                                    plugins                     :   'autoresize advlist autolink lists link image table code help wordcount ' +
                                                                                     'charmap preview anchor searchreplace visualblocks fullscreen ' +
                                                                                     'insertdatetime media emoticons autosave quickbars visualchars ',
                                                     selector                    :   'textarea',
@@ -148,7 +149,8 @@
                                                     quickbars_selection_toolbar :   'bold italic underline | quicklink',
                                                     quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
                                                     quickbars_insert_toolbar    :   'quicktable quickimage quickform',
-                                                    height                      :   300,
+                                                    min_height                  :   300,
+                                                    paste_data_images           :   false,
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
 
@@ -166,6 +168,9 @@
                                     <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
 
                                                 [(ngModel)] = "notes"
+
+                                                (blur)  = "onBlurNotes()"
+                                                (input) = "onInputNotes( $event )"
 
                                                 [attr.placeholder] = "'RP.phNotes' | transloco"></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
 
@@ -192,7 +197,7 @@
 
                                                 [(ngModel)]     = "description"
                                                 [init]          = "{
-                                                    plugins                     :   'advlist autolink lists link image table code help wordcount ' +
+                                                    plugins                     :   'autoresize advlist autolink lists link image table code help wordcount ' +
                                                                                     'charmap preview anchor searchreplace visualblocks fullscreen ' +
                                                                                     'insertdatetime media emoticons autosave quickbars visualchars ',
                                                     selector                    :   'textarea',
@@ -205,7 +210,7 @@
                                                     quickbars_selection_toolbar :   'bold italic underline | quicklink',
                                                     quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
                                                     quickbars_insert_toolbar    :   'quicktable quickimage quickform',
-                                                    height                      :   300,
+                                                    min_height                  :   300,
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
 
@@ -223,7 +228,10 @@
 
                                                 [(ngModel)] = "notes"
 
-                                                placeholder = "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind..."></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
+                                                (blur)  = "onBlurNotes()"
+                                                (input) = "onInputNotes( $event )"
+
+                                                [attr.placeholder] = "'RP.phNotes' | transloco"></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
 
                     <p-tabpanel value   = "Standard"
 
@@ -235,7 +243,7 @@
                             <p-accordion-panel value = "Description">
                                 <p-accordion-header>{{"RP.Accordion.Captions.Description" | transloco }}</p-accordion-header>
 
-                                <p-accordion-content #CodBi_LocalAPIDoc_Elementplaceholder_Description >
+                                <p-accordion-content #CodBi_LocalAPIDoc_Standards_Description >
                                     <div>
                                         <editor *ngIf = "activeTab === 'Standard'"
 
@@ -248,7 +256,7 @@
 
                                                 [(ngModel)]     = "description"
                                                 [init]          = "{
-                                                    plugins                     :   'advlist autolink lists link image table code help wordcount ' +
+                                                    plugins                     :   'autoresize advlist autolink lists link image table code help wordcount ' +
                                                                                     'charmap preview anchor searchreplace visualblocks fullscreen ' +
                                                                                     'insertdatetime media emoticons autosave quickbars visualchars ',
                                                     selector                    :   'textarea',
@@ -261,7 +269,7 @@
                                                     quickbars_selection_toolbar :   'bold italic underline | quicklink',
                                                     quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
                                                     quickbars_insert_toolbar    :   'quicktable quickimage quickform',
-                                                    height                      :   300,
+                                                    min_height                  :   300,
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
 
@@ -291,9 +299,16 @@
 
                                                 [(ngModel)] = "notes"
 
-                                                placeholder = "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind..."></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel></p-tabpanels></p-tabs></ng-template></p-splitter></div>
+                                                (blur)  = "onBlurNotes()"
+                                                (input) = "onInputNotes( $event )"
 
-<div id = "CodBi_LocalAPIDoc_New" #CodBi_LocalAPIDoc_New >
+                                                [attr.placeholder] = "'RP.phNotes' | transloco"></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel></p-tabpanels></p-tabs></ng-template></p-splitter></div>
+<!-- #region Dialogues -->
+<!-- #region CodBi_LocalAPIDoc_New -->
+<div    id          = "CodBi_LocalAPIDoc_New" #CodBi_LocalAPIDoc_New
+        tabindex    = "0"
+
+        (keyup) = "onKeyup_CodBi_LocalAPIDoc_New( $event )">
     <div id = "CodBi_LocalAPIDoc_New_Header">
         <h2>{{"Input.Label.Title" | transloco }}</h2>
 
@@ -344,6 +359,8 @@
                     (click) = "onClick_CodBi_LocalAPIDoc_New_Panel_Add()">{{"Add.Panel.Button" | transloco }}</button></div></div>
 
     <div class = "-close"><button #CodBi_LocalAPIDoc_New_Panel_Close>X</button></div></div>
+<!-- #endregion CodBi_LocalAPIDoc_New -->
+<!-- #endregion Dialogues -->
 <!-- #endregion Templates -->
 <ng-template #tplParameter
                 let-data    = "data"

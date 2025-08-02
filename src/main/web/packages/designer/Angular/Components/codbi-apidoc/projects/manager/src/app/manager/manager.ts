@@ -1,180 +1,226 @@
+// #region Imports
+// #region Types
+// #region Angular
+import type { AfterViewInit } from "@angular/core";
+import type { Observable } from "rxjs";
+// #endregion Angular
+// #region PrimeNG
+import type { TreeNodeSelectEvent } from "primeng/tree";
+import type { TreeNode } from "primeng/api";
+// #endregion PrimeNG
+// #region Transloco
+import type { Translation, TranslocoLoader } from "@ngneat/transloco";
+// #endregion Transloco
+import type { TMessageKey } from "codbi-common";
+// #endregion Types
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-designer";
-import "zone.js";
 import { i18n } from "../../../../../../../../src/js/i18n";
-// biome-ignore lint/style/useImportType: <explanation>
-import {
-  AfterViewInit,
-  ChangeDetectorRef,
-  Component,
-  ElementRef,
-  Inject,
-  Input,
-  ViewChild,
-  ViewEncapsulation,
-  NgModule,
-  input,
-} from "@angular/core";
-import { TabsModule } from "primeng/tabs";
-// biome-ignore lint/style/useImportType: <explanation>
-import { TabViewChangeEvent } from "primeng/tabview";
-// biome-ignore lint/style/useImportType: <explanation>
-import { Tree, TreeModule, TreeNodeSelectEvent } from "primeng/tree";
-// biome-ignore lint/style/useImportType: <explanation>
-import { TreeNode } from "primeng/api";
-import { SplitterModule } from "primeng/splitter";
-import { AccordionModule } from "primeng/accordion";
-import { SafeHtmlPipe } from "./SafeHtmlPipe";
-import { EditorModule, TINYMCE_SCRIPT_SRC } from "@tinymce/tinymce-angular";
+// #endregion XIMA
+// #region Angular
+// biome-ignore lint/style/useImportType: Need ChangeDetectorRef as an injection token.
+import { ChangeDetectorRef, Component, ViewEncapsulation, Input, ViewChild, ElementRef } from "@angular/core";
+// biome-ignore lint/style/useImportType: Need HttpClient as an injection token.
+import { HttpClient } from "@angular/common/http";
 import { BrowserAnimationsModule } from "@angular/platform-browser/animations";
 import { BrowserModule } from "@angular/platform-browser";
+import { trigger, state, style, animate, transition } from "@angular/animations";
+import { CommonModule } from "@angular/common";
+import { Injectable } from "@angular/core";
+// #endregion Angular
+// #region PrimeNG
+import { TreeModule } from "primeng/tree";
+import { TabsModule } from "primeng/tabs";
+import { SplitterModule } from "primeng/splitter";
+import { AccordionModule } from "primeng/accordion";
 import { TagModule } from "primeng/tag";
 import { FormsModule } from "@angular/forms";
 import { TableModule } from "primeng/table";
-import { trigger, state, style, animate, transition } from "@angular/animations";
-
-import Aura from "@primeuix/themes/aura";
-import { CommonModule, NgTemplateOutlet } from "@angular/common";
+// #endregion PrimeNG
+// #region TinyMCE
+import { EditorModule, TINYMCE_SCRIPT_SRC } from "@tinymce/tinymce-angular";
+// #endregion TinyMCE
+// #region Transloco
+// biome-ignore lint/style/useImportType: Need TranslocoService as an injection token.
+import { TranslocoService } from "@ngneat/transloco";
+import { TranslocoPipe, TranslocoModule } from "@ngneat/transloco";
+// #endregion Transloco
+// #region ZOD
+import { z } from "zod";
+// #endregion ZOD
+// #region XDBC
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { ZOD } from "xdbc/src/DBC/ZOD";
-import { z } from "zod";
-import type { TMessageKey } from "codbi-common";
-// biome-ignore lint/style/useImportType: <explanation>
-
-// biome-ignore lint/style/useImportType: <explanation>
-import { HttpClient } from "@angular/common/http";
-import { Injectable } from "@angular/core";
-// biome-ignore lint/style/useImportType: <explanation>
-import { Observable } from "rxjs";
-// biome-ignore lint/style/useImportType: <explanation>
-import { Translation, TranslocoLoader, TranslocoService, TranslocoModule, TranslocoPipe } from "@ngneat/transloco";
-
+// #endregion XDBC
+import { SafeHtmlPipe } from "./SafeHtmlPipe";
+// #endregion Imports
+// #region Interfaces
+/** Defines a contract for {@link object }s representing API-Doc Parameter. */
+interface ApiParameter {
+  /** The parameter's name. */
+  Name: string;
+  /** The parameter description. */
+  Description: string;
+  /** The parameter's id. */
+  id: number;
+}
+/** Defines a contract for an imported, or from the CodBi-Resourceservlet loaded, local API-Documentation. */
+interface ImportedApiDoc {
+  /** The details to CodBi Standard Configurations. */
+  detStandards: {
+    [key: string]: {
+      /** The standard's description. */
+      Description: string;
+      /** The global variables defined by the standard. */
+      globals: ApiParameter[];
+      /** The CSS-Classes parameters defined by the standard. */
+      classes: ApiParameter[];
+    };
+  };
+  /** The details to CodBi Functionalities. */
+  detFunctionalities: { [key: string]: { Description: string; Parameter: ApiParameter[] } };
+  /** The details to CodBi Elementplaceholder. */
+  detElementplaceholder: { [key: string]: { Description: string; Parameter: ApiParameter[] } };
+  /** Stores incoming API-Doc-Data in a way that is more appropriate for JSON.*/
+  docsAPI: [{ [key: string]: string }];
+  /** The files containing the actual code for CodBi Standard-Configurations. */
+  fileListing: Array<string>;
+  /** The files containing the actual code for CodBi Elementplaceholder. */
+  fslElementplaceholder: Array<string>;
+  /** The files containing the actual code for CodBi Functionalities. */
+  fslFunctionalities: Array<string>;
+}
+/**
+ * Defines a contract for {@link object }s representing a {@link TreeNode.data } suitable for the representation
+ * of a local API-Doc entry. */
+interface TreeNodeData {
+  /** The {@link TreeNode.label } duplicated for internal processment. */
+  label: string;
+  /** The Description of either the represented functionality, elementplaceholder or standard configuration. */
+  Description: string;
+  /** The CSS-Classes defined, if we're dealing with a CodBi Standard Configuration. */
+  classes: ApiParameter[];
+  /** The global Variables defined, if we're dealing with a CodBi Standard Configuration. */
+  globals: ApiParameter[];
+  /** The parameter defined, if we're dealing with either a CodBi Functionality or an Elementplaceholder. */
+  Parameter: ApiParameter[];
+  /** The optional internal Notes. */
+  Notes: string;
+}
+/** Defines a contract for elements of the {@link APIDocJSON }s. */
+interface InputDataItem {
+  /** The Description of either the represented functionality, elementplaceholder or standard configuration. */
+  Description?: string;
+  /** The global Variables defined, if we're dealing with a CodBi Standard Configuration. */
+  globals?: { [name: string]: string } | SimplifiedNamedItem[];
+  /** The CSS-Classes defined, if we're dealing with a CodBi Standard Configuration. */
+  classes?: { [name: string]: string } | SimplifiedNamedItem[];
+  /** The parameter defined, if we're dealing with either a CodBi Functionality or an Elementplaceholder. */
+  Parameter?: { [name: string]: string } | SimplifiedNamedItem[];
+}
+/** Defines a contract for {@link object }s that represent local API Documentation to be merged to already existing one. */
+interface APIDocJSON {
+  /** The CodBi Standard-Configurations defined. */
+  detStandards?: { [key: string]: InputDataItem };
+  /** The CodBi Functionalities defined. */
+  detFunctionalities?: { [key: string]: InputDataItem };
+  /** The CodBi Elementplaceholder defined. */
+  detElementplaceholder?: { [key: string]: InputDataItem };
+  /** Stores incoming API-Doc-Data in a way that is more appropriate for JSON.*/
+  docsAPI?: string[];
+  /** The files containing the actual code for CodBi Standard-Configurations. */
+  fileListing?: string[];
+  /** The files containing the actual code for CodBi Elementplaceholder. */
+  fslElementplaceholder?: string[];
+  /** The files containing the actual code for CodBi Functionalities. */
+  fslFunctionalities?: string[];
+}
+/** Defines a contract for local API-Docs that may be merged with others. */
+interface APIDoc_MergeableTreeNode {
+  /** The defined CodBi Standard Configurations's details. */
+  detStandards?: TreeNode[];
+  /** The defined CodBi Standard Functionality's details. */
+  detFunctionalities?: TreeNode[];
+  /** The defined CodBi Standard Element Placeholder's details. */
+  detElementplaceholder?: TreeNode[];
+  /** Stores incoming API-Doc-Data in a way that is more appropriate for JSON.*/
+  docsAPI?: TreeNode[];
+  /** The files containing the actual code for CodBi Standard-Configurations. */
+  fileListing?: TreeNode[];
+  /** The files containing the actual code for CodBi Elementplaceholder. */
+  fslElementplaceholder?: TreeNode[];
+  /** The files containing the actual CodBi Functionalitie's code. */
+  fslFunctionalities?: TreeNode[];
+  /** Further top-level {@link TreeNode }s. */
+  [key: string]: TreeNode[] | undefined;
+}
+/** A contract for {@link object }s describing a CodBi-Functionality, -Elementplaceholder or -Standard Configuration.*/
+interface SimplifiedNamedItem {
+  /** The CodBi-Element's name. */
+  Name?: string;
+  /** The CodBi-Element's description. */
+  Description?: string;
+  /** The CodBi-Element's further properties. */
+  [key: string]: unknown;
+}
+// #endregion Interfaces
+// #region Classes
+// #region Transloco
 @Injectable({
   providedIn: "root",
 })
-export class WebComponentTranslocoHttpLoader implements TranslocoLoader {
-  // IMPORTANT: This is the base URL of your "space provider" where translations are hosted.
-  // Replace this with your actual CDN or server URL.
-  // Example: 'https://my-cdn.com/my-app-translations/'
-  // Example: 'https://my-static-server.com/assets/i18n/'
-  private TRANSLATIONS_BASE_URL = "https://your-space-provider.com/my-web-component/assets/i18n";
-
-  // biome-ignore lint/style/noParameterProperties: <explanation>
-  constructor(private http: HttpClient) {}
-
+/** The {@link TranslocoLoader } acquiring the translations via the CodBi-Resourceservlet. */
+export class TranslocoHttpLoader implements TranslocoLoader {
+  /** Stores the reference to the injected {@link HttpClient }. */
+  protected httpClient: HttpClient | undefined;
+  /**
+   * Creates this {@link TranslocoHttpLoader } by sett the {@link TranslocoHttpLoader.httpClient } to use.
+   *
+   * @param httpClient The {@link HttpClient } provided by Angular. */
+  constructor(httpClient: HttpClient) {
+    this.httpClient = httpClient;
+  }
   /**
    * Fetches the translation file for a given language and optional scope.
-   * @param lang The language code (e.g., 'en', 'es').
-   * @param scope Optional scope for lazy-loaded translations (e.g., 'products').
-   * @returns An Observable that emits the translation JSON.
-   */
-  getTranslation(
-    lang: string,
-    data?: { scope?: string }, // <--- Corrected type: inline object literal
-  ): Observable<Translation> {
-    let url = `${window.location.href.split("/").slice(0, 4).join("/")}/plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/i18n/LocalAPIDocManager/${lang}`;
-
-    /*const scope = data?.scope; // Access scope from the data object
-
-    if (scope) {
-      url += `/${scope}`;
-    }*/
-    url += ".json";
-
-    console.log(`Web Component is fetching translation from: ${url}`);
-    return this.http.get<Translation>(url);
+   *
+   * @param lang  The language {@link string }-code (e.g., 'en', 'es').
+   *
+   * @returns An {@link Observable } that emits the {@link Translation }-JSON. */
+  getTranslation(lang: string): Observable<Translation> {
+    return this.httpClient.get<Translation>(
+      `${window.location.href.split("/").slice(0, 4).join("/")}/plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/i18n/LocalAPIDocManager/${lang}.json`,
+    );
   }
 }
-
-interface ApiParameter {
-  Name: string;
-  Description: string;
-  id: number;
-}
-
-interface ApiClass {
-  Name: string;
-  Description: string;
-  id: number;
-}
-
+// #endregion Transloco
+// #region Helper
+/** An actual {@link ApiParameter }-Implementation. */
 class CommonApiParameter implements ApiParameter {
+  /** See {@link ApiParameter.Name }. */
   Name = "";
+  /** See {@link ApiParameter.Description }. */
   Description = "";
+  /** See {@link ApiParameter.id }. */
   id;
-
+  /**
+   * Creates this {@link ApiParameter } by setting it's {@link ApiParameter.Name },
+   * {@link ApiParameter.Description } and a {@link Math.random } id.
+   *
+   * @param name        The {@link ApiParameter.Name }.
+   * @param description The {@link ApiParameter.Description }.
+   * @param id          The optional {@link ApiParameter.id } that will be generate {@link Math.random }ly,
+   *                    if omitted. */
   constructor(name: string, description: string, id = Math.random()) {
     this.Name = name;
     this.Description = description;
     this.id = id;
   }
 }
-interface ApiDoc {
-  // Declare properties you're adding to window
+// #endregion Helper
 
-  detStandards: {
-    [key: string]: {
-      Description: string;
-      globals: ApiParameter[];
-      classes: ApiClass[];
-    };
-  };
-  detFunctionalities: { [key: string]: { Description: string; Parameter: ApiParameter[] } };
-  detElementplaceholder: { [key: string]: { Description: string; Parameter: ApiParameter[] } };
-  docsAPI: [{ [key: string]: string }];
-  fileListing: Array<string>;
-  fslElementplaceholder: Array<string>;
-  fslFunctionalities: Array<string>;
-}
-
-interface nodeData {
-  label: string;
-  Description: string; // Ensure the casing matches 'Description'
-  classes: ApiClass[];
-  globals: ApiParameter[];
-  Parameter: ApiParameter[];
-  Notes: string;
-  // No need for 'children' here, as TreeNode itself has a 'children' property
-}
-
-interface InputDataItem {
-  Description?: string;
-  globals?: { [name: string]: string } | SimplifiedNamedItem[]; // Can be an object of name:description, or an array of {Name, Description}
-  classes?: { [name: string]: string } | SimplifiedNamedItem[];
-  Parameter?: { [name: string]: string } | SimplifiedNamedItem[];
-}
-
-interface APIDocJSON {
-  detStandards?: { [key: string]: InputDataItem };
-  detFunctionalities?: { [key: string]: InputDataItem };
-  detElementplaceholder?: { [key: string]: InputDataItem };
-  docsAPI?: string[];
-  fileListing?: string[];
-  fslElementplaceholder?: string[];
-  fslFunctionalities?: string[];
-}
-
-// Define the new structure for the initial tree to merge into
-interface MergeableTreeNodeAPIDOC {
-  detStandards?: TreeNode[];
-  detFunctionalities?: TreeNode[];
-  detElementplaceholder?: TreeNode[];
-  docsAPI?: TreeNode[];
-  fileListing?: TreeNode[];
-  fslElementplaceholder?: TreeNode[];
-  fslFunctionalities?: TreeNode[];
-  // You can add other top-level keys here if your tree has more static sections
-  [key: string]: TreeNode[] | undefined; // Allow for other top-level keys
-}
-
-interface SimplifiedNamedItem {
-  Name?: string;
-  Description?: string;
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  [key: string]: any; // Allow other properties if present, but we'll prioritize Name/Description
-}
 /**
  *
  */
@@ -270,7 +316,7 @@ export class Manager implements AfterViewInit {
   itemsElementplaceholder = [];
 
   itemsStandard = [];
-  apiDoc: ApiDoc | undefined;
+  apiDoc: ImportedApiDoc | undefined;
 
   @Input("segment")
   set segment(toSet: "detFunctionalities" | "detElementplaceholder") {
@@ -289,6 +335,7 @@ export class Manager implements AfterViewInit {
 
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   toTreeNodes(toConvert: { [key: string]: any }): TreeNode[] {
+    console.log("toConvert", toConvert);
     const root: TreeNode[] = [];
 
     const keys = Object.keys(toConvert);
@@ -319,8 +366,10 @@ export class Manager implements AfterViewInit {
               Parameter: [],
               globals: [],
               classes: [],
+              Notes: "",
             };
 
+            existingNode.data.Notes = toConvert[key].notes;
             for (const pKey in toConvert[key].Parameter) {
               // biome-ignore lint/style/noNonNullAssertion: <explanation>
               existingNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
@@ -342,6 +391,7 @@ export class Manager implements AfterViewInit {
               Parameter: [],
               globals: [],
               classes: [],
+              Notes: "",
             }, // Initialize data as an empty object for non-leaf nodes
             children: [],
             parent: parentNode,
@@ -350,6 +400,7 @@ export class Manager implements AfterViewInit {
           // Determine the sibling index for the current part
           const siblingIndex = currentLevel.length;
 
+          newNode.data.Notes = toConvert[key].notes;
           // Build the composite key
           if (currentPathKey === "") {
             newNode.key = siblingIndex.toString();
@@ -365,8 +416,10 @@ export class Manager implements AfterViewInit {
               Parameter: [],
               globals: [],
               classes: [],
+              Notes: "",
             };
 
+            newNode.data.Notes = toConvert[key].notes;
             for (const pKey in toConvert[key].Parameter) {
               // biome-ignore lint/style/noNonNullAssertion: <explanation>
               newNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
@@ -413,13 +466,13 @@ export class Manager implements AfterViewInit {
     console.log("n11112222", this.apiDoc, this.items, this.itemsElementplaceholder, this.itemsStandard);
   }
 
-  protected _currentNodeData: nodeData | undefined;
+  protected _currentNodeData: TreeNodeData | undefined;
 
-  get currentlySelectedFunctionalityData(): nodeData {
+  get currentlySelectedFunctionalityData(): TreeNodeData {
     return this._currentNodeData;
   }
 
-  public set currentlycurrentlySelectedFunctionalityData(toSet: nodeData) {
+  public set currentlycurrentlySelectedFunctionalityData(toSet: TreeNodeData) {
     if (this._currentNode) {
       this._currentNode.data = toSet;
     }
@@ -461,6 +514,16 @@ export class Manager implements AfterViewInit {
   // #region New Node Dialog
   // #region Basic Operations
   /**
+   * Makes the {@link HTMLTextAreaElement } resize automatically on input.
+   *
+   * @param event The {@link Event } received. */
+  protected onInputNotes(event: Event) {
+    const textarea = INSTANCE.tsCheck<HTMLTextAreaElement>(event.target, HTMLTextAreaElement);
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }
+  /**
    * Clears the {@link Manager.formerInput_CodBi_LocalAPIDoc_New_Name }
    * @param event
    */
@@ -490,8 +553,8 @@ export class Manager implements AfterViewInit {
    *
    * @param path  The {@link TreeNodes } to create.
    * @param addTo The structure the **path**'s {@link TreeNodes } shall be added to. */
-  protected addTreeNodes(path: string, addTo: TreeNode<nodeData>[]) {
-    let currentNodelevel: TreeNode<nodeData>[] = addTo;
+  protected addTreeNodes(path: string, addTo: TreeNode<TreeNodeData>[]) {
+    let currentNodelevel: TreeNode<TreeNodeData>[] = addTo;
 
     for (const part of path.split(".")) {
       let existent = false;
@@ -1155,11 +1218,11 @@ export class Manager implements AfterViewInit {
   // #endregion Create New Element
   // #endregion Node Management
   get notes() {
-    return this.currentlySelectedFunctionalityData ? this.currentlySelectedFunctionalityData.Notes : "";
+    return this.currentlySelectedTreeNode?.data ? this.currentlySelectedTreeNode.data.Notes : "";
   }
   set notes(toSet: string) {
-    if (this.currentlySelectedFunctionalityData) {
-      this.currentlySelectedFunctionalityData.Notes = toSet;
+    if (this.currentlySelectedTreeNode?.data) {
+      this.currentlySelectedTreeNode.data.Notes = toSet;
     }
   }
 
@@ -1203,6 +1266,10 @@ export class Manager implements AfterViewInit {
   public synchronized = true;
   /** Stores a {@link boolean } stating whether this {@link Manager } is currently synchronizing or not. */
   public synchronizing = false;
+  /** Marks this {@link Manager } as not to {@link Manager.synchronized }. */
+  protected onBlurNotes() {
+    this.synchronized = false;
+  }
   /**
    * Converts an {@link Array } of { Name: string; Description: string }s into an {@link object } with
    * which property's names are the **Name** of the objects in the array and they value their **Description**.
@@ -1335,7 +1402,7 @@ export class Manager implements AfterViewInit {
       detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
       detStandards: this.convertStandardNodes(this.itemsStandard),
     };
-    console.log("localnodedata", localNodeData);
+    console.log("localnodedata", localNodeData, this.items);
     const fileListings = this.enrichData(window[this.docPath], localNodeData);
     // #endregion Generate data to sync.
     const $ = getJQuery();
@@ -1457,6 +1524,7 @@ export class Manager implements AfterViewInit {
         Description: node.data ? node.data.Description : "",
         Parameter: node.data ? this.arrayToObject(node.data.Parameter ? node.data.Parameter : []) : [],
         globals: node.data ? this.arrayToObject(node.data.globals) : [],
+        notes: node.data.Notes ? node.data.Notes : "",
       };
 
       if (node.children) {
@@ -1907,9 +1975,9 @@ export class Manager implements AfterViewInit {
     this._currentNodeData = this._currentNodeData;
   }
   /**
-   * Removes the current row from the {@link Manager._currentNode }'s {@link nodeData.Parameter }.
+   * Removes the current row from the {@link Manager._currentNode }'s {@link TreeNodeData.Parameter }.
    *
-   * @param parameter The current row's value, which won't be used. */
+   * @param parameter The current row's value, that won't be used anyway. */
   onRowDelete(parameter: ApiParameter) {
     this._currentNodeData.Parameter = this._currentNodeData.Parameter.filter(
       (candidate) => candidate.Name !== parameter.Name,
@@ -1927,6 +1995,9 @@ export class Manager implements AfterViewInit {
    */
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   protected toDescriptiveArray(toConvert: { [key: string]: any }): { Name: string; Description: string }[] {
+    if (this.activeTab !== "Elementplaceholder") {
+      return toConvert as { Name: string; Description: string }[];
+    }
     const result: { Name: string; Description: string }[] = [];
 
     for (const key in toConvert) {
@@ -1935,24 +2006,24 @@ export class Manager implements AfterViewInit {
       }
     }
 
-    console.log("descriptive", result, toConvert);
+    console.log("descriptive!!", result, toConvert);
     return toConvert as { Name: string; Description: string }[];
   }
   // #endregion Parameter, Classes & Globals
   // #endregion Right Panel
   // #region Importing
   /**
-   * Imports incoming {@link APIDocJSON } data into already existent {@link MergeableTreeNodeAPIDOC } one.
+   * Imports incoming {@link APIDocJSON } data into already existent {@link APIDoc_MergeableTreeNode } one.
    *
    * @param incomingData      The imported {@link APIDocJSON } to merge.
-   * @param initialTreeObject The {@link MergeableTreeNodeAPIDOC } data to import the **incomingData** into.
+   * @param initialTreeObject The {@link APIDoc_MergeableTreeNode } data to import the **incomingData** into.
    *
-   * @returns The resulting {@link MergeableTreeNodeAPIDOC } data. */
+   * @returns The resulting {@link APIDoc_MergeableTreeNode } data. */
   protected mergeDataIntoStructuredTree(
     incomingData: APIDocJSON,
-    initialTreeObject: MergeableTreeNodeAPIDOC = {},
-  ): MergeableTreeNodeAPIDOC {
-    const mergedTree: MergeableTreeNodeAPIDOC = { ...initialTreeObject };
+    initialTreeObject: APIDoc_MergeableTreeNode = {},
+  ): APIDoc_MergeableTreeNode {
+    const mergedTree: APIDoc_MergeableTreeNode = { ...initialTreeObject };
     /**
      * Finds or creates a hierarchical path of {@link TreeNode }s within a given array of nodes.
      *
@@ -2162,5 +2233,15 @@ export class Manager implements AfterViewInit {
 
     return mergedTree;
   }
-  // #region Importing
+  // #endregion Importing
+  // #region Dialogues
+  // #region CodBi_LocalAPIDoc_New
+  protected onKeyup_CodBi_LocalAPIDoc_New(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      this.CodBi_LocalAPIDoc_New_Panel_Close.nativeElement.click();
+    }
+  }
+  // #endregion CodBi_LocalAPIDoc_New
+  // #endregion Dialogues
 }
+// #endregion Classes

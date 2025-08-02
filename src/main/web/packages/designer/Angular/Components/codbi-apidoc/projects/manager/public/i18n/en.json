@@ -41,5 +41,5 @@
   "RP.Tabs.Header.Functions.Import": "Import from file...",
   "RP.Tabs.Header.Functions.Export": "Export to file...",
   "RP.Tabs.Header.Functions.Sync": "Upload to server",
-  "RP.phNotes": "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind und nur um eigenen CodBi Speicher abgelegt also exportiert werden..."
+  "RP.phNotes": "Here, notes can be recorded that are exclusively accessible via this interface and can only be stored (exported) from your own CodeBi storage..."
 }

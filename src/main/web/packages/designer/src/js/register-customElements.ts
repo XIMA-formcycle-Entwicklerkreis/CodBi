@@ -181,6 +181,7 @@ export function registerCustomElements(): void {
           "X-Action": "Retrieve",
         },
         success: (response) => {
+          console.log("RRRRR:", response);
           for (const functionality in response.detFunctionalities) {
             // biome-ignore lint/suspicious/noExplicitAny: <explanation>
             (window.CodbiPluginData.detFunctionalities as any)[functionality] =
@@ -192,7 +193,7 @@ export function registerCustomElements(): void {
             // biome-ignore lint/suspicious/noExplicitAny: <explanation>
             (window.CodbiPluginData.fslFunctionalities as any as string) =
               // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-              `${(window.CodbiPluginData.fslFunctionalities as any as string).substring(0, window.CodbiPluginData.fslFunctionalities.length - 1)},\"${response.fslFunctionalities}\"]`;
+              `${(window.CodbiPluginData.fslFunctionalities as any as string).substring(0, window.CodbiPluginData.fslFunctionalities.length - 1)},\"${response.fslFunctionalities.split(",").join('","')}\"]`;
           }
 
           for (const placeholder in response.detElementplaceholder) {
@@ -205,7 +206,7 @@ export function registerCustomElements(): void {
             // biome-ignore lint/suspicious/noExplicitAny: <explanation>
             (window.CodbiPluginData.fslElementplaceholder as any as string) =
               // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-              `${(window.CodbiPluginData.fslElementplaceholder as any as string).substring(0, window.CodbiPluginData.fslElementplaceholder.length - 1)},\"${response.fslElementplaceholder}\"]`;
+              `${(window.CodbiPluginData.fslElementplaceholder as any as string).substring(0, window.CodbiPluginData.fslElementplaceholder.length - 1)},\"${response.fslElementplaceholder.split(",").join('","')}\"]`;
           }
 
           if (response.detStandards) {
@@ -218,7 +219,7 @@ export function registerCustomElements(): void {
             // biome-ignore lint/suspicious/noExplicitAny: <explanation>
             (window.CodbiPluginData.fileListing as any as string) =
               // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-              `${(window.CodbiPluginData.fileListing as any as string).substring(0, window.CodbiPluginData.fileListing.length - 1)},\"${response.fileListing}\"]`;
+              `${(window.CodbiPluginData.fileListing as any as string).substring(0, window.CodbiPluginData.fileListing.length - 1)},\"${response.fileListing.split(",").join('","')}\"]`;
           }
           console.log("Q", window.CodbiPluginData);
           setTimeout(() => {
@@ -270,7 +271,6 @@ export function registerCustomElements(): void {
           #cCodBi_LocalAPIDoc cb-manager { display : block ; height : 100% ;}</style>
         <div id = "cCodBi_LocalAPIDoc">
           <cb-manager apidoc      = '${JSON.stringify(response)}'
-                      segment     = "detFunctionalities"
                       baseURL     = "${baseURL}"
                       language    = "${
                         // biome-ignore lint/suspicious/noExplicitAny: <explanation>

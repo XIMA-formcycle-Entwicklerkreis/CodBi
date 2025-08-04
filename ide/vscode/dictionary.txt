@@ -31,6 +31,7 @@ autoheader
 autoheadercss
 autoheaderlevel
 autoheadertitle
+autoresize
 Baiti
 bayvis
 behoerde
@@ -79,6 +80,7 @@ datemax
 datemin
 datepattern
 dividertarget
+docpath
 Durchwahl
 eine
 eingeben
@@ -99,6 +101,7 @@ errorpostfix
 errorprefix
 Falschen
 Feiertage
+filelistings
 forecolor
 formcycle
 Formcylce
@@ -142,6 +145,7 @@ laceholders
 Landvorwahl
 lement
 liegen
+localnodedata
 lteq
 Mandant
 maxfield
@@ -208,6 +212,7 @@ Telefonnummer
 Texteditor
 Textinjector
 Transloco
+treeview
 typhonjs
 über
 verfügbar

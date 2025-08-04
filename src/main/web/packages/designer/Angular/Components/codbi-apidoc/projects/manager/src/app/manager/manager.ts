@@ -8,6 +8,9 @@ import type { Observable } from "rxjs";
 import type { TreeNodeSelectEvent } from "primeng/tree";
 import type { TreeNode } from "primeng/api";
 // #endregion PrimeNG
+// #region TinyMCE
+import type { EditorEvent } from "tinymce";
+// #endregion TinyMCE
 // #region Transloco
 import type { Translation, TranslocoLoader } from "@ngneat/transloco";
 // #endregion Transloco
@@ -39,6 +42,7 @@ import { TableModule } from "primeng/table";
 // #endregion PrimeNG
 // #region TinyMCE
 import { EditorModule, TINYMCE_SCRIPT_SRC } from "@tinymce/tinymce-angular";
+import { Editor as TinyMCEEditor } from "tinymce";
 // #endregion TinyMCE
 // #region Transloco
 // biome-ignore lint/style/useImportType: Need TranslocoService as an injection token.
@@ -220,10 +224,11 @@ class CommonApiParameter implements ApiParameter {
   }
 }
 // #endregion Helper
-
 /**
- *
- */
+ * A dialogue providing the means to manage persistent local CodBi API documentation.
+ * Overall export/import is available for backup.
+ * Specific export/import is available in order to facilitate sharing of code.
+ * Promoting CodBi-GitHub for contribution. */
 @Component({
   selector: "cb-manager",
   imports: [
@@ -246,294 +251,23 @@ class CommonApiParameter implements ApiParameter {
     {
       provide: TINYMCE_SCRIPT_SRC,
       useValue:
-        "http://localhost:8080/xima-formcycle/plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce/tinymce.min.js", // Point to your local path
+        "http://localhost:8080/xima-formcycle/plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce/tinymce.min.js",
     },
   ],
   templateUrl: "./manager.html",
   styleUrl: "./manager.scss",
   encapsulation: ViewEncapsulation.None,
-  animations: [
-    trigger("tabContentAnimation", [
-      state(
-        "false",
-        style({
-          opacity: 0,
-          transform: "translateX(-20px)",
-        }),
-      ),
-      state(
-        "true",
-        style({
-          opacity: 1,
-          transform: "translateX(0)",
-        }),
-      ),
-      transition("inactive <=> active", [animate("300ms ease-in-out")]),
-      // You can also define animations for :enter and :leave if the content is dynamically added/removed
-      transition(":enter", [
-        // When content enters the DOM (e.g., first loaded or after initial inactive state)
-        style({ opacity: 0, transform: "translateX(-20px)" }),
-        animate("300ms ease-in-out", style({ opacity: 1, transform: "translateX(0)" })),
-      ]),
-      transition(":leave", [
-        // When content leaves the DOM (less common for p-tab, as it typically hides)
-        animate("300ms ease-in-out", style({ opacity: 0, transform: "translateX(20px)" })),
-      ]),
-    ]),
-  ],
 })
 export class Manager implements AfterViewInit {
-  @Input() resourceurl: string | undefined;
-  /** */
+  // #region Component References
   @ViewChild("CodBi_LocalAPIDoc", { read: ElementRef }) CodBi_LocalAPIDoc!: ElementRef;
-  /** */
-  @ViewChild("CodBi_LocalAPIDoc_New_Panel_Add") CodBi_LocalAPIDoc_New_Panel_Add!: ElementRef;
-  /** */
-  @ViewChild("CodBi_LocalAPIDoc_New") CodBi_LocalAPIDoc_New!: ElementRef;
-  /** */
-  @ViewChild("CodBi_LocalAPIDoc_Add") CodBi_LocalAPIDoc_Add!: ElementRef;
-  /** */
-  @ViewChild("CodBi_LocalAPIDoc_New_Name") CodBi_LocalAPIDoc_New_Name!: ElementRef;
-  /** */
-  @ViewChild("CodBi_LocalAPIDoc_Tree", { read: ElementRef }) CodBi_LocalAPIDoc_Tree!: ElementRef;
-  /** */
-  @ViewChild("CodBi_LocalAPIDoc_New_Panel_Close") CodBi_LocalAPIDoc_New_Panel_Close!: ElementRef;
-  /** */
-  @ViewChild("CodBi_LocalAPIDoc_Functionalities_Description")
-  CodBi_LocalAPIDoc_Functionalities_Description!: ElementRef;
-  /** */
-  @ViewChild("CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue")
-  CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue!: ElementRef;
-
-  @ViewChild("CodBi_LocalAPIDoc_Tree_Rename_Input") CodBi_LocalAPIDoc_Tree_Rename_Input!: ElementRef;
-
-  items: TreeNode[] = [];
-
-  protected i18n(key: TMessageKey): string {
-    return i18n(key);
-  }
-
-  itemsElementplaceholder = [];
-
-  itemsStandard = [];
-  apiDoc: ImportedApiDoc | undefined;
-
-  @Input("segment")
-  set segment(toSet: "detFunctionalities" | "detElementplaceholder") {
-    //this.items = this.toTreeNode(DEFINED.tsCheck<ApiDoc>(this.apiDoc)[toSet]);
-  }
-
-  _docPath: string | undefined;
-  @Input("docpath")
-  set docPath(toSet: string) {
-    this._docPath = toSet;
-  }
-
-  get docPath(): string {
-    return this._docPath;
-  }
-
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  toTreeNodes(toConvert: { [key: string]: any }): TreeNode[] {
-    console.log("toConvert", toConvert);
-    const root: TreeNode[] = [];
-
-    const keys = Object.keys(toConvert);
-
-    for (const key of keys) {
-      const parts = key.split(".");
-      let currentLevel: TreeNode[] = root;
-      let parentNode: TreeNode | undefined = undefined;
-      let currentPathKey: string = ""; // To build the "0-1-2" key
-
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        const isLeaf = i === parts.length - 1;
-
-        // biome-ignore lint/style/useConst: <explanation>
-        let existingNode = currentLevel.find((node) => node.label === part);
-
-        if (existingNode) {
-          parentNode = existingNode;
-          currentLevel = existingNode.children;
-          // Reconstruct currentPathKey for existing node based on its actual key
-          currentPathKey = existingNode.key || "";
-
-          // If it's an existing node and it's the leaf, update its data
-          if (isLeaf) {
-            existingNode.data = {
-              Description: toConvert[key].Description,
-              Parameter: [],
-              globals: [],
-              classes: [],
-              Notes: "",
-            };
-
-            existingNode.data.Notes = toConvert[key].notes;
-            for (const pKey in toConvert[key].Parameter) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              existingNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
-            }
-            for (const gKey in toConvert[key].globals) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              existingNode.data.globals!.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
-            }
-            for (const cKey in toConvert[key].classes) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              existingNode.data.classes!.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
-            }
-          }
-        } else {
-          const newNode: TreeNode = {
-            label: part,
-            data: {
-              Description: "",
-              Parameter: [],
-              globals: [],
-              classes: [],
-              Notes: "",
-            }, // Initialize data as an empty object for non-leaf nodes
-            children: [],
-            parent: parentNode,
-          };
-
-          // Determine the sibling index for the current part
-          const siblingIndex = currentLevel.length;
-
-          newNode.data.Notes = toConvert[key].notes;
-          // Build the composite key
-          if (currentPathKey === "") {
-            newNode.key = siblingIndex.toString();
-          } else {
-            newNode.key = `${currentPathKey}-${siblingIndex}`;
-          }
-          currentPathKey = newNode.key; // Update for the next iteration
-
-          // Only assign Description, Parameter, globals, and classes if it's the leaf node
-          if (isLeaf) {
-            newNode.data = {
-              Description: toConvert[key].Description,
-              Parameter: [],
-              globals: [],
-              classes: [],
-              Notes: "",
-            };
-
-            newNode.data.Notes = toConvert[key].notes;
-            for (const pKey in toConvert[key].Parameter) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              newNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
-            }
-            for (const gKey in toConvert[key].globals) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              newNode.data.globals!.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
-            }
-            for (const cKey in toConvert[key].classes) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              newNode.data.classes!.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
-            }
-          }
-
-          currentLevel.push(newNode);
-
-          parentNode = newNode;
-          currentLevel = newNode.children;
-        }
-      }
-    }
-
-    return root;
-  }
-  @Input("apidoc")
-  set apidoc(toSet: string) {
-    this.apiDoc = JSON.parse(toSet);
-
-    this.items = this.toTreeNodes(this.apiDoc.detFunctionalities);
-    console.log("setapidoc", this.items, this.apiDoc.detFunctionalities);
-    this.itemsElementplaceholder = this.toTreeNodes(this.apiDoc.detElementplaceholder);
-    this.itemsStandard = this.toTreeNodes(this.apiDoc.detStandards);
-
-    for (const key in this.apiDoc.detFunctionalities) {
-      window.CodbiPluginData.detFunctionalities[key].local = true;
-    }
-    for (const key in this.apiDoc.detElementplaceholder) {
-      window.CodbiPluginData.detElementplaceholder[key].local = true;
-    }
-
-    for (const key in this.apiDoc.detStandards) {
-      window.CodbiPluginData.detStandards[key].local = true;
-    }
-    console.log("n11112222", this.apiDoc, this.items, this.itemsElementplaceholder, this.itemsStandard);
-  }
-
-  protected _currentNodeData: TreeNodeData | undefined;
-
-  get currentlySelectedFunctionalityData(): TreeNodeData {
-    return this._currentNodeData;
-  }
-
-  public set currentlycurrentlySelectedFunctionalityData(toSet: TreeNodeData) {
-    if (this._currentNode) {
-      this._currentNode.data = toSet;
-    }
-  }
-
-  get description(): string {
-    return this._currentNodeData ? this._currentNodeData.Description : "N/A";
-  }
-
-  set description(toSet: string) {
-    if (this._currentNodeData === undefined) {
-      return;
-    }
-    if (this._currentNodeData.Description === undefined) {
-      this._currentNodeData.Description = "";
-    }
-
-    this._currentNodeData.Description = toSet;
-  }
-
-  protected toTreeNode(
-    label: string,
-    segmentToConvert: { Description: string; globals: object; classes: object; Parameter: object },
-  ): TreeNode {
-    const result: TreeNode = {
-      label: label,
-      data: {
-        Description: segmentToConvert.Description,
-        globals: segmentToConvert.globals,
-        classes: segmentToConvert.classes,
-        Parameter: segmentToConvert.Parameter,
-      },
-    };
-
-    return result;
-  }
-
+  // #endregion Component References
   // #region Node Management
   // #region New Node Dialog
-  // #region Basic Operations
-  /**
-   * Makes the {@link HTMLTextAreaElement } resize automatically on input.
-   *
-   * @param event The {@link Event } received. */
-  protected onInputNotes(event: Event) {
-    const textarea = INSTANCE.tsCheck<HTMLTextAreaElement>(event.target, HTMLTextAreaElement);
-
-    textarea.style.height = "auto";
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }
-  /**
-   * Clears the {@link Manager.formerInput_CodBi_LocalAPIDoc_New_Name }
-   * @param event
-   */
-  protected onClick_CodBi_LocalAPIDoc_Add(event: Event) {
-    this.formerInput_CodBi_LocalAPIDoc_New_Name = "";
-    this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "flex";
-    (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.add("-submerged");
-    this.CodBi_LocalAPIDoc_New_Name.nativeElement.focus();
-  }
-  // #endregion Basic Operations
+  @ViewChild("CodBi_LocalAPIDoc_New_Panel_Add") CodBi_LocalAPIDoc_New_Panel_Add!: ElementRef;
+  @ViewChild("CodBi_LocalAPIDoc_New") CodBi_LocalAPIDoc_New!: ElementRef;
+  @ViewChild("CodBi_LocalAPIDoc_Add") CodBi_LocalAPIDoc_Add!: ElementRef;
+  @ViewChild("CodBi_LocalAPIDoc_New_Name") CodBi_LocalAPIDoc_New_Name!: ElementRef;
   // #region Create New Element
   /**
    * The {@link HTMLParagraphElement } stating that the local CodBi-Element to created with the specified
@@ -549,7 +283,7 @@ export class Manager implements AfterViewInit {
   }
   /**
    * Adds the {@link TreeNode }s specified in the given path to the structure {@link toAddTo } inserting the new
-   * {@link TreeNodes } into already existing ones (case insensitive).
+   * {@link TreeNode }s into already existing ones (case insensitive).
    *
    * @param path  The {@link TreeNodes } to create.
    * @param addTo The structure the **path**'s {@link TreeNodes } shall be added to. */
@@ -585,40 +319,39 @@ export class Manager implements AfterViewInit {
       ).children;
     }
   }
+  // #region Checks
   /**
+   * Determines if the specified name of a functionality **toCheck** is already taken.
    *
-   * @param functionalityName
-   * @returns
-   */
-
-  protected isFunctionalityNameTaken(functionalityName: string): boolean {
-    const lowerCaseName = functionalityName.toLowerCase();
-
+   * @param toCheck The possibly taken name.
+   *
+   * @returns TRUE if taken, otherwise FALSE. */
+  protected isFunctionalityNameTaken(toCheck: string): boolean {
     return Object.keys(window.CodbiPluginData.detFunctionalities)
       .map((e) => e.toLowerCase())
-      .includes(lowerCaseName);
+      .includes(toCheck.toLowerCase());
   }
   /**
+   * Determines if the specified name of an elementplaceholder **toCheck** is already taken.
    *
-   * @param elementPlaceholderName
-   * @returns
-   */
-  protected isElementPlaceholderNameTaken(elementPlaceholderName: string): boolean {
-    const lowerCaseName = elementPlaceholderName.toLowerCase();
-
+   * @param toCheck The possibly taken name.
+   *
+   * @returns TRUE if taken, otherwise FALSE. */
+  protected isElementPlaceholderNameTaken(toCheck: string): boolean {
     return Object.keys(window.CodbiPluginData.detElementplaceholder)
       .map((e) => e.toLowerCase())
-      .includes(lowerCaseName);
+      .includes(toCheck.toLowerCase());
   }
   /**
+   * Determines if the specified name of an elementplaceholder **toCheck** is already taken.
    *
-   */
-  protected isStandardNameTaken(standardName: string): boolean {
-    const lowerCaseName = standardName.toLowerCase();
-
+   * @param toCheck The possibly taken name.
+   *
+   * @returns TRUE if taken, otherwise FALSE. */
+  protected isStandardNameTaken(toCheck: string): boolean {
     return Object.keys(window.CodbiPluginData.detStandards)
       .map((e) => e.toLowerCase())
-      .includes(lowerCaseName);
+      .includes(toCheck.toLowerCase());
   }
   /**
    * Determines whether the specified  **pathAndName** is already taken by a native CodBi-Element.
@@ -629,18 +362,34 @@ export class Manager implements AfterViewInit {
   protected isNameTaken(pathAndName: string): boolean {
     const lowerCaseName = pathAndName.toLowerCase();
 
-    return (
-      Object.keys(window.CodbiPluginData.detFunctionalities)
-        .map((e) => e.toLowerCase())
-        .includes(lowerCaseName) ||
-      Object.keys(window.CodbiPluginData.detElementplaceholder)
-        .map((e) => e.toLowerCase())
-        .includes(lowerCaseName) ||
-      Object.keys(window.CodbiPluginData.detStandards)
-        .map((e) => e.toLowerCase())
-        .includes(lowerCaseName)
-    );
+    return Object.keys(
+      window.CodbiPluginData[
+        this.activeTab === "Functionality"
+          ? "detFunctionalities"
+          : this.activeTab === "Elementplaceholder"
+            ? "detElementplaceholder"
+            : "detStandards"
+      ],
+    )
+      .map((e) => e.toLowerCase())
+      .includes(lowerCaseName);
   }
+  /**
+   * Retrieves the topmost parent {@link TreeNode } of the one to retrieve **from**.
+   *
+   * @param from The {@link TreeNode } to retrieve the topmost parent from.
+   *
+   * @returns The requested {@link TreeNode }. */
+  protected getTopmostParent(from: TreeNode): TreeNode {
+    let current = from;
+
+    while (current.parent !== undefined) {
+      current = current.parent;
+    }
+
+    return current;
+  }
+  // #endregion Checks
   /**
    * Removes any dots at the end of the input value of {@link Manager.CodBi_LocalAPIDoc_New_Name } prior to adding
    * the new element to the tree of the currently {@link Manager.activeTab }.
@@ -659,17 +408,7 @@ export class Manager implements AfterViewInit {
     // #region Check against CodBi Data.
     const lowercaseInputControlValue = inputControl.value.toLowerCase();
 
-    if (
-      Object.keys(window.CodbiPluginData.detFunctionalities)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue) ||
-      Object.keys(window.CodbiPluginData.detElementplaceholder)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue) ||
-      Object.keys(window.CodbiPluginData.detStandards)
-        .map((e) => e.toLowerCase())
-        .includes(lowercaseInputControlValue)
-    ) {
+    if (this.isNameTaken(lowercaseInputControlValue)) {
       this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent.nativeElement.style.display = "block";
 
       return;
@@ -696,6 +435,16 @@ export class Manager implements AfterViewInit {
 
     (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.remove("-submerged");
     // #endregion Close the dialog.
+  }
+  /**
+   * Clears the {@link Manager.formerInput_CodBi_LocalAPIDoc_New_Name }
+   * @param event
+   */
+  protected onClick_CodBi_LocalAPIDoc_Add(event: Event) {
+    this.formerInput_CodBi_LocalAPIDoc_New_Name = "";
+    this.CodBi_LocalAPIDoc_New.nativeElement.style.display = "flex";
+    (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.add("-submerged");
+    this.CodBi_LocalAPIDoc_New_Name.nativeElement.focus();
   }
   // #endregion Create New Element
   // #endregion New Node Dialog
@@ -1116,7 +865,6 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link Event } received. */
   protected onBlurRenameInput(event: Event) {
-    // #region Check against CodBi Data.
     const lowercaseInputControlValue = INSTANCE.tsCheck<HTMLInputElement>(
       event.target,
       HTMLInputElement,
@@ -1126,68 +874,40 @@ export class Manager implements AfterViewInit {
 
     this.currentlySelectedTreeNode.label = labelInput.value;
 
-    for (const candidate of this.getTreePaths(
-      this.activeTab === "Functionality"
-        ? this.items
-        : this.activeTab === "Elementplaceholder"
-          ? this.itemsElementplaceholder
-          : this.itemsStandard,
-    )) {
-      if (
-        this.isNameTaken(candidate.toLowerCase()) &&
-        this.activeTabDocRef[candidate.toLowerCase()] &&
-        this.activeTabDocRef[candidate.toLowerCase()].local === undefined &&
-        this.findNodeByPath(candidate).data.Description !== ""
-      ) {
-        this.alreadyTakenName = candidate;
-        // #region Display appropriate error message.
-        this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.top = `${this.CodBi_LocalAPIDoc_Tree.nativeElement.getBoundingClientRect().top - this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.getBoundingClientRect().height * 1.5}px`;
-        this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "block";
+    const currentlySelectedTreeNodePath = this.currentlySelectedTreeNodePath;
+    // #region Update API Doc in memory
+    // #region Remove former entry, if existent.
+    delete this.activeTabDocRef[
+      currentlySelectedTreeNodePath.replace(
+        this.currentlySelectedTreeNode.label,
+        this.currentlySelectedTreeNode.data.label,
+      )
+    ];
+    // #endregion Remove former entry, if existent.
+    this.activeTabDocRef[currentlySelectedTreeNodePath] = this.convertSingleNode(
+      this.currentlySelectedTreeNode,
+      this.activeTab,
+    );
 
-        INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).focus();
-
-        return;
-        // #endregion Display appropriate error message.
-      } else {
-        const currentlySelectedTreeNodePath = this.currentlySelectedTreeNodePath;
-
-        this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "none";
-        // #region Update API Doc in memory
-        // #region Remove former entry, if existent.
-        delete this.activeTabDocRef[
-          currentlySelectedTreeNodePath.replace(
-            this.currentlySelectedTreeNode.label,
-            this.currentlySelectedTreeNode.data.label,
-          )
-        ];
-        // #endregion Remove former entry, if existent.
-        this.activeTabDocRef[currentlySelectedTreeNodePath] = this.convertSingleNode(
-          this.currentlySelectedTreeNode,
-          this.activeTab,
-        );
-
-        let formerCurrentlySelectedTreeNodePath = `${this.currentlySelectedTreeNodePath.substring(0, this.currentlySelectedTreeNodePath.lastIndexOf("."))}.${this.currentlySelectedTreeNode.data.label}`;
-        // #region Remove trailing dot in case element is a root one.
-        if (formerCurrentlySelectedTreeNodePath[0] === ".") {
-          formerCurrentlySelectedTreeNodePath = formerCurrentlySelectedTreeNodePath.substring(1);
-        }
-        // #endregion Remove trailing dot in case element is a root one.
-        if (this.activeTabDocFSL.indexOf(`${formerCurrentlySelectedTreeNodePath.toLowerCase()}.`) !== -1) {
-          this.activeTabDocFSL = this.activeTabDocFSL.replaceAll(
-            formerCurrentlySelectedTreeNodePath.toLowerCase(),
-            currentlySelectedTreeNodePath,
-          );
-        }
-        // #endregion Update FSL if necessary
-        this.activeTabDocRef[this.currentlySelectedTreeNodePath].local = true;
-        // #endregion Update API Doc in memory
-        // Update the View of external components
-        this.activeTabDocUpdater(this.activeTabDocFSL);
-
-        this.synchronized = false;
-      }
+    let formerCurrentlySelectedTreeNodePath = `${this.currentlySelectedTreeNodePath.substring(0, this.currentlySelectedTreeNodePath.lastIndexOf("."))}.${this.currentlySelectedTreeNode.data.label}`;
+    // #region Remove trailing dot in case element is a root one.
+    if (formerCurrentlySelectedTreeNodePath[0] === ".") {
+      formerCurrentlySelectedTreeNodePath = formerCurrentlySelectedTreeNodePath.substring(1);
     }
-    // #endregion Check against CodBi Data.
+    // #endregion Remove trailing dot in case element is a root one.
+    if (this.activeTabDocFSL.indexOf(`${formerCurrentlySelectedTreeNodePath.toLowerCase()}.`) !== -1) {
+      this.activeTabDocFSL = this.activeTabDocFSL.replaceAll(
+        formerCurrentlySelectedTreeNodePath.toLowerCase(),
+        currentlySelectedTreeNodePath,
+      );
+    }
+    // #endregion Update FSL if necessary
+    this.activeTabDocRef[this.currentlySelectedTreeNodePath].local = true;
+    // #endregion Update API Doc in memory
+    // Update the View of external components
+    this.activeTabDocUpdater(this.activeTabDocFSL);
+
+    this.synchronized = false;
     this.currentlySelectedTreeNode.data.label = this.currentlySelectedTreeNode.label =
       INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
     this.currentlySelectedTreeNodeEditing = false;
@@ -1217,21 +937,35 @@ export class Manager implements AfterViewInit {
   }
   // #endregion Create New Element
   // #endregion Node Management
+  /**
+   * Gets the {@link Manager.currentlySelectedTreeNode }'s notes.
+   *
+   * @returns The requested notes. */
   get notes() {
     return this.currentlySelectedTreeNode?.data ? this.currentlySelectedTreeNode.data.Notes : "";
   }
+  /**
+   * Sets the notes of the {@link Manager.currentlySelectedTreeNode }.
+   *
+   * @param notes The notes to set. */
   set notes(toSet: string) {
     if (this.currentlySelectedTreeNode?.data) {
       this.currentlySelectedTreeNode.data.Notes = toSet;
     }
   }
-
+  /** Stores the Base-URL. */
   @Input()
   public baseurl: string = "";
+  // #region Import
+  /** Handles the click on the right panel's import button by simulating a click on {@link Manager.CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue }. */
   onImport() {
     this.CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue.nativeElement.click();
   }
+  // #endregion Import
+  // #region Export
+  /** Handles the click on the right panel's export button. */
   onExport() {
+    // #region Generate data to export.
     const localNodeData = {
       detFunctionalities: this.convertNodes(this.items),
       detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
@@ -1246,21 +980,24 @@ export class Manager implements AfterViewInit {
       detStandards: localNodeData.detStandards,
       fileListing: filelistings.fileListing,
     });
-
+    // #endregion Generate data to export.
+    // #region Setup downloader
     const blob = new Blob([toExport], { type: "application/json" });
-
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
+
     a.href = url;
     a.download = "CodBi / Local API-Documentation.json";
-
+    // #endregion Setup downloader
+    // #region Activate download & clean up
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 
     URL.revokeObjectURL(url);
+    // #endregion Activate download & clean up
   }
-
+  // #endregion Export
   // #region Synchronization
   /** Stores a {@link boolean } stating whether this {@link Manager } is currently synchronized or not. */
   public synchronized = true;
@@ -1271,8 +1008,8 @@ export class Manager implements AfterViewInit {
     this.synchronized = false;
   }
   /**
-   * Converts an {@link Array } of { Name: string; Description: string }s into an {@link object } with
-   * which property's names are the **Name** of the objects in the array and they value their **Description**.
+   * Converts an {@link Array } of { Name: string; Description: string }s into an {@link object } having
+   * properties named as the objects in the array and got their value as their **Description**.
    *
    * @param toConvert The {@link Array } of { Name: string; Description: string }s to convert.
    *
@@ -1287,10 +1024,10 @@ export class Manager implements AfterViewInit {
     return result;
   }
   /**
-   * Convert a tree node reflecting a standard into an object reflecting one.
+   * Convert a tree node reflecting a CodBi Standard Configuration into an {@link object } reflecting one.
    *
    * @param toExtractFrom The {@link TreeNode } to get the data for the resulting object from.
-   * @param base          The parent's string path (for recursion only).
+   * @param base          The parent's {@link string } path (for recursion only).
    *
    * @returns The object corresponding to the {@link TreeNode } {@link toExtractFrom }. */
   convertStandardNodes(toExtractFrom: TreeNode[], base: string | undefined = undefined): object {
@@ -1333,7 +1070,7 @@ export class Manager implements AfterViewInit {
    * @param source      The destination API-Doc.
    *
    * @returns The FSLs of the functionalities, elementplaceholder and standards. */
-  enrichData(destination, source) {
+  protected enrichData(destination, source) {
     const result = {
       fslFunctionalities: [],
       fslElementplaceholder: [],
@@ -1341,6 +1078,11 @@ export class Manager implements AfterViewInit {
     };
     // #region Functionalities
     for (const element in source.detFunctionalities) {
+      // #region Omit elements that are just path segments without any description.
+      if (source.detFunctionalities[element].Description === "") {
+        continue;
+      }
+      // #endregion Omit elements that are just path segments without any description.
       document.querySelector('div[is = "xc-epmanager"]').setAttribute(
         "options",
         JSON.parse(
@@ -1360,6 +1102,11 @@ export class Manager implements AfterViewInit {
     // #endregion Functionalities
     // #region Elementplaceholder
     for (const element in source.detElementplaceholder) {
+      // #region Omit elements that are just path segments without any description.
+      if (source.detElementplaceholder[element].Description === "") {
+        continue;
+      }
+      // #endregion Omit elements that are just path segments without any description.
       document.querySelector('div[is = "xc-epmanager"]').setAttribute(
         "epoptions",
         JSON.parse(
@@ -1378,6 +1125,11 @@ export class Manager implements AfterViewInit {
     // #endregion Elementplaceholder
     // #region Standards
     for (const element in source.detStandards) {
+      // #region Omit elements that are just path segments without any description.
+      if (source.detStandards[element].Description === "") {
+        continue;
+      }
+      // #endregion Omit elements that are just path segments without any description.
       destination.fileListing = `${destination.fileListing.substring(0, destination.fileListing.length - 1)},\"${element}.ts\"]`;
 
       result.fileListing.push(`${element}.ts`);
@@ -1402,7 +1154,6 @@ export class Manager implements AfterViewInit {
       detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
       detStandards: this.convertStandardNodes(this.itemsStandard),
     };
-    console.log("localnodedata", localNodeData, this.items);
     const fileListings = this.enrichData(window[this.docPath], localNodeData);
     // #endregion Generate data to sync.
     const $ = getJQuery();
@@ -1433,39 +1184,15 @@ export class Manager implements AfterViewInit {
     // #endregion Sync
   }
   // #endregion Synchronization
-  activeAccordion: string[] = ["Description"];
 
-  _currentlySelectedTreeNode: TreeNode;
-
-  get currentlySelectedTreeNode(): TreeNode {
-    return this._currentlySelectedTreeNode;
-  }
-
-  _formerCurrentlySelectedTreeNode: TreeNode;
-
-  set currentlySelectedTreeNode(toSet: TreeNode) {
-    if (toSet === null) {
-      return;
-    }
-    this._formerCurrentlySelectedTreeNode = this._currentlySelectedTreeNode;
-
-    this._currentlySelectedTreeNode = toSet;
-    console.log("CurrentNode", this.currentlySelectedTreeNode);
-  }
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   _descriptionEditor: any;
 
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  onInitTinyMCE_Description(event: any) {
+  onInitTinyMCE_Description(event: EditorEvent<TinyMCEditor>) {
     this._descriptionEditor = event.editor;
-    console.log("i");
-    //this._descriptionEditor = event.editor ;
-  }
-  onTabChange(event: string | number) {
-    console.log(event);
   }
 
-  importNode(toImport: { detElementplaceholder: object; detFunctionalities: object; detStandards: object }) {
+  protected importNode(toImport: { detElementplaceholder: object; detFunctionalities: object; detStandards: object }) {
     for (const key in toImport.detFunctionalities) {
     }
     for (const key in toImport.detElementplaceholder) {
@@ -1687,8 +1414,135 @@ export class Manager implements AfterViewInit {
   // #region Internationalization
   @Input() protected language: string = "de";
   // #endregion Internationalization
-  // #region Basic Operations
+  // #region Basics
+  @ViewChild("CodBi_LocalAPIDoc_New_Panel_Close") protected CodBi_LocalAPIDoc_New_Panel_Close!: ElementRef;
+  /** Stores the currently unfolded segments of the right panel's accordion. */
+  protected activeAccordion: string[] = ["Description"];
+  // #region Data Management
+  /** Stores the {@link TreeNode }-Representation of the local API-Doc Functionalities. */
+  protected items: TreeNode[] = [];
+  /** Stores the {@link TreeNode }-Representation of the local API-Doc Elementplaceholder. */
+  protected itemsElementplaceholder = [];
+  /** Stores the {@link TreeNode }-Representation of the local API-Doc Standard Configurations. */
+  protected itemsStandard = [];
+  /** Stores the currently selected {@link TreeNode }. */
+  protected _currentlySelectedTreeNode: TreeNode;
+  /**
+   * Gets the {@link Manager._currentlySelectedTreeNode }.
+   *
+   * @returns The {@link Manager._currentlySelectedTreeNode }. */
+  protected get currentlySelectedTreeNode(): TreeNode {
+    return this._currentlySelectedTreeNode;
+  }
+  /**
+   * Sets the {@link Manager._currentlySelectedTreeNode } which can't be set to **NULL**.
+   *
+   * @params toSet The {@link Manager._currentlySelectedTreeNode } to set as the current one. */
+  protected set currentlySelectedTreeNode(toSet: TreeNode) {
+    if (toSet === null) {
+      return;
+    }
+
+    this._currentlySelectedTreeNode = toSet;
+  }
+  /**
+   * Sets the local API-Documentation as a JSON-{@link String } which will be parsed, stored in
+   * {@link Manager.parsedAPIDoc } and joined with the {@link window.CodbiPluginData } marking the local entries by
+   * setting a **local** property to **TRUE** on them.
+   * The {@link Manager.items }, {@link Manager.itemsElementplaceholder } and {@link Manager.itemsStandard } will be
+   * set accordingly to the parsed data. */
+  @Input("apidoc")
+  protected set apidoc(toSet: string) {
+    this.parsedAPIDoc = JSON.parse(toSet);
+    // #region Set items
+    this.items = this.toTreeNodes(this.parsedAPIDoc.detFunctionalities);
+    this.itemsElementplaceholder = this.toTreeNodes(this.parsedAPIDoc.detElementplaceholder);
+    this.itemsStandard = this.toTreeNodes(this.parsedAPIDoc.detStandards);
+    // #endregion Set items
+    // #region Merge with the CodBi's internal API Doc
+    for (const key in this.parsedAPIDoc.detFunctionalities) {
+      window.CodbiPluginData.detFunctionalities[key].local = true;
+    }
+    for (const key in this.parsedAPIDoc.detElementplaceholder) {
+      window.CodbiPluginData.detElementplaceholder[key].local = true;
+    }
+
+    for (const key in this.parsedAPIDoc.detStandards) {
+      window.CodbiPluginData.detStandards[key].local = true;
+    }
+    // #endregion Merge with the CodBi's internal API Doc
+  }
+  /** Stores the parsed {@link Manager.apidoc }. */
+  protected parsedAPIDoc: ImportedApiDoc | undefined;
+  /** Stores the Path to CodBi's internal API Doc. */
+  protected _docPath: string | undefined;
+  /**
+   * Sets the {@link Manager._docPath }.
+   *
+   * @params toSet The path to CodBi's internal API DOC. */
+  @Input("docpath")
+  protected set docPath(toSet: string) {
+    this._docPath = toSet;
+  }
+  /**
+   * Gets the {@link Manager._docPath }.
+   *
+   * @returns The {@link Manager._docPath }. */
+  protected get docPath(): string {
+    return this._docPath;
+  }
+  /** Stores the currently selected  {@link TreeNode }'s {@link TreeNode.data }. */
+  protected _currentNodeData: TreeNodeData | undefined;
+  /**
+   * Gets the {@link Management._currentNodeData }.
+   *
+   * @returns The {@link Management._currentNodeData }. */
+  get currentlySelectedFunctionalityData(): TreeNodeData {
+    return this._currentNodeData;
+  }
+  /**
+   * Gets the {@link Manager._currentNodeData }'s **Description** property.
+   *
+   * @returns The {@link _currentNodeData }'s **Description**.
+   */
+  get description(): string {
+    return this._currentNodeData ? this._currentNodeData.Description : "N/A";
+  }
+  /**
+   * Sets the {@link Manager._currentNodeData }'s **Description**. Setting this property to **UNDEFINED** will result
+   * in setting it to an empty {@link string }.
+   *
+   * @param toSet The {@link Manager._currentNodeData }'s **Description**. */
+  set description(toSet: string) {
+    if (this._currentNodeData === undefined) {
+      return;
+    }
+    if (this._currentNodeData.Description === undefined) {
+      this._currentNodeData.Description = "";
+    }
+
+    this._currentNodeData.Description = toSet;
+  }
+  // #endregion Data Management
+  // #region Resources
+  /** Stores the **URL** to resources. */
+  @Input() resourceurl: string | undefined;
+  // #endregion Resources
+  // #region Internationalization
+  /**
+   * Invokes {@link i18n } with the specified **key**.
+   *
+   * @param key See {@link i18n }.
+   *
+   * @returns See {@liuk i18n }.
+   */
+  protected i18n(key: TMessageKey): string {
+    return i18n(key);
+  }
+  // #endregion Internationalization
   // #region Tree View
+  /** Stores an {@link ElementRef } to the left panel's **p-treeview**. */
+  @ViewChild("CodBi_LocalAPIDoc_Tree", { read: ElementRef }) protected CodBi_LocalAPIDoc_Tree!: ElementRef;
   // #region Watermark
   /** Stores the URL to the watermark to use as the {@link Manager.CodBi_LocalAPIDoc_Tree }'s CSS-Background-Image. */
   @Input() protected watermark: string = "";
@@ -1704,6 +1558,10 @@ export class Manager implements AfterViewInit {
     this._currentNode = event.node;
     this._currentNodeData = event.node.data;
   }
+  // #region Management
+  /** Stores an {@link ElementRef } to a {@link HTMLInputElement } used to rename a {@link TreeNode }. */
+  @ViewChild("CodBi_LocalAPIDoc_Tree_Rename_Input") CodBi_LocalAPIDoc_Tree_Rename_Input!: ElementRef;
+  // #endregion Management
   // #endregion Tree View
   /** Closes the {@link Manager.CodBi_LocalAPIDoc } panel by adding the `--closed` class to it. */
   protected onClick_CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel() {
@@ -1801,8 +1659,13 @@ export class Manager implements AfterViewInit {
     // #endregion Register file to import selected handler.
   }
   // #endregion Initialization
-  // #endregion Basic Operations
+  // #endregion Basics
   // #region Right Panel
+  // #region Options
+  /** Stores an {@link ElementRef } to the Dialogue to create a new CodBi local API Doc entry. */
+  @ViewChild("CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue")
+  CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue!: ElementRef;
+  // #endregion Options
   // #region Tabs
   /** Stores the name of the currently active tab. */
   _activeTab: "Functionality" | "Elementplaceholder" | "Standard" = "Functionality";
@@ -1862,7 +1725,24 @@ export class Manager implements AfterViewInit {
     }
   }
   // #endregion Tabs
-  // #region Parameter, Classes & Globals
+  // #region Description, Parameter, Classes, Globals & Notes
+  // #region Notes
+  /**
+   * Makes the {@link HTMLTextAreaElement } resize automatically on input.
+   *
+   * @param event The {@link Event } received. */
+  protected onInputNotes(event: Event) {
+    const textarea = INSTANCE.tsCheck<HTMLTextAreaElement>(event.target, HTMLTextAreaElement);
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }
+  // #endregion Notes
+  // #region Description
+  /** Stores an {@link ElementRef } to the description {@link TinyMCE } fpr functionalities. */
+  @ViewChild("CodBi_LocalAPIDoc_Functionalities_Description")
+  CodBi_LocalAPIDoc_Functionalities_Description!: ElementRef;
+  // #endregion Description
   /**
    * Handles the click on the button to add a {@link Manager.CommonApiParameter }
    * to the {@link currentlySelectedTreeNode }. This is used for adding parameter, classes and global variables.
@@ -1923,6 +1803,7 @@ export class Manager implements AfterViewInit {
 
         if (counter === 2) {
           this.currentNameValid = false;
+
           break;
         }
       }
@@ -1956,7 +1837,7 @@ export class Manager implements AfterViewInit {
     this.synchronized = false;
   }
   /**
-   * Restores the current row|ss value from {@link Manager.bufferParameter } Prior to reassigning
+   * Restores the current row's value from {@link Manager.bufferParameter } Prior to reassigning
    * the {@link Manager._currentNodeData } in order to update the view.
    *
    * @param parameter The current row's value, which won't be used.
@@ -1993,10 +1874,12 @@ export class Manager implements AfterViewInit {
    * @param toConvert The object to convert.
    * @returns An array of objects with 'Name' and 'Description' properties.
    */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  protected toDescriptiveArray(toConvert: { [key: string]: any }): { Name: string; Description: string }[] {
+  protected toDescriptiveArray(toConvert: ApiParameter[]): {
+    Name: string;
+    Description: string;
+  }[] {
     if (this.activeTab !== "Elementplaceholder") {
-      return toConvert as { Name: string; Description: string }[];
+      return Object.values(toConvert) as { Name: string; Description: string }[];
     }
     const result: { Name: string; Description: string }[] = [];
 
@@ -2006,12 +1889,159 @@ export class Manager implements AfterViewInit {
       }
     }
 
-    console.log("descriptive!!", result, toConvert);
-    return toConvert as { Name: string; Description: string }[];
+    return Object.values(toConvert) as { Name: string; Description: string }[];
   }
-  // #endregion Parameter, Classes & Globals
+  // #endregion Description, Parameter, Classes, Globals & Notes
   // #endregion Right Panel
   // #region Importing
+  /**
+   * Turns a local API Doc segment, consisting of a **Description**, **Parameter**s and optional **globals**
+   * and **classes**, into a {@link TreeNode }.
+   *
+   * @param label             The {@link TreeNode }'s {@link TreeNode.label }.
+   * @param segmentToConvert  The data of the segment to convert.
+   *
+   * @returns A {@link TreeNode } reflecting the given **segmentToConvert**. */
+  protected toTreeNode(
+    label: string,
+    segmentToConvert: { Description: string; globals: object; classes: object; Parameter: object },
+  ): TreeNode {
+    return {
+      label: label,
+      data: {
+        Description: segmentToConvert.Description,
+        globals: segmentToConvert.globals,
+        classes: segmentToConvert.classes,
+        Parameter: segmentToConvert.Parameter,
+      },
+    };
+  }
+  /**
+   * Turns all local CodBi API-Doc elements within the given {@link object } **toConvert** into an proper
+   * {@link Array } of {@link TreeNode }s.
+   *
+   * @param toConvert The local CodBi-API Doc elements to convert.
+   *
+   * @returns The requested {@link Array } oif {@link TreeNode }s representing the incoming local CodBi API-Doc
+   *          elements **toConvert**. */
+  protected toTreeNodes(toConvert: {
+    [key: string]: {
+      Description?: string;
+      Parameter?: ApiParameter[];
+      globals?: ApiParameter[];
+      classes?: ApiParameter[];
+      notes?: string;
+    };
+  }): TreeNode[] {
+    console.log("toConvert", toConvert);
+    const root: TreeNode[] = [];
+
+    const keys = Object.keys(toConvert);
+
+    for (const key of keys) {
+      const parts = key.split(".");
+      let currentLevel: TreeNode[] = root;
+      let parentNode: TreeNode | undefined = undefined;
+      let currentPathKey: string = ""; // To build the "0-1-2" key
+
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        const isLeaf = i === parts.length - 1;
+
+        // biome-ignore lint/style/useConst: <explanation>
+        let existingNode = currentLevel.find((node) => node.label === part);
+
+        if (existingNode) {
+          parentNode = existingNode;
+          currentLevel = existingNode.children;
+          // Reconstruct currentPathKey for existing node based on its actual key
+          currentPathKey = existingNode.key || "";
+
+          // If it's an existing node and it's the leaf, update its data
+          if (isLeaf) {
+            existingNode.data = {
+              Description: toConvert[key].Description,
+              Parameter: [],
+              globals: [],
+              classes: [],
+              Notes: "",
+            };
+
+            existingNode.data.Notes = toConvert[key].notes;
+            for (const pKey in toConvert[key].Parameter) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              existingNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
+            }
+            for (const gKey in toConvert[key].globals) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              existingNode.data.globals!.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
+            }
+            for (const cKey in toConvert[key].classes) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              existingNode.data.classes!.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
+            }
+          }
+        } else {
+          const newNode: TreeNode = {
+            label: part,
+            data: {
+              Description: "",
+              Parameter: [],
+              globals: [],
+              classes: [],
+              Notes: "",
+            }, // Initialize data as an empty object for non-leaf nodes
+            children: [],
+            parent: parentNode,
+          };
+
+          // Determine the sibling index for the current part
+          const siblingIndex = currentLevel.length;
+
+          newNode.data.Notes = toConvert[key].notes;
+          // Build the composite key
+          if (currentPathKey === "") {
+            newNode.key = siblingIndex.toString();
+          } else {
+            newNode.key = `${currentPathKey}-${siblingIndex}`;
+          }
+          currentPathKey = newNode.key; // Update for the next iteration
+
+          // Only assign Description, Parameter, globals, and classes if it's the leaf node
+          if (isLeaf) {
+            newNode.data = {
+              Description: toConvert[key].Description,
+              Parameter: [],
+              globals: [],
+              classes: [],
+              Notes: "",
+            };
+
+            newNode.data.Notes = toConvert[key].notes;
+            for (const pKey in toConvert[key].Parameter) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              newNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
+            }
+            for (const gKey in toConvert[key].globals) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              newNode.data.globals!.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
+            }
+            for (const cKey in toConvert[key].classes) {
+              // biome-ignore lint/style/noNonNullAssertion: <explanation>
+              newNode.data.classes!.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
+            }
+          }
+
+          currentLevel.push(newNode);
+
+          parentNode = newNode;
+          currentLevel = newNode.children;
+        }
+      }
+    }
+
+    return root;
+  }
   /**
    * Imports incoming {@link APIDocJSON } data into already existent {@link APIDoc_MergeableTreeNode } one.
    *
@@ -2245,3 +2275,7 @@ export class Manager implements AfterViewInit {
   // #endregion Dialogues
 }
 // #endregion Classes
+interface ItemWithDescription {
+  Name: string;
+  Description?: string; // Add other properties if they exist
+}

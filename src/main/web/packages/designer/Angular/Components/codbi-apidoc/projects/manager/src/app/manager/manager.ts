@@ -10,6 +10,7 @@ import type { TreeNode } from "primeng/api";
 // #endregion PrimeNG
 // #region TinyMCE
 import type { EditorEvent } from "tinymce";
+import type { Editor as TinyMCEEditor } from "tinymce";
 // #endregion TinyMCE
 // #region Transloco
 import type { Translation, TranslocoLoader } from "@ngneat/transloco";
@@ -42,7 +43,6 @@ import { TableModule } from "primeng/table";
 // #endregion PrimeNG
 // #region TinyMCE
 import { EditorModule, TINYMCE_SCRIPT_SRC } from "@tinymce/tinymce-angular";
-import { Editor as TinyMCEEditor } from "tinymce";
 // #endregion TinyMCE
 // #region Transloco
 // biome-ignore lint/style/useImportType: Need TranslocoService as an injection token.
@@ -1185,13 +1185,6 @@ export class Manager implements AfterViewInit {
   }
   // #endregion Synchronization
 
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  _descriptionEditor: any;
-
-  onInitTinyMCE_Description(event: EditorEvent<TinyMCEditor>) {
-    this._descriptionEditor = event.editor;
-  }
-
   protected importNode(toImport: { detElementplaceholder: object; detFunctionalities: object; detStandards: object }) {
     for (const key in toImport.detFunctionalities) {
     }
@@ -1942,22 +1935,18 @@ export class Manager implements AfterViewInit {
       const parts = key.split(".");
       let currentLevel: TreeNode[] = root;
       let parentNode: TreeNode | undefined = undefined;
-      let currentPathKey: string = ""; // To build the "0-1-2" key
+      let currentPathKey: string = "";
 
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         const isLeaf = i === parts.length - 1;
-
-        // biome-ignore lint/style/useConst: <explanation>
-        let existingNode = currentLevel.find((node) => node.label === part);
+        const existingNode = currentLevel.find((node) => node.label === part);
 
         if (existingNode) {
           parentNode = existingNode;
           currentLevel = existingNode.children;
-          // Reconstruct currentPathKey for existing node based on its actual key
           currentPathKey = existingNode.key || "";
 
-          // If it's an existing node and it's the leaf, update its data
           if (isLeaf) {
             existingNode.data = {
               Description: toConvert[key].Description,
@@ -1968,17 +1957,24 @@ export class Manager implements AfterViewInit {
             };
 
             existingNode.data.Notes = toConvert[key].notes;
+
             for (const pKey in toConvert[key].Parameter) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              existingNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
+              DEFINED.tsCheck<Array<unknown>>(existingNode.data.Parameter).push({
+                Name: pKey,
+                Description: toConvert[key].Parameter[pKey],
+              });
             }
             for (const gKey in toConvert[key].globals) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              existingNode.data.globals!.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
+              DEFINED.tsCheck<Array<unknown>>(existingNode.data.globals).push({
+                Name: gKey,
+                Description: toConvert[key].globals[gKey],
+              });
             }
             for (const cKey in toConvert[key].classes) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              existingNode.data.classes!.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
+              DEFINED.tsCheck<Array<unknown>>(existingNode.data.classes).push({
+                Name: cKey,
+                Description: toConvert[key].classes[cKey],
+              });
             }
           }
         } else {
@@ -1990,24 +1986,23 @@ export class Manager implements AfterViewInit {
               globals: [],
               classes: [],
               Notes: "",
-            }, // Initialize data as an empty object for non-leaf nodes
+            },
             children: [],
             parent: parentNode,
           };
 
-          // Determine the sibling index for the current part
           const siblingIndex = currentLevel.length;
 
           newNode.data.Notes = toConvert[key].notes;
-          // Build the composite key
+
           if (currentPathKey === "") {
             newNode.key = siblingIndex.toString();
           } else {
             newNode.key = `${currentPathKey}-${siblingIndex}`;
           }
-          currentPathKey = newNode.key; // Update for the next iteration
 
-          // Only assign Description, Parameter, globals, and classes if it's the leaf node
+          currentPathKey = newNode.key;
+
           if (isLeaf) {
             newNode.data = {
               Description: toConvert[key].Description,
@@ -2019,16 +2014,22 @@ export class Manager implements AfterViewInit {
 
             newNode.data.Notes = toConvert[key].notes;
             for (const pKey in toConvert[key].Parameter) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              newNode.data.Parameter!.push({ Name: pKey, Description: toConvert[key].Parameter[pKey] });
+              DEFINED.tsCheck<Array<unknown>>(newNode.data.Parameter).push({
+                Name: pKey,
+                Description: toConvert[key].Parameter[pKey],
+              });
             }
             for (const gKey in toConvert[key].globals) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              newNode.data.globals!.push({ Name: gKey, Description: toConvert[key].globals[gKey] });
+              DEFINED.tsCheck<Array<unknown>>(newNode.data.globals).push({
+                Name: gKey,
+                Description: toConvert[key].globals[gKey],
+              });
             }
             for (const cKey in toConvert[key].classes) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              newNode.data.classes!.push({ Name: cKey, Description: toConvert[key].classes[cKey] });
+              DEFINED.tsCheck<Array<unknown>>(newNode.data.classes).push({
+                Name: cKey,
+                Description: toConvert[key].classes[cKey],
+              });
             }
           }
 

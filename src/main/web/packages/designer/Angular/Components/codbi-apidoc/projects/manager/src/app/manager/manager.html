@@ -116,8 +116,8 @@
 
                                 [class.--active]    = "activeTab === 'Functionality'"
                                 [class.--inactive]  = "activeTab !== 'Functionality'"
-                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef.local === undefined"
-                                [class.--blocked]   = "currentlySelectedTreeNode === undefined">
+                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef && currentlySelectedTreeNodeAPIRef.local === undefined"
+                                [class.--blocked]   = "currentlySelectedTreeNode === undefined || items.length === 0">
                         <p-accordion    [(value)]   = "activeAccordion"
                                         [multiple]  = "true"
                                         [transitionOptions]="'2000ms cubic-bezier(0.86, 0, 0.07, 1)'">
@@ -131,8 +131,7 @@
                                                 id          = "editorDescription_Functionalities" #editorDescription_Functionalities
                                                 licenseKey  = "gpl"
 
-                                                (onInit)    = "onInitTinyMCE_Description( $event )"
-                                                (onBlur)    = "updateNodeToAPIDoc()"
+                                                (onBlur) = "updateNodeToAPIDoc()"
 
                                                 [(ngModel)]     = "description"
                                                 [init]          = "{
@@ -177,8 +176,8 @@
                     <p-tabpanel value   = "Elementplaceholder"
 
                                 [class]             = "activeTab === 'Elementplaceholder' ? '--active' : '--inactive'"
-                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef.local === undefined"
-                                [class.--blocked]   = "currentlySelectedTreeNode === undefined">
+                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef && currentlySelectedTreeNodeAPIRef.local === undefined"
+                                [class.--blocked]   = "currentlySelectedTreeNode === undefined || itemsElementplaceholder.length === 0">
                         <p-accordion    [(value)]   = "activeAccordion"
                                         [multiple]  = "true">
                             <p-accordion-panel value = "Description">
@@ -192,8 +191,7 @@
 
                                                 licenseKey      = "gpl"
 
-                                                (onInit)        = "onInitTinyMCE_Description( $event )"
-                                                (onBlur)        = "updateNodeToAPIDoc()"
+                                                (onBlur) = "updateNodeToAPIDoc()"
 
                                                 [(ngModel)]     = "description"
                                                 [init]          = "{
@@ -237,8 +235,8 @@
                     <p-tabpanel value   = "Standard"
 
                                 [class]             = "activeTab === 'Standard' ? '--active' : '--inactive'"
-                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef.local === undefined"
-                                [class.--blocked]   = "currentlySelectedTreeNode === undefined">
+                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef && currentlySelectedTreeNodeAPIRef.local === undefined"
+                                [class.--blocked]   = "currentlySelectedTreeNode === undefined || itemsStandard.length === 0">
                         <p-accordion    [(value)]   = "activeAccordion"
                                         [multiple]  = "true">
                             <p-accordion-panel value = "Description">
@@ -252,7 +250,6 @@
 
                                                 licenseKey  = "gpl"
 
-                                                (onInit) = "onInitTinyMCE_Description( $event )"
                                                 (onBlur) = "updateNodeToAPIDoc()"
 
                                                 [(ngModel)]     = "description"

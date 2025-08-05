@@ -1,4 +1,7 @@
 interface Window {
+  XFC_METADATA: {
+    currentLanguage: string;
+  };
   // Declare properties you're adding to window
   CodbiPluginData: {
     detStandards: {
@@ -9,12 +12,12 @@ interface Window {
         globals: { [key: string]: string };
       };
     };
-    detFunctionalities: [{ Description: string }];
-    detElementplaceholder: [{ Description: string }];
-    docsAPI: [{ [key: string]: string }];
-    fileListing: Array<string>;
-    fslElementplaceholder: Array<string>;
-    fslFunctionalities: Array<string>;
+    detFunctionalities: { [key: string]: { Description: string } };
+    detElementplaceholder: { [key: string]: { Description: string } };
+    docsAPI: { [key: string]: string };
+    fileListing: string;
+    fslElementplaceholder: string;
+    fslFunctionalities: string;
     populateStandards: () => void;
     updateEPManager: (options: string) => void;
     updateSVManager: (options: string) => void;

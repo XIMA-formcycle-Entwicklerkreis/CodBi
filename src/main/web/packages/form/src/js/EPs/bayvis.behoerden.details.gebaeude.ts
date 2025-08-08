@@ -2,7 +2,7 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
-import { GREATER } from "xdbc/src/DBC/GREATER";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { CodBiError } from "../global-scope.js";
 import { XMLParser } from "fast-xml-parser";
 /**

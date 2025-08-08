@@ -3,7 +3,7 @@ import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
-import { GREATER } from "xdbc/src/DBC/GREATER";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { CodBiError } from "../global-scope";
 import { XMLParser } from "fast-xml-parser";
 /**

@@ -4,7 +4,7 @@ import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { CodBiError } from "../global-scope";
-import { GREATER } from "xdbc/src/DBC/GREATER";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
 import { XMLParser } from "fast-xml-parser";
 /**

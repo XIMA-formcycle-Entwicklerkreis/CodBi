@@ -1,5 +1,12 @@
 import { getJQuery } from "@de-xima/fc-form-renderer";
 import { CodBiLogo } from "./Logo";
+// #region XDBC
+import { DBC } from "xdbc/src/DBC";
+import { OR } from "xdbc/src/DBC/OR";
+import { EQ } from "xdbc/src/DBC/EQ";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
+// #endregion XDBC
 /**
  * The global codbi object, available via `window.codbi`. Should only be used
  * when it is absolutely necessary to expose symbols externally. Use ESM imports
@@ -12,10 +19,10 @@ export interface CodbiGlobal {
   /** See {@link CodBi.checkAttributes }. */
   checkAttributes: () => Promise<boolean>;
   /** See {@link CodBi.registerFunctionality }. */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
   registerFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
   /** See {@link CodBi.extendFunctionality }. */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
   extendFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
   /** See {@link CodBi.registerEP }. */
   registerEP(id: string, generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>): boolean;
@@ -28,7 +35,6 @@ export interface CodbiGlobal {
   /** See {@link CodBi.loadConfigs }. */
   loadConfigs(toLoad: Array<{ targets: string; [key: string]: unknown }>): void;
 }
-
 /**
  * The configuration template for the form, as configured by the user in the
  * form designer. */
@@ -36,20 +42,20 @@ export interface ConfigTemplate {
   /** The technical name of this template. */
   readonly name: string;
 }
-/** ??? */
+/** Augmenting global space. */
 declare global {
+  /**
+   * Augmenting the global {@link Window } to contain also a reference to an {@link object } implementing
+   * the {@link CodbiGlobal }-Interface. */
   interface Window {
     /**
      * The global codbi object, available via `window.codbi`. Should only be
-     * used * when it is absolutely necessary to expose symbols externally.
+     * used when it is absolutely necessary to expose symbols externally.
      * Use ESM imports otherwise. */
     codbi: CodbiGlobal;
   }
 }
-/** Implements basic functionality.
- *
- *
- */
+/** Implements the management functionality. */
 export class CodBi implements CodbiGlobal {
   /** Stores the path to the **XIMA**-Server's resources including the **CodBi** code fragments. */
   public readonly resourceBase: string = document
@@ -60,14 +66,14 @@ export class CodBi implements CodbiGlobal {
   public baseURL: string = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   /** Stores the {@link CodbiGlobal.configTemplate }.*/
   public configTemplate: ConfigTemplate | undefined = undefined;
-  /** Stores all [E]lement [P]laceholder that were registered.*/
+  /** Stores all **E**lement **P**laceholder that were registered.*/
   protected availableEPs: { [k: string]: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> } = {};
   /** Stores all active configurations. */
   protected configs: Array<unknown> = new Array<unknown>();
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
   protected functionalities: Map<string, (toLoad: any, toProcess: Element) => any> = new Map<
     string,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
     (toLoad: any, toProcess: Element | undefined) => any
   >();
   /** Stores the CodBi's control characters. */
@@ -82,10 +88,10 @@ export class CodBi implements CodbiGlobal {
   /** Stores the current {@link checkAttributes } - {@link Promise }. */
   public currentAttributeCheck: Promise<boolean> | undefined;
   /**
-   * Registers an **e**lement **p**laceholder using the specified {@link string} as it's id.
+   * Registers an **E**lement **P**laceholder using the specified {@link string} as it's id.
    *
    * @param id        The {@link string } the placeholder should get as it's id.
-   * @param generator The actual placeholder's (params: Array<string>) => Array<unknown>.
+   * @param generator The actual placeholder's ( params : Array < string >) => Array< unknown >.
    */
   public registerEP(
     id: string,
@@ -105,12 +111,12 @@ export class CodBi implements CodbiGlobal {
     return true;
   }
   /**
-   * Extends an given **e**lement **p**laceholder so that both the former one and the new one are invoked whereas the
+   * Extends an given **E**lement **P**laceholder so that both the former one and the new one are invoked whereas the
    * form one itself may also be an extension already.
-   * The value retrieved from the former **e**lement **p**laceholder will be passed to the new one which may further
+   * The value retrieved from the former **E**lement **P**laceholder will be passed to the new one which may further
    * transform the resulting values.
-   * If an **e**lement **p**laceholder with the given **id** hasn't been registered yet the new one will be registered
-   * using * {@link CodBi.registerEP }.
+   * If an **E**lement **P**laceholder with the given **id** hasn't been registered yet the new one will be registered
+   * using {@link CodBi.registerEP }.
    *
    * @param id        See {@link CodBi.registerEP }.
    * @param generator See {@link CodBi.registerEP }.
@@ -189,10 +195,8 @@ export class CodBi implements CodbiGlobal {
       parts.push(inner.substring(0, inner.indexOf(this.nestingBraces.epSeparator)).trim());
       parts.push(inner.substring(inner.indexOf(this.nestingBraces.epSeparator) + 1).trim());
 
-      // biome-ignore lint/style/noNonNullAssertion: If innerParamseparator is not -1 there gotta be two parts.
-      result.keyPlaceholder = parts[0]!.trim();
-      // biome-ignore lint/style/noNonNullAssertion: If innerParamseparator is not -1 there gotta be two parts.
-      result.params = parts[1]!.trim();
+      result.keyPlaceholder = DEFINED.tsCheck<string>(parts[0]).trim();
+      result.params = DEFINED.tsCheck<string>(parts[1]).trim();
     } else {
       result.keyPlaceholder = inner;
     }
@@ -200,7 +204,7 @@ export class CodBi implements CodbiGlobal {
     return result;
   }
   /**
-   * Splits all semicolon-separated parts of the {@link string } "toSplit" that're not within enclosing curly braces.
+   * Splits all semicolon-separated parts of the {@link string } **toSplit** that're not within enclosing curly braces.
    *
    * @param toSplit The {@link string } to split.
    *
@@ -211,6 +215,7 @@ export class CodBi implements CodbiGlobal {
     }
 
     const parts: string[] = [];
+
     let currentPart = "";
     let braceLevel = 0;
 
@@ -234,12 +239,12 @@ export class CodBi implements CodbiGlobal {
     return parts.map((part) => part.trim());
   }
   /**
-   * Resolves nested **e**lement **p**laceholder within **e**lement **p**laceholder Parameter
+   * Resolves nested **E**lement **P**laceholder within **E**lement **P**laceholder Parameter
    * recursively ({@link CodBi.epSeparator }'s count of initiators determine the level of possible nesting).
    *
-   * @param params The **e**lement **p**laceholder Parameter to check for **e**lement **p**laceholder.
+   * @param params The **E**lement **P**laceholder Parameter to check for **E**lement **P**laceholder.
    *
-   * @returns The resolved incoming "params". */
+   * @returns The resolved incoming **params**. */
   public resolveEPParams(params: Array<string>): Promise<Array<string>> {
     return new Promise((resolve, reject) => {
       let cntPromises = 0;
@@ -251,21 +256,20 @@ export class CodBi implements CodbiGlobal {
         const outermostEP = this.getOutermostEP(candidate);
 
         if (outermostEP !== null) {
-          // biome-ignore lint/style/noNonNullAssertion: <explanation>
-          outermostEP.keyPlaceholder = outermostEP.keyPlaceholder!.toLowerCase();
-          // biome-ignore lint/style/noNonNullAssertion: <explanation>
-          if (this.availableEPs[outermostEP.keyPlaceholder!]) {
+          outermostEP.keyPlaceholder = outermostEP.keyPlaceholder.toLowerCase();
+
+          if (this.availableEPs[outermostEP.keyPlaceholder]) {
             cntPromises++;
             // The "candidate" is an EP, parameter are provided.
             this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string))
               .then((real) => {
-                // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                const epResult = this.availableEPs[outermostEP.keyPlaceholder!]!(real);
+                const epResult = DEFINED.tsCheck<(params: Array<string>) => Array<unknown> | Promise<Array<unknown>>>(
+                  this.availableEPs[outermostEP.keyPlaceholder],
+                )(real);
                 // If the element placeholder is asynchronous...
                 if (epResult instanceof Promise) {
                   epResult
                     .then((real) => {
-                      //result.push(real[0] as string);
                       if (real[0] !== undefined && typeof real[0] === "string") {
                         real[0] = (real[0] as string).trim();
                       }
@@ -324,9 +328,9 @@ export class CodBi implements CodbiGlobal {
               });
           } else {
             // If there are no element placeholder...
-            let final: string | undefined =
-              // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-              (this.availableEPs[candidate.trim().toLowerCase()]!(new Array<string>()) as Array<unknown>)[0] as string;
+            let final: string | undefined = (
+              this.availableEPs[candidate.trim().toLowerCase()](new Array<string>()) as Array<unknown>
+            )[0] as string;
 
             if (final !== undefined) {
               final = final.trim();
@@ -359,39 +363,28 @@ export class CodBi implements CodbiGlobal {
           // Process keys that've been added to the config only.
           if (!Number.isNaN(key) && Object.prototype.hasOwnProperty.call(config, key)) {
             if (Array.isArray(config[key])) {
-              // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-              for (let i = 0; i < (config[key]! as []).length; i++) {
-                // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                if (typeof (config[key]! as [])[i] === "string") {
-                  // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                  const candidate: string | undefined = (config[key]! as [])[i];
+              for (let i = 0; i < (config[key] as []).length; i++) {
+                if (typeof (config[key] as [])[i] === "string") {
+                  const candidate: string | undefined = (config[key] as [])[i];
 
                   if (candidate !== undefined) {
                     const outermostEP = this.getOutermostEP(candidate);
 
                     if (outermostEP !== null) {
-                      // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                      if (this.availableEPs[outermostEP!.keyPlaceholder!.toLowerCase()]) {
+                      if (this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()]) {
                         cntPromises++;
 
-                        this.resolveEPParams(
-                          // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                          this.splitUnbracedParams(outermostEP!.params!),
-                        )
+                        this.resolveEPParams(this.splitUnbracedParams(outermostEP.params))
                           .then((real) => {
-                            // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                            const epResult = this.availableEPs[outermostEP!.keyPlaceholder!.toLowerCase()]!(
-                              // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                              outermostEP!.params! === "" ? new Array<string>() : real,
+                            const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
+                              outermostEP.params === "" ? new Array<string>() : real,
                             );
 
                             if (epResult instanceof Promise) {
                               epResult
                                 .then((real) => {
-                                  // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                                  (config[key]! as []).splice(i, 1, ...(real as []));
-                                  // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                                  config[key] = (config[key]! as []).filter((item) => item !== candidate);
+                                  (config[key] as []).splice(i, 1, ...(real as []));
+                                  config[key] = (config[key] as []).filter((item) => item !== candidate);
 
                                   if (--cntPromises === 0) {
                                     resolve(config);
@@ -401,10 +394,9 @@ export class CodBi implements CodbiGlobal {
                                   reject(X);
                                 });
                             } else {
-                              // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                              (config[key]! as []).splice(i, 1, ...(epResult as []));
-                              // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                              config[key] = (config[key]! as []).filter((item) => item !== candidate);
+                              (config[key] as []).splice(i, 1, ...(epResult as []));
+
+                              config[key] = (config[key] as []).filter((item) => item !== candidate);
 
                               if (--cntPromises === 0) {
                                 resolve(config);
@@ -427,18 +419,12 @@ export class CodBi implements CodbiGlobal {
               const outermostEP = this.getOutermostEP(config[key] as string);
 
               if (outermostEP !== null) {
-                // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                if (this.availableEPs[outermostEP!.keyPlaceholder!.toLowerCase()]) {
+                if (this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()]) {
                   cntPromises++;
 
-                  this.resolveEPParams(
-                    // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                    this.splitUnbracedParams(outermostEP!.params!),
-                  ).then((real) => {
-                    // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                    const epResult = this.availableEPs[outermostEP!.keyPlaceholder!.toLowerCase()]!(
-                      // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-                      outermostEP!.params === "" ? new Array<string>() : real,
+                  this.resolveEPParams(this.splitUnbracedParams(outermostEP.params)).then((real) => {
+                    const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
+                      outermostEP.params === "" ? new Array<string>() : real,
                     );
                     // If parameter is a single element placeholder...
                     if (epResult instanceof Promise) {
@@ -519,10 +505,8 @@ export class CodBi implements CodbiGlobal {
    *              in {@CodBi.functionalities}.
    * @param init  The method to incorporating the new functionality.
    *
-   * @return TRUE on successful registration, otherwise FALSE.
-   */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  public registerFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean {
+   * @return **TRUE** on successful registration, otherwise **FALSE**. */
+  public registerFunctionality(id: string, init: (toLoad: unknown, toProcess: Element) => unknown): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
 
@@ -550,8 +534,7 @@ export class CodBi implements CodbiGlobal {
    * @param init  See {@link CodBi.registerFunctionality }.
    *
    * @returns **TRUE** if an extension took place or **FALSE** if a regular registration was performed. */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  public extendFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean {
+  public extendFunctionality(id: string, init: (toLoad: unknown, toProcess: Element) => unknown): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
 
@@ -564,15 +547,7 @@ export class CodBi implements CodbiGlobal {
     }
     const formerFunctionality = this.functionalities.get(id);
 
-    /*this.functionalities.set(id, init);
-
-    for (const element of document.querySelectorAll(`[data-cb-checked*="${id.toLowerCase()}"]`)) {
-      element.setAttribute("data-cb-checked", element.getAttribute("data-cb-checked").replace(id.toLowerCase(), ""));
-    }
-
-    this.checkAttributes();*/
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    this.functionalities.set(id, (toLoad: any, toProcess: Element) => {
+    this.functionalities.set(id, (toLoad: unknown, toProcess: Element) => {
       formerFunctionality(toLoad, toProcess);
       init(toLoad, toProcess);
     });
@@ -580,15 +555,16 @@ export class CodBi implements CodbiGlobal {
     return true;
   }
   /**
-   * Extracts all **e**lement **p**laceholders used within a CodBi-Attribute's value with nesting supported.
-   * Those placeholders are of following format { Placeholder e.g. HTML.Text.Mapper > Parameter SSV }.
+   * Extracts all **E**lement **P**laceholders used within a CodBi-Attribute's value with nesting supported.
+   * Those placeholders are of following format { placeholder e.g. HTML.Text.Mapper > Parameter SSV }.
    *
-   * @param toExtractFrom The CodBi-Attributes's string to extract the **e**lement **p**laceholders from.
+   * @param toExtractFrom The CodBi-Attributes's string to extract the **E**lement **P**laceholders from.
    *
-   * @return The listing of **e**lement **P**laceholders that were found in the string **toExtractFrom**. */
+   * @return The listing of **E**lement **P**laceholders that were found in the string **toExtractFrom**. */
   public extractEPs(toExtractFrom: string): string[] {
     const result: string[] = [];
     const segmentStartStack: number[] = []; // Indices of segments
+
     let currentSegmentStart = 0; // Index of the current segment's start
 
     for (let i = 0; i < toExtractFrom.length; i++) {
@@ -601,8 +577,7 @@ export class CodBi implements CodbiGlobal {
           break;
         case "}":
           if (segmentStartStack.length > 0) {
-            // biome-ignore lint/style/noNonNullAssertion: Cannot be undefined.
-            currentSegmentStart = segmentStartStack.pop()!;
+            currentSegmentStart = segmentStartStack.pop();
           } else {
             // Opening without closing curly brace encountered. Move on.
             currentSegmentStart = i + 1;
@@ -662,7 +637,6 @@ export class CodBi implements CodbiGlobal {
                 const toLoad = document.createElement("script");
                 toLoad.src = `${this.resourceBase}${functionality.trim().toLowerCase()}.js`;
                 toLoad.type = "module";
-                //toLoad.async = true;
                 toLoad.onload = (event) => {
                   resolve(event);
                 };
@@ -730,8 +704,7 @@ export class CodBi implements CodbiGlobal {
               if (key !== "targets" && !target.hasAttribute(`data-cb-${key}`)) {
                 target.setAttribute(
                   `data-cb-${key}`,
-                  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                  globals[key.toLowerCase()] ? globals[key.toLowerCase()] : (toLoad as any)[key],
+                  globals[key.toLowerCase()] ? globals[key.toLowerCase()] : (toLoad as unknown)[key],
                 );
               }
             }
@@ -742,7 +715,7 @@ export class CodBi implements CodbiGlobal {
     });
   }
   /**
-   * Performs a call to {@link DBC.loadConfig } for each {targets:string} in "toLoad".
+   * Performs a call to {@link DBC.loadConfig } for each {targets:string} in **toLoad**.
    *
    * @param toLoad See {@link DBC.loadConfig }. */
   public loadConfigs(toLoad: Array<{ targets: string; [key: string]: unknown }>): void {
@@ -751,9 +724,9 @@ export class CodBi implements CodbiGlobal {
     }
   }
   /**
-   * Retrieves the Attributes out of the given {@link Element } "toExtractFrom" that are related
+   * Retrieves the Attributes out of the given {@link Element } **toExtractFrom** that are related
    * to the CodBi (**data-cb-** prefixed).
-   * Those attributes may contain **e**lement **p**laceholder that are introduced by an
+   * Those attributes may contain **E**lement **P**laceholder that are introduced by an
    * {@link DBC.nestingBraces.opening } brace. The placeholder and it's optional parameter are separated
    *
    * @param toExtractFrom The {@link Element } to extract the CodBi-Attributes from.
@@ -782,13 +755,13 @@ export class CodBi implements CodbiGlobal {
     return codbiAttributes;
   }
   /**
-   * Merges "a" with "b" overwriting all properties in "a" that're existent in both. Properties that exist in "b"
-   * will be added to "a".
+   * Merges **a** with **b** overwriting all properties in **a** that're existent in both. Properties that exist in **b**
+   * will be added to **a**.
    *
    * @param a The {[key: string]: unknown } to merge.
    * @param b The {[key: string]: unknown } to merge.
    *
-   * @returns "a" merged with "b". */
+   * @returns **a** merged with **b**. */
   protected mergeParameter(a: { [key: string]: unknown }, b: { [key: string]: unknown }): { [key: string]: unknown } {
     const result: { [key: string]: unknown } = a;
 
@@ -813,13 +786,10 @@ export class CodBi implements CodbiGlobal {
 
     for (const parameter of document.querySelectorAll("[ data-name ]")) {
       const completeName = parameter.getAttribute("data-name")?.toLowerCase();
-      // biome-ignore lint/style/noNonNullAssertion: Queried by "data-name".
-      if (completeName!.indexOf(namespace.toLowerCase().replace(/\./g, "_")) !== -1) {
+      if (completeName.indexOf(namespace.toLowerCase().replace(/\./g, "_")) !== -1) {
         const parameterName = parameter.getAttribute("data-name");
-        // biome-ignore lint/style/noNonNullAssertion: Queried by "data-name".
-        result[parameterName!.substring(parameterName?.lastIndexOf("_")! + 1).toLocaleLowerCase()] =
-          // biome-ignore lint/style/noNonNullAssertion: Queried by "data-name".
-          parameter.getAttribute("value")!;
+        result[parameterName.substring(parameterName?.lastIndexOf("_") + 1).toLocaleLowerCase()] =
+          parameter.getAttribute("value");
       }
     }
 

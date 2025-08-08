@@ -1,3 +1,5 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { OR } from "xdbc/src/DBC/OR";
 import { EQ } from "xdbc/src/DBC/EQ";
@@ -6,7 +8,11 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { HasAttribute } from "xdbc/src/DBC/HasAttribute";
+// #endregion XDBC
+// #region XIMA
 import { allByCssAs, allByCssHtml, byCssAs, byCssHtml } from "@de-xima/xima-common-js-dom";
+// #endregion XIMA
+// #endregion Imports
 /**
  * A {@link HTMLDivElement } that manages the **s**eparated **v**alues within an {@link HTMLInputElement }
  * of type **text**.
@@ -44,9 +50,7 @@ export class SVManager extends HTMLDivElement {
 
     this.render();
   }
-  /**
-   *  Sets the URL to an image that shall be used as the CSS-Background-Image for the {@link SVmanager.options } panel.
-   */
+  /** Sets the URL to an image that shall be used as the CSS-Background-Image for the {@link SVmanager.options } panel. */
   public set backgroundImage(toSet: string) {
     this.cssEnabled = `background-color : #FFFFFFDD ; background-size : contain ; background-position : center ; background-repeat : no-repeat ; background-blend-mode : overlay ; display : block ; background-image : url("${toSet}"), linear-gradient( 130deg,rgba( 42, 123, 155, 1 ) 0%, rgba( 216, 216, 235, 1 ) 50%, rgba( 42, 123, 155, 1 ) 100% )`;
   }
@@ -551,7 +555,6 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onInputTarget(event: Event): void {
-    // PRECONDITION
     const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region If the [target] just received focus, show all available functionalities
     if (this.newFocusTarget) {
@@ -684,7 +687,6 @@ function nextElementSibling(element: Element | null | undefined): HTMLElement | 
   const sibling = element?.nextElementSibling;
   return sibling instanceof HTMLElement ? sibling : null;
 }
-
 /**
  * Gets the {@link HTMLElement.previousElementSibling previous element sibling} of the given element when it is an HTMLElement.
  * If not, returns null.

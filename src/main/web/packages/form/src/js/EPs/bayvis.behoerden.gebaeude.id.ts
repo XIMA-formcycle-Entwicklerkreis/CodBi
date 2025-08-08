@@ -4,7 +4,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { CodBiError } from "../global-scope";
 import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
-import { GREATER } from "xdbc/src/DBC/GREATER";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 /**
  *
  * This **E**lement-**P**laceholder retrieves the IDs of authoritie's buildings by the

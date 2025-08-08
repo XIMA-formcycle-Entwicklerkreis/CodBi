@@ -155,7 +155,7 @@ class StructuredDataStoreAction : IPluginServletAction {
   }
 
   /**
-   * Determine API-Doc-File's path by creating it, if neccessary.
+   * Determine API-Doc-File's path by creating it, if necessary.
    *
    * @return The [java.io.File] pointing to the API-Doc-Storage.
    */

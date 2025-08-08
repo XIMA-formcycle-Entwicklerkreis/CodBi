@@ -1,7 +1,13 @@
+// #region Imports
+// #region XIMA
 import { $, Callbacks, Editors, type IPropertyDescriptor, type TEditorCfg } from "@de-xima/fc-form-designer";
 import { parseString } from "@de-xima/xima-common-js-lang";
+// #endregion XIMA
+// #region XDBC
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+// #endregion XDBC
+// #endregion Imports
 /** Defines the type of {@link MultiSelect }. */
 export const MultiSelectType = "com.github.xima_formcycle_entwicklerkreis.fc.plugin:fc-plugin-codbi:MultiSelect";
 /** Describes the {@link MultiSelectType }. */
@@ -49,8 +55,7 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
   /** Populates the listing of standards. */
   protected populateStandards(): void {
     // #region Retrieve available standard configurations
-    // biome-ignore lint/suspicious/noExplicitAny: TODO
-    const listing = JSON.parse((window as any).CodbiPluginData.fileListing).map((file: string) => {
+    const listing = JSON.parse(window.CodbiPluginData.fileListing).map((file: string) => {
       return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
     });
     // #endregion Retrieve available standard configurations
@@ -97,8 +102,7 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
   /**
    * Generates a CSV of all selected standard configurations.
    *
-   * @returns A CSV of all selected standard configurations.
-   */
+   * @returns A CSV of all selected standard configurations. */
   override getValue(): string {
     const result: string[] = [];
     for (const current of this._element.querySelectorAll("input")) {

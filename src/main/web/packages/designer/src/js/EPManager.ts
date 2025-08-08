@@ -1,9 +1,13 @@
-import { SVManager } from "./SVManager.js";
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { OR } from "xdbc/src/DBC/OR";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
+// #endregion XDBC
+import { SVManager } from "./SVManager.js";
+// #endregion Imports
 /**
  * A {@link HTMLDivElement } that manages the **e**lement **p**laceholder within an {@link HTMLInputElement }
  * of type **text** backed by the {@link SVManager }'s functionality. */

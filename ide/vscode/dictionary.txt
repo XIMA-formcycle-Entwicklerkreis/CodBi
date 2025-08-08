@@ -215,6 +215,7 @@ Transloco
 treeview
 typhonjs
 über
+varseditor
 verfügbar
 visualblocks
 visualchars

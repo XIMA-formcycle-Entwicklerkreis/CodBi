@@ -1,12 +1,18 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link HTML_Input_Blacklist.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Input_Blacklist {
   /**
    * The Functionality defines a blacklist of values that may not be the value of
@@ -50,7 +56,6 @@ export class HTML_Input_Blacklist {
       : new Array<string>();
     // #region Bind to appropriate events ( HTMLInputElement & JQuery Datepicker supported )
     // #region Prevent input of blacklisted items via <input> and picker.
-
     const formerDatepickerChangeEvent: (event: Event) => undefined = $(toProcess).datepicker("option", "onSelect");
 
     $(toProcess).on("change", (event: Event) => {

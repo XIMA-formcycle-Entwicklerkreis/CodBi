@@ -1,15 +1,19 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
 import { stringToDate } from "../global-scope";
 import { processArithmeticParams } from "./date.today";
+// #endregion Imports
 /**
  * Performs arithmetic operations on a {@link Date }-{@link String } generating a {@link Date }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class DATE_Arithmetic {
   /**
    * This Element-Placeholder turns a {@link String } into a {@link Date }.
@@ -19,7 +23,7 @@ export class DATE_Arithmetic {
    *  - 2nd:  An optional dateformat {@link string } like YYYY/MM/DD, for example.
    *          If omitted DD.MM.YYYY is assumed.
    *
-   * @param params    The parameters for that Element-Placeholder (provided by CodBi). */
+   * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   /**
    * Uses {@link CodBi.stringToDate } to turn the {@link String } at "params"[ 0 ] of optional format params[ 1 ] into a {@link Date }.

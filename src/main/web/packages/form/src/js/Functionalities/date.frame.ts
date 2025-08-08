@@ -1,14 +1,20 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
 import { CodBiError } from "../global-scope.js";
+// #endregion Imports
 /**
  * Provides the {@link HTML_Select_Injection.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Date_Frame {
   /**
    * Registers the "Date.Frame"-Functionality.
@@ -21,9 +27,7 @@ export class Date_Frame {
    *  - MsgMinInvalid:  The {@link string } to show as the error message when the minimum-{@link HTMLInputElement }'s value is after
    *                    the one in the maximum-{@link HTMLInputElement }.
    *  - MsgMaxInvalid:  The {@link string } to show as the error message when the maximum{@link HTMLInputElement }'s value is before
-   *                    the one in the minimum-{@link HTMLInputElement }.
-   */
-  // #region Register "Date.Frame" as a CodBi - Functionality.
+   *                    the one in the minimum-{@link HTMLInputElement }. */
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "maxfield")
@@ -33,8 +37,7 @@ export class Date_Frame {
     toLoad: { [key: string]: string },
     toProcess: Element,
   ): void {
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
-    const maximumField: HTMLInputElement = document.querySelector(toLoad.maxfield! as string)! as HTMLInputElement;
+    const maximumField: HTMLInputElement = document.querySelector(toLoad.maxfield as string) as HTMLInputElement;
 
     if (maximumField === null) {
       throw new CodBiError(`The selector "${toLoad.maxfield}" does not select anything.`);

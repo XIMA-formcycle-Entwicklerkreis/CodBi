@@ -1,14 +1,22 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region Cropper
 import Cropper from "cropperjs";
+// #endregion Cropper
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
 import { CodBiError } from "../global-scope.js";
+// #endregion Imports
 /**
  * Provides the {@link Media_Image_Cropper.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Media_Image_Cropper {
   /**
    * This functionality provides an imagecropper (https://fengyuanchen.github.io/cropperjs/).
@@ -54,14 +62,11 @@ export class Media_Image_Cropper {
     // #region Register event to properly react on file changes.
     // biome-ignore lint/style/noNonNullAssertion: Was checked on line 47.
     fileInput!.addEventListener("change", (event: Event): undefined => {
-      // biome-ignore lint/style/noNonNullAssertion: Checked beforehand.
-      if ((fileInput! as HTMLInputElement).files && (fileInput! as HTMLInputElement).files!.length > 0) {
-        // biome-ignore lint/style/noNonNullAssertion: Checked beforehand.
-        const file: File | undefined = (fileInput! as HTMLInputElement).files![0];
+      if ((fileInput as HTMLInputElement).files && (fileInput as HTMLInputElement).files.length > 0) {
+        const file: File | undefined = (fileInput as HTMLInputElement).files[0];
 
         if (file) {
-          // biome-ignore lint/style/noNonNullAssertion: Was checked on line 39.
-          container!.innerHTML = ""; // Clear previous cropper, if existent.
+          container.innerHTML = ""; // Clear previous cropper, if existent.
 
           const newImage: HTMLImageElement = document.createElement("img");
           newImage.src = window.URL.createObjectURL(file);
@@ -71,8 +76,7 @@ export class Media_Image_Cropper {
             `width : ${toLoad.maxwidth ? toLoad.maxwidth : 500}px ; height : ${toLoad.maxheight ? toLoad.maxheight : 500}px ;`,
           );
           newImage.setAttribute("data-name", "CodBi_Media_Imagecropper_Bild");
-          // biome-ignore lint/style/noNonNullAssertion: Was checked on line 39.
-          container!.appendChild(newImage);
+          container.appendChild(newImage);
 
           const aspectRatio: number | undefined =
             toLoad.aspectratio &&

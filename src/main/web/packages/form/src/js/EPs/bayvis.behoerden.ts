@@ -1,10 +1,18 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region Fast XML-Parser
+import { XMLParser } from "fast-xml-parser";
+// #endregion Fast XML-Parser
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
 import { CodBiError } from "../global-scope.js";
-import { XMLParser } from "fast-xml-parser";
+// #endregion Imports
 /**
  *
  * This **E**lement-**P**laceholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from
@@ -18,7 +26,7 @@ import { XMLParser } from "fast-xml-parser";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Behoerden {
   /** Stores often used {@link RegExp }s. */
   public static stdExp: {
@@ -90,8 +98,7 @@ export class BayVIS_Behoerden {
             const filteredResult = new Array<string>();
 
             for (const element of result) {
-              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-              filteredResult.push((element as any)[params[0] as string] as string);
+              filteredResult.push((element as unknown)[params[0] as string] as string);
             }
 
             resolve(filteredResult);

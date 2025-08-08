@@ -1,7 +1,13 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
+// #endregion Imports
 /**
  * This **E**lement-**P**laceholder retrieves the content of a URL.
  *
@@ -10,7 +16,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class NET_URL {
   /**
    * Uses {@link resolvePath } to retrieve the {@link Object } at the path specified in "params"[ 1 ] out of the

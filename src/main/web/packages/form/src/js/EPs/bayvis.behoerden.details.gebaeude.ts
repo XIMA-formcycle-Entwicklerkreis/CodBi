@@ -1,10 +1,18 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region Fast XML-Parser
+import { XMLParser } from "fast-xml-parser";
+// #endregion Fast XML-Parser
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+// #endregion XDBC
 import { CodBiError } from "../global-scope.js";
-import { XMLParser } from "fast-xml-parser";
+// #endregion Imports
 /**
  * This **E**lement-**P**laceholder retrieves the details of an authority's building specified by the provided ID from the
  * corresponding CodBi-Plugin servlet.
@@ -30,7 +38,7 @@ import { XMLParser } from "fast-xml-parser";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Behoerden_Details_Gebaeude {
   /** Stores often used {@link RegExp }s. */
   public static stdExp: {

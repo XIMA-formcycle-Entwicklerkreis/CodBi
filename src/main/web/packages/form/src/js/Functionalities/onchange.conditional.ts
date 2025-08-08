@@ -1,14 +1,20 @@
+// #region Imports
+// #region XIMA
+import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+// #endregion XDBC
 import { CodBi, CodBiError } from "../global-scope";
-import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion Imports
 /**
  * Provides the {@link OnChange_Conditional.functionality }.
  *
  * @remarks
  * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.net) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class OnChange_Conditional {
   /**
    * This functionality applies a certain functionality onto the {@link object } "toProcess" depending on whether
@@ -45,8 +51,7 @@ export class OnChange_Conditional {
     toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): undefined {
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
-    toLoad.target = (toLoad.target as Array<unknown>)[0]!;
+    toLoad.target = (toLoad.target as Array<unknown>)[0];
     const processChange = () => {
       // #region Determine fulfillment.
       let fulfilled = false;
@@ -67,33 +72,27 @@ export class OnChange_Conditional {
       // #endregion Define candidate & reference.
       switch ((toLoad.mode as string).toLowerCase()) {
         case "gteq":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) >= (toLoad.reference as any);
+          fulfilled = (candidate as unknown) >= (toLoad.reference as unknown);
 
           break;
         case "gt":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) > (toLoad.reference as any);
+          fulfilled = (candidate as unknown) > (toLoad.reference as unknown);
 
           break;
         case "lteq":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) <= (toLoad.reference as any);
+          fulfilled = (candidate as unknown) <= (toLoad.reference as unknown);
 
           break;
         case "lt":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) < (toLoad.reference as any);
+          fulfilled = (candidate as unknown) < (toLoad.reference as unknown);
 
           break;
         case "eq":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) === (toLoad.reference as any);
+          fulfilled = (candidate as unknown) === (toLoad.reference as unknown);
 
           break;
         case "neq":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) !== (toLoad.reference as any);
+          fulfilled = (candidate as unknown) !== (toLoad.reference as unknown);
 
           break;
         default:

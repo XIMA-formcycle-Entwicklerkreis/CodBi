@@ -1,13 +1,17 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link HTML_Text_Mapper.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Text_Mapper {
   /**
    * This functionality maps the properties of an {@link object } to the placeholders in a {@link string } replacing
@@ -60,8 +64,9 @@ export class HTML_Text_Mapper {
       for (const property of Object.keys((toLoad.replacements as [])[i] as unknown as object)) {
         replacedContent = replacedContent?.replace(
           new RegExp(`\\[\\(${property}\\)\\]`, "g"),
-          // biome-ignore lint/suspicious/noExplicitAny: Precondition for that object is: Not UNDEFINED.
-          (toLoad.replacements as any)[i][property] !== undefined ? (toLoad.replacements as any)[i][property] : "",
+          (toLoad.replacements as unknown)[i][property] !== undefined
+            ? (toLoad.replacements as unknown)[i][property]
+            : "",
         );
       }
       // #endregion Perform replacements

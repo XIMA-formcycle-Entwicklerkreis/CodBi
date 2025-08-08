@@ -1,11 +1,19 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region Fast XML-Parser
+import { XMLParser } from "fast-xml-parser";
+// #endregion Fast XML-Parser
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+// #endregion XDBC
 import { CodBiError } from "../global-scope";
-import { XMLParser } from "fast-xml-parser";
+// #endregion Imports
 /**
  * This **E**lement-**P**laceholder retrieves the details of an authority specified by the provided ID from the corresponding
  * CodBi-Plugin servlet.
@@ -19,7 +27,7 @@ import { XMLParser } from "fast-xml-parser";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Behoerden_Details {
   /** Stores often used {@link RegExp }s. */
   public static stdExp: {
@@ -126,8 +134,7 @@ export class BayVIS_Behoerden_Details {
           };
 
           if (params.length >= 2) {
-            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-            const detail = (result as any)[params[1] as string];
+            const detail = (result as unknown)[params[1] as string];
 
             if (detail === undefined) {
               reject(new CodBiError(`Detail "${params[1]}" of authorities is not available.`));

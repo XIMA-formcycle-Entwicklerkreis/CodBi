@@ -1,12 +1,18 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link Time_Frame.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Time_Frame {
   /**
    * This functionality connects two {@link HTMLInputElement }s to not permit the designated minimum{@link HTMLInputElement } to have a time that
@@ -26,8 +32,7 @@ export class Time_Frame {
     @REGEX.PRE(REGEX.stdExp.cssSelector, "maxfield") toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): void {
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
-    const maximumField: HTMLInputElement = document.querySelector(toLoad.maxfield! as string)! as HTMLInputElement;
+    const maximumField: HTMLInputElement = document.querySelector(toLoad.maxfield as string) as HTMLInputElement;
 
     if (toLoad.maxfield === "undefined" || typeof toLoad.maxfield !== "string" || maximumField === null) {
       return; // Do nothing if toLoad preconditions are not met.

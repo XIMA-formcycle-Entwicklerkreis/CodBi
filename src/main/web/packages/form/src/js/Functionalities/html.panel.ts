@@ -1,22 +1,27 @@
+// #region Imports
+// #region XIMA
 import { getXUtil } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+// #endregion XDBC
 import { CodBiError } from "../global-scope";
+// #endregion Imports
 /**
  * Provides the {@link HTML_Panel.functionality }.
  *
  * @remarks
  * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.net) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Panel {
   /**
    * Retrieves the first ".CXPage"-{@link HTMLElement } above the given "element".
    *
    * @param element The {@link HTMLElement } to start the search from.
    *
-   * @returns The ".CXPage"-{@link HTMLElement } containing the given "element".
-   */
+   * @returns The ".CXPage"-{@link HTMLElement } containing the given "element". */
   public static determinePage(element: HTMLElement): HTMLElement | null {
     let currentElement: HTMLElement | null = element;
 
@@ -132,8 +137,7 @@ export class HTML_Panel {
       const styHeader: string | null = header.getAttribute("style");
       // #region Determine where to re-insert the header when panel gets unfolded.
       const childArray = Array.from(toProcess.children);
-      // biome-ignore lint/style/noNonNullAssertion: <explanation>
-      const idxHeader = childArray.indexOf(header.parentElement!);
+      const idxHeader = childArray.indexOf(header.parentElement);
       const headerAfterElement: Element | undefined =
         idxHeader === childArray.length - 1 ? undefined : childArray[idxHeader];
       // #endregion Determine where to re-insert the header when panel gets unfolded.

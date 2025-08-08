@@ -826,7 +826,6 @@ export class CodBi implements CodbiGlobal {
     svg.style.margin = "2%";
     svg.innerHTML = CodBiLogo();
 
-    //container.appendChild(svg);
     destination.parentElement.appendChild(container);
 
     const innerSVG: SVGSVGElement | null = svg.querySelector("svg");
@@ -842,6 +841,7 @@ export class CodBi implements CodbiGlobal {
     innerSVG.style.height = "fit-content";
     innerSVG.style.padding = "0";
     innerSVG.style.paddingRight = ".1em";
+
     innerSVG.classList.add("CodBi_Logo", "CodBiLoader");
   }
   /**
@@ -861,8 +861,8 @@ export class CodBi implements CodbiGlobal {
   }
   /**
    * Processes all {@link Element }s that're tagged with a certain
-   * Attribute (**data-cb-FUNC**) in order to activate CodBi-Functionalities.
-   * The Attribute **data-cb-FUNC** is a CSV containing all CodBi-Functionalities to
+   * Attribute (**data-cb-func**) in order to activate CodBi-Functionalities.
+   * The Attribute **data-cb-func** is a CSV containing all CodBi-Functionalities to
    * activate.
    *
    * When having found an {@link Element } this methods will look for all
@@ -872,18 +872,18 @@ export class CodBi implements CodbiGlobal {
    *
    * This method also looks for global variables related to the functionality to be used. Those may be specified
    * in the GUI's "Variables" section and got to be prefixed with the functionality's name (using underscores
-   * instead of dots separators however (e.g. Time.Frame >> Time_Frame)) followed by the variable's name without
+   * instead of dots separators however (e.g. time.frame becomes time_frame)) followed by the variable's name without
    * the **data-cb-** prefix (e.g. Time_Frame_MaxField).
    * For being useful to define values that're common to multiple functionalities but still pertain the possibility
    * to overwrite those values when needed, global variables have the least precedence and will be overwritten by
    * the ones the {@link Element } has.
    *
-   * The attribute **data-cb-APPLY** may be used to apply all global variables and all attributes of the
+   * The attribute **data-cb-apply** may be used to apply all global variables and all attributes of the
    * {@link Element }s to the ones specified by the CSS-Selector-TSV, which is this attribute's value
    * (take care to use **data-org-name** in CSS-Attribute-Selectors in order for the application to also work in
    * repetitive containers).
    * Global variables and those received from the original {@link Element } may be overwritten simply by re-specifying
-   * the variable-attribute on the {@link Element}s **data-cb-APPLY** refers to where suitable.
+   * the variable-attribute on the {@link Element}s **data-cb-apply** refers to where suitable.
    *
    * The **data-cb-Loader** attribute, if set to "none" (case insensitive), does deactivate the loader-animation only,
    * not the disabling if {@link HTMLInputElement }s as long as the tagged {@link Element } hasn't been processed.
@@ -894,18 +894,19 @@ export class CodBi implements CodbiGlobal {
    * @throws A {@link CodBiError } when the processing of an {@link Element } throws one.
    *
    * @returns A {@link Promise < boolean >} that resolves a soon as all {@link Elements } where initially processed
-   *          and the application of functionalities as the retrieval of **e**lement **p**laceholder values has been
+   *          and the application of functionalities as the retrieval of **E**lement **P**laceholder values has been
    *          triggered. */
   public checkAttributes(): Promise<boolean> {
-    // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+    // biome-ignore lint/suspicious/noAssignInExpressions: No confusion.
     return (this.currentAttributeCheck = new Promise((resolve) => {
       this.checkingAttributes = true;
+
       let cntPromises = 0;
+
       const toCheck = document.querySelectorAll("[data-cb-func]");
 
       for (const toProcess of document.querySelectorAll("[data-cb-func]")) {
-        // biome-ignore lint/style/noNonNullAssertion: .querySelectorAll("[data-cb-FUNC]") above.
-        for (const functionality of toProcess.getAttribute("data-cb-func")!.split(",")) {
+        for (const functionality of toProcess.getAttribute("data-cb-func").split(",")) {
           // #region Process [data-cb-checked] in order to prevent double appliance of functionalities.
           if (toProcess.hasAttribute("data-cb-checked")) {
             if (toProcess.getAttribute("data-cb-checked").indexOf(functionality.toLowerCase()) !== -1) {
@@ -967,8 +968,7 @@ export class CodBi implements CodbiGlobal {
                   resolve(true);
                 }
               })
-              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-              .catch((X: any) => {
+              .catch((X: unknown) => {
                 this.reportFunctionalityError(toProcess, functionality, codbiAttributes, X, "");
 
                 if (--cntPromises === 0) {
@@ -978,8 +978,7 @@ export class CodBi implements CodbiGlobal {
               });
             // #region Check if further application wanted.
             if (toProcess.hasAttribute("data-cb-APPLY")) {
-              // biome-ignore lint/style/noNonNullAssertion: <explanation>
-              for (const selector of toProcess.getAttribute("data-cb-APPLY")!.split("~")) {
+              for (const selector of toProcess.getAttribute("data-cb-APPLY").split("~")) {
                 this.apply(selector.trim(), (target) => {
                   let codbiAttributesLocal: { [key: string]: unknown } = {};
                   // Assign taking global-variables into consideration.
@@ -1022,8 +1021,7 @@ export class CodBi implements CodbiGlobal {
                           resolve(true);
                         }
                       })
-                      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                      .catch((X: any) => {
+                      .catch((X: unknown) => {
                         this.reportFunctionalityError(toApplyOn, functionality, codbiAttributes, X, "");
 
                         if (--cntPromises === 0) {
@@ -1152,11 +1150,11 @@ export class CodBiError extends Error {
     super(`${message}`);
   }
 }
-/** A {@link CodBiError } to be thrown whenever an **e**lement **p**laceholder causes an {@link Error }. */
+/** A {@link CodBiError } to be thrown whenever an **E**lement **P**laceholder causes an {@link Error }. */
 export class EPCodBiError extends CodBiError {
   /**
    * Constructs this {@link EPCodBiError } by tagging this {@link CodBiError } as an {@link Error } caused by
-   * an **e**lement **p**laceholder.
+   * an **E**lement **P**laceholder.
    *
    * @param placeholder The **e**lement **p**laceholder causing this {@link CodBiError }.
    * @param message     The {@link string } describing this {@link CodBiError }.
@@ -1194,18 +1192,18 @@ export function stringToDate(input: string, format: string = "dd-mm-yyyy"): Date
     fmt[part] = i++;
     return "";
   });
-  // biome-ignore lint/complexity/useLiteralKeys: <explanation>
+  // biome-ignore lint/complexity/useLiteralKeys: Foreign Code
   if (fmt["yyyy"] !== undefined) {
-    // biome-ignore lint/complexity/useLiteralKeys: <explanation>
+    // biome-ignore lint/complexity/useLiteralKeys: Foreign Code
     year = Number.parseInt(parts[fmt["yyyy"]] as string, 10);
   }
-  // biome-ignore lint/complexity/useLiteralKeys: <explanation>
+  // biome-ignore lint/complexity/useLiteralKeys: Foreign Code
   if (fmt["mm"] !== undefined) {
-    // biome-ignore lint/complexity/useLiteralKeys: <explanation>
+    // biome-ignore lint/complexity/useLiteralKeys: Foreign Code
     month = Number.parseInt(parts[fmt["mm"]] as string, 10) - 1; // Month is 0-indexed in JavaScript Date
-  } // biome-ignore lint/complexity/useLiteralKeys: <explanation>
+  } // biome-ignore lint/complexity/useLiteralKeys: Foreign Code
   if (fmt["dd"] !== undefined) {
-    // biome-ignore lint/complexity/useLiteralKeys: <explanation>
+    // biome-ignore lint/complexity/useLiteralKeys: Foreign Code
     day = Number.parseInt(parts[fmt["dd"]] as string, 10);
   }
 

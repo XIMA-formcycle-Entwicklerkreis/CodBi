@@ -1,12 +1,16 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { AE } from "xdbc/src/DBC/AE";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link HTML_Select_Injection.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_CSS {
   /**
    * Registers the "HTML.CSS"-Functionality.
@@ -21,8 +25,7 @@ export class HTML_CSS {
    *  - Replacements: An {@link Array < string >} of two elements each that are separated by a "|".
    *                  The first part contains the placeholder as found in the specified "CSS". The second one
    *                  the {@link string } the placeholder shall be replaced with.
-   *  - Destination:  The selector pointing to the "CSS"-Destination.
-   */
+   *  - Destination:  The selector pointing to the "CSS"-Destination. */
   @DBC.ParamvalueProvider
   public static functionality(
     @AE.PRE(new TYPE("string"), undefined, undefined, "replacements")
@@ -43,8 +46,7 @@ export class HTML_CSS {
         if (parts.length === 2) {
           toLoad.css = (toLoad.css as string).replace(
             new RegExp(`${parts[0]?.trim()}_DM`, "g"),
-            // biome-ignore lint/style/noNonNullAssertion: The "parts" are two in this branch.
-            parts[1]!.trim(),
+            parts[1].trim(),
           ) as string;
         }
       }
@@ -61,8 +63,7 @@ export class HTML_CSS {
         if (parts.length === 2) {
           toLoad.css = (toLoad.css as string).replace(
             new RegExp(`${parts[0]?.trim()}`, "g"),
-            // biome-ignore lint/style/noNonNullAssertion: The "parts" are two in this branch.
-            parts[1]!.trim(),
+            parts[1].trim(),
           ) as string;
         }
       }

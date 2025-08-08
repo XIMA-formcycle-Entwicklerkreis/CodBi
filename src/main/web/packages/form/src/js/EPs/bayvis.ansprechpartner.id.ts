@@ -1,15 +1,20 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region Fast XML-Parser
+import { XMLParser } from "fast-xml-parser";
+// #endregion Fast XML-Parser
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
-import { JSON_OP } from "xdbc/src/DBC/JSON.OP";
-import { JSON_Parse } from "xdbc/src/DBC/JSON.Parse";
+// #endregion XDBC
 import { CodBiError } from "../global-scope";
-import { XMLParser } from "fast-xml-parser";
-import { BayVIS_Ansprechpartner } from "./bayvis.ansprechpartner.js";
+// #endregion Imports
 /**
- *
+
  * This **E**lement-**P**laceholder retrieves the ID of a contact by first- & last-name (order insensitive). If there're more than one contact
  * with the same first- & last-name only the first hit will be returned.
  *
@@ -29,7 +34,7 @@ import { BayVIS_Ansprechpartner } from "./bayvis.ansprechpartner.js";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Ansprechpartner_ID {
   /** Buffers the requested directory of authorities. */
   public static buffer:
@@ -59,12 +64,11 @@ export class BayVIS_Ansprechpartner_ID {
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi).
    *
-   * @throws  A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint or the . */
+   * @throws  A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint. */
   @DBC.ParamvalueProvider
   public static retrieve(
     @AE.PRE(new TYPE("string"))
     @AE.PRE(new REGEX(/^[A-Za-z]+ +[A-Za-z]+$/), 0)
-    //@AE.PRE(new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember), 2)
     params: Array<unknown>,
   ): Promise<
     | Array<string>

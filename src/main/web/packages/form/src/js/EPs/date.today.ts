@@ -1,7 +1,11 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link DATE_Today.retrieve }al of the current {@link Date } along with arithmetic appliances.
  *
@@ -11,7 +15,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.net) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive design.
 export class DATE_Today {
   /**
    * Uses {@link processArithmeticParams } to modify the {@link Date } of today according to the arithmetic operations

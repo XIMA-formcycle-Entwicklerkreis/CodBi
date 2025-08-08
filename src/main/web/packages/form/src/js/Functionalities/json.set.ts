@@ -1,12 +1,16 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link JSON_SET.functionality }.
  *
  * @remarks
  * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class JSON_SET {
   /**
    * This functionality assigns the specified "Property" of a member of {@link Element } "toProcess"
@@ -27,8 +31,7 @@ export class JSON_SET {
     toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): undefined {
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    const target: any = toLoad.path
+    const target: unknown = toLoad.path
       ? (toLoad.path as string)
           .split(".")
           // biome-ignore lint/suspicious/noExplicitAny: <explanation>

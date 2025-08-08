@@ -1,7 +1,11 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
+// #endregion Imports
 // #region Inject necessary CSS.
 const style = document.createElement("style");
 
@@ -27,7 +31,7 @@ document.head.appendChild(style);
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive design.
 export class Date_Weekends {
   /**
    * Checks all "params" for specific data (see {@link Date_Weekends }) and return an {@link Array } of
@@ -46,36 +50,25 @@ export class Date_Weekends {
     let end: Date | undefined;
     // #region Refine parameter for begin and end, if available.
     if (refinedParams.length >= 2) {
-      // biome-ignore lint/style/noNonNullAssertion: Due to params.split & refinedParams.length >= 2.
-      refinedParams[0] = (refinedParams[0]! as string).trim().split(".");
-      // biome-ignore lint/style/noNonNullAssertion: Due to params.split & refinedParams.length >= 2.
-      refinedParams[1] = (refinedParams[1]! as string).trim().split(".");
+      refinedParams[0] = (refinedParams[0] as string).trim().split(".");
+      refinedParams[1] = (refinedParams[1] as string).trim().split(".");
       // #region Generate Begin- & End-Date-Objects.
       begin = new Date(
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        Number.parseInt((refinedParams[0] as Array<string>)[2]!),
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        Number.parseInt((refinedParams[0] as Array<string>)[1]!) - 1,
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        Number.parseInt((refinedParams[0] as Array<string>)[0]!),
+        Number.parseInt((refinedParams[0] as Array<string>)[2]),
+        Number.parseInt((refinedParams[0] as Array<string>)[1]) - 1,
+        Number.parseInt((refinedParams[0] as Array<string>)[0]),
       );
 
       end = new Date(
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        Number.parseInt((refinedParams[1] as Array<string>)[2]!),
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        Number.parseInt((refinedParams[1] as Array<string>)[1]!) - 1,
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        Number.parseInt((refinedParams[1] as Array<string>)[0]!),
+        Number.parseInt((refinedParams[1] as Array<string>)[2]),
+        Number.parseInt((refinedParams[1] as Array<string>)[1]) - 1,
+        Number.parseInt((refinedParams[1] as Array<string>)[0]),
       );
     } else if (refinedParams.length === 1) {
       end = new Date(
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        Number.parseInt((refinedParams[0] as Array<string>)[2]!),
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        Number.parseInt((refinedParams[0] as Array<string>)[1]!) - 1,
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        Number.parseInt((refinedParams[0] as Array<string>)[0]!),
+        Number.parseInt((refinedParams[0] as Array<string>)[2]),
+        Number.parseInt((refinedParams[0] as Array<string>)[1]) - 1,
+        Number.parseInt((refinedParams[0] as Array<string>)[0]),
       );
     }
     // #endregion Refine parameter for begin and end, if available.

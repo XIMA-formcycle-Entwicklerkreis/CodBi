@@ -1,13 +1,17 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { EQ } from "xdbc/src/DBC/EQ";
+// #endregion XDBC
+// #endregion Imports
 import { CodBiError } from "../global-scope.js";
 /**
  * Provides the {@link HTML_Text_Injector.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Text_Injector {
   /**
    * This functionality Injects the "Replacement" {@link string } within the specified "Property" either wherever a
@@ -29,12 +33,7 @@ export class HTML_Text_Injector {
     toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): void {
-    if (
-      typeof (toProcess as unknown as { [key: string]: unknown })[
-        // biome-ignore lint/style/noNonNullAssertion: Is checked right here.
-        toLoad.property! as string
-      ] !== "string"
-    ) {
+    if (typeof (toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] !== "string") {
       throw new CodBiError(`The tagged element's "${toLoad.property}" is a not of type "string"`);
     }
     // If there's a "toLoad.placeholder" of correct type available...
@@ -44,19 +43,13 @@ export class HTML_Text_Injector {
       typeof (toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] === "string"
     ) {
       while (
-        // biome-ignore lint/style/noNonNullAssertion: Was checked right before.
-        ((toProcess as unknown as { [key: string]: unknown })[toLoad.property! as string] as string).indexOf(
+        ((toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] as string).indexOf(
           toLoad.placeholder as string,
         ) !== -1
       ) {
-        // biome-ignore lint/style/noNonNullAssertion: Was checked right before.
-        (toProcess as unknown as { [key: string]: unknown })[toLoad.property! as string] =
-          // biome-ignore lint/style/noNonNullAssertion: Was checked right before.
-          ((toProcess as unknown as { [key: string]: unknown })[toLoad.property! as string] as string).replace(
-            toLoad.placeholder,
-            // biome-ignore lint/style/noNonNullAssertion: Checked with first condition.
-            toLoad.replacement! as string,
-          );
+        (toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] = (
+          (toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] as string
+        ).replace(toLoad.placeholder, toLoad.replacement as string);
       }
     } else if (typeof (toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] === "string") {
       // When no "toLoad.placeholder" is defined, place "toLoad.replacement" at the end of the string already contained in the

@@ -1,6 +1,10 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Joins the properties of multiple {@link object }s into one.
  * Properties will get overridden by the subsequent ones.
@@ -10,7 +14,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class Data_Join {
   /**
    * Joins all {@link object }s in "params" into one.

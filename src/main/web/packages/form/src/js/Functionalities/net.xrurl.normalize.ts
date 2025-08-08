@@ -1,11 +1,15 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link Net_xrURL_Normalize.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Net_xrURL_Normalize {
   /**
    * This functionality corrects links in all {@link HTMLAnchorElements }s, {@link HTMLImageElement }s, {@link HTMLIFrameElement }s & {@link HTMLObjectElement } within the {@link Element}

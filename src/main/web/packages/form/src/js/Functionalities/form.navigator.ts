@@ -1,10 +1,14 @@
+// #region Imports
+// #region XIMA
 import { getJQuery, getXUtil } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #endregion Imports
 /**
  * Registers the {@link Form_Navigator.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Form_Navigator {
   /**
    * The tagged {@link HTMLDivElement } will get navigation buttons that can be used to navigate the form.
@@ -24,8 +28,7 @@ export class Form_Navigator {
     const $ = getJQuery();
     const pages: Array<Element> = $(".XPage").toArray();
     const pageNames: Array<string> = pages.map((page) => page.getAttribute("data-name")) as Array<string>;
-    // biome-ignore lint/style/noNonNullAssertion: At least one page is definitely existent.
-    let currentPage: string = pageNames[0]!;
+    let currentPage: string = pageNames[0];
     let content: string = "";
     // #region Inject <button>s, <style>s and containing <div>.
     for (const name of pageNames) {
@@ -52,8 +55,7 @@ export class Form_Navigator {
     xm_validator.on("progress", (data) => {
       // biome-ignore lint/complexity/useOptionalChain: ???
       if (data.item[0] && data.item[0].hasAttribute("data-name")) {
-        // biome-ignore lint/style/noNonNullAssertion: <explanation>
-        validations.set(data.item[0].getAttribute("data-name")!, data.valid);
+        validations.set(data.item[0].getAttribute("data-name"), data.valid);
       }
     });
     // #endregion Setup validation check tracking.
@@ -79,8 +81,7 @@ export class Form_Navigator {
     // Setup the Navigator's <button>s logic.
     for (const button of toProcess.querySelectorAll(".---CodBi.--Form_Navigator.-Container.-NavButton")) {
       button.addEventListener("click", (event: Event) => {
-        // biome-ignore lint/style/noNonNullAssertion: When there is a click event there is also an event.target.
-        if (!(event.target! as HTMLElement).hasAttribute("page")) {
+        if (!(event.target as HTMLElement).hasAttribute("page")) {
           return;
         }
         // biome-ignore lint/style/noNonNullAssertion: When there is a click event there is also an event.target.
@@ -144,8 +145,7 @@ export class Form_Navigator {
             formerButton.style.pointerEvents = "all";
             formerButton.classList.remove("-current");
           }
-          // biome-ignore lint/style/noNonNullAssertion: When there is a click event there is also an event.target.
-          currentPage = (event.target! as HTMLElement).getAttribute("data-target-page") as string;
+          currentPage = (event.target as HTMLElement).getAttribute("data-target-page") as string;
           // DeActivate the navigation <button> leading to the new current page and tag it as the current one.
           for (const newButton of $(`.---CodBi.--Form_Navigator.-Container.-NavButton[ page = "${currentPage}"]`)) {
             newButton.classList.add("-current");

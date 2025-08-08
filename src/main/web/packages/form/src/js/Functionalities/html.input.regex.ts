@@ -1,13 +1,19 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { EQ } from "xdbc/src/DBC/EQ";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link HTML_Input_REGEX.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Input_REGEX {
   /**
    * Registers the "HTML.Input.REGEX"-Functionality which require the value of {@link HTMLInputElement } to comply
@@ -30,8 +36,7 @@ export class HTML_Input_REGEX {
     const $ = getJQuery();
 
     toProcess.addEventListener("change", (event) => {
-      // biome-ignore lint/style/noNonNullAssertion: <explanation>
-      if (!new RegExp(toLoad.expression as string).test((event.target! as HTMLInputElement).value)) {
+      if (!new RegExp(toLoad.expression as string).test((event.target as HTMLInputElement).value)) {
         $(toProcess).error(
           `${toLoad.errorprefix ? toLoad.errorprefix : ""}${toLoad.exposeexpression ? toLoad.expression : ""}${toLoad.errorpostfix ? toLoad.errorpostfix : ""}`,
         );

@@ -24,6 +24,8 @@
   }
 
   p-tabs {
+    max-height: 100%;
+
     p-tablist {
       box-shadow: 0 0 .5em black;
       margin-bottom: .25em;
@@ -575,7 +577,6 @@
   p-tabs,
   p-tabs p-tabpanels {
     height: 100%;
-    min-height: 100%;
     width: 100%;
   }
 
@@ -648,16 +649,6 @@
   .p-tablist-active-bar {
     display: none;
   }
-}
-
-#CodBi_LocalAPIDoc.--closed {
-  transform: translateX(-100%);
-  opacity: 0;
-}
-
-#CodBi_LocalAPIDoc.--opened {
-  transform: translateX(0);
-  opacity: 1;
 }
 
 @keyframes kfFadeIN_CodBi_LocalAPIDoc_New {

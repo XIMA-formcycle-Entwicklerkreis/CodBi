@@ -59,5 +59,8 @@ interface Window {
      *
      * @param options The CSV containing the entire now available options. */
     updateSVManager: (options: string) => void;
+    /**
+     * Called whenever the API-Doc Manager's **Close**-{@link HTMLButtonElement } is clicked. */
+    managerClosed: (event: Event) => void;
   };
 }

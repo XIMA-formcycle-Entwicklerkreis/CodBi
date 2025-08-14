@@ -1,4 +1,4 @@
-<div id = 'CodBi_LocalAPIDoc' #CodBi_LocalAPIDoc >
+<div    id      = 'CodBi_LocalAPIDoc' #CodBi_LocalAPIDoc >
     <p-splitter id = "Splitter"
                 [panelSizes]    = "[25, 75]"
                 [minSizes]      = "[20, 50]"
@@ -75,7 +75,7 @@
         <ng-template id = "CodBi_LocalAPIDoc_RightPanel" #panel >
             <p-tabs [(value)]   = "activeTab"
                     [lazy]      = "false">
-                <p-tablist>
+                <p-tablist style = "z-index: 10 ;">
                     <p-tab value    = "Functionality">{{"RP.Tabs.Header.Functionalities" | transloco }}</p-tab>
                     <p-tab value    = "Elementplaceholder">{{"RP.Tabs.Header.Elementplaceholder" | transloco }}</p-tab>
                     <p-tab value    = "Standard">{{"RP.Tabs.Header.Standards" | transloco }}</p-tab>
@@ -148,7 +148,7 @@
                                                     quickbars_selection_toolbar :   'bold italic underline | quicklink',
                                                     quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
                                                     quickbars_insert_toolbar    :   'quicktable quickform',
-                                                    min_height                  :   300,
+                                                    min_height                  :   500,
                                                     paste_data_images           :   false,
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
@@ -209,7 +209,7 @@
                                                     quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
                                                     quickbars_insert_toolbar    :   'quicktable quickform',
                                                     paste_data_images           :   false,
-                                                    min_height                  :   300,
+                                                    min_height                  :   500,
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
 
@@ -268,7 +268,7 @@
                                                     quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
                                                     quickbars_insert_toolbar    :   'quicktable quickform',
                                                     paste_data_images           :   false,
-                                                    min_height                  :   300,
+                                                    min_height                  :   500,
                                                     base_url                    :   resourceurl,
                                                     suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
 

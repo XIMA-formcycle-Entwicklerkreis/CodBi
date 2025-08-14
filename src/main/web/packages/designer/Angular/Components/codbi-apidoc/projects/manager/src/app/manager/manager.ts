@@ -477,7 +477,7 @@ export class Manager implements AfterViewInit {
 
       newNodes.push(node);
     }
-    console.log("JJJJJ", newNodes);
+
     return newNodes;
   }
   /**
@@ -1241,7 +1241,7 @@ export class Manager implements AfterViewInit {
     // #region Conversion.
     for (const node of toExtractFrom) {
       result[`${base ? `${base.toLowerCase()}.` : ""}${node.label.toLowerCase()}`] = {
-        Description: node.data ? node.data.Description : "",
+        Description: node.data ? node.data.Description.replace(/'/g, "") : "",
         Parameter: node.data ? this.arrayToObject(node.data.Parameter ? node.data.Parameter : []) : [],
         globals: node.data ? this.arrayToObject(node.data.globals) : [],
         notes: node.data.Notes ? node.data.Notes : "",
@@ -1547,7 +1547,6 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link TreeNodeSelectEvent }. */
   protected onNodeSelect(event: TreeNodeSelectEvent) {
-    console.log(this.currentlySelectedTreeNode);
     this._currentNode = event.node;
     this._currentNodeData = event.node.data;
   }
@@ -1558,7 +1557,7 @@ export class Manager implements AfterViewInit {
   // #endregion Tree View
   /** Closes the {@link Manager.CodBi_LocalAPIDoc } panel by adding the `--closed` class to it. */
   protected onClick_CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel() {
-    this.CodBi_LocalAPIDoc.nativeElement.classList.add("--closed");
+    window.CodbiPluginData.managerClosed();
   }
   /** The {@link ChangeDetectorRef } for this {@link Manager }.*/
   protected cdr: ChangeDetectorRef;
@@ -1926,9 +1925,7 @@ export class Manager implements AfterViewInit {
       notes?: string;
     };
   }): TreeNode[] {
-    console.log("toConvert", toConvert);
     const root: TreeNode[] = [];
-
     const keys = Object.keys(toConvert);
 
     for (const key of keys) {

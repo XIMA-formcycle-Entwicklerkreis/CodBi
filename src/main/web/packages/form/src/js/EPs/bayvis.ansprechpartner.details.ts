@@ -57,7 +57,7 @@ export class BayVIS_Ansprechpartner_Details {
    *          3rd parameter was specified, a non existent contact property was specified. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length")
+    @GREATER.PRE(0, false, false, "length")
     @AE.PRE(new TYPE("string"))
     @AE.PRE(
       new OR([

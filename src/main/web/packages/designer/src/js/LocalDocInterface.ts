@@ -58,15 +58,41 @@ export function enableLocalDocInterface(): void {
           return;
         }
 
-        const cDetailsObject = DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object"));
-        const functionality = newOption.substring(0, newOption.indexOf("/") - 1);
+        const baseDocURL =
+          window.CodbiPluginData.docsAPI[currentLanguage] === undefined
+            ? window.CodbiPluginData.docsAPI.en
+            : window.CodbiPluginData.docsAPI[currentLanguage];
+        // #region Retrieve the proper description according to the new option' structure that identifies the type of dialogue we're actually in.
+        const description = DEFINED.tsCheck<string>(
+          window.CodbiPluginData.detFunctionalities[
+            newOption
+              .substring(0, newOption.indexOf("/") - 1)
+              .toLowerCase()
+              .trim()
+          ]?.Description ??
+            (newOption.indexOf("[") !== -1
+              ? window.CodbiPluginData.detStandards[newOption.substring(1, newOption.indexOf("]") - 1).trim()]
+                  ?.Description
+              : window.CodbiPluginData.detFunctionalities[
+                  newOption.substring(0, newOption.lastIndexOf("_")).replace(/_/, ".").trim()
+                ]?.Description),
+        );
+        // #endregion Retrieve the proper description according to the new option' structure that identifies the type of dialogue we're actually in.
+        if (description[0] === "/") {
+          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
 
-        if (cDetailsObject.getAttribute("data")?.indexOf(functionality) === -1) {
-          cDetailsObject.setAttribute(
+          cDetails.innerHTML = "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
+
+          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
             "data",
-
-            `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[functionality]?.Description}`,
+            `${baseDocURL}${description}`,
           );
+          console.log("III");
+        } else {
+          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).innerHTML = `
+                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
+                              ${description}</div>`;
+          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute("data", "");
         }
       });
       // #endregion Define handler for the <XC-OptionInput>'s changes in option.
@@ -280,15 +306,12 @@ export function enableLocalDocInterface(): void {
           cssAPIManager.href = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.css`;
 
           document.head.appendChild(cssAPIManager);
-
           document.body.insertAdjacentHTML(
             "beforeend",
             `
           <style>
-            @keyframes kfFadeIN_cCodBi_LocalAPIDoc {
-              0% { left : -100vw ; opacity : 0 ; filter : blur( 1 );}
-              100% { left : 0vw ; opacity : .9 ; filter : blur( 0 );}}
-            #cCodBi_LocalAPIDoc { animation : kfFadeIN_cCodBi_LocalAPIDoc .5s ease-in forwards ; position : absolute ; left : 0vw ; top : 20vh ; width : 70vw ; height : 50vh ;}
+            #cCodBi_LocalAPIDoc { position : absolute ; left : -100vw ; top : 20vh ; width : 70vw ; height : 50vh ; pointer-events : none ; opacity : 0 ; transition : 1s all ;}
+            #cCodBi_LocalAPIDoc.--opened { left : 0vw ; opacity : .9 ; pointer-events : all !important ;}}
             #cCodBi_LocalAPIDoc cb-manager { display : block ; height : 100% ;}</style>
           <div id = "cCodBi_LocalAPIDoc">
             <cb-manager apidoc      = '${JSON.stringify(response)}'
@@ -298,6 +321,21 @@ export function enableLocalDocInterface(): void {
                         docPath     = "CodbiPluginData"
                         watermark   = "${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg"></cb-manager></div>`,
           );
+          // #region Register Hotkey ALT+C for displaying the manager and handle the manager's close button.
+          const manager = document.querySelector("#cCodBi_LocalAPIDoc") as HTMLElement;
+
+          manager.style.pointerEvents = "none";
+
+          document.addEventListener("keyup", (event) => {
+            if (event.altKey && event.key === "c") {
+              manager.classList.toggle("--opened");
+            }
+          });
+
+          window.CodbiPluginData.managerClosed = () => {
+            manager.classList.toggle("--opened");
+          };
+          // #endregion Register Hotkey ALT+C for displaying the manager and handle the manager's close button.
           // #endregion Load and inject Angular local API-Documentation-Manager web component
         },
       });
@@ -409,8 +447,10 @@ export function enableLocalDocInterface(): void {
                     });
                     // #region Blend out CodBi-Interface when leaving a global variable input field.
                     added.addEventListener("blur", (event) => {
-                      cDetails.style.display = "none";
-                      optioninput.enabled = false;
+                      if (document.activeElement !== cDetails) {
+                        cDetails.style.display = "none";
+                        optioninput.enabled = false;
+                      }
                     });
                     // #endregion Blend out CodBi-Interface when leaving a global variable input field.
                   }
@@ -441,9 +481,11 @@ export function enableLocalDocInterface(): void {
                     let input: string | undefined;
                     // #region Hide Interface
                     possibleTagify.addEventListener("blur", (event) => {
-                      inTag = false;
-                      cDetails.style.display = "none";
-                      optioninput.enabled = false;
+                      if (document.activeElement !== cDetails) {
+                        inTag = false;
+                        cDetails.style.display = "none";
+                        optioninput.enabled = false;
+                      }
                     });
                     // #endregion Hide Interface
                     possibleTagify.addEventListener("keyup", (event) => {
@@ -513,15 +555,41 @@ export function enableLocalDocInterface(): void {
 
                           input += event.key;
 
-                          console.log("filter", input);
                           optioninput.filter(input);
                         }
 
                         if (inTag) {
-                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                            "data",
-                            `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detStandards[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1).trim()]?.Description}`,
+                          const realName = DEFINED.tsCheck<string>(
+                            optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1).trim(),
                           );
+
+                          const baseDocURL =
+                            window.CodbiPluginData.docsAPI[currentLanguage] === undefined
+                              ? window.CodbiPluginData.docsAPI.en
+                              : window.CodbiPluginData.docsAPI[currentLanguage];
+                          const description = DEFINED.tsCheck<string>(
+                            window.CodbiPluginData.detStandards[realName]?.Description,
+                          );
+
+                          if (window.CodbiPluginData.detStandards[realName]?.Description[0] === "/") {
+                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
+
+                            cDetails.innerHTML =
+                              "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
+
+                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                              "data",
+                              `${baseDocURL}${description}`,
+                            );
+                          } else {
+                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).innerHTML = `
+                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
+                              ${description}</div>`;
+                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                              "data",
+                              "",
+                            );
+                          }
                         }
                       }
                     });
@@ -547,8 +615,10 @@ export function enableLocalDocInterface(): void {
                         updateLayoutEPManager(added);
                         // #region Hide CodBi-Interface
                         added.addEventListener("blur", (event) => {
-                          epManager.enabled = false;
-                          cDetails.style.display = "none";
+                          if (document.activeElement !== cDetails) {
+                            epManager.enabled = false;
+                            cDetails.style.display = "none";
+                          }
                         });
                         // #endregion Hide CodBi-Interface
                         DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
@@ -647,8 +717,10 @@ export function enableLocalDocInterface(): void {
                         });
                         // #region Hide interface on blur.
                         added.addEventListener("blur", (event) => {
-                          optioninput.enabled = false;
-                          cDetails.style.display = "none";
+                          if (document.activeElement !== cDetails) {
+                            optioninput.enabled = false;
+                            cDetails.style.display = "none";
+                          }
                         });
                         // #endregion Hide interface on blur.
                         // #endregion If a data-cb-func field is existent...
@@ -728,8 +800,10 @@ export function enableLocalDocInterface(): void {
                       });
                       // #region Hide CodBi-Interface on leaving <input>.
                       currentFunctionalityParameterInput?.addEventListener("blur", (event) => {
-                        epManager.enabled = false;
-                        cDetails.style.display = "none";
+                        if (document.activeElement !== cDetails) {
+                          epManager.enabled = false;
+                          cDetails.style.display = "none";
+                        }
                       });
                       // #endregion Hide CodBi-Interface on leaving <input>.
                     }
@@ -863,6 +937,11 @@ export function enableLocalDocInterface(): void {
                     }
                     // #region View corresponding API-Doc
                     epManager.onOptionChanged.push((newOption: string) => {
+                      console.log("lastchanged");
+                      if (newOption === "") {
+                        return;
+                      }
+
                       const baseDocURL =
                         window.CodbiPluginData.docsAPI[currentLanguage] === undefined
                           ? window.CodbiPluginData.docsAPI.en
@@ -874,6 +953,11 @@ export function enableLocalDocInterface(): void {
                       );
 
                       if (description[0] === "/") {
+                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
+
+                        cDetails.innerHTML =
+                          "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
+
                         DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
                           "data",
                           `${baseDocURL}${description}`,
@@ -884,6 +968,8 @@ export function enableLocalDocInterface(): void {
                               ${description}</div>`;
                         DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute("data", "");
                       }
+
+                      cDetails.style.display = "block";
                     });
                     // #endregion View corresponding API-Doc
                     // #endregion Register each cell of class .r2

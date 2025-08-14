@@ -245,7 +245,7 @@ export class Optioninput extends HTMLDivElement {
         div.---WaXCode.--Optioninput.--Option.-Current    {
           border : solid ; border-radius : .5em ; border-color : darkorange ; box-shadow : 0 0 .5em black ;
           background-color : #FF8C00BB ;}
-        div.---WaXCode.--Optioninput.--Option.-Current p  { color : white ;}`;
+        div.---WaXCode.--Optioninput.--Option.-Current p  { color : black ;}`;
 
     this.variableStyle = this.appendChild(this.variableStyle);
 
@@ -530,16 +530,16 @@ export class Optioninput extends HTMLDivElement {
           targetOption.classList.add("-Current");
           former.classList.remove("-Current");
 
-          for (const handler of this.onOptionChanged) {
-            const cbOption = DEFINED.tsCheck<string>(
-              DEFINED.tsCheck<HTMLDivElement>(
-                INSTANCE.tsCheck<HTMLDivElement>(
-                  byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
-                  HTMLDivElement,
-                ),
-              ).dataset.cbOption,
-            );
+          const cbOption = DEFINED.tsCheck<string>(
+            DEFINED.tsCheck<HTMLDivElement>(
+              INSTANCE.tsCheck<HTMLDivElement>(
+                byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
+                HTMLDivElement,
+              ),
+            ).dataset.cbOption,
+          );
 
+          for (const handler of this.onOptionChanged) {
             handler(cbOption);
           }
 

@@ -125,7 +125,6 @@ export const appConfig: ApplicationConfig = {
     {
       provide: TRANSLOCO_TRANSPILER,
       useFactory: () => {
-        console.log("--- appConfig TranslocoTranspiler factory is executing! ---");
         return new DefaultTranspiler();
       },
     },

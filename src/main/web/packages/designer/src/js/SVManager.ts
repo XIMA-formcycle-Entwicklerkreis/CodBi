@@ -221,7 +221,7 @@ export class SVManager extends HTMLDivElement {
         div.---WaXCode.--SVManager.--Option.-Current    {
           border : solid ; border-radius : .5em ; border-color : darkorange ; box-shadow : 0 0 .5em black ;
           background-color : #FF8C00BB ;}
-        div.---WaXCode.--SVManager.--Option.-Current p  { color : white ;}`;
+        div.---WaXCode.--SVManager.--Option.-Current p  { color : black ;}`;
 
     this.attachShadow({ mode: "open" });
 
@@ -511,11 +511,13 @@ export class SVManager extends HTMLDivElement {
             event.key === "ArrowDown" ? this.nextVisibleOption : this.previousVisibleOption,
           );
 
+          targetOption.scrollIntoView({ behavior: "smooth", inline: "center", block: "center" });
           targetOption.classList.add("-Current");
           former.classList.remove("-Current");
 
           for (const handler of this.onOptionChanged) {
             const cbOption = byCssHtml(".---WaXCode.--SVManager.--Option.-Current", shadow)?.dataset.cbOption;
+
             handler(cbOption ?? "");
           }
         }
@@ -651,7 +653,6 @@ export class SVManager extends HTMLDivElement {
    *
    * @returns The segment-content where the **position** is pointing at. */
   protected determineSegmentcontent(separatedValues: string, delimiter: string, position: number = 0): string {
-    console.log("determineSegmentcontent");
     const caretPos: number = position;
 
     if (separatedValues.length === 0 || caretPos < 0 || caretPos > separatedValues.length) {

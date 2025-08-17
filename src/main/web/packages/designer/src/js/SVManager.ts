@@ -576,6 +576,7 @@ export class SVManager extends HTMLDivElement {
     }
 
     segmentContent = this.determineSegmentcontent(eventTarget.value, this.separator, eventTarget.selectionStart ?? 0);
+
     const remainingOptions = this.filter(segmentContent);
 
     if (remainingOptions.length === 0) {
@@ -609,26 +610,36 @@ export class SVManager extends HTMLDivElement {
   }
   // #endregion Keyboard handling
   // #region Filtering
-  /**
+  /**thi
    * Filters the view of options.
    *
-   * @param filter The {@link string } to apply as a filter.
+   * @param filter  The {@link string } to apply as a filter.
+   * @param options The {@link HTMLDivElement }s to filter. If not specified, all children tagged with the CSS-Classes
+   *                "---WaXCode --SVManager --Option" will be used.
    *
    * @returns The remaining options. */
-  public filter(filter: string): Array<string> {
+  public filter(
+    filter: string,
+    options: HTMLDivElement[] = allByCssAs(
+      ".---WaXCode.--SVManager.--Option",
+      HTMLDivElement,
+      this.shadowRoot ?? undefined,
+    ),
+  ): Array<string> {
     const hits = new Array<string>();
+
     let firstVisible: HTMLDivElement | undefined;
-    const options = allByCssAs(".---WaXCode.--SVManager.--Option", HTMLDivElement, this.shadowRoot ?? undefined);
 
     for (const option of options) {
       const cbOption = option.dataset.cbOption ?? "";
-      if (cbOption.indexOf(filter.toLowerCase()) === -1) {
+      if (cbOption.toLowerCase().indexOf(filter.toLowerCase()) === -1) {
         option.style.display = "none";
       } else {
         if (firstVisible === undefined) {
           firstVisible = option;
         }
         hits.push(cbOption);
+
         option.style.display = "flex";
       }
 

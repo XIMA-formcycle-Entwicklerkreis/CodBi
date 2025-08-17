@@ -18,6 +18,8 @@ export function enableLocalDocInterface(): void {
   window.addEventListener("load", () => {
     const baseURL: string = `${window.location.href.split("/").slice(0, 4).join("/")}/`; // URL we're coming from.
     const parentWindows: Window[] = window.parent as unknown as Window[];
+    // Specifies whether the attribute panel is currently being forced to be enlarged or not.
+    let attributePanelForcedToEnlarge = false;
     // #region Determine current language.
     let currentLanguage: string = "de";
 
@@ -87,7 +89,6 @@ export function enableLocalDocInterface(): void {
             "data",
             `${baseDocURL}${description}`,
           );
-          console.log("III");
         } else {
           DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).innerHTML = `
                             <div style = "width: 100% ; height: 100% ; overflow : auto ;">
@@ -173,6 +174,21 @@ export function enableLocalDocInterface(): void {
       // #endregion Style <XC-EPManager> & <XC-OptionInput>.
       // #region Documentation Details Viewer
       const cDetails = document.createElement("div");
+      // #region Set up Focus & Mouseover-Flag
+      let flagMouseOverCDetails = false;
+      let currentCDetailBlurAction: (() => void) | undefined;
+
+      cDetails.addEventListener("mouseenter", (event) => {
+        flagMouseOverCDetails = true;
+      });
+      cDetails.addEventListener("mouseleave", (event) => {
+        flagMouseOverCDetails = false;
+
+        if (currentCDetailBlurAction) {
+          currentCDetailBlurAction();
+        }
+      });
+      // #endregion Set up Focus & Mouseover-Flag
       // #region Styling
       cDetails.style.position = "absolute";
       cDetails.style.display = "none";
@@ -447,9 +463,14 @@ export function enableLocalDocInterface(): void {
                     });
                     // #region Blend out CodBi-Interface when leaving a global variable input field.
                     added.addEventListener("blur", (event) => {
-                      if (document.activeElement !== cDetails) {
+                      if (!flagMouseOverCDetails) {
                         cDetails.style.display = "none";
                         optioninput.enabled = false;
+                      } else {
+                        currentCDetailBlurAction = () => {
+                          cDetails.style.display = "none";
+                          optioninput.enabled = false;
+                        };
                       }
                     });
                     // #endregion Blend out CodBi-Interface when leaving a global variable input field.
@@ -481,10 +502,16 @@ export function enableLocalDocInterface(): void {
                     let input: string | undefined;
                     // #region Hide Interface
                     possibleTagify.addEventListener("blur", (event) => {
-                      if (document.activeElement !== cDetails) {
+                      if (!flagMouseOverCDetails) {
                         inTag = false;
                         cDetails.style.display = "none";
                         optioninput.enabled = false;
+                      } else {
+                        currentCDetailBlurAction = () => {
+                          inTag = false;
+                          cDetails.style.display = "none";
+                          optioninput.enabled = false;
+                        };
                       }
                     });
                     // #endregion Hide Interface
@@ -615,9 +642,14 @@ export function enableLocalDocInterface(): void {
                         updateLayoutEPManager(added);
                         // #region Hide CodBi-Interface
                         added.addEventListener("blur", (event) => {
-                          if (document.activeElement !== cDetails) {
+                          if (!flagMouseOverCDetails) {
                             epManager.enabled = false;
                             cDetails.style.display = "none";
+                          } else {
+                            currentCDetailBlurAction = () => {
+                              epManager.enabled = false;
+                              cDetails.style.display = "none";
+                            };
                           }
                         });
                         // #endregion Hide CodBi-Interface
@@ -717,9 +749,14 @@ export function enableLocalDocInterface(): void {
                         });
                         // #region Hide interface on blur.
                         added.addEventListener("blur", (event) => {
-                          if (document.activeElement !== cDetails) {
+                          if (!flagMouseOverCDetails) {
                             optioninput.enabled = false;
                             cDetails.style.display = "none";
+                          } else {
+                            currentCDetailBlurAction = () => {
+                              optioninput.enabled = false;
+                              cDetails.style.display = "none";
+                            };
                           }
                         });
                         // #endregion Hide interface on blur.
@@ -767,6 +804,30 @@ export function enableLocalDocInterface(): void {
 
                       currentFunctionalityParameterInput?.addEventListener("keydown", (event) => {
                         const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
+                        // #region If ALT + X...
+                        if (keyboardEvent.altKey && (keyboardEvent.key === "x" || keyboardEvent.key === "X")) {
+                          const attributePanel = INSTANCE.tsCheck<HTMLElement>(
+                            document.querySelector('[ data-panel-id ="attributes"]'),
+                            HTMLElement,
+                          );
+
+                          attributePanelForcedToEnlarge = attributePanel.style.position !== "fixed";
+
+                          attributePanel.style.position =
+                            attributePanel.style.position === "fixed" ? "relative" : "fixed";
+                          attributePanel.style.zIndex = attributePanel.style.position === "fixed" ? "1001" : "0";
+                          attributePanel.style.left = attributePanel.style.position === "fixed" ? "10vh" : "";
+                          attributePanel.style.top = attributePanel.style.position === "fixed" ? "10vw" : "";
+                          attributePanel.style.width = attributePanel.style.position === "fixed" ? "80vw" : "";
+                          attributePanel.style.height = attributePanel.style.position === "fixed" ? "fit-content" : "";
+                          attributePanel.style.boxShadow =
+                            attributePanel.style.position === "fixed" ? "0 0 1em darkorange" : "";
+                          attributePanel.style.borderRadius = attributePanel.style.position === "fixed" ? ".5em" : "";
+                          attributePanel.style.borderColor = attributePanel.style.position === "fixed" ? "black" : "";
+                          attributePanel.style.transition = attributePanel.style.position === "fixed" ? "1s all" : "";
+                          attributePanel.style.border = attributePanel.style.position === "fixed" ? "solid" : "";
+                        }
+                        // #endregion If ALT + X...
                         // #region If ALT + E...
                         if (keyboardEvent.altKey && (keyboardEvent.key === "e" || keyboardEvent.key === "E")) {
                           // #region Prevent default actions & bubbling.
@@ -800,9 +861,35 @@ export function enableLocalDocInterface(): void {
                       });
                       // #region Hide CodBi-Interface on leaving <input>.
                       currentFunctionalityParameterInput?.addEventListener("blur", (event) => {
-                        if (document.activeElement !== cDetails) {
+                        // #region End forced enlargement of the attributes panel, if necessary.
+                        if (attributePanelForcedToEnlarge) {
+                          const attributePanel = INSTANCE.tsCheck<HTMLElement>(
+                            document.querySelector('[ data-panel-id ="attributes"]'),
+                            HTMLElement,
+                          );
+
+                          attributePanelForcedToEnlarge = false;
+                          attributePanel.style.position = "relative";
+                          attributePanel.style.zIndex = "0";
+                          attributePanel.style.left = "";
+                          attributePanel.style.top = "";
+                          attributePanel.style.width = "";
+                          attributePanel.style.height = "";
+                          attributePanel.style.boxShadow = "";
+                          attributePanel.style.borderRadius = "";
+                          attributePanel.style.borderColor = "";
+                          attributePanel.style.border = "";
+                          attributePanel.style.transition = "";
+                        }
+                        // #endregion End forced enlargement of the attributes panel, if necessary.
+                        if (!flagMouseOverCDetails) {
                           epManager.enabled = false;
                           cDetails.style.display = "none";
+                        } else {
+                          currentCDetailBlurAction = () => {
+                            epManager.enabled = false;
+                            cDetails.style.display = "none";
+                          };
                         }
                       });
                       // #endregion Hide CodBi-Interface on leaving <input>.
@@ -871,9 +958,14 @@ export function enableLocalDocInterface(): void {
                             }
                             // #region Disable CodBi-Interface when this newly created <input> looses focus
                             addedHTMLElement.addEventListener("blur", (event) => {
-                              if (document.activeElement !== cDetails) {
+                              if (!flagMouseOverCDetails) {
                                 epManager.enabled = false;
                                 cDetails.style.display = "none";
+                              } else {
+                                currentCDetailBlurAction = () => {
+                                  epManager.enabled = false;
+                                  cDetails.style.display = "none";
+                                };
                               }
                             });
                             // #endregion Disable CodBi-Interface when this newly created <input> looses focus
@@ -902,9 +994,14 @@ export function enableLocalDocInterface(): void {
                       if (currentFunctionalityInput !== null) {
                         // #region Hide SVManager and API-Docs on blur
                         currentFunctionalityInput.addEventListener("blur", () => {
-                          if (document.activeElement !== cDetails) {
+                          if (!flagMouseOverCDetails) {
                             epManager.enabled = false;
                             cDetails.style.display = "none";
+                          } else {
+                            currentCDetailBlurAction = () => {
+                              epManager.enabled = false;
+                              cDetails.style.display = "none";
+                            };
                           }
                         });
                         // #endregion Hide SVManager and API-Docs on blur
@@ -937,7 +1034,6 @@ export function enableLocalDocInterface(): void {
                     }
                     // #region View corresponding API-Doc
                     epManager.onOptionChanged.push((newOption: string) => {
-                      console.log("lastchanged");
                       if (newOption === "") {
                         return;
                       }

@@ -1162,10 +1162,12 @@ export class Manager implements AfterViewInit {
     // #region Sync
     $.ajax({
       url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
-      type: "GET",
+      type: "POST",
       headers: {
         "X-Action": "Update",
-        "X-ToWrite": JSON.stringify({
+      },
+      data: {
+        ToWrite: JSON.stringify({
           fslFunctionalities: fileListings.fslFunctionalities,
           detFunctionalities: localNodeData.detFunctionalities,
           fslElementplaceholder: fileListings.fslElementplaceholder,

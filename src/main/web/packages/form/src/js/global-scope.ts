@@ -2,9 +2,6 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 import { CodBiLogo } from "./Logo";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
-import { OR } from "xdbc/src/DBC/OR";
-import { EQ } from "xdbc/src/DBC/EQ";
-import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 /**

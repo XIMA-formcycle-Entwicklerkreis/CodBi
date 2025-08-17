@@ -27,6 +27,11 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
   var usedFunctionalities: Set<String> = mutableSetOf<String>()
   /** Stores all **E**lement **P**laceholders used by the form. */
   var usedEPs: Set<String> = mutableSetOf<String>()
+  /**
+   * Stores the prefix to prepend when trying to load local libraries dynamically. Setting this to
+   * an empty [String] will result in the CodBi not even trying to load local library files.
+   */
+  var prefixLocalLib: String = ""
 
   /**
    * Extracts all **E**lement **P**laceholders used within a CodBi-Attribute's value with nesting

@@ -91,7 +91,7 @@ class StructuredDataStoreAction : IPluginServletAction {
       }
       "UPDATE" -> {
         try {
-          val toWrite = params.headerMap["X-ToWrite"]
+          val toWrite = params.requestParameters["ToWrite"]?.first()
 
           if (toWrite == null) {
             servletResponse.value =
@@ -123,7 +123,7 @@ class StructuredDataStoreAction : IPluginServletAction {
                 "{\"status\": \"success\", \"message\": \"Data stored successfully.\"}"
 
             LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-                .error(
+                .info(
                     "StructuredDataStoreAction: UPDATE request handled. New documentation stored successfully.")
           }
         } catch (X: IOException) {

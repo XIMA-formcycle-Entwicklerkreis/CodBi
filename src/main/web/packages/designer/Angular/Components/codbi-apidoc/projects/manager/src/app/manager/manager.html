@@ -217,9 +217,11 @@
                                 <p-accordion-header>Parameter</p-accordion-header>
                                 <p-accordion-content>
                                     <ng-container   [ngTemplateOutlet]          = "tplParameter"
-                                                    [ngTemplateOutletContext]   = "{ data: currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? toDescriptiveArray( currentlySelectedFunctionalityData.Parameter ) : [] : []}"></ng-container></p-accordion-content></p-accordion-panel>
+                                                    [ngTemplateOutletContext]   = "{
+                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? toDescriptiveArray( currentlySelectedFunctionalityData.Parameter ) : [] : [],
+                                                        isEP    : true }"></ng-container></p-accordion-content></p-accordion-panel>
 
-                            <p-accordion-panel value="Notes">
+                            <p-accordion-panel value = "Notes">
                                 <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
 
                                 <p-accordion-content>
@@ -232,7 +234,7 @@
 
                                                 [attr.placeholder] = "'RP.phNotes' | transloco"></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
 
-                    <p-tabpanel value   = "Standard"
+                    <p-tabpanel value = "Standard"
 
                                 [class]             = "activeTab === 'Standard' ? '--active' : '--inactive'"
                                 [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef && currentlySelectedTreeNodeAPIRef.local === undefined"
@@ -363,7 +365,8 @@
 <!-- #endregion Templates -->
 <ng-template #tplParameter
                 let-data    = "data"
-                let-toAdd   = "toAdd">
+                let-toAdd   = "toAdd"
+                let-isEP    = "isEP">
     <p-table    [value] = "data"
 
                 editMode    = "row"
@@ -372,7 +375,7 @@
                 stripedRows >
         <ng-template #header >
             <tr>
-                <th style="width:50%">{{"Input.Parameter.Name" | transloco }}</th>
+                <th style="width:50%">{{( isEP ? "Input.Parameter.Index" : "Input.Parameter.Name") | transloco }}</th>
                 <th style="width:50%">{{"Input.Parameter.Description" | transloco }}</th></tr></ng-template>
 
                 <ng-template   #body
@@ -387,7 +390,7 @@
                                     <input  pInputText
 
                                             [ngClass]       = "{'--invalid' : !currentNameValid }"
-                                            [placeholder]   = "'Input.Parameter.phName' | transloco"
+                                            [placeholder]   = "( isEP ? 'Input.Parameter.phIndex' : 'Input.Parameter.phName') | transloco"
 
                                             [attr.typeToAdd] = "toAdd"
 

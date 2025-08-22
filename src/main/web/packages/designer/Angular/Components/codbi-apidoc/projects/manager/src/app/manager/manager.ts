@@ -595,6 +595,18 @@ export class Manager implements AfterViewInit {
     this.CodBi_LocalAPIDoc_Tree_Label_Remove_Question.nativeElement.style.display = "none";
   }
   // #endregion Removal
+  // #region Code Upload
+  /** References the Upload-File-{@link HTMLInputElement }. */
+  @ViewChild("CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue")
+  CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue!: ElementRef;
+  /**
+   * Opens the {@link Manager.CodBi_LocalAPIDoc_Tree_Label_Upload_Code } to select the code to upload.
+   *
+   * @param event The {@link Event } received. */
+  protected onUploadCode(event: Event) {
+    this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.click();
+  }
+  // #endregion Code Upload
   // #region Renaming
   /**
    *  Provides access to the {@link HTMLParagraphElement } stating that the name chosen for renaming is already taken
@@ -1613,6 +1625,41 @@ export class Manager implements AfterViewInit {
       (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.remove("-submerged");
     });
     // #endregion Register close dialog handler.
+    // #region Code Upload
+    this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.addEventListener("change", (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0];
+
+      if (file) {
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+          const fileContent = e.target?.result as string;
+
+          this.synchronizing = true;
+
+          getJQuery().ajax({
+            url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+            type: "POST",
+            headers: {
+              "X-Action": "Update Code",
+              "X-Functionality": this.getFullNodePath(this.currentlySelectedTreeNode),
+            },
+            data: {
+              ToWrite: e.target?.result as string,
+            },
+            success: (response) => {
+              this.synchronizing = false;
+              this.synchronized = true;
+
+              this.cdr.markForCheck();
+            },
+          });
+        };
+
+        reader.readAsText(file);
+      }
+    });
+    // #endregion Code Upload
     // #region Register file to import selected handler.
     this.CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue.nativeElement.addEventListener("change", (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];

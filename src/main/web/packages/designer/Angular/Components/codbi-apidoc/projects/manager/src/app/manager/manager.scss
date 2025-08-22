@@ -41,7 +41,8 @@
   // #region Nodeoptions
   .--CB-LocalAPIDoc-RemoveTreeItem,
   .--CB-LocalAPIDoc-ExportTreeItem,
-  .--CB-LocalAPIDoc-RenameTreeItem {
+  .--CB-LocalAPIDoc-RenameTreeItem,
+  .--CB-LocalAPIDoc-UploadCodeTreeItem {
     margin-left: 1em;
     border: none;
     background-color: transparent;
@@ -54,14 +55,16 @@
 
   .--CB-LocalAPIDoc-RemoveTreeItem:hover,
   .--CB-LocalAPIDoc-ExportTreeItem:hover,
-  .--CB-LocalAPIDoc-RenameTreeItem:hover {
+  .--CB-LocalAPIDoc-RenameTreeItem:hover,
+  .--CB-LocalAPIDoc-UploadCodeTreeItem:hover {
     color: red;
     text-shadow: 0 0 .1em darkorange;
   }
 
   .--CB-LocalAPIDoc-RemoveTreeItem:active,
   .--CB-LocalAPIDoc-ExportTreeItem:active,
-  .--CB-LocalAPIDoc-RenameTreeItem:active {
+  .--CB-LocalAPIDoc-RenameTreeItem:active,
+  .--CB-LocalAPIDoc-UploadCodeTreeItem:active {
     color: green;
     scale: 0;
   }
@@ -80,6 +83,12 @@
 
   .--CB-LocalAPIDoc-RenameTreeItem::after {
     content: "\e942";
+    font-family: 'primeicons';
+    cursor: pointer;
+  }
+
+  .--CB-LocalAPIDoc-UploadCodeTreeItem::after {
+    content: "\e9d4";
     font-family: 'primeicons';
     cursor: pointer;
   }
@@ -567,7 +576,8 @@
 
     p-treenode:hover .--CB-LocalAPIDoc-RemoveTreeItem,
     p-treenode:hover .--CB-LocalAPIDoc-ExportTreeItem,
-    p-treenode:hover .--CB-LocalAPIDoc-RenameTreeItem {
+    p-treenode:hover .--CB-LocalAPIDoc-RenameTreeItem,
+    p-treenode:hover .--CB-LocalAPIDoc-UploadCodeTreeItem {
       opacity: 1;
       scale: 1;
       pointer-events: all;

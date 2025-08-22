@@ -30,6 +30,8 @@ import org.slf4j.LoggerFactory
 class StructuredDataStoreAction : IPluginServletAction {
   /** Stores the local API documentation. */
   private var documentation: String = ""
+  /** Stores the retrieved functionality code. */
+  private var code: String = ""
   /** Accessor to the plugin's file storage. */
   private var fileHelper: IPluginFileHelper? = null
   /** States the documentation storage's file name. */
@@ -84,6 +86,60 @@ class StructuredDataStoreAction : IPluginServletAction {
     servletResponse.encoding = StandardCharsets.UTF_8.name()
 
     when (mode?.uppercase()) {
+      "UPDATE CODE" -> {
+        val toWrite = params.requestParameters["ToWrite"]?.first()
+
+        if (toWrite == null) {
+          servletResponse.value =
+              "{\"status\": \"error\", \"message\": \"ToWrite header is missing.\"}"
+          servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
+
+          return PluginServletActionRetVal(servletResponse)
+        }
+
+        val functionality = params.headerMap["X-Functionality"]?.lowercase()
+
+        if (functionality == null) {
+          servletResponse.value =
+              "{\"status\": \"error\", \"message\": \"Functionality header is missing.\"}"
+          servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
+
+          return PluginServletActionRetVal(servletResponse)
+        }
+
+        if (toWrite === "") {
+          deleteCodeFile(functionality)
+        } else {
+          lock.write {
+            saveCodeToFile(functionality, toWrite)
+            servletResponse.value =
+                "{\"status\": \"success\", \"message\": \"Code stored successfully.\"}"
+
+            LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+                .info(
+                    "StructuredDataStoreAction: UPDATE request handled. New documentation stored successfully.")
+          }
+        }
+      }
+
+      "CODE" -> {
+        val functionality = params.headerMap["X-Functionality"]?.lowercase()
+
+        if (functionality == null) {
+          servletResponse.value =
+              "{\"status\": \"error\", \"message\": \"Functionality header is missing.\"}"
+          servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
+
+          return PluginServletActionRetVal(servletResponse)
+        }
+
+        loadCodeFromFile(functionality)
+
+        lock.read {
+          servletResponse.value =
+              "{\"result\": \"${ code.replace("\"","<|>").replace("\r","").replace("\n","").replace("\t","")}\"}"
+        }
+      }
       "RETRIEVE" -> {
         loadDataFromFile()
 
@@ -176,6 +232,29 @@ class StructuredDataStoreAction : IPluginServletAction {
     return File(pluginDir, dataFileName)
   }
 
+  /**
+   * Determine lokal Code-File's path by creating it, if necessary.
+   *
+   * @param functionality The path an name of the local functionality to retrieved the code for.
+   * @return The [java.io.File] pointing to the specified functionality's code.
+   */
+  private fun getPluginCodeFile(functionality: String): File? {
+    val pluginDir: File? = fileHelper?.pluginFolder
+
+    if (pluginDir == null) {
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error("The plugin's directory for storage is not available.")
+
+      return null
+    }
+
+    if (!pluginDir.exists()) {
+      pluginDir.mkdirs()
+    }
+
+    return File(pluginDir, "$functionality.js")
+  }
+
   /** Attempts to load the local API-Documentation into [documentation]. */
   private fun loadDataFromFile() {
     val dataFile: File? = getPluginDataFile()
@@ -221,6 +300,44 @@ class StructuredDataStoreAction : IPluginServletAction {
     }
   }
 
+  /** Attempts to load the local API-Documentation into [documentation]. */
+  private fun loadCodeFromFile(functionality: String) {
+    val dataFile: File? = getPluginCodeFile(functionality)
+
+    if (dataFile == null) {
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error("Code file for ${ functionality } could not be found.")
+
+      return
+    }
+
+    lock.write {
+      if (dataFile.exists() && dataFile.length() > 0) {
+        try {
+          code = dataFile.readText(StandardCharsets.UTF_8)
+        } catch (X: IOException) {
+          LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+              .error(
+                  "Following error loading data from file '${ dataFile.absolutePath }': ${ X.message }")
+
+          code = "NONE"
+        } catch (X: Exception) {
+          LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+              .error(
+                  "Following unexpected error loading data from file '${dataFile.absolutePath}': ${ X.message}")
+
+          code = "NONE"
+        }
+      } else {
+        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+            .error(
+                "Either there is no existing data file at '${ dataFile.absolutePath }' or the file is empty. Starting with empty data.")
+
+        code = "NONE"
+      }
+    }
+  }
+
   /** Saves the [documentation] to the plugin's dedicated file. */
   private fun saveDataToFile() {
     val dataFile: File? = getPluginDataFile()
@@ -238,6 +355,64 @@ class StructuredDataStoreAction : IPluginServletAction {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
           .error(
               "Following error occured saving local API-Documentation to file '${ dataFile.absolutePath }': ${ X.message }")
+    }
+  }
+
+  /**  */
+  private fun saveCodeToFile(functionality: String, code: String) {
+    val dataFile: File? = getPluginCodeFile(functionality)
+
+    if (dataFile == null) {
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error("Data file could not be determined for saving.")
+
+      return
+    }
+
+    try {
+      dataFile.writeText(code, StandardCharsets.UTF_8)
+    } catch (X: Exception) {
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error(
+              "Following error occured saving local API-Documentation to file '${ dataFile.absolutePath }': ${ X.message }")
+    }
+  }
+
+  /**
+   * Deletes a file with a name determined by the provided functionality string. This method uses a
+   * try-catch block to handle potential exceptions during deletion.
+   *
+   * @param functionality The unique identifier for the file to be deleted.
+   */
+  private fun deleteCodeFile(functionality: String) {
+    // Determine the file path based on the functionality string.
+    val dataFile: File? = getPluginCodeFile(functionality)
+
+    // Check if the file object was successfully determined.
+    if (dataFile == null) {
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error("Data file could not be determined for deletion.")
+      return
+    }
+
+    try {
+      // Attempt to delete the file.
+      val isDeleted = dataFile.delete()
+
+      if (isDeleted) {
+        // Log a success message if the deletion was successful.
+        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+            .info("Successfully deleted file: '${dataFile.absolutePath}'")
+      } else {
+        // Log an error if the file could not be deleted,
+        // which can happen if it doesn't exist or permissions are an issue.
+        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+            .warn("File could not be deleted: '${dataFile.absolutePath}'. It may not exist.")
+      }
+    } catch (X: Exception) {
+      // Catch and log any exceptions that occur during the deletion process.
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error("Following error occurred deleting file '${dataFile.absolutePath}': ${X.message}")
     }
   }
 }

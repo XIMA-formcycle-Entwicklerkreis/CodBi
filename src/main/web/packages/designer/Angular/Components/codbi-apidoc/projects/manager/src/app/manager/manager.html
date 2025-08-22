@@ -66,7 +66,17 @@
 
                                                 (click) = " onDeleteNode_CANCEL( $event );
 
-                                                            CodBi_LocalAPIDoc_Tree_Label_Remove_Question.style.display = 'none';"></button></div></div></div></ng-template></p-tree>
+                                                            CodBi_LocalAPIDoc_Tree_Label_Remove_Question.style.display = 'none';"></button></div></div>
+
+                                    <div id = "CodBi_LocalAPIDoc_Tree_Label_UploadCode">
+                                        <button class = "--CB-LocalAPIDoc-UploadCodeTreeItem"
+
+                                                (click) = "onUploadCode( $event )"></button>
+
+                                        <input  id = "CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue" #CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue
+                                            type    = "file"
+                                            accept  = ".js"
+                                            style   = "display : none ;"/></div></div></ng-template></p-tree>
 
                 <button class = "-add" #CodBi_LocalAPIDoc_Add
 

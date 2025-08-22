@@ -252,14 +252,7 @@ export function enableLocalDocInterface(): void {
       // #endregion Remove loader when having loaded for the first time in session
       // #region Retrieve Local API Doc
       const $ = getJQuery();
-      $.ajax({
-        url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
-        type: "POST",
-        data: {
-          popel: "ddddd",
-        },
-        success: (response) => {},
-      });
+
       $.ajax({
         url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
         type: "GET",

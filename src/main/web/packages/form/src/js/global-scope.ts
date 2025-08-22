@@ -632,11 +632,13 @@ export class CodBi implements CodbiGlobal {
               // If functionality is missing...
               await new Promise((resolve) => {
                 const toLoad = document.createElement("script");
+
                 toLoad.src = `${this.resourceBase}${functionality.trim().toLowerCase()}.js`;
                 toLoad.type = "module";
                 toLoad.onload = (event) => {
                   resolve(event);
                 };
+
                 document.head.appendChild(toLoad);
               });
             }
@@ -927,8 +929,8 @@ export class CodBi implements CodbiGlobal {
           const toInvoke = this.functionalities.get(functionality.toLowerCase().trim());
           // If the functionality is a registered one...
           if (toInvoke) {
-            // #region Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded,
-            // if not deactivated.
+            // #region  Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded,
+            //          if not deactivated.
             if (
               toProcess.getAttribute("data-cb-LOADER")?.toLocaleLowerCase().trim() !== "none" &&
               toProcess.tagName !== "HEAD"
@@ -936,7 +938,7 @@ export class CodBi implements CodbiGlobal {
               this.injectLoadingAnim(toProcess);
             }
             // #endregion Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded,
-            // if not deactivated.
+            //            if not deactivated.
             toProcess.classList.add("Processing", "CodBi");
 
             cntPromises++;
@@ -1033,6 +1035,63 @@ export class CodBi implements CodbiGlobal {
             }
             // #endregion Check if further application wanted.
             // #endregion Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded, if not deactivated.
+          } else {
+            // If no functionality...
+            if (functionality === "") {
+              continue;
+            }
+            // If no native functionality is existent...
+            getJQuery().ajax({
+              url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+              type: "GET",
+              headers: {
+                "X-Action": "Code",
+                "X-Functionality": functionality.trim().toLowerCase(),
+              },
+              success: (response) => {
+                // #region Evaluate the response and replace all placeholders.
+                // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+                eval(response.result.replaceAll("<|>", '"'));
+                // #endregion Evaluate the response and replace all placeholders.
+                toProcess.classList.add("Processing", "CodBi");
+
+                cntPromises++;
+
+                this.resolveEP(codbiAttributes)
+                  .then((real) => {
+                    codbiAttributes = real;
+
+                    this.functionalities.get(functionality.toLowerCase().trim())(codbiAttributes, toProcess);
+                    // #region Disable loading animation and remove logo when CodBi finished processing that element.
+                    if (
+                      toProcess
+                        .getAttribute(toProcess.hasAttribute("cbLOADER") ? "cbLOADER" : "data-cb-LOADER")
+                        ?.toLocaleLowerCase()
+                        .trim() !== "none" &&
+                      toProcess.tagName !== "HEAD"
+                    ) {
+                      this.removeLoaderAnim(toProcess);
+                    }
+                    // #endregion Disable loading animation and remove logo when CodBi finished processing that element.
+                    toProcess.classList.remove("Processing");
+
+                    if (--cntPromises === 0) {
+                      this.checkingAttributes = false;
+
+                      resolve(true);
+                    }
+                  })
+                  .catch((X: unknown) => {
+                    this.reportFunctionalityError(toProcess, functionality, codbiAttributes, X, "");
+
+                    if (--cntPromises === 0) {
+                      this.checkingAttributes = false;
+
+                      resolve(true);
+                    }
+                  });
+              },
+            });
           }
         }
       }

@@ -42,5 +42,10 @@
   "RP.Tabs.Header.Functions.Import": "Von Datei importieren...",
   "RP.Tabs.Header.Functions.Export": "In Datei exportieren...",
   "RP.Tabs.Header.Functions.Sync": "Zum Server hochladen",
-  "RP.phNotes": "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind und nur um eigenen CodBi Speicher abgelegt also exportiert werden..."
+  "RP.phNotes": "Hier können Notizen erfasst werden die ausschließlich über dieses Interface zugänglich sind und nur um eigenen CodBi Speicher abgelegt also exportiert werden...",
+  "TreeView.Label.Status.Description": "Beschreibung vorhanden",
+  "TreeView.Label.Status.Parameter": "Parameterbeschreibung vorhanden",
+  "TreeView.Label.Status.Globals": "Beschreibung globaler Parameter vorhanden",
+  "TreeView.Label.Status.Classes": "Beschreibung der von dieser CodBi Standard-Konfiguration definierten CSS-Klassen vorhanden",
+  "TreeView.Label.Status.Code": "Code verfügbar"
 }

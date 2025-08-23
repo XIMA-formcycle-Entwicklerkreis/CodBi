@@ -31,6 +31,8 @@ export interface CodbiGlobal {
   loadConfig(toLoad: { [key: string]: unknown }): void;
   /** See {@link CodBi.loadConfigs }. */
   loadConfigs(toLoad: Array<{ targets: string; [key: string]: unknown }>): void;
+  /** Handles the loading of all **n**on **native** CodBi Standard-**C**onfigurations that're not native ones.*/
+  nncHandler(toHandle: string): void;
 }
 /**
  * The configuration template for the form, as configured by the user in the
@@ -54,6 +56,36 @@ declare global {
 }
 /** Implements the management functionality. */
 export class CodBi implements CodbiGlobal {
+  /**
+   * See {@link CodbiGlobal.nncHandler }.
+   *
+   * @param toHandle The non-native configuration to load. */
+  public nncHandler(toHandle: string): void {
+    getJQuery().ajax({
+      url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+      type: "GET",
+      headers: {
+        "X-Action": "Code",
+        "X-ActionDetail": "Standard",
+        "X-Element": toHandle,
+      },
+      success: (response) => {
+        if (response.result !== "NONE") {
+          if (document.readyState === "complete") {
+            // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+            eval(response.result.replaceAll("<|>", '"'));
+            this.checkAttributes();
+          } else {
+            window.addEventListener("load", () => {
+              // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+              eval(response.result.replaceAll("<|>", '"'));
+              this.checkAttributes();
+            });
+          }
+        }
+      },
+    });
+  }
   /** Stores the path to the **XIMA**-Server's resources including the **CodBi** code fragments. */
   public readonly resourceBase: string = document
     .querySelector('script[src$="codbi.js"]')
@@ -65,8 +97,8 @@ export class CodBi implements CodbiGlobal {
   public configTemplate: ConfigTemplate | undefined = undefined;
   /** Stores all **E**lement **P**laceholder that were registered.*/
   protected availableEPs: { [k: string]: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> } = {};
-  /** Stores all active configurations. */
-  protected configs: Array<unknown> = new Array<unknown>();
+  /** Stores all active CSS-Classes that're references to CodBi Standard-Configurations. */
+  protected configs: Array<string> = new Array<string>();
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
   protected functionalities: Map<string, (toLoad: any, toProcess: Element) => any> = new Map<
     string,
@@ -98,7 +130,7 @@ export class CodBi implements CodbiGlobal {
     id = id.toLowerCase();
 
     if (this.availableEPs[id]) {
-      console.log(`Element placeholder (${id}) is already registered. Replacement discarded.`);
+      console.info(`[[ CodBi / Discard ] Element placeholder (${id}) is already registered. Replacement discarded. ]`);
 
       return false;
     }
@@ -296,47 +328,70 @@ export class CodBi implements CodbiGlobal {
               .catch((X: unknown) => {
                 reject(X);
               });
-          }
-        } else if (this.availableEPs[candidate.trim().toLowerCase()]) {
-          // If the element placeholder is a parameterless one...
-          // The "candidate" is an EP, no parameter provided.
-          // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-          const epResult = this.availableEPs[candidate.trim().toLowerCase()]!(new Array<string>());
-
-          if (epResult instanceof Promise) {
+          } else {
+            // #region Fix CSS recognized as an element placeholder bug.
+            if (outermostEP.keyPlaceholder.indexOf("{") !== -1 || outermostEP.keyPlaceholder.indexOf("}") !== -1) {
+              continue;
+            }
+            // #endregion Fix CSS recognized as an element placeholder bug.
+            // Set counter for asynchronous download of EP code.
             cntPromises++;
 
-            epResult
-              .then((real) => {
-                if (real.length > 0) {
-                  if (real[0] !== undefined && typeof real[0] === "string") {
-                    real[0] = (real[0] as string).trim();
-                  }
+            getJQuery().ajax({
+              url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+              type: "GET",
+              headers: {
+                "X-Action": "Code",
+                "X-ActionDetail": "Elementplaceholder",
+                "X-Element": outermostEP.keyPlaceholder.trim().toLowerCase(),
+              },
+              success: (response) => {
+                // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+                eval(response.result.replaceAll("<|>", '"'));
 
-                  result.splice(i, 0, real[0] as string);
+                this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string))
+                  .then((real) => {
+                    const epResult = DEFINED.tsCheck<
+                      (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>
+                    >(this.availableEPs[outermostEP.keyPlaceholder])(real);
+                    // If the element placeholder is asynchronous...
+                    if (epResult instanceof Promise) {
+                      epResult
+                        .then((real) => {
+                          if (real[0] !== undefined && typeof real[0] === "string") {
+                            real[0] = (real[0] as string).trim();
+                          }
 
-                  if (--cntPromises === 0) {
-                    resolve(result);
-                  }
-                }
-              })
-              .catch((X: unknown) => {
-                reject(X);
-              });
-          } else {
-            // If there are no element placeholder...
-            let final: string | undefined = (
-              this.availableEPs[candidate.trim().toLowerCase()](new Array<string>()) as Array<unknown>
-            )[0] as string;
+                          result.splice(i, 0, real[0] as string);
 
-            if (final !== undefined) {
-              final = final.trim();
-            }
+                          if (--cntPromises === 0) {
+                            resolve(result);
+                          }
+                        })
+                        .catch((X: unknown) => {
+                          reject(X);
+                        });
+                    } else {
+                      // In case of a synchronous element placeholder...
+                      if (epResult[0] !== undefined && typeof epResult[0] === "string") {
+                        epResult[0] = (epResult[0] as string).trim();
+                      }
 
-            result.splice(i, 0, final as string);
+                      result.splice(i, 0, epResult[0] as string);
+
+                      if (--cntPromises === 0) {
+                        resolve(result);
+                      }
+                    }
+                  })
+                  .catch((X: unknown) => {
+                    reject(X);
+                  });
+              },
+            });
           }
         } else {
-          result.push(candidate); // The "candidate" is not an EP.
+          result.push(candidate); // The "candidate" is not an EP (no opening curly brace).
         }
       }
       // In case there're no element placeholder at all.
@@ -381,6 +436,7 @@ export class CodBi implements CodbiGlobal {
                               epResult
                                 .then((real) => {
                                   (config[key] as []).splice(i, 1, ...(real as []));
+
                                   config[key] = (config[key] as []).filter((item) => item !== candidate);
 
                                   if (--cntPromises === 0) {
@@ -403,6 +459,56 @@ export class CodBi implements CodbiGlobal {
                           .catch((X: unknown) => {
                             reject(X);
                           });
+                      } else {
+                        // Set counter for asynchronous download of EP code.
+                        cntPromises++;
+
+                        getJQuery().ajax({
+                          url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                          type: "GET",
+                          headers: {
+                            "X-Action": "Code",
+                            "X-ActionDetail": "Elementplaceholder",
+                            "X-Element": outermostEP.keyPlaceholder.trim().toLowerCase(),
+                          },
+                          success: (response) => {
+                            // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+                            eval(response.result.replaceAll("<|>", '"'));
+                            // Promises counter for this already set in advance 'cause of asynchronous download of EP code.
+                            this.resolveEPParams(this.splitUnbracedParams(outermostEP.params))
+                              .then((real) => {
+                                const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
+                                  outermostEP.params === "" ? new Array<string>() : real,
+                                );
+
+                                if (epResult instanceof Promise) {
+                                  epResult
+                                    .then((real) => {
+                                      (config[key] as []).splice(i, 1, ...(real as []));
+                                      config[key] = (config[key] as []).filter((item) => item !== candidate);
+
+                                      if (--cntPromises === 0) {
+                                        resolve(config);
+                                      }
+                                    })
+                                    .catch((X: unknown) => {
+                                      reject(X);
+                                    });
+                                } else {
+                                  (config[key] as []).splice(i, 1, ...(epResult as []));
+
+                                  config[key] = (config[key] as []).filter((item) => item !== candidate);
+
+                                  if (--cntPromises === 0) {
+                                    resolve(config);
+                                  }
+                                }
+                              })
+                              .catch((X: unknown) => {
+                                reject(X);
+                              });
+                          },
+                        });
                       }
                     }
                   }
@@ -444,6 +550,60 @@ export class CodBi implements CodbiGlobal {
                         resolve(config);
                       }
                     }
+                  });
+                } else {
+                  // #region Fix CSS recognized as an element placeholder bug.
+                  if (
+                    outermostEP.keyPlaceholder.indexOf("{") !== -1 ||
+                    outermostEP.keyPlaceholder.indexOf("}") !== -1
+                  ) {
+                    continue;
+                  }
+                  // #endregion Fix CSS recognized as an element placeholder bug.
+                  // Set counter for asynchronous download of EP code.
+                  cntPromises++;
+
+                  getJQuery().ajax({
+                    url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                    type: "GET",
+                    headers: {
+                      "X-Action": "Code",
+                      "X-ActionDetail": "Elementplaceholder",
+                      "X-Element": outermostEP.keyPlaceholder.trim().toLowerCase(),
+                    },
+                    success: (response) => {
+                      if (response.result !== "NONE") {
+                        // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+                        eval(response.result.replaceAll("<|>", '"'));
+
+                        this.resolveEPParams(this.splitUnbracedParams(outermostEP.params)).then((real) => {
+                          const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
+                            outermostEP.params === "" ? new Array<string>() : real,
+                          );
+                          // If parameter is a single element placeholder...
+                          if (epResult instanceof Promise) {
+                            epResult
+                              .then((real) => {
+                                config[key] = real;
+
+                                if (--cntPromises === 0) {
+                                  resolve(config);
+                                }
+                              })
+                              .catch((X: unknown) => {
+                                reject(X);
+                              });
+                          } else {
+                            // If parameter is not an array and contains no element placeholder...
+                            config[key] = epResult;
+
+                            if (--cntPromises === 0) {
+                              resolve(config);
+                            }
+                          }
+                        });
+                      }
+                    },
                   });
                 }
               }
@@ -508,7 +668,7 @@ export class CodBi implements CodbiGlobal {
     id = id.toLowerCase();
 
     if (this.functionalities.has(id)) {
-      console.log(`Functionality (${id}) is already registered. Replacement discarded.`);
+      console.info(`[[ CodBi / Discard ] Functionality (${id}) is already registered. Replacement discarded. ]`);
 
       return false;
     }
@@ -638,6 +798,23 @@ export class CodBi implements CodbiGlobal {
                 toLoad.onload = (event) => {
                   resolve(event);
                 };
+                toLoad.onerror = (event) => {
+                  getJQuery().ajax({
+                    url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                    type: "GET",
+                    headers: {
+                      "X-Action": "Code",
+                      "X-ActionDetail": "Functionality",
+                      "X-Element": functionality.trim().toLowerCase(),
+                    },
+                    success: (response) => {
+                      // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+                      eval(response.result.replaceAll("<|>", '"'));
+
+                      resolve(event);
+                    },
+                  });
+                };
 
                 document.head.appendChild(toLoad);
               });
@@ -658,6 +835,20 @@ export class CodBi implements CodbiGlobal {
                 toLoad.onload = (event) => {
                   resolve(event);
                 };
+                toLoad.onerror = (event) => {
+                  getJQuery().ajax({
+                    url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                    type: "GET",
+                    headers: {
+                      "X-Action": "Code",
+                      "X-ActionDetail": "Elementplaceholder",
+                      "X-Element": ep.trim().toLowerCase(),
+                    },
+                    success: (response) => {
+                      resolve(event);
+                    },
+                  });
+                };
 
                 document.head.appendChild(toLoad);
               });
@@ -670,6 +861,16 @@ export class CodBi implements CodbiGlobal {
       const globals: { [key: string]: string } = {};
 
       for (const selTarget of toLoad.targets.split("~")) {
+        if (this.configs.indexOf(selTarget) !== -1) {
+          console.info(
+            `[[ CodBi / Discard ] Standard-Configuration CSS-Class ${selTarget} has already been used for appliance. Discarding application. ]`,
+          );
+
+          continue;
+        }
+
+        this.configs.push(selTarget);
+
         for (const target of document.querySelectorAll(selTarget)) {
           if (target) {
             // #region Check for global overrides.
@@ -1046,7 +1247,8 @@ export class CodBi implements CodbiGlobal {
               type: "GET",
               headers: {
                 "X-Action": "Code",
-                "X-Functionality": functionality.trim().toLowerCase(),
+                "X-ActionDetail": "Functionality",
+                "X-Element": functionality.trim().toLowerCase(),
               },
               success: (response) => {
                 // #region Evaluate the response and replace all placeholders.

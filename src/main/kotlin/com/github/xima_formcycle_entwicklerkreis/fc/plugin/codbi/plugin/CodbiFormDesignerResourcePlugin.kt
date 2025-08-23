@@ -9,6 +9,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.EMessageKey.PLUGIN_FORM_DESIGNER_RESOURCE_DESC
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.EMessageKey.PLUGIN_FORM_DESIGNER_RESOURCE_NAME
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
+import de.xima.fc.interfaces.plugin.lifecycle.helper.IPluginFileHelper
 import de.xima.fc.interfaces.plugin.param.form.IPluginFormDesignerResourceGetResourceParams
 import de.xima.fc.interfaces.workflow.IResourceDescriptor
 import de.xima.fc.plugin.interfaces.form.IPluginFormDesignerResource
@@ -46,6 +47,8 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
   @Volatile private var jsResource: IResourceDescriptor? = null
   /** Holds the directory the **standard**-configurations reside in. */
   private val dirStandards: String = "./src/main/web/packages/form/src/js/Configurations"
+  /** Accessor to the plugin's file storage. */
+  private var fileHelper: IPluginFileHelper? = null
 
   /** Gets the name of this plugin. */
   override fun getName(): String {
@@ -69,6 +72,8 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
    * corresponding stylesheet.
    */
   override fun initialize(initData: IPluginInitializeData?) {
+    this.fileHelper = initData?.fileHelper
+
     val stable = initData?.manifest?.versionSemVer?.isStable ?: false
     val version =
         if (stable) initData?.manifest?.version ?: "1.0.0"
@@ -83,6 +88,14 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     val detFunctionalities = getDetails("./src/main/web/packages/form/src/js/Functionalities")
     val detElementplaceholder = getDetails("./src/main/web/packages/form/src/js/EPs")
     val detStandards = getDetails("./src/main/web/packages/form/src/js/Configurations")
+    val localCode =
+        fileHelper
+            ?.pluginFolder
+            ?.listFiles()
+            ?.filter { it.isFile }
+            ?.filter { it.name.lowercase().endsWith(".js") }
+            ?.map { it.nameWithoutExtension }
+            ?.joinToString(separator = ",")
 
     jsResource =
         createDynamicJsResource(
@@ -94,7 +107,8 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             detFunctionalities,
             fslElementplaceholder,
             detElementplaceholder,
-            detStandards)
+            detStandards,
+            localCode)
     // endregion Inject available standard configuration via JS defining a global variable for them.
   }
 
@@ -145,6 +159,7 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
       fslElementplaceholder: String,
       detElementplaceholder: String,
       detStandards: String,
+      detLocalCode: String?,
   ): IResourceDescriptor {
     val uri = URI("plugin:${PLUGIN_FORM_DESIGNER_RESOURCE_ID}/${name}?v=${version}")
     val clazz = CodbiFormDesignerResourcePlugin::class.java
@@ -208,6 +223,7 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             window.CodbiPluginData.detStandards             = JSON.parse("$escapedDetStandards");
             window.CodbiPluginData.docsAPI                  = window.CodbiPluginData.docsAPI || {};
             window.CodbiPluginData.docsAPI.en               = "https://waxcode.net/x/CodBi";
+            window.CodbiPluginData.localCode                = "${ detLocalCode }";
 
             $originalJsContent
         """

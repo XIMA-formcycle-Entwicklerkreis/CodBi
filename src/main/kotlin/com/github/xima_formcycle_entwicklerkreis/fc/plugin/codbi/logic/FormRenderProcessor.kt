@@ -142,6 +142,10 @@ internal class FormRenderProcessor {
     attr(script, "name", id)
     attr(script, "src", url)
     attr(script, "type", "module")
+    attr(
+        script,
+        "onerror",
+        "window.codbi.nncHandler('${url.substring(url.lastIndexOf('/')+1).replace(".js","")}');")
 
     return script
   }

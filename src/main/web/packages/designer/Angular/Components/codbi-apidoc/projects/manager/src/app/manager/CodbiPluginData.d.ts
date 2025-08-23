@@ -53,6 +53,8 @@ interface Window {
     fslElementplaceholder: string;
     /** Stores a CSV stating the actual file's names where the code for **CodBi-Functionalities** resides. */
     fslFunctionalities: string;
+    /** Stores a list of CodBi-Elements that're currently available in the Plugin's local code repository. */
+    localCode: string;
     /** Re-Populates the **Standard-Configuration** listing displayed in the form designer's form properties tab.*/
     populateStandards: () => void;
     /**

@@ -32,7 +32,38 @@
 
                                             (keyup)         = "onKeyupRenameInput( $event )"
                                             (blur)          = "onBlurRenameInput( $event )"
-                                            (keydown.enter) = "onBlurRenameInput( $event )"/></div><div>
+                                            (keydown.enter) = "onBlurRenameInput( $event )"/>
+
+                                    <div    class = "CodBi_LocalAPIDoc_Tree_Label_Status">
+                                        <div    *ngIf = 'node.data.Description !== ""'
+
+                                                class = "Description"
+
+                                                [attr.title] = "'TreeView.Label.Status.Description' | transloco"></div>
+
+                                        <div    *ngIf = 'node.data.Parameter && node.data.Parameter.length > 0'
+
+                                                class = "Parameter"
+
+                                                [attr.title] = "'TreeView.Label.Status.Parameter' | transloco"></div>
+
+                                        <div    *ngIf = 'node.data.globals && node.data.globals.length > 0'
+
+                                                class = "Globals"
+
+                                                [attr.title] = "'TreeView.Label.Status.Globals' | transloco"></div>
+
+                                        <div    *ngIf = 'node.data.classes && node.data.classes.length > 0'
+
+                                                class = "Classes"
+
+                                                [attr.title] = "'TreeView.Label.Status.Classes' | transloco"></div>
+
+                                        <div    *ngIf = 'localCodeExistent( node )'
+
+                                                class = "Code"
+
+                                                [attr.title] = "'TreeView.Label.Status.Code' | transloco"></div></div></div><div>
 
                                 <div id = "CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent" #CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent >
                                     <p>"{{ alreadyTakenName }}"{{"Input.Hint.AlreadyExistent" | transloco }}</p></div>

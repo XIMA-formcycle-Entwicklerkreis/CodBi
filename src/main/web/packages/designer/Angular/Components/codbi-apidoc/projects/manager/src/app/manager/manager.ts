@@ -599,12 +599,67 @@ export class Manager implements AfterViewInit {
   /** References the Upload-File-{@link HTMLInputElement }. */
   @ViewChild("CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue")
   CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue!: ElementRef;
+  /** States whether the "Changed"-Eventlistener for {@link Manager.CodBi_LocalAPIDoc_Tree_Label_Upload_Code } has been registered or not.*/
+  protected changedListenerRegistered_CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue = false;
   /**
    * Opens the {@link Manager.CodBi_LocalAPIDoc_Tree_Label_Upload_Code } to select the code to upload.
    *
    * @param event The {@link Event } received. */
   protected onUploadCode(event: Event) {
+    // #region Code Upload
+    if (!this.changedListenerRegistered_CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue) {
+      this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.addEventListener("change", (event) => {
+        console.log("changed");
+        const file = (event.target as HTMLInputElement).files?.[0];
+
+        if (file) {
+          const reader = new FileReader();
+
+          reader.onload = (e) => {
+            console.log("File loaded:", e);
+            const fileContent = e.target?.result as string;
+
+            this.synchronizing = true;
+
+            getJQuery().ajax({
+              url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+              type: "POST",
+              headers: {
+                "X-Action": "Update Code",
+                "X-ActionDetail": this.activeTab,
+                "X-Element": this.getFullNodePath(this.currentlySelectedTreeNode),
+              },
+              data: {
+                ToWrite: e.target?.result as string,
+              },
+              success: (response) => {
+                this.synchronizing = false;
+                this.synchronized = true;
+
+                this.cdr.markForCheck();
+              },
+            });
+          };
+
+          reader.readAsText(file);
+        }
+      });
+
+      this.changedListenerRegistered_CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue = true;
+    }
+    // #endregion Code Upload
     this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.click();
+  }
+  /**
+   * Checks whether the code for the given {@link TreeNode } is already existent in the local code repository.
+   *
+   * @param toCheckFor The {@link TreeNode } to check for if there's appropriate local code existent.
+   *
+   * @returns TRUE if appropriate local code is existent, otherwise FALSE. */
+  protected localCodeExistent(toCheckFor: TreeNode): boolean {
+    return window.CodbiPluginData.localCode
+      .split(",")
+      .includes(`${this.activeTab}_${this.getFullNodePath(toCheckFor)}`);
   }
   // #endregion Code Upload
   // #region Renaming
@@ -1627,12 +1682,14 @@ export class Manager implements AfterViewInit {
     // #endregion Register close dialog handler.
     // #region Code Upload
     this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.addEventListener("change", (event) => {
+      console.log("changed");
       const file = (event.target as HTMLInputElement).files?.[0];
 
       if (file) {
         const reader = new FileReader();
 
         reader.onload = (e) => {
+          console.log("File loaded:", e);
           const fileContent = e.target?.result as string;
 
           this.synchronizing = true;
@@ -1642,7 +1699,8 @@ export class Manager implements AfterViewInit {
             type: "POST",
             headers: {
               "X-Action": "Update Code",
-              "X-Functionality": this.getFullNodePath(this.currentlySelectedTreeNode),
+              "X-ActionDetail": this.activeTab,
+              "X-Element": this.getFullNodePath(this.currentlySelectedTreeNode),
             },
             data: {
               ToWrite: e.target?.result as string,

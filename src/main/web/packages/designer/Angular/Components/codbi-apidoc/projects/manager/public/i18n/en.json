@@ -42,5 +42,10 @@
   "RP.Tabs.Header.Functions.Import": "Import from file...",
   "RP.Tabs.Header.Functions.Export": "Export to file...",
   "RP.Tabs.Header.Functions.Sync": "Upload to server",
-  "RP.phNotes": "Here, notes can be recorded that are exclusively accessible via this interface and can only be stored (exported) from your own CodeBi storage..."
+  "RP.phNotes": "Here, notes can be recorded that are exclusively accessible via this interface and can only be stored (exported) from your own CodeBi storage...",
+  "TreeView.Label.Status.Description": "Description available",
+  "TreeView.Label.Status.Parameter": "Parameterdescription available",
+  "TreeView.Label.Status.Globals": "Description of global parameters available",
+  "TreeView.Label.Status.Classes": "Description of this CodBi Standard-Configuration's CSS-Classes available",
+  "TreeView.Label.Status.Code": "Code available"
 }

@@ -167,6 +167,44 @@
     animation: kfFadeIN_CodBi_LocalAPIDoc_Tree_Label .25s ease-in forwards;
   }
 
+  #CodBi_LocalAPIDoc_Tree_Label {
+    .CodBi_LocalAPIDoc_Tree_Label_Status {
+      height: .2em;
+      display: flex;
+      column-gap: 0;
+      padding: 0;
+      margin: 0;
+      margin-top: -.5em;
+
+      div {
+        width: 1em;
+        cursor: default;
+        border-radius: .1em;
+        box-shadow: 0 0 .1em black;
+      }
+
+      div.Description {
+        background-color: blue;
+      }
+
+      div.Parameter {
+        background-color: darkorange;
+      }
+
+      div.Globals {
+        background-color: red;
+      }
+
+      div.Classes {
+        background-color: wheat;
+      }
+
+      div.Code {
+        background-color: lime;
+      }
+    }
+  }
+
   // #endregion TreeView
   #Splitter {
     width: 100;

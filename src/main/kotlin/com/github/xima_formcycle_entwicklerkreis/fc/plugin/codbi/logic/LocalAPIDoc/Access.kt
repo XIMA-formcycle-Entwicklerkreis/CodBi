@@ -88,6 +88,7 @@ class StructuredDataStoreAction : IPluginServletAction {
     when (mode?.uppercase()) {
       "UPDATE CODE" -> {
         val toWrite = params.requestParameters["ToWrite"]?.first()
+        val detail = params.headerMap["X-ActionDetail"]
 
         if (toWrite == null) {
           servletResponse.value =
@@ -97,9 +98,17 @@ class StructuredDataStoreAction : IPluginServletAction {
           return PluginServletActionRetVal(servletResponse)
         }
 
-        val functionality = params.headerMap["X-Functionality"]?.lowercase()
+        if (detail == null) {
+          servletResponse.value =
+              "{\"status\": \"error\", \"message\": \"Type of CodBi-Element not specified.\"}"
+          servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
 
-        if (functionality == null) {
+          return PluginServletActionRetVal(servletResponse)
+        }
+
+        val element = params.headerMap["X-Element"]?.lowercase()
+
+        if (element == null) {
           servletResponse.value =
               "{\"status\": \"error\", \"message\": \"Functionality header is missing.\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
@@ -108,32 +117,42 @@ class StructuredDataStoreAction : IPluginServletAction {
         }
 
         if (toWrite === "") {
-          deleteCodeFile(functionality)
+          deleteCodeFile(element, detail)
         } else {
           lock.write {
-            saveCodeToFile(functionality, toWrite)
+            saveCodeToFile(element, detail, toWrite)
+
             servletResponse.value =
                 "{\"status\": \"success\", \"message\": \"Code stored successfully.\"}"
 
             LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
                 .info(
-                    "StructuredDataStoreAction: UPDATE request handled. New documentation stored successfully.")
+                    "StructuredDataStoreAction: UPDATE request handled. New code stored successfully.")
           }
         }
       }
 
       "CODE" -> {
-        val functionality = params.headerMap["X-Functionality"]?.lowercase()
+        val element = params.headerMap["X-Element"]?.lowercase()
+        val detail = params.headerMap["X-ActionDetail"]
 
-        if (functionality == null) {
+        if (element == null) {
           servletResponse.value =
-              "{\"status\": \"error\", \"message\": \"Functionality header is missing.\"}"
+              "{\"status\": \"error\", \"message\": \"The CodBi-Element was not specified.\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
 
           return PluginServletActionRetVal(servletResponse)
         }
 
-        loadCodeFromFile(functionality)
+        if (detail == null) {
+          servletResponse.value =
+              "{\"status\": \"error\", \"message\": \"Type of CodBi-Element was not specified.\"}"
+          servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
+
+          return PluginServletActionRetVal(servletResponse)
+        }
+
+        loadCodeFromFile(element, detail)
 
         lock.read {
           servletResponse.value =
@@ -238,7 +257,7 @@ class StructuredDataStoreAction : IPluginServletAction {
    * @param functionality The path an name of the local functionality to retrieved the code for.
    * @return The [java.io.File] pointing to the specified functionality's code.
    */
-  private fun getPluginCodeFile(functionality: String): File? {
+  private fun getPluginCodeFile(element: String, detail: String): File? {
     val pluginDir: File? = fileHelper?.pluginFolder
 
     if (pluginDir == null) {
@@ -252,7 +271,7 @@ class StructuredDataStoreAction : IPluginServletAction {
       pluginDir.mkdirs()
     }
 
-    return File(pluginDir, "$functionality.js")
+    return File(pluginDir, "${detail}_${element}.js")
   }
 
   /** Attempts to load the local API-Documentation into [documentation]. */
@@ -301,12 +320,12 @@ class StructuredDataStoreAction : IPluginServletAction {
   }
 
   /** Attempts to load the local API-Documentation into [documentation]. */
-  private fun loadCodeFromFile(functionality: String) {
-    val dataFile: File? = getPluginCodeFile(functionality)
+  private fun loadCodeFromFile(element: String, detail: String) {
+    val dataFile: File? = getPluginCodeFile(element, detail)
 
     if (dataFile == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error("Code file for ${ functionality } could not be found.")
+          .error("Code file for ${ element } could not be found.")
 
       return
     }
@@ -331,7 +350,7 @@ class StructuredDataStoreAction : IPluginServletAction {
       } else {
         LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
             .error(
-                "Either there is no existing data file at '${ dataFile.absolutePath }' or the file is empty. Starting with empty data.")
+                "Either there is no existing data file at '${ dataFile.absolutePath } (lenght is ${ dataFile.length()})' or the file is empty.")
 
         code = "NONE"
       }
@@ -358,9 +377,15 @@ class StructuredDataStoreAction : IPluginServletAction {
     }
   }
 
-  /**  */
-  private fun saveCodeToFile(functionality: String, code: String) {
-    val dataFile: File? = getPluginCodeFile(functionality)
+  /**
+   * Saves the given [code] for the specified CodBi-[element].
+   *
+   * @param element The CodBi-[element] which's code shall be saved.
+   * @param detail The type of CodBi-[element].
+   * @param code The [code] to be saved.
+   */
+  private fun saveCodeToFile(element: String, detail: String, code: String) {
+    val dataFile: File? = getPluginCodeFile(element, detail)
 
     if (dataFile == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
@@ -379,14 +404,14 @@ class StructuredDataStoreAction : IPluginServletAction {
   }
 
   /**
-   * Deletes a file with a name determined by the provided functionality string. This method uses a
-   * try-catch block to handle potential exceptions during deletion.
+   * Deletes the file containing the code for the specified [element].
    *
-   * @param functionality The unique identifier for the file to be deleted.
+   * @param element The path and name of the CodBi-Element which's code shall be removed.
+   * @param detail The type of CodBi-Element.
    */
-  private fun deleteCodeFile(functionality: String) {
+  private fun deleteCodeFile(element: String, detail: String) {
     // Determine the file path based on the functionality string.
-    val dataFile: File? = getPluginCodeFile(functionality)
+    val dataFile: File? = getPluginCodeFile(element, detail)
 
     // Check if the file object was successfully determined.
     if (dataFile == null) {

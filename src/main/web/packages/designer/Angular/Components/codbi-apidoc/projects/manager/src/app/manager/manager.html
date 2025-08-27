@@ -61,7 +61,7 @@
 
                                         <div    *ngIf = 'localCodeExistent( node )'
 
-                                                class = "Code"
+                                                class   = "Code"
 
                                                 [attr.title] = "'TreeView.Label.Status.Code' | transloco"></div></div></div><div>
 
@@ -122,7 +122,7 @@
                     <p-tab value    = "Standard">{{"RP.Tabs.Header.Standards" | transloco }}</p-tab>
 
                     <div id = "CodBi_LocalAPIDoc_RightPanel_Options">
-                        <button id      = "CodBi_LocalAPIDoc_RightPanel_Options_Sync"
+                        <button id = "CodBi_LocalAPIDoc_RightPanel_Options_Sync" #CodBi_LocalAPIDoc_RightPanel_Options_Sync
 
                                 [attr.title] = "'RP.Tabs.Header.Functions.Sync' | transloco"
 

@@ -599,6 +599,8 @@ export class Manager implements AfterViewInit {
   /** References the Upload-File-{@link HTMLInputElement }. */
   @ViewChild("CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue")
   CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue!: ElementRef;
+  /** References the Sync-Button. */
+  @ViewChild("CodBi_LocalAPIDoc_RightPanel_Options_Sync") CodBi_LocalAPIDoc_RightPanel_Options_Sync!: ElementRef;
   /** States whether the "Changed"-Eventlistener for {@link Manager.CodBi_LocalAPIDoc_Tree_Label_Upload_Code } has been registered or not.*/
   protected changedListenerRegistered_CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue = false;
   /**
@@ -609,17 +611,18 @@ export class Manager implements AfterViewInit {
     // #region Code Upload
     if (!this.changedListenerRegistered_CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue) {
       this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.addEventListener("change", (event) => {
-        console.log("changed");
+        // #region Activate syncing indicator.
+        this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.classList.add("--syncing");
+        this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.classList.remove("--synced");
+        // #endregion Activate syncing indicator.
+        const fullNodePath = this.getFullNodePath(this.currentlySelectedTreeNode);
         const file = (event.target as HTMLInputElement).files?.[0];
 
         if (file) {
           const reader = new FileReader();
 
           reader.onload = (e) => {
-            console.log("File loaded:", e);
             const fileContent = e.target?.result as string;
-
-            this.synchronizing = true;
 
             getJQuery().ajax({
               url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
@@ -627,15 +630,18 @@ export class Manager implements AfterViewInit {
               headers: {
                 "X-Action": "Update Code",
                 "X-ActionDetail": this.activeTab,
-                "X-Element": this.getFullNodePath(this.currentlySelectedTreeNode),
+                "X-Element": fullNodePath,
               },
               data: {
                 ToWrite: e.target?.result as string,
               },
               success: (response) => {
-                this.synchronizing = false;
-                this.synchronized = true;
+                window.CodbiPluginData.localCode = `${window.CodbiPluginData.localCode}${window.CodbiPluginData.localCode.length !== 0 ? "," : ""}${this.activeTab}_${fullNodePath}`;
 
+                // #region Deactivate syncing indicator.
+                this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.classList.remove("--syncing");
+                this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.classList.add("--synced");
+                // #endregion Deactivate syncing indicator.
                 this.cdr.markForCheck();
               },
             });

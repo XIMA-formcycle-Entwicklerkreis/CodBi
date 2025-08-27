@@ -69,30 +69,31 @@ export class OnChange_Conditional {
       if (Array.isArray(toLoad.reference)) {
         toLoad.reference = (toLoad.reference as Array<unknown>)[0];
       }
+
       // #endregion Define candidate & reference.
       switch ((toLoad.mode as string).toLowerCase()) {
         case "gteq":
-          fulfilled = (candidate as unknown) >= (toLoad.reference as unknown);
+          fulfilled = (candidate as Date).getTime() >= (toLoad.reference as Date).getTime();
 
           break;
         case "gt":
-          fulfilled = (candidate as unknown) > (toLoad.reference as unknown);
+          fulfilled = (candidate as Date).getTime() > (toLoad.reference as Date).getTime();
 
           break;
         case "lteq":
-          fulfilled = (candidate as unknown) <= (toLoad.reference as unknown);
+          fulfilled = (candidate as Date).getTime() <= (toLoad.reference as Date).getTime();
 
           break;
         case "lt":
-          fulfilled = (candidate as unknown) < (toLoad.reference as unknown);
+          fulfilled = (candidate as Date).getTime() < (toLoad.reference as Date).getTime();
 
           break;
         case "eq":
-          fulfilled = (candidate as unknown) === (toLoad.reference as unknown);
+          fulfilled = (candidate as Date).getTime() === (toLoad.reference as Date).getTime();
 
           break;
         case "neq":
-          fulfilled = (candidate as unknown) !== (toLoad.reference as unknown);
+          fulfilled = (candidate as Date).getTime() !== (toLoad.reference as Date).getTime();
 
           break;
         default:
@@ -103,12 +104,14 @@ export class OnChange_Conditional {
       for (const attribute of toProcess.attributes) {
         const name = attribute.name.toLowerCase();
 
-        if (name[0] === "c" && name[1] === "b") {
-          if (name[2] === "_") {
-            switch (name.substring(3, 5)) {
+        if (name.substring(0, 8) === "data-cb-") {
+          if (name[8] === "_") {
+            console.log("Changed Val", name.substring(9, 11), fulfilled, candidate, toLoad.reference);
+            switch (name.substring(9, 11)) {
               case "t_": {
+                console.log("fulfilled", fulfilled);
                 if (fulfilled) {
-                  const realAttributename = attribute.name.replace("_t_", "");
+                  const realAttributename = name.replace("_t_", "");
 
                   (toLoad.target as HTMLElement).removeAttribute(realAttributename);
                   (toLoad.target as HTMLElement).setAttribute(realAttributename, attribute.value);
@@ -119,7 +122,7 @@ export class OnChange_Conditional {
 
               case "f_": {
                 if (!fulfilled) {
-                  const realAttributename = attribute.name.replace("_f_", "");
+                  const realAttributename = name.replace("_f_", "");
 
                   (toLoad.target as HTMLElement).removeAttribute(realAttributename);
                   (toLoad.target as HTMLElement).setAttribute(realAttributename, attribute.value);

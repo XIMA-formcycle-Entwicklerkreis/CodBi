@@ -102,6 +102,11 @@ export function loadConfig(): void {
           transition          : all .5s ease-in-out ;
           border-color        : #ACCENT ;
           box-shadow          : 0 0 .5em #SHADOW ;}
+      .modern .CXFieldSet:has( .XFieldSetWrapper .CodBi.--HTML_Panel ):hover {
+          background-image    : none !important ;
+          transition          : all .5s ease-in-out ;
+          border-color        : #ACCENT ;
+          box-shadow          : none ;}
       /* #endregion Fieldset */
       /* #region Animation - Input Underscore */
       @keyframes kfTextField {

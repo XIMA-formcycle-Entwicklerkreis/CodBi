@@ -64,7 +64,7 @@ export function enableLocalDocInterface(): void {
           window.CodbiPluginData.docsAPI[currentLanguage] === undefined
             ? window.CodbiPluginData.docsAPI.en
             : window.CodbiPluginData.docsAPI[currentLanguage];
-        // #region Retrieve the proper description according to the new option' structure that identifies the type of dialogue we're actually in.
+        // #region Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
         const description = DEFINED.tsCheck<string>(
           window.CodbiPluginData.detFunctionalities[
             newOption
@@ -76,13 +76,11 @@ export function enableLocalDocInterface(): void {
               ? window.CodbiPluginData.detStandards[newOption.substring(1, newOption.indexOf("]") - 1).trim()]
                   ?.Description
               : window.CodbiPluginData.detFunctionalities[
-                  newOption.substring(0, newOption.lastIndexOf("_")).replace(/_/, ".").trim()
+                  newOption.substring(0, newOption.lastIndexOf("_")).replace(/_/g, ".").trim()
                 ]?.Description),
         );
-        // #endregion Retrieve the proper description according to the new option' structure that identifies the type of dialogue we're actually in.
+        // #endregion Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
         if (description[0] === "/") {
-          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
-
           cDetails.innerHTML = "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
 
           DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
@@ -90,10 +88,7 @@ export function enableLocalDocInterface(): void {
             `${baseDocURL}${description}`,
           );
         } else {
-          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).innerHTML = `
-                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
-                              ${description}</div>`;
-          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute("data", "");
+          cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
         }
       });
       // #endregion Define handler for the <XC-OptionInput>'s changes in option.
@@ -419,6 +414,10 @@ export function enableLocalDocInterface(): void {
                         // #endregion Configure <XC-OptionInput> to show the globally available variables.
                         // #region Show corresponding documentation when <XC-OptionInput>'s current option changed.
                         optioninput.onOptionChanged.push((newOption) => {
+                          if (newOption.indexOf("_")) {
+                            return;
+                          }
+
                           DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
                             "data",
                             `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${
@@ -459,6 +458,43 @@ export function enableLocalDocInterface(): void {
 
                         updateLayoutCDetails(optioninput);
                         // #endregion Properly layout <XC-OptionInput>.
+                        // #region Initial API Doc loading
+                        const baseDocURL =
+                          window.CodbiPluginData.docsAPI[currentLanguage] === undefined
+                            ? window.CodbiPluginData.docsAPI.en
+                            : window.CodbiPluginData.docsAPI[currentLanguage];
+                        // #region Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
+                        const description = DEFINED.tsCheck<string>(
+                          window.CodbiPluginData.detFunctionalities[
+                            globalVariables[0]
+                              .substring(0, globalVariables[0].indexOf("/") - 1)
+                              .toLowerCase()
+                              .trim()
+                          ]?.Description ??
+                            (globalVariables[0].indexOf("[") !== -1
+                              ? window.CodbiPluginData.detStandards[
+                                  globalVariables[0].substring(1, globalVariables[0].indexOf("]") - 1).trim()
+                                ]?.Description
+                              : window.CodbiPluginData.detFunctionalities[
+                                  globalVariables[0]
+                                    .substring(0, globalVariables[0].lastIndexOf("_"))
+                                    .replace(/_/g, ".")
+                                    .trim()
+                                ]?.Description),
+                        );
+                        // #endregion Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
+                        if (description[0] === "/") {
+                          cDetails.innerHTML =
+                            "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
+
+                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                            "data",
+                            `${baseDocURL}${description}`,
+                          );
+                        } else {
+                          cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
+                        }
+                        // #endregion Initial API Doc loading
                       }
                     });
                     // #region Blend out CodBi-Interface when leaving a global variable input field.
@@ -516,6 +552,8 @@ export function enableLocalDocInterface(): void {
                     });
                     // #endregion Hide Interface
                     possibleTagify.addEventListener("keyup", (event) => {
+                      const eventTarget = INSTANCE.tsCheck<HTMLElement>(event.target, HTMLElement);
+
                       if (input === undefined) {
                         if (event.key === ".") {
                           inTag = true;
@@ -540,6 +578,39 @@ export function enableLocalDocInterface(): void {
                           optioninput.options = availableClasses.map(
                             (cssClass) => `${cssClass.standard} / ${cssClass.name}`,
                           );
+                          // #region First load of documentation.
+                          const realName = DEFINED.tsCheck<string>(
+                            optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1).trim(),
+                          );
+
+                          const baseDocURL =
+                            window.CodbiPluginData.docsAPI[currentLanguage] === undefined
+                              ? window.CodbiPluginData.docsAPI.en
+                              : window.CodbiPluginData.docsAPI[currentLanguage];
+                          const description = DEFINED.tsCheck<string>(
+                            window.CodbiPluginData.detStandards[realName]?.Description,
+                          );
+
+                          if (window.CodbiPluginData.detStandards[realName]?.Description[0] === "/") {
+                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
+
+                            cDetails.innerHTML =
+                              "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
+
+                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                              "data",
+                              `${baseDocURL}${description}`,
+                            );
+                          } else {
+                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).innerHTML = `
+                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
+                              ${description}</div>`;
+                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                              "data",
+                              "",
+                            );
+                          }
+                          // #endregion First load of documentation.
                           optioninput.enabled = true;
                           optioninput.optionTransformer = undefined;
 
@@ -567,22 +638,42 @@ export function enableLocalDocInterface(): void {
                           });
                         }
 
-                        if (inTag && /^[a-zA-Z0-9_ ]$/.test(event.key)) {
-                          if (event.key === " ") {
-                            possibleTagify.innerHTML = optioninput.currentOption.substring(
-                              optioninput.currentOption.indexOf("/") + 1,
-                            );
+                        if (inTag) {
+                          currentCDetailBlurAction = () => {};
 
+                          if (
+                            /^[a-zA-Z0-9_ ]$/.test(event.key) ||
+                            event.key === "Backspace" ||
+                            event.key === "Delete"
+                          ) {
+                            if (event.key === " ") {
+                              possibleTagify.innerHTML = optioninput.currentOption.substring(
+                                optioninput.currentOption.indexOf("/") + 1,
+                              );
+
+                              inTag = false;
+                              cDetails.style.display = "none";
+                              optioninput.enabled = false;
+
+                              return;
+                            }
+
+                            if (eventTarget.innerHTML.indexOf(".") === -1) {
+                              inTag = false;
+                              cDetails.style.display = "none";
+                              optioninput.enabled = false;
+
+                              return;
+                            }
+
+                            optioninput.filter(eventTarget.innerHTML.substring(1));
+                          }
+                        } else {
+                          currentCDetailBlurAction = () => {
                             inTag = false;
                             cDetails.style.display = "none";
                             optioninput.enabled = false;
-
-                            return;
-                          }
-
-                          input += event.key;
-
-                          optioninput.filter(input);
+                          };
                         }
 
                         if (inTag) {
@@ -693,10 +784,11 @@ export function enableLocalDocInterface(): void {
                           if (event.altKey && (event.key === "p" || event.key === "P")) {
                             // #region Build Parameter-listing according to selected functionalities
                             const parameterListing: { [key: string]: Array<string> } = {};
-
+                            console.log("S0", cbFUNCs);
                             for (let functionality of cbFUNCs.trim().split(",")) {
                               // Process functionality only if it is not an empty string...
-                              if (/^(?!\s*$).*?\S.*$/.test(functionality)) {
+                              if (!/^\s*$/.test(functionality)) {
+                                console.log("S0.1", functionality);
                                 functionality = functionality.toLowerCase();
 
                                 parameterListing[functionality] = new Array<string>();
@@ -716,6 +808,7 @@ export function enableLocalDocInterface(): void {
                                   functionalityParameter.push(`${functionality} / ${parameter}`);
                                 }
                               }
+                              console.log("S", functionalityParameter);
                               // #endregion Build Parameter-listing according to selected functionalities
                               // #region Reset the <XC-OptionInput>'s option-transformer.
                               optioninput.optionTransformer = (toTransform: string): string => {
@@ -732,10 +825,29 @@ export function enableLocalDocInterface(): void {
                               updateLayoutCDetails(optioninput);
                               // #region Show the interface.
                               // #region Set initial documentation details.
-                              DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                                "data",
-                                `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}`,
-                              );
+                              if (
+                                window.CodbiPluginData.detFunctionalities[
+                                  optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)
+                                ]?.Description[0] === "/"
+                              ) {
+                                cDetails.innerHTML =
+                                  "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
+
+                                DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                                  "data",
+                                  `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}`,
+                                );
+                              } else {
+                                const docLoader = cDetails.querySelector(".APIDocLoader");
+
+                                if (docLoader) {
+                                  docLoader.remove();
+                                }
+
+                                cDetails.innerHTML = `
+                                  <div style = "width: 100% ; height: 100% ; overflow : auto ;">
+                                    ${window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}</div>`;
+                              }
                               // #endregion Set initial documentation details.
                             }
                           }

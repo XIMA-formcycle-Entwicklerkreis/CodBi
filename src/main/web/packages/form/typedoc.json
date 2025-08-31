@@ -13,5 +13,6 @@
     "excludeProtected": false,
     "excludeExternals": false,
     "disableOutputCheck": true
-  }
+  },
+  "skipErrorChecking": true
 }

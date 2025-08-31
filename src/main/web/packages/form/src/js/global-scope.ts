@@ -77,9 +77,11 @@ export class CodBi implements CodbiGlobal {
             this.checkAttributes();
           } else {
             window.addEventListener("load", () => {
-              // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-              eval(response.result.replaceAll("<|>", '"'));
-              this.checkAttributes();
+              if (response.result !== "NONE") {
+                // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+                eval(response.result.replaceAll("<|>", '"'));
+                this.checkAttributes();
+              }
             });
           }
         }
@@ -346,6 +348,9 @@ export class CodBi implements CodbiGlobal {
                 "X-Element": outermostEP.keyPlaceholder.trim().toLowerCase(),
               },
               success: (response) => {
+                if (response.result === "NONE") {
+                  return;
+                }
                 // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
                 eval(response.result.replaceAll("<|>", '"'));
 
@@ -472,6 +477,9 @@ export class CodBi implements CodbiGlobal {
                             "X-Element": outermostEP.keyPlaceholder.trim().toLowerCase(),
                           },
                           success: (response) => {
+                            if (response.result === "NONE") {
+                              return;
+                            }
                             // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
                             eval(response.result.replaceAll("<|>", '"'));
                             // Promises counter for this already set in advance 'cause of asynchronous download of EP code.
@@ -808,6 +816,9 @@ export class CodBi implements CodbiGlobal {
                       "X-Element": functionality.trim().toLowerCase(),
                     },
                     success: (response) => {
+                      if (response.result === "NONE") {
+                        return;
+                      }
                       // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
                       eval(response.result.replaceAll("<|>", '"'));
 
@@ -1251,6 +1262,9 @@ export class CodBi implements CodbiGlobal {
                 "X-Element": functionality.trim().toLowerCase(),
               },
               success: (response) => {
+                if (response.result === "NONE") {
+                  return;
+                }
                 // #region Evaluate the response and replace all placeholders.
                 // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
                 eval(response.result.replaceAll("<|>", '"'));

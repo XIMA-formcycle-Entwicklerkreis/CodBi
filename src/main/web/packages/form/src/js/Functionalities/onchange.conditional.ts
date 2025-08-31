@@ -127,6 +127,7 @@ export class OnChange_Conditional {
                   (toLoad.target as HTMLElement).removeAttribute(realAttributename);
                   (toLoad.target as HTMLElement).setAttribute(realAttributename, attribute.value);
                 }
+
                 break;
               }
               default:
@@ -135,13 +136,17 @@ export class OnChange_Conditional {
         }
       }
 
-      (toLoad.target as HTMLElement).removeAttribute("cbichecked");
+      if ((toLoad.target as HTMLElement).hasAttribute("data-cb-checked")) {
+        (toLoad.target as HTMLElement).setAttribute(
+          "data-cb-checked",
+          (toLoad.target as HTMLElement).getAttribute("data-cb-checked").replace("html.setattribute", ""),
+        );
+      }
       // #endregion Attribute re-configuration.
       window.codbi.checkAttributes();
     };
 
-    toProcess.addEventListener("change", processChange);
-    getJQuery()(toProcess).datepicker({ onSelect: processChange });
+    getJQuery()(toProcess).on("change", processChange);
   }
   // #region Initialization
   /**

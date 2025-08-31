@@ -2,14 +2,16 @@
 // #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
-import { JSON_OP } from "xdbc/src/DBC/JSON.OP";
-import { JSON_Parse } from "xdbc/src/DBC/JSON.Parse";
-import { CodBiError } from "../global-scope";
+// #endregion XDBC
+// #region XML-Parser
 import { XMLParser } from "fast-xml-parser";
+// #endregion XML-Parser
+import { CodBiError } from "../global-scope";
 // #endregion Imports
 /**
  *

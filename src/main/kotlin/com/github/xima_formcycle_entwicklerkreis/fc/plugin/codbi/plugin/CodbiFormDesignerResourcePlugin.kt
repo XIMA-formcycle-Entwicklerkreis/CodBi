@@ -15,62 +15,45 @@ import de.xima.fc.interfaces.workflow.IResourceDescriptor
 import de.xima.fc.plugin.interfaces.form.IPluginFormDesignerResource
 import de.xima.fc.workflow.ByteArrayResourceDescriptor
 import de.xima.fc.workflow.UrlResourceDescriptor
-import java.io.File
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.net.URI
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.*
+import java.util.stream.Collectors
 import org.json.JSONArray
 import org.slf4j.LoggerFactory
 
 /**
  * Plugin that includes an additional CSS and JavaScript resource in the form designer.
  *
- * The JavaScript adds new properties to the form tab in the properties panel on the right-hand side
- * of the form designer. This lets the user configure the code library dynamically, e.g. whether to
- * enable the code library or which configuration template to use.
- *
- * An interface to facilitate the input of functionalities and their parameter as also element
- * placeholder including information on all those elements is made possible by the data this plugin
- * provides in the global variables **window.CodbiPluginData.fileListing**,
- * **window.CodbiPluginData.fslFunctionalities** and **window.CodbiPluginData.detFunctionalities**.
- *
- * An interface to facilitate the input of CSS-Classes defined by the CodBi-Standardconfigurations
- * that're currently selected is made possible through the data this plugin provides in the global
- * variable **window.CodbiPluginData.detStandards**.
- *
  * @since 1.0.0
  */
 class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
+
   /** Holds the stylesheet for this resource. */
   @Volatile private var cssResource: IResourceDescriptor? = null
+
   /** Holds the javascript resource for this plugin. */
   @Volatile private var jsResource: IResourceDescriptor? = null
-  /** Holds the directory the **standard**-configurations reside in. */
-  private val dirStandards: String = "./src/main/web/packages/form/src/js/Configurations"
+
   /** Accessor to the plugin's file storage. */
   private var fileHelper: IPluginFileHelper? = null
 
-  /** Gets the name of this plugin. */
+  private val resourceRoot = "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi"
+
   override fun getName(): String {
-    // We use a fixed string, not the name of this class via reflection
-    // The class might be refactored, but the name must stay the same
     return PLUGIN_FORM_DESIGNER_RESOURCE_ID
   }
 
-  /** Gets the display name of this plugin. */
   override fun getDisplayName(locale: Locale?): String {
     return localize(PLUGIN_FORM_DESIGNER_RESOURCE_NAME, locale ?: Locale.ENGLISH)
   }
 
-  /** Gets the description of this plugin. */
   override fun getDescription(locale: Locale?): String {
     return localize(PLUGIN_FORM_DESIGNER_RESOURCE_DESC, locale ?: Locale.ENGLISH)
   }
 
-  /**
-   * Initializes this plugin by setting it's version and creates the necessary javascript with
-   * corresponding stylesheet.
-   */
   override fun initialize(initData: IPluginInitializeData?) {
     this.fileHelper = initData?.fileHelper
 
@@ -78,16 +61,18 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     val version =
         if (stable) initData?.manifest?.version ?: "1.0.0"
         else System.currentTimeMillis().toString()
+
     cssResource = createResource("designer-frame.css", RESOURCE_PATH_DESIGNER_FRAME_CSS, version)
     jsResource = createResource("designer.js", RESOURCE_PATH_DESIGNER_SCRIPT, version)
+
     // region Inject available standard configuration via JS defining a global variable for them.
-    val fileListingString = getFileListingAsString(dirStandards)
-    val fslFunctionalities =
-        getFileListingAsString("./src/main/web/packages/form/src/js/Functionalities")
-    val fslElementplaceholder = getFileListingAsString("./src/main/web/packages/form/src/js/EPs")
-    val detFunctionalities = getDetails("./src/main/web/packages/form/src/js/Functionalities")
-    val detElementplaceholder = getDetails("./src/main/web/packages/form/src/js/EPs")
-    val detStandards = getDetails("./src/main/web/packages/form/src/js/Configurations")
+    val fileListing = getFileListingAsString("$resourceRoot/Configurations")
+    val fslFunctionalities = getFileListingAsString("$resourceRoot/Functionalities")
+    val fslElementplaceholder = getFileListingAsString("$resourceRoot/EPs")
+    val detFunctionalities = getDetails("$resourceRoot/Functionalities")
+    val detElementplaceholder = getDetails("$resourceRoot/EPs")
+    val detStandards = getDetails("$resourceRoot/Configurations")
+
     val localCode =
         fileHelper
             ?.pluginFolder
@@ -102,7 +87,8 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             "designer.js",
             RESOURCE_PATH_DESIGNER_SCRIPT,
             version,
-            fileListingString,
+            fileListing, // The fileListingString is now empty as the configurations are not read
+            // that way anymore.
             fslFunctionalities,
             detFunctionalities,
             fslElementplaceholder,
@@ -112,43 +98,24 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     // endregion Inject available standard configuration via JS defining a global variable for them.
   }
 
-  /** Gets the designer's style. */
   override fun getCssResource(
       params: IPluginFormDesignerResourceGetResourceParams?
   ): IResourceDescriptor {
     return cssResource ?: throw IllegalStateException("Plugin not initialized")
   }
 
-  /** Gets the designer's javascript. */
   override fun getJavaScriptResource(
       params: IPluginFormDesignerResourceGetResourceParams?
   ): IResourceDescriptor {
     return jsResource ?: throw IllegalStateException("Plugin not initialized")
   }
 
-  /**
-   * Creates the resource descriptor for a CSS or JavaScript resource.
-   *
-   * This is one of the resources that were created by the `src/main/web/packages/designer` frontend
-   * project build.
-   *
-   * @param name File name of the resource. This is used by formcycle to create a URL to the
-   *   resource.
-   * @param path Internal path of the resource, must point to an existing resource in the class path
-   *   of this plugin JAR. This is used to read the content of the resource.
-   * @return The resource descriptor for the resource.
-   */
   private fun createResource(name: String, path: String, version: String): IResourceDescriptor {
     val uri = URI("plugin:${PLUGIN_FORM_DESIGNER_RESOURCE_ID}/${name}?v=${version}")
     val clazz = CodbiFormDesignerResourcePlugin::class.java
-
     return UrlResourceDescriptor.forClasspathResource(clazz, path, uri, UTF_8)
   }
 
-  /**
-   * Creates a dynamic JavaScript resource by reading an existing JS file and prepending a global
-   * variable containing the file listing.
-   */
   private fun createDynamicJsResource(
       name: String,
       path: String,
@@ -163,12 +130,12 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
   ): IResourceDescriptor {
     val uri = URI("plugin:${PLUGIN_FORM_DESIGNER_RESOURCE_ID}/${name}?v=${version}")
     val clazz = CodbiFormDesignerResourcePlugin::class.java
-    // region Retrieve original content.
+
     val originalJsContentStream =
         clazz.getResourceAsStream(path)
             ?: throw IllegalStateException("Resource not found in classpath: $path")
     val originalJsContent = originalJsContentStream.bufferedReader(UTF_8).use { it.readText() }
-    // endregion Retrieve original content.
+
     val escapedFileListing =
         fileListing
             .replace("\\", "\\\\")
@@ -211,7 +178,7 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace("'", "\\'")
-    // Prepend to original file code
+
     val combinedJsContent =
         """
             window.CodbiPluginData                          = window.CodbiPluginData || {};
@@ -223,7 +190,7 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             window.CodbiPluginData.detStandards             = JSON.parse("$escapedDetStandards");
             window.CodbiPluginData.docsAPI                  = window.CodbiPluginData.docsAPI || {};
             window.CodbiPluginData.docsAPI.en               = "https://waxcode.net/x/CodBi";
-            window.CodbiPluginData.localCode                = "${ detLocalCode }";
+            window.CodbiPluginData.localCode                = "$detLocalCode";
 
             $originalJsContent
         """
@@ -232,69 +199,64 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     return ByteArrayResourceDescriptor(uri, combinedJsContent.toByteArray(UTF_8), UTF_8)
   }
 
-  /**
-   * Retrieves a listing of files from [dirStandards].
-   *
-   * @return The name of the files contained in [dirStandards].
-   */
   private fun getFileListingAsString(toGetFrom: String): String {
-    val directory = File(toGetFrom)
+    val classLoader = CodbiFormDesignerResourcePlugin::class.java.classLoader
+    val files =
+        try {
+          val isr = InputStreamReader(classLoader.getResourceAsStream(toGetFrom) ?: return "[]")
+          BufferedReader(isr).use { it.lines().collect(Collectors.toList()) }
+        } catch (e: Exception) {
+          LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
+              .warn("Directory '$toGetFrom' not found in classpath. Error: ${e.message}")
+          return "[]"
+        }
 
-    if (!directory.exists() || !directory.isDirectory) {
-      println("WARNING: Following standard configuration directory was not found: $toGetFrom")
-
-      return "[]"
-    }
-
-    val files = directory.listFiles()
-    val fileNames =
-        files
-            ?.filter { it.isFile }
-            ?.filter { !it.name.lowercase().endsWith(".json") }
-            ?.map { it.name } ?: emptyList()
-
+    val fileNames = files.filter { it.endsWith(".js") }.map { it.substringBeforeLast('.') }
     return JSONArray(fileNames).toString()
   }
 
-  /**
-   * Retrieves the content of every .json file that corresponds to a functionality .ts file. The
-   * JSON content will be mapped to the name of the functionality's name.
-   *
-   * @param toExtractFrom The path to the directory containing the .ts & .json functionality files.
-   * @return A JSON string representing a map where keys are functionality names and values are the
-   *   content of their corresponding .json files.
-   */
   private fun getDetails(toExtractFrom: String): String {
-    val directory = File(toExtractFrom)
-
-    if (!directory.exists() || !directory.isDirectory) {
-      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .warn("Functionalities directory not found: $toExtractFrom")
-
-      return "{}"
-    }
-    // region Generate JSON
-    val tsFiles = directory.listFiles()?.filter { it.isFile && it.extension == "ts" } ?: emptyList()
-    val combinedJsonContent = mutableMapOf<String, Any>()
     val objectMapper = ObjectMapper().registerKotlinModule()
+    val combinedJsonContent = mutableMapOf<String, Any>()
+    val classLoader = CodbiFormDesignerResourcePlugin::class.java.classLoader
+    val resource =
+        classLoader.getResource(toExtractFrom) ?: return "{\"problem\":\"directory not found\"}"
 
-    for (tsFile in tsFiles) {
-      val fileName = tsFile.nameWithoutExtension
-      val jsonFileName = "$fileName.json"
-      val jsonFile = File(directory, jsonFileName)
-
-      if (jsonFile.exists() && jsonFile.isFile) {
+    val filesInJar =
         try {
-          combinedJsonContent[fileName] =
-              objectMapper.readValue(jsonFile.readText(UTF_8), Any::class.java)
-        } catch (X: Exception) {
-          LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          InputStreamReader(
+                  classLoader.getResourceAsStream(toExtractFrom)
+                      ?: return "{\"problem\":\"directory not found\"}")
+              .useLines { it.toList() }
+        } catch (e: Exception) {
+          LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
+              .warn("Error reading resource directory: $toExtractFrom, Error: ${e.message}")
+          return "{\"problem\":\"directory not found\"}"
+        }
+    LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
+        .error("Files in JAR(" + toExtractFrom + ")" + filesInJar)
+    val tsFileNames = filesInJar.filter { !it.startsWith("CHUNK") && it.endsWith(".js") }
+    LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
+        .error("Files in JAR TS(" + tsFileNames + ")" + filesInJar)
+    for (tsFileName in tsFileNames) {
+      val jsonFileName = "${tsFileName.substringBeforeLast('.')}.json"
+      val jsonResourcePath = "$toExtractFrom/$jsonFileName"
+      val jsonStream = classLoader.getResourceAsStream(jsonResourcePath)
+      LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
+          .error("JSON Stream for ${jsonFileName}" + jsonStream)
+      if (jsonStream != null) {
+        try {
+          combinedJsonContent[tsFileName.substringBeforeLast('.')] =
+              objectMapper.readValue(jsonStream, Any::class.java)
+        } catch (x: Exception) {
+          LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
               .error(
-                  "Error reading or parsing JSON file ${ jsonFile.absolutePath }: ${ X.message }")
+                  "Error reading or parsing JSON from classpath resource '$jsonResourcePath': ${x.message}")
         }
       }
     }
-    // endregion Generate JSON
+    LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
+        .error("X:" + combinedJsonContent)
     return objectMapper.writeValueAsString(combinedJsonContent)
   }
 }

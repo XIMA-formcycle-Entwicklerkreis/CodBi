@@ -247,7 +247,7 @@ export function enableLocalDocInterface(): void {
       // #endregion Remove loader when having loaded for the first time in session
       // #region Retrieve Local API Doc
       const $ = getJQuery();
-
+      console.log("X0.0");
       $.ajax({
         url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
         type: "GET",
@@ -255,6 +255,7 @@ export function enableLocalDocInterface(): void {
           "X-Action": "Retrieve",
         },
         success: (response) => {
+          console.log("X0", response);
           // #region Load into global structures and components
           for (const functionality in response.detFunctionalities) {
             window.CodbiPluginData.detFunctionalities[functionality] = response.detFunctionalities[functionality];
@@ -285,7 +286,7 @@ export function enableLocalDocInterface(): void {
           setTimeout(() => {
             window.CodbiPluginData.populateStandards();
           });
-
+          console.log("X1");
           INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
             "options",
             JSON.parse(window.CodbiPluginData.fslFunctionalities)
@@ -294,7 +295,7 @@ export function enableLocalDocInterface(): void {
               })
               .join(","),
           );
-
+          console.log("X2");
           INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
             "epoptions",
             JSON.parse(window.CodbiPluginData.fslElementplaceholder)
@@ -306,7 +307,7 @@ export function enableLocalDocInterface(): void {
           // #endregion Load into global structures and components
           // #region Load and inject Angular local API-Documentation-Manager web component
           const scriptAPIManager = document.createElement("script");
-
+          console.log("Loading Local API Manager:", scriptAPIManager);
           scriptAPIManager.src = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.js`;
 
           document.head.appendChild(scriptAPIManager);
@@ -725,7 +726,19 @@ export function enableLocalDocInterface(): void {
                     ) {
                       if (!epManager.enabled) {
                         added.setSelectionRange(added.value.length, added.value.length);
-
+                        // #region Refresh listing.
+                        INSTANCE.tsCheck<HTMLElement>(
+                          document.querySelector('div[is = "xc-epmanager"]'),
+                          HTMLElement,
+                        ).setAttribute(
+                          "options",
+                          JSON.parse(window.CodbiPluginData.fslFunctionalities)
+                            .map((file: string) => {
+                              return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+                            })
+                            .join(","),
+                        );
+                        // #endregion Refresh listing.
                         epManager.mode = "SV";
                         epManager.target = INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement);
                         epManager.enabled = true;
@@ -784,11 +797,10 @@ export function enableLocalDocInterface(): void {
                           if (event.altKey && (event.key === "p" || event.key === "P")) {
                             // #region Build Parameter-listing according to selected functionalities
                             const parameterListing: { [key: string]: Array<string> } = {};
-                            console.log("S0", cbFUNCs);
+
                             for (let functionality of cbFUNCs.trim().split(",")) {
                               // Process functionality only if it is not an empty string...
                               if (!/^\s*$/.test(functionality)) {
-                                console.log("S0.1", functionality);
                                 functionality = functionality.toLowerCase();
 
                                 parameterListing[functionality] = new Array<string>();
@@ -808,7 +820,6 @@ export function enableLocalDocInterface(): void {
                                   functionalityParameter.push(`${functionality} / ${parameter}`);
                                 }
                               }
-                              console.log("S", functionalityParameter);
                               // #endregion Build Parameter-listing according to selected functionalities
                               // #region Reset the <XC-OptionInput>'s option-transformer.
                               optioninput.optionTransformer = (toTransform: string): string => {
@@ -948,6 +959,19 @@ export function enableLocalDocInterface(): void {
                           keyboardEvent.stopPropagation();
                           // #endregion Prevent default actions & bubbling.
                           epManager.mode = "EP";
+                          // #region Rebuild listing.
+                          INSTANCE.tsCheck<HTMLElement>(
+                            document.querySelector('div[is = "xc-epmanager"]'),
+                            HTMLElement,
+                          ).setAttribute(
+                            "epoptions",
+                            JSON.parse(window.CodbiPluginData.fslElementplaceholder)
+                              .map((file: string) => {
+                                return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+                              })
+                              .join(","),
+                          );
+                          // #endregion Rebuild listing.
                           // First time load of APIDoc
                           DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
                             "data",
@@ -1132,6 +1156,19 @@ export function enableLocalDocInterface(): void {
                           // #endregion Hide SVManager and API-Docs on ESC
                         });
                         // #region Show interface.
+                        // #region Refresh listing.
+                        INSTANCE.tsCheck<HTMLElement>(
+                          document.querySelector('div[is = "xc-epmanager"]'),
+                          HTMLElement,
+                        ).setAttribute(
+                          "options",
+                          JSON.parse(window.CodbiPluginData.fslFunctionalities)
+                            .map((file: string) => {
+                              return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+                            })
+                            .join(","),
+                        );
+                        // #endregion Refresh listing.
                         epManager.mode = "SV";
                         epManager.target = currentFunctionalityInput;
                         epManager.enabled = true;

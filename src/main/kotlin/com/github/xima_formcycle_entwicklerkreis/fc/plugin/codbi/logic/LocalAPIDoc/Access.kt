@@ -162,7 +162,12 @@ class StructuredDataStoreAction : IPluginServletAction {
       "RETRIEVE" -> {
         loadDataFromFile()
 
-        lock.read { servletResponse.value = documentation }
+        lock.read {
+          servletResponse.value =
+              if (documentation.isEmpty())
+                  "{\"fslFunctionalities\":\"\",\"detFunctionalities\":{},\"fslElementplaceholder\":\"\",\"detElementplaceholder\":{},\"fileListing\":\"\",\"detStandards\":{}}"
+              else documentation
+        }
       }
       "UPDATE" -> {
         try {

@@ -50,7 +50,7 @@ import { TranslocoService } from "@ngneat/transloco";
 import { TranslocoPipe, TranslocoModule } from "@ngneat/transloco";
 // #endregion Transloco
 // #region ZOD
-import { z } from "zod";
+import { json, z } from "zod";
 // #endregion ZOD
 // #region XDBC
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
@@ -686,7 +686,7 @@ export class Manager implements AfterViewInit {
     ).value.toLowerCase();
     const inputControl = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region Suppress invalid characters.
-    if (inputControl.value !== "" && !/^[a-zA-Z0-9_$][a-zA-Z0-9_\-\,$]*$/.test(inputControl.value)) {
+    if (inputControl.value !== "" && !/^[a-zA-Z0-9$][a-zA-Z0-9\-\,$]*$/.test(inputControl.value)) {
       inputControl.value = this.formerInput_CodBi_LocalAPIDoc_New_Name;
     } else {
       this.formerInput_CodBi_LocalAPIDoc_New_Name = inputControl.value;
@@ -728,11 +728,17 @@ export class Manager implements AfterViewInit {
     }
   }
   /**
+   *  Stores the result of {@link this.getFullNodePath } with the {@link this.currentlySelectedTreeNode } as the
+   *  parameter when {@link onRenameNode } was invoked the last time. */
+  protected formerTreeNodePath: string | undefined;
+  /**
    * Initiates the renaming of the {@link Manager.currentlySelectedTreeNode } by toggling
    * {@link Manager.currentlySelectedTreeNodeEditing } also focusing the {@link Manager.currentlySelectedTreeNode }.
    *
    * @param event The {@link Event } received. */
   protected onRenameNode(event: Event) {
+    this.formerTreeNodePath = this.getFullNodePath(this.currentlySelectedTreeNode);
+
     INSTANCE.tsCheck<HTMLElement>(
       event.target,
       HTMLElement,
@@ -938,48 +944,43 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link Event } received. */
   protected onBlurRenameInput(event: Event) {
-    const lowercaseInputControlValue = INSTANCE.tsCheck<HTMLInputElement>(
-      event.target,
-      HTMLInputElement,
-    ).value.toLowerCase();
+    // #region Build new path
+    const newPathBuild: Array<string> = this.currentlySelectedTreeNodePath.split(".");
 
-    const labelInput = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+    newPathBuild[newPathBuild.length - 1] = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
 
-    this.currentlySelectedTreeNode.label = labelInput.value;
+    const newPath = newPathBuild.join(".");
+    // #endregion Build new path
+    // #region Determine the CodBi-Data to change
+    const currentCodBiData =
+      window.CodbiPluginData[
+        this.activeTab === "Functionality"
+          ? "detFunctionalities"
+          : this.activeTab === "Elementplaceholder"
+            ? "detElementplaceholder"
+            : "detStandards"
+      ];
+    // #endregion Determine the CodBi-Data to change
+    // #region Create new entries and remove former ones.
+    for (const element in currentCodBiData) {
+      if (currentCodBiData[element].local && element.indexOf(this.currentlySelectedTreeNodePath) === 0) {
+        currentCodBiData[`${element.replace(this.currentlySelectedTreeNodePath, newPath)}`] = currentCodBiData[element];
 
-    const currentlySelectedTreeNodePath = this.currentlySelectedTreeNodePath;
-    // #region Update API Doc in memory
-    // #region Remove former entry, if existent.
-    delete this.activeTabDocRef[
-      currentlySelectedTreeNodePath.replace(
-        this.currentlySelectedTreeNode.label,
-        this.currentlySelectedTreeNode.data.label,
-      )
-    ];
-    // #endregion Remove former entry, if existent.
-    this.activeTabDocRef[currentlySelectedTreeNodePath] = this.convertSingleNode(
-      this.currentlySelectedTreeNode,
-      this.activeTab,
-    );
-
-    let formerCurrentlySelectedTreeNodePath = `${this.currentlySelectedTreeNodePath.substring(0, this.currentlySelectedTreeNodePath.lastIndexOf("."))}.${this.currentlySelectedTreeNode.data.label}`;
-    // #region Remove trailing dot in case element is a root one.
-    if (formerCurrentlySelectedTreeNodePath[0] === ".") {
-      formerCurrentlySelectedTreeNodePath = formerCurrentlySelectedTreeNodePath.substring(1);
+        delete currentCodBiData[element];
+      }
     }
-    // #endregion Remove trailing dot in case element is a root one.
-    if (this.activeTabDocFSL.indexOf(`${formerCurrentlySelectedTreeNodePath.toLowerCase()}.`) !== -1) {
-      this.activeTabDocFSL = this.activeTabDocFSL.replaceAll(
-        formerCurrentlySelectedTreeNodePath.toLowerCase(),
-        currentlySelectedTreeNodePath,
-      );
-    }
-    // #endregion Update FSL if necessary
-    this.activeTabDocRef[this.currentlySelectedTreeNodePath].local = true;
-    // #endregion Update API Doc in memory
-    // Update the View of external components
-    this.activeTabDocUpdater(this.activeTabDocFSL);
+    // #endregion Create new entries and remove former ones.
+    // #region Recreate corresponding FSL properly.
+    const jsonCurrentTabDocFSL = JSON.parse(this.activeTabDocFSL);
 
+    for (let i = 0; i < jsonCurrentTabDocFSL.length; i++) {
+      if (jsonCurrentTabDocFSL[i].indexOf(this.currentlySelectedTreeNodePath) === 0) {
+        jsonCurrentTabDocFSL[i] = jsonCurrentTabDocFSL[i].replace(this.currentlySelectedTreeNodePath, newPath);
+      }
+    }
+
+    this.activeTabDocFSL = JSON.stringify(jsonCurrentTabDocFSL);
+    // #endregion Recreate corresponding FSL properly.
     this.synchronized = false;
     this.currentlySelectedTreeNode.data.label = this.currentlySelectedTreeNode.label =
       INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
@@ -1001,7 +1002,7 @@ export class Manager implements AfterViewInit {
 
     const inputControl = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region Suppress invalid characters.
-    if (!/^([a-zA-Z_$][a-zA-Z0-9_$]*\.)*[a-zA-Z_$][a-zA-Z0-9_$]*(\.)?$/.test(inputControl.value)) {
+    if (!/^([a-zA-Z$][\-a-zA-Z0-9$]*\.)*[a-zA-Z$][\-a-zA-Z0-9$]*(\.)?$/.test(inputControl.value)) {
       inputControl.value = this.formerInput_CodBi_LocalAPIDoc_New_Name;
     } else {
       this.formerInput_CodBi_LocalAPIDoc_New_Name = inputControl.value;

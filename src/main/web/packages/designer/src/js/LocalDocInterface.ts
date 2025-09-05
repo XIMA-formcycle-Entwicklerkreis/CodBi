@@ -247,7 +247,7 @@ export function enableLocalDocInterface(): void {
       // #endregion Remove loader when having loaded for the first time in session
       // #region Retrieve Local API Doc
       const $ = getJQuery();
-      console.log("X0.0");
+
       $.ajax({
         url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
         type: "GET",
@@ -255,10 +255,30 @@ export function enableLocalDocInterface(): void {
           "X-Action": "Retrieve",
         },
         success: (response) => {
-          console.log("X0", response);
           // #region Load into global structures and components
           for (const functionality in response.detFunctionalities) {
             window.CodbiPluginData.detFunctionalities[functionality] = response.detFunctionalities[functionality];
+
+            getJQuery().ajax({
+              url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
+              type: "GET",
+              headers: {
+                "X-Action": "Code",
+                "X-ActionDetail": "Functionality",
+                "X-Element": functionality,
+              },
+              success: (response) => {
+                if (response.result !== "NONE") {
+                  if (document.readyState === "complete") {
+                    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                    (window.CodbiPluginData.detFunctionalities[functionality] as any).Code = response.result.replaceAll(
+                      "<|>",
+                      '"',
+                    );
+                  }
+                }
+              },
+            });
           }
 
           if (response.fslFunctionalities) {
@@ -267,6 +287,25 @@ export function enableLocalDocInterface(): void {
 
           for (const placeholder in response.detElementplaceholder) {
             window.CodbiPluginData.detElementplaceholder[placeholder] = response.detElementplaceholder[placeholder];
+
+            getJQuery().ajax({
+              url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
+              type: "GET",
+              headers: {
+                "X-Action": "Code",
+                "X-ActionDetail": "Elementplaceholder",
+                "X-Element": placeholder,
+              },
+              success: (response) => {
+                if (response.result !== "NONE") {
+                  if (document.readyState === "complete") {
+                    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                    (window.CodbiPluginData.detElementplaceholder[placeholder] as any).Code =
+                      response.result.replaceAll("<|>", '"');
+                  }
+                }
+              },
+            });
           }
 
           if (response.fslElementplaceholder) {
@@ -276,6 +315,24 @@ export function enableLocalDocInterface(): void {
           if (response.detStandards) {
             for (const key in response.detStandards) {
               window.CodbiPluginData.detStandards[key] = response.detStandards[key];
+
+              getJQuery().ajax({
+                url: `${baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                type: "GET",
+                headers: {
+                  "X-Action": "Code",
+                  "X-ActionDetail": "Standard",
+                  "X-Element": key,
+                },
+                success: (response) => {
+                  if (response.result !== "NONE") {
+                    if (document.readyState === "complete") {
+                      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                      (window.CodbiPluginData.detStandards[key] as any).Code = response.result.replaceAll("<|>", '"');
+                    }
+                  }
+                },
+              });
             }
           }
 
@@ -286,7 +343,7 @@ export function enableLocalDocInterface(): void {
           setTimeout(() => {
             window.CodbiPluginData.populateStandards();
           });
-          console.log("X1");
+
           INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
             "options",
             JSON.parse(window.CodbiPluginData.fslFunctionalities)
@@ -295,7 +352,7 @@ export function enableLocalDocInterface(): void {
               })
               .join(","),
           );
-          console.log("X2");
+
           INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
             "epoptions",
             JSON.parse(window.CodbiPluginData.fslElementplaceholder)
@@ -307,7 +364,7 @@ export function enableLocalDocInterface(): void {
           // #endregion Load into global structures and components
           // #region Load and inject Angular local API-Documentation-Manager web component
           const scriptAPIManager = document.createElement("script");
-          console.log("Loading Local API Manager:", scriptAPIManager);
+
           scriptAPIManager.src = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.js`;
 
           document.head.appendChild(scriptAPIManager);

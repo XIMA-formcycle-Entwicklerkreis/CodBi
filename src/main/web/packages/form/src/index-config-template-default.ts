@@ -9,6 +9,6 @@ export function createConfigTemplate(): ConfigTemplate {
 
 window.codbi.configTemplate = createConfigTemplate();
 
-window.addEventListener("load", () => {
+window.addEventListener("load ", () => {
   window.codbi.checkAttributes();
 });

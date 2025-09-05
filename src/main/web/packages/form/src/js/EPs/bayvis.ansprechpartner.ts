@@ -124,9 +124,14 @@ export class BayVIS_Ansprechpartner {
         headers: { Accept: "application/xml" },
       })
         .done((xml: string) => {
-          const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
+          let response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
             "ns2:ansprechpartner"
           ];
+          // #region React if data is not of format XML but JSON.
+          if (response === undefined) {
+            response = JSON.parse(xml);
+          }
+          // #endregion React if data is not of format XML but JSON.
           // If no response from endpoint (missing credentials)...
           if (response === undefined) {
             return;

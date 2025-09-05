@@ -105,10 +105,15 @@ export class BayVIS_Behoerden_Details_Gebaeude {
         headers: { Accept: "application/xml", ID: params[0] as string, GebaeudeID: params[1] as string },
       })
         .done((xml: string) => {
-          const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
+          let response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
             "ns2:GetBehoerdenGebaeudeResponse"
           ];
-
+          // #region React if data is not of format XML but JSON.
+          if (response === undefined) {
+            response = JSON.parse(xml);
+            response.BehoerdenGebaeude = response.behoerdenGebaeude;
+          }
+          // #endregion React if data is not of format XML but JSON.
           result = response.BehoerdenGebaeude;
 
           if (params.length >= 3) {

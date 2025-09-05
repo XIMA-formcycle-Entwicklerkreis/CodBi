@@ -191,9 +191,14 @@ export class BayVIS_Ansprechpartner_Details {
           .done((xml: string) => {
             cntResolved++;
 
-            const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
+            let response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
               "ns2:ansprechpartner"
             ];
+            // #region React if data is not of format XML but JSON.
+            if (response === undefined) {
+              response = JSON.parse(xml);
+            }
+            // #endregion React if data is not of format XML but JSON.
             // If contact properties are to be retrieved but a specific detail.
             if (params.length >= 2) {
               const detail = (result as unknown)[params[1] as string];

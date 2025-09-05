@@ -73,14 +73,14 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     val detElementplaceholder = getDetails("$resourceRoot/EPs")
     val detStandards = getDetails("$resourceRoot/Configurations")
 
-    val localCode =
-        fileHelper
-            ?.pluginFolder
-            ?.listFiles()
-            ?.filter { it.isFile }
-            ?.filter { it.name.lowercase().endsWith(".js") }
-            ?.map { it.nameWithoutExtension }
-            ?.joinToString(separator = ",")
+    val localCode = "ddd:" + fileHelper?.pluginFolder?.name
+    /*fileHelper
+    ?.pluginFolder
+    ?.listFiles()
+    ?.filter { it.isFile }
+    ?.filter { it.name.lowercase().endsWith(".js") }
+    ?.map { it.nameWithoutExtension }
+    ?.joinToString(separator = ",")*/
 
     jsResource =
         createDynamicJsResource(
@@ -211,7 +211,15 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
           return "[]"
         }
 
-    val fileNames = files.filter { it.endsWith(".js") }.map { it.substringBeforeLast('.') }
+    val fileNames =
+        files
+            .filter {
+              it.endsWith(".js") &&
+                  !it.endsWith(".json") &&
+                  !it.endsWith(".json.js") &&
+                  !it.startsWith("chunk")
+            }
+            .map { it }
     return JSONArray(fileNames).toString()
   }
 

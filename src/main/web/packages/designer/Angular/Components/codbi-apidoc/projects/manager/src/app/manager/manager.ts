@@ -656,17 +656,6 @@ export class Manager implements AfterViewInit {
     // #endregion Code Upload
     this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.click();
   }
-  /**
-   * Checks whether the code for the given {@link TreeNode } is already existent in the local code repository.
-   *
-   * @param toCheckFor The {@link TreeNode } to check for if there's appropriate local code existent.
-   *
-   * @returns TRUE if appropriate local code is existent, otherwise FALSE. */
-  protected localCodeExistent(toCheckFor: TreeNode): boolean {
-    return window.CodbiPluginData.localCode
-      .split(",")
-      .includes(`${this.activeTab}_${this.getFullNodePath(toCheckFor)}`);
-  }
   // #endregion Code Upload
   // #region Renaming
   /**

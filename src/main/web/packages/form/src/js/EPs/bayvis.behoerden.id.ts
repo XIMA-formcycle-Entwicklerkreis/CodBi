@@ -76,12 +76,17 @@ export class BayVIS_Behoerden_ID {
         headers: { Accept: "application/xml" },
       })
         .done((xml: string) => {
-          const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
+          let response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
             "ns2:behoerden"
           ];
+          // #region React if data is not of format XML but JSON.
+          if (response === undefined) {
+            response = JSON.parse(xml);
+          }
+          // #endregion React if data is not of format XML but JSON.
           // If no response from endpoint (missing credentials)...
           if (response === undefined) {
-            return;
+            reject(new CodBiError("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdenverzeichnis"));
           }
 
           const data = (response as { [key: string]: unknown }).behoerde as Array<{

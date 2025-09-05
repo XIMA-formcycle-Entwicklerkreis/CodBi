@@ -120,10 +120,15 @@ class StructuredDataStoreAction : IPluginServletAction {
           deleteCodeFile(element, detail)
         } else {
           lock.write {
-            saveCodeToFile(element, detail, toWrite)
+            val result = saveCodeToFile(element, detail, toWrite)
 
-            servletResponse.value =
-                "{\"status\": \"success\", \"message\": \"Code stored successfully.\"}"
+            if (result) {
+              servletResponse.value =
+                  "{\"status\": \"success\", \"message\": \"Code stored successfully.\"}"
+            } else {
+              servletResponse.value =
+                  "{\"status\": \"success\", \"message\": \"Failed storing Code.\"}"
+            }
 
             LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
                 .info(
@@ -389,14 +394,14 @@ class StructuredDataStoreAction : IPluginServletAction {
    * @param detail The type of CodBi-[element].
    * @param code The [code] to be saved.
    */
-  private fun saveCodeToFile(element: String, detail: String, code: String) {
+  private fun saveCodeToFile(element: String, detail: String, code: String): Boolean {
     val dataFile: File? = getPluginCodeFile(element, detail)
 
     if (dataFile == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
           .error("Data file could not be determined for saving.")
 
-      return
+      return false
     }
 
     try {
@@ -406,6 +411,8 @@ class StructuredDataStoreAction : IPluginServletAction {
           .error(
               "Following error occured saving local API-Documentation to file '${ dataFile.absolutePath }': ${ X.message }")
     }
+
+    return true
   }
 
   /**

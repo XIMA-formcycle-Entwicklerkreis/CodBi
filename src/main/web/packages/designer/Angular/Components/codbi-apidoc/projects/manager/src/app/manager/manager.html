@@ -59,7 +59,7 @@
 
                                                 [attr.title] = "'TreeView.Label.Status.Classes' | transloco"></div>
 
-                                        <div    *ngIf = 'localCodeExistent( node )'
+                                        <div    *ngIf = 'activeTabDocRef[ getFullNodePath(node)] && activeTabDocRef[ getFullNodePath(node)].Code !== undefined'
 
                                                 class   = "Code"
 

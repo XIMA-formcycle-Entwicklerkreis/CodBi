@@ -113,12 +113,19 @@ export class BayVIS_Ansprechpartner_ID {
         headers: { Accept: "application/xml" },
       })
         .done((xmlResponse: string) => {
-          const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xmlResponse)[
+          let response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xmlResponse)[
             "ns2:ansprechpartner"
           ];
+          // #region React if data is not of format XML but JSON.
+          if (response === undefined) {
+            response = JSON.parse(xmlResponse);
+          }
+          // #endregion React if data is not of format XML but JSON.
           // If no response from endpoint (missing credentials)...
           if (response === undefined) {
-            return;
+            reject(
+              new CodBiError("Unable to retrieve data from servlet CodBi_BayVIS_Auskunft_Ansprechpartnerverzeichnis"),
+            );
           }
 
           const jsonResponse = response.ap;

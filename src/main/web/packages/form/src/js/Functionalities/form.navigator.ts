@@ -22,6 +22,10 @@ export class Form_Navigator {
    * .---CodBi.--Form_Navigator.-Container.-NavButton.-current    The {@link HTMLButtonElement} showing corresponding to the current page.
    * .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked    The {@link HTMLButtonElement}s that do not correspond to the current page.
    *
+   * Config Parameter:
+   *  - Preview:  Defines whether the navigator permits switching to every page even it wasn't visited before (**TRUE**)
+   *              or not (**FALSE**).
+   *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   public static functionality(toLoad: { [key: string]: unknown }, toProcess: Element): void {

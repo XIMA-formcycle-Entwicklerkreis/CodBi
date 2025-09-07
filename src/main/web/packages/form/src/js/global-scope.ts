@@ -33,6 +33,8 @@ export interface CodbiGlobal {
   loadConfigs(toLoad: Array<{ targets: string; [key: string]: unknown }>): void;
   /** Handles the loading of all **n**on **native** CodBi Standard-**C**onfigurations that're not native ones.*/
   nncHandler(toHandle: string): void;
+  /** States whether {@link CodbiGlobal.checkAttributes } shall be invoked automatically or not. */
+  autoCheckAttributes: boolean;
 }
 /**
  * The configuration template for the form, as configured by the user in the
@@ -56,6 +58,8 @@ declare global {
 }
 /** Implements the management functionality. */
 export class CodBi implements CodbiGlobal {
+  /** See {@link CodbiGlobal.autoCheckAttributes }. */
+  public autoCheckAttributes: boolean = false;
   /**
    * See {@link CodbiGlobal.nncHandler }.
    *

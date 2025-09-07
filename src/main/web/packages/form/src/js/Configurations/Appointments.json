@@ -22,5 +22,8 @@
     "CodBi_TimeFrame_5_Begin": "",
     "CodBi_TimeFrame_5_End": "",
     "CodBi_Holidays_Listing": ""
+  },
+  "globals": {
+    "CodBi_Holidays_States": ""
   }
 }

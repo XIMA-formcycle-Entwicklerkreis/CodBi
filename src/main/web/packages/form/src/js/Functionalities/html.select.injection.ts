@@ -1,12 +1,16 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link HTML_Select_Injection.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Select_Injection {
   /**
    * This functionality populates a {@link HTMLSelectElement } by generating {@link HTMLOptionElement } for each

@@ -1,12 +1,18 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link HTML_Select_Injection.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Date_NoWeekends {
   /**
    * Registers the "Date.NoWeekends"-Functionality.

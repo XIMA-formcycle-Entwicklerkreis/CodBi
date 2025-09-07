@@ -245,7 +245,7 @@ export class Optioninput extends HTMLDivElement {
         div.---WaXCode.--Optioninput.--Option.-Current    {
           border : solid ; border-radius : .5em ; border-color : darkorange ; box-shadow : 0 0 .5em black ;
           background-color : #FF8C00BB ;}
-        div.---WaXCode.--Optioninput.--Option.-Current p  { color : white ;}`;
+        div.---WaXCode.--Optioninput.--Option.-Current p  { color : black ;}`;
 
     this.variableStyle = this.appendChild(this.variableStyle);
 
@@ -530,24 +530,24 @@ export class Optioninput extends HTMLDivElement {
           targetOption.classList.add("-Current");
           former.classList.remove("-Current");
 
-          for (const handler of this.onOptionChanged) {
-            const cbOption = DEFINED.tsCheck<string>(
-              DEFINED.tsCheck<HTMLDivElement>(
-                INSTANCE.tsCheck<HTMLDivElement>(
-                  byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
-                  HTMLDivElement,
-                ),
-              ).dataset.cbOption,
-            );
-
-            handler(cbOption);
-          }
-
+          const cbOption = DEFINED.tsCheck<string>(
+            DEFINED.tsCheck<HTMLDivElement>(
+              INSTANCE.tsCheck<HTMLDivElement>(
+                byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
+                HTMLDivElement,
+              ),
+            ).dataset.cbOption,
+          );
+          console.log("scroll2:", targetOption.innerHTML);
           targetOption.scrollIntoView({
             behavior: "smooth",
             block: "center",
             inline: "center",
           });
+
+          for (const handler of this.onOptionChanged) {
+            handler(cbOption);
+          }
         }
 
         break;
@@ -596,8 +596,6 @@ export class Optioninput extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   public onInputTarget(event: Event): void {
-    // PRECONDITION
-    const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region If the [target] just received focus, show all available functionalities
     if (this.newFocusTarget) {
       this.newFocusTarget = false;
@@ -609,7 +607,8 @@ export class Optioninput extends HTMLDivElement {
       return;
     }
     // #endregion If the [target] just received focus, show all available functionalities
-    const remainingOptions = this.filter(eventTarget.value);
+    const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+    const remainingOptions = this.filter(eventTarget.value.substring(1));
 
     if (remainingOptions.length === 0) {
       this.enabled = false;
@@ -640,8 +639,9 @@ export class Optioninput extends HTMLDivElement {
    * @returns The remaining options. */
   public filter(filter: string): Array<string> {
     const hits = new Array<string>();
-    let firstVisible: HTMLDivElement | undefined;
     const options = allByCssAs(".---WaXCode.--Optioninput.--Option", HTMLDivElement, this.shadowRoot ?? undefined);
+
+    let firstVisible: HTMLDivElement | undefined;
 
     for (const option of options) {
       const cbOption = option.dataset.cbOption ?? "";
@@ -662,18 +662,18 @@ export class Optioninput extends HTMLDivElement {
       }
     }
 
-    firstVisible?.click();
+    if (hits.length !== 0) {
+      firstVisible?.click();
 
-    const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
-
-    shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current")?.classList.remove("-Current");
-    DEFINED.tsCheck<HTMLElement>(
-      INSTANCE.tsCheck<HTMLDivElement>(
-        shadow.querySelector(`.---WaXCode.--Optioninput.--Option[ data-cb-option = "${hits[0]}"]`),
-        HTMLDivElement,
-      ),
-    ).classList.add("-Current");
-
+      const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+      shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current")?.classList.remove("-Current");
+      DEFINED.tsCheck<HTMLElement>(
+        INSTANCE.tsCheck<HTMLDivElement>(
+          shadow.querySelector(`.---WaXCode.--Optioninput.--Option[ data-cb-option = "${hits[0]}"]`),
+          HTMLDivElement,
+        ),
+      ).classList.add("-Current");
+    }
     return hits;
   }
   // #endregion Filtering

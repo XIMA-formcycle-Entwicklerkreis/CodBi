@@ -1,7 +1,13 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+// #endregion XDBC
+// #endregion Imports
 /** The type of requests needed to identify identical requests. */
 type ApiRequest = {
   /** The requested years. */

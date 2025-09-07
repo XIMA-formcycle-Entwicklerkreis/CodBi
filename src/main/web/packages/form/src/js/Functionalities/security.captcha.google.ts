@@ -1,12 +1,18 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link Security_Captcha_Google.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Security_Captcha_Google {
   /**
    * This functionality needs a site key that can be obtained at https://developers.google.com/recaptcha and

@@ -1,0 +1,528 @@
+<div    id      = 'CodBi_LocalAPIDoc' #CodBi_LocalAPIDoc >
+    <p-splitter id = "Splitter"
+                [panelSizes]    = "[25, 75]"
+                [minSizes]      = "[20, 50]"
+                [style]         = "{ height: '100%', width : '100%' }">
+        <ng-template #panel >
+            <div class = "-panel -left">
+                <p-tree id = "CodBi_LocalAPIDoc_Tree" #CodBi_LocalAPIDoc_Tree
+
+                        [value]             = "activeTab === 'Functionality' ? items : activeTab === 'Elementplaceholder' ? itemsElementplaceholder : itemsStandard"
+                        [filter]            = "true"
+                        [(selection)]       = "currentlySelectedTreeNode"
+                        [filterPlaceholder] = "'TreeView.phFilter' | transloco"
+                        [emptyMessage]      = "'TreeView.EmptyMessage' | transloco"
+
+                        selectionMode = "single"
+
+                        (onNodeSelect) = "onNodeSelect( $event )">
+                        <ng-template    let-node
+
+                                        pTemplate = "default">
+                            <div    id      = "CodBi_LocalAPIDoc_Tree_Item"
+                                    style   = "display : flex ;">
+                                <div id = "CodBi_LocalAPIDoc_Tree_Label">
+                                    <p *ngIf = "currentlySelectedTreeNode !== node || !currentlySelectedTreeNodeEditing">{{ node.label }}</p>
+
+                                    <input  *ngIf = "currentlySelectedTreeNode === node && currentlySelectedTreeNodeEditing === true"
+
+                                            #CodBi_LocalAPIDoc_Tree_Rename_Input
+
+                                            [value] = "node.label"
+
+                                            (keyup)         = "onKeyupRenameInput( $event )"
+                                            (blur)          = "onBlurRenameInput( $event )"
+                                            (keydown.enter) = "onBlurRenameInput( $event )"/>
+
+                                    <div    class = "CodBi_LocalAPIDoc_Tree_Label_Status">
+                                        <div    *ngIf = 'node.data.Description !== ""'
+
+                                                class = "Description"
+
+                                                [attr.title] = "'TreeView.Label.Status.Description' | transloco"></div>
+
+                                        <div    *ngIf = 'node.data.Parameter && node.data.Parameter.length > 0'
+
+                                                class = "Parameter"
+
+                                                [attr.title] = "'TreeView.Label.Status.Parameter' | transloco"></div>
+
+                                        <div    *ngIf = 'node.data.globals && node.data.globals.length > 0'
+
+                                                class = "Globals"
+
+                                                [attr.title] = "'TreeView.Label.Status.Globals' | transloco"></div>
+
+                                        <div    *ngIf = 'node.data.classes && node.data.classes.length > 0'
+
+                                                class = "Classes"
+
+                                                [attr.title] = "'TreeView.Label.Status.Classes' | transloco"></div>
+
+                                        <div    *ngIf = 'activeTabDocRef[ getFullNodePath(node)] && activeTabDocRef[ getFullNodePath(node)].Code !== undefined'
+
+                                                class   = "Code"
+
+                                                [attr.title] = "'TreeView.Label.Status.Code' | transloco"></div></div></div><div>
+
+                                <div id = "CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent" #CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent >
+                                    <p>"{{ alreadyTakenName }}"{{"Input.Hint.AlreadyExistent" | transloco }}</p></div>
+
+                                <button class = "--CB-LocalAPIDoc-RenameTreeItem"
+
+                                        (click) = "onRenameNode( $event );
+
+                                                   formerInput_CodBi_LocalAPIDoc_New_Name = node.label ;"></button></div>
+
+                                <div><button class = "--CB-LocalAPIDoc-ExportTreeItem"
+
+                                        (click) = "onExportNode( $event )"></button></div>
+
+                                <div id = "CodBi_LocalAPIDoc_Tree_Label_Remove">
+                                    <button class = "--CB-LocalAPIDoc-RemoveTreeItem"
+
+                                        (click) = "onDeleteNode( $event );
+
+                                                   CodBi_LocalAPIDoc_Tree_Label_Remove_Question.style.display = 'flex';"></button>
+
+                                    <div id = "CodBi_LocalAPIDoc_Tree_Label_Remove_Question" #CodBi_LocalAPIDoc_Tree_Label_Remove_Question >
+                                        <p>{{"Input.Hint.SureToDelete" | transloco }}</p>
+
+                                        <button id = "CodBi_LocalAPIDoc_Tree_Label_Remove_Question_Yes"
+
+                                                (click) = " onDeleteNode_OK( $event );
+
+                                                            CodBi_LocalAPIDoc_Tree_Label_Remove_Question.style.display = 'none';"></button>
+                                        <button id = "CodBi_LocalAPIDoc_Tree_Label_Remove_Question_No"
+
+                                                (click) = " onDeleteNode_CANCEL( $event );
+
+                                                            CodBi_LocalAPIDoc_Tree_Label_Remove_Question.style.display = 'none';"></button></div></div>
+
+                                    <div id = "CodBi_LocalAPIDoc_Tree_Label_UploadCode">
+                                        <button class = "--CB-LocalAPIDoc-UploadCodeTreeItem"
+
+                                                (click) = "onUploadCode( $event )"></button>
+
+                                        <input  id = "CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue" #CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue
+                                            type    = "file"
+                                            accept  = ".js"
+                                            style   = "display : none ;"/></div></div></ng-template></p-tree>
+
+                <button class = "-add" #CodBi_LocalAPIDoc_Add
+
+                        (click) = "onClick_CodBi_LocalAPIDoc_Add( $event )">+</button></div></ng-template>
+
+        <ng-template id = "CodBi_LocalAPIDoc_RightPanel" #panel >
+            <p-tabs [(value)]   = "activeTab"
+                    [lazy]      = "false">
+                <p-tablist>
+                    <p-tab value    = "Functionality">{{"RP.Tabs.Header.Functionalities" | transloco }}</p-tab>
+                    <p-tab value    = "Elementplaceholder">{{"RP.Tabs.Header.Elementplaceholder" | transloco }}</p-tab>
+                    <p-tab value    = "Standard">{{"RP.Tabs.Header.Standards" | transloco }}</p-tab>
+
+                    <div id = "CodBi_LocalAPIDoc_RightPanel_Options">
+                        <button id = "CodBi_LocalAPIDoc_RightPanel_Options_Sync" #CodBi_LocalAPIDoc_RightPanel_Options_Sync
+
+                                [attr.title] = "'RP.Tabs.Header.Functions.Sync' | transloco"
+
+                                (click) = "enSync()"
+
+                                [ngClass] = "{
+                                    '--synced'  : synchronized,
+                                    '--syncing' : synchronizing }"></button>
+
+                        <button id = "CodBi_LocalAPIDoc_RightPanel_Options_Export"
+
+                                [attr.title] = "'RP.Tabs.Header.Functions.Export' | transloco"
+
+                                (click) = "onExport()"></button>
+
+                        <button id = "CodBi_LocalAPIDoc_RightPanel_Options_Import"
+
+                                [attr.title] = "'RP.Tabs.Header.Functions.Import' | transloco"
+
+                                (click) = "onImport()">
+                            <input  id = "CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue" #CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue
+                                            type    = "file"
+                                            accept  = ".json"
+                                            style   = "display : none ;"/></button>
+
+                        <button id = "CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel"
+
+                                (click) = "onClick_CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel()">X</button></div></p-tablist>
+
+                <p-tabpanels>
+                    <p-tabpanel value = "Functionality"
+
+                                [class.--active]    = "activeTab === 'Functionality'"
+                                [class.--inactive]  = "activeTab !== 'Functionality'"
+                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef && currentlySelectedTreeNodeAPIRef.local === undefined"
+                                [class.--blocked]   = "currentlySelectedTreeNode === undefined || items.length === 0">
+                        <p-accordion    [(value)]   = "activeAccordion"
+                                        [multiple]  = "true"
+                                        [transitionOptions]="'2000ms cubic-bezier(0.86, 0, 0.07, 1)'">
+                            <p-accordion-panel value = "Description">
+                                <p-accordion-header>{{"RP.Accordion.Captions.Description" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content #CodBi_LocalAPIDoc_Functionalities_Description >
+                                    <div>
+                                        <editor *ngIf="activeTab === 'Functionality'"
+
+                                                id          = "editorDescription_Functionalities" #editorDescription_Functionalities
+                                                licenseKey  = "gpl"
+
+                                                (onBlur) = "updateNodeToAPIDoc()"
+
+                                                [(ngModel)]     = "description"
+                                                [init]          = "{
+                                                    plugins                     :   'autoresize advlist autolink lists link image table code help wordcount ' +
+                                                                                    'charmap preview anchor searchreplace visualblocks fullscreen ' +
+                                                                                    'insertdatetime media emoticons autosave quickbars visualchars ',
+                                                    selector                    :   'textarea',
+                                                    onboarding                  :   false,
+                                                    toolbar                     :   'undo redo searchreplace | blocks | ' +
+                                                                                    'bold italic forecolor | alignleft aligncenter ' +
+                                                                                    'alignright alignjustify | bullist numlist outdent indent | ' +
+                                                                                    'removeformat | media insertdatetime charmap emoticons anchor | ' +
+                                                                                    'preview fullscreen visualchars | help',
+                                                    quickbars_selection_toolbar :   'bold italic underline | quicklink',
+                                                    quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
+                                                    quickbars_insert_toolbar    :   'quicktable quickform',
+                                                    min_height                  :   500,
+                                                    paste_data_images           :   false,
+                                                    base_url                    :   resourceurl,
+                                                    suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value = "Parameter">
+                                <p-accordion-header>Parameter</p-accordion-header>
+
+                                <p-accordion-content>
+                                    <ng-container   [ngTemplateOutlet]          = "tplParameter"
+                                                    [ngTemplateOutletContext]   = "{ data: currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? currentlySelectedFunctionalityData.Parameter : [] : []}"></ng-container></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value = "Notes">
+                                <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content>
+                                    <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
+
+                                                [(ngModel)] = "notes"
+
+                                                (blur)  = "onBlurNotes()"
+                                                (input) = "onInputNotes( $event )"
+
+                                                [attr.placeholder] = "'RP.phNotes' | transloco"></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
+
+                    <p-tabpanel value   = "Elementplaceholder"
+
+                                [class]             = "activeTab === 'Elementplaceholder' ? '--active' : '--inactive'"
+                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef && currentlySelectedTreeNodeAPIRef.local === undefined"
+                                [class.--blocked]   = "currentlySelectedTreeNode === undefined || itemsElementplaceholder.length === 0">
+                        <p-accordion    [(value)]   = "activeAccordion"
+                                        [multiple]  = "true">
+                            <p-accordion-panel value = "Description">
+                                <p-accordion-header>{{"RP.Accordion.Captions.Description" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content #CodBi_LocalAPIDoc_Elementplaceholder_Description >
+                                    <div>
+                                        <editor *ngIf="activeTab === 'Elementplaceholder'"
+
+                                                id = "editorDescription_Elementplaceholder" #editorDescription_Elementplaceholder
+
+                                                licenseKey      = "gpl"
+
+                                                (onBlur) = "updateNodeToAPIDoc()"
+
+                                                [(ngModel)]     = "description"
+                                                [init]          = "{
+                                                    plugins                     :   'autoresize advlist autolink lists link image table code help wordcount ' +
+                                                                                    'charmap preview anchor searchreplace visualblocks fullscreen ' +
+                                                                                    'insertdatetime media emoticons autosave quickbars visualchars ',
+                                                    selector                    :   'textarea',
+                                                    onboarding                  :   false,
+                                                    toolbar                     :   'undo redo searchreplace | blocks | ' +
+                                                                                    'bold italic forecolor | alignleft aligncenter ' +
+                                                                                    'alignright alignjustify | bullist numlist outdent indent | ' +
+                                                                                    'removeformat | media insertdatetime charmap emoticons anchor | ' +
+                                                                                    'preview fullscreen visualchars | help',
+                                                    quickbars_selection_toolbar :   'bold italic underline | quicklink',
+                                                    quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
+                                                    quickbars_insert_toolbar    :   'quicktable quickform',
+                                                    paste_data_images           :   false,
+                                                    min_height                  :   500,
+                                                    base_url                    :   resourceurl,
+                                                    suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value="Parameter">
+                                <p-accordion-header>Parameter</p-accordion-header>
+                                <p-accordion-content>
+                                    <ng-container   [ngTemplateOutlet]          = "tplParameter"
+                                                    [ngTemplateOutletContext]   = "{
+                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.Parameter ? toDescriptiveArray( currentlySelectedFunctionalityData.Parameter ) : [] : [],
+                                                        isEP    : true }"></ng-container></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value = "Notes">
+                                <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content>
+                                    <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
+
+                                                [(ngModel)] = "notes"
+
+                                                (blur)  = "onBlurNotes()"
+                                                (input) = "onInputNotes( $event )"
+
+                                                [attr.placeholder] = "'RP.phNotes' | transloco"></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel>
+
+                    <p-tabpanel value = "Standard"
+
+                                [class]             = "activeTab === 'Standard' ? '--active' : '--inactive'"
+                                [class.--nameTaken] = "currentlySelectedTreeNode && isFunctionalityNameTaken( getFullNodePath( currentlySelectedTreeNode )) && currentlySelectedTreeNodeAPIRef && currentlySelectedTreeNodeAPIRef.local === undefined"
+                                [class.--blocked]   = "currentlySelectedTreeNode === undefined || itemsStandard.length === 0">
+                        <p-accordion    [(value)]   = "activeAccordion"
+                                        [multiple]  = "true">
+                            <p-accordion-panel value = "Description">
+                                <p-accordion-header>{{"RP.Accordion.Captions.Description" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content #CodBi_LocalAPIDoc_Standards_Description >
+                                    <div>
+                                        <editor *ngIf = "activeTab === 'Standard'"
+
+                                                id = "editorDescription_Standard" #editorDescription_Standard
+
+                                                licenseKey  = "gpl"
+
+                                                (onBlur) = "updateNodeToAPIDoc()"
+
+                                                [(ngModel)]     = "description"
+                                                [init]          = "{
+                                                    plugins                     :   'autoresize advlist autolink lists link image table code help wordcount ' +
+                                                                                    'charmap preview anchor searchreplace visualblocks fullscreen ' +
+                                                                                    'insertdatetime media emoticons autosave quickbars visualchars ',
+                                                    selector                    :   'textarea',
+                                                    onboarding                  :   false,
+                                                    toolbar                     :   'undo redo searchreplace | blocks | ' +
+                                                                                    'bold italic forecolor | alignleft aligncenter ' +
+                                                                                    'alignright alignjustify | bullist numlist outdent indent | ' +
+                                                                                    'removeformat | media insertdatetime charmap emoticons anchor | ' +
+                                                                                    'preview fullscreen visualchars | help',
+                                                    quickbars_selection_toolbar :   'bold italic underline | quicklink',
+                                                    quickbars_image_toolbar     :   'alignleft aligncenter alignright | imageoptions',
+                                                    quickbars_insert_toolbar    :   'quicktable quickform',
+                                                    paste_data_images           :   false,
+                                                    min_height                  :   500,
+                                                    base_url                    :   resourceurl,
+                                                    suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value="Globals">
+                                <p-accordion-header>{{"RP.Accordion.Captions.Globals" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content>
+                                    <ng-container   [ngTemplateOutlet]          = "tplParameter"
+                                                    [ngTemplateOutletContext]   = "{
+                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.globals ? currentlySelectedFunctionalityData.globals : [] : [],
+                                                        toAdd   : 'Globals'}"></ng-container></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value="Classes">
+                                <p-accordion-header>{{"RP.Accordion.Captions.CSS" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content>
+                                    <ng-container   [ngTemplateOutlet]          = "tplParameter"
+                                                    [ngTemplateOutletContext]   = "{
+                                                        data    : currentlySelectedFunctionalityData ? currentlySelectedFunctionalityData.classes ? currentlySelectedFunctionalityData.classes : [] : [],
+                                                        toAdd   : 'Classes'}"></ng-container></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value="Notes">
+                                <p-accordion-header>{{"RP.Accordion.Captions.Remarks" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content>
+                                    <textarea   id = "CodBi_LocalAPIDoc_RightPanel_Notes_Text"
+
+                                                [(ngModel)] = "notes"
+
+                                                (blur)  = "onBlurNotes()"
+                                                (input) = "onInputNotes( $event )"
+
+                                                [attr.placeholder] = "'RP.phNotes' | transloco"></textarea></p-accordion-content></p-accordion-panel></p-accordion></p-tabpanel></p-tabpanels></p-tabs></ng-template></p-splitter></div>
+<!-- #region Dialogues -->
+<!-- #region CodBi_LocalAPIDoc_New -->
+<div    id          = "CodBi_LocalAPIDoc_New" #CodBi_LocalAPIDoc_New
+        tabindex    = "0"
+
+        (keyup) = "onKeyup_CodBi_LocalAPIDoc_New( $event )">
+    <div id = "CodBi_LocalAPIDoc_New_Header">
+        <h2>{{"Input.Label.Title" | transloco }}</h2>
+
+        <p>{{"Input.Label.Introduction" | transloco }}</p>
+
+        <a id       = "CodBi_LocalAPIDoc_New_JoinUsOnGitHub"
+           href     = "https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev"
+           target   = "GitHub / CodBi Community">
+            <img    [src] = "baseurl + 'plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/assets/svg/GitHub.svg'"
+
+                    alt = "GitHub Logo"/>
+
+            <p>{{"Input.Label.JoinUsOnGitHub" | transloco }}</p>
+        </a>
+
+        <div id = "CodBi_LocalAPIDoc_New_Outro">
+            <h2>{{"Input.Label.Outro.Header" | transloco }}</h2>
+
+            <p [innerHTML] = "'Input.Label.Outro.GoodToGoLocal' | transloco"></p>
+            <p [innerHTML] = "'Input.Label.Outro.ShareViaIssues' | transloco"></p>
+
+            <h3>{{"Input.Label.Outro.AdvantagesOfSharing" | transloco }}</h3>
+
+            <ul>
+                <li><strong>{{"Input.Label.Outro.StrongerLibrary" | transloco }}</strong> - {{"Input.Label.Outro.StrongerLibrary.Details" | transloco }}</li>
+                <li><strong>{{"Input.Label.Outro.FasterDevelopment" | transloco }}</strong> - {{"Input.Label.Outro.FasterDevelopment.Details" | transloco }}</li>
+                <li><strong>{{"Input.Label.Outro.Quality" | transloco }}</strong> - {{"Input.Label.Outro.Quality.Details" | transloco }}</li>
+                <li><strong>{{"Input.Label.Outro.Knowledge" | transloco }}</strong> - {{"Input.Label.Outro.Knowledge.Details" | transloco }}</li></ul>
+
+            <h3 id = "CodBi_LocalAPIDoc_New_Outro_NamingConvention">Wichtig für die Benennung:</h3>
+
+            <p [innerHTML] = "'Input.Label.Outro.NamingConvention' | transloco"></p></div></div>
+
+    <div id = "CodBi_LocalAPIDoc_New_Panel">
+        <label for = "CodBi_LocalAPIDoc_New_Panel_Name">{{"Input.Label." + activeTab | transloco }}</label>
+
+        <div id = "CodBi_LocalAPIDoc_New_Panel_InputArea">
+            <p id = "CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent" #CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent >{{"Input.Hint.AlreadyExistent" | transloco }}</p>
+
+            <input  id      = "CodBi_LocalAPIDoc_New_Name" #CodBi_LocalAPIDoc_New_Name
+                    type    = "text"
+
+                    (keydown.enter) = "onEnter_CodBi_LocalAPIDoc_New_Name()"
+                    (input)         = "onInput_CodBi_LocalAPIDoc_New_Name( $event )"/>
+
+            <button id = "CodBi_LocalAPIDoc_New_Panel_Add" #CodBi_LocalAPIDoc_New_Panel_Add
+
+                    (click) = "onClick_CodBi_LocalAPIDoc_New_Panel_Add()">{{"Add.Panel.Button" | transloco }}</button></div></div>
+
+    <div class = "-close"><button #CodBi_LocalAPIDoc_New_Panel_Close>X</button></div></div>
+<!-- #endregion CodBi_LocalAPIDoc_New -->
+<!-- #endregion Dialogues -->
+<!-- #endregion Templates -->
+<ng-template #tplParameter
+                let-data    = "data"
+                let-toAdd   = "toAdd"
+                let-isEP    = "isEP">
+    <p-table    [value] = "data"
+
+                editMode    = "row"
+                dataKey     = "id"
+
+                stripedRows >
+        <ng-template #header >
+            <tr>
+                <th style="width:50%">{{( isEP ? "Input.Parameter.Index" : "Input.Parameter.Name") | transloco }}</th>
+                <th style="width:50%">{{"Input.Parameter.Description" | transloco }}</th></tr></ng-template>
+
+                <ng-template   #body
+
+                                let-parameter
+                                let-editing = "editing"
+                                let-ri      = "rowIndex">
+                    <tr [pEditableRow] = "parameter">
+                        <td>
+                            <p-cellEditor>
+                                <ng-template #input >
+                                    <input  pInputText
+
+                                            [ngClass]       = "{'--invalid' : !currentNameValid }"
+                                            [placeholder]   = "( isEP ? 'Input.Parameter.phIndex' : 'Input.Parameter.phName') | transloco"
+
+                                            [attr.typeToAdd] = "toAdd"
+
+                                            type        = "text"
+                                            style       = "font-size : 1.5em ; width : 100% ; border-radius: .5em ; border : solid ; border-color: green ; color: darkorange ; box-shadow: 0 0 .5em green ;"
+
+                                            [(ngModel)] = "parameter.Name"
+
+                                            (keyup) = "onKeyup_InputParametername( $event )"
+
+                                            required /></ng-template>
+
+                                <ng-template #output>{{ parameter.Name }}</ng-template></p-cellEditor></td>
+                                    <td>
+                                        <p-cellEditor>
+                                            <ng-template #input >
+                                                <input  pInputText
+
+                                                        [ngClass]       = "{'--invalid' : !currentDescriptionValid }"
+                                                        [placeholder]   = "'Input.Parameter.phDescription' | transloco"
+
+                                                        (keyup) = "onKeyup_InputParameterdescription( $event )"
+
+                                                        type        = "text"
+                                                        style       = "font-size : 1.5em ; width : 100% ; border-radius: .5em ; border : solid ; border-color: green ; color: darkorange ; box-shadow: 0 0 .5em green ;"
+
+                                                        [(ngModel)] = "parameter.Description"
+
+                                                        required /></ng-template>
+
+                                <ng-template #output >{{ parameter.Description }}</ng-template></p-cellEditor></td>
+                                    <td>
+                                        <div class="flex items-center justify-center gap-2">
+                                            <button *ngIf = "!editing"
+
+                                                    pButton
+                                                    pRipple
+                                                    pInitEditableRow
+                                                    text
+                                                    rounded
+
+                                                    type        = "button"
+                                                    icon        = "pi pi-pencil"
+                                                    severity    = "secondary"
+
+                                                    (click) = "onRowEditInit( parameter )"></button>
+
+                                            <button *ngIf = "!editing"
+
+                                                    pButton
+                                                    pRipple
+                                                    text
+                                                    rounded
+
+                                                    type        = "button"
+                                                    icon        = "pi pi-trash"
+                                                    severity    = "secondary"
+
+                                                    (click) = "onRowDelete( parameter )"></button>
+
+                                            <button *ngIf = "editing"
+
+                                                    [ngClass] = "{ '--invalid' : !currentNameValid || !currentDescriptionValid }"
+
+                                                    pButton
+                                                    pRipple
+                                                    text
+                                                    rounded
+                                                    pSaveEditableRow
+
+                                                    type        = "button"
+                                                    severity    = "secondary"
+                                                    icon        = "pi pi-check"
+
+                                                    (click) = "onRowEditSave( parameter, ri, toAdd )"></button>
+
+                                            <button *ngIf = "editing"
+
+                                                    pButton
+                                                    pRipple
+                                                    text
+                                                    rounded
+                                                    pCancelEditableRow
+
+                                                    icon        = "pi pi-times"
+                                                    type        = "button"
+                                                    severity    = "secondary"
+
+                                                    (click) = "onRowEditCancel( parameter, ri, toAdd )"></button></div></td></tr></ng-template></p-table>
+
+    <button id = "CodBi_LocalAPIDoc_RightPanel_AddParameter"
+
+            (click) = "onClick_CodBi_LocalAPIDoc_RightPanel_AddParameter( toAdd )">+</button></ng-template>
+<!-- #endregion Templates -->

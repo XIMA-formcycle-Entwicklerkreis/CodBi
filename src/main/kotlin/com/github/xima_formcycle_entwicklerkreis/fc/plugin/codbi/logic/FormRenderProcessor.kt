@@ -22,7 +22,7 @@ import org.apache.commons.lang3.StringUtils.splitPreserveAllTokens
 internal class FormRenderProcessor {
   private val form: Node
   private val html: Node?
-  private val renderConfig: IXFormRenderConfig
+  val renderConfig: IXFormRenderConfig
 
   /**
    * Constructs a new instance with a certain renderConfig, `<html>` and `<form>` element. Used
@@ -97,6 +97,16 @@ internal class FormRenderProcessor {
   }
 
   /**
+   * Inserts an inline script into the form.
+   *
+   * @param id See [createScriptInline].
+   * @param content See [createScriptInline].
+   */
+  fun insertInlineScript(id: String, content: String) {
+    appendChild(form, createScriptInline(id, content))
+  }
+
+  /**
    * Creates an inline script element with the given content and ID.
    *
    * ```html
@@ -109,7 +119,9 @@ internal class FormRenderProcessor {
    */
   private fun createScriptInline(id: String, content: String): Node {
     val style = newInlineScript(content, id)
+
     attr(style, "id", id)
+
     return style
   }
 
@@ -130,6 +142,10 @@ internal class FormRenderProcessor {
     attr(script, "name", id)
     attr(script, "src", url)
     attr(script, "type", "module")
+    attr(
+        script,
+        "onerror",
+        "window.codbi.nncHandler('${url.substring(url.lastIndexOf('/')+1).replace(".js","")}');")
 
     return script
   }

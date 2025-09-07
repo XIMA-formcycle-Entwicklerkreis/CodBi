@@ -1,9 +1,13 @@
-import { SVManager } from "./SVManager.js";
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { OR } from "xdbc/src/DBC/OR";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
+// #endregion XDBC
+import { SVManager } from "./SVManager.js";
+// #endregion Imports
 /**
  * A {@link HTMLDivElement } that manages the **e**lement **p**laceholder within an {@link HTMLInputElement }
  * of type **text** backed by the {@link SVManager }'s functionality. */
@@ -94,6 +98,16 @@ export class EPManager extends SVManager {
     super();
 
     this._bufferOptions = this.options;
+    // #region Provide Update via PluginData
+    window.CodbiPluginData.updateEPManager = (options: string) => {
+      this.epOptions = JSON.parse(options).map((e: string) => e.replace(".ts", ""));
+      // #region Invalidate mode so that on setting to EP it will rerender.
+      this.mode = "SV";
+      this.mode = "EP";
+      // #endregion Invalidate mode so that on setting to EP it will rerender.
+      this.render();
+    };
+    // #endregion Provide Update via PluginData
   }
   /**
    * States whether this {@link EPManager } was successfully registered as a custom element and performs
@@ -151,6 +165,28 @@ export class EPManager extends SVManager {
   /** States whether the {@link EPManager } is currently into the process of entering an **e**lement **p**laceholder. */
   public enteringEP = false;
   /**
+   * When in **EP**-{@link EPManager.mode } this method filters the {@link SVManager.options } by {@link EPManager.currentFilter }.
+   * Otherwise {@link SVManager.filter } is invoked.
+   *
+   * @param event The {@link Event } received. */
+  protected override onInputTarget(event: Event): void {
+    if (this.mode === "EP") {
+      const remainingOptions = this.filter(this.currentFilter);
+
+      const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+
+      shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current")?.classList.remove("-Current");
+      DEFINED.tsCheck<HTMLElement>(
+        INSTANCE.tsCheck<HTMLDivElement>(
+          shadow.querySelector(`.---WaXCode.--SVManager.--Option[ data-cb-option = "${remainingOptions[0]}"]`),
+          HTMLDivElement,
+        ),
+      ).classList.add("-Current");
+    } else {
+      super.onInputTarget(event);
+    }
+  }
+  /**
    * When in **EP**-{@link EPManager.mode } keeps track if the entered digits and letters to filter
    * the {@link SVManager.options } invoking {@link SVManager.onKeydownTarget } when appropriate or
    * not in **EP**-{@link EPManager.mode }.
@@ -159,7 +195,8 @@ export class EPManager extends SVManager {
   protected override onKeydownTarget(event: KeyboardEvent): void {
     if (this.mode === "EP") {
       const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
-      const selectionStart = DEFINED.tsCheck<number>(eventTarget.selectionStart);
+
+      let selectionStart = DEFINED.tsCheck<number>(eventTarget.selectionStart);
 
       if (event.key !== " ") {
         super.onKeydownTarget(event);
@@ -177,12 +214,23 @@ export class EPManager extends SVManager {
       } else {
         // #region Inject selected option into the {@link SVManager.target } and close [enteringEP]-mode
         if (this.enteringEP) {
+          // #region Remove the characters that were typed during filtering.
+          const inputElement = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
+
+          const remainingOne = inputElement.value.substring(0, selectionStart - this.currentFilter.length);
+          const remainingTwo = inputElement.value.substring(selectionStart);
+
+          inputElement.value = remainingOne + remainingTwo;
+
+          selectionStart = selectionStart - this.currentFilter.length;
+          // #endregion Remove the characters that were typed during filtering.
           const selectedOption = DEFINED.tsCheck<string>(
             INSTANCE.tsCheck<HTMLElement>(
               DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelector(".---WaXCode.--SVManager.--Option.-Current"),
               HTMLElement,
             ).dataset.cbOption,
           );
+
           eventTarget.value = `${eventTarget.value.substring(0, selectionStart - 1)} { ${selectedOption} > } ${eventTarget.value.substring(selectionStart)}`;
 
           eventTarget.setSelectionRange(

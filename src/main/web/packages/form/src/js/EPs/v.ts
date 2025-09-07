@@ -1,6 +1,10 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
 import { CodBiError } from "../global-scope";
+// #endregion Imports
 /**
  * This **E**lement-**P**laceholder acquires a global variable's value.
  *
@@ -9,7 +13,7 @@ import { CodBiError } from "../global-scope";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class V {
   /**
    * Acquires the value of the global variable specified by the 1st parameter.

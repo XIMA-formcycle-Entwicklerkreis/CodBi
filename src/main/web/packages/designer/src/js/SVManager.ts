@@ -1,3 +1,5 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { OR } from "xdbc/src/DBC/OR";
 import { EQ } from "xdbc/src/DBC/EQ";
@@ -6,7 +8,11 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { HasAttribute } from "xdbc/src/DBC/HasAttribute";
+// #endregion XDBC
+// #region XIMA
 import { allByCssAs, allByCssHtml, byCssAs, byCssHtml } from "@de-xima/xima-common-js-dom";
+// #endregion XIMA
+// #endregion Imports
 /**
  * A {@link HTMLDivElement } that manages the **s**eparated **v**alues within an {@link HTMLInputElement }
  * of type **text**.
@@ -28,7 +34,7 @@ export class SVManager extends HTMLDivElement {
   }
   // #region Options
   /** Holds the {@link string }s that're the actual options. */
-  protected options: Array<string>;
+  public options: Array<string>;
   /** Holds the {@link string } the {@link SVManager.target }ed {@link HTMLInputElement }'s content shall
    * be split into. */
   protected separator: string;
@@ -44,9 +50,7 @@ export class SVManager extends HTMLDivElement {
 
     this.render();
   }
-  /**
-   *  Sets the URL to an image that shall be used as the CSS-Background-Image for the {@link SVmanager.options } panel.
-   */
+  /** Sets the URL to an image that shall be used as the CSS-Background-Image for the {@link SVmanager.options } panel. */
   public set backgroundImage(toSet: string) {
     this.cssEnabled = `background-color : #FFFFFFDD ; background-size : contain ; background-position : center ; background-repeat : no-repeat ; background-blend-mode : overlay ; display : block ; background-image : url("${toSet}"), linear-gradient( 130deg,rgba( 42, 123, 155, 1 ) 0%, rgba( 216, 216, 235, 1 ) 50%, rgba( 42, 123, 155, 1 ) 100% )`;
   }
@@ -217,7 +221,7 @@ export class SVManager extends HTMLDivElement {
         div.---WaXCode.--SVManager.--Option.-Current    {
           border : solid ; border-radius : .5em ; border-color : darkorange ; box-shadow : 0 0 .5em black ;
           background-color : #FF8C00BB ;}
-        div.---WaXCode.--SVManager.--Option.-Current p  { color : white ;}`;
+        div.---WaXCode.--SVManager.--Option.-Current p  { color : black ;}`;
 
     this.attachShadow({ mode: "open" });
 
@@ -225,6 +229,13 @@ export class SVManager extends HTMLDivElement {
 
     DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).appendChild(style);
     // #endregion DOM preparations
+    // #region Provide Update via PluginData
+    window.CodbiPluginData.updateSVManager = (options: string) => {
+      this.options = JSON.parse(options).map((e: string) => e.replace(".ts", ""));
+
+      this.render();
+    };
+    // #endregion Provide Update via PluginData
     this.render();
   }
   /** Render's all {@link SVManager.options }. */
@@ -500,11 +511,13 @@ export class SVManager extends HTMLDivElement {
             event.key === "ArrowDown" ? this.nextVisibleOption : this.previousVisibleOption,
           );
 
+          targetOption.scrollIntoView({ behavior: "smooth", inline: "center", block: "center" });
           targetOption.classList.add("-Current");
           former.classList.remove("-Current");
 
           for (const handler of this.onOptionChanged) {
             const cbOption = byCssHtml(".---WaXCode.--SVManager.--Option.-Current", shadow)?.dataset.cbOption;
+
             handler(cbOption ?? "");
           }
         }
@@ -544,7 +557,6 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onInputTarget(event: Event): void {
-    // PRECONDITION
     const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region If the [target] just received focus, show all available functionalities
     if (this.newFocusTarget) {
@@ -564,6 +576,7 @@ export class SVManager extends HTMLDivElement {
     }
 
     segmentContent = this.determineSegmentcontent(eventTarget.value, this.separator, eventTarget.selectionStart ?? 0);
+
     const remainingOptions = this.filter(segmentContent);
 
     if (remainingOptions.length === 0) {
@@ -597,26 +610,36 @@ export class SVManager extends HTMLDivElement {
   }
   // #endregion Keyboard handling
   // #region Filtering
-  /**
+  /**thi
    * Filters the view of options.
    *
-   * @param filter The {@link string } to apply as a filter.
+   * @param filter  The {@link string } to apply as a filter.
+   * @param options The {@link HTMLDivElement }s to filter. If not specified, all children tagged with the CSS-Classes
+   *                "---WaXCode --SVManager --Option" will be used.
    *
    * @returns The remaining options. */
-  public filter(filter: string): Array<string> {
+  public filter(
+    filter: string,
+    options: HTMLDivElement[] = allByCssAs(
+      ".---WaXCode.--SVManager.--Option",
+      HTMLDivElement,
+      this.shadowRoot ?? undefined,
+    ),
+  ): Array<string> {
     const hits = new Array<string>();
+
     let firstVisible: HTMLDivElement | undefined;
-    const options = allByCssAs(".---WaXCode.--SVManager.--Option", HTMLDivElement, this.shadowRoot ?? undefined);
 
     for (const option of options) {
       const cbOption = option.dataset.cbOption ?? "";
-      if (cbOption.indexOf(filter.toLowerCase()) === -1) {
+      if (cbOption.toLowerCase().indexOf(filter.toLowerCase()) === -1) {
         option.style.display = "none";
       } else {
         if (firstVisible === undefined) {
           firstVisible = option;
         }
         hits.push(cbOption);
+
         option.style.display = "flex";
       }
 
@@ -641,7 +664,6 @@ export class SVManager extends HTMLDivElement {
    *
    * @returns The segment-content where the **position** is pointing at. */
   protected determineSegmentcontent(separatedValues: string, delimiter: string, position: number = 0): string {
-    console.log("determineSegmentcontent");
     const caretPos: number = position;
 
     if (separatedValues.length === 0 || caretPos < 0 || caretPos > separatedValues.length) {
@@ -677,7 +699,6 @@ function nextElementSibling(element: Element | null | undefined): HTMLElement | 
   const sibling = element?.nextElementSibling;
   return sibling instanceof HTMLElement ? sibling : null;
 }
-
 /**
  * Gets the {@link HTMLElement.previousElementSibling previous element sibling} of the given element when it is an HTMLElement.
  * If not, returns null.

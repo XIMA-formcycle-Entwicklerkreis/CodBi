@@ -5,5 +5,10 @@
     "CodBi_BayVIS_BehoerdeUndAnsprechpartner": "",
     "CodBi_BayVIS_Ansprechpartner": "",
     "CodBi_BayVIS_Auswahl_Behoerden": ""
+  },
+  "globals": {
+    "BayVIS_Behoerde": "",
+    "BayVIS_Hauptansprechpartner": "",
+    "BayVIS_WeitereAnsprechpartner": ""
   }
 }

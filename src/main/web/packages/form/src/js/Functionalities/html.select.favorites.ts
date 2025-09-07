@@ -1,14 +1,20 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { EQ } from "xdbc/src/DBC/EQ";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link htm.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Select_Favorites {
   /**
    * Rearranges the {@link HTMLOptionElement } within the {@link HTMLSelectElement} "toProcess" in order to place the
@@ -47,8 +53,7 @@ export class HTML_Select_Favorites {
     let lastSelection: string =
       toLoad.initialelement && typeof toLoad.initialelement === "string"
         ? toLoad.initialelement
-        : // biome-ignore lint/style/noNonNullAssertion: Existence of <option> has been assured, any <option> has a value.
-          toProcess.querySelector("option")!.getAttribute("value")!;
+        : toProcess.querySelector("option").getAttribute("value");
     // #region On selection change
     toProcess.addEventListener("change", () => {
       if ($(toProcess).val() === "Divider") {

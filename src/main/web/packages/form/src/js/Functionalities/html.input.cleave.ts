@@ -1,14 +1,20 @@
+// #region Imports
+// #region Cleave
 import Cleave from "cleave.js";
 import "cleave.js/dist/addons/cleave-phone.de";
 import type { CleaveOptions } from "cleave.js/options/index.js";
+// #endregion Cleave
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link HTML_Input_Cleave.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Input_Cleave {
   /**
    * This functionality applies Cleave on an {@link HTMLInputElement }.

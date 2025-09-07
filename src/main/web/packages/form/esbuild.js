@@ -42,6 +42,25 @@ async function findTsFilesInDirectory(toGetFrom) {
     return [];
   }
 }
+/**
+ * Retrieves all JSON files in the specified directory **toGetFrom**.
+ *
+ * @param {string} toGetFrom The relative path leading to the directory to get the typescript files from.
+ *
+ * @returns { Promise < string []>} The requested typescript files. */
+async function findJSONFilesInDirectory(toGetFrom) {
+  const targetDir = path.join(dirName, toGetFrom);
+
+  try {
+    const files = await fs.readdir(toGetFrom);
+
+    return files.filter((file) => file.endsWith(".json"));
+  } catch (error) {
+    console.warn(`WARNING: Unable to read directory ${targetDir}. Returning blanc array. ERROR: ${error.message}`);
+
+    return [];
+  }
+}
 // #region Retrieve CodBi configuration templates.
 const configTemplates = await findConfigTemplates();
 
@@ -49,23 +68,43 @@ console.log("CodBi configurtion templates found found: ", configTemplates);
 // #endregion Retrieve CodBi configuration templates.
 // #region Retrieve functionalities, **e**lement **p**laceholders & configurations.
 const functionalityTsFiles = await findTsFilesInDirectory("src/js/Functionalities");
+const functionalityJSONFiles = await findJSONFilesInDirectory("src/js/Functionalities");
 
 console.log("Functionalities found: ", functionalityTsFiles);
 
 const epsTsFiles = await findTsFilesInDirectory("src/js/EPs");
+const epsJSONFiles = await findJSONFilesInDirectory("src/js/EPs");
 
 console.log("EPs found: ", epsTsFiles);
 
 const configurationsTsFiles = await findTsFilesInDirectory("src/js/Configurations");
+const configurationsJSONFiles = await findJSONFilesInDirectory("src/js/Configurations");
 
 console.log("Standard configurations found: ", configurationsTsFiles);
 // #endregion Retrieve functionalities, **e**lement **p**laceholders & configurations.
 /**
+ * Copies files from one directory to another.
+ *
+ * @param {string[]} filesToCopy The list of files to be copied.
+ * @param {string} sourcePath The source directory path.
+ * @param {string} destinationPath The destination directory path. */
+async function copyFiles(filesToCopy, sourcePath, destinationPath) {
+  await fs.mkdir(destinationPath, { recursive: true });
+  await Promise.all(
+    filesToCopy.map(async (file) => {
+      const sourceFile = path.join(sourcePath, file);
+      const destinationFile = path.join(destinationPath, file);
+      await fs.copyFile(sourceFile, destinationFile);
+    }),
+  );
+}
+/**
  * Creates ESBuild-Configurations for each file **toProcess**.
  *
  * @param toProcess The files to build configurations for.
- * @param basePath  The path to prefix the file's one with. */
-function createIndividualTsBuildsWithSplitting(toProcess, basePath) {
+ * @param basePath  The path to prefix the file's one with.
+ * @param outputDir The directory where to place the files. */
+function createIndividualTsBuildsWithSplitting(toProcess, basePath, outputDir) {
   const entryPoints = toProcess.reduce((acc, current) => {
     const baseName = path.basename(current, ".ts");
     const entryPath = path.join(basePath, current);
@@ -151,7 +190,39 @@ await Promise.all([
     target: mode === "production" ? "es6" : "esnext",
   }),
 
-  ...createIndividualTsBuildsWithSplitting(functionalityTsFiles, "src/js/Functionalities"),
-  ...createIndividualTsBuildsWithSplitting(epsTsFiles, "src/js/EPs"),
-  ...createIndividualTsBuildsWithSplitting(configurationsTsFiles, "src/js/Configurations"),
+  ...createIndividualTsBuildsWithSplitting(
+    functionalityTsFiles,
+    "src/js/Functionalities",
+    process.env.web_output_dir ?? "dist",
+  ),
+  ...createIndividualTsBuildsWithSplitting(epsTsFiles, "src/js/EPs", process.env.web_output_dir ?? "dist"),
+  ...createIndividualTsBuildsWithSplitting(
+    configurationsTsFiles,
+    "src/js/Configurations",
+    process.env.web_output_dir ?? "dist",
+  ),
+
+  ...createIndividualTsBuildsWithSplitting(
+    functionalityTsFiles,
+    "src/js/Functionalities",
+    process.env.web_output_dir + "/Functionalities" ?? "dist/Functionalities",
+  ),
+  ...createIndividualTsBuildsWithSplitting(epsTsFiles, "src/js/EPs", process.env.web_output_dir + "/EPs" ?? "dist/EPs"),
+  ...createIndividualTsBuildsWithSplitting(
+    configurationsTsFiles,
+    "src/js/Configurations",
+    process.env.web_output_dir + "/Configurations" ?? "dist/Configurations",
+  ),
+
+  copyFiles(
+    functionalityJSONFiles,
+    "src/js/Functionalities",
+    process.env.web_output_dir + "/Functionalities" ?? "dist/Functionalities",
+  ),
+  copyFiles(epsJSONFiles, "src/js/EPs", process.env.web_output_dir + "/EPs" ?? "dist/EPs"),
+  copyFiles(
+    configurationsJSONFiles,
+    "src/js/Configurations",
+    process.env.web_output_dir + "/Configurations" ?? "dist/Configurations",
+  ),
 ]);

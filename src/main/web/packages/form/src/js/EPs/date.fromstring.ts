@@ -1,9 +1,13 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+// #endregion XDBC
 import { stringToDate } from "../global-scope";
+// #endregion Imports
 /**
  * This **E**lement-**P**laceholder turns a {@link String } into a {@link Date }.
  *
@@ -14,7 +18,7 @@ import { stringToDate } from "../global-scope";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class DATE_FromString {
   /**
    * Uses {@link CodBi.stringToDate } to turn the {@link String } at "params"[ 0 ] of optional format params[ 1 ] into a {@link Date }.

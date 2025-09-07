@@ -1,22 +1,27 @@
+// #region Imports
+// #region XIMA
 import { getXUtil } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+// #endregion XDBC
 import { CodBiError } from "../global-scope";
+// #endregion Imports
 /**
  * Provides the {@link HTML_Panel.functionality }.
  *
  * @remarks
  * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.net) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Panel {
   /**
    * Retrieves the first ".CXPage"-{@link HTMLElement } above the given "element".
    *
    * @param element The {@link HTMLElement } to start the search from.
    *
-   * @returns The ".CXPage"-{@link HTMLElement } containing the given "element".
-   */
+   * @returns The ".CXPage"-{@link HTMLElement } containing the given "element". */
   public static determinePage(element: HTMLElement): HTMLElement | null {
     let currentElement: HTMLElement | null = element;
 
@@ -76,6 +81,11 @@ export class HTML_Panel {
    *  - AutoHeaderTitle:                The {@link string }the automatically generated header shall display.
    *  - AutoHeaderLevel:                Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,
    *                                    e.g. to get a \<h1> enclosure the value has to be 1.
+   *  - ScrollBlock:                    Defines the logical position to scroll to when the panel
+   *                                    is unfolded (start, center, end, nearest). Defaults to "nearest".
+   *  - GenerateHeader:                 States whether a header shall be automatically generated. Defaults to FALSE.
+   *  - Scroll                          States whether the view shall be scrolled when the panel unfolds.
+   *                                    Default is FALSE.
    *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
@@ -97,6 +107,30 @@ export class HTML_Panel {
       toProcess.children.length > 0 &&
       (toLoad.generateheader as string).toLocaleLowerCase() === "true"
     ) {
+      // #region Normalize [ toLoad.scroll ].
+      if (toLoad.scroll === undefined) {
+        toLoad.scroll = false;
+      } else {
+        if (typeof toLoad.scroll === "string") {
+          toLoad.scroll = (toLoad.scroll as string).toLowerCase().trim() === "true";
+        }
+      }
+      // #endregion Normalize [ toLoad.scroll ].
+      // #region Normalize [ toLoad.scrollblock ].
+      if (toLoad.scroll && toLoad.scrollblock && typeof toLoad.scrollblock === "string") {
+        toLoad.scrollblock = toLoad.scrollblock.toLowerCase().trim();
+      }
+
+      if (
+        toLoad.scroll &&
+        toLoad.scrollblock !== "start" &&
+        toLoad.scrollblock !== "center" &&
+        toLoad.scrollblock !== "end" &&
+        toLoad.scrollblock !== "nearest"
+      ) {
+        toLoad.scrollblock = "nearest";
+      }
+      // #endregion Normalize [ toLoad.scrollblock ].
       const wrpHeader = document.createElement("div");
 
       wrpHeader.classList.add("cHeader");
@@ -132,8 +166,7 @@ export class HTML_Panel {
       const styHeader: string | null = header.getAttribute("style");
       // #region Determine where to re-insert the header when panel gets unfolded.
       const childArray = Array.from(toProcess.children);
-      // biome-ignore lint/style/noNonNullAssertion: <explanation>
-      const idxHeader = childArray.indexOf(header.parentElement!);
+      const idxHeader = childArray.indexOf(header.parentElement);
       const headerAfterElement: Element | undefined =
         idxHeader === childArray.length - 1 ? undefined : childArray[idxHeader];
       // #endregion Determine where to re-insert the header when panel gets unfolded.
@@ -235,7 +268,13 @@ export class HTML_Panel {
             header.parentElement?.insertBefore(styleAfterUnfolded, header);
           }
 
-          toProcess.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (toLoad.scroll) {
+            toProcess.scrollIntoView({
+              behavior: "smooth",
+              block: toLoad.scrollblock as ScrollLogicalPosition,
+              inline: "nearest",
+            });
+          }
         } else {
           (toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded = !(
             toProcess as unknown as { [key: string]: unknown }
@@ -291,7 +330,8 @@ export class HTML_Panel {
 
             if (pageName) {
               gotoPage(pageName);
-              invalid.scrollIntoView({ behavior: "smooth", block: "center" });
+
+              invalid.scrollIntoView({ behavior: "smooth", block: toLoad.scrollblock as ScrollLogicalPosition });
             }
           }
 

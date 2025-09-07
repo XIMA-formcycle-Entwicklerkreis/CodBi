@@ -1,8 +1,12 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
 import { CodBiError } from "../global-scope.js";
+// #endregion Imports
 /**
  * This **E**lement-**P**laceholder retrieves an {@link Object } at a specific path out of the one given in the
  * first parameter.
@@ -13,7 +17,7 @@ import { CodBiError } from "../global-scope.js";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive design.
 export class JSON_Path {
   /**
    * Uses {@link resolvePath } to retrieve the {@link Object } at the path specified in "params"[ 1 ] out of the
@@ -52,8 +56,7 @@ export function resolvePath(toResolve: string, start: object): any {
   const parts = toResolve.split(".");
 
   return parts.reduce((accumulator, current, index): object => {
-    // biome-ignore lint/suspicious/noExplicitAny: Necessary for resolution.
-    const result = (accumulator as any)[current];
+    const result = (accumulator as unknown)[current];
 
     if ((result === undefined || result === null) && index < parts.length - 1) {
       throw new CodBiError(`Path "${toResolve}" is interrupted by an undefined or null object at ${index}`);

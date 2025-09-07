@@ -1,10 +1,14 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+// #endregion XDBC
 import { CodBiError } from "../global-scope";
 import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
-import { GREATER } from "xdbc/src/DBC/GREATER";
+// #endregion Imports
 /**
  *
  * This **E**lement-**P**laceholder retrieves the IDs of authoritie's buildings by the
@@ -17,10 +21,10 @@ import { GREATER } from "xdbc/src/DBC/GREATER";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Behoerden_Gebaeude_ID {
   /**
-   * See {@link BayVIS_Behaoerden_Gebaeude_ID }.
+   * See {@link BayVIS_Behoerden_Gebaeude_ID }.
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi).
    *
@@ -59,7 +63,7 @@ export class BayVIS_Behoerden_Gebaeude_ID {
   }
   // #region Initialization
   /**
-   * States whether this {@link BayVIS_Behaoerden_Gebaeude_ID } was successfully registered
+   * States whether this {@link BayVIS_Behoerden_Gebaeude_ID } was successfully registered
    * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
   public static registered: boolean = (() => {
     return window.codbi.registerEP("BayVIS.Behoerden.Gebaeude.ID", BayVIS_Behoerden_Gebaeude_ID.retrieve);

@@ -14,7 +14,9 @@
 	"workspaces": [
 		"packages/common",
 		"packages/designer",
-		"packages/form"
+		"packages/form",
+		"packages/designer/Angular/Components/codbi-apidoc",
+		"codbi-apidoc"
 	],
 	"scripts": {
 		"docs": "yarn workspaces foreach -Avp run docs",

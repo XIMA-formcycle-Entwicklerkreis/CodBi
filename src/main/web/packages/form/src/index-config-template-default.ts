@@ -8,5 +8,4 @@ export function createConfigTemplate(): ConfigTemplate {
 }
 
 window.codbi.configTemplate = createConfigTemplate();
-
-window.codbi.checkAttributes();
+window.codbi.autoCheckAttributes = true;

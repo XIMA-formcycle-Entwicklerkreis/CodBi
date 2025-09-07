@@ -1,6 +1,10 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+// #endregion XDBC
+// #endregion Imports
 /**
  * This **E**lement **P**laceholder turns a CSV-{@link String } into an {@link Array < string >}.
  *
@@ -9,13 +13,13 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class Data_CSV {
   /**
    * Uses {@link resolvePath } to retrieve the {@link Object } at the path specified in "params"[ 1 ] out of the
    * {@link Object } in "param[ 0 ]".
    *
-   * @param params    The parameters for that Element-Placeholder (provided by CodBi). */
+   * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
     @AE.PRE([new TYPE("string")])

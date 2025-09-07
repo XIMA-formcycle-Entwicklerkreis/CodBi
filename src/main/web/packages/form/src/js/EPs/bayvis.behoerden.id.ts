@@ -1,12 +1,20 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region Fast XML-Parser
+import { XMLParser } from "fast-xml-parser";
+// #endregion Fast XML-Parser
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+// #endregion XDBC
 import { CodBiError } from "../global-scope";
-import { GREATER } from "xdbc/src/DBC/GREATER";
 import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
-import { XMLParser } from "fast-xml-parser";
+// #endregion Imports
 /**
  * This **E**lement-**P**laceholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
  *
@@ -17,7 +25,7 @@ import { XMLParser } from "fast-xml-parser";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Behoerden_ID {
   /** Buffers the requested directory of authorities. */
   public static buffer:
@@ -40,7 +48,6 @@ export class BayVIS_Behoerden_ID {
     @AE.PRE(new TYPE("string"))
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.authorityID), 0)
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)
-    //@AE.PRE(new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember), 2)
     params: Array<unknown>,
   ): Promise<
     | Array<string>
@@ -69,12 +76,17 @@ export class BayVIS_Behoerden_ID {
         headers: { Accept: "application/xml" },
       })
         .done((xml: string) => {
-          const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
+          let response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
             "ns2:behoerden"
           ];
+          // #region React if data is not of format XML but JSON.
+          if (response === undefined) {
+            response = JSON.parse(xml);
+          }
+          // #endregion React if data is not of format XML but JSON.
           // If no response from endpoint (missing credentials)...
           if (response === undefined) {
-            return;
+            reject(new CodBiError("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdenverzeichnis"));
           }
 
           const data = (response as { [key: string]: unknown }).behoerde as Array<{
@@ -88,8 +100,7 @@ export class BayVIS_Behoerden_ID {
 
           for (let i = 0; i < data.length; i++) {
             if (data[i]?.bezeichnung.toLowerCase() === (params[0] as string).toLowerCase()) {
-              // biome-ignore lint/style/noNonNullAssertion: Assured within this branch.
-              result.push(data[i]!.id!.toString());
+              result.push(data[i].id.toString());
             }
           }
 

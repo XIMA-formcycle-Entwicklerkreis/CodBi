@@ -27,7 +27,7 @@
     "cropperjs": "^2.0.0",
     "fast-xml-parser": "^5.2.3",
     "tslib": "~2.8.1",
-    "xdbc": "^1.0.95",
+    "xdbc": "^1.0.125",
     "xml2js": "^0.6.2"
   },
   "devDependencies": {

@@ -1,5 +1,9 @@
+// #region Imports
+// #region XDBC
 import { AE } from "xdbc/src/DBC/AE";
 import { EQ } from "xdbc/src/DBC/EQ";
+// #endregion XDBC
+// #endregion Imports
 /**
  * This **E**lement-**P**laceholder queries an {@link Element }.
  *
@@ -8,7 +12,7 @@ import { EQ } from "xdbc/src/DBC/EQ";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive design.
 export class DOM_Query {
   /**
    * Checks all "params" for specific data (see {@link Date_Weekends }) and return an {@link Array } of

@@ -1,14 +1,20 @@
+// #region Imports
+// #region XIMA
+import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+// #endregion XDBC
 import { CodBi, CodBiError } from "../global-scope";
-import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion Imports
 /**
  * Provides the {@link OnChange_Conditional.functionality }.
  *
  * @remarks
  * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.net) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class OnChange_Conditional {
   /**
    * This functionality applies a certain functionality onto the {@link object } "toProcess" depending on whether
@@ -45,8 +51,7 @@ export class OnChange_Conditional {
     toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): undefined {
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
-    toLoad.target = (toLoad.target as Array<unknown>)[0]!;
+    toLoad.target = (toLoad.target as Array<unknown>)[0];
     const processChange = () => {
       // #region Determine fulfillment.
       let fulfilled = false;
@@ -64,36 +69,31 @@ export class OnChange_Conditional {
       if (Array.isArray(toLoad.reference)) {
         toLoad.reference = (toLoad.reference as Array<unknown>)[0];
       }
+
       // #endregion Define candidate & reference.
       switch ((toLoad.mode as string).toLowerCase()) {
         case "gteq":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) >= (toLoad.reference as any);
+          fulfilled = (candidate as Date).getTime() >= (toLoad.reference as Date).getTime();
 
           break;
         case "gt":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) > (toLoad.reference as any);
+          fulfilled = (candidate as Date).getTime() > (toLoad.reference as Date).getTime();
 
           break;
         case "lteq":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) <= (toLoad.reference as any);
+          fulfilled = (candidate as Date).getTime() <= (toLoad.reference as Date).getTime();
 
           break;
         case "lt":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) < (toLoad.reference as any);
+          fulfilled = (candidate as Date).getTime() < (toLoad.reference as Date).getTime();
 
           break;
         case "eq":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) === (toLoad.reference as any);
+          fulfilled = (candidate as Date).getTime() === (toLoad.reference as Date).getTime();
 
           break;
         case "neq":
-          // biome-ignore lint/suspicious/noExplicitAny: Needed for comparison of unknown type of objects.
-          fulfilled = (candidate as any) !== (toLoad.reference as any);
+          fulfilled = (candidate as Date).getTime() !== (toLoad.reference as Date).getTime();
 
           break;
         default:
@@ -104,12 +104,14 @@ export class OnChange_Conditional {
       for (const attribute of toProcess.attributes) {
         const name = attribute.name.toLowerCase();
 
-        if (name[0] === "c" && name[1] === "b") {
-          if (name[2] === "_") {
-            switch (name.substring(3, 5)) {
+        if (name.substring(0, 8) === "data-cb-") {
+          if (name[8] === "_") {
+            console.log("Changed Val", name.substring(9, 11), fulfilled, candidate, toLoad.reference);
+            switch (name.substring(9, 11)) {
               case "t_": {
+                console.log("fulfilled", fulfilled);
                 if (fulfilled) {
-                  const realAttributename = attribute.name.replace("_t_", "");
+                  const realAttributename = name.replace("_t_", "");
 
                   (toLoad.target as HTMLElement).removeAttribute(realAttributename);
                   (toLoad.target as HTMLElement).setAttribute(realAttributename, attribute.value);
@@ -120,11 +122,12 @@ export class OnChange_Conditional {
 
               case "f_": {
                 if (!fulfilled) {
-                  const realAttributename = attribute.name.replace("_f_", "");
+                  const realAttributename = name.replace("_f_", "");
 
                   (toLoad.target as HTMLElement).removeAttribute(realAttributename);
                   (toLoad.target as HTMLElement).setAttribute(realAttributename, attribute.value);
                 }
+
                 break;
               }
               default:
@@ -133,13 +136,17 @@ export class OnChange_Conditional {
         }
       }
 
-      (toLoad.target as HTMLElement).removeAttribute("cbichecked");
+      if ((toLoad.target as HTMLElement).hasAttribute("data-cb-checked")) {
+        (toLoad.target as HTMLElement).setAttribute(
+          "data-cb-checked",
+          (toLoad.target as HTMLElement).getAttribute("data-cb-checked").replace("html.setattribute", ""),
+        );
+      }
       // #endregion Attribute re-configuration.
       window.codbi.checkAttributes();
     };
 
-    toProcess.addEventListener("change", processChange);
-    getJQuery()(toProcess).datepicker({ onSelect: processChange });
+    getJQuery()(toProcess).on("change", processChange);
   }
   // #region Initialization
   /**

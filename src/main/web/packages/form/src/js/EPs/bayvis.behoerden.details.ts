@@ -1,11 +1,19 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region Fast XML-Parser
+import { XMLParser } from "fast-xml-parser";
+// #endregion Fast XML-Parser
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
-import { GREATER } from "xdbc/src/DBC/GREATER";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+// #endregion XDBC
 import { CodBiError } from "../global-scope";
-import { XMLParser } from "fast-xml-parser";
+// #endregion Imports
 /**
  * This **E**lement-**P**laceholder retrieves the details of an authority specified by the provided ID from the corresponding
  * CodBi-Plugin servlet.
@@ -19,7 +27,7 @@ import { XMLParser } from "fast-xml-parser";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Behoerden_Details {
   /** Stores often used {@link RegExp }s. */
   public static stdExp: {
@@ -40,7 +48,7 @@ export class BayVIS_Behoerden_Details {
    * @throws A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint or the . */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length")
+    @GREATER.PRE(0, false, false, "length")
     @AE.PRE(new TYPE("string"))
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.authorityID), 0)
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)
@@ -105,10 +113,14 @@ export class BayVIS_Behoerden_Details {
         headers: { Accept: "application/xml", ID: (params[0] as string).trim() },
       })
         .done((xml: string) => {
-          const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
+          let response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
             "ns2:GetBehoerdeResponse"
           ];
-
+          // #region React if data is not of format XML but JSON.
+          if (response === undefined) {
+            response = JSON.parse(xml);
+          }
+          // #endregion React if data is not of format XML but JSON.
           result = response.behoerde as {
             logo: { value: string; alt: string; mimetype: string; quelle: string; title: string };
             behoerdeZuordnungen: {
@@ -126,8 +138,7 @@ export class BayVIS_Behoerden_Details {
           };
 
           if (params.length >= 2) {
-            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-            const detail = (result as any)[params[1] as string];
+            const detail = (result as unknown)[params[1] as string];
 
             if (detail === undefined) {
               reject(new CodBiError(`Detail "${params[1]}" of authorities is not available.`));

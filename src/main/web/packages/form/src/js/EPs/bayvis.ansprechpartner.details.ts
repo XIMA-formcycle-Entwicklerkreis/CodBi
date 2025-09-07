@@ -1,17 +1,22 @@
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
-import { GREATER } from "xdbc/src/DBC/GREATER";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { OR } from "xdbc/src/DBC/OR";
-import { JSON_OP } from "xdbc/src/DBC/JSON.OP";
-import { JSON_Parse } from "xdbc/src/DBC/JSON.Parse";
+// #endregion XDBC
+// #region Fast XML-Parser
+import { XMLParser } from "fast-xml-parser";
+// #endregion Fast XML-Parser
 import { CodBiError } from "../global-scope";
 import { BayVIS_Ansprechpartner_ID } from "./bayvis.ansprechpartner.id";
-import { XMLParser } from "fast-xml-parser";
+// #endregion Imports
 /**
- *
  * This **Element**-**P**laceholder retrieves details of a specific contact from the corresponding CodBi-Plugin servlet.
  *
  * Placeholder Parameter:
@@ -32,7 +37,7 @@ import { XMLParser } from "fast-xml-parser";
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
+// biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Ansprechpartner_Details {
   /** Stores often used {@link RegExp }s. */
   public static stdExp: {
@@ -52,7 +57,7 @@ export class BayVIS_Ansprechpartner_Details {
    *          3rd parameter was specified, a non existent contact property was specified. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length")
+    @GREATER.PRE(0, false, false, "length")
     @AE.PRE(new TYPE("string"))
     @AE.PRE(
       new OR([
@@ -186,14 +191,17 @@ export class BayVIS_Ansprechpartner_Details {
           .done((xml: string) => {
             cntResolved++;
 
-            const response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
+            let response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[
               "ns2:ansprechpartner"
             ];
-
+            // #region React if data is not of format XML but JSON.
+            if (response === undefined) {
+              response = JSON.parse(xml);
+            }
+            // #endregion React if data is not of format XML but JSON.
             // If contact properties are to be retrieved but a specific detail.
             if (params.length >= 2) {
-              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-              const detail = (result as any)[params[1] as string];
+              const detail = (result as unknown)[params[1] as string];
 
               if (detail === undefined) {
                 reject(new CodBiError(`Detail "${params[1]}" of authorities is not available.`));
@@ -243,7 +251,7 @@ export class BayVIS_Ansprechpartner_Details {
               (result as { apEmail: string }).apEmail = (result as { email: string }).email;
 
               resolve(
-                // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+                // biome-ignore lint/suspicious/noAssignInExpressions: More concise.
                 (BayVIS_Ansprechpartner_Details.buffer[toAcquire] = [
                   result as {
                     anrede: string;
@@ -332,7 +340,7 @@ export class BayVIS_Ansprechpartner_Details {
               ).push(resultElement);
               // Resolve when last contact to retrieve was received.
               if (cntResolved === ids.length) {
-                // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+                // biome-ignore lint/suspicious/noAssignInExpressions: More concise.
                 resolve((BayVIS_Ansprechpartner_Details.buffer[toAcquire] = result as []));
               }
             }
@@ -349,8 +357,7 @@ export class BayVIS_Ansprechpartner_Details {
           BayVIS_Ansprechpartner_ID.retrieve([ids[i]])
             .then((id) => {
               if ((id as Array<string>)[0] !== undefined) {
-                // biome-ignore lint/style/noNonNullAssertion: <explanation>
-                acquire((id as Array<string>)[0]!.toString());
+                acquire((id as Array<string>)[0].toString());
               }
             })
             .catch((error) => {
@@ -445,8 +452,7 @@ export class BayVIS_Ansprechpartner_Details {
               // #endregion If the last contact can'T be found in the directory.
             });
         } else {
-          // biome-ignore lint/style/noNonNullAssertion: "ids" is a String.split result.
-          acquire(ids[i]!);
+          acquire(ids[i]);
         }
       }
     });

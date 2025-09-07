@@ -1,12 +1,16 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+// #endregion XDBC
+// #endregion Imports
 /**
  * Provides the {@link HTML_SETAttribute.functionality }.
  *
  * @remarks
  * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.de) */
-// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_SETAttribute {
   /**
    * This functionality sets an attribute of specified "Name" onto the {@link Element } "toProcess"

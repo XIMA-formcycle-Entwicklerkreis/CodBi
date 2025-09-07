@@ -64,6 +64,7 @@ class CodBiBayVISAuskunftAnsprechpartnerdetailsAction : IPluginServletAction {
           "Basic " +
               java.util.Base64.getEncoder()
                   .encodeToString(("$username:$password").toByteArray(StandardCharsets.UTF_8)))
+      connection.setRequestProperty("Accept", "application/xml")
 
       statusCode = connection.getResponseCode()
       buffer[id] =

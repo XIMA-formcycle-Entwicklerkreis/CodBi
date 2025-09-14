@@ -124,6 +124,8 @@ interface InputDataItem {
   classes?: { [name: string]: string } | SimplifiedNamedItem[];
   /** The parameter defined, if we're dealing with either a CodBi Functionality or an Elementplaceholder. */
   Parameter?: { [name: string]: string } | SimplifiedNamedItem[];
+  /** Stores the JS-Code for that CodBi-Element. */
+  Code: string | undefined;
 }
 /** Defines a contract for {@link object }s that represent local API Documentation to be merged to already existing one. */
 interface APIDocJSON {
@@ -250,8 +252,7 @@ class CommonApiParameter implements ApiParameter {
   providers: [
     {
       provide: TINYMCE_SCRIPT_SRC,
-      useValue:
-        "http://localhost:8080/xima-formcycle/plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce/tinymce.min.js",
+      useValue: `${window.location.href.split("/").slice(0, 4).join("/")}/plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce/tinymce.min.js`,
     },
   ],
   templateUrl: "./manager.html",
@@ -522,6 +523,15 @@ export class Manager implements AfterViewInit {
 
           this.activeTabDocUpdater(this.activeTabDocFSL);
           // #endregion Remove from FSL
+          // #region Filter out removed code to be imported en sync.
+          for (const toFilterOut of paths) {
+            for (const key of this.importedCodeToUpload.keys()) {
+              if (key.type === "Functionality" && key.key === toFilterOut) {
+                this.importedCodeToUpload.delete(key);
+              }
+            }
+          }
+          // #endregion Filter out removed code to be imported en sync.
         }
         break;
 
@@ -547,6 +557,15 @@ export class Manager implements AfterViewInit {
 
           this.activeTabDocUpdater(this.activeTabDocFSL);
           // #endregion Remove from FSL
+          // #region Filter out removed code to be imported en sync.
+          for (const toFilterOut of paths) {
+            for (const key of this.importedCodeToUpload.keys()) {
+              if (key.type === "Elementplaceholder" && key.key === toFilterOut) {
+                this.importedCodeToUpload.delete(key);
+              }
+            }
+          }
+          // #endregion Filter out removed code to be imported en sync.
         }
 
         break;
@@ -573,6 +592,15 @@ export class Manager implements AfterViewInit {
 
           this.activeTabDocUpdater(this.activeTabDocFSL);
           // #endregion Remove from FSL
+          // #region Filter out removed code to be imported en sync.
+          for (const toFilterOut of paths) {
+            for (const key of this.importedCodeToUpload.keys()) {
+              if (key.type === "Standard" && key.key === toFilterOut) {
+                this.importedCodeToUpload.delete(key);
+              }
+            }
+          }
+          // #endregion Filter out removed code to be imported en sync.
         }
 
         break;
@@ -1034,6 +1062,19 @@ export class Manager implements AfterViewInit {
       detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
       detStandards: this.convertStandardNodes(this.itemsStandard),
     };
+
+    for (const key in localNodeData.detFunctionalities) {
+      localNodeData.detFunctionalities[key].Code = window.CodbiPluginData.detFunctionalities[key].Code;
+    }
+
+    for (const key in localNodeData.detElementplaceholder) {
+      localNodeData.detElementplaceholder[key].Code = window.CodbiPluginData.detElementplaceholder[key].Code;
+    }
+
+    for (const key in localNodeData.detStandards) {
+      localNodeData.detStandards[key].Code = window.CodbiPluginData.detStandards[key].Code;
+    }
+
     const filelistings = this.enrichData(window[this.docPath], localNodeData);
     const toExport = JSON.stringify({
       fslFunctionalities: filelistings.fslFunctionalities,
@@ -1247,9 +1288,14 @@ export class Manager implements AfterViewInit {
       },
     });
     // #endregion Sync
+    // #region Imported Code Upload/Deletion
+    for (const key of this.importedCodeToUpload.keys()) {
+      this.importedCodeToUpload.get(key)();
+      this.importedCodeToUpload.delete(key);
+    }
+    // #endregion Imported Code Upload/Deletion
   }
   // #endregion Synchronization
-
   protected importNode(toImport: { detElementplaceholder: object; detFunctionalities: object; detStandards: object }) {
     for (const key in toImport.detFunctionalities) {
     }
@@ -1310,6 +1356,7 @@ export class Manager implements AfterViewInit {
         Parameter: node.data ? this.arrayToObject(node.data.Parameter ? node.data.Parameter : []) : [],
         globals: node.data ? this.arrayToObject(node.data.globals) : [],
         notes: node.data.Notes ? node.data.Notes : "",
+        code: node.data.code ? node.data.code : undefined,
       };
 
       if (node.children) {
@@ -1403,6 +1450,10 @@ export class Manager implements AfterViewInit {
     switch (this.activeTab) {
       case "Functionality":
         toExport.detFunctionalities = this.convertNodes([this.isolateNode(toConvert)]);
+
+        for (const key in toExport.detFunctionalities) {
+          toExport.detFunctionalities[key].Code = window.CodbiPluginData.detFunctionalities[key].Code;
+        }
         // #region Build file-listing
         {
           const fsl = new Array<string>();
@@ -1420,6 +1471,10 @@ export class Manager implements AfterViewInit {
 
       case "Elementplaceholder":
         toExport.detElementplaceholder = this.convertNodes([this.isolateNode(toConvert)]);
+
+        for (const key in toExport.detElementplaceholder) {
+          toExport.detElementplaceholder[key].Code = window.CodbiPluginData.detElementplaceholder[key].Code;
+        }
         // #region Build file-listing
         {
           const fsl = new Array<string>();
@@ -1437,6 +1492,10 @@ export class Manager implements AfterViewInit {
 
       case "Standard":
         toExport.detStandards = this.convertNodes([this.isolateNode(toConvert)]);
+
+        for (const key in toExport.detStandards) {
+          toExport.detStandards[key].Code = window.CodbiPluginData.detStandards[key].Code;
+        }
         // #region Build file-listing
         {
           const fsl = new Array<string>();
@@ -1657,6 +1716,13 @@ export class Manager implements AfterViewInit {
   ngOnInit() {
     this.translocoService.setActiveLang(this.language);
   }
+  // #region Imported Code Upload
+  /** Stores the uploads to perform to upload imported code. */
+  protected importedCodeToUpload: Map<{ type: string; key: string }, () => void> = new Map<
+    { type: string; key: string },
+    () => void
+  >();
+  // #endregion Imported Code Upload
   /**
    * Initializes the view further by setting the watermark, registering the close dialog and the import
    * file selection handler. */
@@ -1678,14 +1744,12 @@ export class Manager implements AfterViewInit {
     // #endregion Register close dialog handler.
     // #region Code Upload
     this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.addEventListener("change", (event) => {
-      console.log("changed");
       const file = (event.target as HTMLInputElement).files?.[0];
 
       if (file) {
         const reader = new FileReader();
 
         reader.onload = (e) => {
-          console.log("File loaded:", e);
           const fileContent = e.target?.result as string;
 
           this.synchronizing = true;
@@ -1724,7 +1788,80 @@ export class Manager implements AfterViewInit {
           try {
             const fileContent = e.target?.result as string;
             const parsedData: APIDocJSON = JSON.parse(fileContent);
+            // #region Upload Code
+            for (const key in parsedData.detFunctionalities) {
+              if (parsedData.detFunctionalities[key].Code) {
+                this.importedCodeToUpload.set({ type: "Functionality", key: key }, () => {
+                  getJQuery().ajax({
+                    url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+                    type: "POST",
+                    headers: {
+                      "X-Action": "Update Code",
+                      "X-ActionDetail": "Functionality",
+                      "X-Element": key,
+                    },
+                    data: {
+                      ToWrite: parsedData.detFunctionalities[key].Code,
+                    },
+                    success: (response) => {
+                      window.CodbiPluginData.detFunctionalities[key].Code = parsedData.detFunctionalities[key].Code;
 
+                      this.cdr.markForCheck();
+                    },
+                  });
+                });
+              }
+            }
+
+            for (const key in parsedData.detElementplaceholder) {
+              if (parsedData.detElementplaceholder[key].Code) {
+                this.importedCodeToUpload.set({ type: "Elementplaceholder", key: key }, () => {
+                  getJQuery().ajax({
+                    url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+                    type: "POST",
+                    headers: {
+                      "X-Action": "Update Code",
+                      "X-ActionDetail": "Elementplaceholder",
+                      "X-Element": key,
+                    },
+                    data: {
+                      ToWrite: parsedData.detElementplaceholder[key].Code,
+                    },
+                    success: (response) => {
+                      window.CodbiPluginData.detElementplaceholder[key].Code =
+                        parsedData.detElementplaceholder[key].Code;
+
+                      this.cdr.markForCheck();
+                    },
+                  });
+                });
+              }
+            }
+
+            for (const key in parsedData.detStandards) {
+              if (parsedData.detStandards[key].Code) {
+                this.importedCodeToUpload.set({ type: "Standard", key: key }, () => {
+                  getJQuery().ajax({
+                    url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+                    type: "POST",
+                    headers: {
+                      "X-Action": "Update Code",
+                      "X-ActionDetail": "Standard",
+                      "X-Element": key,
+                    },
+                    data: {
+                      ToWrite: parsedData.detStandards[key].Code,
+                    },
+                    success: (response) => {
+                      window.CodbiPluginData.detStandards[key].Code = parsedData.detStandards[key].Code;
+
+                      this.cdr.markForCheck();
+                    },
+                  });
+                });
+              }
+            }
+            // #endregion Upload Code
             const convertedData = this.mergeDataIntoStructuredTree(parsedData, {
               detElementplaceholder: this.itemsElementplaceholder,
               detFunctionalities: this.items,
@@ -1999,7 +2136,7 @@ export class Manager implements AfterViewInit {
    * @returns A {@link TreeNode } reflecting the given **segmentToConvert**. */
   protected toTreeNode(
     label: string,
-    segmentToConvert: { Description: string; globals: object; classes: object; Parameter: object },
+    segmentToConvert: { Description: string; globals: object; classes: object; Parameter: object; code: string },
   ): TreeNode {
     return {
       label: label,
@@ -2008,6 +2145,7 @@ export class Manager implements AfterViewInit {
         globals: segmentToConvert.globals,
         classes: segmentToConvert.classes,
         Parameter: segmentToConvert.Parameter,
+        code: segmentToConvert.code,
       },
     };
   }
@@ -2026,6 +2164,7 @@ export class Manager implements AfterViewInit {
       globals?: ApiParameter[];
       classes?: ApiParameter[];
       notes?: string;
+      Code?: string;
     };
   }): TreeNode[] {
     const root: TreeNode[] = [];
@@ -2057,6 +2196,7 @@ export class Manager implements AfterViewInit {
             };
 
             existingNode.data.Notes = toConvert[key].notes;
+            existingNode.data.code = toConvert[key].Code;
 
             for (const pKey in toConvert[key].Parameter) {
               DEFINED.tsCheck<Array<unknown>>(existingNode.data.Parameter).push({
@@ -2094,6 +2234,7 @@ export class Manager implements AfterViewInit {
           const siblingIndex = currentLevel.length;
 
           newNode.data.Notes = toConvert[key].notes;
+          newNode.data.code = toConvert[key].Code;
 
           if (currentPathKey === "") {
             newNode.key = siblingIndex.toString();
@@ -2113,6 +2254,8 @@ export class Manager implements AfterViewInit {
             };
 
             newNode.data.Notes = toConvert[key].notes;
+            newNode.data.code = toConvert[key].Code;
+
             for (const pKey in toConvert[key].Parameter) {
               DEFINED.tsCheck<Array<unknown>>(newNode.data.Parameter).push({
                 Name: pKey,

@@ -72,7 +72,7 @@ export class Date_Holidays {
       if (Number.isNaN(parameter)) {
         years.push(parameter);
       } else {
-        if (parameter.indexOf("this_year") !== -1) {
+        if (parameter.toLowerCase().indexOf("this_year") !== -1) {
           let idxOperand: number = parameter.indexOf("+");
 
           if (idxOperand === -1) {

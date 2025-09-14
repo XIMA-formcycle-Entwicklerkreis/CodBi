@@ -4,6 +4,7 @@
     "List": {},
     "Prefix": {},
     "Postfix": {},
-    "Separator": {}
+    "Separator": {},
+    "ShowBlacklist": {}
   }
 }

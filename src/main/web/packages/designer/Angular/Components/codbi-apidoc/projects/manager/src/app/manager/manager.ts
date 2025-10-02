@@ -493,6 +493,10 @@ export class Manager implements AfterViewInit {
     node.click();
     // #endregion Update the currently selected node to be the one corresponding to the clicked remove button.
   }
+  // #region Code Deletion
+  /** Stores the CodBi-Elements that were removed since the last {@link Manager.enSync }. */
+  protected removedElements: Array<{ type: "Functionality" | "Elementplaceholder" | "Standard"; path: string }> = [];
+  // #endregion Code Deletion
   /**
    * Handles the event when the user confirms the deletion of a node.
    *
@@ -605,7 +609,11 @@ export class Manager implements AfterViewInit {
 
         break;
     }
-
+    // #region Remove corresponding code from server.
+    for (const path of this.getTreePaths([this.currentlySelectedTreeNode])) {
+      this.removedElements.push({ type: this.activeTab, path: path });
+    }
+    // #endregion Remove corresponding code from server.
     if (this.activeTabItems.length !== 0) {
       this._currentlySelectedTreeNode = this.activeTabItems[this.activeTabItems.length - 1];
     } else {
@@ -961,6 +969,24 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link Event } received. */
   protected onBlurRenameInput(event: Event) {
+    // #region Do nothing if the name wasn't changed.
+    if (this.currentlySelectedTreeNode.label.toLowerCase() === this.formerInput_CodBi_LocalAPIDoc_New_Name) {
+      this.currentlySelectedTreeNodeEditing = false;
+
+      return;
+    }
+    // #endregion Do nothing if the name wasn't changed.
+    // #region Remove corresponding code from server.
+    const newName = this.currentlySelectedTreeNode.label;
+
+    this.currentlySelectedTreeNode.label = this.formerInput_CodBi_LocalAPIDoc_New_Name_Original;
+
+    for (const path of this.getTreePaths([this.currentlySelectedTreeNode])) {
+      this.removedElements.push({ type: this.activeTab, path: path });
+    }
+
+    this.currentlySelectedTreeNode.label = newName;
+    // #endregion Remove corresponding code from server.
     // #region Build new path
     const newPathBuild: Array<string> = this.currentlySelectedTreeNodePath.split(".");
 
@@ -998,6 +1024,7 @@ export class Manager implements AfterViewInit {
 
     this.activeTabDocFSL = JSON.stringify(jsonCurrentTabDocFSL);
     // #endregion Recreate corresponding FSL properly.
+
     this.synchronized = false;
     this.currentlySelectedTreeNode.data.label = this.currentlySelectedTreeNode.label =
       INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
@@ -1009,6 +1036,8 @@ export class Manager implements AfterViewInit {
    * Stores the formerly inputted value of {@link Manager.CodBi_LocalAPIDoc_New_Name } in order to restore it
    * whenever an invalid character was entered. */
   protected formerInput_CodBi_LocalAPIDoc_New_Name: string = "";
+  /** Stores the label's original value that was the current one when the renaming button was clicked. */
+  protected formerInput_CodBi_LocalAPIDoc_New_Name_Original: string = "";
   /**
    * Checks whether the new input of {@link Manager.CodBi_LocalAPIDoc_New_Name } is valid restoring to the
    * {@link Manager.formerInput_CodBi_LocalAPIDoc_New_Name } if not or updating the mentioned property, if so.
@@ -1294,6 +1323,30 @@ export class Manager implements AfterViewInit {
       this.importedCodeToUpload.delete(key);
     }
     // #endregion Imported Code Upload/Deletion
+    // #region Code Deletion
+    for (const toDelete of this.removedElements) {
+      getJQuery().ajax({
+        url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+        type: "POST",
+        headers: {
+          "X-Action": "Update Code",
+          "X-ActionDetail": toDelete.type,
+          "X-Element": toDelete.path,
+        },
+        data: {
+          ToWrite: "",
+        },
+        success: (response) => {
+          this.synchronizing = false;
+          this.synchronized = true;
+
+          this.cdr.markForCheck();
+        },
+      });
+    }
+
+    this.removedElements = [];
+    // #endregion Code Deletion
   }
   // #endregion Synchronization
   protected importNode(toImport: { detElementplaceholder: object; detFunctionalities: object; detStandards: object }) {

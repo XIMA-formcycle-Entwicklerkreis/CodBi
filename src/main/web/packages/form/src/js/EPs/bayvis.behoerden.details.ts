@@ -48,12 +48,12 @@ export class BayVIS_Behoerden_Details {
    * @throws A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint or the . */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(0, false, false, "length")
+    /*@GREATER.PRE(0, false, false, "length")
     @AE.PRE(new TYPE("string"))
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.authorityID), 0)
-    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)
+    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)*/
     params: Array<unknown>,
-  ): Promise<Array<string> | Array<unknown>> {
+  ): Promise<string | unknown> {
     return new Promise((resolve, reject) => {
       if (BayVIS_Behoerden_Details.buffer.has(params[0] as string)) {
         resolve([BayVIS_Behoerden_Details.buffer[params[0] as string]]);
@@ -144,13 +144,13 @@ export class BayVIS_Behoerden_Details {
               reject(new CodBiError(`Detail "${params[1]}" of authorities is not available.`));
             }
 
-            resolve([detail]);
+            resolve(detail);
           }
           // To prevent overwriting when joining e.g. Behoerden-Details and Gebaeude-Details into one object like
           // when using the Data.Join-Elementplaceholder.
           result.bezeichnungBehoerde = result.bezeichnung;
 
-          resolve([result]);
+          resolve(result);
         })
         .fail((X: unknown) => {
           reject(new CodBiError("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdendetails"));

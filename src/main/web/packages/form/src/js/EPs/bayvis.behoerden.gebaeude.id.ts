@@ -31,10 +31,10 @@ export class BayVIS_Behoerden_Gebaeude_ID {
    * @throws A {@link CodBiError } if no data could be retrieved from the BayVIS-endpoint. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length")
+    /*@GREATER.PRE(1, true, false, "length")
     @AE.PRE(new TYPE("string"))
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.authorityID), 0)
-    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)
+    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)*/
     params: Array<unknown>,
   ): Promise<Array<string>> {
     return new Promise((resolve, reject) => {
@@ -42,21 +42,21 @@ export class BayVIS_Behoerden_Gebaeude_ID {
         const result = new Array<string>();
         if (
           Array.isArray(
-            (details[0] as { behoerdenGebaeudeZuordnungen: { gebaeude: unknown } }).behoerdenGebaeudeZuordnungen
-              .gebaeude,
+            (details as { behoerdenGebaeudeZuordnungen: { gebaeude: unknown } }).behoerdenGebaeudeZuordnungen.gebaeude,
           )
         ) {
-          for (const data of (details[0] as { behoerdenGebaeudeZuordnungen: { gebaeude: Array<{ id: number }> } })
+          for (const data of (details as { behoerdenGebaeudeZuordnungen: { gebaeude: Array<{ id: number }> } })
             .behoerdenGebaeudeZuordnungen.gebaeude) {
             result.push(data.id.toString());
           }
         } else {
           result.push(
             (
-              details[0] as { behoerdenGebaeudeZuordnungen: { gebaeude: { id: number } } }
+              details as { behoerdenGebaeudeZuordnungen: { gebaeude: { id: number } } }
             ).behoerdenGebaeudeZuordnungen.gebaeude.id.toString(),
           );
         }
+
         resolve(result);
       });
     });

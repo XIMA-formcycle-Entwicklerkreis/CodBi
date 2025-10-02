@@ -37,6 +37,23 @@ export class HTML_Input_Blacklist {
     toLoad: { [key: string]: unknown },
     @EQ.PRE("INPUT", false, "tagName") toProcess: Element,
   ): void {
+    // #region Normalize Parameter.
+    toLoad.separator = toLoad.separator ? toLoad.separator : ", ";
+    // #region Arrayed Parameter.
+    if (Array.isArray(toLoad.prefix)) {
+      toLoad.prefix = (toLoad.prefix as Array<string>)[0];
+    }
+    if (Array.isArray(toLoad.postfix)) {
+      toLoad.postfix = (toLoad.postfix as Array<string>)[0];
+    }
+    if (Array.isArray(toLoad.separator)) {
+      toLoad.separator = toLoad.separator as Array<string>;
+    }
+    if (Array.isArray(toLoad.showblacklist)) {
+      toLoad.showblacklist = (toLoad.showblacklist as Array<string>)[0];
+    }
+    // #endregion Arrayed Parameter.
+    // #region Normalize Parameter.
     const $ = getJQuery();
     if ($(toProcess).data("datepicker") === 1) {
       $(toProcess).datepicker();

@@ -21,7 +21,7 @@ export class HTML_CSS {
    * respective values according to the given "Replacements"-Definition (...|...).
    *
    * Config Parameter:
-   *  - CSS:          The CSS to inject.
+   *  - CSS:          The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an Elementplaceholder-Retrieval (when used in plain attributes).
    *  - Replacements: An {@link Array < string >} of two elements each that are separated by a "|".
    *                  The first part contains the placeholder as found in the specified "CSS". The second one
    *                  the {@link string } the placeholder shall be replaced with.
@@ -33,6 +33,10 @@ export class HTML_CSS {
     toLoad: { [key: string]: string | Array<string> },
     toProcess: Element,
   ): void {
+    if (Array.isArray(toLoad.css)) {
+      toLoad.css = toLoad.css[0];
+    }
+
     const style = document.createElement("style");
 
     if (toLoad.darkmode) {

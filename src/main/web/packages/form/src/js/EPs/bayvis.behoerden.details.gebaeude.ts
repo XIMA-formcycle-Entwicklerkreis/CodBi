@@ -63,10 +63,10 @@ export class BayVIS_Behoerden_Details_Gebaeude {
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details_Gebaeude.stdExp.authorityID), 0, 1)
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details_Gebaeude.stdExp.directoryMember), 2)
     params: Array<unknown>,
-  ): Promise<Array<string> | Array<unknown>> {
+  ): Promise<string | unknown> {
     return new Promise((resolve, reject) => {
       if (BayVIS_Behoerden_Details_Gebaeude.buffer.has(params[1] as string)) {
-        resolve([BayVIS_Behoerden_Details_Gebaeude.buffer[params[1] as string]]);
+        resolve(BayVIS_Behoerden_Details_Gebaeude.buffer[params[1] as string]);
 
         return;
       }
@@ -123,10 +123,10 @@ export class BayVIS_Behoerden_Details_Gebaeude {
               reject(new CodBiError(`Detail "${params[2]}" of authorities is not available.`));
             }
 
-            resolve([detail]);
+            resolve(detail);
           }
 
-          resolve([result]);
+          resolve(result);
         })
         .fail((X: unknown) => {
           reject(new CodBiError("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdendetails"));

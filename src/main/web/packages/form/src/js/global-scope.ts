@@ -22,7 +22,10 @@ export interface CodbiGlobal {
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
   extendFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
   /** See {@link CodBi.registerEP }. */
-  registerEP(id: string, generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>): boolean;
+  registerEP(
+    id: string,
+    generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
+  ): boolean;
   /** See {@link CodBi.extendEP }. */
   extendEP(id: string, generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>): boolean;
   /** See {@link CodBi.reportError }. */
@@ -102,7 +105,9 @@ export class CodBi implements CodbiGlobal {
   /** Stores the {@link CodbiGlobal.configTemplate }.*/
   public configTemplate: ConfigTemplate | undefined = undefined;
   /** Stores all **E**lement **P**laceholder that were registered.*/
-  protected availableEPs: { [k: string]: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> } = {};
+  protected availableEPs: {
+    [k: string]: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>;
+  } = {};
   /** Stores all active CSS-Classes that're references to CodBi Standard-Configurations. */
   protected configs: Array<string> = new Array<string>();
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
@@ -130,7 +135,7 @@ export class CodBi implements CodbiGlobal {
    */
   public registerEP(
     id: string,
-    generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>,
+    generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
   ): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
@@ -298,18 +303,18 @@ export class CodBi implements CodbiGlobal {
             // The "candidate" is an EP, parameter are provided.
             this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string))
               .then((real) => {
-                const epResult = DEFINED.tsCheck<(params: Array<string>) => Array<unknown> | Promise<Array<unknown>>>(
-                  this.availableEPs[outermostEP.keyPlaceholder],
-                )(real);
+                const epResult = DEFINED.tsCheck<
+                  (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>
+                >(this.availableEPs[outermostEP.keyPlaceholder])(real.flat());
                 // If the element placeholder is asynchronous...
                 if (epResult instanceof Promise) {
                   epResult
                     .then((real) => {
-                      if (real[0] !== undefined && typeof real[0] === "string") {
+                      /*if (real[0] !== undefined && typeof real[0] === "string") {
                         real[0] = (real[0] as string).trim();
-                      }
+                      }*/
 
-                      result.splice(i, 0, real[0] as string);
+                      result.splice(i, 0, real as string);
 
                       if (--cntPromises === 0) {
                         resolve(result);
@@ -320,11 +325,11 @@ export class CodBi implements CodbiGlobal {
                     });
                 } else {
                   // In case of a synchronous element placeholder...
-                  if (epResult[0] !== undefined && typeof epResult[0] === "string") {
+                  /*if (epResult[0] !== undefined && typeof epResult[0] === "string") {
                     epResult[0] = (epResult[0] as string).trim();
-                  }
+                  }*/
 
-                  result.splice(i, 0, epResult[0] as string);
+                  result.splice(i, 0, epResult as string);
 
                   if (--cntPromises === 0) {
                     resolve(result);
@@ -361,7 +366,7 @@ export class CodBi implements CodbiGlobal {
                 this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string))
                   .then((real) => {
                     const epResult = DEFINED.tsCheck<
-                      (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>
+                      (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>
                     >(this.availableEPs[outermostEP.keyPlaceholder])(real);
                     // If the element placeholder is asynchronous...
                     if (epResult instanceof Promise) {
@@ -1068,7 +1073,7 @@ export class CodBi implements CodbiGlobal {
       `.cCodBiLoader[cbFOR="${toRemoveFrom.getAttribute("data-name")}"]`,
     );
 
-    if (loaderAnimation === null) {
+    if (loaderAnimation === null || loaderAnimation === undefined) {
       return;
     }
 
@@ -1175,7 +1180,7 @@ export class CodBi implements CodbiGlobal {
                   this.removeLoaderAnim(toProcess);
                 }
                 // #endregion Disable loading animation and remove logo when CodBi finished processing that element.
-                toProcess.classList.remove("Processing");
+                toProcess.classList?.remove("Processing");
 
                 if (--cntPromises === 0) {
                   this.checkingAttributes = false;
@@ -1228,7 +1233,7 @@ export class CodBi implements CodbiGlobal {
                           this.removeLoaderAnim(toApplyOn);
                         }
 
-                        toApplyOn.classList.remove("Processing");
+                        toApplyOn.classList?.remove("Processing");
                         // #endregion Disable loading animation when CodBi finished processing that element.
                         if (--cntPromises === 0) {
                           this.checkingAttributes = false;
@@ -1293,7 +1298,7 @@ export class CodBi implements CodbiGlobal {
                       this.removeLoaderAnim(toProcess);
                     }
                     // #endregion Disable loading animation and remove logo when CodBi finished processing that element.
-                    toProcess.classList.remove("Processing");
+                    toProcess.classList?.remove("Processing");
 
                     if (--cntPromises === 0) {
                       this.checkingAttributes = false;
@@ -1367,6 +1372,8 @@ export class CodBi implements CodbiGlobal {
     );
   }
   // #endregion Error reporting
+  /** */
+  protected firstTimer: Array<HTMLElement> = new Array<HTMLElement>();
   /**
    * Creates an instance of {@link CodBi} also setting the specified
    * "initiator" & "paramSeparator".
@@ -1408,8 +1415,9 @@ export class CodBi implements CodbiGlobal {
 
     document.head.appendChild(style);
     // #endregion Inject style for elements that're currently being processed.
-    getJQuery()("FORM.xm-form").on("addRow", (c) => {
-      if (document.readyState === "complete") {
+    getJQuery()("FORM.xm-form").on("addRow", (c, data) => {
+      // If added Element is not the first one...
+      if (data.container["0"].getAttribute("data-dynamic-row") !== "0") {
         this.checkAttributes();
       }
     });

@@ -21,6 +21,8 @@ interface Window {
         globals: { [key: string]: string };
         /** Stores a {@link boolean } stating whether this entry is a local or a native one. */
         local: boolean;
+        /** Stores the JS-Code for that CodBi-Element. */
+        Code: string | undefined;
       };
     };
     /** Stores the available **CodBi-Functionalities**. */
@@ -32,6 +34,8 @@ interface Window {
         Parameter: { [key: string]: string };
         /** Stores a {@link boolean } stating whether this entry is a local or a native one. */
         local: boolean;
+        /** Stores the JS-Code for that CodBi-Element. */
+        Code: string | undefined;
       };
     };
     /** Stores the available Element-Placeholder. */
@@ -41,6 +45,8 @@ interface Window {
         Description: string;
         /** Stores a {@link boolean } stating whether this entry is a local or a native one. */
         local: boolean;
+        /** Stores the JS-Code for that CodBi-Element. */
+        Code: string | undefined;
       };
     };
     /** Stores the URLs pointing to the root of localized API-Documentations. */

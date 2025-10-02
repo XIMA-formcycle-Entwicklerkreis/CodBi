@@ -33,13 +33,33 @@ export class HTML_Input_REGEX {
     @EQ.PRE("INPUT", false, "tagName")
     toProcess: Element,
   ): void {
+    // #region Normalize Arrayed-Parameter.
+    if (Array.isArray(toLoad.expression)) {
+      toLoad.expression = (toLoad.expression as Array<string>)[0];
+    }
+
+    if (Array.isArray(toLoad.errorprefix)) {
+      toLoad.errorprefix = (toLoad.errorprefix as Array<string>)[0];
+    }
+
+    if (Array.isArray(toLoad.errorpostfix)) {
+      toLoad.errorpostfix = (toLoad.errorpostfix as Array<string>)[0];
+    }
+
+    if (Array.isArray(toLoad.exposeexpression)) {
+      toLoad.exposeexpression = (toLoad.exposeexpression as Array<string>)[0];
+    }
+    // #endregion Normalize Arrayed-Parameter.
     const $ = getJQuery();
 
     toProcess.addEventListener("change", (event) => {
+      console.log("L:", toLoad.expression);
       if (!new RegExp(toLoad.expression as string).test((event.target as HTMLInputElement).value)) {
         $(toProcess).error(
           `${toLoad.errorprefix ? toLoad.errorprefix : ""}${toLoad.exposeexpression ? toLoad.expression : ""}${toLoad.errorpostfix ? toLoad.errorpostfix : ""}`,
         );
+      } else {
+        $(toProcess).error("");
       }
     });
   }

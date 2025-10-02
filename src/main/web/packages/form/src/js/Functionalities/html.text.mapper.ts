@@ -53,6 +53,11 @@ export class HTML_Text_Mapper {
 
     (toProcess as unknown as { [key: string]: string })[toLoad.property as string] = "";
 
+    // #region Normalize replacements to array
+    if (!Array.isArray(toLoad.replacements)) {
+      toLoad.replacements = [toLoad.replacements];
+    }
+    // #endregion Normalize replacements to array
     for (let i = 0; i < (toLoad.replacements as []).length; i++) {
       if ((toLoad.replacements as [])[i] === undefined) {
         continue;

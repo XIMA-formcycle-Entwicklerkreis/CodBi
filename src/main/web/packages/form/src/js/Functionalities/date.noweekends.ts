@@ -53,6 +53,8 @@ export class Date_NoWeekends {
             ? toLoad.msgnoweekends
             : "Specifying weekends is not allowed.",
         );
+      } else {
+        $(toProcess).error("");
       }
     });
     // #endregion Intercept input.

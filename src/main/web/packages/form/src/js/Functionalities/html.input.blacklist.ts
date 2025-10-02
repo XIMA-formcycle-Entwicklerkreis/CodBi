@@ -5,6 +5,8 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -22,10 +24,11 @@ export class HTML_Input_Blacklist {
    * 2-digit values (10.03.2025 not 10.3.2025).
    *
    * Config Parameter:
-   *  - List:     Contains a {@link string } - CSV of forbidden values.
-   *  - Prefix:   The {@link string } to show before listing all the values in "List" when displaying an errormessage.
-   *  - Postfix:  The {@link string } to show after {@link List} when displaying an errormessage.
-   *  - Separator:The {@link string } to be shown in between each element of the {@link List } when displaying an errormessage.
+   *  - List:           Contains a {@link string } - CSV of forbidden values.
+   *  - Prefix:         The {@link string } to show before listing all the values in "List" when displaying an errormessage.
+   *  - Postfix:        The {@link string } to show after {@link List} when displaying an errormessage.
+   *  - Separator:      The {@link string } to be shown in between each element of the {@link List } when displaying an errormessage.
+   *  - ShowBlacklist:  Whether to show the {@link List } in the errormessage or not (true/false).
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -34,16 +37,33 @@ export class HTML_Input_Blacklist {
     toLoad: { [key: string]: unknown },
     @EQ.PRE("INPUT", false, "tagName") toProcess: Element,
   ): void {
+    // #region Normalize Parameter.
+    toLoad.separator = toLoad.separator ? toLoad.separator : ", ";
+    // #region Arrayed Parameter.
+    if (Array.isArray(toLoad.prefix)) {
+      toLoad.prefix = (toLoad.prefix as Array<string>)[0];
+    }
+    if (Array.isArray(toLoad.postfix)) {
+      toLoad.postfix = (toLoad.postfix as Array<string>)[0];
+    }
+    if (Array.isArray(toLoad.separator)) {
+      toLoad.separator = toLoad.separator as Array<string>;
+    }
+    if (Array.isArray(toLoad.showblacklist)) {
+      toLoad.showblacklist = (toLoad.showblacklist as Array<string>)[0];
+    }
+    // #endregion Arrayed Parameter.
+    // #region Normalize Parameter.
     const $ = getJQuery();
     if ($(toProcess).data("datepicker") === 1) {
       $(toProcess).datepicker();
     }
     // #region Check and react properly
     const check = (toCheck: string, blacklist: Array<string>, target: HTMLInputElement) => {
-      if (blacklist.includes(target.value)) {
-        $(target).error(
-          `${toLoad.prefix ? toLoad.prefix : ""}${toLoad.showblacklist && (toLoad.showblacklist as string).toLowerCase() === "true" ? blacklist.join(toLoad.separator ? (toLoad.separator as string) : "") : ""}${toLoad.postfix ? toLoad.postfix : ""}`,
-        );
+      if (blacklist.includes(toCheck)) {
+        const errorMessage = `${toLoad.prefix ? toLoad.prefix : ""}${toLoad.showblacklist && TYPE.tsCheck<string>(toLoad.showblacklist, "string").toLowerCase() === "true" ? blacklist.join(toLoad.separator ? TYPE.tsCheck<string>(toLoad.separator, "string") : "") : ""}${toLoad.postfix ? toLoad.postfix : ""}`;
+
+        $(target).error(errorMessage.length > 0 ? errorMessage : "The entered value is not allowed.");
       } else {
         $(target).error("");
       }
@@ -62,8 +82,12 @@ export class HTML_Input_Blacklist {
       if (formerDatepickerChangeEvent) {
         formerDatepickerChangeEvent(event);
       }
-      // biome-ignore lint/style/noNonNullAssertion: <explanation>
-      check((event.target! as HTMLInputElement).value, blacklist, toProcess as HTMLInputElement);
+
+      check(
+        INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value,
+        blacklist,
+        toProcess as HTMLInputElement,
+      );
     });
 
     toProcess.addEventListener("input", (event: Event) => {

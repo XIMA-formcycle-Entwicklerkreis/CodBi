@@ -147,10 +147,6 @@ export function loadConfig(): void {
       /* #region Document */
       body.modern.xm-body { background-color : white ;}
       /* #endregion Document */
-      /* #region Form */
-      form.xm-form.modern       { max-width : 80% !important ; with : 80% !important ;}
-      [ role = "presentation"]  { max-width : 100% !important ; with : 100% !important ; margin-left : auto !important ; margin-right : auto !important ;}
-      /* #endregion Form */
       /* #region Dark Mode */
       @media( prefers-color-scheme : dark ) {
         .modern input.XTextField.XItem { border-color : #ACCENT50 !important ;}

@@ -76,6 +76,27 @@ export class BayVIS_Ansprechpartner_Details {
     //@AE.PRE(new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember), 2)
     params: Array<unknown>,
   ): Promise<
+    | string
+    | {
+        anrede: string;
+        vorname: string;
+        nachname: string;
+        funktion: string;
+        stellenbezeichnung: string;
+        email: string;
+        website: string;
+        zimmer: string;
+        behoerdeId: number;
+        behoerdeBezeichnung: string;
+        gebaeudeId: number;
+        gebaeudeBezeichnung: string;
+        ansprechpartnerId: number;
+        apTelefonLandvorwahl: string;
+        apTelefonOrtsvorwahl: string;
+        apTelefonAnlage: string;
+        apTelefonDurchwahl: string;
+        apEmail: string;
+      }
     | Array<string>
     | Array<{
         anrede: string;
@@ -250,34 +271,58 @@ export class BayVIS_Ansprechpartner_Details {
               ).telefonDurchwahl;
               (result as { apEmail: string }).apEmail = (result as { email: string }).email;
 
+              BayVIS_Ansprechpartner_Details.buffer[toAcquire] = [
+                result as {
+                  anrede: string;
+                  vorname: string;
+                  nachname: string;
+                  funktion: string;
+                  stellenbezeichnung: string;
+                  email: string;
+                  website: string;
+                  zimmer: string;
+                  behoerdeId: number;
+                  behoerdeBezeichnung: string;
+                  gebaeudeId: number;
+                  gebaeudeBezeichnung: string;
+                  ansprechpartnerId: number;
+                  telefonLandvorwahl: string;
+                  telefonOrtsvorwahl: string;
+                  telefonAnlage: string;
+                  telefonDurchwahl: string;
+                  apTelefonLandvorwahl: string;
+                  apTelefonOrtsvorwahl: string;
+                  apTelefonAnlage: string;
+                  apTelefonDurchwahl: string;
+                  apEmail: string;
+                },
+              ];
+
               resolve(
-                // biome-ignore lint/suspicious/noAssignInExpressions: More concise.
-                (BayVIS_Ansprechpartner_Details.buffer[toAcquire] = [
-                  result as {
-                    anrede: string;
-                    vorname: string;
-                    nachname: string;
-                    funktion: string;
-                    stellenbezeichnung: string;
-                    email: string;
-                    website: string;
-                    zimmer: string;
-                    behoerdeId: number;
-                    behoerdeBezeichnung: string;
-                    gebaeudeId: number;
-                    gebaeudeBezeichnung: string;
-                    ansprechpartnerId: number;
-                    telefonLandvorwahl: string;
-                    telefonOrtsvorwahl: string;
-                    telefonAnlage: string;
-                    telefonDurchwahl: string;
-                    apTelefonLandvorwahl: string;
-                    apTelefonOrtsvorwahl: string;
-                    apTelefonAnlage: string;
-                    apTelefonDurchwahl: string;
-                    apEmail: string;
-                  },
-                ]),
+                result as {
+                  anrede: string;
+                  vorname: string;
+                  nachname: string;
+                  funktion: string;
+                  stellenbezeichnung: string;
+                  email: string;
+                  website: string;
+                  zimmer: string;
+                  behoerdeId: number;
+                  behoerdeBezeichnung: string;
+                  gebaeudeId: number;
+                  gebaeudeBezeichnung: string;
+                  ansprechpartnerId: number;
+                  telefonLandvorwahl: string;
+                  telefonOrtsvorwahl: string;
+                  telefonAnlage: string;
+                  telefonDurchwahl: string;
+                  apTelefonLandvorwahl: string;
+                  apTelefonOrtsvorwahl: string;
+                  apTelefonAnlage: string;
+                  apTelefonDurchwahl: string;
+                  apEmail: string;
+                },
               );
             } else {
               const resultElement: {
@@ -349,112 +394,21 @@ export class BayVIS_Ansprechpartner_Details {
             reject(new CodBiError("Unable to retrieve data from CodBi_BayVIS_Auskunft_Ansprechpartnerdetails"));
           });
       };
-
-      let ids = (params[0]?.toString() as string).split("/").map((toTrim) => toTrim.trim());
+      // #region Retrieve the details of the specified contacts.
+      const ids = (params[0]?.toString() as string).split("/").map((toTrim) => toTrim.trim());
 
       for (let i = 0; i < ids.length; i++) {
         if (Number.isNaN(Number.parseInt(ids[i] as string))) {
-          BayVIS_Ansprechpartner_ID.retrieve([ids[i]])
-            .then((id) => {
-              if ((id as Array<string>)[0] !== undefined) {
-                acquire((id as Array<string>)[0].toString());
-              }
-            })
-            .catch((error) => {
-              // #region If the first contact can't be found in the directory.
-              if (i === 0) {
-                ids = ids.slice(i + 1);
-                params[0] = ids.join("/");
-
-                BayVIS_Ansprechpartner_Details.retrieve(params)
-                  .then((details) => {
-                    resolve(details);
-                  })
-                  .catch((error) => {});
-              }
-              // #endregion If the first contact can't be found in the directory.
-              // #region If a contact in between the first and the last one can't be found in the directory.
-              if (i !== 0 && i !== ids.length - 1) {
-                ids = ids.splice(i);
-
-                params[0] = ids.join("/");
-                // Recursion needed since for-loop won't continue execution on reject.
-                BayVIS_Ansprechpartner_Details.retrieve(params)
-                  .then((details) => {
-                    resolve(
-                      (
-                        result as Array<{
-                          anrede: string;
-                          vorname: string;
-                          nachname: string;
-                          funktion: string;
-                          stellenbezeichnung: string;
-                          email: string;
-                          website: string;
-                          zimmer: string;
-                          behoerdeId: number;
-                          behoerdeBezeichnung: string;
-                          gebaeudeId: number;
-                          gebaeudeBezeichnung: string;
-                          ansprechpartnerId: number;
-                          telefonLandvorwahl: string;
-                          telefonOrtsvorwahl: string;
-                          telefonAnlage: string;
-                          telefonDurchwahl: string;
-                          apTelefonLandvorwahl: string;
-                          apTelefonOrtsvorwahl: string;
-                          apTelefonAnlage: string;
-                          apTelefonDurchwahl: string;
-                          apEmail: string;
-                        }>
-                      ).concat(
-                        details as Array<{
-                          anrede: string;
-                          vorname: string;
-                          nachname: string;
-                          funktion: string;
-                          stellenbezeichnung: string;
-                          email: string;
-                          website: string;
-                          zimmer: string;
-                          behoerdeId: number;
-                          behoerdeBezeichnung: string;
-                          gebaeudeId: number;
-                          gebaeudeBezeichnung: string;
-                          ansprechpartnerId: number;
-                          telefonLandvorwahl: string;
-                          telefonOrtsvorwahl: string;
-                          telefonAnlage: string;
-                          telefonDurchwahl: string;
-                          apTelefonLandvorwahl: string;
-                          apTelefonOrtsvorwahl: string;
-                          apTelefonAnlage: string;
-                          apTelefonDurchwahl: string;
-                          apEmail: string;
-                        }>,
-                      ),
-                    );
-                  })
-                  .catch((error) => {});
-              }
-              // #region If a contact in between the first and the last one can't be found in the directory.
-              // #region If the last contact can'T be found in the directory.
-              else {
-                ids = ids.slice(0, i);
-                params[0] = ids.join("/");
-
-                BayVIS_Ansprechpartner_Details.retrieve(params)
-                  .then((details) => {
-                    resolve(details);
-                  })
-                  .catch((error) => {});
-              }
-              // #endregion If the last contact can'T be found in the directory.
-            });
+          BayVIS_Ansprechpartner_ID.retrieve([ids[i].trim()]).then((id) => {
+            if ((id as Array<string>)[0] !== undefined) {
+              acquire((id as Array<string>)[0].toString());
+            }
+          });
         } else {
           acquire(ids[i]);
         }
       }
+      // #endregion Retrieve the details of the specified contacts.
     });
   }
   // #region Initialization

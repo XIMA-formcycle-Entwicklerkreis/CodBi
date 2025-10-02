@@ -25,7 +25,7 @@ export class V {
   public static retrieve(
     @REGEX.PRE(REGEX.stdExp.cssSelector)
     params: Array<string>,
-  ): Array<string> {
+  ): string {
     const result: string | undefined | null = document
       .querySelector(`[ data-name = "${(params[0] as string).trim()}"]`)
       ?.getAttribute("value");
@@ -34,7 +34,7 @@ export class V {
       throw new CodBiError(`No global variable "${params[0]}" existent.`);
     }
 
-    return [result];
+    return result;
   }
   /**
    * States whether this {@link V } was successfully registered via {@link CodbiGlobal.registerEP } with the CodBi and

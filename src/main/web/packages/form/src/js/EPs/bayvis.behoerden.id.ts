@@ -44,10 +44,10 @@ export class BayVIS_Behoerden_ID {
    * @throws A {@link CodBiError } if no data could be retrieved from the BayVIS-endpoint. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length")
+    /*@GREATER.PRE(1, true, false, "length")
     @AE.PRE(new TYPE("string"))
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.authorityID), 0)
-    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)
+    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)*/
     params: Array<unknown>,
   ): Promise<
     | Array<string>

@@ -23,15 +23,53 @@ export class Form_Navigator {
    * .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked    The {@link HTMLButtonElement}s that do not correspond to the current page.
    *
    * Config Parameter:
-   *  - Preview:  Defines whether the navigator permits switching to every page even it wasn't visited before (**TRUE**)
-   *              or not (**FALSE**).
+   *  - Preview:              Defines whether the navigator permits switching to every page even it wasn't visited before (**TRUE**)
+   *                          or not (**FALSE**).
+   *  - cssNavButtons:        A {@link string } containing additional CSS to be applied to the navigator's {@link HTMLButtonElement}s.
+   *  - cssHoverNavButtons:   A {@link string } containing additional CSS to be applied to the navigator's {@link HTMLButtonElement}s when hovering them.
+   *  - cssBlockedNavButtons: A {@link string } containing additional CSS to be applied to the navigator's {@link HTMLButtonElement}s that are blocked for any reason.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   public static functionality(toLoad: { [key: string]: unknown }, toProcess: Element): void {
+    // #region Normalize Arrayed-Parameter.
+    toLoad.ccsnavbuttons =
+      toLoad.cssnavbuttons && Array.isArray(toLoad.cssnavbuttons) ? toLoad.cssnavbuttons[0] : toLoad.cssnavbuttons;
+    toLoad.csshovernavbuttons =
+      toLoad.csshovernavbuttons && Array.isArray(toLoad.csshovernavbuttons)
+        ? toLoad.csshovernavbuttons[0]
+        : toLoad.csshovernavbuttons;
+    toLoad.cssblockednavbuttons =
+      toLoad.cssblockednavbuttons && Array.isArray(toLoad.cssblockednavbuttons)
+        ? toLoad.cssblockednavbuttons[0]
+        : toLoad.cssblockednavbuttons;
+    // #endregion Normalize Arrayed-Parameter.
     const $ = getJQuery();
     const pages: Array<Element> = $(".XPage").toArray();
     const pageNames: Array<string> = pages.map((page) => page.getAttribute("data-name")) as Array<string>;
+    const navBarWidth = Math.floor(
+      (pageNames.reduce((accumulator, current) => accumulator + current.length, 0) *
+        Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize)) /
+        1.5,
+    );
+
+    getJQuery()("FORM.xm-form").on("addRow", (c) => {
+      setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+    });
+    // #region Provoke a resize-event when document has loaded in order for the Navbar-Type to be determined correctly.
+    new MutationObserver((mutationsList, observer) => {
+      setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+    }).observe(document.body, {
+      attributes: true, // Watch for attribute changes (style, class)
+      attributeFilter: ["style"], // Only care about these two attributes
+      subtree: true, // IMPORTANT: Watch all descendants
+      childList: true, // Also watch for elements being added/removed (optional)
+    });
+    // #endregion Provoke a resize-event when document has loaded in order for the Navbar-Type to be determined correctly.
     let currentPage: string = pageNames[0];
     let content: string = "";
     // #region Inject <button>s, <style>s and containing <div>.
@@ -42,15 +80,39 @@ export class Form_Navigator {
                 page  = "${name}"
                 type  = "button">${name}</button>`;
     }
-
+    // #region Handle Navigator-Type on resize.
+    window.addEventListener("resize", () => {
+      const containerWidth =
+        toProcess.getBoundingClientRect().width === 0 ? window.innerWidth : toProcess.getBoundingClientRect().width;
+      console.log("navBarWidth:", navBarWidth, "containerWidth:", containerWidth);
+      if (navBarWidth > containerWidth) {
+        toProcess.classList.add("-BurgerMode");
+        console.log("add to:");
+      } else {
+        toProcess.classList.remove("-BurgerMode");
+        console.log("remove:");
+      }
+    });
+    // #endregion Handle Navigator-Type on resize.
     toProcess.innerHTML = `
       <style>
-        .---CodBi.--Form_Navigator.-Container.-NavButton              { font-weight : bold ; cursor : pointer ; margin-left : .25em ; margin-right : .25em ; padding : .5em ; box-shadow : 0 0 .25em black ; background : linear-gradient( 122deg, rgba( 255, 255, 255, 1 ) 0%, rgba( 235, 235, 200, 1 ) 10%, rgba( 235, 235, 230, 1 ) 60%, rgba( 255, 255, 255, 1 ) 100% ); transition : .5s all ;}
-        .---CodBi.--Form_Navigator.-Container.-NavButton:hover        { scale : 1.1 ; box-shadow : 0 0 5em darkorange ;}
+        .---CodBi.--Form_Navigator.-Container.-NavButton          { ${toLoad.cssnavbuttons ? toLoad.cssnavbuttons : "scale: 1 ; font-weight : bold ; cursor : pointer ; margin-left : .25em ; margin-right : .25em ; padding : .5em ; box-shadow : 0 0 .25em black ; background : linear-gradient( 122deg, rgba( 255, 255, 255, 1 ) 0%, rgba( 235, 235, 200, 1 ) 10%, rgba( 235, 235, 230, 1 ) 60%, rgba( 255, 255, 255, 1 ) 100% ); transition : .5s all ;"}}
+        .---CodBi.--Form_Navigator.-Container.-NavButton:hover    { ${toLoad.csshovernavbuttons ? toLoad.csshovernavbuttons : "scale : 1.1 ; box-shadow : 0 0 5em darkorange ;"}}
+        .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked { ${toLoad.cssBlockedNavButtons ? toLoad.cssBlockedNavButtons : "opacity : .5 ; cursor : not-allowed ;"}}
+
+
+        .---CodBi.--Form_Navigator.-Container.-NavButton.-current     { border-radius: .5em ; scale : 1.2 ; border-color: green ; box-shadow : 0 0 .25em green ; cursor : default ;}
         .---CodBi.--Form_Navigator.-Container.-NavButton:first-child  { border-top-left-radius : .5em ; border-bottom-left-radius : .5em ; margin-right : .25em ;}
         .---CodBi.--Form_Navigator.-Container.-NavButton:last-child   { border-top-right-radius : .5em ; border-bottom-right-radius : .5em ; margin-right : .25em ;}
-        .---CodBi.--Form_Navigator.-Container.-NavButton.-current     { scale : 1.1 ; box-shadow : 0 0 .25em green ; cursor : default ;}
-        .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked     { opacity : .5 ; cursor : default ;}</style>
+
+        .-BurgerMode .---CodBi.--Form_Navigator.-Container                         { border-style: none !important ;}
+        .-BurgerMode .---CodBi.--Form_Navigator.-Container.-NavButton              { line-height: .5em ; padding: .5em ; margin: auto ; width: 100% ;}
+        .-BurgerMode .---CodBi.--Form_Navigator.-Container.-NavButton              { margin-top: 1em ; margin-bottom: 1em ;}
+        .-BurgerMode .---CodBi.--Form_Navigator.-Container.-NavButton:first-child  { border-bottom-left-radius: 0 ; border-bottom-right-radius: 0 ; border-top-left-radius: .5em !important ; border-top-right-radius: .5em !important ; margin-right .25em ;}
+        .-BurgerMode .---CodBi.--Form_Navigator.-Container.-NavButton:last-child   { border-top-left-radius: 0 ; border-top-right-radius: 0 ; border-bottom-right-radius: .5em !important ; border-bottom-left-radius: .5em !important ;}
+        .-BurgerMode .---CodBi.--Form_Navigator.-Container.-NavButton.-current     { border-radius: .5em ; scale: 1.2 ; border-color: green ; box-shadow : 0 0 .25em green ; cursor : default ;}
+
+        .-BurgerMode .---CodBi.--Form_Navigator.-Container { margin: auto ; width: fit-content ; display: table ; text-align: center ; border-style: solid ; border-width: .02em ; filter: drop-shadow( 0 0 .2em black ); height: 1.5em ;}</style>
       <div class = "---CodBi --Form_Navigator -Container">${content}</div>`;
     // #endregion Inject <button>s, <style>s and containing <div>.
     // #region Setup validation check tracking.
@@ -120,7 +182,7 @@ export class Form_Navigator {
           }
           // #endregion Prevent moving forward to a page that wasn't validated yet.
           // #region Switch the active buttons classes.
-          for (const currentButton of $(`.---CodBi.--Form_Navigator.-Container.-NavButton[ page = "${currentPage}"]`)) {
+          for (const currentButton of $(".---CodBi.--Form_Navigator.-Container.-NavButton.-current")) {
             currentButton.classList.remove("-current");
 
             currentButton.style.pointerEvents = "all";
@@ -145,7 +207,7 @@ export class Form_Navigator {
             return; // Do nothing if the "currentPage" hasn't been validated.
           }
           // Activate the navigation <button> leading to the former page and remove the tag marking it as the current one.
-          for (const formerButton of $(`.---CodBi.--Form_Navigator.-Container.-NavButton[page = "${currentPage}"]`)) {
+          for (const formerButton of $(".---CodBi.--Form_Navigator.-Container.-NavButton.-current")) {
             formerButton.style.pointerEvents = "all";
             formerButton.classList.remove("-current");
           }

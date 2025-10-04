@@ -49,7 +49,7 @@ export class HTML_Select_Injection {
     }
 
     for (let i = 0; i < arrayLength; i++) {
-      toProcess.innerHTML += `<option value = "${(toLoad.titles as [])[i]}">${(toLoad.values as [])[i]}</option>`;
+      toProcess.innerHTML += `<option title = "${(toLoad.titles as [])[i]}" value = "${(toLoad.values as [])[i]}">${(toLoad.values as [])[i]}</option>`;
     }
     // #endregion Populate the "HTMLSelectElement".
   }

@@ -38,7 +38,7 @@ export class Date_NoWeekends {
     $(toProcess).datepicker("option", "beforeShowDay", $.datepicker.noWeekends);
 
     // #region Intercept input.
-    toProcess.addEventListener("change", (event: Event): undefined => {
+    $(toProcess).on("change", (event: Event): undefined => {
       const weekday = new Date(
         (toProcess as HTMLInputElement).value
           .split(toLoad.delimiter && typeof toLoad.delimiter === "string" ? toLoad.delimiter : ".")

@@ -53,10 +53,9 @@ export class HTML_Input_REGEX {
     const $ = getJQuery();
 
     toProcess.addEventListener("change", (event) => {
-      console.log("L:", toLoad.expression);
       if (!new RegExp(toLoad.expression as string).test((event.target as HTMLInputElement).value)) {
         $(toProcess).error(
-          `${toLoad.errorprefix ? toLoad.errorprefix : ""}${toLoad.exposeexpression ? toLoad.expression : ""}${toLoad.errorpostfix ? toLoad.errorpostfix : ""}`,
+          `${toLoad.errorprefix ? toLoad.errorprefix : "Text does not comply to "}${toLoad.exposeexpression ? toLoad.expression : "a certain restriction"}${toLoad.errorpostfix ? toLoad.errorpostfix : "."}`,
         );
       } else {
         $(toProcess).error("");

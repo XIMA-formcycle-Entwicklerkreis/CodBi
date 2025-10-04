@@ -50,26 +50,38 @@ export class Form_Navigator {
     const navBarWidth = Math.floor(
       (pageNames.reduce((accumulator, current) => accumulator + current.length, 0) *
         Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize)) /
-        1.5,
+        1.2,
     );
-
+    // #region Determine Navbar-Mode on every row addition.
     getJQuery()("FORM.xm-form").on("addRow", (c) => {
       setTimeout(() => {
         window.dispatchEvent(new Event("resize"));
       });
     });
+    // #endregion Determine Navbar-Mode on every row addition.
     // #region Provoke a resize-event when document has loaded in order for the Navbar-Type to be determined correctly.
     new MutationObserver((mutationsList, observer) => {
       setTimeout(() => {
         window.dispatchEvent(new Event("resize"));
       });
     }).observe(document.body, {
-      attributes: true, // Watch for attribute changes (style, class)
-      attributeFilter: ["style"], // Only care about these two attributes
-      subtree: true, // IMPORTANT: Watch all descendants
-      childList: true, // Also watch for elements being added/removed (optional)
+      attributes: true,
+      attributeFilter: ["style"],
+      subtree: true,
+      childList: true,
     });
     // #endregion Provoke a resize-event when document has loaded in order for the Navbar-Type to be determined correctly.
+    // #region Handle Navigator-Type on resize.
+    window.addEventListener("resize", () => {
+      const containerWidth = toProcess.getBoundingClientRect().width;
+
+      if (navBarWidth > containerWidth) {
+        toProcess.classList.add("-BurgerMode");
+      } else {
+        toProcess.classList.remove("-BurgerMode");
+      }
+    });
+    // #endregion Handle Navigator-Type on resize.
     let currentPage: string = pageNames[0];
     let content: string = "";
     // #region Inject <button>s, <style>s and containing <div>.
@@ -80,20 +92,7 @@ export class Form_Navigator {
                 page  = "${name}"
                 type  = "button">${name}</button>`;
     }
-    // #region Handle Navigator-Type on resize.
-    window.addEventListener("resize", () => {
-      const containerWidth =
-        toProcess.getBoundingClientRect().width === 0 ? window.innerWidth : toProcess.getBoundingClientRect().width;
-      console.log("navBarWidth:", navBarWidth, "containerWidth:", containerWidth);
-      if (navBarWidth > containerWidth) {
-        toProcess.classList.add("-BurgerMode");
-        console.log("add to:");
-      } else {
-        toProcess.classList.remove("-BurgerMode");
-        console.log("remove:");
-      }
-    });
-    // #endregion Handle Navigator-Type on resize.
+
     toProcess.innerHTML = `
       <style>
         .---CodBi.--Form_Navigator.-Container.-NavButton          { ${toLoad.cssnavbuttons ? toLoad.cssnavbuttons : "scale: 1 ; font-weight : bold ; cursor : pointer ; margin-left : .25em ; margin-right : .25em ; padding : .5em ; box-shadow : 0 0 .25em black ; background : linear-gradient( 122deg, rgba( 255, 255, 255, 1 ) 0%, rgba( 235, 235, 200, 1 ) 10%, rgba( 235, 235, 230, 1 ) 60%, rgba( 255, 255, 255, 1 ) 100% ); transition : .5s all ;"}}

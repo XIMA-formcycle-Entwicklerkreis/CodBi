@@ -65,8 +65,8 @@ export class Date_Holidays {
     const result: Array<string> = new Array<string>();
     const years: Array<string> = new Array<string>();
     const states: Array<string> = new Array<string>();
-    const augsburg = params.some((toCheck) => (toCheck as string).toLocaleLowerCase() === "friedensfest");
-    const katholic = params.some((toCheck) => (toCheck as string).toLocaleLowerCase() === "katholisch");
+    const augsburg = params.some((toCheck) => (toCheck as string).toLowerCase() === "friedensfest");
+    const katholic = params.some((toCheck) => (toCheck as string).toLowerCase() === "katholisch");
 
     for (const parameter of params) {
       if (Number.isNaN(parameter)) {
@@ -91,10 +91,10 @@ export class Date_Holidays {
             years.push(new Date().getFullYear().toString());
           }
         } else if (
-          parameter.toLocaleLowerCase().indexOf("friedensfest") === -1 &&
-          parameter.toLocaleLowerCase().indexOf("katholisch") === -1
+          parameter.toLowerCase().indexOf("friedensfest") === -1 &&
+          parameter.toLowerCase().indexOf("katholisch") === -1
         ) {
-          states.push(parameter.toLocaleLowerCase());
+          states.push(parameter.toLowerCase());
         }
       }
     }
@@ -161,7 +161,7 @@ export class Date_Holidays {
         headers: {
           years: years.join(","),
           states: states.join(",").replace(/ /g, ""),
-          augsburg: augsburg ? "1" : "0",
+          augsburg: augsburg ? "true" : "false  ",
           catholic: katholic ? "true" : "false",
         },
       }).done((data: string) => {

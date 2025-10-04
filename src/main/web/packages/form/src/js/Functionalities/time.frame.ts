@@ -5,6 +5,7 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { CodBiError } from "../global-scope.js";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -32,10 +33,12 @@ export class Time_Frame {
     @REGEX.PRE(REGEX.stdExp.cssSelector, "maxfield") toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): void {
-    const maximumField: HTMLInputElement = document.querySelector(toLoad.maxfield as string) as HTMLInputElement;
+    const maximumField: HTMLInputElement = toProcess.parentElement.parentElement.querySelector(
+      toLoad.maxfield as string,
+    ) as HTMLInputElement;
 
     if (toLoad.maxfield === "undefined" || typeof toLoad.maxfield !== "string" || maximumField === null) {
-      return; // Do nothing if toLoad preconditions are not met.
+      throw new CodBiError(`No maximum field was specified or the selector (${toLoad.maximumField}) is invalid.`);
     }
 
     const $ = getJQuery();
@@ -55,37 +58,27 @@ export class Time_Frame {
     const onNewMinimum: (event: Event) => undefined = (event: Event): undefined => {
       if (equalityPermitted) {
         if (
-          Number.parseInt(
-            (toProcess as HTMLInputElement).value.split(":").reduce((accumulator, current, index): string => {
-              return `${index === 0 ? Number.parseInt(current) * 60 * 60 : (Number.parseInt(current) * 60) + Number.parseInt(accumulator)}`;
-            }),
-          ) >=
-          Number.parseInt(
-            (maximumField as HTMLInputElement).value.split(":").reduce((accumulator, current, index): string => {
-              return `${index === 0 ? Number.parseInt(current) * 60 * 60 : (Number.parseInt(current) * 60) + Number.parseInt(accumulator)}`;
-            }),
-          )
+          Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
+            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >=
+          Number.parseInt((maximumField as HTMLInputElement).value.split(":")[0]) * 60 +
+            Number.parseInt((maximumField as HTMLInputElement).value.split(":")[1])
         ) {
           $(toProcess).error(msgMinInvalid);
         } else {
           $(toProcess).error("");
+          $(maximumField).error("");
         }
       } else {
         if (
-          Number.parseInt(
-            (toProcess as HTMLInputElement).value.split(":").reduce((accumulator, current, index): string => {
-              return `${index === 0 ? Number.parseInt(current) * 60 * 60 : (Number.parseInt(current) * 60) + Number.parseInt(accumulator)}`;
-            }),
-          ) >
-          Number.parseInt(
-            (maximumField as HTMLInputElement).value.split(":").reduce((accumulator, current, index): string => {
-              return `${index === 0 ? Number.parseInt(current) * 60 * 60 : (Number.parseInt(current) * 60) + Number.parseInt(accumulator)}`;
-            }),
-          )
+          Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
+            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >
+          Number.parseInt((maximumField as HTMLInputElement).value.split(":")[0]) * 60 +
+            Number.parseInt((maximumField as HTMLInputElement).value.split(":")[1])
         ) {
           $(toProcess).error(msgMinInvalid);
         } else {
           $(toProcess).error("");
+          $(maximumField).error("");
         }
       }
     };
@@ -93,37 +86,27 @@ export class Time_Frame {
     const onNewMaximum: (event: Event) => undefined = (event: Event): undefined => {
       if (equalityPermitted) {
         if (
-          Number.parseInt(
-            (toProcess as HTMLInputElement).value.split(":").reduce((accumulator, current, index): string => {
-              return `${index === 0 ? Number.parseInt(current) * 60 * 60 : (Number.parseInt(current) * 60) + Number.parseInt(accumulator)}`;
-            }),
-          ) >=
-          Number.parseInt(
-            (maximumField as HTMLInputElement).value.split(":").reduce((accumulator, current, index): string => {
-              return `${index === 0 ? Number.parseInt(current) * 60 * 60 : (Number.parseInt(current) * 60) + Number.parseInt(accumulator)}`;
-            }),
-          )
+          Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
+            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >
+          Number.parseInt((maximumField as HTMLInputElement).value.split(":")[0]) * 60 +
+            Number.parseInt((maximumField as HTMLInputElement).value.split(":")[1])
         ) {
           $(maximumField).error(msgMaxInvalid);
         } else {
           $(maximumField).error("");
+          $(toProcess).error("");
         }
       } else {
         if (
-          Number.parseInt(
-            (toProcess as HTMLInputElement).value.split(":").reduce((accumulator, current, index): string => {
-              return `${index === 0 ? Number.parseInt(current) * 60 * 60 : (Number.parseInt(current) * 60) + Number.parseInt(accumulator)}`;
-            }),
-          ) >
-          Number.parseInt(
-            (maximumField as HTMLInputElement).value.split(":").reduce((accumulator, current, index): string => {
-              return `${index === 0 ? Number.parseInt(current) * 60 * 60 : (Number.parseInt(current) * 60) + Number.parseInt(accumulator)}`;
-            }),
-          )
+          Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
+            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >
+          Number.parseInt((maximumField as HTMLInputElement).value.split(":")[0]) * 60 +
+            Number.parseInt((maximumField as HTMLInputElement).value.split(":")[1])
         ) {
           $(maximumField).error(msgMaxInvalid);
         } else {
           $(maximumField).error("");
+          $(toProcess).error("");
         }
       }
     };

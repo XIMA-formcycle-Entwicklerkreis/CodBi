@@ -20,6 +20,8 @@ import { CodBiError } from "../global-scope.js";
 export class Media_Image_Cropper {
   /**
    * This functionality provides an imagecropper (https://fengyuanchen.github.io/cropperjs/).
+   * In order for it to work also in repetitive Containers "data-cb-func" gotta be set on the first outermost container
+   * that is not repetitive itself but lies with the repetitive one.
    *
    * Config Parameter:
    *  - Container:    The {@link HTMLDivElement } that shall contain the Cropper-UI.
@@ -40,22 +42,23 @@ export class Media_Image_Cropper {
     toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): void {
-    const $: JQueryStatic = getJQuery();
-    const container: HTMLElement | undefined = $(toLoad.container as string)[0];
+    const container: HTMLElement | undefined = toProcess.querySelector(toLoad.container as string);
     // Do nothing if there's no image container.
     if (container === undefined) {
       new CodBiError(`The container "${toLoad.container}" is not available`);
     }
 
-    const fileInput: HTMLElement | undefined = $(toLoad.file as string)[0];
-
+    const fileInput: HTMLElement | undefined = toProcess.querySelector(toLoad.file as string);
     // Do nothing if "file"-CodBi-Parameter doesn't select a "HTMLInputElement".
     if (
       fileInput === undefined ||
-      fileInput.tagName.toLocaleLowerCase() !== "input" ||
+      fileInput === null ||
+      fileInput.tagName.toLowerCase() !== "input" ||
       fileInput.getAttribute("type") !== "file"
     ) {
       new CodBiError(`The file picker "${toLoad.file}" is either not available or not a file picker`);
+
+      return;
     }
 
     let cropper: Cropper | undefined;
@@ -136,12 +139,12 @@ export class Media_Image_Cropper {
     });
     // #endregion Register event to properly react on file changes.
     // #region Register proper event to update the "target".
-    for (const updater of $(toLoad.updater as string)) {
+    for (const updater of toProcess.parentElement.querySelectorAll(toLoad.updater as string)) {
       updater.addEventListener("click", (event: Event): undefined => {
         if (cropper && toLoad.target && typeof (toLoad.target === "string")) {
-          const target = document.querySelector(toLoad.target as string);
+          const target = toProcess.parentElement.querySelector(toLoad.target as string);
           const canvas = cropper.getCropperCanvas();
-
+          console.log("V:", target, updater, container);
           if (canvas) {
             canvas
               .$toCanvas({

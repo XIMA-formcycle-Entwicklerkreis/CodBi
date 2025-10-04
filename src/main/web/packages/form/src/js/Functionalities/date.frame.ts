@@ -21,6 +21,8 @@ export class Date_Frame {
    *
    * This functionality connects two {@link HTMLInputElement }s to not permit the designated
    * Minimum-{@link HTMLInputElement } to have a date that is after the maximum one (JQuery Datepicker supported).
+   * In order for this functionality to work in repetitive containers, the tagged {@link HTMLInputElement } and the
+   * corresponding **MaxField** need to be within the same container.
    *
    * Config Parameter:
    *  - MaxField:       CSS-Selector selecting the {@link HTMLInputElement } that takes the maximum date.
@@ -37,7 +39,9 @@ export class Date_Frame {
     toLoad: { [key: string]: string },
     toProcess: Element,
   ): void {
-    const maximumField: HTMLInputElement = document.querySelector(toLoad.maxfield as string) as HTMLInputElement;
+    const maximumField: HTMLInputElement = toProcess.parentElement.parentElement.querySelector(
+      toLoad.maxfield as string,
+    ) as HTMLInputElement;
 
     if (maximumField === null) {
       throw new CodBiError(`The selector "${toLoad.maxfield}" does not select anything.`);
@@ -156,6 +160,7 @@ export class Date_Frame {
 
       onNewMinimum(event);
     });
+
     toProcess.addEventListener("input", onNewMinimum);
     $(maximumField).on("change", (event: Event): undefined => {
       if (formerOnMaxSelect) {
@@ -164,6 +169,7 @@ export class Date_Frame {
 
       onNewMaximum(event);
     });
+
     maximumField.addEventListener("input", onNewMaximum);
     // #endregion Bind necessary events.
   }

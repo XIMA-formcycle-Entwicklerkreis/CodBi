@@ -33,10 +33,15 @@ export class OnChange_Conditional {
    *                Available modes are GTE (greater than or equal), GT ( greater than ), LTE ( lower than or equal ),
    *                LT ( lower than ), EQ (equal) & NEQ (not equal).
    *  - Target:     The {@link Element } where to apply one of the specified functionalities depending on whether the
-   *                given "condition" is fulfilled or not.
+   *                given "condition" is fulfilled or not or a CSS-Selector.
+   *                To work in a repetitive container a CSS-Selector is mandatory since the functionality performs the
+   *                query relative to the tagged {@link HTMLInputElement }.
    *  - DateFormat: A {@link string } specifying the format the candidate is of. If this parameter isn't undefined
    *                it triggers value of the tagged field transformation into a {@link Date } prior to compare it with
    *                the reference.
+   *  - Candidate:  The {@link Element } where to get the value to be compared or a CSS-Selector.
+   *                To work in a repetitive container a CSS-Selector is mandatory since the functionality performs the
+   *                query relative to the tagged {@link HTMLInputElement }.
    *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
@@ -46,19 +51,28 @@ export class OnChange_Conditional {
   @DBC.ParamvalueProvider
   public static functionality(
     @REGEX.PRE(/^(GTEQ|GT|LTEQ|LT|EQ|NEQ)$/i, "mode")
-    @INSTANCE.PRE(HTMLInputElement, "target")
     @REGEX.PRE(REGEX.stdExp.dateFormat, "dateFormat")
     toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): undefined {
-    toLoad.target = (toLoad.target as Array<unknown>)[0];
+    // #region Normalize parameter.
+    if (typeof toLoad.target === "string") {
+      toLoad.target = toProcess.parentElement.parentElement.querySelector(toLoad.target as string);
+    } else {
+      toLoad.target = (toLoad.target as Array<unknown>)[0];
+    }
+
+    if (typeof toLoad.candidate === "string") {
+      toLoad.candidate = toProcess.parentElement.parentElement.querySelector(toLoad.candidate as string);
+    }
+    // #endregion Normalize parameter.
     const processChange = () => {
       // #region Determine fulfillment.
       let fulfilled = false;
       // #region Define candidate & reference.
       const candidate = toLoad.dateformat
-        ? formatDate(toLoad.dateformat as string, (toProcess as HTMLInputElement).value)
-        : toLoad.candidate;
+        ? formatDate(toLoad.dateformat as string, (toLoad.candidate as HTMLInputElement).value as string)
+        : new Date((toLoad.candidate as HTMLInputElement).value);
 
       if (candidate === "Invalid date") {
         throw new CodBiError(
@@ -106,10 +120,8 @@ export class OnChange_Conditional {
 
         if (name.substring(0, 8) === "data-cb-") {
           if (name[8] === "_") {
-            console.log("Changed Val", name.substring(9, 11), fulfilled, candidate, toLoad.reference);
             switch (name.substring(9, 11)) {
               case "t_": {
-                console.log("fulfilled", fulfilled);
                 if (fulfilled) {
                   const realAttributename = name.replace("_t_", "");
 

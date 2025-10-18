@@ -29,6 +29,10 @@ export function enableLocalDocInterface(): void {
     // #endregion Determine current language.
     // Initiate if every needed component is fine only...
     if (SVManager.registered && EPManager.registered) {
+      const baseDocURL =
+        window.CodbiPluginData.docsAPI[currentLanguage] === undefined
+          ? window.CodbiPluginData.docsAPI.en
+          : window.CodbiPluginData.docsAPI[currentLanguage];
       // #region Define Flag for Keystroke blocking
       let keystrokeBlockingStart: Date | undefined = new Date();
       // #endregion Define Flag for Keystroke blocking
@@ -232,12 +236,7 @@ export function enableLocalDocInterface(): void {
         );
         // #endregion Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
         if (description[0] === "/") {
-          cDetails.innerHTML = "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
-
-          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-            "data",
-            `${baseDocURL}${description}`,
-          );
+          cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
         } else {
           cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
         }
@@ -753,13 +752,7 @@ export function enableLocalDocInterface(): void {
                         );
                         // #endregion Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
                         if (description[0] === "/") {
-                          cDetails.innerHTML =
-                            "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
-
-                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                            "data",
-                            `${baseDocURL}${description}`,
-                          );
+                          cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
                         } else {
                           cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
                         }
@@ -864,21 +857,11 @@ export function enableLocalDocInterface(): void {
                           if (window.CodbiPluginData.detStandards[realName]?.Description[0] === "/") {
                             DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
 
-                            cDetails.innerHTML =
-                              "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
-
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                              "data",
-                              `${baseDocURL}${description}`,
-                            );
+                            cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
                           } else {
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).innerHTML = `
+                            cDetails.innerHTML = `
                             <div style = "width: 100% ; height: 100% ; overflow : auto ;">
                               ${description}</div>`;
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                              "data",
-                              "",
-                            );
                           }
                           // #endregion First load of documentation.
                           optioninput.enabled = true;
@@ -977,21 +960,11 @@ export function enableLocalDocInterface(): void {
                           if (window.CodbiPluginData.detStandards[realName]?.Description[0] === "/") {
                             DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
 
-                            cDetails.innerHTML =
-                              "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
-
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                              "data",
-                              `${baseDocURL}${description}`,
-                            );
+                            cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
                           } else {
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).innerHTML = `
+                            cDetails.innerHTML = `
                             <div style = "width: 100% ; height: 100% ; overflow : auto ;">
                               ${description}</div>`;
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                              "data",
-                              "",
-                            );
                           }
                         }
                       }
@@ -1130,13 +1103,7 @@ export function enableLocalDocInterface(): void {
                                   optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)
                                 ]?.Description[0] === "/"
                               ) {
-                                cDetails.innerHTML =
-                                  "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
-
-                                DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                                  "data",
-                                  `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}`,
-                                );
+                                cDetails.innerHTML = `<object data = '${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
                               } else {
                                 const docLoader = cDetails.querySelector(".APIDocLoader");
 
@@ -1494,10 +1461,6 @@ export function enableLocalDocInterface(): void {
                         return;
                       }
 
-                      const baseDocURL =
-                        window.CodbiPluginData.docsAPI[currentLanguage] === undefined
-                          ? window.CodbiPluginData.docsAPI.en
-                          : window.CodbiPluginData.docsAPI[currentLanguage];
                       const description = DEFINED.tsCheck<string>(
                         window.CodbiPluginData[
                           epManager.mode === "SV" ? "detFunctionalities" : "detElementplaceholder"
@@ -1505,20 +1468,11 @@ export function enableLocalDocInterface(): void {
                       );
 
                       if (description[0] === "/") {
-                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
-
-                        cDetails.innerHTML =
-                          "<object style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>";
-
-                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                          "data",
-                          `${baseDocURL}${description}`,
-                        );
+                        cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
                       } else {
-                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).innerHTML = `
+                        cDetails.innerHTML = `
                             <div style = "width: 100% ; height: 100% ; overflow : auto ;">
                               ${description}</div>`;
-                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute("data", "");
                       }
 
                       cDetails.style.display = "block";

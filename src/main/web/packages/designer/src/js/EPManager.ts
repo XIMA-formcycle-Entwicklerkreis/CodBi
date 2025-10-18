@@ -182,6 +182,44 @@ export class EPManager extends SVManager {
           HTMLDivElement,
         ),
       ).classList.add("-Current");
+
+      if (this.lastKey !== "Backspace" && this.lastKey !== "Delete" && remainingOptions.length === 1) {
+        const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+        const inputElement = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
+
+        let selectionStart = DEFINED.tsCheck<number>(eventTarget.selectionStart);
+
+        const remainingOne = inputElement.value.substring(0, selectionStart - this.currentFilter.length);
+        const remainingTwo = inputElement.value.substring(selectionStart);
+
+        inputElement.value = remainingOne + remainingTwo;
+
+        selectionStart = selectionStart - this.currentFilter.length;
+        // #endregion Remove the characters that were typed during filtering.
+        const selectedOption = DEFINED.tsCheck<string>(
+          INSTANCE.tsCheck<HTMLElement>(
+            DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelector(".---WaXCode.--SVManager.--Option.-Current"),
+            HTMLElement,
+          ).dataset.cbOption,
+        );
+
+        eventTarget.value = `${eventTarget.value.substring(0, selectionStart - 1)}{ ${selectedOption} >  } ${eventTarget.value.substring(selectionStart)}`;
+
+        eventTarget.setSelectionRange(
+          selectionStart + selectedOption.length + 5,
+          selectionStart + selectedOption.length + 5,
+        );
+
+        this.currentStartCaret = undefined;
+        this.currentFilter = "";
+        this.countStrokes = 0;
+        this.enteringEP = false;
+        this.enabled = false;
+
+        for (const handler of this.onAutocomplete) {
+          handler(remainingOptions[0]);
+        }
+      }
     } else {
       super.onInputTarget(event);
     }
@@ -198,7 +236,7 @@ export class EPManager extends SVManager {
 
       let selectionStart = DEFINED.tsCheck<number>(eventTarget.selectionStart);
 
-      if (event.key !== " ") {
+      if (event.key !== " " && event.key !== "Enter") {
         super.onKeydownTarget(event);
         // #region Keep track of digits and letter input
         if (this.enteringEP && /^[a-zA-Z0-9]$/.test(event.key)) {

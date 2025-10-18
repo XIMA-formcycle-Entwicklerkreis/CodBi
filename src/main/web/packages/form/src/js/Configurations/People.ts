@@ -20,7 +20,14 @@ export function loadConfig(): void {
     targets: ".CodBi_People_18plus",
     FUNC: "HTML.Input.Cleave, Date.Min",
     Minimum: "18",
-    MsgHigher: "",
+    MsgHigher: "18 Jahre ist das erforderliche Mindestalter.",
+  });
+
+  window.codbi.loadConfig({
+    targets: ".CodBi_People_16plus",
+    FUNC: "HTML.Input.Cleave, Date.Min",
+    Minimum: "16",
+    MsgHigher: "16 Jahre ist das erforderliche Mindestalter.",
   });
 
   window.codbi.loadConfig({
@@ -47,13 +54,13 @@ export function loadConfig(): void {
   });
 
   window.codbi.loadConfig({
-    targets: ".CodBi_Fotocropper_Board",
+    targets: ".CodBi_Fotocropper",
     FUNC: "Media.Image.Cropper",
     Container: ".CodBi_Fotocropper_Board",
     File: ".CodBi_Fotocropper_Uploader",
     Updater: ".CodBi_Fotocropper_Update",
     Target: ".CodBi_Fotocropper_Foto",
-    AspectRatio: "4/3",
+    AspectRatio: "4 / 3",
   });
 }
 

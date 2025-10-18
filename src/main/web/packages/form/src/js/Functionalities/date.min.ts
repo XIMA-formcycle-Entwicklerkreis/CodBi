@@ -121,7 +121,7 @@ export class Date_Min {
         );
     }
     // #endregion Determine minimum date.
-    $(toProcess).on("change", (event: Event): undefined => {
+    $(toProcess).on("change", (event: JQuery.Event): undefined => {
       if (toLoad.reverse) {
         if (
           minimum.setHours(0, 0, 0, 0) >

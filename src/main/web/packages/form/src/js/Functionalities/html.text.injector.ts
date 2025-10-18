@@ -19,7 +19,7 @@ export class HTML_Text_Injector {
    *
    * Config Parameter:
    *  - Placeholder:  Specifies the {@link string } that shall be replaced within the
-   *                  {@link Element } "toProcess"'s "Property".
+   *                  {@link Element } "toProcess"'s "Property". Standard-value is "[[INJECTOR_REPLACEMENT]]".
    *  - Replacement:  The {@link string } to replace all occurrences of the specified "Placeholder" or a the end of the
    *                  {@link string } contained in the {@link Element } "toProcess"'s "Property".
    *  - Property:     Specifies which property of the {@link Element } "toProcess" shall receive the "Replacement".
@@ -33,6 +33,11 @@ export class HTML_Text_Injector {
     toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): void {
+    // #region Normalize parameters.
+    if (toLoad.placeholder === undefined) {
+      toLoad.placeholder = "[[INJECTOR_REPLACEMENT]]";
+    }
+    // #endregion Normalize parameters.
     if (typeof (toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] !== "string") {
       throw new CodBiError(`The tagged element's "${toLoad.property}" is a not of type "string"`);
     }

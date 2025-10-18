@@ -26,7 +26,7 @@ import { CodBiError } from "../global-scope";
  *                            stellenbezeichnung: string; email: string; website: string; zimmer: string;
  *                            sortierreihenfolge: number; behoerdeId: number; behoerdeBezeichnung: string;
  *                            gebaeudeId: number; gebaeudeBezeichnung: string; ansprechpartnerId: number;}>}
- *            or an {@link Array < string >}, if the 2nd parameter is specified.
+ *            or an {@link Array < string >}, if a parameter is specified.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
@@ -73,9 +73,9 @@ export class BayVIS_Ansprechpartner {
     return new Promise((resolve, reject) => {
       // #region Use buffer if available.
       if (BayVIS_Ansprechpartner.buffer) {
-        if (params.length >= 2) {
+        if (params.length >= 1) {
           resolve(
-            BayVIS_Ansprechpartner.buffer.map((toMap) => (toMap as { [key: string]: unknown })[params[1] as string]),
+            BayVIS_Ansprechpartner.buffer.map((toMap) => (toMap as { [key: string]: unknown })[params[0] as string]),
           );
         } else {
           resolve(BayVIS_Ansprechpartner.buffer as Array<unknown>);

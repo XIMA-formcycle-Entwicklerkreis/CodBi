@@ -11,9 +11,15 @@ import { allByCssAs, allByCssHtml, byCssAs, byCssHtml } from "@de-xima/xima-comm
  *  A {@link HTMLDivElement } that bound to an {@link HTMLInputElement } only allows one of a
  *  certain set of {@link options }. */
 export class Optioninput extends HTMLDivElement {
+  // #region Info
+  /** Holds a string that can be used to provide contextual information. */
+  public mode: string | undefined;
+  // #endregion Info
   // #region Events
   /** Holds all event listener to notify whenever the currently selected option changes. */
   public readonly onOptionChanged: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
+  /** Holds all event listener to notify whenever an autocomplete occurred. */
+  public readonly onAutocomplete: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
   /** Holds all event listener to notify whenever an option was selected. */
   public readonly onOptionSelected: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
   // #endregion Events
@@ -538,7 +544,7 @@ export class Optioninput extends HTMLDivElement {
               ),
             ).dataset.cbOption,
           );
-          console.log("scroll2:", targetOption.innerHTML);
+
           targetOption.scrollIntoView({
             behavior: "smooth",
             block: "center",
@@ -625,6 +631,10 @@ export class Optioninput extends HTMLDivElement {
       eventTarget.value = remainingOptions[0] ?? "";
 
       for (const handler of this.onOptionChanged) {
+        handler(remainingOptions[0] ?? "");
+      }
+
+      for (const handler of this.onAutocomplete) {
         handler(remainingOptions[0] ?? "");
       }
     }

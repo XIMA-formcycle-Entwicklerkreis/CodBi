@@ -214,7 +214,9 @@ export class HTML_Panel {
         ${toLoad.cssafterheader ? toLoad.cssafterheader : ""}
       }
 
-      #${parentID} .CodBi_HTML_Panel_Header:hover { ${toLoad.cssheaderhover ? toLoad.cssheaderhover : "scale : 1.1 ;"}}
+
+      #${parentID} .CodBi_HTML_Panel_Header:hover { ${toLoad.cssheaderhover ? toLoad.cssheaderhover : "color: darkorange ;"}}
+      #${parentID} .CodBi_HTML_Panel_Header:hover > * { ${toLoad.cssheaderhover ? "" : "margin-left: 5% ; transition: .5s all ;"}}
       #${parentID} .CodBi_HTML_Panel_Header:active { ${toLoad.cssheaderactive ? toLoad.cssheaderactive : "scale : .9 ;"}}
 
       ${

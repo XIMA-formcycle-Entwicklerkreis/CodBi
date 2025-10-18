@@ -57,7 +57,7 @@ export class DATE_Today {
  * @param toProcess The {@link Date } perform the arithmetic operations specified in "params" on.
  * @param params    An {@link Array < string >} of all operation that shall be performed onto the {@link Date }
  *                  "toProcess". Days, months and years may be either added or subtracted by adding each
- *                  arithmetic option as a separate parameter (e.g. Date.Today ~ -1d ; +2m ; -10y ).
+ *                  arithmetic option as a separate parameter (e.g. Date.Today > -1d ; +2m ; -10y ).
  *
  * @returns The {@link Date } "toProcess" modified according to the arithmetic specified in "params". */
 export function processArithmeticParams(toProcess: Date, params: Array<string>): Date {

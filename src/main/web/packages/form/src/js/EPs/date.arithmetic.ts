@@ -20,8 +20,10 @@ export class DATE_Arithmetic {
    *
    * Placeholder Parameter:
    *  - 1st:  The {@link String } to turn to a {@link Date}.
-   *  - 2nd:  An optional dateformat {@link string } like YYYY/MM/DD, for example.
-   *          If omitted DD.MM.YYYY is assumed.
+   *  - 2nd:  The optional format of the "dateString" (e.g. DD/MM/YYYY).
+   *  - 3rd:  The operations to perform on the {@link Date } specified.
+   *          Days, months and years may be either added or subtracted by adding each
+   *          arithmetic option as a separate parameter (e.g. Date.Arithmetic > 01.01.1978 ; -1d ; +2m ; -10y ).
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
@@ -31,16 +33,22 @@ export class DATE_Arithmetic {
    * @param params    The parameters for that Element-Placeholder (provided by CodBi). */
   public static retrieve(
     @AE.PRE([new TYPE("string"), new REGEX(REGEX.stdExp.date)], 0)
-    @AE.PRE([new TYPE("string"), new REGEX(/^[+-]\d+[dmy]$/i)], 1, -1)
+    //@AE.PRE([new TYPE("string"), new REGEX(/^[+-]\d+[dmy]$/i)], 1, -1)
     params: Array<string>,
-  ): Array<Date> {
-    const date: Date | null = stringToDate(params[0] as unknown as string);
+  ): Date {
+    const date: Date | null =
+      params[1].indexOf("+") !== -1 || params[1].indexOf("-") !== -1
+        ? stringToDate(params[0] as unknown as string)
+        : stringToDate(params[0] as unknown as string, params[1]);
 
-    if (date === null) {
+    if (date === null || date.toString() === "Invalid Date") {
       window.codbi.reportError(`"stringToDate" returned NULL. Invoked with: ${params}.`);
     }
 
-    return [processArithmeticParams(date as Date, params.slice(1))];
+    return processArithmeticParams(
+      date as Date,
+      params.slice(params[1].indexOf("+") !== -1 || params[1].indexOf("-") !== -1 ? 1 : 2),
+    );
   }
   /**
    * States whether this {@link DATE_Arithmetic } was successfully registered

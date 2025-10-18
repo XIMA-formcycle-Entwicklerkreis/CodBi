@@ -25,6 +25,8 @@ export class SVManager extends HTMLDivElement {
   // #region Events
   /** Holds all event listener to notify whenever the currently selected option changes. */
   public readonly onOptionChanged: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
+  /** Holds all event listener to notify whenever an autocomplete occurred. */
+  public readonly onAutocomplete: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
   /** Holds all event listener to notify whenever an option was selected. */
   public readonly onOptionSelected: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
   // #endregion Events
@@ -347,7 +349,7 @@ export class SVManager extends HTMLDivElement {
       // #region Add functionality
       // If caret is at the end of the <input>...
       if (target.selectionStart === 0) {
-        target.value = `${option}${target.value.length === 0 ? "" : ","}`;
+        target.value = `${option.toLowerCase()}${target.value.length === 0 ? "" : ","}`;
       } else {
         if (target.selectionStart !== null) {
           // #region Determine indices for replacement
@@ -361,24 +363,25 @@ export class SVManager extends HTMLDivElement {
           // #region Replace properly leaving the [separator] untouched
           target.value = target.value.replace(
             target.value.substring(segmentStart + (target.value[segmentStart] === this.separator ? +1 : 0), segmentEnd),
-            `${option},`,
+            `${option.toLowerCase()},`,
           );
           // #endregion Replace properly leaving the [separator] untouched
-          target.setSelectionRange(segmentEnd, segmentEnd);
+          const newPosition = segmentStart + option.length + 2; // Including the [separator].
+
+          target.setSelectionRange(newPosition, newPosition);
         }
       }
-
       // #endregion Add functionality
     } else {
       // #region Remove functionality
       const targetValue = target.value;
 
       target.value = targetValue
-        .toUpperCase()
+        .toLowerCase()
         .replace(
-          (targetValue.indexOf(`,${option}`) === -1 ? "" : ",") +
-            option +
-            (targetValue.indexOf(`,${option}`) === -1 ? "," : ""),
+          (targetValue.indexOf(`,${option.toLowerCase()}`) === -1 ? "" : ",") +
+            option.toLowerCase() +
+            (targetValue.indexOf(`,${option.toLowerCase()}`) === -1 ? "," : ""),
           "",
         );
       // #endregion Remove functionality
@@ -592,6 +595,10 @@ export class SVManager extends HTMLDivElement {
       remainingOptions.length === 1
     ) {
       eventTarget.value = eventTarget.value.replace(segmentContent, remainingOptions[0] ?? "");
+
+      for (const handler of this.onAutocomplete) {
+        handler(remainingOptions[0] ?? "");
+      }
 
       for (const handler of this.onOptionChanged) {
         handler(remainingOptions[0] ?? "");

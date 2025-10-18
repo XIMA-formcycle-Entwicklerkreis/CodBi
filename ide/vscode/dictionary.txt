@@ -119,6 +119,7 @@ Gebaeude
 Gebaeudedetails
 Geduldeten
 generateheader
+gleich
 gteq
 gültige
 Hauptansprechpartner
@@ -137,6 +138,7 @@ IPTY
 jahr
 katholic
 katholisch
+Keyblocker
 Klassen
 Konfigurationen
 können
@@ -149,6 +151,7 @@ liegen
 localnodedata
 lteq
 Mandant
+Matomo
 maxfield
 Mindate
 msghigher
@@ -195,11 +198,13 @@ Resourceservlet
 resourceurl
 rootext
 rootint
+scrollblock
 searchreplace
 Segmentcontent
 sein
 setattribute
 showblacklist
+siteid
 skewable
 sortiereihenfolge
 sortierreihenfolge

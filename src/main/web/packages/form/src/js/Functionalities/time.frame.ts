@@ -20,11 +20,12 @@ export class Time_Frame {
    * is after the maximum one.
    *
    * Config Parameter:
-   *  - MaxField:       CSS-Selector selecting the {@link HTMLInputElement } that takes the maximum time.
-   *  - MsgMinInvalid:  The optional {@link string } to show as the error message when the minimum-{@link HTMLInputElement }'s value is after
-   *                    the one in the Maximum-{@link HTMLInputElement }.
-   *  - MsgMaxInvalid:  The optional {@link string } to show as the error message when the maximum-{@link HTMLInputElement }'s value is before
-   *                    the one in the Minimum-{@link HTMLInputElement }.
+   *  - MaxField:           CSS-Selector selecting the {@link HTMLInputElement } that takes the maximum time.
+   *  - MsgMinInvalid:      The optional {@link string } to show as the error message when the minimum-{@link HTMLInputElement }'s value is after
+   *                        the one in the Maximum-{@link HTMLInputElement }.
+   *  - MsgMaxInvalid:      The optional {@link string } to show as the error message when the maximum-{@link HTMLInputElement }'s value is before
+   *                        the one in the Minimum-{@link HTMLInputElement }.
+   *  - EqualityPermitted:  Specifies whether the same start and end time is permitted.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -56,7 +57,7 @@ export class Time_Frame {
         : false;
     // #region Define behavior on changed field values.
     const onNewMinimum: (event: Event) => undefined = (event: Event): undefined => {
-      if (equalityPermitted) {
+      if (!equalityPermitted) {
         if (
           Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
             Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >=
@@ -84,10 +85,10 @@ export class Time_Frame {
     };
 
     const onNewMaximum: (event: Event) => undefined = (event: Event): undefined => {
-      if (equalityPermitted) {
+      if (!equalityPermitted) {
         if (
           Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
-            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >
+            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >=
           Number.parseInt((maximumField as HTMLInputElement).value.split(":")[0]) * 60 +
             Number.parseInt((maximumField as HTMLInputElement).value.split(":")[1])
         ) {

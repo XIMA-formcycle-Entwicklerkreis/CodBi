@@ -29,8 +29,8 @@ export class JSON_Path {
     @AE.PRE([new TYPE("string"), new REGEX(REGEX.stdExp.keyPath)], 1)
     @AE.PRE(new TYPE("object"), 0)
     params: Array<unknown>,
-  ): Array<unknown> {
-    return [resolvePath(params[1] as string, params[0] as object)];
+  ): unknown {
+    return resolvePath(params[1] as string, params[0] as object);
   }
   /**
    * States whether this {@link JSON_Path } was successfully registered
@@ -44,6 +44,7 @@ export class JSON_Path {
  * Retrieves the {@link Object } at the dotted path "toResolve" from the one to "start" the resolution at.
  *
  * @param toResolve The path leading to the desired {@link Object } from "start".
+ *                  Round brackets "()" may be used without spaces in between to indicate parameterless method calls.
  * @param start     The {@link Object } to start the retrieval from.
  *
  * @returns The requested {@link Object }.
@@ -56,7 +57,10 @@ export function resolvePath(toResolve: string, start: object): any {
   const parts = toResolve.split(".");
 
   return parts.reduce((accumulator, current, index): object => {
-    const result = (accumulator as unknown)[current];
+    const result =
+      current.indexOf("()") === -1
+        ? (accumulator as unknown)[current]
+        : (accumulator as unknown)[current.substring(0, current.indexOf("()"))]();
 
     if ((result === undefined || result === null) && index < parts.length - 1) {
       throw new CodBiError(`Path "${toResolve}" is interrupted by an undefined or null object at ${index}`);

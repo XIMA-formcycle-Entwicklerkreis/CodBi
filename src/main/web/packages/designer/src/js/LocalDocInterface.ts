@@ -29,6 +29,9 @@ export function enableLocalDocInterface(): void {
     // #endregion Determine current language.
     // Initiate if every needed component is fine only...
     if (SVManager.registered && EPManager.registered) {
+      // #region Define Flag for Keystroke blocking
+      let keystrokeBlockingStart: Date | undefined = new Date();
+      // #endregion Define Flag for Keystroke blocking
       // #region Inject <XC-EPManager> & <XC-OptionInput>.
       document.body.insertAdjacentHTML(
         "beforeend",
@@ -54,7 +57,155 @@ export function enableLocalDocInterface(): void {
         Optioninput,
       );
       // #endregion Acquire references to <XC-EPManager> & <XC-OptionInput>.
+      // #region Attach event to set keystroke blocker.
+      epManager.onAutocomplete.push((completedOption: string) => {
+        keystrokeBlockingStart = new Date();
+      });
+      // #endregion Attach event to set keystroke blocker.
       // #region Define handler for the <XC-OptionInput>'s changes in option.
+      optioninput.onAutocomplete.push((completedOption: string) => {
+        if (optioninput.mode === "Functionality Parameter") {
+          if (completedOption.indexOf("/") !== -1) {
+            optioninput.target.value = `data-cb-${completedOption.substring(completedOption.indexOf("/") + 1).trim()}`;
+          } else {
+            optioninput.target.value = completedOption;
+          }
+
+          cDetails.style.display = "none";
+          optioninput.enabled = false;
+
+          const valueColumn = INSTANCE.tsCheck<HTMLElement>(
+            optioninput.target.parentElement.parentElement.querySelector(".r2"),
+            HTMLElement,
+          );
+          // #region Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
+          const blocker = (event: KeyboardEvent) => {
+            const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
+
+            keyboardEvent.preventDefault();
+            keyboardEvent.stopImmediatePropagation();
+            keyboardEvent.stopPropagation();
+
+            setTimeout(() => {
+              document.removeEventListener("keydown", blocker);
+            }, 250);
+          };
+
+          document.addEventListener("keydown", blocker);
+          // #endregion Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
+          valueColumn.click();
+
+          return;
+        }
+
+        if (optioninput.mode === "Global Variable") {
+          if (completedOption.indexOf("[") !== -1) {
+            optioninput.target.value = completedOption.substring(completedOption.indexOf("]") + 1).trim();
+          } else {
+            optioninput.target.value = completedOption;
+          }
+
+          cDetails.style.display = "none";
+          optioninput.enabled = false;
+
+          const valueColumn = INSTANCE.tsCheck<HTMLElement>(
+            optioninput.target.parentElement.parentElement.querySelector(".r4"),
+            HTMLElement,
+          );
+          // #region Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
+          const blocker = (event: KeyboardEvent) => {
+            const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
+
+            keyboardEvent.preventDefault();
+            keyboardEvent.stopImmediatePropagation();
+            keyboardEvent.stopPropagation();
+
+            setTimeout(() => {
+              document.removeEventListener("keydown", blocker);
+            }, 250);
+          };
+
+          document.addEventListener("keydown", blocker);
+          // #endregion Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
+          valueColumn.click();
+
+          return;
+        }
+
+        keystrokeBlockingStart = new Date(new Date().getTime() - 500);
+
+        const r2 = INSTANCE.tsCheck<HTMLElement>(
+          DEFINED.tsCheck<HTMLElement>(
+            DEFINED.tsCheck<HTMLElement>(DEFINED.tsCheck<HTMLElement>(optioninput.target).parentElement).parentElement,
+          ).querySelector(".r2"),
+          HTMLElement,
+        );
+        // #region Create separate observer for the case of autocompletion necessary.
+        const cellObserver = new MutationObserver((mutationsList, observer) => {
+          for (const mutation of mutationsList) {
+            if (mutation.type === "childList") {
+              for (const added of mutation.addedNodes) {
+                let bound = false; // States whether the epManager's target is already bound to this <input>.
+
+                if (added.nodeName === "INPUT") {
+                  added.addEventListener("keydown", (event) => {
+                    const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
+                    if (keyboardEvent.altKey && (keyboardEvent.key === "e" || keyboardEvent.key === "E")) {
+                      // #region Prevent default actions & bubbling.
+                      keyboardEvent.preventDefault();
+                      keyboardEvent.stopImmediatePropagation();
+                      keyboardEvent.stopPropagation();
+                      // #endregion Prevent default actions & bubbling.
+                      epManager.mode = "EP";
+                      // #region Rebuild listing.
+                      INSTANCE.tsCheck<HTMLElement>(
+                        document.querySelector('div[is = "xc-epmanager"]'),
+                        HTMLElement,
+                      ).setAttribute(
+                        "epoptions",
+                        JSON.parse(window.CodbiPluginData.fslElementplaceholder)
+                          .map((file: string) => {
+                            return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+                          })
+                          .join(","),
+                      );
+                      // #endregion Rebuild listing.
+                      // First time load of APIDoc
+                      DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                        "data",
+                        `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
+                      );
+                      // #region Show interface.
+                      epManager.enabled = true;
+                      epManager.enteringEP = true;
+                      cDetails.style.display = "block";
+
+                      updateLayoutEPManager(added as HTMLInputElement);
+                      updateLayoutCDetails(epManager);
+                      // #endregion Show interface.
+                      // #region Bind epManager's target to this <input> evading unnecessary multiple binding.
+                      if (!bound) {
+                        bound = true;
+
+                        epManager.target = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+                      }
+                      // #endregion Bind epManager's target to this <input> evading unnecessary multiple binding.
+                    }
+                  });
+                }
+              }
+            }
+          }
+        });
+        // #region Create separate observer for the case of autocompletion necessary.
+        cellObserver.observe(r2.parentElement.parentElement, {
+          childList: true,
+          subtree: true,
+        });
+
+        r2.click();
+      });
+
       optioninput.onOptionChanged.push((newOption: string) => {
         if (inTag) {
           return;
@@ -102,6 +253,65 @@ export function enableLocalDocInterface(): void {
           ).querySelector(".r2"),
           HTMLElement,
         ).click();
+
+        if (optioninput.target.parentElement === null) {
+          return;
+        }
+
+        const parent = INSTANCE.tsCheck<HTMLElement>(
+          DEFINED.tsCheck<HTMLElement>(
+            DEFINED.tsCheck<HTMLElement>(DEFINED.tsCheck<HTMLElement>(optioninput.target).parentElement).parentElement,
+          ).querySelector(".r2"),
+          HTMLElement,
+        );
+
+        const cell = parent.querySelector("input");
+
+        if (cell === null) {
+          return;
+        }
+
+        let bound = false;
+
+        cell.addEventListener("keydown", (keyboardEvent: KeyboardEvent) => {
+          // #region Prevent default actions & bubbling.
+          keyboardEvent.preventDefault();
+          keyboardEvent.stopImmediatePropagation();
+          keyboardEvent.stopPropagation();
+          // #endregion Prevent default actions & bubbling.
+          epManager.mode = "EP";
+          // #region Rebuild listing.
+
+          epManager.setAttribute(
+            "epoptions",
+            JSON.parse(window.CodbiPluginData.fslElementplaceholder)
+              .map((file: string) => {
+                return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+              })
+              .join(","),
+          );
+          // #endregion Rebuild listing.
+          // First time load of APIDoc
+          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+            "data",
+            `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
+          );
+          // #region Show interface.
+          epManager.enabled = true;
+          epManager.enteringEP = true;
+          cDetails.style.display = "block";
+
+          updateLayoutEPManager(cell);
+          updateLayoutCDetails(epManager);
+          // #endregion Show interface.
+          // #region Bind epManager's target to this <input> evading unnecessary multiple binding.
+          if (!bound) {
+            bound = true;
+
+            epManager.target = INSTANCE.tsCheck<HTMLInputElement>(keyboardEvent.target, HTMLInputElement);
+          }
+          // #endregion Bind epManager's target to this <input> evading unnecessary multiple binding.
+        });
       });
       // #endregion Define handler for the <XC-OptionInput>'s selection.
       // #region Define handler for the <XC-EPManager>'s selection.
@@ -465,6 +675,7 @@ export function enableLocalDocInterface(): void {
                         }
                         // #endregion Global variables listing
                         // #region Configure <XC-OptionInput> to show the globally available variables.
+                        optioninput.mode = "Global Variable";
                         optioninput.options = globalVariables;
                         optioninput.enabled = true;
                         optioninput.target = added;
@@ -633,6 +844,7 @@ export function enableLocalDocInterface(): void {
                             }
                           }
 
+                          optioninput.mode = "CSS-Class";
                           optioninput.options = availableClasses.map(
                             (cssClass) => `${cssClass.standard} / ${cssClass.name}`,
                           );
@@ -672,15 +884,17 @@ export function enableLocalDocInterface(): void {
                           optioninput.enabled = true;
                           optioninput.optionTransformer = undefined;
 
-                          const rectAdded = INSTANCE.tsCheck<HTMLElement>(
-                            added.parentElement,
-                            HTMLElement,
-                          ).getBoundingClientRect();
+                          if (added.parentElement !== null) {
+                            const rectAdded = INSTANCE.tsCheck<HTMLElement>(
+                              added.parentElement,
+                              HTMLElement,
+                            ).getBoundingClientRect();
 
-                          optioninput.style.maxHeight = `${window.innerHeight - Math.ceil(rectAdded.bottom)}px`;
-                          optioninput.style.top = `${Math.ceil(rectAdded.bottom)}px`;
-                          optioninput.style.left = `${Math.ceil(rectAdded.right - optioninput.getBoundingClientRect().width - (window.innerWidth / 100) * 2)}px`;
-                          optioninput.style.maxHeight = `${Math.ceil(window.innerHeight - (window.innerHeight / 100) * 2 - rectAdded.bottom)}px`;
+                            optioninput.style.maxHeight = `${window.innerHeight - Math.ceil(rectAdded.bottom)}px`;
+                            optioninput.style.top = `${Math.ceil(rectAdded.bottom)}px`;
+                            optioninput.style.left = `${Math.ceil(rectAdded.right - optioninput.getBoundingClientRect().width - (window.innerWidth / 100) * 2)}px`;
+                            optioninput.style.maxHeight = `${Math.ceil(window.innerHeight - (window.innerHeight / 100) * 2 - rectAdded.bottom)}px`;
+                          }
 
                           cDetails.style.display = "block";
 
@@ -723,8 +937,21 @@ export function enableLocalDocInterface(): void {
 
                               return;
                             }
+                            // #region Filter the options and end input if only one option is left.
+                            if (optioninput.filter(eventTarget.innerHTML.substring(1)).length === 1) {
+                              possibleTagify.innerHTML = optioninput.currentOption.substring(
+                                optioninput.currentOption.indexOf("/") + 1,
+                              );
 
-                            optioninput.filter(eventTarget.innerHTML.substring(1));
+                              inTag = false;
+                              cDetails.style.display = "none";
+                              optioninput.enabled = false;
+
+                              event.target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+
+                              return;
+                            }
+                            // #endregion Filter the options and end input if only one option is left.
                           }
                         } else {
                           currentCDetailBlurAction = () => {
@@ -877,6 +1104,10 @@ export function enableLocalDocInterface(): void {
                                   functionalityParameter.push(`${functionality} / ${parameter}`);
                                 }
                               }
+                              // If there is no parameter for the selected functionalities, abort showing the interface.
+                              if (functionalityParameter.length === 0) {
+                                return;
+                              }
                               // #endregion Build Parameter-listing according to selected functionalities
                               // #region Reset the <XC-OptionInput>'s option-transformer.
                               optioninput.optionTransformer = (toTransform: string): string => {
@@ -884,6 +1115,7 @@ export function enableLocalDocInterface(): void {
                               };
                               // #endregion Reset the <XC-OptionInput>'s option-transformer.
                               // #region Show the interface.
+                              optioninput.mode = "Functionality Parameter";
                               optioninput.target = added;
                               optioninput.enabled = true;
                               optioninput.options = functionalityParameter;
@@ -917,6 +1149,7 @@ export function enableLocalDocInterface(): void {
                                     ${window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}</div>`;
                               }
                               // #endregion Set initial documentation details.
+                              cDetails.innerHTML = cDetails.innerHTML.replace("undefined", "");
                             }
                           }
                           // #endregion Show listing of available functionality parameter.
@@ -1122,6 +1355,23 @@ export function enableLocalDocInterface(): void {
                   if (addedHTMLElement.classList.contains("slick-row")) {
                     // #region Register each cell of class .r2
                     const cell = INSTANCE.tsCheck<HTMLElement>(addedHTMLElement.querySelector(".r2"), HTMLElement);
+                    // #region Register Keyblocker to block keystrokes for a certain amount of time after a CodBi-Option was selected
+                    cell.addEventListener("keydown", (event) => {
+                      if (event.key !== ",") {
+                        if (
+                          event.key !== "Tab" &&
+                          keystrokeBlockingStart &&
+                          keystrokeBlockingStart.getTime() + 1000 >= new Date().getTime()
+                        ) {
+                          event.preventDefault();
+                          event.stopImmediatePropagation();
+                          event.stopPropagation();
+                        }
+                      } else {
+                        keystrokeBlockingStart = undefined;
+                      }
+                    });
+                    // #endregion Register Keyblocker to block keystrokes for a certain amount of time after a CodBi-Option was selected
                     // #region  Blends in the CodBi-Interface even when not clicked on another cell before.
                     //          A new <input> is then created when the current one looses focus without another cell
                     //          having been clicked.

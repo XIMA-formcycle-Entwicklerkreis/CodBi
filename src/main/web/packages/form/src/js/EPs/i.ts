@@ -31,7 +31,7 @@ export class I {
       throw new CodBiError(`The second parameter of I must be an array but is of type ${typeof params[1]}.`);
     }
 
-    return params[1][Number.parseInt(params[0])];
+    return params[1][Number.parseInt(params[0].trim())];
   }
   /**
    * States whether this {@link I } was successfully registered via {@link CodbiGlobal.registerEP } with the CodBi and

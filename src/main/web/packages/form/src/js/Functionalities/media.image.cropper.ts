@@ -80,16 +80,12 @@ export class Media_Image_Cropper {
           );
           newImage.setAttribute("data-name", "CodBi_Media_Imagecropper_Bild");
           container.appendChild(newImage);
-
+          // #region Calculate aspect ration, if provided
           const aspectRatio: number | undefined =
-            toLoad.aspectratio &&
-            typeof toLoad.aspectratio === "string" &&
-            toLoad.aspectratio.indexOf("/") !== -1 &&
-            toLoad.aspectratio.indexOf("/") !== toLoad.aspectratio.length - 1 &&
-            toLoad.aspectratio.length >= 3
-              ? // biome-ignore lint/security/noGlobalEval: <explanation>
-                eval(toLoad.aspectratio as string)
+            toLoad.aspectratio && typeof toLoad.aspectratio === "string" && toLoad.aspectratio.indexOf("/") !== -1
+              ? divide(toLoad.aspectratio as string)
               : undefined;
+          // #endregion Calculate aspect ration, if provided
           const rectContainer = newImage.getBoundingClientRect();
 
           cropper = new Cropper(newImage, {
@@ -143,8 +139,8 @@ export class Media_Image_Cropper {
       updater.addEventListener("click", (event: Event): undefined => {
         if (cropper && toLoad.target && typeof (toLoad.target === "string")) {
           const target = toProcess.parentElement.querySelector(toLoad.target as string);
-          const canvas = cropper.getCropperCanvas();
-          console.log("V:", target, updater, container);
+          const canvas = cropper.getCropperSelection();
+
           if (canvas) {
             canvas
               .$toCanvas({
@@ -169,3 +165,34 @@ export class Media_Image_Cropper {
   })();
   // #endregion Initialization
 }
+// #region Helper
+const divide = (divisionString): number => {
+  try {
+    const parts = divisionString.split(/\s*\/\s*/);
+
+    if (parts.length !== 2) {
+      throw new Error("Input format is incorrect. Expected 'number / number'.");
+    }
+
+    const numerator = Number.parseFloat(parts[0]);
+    const denominator = Number.parseFloat(parts[1]);
+
+    if (
+      Number.isNaN(numerator) ||
+      Number.isNaN(denominator) ||
+      !Number.isFinite(numerator) ||
+      !Number.isFinite(denominator)
+    ) {
+      throw new Error("The numerator or denominator is not a valid number.");
+    }
+
+    if (denominator === 0) {
+      throw new Error("Cannot divide by zero.");
+    }
+
+    return numerator / denominator;
+  } catch (X) {
+    throw new CodBiError(`Error: ${(X as Error).message}`);
+  }
+};
+// #endregion Helper

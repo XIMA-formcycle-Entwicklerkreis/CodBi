@@ -36,9 +36,10 @@ export class OnChange_Conditional {
    *                given "condition" is fulfilled or not or a CSS-Selector.
    *                To work in a repetitive container a CSS-Selector is mandatory since the functionality performs the
    *                query relative to the tagged {@link HTMLInputElement }.
-   *  - DateFormat: A {@link string } specifying the format the candidate is of. If this parameter isn't undefined
+   *  - DateFormat: A optional {@link string } specifying the format the candidate is of. If this parameter isn't undefined
    *                it triggers value of the tagged field transformation into a {@link Date } prior to compare it with
-   *                the reference.
+   *                the reference. If not specified the format is assumed to be MM/DD/YYYY or a format parsable by the
+   *                {@link Date } constructor.
    *  - Candidate:  The {@link Element } where to get the value to be compared or a CSS-Selector.
    *                To work in a repetitive container a CSS-Selector is mandatory since the functionality performs the
    *                query relative to the tagged {@link HTMLInputElement }.
@@ -74,7 +75,7 @@ export class OnChange_Conditional {
         ? formatDate(toLoad.dateformat as string, (toLoad.candidate as HTMLInputElement).value as string)
         : new Date((toLoad.candidate as HTMLInputElement).value);
 
-      if (candidate === "Invalid date") {
+      if (candidate === "Invalid Date") {
         throw new CodBiError(
           `The tagged element's value (${(toProcess as HTMLInputElement).value}) could not be converted to the requested "format (${toLoad.formatDate})".`,
         );
@@ -83,7 +84,6 @@ export class OnChange_Conditional {
       if (Array.isArray(toLoad.reference)) {
         toLoad.reference = (toLoad.reference as Array<unknown>)[0];
       }
-
       // #endregion Define candidate & reference.
       switch ((toLoad.mode as string).toLowerCase()) {
         case "gteq":
@@ -176,89 +176,65 @@ export class OnChange_Conditional {
  * @param format      A {@link string } like DD.MM.YYYY.
  * @param dateString  The {@link string  to convert to a {@link Date }.
  *
- * @returns The request {@link Date } ir "Invalid Date".
- */
+ * @returns The request {@link Date } ir "Invalid Date". */
 function formatDate(format: string, dateString: string): Date | string {
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) {
-    return "Invalid Date"; // Handle invalid date strings
+  interface DateParts {
+    y?: number;
+    m?: number;
+    d?: number;
+    h?: number;
+    min?: number;
+    s?: number;
   }
 
-  const replacements: { [key: string]: (date: Date) => string } = {
-    YYYY: (date) => date.getFullYear().toString(),
-    YY: (date) => date.getFullYear().toString().slice(-2),
-    // biome-ignore lint/style/useTemplate: KI Code
-    MM: (date) => ("0" + (date.getMonth() + 1)).slice(-2),
-    M: (date) => (date.getMonth() + 1).toString(),
-    // biome-ignore lint/style/useTemplate: KI Code
-    DD: (date) => ("0" + date.getDate()).slice(-2),
-    D: (date) => date.getDate().toString(),
-    // biome-ignore lint/style/useTemplate: KI Code
-    HH: (date) => ("0" + date.getHours()).slice(-2),
-    H: (date) => date.getHours().toString(),
-    hh: (date) => {
-      const hour = date.getHours() % 12;
-      // biome-ignore lint/style/useTemplate: KI Code
-      return ("0" + (hour === 0 ? 12 : hour)).slice(-2);
-    },
-    h: (date) => {
-      const hour = date.getHours() % 12;
-      return (hour === 0 ? 12 : hour).toString();
-    },
-    // biome-ignore lint/style/useTemplate: KI Code
-    mm: (date) => ("0" + date.getMinutes()).slice(-2),
-    m: (date) => date.getMinutes().toString(),
-    // biome-ignore lint/style/useTemplate: KI Code
-    ss: (date) => ("0" + date.getSeconds()).slice(-2),
-    s: (date) => date.getSeconds().toString(),
-    fff: (date) => {
-      const ms = date.getMilliseconds();
-      // biome-ignore lint/style/useTemplate: KI Code
-      return ms < 10 ? "00" + ms : ms < 100 ? "0" + ms : ms.toString();
-    },
-    ff: (date) => {
-      const ms = date.getMilliseconds();
-      return (ms < 100 ? "0" : "") + Math.floor(ms / 10).toString();
-    },
-    f: (date) => Math.floor(date.getMilliseconds() / 100).toString(),
-    a: (date) => (date.getHours() < 12 ? "am" : "pm"),
-    A: (date) => (date.getHours() < 12 ? "AM" : "PM"),
-  };
+  const parts: DateParts = {};
 
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const day = date.getDate();
-  const hours = date.getHours();
-  const minutes = date.getMinutes();
-  const seconds = date.getSeconds();
-  const milliseconds = date.getMilliseconds();
+  const formatRegex = /([DMYHMSdms]{1,4})/g;
 
-  const formatReplacements: { [key: string]: string } = {};
+  const formatTokens: RegExpMatchArray | null = format.match(formatRegex);
+  const dateValues: string[] = dateString.split(/\D/).filter((v) => v.length > 0);
 
-  for (const key in replacements) {
-    // biome-ignore lint/style/noNonNullAssertion: KI Code
-    const value = replacements[key]!(date);
-    formatReplacements[key] = value;
+  if (!formatTokens || formatTokens.length !== dateValues.length) {
+    console.error("Error: The format string and date string do not have a matching number of components.");
+    return null;
   }
 
-  let formattedDate = format;
-  for (const key in formatReplacements) {
-    // biome-ignore lint/style/noNonNullAssertion: KI Code
-    formattedDate = formattedDate.replace(new RegExp(key, "g"), formatReplacements[key]!);
-  }
-  const hasTime =
-    format.includes("HH") ||
-    format.includes("hh") ||
-    format.includes("mm") ||
-    format.includes("ss") ||
-    format.includes("fff") ||
-    format.includes("ff") ||
-    format.includes("f");
+  for (let i = 0; i < formatTokens.length; i++) {
+    const token: string = formatTokens[i];
+    const value: number = Number.parseInt(dateValues[i], 10);
 
-  if (hasTime) {
-    return new Date(year, month, day, hours, minutes, seconds, milliseconds);
-  } else {
-    return new Date(year, month, day);
+    switch (token.charAt(0).toLowerCase()) {
+      case "d":
+        parts.d = value;
+        break;
+      case "y":
+        parts.y = value;
+        break;
+      case "h":
+        parts.h = value;
+        break;
+      case "s":
+        parts.s = value;
+        break;
+      case "m":
+        if (!parts.m && i < 2) {
+          parts.m = value;
+        } else {
+          parts.min = value;
+        }
+        break;
+      default:
+        break;
+    }
   }
+
+  const year: number = parts.y || 0;
+  const monthIndex: number = (parts.m || 1) - 1;
+  const day: number = parts.d || 1;
+  const hour: number = parts.h || 0;
+  const minute: number = parts.min || 0;
+  const second: number = parts.s || 0;
+
+  return new Date(year, monthIndex, day, hour, minute, second);
 }
 // #endregion Tools

@@ -12,6 +12,7 @@ import de.xima.fc.interfaces.plugin.retval.form.IPluginFormResourceDescriptor
 import de.xima.fc.plugin.interfaces.IFCRemoteSyncPlugin
 import de.xima.fc.plugin.interfaces.form.IPluginFormResources
 import de.xima.fc.plugin.models.retval.form.DefaultPluginFormResourceDescriptor
+import de.xima.fc.workflow.ByteArrayResourceDescriptor
 import de.xima.fc.workflow.UrlResourceDescriptor
 import java.io.IOException // Neu: Für IOException
 import java.net.URI
@@ -60,6 +61,10 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
         else System.currentTimeMillis().toString()
     val dynamicResources =
         mapOf(
+                "MatomoSettings.js" to
+                    createMatomoJsDescriptor(
+                        initData?.properties?.getProperty("Matomo_SiteID").toString(),
+                        initData?.properties?.getProperty("Matomo_URL").toString()),
                 formResourceDescriptor("codbi.js", RESOURCE_PATH_CODBI_SCRIPT, version),
                 formResourceDescriptor("codbi.css", RESOURCE_PATH_CODBI_CSS, version),
                 formResourceDescriptor(
@@ -133,7 +138,14 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
   override fun getResources(
       params: IPluginFormResourcesParams?
   ): Map<String, IPluginFormResourceDescriptor> {
-    return formResources
+    val matomoSiteId = "10"
+    val matomoUrl = "https://analytics.example.com/"
+
+    // 2. Generate the dynamic resource descriptor for the Matomo settings variable
+    val matomoSettingsDescriptor = createMatomoJsDescriptor(matomoSiteId, matomoUrl)
+    return formResources +
+        ("MatomoSetting.js" to
+            matomoSettingsDescriptor /*createSiteIdJsDescriptor(params?.javaClass?.getResource("Matomo_SiteID").toString(),params?.javaClass?.getResource("Matomo_URL").toString())*/)
   }
 
   /**
@@ -175,6 +187,33 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
             .includeInForm(false)
             .build()
     return name to descriptor
+  }
+
+  /**
+   * Creates a dynamic JS-Resource that writes the Matomo-Settings within the Plugin-Config
+   * (**Matomo_SiteID** & **Matomo_URL**) into **window.codbi.Matomo.SiteID & -URL**.
+   *
+   * @param siteID The Matomo Site-ID to use for tracking.
+   * @param url The URL to use for tracking.
+   * @return The appropriate [IPluginFormResourceDescriptor].
+   */
+  private fun createMatomoJsDescriptor(siteID: String, url: String): IPluginFormResourceDescriptor {
+    val safeSiteIdValue = siteID.replace("\"", "\\\"")
+    val safeURLValue = url.replace("\"", "\\\"")
+    val jsContent =
+        "window.codbiSettings = window.codbiSettings || {}; window.codbiSettings.Matomo = window.codbiSettings.Matomo || {}; window.codbiSettings.Matomo.SiteID = \"${safeSiteIdValue}\"; window.codbiSettings.Matomo.URL = \"${safeURLValue}\";"
+    val resource =
+        ByteArrayResourceDescriptor(
+            URI("plugin:${PLUGIN_FORM_RESOURCES_ID}/MatomoSettings.js?v=dynamic"),
+            jsContent.toByteArray(UTF_8),
+            UTF_8)
+
+    return DefaultPluginFormResourceDescriptor.builder()
+        .fileName("MatomoSettings.js")
+        .mimeType("text/javascript")
+        .resource(resource)
+        .includeInForm(true)
+        .build()
   }
 
   /**

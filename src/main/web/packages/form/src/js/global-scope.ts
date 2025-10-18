@@ -1,4 +1,4 @@
-import { getJQuery } from "@de-xima/fc-form-renderer";
+import { getJQuery, type IXUtilOnAddRowData } from "@de-xima/fc-form-renderer";
 import { CodBiLogo } from "./Logo";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
@@ -39,6 +39,16 @@ export interface CodbiGlobal {
   /** States whether {@link CodbiGlobal.checkAttributes } shall be invoked automatically or not. */
   autoCheckAttributes: boolean;
 }
+/** Defines a contract for objects representing a **CodBi-Configuration**. */
+export interface CodbiSettings {
+  /** The configuration regarding **Matomo**-Tracking. */
+  Matomo: {
+    /** The SiteID for tracking. */
+    SiteID: string;
+    /** The URL to report to. */
+    URL: string;
+  };
+}
 /**
  * The configuration template for the form, as configured by the user in the
  * form designer. */
@@ -57,10 +67,34 @@ declare global {
      * used when it is absolutely necessary to expose symbols externally.
      * Use ESM imports otherwise. */
     codbi: CodbiGlobal;
+    /** The current {@link CodbiSettings }. */
+    codbiSettings: CodbiSettings;
   }
 }
 /** Implements the management functionality. */
 export class CodBi implements CodbiGlobal {
+  // #region Attributes
+  /**
+   * Transfer all CodBi-Attributes (**data-cb**) that're existent on the {@link HTMLElement } to copy **from** to the
+   * one to copy **to**.
+   *
+   * @param from The {@link HTMLElement } to transfer from.
+   * @param from The {@link HTMLElement } to transfer to. */
+  protected copyCBAttributes(from: HTMLElement, to: HTMLElement): void {
+    // #region Transfer attributes.
+    for (const candidate of from.attributes) {
+      // #region Prevent overriding of attributes...
+      if (to.hasAttribute(candidate.name)) {
+        continue;
+      }
+      // #endregion Prevent overriding of attributes...
+      if (candidate.name.indexOf("data-cb-") !== -1 && candidate.name !== "data-cb-checked") {
+        to.setAttribute(candidate.name, candidate.value);
+      }
+    }
+    // #endregion Transfer attributes.
+  }
+  // #endregion Attributes
   /** See {@link CodbiGlobal.autoCheckAttributes }. */
   public autoCheckAttributes: boolean = false;
   /**
@@ -1415,9 +1449,26 @@ export class CodBi implements CodbiGlobal {
 
     document.head.appendChild(style);
     // #endregion Inject style for elements that're currently being processed.
-    getJQuery()("FORM.xm-form").on("addRow", (c, data) => {
+    getJQuery().xutil.on("addRow", (params: IXUtilOnAddRowData) => {
+      const addedRow = params.container["0"].getAttribute("data-dynamic-row");
       // If added Element is not the first one...
-      if (data.container["0"].getAttribute("data-dynamic-row") !== "0") {
+      if (addedRow !== "0") {
+        const newContainerID = params.container["0"].getAttribute("id");
+        const codbiElements = document
+          .querySelector(`#${newContainerID.substring(0, newContainerID.length - addedRow.length)}0`)
+          .querySelectorAll("[ data-cb-func ]");
+        // If the original row contained CodBi-Elements...
+        if (codbiElements.length !== 0) {
+          // #region Transfer CodBi-Attributes to cloned object.
+          for (const toClone of codbiElements) {
+            this.copyCBAttributes(
+              toClone as HTMLElement,
+              params.container["0"].querySelector(`[ data-org-id = "${toClone.getAttribute("data-org-id")}"]`),
+            );
+          }
+          // #endregion Transfer CodBi-Attributes to cloned object.
+        }
+
         this.checkAttributes();
       }
     });

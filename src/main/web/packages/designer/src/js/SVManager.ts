@@ -539,6 +539,7 @@ export class SVManager extends HTMLDivElement {
             ".---WaXCode.--SVManager.--Option.-Current",
             DEFINED.tsCheck<ShadowRoot>(this.shadowRoot),
           )?.dataset.cbOption;
+
           handler(cbOption ?? "");
         }
 

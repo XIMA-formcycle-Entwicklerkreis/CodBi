@@ -1,9 +1,9 @@
 {
   "Description": "/classes/Functionalities_html.select.favorites.HTML_Select_Favorites.html#functionality",
   "Parameter": {
-    "DividerTarget": {},
-    "InitialElement": {},
-    "Favorites": {},
-    "Divider": {}
+    "DividerTarget": "",
+    "InitialElement": "",
+    "Favorites": "",
+    "Divider": ""
   }
 }

@@ -39,6 +39,7 @@
 
   // #region TreeView
   // #region Nodeoptions
+  .--CB-LocalAPIDoc-AddTreeItem,
   .--CB-LocalAPIDoc-RemoveTreeItem,
   .--CB-LocalAPIDoc-ExportTreeItem,
   .--CB-LocalAPIDoc-RenameTreeItem,
@@ -53,6 +54,7 @@
     pointer-events: none;
   }
 
+  .--CB-LocalAPIDoc-AddTreeItem:hover,
   .--CB-LocalAPIDoc-RemoveTreeItem:hover,
   .--CB-LocalAPIDoc-ExportTreeItem:hover,
   .--CB-LocalAPIDoc-RenameTreeItem:hover,
@@ -61,12 +63,19 @@
     text-shadow: 0 0 .1em darkorange;
   }
 
+  .--CB-LocalAPIDoc-AddTreeItem:active,
   .--CB-LocalAPIDoc-RemoveTreeItem:active,
   .--CB-LocalAPIDoc-ExportTreeItem:active,
   .--CB-LocalAPIDoc-RenameTreeItem:active,
   .--CB-LocalAPIDoc-UploadCodeTreeItem:active {
     color: green;
     scale: 0;
+  }
+
+  .--CB-LocalAPIDoc-AddTreeItem::after {
+    content: "\e90e";
+    font-family: 'primeicons';
+    cursor: pointer;
   }
 
   .--CB-LocalAPIDoc-RemoveTreeItem::after {
@@ -612,6 +621,7 @@
       box-shadow: -.5em 0 .5em red;
     }
 
+    p-treenode:hover .--CB-LocalAPIDoc-AddTreeItem,
     p-treenode:hover .--CB-LocalAPIDoc-RemoveTreeItem,
     p-treenode:hover .--CB-LocalAPIDoc-ExportTreeItem,
     p-treenode:hover .--CB-LocalAPIDoc-RenameTreeItem,
@@ -685,6 +695,11 @@
     left: 10%;
     animation: kfFadeIN_CodBi_LocalAPIDoc_Functionalities_Description_Taken .5s ease-in forwards;
   }
+}
+
+#CodBi_LocalAPIDoc.--synchronizing {
+  pointer-events: none;
+  opacity: .5;
 }
 
 #CodBi_LocalAPIDoc.-submerged {

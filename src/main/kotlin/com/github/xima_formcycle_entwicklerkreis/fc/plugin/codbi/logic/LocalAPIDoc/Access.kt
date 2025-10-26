@@ -18,9 +18,11 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.nio.charset.StandardCharsets
+import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
+import kotlin.io.path.moveTo
 import org.slf4j.LoggerFactory
 
 /**
@@ -86,6 +88,15 @@ class StructuredDataStoreAction : IPluginServletAction {
     servletResponse.encoding = StandardCharsets.UTF_8.name()
 
     when (mode?.uppercase()) {
+      "RENAME CODE" -> {
+        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).error("Renaming start.")
+        renameCodeFile(
+            params.headerMap["X-ActionDetail"],
+            params.headerMap["X-Element"]?.lowercase(),
+            params.headerMap["X-NewElement"]?.lowercase())
+        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).error("Renaming end.")
+      }
+
       "UPDATE CODE" -> {
         val toWrite = params.requestParameters["ToWrite"]?.first()
         val detail = params.headerMap["X-ActionDetail"]
@@ -164,6 +175,7 @@ class StructuredDataStoreAction : IPluginServletAction {
               "{\"result\": \"${ code.replace("\"","<|>").replace("\r","").replace("\n","").replace("\t","")}\"}"
         }
       }
+
       "RETRIEVE" -> {
         loadDataFromFile()
 
@@ -267,7 +279,7 @@ class StructuredDataStoreAction : IPluginServletAction {
    * @param functionality The path an name of the local functionality to retrieved the code for.
    * @return The [java.io.File] pointing to the specified functionality's code.
    */
-  private fun getPluginCodeFile(element: String, detail: String): File? {
+  private fun getPluginCodeFile(element: String?, detail: String?): File? {
     val pluginDir: File? = fileHelper?.pluginFolder
 
     if (pluginDir == null) {
@@ -326,6 +338,34 @@ class StructuredDataStoreAction : IPluginServletAction {
 
         documentation = ""
       }
+    }
+  }
+
+  /**
+   * Renames the specified CodBi-Element-Code at file level.
+   *
+   * @param element The name of the CodBi-Element (e.g. demo.apidoc.ep).
+   * @param detail The type of CodBi-Element (e.g. Functionality, Elementplaceholder, Standard.
+   */
+  private fun renameCodeFile(element: String?, detail: String?, newElementname: String?) {
+    try {
+      val oldPath: Path? = getPluginCodeFile(detail, element)?.toPath()
+      val newPath: Path? = oldPath?.resolveSibling(element + "_" + newElementname + ".js")
+
+      if (newPath !== null) oldPath.moveTo(newPath)
+      else {
+        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+            .error(
+                "[[ CodBi ] Trying to rename Code-File but new path \"" +
+                    oldPath?.resolveSibling(element + "_" + newElementname + ".js") +
+                    "\" could not be create from old path \"" +
+                    oldPath +
+                    "\".]")
+      }
+    } catch (X: Exception) {
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error(
+              "[[ CodBi ] Trying to rename Code-File but following exception occurred: \"${ X.toString() }\".]")
     }
   }
 

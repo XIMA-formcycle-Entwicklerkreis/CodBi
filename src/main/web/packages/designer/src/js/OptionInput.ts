@@ -365,7 +365,7 @@ export class Optioninput extends HTMLDivElement {
       // #region Add functionality
       // If caret is at the end of the <input>...
       if (target.selectionStart === 0) {
-        target.value = `${option}${target.value.length === 0 ? "" : ","}`;
+        target.value = `${option.trim()}${target.value.length === 0 ? "" : ","}`;
       } else {
         if (target.selectionStart !== null) {
           // #region Determine indices for replacement
@@ -378,8 +378,10 @@ export class Optioninput extends HTMLDivElement {
           // #endregion Determine indices for replacement
           // #region Replace properly leaving the [separator] untouched
           target.value = target.value.replace(
-            target.value.substring(segmentStart + (target.value[segmentStart] === this.separator ? +1 : 0), segmentEnd),
-            `${option},`,
+            target.value
+              .trim()
+              .substring(segmentStart + (target.value[segmentStart] === this.separator ? +1 : 0), segmentEnd),
+            `${option.trim()},`,
           );
           // #endregion Replace properly leaving the [separator] untouched
           target.setSelectionRange(segmentEnd, segmentEnd);
@@ -389,7 +391,7 @@ export class Optioninput extends HTMLDivElement {
       // #endregion Add functionality
     } else {
       // #region Remove functionality
-      const targetValue = target.value;
+      const targetValue = target.value.trim();
 
       target.value = targetValue
         .toUpperCase()
@@ -457,7 +459,7 @@ export class Optioninput extends HTMLDivElement {
     let current = previousElementSibling(shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current"));
 
     while (current != null && current.style.display === "none") {
-      current = previousElementSibling(current.previousElementSibling);
+      current = previousElementSibling(current);
     }
 
     if (current === null || !current.hasAttribute("part")) {
@@ -481,15 +483,15 @@ export class Optioninput extends HTMLDivElement {
 
     let current = nextElementSibling(shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current"));
 
-    while (current != null && current.style.display === "none") {
-      current = nextElementSibling(current.nextElementSibling);
+    while (current !== null && current.style.display === "none") {
+      current = nextElementSibling(current);
     }
 
     if (current === null) {
       current = shadow.querySelector(".---WaXCode.--Optioninput.--Option");
 
-      while (current != null && current.style.display === "none") {
-        current = nextElementSibling(current.nextElementSibling);
+      while (current !== null && current.style.display === "none") {
+        current = nextElementSibling(current);
       }
     }
 
@@ -529,6 +531,7 @@ export class Optioninput extends HTMLDivElement {
               HTMLDivElement,
             ),
           );
+
           const targetOption = DEFINED.tsCheck<HTMLElement>(
             event.key === "ArrowDown" ? this.nextVisibleOption : this.previousVisibleOption,
           );
@@ -569,14 +572,14 @@ export class Optioninput extends HTMLDivElement {
           );
 
           DEFINED.tsCheck<HTMLInputElement>(this.target).value = this._targetOptionTransformer
-            ? this._targetOptionTransformer(currentOption)
+            ? this._targetOptionTransformer(currentOption).trim()
             : DEFINED.tsCheck<string>(
                 DEFINED.tsCheck<HTMLDivElement>(
                   INSTANCE.tsCheck<HTMLDivElement>(
                     byCssHtml(".---WaXCode.--Optioninput.--Option.-Current", shadow),
                     HTMLDivElement,
                   ),
-                ).dataset.cbOption,
+                ).dataset.cbOption?.trim(),
               );
 
           for (const handler of this.onOptionSelected) {
@@ -628,7 +631,7 @@ export class Optioninput extends HTMLDivElement {
       this.lastKey !== "Delete" &&
       remainingOptions.length === 1
     ) {
-      eventTarget.value = remainingOptions[0] ?? "";
+      eventTarget.value = remainingOptions[0].trim() ?? "";
 
       for (const handler of this.onOptionChanged) {
         handler(remainingOptions[0] ?? "");
@@ -648,6 +651,7 @@ export class Optioninput extends HTMLDivElement {
    *
    * @returns The remaining options. */
   public filter(filter: string): Array<string> {
+    const cleanFilter = filter.replace("<br>", "");
     const hits = new Array<string>();
     const options = allByCssAs(".---WaXCode.--Optioninput.--Option", HTMLDivElement, this.shadowRoot ?? undefined);
 
@@ -655,13 +659,14 @@ export class Optioninput extends HTMLDivElement {
 
     for (const option of options) {
       const cbOption = option.dataset.cbOption ?? "";
-      if (cbOption.toLowerCase().indexOf(filter.toLowerCase()) === -1) {
+      if (cbOption.toLowerCase().indexOf(cleanFilter.toLowerCase()) === -1) {
         option.style.display = "none";
       } else {
         if (firstVisible === undefined) {
           firstVisible = option;
         }
         hits.push(cbOption);
+
         option.style.display = "flex";
       }
 
@@ -697,6 +702,7 @@ export class Optioninput extends HTMLDivElement {
  */
 function nextElementSibling(element: Element | null | undefined): HTMLElement | null {
   const sibling = element?.nextElementSibling;
+
   return sibling instanceof HTMLElement ? sibling : null;
 }
 

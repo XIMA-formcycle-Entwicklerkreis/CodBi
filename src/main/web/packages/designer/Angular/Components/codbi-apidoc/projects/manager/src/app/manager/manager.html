@@ -1,4 +1,6 @@
-<div    id      = 'CodBi_LocalAPIDoc' #CodBi_LocalAPIDoc >
+<div    id      = 'CodBi_LocalAPIDoc' #CodBi_LocalAPIDoc
+
+        [class.--synchronizing] = "synchronizing">
     <p-splitter id = "Splitter"
                 [panelSizes]    = "[25, 75]"
                 [minSizes]      = "[20, 50]"
@@ -66,17 +68,23 @@
                                                 [attr.title] = "'TreeView.Label.Status.Code' | transloco"></div></div></div><div>
 
                                 <div id = "CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent" #CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent >
-                                    <p>"{{ alreadyTakenName }}"{{"Input.Hint.AlreadyExistent" | transloco }}</p></div>
+                                    <p>{{"Input.Hint.AlreadyExistent_Node" | transloco }}</p></div>
 
-                                <button class = "--CB-LocalAPIDoc-RenameTreeItem"
+                                    <button class = "--CB-LocalAPIDoc-RenameTreeItem"
 
-                                        (click) = "onRenameNode( $event );
+                                            (click) = "onRenameNode( $event );
 
-                                                   formerInput_CodBi_LocalAPIDoc_New_Name_Original = formerInput_CodBi_LocalAPIDoc_New_Name = node.label ;"></button></div>
+                                                    formerInput_CodBi_LocalAPIDoc_New_Name_Original = formerInput_CodBi_LocalAPIDoc_New_Name = node.label ;"></button></div>
 
-                                <div><button class = "--CB-LocalAPIDoc-ExportTreeItem"
+                                <div>
+                                    <button class = "--CB-LocalAPIDoc-AddTreeItem"
 
-                                        (click) = "onExportNode( $event )"></button></div>
+                                            (click) = "onAddNode( $event )"></button></div>
+
+                                <div>
+                                    <button class = "--CB-LocalAPIDoc-ExportTreeItem"
+
+                                            (click) = "onExportNode( $event )"></button></div>
 
                                 <div id = "CodBi_LocalAPIDoc_Tree_Label_Remove">
                                     <button class = "--CB-LocalAPIDoc-RemoveTreeItem"

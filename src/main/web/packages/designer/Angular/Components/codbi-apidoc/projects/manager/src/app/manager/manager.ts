@@ -33,7 +33,7 @@ import { CommonModule } from "@angular/common";
 import { Injectable } from "@angular/core";
 // #endregion Angular
 // #region PrimeNG
-import { TreeModule } from "primeng/tree";
+import { Tree, TreeModule } from "primeng/tree";
 import { TabsModule } from "primeng/tabs";
 import { SplitterModule } from "primeng/splitter";
 import { AccordionModule } from "primeng/accordion";
@@ -50,7 +50,7 @@ import { TranslocoService } from "@ngneat/transloco";
 import { TranslocoPipe, TranslocoModule } from "@ngneat/transloco";
 // #endregion Transloco
 // #region ZOD
-import { json, z } from "zod";
+import { json, set, z } from "zod";
 // #endregion ZOD
 // #region XDBC
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
@@ -138,11 +138,11 @@ interface APIDocJSON {
   /** Stores incoming API-Doc-Data in a way that is more appropriate for JSON.*/
   docsAPI?: string[];
   /** The files containing the actual code for CodBi Standard-Configurations. */
-  fileListing?: string[];
+  fileListing?: string;
   /** The files containing the actual code for CodBi Elementplaceholder. */
-  fslElementplaceholder?: string[];
+  fslElementplaceholder?: string;
   /** The files containing the actual code for CodBi Functionalities. */
-  fslFunctionalities?: string[];
+  fslFunctionalities?: string;
 }
 /** Defines a contract for local API-Docs that may be merged with others. */
 interface APIDoc_MergeableTreeNode {
@@ -155,13 +155,13 @@ interface APIDoc_MergeableTreeNode {
   /** Stores incoming API-Doc-Data in a way that is more appropriate for JSON.*/
   docsAPI?: TreeNode[];
   /** The files containing the actual code for CodBi Standard-Configurations. */
-  fileListing?: TreeNode[];
+  fileListing?: string[];
   /** The files containing the actual code for CodBi Elementplaceholder. */
-  fslElementplaceholder?: TreeNode[];
+  fslElementplaceholder?: string[];
   /** The files containing the actual CodBi Functionalitie's code. */
-  fslFunctionalities?: TreeNode[];
+  fslFunctionalities?: string[];
   /** Further top-level {@link TreeNode }s. */
-  [key: string]: TreeNode[] | undefined;
+  [key: string]: TreeNode[] | string[] | undefined;
 }
 /** A contract for {@link object }s describing a CodBi-Functionality, -Elementplaceholder or -Standard Configuration.*/
 interface SimplifiedNamedItem {
@@ -391,6 +391,48 @@ export class Manager implements AfterViewInit {
     return current;
   }
   // #endregion Checks
+  // #region Adding Nodes
+  /**
+   * Adds a new node to the {@link Manager.currentlySelectedTreeNode }'s {@link TreeNode.children }.
+   *
+   * @param event The {@link Event } received. */
+  protected onAddNode(event: Event) {
+    INSTANCE.tsCheck<HTMLElement>(
+      event.target,
+      HTMLElement,
+    ).parentElement.parentElement.parentElement.parentElement.parentElement.click();
+
+    const newLabel = this.translocoService.translate("Add.NewNode");
+
+    let newIndex = 0;
+    // #region Determine current new node index.
+    for (const child of this.currentlySelectedTreeNode.children) {
+      if (child.label.indexOf(newLabel) !== -1) {
+        const childIndex = Number.parseInt(child.label.replace(newLabel, ""));
+
+        if (childIndex > newIndex) {
+          newIndex = childIndex;
+        }
+      }
+    }
+    // #endregion Determine current new node index.
+    this.currentlySelectedTreeNode.children.push({
+      label: `${newLabel}${newIndex + 1}`,
+      data: {
+        label: `${newLabel}${newIndex + 1}`,
+        Description: "",
+        globals: [],
+        classes: [],
+        Parameter: [],
+        Notes: this.translocoService.translate("RP.Notes.NewCreation"),
+      },
+      children: [],
+    });
+
+    this.currentlySelectedTreeNode.expanded = true;
+
+    this.cdr.markForCheck();
+  }
   /**
    * Removes any dots at the end of the input value of {@link Manager.CodBi_LocalAPIDoc_New_Name } prior to adding
    * the new element to the tree of the currently {@link Manager.activeTab }.
@@ -407,9 +449,7 @@ export class Manager implements AfterViewInit {
     }
     // #endregion Remove trailing dot.
     // #region Check against CodBi Data.
-    const lowercaseInputControlValue = inputControl.value.toLowerCase();
-
-    if (this.isNameTaken(lowercaseInputControlValue)) {
+    if (this.isNameTaken(inputControl.value)) {
       this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent.nativeElement.style.display = "block";
 
       return;
@@ -452,6 +492,7 @@ export class Manager implements AfterViewInit {
   // #region Removal
   /** */
   @ViewChild("CodBi_LocalAPIDoc_Tree_Label_Remove_Question") CodBi_LocalAPIDoc_Tree_Label_Remove_Question!: ElementRef;
+  // #endregion Adding Nodes
   /**
    *
    * @param nodes
@@ -496,6 +537,12 @@ export class Manager implements AfterViewInit {
   // #region Code Deletion
   /** Stores the CodBi-Elements that were removed since the last {@link Manager.enSync }. */
   protected removedElements: Array<{ type: "Functionality" | "Elementplaceholder" | "Standard"; path: string }> = [];
+  /** Stores the CodBi-Elements that were renamed since the last {@link Manager.enSync }. */
+  protected renamedElements: Array<{
+    type: "Functionality" | "Elementplaceholder" | "Standard";
+    oldPath: string;
+    newPath: string;
+  }> = [];
   // #endregion Code Deletion
   /**
    * Handles the event when the user confirms the deletion of a node.
@@ -610,7 +657,7 @@ export class Manager implements AfterViewInit {
         break;
     }
     // #region Remove corresponding code from server.
-    for (const path of this.getTreePaths([this.currentlySelectedTreeNode])) {
+    for (const path of this.getTreePaths([this.currentlySelectedTreeNode], true)) {
       this.removedElements.push({ type: this.activeTab, path: path });
     }
     // #endregion Remove corresponding code from server.
@@ -694,6 +741,52 @@ export class Manager implements AfterViewInit {
   }
   // #endregion Code Upload
   // #region Renaming
+  /** Removes all intermediate renaming steps within the specified {@link Array<{ type: string ; oldPath: string; newPath: string }>} **toConsolidate**.
+   *
+   * @param toConsolidate The {@link Array<{ type: string ; oldPath: string; newPath: string }>} containing all renaming steps to consolidate.
+   *
+   * @returns The consolidated {@link Array<{ type: string ; oldPath: string; newPath: string }>} with all intermediate renaming steps removed. */
+  protected consolidateRenames(
+    renames: Array<{ oldPath: string; newPath: string; type: string }>,
+  ): Array<{ oldPath: string; newPath: string; type: string }> {
+    const finalStateMap = new Map<string, { finalPath: string; type: string }>();
+    const reverseMap = new Map<string, string>();
+
+    for (const op of renames) {
+      const { oldPath, newPath, type } = op;
+
+      if (reverseMap.has(oldPath)) {
+        const originalOldPath = reverseMap.get(oldPath);
+
+        finalStateMap.set(originalOldPath, {
+          finalPath: newPath,
+          type: type,
+        });
+
+        reverseMap.delete(oldPath);
+        reverseMap.set(newPath, originalOldPath);
+      } else {
+        finalStateMap.set(oldPath, {
+          finalPath: newPath,
+          type: type,
+        });
+        reverseMap.set(newPath, oldPath);
+      }
+    }
+
+    const finalRenames: Array<{ oldPath: string; newPath: string; type: string }> = [];
+    for (const [originalOldPath, state] of finalStateMap.entries()) {
+      if (originalOldPath !== state.finalPath) {
+        finalRenames.push({
+          oldPath: originalOldPath,
+          newPath: state.finalPath,
+          type: state.type,
+        });
+      }
+    }
+
+    return finalRenames;
+  }
   /**
    *  Provides access to the {@link HTMLParagraphElement } stating that the name chosen for renaming is already taken
    *  by a native CodBi-Element. */
@@ -733,7 +826,8 @@ export class Manager implements AfterViewInit {
     if (
       this.currentlySelectedTreeNode === null ||
       this.currentlySelectedTreeNode === undefined ||
-      this.currentlySelectedTreeNode.data === null
+      this.currentlySelectedTreeNode.data === null ||
+      this.currentlySelectedTreeNode.data === undefined
     ) {
       return false;
     }
@@ -762,13 +856,12 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link Event } received. */
   protected onRenameNode(event: Event) {
-    this.formerTreeNodePath = this.getFullNodePath(this.currentlySelectedTreeNode);
-
     INSTANCE.tsCheck<HTMLElement>(
       event.target,
       HTMLElement,
     ).parentElement.parentElement.parentElement.parentElement.parentElement.click();
 
+    this.formerTreeNodePath = this.getFullNodePath(this.currentlySelectedTreeNode);
     this.currentlySelectedTreeNodeEditing = !this.currentlySelectedTreeNodeEditing;
 
     if (this.currentlySelectedTreeNodeEditing) {
@@ -800,9 +893,10 @@ export class Manager implements AfterViewInit {
    * A path is a dot-separated string of node labels.
    *
    * @param nodes The array of TreeNodes to traverse.
-   * @returns An array of strings, where each string is a full or partial path.
-   */
-  protected getTreePaths(nodes: TreeNode[]): string[] {
+   * @param fullPathMode If true, returns only full paths to leaf nodes; if false, returns relative paths to all nodes.
+   *
+   * @returns An array of strings, where each string is a full or partial path. */
+  protected getTreePaths(nodes: TreeNode[], fullPathMode = false): string[] {
     const allPaths: string[] = [];
     const findPathsRecursive = (node: TreeNode, currentPath: string) => {
       const newPath = currentPath ? `${currentPath}.${node.label}` : (node.label ?? "");
@@ -822,7 +916,16 @@ export class Manager implements AfterViewInit {
 
     if (nodes) {
       for (const node of nodes) {
-        findPathsRecursive(node, "");
+        if (fullPathMode) {
+          const fullPath = this.getFullNodePath(node);
+
+          findPathsRecursive(
+            node,
+            fullPath.indexOf(".") === -1 ? "" : fullPath.substring(0, fullPath.lastIndexOf(".")),
+          );
+        } else {
+          findPathsRecursive(node, "");
+        }
       }
     }
 
@@ -976,21 +1079,39 @@ export class Manager implements AfterViewInit {
       return;
     }
     // #endregion Do nothing if the name wasn't changed.
-    // #region Remove corresponding code from server.
-    const newName = this.currentlySelectedTreeNode.label;
+    // #region Do nothing if there's already an element with the same name on the same level.
+    const input = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
 
-    this.currentlySelectedTreeNode.label = this.formerInput_CodBi_LocalAPIDoc_New_Name_Original;
+    for (const children of this.currentlySelectedTreeNode.parent === undefined
+      ? this.currentItems
+      : (this.currentlySelectedTreeNode.parent?.children ?? [])) {
+      if (
+        children !== this.currentlySelectedTreeNode &&
+        children.label.toLowerCase() ===
+          INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value.toLowerCase()
+      ) {
+        this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "block";
 
-    for (const path of this.getTreePaths([this.currentlySelectedTreeNode])) {
-      this.removedElements.push({ type: this.activeTab, path: path });
+        input.focus();
+
+        setTimeout(() => {
+          this.CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent.nativeElement.style.display = "none";
+        }, 2000);
+        return;
+      }
     }
-
-    this.currentlySelectedTreeNode.label = newName;
-    // #endregion Remove corresponding code from server.
+    // #endregion Do nothing if there's already an element with the same name on the same level.
+    // #region Mark element for code file renaming.
+    this.renamedElements.push({
+      type: this.activeTab,
+      oldPath: this.formerTreeNodePath,
+      newPath: `${this.formerTreeNodePath.indexOf(".") === -1 ? "" : this.formerTreeNodePath.substring(0, this.formerTreeNodePath.lastIndexOf(".") + 1)}${INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value}`,
+    });
+    // #endregion Mark element for code file renaming.
     // #region Build new path
     const newPathBuild: Array<string> = this.currentlySelectedTreeNodePath.split(".");
 
-    newPathBuild[newPathBuild.length - 1] = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
+    newPathBuild[newPathBuild.length - 1] = input.value;
 
     const newPath = newPathBuild.join(".");
     // #endregion Build new path
@@ -1167,6 +1288,15 @@ export class Manager implements AfterViewInit {
     const result = {};
     // #region Conversion
     for (const node of toExtractFrom) {
+      // #region Fill in necessary structures.
+      if (node.data.globals === undefined) {
+        node.data.globals = [];
+      }
+
+      if (node.data.classes === undefined) {
+        node.data.classes = [];
+      }
+      // #endregion Fill in necessary structures.
       result[`${base ? `${base}.` : ""}${node.label}`] = {
         Description: node.data ? node.data.Description : "",
         globals: node.data ? this.arrayToObject(node.data.globals) : [],
@@ -1323,15 +1453,16 @@ export class Manager implements AfterViewInit {
       this.importedCodeToUpload.delete(key);
     }
     // #endregion Imported Code Upload/Deletion
-    // #region Code Deletion
-    for (const toDelete of this.removedElements) {
+    // #region Code Renaming
+    for (const toDelete of this.consolidateRenames(this.renamedElements)) {
       getJQuery().ajax({
         url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
         type: "POST",
         headers: {
-          "X-Action": "Update Code",
+          "X-Action": "Rename Code",
           "X-ActionDetail": toDelete.type,
-          "X-Element": toDelete.path,
+          "X-Element": toDelete.oldPath,
+          "X-NewElement": toDelete.newPath,
         },
         data: {
           ToWrite: "",
@@ -1343,6 +1474,32 @@ export class Manager implements AfterViewInit {
           this.cdr.markForCheck();
         },
       });
+    }
+
+    this.renamedElements = [];
+    // #endregion Code Renaming
+    // #region Code Deletion
+    for (const toDelete of this.removedElements) {
+      if (!this.renamedElements.some((candidate) => candidate.oldPath === toDelete.path)) {
+        getJQuery().ajax({
+          url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+          type: "POST",
+          headers: {
+            "X-Action": "Update Code",
+            "X-ActionDetail": toDelete.type,
+            "X-Element": toDelete.path,
+          },
+          data: {
+            ToWrite: "",
+          },
+          success: (response) => {
+            this.synchronizing = false;
+            this.synchronized = true;
+
+            this.cdr.markForCheck();
+          },
+        });
+      }
     }
 
     this.removedElements = [];
@@ -1370,7 +1527,7 @@ export class Manager implements AfterViewInit {
       this.activeTab,
     );
     // #region Update FSL if necessary
-    if (this.activeTabDocFSL.indexOf(`"${this.currentlySelectedTreeNodePath.toLowerCase()}.ts"`) === -1) {
+    if (this.activeTabDocFSL.indexOf(`"${this.currentlySelectedTreeNodePath.toLowerCase()}.js"`) === -1) {
       this.activeTabDocFSL = `${this.activeTabDocFSL.substring(0, this.activeTabDocFSL.length - 1)},\"${this.currentlySelectedTreeNodePath.toLowerCase()}.ts\"]`;
     }
     // #endregion Update FSL if necessary
@@ -1595,6 +1752,17 @@ export class Manager implements AfterViewInit {
   protected itemsElementplaceholder = [];
   /** Stores the {@link TreeNode }-Representation of the local API-Doc Standard Configurations. */
   protected itemsStandard = [];
+  /**
+   * Retrieves either {@link Manager.items }, {@link Manager.itemsElementplaceholder }, {@link Manager.itemsStandards } depending on {@link this.activeTab }.
+   *
+   * @returns The currently active tab's {@link TreeNode } list. */
+  protected get currentItems(): TreeNode[] {
+    return this.activeTab === "Functionality"
+      ? this.items
+      : this.activeTab === "Elementplaceholder"
+        ? this.itemsElementplaceholder
+        : this.itemsStandard;
+  }
   /** Stores the currently selected {@link TreeNode }. */
   protected _currentlySelectedTreeNode: TreeNode;
   /**
@@ -1795,45 +1963,11 @@ export class Manager implements AfterViewInit {
       (this.CodBi_LocalAPIDoc.nativeElement as HTMLElement).classList.remove("-submerged");
     });
     // #endregion Register close dialog handler.
-    // #region Code Upload
-    this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.addEventListener("change", (event) => {
-      const file = (event.target as HTMLInputElement).files?.[0];
-
-      if (file) {
-        const reader = new FileReader();
-
-        reader.onload = (e) => {
-          const fileContent = e.target?.result as string;
-
-          this.synchronizing = true;
-
-          getJQuery().ajax({
-            url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
-            type: "POST",
-            headers: {
-              "X-Action": "Update Code",
-              "X-ActionDetail": this.activeTab,
-              "X-Element": this.getFullNodePath(this.currentlySelectedTreeNode),
-            },
-            data: {
-              ToWrite: e.target?.result as string,
-            },
-            success: (response) => {
-              this.synchronizing = false;
-              this.synchronized = true;
-
-              this.cdr.markForCheck();
-            },
-          });
-        };
-
-        reader.readAsText(file);
-      }
-    });
-    // #endregion Code Upload
     // #region Register file to import selected handler.
     this.CodBi_LocalAPIDoc_RightPanel_Options_Import_Dialogue.nativeElement.addEventListener("change", (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
+
+      this.synchronizing = true;
 
       if (file) {
         const reader = new FileReader();
@@ -1924,13 +2058,71 @@ export class Manager implements AfterViewInit {
             this.itemsStandard = convertedData.detStandards;
             this.items = convertedData.detFunctionalities;
             this.itemsElementplaceholder = convertedData.detElementplaceholder;
+            // #region Merge filelistings
+            window.CodbiPluginData.fileListing = JSON.stringify([
+              ...(JSON.parse(window.CodbiPluginData.fileListing) as []),
+              ...convertedData.fileListing,
+            ]);
+            window.CodbiPluginData.fslElementplaceholder = JSON.stringify([
+              ...(JSON.parse(window.CodbiPluginData.fslElementplaceholder) as []),
+              ...convertedData.fslElementplaceholder,
+            ]);
+            window.CodbiPluginData.fslFunctionalities = JSON.stringify([
+              ...(JSON.parse(window.CodbiPluginData.fslFunctionalities) as []),
+              ...convertedData.fslFunctionalities,
+            ]);
+            // #endregion Merge filelistings
+            // #region Merge API-Doc entries.
+            for (const key in parsedData.detFunctionalities) {
+              if (window.CodbiPluginData.detFunctionalities[key] === undefined) {
+                window.CodbiPluginData.detFunctionalities[key] = {
+                  Description: parsedData.detFunctionalities[key].Description,
+                  Parameter: parsedData.detFunctionalities[key].Parameter as { [name: string]: string },
+                  Code: parsedData.detFunctionalities[key].Code,
+                  local: true,
+                };
+              }
+            }
 
+            for (const key in parsedData.detElementplaceholder) {
+              if (window.CodbiPluginData.detElementplaceholder[key] === undefined) {
+                window.CodbiPluginData.detElementplaceholder[key] = {
+                  Description: parsedData.detElementplaceholder[key].Description,
+                  Code: parsedData.detElementplaceholder[key].Code,
+                  local: true,
+                };
+              }
+            }
+
+            for (const key in parsedData.detStandards) {
+              if (window.CodbiPluginData.detStandards[key] === undefined) {
+                window.CodbiPluginData.detStandards[key] = {
+                  Description: parsedData.detStandards[key].Description,
+                  classes: parsedData.detStandards[key].classes as { [name: string]: string },
+                  globals: parsedData.detStandards[key].globals as { [name: string]: string },
+                  Code: parsedData.detStandards[key].Code,
+                  Active: false,
+                  local: true,
+                };
+              }
+            }
+            // #region Merge API-Doc entries.
+            // #region Update interface.
+            window.CodbiPluginData.updateSVManager(window.CodbiPluginData.fslFunctionalities);
+            window.CodbiPluginData.updateEPManager(
+              window.CodbiPluginData.fslElementplaceholder.replaceAll('.js",', '",'),
+            );
+            window.CodbiPluginData.populateStandards();
+            // #endregion Update interface.
             const activeItems = this.activeTabItems;
 
             if (activeItems.length !== 0) {
               this.currentlySelectedTreeNode = activeItems[0];
               this._currentNodeData = this.currentlySelectedTreeNode.data;
             }
+
+            this.synchronizing = false;
+            this.synchronized = false;
 
             this.cdr.markForCheck();
           } catch (error) {
@@ -2376,7 +2568,12 @@ export class Manager implements AfterViewInit {
         let node = currentNodes.find((n) => n.label === labelPart);
 
         if (!node) {
-          node = { label: labelPart, children: [] };
+          node = { label: labelPart, children: [], data: [] };
+
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          (node as any).Description = "";
+
+          node.data.Description = "";
           currentNodes.push(node);
         }
 
@@ -2484,55 +2681,33 @@ export class Manager implements AfterViewInit {
         if (Object.prototype.hasOwnProperty.call(dataSection, key)) {
           const item = dataSection[key];
           const itemNode = getOrCreateNode(targetArray, key);
-          // Store Description directly on itemNode
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-          if (item.Description !== undefined && (itemNode as any).Description === undefined) {
+
+          if (
+            item.Description !== undefined &&
+            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+            (itemNode as any).Description === undefined
+          ) {
             // biome-ignore lint/suspicious/noExplicitAny: <explanation>
             (itemNode as any).Description = item.Description;
           }
-          // Ensure itemNode.data exists for globals, classes, Parameter
+
           if (!itemNode.data) {
             itemNode.data = {
               // biome-ignore lint/suspicious/noExplicitAny: <explanation>
               Description: (itemNode as any).Description,
             };
+          } else {
+            if (item.Description !== undefined) {
+              itemNode.data.Description = item.Description;
+            } else {
+              itemNode.data.Description = "";
+            }
           }
 
           processToArrayCollection(itemNode.data, "globals", item.globals);
           processToArrayCollection(itemNode.data, "classes", item.classes);
           processToArrayCollection(itemNode.data, "Parameter", item.Parameter);
         }
-      }
-    };
-
-    const processSimpleSection = (
-      sectionName: "docsAPI" | "fileListing" | "fslElementplaceholder" | "fslFunctionalities",
-      dataSection:
-        | APIDocJSON["docsAPI"]
-        | APIDocJSON["fileListing"]
-        | APIDocJSON["fslElementplaceholder"]
-        | APIDocJSON["fslFunctionalities"],
-    ) => {
-      if (!mergedTree[sectionName]) {
-        mergedTree[sectionName] = [];
-      }
-
-      const targetArray = DEFINED.tsCheck<TreeNode[]>(mergedTree[sectionName]);
-
-      if (Array.isArray(dataSection)) {
-        // biome-ignore lint/complexity/noForEach: <explanation>
-        dataSection.forEach((item) => {
-          const itemNode = getOrCreateNode(targetArray, item);
-          if (!itemNode.data) {
-            itemNode.data = {
-              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-              Description: (itemNode as any).Description,
-            };
-          }
-          if (itemNode.data.value === undefined) {
-            itemNode.data.value = item;
-          }
-        });
       }
     };
 
@@ -2545,17 +2720,14 @@ export class Manager implements AfterViewInit {
     if (incomingData.detElementplaceholder) {
       processComplexSection("detElementplaceholder", incomingData.detElementplaceholder);
     }
-    if (incomingData.docsAPI) {
-      processSimpleSection("docsAPI", incomingData.docsAPI);
-    }
     if (incomingData.fileListing) {
-      processSimpleSection("fileListing", incomingData.fileListing);
+      mergedTree.fileListing = incomingData.fileListing.split(",");
     }
     if (incomingData.fslElementplaceholder) {
-      processSimpleSection("fslElementplaceholder", incomingData.fslElementplaceholder);
+      mergedTree.fslElementplaceholder = incomingData.fslElementplaceholder.split(",");
     }
     if (incomingData.fslFunctionalities) {
-      processSimpleSection("fslFunctionalities", incomingData.fslFunctionalities);
+      mergedTree.fslFunctionalities = incomingData.fslFunctionalities.split(",");
     }
 
     return mergedTree;
@@ -2572,7 +2744,8 @@ export class Manager implements AfterViewInit {
   // #endregion Dialogues
 }
 // #endregion Classes
+/** Defines an item with a name and an optional description. */
 interface ItemWithDescription {
   Name: string;
-  Description?: string; // Add other properties if they exist
+  Description?: string;
 }

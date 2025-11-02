@@ -154,6 +154,11 @@
     background-repeat: no-repeat;
     background-blend-mode: overlay;
     background-color: #FFFFFFEE;
+    height: 90%;
+
+    .p-tree-root {
+      height: 90%;
+    }
   }
 
   @keyframes kfFadeIN_CodBi_LocalAPIDoc_Tree_Label {
@@ -754,8 +759,8 @@
     margin-left: auto;
     margin-right: auto;
     position: relative;
-    left: 10%;
-    width: 50%;
+    left: 3%;
+    width: 90%;
     top: 10%;
     opacity: 0;
     padding-bottom: 1em;
@@ -844,9 +849,8 @@
 
   #CodBi_LocalAPIDoc_New_Panel {
     position: absolute;
-    left: 20%;
-    top: 43%;
     border-radius: .5em;
+    justify-self: center;
     padding: 1em;
     border: solid;
     border-color: darkorange;
@@ -857,7 +861,6 @@
     background: linear-gradient(148deg, darkgrey 0%, rgba(250, 245, 245, 1) 13%, rgba(242, 235, 235, 1) 51%, rgba(255, 255, 255, 1) 87%, darkgrey 100%);
     z-index: 100;
     display: flex;
-    max-width: 70%;
 
     label {
       margin-right: .5em;
@@ -870,7 +873,8 @@
     #CodBi_LocalAPIDoc_New_Panel_InputArea {
       max-width: 70%;
 
-      #CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent {
+      #CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent,
+      #CodBi_LocalAPIDoc_New_Panel_Name_Hint_Systemidentifier {
         display: none;
         color: red;
       }

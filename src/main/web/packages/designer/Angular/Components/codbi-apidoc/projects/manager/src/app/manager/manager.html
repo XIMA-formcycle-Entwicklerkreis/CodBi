@@ -110,12 +110,7 @@
                                     <div id = "CodBi_LocalAPIDoc_Tree_Label_UploadCode">
                                         <button class = "--CB-LocalAPIDoc-UploadCodeTreeItem"
 
-                                                (click) = "onUploadCode( $event )"></button>
-
-                                        <input  id = "CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue" #CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue
-                                            type    = "file"
-                                            accept  = ".js"
-                                            style   = "display : none ;"/></div></div></ng-template></p-tree>
+                                                (click) = "onUploadCode( $event )"></button></div></div></ng-template></p-tree>
 
                 <button class = "-add" #CodBi_LocalAPIDoc_Add
 
@@ -364,6 +359,24 @@
 
         <p>{{"Input.Label.Introduction" | transloco }}</p>
 
+        <div id = "CodBi_LocalAPIDoc_New_Panel">
+        <label for = "CodBi_LocalAPIDoc_New_Panel_Name">{{"Input.Label." + activeTab | transloco }}</label>
+
+        <div id = "CodBi_LocalAPIDoc_New_Panel_InputArea">
+            <p id = "CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent" #CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent >{{"Input.Hint.AlreadyExistent" | transloco }}</p>
+
+            <p id = "CodBi_LocalAPIDoc_New_Panel_Name_Hint_Systemidentifier" #CodBi_LocalAPIDoc_New_Panel_Name_Hint_Systemidentifier >{{"Input.Hint.Systemidentifier" | transloco }}</p>
+
+            <input  id      = "CodBi_LocalAPIDoc_New_Name" #CodBi_LocalAPIDoc_New_Name
+                    type    = "text"
+
+                    (keydown.enter) = "onEnter_CodBi_LocalAPIDoc_New_Name()"
+                    (input)         = "onInput_CodBi_LocalAPIDoc_New_Name( $event )"/>
+
+            <button id = "CodBi_LocalAPIDoc_New_Panel_Add" #CodBi_LocalAPIDoc_New_Panel_Add
+
+                    (click) = "onClick_CodBi_LocalAPIDoc_New_Panel_Add()">{{"Add.Panel.Button" | transloco }}</button></div></div>
+
         <a id       = "CodBi_LocalAPIDoc_New_JoinUsOnGitHub"
            href     = "https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev"
            target   = "GitHub / CodBi Community">
@@ -391,22 +404,6 @@
             <h3 id = "CodBi_LocalAPIDoc_New_Outro_NamingConvention">Wichtig für die Benennung:</h3>
 
             <p [innerHTML] = "'Input.Label.Outro.NamingConvention' | transloco"></p></div></div>
-
-    <div id = "CodBi_LocalAPIDoc_New_Panel">
-        <label for = "CodBi_LocalAPIDoc_New_Panel_Name">{{"Input.Label." + activeTab | transloco }}</label>
-
-        <div id = "CodBi_LocalAPIDoc_New_Panel_InputArea">
-            <p id = "CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent" #CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent >{{"Input.Hint.AlreadyExistent" | transloco }}</p>
-
-            <input  id      = "CodBi_LocalAPIDoc_New_Name" #CodBi_LocalAPIDoc_New_Name
-                    type    = "text"
-
-                    (keydown.enter) = "onEnter_CodBi_LocalAPIDoc_New_Name()"
-                    (input)         = "onInput_CodBi_LocalAPIDoc_New_Name( $event )"/>
-
-            <button id = "CodBi_LocalAPIDoc_New_Panel_Add" #CodBi_LocalAPIDoc_New_Panel_Add
-
-                    (click) = "onClick_CodBi_LocalAPIDoc_New_Panel_Add()">{{"Add.Panel.Button" | transloco }}</button></div></div>
 
     <div class = "-close"><button #CodBi_LocalAPIDoc_New_Panel_Close>X</button></div></div>
 <!-- #endregion CodBi_LocalAPIDoc_New -->
@@ -534,3 +531,11 @@
 
             (click) = "onClick_CodBi_LocalAPIDoc_RightPanel_AddParameter( toAdd )">+</button></ng-template>
 <!-- #endregion Templates -->
+<!-- #region Dialogues -->
+<!-- #region File -->
+<input  id = "CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue" #CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue
+                                            type    = "file"
+                                            accept  = ".js"
+                                            style   = "display : none ;"/>
+<!-- #endregion Dialogues -->
+<!-- #endregion File -->

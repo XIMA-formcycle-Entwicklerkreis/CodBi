@@ -594,7 +594,7 @@ export function enableLocalDocInterface(): void {
             "beforeend",
             `
           <style>
-            #cCodBi_LocalAPIDoc { position : absolute ; left : -100vw ; top : 20vh ; width : 70vw ; height : 50vh ; pointer-events : none ; opacity : 0 ; transition : 1s all ;}
+            #cCodBi_LocalAPIDoc { z-index: 100 ; position : absolute ; left : -100vw ; top : 20vh ; width : 70vw ; height : 50vh ; pointer-events : none ; opacity : 0 ; transition : 1s all ;}
             #cCodBi_LocalAPIDoc.--opened { left : 0vw ; opacity : .9 ; pointer-events : all !important ;}}
             #cCodBi_LocalAPIDoc cb-manager { display : block ; height : 100% ;}</style>
           <div id = "cCodBi_LocalAPIDoc">
@@ -1215,9 +1215,8 @@ export function enableLocalDocInterface(): void {
                       const currentFunctionalityParameterInput = cell.querySelector("input");
 
                       let bound = false; // States whether the epManager's target is already bound to this <input>.
-                      console.log("adding handler for", currentFunctionalityParameterInput);
+
                       currentFunctionalityParameterInput?.addEventListener("keydown", (event) => {
-                        console.log("---!-----");
                         const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
                         // #region If ALT + X...
                         if (keyboardEvent.altKey && (keyboardEvent.key === "x" || keyboardEvent.key === "X")) {
@@ -1278,10 +1277,9 @@ export function enableLocalDocInterface(): void {
                           epManager.enabled = true;
                           epManager.enteringEP = true;
                           cDetails.style.display = "block";
-                          console.log("update");
+
                           updateLayoutEPManager(cell);
                           updateLayoutCDetails(epManager);
-                          console.log("after update");
                           // #endregion Show interface.
                           // #region Bind epManager's target to this <input> evading unnecessary multiple binding.
                           if (!bound && event.target !== null) {
@@ -1502,13 +1500,6 @@ export function enableLocalDocInterface(): void {
                         return;
                       }
 
-                      console.log(
-                        "N",
-                        newOption,
-                        window.CodbiPluginData[
-                          epManager.mode === "SV" ? "detFunctionalities" : "detElementplaceholder"
-                        ][newOption.toLowerCase()],
-                      );
                       const description = DEFINED.tsCheck<string>(
                         window.CodbiPluginData[
                           epManager.mode === "SV" ? "detFunctionalities" : "detElementplaceholder"

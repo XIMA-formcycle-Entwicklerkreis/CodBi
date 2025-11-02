@@ -8,10 +8,6 @@ import type { Observable } from "rxjs";
 import type { TreeNodeSelectEvent } from "primeng/tree";
 import type { TreeNode } from "primeng/api";
 // #endregion PrimeNG
-// #region TinyMCE
-import type { EditorEvent } from "tinymce";
-import type { Editor as TinyMCEEditor } from "tinymce";
-// #endregion TinyMCE
 // #region Transloco
 import type { Translation, TranslocoLoader } from "@ngneat/transloco";
 // #endregion Transloco
@@ -50,7 +46,7 @@ import { TranslocoService } from "@ngneat/transloco";
 import { TranslocoPipe, TranslocoModule } from "@ngneat/transloco";
 // #endregion Transloco
 // #region ZOD
-import { json, set, z } from "zod";
+import { json, parse, set, z } from "zod";
 // #endregion ZOD
 // #region XDBC
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
@@ -264,6 +260,25 @@ export class Manager implements AfterViewInit {
   @ViewChild("CodBi_LocalAPIDoc", { read: ElementRef }) CodBi_LocalAPIDoc!: ElementRef;
   // #endregion Component References
   // #region Node Management
+  /**
+   * Retrieves all children of the {@link TreeNode } specified.
+   *
+   * @param from The {@link TreeNode } tmo retrieve the children from.
+   *
+   * @returns The requested {@link Array < TreeNode >}. */
+  protected retrieveChildnodes(from: TreeNode): Array<TreeNode> {
+    const result = new Array<TreeNode>();
+
+    for (const child of from.children) {
+      result.push(child);
+
+      for (const furtherChild of this.retrieveChildnodes(child)) {
+        result.push(furtherChild);
+      }
+    }
+
+    return result;
+  }
   // #region New Node Dialog
   @ViewChild("CodBi_LocalAPIDoc_New_Panel_Add") CodBi_LocalAPIDoc_New_Panel_Add!: ElementRef;
   @ViewChild("CodBi_LocalAPIDoc_New") CodBi_LocalAPIDoc_New!: ElementRef;
@@ -274,10 +289,10 @@ export class Manager implements AfterViewInit {
    * The {@link HTMLParagraphElement } stating that the local CodBi-Element to created with the specified
    * {@link Manager.CodBi_LocalAPIDoc_New_Name } is already taken by a native CodBi-Element. */
   @ViewChild("CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent")
-  /**
-   * References the {@link HTMLParagraphElement } stating that the name of a new element is already taken by a
-   * native CodBi-Element. This is used to inform the user. */
   CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent!: ElementRef;
+  /* The {@link HTMLParagraphElement } stating that no elements ending with "_imported" are "_importiert" are allowed. */
+  @ViewChild("CodBi_LocalAPIDoc_New_Panel_Name_Hint_Systemidentifier")
+  CodBi_LocalAPIDoc_New_Panel_Name_Hint_Systemidentifier!: ElementRef;
   /** Simulates a click on {@link Manager.CodBi_LocalAPIDoc_New_Panel_Add } in order to add a new element. */
   protected onEnter_CodBi_LocalAPIDoc_New_Name() {
     this.CodBi_LocalAPIDoc_New_Panel_Add.nativeElement.click();
@@ -431,6 +446,8 @@ export class Manager implements AfterViewInit {
 
     this.currentlySelectedTreeNode.expanded = true;
 
+    this.synchronized = false;
+
     this.cdr.markForCheck();
   }
   /**
@@ -453,8 +470,19 @@ export class Manager implements AfterViewInit {
       this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent.nativeElement.style.display = "block";
 
       return;
+    } else {
+      this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_AlreadyExistent.nativeElement.style.display = "none";
     }
     // #endregion Check against CodBi Data.
+    // #region Check if Systemidentifier used.
+    if (inputControl.value.endsWith("_codbi_import")) {
+      this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_Systemidentifier.nativeElement.style.display = "block";
+
+      return;
+    } else {
+      this.CodBi_LocalAPIDoc_New_Panel_Name_Hint_Systemidentifier.nativeElement.style.display = "none";
+    }
+    // #endregion Check if Systemidentifier used.
     // #region Add new element to the tree and update it.
     this.addTreeNodes(
       this.CodBi_LocalAPIDoc_New_Name.nativeElement.value.toLowerCase(),
@@ -544,6 +572,22 @@ export class Manager implements AfterViewInit {
     newPath: string;
   }> = [];
   // #endregion Code Deletion
+  // #region Data
+  /**
+   * Retrieves either {@link window.CodbiPluginData.detFunctionalities }, {@link window.CodbiPluginData.detElementplaceholder },
+   * {@link window.CodbiPluginData.detStandards } depending on {@link Manager.activeTab },
+   *
+   * @returns The current CodBi elements details. */
+  protected get currentCodBiElements() {
+    return window.CodbiPluginData[
+      this.activeTab === "Functionality"
+        ? "detFunctionalities"
+        : this.activeTab === "Elementplaceholder"
+          ? "detElementplaceholder"
+          : "detStandards"
+    ];
+  }
+  // #endregion Data
   /**
    * Handles the event when the user confirms the deletion of a node.
    *
@@ -555,16 +599,22 @@ export class Manager implements AfterViewInit {
       case "Functionality":
         {
           const paths = this.getTreePaths([this._currentNode]);
+          const fullNodePath = this.getFullNodePath(this.currentlySelectedTreeNode);
+          const base = this.getTreeNodeBase(this._currentNode);
 
           this.items = this.removeNodeRecursive(this.items, this._currentNode);
+
+          delete window.CodbiPluginData.detFunctionalities[fullNodePath];
           // #region Remove from FSL
           const toFilter = JSON.parse(`{ "result": ${this.activeTabDocFSL}}`);
 
           toFilter.result = toFilter.result.filter((e) => {
             for (const toFilterOut of paths) {
-              if (e === `${toFilterOut}.ts`) {
+              if (e === `${base === "" ? "" : `${base}.`}${toFilterOut}.ts` || e === `${fullNodePath}.ts`) {
                 return false;
               }
+
+              delete window.CodbiPluginData.detFunctionalities[`${base === "" ? "" : `${base}.`}${toFilterOut}`];
             }
 
             return true;
@@ -584,30 +634,34 @@ export class Manager implements AfterViewInit {
           }
           // #endregion Filter out removed code to be imported en sync.
         }
+
         break;
 
       case "Elementplaceholder":
         {
           const paths = this.getTreePaths([this._currentNode]);
+          const fullNodePath = this.getFullNodePath(this.currentlySelectedTreeNode);
+          const base = this.getTreeNodeBase(this._currentNode);
 
           this.itemsElementplaceholder = this.removeNodeRecursive(this.itemsElementplaceholder, this._currentNode);
+
+          delete window.CodbiPluginData.detElementplaceholder[fullNodePath];
           // #region Remove from FSL
           const toFilter = JSON.parse(`{ "result": ${this.activeTabDocFSL}}`);
 
           toFilter.result = toFilter.result.filter((e) => {
             for (const toFilterOut of paths) {
-              if (e === `${toFilterOut}.ts`) {
+              if (e === `${base === "" ? "" : `${base}.`}${toFilterOut}.ts` || e === `${fullNodePath}.ts`) {
                 return false;
               }
+
+              delete window.CodbiPluginData.detElementplaceholder[`${base === "" ? "" : `${base}.`}${toFilterOut}`];
             }
 
             return true;
           });
 
           this.activeTabDocFSL = JSON.stringify(toFilter.result);
-
-          this.activeTabDocUpdater(this.activeTabDocFSL);
-          // #endregion Remove from FSL
           // #region Filter out removed code to be imported en sync.
           for (const toFilterOut of paths) {
             for (const key of this.importedCodeToUpload.keys()) {
@@ -617,6 +671,8 @@ export class Manager implements AfterViewInit {
             }
           }
           // #endregion Filter out removed code to be imported en sync.
+          this.activeTabDocUpdater(this.activeTabDocFSL);
+          // #endregion Remove from FSL
         }
 
         break;
@@ -624,16 +680,22 @@ export class Manager implements AfterViewInit {
       case "Standard":
         {
           const paths = this.getTreePaths([this._currentNode]);
+          const fullNodePath = this.getFullNodePath(this.currentlySelectedTreeNode);
+          const base = this.getTreeNodeBase(this._currentNode);
 
           this.itemsStandard = this.removeNodeRecursive(this.itemsStandard, this._currentNode);
+
+          delete window.CodbiPluginData.detStandards[fullNodePath];
           // #region Remove from FSL
           const toFilter = JSON.parse(`{ "result": ${this.activeTabDocFSL}}`);
 
           toFilter.result = toFilter.result.filter((e) => {
             for (const toFilterOut of paths) {
-              if (e === `${toFilterOut}.ts`) {
+              if (e === `${base === "" ? "" : `${base}.`}${toFilterOut}.ts` || e === `${fullNodePath}.ts`) {
                 return false;
               }
+
+              delete window.CodbiPluginData.detStandards[`${base === "" ? "" : `${base}.`}${toFilterOut}`];
             }
 
             return true;
@@ -641,7 +703,7 @@ export class Manager implements AfterViewInit {
 
           this.activeTabDocFSL = JSON.stringify(toFilter.result);
 
-          this.activeTabDocUpdater(this.activeTabDocFSL);
+          window.CodbiPluginData.populateStandards();
           // #endregion Remove from FSL
           // #region Filter out removed code to be imported en sync.
           for (const toFilterOut of paths) {
@@ -691,43 +753,76 @@ export class Manager implements AfterViewInit {
    *
    * @param event The {@link Event } received. */
   protected onUploadCode(event: Event) {
+    this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.value = ""; // So that the listener will fire even when same file was selected again.
     // #region Code Upload
     if (!this.changedListenerRegistered_CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue) {
       this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.addEventListener("change", (event) => {
-        // #region Activate syncing indicator.
-        this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.classList.add("--syncing");
-        this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.classList.remove("--synced");
-        // #endregion Activate syncing indicator.
         const fullNodePath = this.getFullNodePath(this.currentlySelectedTreeNode);
         const file = (event.target as HTMLInputElement).files?.[0];
 
         if (file) {
+          this.synchronizing = true;
+
           const reader = new FileReader();
 
           reader.onload = (e) => {
             const fileContent = e.target?.result as string;
+            const activeTab = this.activeTab; // Closure.
 
-            getJQuery().ajax({
-              url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
-              type: "POST",
-              headers: {
-                "X-Action": "Update Code",
-                "X-ActionDetail": this.activeTab,
-                "X-Element": fullNodePath,
-              },
-              data: {
-                ToWrite: e.target?.result as string,
-              },
-              success: (response) => {
-                window.CodbiPluginData.localCode = `${window.CodbiPluginData.localCode}${window.CodbiPluginData.localCode.length !== 0 ? "," : ""}${this.activeTab}_${fullNodePath}`;
+            this.importedCodeToUpload.set({ type: this.activeTab, key: fullNodePath }, () => {
+              return new Promise<void>((resolve, reject) => {
+                getJQuery().ajax({
+                  url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+                  type: "POST",
+                  headers: {
+                    "X-Action": "Update Code",
+                    "X-ActionDetail": activeTab,
+                    "X-Element": fullNodePath,
+                  },
+                  data: {
+                    ToWrite: e.target?.result as string,
+                  },
+                  success: (response) => {
+                    window.CodbiPluginData.localCode = `${window.CodbiPluginData.localCode}${window.CodbiPluginData.localCode.length !== 0 ? "," : ""}${activeTab}_${fullNodePath}`;
 
-                // #region Deactivate syncing indicator.
-                this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.classList.remove("--syncing");
-                this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.classList.add("--synced");
-                // #endregion Deactivate syncing indicator.
-                this.cdr.markForCheck();
-              },
+                    this.cdr.markForCheck();
+                    resolve();
+                  },
+                });
+              });
             });
+
+            if (this.currentCodBiElements[fullNodePath] === undefined) {
+              this.currentlySelectedTreeNode.data.Description =
+                this.translocoService.translate("Add.NewNode.ViaCodeUpload");
+              this.currentCodBiElements[fullNodePath] = {
+                Active: true,
+                Description: this.currentlySelectedTreeNode.label,
+                // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
+                Code: (this.currentlySelectedTreeNode.data.Code = e.target?.result as string),
+                local: true,
+              };
+
+              switch (activeTab) {
+                case "Elementplaceholder":
+                  break;
+                case "Functionality":
+                  window.CodbiPluginData.detFunctionalities[fullNodePath].Parameter = {};
+
+                  break;
+                case "Standard":
+                  window.CodbiPluginData.detStandards[fullNodePath].classes = {};
+                  window.CodbiPluginData.detStandards[fullNodePath].globals = {};
+              }
+            } else {
+              this.currentCodBiElements[fullNodePath].Code = this.currentlySelectedTreeNode.data.Code = e.target
+                ?.result as string;
+            }
+
+            this.synchronizing = false;
+            this.synchronized = false;
+
+            this.cdr.markForCheck();
           };
 
           reader.readAsText(file);
@@ -804,7 +899,10 @@ export class Manager implements AfterViewInit {
     ).value.toLowerCase();
     const inputControl = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region Suppress invalid characters.
-    if (inputControl.value !== "" && !/^[a-zA-Z0-9$][a-zA-Z0-9\-\,$]*$/.test(inputControl.value)) {
+    if (
+      (inputControl.value !== "" && !/^[a-zA-Z0-9$][a-zA-Z0-9\-\,$\_]*$/.test(inputControl.value)) ||
+      inputControl.value.endsWith("_codbi_import")
+    ) {
       inputControl.value = this.formerInput_CodBi_LocalAPIDoc_New_Name;
     } else {
       this.formerInput_CodBi_LocalAPIDoc_New_Name = inputControl.value;
@@ -887,6 +985,23 @@ export class Manager implements AfterViewInit {
     }
 
     return path;
+  }
+  /**
+   * Retrieves the dotted path to the specified {@link TreeNode } **toGetFrom**.
+   *
+   * @param toGetFrom The {@link TreeNode } to determine the dotted path leading to it from.
+   *
+   * @returns The requested dotted path. */
+  protected getTreeNodeBase(toGetFrom: TreeNode): string {
+    let result = "";
+
+    while (toGetFrom.parent) {
+      result = `${toGetFrom.parent.parent ? "." : ""}${toGetFrom.parent.label}${result}`;
+      // biome-ignore lint/style/noParameterAssign: OMG!
+      toGetFrom = toGetFrom.parent;
+    }
+
+    return result;
   }
   /**
    * Traverses a TreeNode array and returns all possible paths from the root to every node in the tree.
@@ -1002,12 +1117,18 @@ export class Manager implements AfterViewInit {
 
     if (type === "Standard") {
       result.Description = node.data ? node.data.Description : "";
-      result.globals = node.data ? this.arrayToObject(node.data.globals) : [];
-      result.classes = node.data ? this.arrayToObject(node.data.classes) : [];
+      result.globals =
+        node.data?.globals && node.data.globals.length !== 0 ? this.arrayToObject(node.data.globals) : [];
+      result.classes =
+        node.data?.classes && node.data.classes.length !== 0 ? this.arrayToObject(node.data.classes) : [];
     } else {
       result.Description = node.data ? node.data.Description : "";
-      result.Parameter = node.data ? this.arrayToObject(node.data.Parameter ? node.data.Parameter : []) : [];
-      result.globals = node.data ? this.arrayToObject(node.data.globals) : [];
+      result.Parameter =
+        node.data?.Parameter && node.data.Parameter.length !== 0
+          ? this.arrayToObject(node.data.Parameter ? node.data.Parameter : [])
+          : [];
+      result.globals =
+        node.data?.globals && node.data.globals.length !== 0 ? this.arrayToObject(node.data.globals) : [];
     }
 
     return result;
@@ -1082,6 +1203,8 @@ export class Manager implements AfterViewInit {
     // #region Do nothing if there's already an element with the same name on the same level.
     const input = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
 
+    input.value = input.value.toLowerCase();
+
     for (const children of this.currentlySelectedTreeNode.parent === undefined
       ? this.currentItems
       : (this.currentlySelectedTreeNode.parent?.children ?? [])) {
@@ -1107,6 +1230,17 @@ export class Manager implements AfterViewInit {
       oldPath: this.formerTreeNodePath,
       newPath: `${this.formerTreeNodePath.indexOf(".") === -1 ? "" : this.formerTreeNodePath.substring(0, this.formerTreeNodePath.lastIndexOf(".") + 1)}${INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value}`,
     });
+
+    for (const child of this.retrieveChildnodes(this.currentlySelectedTreeNode)) {
+      this.renamedElements.push({
+        type: this.activeTab,
+        oldPath: this.getFullNodePath(child),
+        newPath: this.getFullNodePath(child).replace(
+          this.formerTreeNodePath,
+          `${this.formerTreeNodePath.indexOf(".") === -1 ? "" : this.formerTreeNodePath.substring(0, this.formerTreeNodePath.lastIndexOf(".") + 1)}${INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value}`,
+        ),
+      });
+    }
     // #endregion Mark element for code file renaming.
     // #region Build new path
     const newPathBuild: Array<string> = this.currentlySelectedTreeNodePath.split(".");
@@ -1138,14 +1272,30 @@ export class Manager implements AfterViewInit {
     const jsonCurrentTabDocFSL = JSON.parse(this.activeTabDocFSL);
 
     for (let i = 0; i < jsonCurrentTabDocFSL.length; i++) {
+      // #region Replace only if the [currentlySelectedTreeNodePath] is the element and not just a part of it.
       if (jsonCurrentTabDocFSL[i].indexOf(this.currentlySelectedTreeNodePath) === 0) {
         jsonCurrentTabDocFSL[i] = jsonCurrentTabDocFSL[i].replace(this.currentlySelectedTreeNodePath, newPath);
       }
+      // #endregion Replace only if the [currentlySelectedTreeNodePath] is the element and not just a part of it.
     }
 
     this.activeTabDocFSL = JSON.stringify(jsonCurrentTabDocFSL);
-    // #endregion Recreate corresponding FSL properly.
 
+    switch (this.activeTab) {
+      case "Functionality":
+        window.CodbiPluginData.updateSVManager(this.activeTabDocFSL);
+
+        break;
+      case "Elementplaceholder":
+        window.CodbiPluginData.updateEPManager(this.activeTabDocFSL);
+
+        break;
+      case "Standard":
+        window.CodbiPluginData.populateStandards();
+
+        break;
+    }
+    // #endregion Recreate corresponding FSL properly.
     this.synchronized = false;
     this.currentlySelectedTreeNode.data.label = this.currentlySelectedTreeNode.label =
       INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value;
@@ -1169,7 +1319,7 @@ export class Manager implements AfterViewInit {
 
     const inputControl = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
     // #region Suppress invalid characters.
-    if (!/^([a-zA-Z$][\-a-zA-Z0-9$]*\.)*[a-zA-Z$][\-a-zA-Z0-9$]*(\.)?$/.test(inputControl.value)) {
+    if (!/^([a-zA-Z$][\-a-zA-Z0-9$\_]*\.)*[a-zA-Z$\_]*(\.)?$/.test(inputControl.value)) {
       inputControl.value = this.formerInput_CodBi_LocalAPIDoc_New_Name;
     } else {
       this.formerInput_CodBi_LocalAPIDoc_New_Name = inputControl.value;
@@ -1214,17 +1364,36 @@ export class Manager implements AfterViewInit {
     };
 
     for (const key in localNodeData.detFunctionalities) {
+      if (localNodeData.detFunctionalities[key].Description === "") {
+        delete localNodeData.detFunctionalities[key];
+
+        continue;
+      }
+
       localNodeData.detFunctionalities[key].Code = window.CodbiPluginData.detFunctionalities[key].Code;
     }
 
     for (const key in localNodeData.detElementplaceholder) {
+      if (localNodeData.detFunctionalities[key].Description === "") {
+        delete localNodeData.detFunctionalities[key];
+
+        continue;
+      }
+
       localNodeData.detElementplaceholder[key].Code = window.CodbiPluginData.detElementplaceholder[key].Code;
     }
 
     for (const key in localNodeData.detStandards) {
+      if (localNodeData.detFunctionalities[key].Description === "") {
+        delete localNodeData.detFunctionalities[key];
+
+        continue;
+      }
+
       localNodeData.detStandards[key].Code = window.CodbiPluginData.detStandards[key].Code;
     }
-
+    // #region Remove entries without description.
+    // #endregion Remove entries without description.
     const filelistings = this.enrichData(window[this.docPath], localNodeData);
     const toExport = JSON.stringify({
       fslFunctionalities: filelistings.fslFunctionalities,
@@ -1346,6 +1515,10 @@ export class Manager implements AfterViewInit {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
+      const lcElementName = element.toLowerCase();
+
+      source.detFunctionalities[lcElementName].Code = destination.detFunctionalities[lcElementName].Code;
+
       document.querySelector('div[is = "xc-epmanager"]').setAttribute(
         "options",
         JSON.parse(
@@ -1359,8 +1532,8 @@ export class Manager implements AfterViewInit {
 
       result.fslFunctionalities.push(`${element}.ts`);
 
-      destination.detFunctionalities[element.toLowerCase()] = source.detFunctionalities[element];
-      destination.detFunctionalities[element.toLowerCase()].local = true;
+      destination.detFunctionalities[lcElementName] = source.detFunctionalities[element];
+      destination.detFunctionalities[lcElementName].local = true;
     }
     // #endregion Functionalities
     // #region Elementplaceholder
@@ -1370,6 +1543,10 @@ export class Manager implements AfterViewInit {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
+      const lcElementName = element.toLowerCase();
+
+      source.detElementplaceholder[lcElementName].Code = destination.detElementplaceholder[lcElementName].Code;
+
       document.querySelector('div[is = "xc-epmanager"]').setAttribute(
         "epoptions",
         JSON.parse(
@@ -1382,8 +1559,8 @@ export class Manager implements AfterViewInit {
       );
       result.fslElementplaceholder.push(`${element}.ts`);
 
-      destination.detElementplaceholder[element] = source.detElementplaceholder[element];
-      destination.detElementplaceholder[element].local = true;
+      destination.detElementplaceholder[lcElementName] = source.detElementplaceholder[element];
+      destination.detElementplaceholder[lcElementName].local = true;
     }
     // #endregion Elementplaceholder
     // #region Standards
@@ -1393,11 +1570,16 @@ export class Manager implements AfterViewInit {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
+      const lcElementName = element.toLowerCase();
+
+      source.detStandards[lcElementName].Code = destination.detStandards[lcElementName].Code;
+
       destination.fileListing = `${destination.fileListing.substring(0, destination.fileListing.length - 1)},\"${element}.ts\"]`;
 
       result.fileListing.push(`${element}.ts`);
-      destination.detStandards[element] = source.detStandards[element];
-      destination.detStandards[element].local = true;
+
+      destination.detStandards[lcElementName] = source.detStandards[element];
+      destination.detStandards[lcElementName].local = true;
     }
     // #endregion Elementplaceholder
     return {
@@ -1410,13 +1592,14 @@ export class Manager implements AfterViewInit {
    *  Loads {@link Manager.items }, {@link Manager.itemsElementplaceholder} & {@link Manager.itemsStandard } up to
    *  the CodBi-Plugin's storage using its middleware prior to setting {@link Manager.synchronized } and
    *  {@link Manager.synchronizing } appropriately. */
-  protected enSync() {
+  protected async enSync() {
     // #region Generate data to sync.
     const localNodeData = {
       detFunctionalities: this.convertNodes(this.items),
       detElementplaceholder: this.convertNodes(this.itemsElementplaceholder),
       detStandards: this.convertStandardNodes(this.itemsStandard),
     };
+
     const fileListings = this.enrichData(window[this.docPath], localNodeData);
     // #endregion Generate data to sync.
     const $ = getJQuery();
@@ -1447,15 +1630,16 @@ export class Manager implements AfterViewInit {
       },
     });
     // #endregion Sync
-    // #region Imported Code Upload/Deletion
+    // #region Imported Code Upload.
     for (const key of this.importedCodeToUpload.keys()) {
-      this.importedCodeToUpload.get(key)();
+      await this.importedCodeToUpload.get(key)();
+
       this.importedCodeToUpload.delete(key);
     }
-    // #endregion Imported Code Upload/Deletion
+    // #endregion Imported Code Upload.
     // #region Code Renaming
-    for (const toDelete of this.consolidateRenames(this.renamedElements)) {
-      getJQuery().ajax({
+    for (const toDelete of this.renamedElements) {
+      await getJQuery().ajax({
         url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
         type: "POST",
         headers: {
@@ -1481,7 +1665,7 @@ export class Manager implements AfterViewInit {
     // #region Code Deletion
     for (const toDelete of this.removedElements) {
       if (!this.renamedElements.some((candidate) => candidate.oldPath === toDelete.path)) {
-        getJQuery().ajax({
+        await getJQuery().ajax({
           url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
           type: "POST",
           headers: {
@@ -1527,7 +1711,10 @@ export class Manager implements AfterViewInit {
       this.activeTab,
     );
     // #region Update FSL if necessary
-    if (this.activeTabDocFSL.indexOf(`"${this.currentlySelectedTreeNodePath.toLowerCase()}.js"`) === -1) {
+    if (
+      this.currentlySelectedTreeNode.data.Description !== "" &&
+      this.activeTabDocFSL.indexOf(`"${this.currentlySelectedTreeNodePath.toLowerCase()}.js"`) === -1
+    ) {
       this.activeTabDocFSL = `${this.activeTabDocFSL.substring(0, this.activeTabDocFSL.length - 1)},\"${this.currentlySelectedTreeNodePath.toLowerCase()}.ts\"]`;
     }
     // #endregion Update FSL if necessary
@@ -1563,8 +1750,8 @@ export class Manager implements AfterViewInit {
     for (const node of toExtractFrom) {
       result[`${base ? `${base.toLowerCase()}.` : ""}${node.label.toLowerCase()}`] = {
         Description: node.data ? node.data.Description.replace(/'/g, "") : "",
-        Parameter: node.data ? this.arrayToObject(node.data.Parameter ? node.data.Parameter : []) : [],
-        globals: node.data ? this.arrayToObject(node.data.globals) : [],
+        Parameter: node.data?.Parameter ? this.arrayToObject(node.data.Parameter) : [],
+        globals: node.data?.globals ? this.arrayToObject(node.data.globals) : [],
         notes: node.data.Notes ? node.data.Notes : "",
         code: node.data.code ? node.data.code : undefined,
       };
@@ -1589,7 +1776,7 @@ export class Manager implements AfterViewInit {
    * @param toIsolate The {@link TreeNode } to isolate.
    *
    * @returns The requested {@link TreeNode }. */
-  protected isolateNode(toIsolate: TreeNode): TreeNode {
+  protected isolateNode(toIsolate: TreeNode): TreeNode | undefined {
     const path: TreeNode[] = [];
     let currentNode: TreeNode | undefined = toIsolate;
 
@@ -1607,22 +1794,28 @@ export class Manager implements AfterViewInit {
 
     for (let i = 0; i < path.length; i++) {
       const originalNode = path[i];
+      const nextNodeInPath = path[i + 1];
 
       const newNode: TreeNode = {
         label: originalNode.label,
         key: originalNode.key,
         data: originalNode.data ? { ...originalNode.data } : undefined,
-        children: [...originalNode.children],
+        children: nextNodeInPath ? [{} as TreeNode] : [],
+        parent: undefined,
       };
 
       if (i === 0) {
         newRoot = newNode;
         currentNewNode = newNode;
       } else if (currentNewNode) {
-        currentNewNode.children.push(newNode);
+        currentNewNode.children[0] = newNode;
         newNode.parent = currentNewNode;
         currentNewNode = newNode;
       }
+    }
+
+    if (currentNewNode) {
+      currentNewNode.children = path[path.length - 1].children.map((child) => child);
     }
 
     return newRoot;
@@ -1643,16 +1836,16 @@ export class Manager implements AfterViewInit {
       detFunctionalities: object;
       detElementplaceholder: object;
       detStandards: object;
-      fileListing: string[];
-      fslFunctionalities: string[];
-      fslElementplaceholder: string[];
+      fileListing: string;
+      fslFunctionalities: string;
+      fslElementplaceholder: string;
     } = {
       detFunctionalities: {},
       detElementplaceholder: {},
       detStandards: {},
-      fileListing: [],
-      fslFunctionalities: [],
-      fslElementplaceholder: [],
+      fileListing: "[]",
+      fslFunctionalities: "[]",
+      fslElementplaceholder: "[]",
     };
 
     const toConvert = ZOD.tsCheck<TreeNode>(this.currentlySelectedTreeNode, Manager.zshTeeNode);
@@ -1670,11 +1863,11 @@ export class Manager implements AfterViewInit {
 
           for (const key in toExport.detFunctionalities) {
             if (toExport.detFunctionalities[key].Description !== "") {
-              fsl.push(`${key}.ts`);
+              fsl.push(`${key}.js`);
             }
           }
 
-          toExport.fslFunctionalities = fsl;
+          toExport.fslFunctionalities = fsl.length === 0 ? "[]" : JSON.stringify(fsl);
         }
         // #endregion Build file-listing
         break;
@@ -1690,12 +1883,12 @@ export class Manager implements AfterViewInit {
           const fsl = new Array<string>();
 
           for (const key in toExport.detElementplaceholder) {
-            if (toExport.detFunctionalities[key].Description !== "") {
-              fsl.push(`${key}.ts`);
+            if (toExport.detElementplaceholder[key].Description !== "") {
+              fsl.push(`${key}.js`);
             }
           }
 
-          toExport.fslElementplaceholder = fsl;
+          toExport.fslElementplaceholder = fsl.length === 0 ? "[]" : JSON.stringify(fsl);
         }
         // #endregion Build file-listing
         break;
@@ -1711,12 +1904,12 @@ export class Manager implements AfterViewInit {
           const fsl = new Array<string>();
 
           for (const key in toExport.detStandards) {
-            if (toExport.detFunctionalities[key].Description !== "") {
-              fsl.push(`${key}.ts`);
+            if (toExport.detStandards[key].Description !== "") {
+              fsl.push(`${key}.js`);
             }
           }
 
-          toExport.fileListing = fsl;
+          toExport.fileListing = fsl.length === 0 ? "[]" : JSON.stringify(fsl);
         }
         // #endregion Build file-listing
         break;
@@ -1939,9 +2132,9 @@ export class Manager implements AfterViewInit {
   }
   // #region Imported Code Upload
   /** Stores the uploads to perform to upload imported code. */
-  protected importedCodeToUpload: Map<{ type: string; key: string }, () => void> = new Map<
+  protected importedCodeToUpload: Map<{ type: string; key: string }, () => Promise<void>> = new Map<
     { type: string; key: string },
-    () => void
+    () => Promise<void>
   >();
   // #endregion Imported Code Upload
   /**
@@ -1975,26 +2168,107 @@ export class Manager implements AfterViewInit {
           try {
             const fileContent = e.target?.result as string;
             const parsedData: APIDocJSON = JSON.parse(fileContent);
+            // #region Rename items that're already existent.
+            const functionalityKeysAlreadyExistent = new Array<string>();
+
+            for (const candidate in parsedData.detFunctionalities) {
+              if (
+                parsedData.detFunctionalities[candidate].Description === "" ||
+                window.CodbiPluginData.detFunctionalities[candidate]
+              ) {
+                if (parsedData.detFunctionalities[candidate].Description !== "") {
+                  parsedData.detFunctionalities[
+                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}`
+                  ] = parsedData.detFunctionalities[candidate];
+                  parsedData.fslFunctionalities = parsedData.fslFunctionalities.replace(
+                    `${candidate}.ts`,
+                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}.ts`,
+                  );
+                }
+
+                delete parsedData.detFunctionalities[candidate];
+
+                functionalityKeysAlreadyExistent.push(candidate);
+              }
+            }
+
+            const standardsKeysAlreadyExistent = new Array<string>();
+
+            for (const candidate in parsedData.detStandards) {
+              if (
+                parsedData.detStandards[candidate].Description === "" ||
+                window.CodbiPluginData.detStandards[candidate]
+              ) {
+                if (parsedData.detStandards[candidate].Description !== "") {
+                  parsedData.detStandards[
+                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}`
+                  ] = parsedData.detStandards[candidate];
+
+                  parsedData.fileListing = parsedData.fileListing.replace(
+                    `${candidate}.ts`,
+                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}.ts`,
+                  );
+                }
+
+                delete parsedData.detStandards[candidate];
+
+                const standardsKeysAlreadyExistent = new Array<string>();
+              }
+            }
+
+            const epKeysAlreadyExistent = new Array<string>();
+
+            for (const candidate in parsedData.detElementplaceholder) {
+              if (
+                parsedData.detElementplaceholder[candidate].Description === "" ||
+                window.CodbiPluginData.detElementplaceholder[candidate]
+              ) {
+                if (parsedData.detElementplaceholder[candidate].Description !== "") {
+                  parsedData.detElementplaceholder[
+                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}`
+                  ] = parsedData.detElementplaceholder[candidate];
+
+                  parsedData.fslElementplaceholder = parsedData.fslElementplaceholder.replace(
+                    `${candidate}.ts`,
+                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}.ts`,
+                  );
+                }
+
+                delete parsedData.detElementplaceholder[candidate];
+
+                epKeysAlreadyExistent.push(candidate);
+              }
+            }
+            // #endregion Rename items that're already existent.
             // #region Upload Code
             for (const key in parsedData.detFunctionalities) {
+              if (window.CodbiPluginData.detFunctionalities[key]) {
+                continue;
+              }
+
               if (parsedData.detFunctionalities[key].Code) {
                 this.importedCodeToUpload.set({ type: "Functionality", key: key }, () => {
-                  getJQuery().ajax({
-                    url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
-                    type: "POST",
-                    headers: {
-                      "X-Action": "Update Code",
-                      "X-ActionDetail": "Functionality",
-                      "X-Element": key,
-                    },
-                    data: {
-                      ToWrite: parsedData.detFunctionalities[key].Code,
-                    },
-                    success: (response) => {
-                      window.CodbiPluginData.detFunctionalities[key].Code = parsedData.detFunctionalities[key].Code;
+                  return new Promise<void>((resolve, reject) => {
+                    getJQuery().ajax({
+                      url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+                      type: "POST",
+                      headers: {
+                        "X-Action": "Update Code",
+                        "X-ActionDetail": "Functionality",
+                        "X-Element": key,
+                      },
+                      data: {
+                        ToWrite: parsedData.detFunctionalities[key].Code,
+                      },
+                      success: (response) => {
+                        if (window.CodbiPluginData.detFunctionalities[key]) {
+                          window.CodbiPluginData.detFunctionalities[key].Code = parsedData.detFunctionalities[key].Code;
+                        }
 
-                      this.cdr.markForCheck();
-                    },
+                        this.cdr.markForCheck();
+                        resolve();
+                      },
+                    });
                   });
                 });
               }
@@ -2003,23 +2277,28 @@ export class Manager implements AfterViewInit {
             for (const key in parsedData.detElementplaceholder) {
               if (parsedData.detElementplaceholder[key].Code) {
                 this.importedCodeToUpload.set({ type: "Elementplaceholder", key: key }, () => {
-                  getJQuery().ajax({
-                    url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
-                    type: "POST",
-                    headers: {
-                      "X-Action": "Update Code",
-                      "X-ActionDetail": "Elementplaceholder",
-                      "X-Element": key,
-                    },
-                    data: {
-                      ToWrite: parsedData.detElementplaceholder[key].Code,
-                    },
-                    success: (response) => {
-                      window.CodbiPluginData.detElementplaceholder[key].Code =
-                        parsedData.detElementplaceholder[key].Code;
+                  return new Promise<void>((resolve, reject) => {
+                    getJQuery().ajax({
+                      url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+                      type: "POST",
+                      headers: {
+                        "X-Action": "Update Code",
+                        "X-ActionDetail": "Elementplaceholder",
+                        "X-Element": key,
+                      },
+                      data: {
+                        ToWrite: parsedData.detElementplaceholder[key].Code,
+                      },
+                      success: (response) => {
+                        if (window.CodbiPluginData.detElementplaceholder[key]) {
+                          window.CodbiPluginData.detElementplaceholder[key].Code =
+                            parsedData.detElementplaceholder[key].Code;
+                        }
 
-                      this.cdr.markForCheck();
-                    },
+                        this.cdr.markForCheck();
+                        resolve();
+                      },
+                    });
                   });
                 });
               }
@@ -2028,22 +2307,28 @@ export class Manager implements AfterViewInit {
             for (const key in parsedData.detStandards) {
               if (parsedData.detStandards[key].Code) {
                 this.importedCodeToUpload.set({ type: "Standard", key: key }, () => {
-                  getJQuery().ajax({
-                    url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
-                    type: "POST",
-                    headers: {
-                      "X-Action": "Update Code",
-                      "X-ActionDetail": "Standard",
-                      "X-Element": key,
-                    },
-                    data: {
-                      ToWrite: parsedData.detStandards[key].Code,
-                    },
-                    success: (response) => {
-                      window.CodbiPluginData.detStandards[key].Code = parsedData.detStandards[key].Code;
+                  return new Promise<void>((resolve, reject) => {
+                    getJQuery().ajax({
+                      url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+                      type: "POST",
+                      headers: {
+                        "X-Action": "Update Code",
+                        "X-ActionDetail": "Standard",
+                        "X-Element": key,
+                      },
+                      data: {
+                        ToWrite: parsedData.detStandards[key].Code,
+                      },
+                      success: (response) => {
+                        if (window.CodbiPluginData.detStandards[key]) {
+                          window.CodbiPluginData.detStandards[key].Code = parsedData.detStandards[key].Code;
+                        }
 
-                      this.cdr.markForCheck();
-                    },
+                        this.cdr.markForCheck();
+
+                        resolve();
+                      },
+                    });
                   });
                 });
               }
@@ -2054,7 +2339,25 @@ export class Manager implements AfterViewInit {
               detFunctionalities: this.items,
               detStandards: this.itemsStandard,
             });
+            // #region Remove not imported elements from filelistings.
+            for (const toRemove of functionalityKeysAlreadyExistent) {
+              convertedData.fslFunctionalities = convertedData.fslFunctionalities.filter(
+                (candidate) => candidate !== `${toRemove}.ts`,
+              );
+            }
 
+            for (const toRemove of epKeysAlreadyExistent) {
+              convertedData.fslElementplaceholder = convertedData.fslElementplaceholder.filter(
+                (candidate) => candidate !== `${toRemove}.ts`,
+              );
+            }
+
+            for (const toRemove of standardsKeysAlreadyExistent) {
+              convertedData.fileListing = convertedData.fileListing.filter(
+                (candidate) => candidate !== `${toRemove}.ts`,
+              );
+            }
+            // #endregion Remove not imported elements from filelistings.
             this.itemsStandard = convertedData.detStandards;
             this.items = convertedData.detFunctionalities;
             this.itemsElementplaceholder = convertedData.detElementplaceholder;
@@ -2063,6 +2366,7 @@ export class Manager implements AfterViewInit {
               ...(JSON.parse(window.CodbiPluginData.fileListing) as []),
               ...convertedData.fileListing,
             ]);
+
             window.CodbiPluginData.fslElementplaceholder = JSON.stringify([
               ...(JSON.parse(window.CodbiPluginData.fslElementplaceholder) as []),
               ...convertedData.fslElementplaceholder,
@@ -2714,18 +3018,23 @@ export class Manager implements AfterViewInit {
     if (incomingData.detStandards) {
       processComplexSection("detStandards", incomingData.detStandards);
     }
+
     if (incomingData.detFunctionalities) {
       processComplexSection("detFunctionalities", incomingData.detFunctionalities);
     }
+
     if (incomingData.detElementplaceholder) {
       processComplexSection("detElementplaceholder", incomingData.detElementplaceholder);
     }
+
     if (incomingData.fileListing) {
       mergedTree.fileListing = incomingData.fileListing.split(",");
     }
+
     if (incomingData.fslElementplaceholder) {
       mergedTree.fslElementplaceholder = incomingData.fslElementplaceholder.split(",");
     }
+
     if (incomingData.fslFunctionalities) {
       mergedTree.fslFunctionalities = incomingData.fslFunctionalities.split(",");
     }

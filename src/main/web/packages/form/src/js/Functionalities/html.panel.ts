@@ -322,22 +322,29 @@ export class HTML_Panel {
       // #endregion Required fields handling (validation handling).
       // #region Prevent form submission as long as there're invalid fields.
       getXUtil().on("submit", (params) => {
+        let reallyInvalid = false;
+
         if (HTML_Panel.invalidElements.length === 0) {
           return { preventSubmission: false };
         } else {
           for (const invalid of HTML_Panel.invalidElements) {
+            if (invalid.getAttribute("aria-invalid") === "false") {
+              continue;
+            }
+
+            reallyInvalid = true;
+
             HTML_Panel.unfoldPanelAncestors(invalid);
 
             const pageName = HTML_Panel.determinePage(invalid)?.getAttribute("data-xn");
 
             if (pageName) {
               gotoPage(pageName);
-
               invalid.scrollIntoView({ behavior: "smooth", block: toLoad.scrollblock as ScrollLogicalPosition });
             }
           }
 
-          return { preventSubmission: true };
+          return { preventSubmission: reallyInvalid };
         }
       });
       // #endregion Prevent form submission as long as there're invalid fields.
@@ -350,9 +357,7 @@ export class HTML_Panel {
             HTML_Panel.invalidElements = HTML_Panel.invalidElements.filter((candidate) => candidate !== item);
           }
         }
-      });
 
-      xm_validator.on("requestBegin", (data) => {
         if (
           (toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded &&
           data.items[0]?.classList.contains("XPage")

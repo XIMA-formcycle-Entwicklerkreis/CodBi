@@ -672,6 +672,7 @@ export class Manager implements AfterViewInit {
           }
           // #endregion Filter out removed code to be imported en sync.
           this.activeTabDocUpdater(this.activeTabDocFSL);
+          window.CodbiPluginData.updateSVManager(window.CodbiPluginData.fslFunctionalities); // Necessity to update the SVManager, too.
           // #endregion Remove from FSL
         }
 
@@ -714,6 +715,7 @@ export class Manager implements AfterViewInit {
             }
           }
           // #endregion Filter out removed code to be imported en sync.
+          this.activeTabDocUpdater(undefined);
         }
 
         break;
@@ -805,14 +807,32 @@ export class Manager implements AfterViewInit {
 
               switch (activeTab) {
                 case "Elementplaceholder":
+                  window.CodbiPluginData.fslElementplaceholder = JSON.stringify([
+                    ...(JSON.parse(window.CodbiPluginData.fslElementplaceholder) as []),
+                    `${fullNodePath}.ts`,
+                  ]);
+
+                  window.CodbiPluginData.updateEPManager(window.CodbiPluginData.fslElementplaceholder);
+
                   break;
                 case "Functionality":
                   window.CodbiPluginData.detFunctionalities[fullNodePath].Parameter = {};
+
+                  window.CodbiPluginData.fslFunctionalities = JSON.stringify([
+                    ...(JSON.parse(window.CodbiPluginData.fslFunctionalities) as []),
+                    `${fullNodePath}.ts`,
+                  ]);
+
+                  window.CodbiPluginData.updateSVManager(window.CodbiPluginData.fslFunctionalities);
 
                   break;
                 case "Standard":
                   window.CodbiPluginData.detStandards[fullNodePath].classes = {};
                   window.CodbiPluginData.detStandards[fullNodePath].globals = {};
+
+                  this.updateNodeToAPIDoc();
+
+                  break;
               }
             } else {
               this.currentCodBiElements[fullNodePath].Code = this.currentlySelectedTreeNode.data.Code = e.target
@@ -1713,7 +1733,7 @@ export class Manager implements AfterViewInit {
     // #region Update FSL if necessary
     if (
       this.currentlySelectedTreeNode.data.Description !== "" &&
-      this.activeTabDocFSL.indexOf(`"${this.currentlySelectedTreeNodePath.toLowerCase()}.js"`) === -1
+      this.activeTabDocFSL.indexOf(`"${this.currentlySelectedTreeNodePath.toLowerCase()}.ts"`) === -1
     ) {
       this.activeTabDocFSL = `${this.activeTabDocFSL.substring(0, this.activeTabDocFSL.length - 1)},\"${this.currentlySelectedTreeNodePath.toLowerCase()}.ts\"]`;
     }
@@ -2124,6 +2144,22 @@ export class Manager implements AfterViewInit {
       }
     });
     // #endregion Hotkey Registration
+    // #region Restore activity bar when coming out of responsive shrinked view.
+    window.matchMedia("screen and (min-width: 110em)").addEventListener("change", (event) => {
+      if (event.matches) {
+        const boundariesCurrentTab = document
+          .querySelector(`#CodBi_LocalAPIDoc p-tab[ value = "${this.activeTab}"]`)
+          .getBoundingClientRect();
+
+        document
+          .querySelector("#CodBi_LocalAPIDoc .p-tablist-active-bar")
+          .setAttribute(
+            "style",
+            `width: ${boundariesCurrentTab.width}px ; left: ${boundariesCurrentTab.x - boundariesCurrentTab.width}px ;`,
+          );
+      }
+    });
+    // #endregion Restore activity bar when coming out of responsive shrinked view.
   }
   /** Initiates this {@link Manager } further by setting the {@link Manager.translocoService }'s active language
    *  to {@link Manager.language }. */

@@ -29,6 +29,10 @@
     p-tablist {
       box-shadow: 0 0 .5em black;
       margin-bottom: .25em;
+
+      p-tab {
+        border-color: transparent !important;
+      }
     }
   }
 
@@ -317,6 +321,36 @@
     display: flex;
   }
 
+  // #region Responsive tab panels & options.
+  @media screen and (max-width: 110em) {
+    .p-tablist-tab-list {
+      display: block;
+
+    }
+
+    p-tab {
+      justify-content: center;
+    }
+
+    p-tab[value="Standard"] {
+      margin-bottom: 1em;
+    }
+
+    #CodBi_LocalAPIDoc_RightPanel_Options {
+      margin-bottom: .5em;
+      justify-content: center;
+    }
+
+    #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel {
+      border-radius: 1em;
+    }
+
+    .p-tablist-active-bar {
+      opacity: 0 !important;
+    }
+  }
+
+  // #endregion Responsive tab panels & options.
   #CodBi_LocalAPIDoc_RightPanel_Options_Sync {
     cursor: pointer;
     font-size: 1.5em;

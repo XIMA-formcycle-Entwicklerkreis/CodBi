@@ -257,7 +257,7 @@ export class SVManager extends HTMLDivElement {
           <input  part  = "Optioninput"
                   type  = "checkbox"></input>
 
-          <p part = "Optiontext">${this._optionTransformer ? this._optionTransformer(option) : option}</p></div>`;
+          <p part = "Optiontext">${this._optionTransformer ? this._optionTransformer(option.replace(".js", "")) : option.replace(".js", "")}</p></div>`;
     }
     // #endregion Options injection
     // #region Bind event handler

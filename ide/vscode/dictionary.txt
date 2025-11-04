@@ -207,6 +207,7 @@ Segmentcontent
 sein
 setattribute
 showblacklist
+shrinked
 siteid
 skewable
 sortiereihenfolge

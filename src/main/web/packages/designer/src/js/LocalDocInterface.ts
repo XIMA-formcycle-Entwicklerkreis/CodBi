@@ -159,6 +159,7 @@ export function enableLocalDocInterface(): void {
                       keyboardEvent.stopImmediatePropagation();
                       keyboardEvent.stopPropagation();
                       // #endregion Prevent default actions & bubbling.
+                      epManager.mode = "SV";
                       epManager.mode = "EP";
                       // #region Rebuild listing.
                       INSTANCE.tsCheck<HTMLElement>(
@@ -1010,6 +1011,8 @@ export function enableLocalDocInterface(): void {
                         HTMLElement,
                       ).innerHTML.toLowerCase() === "data-cb-func"
                     ) {
+                      window.CodbiPluginData.updateSVManager(window.CodbiPluginData.fslFunctionalities);
+
                       if (!epManager.enabled) {
                         added.setSelectionRange(added.value.length, added.value.length);
                         // #region Refresh listing.
@@ -1057,7 +1060,6 @@ export function enableLocalDocInterface(): void {
                     }
                     // #endregion Handle sole clicks on a [data-cb-func] value field
                     const addedParent = DEFINED.tsCheck<HTMLElement>(added.parentElement);
-
                     if (added.classList.contains("editor-text") && addedParent.classList.contains("r1")) {
                       let cbFUNCs: string | undefined;
 
@@ -1249,6 +1251,7 @@ export function enableLocalDocInterface(): void {
                           keyboardEvent.stopImmediatePropagation();
                           keyboardEvent.stopPropagation();
                           // #endregion Prevent default actions & bubbling.
+                          epManager.mode = "SV";
                           epManager.mode = "EP";
                           // #region Rebuild listing.
                           INSTANCE.tsCheck<HTMLElement>(
@@ -1264,6 +1267,7 @@ export function enableLocalDocInterface(): void {
                           );
                           // #endregion Rebuild listing.
                           // First time load of APIDoc
+                          console.log("s1:", epManager.currentOption);
                           if (cDetails.querySelector("object") === null) {
                             cDetails.innerHTML = "<object style = 'width : 100% ; height: 100% ;'></object>";
                           }
@@ -1503,7 +1507,7 @@ export function enableLocalDocInterface(): void {
                       const description = DEFINED.tsCheck<string>(
                         window.CodbiPluginData[
                           epManager.mode === "SV" ? "detFunctionalities" : "detElementplaceholder"
-                        ][newOption.toLowerCase()]?.Description,
+                        ][newOption.replace(".js", "").toLowerCase()]?.Description,
                       );
 
                       if (description[0] === "/") {

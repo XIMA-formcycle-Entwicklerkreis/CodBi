@@ -1,10 +1,12 @@
 <div    id      = 'CodBi_LocalAPIDoc' #CodBi_LocalAPIDoc
 
         [class.--synchronizing] = "synchronizing">
-    <p-splitter id = "Splitter"
+    <p-splitter id = "Splitter" #Splitter
                 [panelSizes]    = "[25, 75]"
                 [minSizes]      = "[20, 50]"
-                [style]         = "{ height: '100%', width : '100%' }">
+                [style]         = "{ height: '100%', width : '100%' }"
+
+                (onResizeEnd) = "onMainPanelResize()">
         <ng-template #panel >
             <div class = "-panel -left">
                 <p-tree id = "CodBi_LocalAPIDoc_Tree" #CodBi_LocalAPIDoc_Tree

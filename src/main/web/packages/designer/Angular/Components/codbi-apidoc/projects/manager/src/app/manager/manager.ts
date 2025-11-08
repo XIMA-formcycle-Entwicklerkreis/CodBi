@@ -31,7 +31,7 @@ import { Injectable } from "@angular/core";
 // #region PrimeNG
 import { Tree, TreeModule } from "primeng/tree";
 import { TabsModule } from "primeng/tabs";
-import { SplitterModule } from "primeng/splitter";
+import { type Splitter, SplitterModule } from "primeng/splitter";
 import { AccordionModule } from "primeng/accordion";
 import { TagModule } from "primeng/tag";
 import { FormsModule } from "@angular/forms";
@@ -256,6 +256,18 @@ class CommonApiParameter implements ApiParameter {
   encapsulation: ViewEncapsulation.None,
 })
 export class Manager implements AfterViewInit {
+  // #region Layout
+  /** The {@link Splitter } constituting the two main areas of this {@link Manager }. */
+  @ViewChild("Splitter") Splitter!: Splitter;
+  /**
+   * Handles the Resizing of the {@link Manage.Splitter } by storing it's {@link Splitter.panelSizes } into the
+   * {@link localStorage } in order to restore it when this {@link Manager } gets constructed.
+   *
+   * @param event As provided by Angular. */
+  protected onMainPanelResize() {
+    localStorage.setItem("CodBi_LocalAPIDocManager_Splitter_PanelSizes", JSON.stringify(this.Splitter.panelSizes));
+  }
+  // #endregion Layout
   // #region Component References
   @ViewChild("CodBi_LocalAPIDoc", { read: ElementRef }) CodBi_LocalAPIDoc!: ElementRef;
   // #endregion Component References
@@ -795,46 +807,49 @@ export class Manager implements AfterViewInit {
             });
 
             if (this.currentCodBiElements[fullNodePath] === undefined) {
-              this.currentlySelectedTreeNode.data.Description =
-                this.translocoService.translate("Add.NewNode.ViaCodeUpload");
               this.currentCodBiElements[fullNodePath] = {
                 Active: true,
-                Description: this.currentlySelectedTreeNode.label,
+                Description: this.translocoService.translate("Add.NewNode.ViaCodeUpload"),
                 // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
                 Code: (this.currentlySelectedTreeNode.data.Code = e.target?.result as string),
                 local: true,
               };
+            }
 
-              switch (activeTab) {
-                case "Elementplaceholder":
-                  window.CodbiPluginData.fslElementplaceholder = JSON.stringify([
-                    ...(JSON.parse(window.CodbiPluginData.fslElementplaceholder) as []),
-                    `${fullNodePath}.ts`,
-                  ]);
+            this.currentlySelectedTreeNode.data.Description =
+              this.translocoService.translate("Add.NewNode.ViaCodeUpload");
 
-                  window.CodbiPluginData.updateEPManager(window.CodbiPluginData.fslElementplaceholder);
+            switch (activeTab) {
+              case "Elementplaceholder":
+                window.CodbiPluginData.fslElementplaceholder = JSON.stringify([
+                  ...(JSON.parse(window.CodbiPluginData.fslElementplaceholder) as []),
+                  `${fullNodePath}.ts`,
+                ]);
 
-                  break;
-                case "Functionality":
-                  window.CodbiPluginData.detFunctionalities[fullNodePath].Parameter = {};
+                window.CodbiPluginData.updateEPManager(window.CodbiPluginData.fslElementplaceholder);
 
-                  window.CodbiPluginData.fslFunctionalities = JSON.stringify([
-                    ...(JSON.parse(window.CodbiPluginData.fslFunctionalities) as []),
-                    `${fullNodePath}.ts`,
-                  ]);
+                break;
+              case "Functionality":
+                window.CodbiPluginData.detFunctionalities[fullNodePath].Parameter = {};
 
-                  window.CodbiPluginData.updateSVManager(window.CodbiPluginData.fslFunctionalities);
+                window.CodbiPluginData.fslFunctionalities = JSON.stringify([
+                  ...(JSON.parse(window.CodbiPluginData.fslFunctionalities) as []),
+                  `${fullNodePath}.ts`,
+                ]);
 
-                  break;
-                case "Standard":
-                  window.CodbiPluginData.detStandards[fullNodePath].classes = {};
-                  window.CodbiPluginData.detStandards[fullNodePath].globals = {};
+                window.CodbiPluginData.updateSVManager(window.CodbiPluginData.fslFunctionalities);
 
-                  this.updateNodeToAPIDoc();
+                break;
+              case "Standard":
+                window.CodbiPluginData.detStandards[fullNodePath].classes = {};
+                window.CodbiPluginData.detStandards[fullNodePath].globals = {};
 
-                  break;
-              }
-            } else {
+                break;
+            }
+
+            this.updateNodeToAPIDoc();
+
+            if (this.currentCodBiElements[fullNodePath] !== undefined) {
               this.currentCodBiElements[fullNodePath].Code = this.currentlySelectedTreeNode.data.Code = e.target
                 ?.result as string;
             }
@@ -1292,9 +1307,23 @@ export class Manager implements AfterViewInit {
     const jsonCurrentTabDocFSL = JSON.parse(this.activeTabDocFSL);
 
     for (let i = 0; i < jsonCurrentTabDocFSL.length; i++) {
+      const lcJSONCurrentTabDocFSL = jsonCurrentTabDocFSL[i].toLowerCase();
+      const lcCurrentlySelectedTreeNodePath = this.currentlySelectedTreeNodePath.toLowerCase();
       // #region Replace only if the [currentlySelectedTreeNodePath] is the element and not just a part of it.
-      if (jsonCurrentTabDocFSL[i].indexOf(this.currentlySelectedTreeNodePath) === 0) {
+      if (jsonCurrentTabDocFSL[i].toLowerCase() === `${this.currentlySelectedTreeNodePath.toLowerCase()}.ts`) {
         jsonCurrentTabDocFSL[i] = jsonCurrentTabDocFSL[i].replace(this.currentlySelectedTreeNodePath, newPath);
+      } else {
+        if (
+          lcJSONCurrentTabDocFSL.indexOf(".") !== -1 &&
+          jsonCurrentTabDocFSL[i].toLowerCase() !== `${this.currentlySelectedTreeNodePath.toLowerCase()}.ts` &&
+          lcJSONCurrentTabDocFSL
+            .substring(0, lcJSONCurrentTabDocFSL.lastIndexOf("."))
+            .indexOf(lcCurrentlySelectedTreeNodePath) !== -1 &&
+          lcJSONCurrentTabDocFSL.replace(".ts", "").lastIndexOf(".") !==
+            lcCurrentlySelectedTreeNodePath.lastIndexOf(".")
+        ) {
+          jsonCurrentTabDocFSL[i] = jsonCurrentTabDocFSL[i].replace(this.currentlySelectedTreeNodePath, newPath);
+        }
       }
       // #endregion Replace only if the [currentlySelectedTreeNodePath] is the element and not just a part of it.
     }
@@ -1530,12 +1559,17 @@ export class Manager implements AfterViewInit {
     };
     // #region Functionalities
     for (const element in source.detFunctionalities) {
+      console.log("elementname", element);
+      const lcElementName = element.toLowerCase();
+
+      if (source.detFunctionalities[lcElementName] === undefined) {
+        continue;
+      }
       // #region Omit elements that are just path segments without any description.
       if (source.detFunctionalities[element].Description === "") {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
-      const lcElementName = element.toLowerCase();
 
       source.detFunctionalities[lcElementName].Code = destination.detFunctionalities[lcElementName].Code;
 
@@ -1558,6 +1592,10 @@ export class Manager implements AfterViewInit {
     // #endregion Functionalities
     // #region Elementplaceholder
     for (const element in source.detElementplaceholder) {
+      console.log("elementname ep", element);
+      if (source.detElementplaceholder[element] === undefined) {
+        continue;
+      }
       // #region Omit elements that are just path segments without any description.
       if (source.detElementplaceholder[element].Description === "") {
         continue;
@@ -1585,6 +1623,10 @@ export class Manager implements AfterViewInit {
     // #endregion Elementplaceholder
     // #region Standards
     for (const element in source.detStandards) {
+      console.log("elementname standard", element);
+      if (source.detStandards[element] === undefined) {
+        continue;
+      }
       // #region Omit elements that are just path segments without any description.
       if (source.detStandards[element].Description === "") {
         continue;
@@ -2147,15 +2189,14 @@ export class Manager implements AfterViewInit {
     // #region Restore activity bar when coming out of responsive shrinked view.
     window.matchMedia("screen and (min-width: 110em)").addEventListener("change", (event) => {
       if (event.matches) {
-        const boundariesCurrentTab = document
-          .querySelector(`#CodBi_LocalAPIDoc p-tab[ value = "${this.activeTab}"]`)
-          .getBoundingClientRect();
+        const activeTab = document.querySelector(`#CodBi_LocalAPIDoc p-tab[ value = "${this.activeTab}"]`);
+        const boundariesCurrentTab = activeTab.getBoundingClientRect();
 
         document
           .querySelector("#CodBi_LocalAPIDoc .p-tablist-active-bar")
           .setAttribute(
             "style",
-            `width: ${boundariesCurrentTab.width}px ; left: ${boundariesCurrentTab.x - boundariesCurrentTab.width}px ;`,
+            `width: ${boundariesCurrentTab.width}px ; left: ${boundariesCurrentTab.x - activeTab.parentElement.getBoundingClientRect().left}px ;`,
           );
       }
     });
@@ -2474,6 +2515,13 @@ export class Manager implements AfterViewInit {
       }
     });
     // #endregion Register file to import selected handler.
+    // #region Restore main panel sizes.
+    const storedPanelSizes = localStorage.getItem("CodBi_LocalAPIDocManager_Splitter_PanelSizes");
+
+    if (storedPanelSizes !== "undefined" && storedPanelSizes !== undefined && storedPanelSizes !== null) {
+      this.Splitter.panelSizes = INSTANCE.tsCheck<Array<number>>(JSON.parse(storedPanelSizes), Array<number>);
+    }
+    // #endregion Restore main panel sizes.
   }
   // #endregion Initialization
   // #endregion Basics

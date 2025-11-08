@@ -62,7 +62,12 @@ export class SVManager extends HTMLDivElement {
    *
    * @return The name of the currently set option. */
   public get currentOption(): string {
-    return byCssHtml(".---WaXCode.--SVManager.--Option.-Current", this.shadowRoot ?? undefined)?.dataset.cbOption ?? "";
+    return (
+      byCssHtml(".---WaXCode.--SVManager.--Option.-Current", this.shadowRoot ?? undefined)?.dataset.cbOption.replace(
+        ".js",
+        "",
+      ) ?? ""
+    );
   }
   /** Stores the last {@link KeyboardEvent }'s **key** that passed through {@link SVManager.onKeydownTarget }. */
   protected lastKey: string | undefined;
@@ -233,7 +238,6 @@ export class SVManager extends HTMLDivElement {
     // #endregion DOM preparations
     // #region Provide Update via PluginData
     window.CodbiPluginData.updateSVManager = (options: string) => {
-      //console.log("received options", options);
       this.options = JSON.parse(options).map((e: string) => e.replace(".ts", ""));
 
       this.render();
@@ -655,7 +659,13 @@ export class SVManager extends HTMLDivElement {
       const part = byCssAs('[ part = "Optioninput"]', HTMLInputElement, option);
 
       if (part !== undefined) {
-        part.checked = DEFINED.tsCheck<HTMLInputElement>(this.target).value.toLowerCase().indexOf(cbOption) !== -1;
+        part.checked = false;
+
+        for (const candidate of this.target.value.split(",")) {
+          if (candidate === cbOption) {
+            part.checked = true;
+          }
+        }
       }
     }
 

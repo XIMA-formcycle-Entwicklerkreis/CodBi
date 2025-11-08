@@ -168,11 +168,11 @@ class StructuredDataStoreAction : IPluginServletAction {
           return PluginServletActionRetVal(servletResponse)
         }
 
-        loadCodeFromFile(element, detail)
+        var result = loadCodeFromFile(element, detail)
 
         lock.read {
           servletResponse.value =
-              "{\"result\": \"${ code.replace("\"","<|>").replace("\r","").replace("\n","").replace("\t","")}\"}"
+              "{\"result\": \"${ result.replace("\"","<|>").replace("\r","").replace("\n","").replace("\t","")}\"}"
         }
       }
 
@@ -370,32 +370,38 @@ class StructuredDataStoreAction : IPluginServletAction {
   }
 
   /** Attempts to load the local API-Documentation into [documentation]. */
-  private fun loadCodeFromFile(element: String, detail: String) {
+  private fun loadCodeFromFile(element: String, detail: String): String {
     val dataFile: File? = getPluginCodeFile(element, detail)
 
     if (dataFile == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
           .error("Code file for ${ element } could not be found.")
 
-      return
+      code = "NONE"
+
+      return "NONE"
     }
 
     lock.write {
       if (dataFile.exists() && dataFile.length() > 0) {
         try {
-          code = dataFile.readText(StandardCharsets.UTF_8)
+          return dataFile.readText(StandardCharsets.UTF_8)
         } catch (X: IOException) {
           LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
               .error(
                   "Following error loading data from file '${ dataFile.absolutePath }': ${ X.message }")
 
           code = "NONE"
+
+          return "NONE"
         } catch (X: Exception) {
           LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
               .error(
                   "Following unexpected error loading data from file '${dataFile.absolutePath}': ${ X.message}")
 
           code = "NONE"
+
+          return "NONE"
         }
       } else {
         LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
@@ -403,6 +409,8 @@ class StructuredDataStoreAction : IPluginServletAction {
                 "Either there is no existing data file at '${ dataFile.absolutePath } (lenght is ${ dataFile.length()})' or the file is empty.")
 
         code = "NONE"
+
+        return "NONE"
       }
     }
   }

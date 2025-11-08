@@ -47,6 +47,26 @@ export class EPManager extends SVManager {
   public get mode(): "SV" | "EP" {
     return this._mode;
   }
+  /** Hides the checkboxes after {@link SVManager.render }ing if {@link EPManager.mode } is set to "EP". */
+  protected override render(): void {
+    super.render();
+
+    if (this.mode === "EP") {
+      for (const checkbox of DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelectorAll('[ part = "Optioninput"]')) {
+        const cb = INSTANCE.tsCheck<HTMLElement>(checkbox, HTMLElement);
+
+        cb.style.display = "none";
+
+        const text = INSTANCE.tsCheck<HTMLElement>(
+          DEFINED.tsCheck<HTMLElement>(cb.parentElement).querySelector('[ part = "Optiontext"]'),
+          HTMLElement,
+        );
+
+        text.style.marginLeft = "auto";
+        text.style.marginRight = "auto";
+      }
+    }
+  }
   /**
    * Sets the current {@link EPManager.mode } switching the {@link SVManager.options } with the
    * {@link EPManager.epOptions} when set to "**EP**" and vice versa. */

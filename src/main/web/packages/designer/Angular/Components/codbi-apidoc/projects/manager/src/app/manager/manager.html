@@ -19,7 +19,8 @@
 
                         selectionMode = "single"
 
-                        (onNodeSelect) = "onNodeSelect( $event )">
+                        (onNodeSelect)  = "onNodeSelect( $event )"
+                        (onFilter)      = "onFilterNodes( $event )">
                         <ng-template    let-node
 
                                         pTemplate = "default">
@@ -35,6 +36,7 @@
                                             [value] = "node.label"
 
                                             (keyup)         = "onKeyupRenameInput( $event )"
+                                            (keydown)       = "onKeydownRenameInput( $event )"
                                             (blur)          = "onBlurRenameInput( $event )"
                                             (keydown.enter) = "onBlurRenameInput( $event )"/>
 
@@ -403,7 +405,7 @@
                 <li><strong>{{"Input.Label.Outro.Quality" | transloco }}</strong> - {{"Input.Label.Outro.Quality.Details" | transloco }}</li>
                 <li><strong>{{"Input.Label.Outro.Knowledge" | transloco }}</strong> - {{"Input.Label.Outro.Knowledge.Details" | transloco }}</li></ul>
 
-            <h3 id = "CodBi_LocalAPIDoc_New_Outro_NamingConvention">Wichtig für die Benennung:</h3>
+            <h3 id = "CodBi_LocalAPIDoc_New_Outro_NamingConvention">{{"Input.Label.Outro.ImportantWhenNaming" | transloco }}</h3>
 
             <p [innerHTML] = "'Input.Label.Outro.NamingConvention' | transloco"></p></div></div>
 

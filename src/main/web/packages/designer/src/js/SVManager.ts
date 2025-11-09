@@ -238,7 +238,7 @@ export class SVManager extends HTMLDivElement {
     // #endregion DOM preparations
     // #region Provide Update via PluginData
     window.CodbiPluginData.updateSVManager = (options: string) => {
-      this.options = JSON.parse(options).map((e: string) => e.replace(".ts", ""));
+      this.options = JSON.parse(options).map((e: string) => e.replace(".js", ""));
 
       this.render();
     };

@@ -873,8 +873,6 @@ export function enableLocalDocInterface(): void {
                           );
 
                           if (window.CodbiPluginData.detStandards[realName]?.Description[0] === "/") {
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
-
                             cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
                           } else {
                             cDetails.innerHTML = `
@@ -1059,144 +1057,148 @@ export function enableLocalDocInterface(): void {
                       }
                     }
                     // #endregion Handle sole clicks on a [data-cb-func] value field
-                    const addedParent = DEFINED.tsCheck<HTMLElement>(added.parentElement);
-                    if (added.classList.contains("editor-text") && addedParent.classList.contains("r1")) {
-                      let cbFUNCs: string | undefined;
+                    if (added.parentElement) {
+                      const addedParent = added.parentElement;
+                      if (added.classList.contains("editor-text") && addedParent.classList.contains("r1")) {
+                        let cbFUNCs: string | undefined;
 
-                      for (const possibleCBFunc of DEFINED.tsCheck<HTMLElement>(
-                        DEFINED.tsCheck<HTMLElement>(addedParent.parentElement).parentElement,
-                      ).querySelectorAll(".r1")) {
-                        if (possibleCBFunc.innerHTML.toLowerCase() === "data-cb-func") {
-                          cbFUNCs = INSTANCE.tsCheck<HTMLElement>(
-                            DEFINED.tsCheck<HTMLElement>(possibleCBFunc.parentElement).querySelector(".r2"),
-                            HTMLElement,
-                          ).innerHTML;
+                        if (added.parentElement.parentElement) {
+                          for (const possibleCBFunc of DEFINED.tsCheck<HTMLElement>(
+                            DEFINED.tsCheck<HTMLElement>(addedParent.parentElement).parentElement,
+                          ).querySelectorAll(".r1")) {
+                            if (possibleCBFunc.innerHTML.toLowerCase() === "data-cb-func") {
+                              cbFUNCs = INSTANCE.tsCheck<HTMLElement>(
+                                DEFINED.tsCheck<HTMLElement>(possibleCBFunc.parentElement).querySelector(".r2"),
+                                HTMLElement,
+                              ).innerHTML;
 
-                          break;
-                        }
-                      }
-
-                      if (cbFUNCs) {
-                        // #region If a data-cb-func field is existent...
-                        INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement).placeholder = "CodBi: ALT+P";
-
-                        added.addEventListener("keydown", (event) => {
-                          // #region Show listing of available functionality parameter.
-                          if (event.altKey && (event.key === "p" || event.key === "P")) {
-                            // #region Build Parameter-listing according to selected functionalities
-                            const parameterListing: { [key: string]: Array<string> } = {};
-
-                            for (let functionality of cbFUNCs.trim().split(",")) {
-                              // Process functionality only if it is not an empty string...
-                              if (!/^\s*$/.test(functionality)) {
-                                functionality = functionality.toLowerCase();
-
-                                parameterListing[functionality] = new Array<string>();
-
-                                for (const parameter in window.CodbiPluginData.detFunctionalities[functionality]
-                                  ?.Parameter) {
-                                  DEFINED.tsCheck<Array<string>>(parameterListing[functionality]).push(parameter);
-                                }
-                              }
-
-                              const functionalityParameter = new Array<string>();
-
-                              for (const functionality in parameterListing) {
-                                for (const parameter of DEFINED.tsCheck<Array<string>>(
-                                  parameterListing[functionality],
-                                )) {
-                                  functionalityParameter.push(`${functionality} / ${parameter}`);
-                                }
-                              }
-                              // If there is no parameter for the selected functionalities, abort showing the interface.
-                              if (functionalityParameter.length === 0) {
-                                return;
-                              }
-                              // #endregion Build Parameter-listing according to selected functionalities
-                              // #region Reset the <XC-OptionInput>'s option-transformer.
-                              optioninput.optionTransformer = (toTransform: string): string => {
-                                return toTransform.toUpperCase();
-                              };
-                              // #endregion Reset the <XC-OptionInput>'s option-transformer.
-                              // #region Show the interface.
-                              optioninput.mode = "Functionality Parameter";
-                              optioninput.target = added;
-                              optioninput.enabled = true;
-                              optioninput.options = functionalityParameter;
-                              cDetails.style.display = "block";
-                              optioninput.targetOptionTransformer = (toTransform: string): string => {
-                                return `data-cb-${toTransform.substring(toTransform.indexOf("/") + 1).trim()}`;
-                              };
-
-                              updateLayoutOptioninput(added);
-                              updateLayoutCDetails(optioninput);
-                              // #region Show the interface.
-                              // #region Set initial documentation details.
-                              if (
-                                window.CodbiPluginData.detFunctionalities[
-                                  optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)
-                                ]?.Description[0] === "/"
-                              ) {
-                                cDetails.innerHTML = `<object data = '${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-                              } else {
-                                const docLoader = cDetails.querySelector(".APIDocLoader");
-
-                                if (docLoader) {
-                                  docLoader.remove();
-                                }
-
-                                cDetails.innerHTML = `
-                                  <div style = "width: 100% ; height: 100% ; overflow : auto ;">
-                                    ${window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}</div>`;
-                              }
-                              // #endregion Set initial documentation details.
-                              cDetails.innerHTML = cDetails.innerHTML.replace("undefined", "");
+                              break;
                             }
                           }
-                          // #endregion Show listing of available functionality parameter.
-                          // #region Hide Interface on ESC.
-                          if (event.key === "Escape") {
-                            optioninput.enabled = false;
-                            cDetails.style.display = "none";
-                            // #endregion Hide Interface on ESC.
-                          }
-                        });
-                        // #region Hide interface on blur.
-                        added.addEventListener("blur", (event) => {
-                          if (!flagMouseOverCDetails) {
-                            optioninput.enabled = false;
-                            cDetails.style.display = "none";
-                          } else {
-                            currentCDetailBlurAction = () => {
+                        }
+
+                        if (cbFUNCs) {
+                          // #region If a data-cb-func field is existent...
+                          INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement).placeholder = "CodBi: ALT+P";
+
+                          added.addEventListener("keydown", (event) => {
+                            // #region Show listing of available functionality parameter.
+                            if (event.altKey && (event.key === "p" || event.key === "P")) {
+                              // #region Build Parameter-listing according to selected functionalities
+                              const parameterListing: { [key: string]: Array<string> } = {};
+
+                              for (let functionality of cbFUNCs.trim().split(",")) {
+                                // Process functionality only if it is not an empty string...
+                                if (!/^\s*$/.test(functionality)) {
+                                  functionality = functionality.toLowerCase();
+
+                                  parameterListing[functionality] = new Array<string>();
+
+                                  for (const parameter in window.CodbiPluginData.detFunctionalities[functionality]
+                                    ?.Parameter) {
+                                    DEFINED.tsCheck<Array<string>>(parameterListing[functionality]).push(parameter);
+                                  }
+                                }
+
+                                const functionalityParameter = new Array<string>();
+
+                                for (const functionality in parameterListing) {
+                                  for (const parameter of DEFINED.tsCheck<Array<string>>(
+                                    parameterListing[functionality],
+                                  )) {
+                                    functionalityParameter.push(`${functionality} / ${parameter}`);
+                                  }
+                                }
+                                // If there is no parameter for the selected functionalities, abort showing the interface.
+                                if (functionalityParameter.length === 0) {
+                                  return;
+                                }
+                                // #endregion Build Parameter-listing according to selected functionalities
+                                // #region Reset the <XC-OptionInput>'s option-transformer.
+                                optioninput.optionTransformer = (toTransform: string): string => {
+                                  return toTransform.toUpperCase();
+                                };
+                                // #endregion Reset the <XC-OptionInput>'s option-transformer.
+                                // #region Show the interface.
+                                optioninput.mode = "Functionality Parameter";
+                                optioninput.target = added;
+                                optioninput.enabled = true;
+                                optioninput.options = functionalityParameter;
+                                cDetails.style.display = "block";
+                                optioninput.targetOptionTransformer = (toTransform: string): string => {
+                                  return `data-cb-${toTransform.substring(toTransform.indexOf("/") + 1).trim()}`;
+                                };
+
+                                updateLayoutOptioninput(added);
+                                updateLayoutCDetails(optioninput);
+                                // #region Show the interface.
+                                // #region Set initial documentation details.
+                                if (
+                                  window.CodbiPluginData.detFunctionalities[
+                                    optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)
+                                  ]?.Description[0] === "/"
+                                ) {
+                                  cDetails.innerHTML = `<object data = '${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
+                                } else {
+                                  const docLoader = cDetails.querySelector(".APIDocLoader");
+
+                                  if (docLoader) {
+                                    docLoader.remove();
+                                  }
+
+                                  cDetails.innerHTML = `
+                                  <div style = "width: 100% ; height: 100% ; overflow : auto ;">
+                                    ${window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}</div>`;
+                                }
+                                // #endregion Set initial documentation details.
+                                cDetails.innerHTML = cDetails.innerHTML.replace("undefined", "");
+                              }
+                            }
+                            // #endregion Show listing of available functionality parameter.
+                            // #region Hide Interface on ESC.
+                            if (event.key === "Escape") {
                               optioninput.enabled = false;
                               cDetails.style.display = "none";
-                            };
-                          }
-                        });
-                        // #endregion Hide interface on blur.
-                        // #endregion If a data-cb-func field is existent...
-                      } else {
-                        // #region If there is no data-cb-func field existent...
-                        INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement).placeholder = "CodBi: ALT+F";
-                        // #region Create a data-cb-func field on ALT + F.
-                        added.addEventListener("keydown", (event) => {
-                          if (event.altKey && (event.key === "f" || event.key === "F")) {
-                            event.preventDefault();
-                            event.stopImmediatePropagation();
-                            event.stopPropagation();
+                              // #endregion Hide Interface on ESC.
+                            }
+                          });
+                          // #region Hide interface on blur.
+                          added.addEventListener("blur", (event) => {
+                            if (!flagMouseOverCDetails) {
+                              optioninput.enabled = false;
+                              cDetails.style.display = "none";
+                            } else {
+                              currentCDetailBlurAction = () => {
+                                optioninput.enabled = false;
+                                cDetails.style.display = "none";
+                              };
+                            }
+                          });
+                          // #endregion Hide interface on blur.
+                          // #endregion If a data-cb-func field is existent...
+                        } else {
+                          // #region If there is no data-cb-func field existent...
+                          INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement).placeholder = "CodBi: ALT+F";
+                          // #region Create a data-cb-func field on ALT + F.
+                          added.addEventListener("keydown", (event) => {
+                            if (event.altKey && (event.key === "f" || event.key === "F")) {
+                              event.preventDefault();
+                              event.stopImmediatePropagation();
+                              event.stopPropagation();
 
-                            added.value = "data-cb-func";
+                              added.value = "data-cb-func";
 
-                            INSTANCE.tsCheck<HTMLElement>(
-                              DEFINED.tsCheck<HTMLElement>(
-                                DEFINED.tsCheck<HTMLElement>(added.parentElement).parentElement,
-                              ).querySelector(".r2"),
-                              HTMLElement,
-                            ).click();
-                          }
-                        });
-                        // #endregion Create a data-cb-func field on ALT + F.
-                        // #endregion If there is no data-cb-func field existent...
+                              INSTANCE.tsCheck<HTMLElement>(
+                                DEFINED.tsCheck<HTMLElement>(
+                                  DEFINED.tsCheck<HTMLElement>(added.parentElement).parentElement,
+                                ).querySelector(".r2"),
+                                HTMLElement,
+                              ).click();
+                            }
+                          });
+                          // #endregion Create a data-cb-func field on ALT + F.
+                          // #endregion If there is no data-cb-func field existent...
+                        }
                       }
                     }
 
@@ -1267,7 +1269,6 @@ export function enableLocalDocInterface(): void {
                           );
                           // #endregion Rebuild listing.
                           // First time load of APIDoc
-                          console.log("s1:", epManager.currentOption);
                           if (cDetails.querySelector("object") === null) {
                             cDetails.innerHTML = "<object style = 'width : 100% ; height: 100% ;'></object>";
                           }

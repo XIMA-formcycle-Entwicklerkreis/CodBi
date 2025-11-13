@@ -54,5 +54,18 @@
   "TreeView.Label.Status.Parameter": "Parameterbeschreibung vorhanden",
   "TreeView.Label.Status.Globals": "Beschreibung globaler Parameter vorhanden",
   "TreeView.Label.Status.Classes": "Beschreibung der von dieser CodBi Standard-Konfiguration definierten CSS-Klassen vorhanden",
-  "TreeView.Label.Status.Code": "Code verfügbar"
+  "TreeView.Label.Status.Code": "Code verfügbar",
+  "CodeTemplate_OnLoaded": "Wenn Dokument Geladen",
+  "CodeTemplate_Functionality": "Neue Funktionalität",
+  "CodeTemplate_Functionality_Placeholder": "Meine.Neue.Funktionalitaet",
+  "CodeTemplate_EP": "Neuer Elementplatzhalter",
+  "CodeTemplate_EP_Placeholder": "Mein.Neuer.Elementplatzhalter",
+  "CodeTemplate_Standard": "Neue Standardkonfiguration",
+  "CodeTemplate_Standard_Placeholder_Targets": ".Zielklasse(n) für meine neue Standardkonfiguration (durch ~ getrennte CSS Selektoren)",
+  "CodeTemplate_Standard_Placeholder_FUNC": "CSV der auszuführenden Funktionalität(en)",
+  "CodeTemplate_Functionality_Extend": "Erweitern einer Funktionalität",
+  "CodeTemplate_Functionality_Extend_Placeholder": "Zu.Erweiternde.Funktionalitaet",
+  "CodeTemplate_EP_Extend": "Erweitern einer Elementplatzhalters",
+  "CodeTemplate_EP_Extend_Placeholder": "Zu.Erweiternder.Platzhalter",
+  "CodeTemplate_Start": "CodBi starten"
 }

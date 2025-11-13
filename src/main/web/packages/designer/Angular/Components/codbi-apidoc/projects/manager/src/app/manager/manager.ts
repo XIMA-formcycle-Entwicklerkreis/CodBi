@@ -1345,19 +1345,24 @@ export class Manager implements AfterViewInit {
 
         delete currentCodBiData[element];
       } else {
-        if (
-          currentCodBiData[element].local &&
-          element.indexOf(this.currentlySelectedTreeNodePath) === 0 &&
-          element[this.currentlySelectedTreeNodePath.length] === "."
-        ) {
-          if (element.lastIndexOf(".") !== -1 && element.lastIndexOf(".") + 1 < newPath.length) {
-            continue;
+        if (currentCodBiData[element].local) {
+          if (
+            element.indexOf(this.currentlySelectedTreeNodePath) === 0 &&
+            element[this.currentlySelectedTreeNodePath.length] === "."
+          ) {
+            if (
+              element.lastIndexOf(".") !== -1 &&
+              element.indexOf(this.currentlySelectedTreeNodePath) !== 0 &&
+              element.lastIndexOf(".") + 1 < newPath.length
+            ) {
+              continue;
+            }
+
+            currentCodBiData[`${element.replace(this.currentlySelectedTreeNodePath, newPath)}`] =
+              currentCodBiData[element];
+
+            delete currentCodBiData[element];
           }
-
-          currentCodBiData[`${element.replace(this.currentlySelectedTreeNodePath, newPath)}`] =
-            currentCodBiData[element];
-
-          delete currentCodBiData[element];
         }
       }
     }
@@ -1482,8 +1487,8 @@ export class Manager implements AfterViewInit {
     }
 
     for (const key in localNodeData.detElementplaceholder) {
-      if (localNodeData.detFunctionalities[key].Description === "") {
-        delete localNodeData.detFunctionalities[key];
+      if (localNodeData.detElementplaceholder[key].Description === "") {
+        delete localNodeData.detElementplaceholder[key];
 
         continue;
       }
@@ -1492,8 +1497,8 @@ export class Manager implements AfterViewInit {
     }
 
     for (const key in localNodeData.detStandards) {
-      if (localNodeData.detFunctionalities[key].Description === "") {
-        delete localNodeData.detFunctionalities[key];
+      if (localNodeData.detStandards[key].Description === "") {
+        delete localNodeData.detStandards[key];
 
         continue;
       }
@@ -1628,8 +1633,11 @@ export class Manager implements AfterViewInit {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
-
-      source.detFunctionalities[lcElementName].Code = destination.detFunctionalities[lcElementName].Code;
+      if (source.detFunctionalities[lcElementName]) {
+        source.detFunctionalities[lcElementName].Code = destination.detFunctionalities[lcElementName].Code;
+      } else {
+        source.detFunctionalities[lcElementName] = destination.detFunctionalities[lcElementName];
+      }
 
       document.querySelector('div[is = "xc-epmanager"]').setAttribute(
         "options",
@@ -1660,8 +1668,11 @@ export class Manager implements AfterViewInit {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
-
-      source.detElementplaceholder[lcElementName].Code = destination.detElementplaceholder[lcElementName].Code;
+      if (source.detElementplaceholder[lcElementName]) {
+        source.detElementplaceholder[lcElementName].Code = destination.detElementplaceholder[lcElementName].Code;
+      } else {
+        source.detElementplaceholder[lcElementName] = destination.detElementplaceholder[lcElementName];
+      }
 
       document.querySelector('div[is = "xc-epmanager"]').setAttribute(
         "epoptions",
@@ -1691,7 +1702,11 @@ export class Manager implements AfterViewInit {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
-      source.detStandards[lcElementName].Code = destination.detStandards[lcElementName].Code;
+      if (source.detStandards[lcElementName]) {
+        source.detStandards[lcElementName].Code = destination.detStandards[lcElementName].Code;
+      } else {
+        source.detStandards[lcElementName] = destination.detStandards[lcElementName];
+      }
 
       destination.fileListing = `${destination.fileListing.substring(0, destination.fileListing.length - 1)},\"${element}.js\"]`;
 
@@ -2222,7 +2237,7 @@ export class Manager implements AfterViewInit {
   /** The {@link ChangeDetectorRef } for this {@link Manager }.*/
   protected cdr: ChangeDetectorRef;
   /** The {@link TranslocoService } used by this {@link Manager }. */
-  protected translocoService: TranslocoService;
+  public translocoService: TranslocoService;
   // #region Initialization
   /**
    * Constructs this {@link Manager } by registering **ALT + C** as the hotkey for showing/hiding itself and
@@ -2233,6 +2248,11 @@ export class Manager implements AfterViewInit {
   constructor(cdr: ChangeDetectorRef, translocoService: TranslocoService) {
     this.cdr = cdr;
     this.translocoService = translocoService;
+    // #region Register Translation Service
+    window.CodbiPluginData.retrieveManagerTranslatedResource = (id: string): string => {
+      return this.translocoService.translate(id);
+    };
+    // #endregion Register Translation Service
     // #region Hotkey Registration
     document.addEventListener("keyup", (event) => {
       if (event.altKey && event.key === "c") {
@@ -2278,6 +2298,18 @@ export class Manager implements AfterViewInit {
    * Initializes the view further by setting the watermark, registering the close dialog and the import
    * file selection handler. */
   ngAfterViewInit() {
+    getJQuery().ajax({
+      url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
+      type: "GET",
+      headers: {
+        "X-Action": "Sync Allowed",
+      },
+      success: (response) => {
+        if (response.message === "FALSE") {
+          this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.style.display = "none";
+        }
+      },
+    });
     // #region Apply Watermark
     this.CodBi_LocalAPIDoc_Tree.nativeElement.style.backgroundImage = `url('${this.watermark}')`;
     // #endregion Apply Watermark

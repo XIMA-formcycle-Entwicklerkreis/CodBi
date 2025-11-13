@@ -10,6 +10,35 @@ import { Optioninput } from "./OptionInput.js";
 import { SVManager } from "./SVManager.js";
 import { EPManager } from "./EPManager.js";
 // #endregion Imports
+// #region Helper
+/**
+ * Determines the size in pixels of one EM within the context of the specified **element**.
+ *
+ * @param element The {@link HTMLElement } which's  corresponding EM shall be calculated.
+ *
+ * @returns The requested EM in pixels. */
+function getEmSizeInPixels(element: Element) {
+  const computedStyles = window.getComputedStyle(element);
+  const fontSizeString = computedStyles.getPropertyValue("font-size");
+  const result = Number.parseFloat(fontSizeString);
+
+  return result;
+}
+/**
+ * Inserts the {@link string } **toInsert** into the specified {@link HTMLTextAreaElement }.
+ *
+ * @param into      The {@link HTMLTextAreaElement } to insert the {@link string } **toInsert** to.
+ * @param toInsert  The {@link string } to insert into the specified {@link HTMLTextAreaElement }. */
+function insertText(into: HTMLTextAreaElement, toInsert: string) {
+  const start = into.selectionStart;
+  const end = into.selectionEnd;
+  const value = into.value;
+
+  into.value = value.substring(0, start) + toInsert + value.substring(end);
+
+  into.dispatchEvent(new Event("input", { bubbles: true }));
+}
+// #endregion Helper
 export function enableLocalDocInterface(): void {
   if (window.CodbiPluginData === undefined) {
     return;
@@ -66,6 +95,71 @@ export function enableLocalDocInterface(): void {
         keystrokeBlockingStart = new Date();
       });
       // #endregion Attach event to set keystroke blocker.
+      // #region Register Template-Selected Handler
+      optioninput.onOptionSelected.push((selectedOption: string) => {
+        if (optioninput.mode === "Code Template") {
+          switch (selectedOption) {
+            case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_OnLoaded"):
+              insertText(
+                optioninput.target as unknown as HTMLTextAreaElement,
+                'window.addEventListener("load", (event) => {});',
+              );
+
+              break;
+
+            case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality"):
+              insertText(
+                optioninput.target as unknown as HTMLTextAreaElement,
+                `window.codbi.registerFunctionality("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality_Placeholder")}",( toLoad, toProcess ) =>  {});`,
+              );
+
+              break;
+
+            case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP"):
+              insertText(
+                optioninput.target as unknown as HTMLTextAreaElement,
+                `window.codbi.registerEP("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Placeholder")}",( params ) =>  {});`,
+              );
+
+              break;
+
+            case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Standard"):
+              insertText(
+                optioninput.target as unknown as HTMLTextAreaElement,
+                `window.codbi.loadConfig({ targets: "${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Standard_Placeholder_Targets")}", FUNC: "${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Standard_Placeholder_FUNC")}"});`,
+              );
+
+              break;
+
+            case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality_Extend"):
+              insertText(
+                optioninput.target as unknown as HTMLTextAreaElement,
+                `window.codbi.extendFunctionality("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality_Extend_Placeholder")}",( toLoad, toProcess ) =>  {});`,
+              );
+
+              break;
+
+            case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend"):
+              insertText(optioninput.target as unknown as HTMLTextAreaElement, "window.codbi.checkAttributes();");
+
+              break;
+
+            case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Start"):
+              insertText(
+                optioninput.target as unknown as HTMLTextAreaElement,
+                `window.codbi.extendEP("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend_Placeholder")}",( params, formerResult ) =>  {});`,
+              );
+
+              break;
+
+            default:
+              insertText(optioninput.target as unknown as HTMLTextAreaElement, "!! UNKNOWN SELECTION !!");
+          }
+
+          optioninput.enabled = false;
+        }
+      });
+      // #endregion Register Template-Selected Handler
       // #region Define handler for the <XC-OptionInput>'s changes in option.
       optioninput.onAutocomplete.push((completedOption: string) => {
         if (optioninput.mode === "Functionality Parameter") {
@@ -153,7 +247,7 @@ export function enableLocalDocInterface(): void {
                   added.addEventListener("keydown", (event) => {
                     const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
 
-                    if (keyboardEvent.altKey && (keyboardEvent.key === "e" || keyboardEvent.key === "E")) {
+                    if (keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === "e") {
                       // #region Prevent default actions & bubbling.
                       keyboardEvent.preventDefault();
                       keyboardEvent.stopImmediatePropagation();
@@ -251,6 +345,10 @@ export function enableLocalDocInterface(): void {
       // #endregion Define handler for the <XC-OptionInput>'s changes in option.
       // #region Define handler for the <XC-OptionInput>'s selection.
       optioninput.onOptionSelected.push((selectedOption: string) => {
+        if (optioninput.mode === "Code Template") {
+          return;
+        }
+
         cDetails.style.display = "none";
 
         INSTANCE.tsCheck<HTMLElement>(
@@ -612,12 +710,61 @@ export function enableLocalDocInterface(): void {
           manager.style.pointerEvents = "none";
 
           document.addEventListener("keyup", (event) => {
-            if (event.altKey && event.key === "c") {
-              manager.classList.toggle("--opened");
+            if (event.altKey && event.key.toLowerCase() === "c") {
+              if (
+                document.getElementById("scriptForm:scriptTabs:xm-editor-js_editor").contains(document.activeElement)
+              ) {
+                if (optioninput.enabled) {
+                  optioninput.enabled = false;
+                } else {
+                  // #region Hide options for code templates when JS-Editor gets blurred.
+                  const listener = (event) => {
+                    if (optioninput.enabled && optioninput.mode === "Code Template") {
+                      optioninput.enabled = false;
+                      document.activeElement.removeEventListener("blur", listener);
+                    }
+                  };
+
+                  document.activeElement.addEventListener("blur", listener);
+                  // #endregion Hide options for code templates when JS-Editor gets blurred.
+                  // #region Calculate Layout
+                  const clientRect = document.activeElement.getBoundingClientRect();
+                  const emPixels = getEmSizeInPixels(document.activeElement) * 22;
+
+                  optioninput.style.top = `${clientRect.top - emPixels}px`;
+                  optioninput.style.left = `${clientRect.left + clientRect.width / 2}px`;
+                  optioninput.style.maxHeight = `${emPixels}px`;
+                  // #endregion Calculate Layout
+                  optioninput.mode = "Code Template";
+
+                  optioninput.options = [
+                    window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_OnLoaded"),
+                    window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality"),
+                    window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP"),
+                    window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Standard"),
+                    window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality_Extend"),
+                    window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend"),
+                  ];
+
+                  optioninput.enabled = true;
+                  optioninput.target = document.activeElement as HTMLInputElement;
+                  optioninput.targetOptionTransformer = (toTransform: string): string => {
+                    return "";
+                  };
+                  // #region Close the API Doc-Manager if it is opened.
+                  if (manager.classList.contains("--opened")) {
+                    manager.classList.remove("--opened");
+                  }
+                  // #endregion Close the API Doc-Manager if it is opened.
+                }
+              } else {
+                manager.classList.toggle("--opened");
+              }
             }
           });
 
           window.CodbiPluginData.managerClosed = () => {
+            console.log("L:", document.activeElement);
             manager.classList.toggle("--opened");
           };
           // #endregion Register Hotkey ALT+C for displaying the manager and handle the manager's close button.
@@ -717,6 +864,10 @@ export function enableLocalDocInterface(): void {
                         // #endregion Show corresponding documentation when <XC-OptionInput>'s current option changed.
                         // #region Insert proper global variable when <XC-OptionInput>'s current option was selected.
                         optioninput.onOptionSelected.push((newOption) => {
+                          if (optioninput.mode === "Code Template") {
+                            return;
+                          }
+
                           if (added.value.indexOf("[") !== -1) {
                             added.value = added.value.substring(added.value.indexOf("]") + 2).trim();
                           } else {
@@ -1044,10 +1195,12 @@ export function enableLocalDocInterface(): void {
                           }
                         });
                         // #endregion Hide CodBi-Interface
-                        DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                          "data",
-                          `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[epManager.currentOption]?.Description}`,
-                        );
+                        if (cDetails.querySelector("object")) {
+                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                            "data",
+                            `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[epManager.currentOption]?.Description}`,
+                          );
+                        }
                       }
 
                       if (cDetails.style.display !== "block") {
@@ -1066,7 +1219,10 @@ export function enableLocalDocInterface(): void {
                           for (const possibleCBFunc of DEFINED.tsCheck<HTMLElement>(
                             DEFINED.tsCheck<HTMLElement>(addedParent.parentElement).parentElement,
                           ).querySelectorAll(".r1")) {
-                            if (possibleCBFunc.innerHTML.toLowerCase() === "data-cb-func") {
+                            if (
+                              possibleCBFunc.parentElement &&
+                              possibleCBFunc.innerHTML.toLowerCase() === "data-cb-func"
+                            ) {
                               cbFUNCs = INSTANCE.tsCheck<HTMLElement>(
                                 DEFINED.tsCheck<HTMLElement>(possibleCBFunc.parentElement).querySelector(".r2"),
                                 HTMLElement,
@@ -1181,7 +1337,7 @@ export function enableLocalDocInterface(): void {
                           INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement).placeholder = "CodBi: ALT+F";
                           // #region Create a data-cb-func field on ALT + F.
                           added.addEventListener("keydown", (event) => {
-                            if (event.altKey && (event.key === "f" || event.key === "F")) {
+                            if (event.altKey && event.key.toLowerCase() === "f") {
                               event.preventDefault();
                               event.stopImmediatePropagation();
                               event.stopPropagation();
@@ -1247,7 +1403,7 @@ export function enableLocalDocInterface(): void {
                         }
                         // #endregion If ALT + X...
                         // #region If ALT + E...
-                        if (keyboardEvent.altKey && (keyboardEvent.key === "e" || keyboardEvent.key === "E")) {
+                        if (keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === "e") {
                           // #region Prevent default actions & bubbling.
                           keyboardEvent.preventDefault();
                           keyboardEvent.stopImmediatePropagation();

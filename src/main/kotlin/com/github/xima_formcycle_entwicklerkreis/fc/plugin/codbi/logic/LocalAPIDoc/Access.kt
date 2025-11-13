@@ -30,6 +30,8 @@ import org.slf4j.LoggerFactory
  * data. Data is persisted to a file on the server using Formcycle's IPluginFileHelper.
  */
 class StructuredDataStoreAction : IPluginServletAction {
+  /** Stores a CSV of all usernames that're allowed to sync the API-Documentation. */
+  protected var syncUsers: List<String>? = emptyList()
   /** Stores the local API documentation. */
   private var documentation: String = ""
   /** Stores the retrieved functionality code. */
@@ -50,6 +52,7 @@ class StructuredDataStoreAction : IPluginServletAction {
    */
   override fun initialize(configData: IPluginInitializeData) {
     this.fileHelper = configData.fileHelper
+    syncUsers = configData.properties.getProperty("APIDoc_UsersAllowedToSYNC")?.split(",")
   }
 
   /**
@@ -61,6 +64,8 @@ class StructuredDataStoreAction : IPluginServletAction {
   override fun validateConfigurationData(
       configData: IPluginValidationData
   ): IPluginInitializeValidationResult? {
+    syncUsers = configData.properties.getProperty("APIDoc_UsersAllowedToSYNC")?.split(",")
+
     return null
   }
 
@@ -88,7 +93,27 @@ class StructuredDataStoreAction : IPluginServletAction {
     servletResponse.encoding = StandardCharsets.UTF_8.name()
 
     when (mode?.uppercase()) {
+      "SYNC ALLOWED" ->
+          if (syncUsers?.contains(params.user.userName) != true) {
+            servletResponse.value = "{\"status\": \"success\", \"message\": \"FALSE\"}"
+            servletResponse.httpStatusCode = HttpURLConnection.HTTP_OK
+
+            return PluginServletActionRetVal(servletResponse)
+          } else {
+            servletResponse.value = "{\"status\": \"success\", \"message\": \"TRUE\"}"
+            servletResponse.httpStatusCode = HttpURLConnection.HTTP_OK
+
+            return PluginServletActionRetVal(servletResponse)
+          }
+
       "RENAME CODE" -> {
+        if (syncUsers?.contains(params.user.userName) != true) {
+          servletResponse.value = "{\"status\": \"error\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
+          servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
+
+          return PluginServletActionRetVal(servletResponse)
+        }
+
         LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).error("Renaming start.")
         renameCodeFile(
             params.headerMap["X-ActionDetail"],
@@ -98,6 +123,13 @@ class StructuredDataStoreAction : IPluginServletAction {
       }
 
       "UPDATE CODE" -> {
+        if (syncUsers?.contains(params.user.userName) != true) {
+          servletResponse.value = "{\"status\": \"error\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
+          servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
+
+          return PluginServletActionRetVal(servletResponse)
+        }
+
         val toWrite = params.requestParameters["ToWrite"]?.first()
         val detail = params.headerMap["X-ActionDetail"]
 
@@ -187,6 +219,13 @@ class StructuredDataStoreAction : IPluginServletAction {
         }
       }
       "UPDATE" -> {
+        if (syncUsers?.contains(params.user.userName) != true) {
+          servletResponse.value = "{\"status\": \"error\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
+          servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
+
+          return PluginServletActionRetVal(servletResponse)
+        }
+
         try {
           val toWrite = params.requestParameters["ToWrite"]?.first()
 

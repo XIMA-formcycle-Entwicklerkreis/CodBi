@@ -76,5 +76,7 @@ interface Window {
     /**
      * Called whenever the API-Doc Manager's **Close**-{@link HTMLButtonElement } is clicked. */
     managerClosed: () => void;
+    /** Gets an API-Doc Manager translation resource.*/
+    retrieveManagerTranslatedResource(id: string): string;
   };
 }

@@ -7,6 +7,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { HasAttribute } from "xdbc/src/DBC/HasAttribute";
 import { allByCssAs, allByCssHtml, byCssAs, byCssHtml } from "@de-xima/xima-common-js-dom";
+import { instance } from "@de-xima/fc-form-designer";
 /**
  *  A {@link HTMLDivElement } that bound to an {@link HTMLInputElement } only allows one of a
  *  certain set of {@link options }. */
@@ -505,6 +506,10 @@ export class Optioninput extends HTMLDivElement {
    * @throws A {@link DBC.Infringement } if a query for **.---WaXCode.--Optioninput.--Option.-Current** from this
    * {@link Optioninput }'s {@link HTMLDivElement.shadowRoot } acquires **null**. */
   public onKeydownTarget(event: KeyboardEvent): void {
+    if (!this.enabled) {
+      return;
+    }
+
     this.lastKey = event.key;
 
     if (event.key === "Delete") {
@@ -616,7 +621,13 @@ export class Optioninput extends HTMLDivElement {
       return;
     }
     // #endregion If the [target] just received focus, show all available functionalities
-    const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+    if (!(event.target instanceof HTMLInputElement) || !(event.target instanceof HTMLTextAreaElement)) {
+      throw new INSTANCE.Infringement(
+        "The event.target has to be either of type HTMLInputElement or HTMLTextAreaElement but isn't",
+      );
+    }
+
+    const eventTarget = event.target;
     const remainingOptions = this.filter(eventTarget.value.substring(1));
 
     if (remainingOptions.length === 0) {

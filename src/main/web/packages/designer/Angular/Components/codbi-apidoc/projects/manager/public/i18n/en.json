@@ -54,5 +54,18 @@
   "TreeView.Label.Status.Parameter": "Parameterdescription available",
   "TreeView.Label.Status.Globals": "Description of global parameters available",
   "TreeView.Label.Status.Classes": "Description of this CodBi Standard-Configuration's CSS-Classes available",
-  "TreeView.Label.Status.Code": "Code available"
+  "TreeView.Label.Status.Code": "Code available",
+  "CodeTemplate_OnLoaded": "On Document Loaded",
+  "CodeTemplate_Functionality": "New Functionality",
+  "CodeTemplate_Functionality_Placeholder": "My.New.Functionality",
+  "CodeTemplate_EP": "New Elementplaceholder",
+  "CodeTemplate_EP_Placeholder": "My.New.Elementplaceholder",
+  "CodeTemplate_Standard": "New Standard-Configuration",
+  "CodeTemplate_Standard_Placeholder_Targets": ".Targetclass(es) of my new Standardconfiguration (~ separated CSS Selectors)",
+  "CodeTemplate_Standard_Placeholder_FUNC": "CSV of Functionality/ies to execute",
+  "CodeTemplate_Functionality_Extend": "Extend Functionality",
+  "CodeTemplate_Functionality_Extend_Placeholder": "Functionality.To.Extend",
+  "CodeTemplate_EP_Extend": "Extend Elementplaceholder",
+  "CodeTemplate_EP_Extend_Placeholder": "Elementplaceholder.To.Extend",
+  "CodeTemplate_Start": "Start CodBi"
 }

@@ -94,7 +94,7 @@ class StructuredDataStoreAction : IPluginServletAction {
 
     when (mode?.uppercase()) {
       "SYNC ALLOWED" ->
-          if (syncUsers?.contains(params.user.userName) != true) {
+          if (syncUsers?.contains(params.user.userName?.trim()) != true) {
             servletResponse.value = "{\"status\": \"success\", \"message\": \"FALSE\"}"
             servletResponse.httpStatusCode = HttpURLConnection.HTTP_OK
 
@@ -107,7 +107,7 @@ class StructuredDataStoreAction : IPluginServletAction {
           }
 
       "RENAME CODE" -> {
-        if (syncUsers?.contains(params.user.userName) != true) {
+        if (syncUsers?.contains(params.user.userName?.trim()) != true) {
           servletResponse.value = "{\"status\": \"error\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
 
@@ -123,7 +123,7 @@ class StructuredDataStoreAction : IPluginServletAction {
       }
 
       "UPDATE CODE" -> {
-        if (syncUsers?.contains(params.user.userName) != true) {
+        if (syncUsers?.contains(params.user.userName?.trim()) != true) {
           servletResponse.value = "{\"status\": \"error\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
 
@@ -219,7 +219,7 @@ class StructuredDataStoreAction : IPluginServletAction {
         }
       }
       "UPDATE" -> {
-        if (syncUsers?.contains(params.user.userName) != true) {
+        if (syncUsers?.contains(params.user.userName?.trim()) != true) {
           servletResponse.value = "{\"status\": \"error\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
 

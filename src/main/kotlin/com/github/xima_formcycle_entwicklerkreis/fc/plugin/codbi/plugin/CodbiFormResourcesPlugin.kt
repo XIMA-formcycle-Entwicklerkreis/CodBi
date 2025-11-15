@@ -61,6 +61,9 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
         else System.currentTimeMillis().toString()
     val dynamicResources =
         mapOf(
+                "LDAPSettings.js" to
+                    createLDAPJsDescriptor(
+                        initData?.properties?.getProperty("LDAP_URL").toString()),
                 "MatomoSettings.js" to
                     createMatomoJsDescriptor(
                         initData?.properties?.getProperty("Matomo_SiteID").toString(),
@@ -210,6 +213,31 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
 
     return DefaultPluginFormResourceDescriptor.builder()
         .fileName("MatomoSettings.js")
+        .mimeType("text/javascript")
+        .resource(resource)
+        .includeInForm(true)
+        .build()
+  }
+
+  /**
+   * Creates a dynamic JS-Resource that writes the LDAP-Settings within the Plugin-Config
+   * (**LDAP_URL**) into **window.codbi.LDAP.URL**.
+   *
+   * @param url The URL of the Formcycle LDAP Request to use if no other has been specified.
+   * @return The appropriate [IPluginFormResourceDescriptor].
+   */
+  private fun createLDAPJsDescriptor(url: String): IPluginFormResourceDescriptor {
+    val safeURLValue = url.replace("\"", "\\\"")
+    val jsContent =
+        "window.codbiSettings = window.codbiSettings || {}; window.codbiSettings.LDAP = window.codbiSettings.LDAP || {}; window.codbiSettings.LDAP.URL = \"${safeURLValue}\";"
+    val resource =
+        ByteArrayResourceDescriptor(
+            URI("plugin:${PLUGIN_FORM_RESOURCES_ID}/LDAPSettings.js?v=dynamic"),
+            jsContent.toByteArray(UTF_8),
+            UTF_8)
+
+    return DefaultPluginFormResourceDescriptor.builder()
+        .fileName("LDAPSettings.js")
         .mimeType("text/javascript")
         .resource(resource)
         .includeInForm(true)

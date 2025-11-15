@@ -66,6 +66,7 @@ cssenabled
 cssheaderactive
 cssheaderhover
 cssheaderunfolded
+cssproposals
 cssrequiredfields
 cssrequiredfieldscontent
 darf

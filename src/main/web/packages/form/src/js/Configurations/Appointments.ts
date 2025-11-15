@@ -18,7 +18,7 @@
  * - **CodBi_Holidays_Listing**
  *   The {@link HTMLSelectElement } tagged with this class, will be filled with all holidays for the current
  *   and next years for the state specified in the global variable **CodBi_Holidays_States**. */
-function loadConfig(): void {
+export function loadConfig(): void {
   // #region CodBi_DateFrame_1[-5]_...
   window.codbi.loadConfigs([
     {

@@ -1633,10 +1633,12 @@ export class Manager implements AfterViewInit {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
-      if (source.detFunctionalities[lcElementName]) {
-        source.detFunctionalities[lcElementName].Code = destination.detFunctionalities[lcElementName].Code;
-      } else {
-        source.detFunctionalities[lcElementName] = destination.detFunctionalities[lcElementName];
+      if (destination.detFunctionalities[lcElementName]) {
+        if (source.detFunctionalities[lcElementName]) {
+          source.detFunctionalities[lcElementName].Code = destination.detFunctionalities[lcElementName].Code;
+        } else {
+          source.detFunctionalities[lcElementName] = destination.detFunctionalities[lcElementName];
+        }
       }
 
       document.querySelector('div[is = "xc-epmanager"]').setAttribute(
@@ -1668,10 +1670,12 @@ export class Manager implements AfterViewInit {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
-      if (source.detElementplaceholder[lcElementName]) {
-        source.detElementplaceholder[lcElementName].Code = destination.detElementplaceholder[lcElementName].Code;
-      } else {
-        source.detElementplaceholder[lcElementName] = destination.detElementplaceholder[lcElementName];
+      if (destination.detElementplaceholder[lcElementName]) {
+        if (source.detElementplaceholder[lcElementName]) {
+          source.detElementplaceholder[lcElementName].Code = destination.detElementplaceholder[lcElementName].Code;
+        } else {
+          source.detElementplaceholder[lcElementName] = destination.detElementplaceholder[lcElementName];
+        }
       }
 
       document.querySelector('div[is = "xc-epmanager"]').setAttribute(
@@ -1702,12 +1706,13 @@ export class Manager implements AfterViewInit {
         continue;
       }
       // #endregion Omit elements that are just path segments without any description.
-      if (source.detStandards[lcElementName]) {
-        source.detStandards[lcElementName].Code = destination.detStandards[lcElementName].Code;
-      } else {
-        source.detStandards[lcElementName] = destination.detStandards[lcElementName];
+      if (destination.detStandards[lcElementName]) {
+        if (source.detStandards[lcElementName]) {
+          source.detStandards[lcElementName].Code = destination.detStandards[lcElementName].Code;
+        } else {
+          source.detStandards[lcElementName] = destination.detStandards[lcElementName];
+        }
       }
-
       destination.fileListing = `${destination.fileListing.substring(0, destination.fileListing.length - 1)},\"${element}.js\"]`;
 
       result.fileListing.push(`${element}.js`);

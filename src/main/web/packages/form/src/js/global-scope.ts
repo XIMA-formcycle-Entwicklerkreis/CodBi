@@ -48,6 +48,11 @@ export interface CodbiSettings {
     /** The URL to report to. */
     URL: string;
   };
+  /** The configuration regarding **LDAP**. */
+  LDAP: {
+    /** The URL to the Formcycle-LDAP-Query to use by default. */
+    URL: string;
+  };
 }
 /**
  * The configuration template for the form, as configured by the user in the

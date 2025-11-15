@@ -730,13 +730,14 @@ export function enableLocalDocInterface(): void {
                   // #region Calculate Layout
                   const clientRect = document.activeElement.getBoundingClientRect();
                   const emPixels = getEmSizeInPixels(document.activeElement) * 22;
+                  const top = clientRect.top + clientRect.height;
 
-                  optioninput.style.top = `${clientRect.top - emPixels}px`;
+                  optioninput.style.top = `${(top > 0 ? top : 0) + emPixels / 11}px`;
                   optioninput.style.left = `${clientRect.left + clientRect.width / 2}px`;
                   optioninput.style.maxHeight = `${emPixels}px`;
                   // #endregion Calculate Layout
                   optioninput.mode = "Code Template";
-
+                  // #region Define Code Template Options
                   optioninput.options = [
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_OnLoaded"),
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality"),
@@ -744,8 +745,9 @@ export function enableLocalDocInterface(): void {
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Standard"),
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality_Extend"),
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend"),
+                    window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Start"),
                   ];
-
+                  // #endregion Define Code Template Options
                   optioninput.enabled = true;
                   optioninput.target = document.activeElement as HTMLInputElement;
                   optioninput.targetOptionTransformer = (toTransform: string): string => {

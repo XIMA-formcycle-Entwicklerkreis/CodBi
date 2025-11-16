@@ -86,6 +86,8 @@ export class HTML_Panel {
    *  - GenerateHeader:                 States whether a header shall be automatically generated. Defaults to FALSE.
    *  - Scroll                          States whether the view shall be scrolled when the panel unfolds.
    *                                    Default is FALSE.
+   *  - Accordion                       If set, this panel becomes part of an accordion. All panels sharing the same
+   *                                    accordion name will be folded when one of them is unfolded.
    *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
@@ -277,6 +279,20 @@ export class HTML_Panel {
               inline: "nearest",
             });
           }
+          // #region Handle accordions enabling live changes.
+          if (toProcess.hasAttribute("data-cb-accordion")) {
+            toLoad.accordion = toProcess.getAttribute("data-cb-accordion");
+
+            for (const toFold of document.querySelectorAll(
+              `.CodBi.--HTML_Panel[ data-cb-accordion = "${toLoad.accordion as string}"]:not(.--folded)`,
+            )) {
+              toFold
+                .querySelector(".CodBi_HTML_Panel_Header")
+                ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+            }
+          }
+          // #endregion Handle accordions enabling live changes.
+          (toProcess as HTMLElement).classList.remove("--folded");
         } else {
           (toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded = !(
             toProcess as unknown as { [key: string]: unknown }
@@ -293,6 +309,8 @@ export class HTML_Panel {
           if (toLoad.cssafterheadercontentunfolded || toLoad.cssafterheaderunfolded) {
             styleAfterUnfolded.remove();
           }
+
+          (toProcess as HTMLElement).classList.add("--folded");
         }
       });
       // #endregion Handle clicks on the header.

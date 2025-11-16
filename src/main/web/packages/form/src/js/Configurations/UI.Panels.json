@@ -3,6 +3,7 @@
   "classes": {
     "CodBi_HTML_Panel_Standard": "",
     "CodBi_HTML_Panel_Flat": "",
-    "CodBi_HTML_Panel_Minimal": ""
+    "CodBi_HTML_Panel_Minimal": "",
+    "CodBi_HTML_Panel_NoCordion": ""
   }
 }

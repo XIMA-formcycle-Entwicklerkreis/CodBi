@@ -54,6 +54,7 @@ celleditor
 charmap
 Childnodes
 Codbi
+Cordion
 cssafterheader
 cssafterheadercontent
 cssafterheadercontentunfolded
@@ -214,6 +215,7 @@ skewable
 sortiereihenfolge
 sortierreihenfolge
 Stadt
+Standardconfiguration's
 Standardkonfiguration
 Standardslisting
 Startdatum

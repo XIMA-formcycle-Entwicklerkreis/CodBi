@@ -19,10 +19,24 @@ export class LDAP_Find {
   /**
    * Registers the "LDAP.Find"-Functionality.
    *
-   * This Elementplaceholder connects via a default (**LDAP_URL** in CodBi Settings) or an optionally specified **URL** to a
-   * Formcycle-LDAP-Query requesting data from it. The Query has to have following content in order to work with this
-   * Elementplaceholder: **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**.
-   *    *
+   * This Elementplaceholder connects via a default (**LDAP_URL** in CodBi Settings) or an optionally specified
+   * URL (optional **3rd parameter**) to a predefined Formcycle LDAP-Query requesting data from it.
+   * The Query has to have following content in order to work with this Elementplaceholder:
+   * **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**.
+   *
+   * **Furthermore Following currently supported LDAP-Attributes should be returned by the predefined Formcycle LDAP-Query**
+   * | LDAP Property | Corresponds To |
+   * | :------------ | :------------- |
+   * | givenName     | First Name     |
+   * | mail          | eMail Address  |
+   * | sn            | Last Name      |
+   * | title         | Title          |
+   * | department    | Department     |
+   * | telephoneNumber| Phonenumber   |
+   * | sAMAccountName| Account        |
+   * | cn            | Common Name    |
+   * | displayName   | Display Name   |
+   *
    * Config Parameter:
    *  1st:  The mode to use for the filter. Either **AND** or **OR** (case insensitive). Everything else will be interpreted as **AND**.
    *  2nd:  The LDAP conditions (like sn = Doe) separated by **|** (like sn = Doe | givenName = John).
@@ -58,7 +72,7 @@ export class LDAP_Find {
       // #endregion Fill conditions up to 10 elements.
       // #region Normalize conditions.
       conditions = conditions.map((toTransform) => {
-        return toTransform.replace("=", "%3D").replace(/ /g, "");
+        return toTransform.replace("=", "%3D").trim();
       });
       // #endregion Normalize conditions.
       if (runningQuery) {

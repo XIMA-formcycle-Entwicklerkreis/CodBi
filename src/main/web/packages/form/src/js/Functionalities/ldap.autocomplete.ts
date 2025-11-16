@@ -42,14 +42,17 @@ export class LDAP_Autocomplete {
 
       const ldapResult = await LDAP_Find.retrieve(findParameter);
 
-      if (ldapResult.length !== 1) {
+      if (ldapResult.length === 0) {
         getJQuery()(toProcess).error(
           toLoad.msgNotInLDAP
             ? toLoad.msgNotInLDAP
             : "Only values that're present in the Active Directory are permitted.",
         );
       } else {
-        proposals.remove();
+        if (document.activeElement !== proposals) {
+          proposals.remove();
+        }
+
         getJQuery()(toProcess).error("");
       }
     });
@@ -63,12 +66,28 @@ export class LDAP_Autocomplete {
       "style",
       toLoad.cssproposals
         ? toLoad.cssproposals
-        : "margin-left: .5em ; border-color: darkorange ; border-radius: .5em ; box-shadow: 0 0 .5em darkorange ; color: green ; font-weight: bolder ; cursor: pointer;",
+        : "margin-top: .5em ; max-width: 100% ; border-color: darkorange ; border-radius: .5em ; box-shadow: 0 0 .5em darkorange ; color: green ; font-weight: bolder ; cursor: pointer;",
     );
-    proposals.addEventListener("change", (event) => {
+    proposals.addEventListener("change", async (event) => {
       (toProcess as HTMLInputElement).value = (proposals as HTMLSelectElement).value;
 
       proposals.remove();
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      if ((toProcess as any).codbiLDAPSetMatchListeners) {
+        // #region Acquire LDAP-Data for passing it to the match-listeners.
+        const findParameter = ["AND", `${toLoad.property}=${(proposals as HTMLSelectElement).value}`];
+
+        if (toLoad.url) {
+          findParameter.push(toLoad.url);
+        }
+
+        const ldapResult = await LDAP_Find.retrieve(findParameter);
+        // #endregion Acquire LDAP-Data for passing it to the match-listeners.
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        for (const listener of (toProcess as any).codbiLDAPSetMatchListeners) {
+          listener(ldapResult, toProcess);
+        }
+      }
     });
     // #endregion Create Selection.
     toProcess.addEventListener("keydown", async (event) => {
@@ -121,7 +140,7 @@ export class LDAP_Autocomplete {
           proposals.options.add(new Option(result[toLoad.property], result[toLoad.property]));
         }
 
-        toProcess.parentElement.insertBefore(proposals, toProcess);
+        toProcess.parentElement.appendChild(proposals);
       }
       // #endregion Show proposals.
     });

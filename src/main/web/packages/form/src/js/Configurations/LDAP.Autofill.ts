@@ -1,9 +1,9 @@
 /**
- * Registers standard configurations specific to LDAP autocompletion of {@link HTMLInputElement }s.
+ * Registers standard configurations specific to LDAP-Autocompletion in {@link HTMLInputElement }s.
  *
  * CSS-Classes:
  *  - **CodBi_LDAP_AC_Mail**
- *    The {@link HTMLInputElement }s tagged with these classes will be configured to be autocompleted as soon as the
+ *    The {@link HTMLInputElement }s tagged with this class will be configured to be autocompleted as soon as the
  *    entered mail-address matches an entry in the connected LDAP. As long as there are multiple matches, a selection
  *    will be presented to the user.
  *    Entering an address that does not match any entry in the LDAP will not be tolerated.

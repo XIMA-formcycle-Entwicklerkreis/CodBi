@@ -1,14 +1,8 @@
 // #region Imports
-// #region XIMA
-import { getJQuery } from "@de-xima/fc-form-renderer";
-// #endregion XIMA
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
-import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { LDAP_Autocomplete } from "./ldap.autocomplete.js";
 // #endregion XDBC
-// #region Elementplaceholder
-import { LDAP_Find } from "../EPs/ldap.find.js";
-// #endregion Elementplaceholder
 // #endregion Imports
 /**
  * Provides the {@link LDAP_Autocomplete.functionality }.
@@ -18,18 +12,12 @@ import { LDAP_Find } from "../EPs/ldap.find.js";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class LDAP_Autocomplete_Set {
   /**
-   * Registers the "Matomo.Tracking"-Functionality.
+   * Registers the "LDAP.Autocomplete.Set"-Functionality.
    *
-   * This functionality connects to a **Matomo-Server**, that is either specified in the Plugin-Config (**Matomo_URL**)
-   * or in this functionalitie's parameter (**URL**) while the functionality parameter takes precedence, and initiates
-   * tracking to a specified **Site-ID**. The **Site-ID** is either specified o n the PLugin-Config (**Matomo_SiteID**)
-   * or in the functionalitie's parameter (**SiteID**) while the functionality parameter takes precedence.
-   * Furthermore, this functionality prevents any input that is not matched (removes any unmatched input on blur).
-   *
-   * Config Parameter:
-   *  - Property:       The URL of the Matomo-Server that shall track the tagged form.
-   *  - CSSProposals:   The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.
-   *  - URL:            The ID of the Matomo-Project-Site that shall be used for tracking. */
+   * This functionality connects all {@link HTMLInputElement }s tagged with the
+   * **LDAP.Autofill** Standardconfiguration's CSS-Classes within the tagged container to a set.
+   * When a match is found for one of the autocompleting input fields, all other input fields get the corresponding
+   * values filled in automatically according to their LDAP-Property. */
   @DBC.ParamvalueProvider
   public static functionality(toLoad: { [key: string]: string }, toProcess: Element): void {
     // #region Define match-listener routine.
@@ -80,12 +68,6 @@ export class LDAP_Autocomplete_Set {
 
       if (current) {
         (current as HTMLInputElement).value = ldapResult[0].cn;
-      }
-
-      current = toProcess.querySelector(".CodBi_LDAP_AC_DisplayName");
-
-      if (current) {
-        (current as HTMLInputElement).value = ldapResult[0].displayName;
       }
 
       current = toProcess.querySelector(".CodBi_LDAP_AC_DisplayName");
@@ -167,6 +149,9 @@ export class LDAP_Autocomplete_Set {
 
     for (const inputField of toProcess.querySelectorAll(".CodBi_LDAP_Set_Member")) {
       if (inputField.hasAttribute("data-cb-ldapProperty")) {
+        LDAP_Autocomplete.functionality({ Property: inputField.getAttribute("data-cb-ldapProperty") }, inputField);
+        // biome-ignore lint/complexity/useLiteralKeys: <explanation>
+        inputField["codbiLDAPSetMatchListeners"] = [matchListener];
       }
     }
     // #endregion Acquire input fields to complete.

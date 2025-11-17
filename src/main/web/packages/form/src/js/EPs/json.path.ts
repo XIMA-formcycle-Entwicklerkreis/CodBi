@@ -25,11 +25,7 @@ export class JSON_Path {
    *
    * @param params    The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
-  public static retrieve(
-    @AE.PRE([new TYPE("string"), new REGEX(REGEX.stdExp.keyPath)], 1)
-    @AE.PRE(new TYPE("object"), 0)
-    params: Array<unknown>,
-  ): unknown {
+  public static retrieve(params: Array<unknown>): unknown {
     return resolvePath(params[1] as string, params[0] as object);
   }
   /**

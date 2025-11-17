@@ -8,7 +8,12 @@
  *
  *    **Usage:**
  *    Tag the {@link HTMLDivElement } or fieldset with the CSS-Class "CodBi_HTML_Panel_Standard" and set the attribute "cbAutoheaderTitle"
- *    to define the title showed in the header. */
+ *    to define the title showed in the header.
+ *
+ *  - **CodBi_Accordion_A to D**
+ *    Sets up accordions using the **HTML.Panel.Accordion** Functionality named either
+ *    **CodBi_Accordion_A**, **CodBi_Accordion_B**, **CodBi_Accordion_C** or **CodBi_Accordion_D** depending
+ *    on the Standardconfiguration-Class used.*/
 export function loadConfig(): void {
   // #region CodBi_HTML_Panel_Standard
   window.codbi.loadConfigs([
@@ -68,6 +73,30 @@ export function loadConfig(): void {
     },
   ]);
   // #endregion CodBi_HTML_Panel_Standard
+  // #region Accordions
+  window.codbi.loadConfigs([
+    {
+      targets: ".CodBi_Accordion_A",
+      FUNC: "HTML.Panel.Accordion",
+      Accordion: "CodBi_Accordion_Set_A",
+    },
+    {
+      targets: ".CodBi_Accordion_B",
+      FUNC: "HTML.Panel.Accordion",
+      Accordion: "CodBi_Accordion_Set_B",
+    },
+    {
+      targets: ".CodBi_Accordion_C",
+      FUNC: "HTML.Panel.Accordion",
+      Accordion: "CodBi_Accordion_Set_C",
+    },
+    {
+      targets: ".CodBi_Accordion_D",
+      FUNC: "HTML.Panel.Accordion",
+      Accordion: "CodBi_Accordion_Set_D",
+    },
+  ]);
+  // #endregion Accordions
 }
 
 loadConfig();

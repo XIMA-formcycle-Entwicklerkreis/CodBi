@@ -1,5 +1,5 @@
 /**
- * Registers standard configurations specific to people characteristics.
+ * Registers standard configurations specific to finances.
  *
  * CSS-Classes:
  * - **CodBi_Currency**

@@ -92,10 +92,13 @@ class StructuredDataStoreAction : IPluginServletAction {
 
     servletResponse.encoding = StandardCharsets.UTF_8.name()
 
+    syncUsers = syncUsers?.map { rawString -> rawString.trim().lowercase() }
+
     when (mode?.uppercase()) {
       "SYNC ALLOWED" ->
-          if (syncUsers?.contains(params.user.userName?.trim()) != true) {
-            servletResponse.value = "{\"status\": \"success\", \"message\": \"FALSE\"}"
+          if (syncUsers?.contains(params.user.userName?.lowercase()?.trim()) != true) {
+            servletResponse.value =
+                "{\"status\": \"error for ${params.user.userName}. Not in ${ syncUsers.toString()}\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
             servletResponse.httpStatusCode = HttpURLConnection.HTTP_OK
 
             return PluginServletActionRetVal(servletResponse)
@@ -219,8 +222,9 @@ class StructuredDataStoreAction : IPluginServletAction {
         }
       }
       "UPDATE" -> {
-        if (syncUsers?.contains(params.user.userName?.trim()) != true) {
-          servletResponse.value = "{\"status\": \"error\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
+        if (syncUsers?.contains(params.user.userName?.lowercase()?.trim()) != true) {
+          servletResponse.value =
+              "{\"status\": \"error for ${params.user.userName}. Not in ${ syncUsers.toString()}\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
 
           return PluginServletActionRetVal(servletResponse)

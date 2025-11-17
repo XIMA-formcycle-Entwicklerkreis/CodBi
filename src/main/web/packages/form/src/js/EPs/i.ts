@@ -6,7 +6,8 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { CodBiError } from "../global-scope";
 // #endregion Imports
 /**
- * This **E**lement-**P**laceholder acquires a global variable's value.
+ * This **E**lement-**P**laceholder acquires a specific element
+ * within an {@link Array }.
  *
  * Placeholder Parameter:
  *  - The index to retrieve.
@@ -28,7 +29,11 @@ export class I {
     params: Array<string>,
   ): string {
     if (!Array.isArray(params[1])) {
-      throw new CodBiError(`The second parameter of I must be an array but is of type ${typeof params[1]}.`);
+      if (Number.parseInt(params[0].trim()) !== 0) {
+        throw new CodBiError(`The second parameter of I must be an array but is of type ${typeof params[1]}.`);
+      } else {
+        return params[1];
+      }
     }
 
     return params[1][Number.parseInt(params[0].trim())];

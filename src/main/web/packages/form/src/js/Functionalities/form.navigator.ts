@@ -16,11 +16,13 @@ export class Form_Navigator {
    * {@link HTMLButtonElement}s being synchronized when clicking the ones of one of the implemented navigators.
    *
    * CSS Selectors:
-   * .---CodBi.--Form_Navigator.-Container.-NavButton             Any navigational {@link HTMLButtonElement}.
-   * .---CodBi.--Form_Navigator.-Container.-NavButton:first-child The first {@link HTMLButtonElement}.
-   * .---CodBi.--Form_Navigator.-Container.-NavButton:last-child  The last {@link HTMLButtonElement}.
-   * .---CodBi.--Form_Navigator.-Container.-NavButton.-current    The {@link HTMLButtonElement} showing corresponding to the current page.
-   * .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked    The {@link HTMLButtonElement}s that do not correspond to the current page.
+   * | Selector | Element Type | Description |
+   * | :--- | :--- | :--- |
+   * | .---CodBi.--Form_Navigator.-Container.-NavButton | Any `HTMLButtonElement` | Targets **any** navigational button within the form navigator. |
+   * | .---CodBi.--Form_Navigator.-Container.-NavButton:first-child | The first `HTMLButtonElement` | Targets the **first** button in the sequence. |
+   * | .---CodBi.--Form_Navigator.-Container.-NavButton:last-child | The last `HTMLButtonElement` | Targets the **last** button in the sequence. |
+   * | .---CodBi.--Form_Navigator.-Container.-NavButton.-current | `HTMLButtonElement` | The button corresponding to the **currently active page** or step. |
+   * | .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked | `HTMLButtonElement`
    *
    * Config Parameter:
    *  - Preview:              Defines whether the navigator permits switching to every page even it wasn't visited before (**TRUE**)

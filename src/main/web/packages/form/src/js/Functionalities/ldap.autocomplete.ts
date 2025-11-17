@@ -18,7 +18,7 @@ import { LDAP_Find } from "../EPs/ldap.find.js";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class LDAP_Autocomplete {
   /**
-   * Registers the "Matomo.Tracking"-Functionality.
+   * Registers the "LDAP.Autocomplete"-Functionality.
    *
    * This functionalities takes advantage of the {@link LDAP_Find} Elementplaceholder to complete what is typed into
    * the tagged {@link HTMLInputElement } with data from a connected Formcycle predefined LDAP-Query according
@@ -44,8 +44,8 @@ export class LDAP_Autocomplete {
 
       if (ldapResult.length === 0) {
         getJQuery()(toProcess).error(
-          toLoad.msgNotInLDAP
-            ? toLoad.msgNotInLDAP
+          toLoad.msgnotinldap
+            ? toLoad.msgnotinldap
             : "Only values that're present in the Active Directory are permitted.",
         );
       } else {
@@ -68,7 +68,8 @@ export class LDAP_Autocomplete {
         ? toLoad.cssproposals
         : "margin-top: .5em ; max-width: 100% ; border-color: darkorange ; border-radius: .5em ; box-shadow: 0 0 .5em darkorange ; color: green ; font-weight: bolder ; cursor: pointer;",
     );
-    proposals.addEventListener("change", async (event) => {
+    // #region Handle Selection.
+    const onSelected = async () => {
       (toProcess as HTMLInputElement).value = (proposals as HTMLSelectElement).value;
 
       proposals.remove();
@@ -88,7 +89,17 @@ export class LDAP_Autocomplete {
           listener(ldapResult, toProcess);
         }
       }
+    };
+
+    proposals.addEventListener("change", async (event) => {
+      onSelected();
     });
+    proposals.addEventListener("keydown", async (event) => {
+      if (event.key === "Enter" || event.key === "Space") {
+        onSelected();
+      }
+    });
+    // #endregion Handle Selection.
     // #endregion Create Selection.
     toProcess.addEventListener("keydown", async (event) => {
       if (blocked) {

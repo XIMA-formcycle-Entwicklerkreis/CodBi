@@ -145,10 +145,7 @@ export function enableLocalDocInterface(): void {
               break;
 
             case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Start"):
-              insertText(
-                optioninput.target as unknown as HTMLTextAreaElement,
-                `window.codbi.extendEP("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend_Placeholder")}",( params, formerResult ) =>  {});`,
-              );
+              insertText(optioninput.target as unknown as HTMLTextAreaElement, "window.codbi.checkAttributes();");
 
               break;
 

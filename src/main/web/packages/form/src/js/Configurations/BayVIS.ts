@@ -1,5 +1,5 @@
 /**
- * Registers standard configurations specific buildings registered in BayVIS.
+ * Registers standard configurations specific to buildings registered in BayVIS.
  *
  * CSS-Classes:
  * - **CodBi_BayVIS_Behoerde**

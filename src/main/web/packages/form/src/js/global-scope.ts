@@ -117,19 +117,8 @@ export class CodBi implements CodbiGlobal {
       },
       success: (response) => {
         if (response.result !== "NONE") {
-          if (document.readyState === "complete") {
-            // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-            eval(response.result.replaceAll("<|>", '"'));
-            this.checkAttributes();
-          } else {
-            window.addEventListener("load", () => {
-              if (response.result !== "NONE") {
-                // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-                eval(response.result.replaceAll("<|>", '"'));
-                this.checkAttributes();
-              }
-            });
-          }
+          // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+          eval(response.result.replaceAll("<|>", '"'));
         }
       },
     });
@@ -833,7 +822,7 @@ export class CodBi implements CodbiGlobal {
    * **e**lement **p**laceholders and load missing code fragments prior to applying any new attribute on any
    * {@link Element }.
    *
-   * @param toLoad The CodBi-Configuration to apply onto the "target"ed {@link Element }s.
+   * @param toLoad The CodBi-Configuration to apply onto the **target**ed {@link Element }s.
    *
    * @returns A {@link Promise < void >} indicating when the operation including loading missing code fragments has
    *          been completed. */
@@ -864,11 +853,10 @@ export class CodBi implements CodbiGlobal {
                       "X-Element": functionality.trim().toLowerCase(),
                     },
                     success: (response) => {
-                      if (response.result === "NONE") {
-                        return;
+                      if (response.result !== "NONE") {
+                        // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
+                        eval(response.result.replaceAll("<|>", '"'));
                       }
-                      // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-                      eval(response.result.replaceAll("<|>", '"'));
 
                       resolve(event);
                     },

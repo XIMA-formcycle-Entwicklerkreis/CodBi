@@ -65,6 +65,7 @@ export class HTML_Panel {
    *  - CSSHeaderHover:                 The optional header's CSS:hover (defaults to { scale : 1.1 ;}).
    *  - CSSHeaderActive:                The optional header's CSS:active (defaults to { scale : .9 ;}).
    *  - CSSHeaderUnfolded:              The optional CSS to be applied onto the header when the panel is unfolded.
+   *  - DCSSHeaderUnfolded:             The optional Darkmode CSS to be applied onto the header when the panel is unfolded.
    *  - CSSAnimFadeINPanel:             The optional animation to be applied onto the panel whenever the panel
    *                                    is unfolded.
    *  - CSSAnimFadeINPanelDuration:     The optional animation's duration that is applied onto the panel whenever
@@ -72,8 +73,11 @@ export class HTML_Panel {
    *  - CSSAnimFadeINPanelEasing:       The optional animation's easing function that is applied onto the panel
    *                                    whenever the panel is unfolded (defaults to "ease-in-out").
    *  - CSSAfterHeader:                 The CSS:after to be applied onto the header when the panel is folded.
+   *  - CSSBeforeHeader:                The CSS:before to be applied onto the header when the panel is folded.
    *  - CSSAfterHeaderContent:          The CSS:after content to be applied onto the header when the panel is folded.
+   *  - CSSBeforeHeaderContent:         The CSS:before content to be applied onto the header when the panel is folded.
    *  - CSSAfterHeaderContentUnfolded:  The CSS:after content to be applied onto the header when the panel is unfolded.
+   *  - CSSBeforeHeaderContentUnfolded: The CSS:after content to be applied onto the header when the panel is unfolded.
    *  - CSSRequiredFieldsContent:       The CSS:before content to applied onto the header if it contains a validation
    *                                    sensitive field.
    *  - CSSRequiredFields:              The CSS:before to applied onto the header if it contains a validation
@@ -191,6 +195,10 @@ export class HTML_Panel {
           header?.setAttribute("style", toLoad.cssheaderunfolded as string);
         }
       }
+
+      if ((toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded) {
+        toProcess.classList.add("--folded");
+      }
       // #endregion Consider initial folding state.
       // #region Inject necessary styles.
       // #region Determine "toProcess"'s parent's id-Attribute.
@@ -203,9 +211,10 @@ export class HTML_Panel {
       // #endregion Determine "toProcess"'s parent's id-Attribute.
       // #region Generation.
       const style = document.createElement("style");
+
       style.innerHTML = `
       @media( prefers-color-scheme : dark ) {
-        .CodBi_HTML_Panel_Header { background: linear-gradient(130deg, rgba(5, 5, 5, 1) 0%, rgba(56, 47, 47, 1) 23%, rgba(84, 62, 62, 1) 55%, rgba(56, 52, 52, 1) 89%, rgba(0, 0, 0, 1) 100%) !important ;}}
+        #${parentID} .CodBi_HTML_Panel_Header { ${toLoad.dcssheaderunfolded ? toLoad.dcssheaderunfolded : "background: linear-gradient(130deg, rgba(5, 5, 5, 1) 0%, rgba(56, 47, 47, 1) 23%, rgba(84, 62, 62, 1) 55%, rgba(56, 52, 52, 1) 89%, rgba(0, 0, 0, 1) 100%) !important ;"}}}
 
       .CodBi_HTML_Panel_Header > p { margin : 0 ;}
 
@@ -216,6 +225,12 @@ export class HTML_Panel {
         ${toLoad.cssafterheader ? toLoad.cssafterheader : ""}
       }
 
+      #${parentID} .CodBi_HTML_Panel_Header:before,
+      #${toProcess.parentElement?.parentElement?.getAttribute("id")} .CodBi_HTML_Panel_Header:before {
+        content : "${toLoad.cssbeforeheadercontent ? toLoad.cssbeforeheadercontent : ""}";
+
+        ${toLoad.cssbeforeheader ? toLoad.cssbeforeheader : ""}
+      }
 
       #${parentID} .CodBi_HTML_Panel_Header:hover { ${toLoad.cssheaderhover ? toLoad.cssheaderhover : "color: darkorange ;"}}
       #${parentID} .CodBi_HTML_Panel_Header:hover > * { ${toLoad.cssheaderhover ? "" : "margin-left: 5% ; transition: .5s all ;"}}
@@ -239,6 +254,15 @@ export class HTML_Panel {
           content : "${toLoad.cssafterheadercontentunfolded ? toLoad.cssafterheadercontentunfolded : toLoad.cssafterheadercontent ? toLoad.cssafterheadercontent : ""}";
 
           ${toLoad.cssafterheaderunfolded ? toLoad.cssafterheaderunfolded : toLoad.cssafterheader ? toLoad.cssafterheader : ""}}`;
+
+      const styleBeforeUnfolded = document.createElement("style");
+
+      styleBeforeUnfolded.innerHTML = `
+        #${parentID} > style + .CodBi_HTML_Panel_Header::before,
+        #${parentID} > * > style + .CodBi_HTML_Panel_Header::before {
+          content : "${toLoad.cssbeforeheadercontentunfolded ? toLoad.cssbeforeheadercontentunfolded : toLoad.cssbeforeheadercontent ? toLoad.cssbeforeheadercontent : ""}";
+
+          ${toLoad.cssbeforeheaderunfolded ? toLoad.cssbeforeheaderunfolded : toLoad.cssbeforeheader ? toLoad.cssbeforeheader : ""}}`;
       // #endregion Generation.
       // #region Actual injection.
       header.parentElement?.insertBefore(style, header);
@@ -270,6 +294,7 @@ export class HTML_Panel {
 
           if (toLoad.cssafterheadercontentunfolded || toLoad.cssafterheaderunfolded) {
             header.parentElement?.insertBefore(styleAfterUnfolded, header);
+            header.parentElement?.insertBefore(styleBeforeUnfolded, header);
           }
 
           if (toLoad.scroll) {
@@ -308,6 +333,7 @@ export class HTML_Panel {
 
           if (toLoad.cssafterheadercontentunfolded || toLoad.cssafterheaderunfolded) {
             styleAfterUnfolded.remove();
+            styleBeforeUnfolded.remove();
           }
 
           (toProcess as HTMLElement).classList.add("--folded");

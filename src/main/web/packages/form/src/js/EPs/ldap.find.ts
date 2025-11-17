@@ -38,9 +38,9 @@ export class LDAP_Find {
    * | displayName   | Display Name   |
    *
    * Config Parameter:
-   *  1st:  The mode to use for the filter. Either **AND** or **OR** (case insensitive). Everything else will be interpreted as **AND**.
-   *  2nd:  The LDAP conditions (like sn = Doe) separated by **|** (like sn = Doe | givenName = John).
-   *  3rd:  The optional **URL** to a Formcycle-LDAP-Query (which's content is **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**) to use. */
+   *  - 1st:  The mode to use for the filter. Either **AND** or **OR** (case insensitive). Everything else will be interpreted as **AND**.
+   *  - 2nd:  The LDAP conditions (like sn = Doe) separated by **|** (like sn = Doe | givenName = John).
+   *  - 3rd:  The optional **URL** to a Formcycle-LDAP-Query (which's content is **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**) to use. */
   @DBC.ParamvalueProvider
   public static retrieve(
     @AE.PRE(new TYPE("string"))

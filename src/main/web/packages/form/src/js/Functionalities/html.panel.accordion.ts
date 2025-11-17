@@ -3,7 +3,6 @@
 import { DBC } from "xdbc/src/DBC";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
-import { CodBiError } from "../global-scope";
 // #endregion Imports
 /**
  * Provides the {@link HTML_Panel_Accordion.functionality }.

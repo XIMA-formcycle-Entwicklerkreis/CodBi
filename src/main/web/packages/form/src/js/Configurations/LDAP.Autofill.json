@@ -1,5 +1,5 @@
 {
-  "Description": "/functions/Configurations_Appointments.loadConfig.html",
+  "Description": "/functions/Configurations_LDAP.Autofill.loadConfig.html",
   "classes": {
     "CodBi_LDAP_AC_Mail": "",
     "CodBi_LDAP_AC_FirstName": "",

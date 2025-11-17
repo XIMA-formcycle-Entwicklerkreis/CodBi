@@ -1,6 +1,6 @@
 {
   "entryPoints": ["./src/js/**/*.ts"],
-  "out": "./docs",
+  "out": "./docs2",
   "name": "CodBi",
 
   "exclude": ["./src/tests/**/*", "./node_modules"],

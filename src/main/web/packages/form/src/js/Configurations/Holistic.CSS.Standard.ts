@@ -147,6 +147,25 @@ export function loadConfig(): void {
       /* #region Document */
       body.modern.xm-body { background-color : white ;}
       /* #endregion Document */
+      /* #region Print */
+      .print.XSpan { font-size: 2em !important; line-height: 1em !important ; text-justify: auto;}
+
+      @media print {
+        .xm-form.modern DIV.XFieldSetWrapper,
+        .xm-form.modern DIV.XItem.XContainer,
+        CXFieldSet                              { border:none !important;}
+
+        h1 { font-size:3em !important;}
+        h2 { font-size: 2.5em !important;}
+
+        .CXTextField { margin-bottom: 1.5em !important ;}
+
+        .xm-form .xm-content div.print.XSpan { background-color: #ACCENT10 !important ;}
+
+        label span,
+        label span em { font-size:1.25em !important; line-height: 1.25em ; color: #ACCENT50 ;}
+      }
+      /* #endregion Print */
       /* #region Dark Mode */
       @media( prefers-color-scheme : dark ) {
         .modern input.XTextField.XItem { border-color : #ACCENT50 !important ;}
@@ -232,6 +251,13 @@ export function loadConfig(): void {
         /* #region Paragraphs etc. */
         p, h1, h2, h3, h4, h5, h6, ul, span { color : #ACCENT_DM ;}
         /* #endregion Paragraphs etc. */
+        /* #region Print */
+        @media print {
+          .xm-form .xm-content div.print.XSpan { background-color: #ACCENT_DM10 !important ;}
+
+          label span,
+          label span em { color: #ACCENT_DM50 ;}}
+        /* #endregion Print */
       }
       /* #endregion Dark Mode */
 

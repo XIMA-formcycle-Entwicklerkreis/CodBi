@@ -1,0 +1,73 @@
+// #region Imports
+import { CodBiError } from "../global-scope.js";
+// #endregion Imports
+/**
+ * Provides the {@link HTML_Select_Injection.functionality }.
+ *
+ * @remarks
+ * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+// biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
+export class Print_Remove {
+  /**
+   * Registers the "Date.Frame"-Functionality.
+   *
+   * This functionality connects two {@link HTMLInputElement }s to not permit the designated
+   * Minimum-{@link HTMLInputElement } to have a date that is after the maximum one (JQuery Datepicker supported).
+   * In order for this functionality to work in repetitive containers, the tagged {@link HTMLInputElement } and the
+   * corresponding **MaxField** need to be within the same container.
+   *
+   * Config Parameter:
+   *  - DocumentSelector: The CSS-Selector specifying the {@link HTMLElement } to {@link HTMLElement.remove }.
+   *                      This parameter takes precedence over **ParentalLevel**.
+   *  - ParentalLevel:    The number of elements to climb up the {@link HTMLElement.parentElement }-Tree to get to
+   *                      the {@link HTMLElement } to {@link HTMLElement.remove }.
+   *  - Invert:           Specifies whether this functionality shall be inverted, e.g. the {@link HTMLElement }
+   *                      will get {@link HTMLElement.remove }d in the form but shown
+   *                      when printed (defaults to **NOT SET**).
+   *                      If set **ParentalLevel** will be set to "1" if it has not been set, since the
+   *                      CodBi does not allow to remove the {@link HTMLElement } **toProcess**. */
+  public static functionality(toLoad: { [key: string]: string }, toProcess: Element): void {
+    let invert = false;
+
+    if (toLoad.invert && (toLoad.invert as string).toLowerCase() === "true") {
+      invert = true;
+      toLoad.parentallevel = toLoad.parentallevel ? toLoad.parentallevel : "1";
+    }
+
+    if (invert ? XFC_METADATA.requestType !== "print" : XFC_METADATA.requestType === "print") {
+      if (toLoad.documentselector) {
+        const toRemove = document.querySelector(toLoad.documentselector);
+
+        if (toRemove) {
+          toRemove.remove();
+        }
+
+        return;
+      }
+
+      if (toLoad.parentallevel) {
+        let toRemove = toProcess;
+
+        const parentalLevel = Number.parseInt(toLoad.parentallevel);
+
+        for (let i = 0; i < parentalLevel; i++) {
+          toRemove = toRemove.parentElement;
+        }
+
+        toRemove.remove();
+
+        return;
+      }
+
+      toProcess.remove();
+    }
+  }
+  // #region Initialization
+  /**
+   * States whether this {@link Date_Frame } was successfully registered
+   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
+  public static registered: boolean = (() => {
+    return window.codbi.registerFunctionality("Print.Remove", Print_Remove.functionality);
+  })();
+  // #endregion Initialization
+}

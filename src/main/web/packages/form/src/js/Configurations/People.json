@@ -1,6 +1,10 @@
 {
   "Description": "/functions/Configurations_People.loadConfig.html",
   "classes": {
+    "CodBi_People_Alphanumeric": "",
+    "CodBi_People_Name": "",
+    "CodBi_People_BuildingNumber": "",
+    "CodBi_People_Mail": "",
     "CodBi_People_18plus": "",
     "CodBi_People_16plus": "",
     "CodBi_People_Phone": "",
@@ -9,6 +13,7 @@
     "CodBi_Fotocropper_Board": "",
     "CodBi_Fotocropper_Uploader": "",
     "CodBi_Fotocropper_Update": "",
+    "CodBi_Fotocropper_ImageURL": "",
     "CodBi_Fotocropper_Foto": ""
   }
 }

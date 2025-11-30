@@ -21,12 +21,18 @@ export class HTML_Input_REGEX {
    *
    * Config Parameter:
    *  - Expression:       The {@link RegExp } - {@link string } the value of "toProcess" has to comply to.
+   *                      Use **°** instead of **^** to mark the beginning of the input string or a negation.
+   *  - KeyExpression:    The {@link RegExp } - {@link string } the individual keystrokes have to comply to.
+   *  - Flags:            The {@link RegExp } - flags {@link string } used to create the "expression" (defaults to "g").
+   *  - KeyFlags:         The {@link RegExp } - flags {@link string } used to create the "keyexpression" (defaults to "g").
    *  - ErrorPrefix:      The first part of the error message {@link string } displayed prior to the "expression".
    *  - ErrorPostfix:     The final part of the error message {@link string } displayed after  to the "expression".
-   *  - ExposeExpression: Will expose the "expression" within the errormessage if set to a non empty {@link string }. */
+   *  - ExposeExpression: Will expose the "expression" within the errormessage if set to **TRUE** (case insensitive). */
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "expression")
+    @TYPE.PRE("string", "exposeexpression")
+    @TYPE.PRE("string", "flags")
     @TYPE.PRE("string", "errorprefix")
     @TYPE.PRE("string", "errorpostfix")
     toLoad: { [key: string]: unknown },
@@ -50,17 +56,48 @@ export class HTML_Input_REGEX {
       toLoad.exposeexpression = (toLoad.exposeexpression as Array<string>)[0];
     }
     // #endregion Normalize Arrayed-Parameter.
+    toLoad.expression = (toLoad.expression as string).replace(/°/, "^");
+
     const $ = getJQuery();
 
+    // #region Live validation
+    toProcess.addEventListener("keyup", (event) => {
+      if ((event as KeyboardEvent).key.length === 1) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        event.stopPropagation();
+      }
+    });
+
+    toProcess.addEventListener("keydown", (event) => {
+      if (toLoad.keyexpression && (event as KeyboardEvent).key.length === 1) {
+        if (
+          !new RegExp(toLoad.keyexpression as string, toLoad.keyflags ? (toLoad.keyflags as string) : "i").test(
+            (event as KeyboardEvent).key,
+          )
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          event.stopPropagation();
+        }
+      }
+    });
+    // #region Live validation
+    // #region Invalidate Field
     toProcess.addEventListener("change", (event) => {
-      if (!new RegExp(toLoad.expression as string).test((event.target as HTMLInputElement).value)) {
+      if (
+        !new RegExp(toLoad.expression as string, toLoad.flags ? (toLoad.flags as string) : "g").test(
+          (event.target as HTMLInputElement).value,
+        )
+      ) {
         $(toProcess).error(
-          `${toLoad.errorprefix ? toLoad.errorprefix : "Text does not comply to "}${toLoad.exposeexpression ? toLoad.expression : "a certain restriction"}${toLoad.errorpostfix ? toLoad.errorpostfix : "."}`,
+          `${toLoad.errorprefix ? toLoad.errorprefix : "Text does not comply to "}${toLoad.exposeexpression && (toLoad.exposeexpression as string).toLowerCase() === "true" ? toLoad.expression : "a certain restriction"}${toLoad.errorpostfix ? ` ${toLoad.errorpostfix}` : "."}`,
         );
       } else {
         $(toProcess).error("");
       }
     });
+    // #endregion Invalidate Field
   }
   // #region Initialization
   /**

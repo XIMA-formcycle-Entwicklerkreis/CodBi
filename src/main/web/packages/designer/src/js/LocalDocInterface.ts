@@ -40,6 +40,8 @@ function insertText(into: HTMLTextAreaElement, toInsert: string) {
 }
 // #endregion Helper
 export function enableLocalDocInterface(): void {
+  let codbiToggle: HTMLElement | undefined;
+
   if (window.CodbiPluginData === undefined) {
     return;
   }
@@ -68,7 +70,17 @@ export function enableLocalDocInterface(): void {
       // #region Inject <XC-EPManager> & <XC-OptionInput>.
       document.body.insertAdjacentHTML(
         "beforeend",
-        `
+        `<style>
+                        .CodBi_Print_Remove_PrintOnly:after {
+                          content: "x";
+                          padding-left: .5em;
+                          color: white;
+                          border:solid;
+                          background-color: black;
+                          border-radius: .5em;
+                          position: absolute;
+                          opacity: 0.6;}
+                        </style>
           <div  is          = "xc-epmanager"
                 options     = "${JSON.parse(window.CodbiPluginData.fslFunctionalities)
                   .map((file: string) => {
@@ -708,6 +720,13 @@ export function enableLocalDocInterface(): void {
 
           document.addEventListener("keyup", (event) => {
             if (event.altKey && event.key.toLowerCase() === "c") {
+              // #region Do nothing if CodBi-Toggle is not checked.
+              codbiToggle = document.querySelector("#form-codbi-prop-enable-input");
+
+              if (codbiToggle && !(codbiToggle as HTMLInputElement).checked) {
+                return;
+              }
+              // #region Do nothing if CodBi-Toggle is not checked.
               if (
                 document.getElementById("scriptForm:scriptTabs:xm-editor-js_editor").contains(document.activeElement)
               ) {
@@ -805,9 +824,21 @@ export function enableLocalDocInterface(): void {
                     added instanceof HTMLInputElement &&
                     DEFINED.tsCheck<HTMLElement>(added.parentElement).classList.contains("r2")
                   ) {
+                    // #region Do nothing if CodBi-Toggle is not checked.
+                    codbiToggle = document.querySelector("#form-codbi-prop-enable-input");
+                    if (codbiToggle && !(codbiToggle as HTMLInputElement).checked) {
+                      return;
+                    }
+                    // #region Do nothing if CodBi-Toggle is not checked.
                     added.placeholder = "CodBi: ALT + V";
 
                     added.addEventListener("keydown", (event) => {
+                      // #region Do nothing if CodBi-Toggle is not checked.
+                      codbiToggle = document.querySelector("#form-codbi-prop-enable-input");
+                      if (codbiToggle && !(codbiToggle as HTMLInputElement).checked) {
+                        return;
+                      }
+                      // #region Do nothing if CodBi-Toggle is not checked.
                       if (event.altKey && (event.key === "v" || event.key === "V")) {
                         // #region Global variables listing
                         const globalVariables = new Array<string>();
@@ -1082,6 +1113,12 @@ export function enableLocalDocInterface(): void {
                             }
 
                             if (eventTarget.innerHTML.indexOf(".") === -1) {
+                              // #region Do nothing if CodBi-Toggle is not checked.
+                              codbiToggle = document.querySelector("#form-codbi-prop-enable-input");
+                              if (codbiToggle && !(codbiToggle as HTMLInputElement).checked) {
+                                return;
+                              }
+                              // #region Do nothing if CodBi-Toggle is not checked.
                               inTag = false;
                               cDetails.style.display = "none";
                               optioninput.enabled = false;
@@ -1332,11 +1369,23 @@ export function enableLocalDocInterface(): void {
                           // #endregion Hide interface on blur.
                           // #endregion If a data-cb-func field is existent...
                         } else {
+                          // #region Do nothing if CodBi-Toggle is not checked.
+                          codbiToggle = document.querySelector("#form-codbi-prop-enable-input");
+                          if (codbiToggle && !(codbiToggle as HTMLInputElement).checked) {
+                            return;
+                          }
+                          // #region Do nothing if CodBi-Toggle is not checked.
                           // #region If there is no data-cb-func field existent...
                           INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement).placeholder = "CodBi: ALT+F";
                           // #region Create a data-cb-func field on ALT + F.
                           added.addEventListener("keydown", (event) => {
                             if (event.altKey && event.key.toLowerCase() === "f") {
+                              // #region Do nothing if CodBi-Toggle is not checked.
+                              codbiToggle = document.querySelector("#form-codbi-prop-enable-input");
+                              if (codbiToggle && !(codbiToggle as HTMLInputElement).checked) {
+                                return;
+                              }
+                              // #region Do nothing if CodBi-Toggle is not checked.
                               event.preventDefault();
                               event.stopImmediatePropagation();
                               event.stopPropagation();

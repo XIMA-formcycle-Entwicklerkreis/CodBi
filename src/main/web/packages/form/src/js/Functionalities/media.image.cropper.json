@@ -5,6 +5,8 @@
     "Target": "",
     "File": "",
     "Updater": "",
-    "AspectRatio": ""
+    "AspectRatio": "",
+    "OutputWidth": "",
+    "CSSCropperHandle": ""
   }
 }

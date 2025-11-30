@@ -1,6 +1,6 @@
 // #region Imports
 // #region XIMA
-import { getXUtil } from "@de-xima/fc-form-renderer";
+import { getXUtil, getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
@@ -16,6 +16,8 @@ import { CodBiError } from "../global-scope";
  * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Panel {
+  static mapHeaderAfterElements: Map<HTMLElement, HTMLElement> = new Map<HTMLElement, HTMLElement>();
+
   /**
    * Retrieves the first ".CXPage"-{@link HTMLElement } above the given "element".
    *
@@ -60,38 +62,46 @@ export class HTML_Panel {
    * the XIMA-Text/HTML-Editor for creating the header's content.
    *
    * Config Parameter:
-   *  - Folded:                         States whether this panel is folded (TRUE) or unfolded (everything else) when
-   *                                    it is loaded (defaults to TRUE).
-   *  - CSSHeaderHover:                 The optional header's CSS:hover (defaults to { scale : 1.1 ;}).
-   *  - CSSHeaderActive:                The optional header's CSS:active (defaults to { scale : .9 ;}).
-   *  - CSSHeaderUnfolded:              The optional CSS to be applied onto the header when the panel is unfolded.
-   *  - DCSSHeaderUnfolded:             The optional Darkmode CSS to be applied onto the header when the panel is unfolded.
-   *  - CSSAnimFadeINPanel:             The optional animation to be applied onto the panel whenever the panel
-   *                                    is unfolded.
-   *  - CSSAnimFadeINPanelDuration:     The optional animation's duration that is applied onto the panel whenever
-   *                                    the panel is unfolded (defaults to 0s).
-   *  - CSSAnimFadeINPanelEasing:       The optional animation's easing function that is applied onto the panel
-   *                                    whenever the panel is unfolded (defaults to "ease-in-out").
-   *  - CSSAfterHeader:                 The CSS:after to be applied onto the header when the panel is folded.
-   *  - CSSBeforeHeader:                The CSS:before to be applied onto the header when the panel is folded.
-   *  - CSSAfterHeaderContent:          The CSS:after content to be applied onto the header when the panel is folded.
-   *  - CSSBeforeHeaderContent:         The CSS:before content to be applied onto the header when the panel is folded.
-   *  - CSSAfterHeaderContentUnfolded:  The CSS:after content to be applied onto the header when the panel is unfolded.
-   *  - CSSBeforeHeaderContentUnfolded: The CSS:after content to be applied onto the header when the panel is unfolded.
-   *  - CSSRequiredFieldsContent:       The CSS:before content to applied onto the header if it contains a validation
-   *                                    sensitive field.
-   *  - CSSRequiredFields:              The CSS:before to applied onto the header if it contains a validation
-   *                                    sensitive field.
-   *  - AutoHeaderTitle:                The {@link string }the automatically generated header shall display.
-   *  - AutoHeaderLevel:                Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,
-   *                                    e.g. to get a \<h1> enclosure the value has to be 1.
-   *  - ScrollBlock:                    Defines the logical position to scroll to when the panel
-   *                                    is unfolded (start, center, end, nearest). Defaults to "nearest".
-   *  - GenerateHeader:                 States whether a header shall be automatically generated. Defaults to FALSE.
-   *  - Scroll                          States whether the view shall be scrolled when the panel unfolds.
-   *                                    Default is FALSE.
-   *  - Accordion                       If set, this panel becomes part of an accordion. All panels sharing the same
-   *                                    accordion name will be folded when one of them is unfolded.
+   *  - Folded:                           States whether this panel is folded (TRUE) or unfolded (everything else) when
+   *                                      it is loaded (defaults to TRUE).
+   *  - CSSHeaderHover:                   The optional header's CSS:hover (defaults to { scale : 1.1 ;}).
+   *  - CSSHeaderActive:                  The optional header's CSS:active (defaults to { scale : .9 ;}).
+   *  - CSSHeaderUnfolded:                The optional CSS to be applied onto the header when the panel is unfolded.
+   *  - DCSSHeaderUnfolded:               The optional Darkmode CSS to be applied onto the header when the panel is unfolded.
+   *  - CSSAnimFadeINPanel:               The optional animation to be applied onto the panel whenever the panel
+   *                                      is unfolded.
+   *  - CSSAnimFadeINPanelDuration:       The optional animation's duration that is applied onto the panel whenever
+   *                                      the panel is unfolded (defaults to 0s).
+   *  - CSSAnimFadeINPanelEasing:         The optional animation's easing function that is applied onto the panel
+   *                                      whenever the panel is unfolded (defaults to "ease-in-out").
+   *  - CSSAfterHeader:                   The CSS:after to be applied onto the header when the panel is folded.
+   *  - CSSBeforeHeader:                  The CSS:before to be applied onto the header when the panel is folded
+   *                                      (will be overwritten when required fields are contained by the panel).
+   *  - CSSAfterHeaderContent:            The CSS:after content to be applied onto the header when the panel is folded.
+   *  - CSSBeforeHeaderContent:           The CSS:before content to be applied onto the header when the panel is folded.
+   *                                      (will be overwritten when required fields are contained by the panel).
+   *  - CSSAfterHeaderContentUnfolded:    The CSS:after content to be applied onto the header when the panel is unfolded.
+   *  - CSSBeforeHeaderContentUnfolded:   The CSS:after content to be applied onto the header when the panel is unfolded.
+   *                                      (will be overwritten when required fields are contained by the panel).
+   *  - CSSRequiredFieldsContent:         The CSS:before content to applied onto the header if it contains a validation
+   *                                      sensitive field.
+   *  - CSSRequiredFields:                The CSS:before to applied onto the header if it contains a validation
+   *                                      sensitive field.
+   *  - AutoHeaderTitle:                  The {@link string }the automatically generated header shall display.
+   *  - AutoHeaderTitleSupplementsSpacer  The {@link string } separating the actual title form all {@link string }s
+   *                                      that're supplemented 'cause they're {@link HTMLInputElement.value }s of
+   *                                      {@link HTMLInputElement }s tagged with the
+   *                                      CSS-Class **CodBi_HTML_Panel_AutoHeaderTitle_Supplement** without any
+   *                                      **XFieldSet**s or **XContainer** in between.
+   *  - AutoHeaderLevel:                  Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,
+   *                                      e.g. to get a \<h1> enclosure the value has to be 1.
+   *  - ScrollBlock:                      Defines the logical position to scroll to when the panel
+   *                                      is unfolded (start, center, end, nearest). Defaults to "nearest".
+   *  - GenerateHeader:                   States whether a header shall be automatically generated. Defaults to FALSE.
+   *  - Scroll                            States whether the view shall be scrolled when the panel unfolds.
+   *                                      Default is FALSE.
+   *  - Accordion                         If set, this panel becomes part of an accordion. All panels sharing the same
+   *                                      accordion name will be folded when one of them is unfolded.
    *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
@@ -106,6 +116,10 @@ export class HTML_Panel {
     @INSTANCE.PRE(HTMLDivElement)
     toProcess: Element,
   ): undefined {
+    if (XFC_METADATA.requestType === "print") {
+      return;
+    }
+
     let header: HTMLElement | null;
 
     if (
@@ -145,7 +159,37 @@ export class HTML_Panel {
 
       const legend = toProcess.querySelector("legend");
 
-      header.innerHTML = `${toLoad.autoheaderlevel ? `<h${toLoad.autoheaderlevel}>` : ""}${toLoad.autoheadertitle ? (toLoad.autoheadertitle as string) : toProcess.tagName === "FIELDSET" ? (legend ? toProcess.querySelector("legend")?.innerHTML : "") : ""}${toLoad.autoheaderlevel ? `</h${toLoad.autoheaderlevel}>` : ""}`;
+      toLoad.autoheadertitlesuplementsspacer = toLoad.autoheadertitlesuplementsspacer
+        ? (toLoad.autoheadertitlesuplementsspacer as string)
+        : " / ";
+
+      let autoHeaderTitleSupplement = toLoad.autoheadertitlesuplementsspacer as string;
+
+      const supplements = toProcess.querySelectorAll(".CodBi_HTML_Panel_AutoHeaderTitle_Supplement");
+      const constructHeaderSupplements = () => {
+        for (let i = 0; i < supplements.length; i++) {
+          autoHeaderTitleSupplement += `${(supplements[i] as HTMLInputElement).value === "" || i === 0 ? "" : ", "}${(supplements[i] as HTMLInputElement).value}`;
+        }
+      };
+
+      for (let i = 0; i < supplements.length; i++) {
+        if (
+          !isClassInBetween("XFieldSet", toProcess as HTMLElement, supplements[i] as HTMLElement) &&
+          !isClassInBetween("XContainer", toProcess as HTMLElement, supplements[i] as HTMLElement)
+        ) {
+          supplements[i].addEventListener("change", (event) => {
+            autoHeaderTitleSupplement = toLoad.autoheadertitlesuplementsspacer as string;
+
+            constructHeaderSupplements();
+
+            header.innerHTML = `${toLoad.autoheaderlevel ? `<h${toLoad.autoheaderlevel}>` : ""}${toLoad.autoheadertitle ? (toLoad.autoheadertitle as string) + (autoHeaderTitleSupplement.length !== (toLoad.autoheadertitlesuplementsspacer as string).length ? autoHeaderTitleSupplement : "") : toProcess.tagName === "FIELDSET" ? (legend.innerHTML + (autoHeaderTitleSupplement.length === (toLoad.autoheadertitlesuplementsspacer as string).length ? "" : autoHeaderTitleSupplement)) : ""}${toLoad.autoheaderlevel ? `</h${toLoad.autoheaderlevel}>` : ""}`;
+          });
+        }
+      }
+
+      constructHeaderSupplements();
+
+      header.innerHTML = `${toLoad.autoheaderlevel ? `<h${toLoad.autoheaderlevel}>` : ""}${toLoad.autoheadertitle ? (toLoad.autoheadertitle as string) + (autoHeaderTitleSupplement.length !== (toLoad.autoheadertitlesuplementsspacer as string).length ? autoHeaderTitleSupplement : "") : toProcess.tagName === "FIELDSET" ? (legend ? toProcess.querySelector("legend")?.innerHTML + (autoHeaderTitleSupplement.length === (toLoad.autoheadertitlesuplementsspacer as string).length ? "" : autoHeaderTitleSupplement) : "") : ""}${toLoad.autoheaderlevel ? `</h${toLoad.autoheaderlevel}>` : ""}`;
 
       if (legend) {
         legend.remove();
@@ -175,6 +219,10 @@ export class HTML_Panel {
       const idxHeader = childArray.indexOf(header.parentElement);
       const headerAfterElement: Element | undefined =
         idxHeader === childArray.length - 1 ? undefined : childArray[idxHeader];
+
+      if (headerAfterElement) {
+        HTML_Panel.mapHeaderAfterElements.set(toProcess as HTMLElement, headerAfterElement as HTMLElement);
+      }
       // #endregion Determine where to re-insert the header when panel gets unfolded.
       const bufferDisplay = (toProcess as HTMLElement).style.display; // Store in order to restore it later on.
       // Determine weather initially folded or not.
@@ -213,6 +261,10 @@ export class HTML_Panel {
       const style = document.createElement("style");
 
       style.innerHTML = `
+      @media( print ) {
+        #${parentID}.CodBi.--HTML_Panel { display : ${bufferDisplay} !important ;}
+      }
+
       @media( prefers-color-scheme : dark ) {
         #${parentID} .CodBi_HTML_Panel_Header { ${toLoad.dcssheaderunfolded ? toLoad.dcssheaderunfolded : "background: linear-gradient(130deg, rgba(5, 5, 5, 1) 0%, rgba(56, 47, 47, 1) 23%, rgba(84, 62, 62, 1) 55%, rgba(56, 52, 52, 1) 89%, rgba(0, 0, 0, 1) 100%) !important ;"}}}
 
@@ -232,9 +284,12 @@ export class HTML_Panel {
         ${toLoad.cssbeforeheader ? toLoad.cssbeforeheader : ""}
       }
 
-      #${parentID} .CodBi_HTML_Panel_Header:hover { ${toLoad.cssheaderhover ? toLoad.cssheaderhover : "color: darkorange ;"}}
-      #${parentID} .CodBi_HTML_Panel_Header:hover > * { ${toLoad.cssheaderhover ? "" : "margin-left: 5% ; transition: .5s all ;"}}
-      #${parentID} .CodBi_HTML_Panel_Header:active { ${toLoad.cssheaderactive ? toLoad.cssheaderactive : "scale : .9 ;"}}
+      #${parentID} .CodBi_HTML_Panel_Header:hover,
+      .XFieldSetWrapper:has( #${parentID}) .CodBi_HTML_Panel_Header:hover     { ${toLoad.cssheaderhover ? toLoad.cssheaderhover : "color: darkorange ;"}}
+      #${parentID} .CodBi_HTML_Panel_Header:hover > *,
+      .XFieldSetWrapper:has( #${parentID}) .CodBi_HTML_Panel_Header:hover > * { ${toLoad.cssheaderhover ? "" : "margin-left: 5% ; transition: .5s all ;"}}
+      #${parentID} .CodBi_HTML_Panel_Header:active,
+      .XFieldSetWrapper:has( #${parentID}) .CodBi_HTML_Panel_Header:active    { ${toLoad.cssheaderactive ? toLoad.cssheaderactive : "scale : .9 ;"}}
 
       ${
         toLoad.cssanimfadeinpanel
@@ -423,3 +478,29 @@ export class HTML_Panel {
   })();
   // #endregion Initialization
 }
+// #region Helper
+/**
+ * Finds if an element with a specific class exists between two nodes.
+ *
+ * @param {string}      suspect - The class to look for.
+ * @param {HTMLElement} start   - The starting HTML element.
+ * @param {HTMLElement} end     - The ending HTML element.
+ *
+ * @returns {boolean} True if the class is found between the nodes (exclusive). */
+function isClassInBetween(suspect: string, start: HTMLElement, end: HTMLElement): boolean {
+  while (end && end !== start) {
+    if (
+      end.getAttribute("class").indexOf(` ${suspect} `) !== -1 ||
+      end.getAttribute("class").indexOf(` ${suspect}"`) !== -1 ||
+      end.getAttribute("class").indexOf(`"${suspect} `) !== -1 ||
+      end.getAttribute("class").indexOf(`"${suspect}"`) !== -1
+    ) {
+      return true;
+    }
+    // biome-ignore lint/style/noParameterAssign: No need for a local variable for such short code.
+    end = end.parentElement;
+  }
+
+  return false;
+}
+// #endregion Helper

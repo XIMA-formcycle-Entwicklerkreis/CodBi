@@ -30,7 +30,7 @@ export class HTML_Panel_Accordion {
     @INSTANCE.PRE(HTMLDivElement)
     toProcess: Element,
   ): undefined {
-    if (toLoad.accordion === undefined) {
+    if (toLoad.accordion === undefined || XFC_METADATA.requestType === "print") {
       return;
     }
 

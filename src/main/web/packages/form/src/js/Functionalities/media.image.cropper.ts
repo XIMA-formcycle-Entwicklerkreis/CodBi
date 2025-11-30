@@ -24,15 +24,18 @@ export class Media_Image_Cropper {
    * that is not repetitive itself but lies with the repetitive one.
    *
    * Config Parameter:
-   *  - Container:    The {@link HTMLDivElement } that shall contain the Cropper-UI.
-   *  - Target:       The {@link HTMLImageElement } that will contain the cropped image when
-   *                  clicking the "Updater".
-   *  - File:         The {@link HTMLInputElement } of type = "file" where to select the image to crop.
-   *  - Updater:      The CSS-Selector specifying the {@link HTMLButtonElement } that, on click, will cause an update of the "Target".
-   *  - AspectRatio:  The optional cropper's aspectratio to retain (e.g. 16 / 9 or 4 / 3 ).
-   *                  Setting this value will make the cropper non-resizable.
+   *  - Container:        The {@link HTMLDivElement } that shall contain the Cropper-UI.
+   *  - Target:           The {@link HTMLImageElement } that will contain the cropped image when
+   *                      clicking the "Updater".
+   *  - File:             The {@link HTMLInputElement } of type = "file" where to select the image to crop.
+   *  - Updater:          The CSS-Selector specifying the {@link HTMLButtonElement } that, on click, will cause an update of the "Target".
+   *  - ImageURL          The CSS-Selector specifying the {@link HTMLInputElement } that shall receive the image data.
+   *  - AspectRatio:      The optional cropper's aspectratio to retain (e.g. 16 / 9 or 4 / 3 ).
+   *                      Setting this value will make the cropper non-resizable.
+   *  - OutputWidth       The width in pixel for canvas where the cropped area shall be reflected.
+   *  - CSSCropperHandle  The CSS that shall be applied on each <cropper-handle> (defaults to background-color: darkorange ;).
    *
-   * @param toLoad    Provided by the CodBi. */
+   * @param toLoad Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
     @REGEX.PRE(REGEX.stdExp.cssSelector, "container")
@@ -88,6 +91,9 @@ export class Media_Image_Cropper {
           // #endregion Calculate aspect ration, if provided
           const rectContainer = newImage.getBoundingClientRect();
 
+          toLoad.csscropperhandle = toLoad.csscropperhandle
+            ? toLoad.csscropperhandle
+            : "background-color: darkorange ;";
           cropper = new Cropper(newImage, {
             template: `
                 <cropper-canvas style = "height : 100% ; width : 100% ;" background >
@@ -97,20 +103,9 @@ export class Media_Image_Cropper {
                                     theme-color = "rgba( 255, 255, 255, 0.35 )"></cropper-handle></cropper-image>
                   <cropper-shade hidden></cropper-shade>
                   <cropper-selection
-                    width = "${
-                      aspectRatio
-                        ? rectContainer.width / rectContainer.height > aspectRatio
-                          ? rectContainer.height * aspectRatio
-                          : rectContainer.width
-                        : 400
-                    }"
-                     height = "${
-                       aspectRatio
-                         ? rectContainer.width / rectContainer.height <= aspectRatio
-                           ? rectContainer.width / aspectRatio
-                           : rectContainer.width
-                         : 300
-                     }" movable ${aspectRatio ? "" : "resizable zoomable"}>
+                    width = "100"
+                    height = "100"
+                    movable ${aspectRatio ? "" : "resizable zoomable"}>
                     <cropper-grid role = "grid" bordered covered></cropper-grid>
                     <cropper-handle action      = "move"
                                     theme-color = "rgba( 255, 255, 255, 0.35 )"></cropper-handle>
@@ -119,14 +114,14 @@ export class Media_Image_Cropper {
                         ? ""
                         : `
                         <cropper-crosshair centered></cropper-crosshair>
-                        <cropper-handle action = "n-resize"></cropper-handle>
-                        <cropper-handle action = "e-resize"></cropper-handle>
-                        <cropper-handle action = "s-resize"></cropper-handle>
-                        <cropper-handle action = "w-resize"></cropper-handle>
-                        <cropper-handle action = "ne-resize"></cropper-handle>
-                        <cropper-handle action = "nw-resize"></cropper-handle>
-                        <cropper-handle action = "se-resize"></cropper-handle>
-                        <cropper-handle action = "sw-resize">`
+                        <cropper-handle action = "n-resize"   style = "${toLoad.csscropperhandle}"></cropper-handle>
+                        <cropper-handle action = "e-resize"   style = "${toLoad.csscropperhandle}"></cropper-handle>
+                        <cropper-handle action = "s-resize"   style = "${toLoad.csscropperhandle}"></cropper-handle>
+                        <cropper-handle action = "w-resize"   style = "${toLoad.csscropperhandle}"></cropper-handle>
+                        <cropper-handle action = "ne-resize"  style = "${toLoad.csscropperhandle}"></cropper-handle>
+                        <cropper-handle action = "nw-resize"  style = "${toLoad.csscropperhandle}"></cropper-handle>
+                        <cropper-handle action = "se-resize"  style = "${toLoad.csscropperhandle}"></cropper-handle>
+                        <cropper-handle action = "sw-resize"  style = "${toLoad.csscropperhandle}"></cropper-handle>`
                     }
                     </cropper-handle></cropper-selection></cropper-canvas>`,
           });
@@ -142,13 +137,32 @@ export class Media_Image_Cropper {
           const canvas = cropper.getCropperSelection();
 
           if (canvas) {
+            const targetBoundingClientRect = target.getBoundingClientRect();
+            console.log(canvas, canvas?.clientHeight, canvas?.clientHeight, window.devicePixelRatio, "canvas");
             canvas
               .$toCanvas({
-                width: canvas?.clientWidth,
-                height: canvas?.clientHeight,
+                width: toLoad.outputwidth ? (toLoad.outputwidth as number) : 1000,
               })
               .then((canvas: HTMLCanvasElement) => {
-                target?.setAttribute("src", canvas.toDataURL());
+                target.setAttribute(
+                  "width",
+                  (Number.parseInt(canvas?.getAttribute("width")) * window.devicePixelRatio * 4 || 1).toString(),
+                );
+                target.setAttribute(
+                  "width",
+                  (Number.parseInt(canvas?.getAttribute("height")) * window.devicePixelRatio * 4 || 1).toString(),
+                );
+                const urlImage = canvas.toDataURL("image/jpeg", 1.0);
+
+                if (toLoad.imageurl) {
+                  const imageURLReceiver = toProcess.querySelector(toLoad.imageurl as string);
+
+                  if (imageURLReceiver) {
+                    (imageURLReceiver as HTMLInputElement).value = urlImage;
+                  }
+                }
+
+                target?.setAttribute("src", urlImage);
               });
           }
         }

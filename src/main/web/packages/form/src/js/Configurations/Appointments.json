@@ -1,6 +1,7 @@
 {
   "Description": "/functions/Configurations_Appointments.loadConfig.html",
   "classes": {
+    "CodBi_NoFutureDate": "",
     "CodBi_DateFrame_1_Begin": "",
     "CodBi_DateFrame_1_End": "",
     "CodBi_DateFrame_2_Begin": "",

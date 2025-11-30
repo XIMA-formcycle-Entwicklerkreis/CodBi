@@ -1047,7 +1047,7 @@ export class CodBi implements CodbiGlobal {
    *
    * @param destination The {@link Element } that shall precede the {@link CodBiLogo }. */
   protected injectLoadingAnim(destination: Element): void {
-    if (destination.parentElement?.querySelector(".CodBi_Logo") !== null) {
+    if (XFC_METADATA.requestType === "print" || destination.parentElement?.querySelector(".CodBi_Logo") !== null) {
       return; // Don't inject the CodBi-Logo if there is already one present.
     }
 
@@ -1447,9 +1447,17 @@ export class CodBi implements CodbiGlobal {
       // If added Element is not the first one...
       if (addedRow !== "0") {
         const newContainerID = params.container["0"].getAttribute("id");
-        const codbiElements = document
-          .querySelector(`#${newContainerID.substring(0, newContainerID.length - addedRow.length)}0`)
-          .querySelectorAll("[ data-cb-func ]");
+
+        let copytarget: HTMLElement | undefined;
+        let i = 0;
+
+        while (copytarget === undefined || copytarget === null) {
+          copytarget = document.querySelector(
+            `#${newContainerID.substring(0, newContainerID.length - addedRow.length)}${i++}`,
+          );
+        }
+
+        const codbiElements = copytarget.querySelectorAll("[ data-cb-func ]");
         // If the original row contained CodBi-Elements...
         if (codbiElements.length !== 0) {
           // #region Transfer CodBi-Attributes to cloned object.

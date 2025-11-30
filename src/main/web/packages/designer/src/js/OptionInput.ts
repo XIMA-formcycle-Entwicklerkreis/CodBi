@@ -621,9 +621,10 @@ export class Optioninput extends HTMLDivElement {
       return;
     }
     // #endregion If the [target] just received focus, show all available functionalities
-    if (!(event.target instanceof HTMLInputElement) || !(event.target instanceof HTMLTextAreaElement)) {
+    if (!(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement)) {
+      console.log("N:", event.target);
       throw new INSTANCE.Infringement(
-        "The event.target has to be either of type HTMLInputElement or HTMLTextAreaElement but isn't",
+        `The event.target has to be either of type HTMLInputElement or HTMLTextAreaElement but isn't. It is of type ${typeof event.target}.`,
       );
     }
 

@@ -2,6 +2,8 @@
  * Registers standard configurations specific to appointment arrangements.
  *
  * CSS-Classes:
+ * - **CodBi_NoFutureDate**
+ *  The {@link HTMLInputElement } tagged with this class may not be set to a future date.
  * - **CodBi_DateFrame_1_Begin & CodBi_DateFrame_1_End ( 1 to 5 )**
  *  The {@link HTMLInputElement }s tagged with these classes will be configured to not allow entering a date
  *  in the tagged {@link HTMLInputElement } that is higher than the one in the {@link HTMLInputElement } the
@@ -19,6 +21,14 @@
  *   The {@link HTMLSelectElement } tagged with this class, will be filled with all holidays for the current
  *   and next years for the state specified in the global variable **CodBi_Holidays_States**. */
 export function loadConfig(): void {
+  // #region .CodBi_NoFutureDate
+  window.codbi.loadConfig({
+    targets: ".CodBi_NoFutureDate",
+    FUNC: "Date.Min",
+    Minimum: 0,
+    MsgHigher: "Das Datum darf nicht in der Zukunft liegen.",
+  });
+  // #endregion .CodBi_NoFutureDate
   // #region CodBi_DateFrame_1[-5]_...
   window.codbi.loadConfigs([
     {

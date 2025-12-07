@@ -53,6 +53,11 @@ export interface CodbiSettings {
     /** The URL to the Formcycle-LDAP-Query to use by default. */
     URL: string;
   };
+  /** The configuration regarding **OpenPLZ**. */
+  OpenPLZ: {
+    /** The URL to the Formcycle-OpenPLZ-Query to use by default. */
+    URL: string;
+  };
 }
 /**
  * The configuration template for the form, as configured by the user in the

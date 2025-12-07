@@ -183,6 +183,7 @@ Mindestalter
 msghigher
 msgmaxinvalid
 msgmininvalid
+msgnotknown
 msgnoweekends
 nach
 nachname
@@ -197,9 +198,12 @@ noweekends
 Nullen
 numlist
 onfigurations
+openplz
 Optioncontainer
 Optioninput
 Optiontext
+orga
+organizationalunits
 Ortsvorwahl
 outputwidth
 Parametercells
@@ -255,6 +259,7 @@ telefon
 Telefonnummer
 Texteditor
 Textinjector
+textsearch
 toload
 Transloco
 treeview
@@ -262,6 +267,7 @@ typhonjs
 über
 varseditor
 verfügbar
+Verwaltungseinheiten
 visualblocks
 visualchars
 vorname

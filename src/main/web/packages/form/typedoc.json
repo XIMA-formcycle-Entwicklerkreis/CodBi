@@ -1,18 +1,1 @@
-{
-  "entryPoints": ["./src/js/**/*.ts"],
-  "out": "./docs2",
-  "name": "CodBi",
-
-  "exclude": ["./src/tests/**/*", "./node_modules"],
-  "theme": "default",
-  "hideGenerator": true,
-  "disableSources": false,
-  "tsconfig": "./tsconfig.json",
-  "options": {
-    "excludePrivate": true,
-    "excludeProtected": false,
-    "excludeExternals": false,
-    "disableOutputCheck": true
-  },
-  "skipErrorChecking": true
-}
+3R1gJZKU7I5rNcv5gBc8!

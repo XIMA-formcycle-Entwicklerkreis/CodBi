@@ -8,6 +8,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
 import { CodBiError } from "../global-scope";
+import { xutil } from "jquery";
 // #endregion Imports
 /**
  * Provides the {@link HTML_Panel.functionality }.
@@ -17,7 +18,6 @@ import { CodBiError } from "../global-scope";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Panel {
   static mapHeaderAfterElements: Map<HTMLElement, HTMLElement> = new Map<HTMLElement, HTMLElement>();
-
   /**
    * Retrieves the first ".CXPage"-{@link HTMLElement } above the given "element".
    *
@@ -39,6 +39,8 @@ export class HTML_Panel {
   }
   /** Stores all {@link HTMLElement }s that're currently invalid. */
   public static invalidElements: Array<HTMLElement> = new Array<HTMLElement>();
+  /** States whether the validator algorithm has already been registered. */
+  public static validatorRegistered = false;
   /**
    * Unfolds all HTML-Panels that are ancestors of the specified {@link Element } by simulating a click on their
    * header if they're folded.
@@ -265,7 +267,11 @@ export class HTML_Panel {
         #${parentID}.CodBi.--HTML_Panel { display : ${bufferDisplay} !important ;}
       }
 
+      .CodBi_HTML_Panel_MissingRequiredField { border-left-style: solid !important ; border-right-style: solid !important ; padding: .5em ; box-shadow: 0 0 .25em darkorange ; border-color: red !important ;}
+
       @media( prefers-color-scheme : dark ) {
+        .CodBi_HTML_Panel_MissingRequiredField { border-left-style: solid !important ; border-right-style: solid !important ; padding: .5em ; box-shadow: 0 0 .25em darkorange ; border-color: darkorange !important ;}
+
         #${parentID} .CodBi_HTML_Panel_Header { ${toLoad.dcssheaderunfolded ? toLoad.dcssheaderunfolded : "background: linear-gradient(130deg, rgba(5, 5, 5, 1) 0%, rgba(56, 47, 47, 1) 23%, rgba(84, 62, 62, 1) 55%, rgba(56, 52, 52, 1) 89%, rgba(0, 0, 0, 1) 100%) !important ;"}}}
 
       .CodBi_HTML_Panel_Header > p { margin : 0 ;}
@@ -399,7 +405,7 @@ export class HTML_Panel {
       let requiredFieldsContained = false;
 
       for (const required of toProcess.querySelectorAll('[ aria-required = "true"]')) {
-        HTML_Panel.invalidElements.push(required as HTMLElement);
+        //HTML_Panel.invalidElements.push(required as HTMLElement);
 
         requiredFieldsContained = true;
       }
@@ -421,26 +427,65 @@ export class HTML_Panel {
       // #endregion Required fields handling (validation handling).
       // #region Prevent form submission as long as there're invalid fields.
       getXUtil().on("submit", (params) => {
+        // #region Untag missing required fields.
+        for (const untag of document.querySelectorAll(".CodBi_HTML_Panel_MissingRequiredField")) {
+          untag.classList.remove("CodBi_HTML_Panel_MissingRequiredField");
+        }
+        // #endregion Untag missing required fields.
         let reallyInvalid = false;
+
+        for (const candidate of document.querySelectorAll('[ aria-required = "true"]')) {
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          if ((candidate as any).value === "" || (candidate as any).value === undefined) {
+            HTML_Panel.unfoldPanelAncestors(candidate as HTMLElement);
+
+            if (!isDisplayNone(candidate as HTMLElement)) {
+              let checkedSelection = false;
+
+              if (candidate.classList.contains("XSelect")) {
+                for (const option of candidate.querySelectorAll("input")) {
+                  if (option.checked === true) {
+                    checkedSelection = true;
+                  }
+                }
+              }
+
+              if (!checkedSelection) {
+                // #region Determine and go to page.
+                const pageName = HTML_Panel.determinePage(candidate as HTMLElement)?.getAttribute("data-xn");
+
+                if (pageName) {
+                  gotoPage(pageName);
+                  candidate.scrollIntoView({ behavior: "smooth", block: toLoad.scrollblock as ScrollLogicalPosition });
+                }
+                // #endregion Determine and go to page.
+                // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                (candidate as any).focus();
+
+                (candidate as HTMLElement).classList.add("CodBi_HTML_Panel_MissingRequiredField");
+
+                return { preventSubmission: true };
+              }
+            }
+          }
+        }
 
         if (HTML_Panel.invalidElements.length === 0) {
           return { preventSubmission: false };
         } else {
           for (const invalid of HTML_Panel.invalidElements) {
-            if (invalid.getAttribute("aria-invalid") === "false") {
-              continue;
-            }
-
             reallyInvalid = true;
 
             HTML_Panel.unfoldPanelAncestors(invalid);
-
+            // #region Determine and go to page.
             const pageName = HTML_Panel.determinePage(invalid)?.getAttribute("data-xn");
 
             if (pageName) {
               gotoPage(pageName);
               invalid.scrollIntoView({ behavior: "smooth", block: toLoad.scrollblock as ScrollLogicalPosition });
             }
+            // #endregion Determine and go to page.
+            invalid.focus();
           }
 
           return { preventSubmission: reallyInvalid };
@@ -448,24 +493,19 @@ export class HTML_Panel {
       });
       // #endregion Prevent form submission as long as there're invalid fields.
       // #region Handle unfolding of panels containing invalid fields.
-      xm_validator.on("requestBegin", (data) => {
-        for (const item of data.items) {
-          if (item.getAttribute("aria-invalid") === "true") {
-            HTML_Panel.invalidElements.push(item);
-          } else {
-            HTML_Panel.invalidElements = HTML_Panel.invalidElements.filter((candidate) => candidate !== item);
-          }
-        }
+      if (!HTML_Panel.validatorRegistered) {
+        xm_validator.on("begin", (data) => {
+          for (const item of data.items) {
+            if (!HTML_Panel.invalidElements.includes(item) && item.getAttribute("aria-invalid") === "true") {
+              HTML_Panel.invalidElements.push(item);
+            }
 
-        if (
-          (toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded &&
-          data.items[0]?.classList.contains("XPage")
-        ) {
-          for (const invalid of HTML_Panel.invalidElements) {
-            HTML_Panel.unfoldPanelAncestors(invalid);
+            if (HTML_Panel.invalidElements.includes(item) && item.getAttribute("aria-invalid") === "false") {
+              HTML_Panel.invalidElements = HTML_Panel.invalidElements.filter((candidate) => candidate !== item);
+            }
           }
-        }
-      });
+        });
+      }
       // #endregion Handle unfolding of panels containing invalid fields.
     }
   }
@@ -499,6 +539,24 @@ function isClassInBetween(suspect: string, start: HTMLElement, end: HTMLElement)
     }
     // biome-ignore lint/style/noParameterAssign: No need for a local variable for such short code.
     end = end.parentElement;
+  }
+
+  return false;
+}
+/**
+ * Determines whether the **suspect** {@link HTMLElement } is hidden cause of it's own or one of it'S ancestor's
+ * CSS **display** property is set to **none**.
+ *
+ * @param suspect The {@link HTMLElement } to check.
+ *
+ * @returns **TRUE** if the **suspect** {@link HTMLElement } is hidden, otherwise **FALSE**. */
+function isDisplayNone(suspect: HTMLElement) {
+  while (suspect !== null) {
+    if (suspect.style.display === "none") {
+      return true;
+    }
+    // biome-ignore lint/style/noParameterAssign:
+    suspect = suspect.parentElement;
   }
 
   return false;

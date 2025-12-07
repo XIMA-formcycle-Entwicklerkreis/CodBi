@@ -62,6 +62,10 @@ export class HTML_Input_REGEX {
 
     // #region Live validation
     toProcess.addEventListener("keyup", (event) => {
+      if ((event as KeyboardEvent).key === undefined) {
+        return;
+      }
+
       if ((event as KeyboardEvent).key.length === 1) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -70,6 +74,10 @@ export class HTML_Input_REGEX {
     });
 
     toProcess.addEventListener("keydown", (event) => {
+      if ((event as KeyboardEvent).key === undefined) {
+        return;
+      }
+
       if (toLoad.keyexpression && (event as KeyboardEvent).key.length === 1) {
         if (
           !new RegExp(toLoad.keyexpression as string, toLoad.keyflags ? (toLoad.keyflags as string) : "i").test(

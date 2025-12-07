@@ -260,6 +260,27 @@ export function loadConfig(): void {
         /* #endregion Print */
       }
       /* #endregion Dark Mode */
+      /* #region Druck Einstellungen*/
+      .xm-form.modern DIV.XFieldSetWrapper,
+      .xm-form.modern DIV.XItem.XContainer,
+      CXFieldSet                              { border:none !important;}
+
+      .print.XSpan { font-size: 2em !important; line-height: 1em !important ; text-justify: auto;}
+
+      @media print {
+          h1 { font-size:3em !important;}
+          h2 { font-size: 2.5em !important;}
+
+          .CXTextField { margin-bottom: 1.5em !important ;}
+
+          .xm-form .xm-content div.print.XSpan { background-color: #65b22e10 !important ;}
+
+          label,
+          label span,
+          label span em { font-size:1.25em !important; color: #65b22e ;}
+
+          .CXUpload *:not(label) { font-size: 1.25em !important ; margin-top : .5em ;}}
+      /* #endregion Druck Einstellungen*/
 
 }`
       .replace(/\{/g, "<")

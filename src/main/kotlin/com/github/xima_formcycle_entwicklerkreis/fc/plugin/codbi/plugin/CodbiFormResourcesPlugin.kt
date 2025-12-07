@@ -243,7 +243,6 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
         .includeInForm(true)
         .build()
   }
-
   /**
    * Creates the form resource descriptor for a CSS or JavaScript resource contained in this plugin
    * JAR file. This is one of the files that were created by the `src/main/web/packages/form`

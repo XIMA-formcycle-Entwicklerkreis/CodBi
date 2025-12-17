@@ -110,17 +110,20 @@ export class LDAP_Autocomplete {
 
       const key = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent).key;
 
-      if (key.length !== 1) {
+      if (key.length !== 1 && key !== "Backspace" && key !== "Delete") {
         return;
       }
 
-      const findParameter = ["AND", `${toLoad.property}=${(toProcess as HTMLInputElement).value}${key}`];
+      const findParameter = [
+        "AND",
+        `${toLoad.property}=${(toProcess as HTMLInputElement).value}${key.length === 1 ? key : ""}`,
+      ];
 
       if (toLoad.url) {
         findParameter.push(toLoad.url);
       }
 
-      const ldapResult = await LDAP_Find.retrieve(findParameter);
+      const ldapResult = removeDuplicates(await LDAP_Find.retrieve(findParameter), toLoad.property);
 
       if (ldapResult.length === 1) {
         (toProcess as HTMLInputElement).value = ldapResult[0][toLoad.property];
@@ -165,3 +168,22 @@ export class LDAP_Autocomplete {
   })();
   // #endregion Initialization
 }
+// #region Helper
+export function removeDuplicates(toFilter: unknown[], by: string | undefined = undefined): unknown[] {
+  if (by) {
+    const seen = new Map<string, unknown>();
+
+    for (const item of toFilter) {
+      const propValue = item[by];
+
+      if (!seen.has(propValue)) {
+        seen.set(propValue, item);
+      }
+    }
+
+    return Array.from(seen.values());
+  } else {
+    return [...new Set(toFilter)];
+  }
+}
+// #endregion Helper

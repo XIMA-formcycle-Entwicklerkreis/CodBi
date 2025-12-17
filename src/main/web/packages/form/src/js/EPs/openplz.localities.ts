@@ -5,9 +5,11 @@ import { OpenPLZ } from "./openplz.js";
  * An {@link OpenPLZ }-Request specialized into searching for localities.
  *
  * Config Parameter:
- * - 1st: The country's code to look up the locality in (e.g. de or ch).
+ * - 1st: The optional **country** to retrieve the data of (if not provided either the country specified in
+ *        the CodBi's Configuration **OpenPLZ_Country** will be used or, if not specified, "de").
  * - 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's name.
  * - 3rd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's postal code.
+ * - 4th: An Optional number of pages to load.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
@@ -22,8 +24,13 @@ export class OpenPLZ_Localities extends OpenPLZ {
       "Localities",
       "",
       "",
-      `name-${params[1]}`,
-      params.length === 3 ? `postalCode-${params[2]}` : "",
+      `name-${(params[1] as string).replace(/^/, "°")}`,
+      params.length >= 3 ? `postalCode-${(params[2] as string).replace(/^/, "°")}` : "",
+      "",
+      "",
+      "",
+      params[3] ? params[3] : "",
+      params[3] ? params[3] : "",
     ]);
   }
   // #region Initialization

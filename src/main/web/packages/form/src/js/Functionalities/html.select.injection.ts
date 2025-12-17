@@ -18,10 +18,17 @@ export class HTML_Select_Injection {
    * also. The one with the least entries determines the amount of {@link HTMLOptionElement }s that'll be generated.
    *
    * Config Parameter:
-   *  - Titles:   The optional "title"-attributes that shall be set on the {@link HTMLOptionElement }s.
-   *  - Values:   The {@link HTMLElement.innerHTML }s the generated {@link HTMLOptionElement } shall have.
-   *  - ReClean:  An optional {@link boolean } specifying whether to clean the {@link HTMLSelectElement } prior to
-   *              populate it.
+   *  - Titles:         The optional "title"-attributes that shall be set on the {@link HTMLOptionElement }s.
+   *  - TitleProperty:  The optional property to retrieve from the {@link Array } passed to the **Values** to use it as
+   *                    the actual title.
+   *  - Values:         The {@link HTMLElement.innerHTML }s the generated {@link HTMLOptionElement } shall have.
+   *  - ValueProperty:  The optional property to retrieve from the {@link Array } passed to the **Values** to use it as
+   *                    the actual value.
+   *  - TextProperty    The optional property to retrieve from the {@link Array } passed to the **Values** to use it as
+   *                    the actual seen text in the selection (if not specified but **ValueProperty** is, the
+   *                    **ValueProperty** will be used for the text).
+   *  - ReClean:        An optional {@link boolean } specifying whether to clean the {@link HTMLSelectElement } prior to
+   *                    populate it.
    *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }. */
@@ -49,7 +56,27 @@ export class HTML_Select_Injection {
     }
 
     for (let i = 0; i < arrayLength; i++) {
-      toProcess.innerHTML += `<option title = "${(toLoad.titles as [])[i]}" value = "${(toLoad.values as [])[i]}">${(toLoad.values as [])[i]}</option>`;
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/style/useSingleVarDeclarator: <explanation>
+      let title: string | any, value: string | any, text: string | any;
+
+      value = text = (toLoad.values as [])[i];
+
+      title = toLoad.titles ? (toLoad.titles as [])[i] : value;
+
+      if (typeof value !== "string") {
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        value = (title as any)[toLoad.valueproperty as string];
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        text = (title as any)[toLoad.textproperty as string];
+      }
+
+      if (typeof title !== "string") {
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        title = (title as any)[toLoad.titleproperty as string];
+      }
+
+      toProcess.innerHTML += `<option title = "${title} value = "${value}">${text}</option>`;
     }
     // #endregion Populate the "HTMLSelectElement".
   }

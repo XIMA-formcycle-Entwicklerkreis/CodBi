@@ -14,6 +14,20 @@
     "CodBi_Fotocropper_Uploader": "",
     "CodBi_Fotocropper_Update": "",
     "CodBi_Fotocropper_ImageURL": "",
-    "CodBi_Fotocropper_Foto": ""
+    "CodBi_Fotocropper_Foto": "",
+    "CodBi_People_OpenPLZ_AC_SET_PLZ": "",
+    "CodBi_People_OpenPLZ_AC_SET_Locality": "",
+    "CodBi_People_OpenPLZ_AC_SET_Street": "",
+    "CodBi_People_OpenPLZ_AC_SET_BuildingNumber": "",
+    "CodBi_OpenPLZ_Select_Localities": "",
+    "CodBi_OpenPLZ_Select_Streets_By_PLZ": "",
+    "CodBi_OpenPLZ_Select_Orga_Bundeslaender": "",
+    "CodBi_OpenPLZ_Select_Orga_Bayern": ""
+  },
+  "globals": {
+    "CodBi_OpenPLZ_Country": "",
+    "CodBi_OpenPLZ_Selection_Streets_regexName": "",
+    "CodBi_OpenPLZ_Selection_Streets_PLZ": "",
+    "CodBi_OpenPLZ_Selection_Localities_regexName": ""
   }
 }

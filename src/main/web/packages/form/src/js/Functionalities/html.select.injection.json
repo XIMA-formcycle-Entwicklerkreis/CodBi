@@ -3,6 +3,9 @@
   "Parameter": {
     "Titles": "",
     "Values": "",
-    "ReClean": ""
+    "ReClean": "",
+    "TitleProperty": "",
+    "ValueProperty": "",
+    "TextProperty": ""
   }
 }

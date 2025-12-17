@@ -9,13 +9,15 @@ import { OpenPLZ } from "./openplz.js";
  * This {@link OpenPLZ } does not search for units but rather returns all available ones.
  *
  * Config Parameter:
- * - 1st: The **country** to retrieve the data of.
+ * - 1st: The optional **country** to retrieve the data of (if not provided either the country specified in
+ *        the CodBi's Configuration **OpenPLZ_Country** will be used or, if not specified, "de").
  * - 2nd: The **orgaUnit** to retrieve (e.g. **FederalStates**, **FederalProvinces** or **Cantons**).
  * - 3rd: The optional key of the state, province or canton to get details of. This {@link OpenPLZ } has the ability
  *        to lookup **FederalStates**, **FederalProvinces** & **Cantons** by name, if the key provided is
  *        not a number but a name. If this parameter is set the 4th must be provided also.
  * - 4th: The optional detail to fetch about a certain state, province or canton identified by the
  *        **officialKey** (not optional if an official key is present). May be Municipalities or Districts.
+ * - 5th: An Optional number of pages to load.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
@@ -42,9 +44,10 @@ export class OpenPLZ_OrganizationalUnits extends OpenPLZ {
             "X-Param2": "",
             "X-Param3": "",
             "X-Param4": "",
+            "X-PagesToLoad": params[4] ? (params[4] as string) : "",
           },
         }).done((response: string) => {
-          resolve(response);
+          resolve(JSON.parse(response));
         });
       } else {
         if (isNumericString(params[2] as string)) {
@@ -61,9 +64,10 @@ export class OpenPLZ_OrganizationalUnits extends OpenPLZ {
               "X-Param2": "",
               "X-Param3": "",
               "X-Param4": "",
+              "X-PagesToLoad": params[4] ? (params[4] as string) : "",
             },
           }).done((response: string) => {
-            resolve(response);
+            resolve(JSON.parse(response));
           });
         } else {
           $.ajax({
@@ -96,9 +100,10 @@ export class OpenPLZ_OrganizationalUnits extends OpenPLZ {
                     "X-Param2": "",
                     "X-Param3": "",
                     "X-Param4": "",
+                    "X-PagesToLoad": params[4] ? (params[4] as string) : "",
                   },
                 }).done((response: string) => {
-                  resolve(response);
+                  resolve(JSON.parse(response));
                 });
               }
             }

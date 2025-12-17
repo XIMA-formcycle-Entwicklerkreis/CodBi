@@ -12,7 +12,7 @@
           <option name="mavenHome" value="Use Maven wrapper" />
           <option name="mavenHomeTypeForPersistence" value="WRAPPER" />
           <option name="nonRecursive" value="false" />
-          <option name="outputLevel" value="INFO" />
+          <option name="outputLevel" value="ERROR" />
           <option name="printErrorStackTraces" value="true" />
           <option name="showDialogWithAdvancedSettings" value="false" />
           <option name="threads" />

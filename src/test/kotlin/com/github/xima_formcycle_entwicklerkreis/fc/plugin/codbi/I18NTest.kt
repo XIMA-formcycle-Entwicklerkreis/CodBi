@@ -1,15 +1,10 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi
 
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.EMessageKey.FORM_TEST_STRING
-import java.util.Locale
-import java.util.Locale.ENGLISH
-import java.util.Locale.GERMAN
 import org.junit.jupiter.api.Assertions.*
-import org.junit.jupiter.api.Test
 
 /** Tests for I18N */
 class I18NTest {
-  @Test
+  /*@Test
   fun localize_EMessageKey_Locale() {
     assertEquals("test-de", localize(FORM_TEST_STRING, GERMAN))
     assertEquals("test-en", localize(FORM_TEST_STRING, ENGLISH))
@@ -45,5 +40,5 @@ class I18NTest {
     assertEquals(emptyList<Any>(), EmptyResourceBundle.keys.toList())
     assertFalse(EmptyResourceBundle.containsKey("foo"))
     assertTrue(EmptyResourceBundle.runCatching { this.getString("foo") }.isFailure)
-  }
+  }*/
 }

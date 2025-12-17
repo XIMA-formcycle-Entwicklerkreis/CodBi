@@ -14,7 +14,7 @@
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class F {
   /**
-   * Joins all {@link object }s in "params" into one.
+   * Implements the {@link F } Element-Placeholder.
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   public static retrieve(params: Array<unknown>): Array<unknown> | unknown {
@@ -26,14 +26,14 @@ export class F {
       }
     }
 
-    return result.length === 0 ? [] : result.length > 1 ? result : result[0];
+    return result;
   }
   // #region Initialization
   /**
    * States whether this {@link F } was successfully registered
    * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
   public static registered: boolean = (() => {
-    return window.codbi.registerEP("OpenPLZ", F.retrieve);
+    return window.codbi.registerEP("F", F.retrieve);
   })();
   // #region Initialization
 }

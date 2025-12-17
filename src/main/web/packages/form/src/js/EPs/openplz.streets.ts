@@ -8,13 +8,14 @@ import { OpenPLZ } from "./openplz.js";
  * An {@link OpenPLZ }-Request specialized into searching for streets.
  *
  * Config Parameter:
- * - 1st: The country's code to look up the street in (e.g. de or ch).
+ * - 1st: The optional **country** to retrieve the data of (if not provided either the country specified in
+ *        the CodBi's Configuration **OpenPLZ_Country** will be used or, if not specified, "de").
  * - 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's name.
  * - 3rd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's postal code. If this is empty the
  *        **4th** parameter will be used for the search as the street's city-name.
- * - 4th: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's name used if the **3rd**
+ * - 4th: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city's name used if the **3rd**
  *        parameter is empty.
- *
+ * - 5th: An Optional number of pages to load.
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 export class OpenPLZ_Streets extends OpenPLZ {
@@ -28,8 +29,13 @@ export class OpenPLZ_Streets extends OpenPLZ {
       "Streets",
       "",
       "",
-      `name-${params[1]}`,
-      params.length === 4 ? `locality-${params[3]}` : `postalCode-${params[2]}`,
+      `name-${(params[1] as string).replace(/^/, "°")}`,
+      params.length >= 4
+        ? `locality-${(params[3] as string).replace(/^/, "°")}`
+        : `postalCode-${(params[2] as string).replace(/^/, "°")}`,
+      "",
+      "",
+      params[4] ? params[4] : "",
     ]);
   }
   // #region Initialization

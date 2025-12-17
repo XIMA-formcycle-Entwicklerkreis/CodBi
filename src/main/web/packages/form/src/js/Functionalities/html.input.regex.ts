@@ -28,6 +28,7 @@ export class HTML_Input_REGEX {
    *  - ErrorPrefix:      The first part of the error message {@link string } displayed prior to the "expression".
    *  - ErrorPostfix:     The final part of the error message {@link string } displayed after  to the "expression".
    *  - ExposeExpression: Will expose the "expression" within the errormessage if set to **TRUE** (case insensitive). */
+
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "expression")

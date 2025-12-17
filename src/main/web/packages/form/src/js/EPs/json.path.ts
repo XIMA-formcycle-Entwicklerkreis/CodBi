@@ -1,8 +1,6 @@
 // #region Imports
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
-import { AE } from "xdbc/src/DBC/AE";
-import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";

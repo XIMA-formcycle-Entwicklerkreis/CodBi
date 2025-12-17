@@ -55,8 +55,10 @@ export class BayVIS_Behoerden_Details {
     params: Array<unknown>,
   ): Promise<string | unknown> {
     return new Promise((resolve, reject) => {
-      if (BayVIS_Behoerden_Details.buffer.has(params[0] as string)) {
-        resolve([BayVIS_Behoerden_Details.buffer[params[0] as string]]);
+      if (BayVIS_Behoerden_Details.buffer.has(typeof params[0] === "string" ? params[0] : (params[0][0] as string))) {
+        resolve([
+          BayVIS_Behoerden_Details.buffer[typeof params[0] === "string" ? params[0] : (params[0][0] as string)],
+        ]);
 
         return;
       }
@@ -110,7 +112,10 @@ export class BayVIS_Behoerden_Details {
       $.ajax({
         url: `${window.codbi.baseURL}plugin?name=CodBi_BayVIS_Auskunft_Behoerdendetails`,
         type: "GET",
-        headers: { Accept: "application/xml", ID: (params[0] as string).trim() },
+        headers: {
+          Accept: "application/xml",
+          ID: (typeof params[0] === "string" ? params[0] : (params[0][0] as string)).trim(),
+        },
       })
         .done((xml: string) => {
           let response = new XMLParser({ attributeNamePrefix: "", ignoreAttributes: false }).parse(xml)[

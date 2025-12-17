@@ -338,7 +338,7 @@ export class CodBi implements CodbiGlobal {
               .then((real) => {
                 const epResult = DEFINED.tsCheck<
                   (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>
-                >(this.availableEPs[outermostEP.keyPlaceholder])(real.flat());
+                >(this.availableEPs[outermostEP.keyPlaceholder])(real);
                 // If the element placeholder is asynchronous...
                 if (epResult instanceof Promise) {
                   epResult

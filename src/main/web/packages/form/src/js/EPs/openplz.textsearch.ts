@@ -5,8 +5,10 @@ import { OpenPLZ } from "./openplz.js";
  * An {@link OpenPLZ }-Request performing a full text-search.
  *
  * Config Parameter:
- * - 1st: The country's code to look up the locality in (e.g. de or ch).
+ * - 1st: The optional **country** to retrieve the data of (if not provided either the country specified in
+ *        the CodBi's Configuration **OpenPLZ_Country** will be used or, if not specified, "de").
  * - 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g. 91522 Nürnbergerstrasse ).
+ * - 3rd: An Optional number of pages to load.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
@@ -22,6 +24,10 @@ export class OpenPLZ_TextSearch extends OpenPLZ {
       "",
       "",
       `searchTerm-${(params[1] as string).replace(/ /, "+")}`,
+      "",
+      "",
+      "",
+      params[2] ? (params[2] as string) : "",
     ]);
   }
   // #region Initialization

@@ -9,7 +9,8 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
  * features that the REST-Service provides accessible.
  *
  * Config Parameter:
- * - 1st: The **country** to retrieve the data of.
+ * - 1st: The optional **country** to retrieve the data of (if not provided either the country specified in
+ *        the CodBi's Configuration **OpenPLZ_Country** will be used or, if not specified, "de").
  * - 2nd: The **orgaUnit** to retrieve (e.g. **FederalStates**, **FederalProvinces** or **Cantons**).
  * - 3rd: The optional key of the state, province or canton to get details of.
  * - 4th: The optional detail to fetch about a certain state, province or canton identified by the
@@ -22,6 +23,7 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
  *        **locality**, **searchTerm**).
  * - 8th: There may be up to four parameter passed along the request (e.g. **postalCode**, **name**,
  *        **locality**, **searchTerm**).
+ * - 9th: An Optional number of pages to load.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
@@ -47,6 +49,7 @@ export class OpenPLZ {
             "X-Param2": params[5] ? (params[5] as string).replace("=", "-").replace(/ /, "") : "",
             "X-Param3": params[6] ? (params[6] as string).replace("=", "-").replace(/ /, "") : "",
             "X-Param4": params[7] ? (params[7] as string).replace("=", "-").replace(/ /, "") : "",
+            "X-PagesToLoad": params[8] ? params[8].toString() : undefined,
           },
         })
         .done((response: string) => {

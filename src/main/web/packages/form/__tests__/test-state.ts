@@ -11,24 +11,10 @@ import type {
   getXfcMetaData,
 } from "@de-xima/fc-form-renderer";
 
-/**
- * Global state when running tests, for features that require global state.
- * For example, the current language of the form designer is stored here.
- */
 export interface TestState {
-  /**
-   * The meta data provided by the server to a rendered form.
-   */
   xfcMetaData: IXfcMetadata;
 
-  /**
-   * The localized messages as entered by the user in the backend menu
-   * `Files & templates` -> `I18N variables`.
-   */
   xmFormI18n: Record<string, string>;
-  /**
-   * Callbacks that were registered via {@link IXUtil.on}.
-   */
   xUtilCallbacks: Map<string, Set<(...args: never[]) => unknown>>;
 }
 
@@ -40,9 +26,6 @@ function createDefaultTestState(): TestState {
   };
 }
 
-/**
- * Default client for {@link IXfcMetadata.client}.
- */
 export function createDefaultXfcMetaDataClient(): IMetadataClient {
   return {
     id: 1,
@@ -50,9 +33,6 @@ export function createDefaultXfcMetaDataClient(): IMetadataClient {
   };
 }
 
-/**
- * Default client for {@link IMetadataProject.currentForm}.
- */
 export function createDefaultXfcMetaDataForm(): IMetadataForm {
   return {
     id: 1,
@@ -61,9 +41,6 @@ export function createDefaultXfcMetaDataForm(): IMetadataForm {
   };
 }
 
-/**
- * Default client for {@link IXfcMetadata.currentProject}.
- */
 export function createDefaultXfcMetaDataProject(): IMetadataProject {
   return {
     currentForm: createDefaultXfcMetaDataForm(),
@@ -74,18 +51,12 @@ export function createDefaultXfcMetaDataProject(): IMetadataProject {
   };
 }
 
-/**
- * Default client for {@link IXfcMetadata.limits}.
- */
 export function createDefaultXfcMetaDataLimits(): IMetadataFormLimits {
   return {
     singleFileUpload: null,
   };
 }
 
-/**
- * Default client for {@link IXfcMetadata.urls}.
- */
 export function createDefaultXfcMetaDataUrls(): IMetadataUrls {
   return {
     ajax_upload: "",
@@ -112,16 +83,10 @@ export function createDefaultXfcMetaDataUrls(): IMetadataUrls {
   };
 }
 
-/**
- * Default client for {@link IXfcMetadata.currentUser}.
- */
 export function createDefaultXfcMetaDataCurrentUser(): IMetadataCurrentUser {
   return {};
 }
 
-/**
- * Default client for {@link IXfcMetadata.user}.
- */
 export function createDefaultXfcMetaDataUser(): IMetadataUser {
   return {
     displayName: null,
@@ -138,9 +103,6 @@ export function createDefaultXfcMetaDataUser(): IMetadataUser {
   };
 }
 
-/**
- * Default data for {@link getXfcMetaData}.
- */
 export const DefaultXfcMetaData: IXfcMetadata = {
   attachments: [],
   currentClient: createDefaultXfcMetaDataClient(),
@@ -164,15 +126,8 @@ export const DefaultXfcMetaData: IXfcMetadata = {
   serverValidationErrors: {},
 };
 
-/**
- * Global state when running tests, for features that require global state.
- * For example, the current language of the form designer is stored here.
- */
 export let TestState: TestState = createDefaultTestState();
 
-/**
- * Resets {@link TestState} to its default values.
- */
 export function resetTestState(): void {
   TestState = createDefaultTestState();
 }

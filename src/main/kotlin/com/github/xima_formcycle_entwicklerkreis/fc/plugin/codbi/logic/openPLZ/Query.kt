@@ -139,7 +139,7 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
         hrsTillUpdate = configData.properties.getProperty("OpenPLZ_UpdateCycle").toInt()
     if (configData.properties.getProperty("OpenPLZ_URL") != null)
         url = configData.properties.getProperty("OpenPLZ_URL")
-    else url = "https://www.openplzapi.org"
+    else url = "https://openplzapi.org"
     if (configData.properties.getProperty("OpenPLZ_Country") != null)
         country = configData.properties.getProperty("OpenPLZ_Country")
     else country = "de"

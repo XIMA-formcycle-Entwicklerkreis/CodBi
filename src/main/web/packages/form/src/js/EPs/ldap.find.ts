@@ -10,7 +10,7 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 import { CodBiError } from "../global-scope.js";
 // #endregion Imports
 /**
- * Provides the {@link LDAP_Find.functionality }.
+ * Provides the {@link LDAP_Find#functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */

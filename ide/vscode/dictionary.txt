@@ -276,6 +276,7 @@ tagify
 targetdata
 telefon
 Telefonnummer
+Tesseract
 Texteditor
 Textinjector
 textproperty

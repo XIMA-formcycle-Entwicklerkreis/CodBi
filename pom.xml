@@ -90,10 +90,55 @@
 		<maven-surefire-junit5-tree-reporter.version>1.4.0</maven-surefire-junit5-tree-reporter.version>
 		<properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
 		<spotless-maven-plugin.version>2.44.2</spotless-maven-plugin.version>
+		<!--//region AI / Callari -->
+		<djl.version>0.21.0</djl.version>
+		<!--//endregion AI / Callari -->
 	</properties>
 
 	<dependencyManagement>
 		<dependencies>
+			<dependency>
+				<groupId>com.google.code.gson</groupId>
+				<artifactId>gson</artifactId>
+				<version>2.13.1</version>
+				<scope>provided</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.slf4j</groupId>
+				<artifactId>slf4j-api</artifactId>
+				<version>2.0.17</version>
+				<scope>provided</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.commons</groupId>
+				<artifactId>commons-compress</artifactId>
+				<version>1.27.1</version>
+
+			</dependency>
+			<dependency>
+				<groupId>ai.djl</groupId>
+				<artifactId>api</artifactId>
+				<version>0.36.0</version>
+			</dependency>
+
+			<dependency>
+				<groupId>commons-io</groupId>
+				<artifactId>commons-io</artifactId>
+				<version>2.19.0</version>
+				<scope>provided</scope>
+			</dependency>
+			<dependency>
+				<groupId>commons-codec</groupId>
+				<artifactId>commons-codec</artifactId>
+				<version>1.17.1</version>
+				<scope>provided</scope>
+			</dependency>
+			<dependency>
+				<groupId>net.java.dev.jna</groupId>
+				<artifactId>jna</artifactId>
+				<version>5.17.0</version>
+				<scope>provided</scope>
+			</dependency>
 			<!-- Import third party libraries already provided by formcycle that we can make use of. -->
 			<dependency>
 				<groupId>de.xima.fc</groupId>
@@ -141,10 +186,88 @@
 				<artifactId>jackson-module-kotlin</artifactId>
 				<version>${jackson.version}</version>
 			</dependency>
+
+			<dependency>
+				<groupId>com.google.errorprone</groupId>
+				<artifactId>error_prone_annotations</artifactId>
+				<version>2.38.0</version>
+				<scope>provided</scope>
+			</dependency>
+
+			<dependency>
+				<groupId>org.apache.pdfbox</groupId>
+				<artifactId>pdfbox</artifactId>
+				<version>2.0.31</version>
+				<scope>provided</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.apache.pdfbox</groupId>
+				<artifactId>pdfbox-tools</artifactId>
+				<version>2.0.31</version>
+				<scope>provided</scope>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 
 	<dependencies>
+		<!--//region AI / Callari -->
+
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-compress</artifactId>
+			<version>1.27.1</version>
+
+		</dependency>
+		<dependency>
+			<groupId>ai.djl</groupId>
+			<artifactId>api</artifactId>
+			<version>0.36.0</version>
+
+		</dependency>
+
+		<dependency>
+			<groupId>ai.djl</groupId>
+			<artifactId>model-zoo</artifactId>
+			<version>0.36.0</version>
+
+		</dependency>
+
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-engine</artifactId>
+			<version>0.36.0</version>
+			<scope>runtime</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-model-zoo</artifactId>
+			<version>0.36.0</version>
+		</dependency>
+		<dependency>
+			<groupId>net.sourceforge.tess4j</groupId>
+			<artifactId>tess4j</artifactId>
+			<version>5.16.0</version>
+			<exclusions>
+				<exclusion>
+					<groupId>org.apache.pdfbox</groupId>
+					<artifactId>pdfbox</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.apache.pdfbox</groupId>
+					<artifactId>pdfbox-tools</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.apache.pdfbox</groupId>
+					<artifactId>pdfbox-debugger</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.jboss.logging</groupId>
+					<artifactId>jboss-logging</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+		<!--//endregion AI / Callari -->
 		<!-- formcycle plugin API -->
 		<dependency>
 			<groupId>de.xima.fc</groupId>
@@ -206,15 +329,36 @@
 			<snapshots>
 				<enabled>false</enabled>
 			</snapshots>
+			<id>maven-public</id>
+			<name>Maven Central</name>
+			<url>https://repo.maven.apache.org/maven2</url>
+		</repository>
+		<repository>
+			<releases>
+				<enabled>true</enabled>
+			</releases>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
 			<id>xima</id>
 			<name>fc-plugin-dev</name>
 			<url>https://artifactory.xima-services.de/artifactory/fc-plugin-dev</url>
 		</repository>
 	</repositories>
 
-	<!-- Maven plugin repository provided by xima -->
 	<pluginRepositories>
 		<pluginRepository>
+			<snapshots>
+				<enabled>false</enabled>
+			</snapshots>
+			<id>maven-public-mirror</id>
+			<name>Maven Central Plugins</name>
+			<url>https://repo.maven.apache.org/maven2</url>
+		</pluginRepository>
+		<pluginRepository>
+			<releases>
+				<enabled>true</enabled>
+			</releases>
 			<snapshots>
 				<enabled>false</enabled>
 			</snapshots>
@@ -542,6 +686,7 @@
 									<version>${maven.version}</version>
 								</requireMavenVersion>
 								<dependencyConvergence/>
+								--&gt;
 								<reactorModuleConvergence/>
 								<banDuplicatePomDependencyVersions/>
 								<requirePluginVersions/>
@@ -976,6 +1121,16 @@
 				<skipTests>true</skipTests>
 			</properties>
 			<build>
+				<resources>
+					<resource>
+						<filtering>false</filtering>
+						<directory>src/main/resources</directory>
+						<includes>
+							<include>native/lib/*.properties</include>
+							<include>*.properties</include>
+						</includes>
+					</resource>
+				</resources>
 				<plugins>
 					<!-- Skip enforcer for dev build -->
 					<plugin>

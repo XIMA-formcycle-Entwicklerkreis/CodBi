@@ -37,6 +37,7 @@ export class AI_OCR {
     toProcess: Element,
   ): void {
     (toProcess as HTMLInputElement).addEventListener("change", (event) => {
+      // Check if maximum überschritten
       const $ = getJQuery();
       const files = (toProcess as HTMLInputElement).files;
       if (!files || files.length === 0) {
@@ -57,7 +58,7 @@ export class AI_OCR {
 
       // 2. Execute the AJAX POST request
       $.ajax({
-        url: `${window.codbi.baseURL}plugin?name=CodBi_Tesseract`,
+        url: `${window.codbi.baseURL}plugin?name=CodBi_Donut`, //url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Tesseract`,
         type: "POST",
         data: formData,
         processData: false, // Tell jQuery NOT to process the data (must be false for FormData)

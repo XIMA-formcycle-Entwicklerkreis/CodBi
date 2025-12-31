@@ -1,12 +1,18 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic
 
+// region Imports
+// region XIMA
+// endregion XIMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.TesseractAction
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
+import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import org.slf4j.LoggerFactory
 
+// endregion Imports
 /**
  * Serves as a common base for all classes related to CodBi / AI. In order to enable the re-usage of
  * images that were already uploaded, this class sets up a cache ([cacheIDedImages]) that is managed
@@ -16,14 +22,22 @@ import org.slf4j.LoggerFactory
  * A dedicated [log]ger posts messages in following manner to the console **[[ CodBi / AI /
  * [idLogMessages] ] **...message...** ]**.
  */
-abstract class AI {
+abstract class AI : IPluginServletAction {
   /**
    * The predicate used to [log] messages related to CodBi / AI to the console (defaults to **CodBi
    * / AI**).
    */
   protected var idLogMessages = ""
+
+  /** Defines the various importance-states that can be passed to the [log]ger. */
+  enum class LogLevel {
+    INFO,
+    WARNING,
+    ERROR
+  }
+
   /** The [org.slf4j.Logger] for this [TesseractAction]. */
-  private val logger = LoggerFactory.getLogger(TesseractAction::class.java)
+  protected val logger = LoggerFactory.getLogger(TesseractAction::class.java)
 
   /**
    * Stores [File] and timestamp so we can clean up old ones that passed the
@@ -43,10 +57,26 @@ abstract class AI {
 
   /**
    * Posts log message to the console signed with **[[ CodBi / AI / [idLogMessages] ]
-   * **...message...** ]**
+   * **...message...** ]** of a specified importance (info or error).
    */
-  protected fun log(toLog: String) {}
+  protected open fun log(importance: LogLevel, toLog: String) {
+    when (importance) {
+      LogLevel.INFO ->
+          logger.info(
+              "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages"} ]] $toLog ]")
+      LogLevel.WARNING ->
+          logger.warn(
+              "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages"} ]] $toLog ]")
+      LogLevel.ERROR ->
+          logger.error(
+              "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages"} ]] $toLog ]")
+    }
+  }
 
+  /**
+   * Initiates a task that removes unused images that're expired ([msExpirationIDedImages]) from the
+   * cache ([cacheIDedImages]).
+   */
   fun startJanitor() {
     janitorIDedImages?.scheduleAtFixedRate(
         {
@@ -55,20 +85,36 @@ abstract class AI {
 
           while (iterator.hasNext()) {
             val entry = iterator.next()
-
-            // HERE is where CACHE_EXPIRATION_MS is used:
             val age = now - entry.value.timestamp
 
             if (age > msExpirationIDedImages) {
-              // The file has expired
               entry.value.file.delete()
               iterator.remove()
-              logger.info("[[ CodBi ]] Janitor: Purged image ${entry.key} (Age: ${age/1000}s)")
+
+              log(LogLevel.INFO, "Janitor: Purged image ${entry.key} (Age: ${age/1000}s).")
             }
           }
         },
         1,
         1,
         TimeUnit.MINUTES)
+  }
+
+  /** Shuts down the janitor ([startJanitor]) and removes all cached images ([cacheIDedImages]). */
+  override fun shutdown(shutdownData: IPluginShutdownData?) {
+    try {
+      janitorIDedImages?.shutdown()
+
+      if (janitorIDedImages?.awaitTermination(5, TimeUnit.SECONDS) == false) {
+        janitorIDedImages?.shutdownNow()
+      }
+    } catch (X: InterruptedException) {
+      janitorIDedImages?.shutdownNow()
+    }
+
+    cacheIDedImages.values.forEach { it.file.delete() }
+    cacheIDedImages.clear()
+
+    janitorIDedImages = null
   }
 }

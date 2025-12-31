@@ -91,12 +91,19 @@
 		<properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
 		<spotless-maven-plugin.version>2.44.2</spotless-maven-plugin.version>
 		<!--//region AI / Callari -->
-		<djl.version>0.21.0</djl.version>
+		<djl.version>0.36.0</djl.version>
 		<!--//endregion AI / Callari -->
 	</properties>
 
 	<dependencyManagement>
 		<dependencies>
+			<dependency>
+				<groupId>ai.djl</groupId>
+				<artifactId>bom</artifactId>
+				<version>${djl.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
 			<dependency>
 				<groupId>com.google.code.gson</groupId>
 				<artifactId>gson</artifactId>
@@ -226,22 +233,41 @@
 		</dependency>
 
 		<dependency>
-			<groupId>ai.djl</groupId>
-			<artifactId>model-zoo</artifactId>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-engine</artifactId>
 			<version>0.36.0</version>
-
+			<scope>compile</scope>
 		</dependency>
 
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-engine</artifactId>
-			<version>0.36.0</version>
-			<scope>runtime</scope>
+			<artifactId>pytorch-native-cpu</artifactId>
+			<version>2.7.1</version>
+			<classifier>win-x86_64</classifier>
 		</dependency>
 
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-model-zoo</artifactId>
+			<version>0.36.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>ai.djl</groupId>
+			<artifactId>model-zoo</artifactId>
+			<version>0.36.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-jni</artifactId>
+			<version>2.7.1-0.36.0</version>
+			<scope>compile</scope>
+		</dependency>
+
+		<dependency>
+			<groupId>ai.djl.huggingface</groupId>
+			<artifactId>tokenizers</artifactId>
 			<version>0.36.0</version>
 		</dependency>
 		<dependency>
@@ -267,6 +293,7 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
+
 		<!--//endregion AI / Callari -->
 		<!-- formcycle plugin API -->
 		<dependency>
@@ -333,6 +360,12 @@
 			<name>Maven Central</name>
 			<url>https://repo.maven.apache.org/maven2</url>
 		</repository>
+
+		<repository>
+			<id>djl</id>
+			<url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+		</repository>
+
 		<repository>
 			<releases>
 				<enabled>true</enabled>
@@ -384,6 +417,7 @@
 		<!-- Define versions for Maven plugins -->
 		<pluginManagement>
 			<plugins>
+
 				<plugin>
 					<groupId>org.codehaus.mojo</groupId>
 					<artifactId>build-helper-maven-plugin</artifactId>
@@ -445,6 +479,7 @@
 					<artifactId>maven-assembly-plugin</artifactId>
 					<version>${maven-assembly-plugin.version}</version>
 				</plugin>
+
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-clean-plugin</artifactId>
@@ -479,6 +514,7 @@
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-resources-plugin</artifactId>
 					<version>${maven-resources-plugin.version}</version>
+
 				</plugin>
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
@@ -1107,6 +1143,7 @@
 					<target>9</target>
 				</configuration>
 			</plugin>
+
 		</plugins>
 
 		<sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
@@ -1132,6 +1169,7 @@
 					</resource>
 				</resources>
 				<plugins>
+
 					<!-- Skip enforcer for dev build -->
 					<plugin>
 						<groupId>org.apache.maven.plugins</groupId>

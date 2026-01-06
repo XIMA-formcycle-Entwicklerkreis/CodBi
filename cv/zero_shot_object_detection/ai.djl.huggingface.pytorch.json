@@ -1,0 +1,9 @@
+{
+  "google/owlv2-base-patch16": {
+    "application": "cv/zero_shot_object_detection",
+    "downloads": 16296,
+    "result": "success",
+    "sha1": null,
+    "size": 624223851
+  }
+}

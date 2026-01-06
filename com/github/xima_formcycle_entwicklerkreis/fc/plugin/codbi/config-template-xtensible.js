@@ -1,0 +1,11 @@
+"use strict";
+(() => {
+  // src/index-config-template-xtensible.ts
+  function createConfigTemplate() {
+    return {
+      name: "xtensible"
+    };
+  }
+  window.codbi.configTemplate = createConfigTemplate();
+})();
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vLi4vLi4vLi4vLi4vLi4vLi4vc3JjL21haW4vd2ViL3BhY2thZ2VzL2Zvcm0vc3JjL2luZGV4LWNvbmZpZy10ZW1wbGF0ZS14dGVuc2libGUudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbImltcG9ydCB0eXBlIHsgQ29uZmlnVGVtcGxhdGUgfSBmcm9tIFwiLi9qcy9nbG9iYWwtc2NvcGUuanNcIjtcblxuZXhwb3J0IGZ1bmN0aW9uIGNyZWF0ZUNvbmZpZ1RlbXBsYXRlKCk6IENvbmZpZ1RlbXBsYXRlIHtcbiAgcmV0dXJuIHtcbiAgICBuYW1lOiBcInh0ZW5zaWJsZVwiLFxuICB9O1xufVxuXG53aW5kb3cuY29kYmkuY29uZmlnVGVtcGxhdGUgPSBjcmVhdGVDb25maWdUZW1wbGF0ZSgpO1xuIl0sCiAgIm1hcHBpbmdzIjogIjs7O0FBRU8sV0FBUyx1QkFBdUM7QUFDckQsV0FBTztBQUFBLE1BQ0wsTUFBTTtBQUFBLElBQ1I7QUFBQSxFQUNGO0FBRUEsU0FBTyxNQUFNLGlCQUFpQixxQkFBcUI7IiwKICAibmFtZXMiOiBbXQp9Cg==

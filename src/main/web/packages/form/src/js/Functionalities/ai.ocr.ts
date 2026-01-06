@@ -58,7 +58,7 @@ export class AI_OCR {
 
       // 2. Execute the AJAX POST request
       $.ajax({
-        url: `${window.codbi.baseURL}plugin?name=CodBi_Donut_QA`, //url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Tesseract`,
+        url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Donut_QA`, //url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Tesseract`,
         type: "POST",
         data: formData,
         processData: false, // Tell jQuery NOT to process the data (must be false for FormData)

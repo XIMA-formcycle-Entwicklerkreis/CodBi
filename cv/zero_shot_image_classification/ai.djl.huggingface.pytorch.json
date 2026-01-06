@@ -1,0 +1,9 @@
+{
+  "openai/clip-vit-large-patch14": {
+    "application": "cv/zero_shot_image_classification",
+    "downloads": 44096243,
+    "result": "success",
+    "sha1": null,
+    "size": 1714969691
+  }
+}

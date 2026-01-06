@@ -1,0 +1,13 @@
+Manifest-Version: 1.0
+Created-By: Maven Archiver 3.6.1
+Build-Jdk-Spec: 23
+Build-Timestamp: 202601051754
+Implementation-Title: com.github.xima_formcycle_entwicklerkreis.fc.plugi
+ n:fc-plugin-codbi
+Implementation-Vendor-Id: com.github.xima_formcycle_entwicklerkreis.fc.p
+ lugin
+Implementation-Version: 1.0.0-SNAPSHOT
+Plugin-Key: f140090d-d471-4650-8fef-8067e1e1dcdd
+Plugin-Repository: xfc-proma
+formcycle-version-requirement: 8.3.3
+

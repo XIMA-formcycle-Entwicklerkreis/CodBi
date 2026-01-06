@@ -1,0 +1,45 @@
+import {
+  OpenPLZ
+} from "./chunk-Q5ESOWDF.js";
+import {
+  require_dist
+} from "./chunk-5LC5FOZV.js";
+import {
+  __toESM
+} from "./chunk-KWZW6WYL.js";
+
+// src/js/EPs/openplz.streets.ts
+var import_fc_form_renderer = __toESM(require_dist(), 1);
+var OpenPLZ_Streets = class _OpenPLZ_Streets extends OpenPLZ {
+  /**
+   * Joins all {@link object }s in "params" into one.
+   *
+   * @param params The parameters for that Element-Placeholder (provided by CodBi). */
+  static retrieve(params) {
+    return OpenPLZ.retrieve([
+      params[0] ? params[0] : "",
+      "Streets",
+      "",
+      "",
+      `name-${params[1].replace(/^/, "\xB0")}`,
+      params.length >= 4 ? `locality-${params[3].replace(/^/, "\xB0")}` : `postalCode-${params[2].replace(/^/, "\xB0")}`,
+      "",
+      "",
+      params[4] ? params[4] : ""
+    ]);
+  }
+  static {
+    // #region Initialization
+    /**
+     * States whether this {@link OpenPLZ_Streets } was successfully registered
+     * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
+    this.registered = (() => {
+      return window.codbi.registerEP("OpenPLZ.Streets", _OpenPLZ_Streets.retrieve);
+    })();
+  }
+  // #region Initialization
+};
+export {
+  OpenPLZ_Streets
+};
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vLi4vLi4vLi4vLi4vLi4vLi4vc3JjL21haW4vd2ViL3BhY2thZ2VzL2Zvcm0vc3JjL2pzL0VQcy9vcGVucGx6LnN0cmVldHMudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbIi8vICNyZWdpb24gSW1wb3J0c1xuLy8gI3JlZ2lvbiBYSU1BXG5pbXBvcnQgeyBnZXRKUXVlcnkgfSBmcm9tIFwiQGRlLXhpbWEvZmMtZm9ybS1yZW5kZXJlclwiO1xuLy8gI2VuZHJlZ2lvbiBYSU1BXG5pbXBvcnQgeyBPcGVuUExaIH0gZnJvbSBcIi4vb3BlbnBsei5qc1wiO1xuLy8gI2VuZHJlZ2lvbiBJbXBvcnRzXG4vKipcbiAqIEFuIHtAbGluayBPcGVuUExaIH0tUmVxdWVzdCBzcGVjaWFsaXplZCBpbnRvIHNlYXJjaGluZyBmb3Igc3RyZWV0cy5cbiAqXG4gKiBDb25maWcgUGFyYW1ldGVyOlxuICogLSAxc3Q6IFRoZSBvcHRpb25hbCAqKmNvdW50cnkqKiB0byByZXRyaWV2ZSB0aGUgZGF0YSBvZiAoaWYgbm90IHByb3ZpZGVkIGVpdGhlciB0aGUgY291bnRyeSBzcGVjaWZpZWQgaW5cbiAqICAgICAgICB0aGUgQ29kQmkncyBDb25maWd1cmF0aW9uICoqT3BlblBMWl9Db3VudHJ5Kiogd2lsbCBiZSB1c2VkIG9yLCBpZiBub3Qgc3BlY2lmaWVkLCBcImRlXCIpLlxuICogLSAybmQ6IFRoZSBbIFBPU0lYIFJlZ0V4IF0oaHR0cHM6Ly93d3cub3BlbnBsemFwaS5vcmcvZGUvcmVnZXgvKSBmb3IgdGhlIHN0cmVldCdzIG5hbWUuXG4gKiAtIDNyZDogVGhlIFsgUE9TSVggUmVnRXggXShodHRwczovL3d3dy5vcGVucGx6YXBpLm9yZy9kZS9yZWdleC8pIGZvciB0aGUgc3RyZWV0J3MgcG9zdGFsIGNvZGUuIElmIHRoaXMgaXMgZW1wdHkgdGhlXG4gKiAgICAgICAgKio0dGgqKiBwYXJhbWV0ZXIgd2lsbCBiZSB1c2VkIGZvciB0aGUgc2VhcmNoIGFzIHRoZSBzdHJlZXQncyBjaXR5LW5hbWUuXG4gKiAtIDR0aDogVGhlIFsgUE9TSVggUmVnRXggXShodHRwczovL3d3dy5vcGVucGx6YXBpLm9yZy9kZS9yZWdleC8pIGZvciB0aGUgY2l0eSdzIG5hbWUgdXNlZCBpZiB0aGUgKiozcmQqKlxuICogICAgICAgIHBhcmFtZXRlciBpcyBlbXB0eS5cbiAqIC0gNXRoOiBBbiBPcHRpb25hbCBudW1iZXIgb2YgcGFnZXMgdG8gbG9hZC5cbiAqIEByZW1hcmtzXG4gKiBNYWludGFpbmVyOiBDYWxsYXJpLCBTYWx2YXRvcmUgKFNhbHZhdG9yZS5DYWxsYXJpQEFuc2JhY2guZGUpICovXG5leHBvcnQgY2xhc3MgT3BlblBMWl9TdHJlZXRzIGV4dGVuZHMgT3BlblBMWiB7XG4gIC8qKlxuICAgKiBKb2lucyBhbGwge0BsaW5rIG9iamVjdCB9cyBpbiBcInBhcmFtc1wiIGludG8gb25lLlxuICAgKlxuICAgKiBAcGFyYW0gcGFyYW1zIFRoZSBwYXJhbWV0ZXJzIGZvciB0aGF0IEVsZW1lbnQtUGxhY2Vob2xkZXIgKHByb3ZpZGVkIGJ5IENvZEJpKS4gKi9cbiAgcHVibGljIHN0YXRpYyBvdmVycmlkZSByZXRyaWV2ZShwYXJhbXM6IEFycmF5PHVua25vd24+KTogQXJyYXk8dW5rbm93bj4gfCB1bmtub3duIHtcbiAgICByZXR1cm4gT3BlblBMWi5yZXRyaWV2ZShbXG4gICAgICBwYXJhbXNbMF0gPyAocGFyYW1zWzBdIGFzIHN0cmluZykgOiBcIlwiLFxuICAgICAgXCJTdHJlZXRzXCIsXG4gICAgICBcIlwiLFxuICAgICAgXCJcIixcbiAgICAgIGBuYW1lLSR7KHBhcmFtc1sxXSBhcyBzdHJpbmcpLnJlcGxhY2UoL14vLCBcIlx1MDBCMFwiKX1gLFxuICAgICAgcGFyYW1zLmxlbmd0aCA+PSA0XG4gICAgICAgID8gYGxvY2FsaXR5LSR7KHBhcmFtc1szXSBhcyBzdHJpbmcpLnJlcGxhY2UoL14vLCBcIlx1MDBCMFwiKX1gXG4gICAgICAgIDogYHBvc3RhbENvZGUtJHsocGFyYW1zWzJdIGFzIHN0cmluZykucmVwbGFjZSgvXi8sIFwiXHUwMEIwXCIpfWAsXG4gICAgICBcIlwiLFxuICAgICAgXCJcIixcbiAgICAgIHBhcmFtc1s0XSA/IHBhcmFtc1s0XSA6IFwiXCIsXG4gICAgXSk7XG4gIH1cbiAgLy8gI3JlZ2lvbiBJbml0aWFsaXphdGlvblxuICAvKipcbiAgICogU3RhdGVzIHdoZXRoZXIgdGhpcyB7QGxpbmsgT3BlblBMWl9TdHJlZXRzIH0gd2FzIHN1Y2Nlc3NmdWxseSByZWdpc3RlcmVkXG4gICAqIHZpYSB7QGxpbmsgQ29kYmlHbG9iYWwucmVnaXN0ZXJFUCB9IHdpdGggdGhlIENvZEJpIGFuZCBwZXJmb3JtcyB0aGUgcmVnaXN0cmF0aW9uIHVwb24gY2xhc3MgdXNhZ2UuKi9cbiAgcHVibGljIHN0YXRpYyBvdmVycmlkZSByZWdpc3RlcmVkOiBib29sZWFuID0gKCgpID0+IHtcbiAgICByZXR1cm4gd2luZG93LmNvZGJpLnJlZ2lzdGVyRVAoXCJPcGVuUExaLlN0cmVldHNcIiwgT3BlblBMWl9TdHJlZXRzLnJldHJpZXZlKTtcbiAgfSkoKTtcbiAgLy8gI3JlZ2lvbiBJbml0aWFsaXphdGlvblxufVxuIl0sCiAgIm1hcHBpbmdzIjogIjs7Ozs7Ozs7Ozs7QUFFQSw4QkFBMEI7QUFrQm5CLElBQU0sa0JBQU4sTUFBTSx5QkFBd0IsUUFBUTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEsRUFLM0MsT0FBdUIsU0FBUyxRQUFrRDtBQUNoRixXQUFPLFFBQVEsU0FBUztBQUFBLE1BQ3RCLE9BQU8sQ0FBQyxJQUFLLE9BQU8sQ0FBQyxJQUFlO0FBQUEsTUFDcEM7QUFBQSxNQUNBO0FBQUEsTUFDQTtBQUFBLE1BQ0EsUUFBUyxPQUFPLENBQUMsRUFBYSxRQUFRLEtBQUssTUFBRyxDQUFDO0FBQUEsTUFDL0MsT0FBTyxVQUFVLElBQ2IsWUFBYSxPQUFPLENBQUMsRUFBYSxRQUFRLEtBQUssTUFBRyxDQUFDLEtBQ25ELGNBQWUsT0FBTyxDQUFDLEVBQWEsUUFBUSxLQUFLLE1BQUcsQ0FBQztBQUFBLE1BQ3pEO0FBQUEsTUFDQTtBQUFBLE1BQ0EsT0FBTyxDQUFDLElBQUksT0FBTyxDQUFDLElBQUk7QUFBQSxJQUMxQixDQUFDO0FBQUEsRUFDSDtBQUFBLEVBS0E7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBLFNBQXVCLGNBQXVCLE1BQU07QUFDbEQsYUFBTyxPQUFPLE1BQU0sV0FBVyxtQkFBbUIsaUJBQWdCLFFBQVE7QUFBQSxJQUM1RSxHQUFHO0FBQUE7QUFBQTtBQUVMOyIsCiAgIm5hbWVzIjogW10KfQo=

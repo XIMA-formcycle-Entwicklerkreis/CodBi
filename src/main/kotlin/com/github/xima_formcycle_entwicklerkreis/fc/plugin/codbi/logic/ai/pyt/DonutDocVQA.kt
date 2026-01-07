@@ -29,6 +29,8 @@ import java.nio.file.Paths
 /**
  * The specific Translator logic for Donut DocVQA. Handles resizing, prompt generation, and the
  * autoregressive decoding loop.
+ *
+ * https://huggingface.co/Callari/donut-docvqa
  */
 class DocVQATranslator(
     private val modelDir: String,

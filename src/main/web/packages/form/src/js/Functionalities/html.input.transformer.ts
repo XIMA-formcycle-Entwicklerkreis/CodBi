@@ -17,9 +17,9 @@ export class HTML_Input_Transformer {
    * Gets the algorithm used to transform the tagged {@link HTMLInputElement }'s {@link HTMLInputElement.value }.
    *
    * @return An anonymous function simply returning the {@link string } to transform. */
-  protected static get transformer(): (toTransform: string) => string {
+  protected static get transformer(): (toTransform: string, toLoad: { [key: string]: unknown }) => string {
     console.log("standard transformer");
-    return (toTransform: string) => {
+    return (toTransform: string, toLoad: { [key: string]: unknown }) => {
       return toTransform;
     };
   }
@@ -36,12 +36,15 @@ export class HTML_Input_Transformer {
   public static functionality(
     toLoad: { [key: string]: unknown },
     toProcess: Element,
-    transformer: (toTransform: string) => string = HTML_Input_Transformer.transformer,
+    transformer: (
+      toTransform: string,
+      toLoad: { [key: string]: unknown },
+    ) => string = HTML_Input_Transformer.transformer,
   ): void {
     const $ = getJQuery();
     // #region Perform transformation
     toProcess.addEventListener("change", (event) => {
-      (event.target as HTMLInputElement).value = transformer((event.target as HTMLInputElement).value);
+      (event.target as HTMLInputElement).value = transformer((event.target as HTMLInputElement).value, toLoad);
     });
     // #endregion Perform transformation
   }

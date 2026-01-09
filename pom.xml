@@ -582,6 +582,83 @@
 						</fileset>
 					</filesets>
 				</configuration>
+				<executions>
+					<!-- Selective clean before compile: remove .class and .js files from target -->
+					<execution>
+						<id>selective-clean-before-compile</id>
+						<goals>
+							<goal>clean</goal>
+						</goals>
+						<phase>initialize</phase>
+						<configuration>
+							<excludeDefaultDirectories>true</excludeDefaultDirectories>
+							<filesets>
+								<!-- Remove compiled Kotlin/Java classes -->
+								<fileset>
+									<directory>${project.build.outputDirectory}</directory>
+									<includes>
+										<include>**/*.class</include>
+									</includes>
+								</fileset>
+								<fileset>
+									<directory>${project.build.testOutputDirectory}</directory>
+									<includes>
+										<include>**/*.class</include>
+									</includes>
+								</fileset>
+								<!-- Remove compiled TypeScript/JavaScript files from web output -->
+								<fileset>
+									<directory>${web.output.directory}</directory>
+									<includes>
+										<include>**/*.js</include>
+										<include>**/*.js.map</include>
+									</includes>
+								</fileset>
+								<!-- Also remove from classes directory (where resources are copied) -->
+								<fileset>
+									<directory>${project.build.outputDirectory}</directory>
+									<includes>
+										<include>**/*.js</include>
+										<include>**/*.js.map</include>
+									</includes>
+								</fileset>
+								<!-- Remove JAR files to force rebuild -->
+								<fileset>
+									<directory>${project.build.directory}</directory>
+									<includes>
+										<include>*.jar</include>
+									</includes>
+								</fileset>
+							</filesets>
+						</configuration>
+					</execution>
+					<!-- Selective clean after build: remove only .class files from target after packaging -->
+					<execution>
+						<id>selective-clean-after-build</id>
+						<goals>
+							<goal>clean</goal>
+						</goals>
+						<phase>package</phase>
+						<configuration>
+							<excludeDefaultDirectories>true</excludeDefaultDirectories>
+							<filesets>
+								<!-- Remove compiled Kotlin/Java classes from target -->
+								<fileset>
+									<directory>${project.build.outputDirectory}</directory>
+									<includes>
+										<include>**/*.class</include>
+									</includes>
+								</fileset>
+								<fileset>
+									<directory>${project.build.testOutputDirectory}</directory>
+									<includes>
+										<include>**/*.class</include>
+									</includes>
+								</fileset>
+							</filesets>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 
 			<!-- Load values from constants.properties and make them available to the Maven build process -->

@@ -30,11 +30,61 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.jar.JarFile
 
 // endregion Imports
+/** The [IPluginInitializeValidationResult] returned b [PyTorch]. */
+class ValidationResult : IPluginInitializeValidationResult {
+  /** See [IPluginInitializeValidationResult] */
+  private var valid: Boolean = false
+  /** See [IPluginInitializeValidationResult] */
+  private var messages: List<String> = listOf("")
+
+  /** See [IPluginInitializeValidationResult] */
+  override fun isValid(): Boolean {
+    return valid
+  }
+
+  /** See [IPluginInitializeValidationResult] */
+  override fun getErrorMessages(): List<String> {
+    return messages
+  }
+
+  /**
+   * Constructs this [ValidationResult] by setting if it is [valid] and it's [message] to propagate.
+   *
+   * @param isValid Whether this [ValidationResult] is valid or not.
+   * @param message The message to propagate.
+   */
+  constructor(isValid: Boolean, message: String) {
+    this.valid = isValid
+    this.messages = listOf(message)
+  }
+
+  /**
+   * Constructs this [ValidationResult] by setting if it is [valid] and it's [messages] to
+   * propagate.
+   *
+   * @param isValid Whether this [ValidationResult] is valid or not.
+   * @param messages The message to propagate.
+   */
+  constructor(isValid: Boolean, messages: List<String>) {
+    this.valid = isValid
+    this.messages = messages
+  }
+}
+
 /**
  * The CodBi's base class for all PyTorch Model Implementations. Handles **Native Library loading**,
  * **Model file downloading**, and **Predictor Pooling**. PyTorch's native libraries consume about
  * **300MB** of the server's RAM.
  *
+ * # ⚠️ CRITICAL SYSTEM REQUIREMENT ⚠️
+ *
+ * Owing to the static dispatcher architecture of the PyTorch c10 library, a full restart of the
+ * Master Server service is required following any plugin updates or configuration changes once the
+ * engine has been initialized. Because the C++ address space maintains a global state, native
+ * kernels can only be registered once per JVM process. While high-level AI models (e.g., Donut) can
+ * be reloaded dynamically, the underlying PyTorch engine remains bound to the initial ClassLoader,
+ * making a service restart mandatory for engine-level reconfigurations.
+ * ---
  * This [AI] gets activated if the CodBi-Plugin-Property **Active_AI** contains **PyTorch**
  * (case-insensitive) meaning that any subsequent keywords like e.g. **DONUT** will have no effect
  * if the mentioned property does not also include **PyTorch**.
@@ -57,8 +107,21 @@ import java.util.jar.JarFile
  * **PyTorch** has to be added to the **AI_Remove**-Plugin-Property. This will cause an automatic
  * clean up of all files related to **PyTorch** as also the models that were downloaded for derived
  * classes. If just the files related to a derived shall be removed each class defines its own
- * keyword. Some native libraries will most certainly be locked and thus undeleteable until the
+ * keyword. Some native libraries will most certainly be locked and thus undetectable until the
  * **JVM** shuts down. Restarting the server will remove those last files automatically
+ *
+ * ## Virus Scanners
+ * Security on the server may flag native libraries in part as suspicious simply because it is
+ * executable. If so and taking them out of quarantine takes longer than the initialization itself,
+ * the server should be restarted for proper AI-Capabilities.
+ *
+ * ### Exclusions
+ * Either add exclusions for the whole plugin directory or the following subfolder:
+ * - {plugin}/plugin/root/pytorch/
+ * - {plugin}/ai/pytorch/
+ * - {java.io.tmpdir}/pytorch-extract-.../
+ * - {plugin}/plugin/root/pytorch-temp
+ * - {plugin}/plugin/root/jnilib-temp *
  *
  * @param I The Input type for the model (e.g. **[Pair] < [Image], [String] >**)
  * @param O The Output type for the model (e.g. **[String]**)
@@ -164,7 +227,8 @@ abstract class PyTorch<I, O> : AI() {
    * - The URL to the JNI-JAR may be changed by specifying the Plugin-Property
    *   **AI_PyTorch_JNIURL**. Defaults to OS-specific URL based on the server's operating system.
    */
-  private var urlJNINatives = getDefaultPyTorchJNIURL()
+  private var urlJNINatives =
+      "https://repo1.maven.org/maven2/ai/djl/pytorch/pytorch-jni/2.7.1-0.36.0/pytorch-jni-2.7.1-0.36.0.jar"
 
   /**
    * Detects the operating system and returns the appropriate OS string for Maven artifact naming.
@@ -195,16 +259,6 @@ abstract class PyTorch<I, O> : AI() {
   }
 
   /**
-   * Gets the default PyTorch JNI library URL based on the current operating system.
-   *
-   * @return The default URL for PyTorch JNI libraries.
-   */
-  private fun getDefaultPyTorchJNIURL(): String {
-    val osStr = getOSString()
-    return "https://repo1.maven.org/maven2/ai/djl/pytorch/pytorch-jni/2.7.1-0.36.0/pytorch-jni-2.7.1-0.36.0-$osStr.jar"
-  }
-
-  /**
    * Builds the definition on how the model interprets it's data.
    *
    * @param modelDir The directory where model files reside.
@@ -224,8 +278,7 @@ abstract class PyTorch<I, O> : AI() {
     poolSize = configData.properties.getProperty("Pool_Size_PyTorch")?.toInt() ?: 2
     urlPyTorchNatives =
         configData.properties.getProperty("AI_PyTorch_LibURL") ?: getDefaultPyTorchLibURL()
-    urlJNINatives =
-        configData.properties.getProperty("AI_PyTorch_JNIURL") ?: getDefaultPyTorchJNIURL()
+    urlJNINatives = configData.properties.getProperty("AI_PyTorch_JNIURL") ?: urlJNINatives
     // endregion Get Plugin-Properties
     // region Check for AI_Remove property
     if ((configData.properties.getProperty("AI_Remove")?.lowercase() ?: "").contains("pytorch")) {
@@ -275,8 +328,7 @@ abstract class PyTorch<I, O> : AI() {
     poolSize = configData.properties.getProperty("Pool_Size_PyTorch")?.toInt() ?: 2
     urlPyTorchNatives =
         configData.properties.getProperty("AI_PyTorch_LibURL") ?: getDefaultPyTorchLibURL()
-    urlJNINatives =
-        configData.properties.getProperty("AI_PyTorch_JNIURL") ?: getDefaultPyTorchJNIURL()
+    urlJNINatives = configData.properties.getProperty("AI_PyTorch_JNIURL") ?: urlJNINatives
     // endregion Get Plugin-Properties
     super.initialize(configData)
     init(configData.fileHelper.pluginFolder)
@@ -292,18 +344,6 @@ abstract class PyTorch<I, O> : AI() {
    */
   fun init(pluginFolder: File) {
     log(LogLevel.INFO, "Initializing PyTorch Engine.")
-    setupNativeEnvironment(pluginFolder)
-    // region Acquire model, if necessary.
-    val modelDir = File(pluginFolder, "ai/pytorch/models/$modelName")
-
-    if (!modelDir.exists()) modelDir.mkdirs()
-    if (!modelDir.exists()) log(LogLevel.INFO, "Creating Model directory \"$modelDir\" failed.")
-
-    log(LogLevel.INFO, "Model directory is: $modelDir")
-    ensureModelFiles(modelDir, pluginFolder)
-    // endregion Acquire model, if necessary.
-    // region Acquire Model from companion, if available.
-    // Check if model is already loaded in shared registry for this derived class type
     val sharedModel = getSharedModel<I, O>(this.javaClass)
 
     if (sharedModel != null) {
@@ -334,7 +374,17 @@ abstract class PyTorch<I, O> : AI() {
 
       return
     }
-    // endregion Acquire Model from companion, if available.
+
+    setupNativeEnvironment(pluginFolder)
+    // region Acquire model, if necessary.
+    val modelDir = File(pluginFolder, "ai/pytorch/models/$modelName")
+
+    if (!modelDir.exists()) modelDir.mkdirs()
+    if (!modelDir.exists()) log(LogLevel.INFO, "Creating Model directory \"$modelDir\" failed.")
+
+    log(LogLevel.INFO, "Model directory is: $modelDir")
+    ensureModelFiles(modelDir, pluginFolder)
+    // endregion Acquire model, if necessary.
     // region Load Model
     log(LogLevel.INFO, "Model is not available in companion. Creating new model.")
 
@@ -379,7 +429,7 @@ abstract class PyTorch<I, O> : AI() {
       log(
           LogLevel.INFO,
           "The \"$modelName\" was initialized successfully with pool a size of $poolSize.")
-    } catch (X: Exception) {
+    } catch (X: Throwable) {
       // Check if the exception message indicates an already-loaded library
       val errorMessage = X.message ?: ""
 
@@ -453,9 +503,7 @@ abstract class PyTorch<I, O> : AI() {
    */
   private fun cleanupMemory() {
     // Close all predictors in the pool
-    while (pool.isNotEmpty()) {
-      pool.poll()?.close()
-    }
+    while (pool.isNotEmpty()) pool.poll()?.close()
 
     val isShared = isModelShared(this.javaClass)
 
@@ -514,6 +562,8 @@ abstract class PyTorch<I, O> : AI() {
     System.setProperty("ai.djl.pytorch.num_interop_threads", "1")
     System.setProperty("ai.djl.pytorch.num_threads", "1")
     System.setProperty("ai.djl.huggingface.tokenizers.version", "0.31.0")
+    // Set custom native helper to load libraries in system classloader
+    // This prevents "already loaded in another classloader" errors when plugins are reloaded
 
     val osStr = getOSString()
     val baseDir = pluginFolder.resolve("plugin/root")
@@ -579,14 +629,24 @@ abstract class PyTorch<I, O> : AI() {
 
         log(LogLevel.INFO, "PyTorch engine registered successfully")
       }
-    } catch (X: Exception) {
+    } catch (X: Throwable) {
       val errorMessage = X.message ?: ""
+      val causeMessage = X.cause?.message ?: ""
+      val isAlreadyLoaded =
+          errorMessage.contains("already loaded", ignoreCase = true) ||
+              errorMessage.contains("already loaded in another classloader", ignoreCase = true) ||
+              causeMessage.contains("already loaded", ignoreCase = true) ||
+              causeMessage.contains("already loaded in another classloader", ignoreCase = true) ||
+              X is UnsatisfiedLinkError
 
-      if (errorMessage.contains("already loaded", ignoreCase = true) ||
-          errorMessage.contains("already loaded in another classloader", ignoreCase = true))
-          log(LogLevel.INFO, "Library already loaded (this is normal): ${ X.message }")
+      if (isAlreadyLoaded)
+          log(
+              LogLevel.INFO,
+              "Library already loaded (this is normal): ${ X.message ?: X.cause?.message ?: X.toString() }")
       else {
-        log(LogLevel.ERROR, "Failed to register PyTorch Engine: ${ X.message }")
+        log(
+            LogLevel.ERROR,
+            "Failed to register PyTorch Engine: ${ X.message ?: X.cause?.message ?: X.toString() }")
 
         throw X
       }
@@ -629,10 +689,10 @@ abstract class PyTorch<I, O> : AI() {
    * @param importance See [AI.log].
    * @param toLog See [AI.log].
    */
-  override fun log(importance: LogLevel, toLog: String) {
+  override fun log(importance: LogLevel, toLog: String, adjenct: String) {
     super.idLogMessages = "PyTorch"
 
-    super.log(importance, toLog)
+    super.log(importance, toLog, adjenct)
   }
 
   /**
@@ -939,9 +999,7 @@ class EngineLoader(
    *
    * @return Prefix: "" for Windows, "lib" for Linux/macOS
    */
-  private fun getLibraryPrefix(): String {
-    return if (isWindows()) "" else "lib"
-  }
+  private fun getLibraryPrefix(): String = if (isWindows()) "" else "lib"
 
   /**
    * Ensures that the plugin's folder contains all libraries files within the proper directories for

@@ -7,8 +7,8 @@ import { HTML_Input_Transformer } from "./html.input.transformer";
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 export class HTML_Input_Trans_Capital extends HTML_Input_Transformer {
-  public static override get transformer(): (toTransform: string) => string {
-    return (toTransform: string): string => {
+  public static override get transformer(): (toTransform: string, toLoad: { [key: string]: unknown }) => string {
+    return (toTransform: string, toLoad: { [key: string]: unknown }): string => {
       return toTransform.toLowerCase().replace(/(^|\s|-)(\S)/g, (fullMatch, separator, letter) => {
         return separator + letter.toUpperCase();
       });

@@ -1,0 +1,200 @@
+# Coding Style Rules
+
+When generating or modifying code, follow these patterns to maintain consistency with the codebase style.
+
+## General Principles
+- Compact and concise: Prefer compact code over verbose alternatives
+- Table-like alignment: Align related elements for easy scanning
+- Minimal whitespace: Use blank lines sparingly, only between logical sections
+
+## Kotlin Style Patterns
+
+### Control Flow
+
+#### If Statements
+- **No space between `if` and opening parenthesis**: `if(` not `if (`
+- Use single-line if statements WITHOUT braces when the body is a single statement:
+  `if( condition ) statement`
+  `if(!initialized.get()) statement`
+- Use braces only when necessary (multi-line or multiple statements):
+  `if( condition ) { statement1; statement2 }`
+
+#### Finally Blocks
+- Use compact finally blocks on a single line when possible:
+  `} finally { statement }`
+- Use multi-line only when the block contains multiple statements
+
+### Variable Declarations
+
+#### Aligned Assignment Operators
+When multiple variables are declared sequentially, ALIGN the `=` operators so all values start at the same column. This creates a table-like structure for easy scanning.
+
+✅ Preferred: Aligned assignments
+```
+val manager  = ctx.ndManager
+val image    = input.first
+val question = input.second
+```
+
+❌ Avoid: Unaligned assignments
+```
+val manager = ctx.ndManager
+val image = input.first
+val question = input.second
+```
+
+This pattern makes it easy to scan down the left column to see variable names and down the right column to see values.
+
+### Spacing Around Control Characters
+
+**Letters should be separated from control characters by a space:**
+
+- **Brackets and parentheses**: Use spaces inside brackets/parentheses
+  - ✅ `( headerName, headerValue )` not `(headerName, headerValue)`
+  - ✅ `[ key ]` not `[key]`
+  - ✅ `( key, question )` not `(key, question)`
+
+- **Operators**: Use spaces around binary operators
+  - ✅ `( a + b )` not `(a+b)`
+  - ✅ `if ( a + b > 10 )` not `if (a+b > 10)`
+
+- **Unary operators**: Unary operators like `!` stay attached to their operand
+  - ✅ `if(!initialized.get())` not `if ( !initialized.get() )` or `if( ! initialized.get() )`
+  - ✅ `if( !active )` not `if ( !active )`
+
+- **Closing parentheses**: No space before closing paren when it ends the condition
+  - ✅ `if( condition )` not `if( condition  )`
+  - ✅ `if(!initialized.get())` not `if( !initialized.get() )`
+
+### Function Parameters
+- Spacing around parentheses follows the control character spacing rule
+- Can vary based on context, but prefer spaces inside parentheses/brackets
+
+### Indentation
+- Use 2 spaces for indentation (standard Kotlin)
+- No tabs
+
+### Blank Lines
+- Use blank lines sparingly
+- Only insert blank lines between logical sections
+- Avoid excessive whitespace
+
+### Code Organization
+- Use `//region` and `//endregion` comments to organize code sections:
+  `//region Image processing` ... `//endregion Image processing`
+
+### Comments
+
+#### KDoc Comments (Classes and Functions)
+
+**Class Comments:**
+- Start with `/**` on its own line
+- First line describes what the class does
+- Can use markdown sections with `##` or `####` for subsections
+- Use bullet points with `-` for lists
+- End with `*/` on its own line (sometimes with `*` before closing)
+
+**Function/Method Comments:**
+- Start with `/**` on its own line
+- First line describes what the function does
+- Can have multiple paragraphs
+- Use `@param` for parameters (can reference interfaces: `@param ctx See [Translator.prepare].`)
+- Use `@return` for return values (can be multi-line and indented)
+- End with `*/` on its own line (sometimes with `*` before closing)
+
+**Property/Field Comments:**
+- Single line format: `/** Description. */`
+- Can reference other classes: `/** See [PyTorch.resModelFiles]. */`
+- Sometimes incomplete: `/** See [PyTorch.modelName]*/` (acceptable pattern)
+
+#### Inline Comments
+
+- Use `//` for single-line comments
+- Use `//region` and `//endregion` for code organization
+- Use `// --- TEXT ---` for section markers within functions
+- Comments can be on their own line or at the end of a line
+
+#### Comment Patterns
+
+- Use `**bold**` for emphasis in KDoc
+- Use `[ClassName]` or `[ClassName.method]` for references
+- Use `####` for subsections in class documentation
+- Parameters can reference interfaces: `@param ctx See [Translator.prepare].`
+- Return values can be multi-line and indented for clarity
+
+#### TSDoc Comments (TypeScript)
+
+**TSDoc follows the same patterns as KDoc:**
+
+**Class Comments:**
+- Start with `/**` on its own line
+- First line describes what the class does
+- Can use `@remarks` for additional notes
+- End with `*/` on its own line
+
+**Function/Method Comments:**
+- Start with `/**` on its own line
+- First line describes what the function does
+- Can have multiple paragraphs
+- Use `@param` for parameters
+- Use `@returns` or `@return` for return values (can be multi-line and indented)
+- End with `*/` on its own line
+
+**TSDoc Patterns:**
+- Use `{@link ClassName.method}` for references
+- Use `@remarks` for additional notes
+- Parameters can be documented with `@param`
+- Same spacing and formatting rules as KDoc
+
+## Style Comparison
+
+### Compact Style (DonutDocVQA.kt)
+- Compact, concise
+- Single-line if statements without braces
+- Compact finally blocks
+- Aligned variable assignments
+- Minimal whitespace
+
+### Verbose Style (PyTorch.kt)
+- More verbose
+- Always uses braces for if statements
+- Multi-line finally blocks
+- Standard variable assignments
+- More whitespace
+
+**IMPORTANT: Always use the compact pattern when generating or modifying code. This is the preferred style for this codebase.**
+
+## Examples
+
+### Good: Compact If Statement
+```
+if( array.shape.dimension() == 4 ) array = array.squeeze(0)
+if( nextTokenId == 2L ) break
+if(!initialized.get()) return
+```
+
+### Good: Aligned Variables
+```
+val manager  = ctx.ndManager
+val image    = input.first
+val question = input.second
+```
+
+### Good: Compact Finally
+```
+} finally { Thread.currentThread().contextClassLoader = oldClassLoader }
+```
+
+### Good: Region Organization
+```
+//region Image processing
+var array = image.toNDArray(manager)
+// ... processing code ...
+//endregion Image processing
+```
+
+## Notes
+- This style guide is based on analysis of DonutDocVQA.kt and other files in the codebase
+- Patterns may evolve over time - this document should be updated accordingly
+- **Always apply the compact pattern** when generating or modifying code
+- This is the standard style for this codebase

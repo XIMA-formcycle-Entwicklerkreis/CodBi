@@ -472,15 +472,14 @@ class TesseractAction : AI() {
   }
 
   /**
-   * Does [AI.log] the given [String] [toLog] having set the [idLogMessages] to **Tesseract** in
-   * advance.
+   * Sets the [idLogMessages] prior to [AI.log]ging.
    *
    * @param importance See [AI.log].
    * @param toLog See [AI.log].
    */
-  override fun log(importance: LogLevel, toLog: String) {
-    idLogMessages = "Tesseract"
+  override fun log(importance: LogLevel, toLog: String, adjenct: String) {
+    super.idLogMessages = "CodBi / AI / Tesseract"
 
-    super.log(importance, toLog)
+    super.log(importance, toLog, adjenct)
   }
 }

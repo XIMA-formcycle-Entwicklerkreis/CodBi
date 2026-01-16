@@ -88,11 +88,10 @@
 		<maven-site-plugin.version>3.21.0</maven-site-plugin.version>
 		<maven-surefire-plugin.version>3.5.2</maven-surefire-plugin.version>
 		<maven-surefire-junit5-tree-reporter.version>1.4.0</maven-surefire-junit5-tree-reporter.version>
+		<maven-exec-plugin.version>3.1.0</maven-exec-plugin.version>
 		<properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
 		<spotless-maven-plugin.version>2.44.2</spotless-maven-plugin.version>
-		<!--//region AI / Callari -->
 		<djl.version>0.36.0</djl.version>
-		<!--//endregion AI / Callari -->
 	</properties>
 
 	<dependencyManagement>
@@ -217,8 +216,6 @@
 	</dependencyManagement>
 
 	<dependencies>
-		<!--//region AI / Callari -->
-
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-compress</artifactId>
@@ -232,6 +229,7 @@
 
 		</dependency>
 
+		<!--
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-engine</artifactId>
@@ -265,12 +263,20 @@
 			<version>2.7.1-0.36.0</version>
 			<scope>compile</scope>
 		</dependency>
+		-->
 
 		<dependency>
 			<groupId>ai.djl.huggingface</groupId>
 			<artifactId>tokenizers</artifactId>
 			<version>0.36.0</version>
 		</dependency>
+
+		<dependency>
+			<groupId>ai.djl.onnxruntime</groupId>
+			<artifactId>onnxruntime-engine</artifactId>
+			<version>0.36.0</version>
+		</dependency>
+
 		<dependency>
 			<groupId>net.sourceforge.tess4j</groupId>
 			<artifactId>tess4j</artifactId>
@@ -295,7 +301,6 @@
 			</exclusions>
 		</dependency>
 
-		<!--//endregion AI / Callari -->
 		<!-- formcycle plugin API -->
 		<dependency>
 			<groupId>de.xima.fc</groupId>
@@ -443,7 +448,6 @@
 					<groupId>com.github.eirslett</groupId>
 					<artifactId>frontend-maven-plugin</artifactId>
 					<version>${frontend-maven-plugin.version}</version>
-					<!-- #region Disabling Tests / Callari -->
 					<executions>
 						<execution>
 							<id>test</id>
@@ -458,7 +462,6 @@
 							</configuration>
 						</execution>
 					</executions>
-					<!-- #endregion Disabling Tests / Callari -->
 				</plugin>
 				<plugin>
 					<groupId>com.rudikershaw.gitbuildhook</groupId>
@@ -1220,6 +1223,26 @@
 					<source>9</source>
 					<target>9</target>
 				</configuration>
+			</plugin>
+
+			<!-- Play sound notification when build completes -->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>${maven-exec-plugin.version}</version>
+				<executions>
+					<execution>
+						<id>play-build-complete-sound</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<phase>package</phase>
+						<configuration>
+							<executable>powershell</executable>
+							<commandlineArgs>-Command "[console]::beep(800, 500)"</commandlineArgs>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 
 		</plugins>

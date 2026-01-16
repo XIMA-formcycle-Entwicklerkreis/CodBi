@@ -38,6 +38,19 @@ export interface CodbiGlobal {
   nncHandler(toHandle: string): void;
   /** States whether {@link CodbiGlobal.checkAttributes } shall be invoked automatically or not. */
   autoCheckAttributes: boolean;
+  /**
+   * Injects the **CodBi-Loading-Animation** after the given {@link destination }, only
+   * if there is no animation present yet.
+   *
+   * @param destination The {@link Element } that shall precede the **Animation**. */
+  injectLoadingAnim(destination: Element): void;
+  /**
+   * Removes the **CodBi-Loading-Animation** that was inserted via
+   * {@link CodbiGlobal.injectLoadingAnimfrom the given {@link toRemoveFrom }.
+   *
+   * @param toRemoveFrom The {@link Element } all CSS-Class-**cCodBiLoader** shall be
+   *                     removed from. */
+  removeLoaderAnim(toRemoveFrom: Element): void;
 }
 /** Defines a contract for objects representing a **CodBi-Configuration**. */
 export interface CodbiSettings {
@@ -1051,7 +1064,7 @@ export class CodBi implements CodbiGlobal {
    * Injects the {@link CodBiLogo } and a CSS loading animation after the given {@link destination }.
    *
    * @param destination The {@link Element } that shall precede the {@link CodBiLogo }. */
-  protected injectLoadingAnim(destination: Element): void {
+  public injectLoadingAnim(destination: Element): void {
     if (XFC_METADATA.requestType === "print" || destination.parentElement?.querySelector(".CodBi_Logo") !== null) {
       return; // Don't inject the CodBi-Logo if there is already one present.
     }
@@ -1400,7 +1413,12 @@ export class CodBi implements CodbiGlobal {
     message: string,
   ): void {
     this.reportError(
-      `Processing "${cause.getAttribute("data-name")}" caused following error in functionality "${functionality}" with parameter (${JSON.stringify(parameter, null)}):\n ${exception}${message ? ` | ${message}` : ""}`,
+      `Processing "${cause.getAttribute(
+        "data-name",
+      )}" caused following error in functionality "${functionality}" with parameter (${JSON.stringify(
+        parameter,
+        null,
+      )}):\n ${exception}${message ? ` | ${message}` : ""}`,
     );
   }
   // #endregion Error reporting

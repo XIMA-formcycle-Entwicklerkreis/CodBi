@@ -69,7 +69,7 @@ export class AI_PT_DONUT_QA {
 
       // 2. Execute the AJAX POST request
       $.ajax({
-        url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Donut_QA`,
+        url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Donut_vQA`,
         type: "POST",
         data: formData,
         dataType: "json", // Expect JSON response

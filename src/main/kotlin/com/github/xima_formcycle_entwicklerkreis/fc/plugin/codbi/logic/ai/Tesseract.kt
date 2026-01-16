@@ -1,13 +1,17 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai
 
 // region Imports
+// region CodBi
+// endregion CodBi
 // region XIMA
 // endregion XIMA
 // region Tesseract
 // endregion Tesseract
-// region CodBi
-// endregion CodBi
+// region JSON
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI
+import com.google.gson.Gson
+import com.google.gson.JsonSyntaxException
+import com.google.gson.reflect.TypeToken
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeValidationResult
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
@@ -20,18 +24,22 @@ import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
 import java.io.File
 import java.net.URI
+import java.net.URLDecoder
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.*
 import javax.servlet.ServletException
 import net.sourceforge.tess4j.ITessAPI
 import net.sourceforge.tess4j.TessAPI1
 
+// endregion JSON
 // endregion Imports
 /**
  * Performs OCR on one or multiple images using the
  * [Tesseract](https://github.com/tesseract-ocr/tesseract).
  *
  * Returns either the whole text of the document(s) parsed or, if a **X-OCR-Regex** is found in the
- * header, only the text matching that regular expression separated by **:-:**.
+ * header, the text matching a specified regular expression, the text matching multiple named
+ * regular expressions or whether the text matches a specified regular expression.
  *
  * Reusing images that were already uploaded is possible in order to optimize traffic. Passing an
  * **X-OCR-Image-ID** within the header when requesting the **CodBi_Tesseract**-Action will make the
@@ -230,7 +238,7 @@ class TesseractAction : AI() {
    * **^[a-z]{3}(\s*\+\s*[a-z]{3})*$**, if it is set.
    *
    * @param configData The [IPluginValidationData] as provided by the formcycle environment.
-   * @return Always NULL.
+   * @return Always **NULL**.
    * @throws IllegalArgumentException If **AI_Tesseract_Languages** does not comply to
    *   **^[a-z]{3}(\s*\+\s*[a-z]{3})*$**.
    */
@@ -242,6 +250,7 @@ class TesseractAction : AI() {
     // Remove local native libs and models, if no OCR configured.
     if (!(configData.properties.getProperty("Active_AI")?.lowercase() ?: "").contains("OCR"))
         wipeLocalData()
+
     if (!Regex("""^[a-z]{3}(\s*\+\s*[a-z]{3})*$""")
         .matches(configData.properties.getProperty("AI_Tesseract_Languages")))
         throw IllegalArgumentException(
@@ -255,8 +264,14 @@ class TesseractAction : AI() {
    * janitor to store images that have an ID (if transmitted in the header **X-OCR-Image-ID**) and
    * extracts all the text from the transmitted, or via **X-OCR-Image-ID** specified, images.
    *
-   * If a **X-OCR-Regex** is found in the header only the text matching that regular expression will
-   * be returned, separated by **:-:**.
+   * #### **X-Mode** Options (case-insensitive):
+   * - **print (default)**: Plain text extraction - extracts all text from the image(s).
+   * - **extract**: Extracts text from image(s) and returns only the parts that match the regex
+   *   pattern specified in the **X-Pattern** header.
+   * - **verify**: Extracts text from image(s) and checks if the text matches the regex pattern
+   *   specified in the **X-Pattern** header.
+   * - **extract fields**: Extracts text from image(s) and applies multiple regex patterns from the
+   *   **X-FieldPatterns** header (JSON array) to extract field values.
    *
    * @param params As provided by the formcycle environment.
    * @return A proper [IPluginServletActionRetVal].
@@ -274,6 +289,36 @@ class TesseractAction : AI() {
               "{\"error\":\"The Tesseract is currently not active. In order to activate it the keyword OCR has to be placed into the CodBi-Plugin-Property Active_AI.\"}"))
     }
     // endregion Check if the Tesseract is active.
+    // region Get mode from X-Mode header (case-insensitive)
+    val modeHeader =
+        params.headerMap.entries.find { it.key.equals("X-Mode", ignoreCase = true) }?.value?.trim()
+    val mode = modeHeader?.lowercase()
+    // endregion Get mode from X-Mode header (case-insensitive)
+    when (mode) {
+      "print" -> return executeModePrint(params)
+      "extract" -> return executeModeExtract(params)
+      "verify" -> return executeModeVerify(params)
+      "extract fields" -> return executeModeExtractFields(params)
+      null ->
+          return PluginServletActionRetVal(
+              ServletResponse(
+                  EResponseType.JSON,
+                  "{\"error\":\"No X-Mode specified. Specify a modus operandi (print,verify, extract, or extract fields).\"}"))
+      else ->
+          return PluginServletActionRetVal(
+              ServletResponse(
+                  EResponseType.JSON,
+                  "{\"error\":\"Unsupported X-Mode in request-header:${ modeHeader }\"}"))
+    }
+  }
+
+  /**
+   * Mode print: Plain text extraction - extracts all text from the image(s).
+   *
+   * @param params As provided by the formcycle environment.
+   * @return A proper [IPluginServletActionRetVal].
+   */
+  private fun executeModePrint(params: IPluginServletActionParams): IPluginServletActionRetVal {
     if (params.uploadFiles.isNullOrEmpty() && params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()) {
       log(
           LogLevel.ERROR,
@@ -325,25 +370,10 @@ class TesseractAction : AI() {
             val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
 
             if (ptr != null) {
-              if (params.headerMap["X-OCR-Regex"].isNullOrEmpty())
+              if (params.headerMap["X-Pattern"].isNullOrEmpty())
                   ocrResults[inputName] = ptr.getString(0, "UTF-8").trim()
               else {
-                val rawText = ptr.getString(0, "UTF-8") ?: ""
-                val regexHeader = params.headerMap["X-OCR-Regex"]?.trim()
-
-                ocrResults[inputName] =
-                    if (!regexHeader.isNullOrEmpty()) {
-                      try {
-                        regexHeader
-                            .toRegex()
-                            .findAll(rawText)
-                            .map { it.value }
-                            .joinToString(":-:")
-                            .ifEmpty { "No match" }
-                      } catch (X: Exception) {
-                        "Regex Error: ${ X.message }"
-                      }
-                    } else rawText.trim()
+                ocrResults[inputName] = ptr.getString(0, "UTF-8") ?: ""
               }
 
               TessAPI1.TessDeleteText(ptr)
@@ -396,6 +426,570 @@ class TesseractAction : AI() {
           ->
           val escapedValue = value.replace("\"", "\\\"").replace("\n", "\\n")
           "\"$key\":\"$escapedValue\""
+        }
+
+    val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
+    // endregion Generate response
+    return PluginServletActionRetVal(servletResponse)
+  }
+
+  /**
+   * Mode extract: Extracts text from image(s) and returns only the parts that match the regex
+   * pattern specified in the **X-Pattern** header.
+   *
+   * @param params As provided by the formcycle environment.
+   * @return A proper [IPluginServletActionRetVal].
+   */
+  private fun executeModeExtract(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    if (params.uploadFiles.isNullOrEmpty() && params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()) {
+      log(
+          LogLevel.ERROR,
+          "No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.")
+
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              "{\"error\":\"No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.\"}"))
+    }
+
+    val patternHeaderEncoded = params.headerMap["X-Pattern"]?.trim()
+
+    if (patternHeaderEncoded.isNullOrEmpty()) {
+      log(LogLevel.ERROR, "Mode extract requires **X-Pattern** header to be specified.")
+
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              "{\"error\":\"Mode extract requires X-Pattern header to be specified.\"}"))
+    }
+
+    val patternHeader =
+        try {
+          URLDecoder.decode(patternHeaderEncoded, StandardCharsets.UTF_8.toString())
+        } catch (e: Exception) {
+          log(LogLevel.ERROR, "Failed to decode X-Pattern header: ${ e.message }")
+          return PluginServletActionRetVal(
+              ServletResponse(
+                  EResponseType.JSON,
+                  "{\"error\":\"Failed to decode X-Pattern header: ${ e.message }\"}"))
+        }
+    val ocrResults = mutableMapOf<String, List<String>>()
+    val filesToDelete = mutableListOf<File>()
+
+    try {
+      if (!params.uploadFiles.isNullOrEmpty()) {
+        params.uploadFiles?.forEach { (inputName, fileItem) ->
+          val distinctImageID = "${params.headerMap["X-OCR-Image-ID"]}::${inputName}"
+          var tempFile: File? = null
+          var shouldDeleteThisFile = true
+          // region Check if the image is already cached.
+          if (distinctImageID.isNotBlank() && cacheIDedImages.containsKey(distinctImageID)) {
+            tempFile = cacheIDedImages[distinctImageID]?.file
+            shouldDeleteThisFile = false
+          }
+          // endregion Check if the image is already cached.
+          // region Create file if not in cache and cache it X-OCR-Image-ID is set in header.
+          if (tempFile == null || !tempFile.exists()) {
+            tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
+
+            fileItem.stream().use { input ->
+              val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
+
+              tempFile!!.writeBytes(bytes)
+            }
+
+            if (distinctImageID.isNotBlank()) {
+              cacheIDedImages[distinctImageID] = CachedImage(tempFile!!)
+              shouldDeleteThisFile = false
+            }
+          }
+          // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
+          if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
+          // region OCR Processing
+          val handle =
+              pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+          try {
+            TessAPI1.TessBaseAPIProcessPages(handle, tempFile!!.absolutePath, null, 0, null)
+
+            val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
+
+            if (ptr != null) {
+              val rawText = ptr.getString(0, "UTF-8") ?: ""
+
+              ocrResults[inputName] =
+                  try {
+                    patternHeader.toRegex().findAll(rawText).map { it.value }.toList()
+                  } catch (X: Exception) {
+                    listOf("Regex Error: ${ X.message }")
+                  }
+
+              TessAPI1.TessDeleteText(ptr)
+            } else {
+              ocrResults[inputName] = emptyList()
+            }
+
+            TessAPI1.TessBaseAPIClear(handle)
+          } catch (X: Throwable) {
+            throw ServletException(
+                "[[ CodBi / AI / Tesseract ] Processing ${ inputName } failed with: ${ X }.]")
+          } finally {
+            pool.offer(handle)
+          }
+          // endregion OCR Processing
+        }
+      } else {
+        cacheIDedImages.entries
+            .filter { it.key.startsWith("${ params.headerMap["X-OCR-Image-ID"] }::") }
+            .map { it.value }
+            .forEach { (image, key) ->
+              // region OCR Processing
+              val handle =
+                  pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+              try {
+                TessAPI1.TessBaseAPIProcessPages(handle, image.absolutePath, null, 0, null)
+
+                val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
+
+                if (ptr != null) {
+                  val rawText = ptr.getString(0, "UTF-8") ?: ""
+
+                  ocrResults[image.name] =
+                      try {
+                        patternHeader.toRegex().findAll(rawText).map { it.value }.toList()
+                      } catch (X: Exception) {
+                        listOf("Regex Error: ${ X.message }")
+                      }
+
+                  TessAPI1.TessDeleteText(ptr)
+                } else {
+                  ocrResults[image.name] = emptyList()
+                }
+
+                TessAPI1.TessBaseAPIClear(handle)
+              } catch (X: Throwable) {
+                throw ServletException(
+                    "[[ CodBi / AI / Tesseract ] Processing ${ image.name } failed with: ${ X }.]")
+              } finally {
+                pool.offer(handle)
+              }
+              // endregion OCR Processing
+            }
+      }
+    } catch (e: Exception) {
+      logger.error("[[ CodBi ]] Execution Error", e)
+    }
+    // region Generate response
+    val jsonResponse =
+        ocrResults.entries.joinToString(separator = ",", prefix = "{", postfix = "}") { (key, value)
+          ->
+          val arrayValues =
+              value.joinToString(separator = ",") { match ->
+                val escaped = match.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+                "\"$escaped\""
+              }
+          "\"$key\":[$arrayValues]"
+        }
+
+    val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
+    // endregion Generate response
+    return PluginServletActionRetVal(servletResponse)
+  }
+
+  /**
+   * Mode verify: Extracts text from image(s) and checks if the text matches the regex pattern
+   * specified in the **X-Pattern** header.
+   *
+   * @param params As provided by the formcycle environment.
+   * @return A proper [IPluginServletActionRetVal] with boolean results indicating if each image's
+   *   text matches the pattern.
+   */
+  private fun executeModeVerify(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    if (params.uploadFiles.isNullOrEmpty() && params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()) {
+      log(
+          LogLevel.ERROR,
+          "No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.")
+
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              "{\"error\":\"No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.\"}"))
+    }
+    val patternHeaderEncoded = params.headerMap["X-Pattern"]?.trim()
+    if (patternHeaderEncoded.isNullOrEmpty()) {
+      log(LogLevel.ERROR, "Mode verify requires **X-Pattern** header to be specified.")
+
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              "{\"error\":\"Mode verify requires X-Pattern header to be specified.\"}"))
+    }
+    val patternHeader =
+        try {
+          URLDecoder.decode(patternHeaderEncoded, StandardCharsets.UTF_8.toString())
+        } catch (e: Exception) {
+          log(LogLevel.ERROR, "Failed to decode X-Pattern header: ${ e.message }")
+          return PluginServletActionRetVal(
+              ServletResponse(
+                  EResponseType.JSON,
+                  "{\"error\":\"Failed to decode X-Pattern header: ${ e.message }\"}"))
+        }
+    val verifyResults = mutableMapOf<String, Boolean>()
+    val filesToDelete = mutableListOf<File>()
+
+    try {
+      if (!params.uploadFiles.isNullOrEmpty()) {
+        params.uploadFiles?.forEach { (inputName, fileItem) ->
+          val distinctImageID = "${params.headerMap["X-OCR-Image-ID"]}::${inputName}"
+          var tempFile: File? = null
+          var shouldDeleteThisFile = true
+          // region Check if the image is already cached.
+          if (distinctImageID.isNotBlank() && cacheIDedImages.containsKey(distinctImageID)) {
+            tempFile = cacheIDedImages[distinctImageID]?.file
+            shouldDeleteThisFile = false
+          }
+          // endregion Check if the image is already cached.
+          // region Create file if not in cache and cache it X-OCR-Image-ID is set in header.
+          if (tempFile == null || !tempFile.exists()) {
+            tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
+
+            fileItem.stream().use { input ->
+              val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
+
+              tempFile!!.writeBytes(bytes)
+            }
+
+            if (distinctImageID.isNotBlank()) {
+              cacheIDedImages[distinctImageID] = CachedImage(tempFile!!)
+              shouldDeleteThisFile = false
+            }
+          }
+          // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
+          if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
+          // region OCR Processing
+          val handle =
+              pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+          try {
+            TessAPI1.TessBaseAPIProcessPages(handle, tempFile!!.absolutePath, null, 0, null)
+
+            val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
+
+            if (ptr != null) {
+              val rawText = ptr.getString(0, "UTF-8") ?: ""
+
+              verifyResults[inputName] =
+                  try {
+                    println(
+                        ">>>" +
+                            patternHeader.toRegex() +
+                            " - " +
+                            patternHeader.toRegex().containsMatchIn(rawText) +
+                            " - " +
+                            rawText)
+                    patternHeader.toRegex().containsMatchIn(rawText)
+                  } catch (X: Exception) {
+                    log(LogLevel.ERROR, "Regex Error in verify mode: ${ X.message }")
+                    false
+                  }
+
+              TessAPI1.TessDeleteText(ptr)
+            } else {
+              verifyResults[inputName] = false
+            }
+
+            TessAPI1.TessBaseAPIClear(handle)
+          } catch (X: Throwable) {
+            throw ServletException(
+                "[[ CodBi / AI / Tesseract ] Processing ${ inputName } failed with: ${ X }.]")
+          } finally {
+            pool.offer(handle)
+          }
+          // endregion OCR Processing
+        }
+      } else {
+        cacheIDedImages.entries
+            .filter { it.key.startsWith("${ params.headerMap["X-OCR-Image-ID"] }::") }
+            .map { it.value }
+            .forEach { (image, key) ->
+              // region OCR Processing
+              val handle =
+                  pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+              try {
+                TessAPI1.TessBaseAPIProcessPages(handle, image.absolutePath, null, 0, null)
+
+                val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
+
+                if (ptr != null) {
+                  val rawText = ptr.getString(0, "UTF-8") ?: ""
+
+                  verifyResults[image.name] =
+                      try {
+                        patternHeader.toRegex().containsMatchIn(rawText)
+                      } catch (X: Exception) {
+                        log(LogLevel.ERROR, "Regex Error in verify mode: ${ X.message }")
+                        false
+                      }
+
+                  TessAPI1.TessDeleteText(ptr)
+                } else {
+                  verifyResults[image.name] = false
+                }
+
+                TessAPI1.TessBaseAPIClear(handle)
+              } catch (X: Throwable) {
+                throw ServletException(
+                    "[[ CodBi / AI / Tesseract ] Processing ${ image.name } failed with: ${ X }.]")
+              } finally {
+                pool.offer(handle)
+              }
+              // endregion OCR Processing
+            }
+      }
+    } catch (e: Exception) {
+      logger.error("[[ CodBi ]] Execution Error", e)
+    }
+    // region Generate response
+    val jsonResponse =
+        verifyResults.entries.joinToString(separator = ",", prefix = "{", postfix = "}") {
+            (key, value) ->
+          "\"$key\":$value"
+        }
+
+    val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
+    // endregion Generate response
+    return PluginServletActionRetVal(servletResponse)
+  }
+
+  /**
+   * Mode extract fields: Extracts text from image(s) and applies multiple regex patterns from the
+   * **X-FieldPatterns** header (JSON array) to extract field values.
+   *
+   * @param params As provided by the formcycle environment.
+   * @return A proper [IPluginServletActionRetVal] with field extraction results for each image.
+   */
+  private fun executeModeExtractFields(
+      params: IPluginServletActionParams
+  ): IPluginServletActionRetVal {
+    if (params.uploadFiles.isNullOrEmpty() && params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()) {
+      log(
+          LogLevel.ERROR,
+          "No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.")
+
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              "{\"error\":\"No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.\"}"))
+    }
+    // region Get X-FieldPatterns header (case-insensitive)
+    val fieldPatternsHeaderEncoded =
+        params.headerMap.entries
+            .find { it.key.equals("X-FieldPatterns", ignoreCase = true) }
+            ?.value
+            ?.trim()
+    // endregion Get X-FieldPatterns header (case-insensitive)
+    if (fieldPatternsHeaderEncoded.isNullOrEmpty()) {
+      log(
+          LogLevel.ERROR,
+          "Mode extract fields requires **X-FieldPatterns** header to be specified.")
+
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              "{\"error\":\"Mode extract fields requires X-FieldPatterns header to be specified.\"}"))
+    }
+    val fieldPatternsHeader =
+        try {
+          URLDecoder.decode(fieldPatternsHeaderEncoded, StandardCharsets.UTF_8.toString())
+        } catch (e: Exception) {
+          log(LogLevel.ERROR, "Failed to decode X-FieldPatterns header: ${ e.message }")
+          return PluginServletActionRetVal(
+              ServletResponse(
+                  EResponseType.JSON,
+                  "{\"error\":\"Failed to decode X-FieldPatterns header: ${ e.message }\"}"))
+        }
+    val fieldPatterns =
+        try {
+          val gson = Gson()
+          val type = object : TypeToken<List<Map<String, String>>>() {}.type
+          val jsonArray = gson.fromJson<List<Map<String, String>>>(fieldPatternsHeader, type)
+          jsonArray.map { entry ->
+            entry.mapValues { (_, encodedPattern) ->
+              try {
+                URLDecoder.decode(encodedPattern, StandardCharsets.UTF_8.toString())
+              } catch (e: Exception) {
+                log(LogLevel.ERROR, "Failed to decode pattern for field: ${ e.message }")
+                ""
+              }
+            }
+          }
+        } catch (e: JsonSyntaxException) {
+          log(LogLevel.ERROR, "Failed to parse X-FieldPatterns JSON: ${ e.message }")
+          return PluginServletActionRetVal(
+              ServletResponse(
+                  EResponseType.JSON,
+                  "{\"error\":\"Failed to parse X-FieldPatterns JSON: ${ e.message }\"}"))
+        } catch (e: Exception) {
+          log(LogLevel.ERROR, "Error processing X-FieldPatterns: ${ e.message }")
+          return PluginServletActionRetVal(
+              ServletResponse(
+                  EResponseType.JSON,
+                  "{\"error\":\"Error processing X-FieldPatterns: ${ e.message }\"}"))
+        }
+    val fieldResults = mutableMapOf<String, Map<String, List<String>>>()
+    val filesToDelete = mutableListOf<File>()
+
+    try {
+      if (!params.uploadFiles.isNullOrEmpty()) {
+        params.uploadFiles?.forEach { (inputName, fileItem) ->
+          val distinctImageID = "${params.headerMap["X-OCR-Image-ID"]}::${inputName}"
+          var tempFile: File? = null
+          var shouldDeleteThisFile = true
+          // region Check if the image is already cached.
+          if (distinctImageID.isNotBlank() && cacheIDedImages.containsKey(distinctImageID)) {
+            tempFile = cacheIDedImages[distinctImageID]?.file
+            shouldDeleteThisFile = false
+          }
+          // endregion Check if the image is already cached.
+          // region Create file if not in cache and cache it X-OCR-Image-ID is set in header.
+          if (tempFile == null || !tempFile.exists()) {
+            tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
+
+            fileItem.stream().use { input ->
+              val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
+
+              tempFile!!.writeBytes(bytes)
+            }
+
+            if (distinctImageID.isNotBlank()) {
+              cacheIDedImages[distinctImageID] = CachedImage(tempFile!!)
+              shouldDeleteThisFile = false
+            }
+          }
+          // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
+          if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
+          // region OCR Processing
+          val handle =
+              pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+          try {
+            TessAPI1.TessBaseAPIProcessPages(handle, tempFile!!.absolutePath, null, 0, null)
+
+            val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
+
+            if (ptr != null) {
+              val rawText = ptr.getString(0, "UTF-8") ?: ""
+              // region Initialize all field names with empty lists to ensure they're always present
+              val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
+              val imageFields = allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
+              // endregion Initialize all field names with empty lists to ensure they're always
+              // present
+
+              fieldPatterns.forEach { fieldPatternMap ->
+                fieldPatternMap.forEach { (fieldName, pattern) ->
+                  if (pattern.isNotBlank()) {
+                    try {
+                      val matches = pattern.toRegex().findAll(rawText).map { it.value }.toList()
+                      imageFields[fieldName] = matches
+                    } catch (X: Exception) {
+                      log(LogLevel.ERROR, "Regex Error for field '$fieldName': ${ X.message }")
+                      imageFields[fieldName] = emptyList()
+                    }
+                  } else {
+                    imageFields[fieldName] = emptyList()
+                  }
+                }
+              }
+
+              fieldResults[inputName] = imageFields
+
+              TessAPI1.TessDeleteText(ptr)
+            } else {
+              fieldResults[inputName] =
+                  fieldPatterns.flatMap { it.keys }.associateWith { emptyList<String>() }
+            }
+
+            TessAPI1.TessBaseAPIClear(handle)
+          } catch (X: Throwable) {
+            throw ServletException(
+                "[[ CodBi / AI / Tesseract ] Processing ${ inputName } failed with: ${ X }.]")
+          } finally {
+            pool.offer(handle)
+          }
+          // endregion OCR Processing
+        }
+      } else {
+        cacheIDedImages.entries
+            .filter { it.key.startsWith("${ params.headerMap["X-OCR-Image-ID"] }::") }
+            .map { it.value }
+            .forEach { (image, key) ->
+              // region OCR Processing
+              val handle =
+                  pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+              try {
+                TessAPI1.TessBaseAPIProcessPages(handle, image.absolutePath, null, 0, null)
+
+                val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
+
+                if (ptr != null) {
+                  val rawText = ptr.getString(0, "UTF-8") ?: ""
+                  // region Initialize all field names with empty lists to ensure they're always
+                  // present
+                  val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
+                  val imageFields =
+                      allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
+                  // endregion Initialize all field names with empty lists to ensure they're always
+                  // present
+
+                  fieldPatterns.forEach { fieldPatternMap ->
+                    fieldPatternMap.forEach { (fieldName, pattern) ->
+                      if (pattern.isNotBlank()) {
+                        try {
+                          val matches = pattern.toRegex().findAll(rawText).map { it.value }.toList()
+                          imageFields[fieldName] = matches
+                        } catch (X: Exception) {
+                          log(LogLevel.ERROR, "Regex Error for field '$fieldName': ${ X.message }")
+                          imageFields[fieldName] = emptyList()
+                        }
+                      } else {
+                        imageFields[fieldName] = emptyList()
+                      }
+                    }
+                  }
+
+                  fieldResults[image.name] = imageFields
+
+                  TessAPI1.TessDeleteText(ptr)
+                } else {
+                  fieldResults[image.name] =
+                      fieldPatterns.flatMap { it.keys }.associateWith { emptyList<String>() }
+                }
+
+                TessAPI1.TessBaseAPIClear(handle)
+              } catch (X: Throwable) {
+                throw ServletException(
+                    "[[ CodBi / AI / Tesseract ] Processing ${ image.name } failed with: ${ X }.]")
+              } finally {
+                pool.offer(handle)
+              }
+              // endregion OCR Processing
+            }
+      }
+    } catch (e: Exception) {
+      logger.error("[[ CodBi ]] Execution Error", e)
+    }
+    // region Generate response
+    val jsonResponse =
+        fieldResults.entries.joinToString(separator = ",", prefix = "{", postfix = "}") {
+            (imageName, fields) ->
+          val fieldsJson =
+              fields.entries.joinToString(separator = ",") { (fieldName, matches) ->
+                val arrayValues =
+                    matches.joinToString(separator = ",") { match ->
+                      val escaped =
+                          match.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+                      "\"$escaped\""
+                    }
+                "\"$fieldName\":[$arrayValues]"
+              }
+          "\"$imageName\":{$fieldsJson}"
         }
 
     val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
@@ -477,9 +1071,9 @@ class TesseractAction : AI() {
    * @param importance See [AI.log].
    * @param toLog See [AI.log].
    */
-  override fun log(importance: LogLevel, toLog: String, adjenct: String) {
+  override fun log(importance: LogLevel, toLog: String, adjenct: String, exception: Throwable?) {
     super.idLogMessages = "CodBi / AI / Tesseract"
 
-    super.log(importance, toLog, adjenct)
+    super.log(importance, toLog, adjenct, exception)
   }
 }

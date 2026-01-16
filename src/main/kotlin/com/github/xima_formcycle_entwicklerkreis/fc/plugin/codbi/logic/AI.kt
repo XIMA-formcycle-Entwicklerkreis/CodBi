@@ -59,17 +59,24 @@ abstract class AI : IPluginServletAction {
    * Posts log message to the console signed with **[[ CodBi / AI / [idLogMessages] ]
    * **...message...** ]** of a specified importance (info or error).
    */
-  protected open fun log(importance: LogLevel, toLog: String, adjenct: String = "") {
+  protected open fun log(
+      importance: LogLevel,
+      toLog: String,
+      adjenct: String = "",
+      exception: Throwable? = null
+  ) {
+    val message =
+        "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages$adjenct"} ]] $toLog ]"
     when (importance) {
-      LogLevel.INFO ->
-          logger.info(
-              "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages$adjenct"} ]] $toLog ]")
-      LogLevel.WARNING ->
-          logger.warn(
-              "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages$adjenct"} ]] $toLog ]")
-      LogLevel.ERROR ->
-          logger.error(
-              "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages$adjenct"} ]] $toLog ]")
+      LogLevel.INFO -> logger.info(message)
+      LogLevel.WARNING -> logger.warn(message)
+      LogLevel.ERROR -> {
+        if (exception != null) {
+          logger.error(message, exception)
+        } else {
+          logger.error(message)
+        }
+      }
     }
   }
 

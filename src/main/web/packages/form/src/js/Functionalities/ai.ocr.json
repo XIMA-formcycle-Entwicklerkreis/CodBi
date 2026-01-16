@@ -1,9 +1,11 @@
 {
-  "Description": "/classes/Functionalities_security.captcha.google.Security_Captcha_Google.html#functionality",
+  "Description": "/classes/Functionalities_ai.ocr.AI_OCR.html#functionality",
   "Parameter": {
-    "SiteKey": "",
-    "DataCallback": "",
-    "DataCallbackCode": "",
-    "Script": ""
+    "Mode": "",
+    "Pattern": "",
+    "FieldPattern_": "",
+    "ProcessingImageText": "",
+    "InvalidImageText": "",
+    "Name": ""
   }
 }

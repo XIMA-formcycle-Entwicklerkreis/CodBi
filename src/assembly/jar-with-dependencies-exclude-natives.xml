@@ -13,12 +13,25 @@
             <useProjectArtifact>true</useProjectArtifact>
             <unpack>true</unpack>
             <scope>runtime</scope>
-            <excludes>
-                <!-- Exclude native libraries - they will be loaded at runtime via PyTorch.kt -->
-                <exclude>**/*.dll</exclude>
-                <exclude>**/*.so</exclude>
-                <exclude>**/*.dylib</exclude>
-            </excludes>
+            <unpackOptions>
+                <excludes>
+                    <!-- Exclude the root "native/" payload from ALL dependencies (tokenizers, etc.). -->
+                    <exclude>native/**</exclude>
+                    <!-- Exclude Tesseract language/model data (downloaded at runtime by Tesseract.kt). -->
+                    <exclude>tessdata/**</exclude>
+                    <exclude>**/*.traineddata</exclude>
+                    <!-- Exclude Tess4J native payload (downloaded/extracted at runtime by Tesseract.kt). -->
+                    <exclude>win32-x86/**</exclude>
+                    <exclude>win32-x86-64/**</exclude>
+                    <!-- Exclude bundled Tesseract runtime libs from project resources (downloaded at runtime by Tesseract.kt). -->
+                    <exclude>AI/Tesseract/Runtime/**</exclude>
+                    <!-- Exclude ONNX Runtime native payload completely (ORT is downloaded/extracted at runtime). -->
+                    <exclude>ai/onnxruntime/native/**</exclude>
+                    <exclude>AI/onnxruntime/native/**</exclude>
+                    <!-- Some builds include the native payload under an upper-case AI folder. Exclude it entirely. -->
+                    <exclude>AI/onnxruntime/**</exclude>
+                </excludes>
+            </unpackOptions>
         </dependencySet>
     </dependencySets>
     <fileSets>
@@ -26,9 +39,17 @@
             <directory>${project.build.outputDirectory}</directory>
             <outputDirectory>/</outputDirectory>
             <excludes>
-                <exclude>**/*.dll</exclude>
-                <exclude>**/*.so</exclude>
-                <exclude>**/*.dylib</exclude>
+                <exclude>native/**</exclude>
+                <exclude>tessdata/**</exclude>
+                <exclude>**/*.traineddata</exclude>
+                <exclude>win32-x86/**</exclude>
+                <exclude>win32-x86-64/**</exclude>
+                <exclude>AI/Tesseract/Runtime/**</exclude>
+                <exclude>ai/onnxruntime/native/</exclude>
+                <exclude>ai/onnxruntime/native/**</exclude>
+                <exclude>AI/onnxruntime/native/</exclude>
+                <exclude>AI/onnxruntime/native/**</exclude>
+                <exclude>AI/onnxruntime/**</exclude>
             </excludes>
         </fileSet>
     </fileSets>

@@ -13,7 +13,12 @@ This document describes the coding patterns and style preferences used in this c
 ### Control Flow
 
 #### If Statements
-- **No space between `if` and opening parenthesis**: `if(` not `if (`
+- **No space between control keywords and `(`**: `if(` / `for(` / `while(` / `when(` / `catch(` (not `if (` / `for (` / ...)
+- **Canonical pattern**: `if( ... )`
+- **Spaces inside the parentheses**: Add a space after `(` and before `)` when the adjacent character is a **letter/digit**
+  - ✅ `if( condition )`
+  - ✅ `if(!initialized.get() )` (no space after `(` because next char is `!`)
+  - ❌ `if(condition)`
 - **Always on a separate line**: If statements should always be separated by a blank line from other types of instructions
 - **Single-line if statements without braces** when the body is a single statement:
   ```kotlin
@@ -45,6 +50,23 @@ This document describes the coding patterns and style preferences used in this c
 
 #### Aligned Assignment Operators
 When multiple variables are declared sequentially, **align the `=` operators** so all values start at the same column. This creates a table-like structure for easy scanning:
+
+#### Keep RHS on Same Line (When It Fits)
+- If the right-hand side fits within the codebase width limit (currently **100**), keep it on the **same line** as the `=`.
+- Only wrap the RHS to the next line when it would exceed the width limit or improves readability for complex expressions (`when`, `try`, long lambdas, etc.).
+
+✅ Preferred:
+```kotlin
+val tmpDir = pluginRoot?.resolve("Resources/AI/Tesseract/TmpNatives")?.apply { mkdirs() }
+```
+
+✅ Wrap only when needed:
+```kotlin
+val platformDirName =
+    when {
+      // ...
+    }
+```
 
 ```kotlin
 // ✅ Preferred: Aligned assignments

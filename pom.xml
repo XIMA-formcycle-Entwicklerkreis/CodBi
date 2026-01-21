@@ -275,6 +275,19 @@
 			<groupId>ai.djl.onnxruntime</groupId>
 			<artifactId>onnxruntime-engine</artifactId>
 			<version>0.36.0</version>
+			<exclusions>
+				<exclusion>
+					<groupId>com.microsoft.onnxruntime</groupId>
+					<artifactId>onnxruntime</artifactId>
+				</exclusion>
+			</exclusions>
+		</dependency>
+
+		<!-- Keep ONNX Runtime Java API classes packaged, but pin to 1.19.2 to match downloaded natives. -->
+		<dependency>
+			<groupId>com.microsoft.onnxruntime</groupId>
+			<artifactId>onnxruntime</artifactId>
+			<version>1.19.2</version>
 		</dependency>
 
 		<dependency>

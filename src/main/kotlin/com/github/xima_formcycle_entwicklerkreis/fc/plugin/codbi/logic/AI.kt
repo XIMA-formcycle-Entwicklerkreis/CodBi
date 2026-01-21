@@ -66,7 +66,7 @@ abstract class AI : IPluginServletAction {
       exception: Throwable? = null
   ) {
     val message =
-        "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages$adjenct"} ]] $toLog ]"
+        "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages$adjenct"} ] $toLog ]"
     when (importance) {
       LogLevel.INFO -> logger.info(message)
       LogLevel.WARNING -> logger.warn(message)

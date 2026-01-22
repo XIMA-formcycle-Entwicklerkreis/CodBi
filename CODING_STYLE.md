@@ -85,6 +85,24 @@ This pattern makes it easy to:
 - Scan down the right column to see values
 - Quickly identify related variable declarations
 
+#### Separation from Other Code
+- **Separate from other logic**: Variable declarations (`val`/`var`) and assignments (e.g., `x = y`) should be separated from other types of instructions (function calls, control flow, etc.) by an empty line.
+- **Grouping**: Consecutive declarations or assignments do not need empty lines between them.
+- **Alignment**: When assignments are one under another, align their `=` or `->` operators on the same column for better readability.
+
+```kotlin
+// ✅ Preferred
+val a = 1
+x     = 5
+
+process(a, x)
+
+// ❌ Avoid
+val a = 1
+x = 5
+process(a, x)
+```
+
 ### Spacing Around Control Characters
 
 **Letters should be separated from control characters by a space:**
@@ -173,6 +191,12 @@ This pattern makes it easy to:
   (fileName, text)=> { output += text; }
   ```
 
+- **Closing Braces**:
+  - **Correct**: `)}`
+  - **Incorrect**: `) }`
+  - **Correct**: `{(`
+  - **Incorrect**: `{ (`
+
 ### Function Parameters
 
 - **Spacing around parentheses** follows the control character spacing rule:
@@ -195,6 +219,8 @@ This pattern makes it easy to:
 - Use blank lines **sparingly**
 - Only insert blank lines between logical sections
 - **Exception**: If statements should always be separated by a blank line from other types of instructions
+- **Exception**: Variable declaration blocks (`val`/`var`) and assignments should be separated by a blank line from other types of instructions
+- **No blank lines after comments**: Comments should be immediately followed by the code they describe.
 - Avoid excessive whitespace
 
 ### Code Organization
@@ -271,6 +297,7 @@ override val modelName = "donut-docvqa"
 - Use `//region` and `//endregion` for code organization
 - Use `// --- TEXT ---` for section markers within functions
 - Comments can be on their own line or at the end of a line
+- **No new line between comments and code**: Comments should be immediately followed by the code they describe, without an empty line in between.
 
 ```kotlin
 //region Image processing

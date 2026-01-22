@@ -42,22 +42,6 @@ import java.util.jar.JarFile
  * - **Disk** : ~20–40 MB cached jar + ~10–50 MB extracted natives per run dir (Windows DLLs can be
  *   locked until JVM exit, so old run dirs may remain until the next successful purge).
  * - **CPU/RAM** : **~100–400 MB RAM**
- *
- * ## AI on Formcylce server benefits
- * - **Lean Compliance**: Simpler DSGVO and EU AI Act handling. Most easy approval from your Data
- *   Protection Officer (DSGVO), No Data Transit Mapping, No extra TOMs, no extra VVTs, remain User
- *   instead of becoming an infrastructure operator or even a provider regarding the EU-AI Act.
- * - **Infrastructure Efficiency**: No second OS to patch, monitor, or license. Dramatically lowers
- *   TCO (Total Cost of Ownership) and prevents "server sprawl."
- * - **Maximum Performance**: Zero network latency. Localhost communication bypasses the physical
- *   network, ensuring the fastest possible data exchange between Formcycle and the AI.
- * - **Simplified Security**: No internal API ports to open or protect. Data never leaves the
- *   machine, eliminating the need for complex mTLS or inter-server encryption.
- * - **Unified Maintenance**: Single-point backups ensure the application and AI model are always in
- *   sync. Debugging is faster with all logs centralized on one filesystem.
- *
- * **Bottom Line**: Hosting on the same server is the most pragmatic, cost-effective, and
- * low-maintenance approach for high-speed, internalized workflows.
  */
 abstract class ONNX : AI() {
   companion object {

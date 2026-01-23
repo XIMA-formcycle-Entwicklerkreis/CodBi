@@ -78,7 +78,7 @@ class TesseractAction : AI() {
     /** Tracks whether the Tesseract pool has been initialized. */
     private var isPoolInitialized = false
     /**
-     * The name of this [IPluginServletAction].
+     * Specifies the name of this [IPluginServletAction].
      *
      * @return The requested [String]. */
     override fun getName() = "CodBi_AI_Tesseract"
@@ -1031,7 +1031,7 @@ class TesseractAction : AI() {
      * @param importance    See [AI.log].
      * @param toLog         See [AI.log]. */
     override fun log( importance: LogLevel, toLog: String, adjenct: String, exception: Throwable?) {
-        super.idLogMessages = "CodBi / AI / Tesseract"
+        super.idLogMessages = "Tesseract"
 
         super.log( importance, toLog, adjenct, exception )}
 }

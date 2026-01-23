@@ -262,7 +262,7 @@ class DocVQATranslator(
 }
 
 /**
- * ONNX-based Donut Document Visual Question Answering Action.
+ * # ONNX-based Donut Document Visual Question & Answering Action.
  *
  * Activated by adding **DONUT** and **ONNX** to the **Active_AI** plugin property.
  *

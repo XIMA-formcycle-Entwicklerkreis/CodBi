@@ -62,7 +62,9 @@ abstract class AI : IPluginServletAction {
   /**
    * Initializes the AI components by reading configuration properties.
    * Specifically, it acquires the `msExpirationIDedImages` from the plugin property "AI_CachedImageExpiration".
-   * Subclasses should call this method at the beginning of their own `initialize` implementation. */
+   * Subclasses should call this method at the beginning of their own `initialize` implementation.
+   *
+   * @param configData Provided by the Formcycle environment.*/
   override fun initialize(configData: IPluginInitializeData) {
     idLogMessages = "Tesseract"
 
@@ -70,6 +72,7 @@ abstract class AI : IPluginServletAction {
 
     if(!expirationValue.isNullOrBlank()) {
       expirationValue.toLongOrNull()?.let {
+
         if (it > 0) { msExpirationIDedImages = it }
         else {
           log(LogLevel.WARNING, "AI_CachedImageExpiration must be a positive number, but was '$expirationValue'. Using default.")}

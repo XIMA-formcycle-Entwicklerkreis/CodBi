@@ -19,6 +19,9 @@ This document describes the coding patterns and style preferences used in this c
   - ✅ `if( condition )`
   - ✅ `if(!initialized.get() )` (no space after `(` because next char is `!`)
   - ❌ `if(condition)`
+- **Grouping Special Characters**: Special characters should be grouped together without spaces.
+  - ✅ `if(!tracked )`
+  - ❌ `if( !tracked )`
 - **Always on a separate line**: If statements should always be separated by a blank line from other types of instructions
 - **Single-line if statements without braces** when the body is a single statement:
   ```kotlin
@@ -136,11 +139,11 @@ process(a, x)
 - **Operators**: Use spaces around binary operators
   ```kotlin
   // ✅ Preferred: Spaces around operators
-  if ( a + b > 10 )
+  if( a + b > 10 )
   val result = ( a + b ) * 2
   
   // ❌ Avoid: No spaces around operators
-  if (a+b > 10)
+  if(a+b > 10)
   val result = (a+b)*2
   ```
 
@@ -148,10 +151,10 @@ process(a, x)
   ```kotlin
   // ✅ Preferred: Unary operator attached, space before closing paren
   if(!initialized.get() )
-  if( !active )
+  if(!active )
   
   // ❌ Avoid: Space after unary operator or no space before closing paren
-  if ( ! active )
+  if( ! active )
   if(!initialized.get())
   ```
 
@@ -167,6 +170,12 @@ process(a, x)
   if( condition)
   if(!initialized.get())
   if( key.isNotBlank() && headerValue != null)
+  ```
+
+- **Parentheses and Quotes**: No space between parentheses and quotes
+  ```kotlin
+  // ✅ Preferred: ("text")
+  // ❌ Avoid: ( "text" )
   ```
 
 - **Control characters together**: No spaces between adjacent control characters
@@ -196,6 +205,18 @@ process(a, x)
   - **Incorrect**: `) }`
   - **Correct**: `{(`
   - **Incorrect**: `{ (`
+
+### Chained Expressions
+- **Keep on one line**: Chained expressions should be kept on a single line as long as they do not exceed the maximum line width.
+  ```kotlin
+  // ✅ Preferred
+  URI(url).toURL().openConnection()
+  
+  // ❌ Avoid
+  URI(url)
+    .toURL()
+    .openConnection()
+  ```
 
 ### Function Parameters
 
@@ -242,7 +263,7 @@ process(a, x)
 - First line describes what the class does
 - Can use markdown sections with `##` or `####` for subsections
 - Use bullet points with `-` for lists
-- End with `*/` on its own line (sometimes with `*` before closing)
+- **End with `*/` on the last line of the documentation**, separated by a space from the rest of the line. It shall not be on its own line.
 
 ```kotlin
 /**
@@ -253,17 +274,18 @@ process(a, x)
  *   (e.g., X-Question-total: "Total?", X-Question-date: "Date?")
  *
  * #### Resources
- * On **Disk** the model takes up about **800MB** while in **RAM** it will need about **1GB**.
- * */
+ * On **Disk** the model takes up about **800MB** while in **RAM** it will need about **1GB**. */
 ```
 
 **Function/Method Comments:**
+- **Mandatory**: All methods must have documentation.
+- **Mandatory**: All parameters (`@param`) and return values (`@return`) must be documented.
 - Start with `/**` on its own line
 - First line describes what the function does
 - Can have multiple paragraphs
 - Use `@param` for parameters (can reference interfaces: `@param ctx See [Translator.prepare].`)
 - Use `@return` for return values (can be multi-line and indented)
-- End with `*/` on its own line (sometimes with `*` before closing)
+- **End with `*/` on the last line of the documentation**, separated by a space from the rest of the line. It shall not be on its own line.
 
 ```kotlin
 /**
@@ -274,8 +296,7 @@ process(a, x)
  * @param params
  *
  * @return  A proper message if this model is not [PyTorch.initialized] cause **DONUT** is missing in the
- *          Plugin-Property
- */
+ *          Plugin-Property */
 ```
 
 **Property/Field Comments:**
@@ -325,7 +346,7 @@ val questionsToAsk = mutableMapOf<String, String>()
 - Start with `/**` on its own line
 - First line describes what the class does
 - Can use `@remarks` for additional notes
-- End with `*/` on its own line
+- **End with `*/` on the last line of the documentation**, separated by a space from the rest of the line. It shall not be on its own line.
 
 ```typescript
 /**
@@ -341,7 +362,7 @@ val questionsToAsk = mutableMapOf<String, String>()
 - Can have multiple paragraphs
 - Use `@param` for parameters
 - Use `@returns` or `@return` for return values (can be multi-line and indented)
-- End with `*/` on its own line
+- **End with `*/` on the last line of the documentation**, separated by a space from the rest of the line. It shall not be on its own line.
 
 ```typescript
 /**

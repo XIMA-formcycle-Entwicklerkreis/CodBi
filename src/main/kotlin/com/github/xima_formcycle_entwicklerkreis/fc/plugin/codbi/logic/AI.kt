@@ -1,18 +1,17 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic
 
 // region Imports
-import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 // region XIMA
-// endregion XIMA
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.TesseractAction
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
+// endregion XIMA
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import org.slf4j.LoggerFactory
-
 // endregion Imports
 /**
  * # Serves as a common base for all classes related to CodBi / AI.
@@ -40,8 +39,7 @@ import org.slf4j.LoggerFactory
  * **Bottom Line**: Hosting on the same server is the most pragmatic, cost-effective, and
  * low-maintenance approach for high-speed, internalized workflows. */
 abstract class AI : IPluginServletAction {
-  /**
-   * The predicate used to [log] messages related to CodBi / AI to the console (defaults to **CodBi / AI**). */
+  /** The predicate used to [log] messages related to CodBi / AI to the console (defaults to **CodBi / AI**). */
   protected var idLogMessages = ""
   /** Defines the various importance-states that can be passed to the [log]ger. */
   enum class LogLevel { INFO, WARNING, ERROR }

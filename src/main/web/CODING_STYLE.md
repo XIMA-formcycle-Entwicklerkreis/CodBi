@@ -12,38 +12,25 @@ This document describes the coding patterns and style preferences used in this c
 
 ### Control Flow
 
-#### Control Structures (If, For, While, etc.)
+#### If Statements
 - **No space between control keywords and `(`**: `if(` / `for(` / `while(` / `when(` / `catch(` (not `if (` / `for (` / ...)
-- **Canonical pattern**: `if( ... )` / `for( ... )` / `while( ... )`
+- **Canonical pattern**: `if( ... )`
 - **Spaces inside the parentheses**: Add a space after `(` and before `)` when the adjacent character is a **letter/digit**
   - ✅ `if( condition )`
-  - ✅ `for( item in list )`
   - ✅ `if(!initialized.get() )` (no space after `(` because next char is `!`)
   - ❌ `if(condition)`
 - **Grouping Special Characters**: Special characters should be grouped together without spaces.
   - ✅ `if(!tracked )`
   - ❌ `if( !tracked )`
-- **Always on a separate line**: Control structures should always be separated by a blank line from other types of instructions
-- **Single-line bodies without braces** when the body is a single statement (applies to `if`, `for`, `while`, etc.):
-  - Do NOT use braces for single-instruction bodies
-  - Place the instruction on the same line as the control structure when it fits within the column limit (100)
-  - Only move to next line if it exceeds the column limit
+- **Always on a separate line**: If statements should always be separated by a blank line from other types of instructions
+- **Single-line if statements without braces** when the body is a single statement:
   ```kotlin
   if( condition ) statement
-  for( item in list ) statement
-  while( condition ) statement
-  if(!initialized.get() ) statement
-  
-  // Multi-line only when exceeds column limit
-  if( veryLongConditionThatMakesTheLineExceedTheColumnLimit ) veryLongStatementThatAlsoExceedsColumnLimit
+  if(!initialized.get()) statement
   ```
-- Use braces only when necessary (multi-line body or multiple statements):
+- Use braces only when necessary (multi-line or multiple statements):
   ```kotlin
   if( condition ) {
-    statement1
-    statement2
-  }
-  for( item in list ) {
     statement1
     statement2
   }

@@ -4,6 +4,7 @@ import { CodBiLogo } from "./Logo";
 import { DBC } from "xdbc/src/DBC";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
+
 /**
  * The global codbi object, available via `window.codbi`. Should only be used
  * when it is absolutely necessary to expose symbols externally. Use ESM imports
@@ -51,6 +52,15 @@ export interface CodbiGlobal {
    * @param toRemoveFrom The {@link Element } all CSS-Class-**cCodBiLoader** shall be
    *                     removed from. */
   removeLoaderAnim(toRemoveFrom: Element): void;
+  /**
+   * Logs the provided {@link message} using the specified {@link level}.
+   *
+   * @param level   The log level to use ("INFO", "WARNING", "ERROR").
+   * @param message The message to log.
+   * @param adjunct An adjunct string to provide additional context or information.
+   *                Will be placed after a slash in the log header ([[ CodBi / <adjunct> ] ... ]).
+   */
+  log(level: "INFO" | "WARNING" | "ERROR", message: string, adjunct?: string): void;
 }
 /** Defines a contract for objects representing a **CodBi-Configuration**. */
 export interface CodbiSettings {
@@ -1496,6 +1506,20 @@ export class CodBi implements CodbiGlobal {
         this.checkAttributes();
       }
     });
+  }
+  /** See {@link CodbiGlobal.log }. */
+  log(level: "INFO" | "WARNING" | "ERROR", message: string, adjunct?: string): void {
+    switch (level) {
+      case "INFO":
+        console.info(`[[ CodBi ${adjunct ? ` / ${adjunct}` : ""} ] 💡${message} ]`);
+        break;
+      case "WARNING":
+        console.warn(`[[ CodBi ${adjunct ? ` / ${adjunct}` : ""} ] ! ${message} ]`);
+        break;
+      case "ERROR":
+        console.error(`[[ CodBi ${adjunct ? ` / ${adjunct}` : ""} ] ❌ ${message} ]`);
+        break;
+    }
   }
 }
 // #region Errors

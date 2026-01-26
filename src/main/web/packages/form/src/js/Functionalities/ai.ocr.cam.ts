@@ -59,19 +59,20 @@ export class AI_OCR_CAM {
     const tsMode = TYPE.tsCheck<string>(toLoad.mode, "string").toLowerCase();
     const tsProcessingimagetext = toLoad.processingimagetext
       ? TYPE.tsCheck<string>(toLoad.processingimagetext, "string")
-      : "Verarbeite...";
+      : "Processing...";
     const tsInvalidimagetext = toLoad.invalidimagetext
       ? TYPE.tsCheck<string>(toLoad.invalidimagetext, "string")
-      : "One or more of the images you selected did not contain the expected text.";
+      : "One or more of the images you selected did not contain the expected text";
 
     // #region Initialize camera container and controls
     const wrapper = document.createElement("div");
+
     wrapper.style.cssText = "display: flex; justify-content: center; align-items: center; width: 100%;";
 
     const cameraContainer = document.createElement("div");
+
     cameraContainer.id = `CodBi_AI_OCR_CAM_Container_${Math.random().toString(36).substr(2, 9)}`;
     cameraContainer.classList.add("CodBi_AI_OCR_CAM_Container");
-
     // #region Define CSS
     const style = document.createElement("style");
     style.textContent = `
@@ -110,26 +111,30 @@ export class AI_OCR_CAM {
 
     cameraContainer.appendChild(style);
     // #endregion Define CSS
-
     const videoElement = document.createElement("video");
+
     videoElement.id = `camera-feed-${container.id}`;
     videoElement.autoplay = true;
     videoElement.playsInline = true;
 
     const cameraSelect = document.createElement("select");
+
     cameraSelect.id = `camera-select-${container.id}`;
     cameraSelect.style.display = "none";
     cameraSelect.classList.add("CodBi_AI_OCR_CAM_Select");
 
     const capturedImage = document.createElement("img");
+
     capturedImage.id = `captured-image-${container.id}`;
     capturedImage.classList.add("CodBi_AI_OCR_CAM_CapturedImage");
     capturedImage.alt = "Captured image";
 
     const videoWrapper = document.createElement("div");
+
     videoWrapper.classList.add("CodBi_AI_OCR_CAM_VideoWrapper");
 
     const videoContainer = document.createElement("div");
+
     videoContainer.classList.add("CodBi_AI_OCR_CAM_VideoContainer");
     videoContainer.appendChild(cameraSelect);
     videoContainer.appendChild(videoElement);
@@ -137,11 +142,13 @@ export class AI_OCR_CAM {
     videoWrapper.appendChild(videoContainer);
 
     const captureButton = document.createElement("button");
+
     captureButton.innerText = "Scannen";
     captureButton.type = "button";
     captureButton.classList.add("CodBi_AI_OCR_CAM_Capture");
 
     const canvas = document.createElement("canvas");
+
     canvas.id = `camera-canvas-${container.id}`;
     canvas.style.cssText = "display: none;";
 
@@ -152,10 +159,8 @@ export class AI_OCR_CAM {
     container.appendChild(wrapper);
     container.appendChild(canvas);
     // #endregion Initialize camera container and controls
-
     // #region Get available cameras
     let stream: MediaStream | null = null;
-
     // #region Start camera stream
     const startCamera = (deviceId: string) => {
       navigator.mediaDevices
@@ -163,7 +168,8 @@ export class AI_OCR_CAM {
         .then((mediaStream) => {
           stream = mediaStream;
           videoElement.srcObject = mediaStream;
-          window.codbi.log("INFO", "Camera stream started successfully.", "AI / TESSERACT");
+
+          window.codbi.log("INFO", "Camera stream started successfully", "AI / TESSERACT");
         })
         .catch((error) => {
           if (error.name === "OverconstrainedError") {
@@ -172,45 +178,50 @@ export class AI_OCR_CAM {
               .then((mediaStream) => {
                 stream = mediaStream;
                 videoElement.srcObject = mediaStream;
-                window.codbi.log("INFO", "Camera stream started (using default camera).", "AI / TESSERACT");
+
+                window.codbi.log("INFO", "Camera stream started (using default camera)", "AI / TESSERACT");
               })
               .catch((fallbackError) => {
-                console.error(fallbackError);
                 window.codbi.log("ERROR", `Failed to start camera stream: ${fallbackError.message}`, "AI / TESSERACT");
+
                 captureButton.disabled = true;
               });
           } else {
             window.codbi.log("ERROR", `Failed to start camera stream: ${error.message}`, "AI / TESSERACT");
+
             captureButton.disabled = true;
           }
         });
     };
     // #endregion Start camera stream
-
     navigator.mediaDevices
       .enumerateDevices()
       .then((devices) => {
         const videoDevices = devices.filter((device) => device.kind === "videoinput");
 
         if (videoDevices.length === 0) {
-          window.codbi.log("ERROR", "No camera devices found on this device.", "AI / TESSERACT");
+          window.codbi.log("ERROR", "No camera devices found on this device", "AI / TESSERACT");
+
           captureButton.disabled = true;
+
           return;
         } else {
           captureButton.disabled = false;
         }
-
         // Populate camera select dropdown
         for (const device of videoDevices) {
           const option = document.createElement("option");
+
           option.value = device.deviceId;
           option.text = device.label || `Camera ${cameraSelect.options.length + 1}`;
+
           cameraSelect.appendChild(option);
         }
 
         if (videoDevices.length > 1) {
           cameraSelect.style.display = "block";
         }
+
         if (cameraSelect.options.length > 0) {
           startCamera(cameraSelect.value);
         }
@@ -221,72 +232,77 @@ export class AI_OCR_CAM {
               track.stop();
             }
           }
+
           startCamera(cameraSelect.value);
         });
       })
       .catch((error) => {
         window.codbi.log("ERROR", `Failed to enumerate camera devices: ${error.message}`, "AI / TESSERACT");
+
         captureButton.disabled = true;
       });
     // #endregion Get available cameras
-
     // #region Build X-FieldPatterns from Pattern_* fields
     const fieldPatterns: Array<{ [key: string]: string }> = [];
+
     if (tsMode === "extract fields") {
       const patternKeys = Object.keys(toLoad).filter((key) => key.startsWith("pattern_"));
+
       for (const patternKey of patternKeys) {
         const fieldName = patternKey.substring(8);
         const pattern = toLoad[patternKey] as string;
+
         if (fieldName && pattern) {
           const fieldObj: { [key: string]: string } = {};
+
           fieldObj[fieldName] = encodeURIComponent((pattern as string).replace(/°/, "^"));
+
           fieldPatterns.push(fieldObj);
         }
       }
     }
+
     const fieldPatternsJson = fieldPatterns.length > 0 ? JSON.stringify(fieldPatterns) : "";
     // #endregion Build X-FieldPatterns from Pattern_* fields
-
     // #region Capture image and send to plugin
     const originalButtonText = captureButton.innerText;
+
     captureButton.addEventListener("click", () => {
       if (!videoElement.srcObject) {
-        window.codbi.log("WARNING", "Camera stream is not active.", "AI / TESSERACT");
+        window.codbi.log("WARNING", "Camera stream is not active", "AI / TESSERACT");
+
         return;
       }
 
       const context = canvas.getContext("2d");
+
       if (!context) {
-        window.codbi.log("ERROR", "Failed to get canvas context.", "AI / TESSERACT");
+        window.codbi.log("ERROR", "Failed to get canvas context", "AI / TESSERACT");
+
         return;
       }
-
-      // Clear canvas before drawing
       canvas.width = videoElement.videoWidth;
       canvas.height = videoElement.videoHeight;
-      context.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw current video frame
+      context.clearRect(0, 0, canvas.width, canvas.height);
       context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
 
-      // Display captured image
       const imageDataUrl = canvas.toDataURL("image/png");
       capturedImage.src = imageDataUrl;
-      capturedImage.classList.add("visible");
 
-      // Convert canvas to blob immediately
+      capturedImage.classList.add("visible");
       canvas.toBlob((blob) => {
         if (!blob) {
-          window.codbi.log("ERROR", "Failed to convert canvas to blob.", "AI / TESSERACT");
+          window.codbi.log("ERROR", "Failed to convert canvas to blob", "AI / TESSERACT");
+
           return;
         }
-
         // #region Disable button and show processing text
         captureButton.disabled = true;
         captureButton.innerText = tsProcessingimagetext;
+
         window.codbi.injectLoadingAnim(captureButton);
         // #endregion Disable button and show processing text
-
         // #region Define how to restore the button
         const restoreButton = () => {
           window.codbi.removeLoaderAnim(captureButton);
@@ -294,16 +310,18 @@ export class AI_OCR_CAM {
           captureButton.innerText = originalButtonText;
         };
         // #endregion Define how to restore the button
-
         // #region Send the request to the Tesseract AI OCR API
         const formData = new FormData();
+
         formData.append("camera_capture.png", blob, "camera_capture.png");
 
         const ajaxHeaders: { [key: string]: string } = { "X-Mode": toLoad.mode as string };
+
         if (tsMode !== "print") {
           ajaxHeaders["X-Pattern"] = encodeURIComponent(
             toLoad.pattern ? (toLoad.pattern as string).replace(/°/, "^") : "",
           );
+
           ajaxHeaders["X-FieldPatterns"] = fieldPatternsJson.length > 0 ? encodeURIComponent(fieldPatternsJson) : "";
         }
 
@@ -313,9 +331,10 @@ export class AI_OCR_CAM {
 
         if (toLoad.preprocess) {
           const preprocessValue = TYPE.tsCheck<string>(toLoad.preprocess, "string").toLowerCase();
+
           ajaxHeaders["X-Preprocess"] = preprocessValue === "true" || preprocessValue === "1" ? "true" : "false";
         }
-
+        // #endregion Send the request to the Tesseract AI OCR API
         $.ajax({
           url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Tesseract`,
           type: "POST",
@@ -325,15 +344,16 @@ export class AI_OCR_CAM {
           cache: false,
           headers: ajaxHeaders,
           success: (response) => {
-            console.log("OCR Success:", response);
-
-            // #region Print mode: place result in <textarea>
+            // #region Print mode: Set value on CodBi_AI_Tesseract_Receiver element
             if (tsMode === "print") {
               const parent2 = toProcess.parentElement?.parentElement || null;
+
               if (parent2) {
-                const receiverElem = parent2.querySelector(
-                  ".CodBi_AI_Tesseract_Receiver",
-                ) as HTMLTextAreaElement | null;
+                const receiverElem = INSTANCE.tsCheck<HTMLTextAreaElement>(
+                  parent2.querySelector(".CodBi_AI_Tesseract_Receiver"),
+                  HTMLTextAreaElement,
+                );
+
                 if (receiverElem) {
                   const responseText =
                     typeof response === "string" ? response : response.text || JSON.stringify(response);
@@ -347,28 +367,32 @@ export class AI_OCR_CAM {
                 }
               }
             }
-
-            // #region Extract fields mode: set values on CodBi_AI_OCR_Receiver elements
+            // #endregion Print mode: Set value on CodBi_AI_Tesseract_Receiver element
+            // #region Extract fields mode: Set values on CodBi_AI_OCR_Receiver elements
             if (tsMode === "extract fields" && typeof response === "object" && response !== null) {
               const parent3 = toProcess.parentElement?.parentElement?.parentElement || null;
+
               if (parent3) {
                 const receivers = parent3.querySelectorAll(".CodBi_AI_OCR_Receiver");
+
                 for (const elem of receivers) {
                   const field = (elem as HTMLElement).getAttribute("data-cb-Field").toLowerCase();
+
                   if (field) {
                     const separator = toLoad.separator ? (toLoad.separator as string) : ",";
                     const collectedValues: string[] = [];
 
-                    // Process all filename properties in response
                     for (const fileKey in response) {
                       if (Object.prototype.hasOwnProperty.call(response, fileKey)) {
                         const fileData = response[fileKey];
+
                         if (
                           fileData &&
                           typeof fileData === "object" &&
                           Object.prototype.hasOwnProperty.call(fileData, field)
                         ) {
                           const fieldValue = fileData[field];
+
                           if (Array.isArray(fieldValue)) {
                             collectedValues.push(...fieldValue);
                           } else if (typeof fieldValue === "string") {
@@ -380,6 +404,7 @@ export class AI_OCR_CAM {
 
                     if (collectedValues.length > 0) {
                       const joinedValue = collectedValues.join(separator);
+
                       if ("value" in elem) {
                         (elem as HTMLInputElement | HTMLTextAreaElement).value = joinedValue;
                       } else {
@@ -390,8 +415,8 @@ export class AI_OCR_CAM {
                 }
               }
             }
-
-            // #region Validate verify mode results
+            // #endregion Extract fields mode: Set values on CodBi_AI_OCR_Receiver elements
+            // #region Verify mode
             if (tsMode === "verify") {
               const verifyResults = response as { [key: string]: boolean };
               const hasFailure = Object.values(verifyResults).some((result) => result === false);
@@ -401,42 +426,31 @@ export class AI_OCR_CAM {
                 // Add styles for manual verification checkbox
                 if (!document.getElementById("CodBi_AI_OCR_ManualVerify_Styles")) {
                   const verifyStyle = document.createElement("style");
+
                   verifyStyle.id = "CodBi_AI_OCR_ManualVerify_Styles";
                   verifyStyle.textContent = `
-                    .CodBi_AI_OCR_ManualVerify {
-                      display: flex;
-                      align-items: center;
-                      margin-top: 8px;
-                      gap: 8px;
-                      flex-wrap: nowrap;
-                    }
-                    .CodBi_AI_OCR_ManualVerify_Checkbox {
-                      cursor: pointer;
-                      opacity: 1 !important;
-                      position: relative !important;
-                      flex-shrink: 0;
-                    }
-                    .CodBi_AI_OCR_ManualVerify label {
-                      margin-bottom: 0;
-                      position: relative !important;
-                      white-space: nowrap;
-                    }
-                    
-                    @keyframes highlight {
-                      0% { opacity:1; }
-                      50% { opacity:0; }
-                      100% { opacity:1; }
-                    }
-                    
-                    .CodBi_AI_OCR_ManualVerify label span {
-                      font-weight: bold; color: darkorange ;animation: highlight 2s ease-in-out infinite;
-                    }
-                  `;
+                        .CodBi_AI_OCR_ManualVerify { display: flex ; align-items: center ; margin-top: 8px ; gap: 8px ;
+                            flex-wrap: nowrap ;}
+                        
+                        .CodBi_AI_OCR_ManualVerify_Checkbox { cursor: pointer ; opacity: 1 !important ; position: relative !important ;
+                        flex-shrink: 0 ;}
+
+                        .CodBi_AI_OCR_ManualVerify label { margin-bottom: 0 ; position: relative !important ; white-space: nowrap ;}
+                        
+                        @keyframes highlight {
+                        0%    { opacity:1; }
+                        50%   { opacity:0; }
+                        100%  { opacity:1; }}
+                        
+                        .CodBi_AI_OCR_ManualVerify label span { font-weight: bold ; color: darkorange ;
+                            animation: highlight 2s ease-in-out infinite ;}`;
+
                   document.head.appendChild(verifyStyle);
                 }
-
-                // Create checkbox for manual verification
+                // #endregion Verify mode
+                // #region Create checkbox for manual verification
                 const checkboxContainer = document.createElement("div");
+
                 checkboxContainer.className = "CodBi_AI_OCR_ManualVerify";
                 checkboxContainer.style.display = "flex";
                 checkboxContainer.style.alignItems = "center";
@@ -444,30 +458,30 @@ export class AI_OCR_CAM {
                 checkboxContainer.style.gap = "8px";
 
                 const checkbox = document.createElement("input");
+
                 checkbox.type = "checkbox";
                 checkbox.id = `manual-verify-${container.id}`;
                 checkbox.className = "CodBi_AI_OCR_ManualVerify_Checkbox";
 
                 const label = document.createElement("label");
+
                 label.htmlFor = checkbox.id;
                 label.textContent = toLoad.wrongfilemessage
                   ? (toLoad.wrongfilemessage as string)
-                  : "The content is not as expected. You may manually verify that it is the correct one by clicking the checkbox.";
+                  : "The content is not as expected. You may manually verify that it is the correct one by clicking the checkbox";
                 label.style.marginBottom = "0";
 
                 checkboxContainer.appendChild(checkbox);
                 checkboxContainer.appendChild(label);
-
-                // Remove any existing manual verify checkbox to prevent duplicates
+                // #endregion Create checkbox for manual verification
+                // #region Remove any existing manual verify checkbox to prevent duplicates
                 const existingManualVerify = container.parentElement.querySelectorAll(".CodBi_AI_OCR_ManualVerify");
                 for (let i = 0; i < existingManualVerify.length; i++) {
                   existingManualVerify[i].remove();
                 }
-
-                // Insert checkbox after the camera container
+                // #endregion Remove any existing manual verify checkbox to prevent duplicates
                 container.insertAdjacentElement("afterend", checkboxContainer);
 
-                // Handle checkbox change
                 checkbox.addEventListener("change", () => {
                   if (checkbox.checked) {
                     $(toProcess).error("");
@@ -480,11 +494,11 @@ export class AI_OCR_CAM {
               }
             }
             // #endregion Validate verify mode results
-
             restoreButton();
           },
           error: (xhr, status, error) => {
             restoreButton();
+
             throw new CodBiError(`❌ Tesseract AI OCR request failed with status (${status}) due to: ${error}`);
           },
         });

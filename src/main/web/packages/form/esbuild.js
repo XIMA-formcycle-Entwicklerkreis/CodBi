@@ -9,6 +9,9 @@ import { newEsBuildPostCssPlugin } from "@de-xima/esbuild-plugin-postcss";
 const mode = (process.argv.find((x) => x.startsWith("--mode=")) ?? "--mode=production").substring(7);
 const outputDir = process.env.web_output_dir ?? "dist";
 const dirName = path.dirname(fileURLToPath(import.meta.url));
+// --- PDF.js Worker Paths ---
+const pdfjsWorkerSourceFile = path.resolve(dirName, "../../node_modules/pdfjs-dist/build/pdf.worker.min.js");
+const pdfjsWorkerOutputFile = path.join(outputDir, "pdf.worker.min.js");
 /**
  * Finds all code library configuration templates. They must have file name
  * that follows the pattern `index-config-template-<template>.ts`.
@@ -99,6 +102,23 @@ async function copyFiles(filesToCopy, sourcePath, destinationPath) {
   );
 }
 /**
+ * Copies the PDF.js worker file to the output directory.
+ */
+async function copyPdfJsWorker() {
+  console.log(`Copying PDF.js worker from ${pdfjsWorkerSourceFile} to ${pdfjsWorkerOutputFile}...`);
+
+  try {
+    await fs.mkdir(outputDir, { recursive: true });
+    await fs.copyFile(pdfjsWorkerSourceFile, pdfjsWorkerOutputFile);
+
+    console.log("PDF.js worker copied successfully.");
+  } catch (X) {
+    console.error("Error copying PDF.js worker:", X.message);
+
+    process.exit(1);
+  }
+}
+/**
  * Creates ESBuild-Configurations for each file **toProcess**.
  *
  * @param toProcess The files to build configurations for.
@@ -140,6 +160,7 @@ function createIndividualTsBuildsWithSplitting(toProcess, basePath, outputDir) {
 }
 
 await Promise.all([
+  copyPdfJsWorker(),
   ...configTemplates.map((configTemplate) =>
     esbuild.build({
       bundle: true,

@@ -122,7 +122,6 @@ class TesseractAction : AI() {
    * @return A new preprocessed image file, or the original if preprocessing is disabled or fails.
    */
   private fun preprocessImage(inputFile: File, params: IPluginServletActionParams): File {
-    // Check if preprocessing is enabled via X-Preprocess header (default: false)
     val preprocessHeader =
         params.headerMap.entries
             .find { it.key.equals("X-Preprocess", ignoreCase = true) }
@@ -132,20 +131,20 @@ class TesseractAction : AI() {
 
     if (preprocessHeader != "true" && preprocessHeader != "1") {
       log(LogLevel.INFO, "Image preprocessing disabled (use X-Preprocess: true to enable)")
+
       return inputFile
     }
     try {
       val originalImage = ImageIO.read(inputFile) ?: return inputFile
-
-      // Step 1: Convert to grayscale
       val grayscaleImage =
           BufferedImage(originalImage.width, originalImage.height, BufferedImage.TYPE_BYTE_GRAY)
       val graphics = grayscaleImage.createGraphics()
+
       graphics.drawImage(originalImage, 0, 0, null)
       graphics.dispose()
 
-      // Step 2: Calculate Otsu's threshold for adaptive binarization
       val histogram = IntArray(256)
+
       for (y in 0 until grayscaleImage.height) {
         for (x in 0 until grayscaleImage.width) {
           val gray = grayscaleImage.getRGB(x, y) and 0xFF
@@ -155,6 +154,7 @@ class TesseractAction : AI() {
 
       val total = grayscaleImage.width * grayscaleImage.height
       var sum = 0.0
+
       for (i in 0..255) sum += i * histogram[i]
 
       var sumB = 0.0
@@ -165,12 +165,15 @@ class TesseractAction : AI() {
 
       for (t in 0..255) {
         wB += histogram[t]
+
         if (wB == 0) continue
 
         wF = total - wB
+
         if (wF == 0) break
 
         sumB += (t * histogram[t]).toDouble()
+
         val mB = sumB / wB
         val mF = (sum - sumB) / wF
         val variance = wB.toDouble() * wF.toDouble() * (mB - mF) * (mB - mF)
@@ -181,7 +184,6 @@ class TesseractAction : AI() {
         }
       }
 
-      // Step 3: Apply binarization with calculated threshold
       val binarizedImage =
           BufferedImage(grayscaleImage.width, grayscaleImage.height, BufferedImage.TYPE_BYTE_BINARY)
 
@@ -193,7 +195,6 @@ class TesseractAction : AI() {
         }
       }
 
-      // Step 4: Noise reduction with median filter (3x3)
       val denoisedImage =
           BufferedImage(binarizedImage.width, binarizedImage.height, BufferedImage.TYPE_BYTE_BINARY)
 
@@ -205,6 +206,7 @@ class TesseractAction : AI() {
               neighbors.add(binarizedImage.getRGB(x + dx, y + dy) and 0xFF)
             }
           }
+
           neighbors.sort()
           val median = neighbors[4]
           val color = if (median > 127) 0xFFFFFF else 0x000000
@@ -212,8 +214,8 @@ class TesseractAction : AI() {
         }
       }
 
-      // Save preprocessed image
       val preprocessedFile = kotlin.io.path.createTempFile("ocr_preprocessed_", ".png").toFile()
+
       ImageIO.write(denoisedImage, "PNG", preprocessedFile)
 
       log(
@@ -225,6 +227,7 @@ class TesseractAction : AI() {
       log(
           LogLevel.ERROR,
           "Image preprocessing failed for ${ inputFile.name }, using original image: ${ X.message }")
+
       return inputFile
     }
   }

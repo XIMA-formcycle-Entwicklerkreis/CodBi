@@ -1,0 +1,13 @@
+{
+  "Description": "/classes/Functionalities_ai.ocr.cam.AI_OCR_CAM.html#functionality",
+  "Parameter": {
+    "Mode": "",
+    "Pattern": "",
+    "FieldPattern_": "",
+    "ProcessingImageText": "",
+    "RegeExFlags": "",
+    "InvalidImageText": "",
+    "WrongFileMessage": "",
+    "Separator": ""
+  }
+}

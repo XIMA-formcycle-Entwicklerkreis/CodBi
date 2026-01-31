@@ -8,6 +8,8 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai
 // region XIMA
 // endregion XIMA
 // region Tesseract
+// endregion Tesseract
+// region Java/Javax
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -22,19 +24,25 @@ import de.xima.fc.mdl.fdv.EResponseType
 import de.xima.fc.mdl.response.ServletResponse
 import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
+import java.awt.geom.AffineTransform
+import java.awt.image.AffineTransformOp
 import java.awt.image.BufferedImage
 import java.io.File
 import java.net.URI
 import java.net.URLDecoder
+import java.nio.ByteBuffer
+import java.nio.FloatBuffer
+import java.nio.IntBuffer
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.*
 import java.util.jar.JarFile
 import javax.imageio.ImageIO
+import javax.imageio.metadata.IIOMetadataNode
 import javax.servlet.ServletException
 import net.sourceforge.tess4j.ITessAPI
 import net.sourceforge.tess4j.TessAPI1
 
-// endregion Tesseract
+// endregion Java/Javax
 // endregion Imports
 /**
  * # Performs OCR on one or multiple images using the
@@ -65,7 +73,7 @@ class TesseractAction : AI() {
    * States whether this [TesseractAction] is currently active or not (**Active_AI** contains
    * **OCR** or not).
    */
-  protected var active = false
+  private var active = false
   /** The CodBi-Plugin's root directory. */
   private var pluginRoot: File? = null
   /** The tesseract-handle pool. */
@@ -90,7 +98,7 @@ class TesseractAction : AI() {
   /**
    * Parses the X-RegexFlags header and returns a set of RegexOption flags.
    *
-   * @param params The servlet action parameters containing the header map.
+   * @param params The [IPluginServletActionParams] containing the header map.
    * @return A set of RegexOption flags to apply to regex patterns.
    */
   private fun parseRegexFlags(params: IPluginServletActionParams): Set<RegexOption> {
@@ -111,6 +119,363 @@ class TesseractAction : AI() {
     }
 
     return flags
+  }
+
+  // region Image Transformation
+  /**
+   * Defines the possible image transformations that can be applied to correct image orientation.
+   * These transformations are used to prepare images for optimal OCR processing.
+   */
+  private enum class ImageTransformation {
+    /** Rotates the image 90 degrees clockwise. */
+    ROTATE_90,
+    /** Rotates the image 180 degrees. */
+    ROTATE_180,
+    /** Rotates the image 270 degrees clockwise (or 90 degrees counter-clockwise). */
+    ROTATE_270,
+    /** Flips the image horizontally (mirror effect on vertical axis). */
+    FLIP_HORIZONTAL,
+    /** Flips the image vertically (mirror effect on horizontal axis). */
+    FLIP_VERTICAL,
+    /** Rotates the image 90 degrees clockwise, then flips it horizontally. */
+    ROTATE_90_FLIP_HORIZONTAL,
+    /** Rotates the image 270 degrees clockwise, then flips it horizontally. */
+    ROTATE_270_FLIP_HORIZONTAL
+  }
+
+  /**
+   * Transforms an image using the specified transformation type.
+   *
+   * @param img The [BufferedImage] to transform.
+   * @param transformation The [ImageTransformation] to apply.
+   * @return The transformed image.
+   */
+  private fun transformImage(
+      img: BufferedImage,
+      transformation: ImageTransformation
+  ): BufferedImage {
+    val w = img.width
+    val h = img.height
+    val at = AffineTransform()
+
+    val (resultWidth, resultHeight, transforms) =
+        when (transformation) {
+          ImageTransformation.ROTATE_90 ->
+              Triple(h, w) {
+                at.translate(h.toDouble(), 0.0)
+                at.rotate(Math.PI / 2)
+              }
+          ImageTransformation.ROTATE_180 ->
+              Triple(w, h) {
+                at.translate(w.toDouble(), h.toDouble())
+                at.rotate(Math.PI)
+              }
+          ImageTransformation.ROTATE_270 ->
+              Triple(h, w) {
+                at.translate(0.0, w.toDouble())
+                at.rotate(-Math.PI / 2)
+              }
+          ImageTransformation.FLIP_HORIZONTAL ->
+              Triple(w, h) {
+                at.translate(w.toDouble(), 0.0)
+                at.scale(-1.0, 1.0)
+              }
+          ImageTransformation.FLIP_VERTICAL ->
+              Triple(w, h) {
+                at.translate(0.0, h.toDouble())
+                at.scale(1.0, -1.0)
+              }
+          ImageTransformation.ROTATE_90_FLIP_HORIZONTAL -> {
+            return transformImage(
+                transformImage(img, ImageTransformation.ROTATE_90),
+                ImageTransformation.FLIP_HORIZONTAL)
+          }
+          ImageTransformation.ROTATE_270_FLIP_HORIZONTAL -> {
+            return transformImage(
+                transformImage(img, ImageTransformation.ROTATE_270),
+                ImageTransformation.FLIP_HORIZONTAL)
+          }
+        }
+
+    transforms()
+
+    val result = BufferedImage(resultWidth, resultHeight, img.type)
+    val op = AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR)
+
+    return op.filter(img, result)
+  }
+
+  /** Rotates the image 90 degrees clockwise. */
+  private fun rotate90(img: BufferedImage): BufferedImage =
+      transformImage(img, ImageTransformation.ROTATE_90)
+
+  /** Rotates the image 180 degrees. */
+  private fun rotate180(img: BufferedImage): BufferedImage =
+      transformImage(img, ImageTransformation.ROTATE_180)
+
+  /** Rotates the image 270 degrees clockwise. */
+  private fun rotate270(img: BufferedImage): BufferedImage =
+      transformImage(img, ImageTransformation.ROTATE_270)
+
+  // endregion Image Transformation
+  /**
+   * Reads DPI metadata from an image file.
+   *
+   * @param imageFile The image file to read DPI from.
+   * @return The DPI value, or 300 as default if not found.
+   */
+  private fun readImageDPI(imageFile: File): Int {
+    try {
+      val readers =
+          ImageIO.getImageReadersByFormatName(imageFile.extension.lowercase().ifEmpty { "png" })
+
+      if (!readers.hasNext()) return 300
+
+      val reader = readers.next()
+      val iis = ImageIO.createImageInputStream(imageFile)
+
+      if (iis == null) {
+        reader.dispose()
+
+        return 300
+      }
+
+      try {
+        reader.input = iis
+
+        val metadata = reader.getImageMetadata(0)
+        val formatName = metadata.nativeMetadataFormatName
+        val tree = metadata.getAsTree(formatName)
+        // region Parse metadata tree
+        if (tree is IIOMetadataNode) {
+          val physNode = findNode(tree, "pHYs")
+          if (physNode != null) {
+            val pixelsPerUnitX = physNode.getAttribute("pixelsPerUnitXAxis")?.toIntOrNull()
+            val unitSpecifier = physNode.getAttribute("unitSpecifier")?.toIntOrNull()
+
+            if (pixelsPerUnitX != null && unitSpecifier == 1) { // 1 = meters
+              val dpi = (pixelsPerUnitX * 0.0254).toInt()
+              log(LogLevel.INFO, "Read DPI from image: $dpi")
+              reader.dispose()
+              iis.close()
+              return dpi
+            }
+          }
+
+          // For JPEG files
+          val jfifNode = findNode(tree, "app0JFIF")
+          if (jfifNode != null) {
+            val resX = jfifNode.getAttribute("Xdensity")?.toIntOrNull()
+            val resUnits = jfifNode.getAttribute("resUnits")?.toIntOrNull()
+
+            if (resX != null) {
+              val dpi =
+                  when (resUnits) {
+                    1 -> resX // DPI
+                    2 -> (resX * 2.54).toInt() // DPC (dots per cm) to DPI
+                    else -> resX
+                  }
+              log(LogLevel.INFO, "Read DPI from image: $dpi")
+              reader.dispose()
+              iis.close()
+              return dpi
+            }
+          }
+        }
+        // endregion Parse metadata tree
+      } finally {
+        reader.dispose()
+        iis.close()
+      }
+    } catch (e: Exception) {
+      log(LogLevel.WARNING, "Failed to read DPI from image: ${e.message}")
+    }
+
+    log(LogLevel.INFO, "No DPI metadata found, using default 300 DPI")
+
+    return 300
+  }
+
+  /**
+   * Recursively finds a node by name in metadata tree.
+   *
+   * @param node The metadata node to search in.
+   * @param nodeName The name of the node to find.
+   * @return The found node, or null if not found.
+   */
+  private fun findNode(node: IIOMetadataNode, nodeName: String): IIOMetadataNode? {
+    if (node.nodeName.equals(nodeName, ignoreCase = true)) {
+      return node
+    }
+
+    for (i in 0 until node.length) {
+      val child = node.item(i)
+
+      if (child is IIOMetadataNode) {
+        val found = findNode(child, nodeName)
+
+        if (found != null) return found
+      }
+    }
+
+    return null
+  }
+
+  /**
+   * Writes a BufferedImage to a PNG file with proper DPI metadata set to 300 DPI. This ensures
+   * Tesseract gets the correct resolution information.
+   *
+   * @param image The image to write.
+   * @param outputFile The file to write to.
+   * @param dpi The DPI (dots per inch) to set in the image metadata.
+   */
+  private fun writeImageWithDPI(image: BufferedImage, outputFile: File, dpi: Int = 300) {
+    val writers = ImageIO.getImageWritersByFormatName("png")
+    if (!writers.hasNext()) {
+      ImageIO.write(image, "PNG", outputFile)
+
+      return
+    }
+
+    val writer = writers.next()
+    val writeParam = writer.defaultWriteParam
+
+    val ios = ImageIO.createImageOutputStream(outputFile)
+
+    if (ios == null) {
+      ImageIO.write(image, "PNG", outputFile)
+      writer.dispose()
+
+      return
+    }
+
+    try {
+      writer.output = ios
+
+      // Create metadata with DPI information
+      val metadata =
+          writer.getDefaultImageMetadata(
+              javax.imageio.ImageTypeSpecifier.createFromBufferedImageType(image.type), writeParam)
+
+      // Set DPI in metadata using standard format
+      val dotsPerMeter = (dpi / 0.0254).toInt() // Convert DPI to dots per meter
+
+      val root = metadata.getAsTree("javax_imageio_png_1.0") as IIOMetadataNode
+
+      // Find or create pHYs node
+      var physNode: IIOMetadataNode? = null
+      val nodeList = root.getElementsByTagName("pHYs")
+      if (nodeList.length > 0) {
+        physNode = nodeList.item(0) as IIOMetadataNode
+      } else {
+        physNode = IIOMetadataNode("pHYs")
+        root.appendChild(physNode)
+      }
+
+      physNode.setAttribute("pixelsPerUnitXAxis", dotsPerMeter.toString())
+      physNode.setAttribute("pixelsPerUnitYAxis", dotsPerMeter.toString())
+      physNode.setAttribute("unitSpecifier", "meter")
+
+      try {
+        metadata.setFromTree("javax_imageio_png_1.0", root)
+        log(LogLevel.INFO, "Set image DPI to $dpi ($dotsPerMeter dots/meter)")
+      } catch (e: Exception) {
+        log(LogLevel.WARNING, "Failed to set DPI metadata: ${e.message}")
+      }
+
+      val iioImage = javax.imageio.IIOImage(image, null, metadata)
+      writer.write(null, iioImage, writeParam)
+    } finally {
+      ios.close()
+      writer.dispose()
+    }
+  }
+
+  /**
+   * Detects the orientation of an image using Tesseract's built-in OSD (Orientation and Script
+   * Detection).
+   *
+   * @param image The image to analyze.
+   * @param tempFile Temporary file for saving the image.
+   * @return The rotation angle (0, 90, 180, or 270) that should be applied to correct the
+   *   orientation.
+   */
+  private fun detectBestOrientation(image: BufferedImage, tempFile: File): Int {
+    try {
+      val testFile = kotlin.io.path.createTempFile("ocr_osd_", ".png").toFile()
+      try {
+        writeImageWithDPI(image, testFile, 300)
+
+        val osdHandle = TessAPI1.TessBaseAPICreate()
+
+        try {
+          if (TessAPI1.TessBaseAPIInit3(osdHandle, tessDataDir!!.absolutePath, "osd") != 0) {
+            log(
+                LogLevel.WARNING,
+                "Failed to initialize Tesseract with OSD data - osd.traineddata may be missing")
+            TessAPI1.TessBaseAPIDelete(osdHandle)
+
+            return 0
+          }
+
+          TessAPI1.TessBaseAPISetPageSegMode(osdHandle, 0) // 0 = PSM_OSD_ONLY
+
+          val width = image.width
+          val height = image.height
+          val pixels = image.getRGB(0, 0, width, height, null, 0, width)
+          val buffer = java.nio.ByteBuffer.allocateDirect(width * height * 4)
+
+          for (pixel in pixels) {
+            buffer.put((pixel shr 16 and 0xFF).toByte()) // R
+            buffer.put((pixel shr 8 and 0xFF).toByte()) // G
+            buffer.put((pixel and 0xFF).toByte()) // B
+            buffer.put((pixel shr 24 and 0xFF).toByte()) // A
+          }
+
+          buffer.rewind()
+
+          TessAPI1.TessBaseAPISetImage(osdHandle, buffer, width, height, 4, width * 4)
+
+          val orientDegPtr = java.nio.IntBuffer.allocate(1)
+          val orientConfPtr = java.nio.FloatBuffer.allocate(1)
+          val scriptNamePtr = com.sun.jna.ptr.PointerByReference()
+          val scriptConfPtr = java.nio.FloatBuffer.allocate(1)
+
+          val result =
+              TessAPI1.TessBaseAPIDetectOrientationScript(
+                  osdHandle, orientDegPtr, orientConfPtr, scriptNamePtr, scriptConfPtr)
+
+          if (result == 1) {
+            val orientDeg = orientDegPtr.get(0)
+            val orientConf = orientConfPtr.get(0)
+            log(
+                LogLevel.INFO,
+                "Tesseract OSD detected orientation: ${orientDeg}° (confidence: ${orientConf})")
+
+            val correctionAngle =
+                when (orientDeg) {
+                  0 -> 0
+                  90 -> 270
+                  180 -> 180
+                  270 -> 90
+                  else -> 0
+                }
+
+            return correctionAngle
+          }
+        } finally {
+          TessAPI1.TessBaseAPIDelete(osdHandle)
+        }
+      } finally {
+        testFile.delete()
+      }
+    } catch (e: Exception) {
+      log(LogLevel.WARNING, "Tesseract OSD failed: ${e.message}")
+    }
+
+    log(LogLevel.INFO, "Could not detect orientation, assuming no rotation needed")
+
+    return 0
   }
 
   /**
@@ -135,6 +500,7 @@ class TesseractAction : AI() {
       return inputFile
     }
     try {
+      val originalDPI = readImageDPI(inputFile)
       val originalImage = ImageIO.read(inputFile) ?: return inputFile
       val grayscaleImage =
           BufferedImage(originalImage.width, originalImage.height, BufferedImage.TYPE_BYTE_GRAY)
@@ -191,6 +557,7 @@ class TesseractAction : AI() {
         for (x in 0 until grayscaleImage.width) {
           val gray = grayscaleImage.getRGB(x, y) and 0xFF
           val binary = if (gray > threshold) 0xFFFFFF else 0x000000
+
           binarizedImage.setRGB(x, y, binary)
         }
       }
@@ -201,6 +568,7 @@ class TesseractAction : AI() {
       for (y in 1 until binarizedImage.height - 1) {
         for (x in 1 until binarizedImage.width - 1) {
           val neighbors = mutableListOf<Int>()
+
           for (dy in -1..1) {
             for (dx in -1..1) {
               neighbors.add(binarizedImage.getRGB(x + dx, y + dy) and 0xFF)
@@ -210,13 +578,14 @@ class TesseractAction : AI() {
           neighbors.sort()
           val median = neighbors[4]
           val color = if (median > 127) 0xFFFFFF else 0x000000
+
           denoisedImage.setRGB(x, y, color)
         }
       }
 
       val preprocessedFile = kotlin.io.path.createTempFile("ocr_preprocessed_", ".png").toFile()
 
-      ImageIO.write(denoisedImage, "PNG", preprocessedFile)
+      writeImageWithDPI(denoisedImage, preprocessedFile, originalDPI)
 
       log(
           LogLevel.INFO,
@@ -263,7 +632,6 @@ class TesseractAction : AI() {
 
     if (root != null) {
       try {
-        // region Resolve platform & ensure runtime libs
         val os = System.getProperty("os.name").lowercase()
         val arch = System.getProperty("os.arch").lowercase()
         val platformDirName =
@@ -282,7 +650,6 @@ class TesseractAction : AI() {
 
           return false
         }
-        // endregion Resolve platform & ensure runtime libs
         // region Clone libs into a fresh run dir (avoid locked DLLs)
         if (dirTempNativeLibs == null || !dirTempNativeLibs!!.exists()) {
           val tmpDir = root.resolve("Resources/AI/Tesseract/TmpNatives").apply { mkdirs() }
@@ -310,6 +677,7 @@ class TesseractAction : AI() {
         val langs =
             if (languages.isNullOrBlank()) listOf("de")
             else languages.split("+").map { it.trim() }.filter { it.isNotBlank() }
+
         langs.forEach { lang -> ensureTessData(tessDataDir, lang) }
         // endregion Ensure that the model files are available
         // region Initialize / Manage pool
@@ -414,7 +782,6 @@ class TesseractAction : AI() {
 
     startJanitor()
     // endregion Begin the observation of the [cacheIDedImages].
-
     log(LogLevel.INFO, "Tesseract initialized.")
   }
 
@@ -554,8 +921,66 @@ class TesseractAction : AI() {
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
           if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
           // region OCR Processing
-          val preprocessedFile = preprocessImage(tempFile!!, params)
-          if (preprocessedFile != tempFile) filesToDelete.add(preprocessedFile)
+          // Apply orientation correction: Manual override or auto-detection using Tesseract
+          val orientationCorrectedFile =
+              try {
+                // Read original DPI first
+                val originalDPI = readImageDPI(tempFile!!)
+                var correctedImage = ImageIO.read(tempFile!!)
+
+                // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
+                // 270)
+                val manualRotation =
+                    params.headerMap.entries
+                        .find { it.key.equals("X-Rotate", ignoreCase = true) }
+                        ?.value
+                        ?.trim()
+                        ?.toIntOrNull() ?: 0
+
+                if (manualRotation != 0) {
+                  log(
+                      LogLevel.INFO,
+                      "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+                  correctedImage =
+                      when (manualRotation) {
+                        90 -> rotate90(correctedImage)
+                        180 -> rotate180(correctedImage)
+                        270 -> rotate270(correctedImage)
+                        else -> {
+                          log(
+                              LogLevel.WARNING,
+                              "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
+                          correctedImage
+                        }
+                      }
+                } else {
+                  // Always use Tesseract orientation detection for best results
+                  log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+                  val detectedAngle = detectBestOrientation(correctedImage, tempFile!!)
+
+                  if (detectedAngle != 0) {
+                    correctedImage =
+                        when (detectedAngle) {
+                          90 -> rotate90(correctedImage)
+                          180 -> rotate180(correctedImage)
+                          270 -> rotate270(correctedImage)
+                          else -> correctedImage
+                        }
+                    log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
+                  }
+                }
+
+                val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
+                writeImageWithDPI(correctedImage, correctedFile, originalDPI)
+                filesToDelete.add(correctedFile)
+                correctedFile
+              } catch (e: Exception) {
+                log(LogLevel.WARNING, "Orientation correction failed, using original: ${e.message}")
+                tempFile!!
+              }
+
+          val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
+          if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
 
           val handle =
               pool.poll(10, TimeUnit.SECONDS)
@@ -622,12 +1047,8 @@ class TesseractAction : AI() {
       logger.error("[[ CodBi ]] Execution Error", X)
     }
     // region Generate response
-    val jsonResponse =
-        ocrResults.entries.joinToString(separator = ",", prefix = "{", postfix = "}") { (key, value)
-          ->
-          val escapedValue = value.replace("\"", "\\\"").replace("\n", "\\n")
-          "\"$key\":\"$escapedValue\""
-        }
+    val jsonMap = ocrResults.mapValues { (_, value) -> value }
+    val jsonResponse = Gson().toJson(jsonMap)
 
     val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
     // endregion Generate response
@@ -713,8 +1134,65 @@ class TesseractAction : AI() {
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
           if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
           // region OCR Processing
-          val preprocessedFile = preprocessImage(tempFile!!, params)
-          if (preprocessedFile != tempFile) filesToDelete.add(preprocessedFile)
+          // Apply orientation correction: Manual override or auto-detection using Tesseract
+          val orientationCorrectedFile =
+              try {
+                // Read original DPI first
+                val originalDPI = readImageDPI(tempFile!!)
+                var correctedImage = ImageIO.read(tempFile!!)
+
+                // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
+                // 270)
+                val manualRotation =
+                    params.headerMap.entries
+                        .find { it.key.equals("X-Rotate", ignoreCase = true) }
+                        ?.value
+                        ?.trim()
+                        ?.toIntOrNull() ?: 0
+
+                if (manualRotation != 0) {
+                  log(
+                      LogLevel.INFO,
+                      "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+                  correctedImage =
+                      when (manualRotation) {
+                        90 -> rotate90(correctedImage)
+                        180 -> rotate180(correctedImage)
+                        270 -> rotate270(correctedImage)
+                        else -> {
+                          log(
+                              LogLevel.WARNING,
+                              "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
+                          correctedImage
+                        }
+                      }
+                } else {
+                  // Always use Tesseract orientation detection for best results
+                  log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+                  val detectedAngle = detectBestOrientation(correctedImage, tempFile!!)
+
+                  if (detectedAngle != 0) {
+                    correctedImage =
+                        when (detectedAngle) {
+                          90 -> rotate90(correctedImage)
+                          180 -> rotate180(correctedImage)
+                          270 -> rotate270(correctedImage)
+                          else -> correctedImage
+                        }
+                    log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
+                  }
+                }
+
+                val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
+                writeImageWithDPI(correctedImage, correctedFile, originalDPI)
+                filesToDelete.add(correctedFile)
+                correctedFile
+              } catch (e: Exception) {
+                log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
+                tempFile!!
+              }
+          val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
+          if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
 
           val handle =
               pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
@@ -772,7 +1250,7 @@ class TesseractAction : AI() {
 
                   ocrResults[image.name] =
                       try {
-                        patternHeader.toRegex().findAll(rawText).map { it.value }.toList()
+                        patternHeader.toRegex(regexFlags).findAll(rawText).map { it.value }.toList()
                       } catch (X: Exception) {
                         listOf("Regex Error: ${ X.message }")
                       }
@@ -796,16 +1274,8 @@ class TesseractAction : AI() {
       logger.error("[[ CodBi / AI / Tesseract ] Execution Error: $X ]", X)
     }
     // region Generate response
-    val jsonResponse =
-        ocrResults.entries.joinToString(separator = ",", prefix = "{", postfix = "}") { (key, value)
-          ->
-          val arrayValues =
-              value.joinToString(separator = ",") { match ->
-                val escaped = match.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-                "\"$escaped\""
-              }
-          "\"$key\":[$arrayValues]"
-        }
+    val jsonMap = ocrResults.mapValues { (_, value) -> value }
+    val jsonResponse = Gson().toJson(jsonMap)
 
     val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
     // endregion Generate response
@@ -890,8 +1360,65 @@ class TesseractAction : AI() {
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
           if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
           // region OCR Processing
-          val preprocessedFile = preprocessImage(tempFile!!, params)
-          if (preprocessedFile != tempFile) filesToDelete.add(preprocessedFile)
+          // Apply orientation correction: Manual override or auto-detection using Tesseract
+          val orientationCorrectedFile =
+              try {
+                // Read original DPI first
+                val originalDPI = readImageDPI(tempFile!!)
+                var correctedImage = ImageIO.read(tempFile!!)
+
+                // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
+                // 270)
+                val manualRotation =
+                    params.headerMap.entries
+                        .find { it.key.equals("X-Rotate", ignoreCase = true) }
+                        ?.value
+                        ?.trim()
+                        ?.toIntOrNull() ?: 0
+
+                if (manualRotation != 0) {
+                  log(
+                      LogLevel.INFO,
+                      "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+                  correctedImage =
+                      when (manualRotation) {
+                        90 -> rotate90(correctedImage)
+                        180 -> rotate180(correctedImage)
+                        270 -> rotate270(correctedImage)
+                        else -> {
+                          log(
+                              LogLevel.WARNING,
+                              "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
+                          correctedImage
+                        }
+                      }
+                } else {
+                  // Always use Tesseract orientation detection for best results
+                  log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+                  val detectedAngle = detectBestOrientation(correctedImage, tempFile!!)
+
+                  if (detectedAngle != 0) {
+                    correctedImage =
+                        when (detectedAngle) {
+                          90 -> rotate90(correctedImage)
+                          180 -> rotate180(correctedImage)
+                          270 -> rotate270(correctedImage)
+                          else -> correctedImage
+                        }
+                    log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
+                  }
+                }
+
+                val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
+                writeImageWithDPI(correctedImage, correctedFile, originalDPI)
+                filesToDelete.add(correctedFile)
+                correctedFile
+              } catch (e: Exception) {
+                log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
+                tempFile!!
+              }
+          val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
+          if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
 
           val handle =
               pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
@@ -974,13 +1501,14 @@ class TesseractAction : AI() {
       logger.error("[[ CodBi ]] Execution Error", X)
     }
     // region Generate response
-    val jsonResponse =
-        verifyResults.entries.joinToString(separator = ",", prefix = "{", postfix = "}") {
-            (key, value) ->
-          "\"$key\":$value"
-        }
+    val jsonMap = verifyResults.mapValues { (_, value) -> value }
+    val jsonResponse = Gson().toJson(jsonMap)
 
-    val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
+    val servletResponse =
+        ServletResponse(EResponseType.HTML).apply {
+          value = String(jsonResponse.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
+          encoding = StandardCharsets.UTF_8.name()
+        }
     // endregion Generate response
     return PluginServletActionRetVal(servletResponse)
   }
@@ -1103,8 +1631,65 @@ class TesseractAction : AI() {
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
           if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
           // region OCR Processing
-          val preprocessedFile = preprocessImage(tempFile!!, params)
-          if (preprocessedFile != tempFile) filesToDelete.add(preprocessedFile)
+          // Apply orientation correction: Manual override or auto-detection using Tesseract
+          val orientationCorrectedFile =
+              try {
+                // Read original DPI first
+                val originalDPI = readImageDPI(tempFile!!)
+                var correctedImage = ImageIO.read(tempFile!!)
+
+                // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
+                // 270)
+                val manualRotation =
+                    params.headerMap.entries
+                        .find { it.key.equals("X-Rotate", ignoreCase = true) }
+                        ?.value
+                        ?.trim()
+                        ?.toIntOrNull() ?: 0
+
+                if (manualRotation != 0) {
+                  log(
+                      LogLevel.INFO,
+                      "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+                  correctedImage =
+                      when (manualRotation) {
+                        90 -> rotate90(correctedImage)
+                        180 -> rotate180(correctedImage)
+                        270 -> rotate270(correctedImage)
+                        else -> {
+                          log(
+                              LogLevel.WARNING,
+                              "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
+                          correctedImage
+                        }
+                      }
+                } else {
+                  // Always use Tesseract orientation detection for best results
+                  log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+                  val detectedAngle = detectBestOrientation(correctedImage, tempFile!!)
+
+                  if (detectedAngle != 0) {
+                    correctedImage =
+                        when (detectedAngle) {
+                          90 -> rotate90(correctedImage)
+                          180 -> rotate180(correctedImage)
+                          270 -> rotate270(correctedImage)
+                          else -> correctedImage
+                        }
+                    log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
+                  }
+                }
+
+                val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
+                writeImageWithDPI(correctedImage, correctedFile, originalDPI)
+                filesToDelete.add(correctedFile)
+                correctedFile
+              } catch (e: Exception) {
+                log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
+                tempFile!!
+              }
+          val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
+          if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
 
           val handle =
               pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
@@ -1225,23 +1810,17 @@ class TesseractAction : AI() {
       logger.error("[[ CodBi / AI / Tesseract ]] Execution Error", X)
     }
     // region Generate response
-    val jsonResponse =
-        fieldResults.entries.joinToString(separator = ",", prefix = "{", postfix = "}") {
-            (imageName, fields) ->
-          val fieldsJson =
-              fields.entries.joinToString(separator = ",") { (fieldName, matches) ->
-                val arrayValues =
-                    matches.joinToString(separator = ",") { match ->
-                      val escaped =
-                          match.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-                      "\"$escaped\""
-                    }
-                "\"$fieldName\":[$arrayValues]"
-              }
-          "\"$imageName\":{$fieldsJson}"
+    val jsonMap =
+        fieldResults.mapValues { (imageName, fields) ->
+          fields.mapValues { (_, matches) -> matches }
         }
+    val jsonResponse = Gson().toJson(jsonMap)
 
-    val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
+    val servletResponse =
+        ServletResponse(EResponseType.HTML).apply {
+          value = String(jsonResponse.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
+          encoding = StandardCharsets.UTF_8.name()
+        }
     // endregion Generate response
     return PluginServletActionRetVal(servletResponse)
   }

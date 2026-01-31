@@ -4,15 +4,17 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 //endregion XIMA
 //region XDBC
 import { DBC } from "xdbc/src/DBC";
-import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
-import { CodBiError } from "../global-scope";
+import { EQ } from "xdbc/src/DBC/EQ";
+import { IF } from "xdbc/src/DBC/IF";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+import { REGEX } from "xdbc/src/DBC/REGEX";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 //endregion XDBC
-//region PDF.js
+//region PDF
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
-// Worker source will be set dynamically at runtime (see ensurePdfJsWorkerConfigured method)
-//endregion PDF.js
+//endregion PDF
+import { CodBiError } from "../global-scope";
 //endregion Imports
 /**
  * Provides the {@link AI.functionality }.
@@ -23,7 +25,7 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class AI_OCR {
   /**
-   * This functionality scans the selected files of a {@link HTMLINputElement } either prints the scanned text, extracts
+   * This functionality scans the selected files of a {@link HTMLInputElement } either prints the scanned text, extracts
    * substrings from the scanned text or verifies that the scanned text matches the pattern using the Tesseract AI-OCR engine.
    *
    * **PDF Support**: PDF files are automatically detected. PDFs with text (>100 characters) are processed client-side without
@@ -62,77 +64,81 @@ export class AI_OCR {
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
-  public static functionality(toLoad: { [key: string]: unknown }, toProcess: Element): void {
+  public static functionality(
+    @TYPE.PRE(
+      "string",
+      "mode :: pattern :: invalidimagetext :: wrongfilemessage :: processingimagetext :: separator :: regexflags",
+    )
+    @REGEX.PRE(/^(Print|Verify|Extract Fields)$/i, "mode")
+    @REGEX.PRE(/^\S+$/, "separator")
+    @REGEX.PRE(/^\d+$/, "maxpages")
+    @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages")
+    @IF.PRE(new TYPE("string"), new REGEX(REGEX.stdExp.boolean), "preprocess")
+    @IF.PRE(new TYPE("string"), new TYPE("boolean"), "preprocess", true)
+    toLoad: { [key: string]: unknown },
+
+    @INSTANCE.PRE(
+      HTMLInputElement,
+      undefined,
+      'Is it not an <input type = "file"/> that is tagged with this functionality?',
+    )
+    @EQ.PRE("file", false, "type")
+    toProcess: Element,
+  ): void {
     (toProcess as HTMLInputElement).addEventListener("change", async (event) => {
-      const tsMode = TYPE.tsCheck<string>(toLoad.mode, "string").toLowerCase();
       const container = document.querySelector(`div .CXUpload:has( #${toProcess.getAttribute("id")})`).parentElement;
-      // #region Determine questions
-      if (tsMode === "extract fields") {
-        const questionElements = container.querySelectorAll(".AI_TESSERACT_Name");
-
-        for (const element of questionElements) {
-          const id = element.id;
-          const question = element.getAttribute("data-cb-Name");
-        }
-
-        if (tsMode === "extract fields" && questionElements.length === 0) {
-          return;
-        }
-      }
-      // #endregion Determine questions
       const $ = getJQuery();
-      const files = INSTANCE.tsCheck<HTMLInputElement>(toProcess, HTMLInputElement).files;
-
-      // #region Configure PDF.js worker if needed
+      const files = (toProcess as HTMLInputElement).files;
+      // Configure PDF.js worker if needed
       AI_OCR.ensurePdfJsWorkerConfigured();
-      // #endregion Configure PDF.js worker if needed
 
       const formData = new FormData();
       const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
-      const tsProcessingimagetext = toLoad.processingimagetext
-        ? TYPE.tsCheck<string>(toLoad.processingimagetext, "string")
-        : undefined;
-      const tsInvalidimagetext = toLoad.invalidimagetext
-        ? TYPE.tsCheck<string>(toLoad.invalidimagetext, "string")
+      toLoad.processingimagetext = toLoad.processingimagetext ? toLoad.processingimagetext : "Processing...";
+      toLoad.invalidimagetext = toLoad.invalidimagetext
+        ? toLoad.invalidimagetext
         : "At least one of the images you selected did not contain the expected content.";
-
       // #region Process files (PDF or Image)
       const pdfTextResults: { [filename: string]: string } = {};
 
       for (const file of Array.from(files)) {
         if (file.type === "application/pdf") {
-          // Process PDF file
           const pdfResult = await AI_OCR.processPdfFile(file, maxPages);
 
           if (pdfResult.hasText) {
-            // PDF has text - process client-side
             pdfTextResults[file.name] = pdfResult.text;
           } else {
-            // PDF has images - add to formData for server-side OCR
             for (let i = 0; i < pdfResult.images.length; i++) {
               const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
+
               formData.append(imageName, pdfResult.images[i], imageName);
             }
           }
         } else {
-          // Regular image file
-          formData.append(file.name, file);
+          const downscaledImage = await AI_OCR.downscaleImageForOCR(file);
+
+          formData.append(file.name, downscaledImage, file.name);
         }
       }
       // #endregion Process files (PDF or Image)
-      // #region Build X-FieldPatterns from Pattern_* fields
+      // #region Build X-FieldPatterns from Pattern_* fields, if in Extract Fields mode
       const fieldPatterns: Array<{ [key: string]: string }> = [];
 
-      if (tsMode === "extract fields") {
+      if ((toLoad.mode as string).toLowerCase() === "extract fields") {
         const patternKeys = Object.keys(toLoad).filter((key) => key.startsWith("pattern_"));
-
+        console.log("Pattern Keys:", patternKeys, " toLoad:", toLoad);
         for (const patternKey of patternKeys) {
           const fieldName = patternKey.substring(8);
-          const pattern = toLoad[patternKey] as string;
+          const pattern = TYPE.tsCheck<string>(
+            toLoad[patternKey],
+            "string",
+            `Does the attribute "${patternKey}" contain a regular expression pattern?`,
+          );
 
           if (fieldName && pattern) {
             const fieldObj: { [key: string]: string } = {};
-            fieldObj[fieldName] = encodeURIComponent((pattern as string).replace(/°/, "^"));
+
+            fieldObj[fieldName] = encodeURIComponent(pattern.replace(/°/, "^"));
 
             fieldPatterns.push(fieldObj);
           }
@@ -140,18 +146,21 @@ export class AI_OCR {
       }
 
       const fieldPatternsJson = fieldPatterns.length > 0 ? JSON.stringify(fieldPatterns) : "";
-      // endregion Build X-FieldPatterns from Pattern_* fields
+      // endregion Build X-FieldPatterns from Pattern_* fields, if in Extract Fields mode
       // #region Disable input and show loading animation
-      const tsToProcess = INSTANCE.tsCheck<HTMLElement>(toProcess, HTMLElement);
-      tsToProcess.style.pointerEvents = "none";
-      tsToProcess.style.opacity = "0.5";
+      (toProcess as HTMLElement).style.pointerEvents = "none";
+      (toProcess as HTMLElement).style.opacity = "0.5";
 
       window.codbi.injectLoadingAnim(toProcess);
 
-      const label = INSTANCE.tsCheck<HTMLElement>(tsToProcess.parentElement.querySelector("label"), HTMLElement);
+      const label = INSTANCE.tsCheck<HTMLLabelElement>(
+        (toProcess as HTMLElement).parentElement.querySelector("label"),
+        HTMLLabelElement,
+        "Does the tagged <input> not have a label?.",
+      );
       const formerText = label ? label.innerHTML : "";
 
-      if (tsProcessingimagetext) {
+      if (toLoad.processingimagetext) {
         label.innerHTML = `${formerText}
         <style>
           @keyframes highlight {
@@ -161,64 +170,68 @@ export class AI_OCR {
                   
           .OCR_Verification { font-weight: bold ; color: darkorange ; animation: highlight 2s ease-in-out infinite ;}</style>
 
-        <span class = "OCR_Verification">${tsProcessingimagetext}</span>`;
+        <span class = "OCR_Verification">${toLoad.processingimagetext}</span>`;
       }
       // endregion Disable input and show loading animation
       // #region Define how to remove the loading animation and restore the label
       const unanimate = () => {
         window.codbi.removeLoaderAnim(toProcess);
 
-        tsToProcess.style.pointerEvents = "all";
-        tsToProcess.style.opacity = "1";
+        (toProcess as HTMLElement).style.pointerEvents = "all";
+        (toProcess as HTMLElement).style.opacity = "1";
         label.innerHTML = formerText;
       };
       // endregion Define how to remove the loading animation and restore the label
-
       // #region Process PDF text results client-side if any
       let clientSideResponse: { [key: string]: unknown } = {};
 
       if (Object.keys(pdfTextResults).length > 0) {
         clientSideResponse = AI_OCR.processTextClientSide(
           pdfTextResults,
-          tsMode,
+          toLoad.mode as string,
           toLoad.pattern as string | undefined,
           fieldPatterns,
           toLoad.regexflags as string | undefined,
         );
       }
       // #endregion Process PDF text results client-side
-
       // #region Determine if server call is needed
       const needsServerCall = formData.has(formData.keys().next().value);
 
       if (!needsServerCall) {
-        // Only PDF text - process client-side and finish
-        AI_OCR.handleResponse(clientSideResponse, tsMode, toLoad, toProcess, tsInvalidimagetext, $);
+        AI_OCR.handleResponse(clientSideResponse, toLoad, toProcess, toLoad.invalidimagetext as string, $);
         unanimate();
+
         return;
       }
       // #endregion Determine if server call is needed
-
       // #region Send the request to the Tesseract AI OCR API
       const ajaxHeaders: { [key: string]: string } = { "X-Mode": toLoad.mode as string };
 
-      if (tsMode !== "print") {
+      if ((toLoad.mode as string).toLowerCase() !== "print") {
         ajaxHeaders["X-Pattern"] = encodeURIComponent(
           toLoad.pattern ? (toLoad.pattern as string).replace(/°/, "^") : "",
         );
+      }
 
-        ajaxHeaders["X-FieldPatterns"] = fieldPatternsJson.length > 0 ? encodeURIComponent(fieldPatternsJson) : "";
+      if ((toLoad.mode as string).toLowerCase() === "extract fields" && fieldPatternsJson.length > 0) {
+        ajaxHeaders["X-FieldPatterns"] = encodeURIComponent(fieldPatternsJson);
       }
 
       if (toLoad.regexflags) {
-        ajaxHeaders["X-RegexFlags"] = TYPE.tsCheck<string>(toLoad.regexflags, "string");
+        ajaxHeaders["X-RegexFlags"] = toLoad.regexflags as string;
       }
+      // #region Set Preprocessing-Header, if defined in passed parameter.
+      if (toLoad.preprocess && (toLoad.preprocess as string).toLowerCase() === "true") {
+        if (typeof toLoad.preprocess === "string") {
+          const preprocessValue = (toLoad.preprocess as string).toLowerCase();
 
-      if (toLoad.preprocess) {
-        const preprocessValue = TYPE.tsCheck<string>(toLoad.preprocess, "string").toLowerCase();
-        ajaxHeaders["X-Preprocess"] = preprocessValue === "true" || preprocessValue === "1" ? "true" : "false";
+          ajaxHeaders["X-Preprocess"] = preprocessValue === "true" || preprocessValue === "t" ? "true" : "false";
+        } else {
+          ajaxHeaders["X-Preprocess"] = (toLoad.preprocess as boolean) ? "true" : "false";
+        }
       }
-
+      // #endregion Set Preprocessing-Header, if defined in passed parameter.
       $.ajax({
         url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Tesseract`,
         type: "POST",
@@ -228,10 +241,10 @@ export class AI_OCR {
         cache: false,
         headers: ajaxHeaders,
         success: (response) => {
-          // Merge client-side PDF text results with server-side OCR results
-          const mergedResponse = { ...clientSideResponse, ...response };
+          const parsedResponse = typeof response === "string" ? JSON.parse(response) : response;
+          const mergedResponse = { ...clientSideResponse, ...parsedResponse };
 
-          AI_OCR.handleResponse(mergedResponse, tsMode, toLoad, toProcess, tsInvalidimagetext, $);
+          AI_OCR.handleResponse(mergedResponse, toLoad, toProcess, toLoad.invalidimagetext as string, $);
           unanimate();
         },
         error: (xhr, status, error) => {
@@ -240,32 +253,92 @@ export class AI_OCR {
           throw new CodBiError(`❌ Tesseract AI OCR request failed with status (${status}) due to: ${error}`);
         },
       });
-      // endregion Send the request to the Tesseract AI OCR API
+      // #endregion Send the request to the Tesseract AI OCR API
     });
   }
-
   /**
-   * Ensures PDF.js worker is configured with the correct URL.
+   * Downscales an image to optimal resolution for OCR processing.
+   * Target: max 2048px on longest edge for good OCR accuracy with faster processing.
+   *
+   * @param file - The image file to downscale
+   *
+   * @returns Promise resolving to downscaled Blob or original file if already optimal
    */
+  private static async downscaleImageForOCR(file: File): Promise<Blob> {
+    const MAX_DIMENSION = 2048;
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+
+        const { width, height } = img;
+        const maxDim = Math.max(width, height);
+
+        if (maxDim <= MAX_DIMENSION) {
+          resolve(file);
+          return;
+        }
+
+        const scale = MAX_DIMENSION / maxDim;
+        const newWidth = Math.round(width * scale);
+        const newHeight = Math.round(height * scale);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+        canvas.toBlob(
+          (blob) => {
+            resolve(blob || file);
+          },
+          file.type.startsWith("image/png") ? "image/png" : "image/jpeg",
+          0.92,
+        );
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
+
+      img.src = url;
+    });
+  }
+  /** States whether the PDF.js worker is configured with the correct URL or not. */
   private static pdfJsWorkerConfigured = false;
+  /**
+   * Ensures the PDF.js worker is configured with the correct URL.
+   * This method is called before processing PDF files to set up the web worker
+   * that handles PDF parsing in a separate thread. The worker file is loaded
+   * from FormCycle plugin resources and only configured once per session.
+   *
+   * @remarks
+   * The worker configuration is cached using the static flag {@link AI_OCR.pdfJsWorkerConfigured } to avoid redundant
+   * configuration calls.
+   */
   private static ensurePdfJsWorkerConfigured(): void {
     if (AI_OCR.pdfJsWorkerConfigured) {
       return;
     }
 
-    // Configure worker to load from FormCycle plugin resources
-    // The worker file is bundled by esbuild and served via the Resource plugin
     pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.codbi.baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.worker.min.js`;
 
     AI_OCR.pdfJsWorkerConfigured = true;
 
-    window.codbi.log("INFO", `PDF.js worker configured: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`, "AI / TESSERACT");
+    window.codbi.log("INFO", `PDF.js worker configured: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`, "AI / OCR");
   }
-
   /**
    * Processes a PDF file to extract text or images.
+   *
    * @param file - The PDF file to process
    * @param maxPages - Maximum number of pages to process
+   *
    * @returns Object containing either extracted text or rendered images
    */
   private static async processPdfFile(
@@ -275,7 +348,6 @@ export class AI_OCR {
     const arrayBuffer = await file.arrayBuffer();
     const pdf: PDFDocumentProxy = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const numPages = Math.min(pdf.numPages, maxPages);
-
     let fullText = "";
     const images: Blob[] = [];
 
@@ -290,7 +362,6 @@ export class AI_OCR {
     const hasText = fullText.trim().length > 0;
 
     if (!hasText) {
-      // No text found - render pages as images
       for (let pageNum = 1; pageNum <= numPages; pageNum++) {
         const page: PDFPageProxy = await pdf.getPage(pageNum);
         const viewport = page.getViewport({ scale: 2.0 });
@@ -315,11 +386,13 @@ export class AI_OCR {
 
   /**
    * Processes extracted PDF text client-side using patterns.
-   * @param pdfTextResults - Object mapping filenames to extracted text
-   * @param mode - The mode (print, verify, extract fields)
-   * @param pattern - The pattern to match (for verify mode)
-   * @param fieldPatterns - Field patterns for extract fields mode
-   * @param regexFlags - Optional regex flags
+   *
+   * @param pdfTextResults  Object mapping filenames to extracted text
+   * @param mode            The mode (print, verify, extract fields)
+   * @param pattern         The pattern to match (for verify mode)
+   * @param fieldPatterns   Field patterns for extract fields mode
+   * @param regexFlags      Optional regex flags
+   *
    * @returns Processed results object
    */
   private static processTextClientSide(
@@ -332,30 +405,38 @@ export class AI_OCR {
     const results: { [key: string]: unknown } = {};
 
     for (const [filename, text] of Object.entries(pdfTextResults)) {
-      if (mode === "print") {
-        results[filename] = text;
-      } else if (mode === "verify" && pattern) {
-        const regex = new RegExp(pattern, regexFlags || "");
-        results[filename] = regex.test(text);
-      } else if (mode === "extract fields" && fieldPatterns) {
-        const fieldResults: { [key: string]: string[] } = {};
-
-        for (const fieldPattern of fieldPatterns) {
-          for (const [fieldName, fieldPatternStr] of Object.entries(fieldPattern)) {
-            const decodedPattern = decodeURIComponent(fieldPatternStr);
-            const regex = new RegExp(decodedPattern, regexFlags || "");
-            const matches = text.match(regex);
-
-            if (matches) {
-              if (!fieldResults[fieldName]) {
-                fieldResults[fieldName] = [];
-              }
-              fieldResults[fieldName].push(...matches.slice(1).filter(Boolean));
-            }
+      switch (mode) {
+        case "print":
+          results[filename] = text;
+          break;
+        case "verify":
+          if (pattern) {
+            const regex = new RegExp(pattern, regexFlags || "");
+            results[filename] = regex.test(text);
           }
-        }
+          break;
+        case "extract fields":
+          if (fieldPatterns) {
+            const fieldResults: { [key: string]: string[] } = {};
 
-        results[filename] = fieldResults;
+            for (const fieldPattern of fieldPatterns) {
+              for (const [fieldName, fieldPatternStr] of Object.entries(fieldPattern)) {
+                const decodedPattern = decodeURIComponent(fieldPatternStr);
+                const regex = new RegExp(decodedPattern, regexFlags || "");
+                const matches = text.match(regex);
+
+                if (matches) {
+                  if (!fieldResults[fieldName]) {
+                    fieldResults[fieldName] = [];
+                  }
+                  fieldResults[fieldName].push(...matches.slice(1).filter(Boolean));
+                }
+              }
+            }
+
+            results[filename] = fieldResults;
+          }
+          break;
       }
     }
 
@@ -364,68 +445,87 @@ export class AI_OCR {
 
   /**
    * Handles the OCR response and updates the UI accordingly.
-   * @param response - The OCR response data
-   * @param tsMode - The mode (print, verify, extract fields)
-   * @param toLoad - Configuration object
-   * @param toProcess - The HTML element being processed
-   * @param tsInvalidimagetext - Error message for invalid images
-   * @param $ - jQuery instance
+   *
+   * @param response           The OCR response data
+   * @param toLoad             Configuration object
+   * @param toProcess          The HTML element being processed
+   * @param tsInvalidimagetext Error message for invalid images
+   * @param $                  jQuery instance
    */
   private static handleResponse(
     response: unknown,
-    tsMode: string,
     toLoad: { [key: string]: unknown },
     toProcess: Element,
     tsInvalidimagetext: string,
     $: JQueryStatic,
   ): void {
-    // #region Print mode: Place result(s) in <textarea>
-    if (tsMode === "print") {
+    if ((toLoad.mode as string).toLowerCase() === "print") {
       const parent2 = toProcess.parentElement?.parentElement?.parentElement || null;
 
       if (parent2) {
-        const receiverElem = parent2.querySelector(".CodBi_AI_Tesseract_Receiver") as HTMLTextAreaElement | null;
+        const receiverElem = INSTANCE.tsCheck<HTMLTextAreaElement | null>(
+          parent2.querySelector(".CodBi_AI_OCR_Receiver"),
+          HTMLTextAreaElement,
+          "The receiver element for the OCR results in Print-Mode has to be a <textarea>.",
+        );
 
         if (receiverElem) {
           let responseText = "";
 
-          if (typeof response === "string") {
-            responseText = response;
-          } else if (response && typeof response === "object") {
-            const values = Object.values(response);
-            const textValues = values.map((val) => (typeof val === "string" ? val : JSON.stringify(val)));
-            responseText = textValues.join("\n\n");
-          } else {
-            responseText = JSON.stringify(response);
+          switch (typeof response) {
+            case "string":
+              responseText = response;
+              break;
+            case "object":
+              if (response !== null) {
+                const values = Object.values(response);
+                const textValues = values.map((val) => (typeof val === "string" ? val : JSON.stringify(val)));
+                responseText = textValues.join("\n\n");
+              } else {
+                responseText = JSON.stringify(response);
+              }
+              break;
+            default:
+              responseText = JSON.stringify(response);
+              break;
           }
-          receiverElem.value = responseText.replace(/\\n/g, "\n");
+
+          receiverElem.value = responseText;
         } else {
           window.codbi.log(
             "INFO",
             `Receiver element with class 'CodBi_AI_Tesseract_Receiver' not found in #${toProcess.parentElement.parentElement.getAttribute("id")}.`,
-            "AI / TESSERACT",
+            "AI / OCR",
           );
         }
       }
     }
     // #endregion Print mode: Place result(s) in <textarea>
     // #region Extract fields mode: Set values on of CSS-Class "CodBi_AI_OCR_Receiver"
-    if (tsMode === "extract fields" && typeof response === "object" && response !== null) {
+    if (
+      (toLoad.mode as string).toLowerCase() === "extract fields" &&
+      typeof response === "object" &&
+      response !== null
+    ) {
       const parent3 = toProcess.parentElement?.parentElement?.parentElement || null;
+
       if (parent3) {
         const receivers = parent3.querySelectorAll(".CodBi_AI_OCR_Receiver");
+
         for (const elem of receivers) {
           const field = (elem as HTMLElement).getAttribute("data-cb-Field").toLowerCase();
+
           if (field) {
             const separator = toLoad.separator ? (toLoad.separator as string) : ",";
             const collectedValues: string[] = [];
 
-            // Process all filename properties in response
             for (const fileKey in response) {
               if (Object.prototype.hasOwnProperty.call(response, fileKey)) {
                 const fileData = response[fileKey];
+
                 if (fileData && typeof fileData === "object" && Object.prototype.hasOwnProperty.call(fileData, field)) {
                   const fieldValue = fileData[field];
+
                   if (Array.isArray(fieldValue)) {
                     collectedValues.push(...fieldValue);
                   } else if (typeof fieldValue === "string") {
@@ -434,11 +534,16 @@ export class AI_OCR {
                 }
               }
             }
-
+            console.log("Collected Values for field", field, ":", collectedValues);
             if (collectedValues.length > 0) {
               const joinedValue = collectedValues.join(separator);
+
               if ("value" in elem) {
-                (elem as HTMLInputElement | HTMLTextAreaElement).value = joinedValue;
+                INSTANCE.tsCheckMulti<HTMLInputElement | HTMLTextAreaElement>(
+                  elem,
+                  [HTMLInputElement, HTMLTextAreaElement],
+                  "The OCR receiver element has to be an <input> or <textarea> when in Extract Fields mode.",
+                ).value = joinedValue;
               } else {
                 elem.textContent = joinedValue;
               }
@@ -449,7 +554,7 @@ export class AI_OCR {
     }
     // #endregion Extract fields mode: Set values on of CSS-Class "CodBi_AI_OCR_Receiver"
     // #region Validate verify mode results
-    if (tsMode === "verify") {
+    if ((toLoad.mode as string).toLowerCase() === "verify") {
       if (Object.values(response as { [key: string]: boolean }).some((result) => result === false)) {
         $(toProcess).error(tsInvalidimagetext);
         // #region Add styles for manual verification checkbox
@@ -463,7 +568,7 @@ export class AI_OCR {
             .CodBi_AI_OCR_ManualVerify_Checkbox { cursor: pointer ; opacity: 1 !important ; position: relative !important ;
               flex-shrink: 0 ;}
 
-            .CodBi_AI_OCR_ManualVerify label { margin-bottom: 0 ; position: relative !important ; white-space: nowrap ;}
+            .CodBi_AI_OCR_ManualVerify label { margin-bottom: 0 ; position: relative !important ;}
             
             @keyframes highlight {
               0%    { opacity:1; }
@@ -501,7 +606,7 @@ export class AI_OCR {
         label.htmlFor = checkbox.id;
         label.textContent = toLoad.wrongfilemessage
           ? (toLoad.wrongfilemessage as string)
-          : "The content is not as expected. You may manually verify that it is the correct one by clicking the checkbox.";
+          : "The content is not as expected. Please check if you selected the correct file(s). You may manually verify that it is the correct one by clicking the checkbox.";
         label.style.marginBottom = "0";
 
         checkboxContainer.appendChild(checkbox);
@@ -523,13 +628,7 @@ export class AI_OCR {
     }
     // #endregion Validate verify mode results
   }
-
-  //region Initialization
-  /**
-   * States whether this {@link AI } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("AI.OCR", AI_OCR.functionality);
-  })();
-  //endregion Initialization
 }
+//region Initialization
+window.codbi.registerFunctionality("AI.OCR", AI_OCR.functionality.bind(AI_OCR));
+//endregion Initialization

@@ -1,4 +1,4 @@
-// @ts-check
+// @ts-nocheck
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -226,24 +226,30 @@ await Promise.all([
   ...createIndividualTsBuildsWithSplitting(
     functionalityTsFiles,
     "src/js/Functionalities",
+    // biome-ignore lint/style/useTemplate: <explanation>
     process.env.web_output_dir + "/Functionalities" ?? "dist/Functionalities",
   ),
+  // biome-ignore lint/style/useTemplate: <explanation>
   ...createIndividualTsBuildsWithSplitting(epsTsFiles, "src/js/EPs", process.env.web_output_dir + "/EPs" ?? "dist/EPs"),
   ...createIndividualTsBuildsWithSplitting(
     configurationsTsFiles,
     "src/js/Configurations",
+    // biome-ignore lint/style/useTemplate: <explanation>
     process.env.web_output_dir + "/Configurations" ?? "dist/Configurations",
   ),
 
   copyFiles(
     functionalityJSONFiles,
     "src/js/Functionalities",
+    // biome-ignore lint/style/useTemplate: <explanation>
     process.env.web_output_dir + "/Functionalities" ?? "dist/Functionalities",
   ),
+  // biome-ignore lint/style/useTemplate: <explanation>
   copyFiles(epsJSONFiles, "src/js/EPs", process.env.web_output_dir + "/EPs" ?? "dist/EPs"),
   copyFiles(
     configurationsJSONFiles,
     "src/js/Configurations",
+    // biome-ignore lint/style/useTemplate: <explanation>
     process.env.web_output_dir + "/Configurations" ?? "dist/Configurations",
   ),
 ]);

@@ -280,6 +280,17 @@ export function loadConfig(): void {
           label span em { font-size:1.25em !important; color: #65b22e ;}
 
           .CXUpload *:not(label) { font-size: 1.25em !important ; margin-top : .5em ;}}
+      /* #region PageBreak Handling */
+      .xm-form.modern .dont_break { page-break-inside: avoid ;}
+
+      .CXPage:first-child, .CXPage:not(:first-child) { page-break-before: avoid ;
+
+      .CXTextField, .CXCheckbox, .CXSelect, .CXTextArea, .CXAppointment, .CXSignature, .CXUpload, .CXCaptcha, .CXMap { break-inside: avoid ;}
+
+      .CXSelect .XDropDown, .CXTextField .XTextField, .CXTextArea .XTextArea, .CXSignature .XSignature { page-break-inside: avoid ;}
+      
+      .CXCheckbox { margin-left: 0 !important ; page-break-inside: avoid ;}
+      /* #endregion PageBreak Handling */
       /* #endregion Druck Einstellungen*/
 
 }`

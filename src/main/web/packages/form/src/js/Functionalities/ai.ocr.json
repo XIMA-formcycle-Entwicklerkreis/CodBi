@@ -3,11 +3,13 @@
   "Parameter": {
     "Mode": "",
     "Pattern": "",
+    "Separator": "",
+    "MaxPages": "",
     "FieldPattern_": "",
     "RegExFlags": "",
+    "Preprocess": "",
     "ProcessingImageText": "",
     "InvalidImageText": "",
-    "WrongFileMessage": "",
-    "Name": ""
+    "WrongFileMessage": ""
   }
 }

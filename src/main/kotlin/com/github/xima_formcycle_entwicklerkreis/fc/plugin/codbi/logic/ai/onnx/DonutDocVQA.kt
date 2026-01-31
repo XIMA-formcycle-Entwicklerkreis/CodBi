@@ -31,6 +31,11 @@ import de.xima.fc.mdl.fdv.EResponseType
 import de.xima.fc.mdl.response.ServletResponse
 import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
+import java.awt.geom.AffineTransform
+import java.awt.image.AffineTransformOp
+import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URI
 import java.nio.file.Paths
@@ -39,6 +44,8 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.jar.JarFile
+import javax.imageio.ImageIO
+import net.sourceforge.tess4j.TessAPI1
 
 // endregion Imports
 /**
@@ -280,6 +287,27 @@ class DocVQATranslator(
  * * - **AI_ONNX_DONUT_MaxTokens** States the number of tokens that have to be reached to force
  *   aborting processing to avoid infinite processing.
  * * - **AI_ONNX_DONUT_ModelDirectory** The direcotry where the model files shall be stored.
+ * * - **AI_ONNX_DONUT_OSDPoolSize** Number of Tesseract OSD handles to keep in pool for automatic
+ *   orientation detection. Defaults to **2**. Only used when OCR is active in Active_AI.
+ *
+ * ## Image Orientation Correction
+ * The Donut model is sensitive to image orientation. There are two ways to handle rotation:
+ *
+ * **1. Manual Rotation (Priority):** Provide an **X-Rotate** header with the rotation angle:
+ * - **X-Rotate: 90** - Rotate image 90° clockwise
+ * - **X-Rotate: 180** - Rotate image 180°
+ * - **X-Rotate: 270** - Rotate image 270° clockwise (90° counter-clockwise)
+ *
+ * **2. Automatic Detection (Fallback):** If no X-Rotate header is provided AND **OCR** is in the
+ * **Active_AI** plugin property, Tesseract's OSD (Orientation and Script Detection) will
+ * automatically detect and correct image orientation. This requires:
+ * - **OCR** in Active_AI property (enables Tesseract)
+ * - Tesseract's **osd.traineddata** file must be available
+ *
+ * **3. No Rotation:** If X-Rotate is not provided and OCR is not active, images are processed
+ * as-is.
+ *
+ * Common use case: Photos taken in portrait mode on mobile devices often need 90° or 270° rotation.
  */
 class DonutDocVQAAction : ONNX() {
   /** States the files to use for all instances. */
@@ -297,6 +325,15 @@ class DonutDocVQAAction : ONNX() {
   private var keepNewest = 3
   /** Tracks if DONUT is present in Active_AI. */
   private var donutActive = false
+  /** Tracks if OCR (Tesseract) is present in Active_AI for orientation detection. */
+  private var ocrActive = false
+  /** The size of the OSD handle pool for orientation detection. Defaults to 2. */
+  private var osdPoolSize = 2
+  /** Pool of Tesseract OSD handles for orientation detection. */
+  private val osdPool =
+      java.util.concurrent.LinkedBlockingQueue<net.sourceforge.tess4j.ITessAPI.TessBaseAPI>()
+  /** Tracks whether the OSD pool has been initialized. */
+  private var isOsdPoolInitialized = false
   /** The encoder model. */
   private var encoderModel: ZooModel<NDList, NDList>? = null
   /** The decoder model. */
@@ -638,6 +675,44 @@ class DonutDocVQAAction : ONNX() {
     // endregion Check if files shall be purged
     val activeAI = configData.properties.getProperty("Active_AI")?.lowercase() ?: ""
     donutActive = activeAI.contains("donut") && !activeAI.contains("donut_pytorch")
+    ocrActive = activeAI.contains("ocr")
+
+    if (ocrActive) {
+      log(AI.LogLevel.INFO, "OCR is active - automatic orientation detection will be available")
+
+      // Read OSD pool size
+      val candidateOsdPoolSize =
+          configData.properties.getProperty("AI_ONNX_DONUT_OSDPoolSize")?.toIntOrNull()
+      osdPoolSize =
+          if (candidateOsdPoolSize != null && candidateOsdPoolSize > 0) candidateOsdPoolSize else 2
+      log(AI.LogLevel.INFO, "OSD pool size set to: $osdPoolSize")
+
+      // Initialize OSD pool
+      val tessDataDir = File(configData.fileHelper.pluginFolder, "Resources/AI/Tesseract/Models")
+      if (tessDataDir.exists()) {
+        try {
+          repeat(osdPoolSize) {
+            val osdHandle = TessAPI1.TessBaseAPICreate()
+            if (TessAPI1.TessBaseAPIInit3(osdHandle, tessDataDir.absolutePath, "osd") == 0) {
+              TessAPI1.TessBaseAPISetPageSegMode(osdHandle, 0) // PSM_OSD_ONLY
+              osdPool.put(osdHandle)
+              log(AI.LogLevel.INFO, "Created OSD handle ${it + 1}/${osdPoolSize}")
+            } else {
+              log(AI.LogLevel.WARNING, "Failed to initialize OSD handle ${it + 1}")
+              TessAPI1.TessBaseAPIDelete(osdHandle)
+            }
+          }
+          isOsdPoolInitialized = true
+          log(AI.LogLevel.INFO, "OSD pool initialized with ${osdPool.size} handles")
+        } catch (e: Exception) {
+          log(AI.LogLevel.WARNING, "Failed to initialize OSD pool: ${e.message}")
+        }
+      } else {
+        log(
+            AI.LogLevel.WARNING,
+            "Tesseract tessdata directory not found at ${tessDataDir.absolutePath} - OSD pool not initialized")
+      }
+    }
     // region Check if tokenizer library can be made available
     if (donutActive)
         if (!ensureTokenizersNativeLibraries())
@@ -1034,6 +1109,135 @@ class DonutDocVQAAction : ONNX() {
     return rawAnswer.replace("</s_answer>", "").replace("<s>", "").trim()
   }
 
+  /**
+   * Detects the orientation of an image using Tesseract's OSD (Orientation and Script Detection).
+   * This method uses a pool of pre-initialized OSD handles for better performance.
+   *
+   * @param image The image to analyze.
+   * @param tessDataDir The directory containing Tesseract's tessdata (included for logging
+   *   purposes).
+   * @return The rotation angle (0, 90, 180, or 270) that should be applied to correct the
+   *   orientation, or 0 if detection fails or OCR is not active.
+   */
+  private fun detectOrientation(image: BufferedImage, tessDataDir: File): Int {
+    if (!ocrActive || !isOsdPoolInitialized) {
+      log(
+          LogLevel.INFO,
+          "OSD not available - OCR active: $ocrActive, pool initialized: $isOsdPoolInitialized")
+      return 0
+    }
+
+    // Acquire OSD handle from pool with timeout
+    val osdHandle =
+        try {
+          osdPool.poll(10, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (e: InterruptedException) {
+          log(LogLevel.WARNING, "Interrupted while waiting for OSD handle")
+          return 0
+        }
+
+    if (osdHandle == null) {
+      log(LogLevel.WARNING, "OSD pool exhausted - no handle available")
+      return 0
+    }
+
+    try {
+      val width = image.width
+      val height = image.height
+      val pixels = image.getRGB(0, 0, width, height, null, 0, width)
+      val buffer = java.nio.ByteBuffer.allocateDirect(width * height * 4)
+
+      for (pixel in pixels) {
+        buffer.put((pixel shr 16 and 0xFF).toByte()) // R
+        buffer.put((pixel shr 8 and 0xFF).toByte()) // G
+        buffer.put((pixel and 0xFF).toByte()) // B
+        buffer.put((pixel shr 24 and 0xFF).toByte()) // A
+      }
+
+      buffer.rewind()
+
+      TessAPI1.TessBaseAPISetImage(osdHandle, buffer, width, height, 4, width * 4)
+
+      val orientDegPtr = java.nio.IntBuffer.allocate(1)
+      val orientConfPtr = java.nio.FloatBuffer.allocate(1)
+      val scriptNamePtr = com.sun.jna.ptr.PointerByReference()
+      val scriptConfPtr = java.nio.FloatBuffer.allocate(1)
+
+      val result =
+          TessAPI1.TessBaseAPIDetectOrientationScript(
+              osdHandle, orientDegPtr, orientConfPtr, scriptNamePtr, scriptConfPtr)
+
+      if (result == 1) {
+        val orientDeg = orientDegPtr.get(0)
+        val orientConf = orientConfPtr.get(0)
+        log(
+            LogLevel.INFO,
+            "Tesseract OSD detected orientation: ${orientDeg}° (confidence: ${orientConf})")
+
+        // Convert Tesseract's detected orientation to correction angle
+        val correctionAngle =
+            when (orientDeg) {
+              0 -> 0
+              90 -> 270 // Image is 90° rotated, need to rotate 270° to correct
+              180 -> 180
+              270 -> 90 // Image is 270° rotated, need to rotate 90° to correct
+              else -> 0
+            }
+
+        return correctionAngle
+      }
+    } catch (e: Exception) {
+      log(LogLevel.WARNING, "Tesseract OSD failed: ${e.message}")
+    } finally {
+      // Return handle to pool
+      try {
+        osdPool.put(osdHandle)
+      } catch (e: InterruptedException) {
+        log(LogLevel.WARNING, "Interrupted while returning OSD handle to pool")
+      }
+    }
+
+    log(LogLevel.INFO, "Could not detect orientation, assuming no rotation needed")
+    return 0
+  }
+
+  /**
+   * Rotates a BufferedImage by the specified degrees (90, 180, or 270).
+   *
+   * @param img The image to rotate.
+   * @param degrees The rotation angle in degrees (90, 180, or 270).
+   * @return The rotated image.
+   */
+  private fun rotateImage(img: BufferedImage, degrees: Int): BufferedImage {
+    val width = img.width
+    val height = img.height
+    val at = AffineTransform()
+
+    val (resultWidth, resultHeight) =
+        when (degrees) {
+          90 -> {
+            at.translate(height.toDouble(), 0.0)
+            at.rotate(Math.PI / 2)
+            Pair(height, width)
+          }
+          180 -> {
+            at.translate(width.toDouble(), height.toDouble())
+            at.rotate(Math.PI)
+            Pair(width, height)
+          }
+          270 -> {
+            at.translate(0.0, width.toDouble())
+            at.rotate(-Math.PI / 2)
+            Pair(height, width)
+          }
+          else -> return img
+        }
+
+    val result = BufferedImage(resultWidth, resultHeight, img.type)
+    val op = AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR)
+    return op.filter(img, result)
+  }
+
   /** Handles incoming requests. */
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
     log(AI.LogLevel.INFO, "Processing request received")
@@ -1089,7 +1293,97 @@ class DonutDocVQAAction : ONNX() {
               stream.map { it.data }.reduce { acc, bytes -> acc + bytes }.orElse(byteArrayOf())
             }
 
-        combinedBytes.inputStream().use { inputStream ->
+        // region Apply orientation correction (manual X-Rotate or automatic OSD)
+        val rotatedBytes =
+            try {
+              // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
+              // 270)
+              val manualRotation =
+                  params.headerMap.entries
+                      .find { it.key.equals("X-Rotate", ignoreCase = true) }
+                      ?.value
+                      ?.trim()
+                      ?.toIntOrNull()
+
+              if (manualRotation != null && manualRotation != 0) {
+                // Manual rotation via X-Rotate header
+                log(
+                    LogLevel.INFO,
+                    "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+
+                val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
+
+                if (bufferedImg != null) {
+                  val rotatedImg =
+                      when (manualRotation) {
+                        90,
+                        180,
+                        270 -> rotateImage(bufferedImg, manualRotation)
+                        else -> {
+                          log(
+                              LogLevel.WARNING,
+                              "Invalid X-Rotate value: $manualRotation (use 90, 180, or 270)")
+                          bufferedImg
+                        }
+                      }
+
+                  val baos = ByteArrayOutputStream()
+                  ImageIO.write(rotatedImg, "PNG", baos)
+                  baos.toByteArray()
+                } else {
+                  log(LogLevel.WARNING, "Failed to read image for rotation, using original")
+                  combinedBytes
+                }
+              } else if (ocrActive) {
+                // Automatic orientation detection using Tesseract OSD
+                log(
+                    LogLevel.INFO,
+                    "No X-Rotate header provided - using Tesseract OSD for automatic orientation detection")
+
+                val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
+
+                if (bufferedImg != null) {
+                  // Find tessdata directory (same as Tesseract plugin uses)
+                  val tessDataDir = File(pluginFolder, "Resources/AI/Tesseract/Models")
+
+                  if (tessDataDir.exists()) {
+                    val detectedAngle = detectOrientation(bufferedImg, tessDataDir)
+
+                    if (detectedAngle != 0) {
+                      log(LogLevel.INFO, "Applying auto-detected rotation: ${detectedAngle}°")
+                      val rotatedImg = rotateImage(bufferedImg, detectedAngle)
+
+                      val baos = ByteArrayOutputStream()
+                      ImageIO.write(rotatedImg, "PNG", baos)
+                      baos.toByteArray()
+                    } else {
+                      log(LogLevel.INFO, "No rotation needed according to OSD")
+                      combinedBytes
+                    }
+                  } else {
+                    log(
+                        LogLevel.WARNING,
+                        "Tesseract tessdata directory not found at ${tessDataDir.absolutePath} - skipping OSD")
+                    combinedBytes
+                  }
+                } else {
+                  log(LogLevel.WARNING, "Failed to read image for OSD, using original")
+                  combinedBytes
+                }
+              } else {
+                // No rotation - neither manual nor automatic
+                log(LogLevel.INFO, "No rotation applied - X-Rotate not provided and OCR not active")
+                combinedBytes
+              }
+            } catch (e: Exception) {
+              log(
+                  LogLevel.WARNING,
+                  "Image orientation correction failed: ${e.message}, using original image")
+              combinedBytes
+            }
+        // endregion Apply orientation correction (manual X-Rotate or automatic OSD)
+
+        rotatedBytes.inputStream().use { inputStream ->
           val djlImg = ImageFactory.getInstance().fromInputStream(inputStream)
           val results = mutableMapOf<String, String>()
 
@@ -1191,6 +1485,20 @@ class DonutDocVQAAction : ONNX() {
    */
   override fun shutdown(shutdownData: IPluginShutdownData?) {
     translator?.closePredictor()
+
+    // Clean up OSD pool
+    while (osdPool.isNotEmpty()) {
+      val handle = osdPool.poll()
+      if (handle != null) {
+        try {
+          TessAPI1.TessBaseAPIDelete(handle)
+        } catch (e: Exception) {
+          log(AI.LogLevel.WARNING, "Error deleting OSD handle during shutdown: ${e.message}")
+        }
+      }
+    }
+    isOsdPoolInitialized = false
+    log(AI.LogLevel.INFO, "OSD pool cleaned up")
 
     encoderModel = null
     decoderModel = null

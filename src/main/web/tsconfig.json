@@ -25,7 +25,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "downlevelIteration": true,
-    "verbatimModuleSyntax": true,
+    "verbatimModuleSyntax": false,
     "isolatedModules": true,
     "isolatedDeclarations": true,
     // Strictness / correctness

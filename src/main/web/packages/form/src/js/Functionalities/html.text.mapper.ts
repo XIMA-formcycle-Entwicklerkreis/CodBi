@@ -4,6 +4,8 @@ import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -33,10 +35,14 @@ export class HTML_Text_Mapper {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @EQ.PRE(undefined, true, "replacements")
+    @DEFINED.PRE("replacements")
+    @TYPE.PRE("object | object[]", "replacements")
+    @DEFINED.PRE("property")
     @REGEX.PRE(REGEX.stdExp.property, "property")
     @TYPE.PRE("string", "css")
     toLoad: { [key: string]: unknown },
+
+    @INSTANCE.PRE(HTMLElement, undefined, "Is it not an HTML-Element that is tagged with this functionality?")
     toProcess: Element,
   ): void {
     // #region Further Precondition Checks
@@ -52,7 +58,6 @@ export class HTML_Text_Mapper {
     }
 
     (toProcess as unknown as { [key: string]: string })[toLoad.property as string] = "";
-
     // #region Normalize replacements to array
     if (!Array.isArray(toLoad.replacements)) {
       toLoad.replacements = [toLoad.replacements];
@@ -64,7 +69,6 @@ export class HTML_Text_Mapper {
       }
 
       let replacedContent: string = originalContent;
-
       // #region Perform replacements
       for (const property of Object.keys((toLoad.replacements as [])[i] as unknown as object)) {
         replacedContent = replacedContent?.replace(
@@ -86,12 +90,6 @@ export class HTML_Text_Mapper {
     // #endregion Process each context
     toProcess.setAttribute("style", `${toProcess.getAttribute("style")};${toLoad.css}`);
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Text_Mapper } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Text.Mapper", HTML_Text_Mapper.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("HTML.Text.Mapper", HTML_Text_Mapper.functionality.bind(HTML_Text_Mapper)); // Initialization

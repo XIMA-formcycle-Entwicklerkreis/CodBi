@@ -7,6 +7,7 @@ import type { CleaveOptions } from "cleave.js/options/index.js";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { EQ } from "xdbc/src/DBC/EQ";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
@@ -20,7 +21,7 @@ export class HTML_Input_Cleave {
   /**
    * This functionality applies Cleave on an {@link HTMLInputElement }.
    *
-   * Config Parameter:
+   * ### Config Parameter:
    *  - Config      : The {@link CleaveOptions } to set instead of the other shorthand parameter.
    *  - Date        : The {@link CleaveOptions.date }.
    *  - DateMin     : The {@link CleaveOptions.dateMin }.
@@ -35,7 +36,14 @@ export class HTML_Input_Cleave {
   @DBC.ParamvalueProvider
   public static functionality(
     toLoad: { [key: string]: unknown },
-    @EQ.PRE("INPUT", false, "tagName") toProcess: Element,
+
+    @INSTANCE.PRE(
+      HTMLInputElement,
+      undefined,
+      'Is it not an <input type = "text"/> that is tagged with this functionality?',
+    )
+    @EQ.PRE("text", false, "type")
+    toProcess: Element,
   ): void {
     // #region Normalize Arrayed-Parameter.
     if (Array.isArray(toLoad.config)) {
@@ -79,12 +87,6 @@ export class HTML_Input_Cleave {
     // Apply Cleave.
     new Cleave(toProcess as HTMLElement, config);
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Input_Cleave } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Input.Cleave", HTML_Input_Cleave.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("HTML.Input.Cleave", HTML_Input_Cleave.functionality.bind(HTML_Input_Cleave)); // Initialization

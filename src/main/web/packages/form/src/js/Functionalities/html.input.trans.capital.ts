@@ -7,6 +7,12 @@ import { HTML_Input_Transformer } from "./html.input.transformer";
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 export class HTML_Input_Trans_Capital extends HTML_Input_Transformer {
+  /**
+   * Gets the transformer that converts the input to capitalized words.
+   *
+   * @returns A transformer that lowercases the input and uppercases the first
+   *          letter after a word boundary (start, whitespace, or hyphen).
+   */
   public static override get transformer(): (toTransform: string, toLoad: { [key: string]: unknown }) => string {
     return (toTransform: string, toLoad: { [key: string]: unknown }): string => {
       return toTransform.toLowerCase().replace(/(^|\s|-)(\S)/g, (fullMatch, separator, letter) => {
@@ -23,12 +29,9 @@ export class HTML_Input_Trans_Capital extends HTML_Input_Transformer {
   public static override functionality(toLoad: { [key: string]: unknown }, toProcess: Element): void {
     HTML_Input_Transformer.functionality(toLoad, toProcess, HTML_Input_Trans_Capital.transformer);
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Input_Trans_Capital } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static override registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Input.Trans.Capital", HTML_Input_Trans_Capital.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "HTML.Input.Trans.Capital",
+  HTML_Input_Trans_Capital.functionality.bind(HTML_Input_Trans_Capital),
+); // Initialization

@@ -1,8 +1,9 @@
 // #region Imports
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
-import { EQ } from "xdbc/src/DBC/EQ";
+import { DIFFERENT } from "xdbc/src/DBC/EQ/DIFFERENT";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -17,7 +18,7 @@ export class HTML_Select_Injection {
    * entry found in "Titles", if available. If "Titles" isn't available the "Values" will be treated as the "Titles"
    * also. The one with the least entries determines the amount of {@link HTMLOptionElement }s that'll be generated.
    *
-   * Config Parameter:
+   * ### Config Parameter:
    *  - Titles:         The optional "title"-attributes that shall be set on the {@link HTMLOptionElement }s.
    *  - TitleProperty:  The optional property to retrieve from the {@link Array } passed to the **Values** to use it as
    *                    the actual title.
@@ -34,9 +35,16 @@ export class HTML_Select_Injection {
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @INSTANCE.PRE(Array<string>, "values")
+    @TYPE.PRE("string", "textproperty")
+    @TYPE.PRE("string | boolean", "reclean")
+    @DIFFERENT.PRE(0, "titles.length", "Isn't at least one title specified?")
+    @INSTANCE.PRE(Array<string>, "titles", 'Aren\'t all the "titles" strings?')
+    @DIFFERENT.PRE(0, "values.length", "Isn't at least one value specified?")
+    @INSTANCE.PRE(Array<string>, "values", 'Aren\'t all the "values" strings?')
     toLoad: { [key: string]: [] | boolean | string | undefined },
-    @EQ.PRE("SELECT" as unknown as object, false, "tagName") toProcess: Element,
+
+    @INSTANCE.PRE(HTMLSelectElement, undefined, "Is it not a <select/> that is tagged with this functionality?")
+    toProcess: Element,
   ): undefined {
     // #region Delete the "HTMLSelectElement"'s "innerHTML" if "ReClean" is TRUE.
     if (toLoad.reclean) {
@@ -56,19 +64,17 @@ export class HTML_Select_Injection {
     }
 
     for (let i = 0; i < arrayLength; i++) {
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      // biome-ignore lint/style/useSingleVarDeclarator: <explanation>
-      let title: string | any, value: string | any, text: string | any;
+      let title: string | unknown;
+      let value: string | unknown;
+      let text: string | unknown;
 
       value = text = (toLoad.values as [])[i];
 
       title = toLoad.titles ? (toLoad.titles as [])[i] : value;
 
       if (typeof value !== "string") {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        value = (title as any)[toLoad.valueproperty as string];
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        text = (title as any)[toLoad.textproperty as string];
+        value = (title as unknown)[toLoad.valueproperty as string];
+        text = (title as unknown)[toLoad.textproperty as string];
       }
 
       if (typeof title !== "string") {
@@ -80,12 +86,9 @@ export class HTML_Select_Injection {
     }
     // #endregion Populate the "HTMLSelectElement".
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Select_Injection } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Select.Injection", HTML_Select_Injection.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "HTML.Select.Injection",
+  HTML_Select_Injection.functionality.bind(HTML_Select_Injection),
+); // Initialization

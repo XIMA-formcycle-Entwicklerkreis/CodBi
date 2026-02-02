@@ -6,6 +6,7 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { EQ } from "xdbc/src/DBC/EQ";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -31,36 +32,27 @@ export class HTML_Input_REGEX {
 
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE("string", "expression")
-    @TYPE.PRE("string", "exposeexpression")
-    @TYPE.PRE("string", "flags")
-    @TYPE.PRE("string", "errorprefix")
-    @TYPE.PRE("string", "errorpostfix")
+    @TYPE.PRE("string", "expression :: flags :: keyexpression :: keyflags :: errorprefix :: errorpostfix")
+    @TYPE.PRE("string | boolean", "exposeexpression")
     toLoad: { [key: string]: unknown },
-    @EQ.PRE("INPUT", false, "tagName")
+
+    @INSTANCE.PRE(
+      HTMLInputElement,
+      undefined,
+      'Is it not an <input type = "text"/> that is tagged with this functionality?',
+    )
+    @EQ.PRE("text", false, "type")
     toProcess: Element,
   ): void {
-    // #region Normalize Arrayed-Parameter.
-    if (Array.isArray(toLoad.expression)) {
-      toLoad.expression = (toLoad.expression as Array<string>)[0];
-    }
-
-    if (Array.isArray(toLoad.errorprefix)) {
-      toLoad.errorprefix = (toLoad.errorprefix as Array<string>)[0];
-    }
-
-    if (Array.isArray(toLoad.errorpostfix)) {
-      toLoad.errorpostfix = (toLoad.errorpostfix as Array<string>)[0];
-    }
-
-    if (Array.isArray(toLoad.exposeexpression)) {
-      toLoad.exposeexpression = (toLoad.exposeexpression as Array<string>)[0];
-    }
-    // #endregion Normalize Arrayed-Parameter.
+    // #region Normalize Parameter.
     toLoad.expression = (toLoad.expression as string).replace(/°/, "^");
-
+    toLoad.exposeexpression = toLoad.exposeexpression
+      ? typeof toLoad.exposeexpression === "string"
+        ? toLoad.exposeexpression.toLowerCase() === "true"
+        : toLoad.exposeexpression
+      : false;
+    // #endregion Normalize Parameter.
     const $ = getJQuery();
-
     // #region Live validation
     toProcess.addEventListener("keyup", (event) => {
       if ((event as KeyboardEvent).key === undefined) {
@@ -96,11 +88,11 @@ export class HTML_Input_REGEX {
     toProcess.addEventListener("change", (event) => {
       if (
         !new RegExp(toLoad.expression as string, toLoad.flags ? (toLoad.flags as string) : "g").test(
-          (event.target as HTMLInputElement).value,
+          (toProcess as HTMLInputElement).value,
         )
       ) {
         $(toProcess).error(
-          `${toLoad.errorprefix ? toLoad.errorprefix : "Text does not comply to "}${toLoad.exposeexpression && (toLoad.exposeexpression as string).toLowerCase() === "true" ? toLoad.expression : "a certain restriction"}${toLoad.errorpostfix ? ` ${toLoad.errorpostfix}` : "."}`,
+          `${toLoad.errorprefix ? toLoad.errorprefix : "Text does not comply to "}${toLoad.exposeexpression ? toLoad.expression : "a certain restriction"}${toLoad.errorpostfix ? ` ${toLoad.errorpostfix}` : "."}`,
         );
       } else {
         $(toProcess).error("");
@@ -108,12 +100,6 @@ export class HTML_Input_REGEX {
     });
     // #endregion Invalidate Field
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Input_REGEX } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Input.REGEX", HTML_Input_REGEX.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("HTML.Input.REGEX", HTML_Input_REGEX.functionality.bind(HTML_Input_REGEX)); // Initialization

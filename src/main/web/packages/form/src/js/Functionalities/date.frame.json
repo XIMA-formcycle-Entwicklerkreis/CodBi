@@ -3,6 +3,7 @@
   "Parameter": {
     "MaxField": "",
     "MsgMinInvalid": "",
-    "MsgMaxInvalid": ""
+    "MsgMaxInvalid": "",
+    "EqualityPermitted": ""
   }
 }

@@ -1,6 +1,9 @@
 {
   "Description": "/classes/Functionalities_form.navigator.Form_Navigator.html#functionality",
   "Parameter": {
-    "Preview": ""
+    "Preview": "",
+    "CSSNavButtons": "",
+    "CSSHoverNavButtons": "",
+    "CSSBlockedNavButton": ""
   }
 }

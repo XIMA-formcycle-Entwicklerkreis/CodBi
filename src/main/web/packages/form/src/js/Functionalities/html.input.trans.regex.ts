@@ -11,6 +11,10 @@ export class HTML_Input_Trans_RegEx extends HTML_Input_Transformer {
    * Get the actual transformer that does a {@link String.replace} with the {@link toLoad.extractor } and
    * the {@link toLoad.replacements }.
    *
+   * ### Config Parameter:
+   * - Extractor:    The {@link string } representing the regular expression to extract the values to be replaced.
+   * - Replacements: The {@link string } representing the replacement value.
+   *
    * @param toTransform The {@link string } to transform.
    * @param toLoad      As provided by the **CodBi**.
    *
@@ -29,12 +33,9 @@ export class HTML_Input_Trans_RegEx extends HTML_Input_Transformer {
   public static override functionality(toLoad: { [key: string]: unknown }, toProcess: Element): void {
     HTML_Input_Transformer.functionality(toLoad, toProcess, HTML_Input_Trans_RegEx.transformer);
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Input_Trans_RegEx } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static override registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Input.Trans.RegEx", HTML_Input_Trans_RegEx.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "HTML.Input.Trans.RegEx",
+  HTML_Input_Trans_RegEx.functionality.bind(HTML_Input_Trans_RegEx),
+);

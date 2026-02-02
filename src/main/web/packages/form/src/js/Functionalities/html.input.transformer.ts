@@ -18,7 +18,6 @@ export class HTML_Input_Transformer {
    *
    * @return An anonymous function simply returning the {@link string } to transform. */
   protected static get transformer(): (toTransform: string, toLoad: { [key: string]: unknown }) => string {
-    console.log("standard transformer");
     return (toTransform: string, toLoad: { [key: string]: unknown }) => {
       return toTransform;
     };
@@ -48,12 +47,4 @@ export class HTML_Input_Transformer {
     });
     // #endregion Perform transformation
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Input_Transformer } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Input.Transformer", HTML_Input_Transformer.functionality);
-  })();
-  // #endregion Initialization
 }

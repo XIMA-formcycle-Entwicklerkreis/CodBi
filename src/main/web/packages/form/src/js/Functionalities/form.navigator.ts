@@ -2,6 +2,12 @@
 // #region XIMA
 import { getJQuery, getXUtil } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
+// #region XDBC
+import { IF } from "xdbc/src/DBC/IF";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { REGEX } from "xdbc/src/DBC/REGEX";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+// #endregion XDBC
 // #endregion Imports
 /**
  * Registers the {@link Form_Navigator.functionality }.
@@ -13,39 +19,36 @@ export class Form_Navigator {
   /**
    * The tagged {@link HTMLDivElement } will get navigation buttons that can be used to navigate the form.
    * Multiple {@link HTMLDivElement } can implement the navigator (e.g. header & footer) with it's
-   * {@link HTMLButtonElement}s being synchronized when clicking the ones of one of the implemented navigators.
+   * {@link HTMLButtonElement}s being synchronized when clicking one of the implemented navigators.
    *
-   * CSS Selectors:
+   * ### CSS Selectors:
+   *
    * | Selector | Element Type | Description |
-   * | :--- | :--- | :--- |
-   * | .---CodBi.--Form_Navigator.-Container.-NavButton | Any `HTMLButtonElement` | Targets **any** navigational button within the form navigator. |
-   * | .---CodBi.--Form_Navigator.-Container.-NavButton:first-child | The first `HTMLButtonElement` | Targets the **first** button in the sequence. |
-   * | .---CodBi.--Form_Navigator.-Container.-NavButton:last-child | The last `HTMLButtonElement` | Targets the **last** button in the sequence. |
-   * | .---CodBi.--Form_Navigator.-Container.-NavButton.-current | `HTMLButtonElement` | The button corresponding to the **currently active page** or step. |
-   * | .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked | `HTMLButtonElement`
+   * | --- | --- | --- |
+   * | `.---CodBi.--Form_Navigator.-Container.-NavButton` | Any `HTMLButtonElement` | Targets **any** navigational button within the form navigator. |
+   * | `.---CodBi.--Form_Navigator.-Container.-NavButton:first-child` | The first `HTMLButtonElement` | Targets the **first** button in the sequence. |
+   * | `.---CodBi.--Form_Navigator.-Container.-NavButton:last-child` | The last `HTMLButtonElement` | Targets the **last** button in the sequence. |
+   * | `.---CodBi.--Form_Navigator.-Container.-NavButton.-current` | `HTMLButtonElement` | The button corresponding to the **currently active page** or step. |
+   * | `.---CodBi.--Form_Navigator.-Container.-NavButton.-blocked` | `HTMLButtonElement` | Targets buttons blocked for any reason. |
    *
    * Config Parameter:
-   *  - Preview:              Defines whether the navigator permits switching to every page even it wasn't visited before (**TRUE**)
-   *                          or not (**FALSE**).
-   *  - cssNavButtons:        A {@link string } containing additional CSS to be applied to the navigator's {@link HTMLButtonElement}s.
-   *  - cssHoverNavButtons:   A {@link string } containing additional CSS to be applied to the navigator's {@link HTMLButtonElement}s when hovering them.
-   *  - cssBlockedNavButtons: A {@link string } containing additional CSS to be applied to the navigator's {@link HTMLButtonElement}s that are blocked for any reason.
+   *  - **Preview**:              Defines whether the navigator permits switching to every page even it wasn't visited before (**TRUE**)
+   *                              or not (**FALSE**). Defaults to: **FALSE**.
+   *  - **cssNavButtons**:        A {@link string } containing additional CSS to be applied to the navigator's {@link HTMLButtonElement}s.
+   *  - **cssHoverNavButtons**:   A {@link string } containing additional CSS to be applied to the navigator's {@link HTMLButtonElement}s when hovering them.
+   *  - **cssBlockedNavButtons**: A {@link string } containing additional CSS to be applied to the navigator's {@link HTMLButtonElement}s that are blocked for any reason.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
-  public static functionality(toLoad: { [key: string]: unknown }, toProcess: Element): void {
-    // #region Normalize Arrayed-Parameter.
-    toLoad.ccsnavbuttons =
-      toLoad.cssnavbuttons && Array.isArray(toLoad.cssnavbuttons) ? toLoad.cssnavbuttons[0] : toLoad.cssnavbuttons;
-    toLoad.csshovernavbuttons =
-      toLoad.csshovernavbuttons && Array.isArray(toLoad.csshovernavbuttons)
-        ? toLoad.csshovernavbuttons[0]
-        : toLoad.csshovernavbuttons;
-    toLoad.cssblockednavbuttons =
-      toLoad.cssblockednavbuttons && Array.isArray(toLoad.cssblockednavbuttons)
-        ? toLoad.cssblockednavbuttons[0]
-        : toLoad.cssblockednavbuttons;
-    // #endregion Normalize Arrayed-Parameter.
+  public static functionality(
+    @TYPE.PRE("string", "cssnavbuttons :: csshovernavbuttons :: cssblockednavbuttons")
+    @IF.PRE(new TYPE("string"), new REGEX(REGEX.stdExp.boolean), "preview")
+    @IF.PRE(new TYPE("string"), new TYPE("boolean"), "preview", true)
+    toLoad: { [key: string]: unknown },
+
+    @INSTANCE.PRE(HTMLDivElement, undefined, "Is it not a <div> that is tagged with this functionality?")
+    toProcess: Element,
+  ): void {
     const $ = getJQuery();
     const pages: Array<Element> = $(".XPage").toArray();
     const pageNames: Array<string> = pages.map((page) => page.getAttribute("data-name")) as Array<string>;
@@ -86,10 +89,16 @@ export class Form_Navigator {
     // #endregion Handle Navigator-Type on resize.
     let currentPage: string = pageNames[0];
     let content: string = "";
+
+    toLoad.preview = toLoad.preview
+      ? typeof toLoad.preview === "boolean"
+        ? (toLoad.preview as boolean)
+        : (toLoad.preview as string).toLowerCase() === "true"
+      : false;
     // #region Inject <button>s, <style>s and containing <div>.
     for (const name of pageNames) {
       content += `
-        <button ${(toLoad.preview && (toLoad.preview as string).trim().toLowerCase() !== "true") || toLoad.preview === undefined ? 'style = "pointer-events : none ;"' : ""}
+        <button ${!toLoad.preview ? 'style = "pointer-events : none ;"' : ""}
                 class = "---CodBi --Form_Navigator -Container -NavButton ${name === currentPage ? "-current" : "blocked"}"
                 page  = "${name}"
                 type  = "button">${name}</button>`;
@@ -120,8 +129,7 @@ export class Form_Navigator {
     const validations: Map<string, boolean> = new Map<string, boolean>();
 
     xm_validator.on("progress", (data) => {
-      // biome-ignore lint/complexity/useOptionalChain: ???
-      if (data.item[0] && data.item[0].hasAttribute("data-name")) {
+      if (data.item[0]?.hasAttribute("data-name")) {
         validations.set(data.item[0].getAttribute("data-name"), data.valid);
       }
     });
@@ -138,21 +146,26 @@ export class Form_Navigator {
         `.---CodBi.--Form_Navigator.-Container.-NavButton[ page = "${currentPage}"]`,
       )) {
         if (navButton) {
-          (navButton as HTMLElement).classList.add("-current");
+          INSTANCE.tsCheck<HTMLElement>(navButton, HTMLElement).classList.add("-current");
+
           (navButton as HTMLElement).style.pointerEvents = "all";
         }
       }
+
       formerGotoPage(pageName, validate);
     };
     // #endregion Intercept "window.gotoPage"s.
     // Setup the Navigator's <button>s logic.
     for (const button of toProcess.querySelectorAll(".---CodBi.--Form_Navigator.-Container.-NavButton")) {
       button.addEventListener("click", (event: Event) => {
-        if (!(event.target as HTMLElement).hasAttribute("page")) {
+        if (!INSTANCE.tsCheck<HTMLElement>(event.target, HTMLElement).hasAttribute("page")) {
           return;
         }
-        // biome-ignore lint/style/noNonNullAssertion: When there is a click event there is also an event.target.
-        const targetPage: string = (event.target! as HTMLElement).getAttribute("page")!;
+
+        const targetPage: string = TYPE.tsCheck<string>(
+          INSTANCE.tsCheck<HTMLElement>(event.target, HTMLElement).getAttribute("page"),
+          "string",
+        );
 
         if (
           pageNames.filter(
@@ -162,10 +175,7 @@ export class Form_Navigator {
         ) {
           const goForward: boolean = pageNames.indexOf(currentPage) < pageNames.indexOf(targetPage);
 
-          if (
-            (toLoad.preview && (toLoad.preview as string).trim().toLowerCase() !== "true") ||
-            toLoad.preview === undefined
-          ) {
+          if (toLoad.preview) {
             gotoPage(currentPage, true);
             gotoPage(targetPage, goForward);
           } else {
@@ -173,12 +183,7 @@ export class Form_Navigator {
             gotoPage(targetPage, false);
           }
           // #region Prevent moving forward to a page that wasn't validated yet.
-          if (
-            ((toLoad.preview && (toLoad.preview as string).trim().toLowerCase() !== "true") ||
-              toLoad.preview === undefined) &&
-            goForward &&
-            !validations.get(currentPage)
-          ) {
+          if (toLoad.preview && goForward && !validations.get(currentPage)) {
             return;
           }
           // #endregion Prevent moving forward to a page that wasn't validated yet.
@@ -222,12 +227,6 @@ export class Form_Navigator {
       }
     }
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Form_Navigator } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("Form.Navigator", Form_Navigator.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("Form.Navigator", Form_Navigator.functionality.bind(Form_Navigator)); // Initialization

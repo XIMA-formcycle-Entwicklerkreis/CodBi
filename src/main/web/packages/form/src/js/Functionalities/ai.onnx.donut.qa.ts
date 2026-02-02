@@ -45,12 +45,14 @@ export class AI_ONNX_DONUT_QA {
    * 2. **Automatic Detection (Fallback):** If no data-cb-Rotate attribute is provided AND the
    *    Tesseract OCR engine is active (**OCR** is set in **Active_AI** plugin property), the system will
    *    automatically detect and correct image orientation using Tesseract's OSD (Orientation
-   *    and Script Detection).
+   *    and Script Detection). Hint: **If you experience wrong results on images taken with an iPhone, consider enabling **OCR**
+   *    for automatic rotation correction. Since some iPhones don't visibly show when they rotate an image that is taken by camera and
+   *    directly imported, like when selecting file and taking a photo as the selection.**
    *
    * 3. **No Rotation:** If data-cb-Rotate is not provided and **OCR** is not set in **Active_AI** plugin property, images are
    *    processed as-is leading to potential wrong results with images that are rotated.
    *
-   * **Config Parameters:**
+   * ### Config Parameters:
    * - **maxPages**:  Optional number limiting how many pages from a PDF are processed and sent to the AI.
    *                  Useful for large PDFs to avoid overwhelming the AI or hitting processing limits.
    *                  If not specified or set to 0, all pages are processed. Example: `maxPages: 5` will
@@ -456,12 +458,6 @@ export class AI_ONNX_DONUT_QA {
 
     return images;
   }
-  //region Initialization
-  /**
-   * States whether this {@link AI } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("AI.ONNX.DONUT.QA", AI_ONNX_DONUT_QA.functionality);
-  })();
-  //endregion Initialization
 }
+
+window.codbi.registerFunctionality("AI.ONNX.DONUT.QA", AI_ONNX_DONUT_QA.functionality.bind(AI_ONNX_DONUT_QA)); // Initialization

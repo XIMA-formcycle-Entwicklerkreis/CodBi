@@ -1,7 +1,9 @@
 // #region Imports
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -18,16 +20,18 @@ export class HTML_Panel_Accordion {
    * {@link HTML_Panel_NoAccordion.functionality } with a different name for the **Accordion-Set** on the sub container
    * they belong to.
    *
-   * Config Parameter:
-   *  - Accordion The name of the set all **.CodBi.--HTML_Panel** within the tagged {@link HTMLDivElement } shall
-   *              belong to. If no name is defined, nothing happens.
+   * ### Config Parameter:
+   *  - **Accordion:**  The name of the set all **.CodBi.--HTML_Panel** within the tagged {@link HTMLDivElement } shall
+   *                    belong to. If no name is defined, nothing happens.
    *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.*/
   @DBC.ParamvalueProvider
   public static functionality(
+    @TYPE.PRE("string", "accordion")
+    @DEFINED.PRE("accordion", "Is the data-cb-Accordion not defined?")
     toLoad: { [key: string]: unknown },
-    @INSTANCE.PRE(HTMLDivElement)
+    @INSTANCE.PRE(HTMLDivElement, undefined, "Is it not a <div/> that is tagged with this functionality?")
     toProcess: Element,
   ): undefined {
     if (toLoad.accordion === undefined || XFC_METADATA.requestType === "print") {
@@ -46,12 +50,9 @@ export class HTML_Panel_Accordion {
 
     bind();
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Panel_Accordion } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Panel.Accordion", HTML_Panel_Accordion.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "HTML.Panel.Accordion",
+  HTML_Panel_Accordion.functionality.bind(HTML_Panel_Accordion),
+);

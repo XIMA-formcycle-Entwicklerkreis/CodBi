@@ -4,8 +4,11 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
+import { EQ } from "xdbc/src/DBC/EQ.js";
+import { IF } from "xdbc/src/DBC/IF.js";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";
 // #endregion Imports
@@ -24,45 +27,52 @@ export class Date_Frame {
    * In order for this functionality to work in repetitive containers, the tagged {@link HTMLInputElement } and the
    * corresponding **MaxField** need to be within the same container.
    *
-   * Config Parameter:
-   *  - MaxField:       CSS-Selector selecting the {@link HTMLInputElement } that takes the maximum date.
-   *  - MsgMinInvalid:  The {@link string } to show as the error message when the minimum-{@link HTMLInputElement }'s value is after
-   *                    the one in the maximum-{@link HTMLInputElement }.
-   *  - MsgMaxInvalid:  The {@link string } to show as the error message when the maximum{@link HTMLInputElement }'s value is before
-   *                    the one in the minimum-{@link HTMLInputElement }. */
+   * ### Config Parameter:
+   *  - MaxField:           CSS-Selector selecting the {@link HTMLInputElement } that takes the maximum date.
+   *  - MsgMinInvalid:      The {@link string } to show as the error message when the minimum-{@link HTMLInputElement }'s value is after
+   *                        the one in the maximum-{@link HTMLInputElement }.
+   *  - MsgMaxInvalid:      The {@link string } to show as the error message when the maximum{@link HTMLInputElement }'s value is before
+   *                        the one in the minimum-{@link HTMLInputElement }.
+   *  - EqualityPermitted:  A {@link boolean } indicating whether equality between minimum and maximum dates is allowed. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE("string", "maxfield")
-    @REGEX.PRE(REGEX.stdExp.cssSelector, "maxfield")
-    @TYPE.PRE("string", "msgmininvalid")
-    @TYPE.PRE("string", "msgmaxinvalid")
-    toLoad: { [key: string]: string },
+    @TYPE.PRE("string", "maxfield :: msgmininvalid :: msgmaxinvalid")
+    @REGEX.PRE(REGEX.stdExp.cssSelector, "maxfield", "Does the MaXField-Parameter not contain a valid CSS-Selector?")
+    @IF.PRE(new TYPE("string"), new REGEX(REGEX.stdExp.boolean), "equalitypermitted")
+    @IF.PRE(new TYPE("string"), new TYPE("boolean"), "equalitypermitted", true)
+    toLoad: { [key: string]: unknown },
+
+    @INSTANCE.PRE(
+      HTMLInputElement,
+      undefined,
+      'Is it not an <input type = "text"/> that is tagged with this functionality?',
+    )
+    @EQ.PRE("text", false, "type")
     toProcess: Element,
   ): void {
-    const maximumField: HTMLInputElement = toProcess.parentElement.parentElement.querySelector(
-      toLoad.maxfield as string,
-    ) as HTMLInputElement;
+    const maximumField = INSTANCE.tsCheck<HTMLInputElement>(
+      toProcess.parentElement.parentElement.querySelector(toLoad.maxfield as string),
+      HTMLInputElement,
+      "Is the CSS-Selector in the MaxField-Parameter not selecting an <input/> element?",
+    );
 
     if (maximumField === null) {
       throw new CodBiError(`The selector "${toLoad.maxfield}" does not select anything.`);
     }
 
     const $ = getJQuery();
-    const msgMinInvalid: string =
-      toLoad.msgmininvalid && typeof toLoad.msgmininvalid === "string"
-        ? toLoad.msgmininvalid
-        : "Minimum value is invalid.";
-    const msgMaxInvalid: string =
-      toLoad.msgmaxinvalid && typeof toLoad.msgmaxinvalid === "string"
-        ? toLoad.msgmaxinvalid
-        : "Maximum value is invalid.";
-    const equalityPermitted: boolean =
-      toLoad.equalitypermitted && typeof toLoad.equalitypermitted === "boolean"
+    // #region Normalize parameters.
+    toLoad.msgmininvalid = toLoad.msgmininvalid ? toLoad.msgmininvalid : "Minimum value is invalid.";
+    toLoad.msgmaxinvalid = toLoad.msgmaxinvalid ? toLoad.msgmaxinvalid : "Maximum value is invalid.";
+    toLoad.equalitypermitted = toLoad.equalitypermitted
+      ? typeof toLoad.equalitypermitted === "boolean"
         ? (toLoad.equalitypermitted as boolean)
-        : false;
+        : (toLoad.equalitypermitted as string).toLowerCase() === "true"
+      : false;
+    // #endregion Normalize parameters.
     // #region Define behavior on changed field values.
     const onNewMinimum: (event: Event) => undefined = (event: Event): undefined => {
-      if (equalityPermitted) {
+      if (toLoad.equalitypermitted) {
         if (
           new Date(
             (toProcess as HTMLInputElement).value.split(".").reduce((accumulator, current, index): string => {
@@ -75,7 +85,7 @@ export class Date_Frame {
             }),
           )
         ) {
-          $(toProcess).error(msgMinInvalid);
+          $(toProcess).error(toLoad.msgmininvalid as string);
         } else {
           $(toProcess).error("");
           $(maximumField).error("");
@@ -93,7 +103,7 @@ export class Date_Frame {
             }),
           )
         ) {
-          $(toProcess).error(msgMinInvalid);
+          $(toProcess).error(toLoad.msgmininvalid as string);
         } else {
           $(toProcess).error("");
           $(maximumField).error("");
@@ -102,7 +112,7 @@ export class Date_Frame {
     };
 
     const onNewMaximum: (event: Event) => undefined = (event: Event): undefined => {
-      if (equalityPermitted) {
+      if (toLoad.equalitypermitted) {
         if (
           new Date(
             (toProcess as HTMLInputElement).value
@@ -119,7 +129,7 @@ export class Date_Frame {
               }),
           )
         ) {
-          $(maximumField).error(msgMaxInvalid);
+          $(maximumField).error(toLoad.msgmaxinvalid as string);
         } else {
           $(maximumField).error("");
           $(toProcess).error("");
@@ -141,7 +151,7 @@ export class Date_Frame {
               }),
           )
         ) {
-          $(maximumField).error(msgMaxInvalid);
+          $(maximumField).error(toLoad.msgmaxinvalid as string);
         } else {
           $(maximumField).error("");
           $(toProcess).error("");
@@ -173,12 +183,6 @@ export class Date_Frame {
     maximumField.addEventListener("input", onNewMaximum);
     // #endregion Bind necessary events.
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Date_Frame } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("Date.Frame", Date_Frame.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("Date.Frame", Date_Frame.functionality.bind(Date_Frame)); // Initialization

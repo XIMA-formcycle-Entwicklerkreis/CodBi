@@ -3,6 +3,8 @@
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -26,26 +28,25 @@ export class JSON_SET {
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }. */
   @DBC.ParamvalueProvider
   public static functionality(
+    @DEFINED.PRE("path")
+    @DEFINED.PRE("property")
+    @DEFINED.PRE("toset")
     @REGEX.PRE(REGEX.stdExp.keyPath, "path")
     @TYPE.PRE("string", "property")
+    @REGEX.PRE(REGEX.stdExp.property, "property")
     toLoad: { [key: string]: unknown },
+
+    @INSTANCE.PRE(HTMLElement, undefined, "Is it not an HTML-Element that is tagged with this functionality?")
     toProcess: Element,
   ): undefined {
     const target: unknown = toLoad.path
       ? (toLoad.path as string)
           .split(".")
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-          .reduce((accumulator, current) => (accumulator as any)[current], toProcess)
+          .reduce((accumulator, current) => (accumulator as unknown)[current], toProcess)
       : toProcess;
 
     target[toLoad.property as string] = toLoad.toset;
   }
-  // #region Initialization
-  /**
-   * States whether this {@link JSON_SET } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("JSON.SET", JSON_SET.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("JSON.SET", JSON_SET.functionality.bind(JSON_SET)); // Initialization

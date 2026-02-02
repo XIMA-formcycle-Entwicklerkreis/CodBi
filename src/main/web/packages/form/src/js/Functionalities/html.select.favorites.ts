@@ -7,6 +7,7 @@ import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { EQ } from "xdbc/src/DBC/EQ";
+import { AE } from "xdbc/src/DBC/AE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -42,11 +43,23 @@ export class HTML_Select_Favorites {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE("string", "dividertarget")
-    @INSTANCE.PRE(Array<string>, "favorites")
-    @EQ.PRE(0, true, "favorites.length")
+    @TYPE.PRE(
+      "string",
+      "dividertarget :: initialelement :: divider",
+      'Is one or more of the parameters "dividertarget", "initialelement" or "divider" not of type string?',
+    )
+    @INSTANCE.PRE(Array<string>, "favorites", 'Is the parameter "favorites" not an array of strings?')
+    @EQ.PRE(0, true, "favorites.length", "Isn't at least one favorite specified?")
+    @AE.PRE(
+      [new TYPE("string")],
+      undefined,
+      undefined,
+      "favorites",
+      'Aren\'t all elements of parameter "favorites" of type string?',
+    )
     toLoad: { [key: string]: unknown },
-    @EQ.PRE("SELECT", false, "tagName")
+
+    @INSTANCE.PRE(HTMLSelectElement, undefined, "Is it not a <select/> that is tagged with this functionality?")
     toProcess: Element,
   ): void {
     const $ = getJQuery();
@@ -94,12 +107,9 @@ export class HTML_Select_Favorites {
       $(toProcess).val(toLoad.initialelement);
     }
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Select_Favorites } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Select.Favorites", HTML_Select_Favorites.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "HTML.Select.Favorites",
+  HTML_Select_Favorites.functionality.bind(HTML_Select_Favorites),
+); // Initialization

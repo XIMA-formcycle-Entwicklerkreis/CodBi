@@ -8,6 +8,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
 // #region Elementplaceholder
 import { LDAP_Find } from "../EPs/ldap.find.js";
+import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
 // #endregion Elementplaceholder
 // #endregion Imports
 /**
@@ -29,9 +30,15 @@ export class LDAP_Autocomplete {
    * Config Parameter:
    *  - Property:       The LDAP-Property that shall be autocompleted.
    *  - CSSProposals:   The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.
-   *  - URL:            The URL of the Formcycle predefined LDAP-Query to use. */
+   *  - URL:            The URL of the Formcycle predefined LDAP-Query to use.
+   *  - MsgNotInLDAP:   The message to display when the entered value is not found in the LDAP.
+   */
   @DBC.ParamvalueProvider
-  public static functionality(toLoad: { [key: string]: string }, toProcess: Element): void {
+  public static functionality(
+    @DEFINED.PRE("property")
+    toLoad: { [key: string]: string },
+    toProcess: Element,
+  ): void {
     // #region Remove entries that're not in LDAP.
     toProcess.addEventListener("blur", async (event) => {
       const findParameter = ["AND", `${toLoad.property}=${(toProcess as HTMLInputElement).value}`];
@@ -159,15 +166,9 @@ export class LDAP_Autocomplete {
       // #endregion Show proposals.
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link LDAP_Autocomplete } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("LDAP.Autocomplete", LDAP_Autocomplete.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("LDAP.Autocomplete", LDAP_Autocomplete.functionality.bind(LDAP_Autocomplete)); // Initialization
 // #region Helper
 export function removeDuplicates(toFilter: unknown[], by: string | undefined = undefined): unknown[] {
   if (by) {

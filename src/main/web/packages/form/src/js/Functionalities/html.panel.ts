@@ -4,11 +4,13 @@ import { getXUtil, getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
-import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+import { OR } from "xdbc/src/DBC/OR";
+import { EQ } from "xdbc/src/DBC/EQ";
+import { UNDEFINED } from "xdbc/src/DBC/UNDEFINED";
 // #endregion XDBC
 import { CodBiError } from "../global-scope";
-import { xutil } from "jquery";
 // #endregion Imports
 /**
  * Provides the {@link HTML_Panel.functionality }.
@@ -63,7 +65,7 @@ export class HTML_Panel {
    * two levels within the tagged {@link HTMLElement}. Thus using a * XIMA-Text-Element as the header will provide
    * the XIMA-Text/HTML-Editor for creating the header's content.
    *
-   * Config Parameter:
+   * ### Config Parameter:
    *  - Folded:                           States whether this panel is folded (TRUE) or unfolded (everything else) when
    *                                      it is loaded (defaults to TRUE).
    *  - CSSHeaderHover:                   The optional header's CSS:hover (defaults to { scale : 1.1 ;}).
@@ -112,10 +114,21 @@ export class HTML_Panel {
    *          a child of CSS-Class "CodBi_HTML_Panel_Header".*/
   @DBC.ParamvalueProvider
   public static functionality(
-    @REGEX.PRE(REGEX.stdExp.keyPath, "path")
-    @REGEX.PRE(REGEX.stdExp.property, "property")
+    @TYPE.PRE("string", "autoheadertitle :: autoheadertitlesupplementsspacer :: scrollblock")
+    @TYPE.PRE("string | boolean", "folded :: generateheader :: scroll")
+    @TYPE.PRE("string | number", "autoheaderlevel")
+    @OR.PRE(
+      [new EQ("start"), new EQ("center"), new EQ("end"), new EQ("nearest"), new UNDEFINED()],
+      "scrollblock",
+      "Is data-cb-ScrollBlock something different than start, center, end or nearest?",
+    )
     toLoad: { [key: string]: unknown },
-    @INSTANCE.PRE(HTMLDivElement)
+
+    @OR.PRE(
+      [new INSTANCE(HTMLDivElement), new INSTANCE(HTMLFieldSetElement)],
+      undefined,
+      "Is it not a <div> that is tagged with this functionality?",
+    )
     toProcess: Element,
   ): undefined {
     if (XFC_METADATA.requestType === "print") {
@@ -160,7 +173,7 @@ export class HTML_Panel {
       header = document.createElement("div");
 
       const legend = toProcess.querySelector("legend");
-
+      // #region Autoheader Supplement
       toLoad.autoheadertitlesuplementsspacer = toLoad.autoheadertitlesuplementsspacer
         ? (toLoad.autoheadertitlesuplementsspacer as string)
         : " / ";
@@ -192,7 +205,7 @@ export class HTML_Panel {
       constructHeaderSupplements();
 
       header.innerHTML = `${toLoad.autoheaderlevel ? `<h${toLoad.autoheaderlevel}>` : ""}${toLoad.autoheadertitle ? (toLoad.autoheadertitle as string) + (autoHeaderTitleSupplement.length !== (toLoad.autoheadertitlesuplementsspacer as string).length ? autoHeaderTitleSupplement : "") : toProcess.tagName === "FIELDSET" ? (legend ? toProcess.querySelector("legend")?.innerHTML + (autoHeaderTitleSupplement.length === (toLoad.autoheadertitlesuplementsspacer as string).length ? "" : autoHeaderTitleSupplement) : "") : ""}${toLoad.autoheaderlevel ? `</h${toLoad.autoheaderlevel}>` : ""}`;
-
+      // #endregion Autoheader Supplement
       if (legend) {
         legend.remove();
       }
@@ -208,7 +221,7 @@ export class HTML_Panel {
 
     if (header === null) {
       throw new CodBiError(
-        `Tagged <div> "${toProcess.getAttribute("data-name")}" contains no HTML-Element tagged with CSS-"CodBi_HTML_Panel_Header".`,
+        `Tagged <div> or <fieldset> "${toProcess.getAttribute("data-name")}" contains no HTML-Element tagged with CSS-"CodBi_HTML_Panel_Header".`,
       );
     } else {
       (toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Header = header;
@@ -263,9 +276,7 @@ export class HTML_Panel {
       const style = document.createElement("style");
 
       style.innerHTML = `
-      @media( print ) {
-        #${parentID}.CodBi.--HTML_Panel { display : ${bufferDisplay} !important ;}
-      }
+      @media( print ) { #${parentID}.CodBi.--HTML_Panel { display : ${bufferDisplay} !important ;}}
 
       .CodBi_HTML_Panel_MissingRequiredField { border-left-style: solid !important ; border-right-style: solid !important ; padding: .5em ; box-shadow: 0 0 .25em darkorange ; border-color: red !important ;}
 
@@ -435,8 +446,10 @@ export class HTML_Panel {
         let reallyInvalid = false;
 
         for (const candidate of document.querySelectorAll('[ aria-required = "true"]')) {
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-          if ((candidate as any).value === "" || (candidate as any).value === undefined) {
+          if (
+            (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value === "" ||
+            (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value === undefined
+          ) {
             HTML_Panel.unfoldPanelAncestors(candidate as HTMLElement);
 
             if (!isDisplayNone(candidate as HTMLElement)) {
@@ -459,8 +472,7 @@ export class HTML_Panel {
                   candidate.scrollIntoView({ behavior: "smooth", block: toLoad.scrollblock as ScrollLogicalPosition });
                 }
                 // #endregion Determine and go to page.
-                // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                (candidate as any).focus();
+                (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).focus();
 
                 (candidate as HTMLElement).classList.add("CodBi_HTML_Panel_MissingRequiredField");
 
@@ -509,15 +521,9 @@ export class HTML_Panel {
       // #endregion Handle unfolding of panels containing invalid fields.
     }
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Panel } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Panel", HTML_Panel.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("HTML.Panel", HTML_Panel.functionality.bind(HTML_Panel)); // Initialize
 // #region Helper
 /**
  * Finds if an element with a specific class exists between two nodes.

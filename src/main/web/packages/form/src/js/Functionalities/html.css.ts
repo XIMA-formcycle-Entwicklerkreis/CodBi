@@ -3,6 +3,8 @@
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { AE } from "xdbc/src/DBC/AE";
+import { REGEX } from "xdbc/src/DBC/REGEX";
+import { IF } from "xdbc/src/DBC/IF";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -12,29 +14,33 @@ import { AE } from "xdbc/src/DBC/AE";
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_CSS {
+  /** The {@link RegExp} used to validate replacement strings. */
+  public static rexpReplacements: RegExp = /^.+\s*\|\s*.+$/;
   /**
-   * Registers the "HTML.CSS"-Functionality.
-   *
    * This functionality injects a {@link HTMLStyleElement } containing the specified "CSS" into either the specified
    * "Destination" or the {@link document }'s {@link HTMLHeadElement }.
    * Prior to injection the placeholder (<...>) within the specified "CSS" will be replaced with their
    * respective values according to the given "Replacements"-Definition (...|...).
    *
-   * Config Parameter:
-   *  - CSS:          The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an Elementplaceholder-Retrieval (when used in plain attributes).
+   * ### Config Parameter:
+   *  - CSS:          The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an
+   *                  Elementplaceholder-Retrieval (when used in plain attributes).
    *  - Replacements: An {@link Array < string >} of two elements each that are separated by a "|".
    *                  The first part contains the placeholder as found in the specified "CSS". The second one
-   *                  the {@link string } the placeholder shall be replaced with.
+   *                  the {@link string } the placeholder shall be replaced with. Each element has to comply to
+   *                  **^[a-zA-Z][a-zA-Z0-9]*\s*\|\s*[a-zA-Z0-9]*$**.
+   *  - Darkmode:     The Darkmode-**Replacements** that will replace all placeholders ending with "_DM" in the
+   *                  provided **CSS**.
    *  - Destination:  The selector pointing to the "CSS"-Destination. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @AE.PRE(new TYPE("string"), undefined, undefined, "replacements")
-    @TYPE.PRE("string", "css")
-    toLoad: { [key: string]: string | Array<string> },
+    @TYPE.PRE("string", "destination") toLoad: { [key: string]: string | Array<string> },
     toProcess: Element,
   ): void {
     if (Array.isArray(toLoad.css)) {
-      toLoad.css = toLoad.css[0];
+      toLoad.css = TYPE.tsCheck<string>(toLoad.css[0], "string");
+    } else {
+      toLoad.css = TYPE.tsCheck<string>(toLoad.css, "string");
     }
 
     const style = document.createElement("style");
@@ -45,9 +51,9 @@ export class HTML_CSS {
       }
 
       for (const replacement of toLoad.darkmode) {
-        const parts = replacement.split("|");
+        const parts = REGEX.tsCheck<string>(replacement, HTML_CSS.rexpReplacements).split("|");
 
-        if (parts.length === 2) {
+        if (parts.length >= 2) {
           toLoad.css = (toLoad.css as string).replace(
             new RegExp(`${parts[0]?.trim()}_DM`, "g"),
             parts[1].trim(),
@@ -62,9 +68,9 @@ export class HTML_CSS {
       }
 
       for (const replacement of toLoad.replacements) {
-        const parts = replacement.split("|");
+        const parts = REGEX.tsCheck<string>(replacement, HTML_CSS.rexpReplacements).split("|");
 
-        if (parts.length === 2) {
+        if (parts.length >= 2) {
           toLoad.css = (toLoad.css as string).replace(
             new RegExp(`${parts[0]?.trim()}`, "g"),
             parts[1].trim(),
@@ -79,14 +85,10 @@ export class HTML_CSS {
 
     if (toLoad.destination) {
       document.querySelector(toLoad.destination as string)?.appendChild(style);
+    } else {
+      document.head.appendChild(style);
     }
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_CSS } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.CSS", HTML_CSS.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("HTML.CSS", HTML_CSS.functionality.bind(HTML_CSS)); // Initialization

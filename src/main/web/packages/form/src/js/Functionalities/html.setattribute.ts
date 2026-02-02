@@ -3,6 +3,7 @@
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -26,17 +27,13 @@ export class HTML_SETAttribute {
   public static functionality(
     @REGEX.PRE(REGEX.stdExp.htmlAttributeName, "name")
     @TYPE.PRE("string", "toset")
+    @DEFINED.PRE("name")
+    @DEFINED.PRE("toset")
     toLoad: { [key: string]: unknown },
     toProcess: Element,
   ): undefined {
     toProcess.setAttribute(toLoad.name as string, toLoad.toset as string);
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_SETAttribute } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.SETAttribute", HTML_SETAttribute.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("HTML.SETAttribute", HTML_SETAttribute.functionality.bind(HTML_SETAttribute)); // Initialization

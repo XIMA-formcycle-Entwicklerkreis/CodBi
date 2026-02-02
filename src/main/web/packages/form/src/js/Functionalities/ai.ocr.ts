@@ -31,6 +31,10 @@ export class AI_OCR {
    * **PDF Support**: PDF files are automatically detected. PDFs with text (>100 characters) are processed client-side without
    * using the AI backend. PDFs with minimal text (scanned documents) are rendered to images and sent to Tesseract for OCR.
    *
+   * **Automatic Orientation Detection:**
+   * The Tesseract OCR engine will automatically detect and correct image orientation using its OSD (Orientation
+   * and Script Detection).
+   *
    * #### Config Parameter:
    *  - **Mode**:                 Either **Print**, **Verify** or **Extract Fields**.
    *  - **Pattern**:              The {@link RegEx } to use to either extract the substrings from the scanned text or to verify that
@@ -629,6 +633,5 @@ export class AI_OCR {
     // #endregion Validate verify mode results
   }
 }
-//region Initialization
-window.codbi.registerFunctionality("AI.OCR", AI_OCR.functionality.bind(AI_OCR));
-//endregion Initialization
+
+window.codbi.registerFunctionality("AI.OCR", AI_OCR.functionality.bind(AI_OCR)); // Initialization

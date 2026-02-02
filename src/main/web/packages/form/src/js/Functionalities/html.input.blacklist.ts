@@ -17,42 +17,41 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Input_Blacklist {
   /**
-   * The Functionality defines a blacklist of values that may not be the value of
-   * an {@link HTMLInputElement}.
-   * If a jQuery - Datepicker is supported. A Date in the List - Parameter needs
-   * to have each of it's elements specified as
+   * The Functionality defines a blacklist of values that may not be the value of an {@link HTMLInputElement}.
+   * If a jQuery - Datepicker is enabled. A Date in the List - Parameter needs to have each of it's elements specified as
    * 2-digit values (10.03.2025 not 10.3.2025).
    *
-   * Config Parameter:
+   * ### Config Parameter:
    *  - List:           Contains a {@link string } - CSV of forbidden values.
    *  - Prefix:         The {@link string } to show before listing all the values in "List" when displaying an errormessage.
    *  - Postfix:        The {@link string } to show after {@link List} when displaying an errormessage.
    *  - Separator:      The {@link string } to be shown in between each element of the {@link List } when displaying an errormessage.
-   *  - ShowBlacklist:  Whether to show the {@link List } in the errormessage or not (true/false).
+   *                    Defaults to ", ".
+   *  - ShowBlacklist:  Whether to show the {@link List } in the errormessage or not (true/false). Defaults to false.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
+    @TYPE.PRE("string", "prefix :: postfix :: separator")
+    @TYPE.PRE("string | boolean", "showblacklist")
     toLoad: { [key: string]: unknown },
-    @EQ.PRE("INPUT", false, "tagName") toProcess: Element,
+
+    @INSTANCE.PRE(
+      HTMLInputElement,
+      undefined,
+      'Is it not an <input type = "text"/> that is tagged with this functionality?',
+    )
+    @EQ.PRE("text", false, "type")
+    toProcess: Element,
   ): void {
     // #region Normalize Parameter.
-    toLoad.separator = toLoad.separator ? toLoad.separator : ", ";
-    // #region Arrayed Parameter.
-    if (Array.isArray(toLoad.prefix)) {
-      toLoad.prefix = (toLoad.prefix as Array<string>)[0];
-    }
-    if (Array.isArray(toLoad.postfix)) {
-      toLoad.postfix = (toLoad.postfix as Array<string>)[0];
-    }
-    if (Array.isArray(toLoad.separator)) {
-      toLoad.separator = toLoad.separator as Array<string>;
-    }
-    if (Array.isArray(toLoad.showblacklist)) {
-      toLoad.showblacklist = (toLoad.showblacklist as Array<string>)[0];
-    }
-    // #endregion Arrayed Parameter.
+    toLoad.separator = toLoad.separator || ", ";
+    toLoad.showblacklist = toLoad.showblacklist
+      ? typeof toLoad.showblacklist === "string"
+        ? toLoad.showblacklist.toLowerCase() === "true"
+        : toLoad.showblacklist
+      : false;
     // #region Normalize Parameter.
     const $ = getJQuery();
     if ($(toProcess).data("datepicker") === 1) {
@@ -83,16 +82,11 @@ export class HTML_Input_Blacklist {
         formerDatepickerChangeEvent(event);
       }
 
-      check(
-        INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement).value,
-        blacklist,
-        toProcess as HTMLInputElement,
-      );
+      check((event.target as HTMLInputElement).value, blacklist, toProcess as HTMLInputElement);
     });
 
     toProcess.addEventListener("input", (event: Event) => {
-      // biome-ignore lint/style/noNonNullAssertion: <explanation>
-      check((event.target! as HTMLInputElement).value, blacklist, event.target as HTMLInputElement);
+      check((event.target as HTMLInputElement).value, blacklist, event.target as HTMLInputElement);
     });
     // #endregion Prevent input of blacklisted items via <input> and picker.
     // #region Fade invalid dates in picker.
@@ -121,12 +115,9 @@ export class HTML_Input_Blacklist {
     // #endregion Fade invalid dates in picker.
     // #endregion Bind to appropriate events ( HTMLInputElement & JQuery Datepicker supported )
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Input_Blacklist } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Input.Blacklist", HTML_Input_Blacklist.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "HTML.Input.Blacklist",
+  HTML_Input_Blacklist.functionality.bind(HTML_Input_Blacklist),
+); // Initialize

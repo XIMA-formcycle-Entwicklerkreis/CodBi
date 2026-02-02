@@ -1,8 +1,11 @@
 // #region Imports
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
+import { IF } from "xdbc/src/DBC/IF.js";
 import { TYPE } from "xdbc/src/DBC/TYPE";
-import { EQ } from "xdbc/src/DBC/EQ";
+import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
+import { REGEX } from "xdbc/src/DBC/REGEX.js";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 // #endregion XDBC
 // #endregion Imports
 import { CodBiError } from "../global-scope.js";
@@ -20,7 +23,7 @@ export class HTML_Text_Injector {
    * Config Parameter:
    *  - Placeholder:  Specifies the {@link string } that shall be replaced within the
    *                  {@link Element } "toProcess"'s "Property". Standard-value is "[[INJECTOR_REPLACEMENT]]".
-   *  - Replacement:  The {@link string } to replace all occurrences of the specified "Placeholder" or a the end of the
+   *  - Replacement:  The {@link string } to replace all occurrences of the specified "Placeholder" or at the end of the
    *                  {@link string } contained in the {@link Element } "toProcess"'s "Property".
    *  - Property:     Specifies which property of the {@link Element } "toProcess" shall receive the "Replacement".
    *
@@ -28,9 +31,14 @@ export class HTML_Text_Injector {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @EQ.PRE(null, true, "replacement")
-    @TYPE.PRE("string", "property")
+    @TYPE.PRE("string", "placeholder")
+    @IF.PRE(new TYPE("object"), new INSTANCE(Array<string>), "replacement")
+    @IF.PRE(new TYPE("object"), new TYPE("string"), "replacement", true)
+    @DEFINED.PRE("replacement")
+    @REGEX.PRE(REGEX.stdExp.property, "property")
     toLoad: { [key: string]: unknown },
+
+    @INSTANCE.PRE(HTMLElement, undefined, "Is it not an Element that is tagged with this functionality?")
     toProcess: Element,
   ): void {
     // #region Normalize parameters.
@@ -59,20 +67,12 @@ export class HTML_Text_Injector {
     } else if (typeof (toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] === "string") {
       // When no "toLoad.placeholder" is defined, place "toLoad.replacement" at the end of the string already contained in the
       // specified "toLoad.property".
-      // biome-ignore lint/style/noNonNullAssertion: Already checked.
-      (toProcess as unknown as { [key: string]: unknown })[toLoad.property! as string] =
-        // biome-ignore lint/style/noNonNullAssertion: Was checked right before.
-        ((toProcess as unknown as { [key: string]: unknown })[toLoad.property! as string] as string) +
+      (toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] =
+        ((toProcess as unknown as { [key: string]: unknown })[toLoad.property as string] as string) +
         (toLoad.replacement as string);
     }
     // Do nothing if the specified "toLoad.Property" of "toProcess" doesn't contain a string.
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Text_Injector } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Text.Injector", HTML_Text_Injector.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("HTML.Text.Injector", HTML_Text_Injector.functionality.bind(HTML_Text_Injector)); // Initialization

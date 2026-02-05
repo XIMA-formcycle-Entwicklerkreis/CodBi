@@ -6,44 +6,52 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE.js";
 import { TYPE } from "xdbc/src/DBC/TYPE";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER.js";
+import { REGEX } from "xdbc/src/DBC/REGEX.js";
+import { IF } from "xdbc/src/DBC/IF.js";
+import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";
 // #endregion Imports
 /**
- * Provides the {@link LDAP_Find#functionality }.
+ * This Elementplaceholder connects via a default (**LDAP_URL** in CodBi Settings) or an optionally specified
+ * URL (optional **3rd parameter**) to a predefined Formcycle LDAP-Query requesting data from it.
+ * The Query has to have following content in order to work with this Elementplaceholder:
+ * **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**.
+ *
+ * **Furthermore Following currently supported LDAP-Attributes should be returned by the predefined Formcycle LDAP-Query**
+ * | LDAP Property | Corresponds To |
+ * | :------------ | :------------- |
+ * | givenName     | First Name     |
+ * | mail          | eMail Address  |
+ * | sn            | Last Name      |
+ * | title         | Title          |
+ * | department    | Department     |
+ * | telephoneNumber| Phonenumber   |
+ * | sAMAccountName| Account        |
+ * | cn            | Common Name    |
+ * | displayName   | Display Name   |
+ *
+ * ### Config Parameter:
+ *  - 1st:  The mode to use for the filter. Either **AND** or **OR** (case insensitive). Everything else will be interpreted as **AND**.
+ *  - 2nd:  The LDAP conditions (like sn = Doe) separated by **|** (like sn = Doe | givenName = John).
+ *  - 3rd:  The optional **URL** to a Formcycle-LDAP-Query (which's content is **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**) to use.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class LDAP_Find {
   /**
-   * Registers the "LDAP.Find"-Functionality.
+   * See {@link LDAP_Find }.
    *
-   * This Elementplaceholder connects via a default (**LDAP_URL** in CodBi Settings) or an optionally specified
-   * URL (optional **3rd parameter**) to a predefined Formcycle LDAP-Query requesting data from it.
-   * The Query has to have following content in order to work with this Elementplaceholder:
-   * **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**.
-   *
-   * **Furthermore Following currently supported LDAP-Attributes should be returned by the predefined Formcycle LDAP-Query**
-   * | LDAP Property | Corresponds To |
-   * | :------------ | :------------- |
-   * | givenName     | First Name     |
-   * | mail          | eMail Address  |
-   * | sn            | Last Name      |
-   * | title         | Title          |
-   * | department    | Department     |
-   * | telephoneNumber| Phonenumber   |
-   * | sAMAccountName| Account        |
-   * | cn            | Common Name    |
-   * | displayName   | Display Name   |
-   *
-   * Config Parameter:
-   *  - 1st:  The mode to use for the filter. Either **AND** or **OR** (case insensitive). Everything else will be interpreted as **AND**.
-   *  - 2nd:  The LDAP conditions (like sn = Doe) separated by **|** (like sn = Doe | givenName = John).
-   *  - 3rd:  The optional **URL** to a Formcycle-LDAP-Query (which's content is **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**) to use. */
+   * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
+    @GREATER.PRE(2, true, false, "length", "Haven't at least the mode and the LDAP-Conditions been specified?")
     @AE.PRE(new TYPE("string"))
+    @AE.PRE(new REGEX(/(AND|OR)/i), 0)
+    @AE.PRE(new REGEX(/^\w+\s*=\s*\w+(?:\s*\|\s*\w+\s*=\s*\w+)*$/), 1)
+    @AE.PRE(new IF(new DEFINED(), new REGEX(REGEX.stdExp.url)), 3)
     params: Array<unknown>,
   ): Promise<Array<unknown>> {
     let runningQuery = undefined;
@@ -88,12 +96,6 @@ export class LDAP_Find {
         });
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link LDAP_Find } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("LDAP.Find", LDAP_Find.retrieve);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerEP("LDAP.Find", LDAP_Find.retrieve.bind(LDAP_Find)); // Initialization

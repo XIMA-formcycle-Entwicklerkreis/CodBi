@@ -23,8 +23,6 @@ import { BayVIS_Ansprechpartner_ID } from "./bayvis.ansprechpartner.id";
  *  - 1st:      The ID of the contact who's details are to be retrieved.
  *              Multiple IDs may be provided by using "/" as a divider (e.g. 12345 / 678901 ).
  *  - 2nd:      A property of the contact, like e.g. "nachname".
- *  - 2nd/3rd:  The BayVIS-URL where to retrieve the contact directory from, if the 2nd parameter contains
- *              not just IDs but also names to look for.
  *
  *  - resolves  To either an
  *              {@link Array <{ anrede: string; vorname: string; nachname: string; funktion: string;
@@ -57,8 +55,15 @@ export class BayVIS_Ansprechpartner_Details {
    *          3rd parameter was specified, a non existent contact property was specified. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(0, false, false, "length")
-    @AE.PRE(new TYPE("string"))
+    @GREATER.PRE(
+      1,
+      false,
+      false,
+      "length",
+      "Has the contact's ID (1st parameter) and the property (2nd parameter) to retrieve been specified?",
+    )
+    @AE.PRE(new OR([new TYPE("string"), new TYPE("number"), new TYPE("object")]), 0)
+    @AE.PRE(new TYPE("string"), 1)
     @AE.PRE(
       new OR([
         new REGEX(/^([A-Za-z\s]+|\d{1,6})(?:\/([A-Za-z\s]+|\d{1,6}))*|$/),
@@ -73,7 +78,6 @@ export class BayVIS_Ansprechpartner_Details {
       ]),
       1,
     )
-    //@AE.PRE(new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember), 2)
     params: Array<unknown>,
   ): Promise<
     | string
@@ -411,12 +415,9 @@ export class BayVIS_Ansprechpartner_Details {
       // #endregion Retrieve the details of the specified contacts.
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link BayVIS_Ansprechpartner_Details } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("BayVIS.Ansprechpartner.Details", BayVIS_Ansprechpartner_Details.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP(
+  "BayVIS.Ansprechpartner.Details",
+  BayVIS_Ansprechpartner_Details.retrieve.bind(BayVIS_Ansprechpartner_Details),
+); // Initialization

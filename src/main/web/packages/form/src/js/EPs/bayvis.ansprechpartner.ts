@@ -7,6 +7,7 @@ import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 // #endregion XDBC
 // #region XML-Parser
 import { XMLParser } from "fast-xml-parser";
@@ -55,7 +56,8 @@ export class BayVIS_Ansprechpartner {
   public static stdExp: {
     directoryMember: RegExp;
   } = {
-    directoryMember: /^(behoerdenart|behoerdengruppe|bezeichnung|email|id|sortierreihenfolge)$/,
+    directoryMember:
+      /^(anrede|vorname|nachname|funktion|stellenbezeichnung|email|website|zimmer|sortierreihenfolge|behoerdeId|behoerdeBezeichnung|gebaeudeId|gebaeudeBezeichnung|ansprechpartnerId)$/,
   };
   /**
    * See {@link BayVIS_Ansprechpartner }.
@@ -65,9 +67,9 @@ export class BayVIS_Ansprechpartner {
    * @throws A {@link CodBiError } if no data could be retrieved from the BayVIS-Endpoint. */
   @DBC.ParamvalueProvider
   public static retrieve(
+    @GREATER.PRE(1, false, false, "length", "Has directory property been specified?")
     @AE.PRE(new TYPE("string"))
-    @AE.PRE(new REGEX(REGEX.stdExp.url), 0)
-    @AE.PRE(new REGEX(BayVIS_Ansprechpartner.stdExp.directoryMember), 1)
+    @AE.PRE(new REGEX(BayVIS_Ansprechpartner.stdExp.directoryMember), 0)
     params: Array<unknown>,
   ): Promise<Array<string> | Array<unknown>> {
     return new Promise((resolve, reject) => {
@@ -158,12 +160,6 @@ export class BayVIS_Ansprechpartner {
         });
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link BayVIS_Ansprechpartner } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("BayVIS.Ansprechpartner", BayVIS_Ansprechpartner.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("BayVIS.Ansprechpartner", BayVIS_Ansprechpartner.retrieve.bind(BayVIS_Ansprechpartner)); // Initialization

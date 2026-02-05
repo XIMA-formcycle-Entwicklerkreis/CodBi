@@ -5,12 +5,18 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+import { REGEX } from "xdbc/src/DBC/REGEX";
 // #endregion XDBC
+// #region CodBi
 // #region Elementplaceholder
 import { OpenPLZ_Streets } from "../EPs/openplz.streets";
 import { OpenPLZ_Localities } from "../EPs/openplz.localities";
 import { removeDuplicates } from "./ldap.autocomplete";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
+import { EQ } from "xdbc/src/DBC/EQ";
 // #endregion Elementplaceholder
+// #endregion CodBi
 // #endregion Imports
 /**
  * Provides the {@link OpenPLZ_Autocomplete.functionality }.
@@ -46,29 +52,42 @@ export class OpenPLZ_Autocomplete {
     fill: "forwards",
   };
   /**
-   * Registers the "LDAP.Autocomplete"-Functionality.
+   * Registers the "OpenPLZ.Autocomplete"-Functionality.
    *
-   * This functionalities takes advantage of the {@link LDAP_Find} Elementplaceholder to complete what is typed into
-   * the tagged {@link HTMLInputElement } with data from a connected Formcycle predefined LDAP-Query according
-   * to the {@link LDAP_Find } specifications.
-   * It suggests completions as soon as there are multiple matches and only allows entries that match exactly one
-   * LDAP-Entry.
+   * This functionalities takes advantage of the {@link OpenPLZ_Streets} and {@link OpenPLZ_Localities } Elementplaceholder to
+   * complete what is typed into the tagged {@link HTMLInputElement } with data the public [OpenPLZ API ](https://www.openplzapi.org/)
+   * provides.
+   * It suggests completions as soon as there are multiple matches and only allows entries that match exactly one OpenPLZ-Entry.
    *
    * Config Parameter:
    *  - Country:            The optional **country** to retrieve the data of (if not provided either the country specified in
    *                        the CodBi's Configuration **OpenPLZ_Country** will be used or, if not specified, "de").
    *  - TargetData:         What type of data shall be received by the target (Localities, PostalCode or Streets ).
-   *  - Dependent:          The CSS-Selector of the field that automatically will be filled accordingly if either a
-   *                        postal-code or a locality has been found.
    *  - DependentPLZ        The CSS-Selector of the field that restricts the search of streets by it's value resembling a
    *                        postal-code, only if **DependentLocality** is **undefined**.
    *  - DependentLocality   The CSS-Selector of the field that restricts the search of streets by it's value resembling a
    *                        locality (overwrites **DependentPLZ**).
-   *  - FocusOnAutocomplete The CSS-Selector of the field to focus when an autocomplete has occured.
+   *  - FocusOnAutocomplete The CSS-Selector of the field to focus when an autocomplete has occurred.
    *  - MsgNotKnown:        The message to show when trying to set a value that can't be found in OpenPLZ.
    *  - CSSProposals:       The CSS-Style for the proposals-Select-Element appearing when there are multiple matches. */
   @DBC.ParamvalueProvider
-  public static functionality(toLoad: { [key: string]: string }, toProcess: Element): void {
+  public static functionality(
+    @DEFINED.PRE("targetdata :: focusonautocomplete")
+    @TYPE.PRE(
+      "string",
+      "targetdata :: country :: cssproposals :: msgnotknown :: dependent :: dependentplz :: dependentlocality :: focusonautocomplete",
+    )
+    @REGEX.PRE(/(de|en|at|li|ch)/i, "country")
+    @REGEX.PRE(/^(localities|postalcode|streets)$/i, "targetdata")
+    @REGEX.PRE(REGEX.stdExp.cssSelector, "dependentplz")
+    @REGEX.PRE(REGEX.stdExp.cssSelector, "dependentlocality")
+    @REGEX.PRE(REGEX.stdExp.cssSelector, "focusonautocomplete")
+    toLoad: { [key: string]: string },
+
+    @INSTANCE.PRE(HTMLInputElement, "Is it not an <input> that is tagged with this functionality?")
+    @EQ.PRE("text", false, "type", 'Isn\'t the tagged <input type = "text"/> ?')
+    toProcess: Element,
+  ): void {
     const targetResultProperty =
       toLoad.targetdata.toLowerCase() === "localities" || toLoad.targetdata.toLowerCase() === "streets"
         ? "name"
@@ -106,13 +125,21 @@ export class OpenPLZ_Autocomplete {
               `°${(toProcess as HTMLInputElement).value}`,
               toLoad.dependentplz === undefined ||
               (toLoad.dependentlocality &&
-                toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependentlocality) &&
+                INSTANCE.tsCheck<HTMLInputElement>(
+                  toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependentlocality),
+                  HTMLInputElement,
+                  'Is the DependentLocality not pointing to a <input type = "text">?',
+                ) &&
                 (
                   toProcess.parentElement.parentElement.parentElement.querySelector(
                     toLoad.dependentlocality,
                   ) as HTMLInputElement
                 ).value !== "") ||
-              (toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependentplz) &&
+              (INSTANCE.tsCheck<HTMLInputElement>(
+                toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependentplz),
+                HTMLInputElement,
+                'Is the DependentPLZ not pointing to a <input type = "text">?',
+              ) &&
                 (
                   toProcess.parentElement.parentElement.parentElement.querySelector(
                     toLoad.dependentplz,
@@ -469,3 +496,8 @@ export class OpenPLZ_Autocomplete {
   })();
   // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "OpenPLZ.Autocomplete",
+  OpenPLZ_Autocomplete.functionality.bind(OpenPLZ_Autocomplete),
+); // Initialization

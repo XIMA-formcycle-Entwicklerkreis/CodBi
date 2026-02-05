@@ -9,8 +9,26 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #region Elementplaceholder
 import { LDAP_Find } from "../EPs/ldap.find.js";
 import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
+import { TYPE } from "xdbc/src/DBC/TYPE.js";
+import { REGEX } from "xdbc/src/DBC/REGEX.js";
+import { EQ } from "xdbc/src/DBC/EQ.js";
 // #endregion Elementplaceholder
 // #endregion Imports
+
+// #region Types
+/**
+ * Extended HTMLInputElement interface that adds support for LDAP match listeners.
+ */
+interface HTMLInputElementWithLDAPListeners extends HTMLInputElement {
+  /**
+   * Array of listener callbacks to be invoked when an LDAP match is found.
+   *
+   * @param ldapResult - The array of LDAP result objects returned from the LDAP query.
+   * @param element - The HTML input element that triggered the LDAP match.
+   */
+  codbiLDAPSetMatchListeners?: ((ldapResult: unknown[], element: Element) => void)[];
+}
+// #endregion Types
 /**
  * Provides the {@link LDAP_Autocomplete.functionality }.
  *
@@ -36,7 +54,13 @@ export class LDAP_Autocomplete {
   @DBC.ParamvalueProvider
   public static functionality(
     @DEFINED.PRE("property")
+    @TYPE.PRE("string", "property :: cssproposals :: url :: msgnotinldap")
+    @REGEX.PRE(REGEX.stdExp.property, "property")
+    @REGEX.PRE(REGEX.stdExp.url, "url")
     toLoad: { [key: string]: string },
+
+    @INSTANCE.PRE(HTMLInputElement, undefined, "Is it not an <input> that is tagged with this functionality?")
+    @EQ.PRE("text", false, "type", 'Isn\'t the tagged <input type = "text"/> ?')
     toProcess: Element,
   ): void {
     // #region Remove entries that're not in LDAP.
@@ -91,8 +115,7 @@ export class LDAP_Autocomplete {
 
         const ldapResult = await LDAP_Find.retrieve(findParameter);
         // #endregion Acquire LDAP-Data for passing it to the match-listeners.
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        for (const listener of (toProcess as any).codbiLDAPSetMatchListeners) {
+        for (const listener of (toProcess as HTMLInputElementWithLDAPListeners).codbiLDAPSetMatchListeners) {
           listener(ldapResult, toProcess);
         }
       }
@@ -101,6 +124,7 @@ export class LDAP_Autocomplete {
     proposals.addEventListener("change", async (event) => {
       onSelected();
     });
+
     proposals.addEventListener("keydown", async (event) => {
       if (event.key === "Enter" || event.key === "Space") {
         onSelected();
@@ -170,6 +194,14 @@ export class LDAP_Autocomplete {
 
 window.codbi.registerFunctionality("LDAP.Autocomplete", LDAP_Autocomplete.functionality.bind(LDAP_Autocomplete)); // Initialization
 // #region Helper
+/**
+ * Removes duplicate items from an array based on an optional property.
+ *
+ * @param toFilter  The array of items to filter for duplicates.
+ * @param by        The property name to use for deduplication. If undefined, uses the Set-based approach for primitive values.
+ *
+ * @returns A new array with duplicate items removed. If `by` is specified, duplicates are identified by comparing the value of that property. Otherwise, duplicates are identified using Set equality.
+ */
 export function removeDuplicates(toFilter: unknown[], by: string | undefined = undefined): unknown[] {
   if (by) {
     const seen = new Map<string, unknown>();

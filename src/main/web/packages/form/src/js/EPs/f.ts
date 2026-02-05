@@ -1,4 +1,12 @@
 // #region Imports
+// #region XDBC
+import { DBC } from "xdbc/src/DBC";
+import { AE } from "xdbc/src/DBC/AE";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+// #endregion XDBC
 // #endregion Imports
 /**
  * Finds the objects within an {@link Array } that have a specific **property** with a specific **value**.
@@ -17,7 +25,15 @@ export class F {
    * Implements the {@link F } Element-Placeholder.
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
-  public static retrieve(params: Array<unknown>): Array<unknown> | unknown {
+  @DBC.ParamvalueProvider
+  @INSTANCE.POST(Array)
+  public static retrieve(
+    @GREATER.PRE(3, true, false, "length", "Haven't the name, the value and the pool to search been specified?")
+    @AE.PRE(new TYPE("string"), 0)
+    @AE.PRE(new DEFINED(), 1)
+    @AE.PRE(new INSTANCE(Array), 2)
+    params: Array<unknown>,
+  ): Array<unknown> | unknown {
     const result = [];
 
     for (const candidate of params[2] as []) {
@@ -28,12 +44,6 @@ export class F {
 
     return result;
   }
-  // #region Initialization
-  /**
-   * States whether this {@link F } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("F", F.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("F", F.retrieve.bind(F)); // Initialization

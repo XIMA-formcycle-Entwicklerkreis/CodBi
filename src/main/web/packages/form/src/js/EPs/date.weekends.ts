@@ -4,6 +4,7 @@ import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 // #endregion XDBC
 // #endregion Imports
 // #region Inject necessary CSS.
@@ -40,6 +41,7 @@ export class Date_Weekends {
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
+    @GREATER.PRE(1, true, false, "length", "Hasn't at least the beginning of the range been specified?")
     @AE.PRE([new TYPE("string"), new REGEX(REGEX.stdExp.date)])
     params: Array<string>,
   ): Array<string> {
@@ -95,11 +97,6 @@ export class Date_Weekends {
 
     return result;
   }
-  /**
-   * States whether this {@link Date_Weekends } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("Date.Weekends", Date_Weekends.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("Date.Weekends", Date_Weekends.retrieve.bind(Date_Weekends)); // Initialization

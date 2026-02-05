@@ -6,6 +6,8 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 import { CodBi, CodBiError } from "../global-scope";
 // #endregion Imports
@@ -17,7 +19,7 @@ import { CodBi, CodBiError } from "../global-scope";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class OnChange_Conditional {
   /**
-   * This functionality applies a certain functionality onto the {@link object } "toProcess" depending on whether
+   * This functionality applies a certain functionality onto the {@link object } **toProcess** depending on whether
    * a given condition is fulfilled or not.
    * The functionalities to apply are defined by the tagged {@link HTMLInputElement }'s attributes. Those attributes
    * start with either cb_T_, for attributes to be applied when the tagged {@link HTMLInputElement } and
@@ -51,20 +53,31 @@ export class OnChange_Conditional {
    *          couldn't be converted to a {@link Date } by {@link formatDate }. */
   @DBC.ParamvalueProvider
   public static functionality(
+    @TYPE.PRE("string", "mode :: target :: dateformat :: candidate")
     @REGEX.PRE(/^(GTEQ|GT|LTEQ|LT|EQ|NEQ)$/i, "mode")
+    @REGEX.PRE(REGEX.stdExp.cssSelector, "target")
     @REGEX.PRE(REGEX.stdExp.dateFormat, "dateFormat")
+    @REGEX.PRE(REGEX.stdExp.cssSelector, "candidate")
     toLoad: { [key: string]: unknown },
+
+    @INSTANCE.PRE(HTMLElement, "Is it not an HTML-Element that is tagged with this functionality?")
     toProcess: Element,
   ): undefined {
     // #region Normalize parameter.
     if (typeof toLoad.target === "string") {
-      toLoad.target = toProcess.parentElement.parentElement.querySelector(toLoad.target as string);
+      toLoad.target = DEFINED.tsCheck<HTMLElement>(
+        toProcess.parentElement.parentElement.querySelector(toLoad.target as string),
+        "Is the target accessible via the provided CSS-Selector?",
+      );
     } else {
-      toLoad.target = (toLoad.target as Array<unknown>)[0];
+      toLoad.target = INSTANCE.tsCheck<HTMLElement>((toLoad.target as Array<unknown>)[0], HTMLElement);
     }
 
     if (typeof toLoad.candidate === "string") {
-      toLoad.candidate = toProcess.parentElement.parentElement.querySelector(toLoad.candidate as string);
+      toLoad.candidate = DEFINED.tsCheck<HTMLElement>(
+        toProcess.parentElement.parentElement.querySelector(toLoad.candidate as string),
+        "Is the candidate accessible via the provided CSS-Selector?",
+      );
     }
     // #endregion Normalize parameter.
     const processChange = () => {
@@ -160,15 +173,12 @@ export class OnChange_Conditional {
 
     getJQuery()(toProcess).on("change", processChange);
   }
-  // #region Initialization
-  /**
-   * States whether this {@link OnChange_Conditional } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("OnChange.Conditional", OnChange_Conditional.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "OnChange.Conditional",
+  OnChange_Conditional.functionality.bind(OnChange_Conditional),
+); // Initialization
 // #region Tools
 /**
  * KI Code

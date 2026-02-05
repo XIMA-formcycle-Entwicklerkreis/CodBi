@@ -1,11 +1,21 @@
+// #region Imports
+// #region XDBC
+import { IF } from "xdbc/src/DBC/IF";
+import { EQ } from "xdbc/src/DBC/EQ";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+import { REGEX } from "xdbc/src/DBC/REGEX";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+// #endregion XDBC
+// #region XIMA
+import { getJQuery } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
+// #endregion Imports
 /**
  * Provides the {@link HTML_Select_Injection.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
-
-import { getJQuery } from "@de-xima/fc-form-renderer";
-
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Media_MultipleUpload {
   /**
@@ -17,9 +27,21 @@ export class Media_MultipleUpload {
    *  - Maximum:        The number of files that may be uploaded.
    *  - prefixTooMany:  The message that is displayed before the **Maximum** if too many files were selected.
    *  - postfixTooMany: The message that is displayed after the **Maximum** if too many files were selected. */
-  public static functionality(toLoad: { [key: string]: string }, toProcess: Element): void {
+  public static functionality(
+    @TYPE.PRE("string", "prefixtoomany :: postfixtoomany")
+    @TYPE.PRE("string | number", "maximum")
+    @IF.PRE(new TYPE("string"), new REGEX(/\d+/), "maximum")
+    toLoad: { [key: string]: string },
+
+    @INSTANCE.PRE(HTMLInputElement, "Is it not an <input> that is tagged with this functionality?")
+    @EQ.PRE("type", false, 'Is it not an <input type = "file"> that is tagged with this functionality?', "type")
+    toProcess: Element,
+  ): void {
     const maximum = toLoad.maximum ? Number.parseInt(toLoad.maximum) : 2;
-    const labelText = toProcess.parentElement.querySelector("label span").innerHTML;
+    const labelText = DEFINED.tsCheck<HTMLSpanElement>(
+      toProcess.parentElement.querySelector("label span"),
+      'Isn\'t there a <label> with a <span> for the tagged <input type="file">?',
+    ).innerHTML;
 
     toProcess.addEventListener("change", (event) => {
       if ((toProcess as HTMLInputElement).files.length > maximum) {
@@ -49,12 +71,9 @@ export class Media_MultipleUpload {
 
     toProcess.setAttribute("multiple", "");
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Media_MultipleUpload } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("Media.MultipleUpload", Media_MultipleUpload.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "Media.MultipleUpload",
+  Media_MultipleUpload.functionality.bind(Media_MultipleUpload),
+); // Initialization

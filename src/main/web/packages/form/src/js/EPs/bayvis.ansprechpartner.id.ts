@@ -7,9 +7,10 @@ import { XMLParser } from "fast-xml-parser";
 // #endregion Fast XML-Parser
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { AE } from "xdbc/src/DBC/AE";
-import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 import { CodBiError } from "../global-scope";
 // #endregion Imports
@@ -27,8 +28,7 @@ import { CodBiError } from "../global-scope";
  *                              behoerdeId: number; behoerdeBezeichnung: string;
  *                              gebaeudeId: number; gebaeudeBezeichnung: string; ansprechpartnerId: number;
  *                              apTelefonLandvorwahl: string; apTelefonOrtsvorwahl: string; apTelefonAnlage: string;
- *                              apTelefonDurchwahl: string; apEmail: string;}>}
- *              or an {@link Array < string >}, if the 3rd parameter is specified.
+ *                              apTelefonDurchwahl: string; apEmail: string;}>}.
  *
  * @throws A {@link CodBiError } if no contact with the specified full name wasn't found or if the specified endpoint couldn't be reached.
  *
@@ -66,7 +66,12 @@ export class BayVIS_Ansprechpartner_ID {
    *
    * @throws  A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint. */
   @DBC.ParamvalueProvider
-  public static retrieve(params: Array<unknown>): Promise<
+  public static retrieve(
+    @GREATER.PRE(1, false, false, "length", "Has the contact's first- and last name been specified?")
+    @AE.PRE(new TYPE("string"), 0)
+    @AE.PRE(new REGEX(/^[A-Z][a-z]+\s[A-Z][a-z]+$/), 0)
+    params: Array<unknown>,
+  ): Promise<
     | Array<string>
     | Array<{
         anrede: string;
@@ -147,12 +152,9 @@ export class BayVIS_Ansprechpartner_ID {
         });
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link BayVIS_Ansprechpartner_ID } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("BayVIS.Ansprechpartner.ID", BayVIS_Ansprechpartner_ID.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP(
+  "BayVIS.Ansprechpartner.ID",
+  BayVIS_Ansprechpartner_ID.retrieve.bind(BayVIS_Ansprechpartner_ID),
+); // Initialization

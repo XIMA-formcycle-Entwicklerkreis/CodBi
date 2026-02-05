@@ -38,6 +38,36 @@ function insertText(into: HTMLTextAreaElement, toInsert: string) {
 
   into.dispatchEvent(new Event("input", { bubbles: true }));
 }
+/** Builds a comma-separated list from a JSON-encoded array of file names.
+ *
+ * @param serializedFiles The JSON-encoded array string.
+ *
+ * @returns The normalized comma-separated list. */
+function buildFileList(serializedFiles: string): string {
+  return JSON.parse(serializedFiles)
+    .map((file: string) => {
+      return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
+    })
+    .join(",");
+}
+/** Blocks keystrokes for a short duration to avoid accidental input.
+ *
+ * @param durationMs The blocking duration in milliseconds. */
+function addTemporaryKeyblocker(durationMs: number): void {
+  const blocker = (event: KeyboardEvent) => {
+    const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
+
+    keyboardEvent.preventDefault();
+    keyboardEvent.stopImmediatePropagation();
+    keyboardEvent.stopPropagation();
+
+    setTimeout(() => {
+      document.removeEventListener("keydown", blocker);
+    }, durationMs);
+  };
+
+  document.addEventListener("keydown", blocker);
+}
 // #endregion Helper
 export function enableLocalDocInterface(): void {
   let codbiToggle: HTMLElement | undefined;
@@ -82,21 +112,14 @@ export function enableLocalDocInterface(): void {
                           opacity: 0.6;}
                         </style>
           <div  is          = "xc-epmanager"
-                options     = "${JSON.parse(window.CodbiPluginData.fslFunctionalities)
-                  .map((file: string) => {
-                    return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-                  })
-                  .join(",")}"
-                epoptions  = "${JSON.parse(window.CodbiPluginData.fslElementplaceholder)
-                  .map((file: string) => {
-                    return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-                  })
-                  .join(",")}"></div>
+                options     = "${buildFileList(window.CodbiPluginData.fslFunctionalities)}"
+                epoptions  = "${buildFileList(window.CodbiPluginData.fslElementplaceholder)}"><bv/div>
           <div  is = "xc-optioninput"></div>`,
       );
       // #endregion Inject <XC-EPManager> & <XC-OptionInput>.
       // #region Acquire references to <XC-EPManager> & <XC-OptionInput>.
       const epManager = INSTANCE.tsCheck<EPManager>(document.querySelector('div[is="xc-epmanager"]'), EPManager);
+      const epManagerElement = INSTANCE.tsCheck<HTMLElement>(epManager, HTMLElement);
       const optioninput = INSTANCE.tsCheck<Optioninput>(
         document.querySelector('div[is="xc-optioninput"]'),
         Optioninput,
@@ -186,19 +209,7 @@ export function enableLocalDocInterface(): void {
             HTMLElement,
           );
           // #region Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
-          const blocker = (event: KeyboardEvent) => {
-            const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
-
-            keyboardEvent.preventDefault();
-            keyboardEvent.stopImmediatePropagation();
-            keyboardEvent.stopPropagation();
-
-            setTimeout(() => {
-              document.removeEventListener("keydown", blocker);
-            }, 250);
-          };
-
-          document.addEventListener("keydown", blocker);
+          addTemporaryKeyblocker(250);
           // #endregion Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
           valueColumn.click();
 
@@ -220,19 +231,7 @@ export function enableLocalDocInterface(): void {
             HTMLElement,
           );
           // #region Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
-          const blocker = (event: KeyboardEvent) => {
-            const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
-
-            keyboardEvent.preventDefault();
-            keyboardEvent.stopImmediatePropagation();
-            keyboardEvent.stopPropagation();
-
-            setTimeout(() => {
-              document.removeEventListener("keydown", blocker);
-            }, 250);
-          };
-
-          document.addEventListener("keydown", blocker);
+          addTemporaryKeyblocker(250);
           // #endregion Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
           valueColumn.click();
 
@@ -265,16 +264,9 @@ export function enableLocalDocInterface(): void {
                       epManager.mode = "SV";
                       epManager.mode = "EP";
                       // #region Rebuild listing.
-                      INSTANCE.tsCheck<HTMLElement>(
-                        document.querySelector('div[is = "xc-epmanager"]'),
-                        HTMLElement,
-                      ).setAttribute(
+                      epManagerElement.setAttribute(
                         "epoptions",
-                        JSON.parse(window.CodbiPluginData.fslElementplaceholder)
-                          .map((file: string) => {
-                            return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-                          })
-                          .join(","),
+                        buildFileList(window.CodbiPluginData.fslElementplaceholder),
                       );
                       // #endregion Rebuild listing.
                       // First time load of APIDoc
@@ -395,14 +387,7 @@ export function enableLocalDocInterface(): void {
           epManager.mode = "EP";
           // #region Rebuild listing.
 
-          epManager.setAttribute(
-            "epoptions",
-            JSON.parse(window.CodbiPluginData.fslElementplaceholder)
-              .map((file: string) => {
-                return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-              })
-              .join(","),
-          );
+          epManager.setAttribute("epoptions", buildFileList(window.CodbiPluginData.fslElementplaceholder));
           // #endregion Rebuild listing.
           // First time load of APIDoc
           DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
@@ -667,23 +652,9 @@ export function enableLocalDocInterface(): void {
             window.CodbiPluginData.populateStandards();
           });
 
-          INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
-            "options",
-            JSON.parse(window.CodbiPluginData.fslFunctionalities)
-              .map((file: string) => {
-                return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-              })
-              .join(","),
-          );
+          epManagerElement.setAttribute("options", buildFileList(window.CodbiPluginData.fslFunctionalities));
 
-          INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
-            "epoptions",
-            JSON.parse(window.CodbiPluginData.fslElementplaceholder)
-              .map((file: string) => {
-                return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-              })
-              .join(","),
-          );
+          epManagerElement.setAttribute("epoptions", buildFileList(window.CodbiPluginData.fslElementplaceholder));
           // #endregion Load into global structures and components
           // #region Load and inject Angular local API-Documentation-Manager web component
           const scriptAPIManager = document.createElement("script");
@@ -1137,19 +1108,7 @@ export function enableLocalDocInterface(): void {
 
                               event.target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
                               // #region Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
-                              const blocker = (event: KeyboardEvent) => {
-                                const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
-
-                                keyboardEvent.preventDefault();
-                                keyboardEvent.stopImmediatePropagation();
-                                keyboardEvent.stopPropagation();
-
-                                setTimeout(() => {
-                                  document.removeEventListener("keydown", blocker);
-                                }, 500);
-                              };
-
-                              document.addEventListener("keydown", blocker);
+                              addTemporaryKeyblocker(500);
                               // #endregion Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
                               return;
                             }
@@ -1201,16 +1160,9 @@ export function enableLocalDocInterface(): void {
                       if (!epManager.enabled) {
                         added.setSelectionRange(added.value.length, added.value.length);
                         // #region Refresh listing.
-                        INSTANCE.tsCheck<HTMLElement>(
-                          document.querySelector('div[is = "xc-epmanager"]'),
-                          HTMLElement,
-                        ).setAttribute(
+                        epManagerElement.setAttribute(
                           "options",
-                          JSON.parse(window.CodbiPluginData.fslFunctionalities)
-                            .map((file: string) => {
-                              return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-                            })
-                            .join(","),
+                          buildFileList(window.CodbiPluginData.fslFunctionalities),
                         );
                         // #endregion Refresh listing.
                         epManager.mode = "SV";
@@ -1424,82 +1376,84 @@ export function enableLocalDocInterface(): void {
 
                       let bound = false; // States whether the epManager's target is already bound to this <input>.
 
-                      currentFunctionalityParameterInput?.addEventListener("keydown", (event) => {
-                        const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
-                        // #region If ALT + X...
-                        if (keyboardEvent.altKey && (keyboardEvent.key === "x" || keyboardEvent.key === "X")) {
-                          const attributePanel = INSTANCE.tsCheck<HTMLElement>(
-                            document.querySelector('[ data-panel-id ="attributes"]'),
-                            HTMLElement,
-                          );
-
-                          attributePanelForcedToEnlarge = attributePanel.style.position !== "fixed";
-
-                          attributePanel.style.position =
-                            attributePanel.style.position === "fixed" ? "relative" : "fixed";
-                          attributePanel.style.zIndex = attributePanel.style.position === "fixed" ? "1001" : "0";
-                          attributePanel.style.left = attributePanel.style.position === "fixed" ? "10vh" : "";
-                          attributePanel.style.top = attributePanel.style.position === "fixed" ? "10vw" : "";
-                          attributePanel.style.width = attributePanel.style.position === "fixed" ? "80vw" : "";
-                          attributePanel.style.height = attributePanel.style.position === "fixed" ? "fit-content" : "";
-                          attributePanel.style.boxShadow =
-                            attributePanel.style.position === "fixed" ? "0 0 1em darkorange" : "";
-                          attributePanel.style.borderRadius = attributePanel.style.position === "fixed" ? ".5em" : "";
-                          attributePanel.style.borderColor = attributePanel.style.position === "fixed" ? "black" : "";
-                          attributePanel.style.transition = attributePanel.style.position === "fixed" ? "1s all" : "";
-                          attributePanel.style.border = attributePanel.style.position === "fixed" ? "solid" : "";
-                        }
-                        // #endregion If ALT + X...
-                        // #region If ALT + E...
-                        if (keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === "e") {
-                          // #region Prevent default actions & bubbling.
-                          keyboardEvent.preventDefault();
-                          keyboardEvent.stopImmediatePropagation();
-                          keyboardEvent.stopPropagation();
-                          // #endregion Prevent default actions & bubbling.
-                          epManager.mode = "SV";
-                          epManager.mode = "EP";
-                          // #region Rebuild listing.
-                          INSTANCE.tsCheck<HTMLElement>(
-                            document.querySelector('div[is = "xc-epmanager"]'),
-                            HTMLElement,
-                          ).setAttribute(
-                            "epoptions",
-                            JSON.parse(window.CodbiPluginData.fslElementplaceholder)
-                              .map((file: string) => {
-                                return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-                              })
-                              .join(","),
-                          );
-                          // #endregion Rebuild listing.
-                          // First time load of APIDoc
-                          if (cDetails.querySelector("object") === null) {
-                            cDetails.innerHTML = "<object style = 'width : 100% ; height: 100% ;'></object>";
+                      cell.addEventListener(
+                        "keydown",
+                        (event) => {
+                          if (!(event.target instanceof HTMLInputElement)) {
+                            return;
                           }
 
-                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                            "data",
-                            `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
-                          );
+                          const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
+                          // #region If ALT + X...
+                          if (keyboardEvent.altKey && (keyboardEvent.key === "x" || keyboardEvent.key === "X")) {
+                            const attributePanel = INSTANCE.tsCheck<HTMLElement>(
+                              document.querySelector('[ data-panel-id ="attributes"]'),
+                              HTMLElement,
+                            );
 
-                          // #region Show interface.
-                          epManager.enabled = true;
-                          epManager.enteringEP = true;
-                          cDetails.style.display = "block";
+                            attributePanelForcedToEnlarge = attributePanel.style.position !== "fixed";
 
-                          updateLayoutEPManager(cell);
-                          updateLayoutCDetails(epManager);
-                          // #endregion Show interface.
-                          // #region Bind epManager's target to this <input> evading unnecessary multiple binding.
-                          if (!bound && event.target !== null) {
-                            bound = true;
-
-                            epManager.target = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+                            attributePanel.style.position =
+                              attributePanel.style.position === "fixed" ? "relative" : "fixed";
+                            attributePanel.style.zIndex = attributePanel.style.position === "fixed" ? "1001" : "0";
+                            attributePanel.style.left = attributePanel.style.position === "fixed" ? "10vh" : "";
+                            attributePanel.style.top = attributePanel.style.position === "fixed" ? "10vw" : "";
+                            attributePanel.style.width = attributePanel.style.position === "fixed" ? "80vw" : "";
+                            attributePanel.style.height =
+                              attributePanel.style.position === "fixed" ? "fit-content" : "";
+                            attributePanel.style.boxShadow =
+                              attributePanel.style.position === "fixed" ? "0 0 1em darkorange" : "";
+                            attributePanel.style.borderRadius = attributePanel.style.position === "fixed" ? ".5em" : "";
+                            attributePanel.style.borderColor = attributePanel.style.position === "fixed" ? "black" : "";
+                            attributePanel.style.transition = attributePanel.style.position === "fixed" ? "1s all" : "";
+                            attributePanel.style.border = attributePanel.style.position === "fixed" ? "solid" : "";
                           }
-                          // #endregion Bind epManager's target to this <input> evading unnecessary multiple binding.
-                        }
-                        // #endregion If ALT + E...
-                      });
+                          // #endregion If ALT + X...
+                          // #region If ALT + E...
+                          if (keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === "e") {
+                            // #region Prevent default actions & bubbling.
+                            keyboardEvent.preventDefault();
+                            keyboardEvent.stopImmediatePropagation();
+                            keyboardEvent.stopPropagation();
+                            // #endregion Prevent default actions & bubbling.
+                            epManager.mode = "SV";
+                            epManager.mode = "EP";
+                            // #region Rebuild listing.
+                            epManagerElement.setAttribute(
+                              "epoptions",
+                              buildFileList(window.CodbiPluginData.fslElementplaceholder),
+                            );
+                            // #endregion Rebuild listing.
+                            // First time load of APIDoc
+                            if (cDetails.querySelector("object") === null) {
+                              cDetails.innerHTML = "<object style = 'width : 100% ; height: 100% ;'></object>";
+                            }
+
+                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
+                              "data",
+                              `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
+                            );
+
+                            // #region Show interface.
+                            epManager.enabled = true;
+                            epManager.enteringEP = true;
+                            cDetails.style.display = "block";
+
+                            updateLayoutEPManager(cell);
+                            updateLayoutCDetails(epManager);
+                            // #endregion Show interface.
+                            // #region Bind epManager's target to this <input> evading unnecessary multiple binding.
+                            if (!bound && event.target !== null) {
+                              bound = true;
+
+                              epManager.target = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+                            }
+                            // #endregion Bind epManager's target to this <input> evading unnecessary multiple binding.
+                          }
+                          // #endregion If ALT + E...
+                        },
+                        { capture: true },
+                      );
                       // #region Hide CodBi-Interface on leaving <input>.
                       currentFunctionalityParameterInput?.addEventListener("blur", (event) => {
                         // #region End forced enlargement of the attributes panel, if necessary.
@@ -1679,16 +1633,9 @@ export function enableLocalDocInterface(): void {
                         });
                         // #region Show interface.
                         // #region Refresh listing.
-                        INSTANCE.tsCheck<HTMLElement>(
-                          document.querySelector('div[is = "xc-epmanager"]'),
-                          HTMLElement,
-                        ).setAttribute(
+                        epManagerElement.setAttribute(
                           "options",
-                          JSON.parse(window.CodbiPluginData.fslFunctionalities)
-                            .map((file: string) => {
-                              return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
-                            })
-                            .join(","),
+                          buildFileList(window.CodbiPluginData.fslFunctionalities),
                         );
                         // #endregion Refresh listing.
                         epManager.mode = "SV";

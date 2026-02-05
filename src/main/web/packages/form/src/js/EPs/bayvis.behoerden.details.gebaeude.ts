@@ -8,6 +8,7 @@ import { XMLParser } from "fast-xml-parser";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
+import { TYPE } from "xdbc/src/DBC/TYPE.js";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 // #endregion XDBC
@@ -59,7 +60,8 @@ export class BayVIS_Behoerden_Details_Gebaeude {
    * @throws A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint or the . */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(2, true, false, "length")
+    @GREATER.PRE(2, false, false, "length", "Has the authority and building ID been specified?")
+    @AE.PRE(new TYPE("string | object"))
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details_Gebaeude.stdExp.authorityID), 0, 1)
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details_Gebaeude.stdExp.directoryMember), 2)
     params: Array<unknown>,
@@ -133,12 +135,9 @@ export class BayVIS_Behoerden_Details_Gebaeude {
         });
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link BayVIS_Behoerden_Details_Gebaeude } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("BayVIS.Behoerden.Details.Gebaeude", BayVIS_Behoerden_Details_Gebaeude.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP(
+  "BayVIS.Behoerden.Details.Gebaeude",
+  BayVIS_Behoerden_Details_Gebaeude.retrieve.bind(BayVIS_Behoerden_Details_Gebaeude),
+); // Initialization

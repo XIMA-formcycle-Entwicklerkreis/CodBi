@@ -2,6 +2,7 @@
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 // #endregion XDBC
 import { CodBiError } from "../global-scope";
 // #endregion Imports
@@ -26,7 +27,8 @@ export class V {
    *          of **params** is set to **REPORT**. Otherwise a empty {@link string } will be returned. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @REGEX.PRE(REGEX.stdExp.cssSelector)
+    @GREATER.PRE(1, true, false, "length", "Hasn't at least the the variable's CSS-Selector been specified?")
+    @REGEX.PRE(/\w+/)
     params: Array<string>,
   ): string {
     const result: string | undefined | null = document
@@ -43,11 +45,6 @@ export class V {
 
     return result;
   }
-  /**
-   * States whether this {@link V } was successfully registered via {@link CodbiGlobal.registerEP } with the CodBi and
-   * performs the registration upon class usage. */
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("V", V.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("V", V.retrieve.bind(V)); // Initialization

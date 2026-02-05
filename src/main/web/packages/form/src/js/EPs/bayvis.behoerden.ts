@@ -10,6 +10,7 @@ import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER.js";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";
 // #endregion Imports
@@ -44,6 +45,7 @@ export class BayVIS_Behoerden {
    * @throws A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint or the . */
   @DBC.ParamvalueProvider
   public static retrieve(
+    @GREATER.PRE(1, true, false, "length", "Has a property of the authority been specified?")
     @AE.PRE(new TYPE("string"))
     @AE.PRE(new REGEX(BayVIS_Behoerden.stdExp.directoryMember), 1)
     params: Array<unknown>,
@@ -116,12 +118,6 @@ export class BayVIS_Behoerden {
         });
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link BayVIS_Behoerden } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("BayVIS.Behoerden", BayVIS_Behoerden.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("BayVIS.Behoerden", BayVIS_Behoerden.retrieve.bind(BayVIS_Behoerden)); // Initialization

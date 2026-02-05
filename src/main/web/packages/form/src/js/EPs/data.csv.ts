@@ -2,6 +2,7 @@
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
@@ -16,13 +17,13 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class Data_CSV {
   /**
-   * Uses {@link resolvePath } to retrieve the {@link Object } at the path specified in "params"[ 1 ] out of the
-   * {@link Object } in "param[ 0 ]".
+   * See {@link Data_CSV }.
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @AE.PRE([new TYPE("string")])
+    @GREATER.PRE(1, true, false, "length", "Has the CSV-String to convert been specified?")
+    @AE.PRE([new TYPE("string | object")])
     params: Array<string>,
   ): Array<string> {
     const result: Array<string> = new Array<string>();
@@ -39,12 +40,6 @@ export class Data_CSV {
     // #region Turn every element that is a string to an array of strings separated by ",".
     return result;
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Data_CSV } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("Data.CSV", Data_CSV.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("Data.CSV", Data_CSV.retrieve.bind(Data_CSV)); // Initialization

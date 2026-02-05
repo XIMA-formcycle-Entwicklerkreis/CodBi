@@ -1,4 +1,12 @@
 // #region Imports
+// #region XDBC
+import { DBC } from "xdbc/src/DBC";
+import { AE } from "xdbc/src/DBC/AE";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { REGEX } from "xdbc/src/DBC/REGEX";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+// #endregion XDBC
 import { removeDuplicates } from "../Functionalities/ldap.autocomplete";
 // #endregion Imports
 /**
@@ -20,17 +28,18 @@ export class Unique {
    * property.
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
-  public static retrieve(params: Array<unknown>): Array<unknown> {
+  @DBC.ParamvalueProvider
+  public static retrieve(
+    @GREATER.PRE(1, true, false, "length", "Hasn't at least the Array to filter been provided?")
+    @AE.PRE(new INSTANCE(Array), 0)
+    @AE.PRE(new TYPE("string"), 1)
+    @AE.PRE(new REGEX(REGEX.stdExp.property), 1)
+    params: Array<unknown>,
+  ): Array<unknown> {
     return params.length === 1
       ? removeDuplicates(params[0] as [])
       : removeDuplicates(params[0] as [], params[1] as string);
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Unique } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("Unique", Unique.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("Unique", Unique.retrieve.bind(Unique)); // Initialization

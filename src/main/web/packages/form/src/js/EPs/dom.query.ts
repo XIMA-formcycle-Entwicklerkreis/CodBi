@@ -1,7 +1,11 @@
 // #region Imports
 // #region XDBC
+import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
-import { EQ } from "xdbc/src/DBC/EQ";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { REGEX } from "xdbc/src/DBC/REGEX";
+import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -15,21 +19,21 @@ import { EQ } from "xdbc/src/DBC/EQ";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive design.
 export class DOM_Query {
   /**
-   * Checks all "params" for specific data (see {@link Date_Weekends }) and return an {@link Array } of
-   * Date-{@link strings}.
+   * See {@link DOM_Query }.
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
-  @AE.POST(new EQ(null, true), 0)
-  public static retrieve(params: Array<string>): Array<Element | null> {
+  @DBC.ParamvalueProvider
+  @INSTANCE.POST(Element)
+  public static retrieve(
+    @GREATER.PRE(1, true, false, "length", "Hasn't the CSS-Selector been specified?")
+    @AE.PRE([new TYPE("string")])
+    @AE.PRE(new REGEX(REGEX.stdExp.cssSelector), 0)
+    params: Array<string>,
+  ): Element | null {
     const result: Element | null = document.querySelector(params[0] as string);
 
-    return [result];
+    return result;
   }
-  /**
-   * States whether this {@link DOM_Query } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("DOM.Query", DOM_Query.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("DOM.Query", DOM_Query.retrieve.bind(DOM_Query)); // Initialization

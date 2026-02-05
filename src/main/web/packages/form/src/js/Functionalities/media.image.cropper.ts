@@ -7,7 +7,11 @@ import Cropper from "cropperjs";
 // #endregion Cropper
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
+import { IF } from "xdbc/src/DBC/IF.js";
+import { TYPE } from "xdbc/src/DBC/TYPE.js";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
+import { OR } from "xdbc/src/DBC/OR.js";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";
 // #endregion Imports
@@ -18,31 +22,47 @@ import { CodBiError } from "../global-scope.js";
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Media_Image_Cropper {
+  /** Stores often used {@link RegExp }s. */
+  public static stdExp: { [key: string]: RegExp } = {
+    aspectRatio: /^\d+\s*\/\s*\d+$/,
+  };
   /**
-   * This functionality provides an imagecropper (https://fengyuanchen.github.io/cropperjs/).
+   * This functionality provides an image-cropper (https://fengyuanchen.github.io/cropperjs/).
    * In order for it to work also in repetitive Containers "data-cb-func" gotta be set on the first outermost container
    * that is not repetitive itself but lies with the repetitive one.
    *
    * Config Parameter:
-   *  - Container:        The {@link HTMLDivElement } that shall contain the Cropper-UI.
-   *  - Target:           The {@link HTMLImageElement } that will contain the cropped image when
+   *  - Container:        The CSS-Selector of the {@link HTMLDivElement } that shall contain the Cropper-UI.
+   *  - Target:           The CSS-Selector of the {@link HTMLImageElement } that will contain the cropped image after
    *                      clicking the "Updater".
-   *  - File:             The {@link HTMLInputElement } of type = "file" where to select the image to crop.
+   *  - File:             The CSS-Selector of the {@link HTMLInputElement } of type = "file" where to select the image to crop.
    *  - Updater:          The CSS-Selector specifying the {@link HTMLButtonElement } that, on click, will cause an update of the "Target".
    *  - ImageURL          The CSS-Selector specifying the {@link HTMLInputElement } that shall receive the image data.
-   *  - AspectRatio:      The optional cropper's aspectratio to retain (e.g. 16 / 9 or 4 / 3 ).
+   *  - AspectRatio:      The optional cropper's aspect-ratio to retain (e.g. 16 / 9 or 4 / 3 ).
    *                      Setting this value will make the cropper non-resizable.
    *  - OutputWidth       The width in pixel for canvas where the cropped area shall be reflected.
+   *                      If provided as a string the minimum value is 100. Defaults to 1000px.
    *  - CSSCropperHandle  The CSS that shall be applied on each <cropper-handle> (defaults to background-color: darkorange ;).
    *
    * @param toLoad Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
+    @TYPE.PRE("string", "container :: target :: file :: updater :: imageurl :: csscropperhandle")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "container")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "target")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "file")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "updater")
+    @REGEX.PRE(REGEX.stdExp.cssSelector, "imageurl")
+    @TYPE.PRE("string | number", "aspectratio :: outputwidth")
+    @IF.PRE(new TYPE("string"), new REGEX(Media_Image_Cropper.stdExp.aspectRatio), "aspectratio")
+    @IF.PRE(new TYPE("string"), new REGEX(/[1-9][1-9][1-9]+/), "outputwidth")
     toLoad: { [key: string]: unknown },
+
+    @OR.PRE(
+      [new INSTANCE(HTMLDivElement), new INSTANCE(HTMLFieldSetElement)],
+      undefined,
+      "Is it not a <div> or <fieldset> that is tagged with this functionality?",
+    )
     toProcess: Element,
   ): void {
     const container: HTMLElement | undefined = toProcess.querySelector(toLoad.container as string);
@@ -66,8 +86,7 @@ export class Media_Image_Cropper {
 
     let cropper: Cropper | undefined;
     // #region Register event to properly react on file changes.
-    // biome-ignore lint/style/noNonNullAssertion: Was checked on line 47.
-    fileInput!.addEventListener("change", (event: Event): undefined => {
+    fileInput.addEventListener("change", (event: Event): undefined => {
       if ((fileInput as HTMLInputElement).files && (fileInput as HTMLInputElement).files.length > 0) {
         const file: File | undefined = (fileInput as HTMLInputElement).files[0];
 
@@ -170,15 +189,9 @@ export class Media_Image_Cropper {
     }
     // #endregion Register proper event to update the "target".
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Media_Image_Cropper } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("Media.Image.Cropper", Media_Image_Cropper.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("Media.Image.Cropper", Media_Image_Cropper.functionality.bind(Media_Image_Cropper)); // Initialization
 // #region Helper
 const divide = (divisionString): number => {
   try {

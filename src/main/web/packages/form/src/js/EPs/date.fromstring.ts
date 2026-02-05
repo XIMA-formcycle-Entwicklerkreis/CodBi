@@ -5,6 +5,7 @@ import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 // #endregion XDBC
 import { stringToDate } from "../global-scope";
 // #endregion Imports
@@ -27,17 +28,13 @@ export class DATE_FromString {
   @DBC.ParamvalueProvider
   @AE.POST(new INSTANCE(Date))
   public static retrieve(
+    @GREATER.PRE(2, true, false, "length", "Was the date string to convert and the operation to perform not specified?")
     @AE.PRE([new TYPE("string"), new REGEX(REGEX.stdExp.date)], 0)
     @AE.PRE([new TYPE("string"), new REGEX(REGEX.stdExp.dateFormat)], 1)
     params: Array<string>,
   ): Array<Date | null> {
     return [stringToDate(params[0] as string, params.length === 2 ? (params[1] as string) : "DD.MM.YYYY")];
   }
-  /**
-   * States whether this {@link DATE_FromString } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("Date.FromString", DATE_FromString.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("Date.FromString", DATE_FromString.retrieve.bind(DATE_FromString)); // Initialization

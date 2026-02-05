@@ -1,10 +1,12 @@
 {
   "Description": "/classes/Functionalities_openplz.autocomplete.OpenPLZ_Autocomplete.html#functionality",
   "Parameter": {
-    "Target": "",
+    "TargetData": "",
     "Country": "",
-    "Locality": "",
     "CSSProposals": "",
-    "MsgNotKnown": ""
+    "MsgNotKnown": "",
+    "DependentPLZ": "",
+    "DependentLocality": "",
+    "FocusOnAutocomplete": ""
   }
 }

@@ -4,6 +4,7 @@ import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -29,25 +30,21 @@ export class DATE_Today {
    *          specified "params" or the {@link Date } of today, if the first element in "params* is the keyword
    *          "NOW" (case insensitive). */
   @DBC.ParamvalueProvider
+  @INSTANCE.POST(Date)
   public static retrieve(
     @AE.PRE([new TYPE("string"), new REGEX(/^(?i:(NOW)|([+-]\d+[dmy]))$/i)]) params: Array<string>,
-  ): Array<Date> {
+  ): Date {
     const result: Date = new Date();
 
     if (params[0]?.toLocaleUpperCase() === "NOW" || params.length === 0) {
-      return [new Date()];
+      return new Date();
     }
 
-    return [processArithmeticParams(result, params)];
+    return processArithmeticParams(result, params);
   }
-  /**
-   * States whether this {@link DATE_Today } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("Date.Today", DATE_Today.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("Date.Today", DATE_Today.retrieve.bind(DATE_Today)); // Initialization
 // #region Tools
 /**
  * Performs arithmetic operations on the {@link Date } "toProcess". Days, months and years may be either added

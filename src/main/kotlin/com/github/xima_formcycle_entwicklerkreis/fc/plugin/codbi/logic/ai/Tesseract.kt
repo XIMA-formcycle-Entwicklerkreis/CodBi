@@ -67,6 +67,13 @@ import net.sourceforge.tess4j.TessAPI1
  * - **[https://github.com/tesseract-ocr/tessdata_best/raw/main/](https://github.com/tesseract-ocr/tessdata_best)**
  *   **The Maven repository's URL may be changed using the AI_Tesseract_MavenRepository plugin
  *   property.**
+ *
+ * ## Domains to whitelist
+ * - **repo1.maven.org**
+ * - **github.com**
+ * - **raw.githubusercontent.com**
+ * - **api.github.com**
+ * - **objects.githubusercontent.com**
  */
 class TesseractAction : AI() {
   /**

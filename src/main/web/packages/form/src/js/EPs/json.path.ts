@@ -2,6 +2,10 @@
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER.js";
+import { AE } from "xdbc/src/DBC/AE.js";
+import { TYPE } from "xdbc/src/DBC/TYPE.js";
+import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
 // #endregion XDBC
 import { CodBiError } from "../global-scope.js";
 // #endregion Imports
@@ -23,7 +27,13 @@ export class JSON_Path {
    *
    * @param params    The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
-  public static retrieve(params: Array<unknown>): unknown {
+  public static retrieve(
+    @GREATER.PRE(1, true, false, "length", "Haven't the object to retrieve from and the path been specified?")
+    @AE.PRE(new DEFINED(), 0)
+    @AE.PRE(new TYPE("string"), 1)
+    @AE.PRE(new REGEX(REGEX.stdExp.keyPath), 1)
+    params: Array<unknown>,
+  ): unknown {
     return resolvePath(params[1] as string, params[0] as object);
   }
   /**

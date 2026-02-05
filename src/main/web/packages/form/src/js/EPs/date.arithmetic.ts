@@ -4,36 +4,37 @@ import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 // #endregion XDBC
 import { stringToDate } from "../global-scope";
 import { processArithmeticParams } from "./date.today";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion Imports
 /**
- * Performs arithmetic operations on a {@link Date }-{@link String } generating a {@link Date }.
+ * This Element-Placeholder turns a {@link String } into a {@link Date }.
+ *
+ * Placeholder Parameter:
+ *  - 1st:  The {@link String } to turn to a {@link Date}.
+ *  - 2nd:  The optional format of the "dateString" (e.g. DD/MM/YYYY).
+ *  - 3rd:  The operations to perform on the {@link Date } specified.
+ *          Days, months and years may be either added or subtracted by adding each
+ *          arithmetic option as a separate parameter (e.g. Date.Arithmetic > 01.01.1978 ; -1d ; +2m ; -10y ).
+ *
+ * @param params The parameters for that Element-Placeholder (provided by CodBi).
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class DATE_Arithmetic {
   /**
-   * This Element-Placeholder turns a {@link String } into a {@link Date }.
-   *
-   * Placeholder Parameter:
-   *  - 1st:  The {@link String } to turn to a {@link Date}.
-   *  - 2nd:  The optional format of the "dateString" (e.g. DD/MM/YYYY).
-   *  - 3rd:  The operations to perform on the {@link Date } specified.
-   *          Days, months and years may be either added or subtracted by adding each
-   *          arithmetic option as a separate parameter (e.g. Date.Arithmetic > 01.01.1978 ; -1d ; +2m ; -10y ).
-   *
-   * @param params The parameters for that Element-Placeholder (provided by CodBi). */
-  @DBC.ParamvalueProvider
-  /**
-   * Uses {@link CodBi.stringToDate } to turn the {@link String } at "params"[ 0 ] of optional format params[ 1 ] into a {@link Date }.
+   * See {@link DATE_Arithmetic }.
    *
    * @param params    The parameters for that Element-Placeholder (provided by CodBi). */
+  @DBC.ParamvalueProvider
+  @INSTANCE.POST(Date)
   public static retrieve(
+    @GREATER.PRE(2, true, false, "length", "Was the date string to convert and the operation to perform not specified?")
     @AE.PRE([new TYPE("string"), new REGEX(REGEX.stdExp.date)], 0)
-    //@AE.PRE([new TYPE("string"), new REGEX(/^[+-]\d+[dmy]$/i)], 1, -1)
     params: Array<string>,
   ): Date {
     const date: Date | null =
@@ -50,11 +51,6 @@ export class DATE_Arithmetic {
       params.slice(params[1].indexOf("+") !== -1 || params[1].indexOf("-") !== -1 ? 1 : 2),
     );
   }
-  /**
-   * States whether this {@link DATE_Arithmetic } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("Date.Arithmetic", DATE_Arithmetic.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("Date.Arithmetic", DATE_Arithmetic.retrieve.bind(DATE_Arithmetic)); // Initialization

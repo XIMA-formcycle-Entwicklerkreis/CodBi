@@ -5,13 +5,14 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 // #endregion XDBC
 // #endregion Imports
 /**
  * This **E**lement-**P**laceholder retrieves the content of a URL.
  *
- * Config Parameter:
+ * ### Config Parameter:
  *  1. The URL to retrieve from.
  *
  * @remarks
@@ -25,6 +26,7 @@ export class NET_URL {
    * @param params    The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
+    @GREATER.PRE(1, true, false, "length", "Hasn't a URL been specified?")
     @AE.PRE(new REGEX(REGEX.stdExp.url))
     params: Array<unknown>,
   ): Promise<Array<unknown>> {
@@ -37,11 +39,6 @@ export class NET_URL {
       // #endregion Retrieve the content the specified URL points to.
     });
   }
-  /**
-   * States whether this {@link NET_URL } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("Net.URL", NET_URL.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("Net.URL", NET_URL.retrieve.bind(NET_URL)); // Initialization

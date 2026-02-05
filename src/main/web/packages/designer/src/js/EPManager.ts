@@ -47,26 +47,6 @@ export class EPManager extends SVManager {
   public get mode(): "SV" | "EP" {
     return this._mode;
   }
-  /** Hides the checkboxes after {@link SVManager.render }ing if {@link EPManager.mode } is set to "EP". */
-  protected override render(): void {
-    super.render();
-
-    if (this.mode === "EP") {
-      for (const checkbox of DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelectorAll('[ part = "Optioninput"]')) {
-        const cb = INSTANCE.tsCheck<HTMLElement>(checkbox, HTMLElement);
-
-        cb.style.display = "none";
-
-        const text = INSTANCE.tsCheck<HTMLElement>(
-          DEFINED.tsCheck<HTMLElement>(cb.parentElement).querySelector('[ part = "Optiontext"]'),
-          HTMLElement,
-        );
-
-        text.style.marginLeft = "auto";
-        text.style.marginRight = "auto";
-      }
-    }
-  }
   /**
    * Sets the current {@link EPManager.mode } switching the {@link SVManager.options } with the
    * {@link EPManager.epOptions} when set to "**EP**" and vice versa. */
@@ -78,24 +58,26 @@ export class EPManager extends SVManager {
     this._mode = toSet;
 
     if (this._mode === "SV" && this._bufferOptions !== undefined) {
+      const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+
       this.options = this._bufferOptions;
 
       this.render();
 
-      for (const checkbox of DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelectorAll('[ part = "Optioninput"]')) {
+      for (const checkbox of shadow.querySelectorAll('[ part = "Optioninput"]')) {
         INSTANCE.tsCheck<HTMLElement>(checkbox, HTMLElement).style.display = "inline-block";
       }
     } else {
       if (this._epOptions !== undefined) {
+        const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+
         this.currentStartCaret = this.target?.selectionStart;
 
         this.options = this._epOptions;
 
         this.render();
 
-        for (const checkbox of DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelectorAll(
-          '[ part = "Optioninput"]',
-        )) {
+        for (const checkbox of shadow.querySelectorAll('[ part = "Optioninput"]')) {
           const cb = INSTANCE.tsCheck<HTMLElement>(checkbox, HTMLElement);
 
           cb.style.display = "none";
@@ -184,6 +166,45 @@ export class EPManager extends SVManager {
   protected countStrokes = 0;
   /** States whether the {@link EPManager } is currently into the process of entering an **e**lement **p**laceholder. */
   public enteringEP = false;
+  /** Inserts the current selected option into the {@link SVManager.target } and resets EP state.
+   *
+   * @returns The selected option's name. */
+  protected insertSelectedOption(
+    eventTarget: HTMLInputElement,
+    selectionStart: number,
+    shadow: ShadowRoot,
+    format: (selectedOption: string) => string,
+  ): string {
+    // #region Remove the characters that were typed during filtering.
+    const inputElement = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
+
+    const remainingOne = inputElement.value.substring(0, selectionStart - this.currentFilter.length);
+    const remainingTwo = inputElement.value.substring(selectionStart);
+
+    inputElement.value = remainingOne + remainingTwo;
+
+    const adjustedSelectionStart = selectionStart - this.currentFilter.length;
+    // #endregion Remove the characters that were typed during filtering.
+    const selectedOption = DEFINED.tsCheck<string>(
+      INSTANCE.tsCheck<HTMLElement>(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"), HTMLElement)
+        .dataset.cbOption,
+    );
+
+    eventTarget.value = `${eventTarget.value.substring(0, selectionStart - 1)}${format(selectedOption)}${eventTarget.value.substring(selectionStart)}`;
+
+    eventTarget.setSelectionRange(
+      selectionStart + selectedOption.length + 5,
+      selectionStart + selectedOption.length + 5,
+    );
+
+    this.currentStartCaret = undefined;
+    this.currentFilter = "";
+    this.countStrokes = 0;
+    this.enteringEP = false;
+    this.enabled = false;
+
+    return selectedOption;
+  }
   /**
    * When in **EP**-{@link EPManager.mode } this method filters the {@link SVManager.options } by {@link EPManager.currentFilter }.
    * Otherwise {@link SVManager.filter } is invoked.
@@ -205,36 +226,9 @@ export class EPManager extends SVManager {
 
       if (this.lastKey !== "Backspace" && this.lastKey !== "Delete" && remainingOptions.length === 1) {
         const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
-        const inputElement = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
+        const selectionStart = eventTarget.selectionStart ?? 0;
 
-        let selectionStart = DEFINED.tsCheck<number>(eventTarget.selectionStart);
-
-        const remainingOne = inputElement.value.substring(0, selectionStart - this.currentFilter.length);
-        const remainingTwo = inputElement.value.substring(selectionStart);
-
-        inputElement.value = remainingOne + remainingTwo;
-
-        selectionStart = selectionStart - this.currentFilter.length;
-        // #endregion Remove the characters that were typed during filtering.
-        const selectedOption = DEFINED.tsCheck<string>(
-          INSTANCE.tsCheck<HTMLElement>(
-            DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelector(".---WaXCode.--SVManager.--Option.-Current"),
-            HTMLElement,
-          ).dataset.cbOption,
-        );
-
-        eventTarget.value = `${eventTarget.value.substring(0, selectionStart - 1)}{ ${selectedOption} >  } ${eventTarget.value.substring(selectionStart)}`;
-
-        eventTarget.setSelectionRange(
-          selectionStart + selectedOption.length + 5,
-          selectionStart + selectedOption.length + 5,
-        );
-
-        this.currentStartCaret = undefined;
-        this.currentFilter = "";
-        this.countStrokes = 0;
-        this.enteringEP = false;
-        this.enabled = false;
+        this.insertSelectedOption(eventTarget, selectionStart, shadow, (selectedOption) => `{ ${selectedOption} >  } `);
 
         for (const handler of this.onAutocomplete) {
           handler(remainingOptions[0]);
@@ -253,8 +247,9 @@ export class EPManager extends SVManager {
   protected override onKeydownTarget(event: KeyboardEvent): void {
     if (this.mode === "EP") {
       const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+      const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
-      let selectionStart = DEFINED.tsCheck<number>(eventTarget.selectionStart);
+      const selectionStart = eventTarget.selectionStart ?? 0;
 
       if (event.key !== " " && event.key !== "Enter") {
         super.onKeydownTarget(event);
@@ -272,35 +267,12 @@ export class EPManager extends SVManager {
       } else {
         // #region Inject selected option into the {@link SVManager.target } and close [enteringEP]-mode
         if (this.enteringEP) {
-          // #region Remove the characters that were typed during filtering.
-          const inputElement = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
-
-          const remainingOne = inputElement.value.substring(0, selectionStart - this.currentFilter.length);
-          const remainingTwo = inputElement.value.substring(selectionStart);
-
-          inputElement.value = remainingOne + remainingTwo;
-
-          selectionStart = selectionStart - this.currentFilter.length;
-          // #endregion Remove the characters that were typed during filtering.
-          const selectedOption = DEFINED.tsCheck<string>(
-            INSTANCE.tsCheck<HTMLElement>(
-              DEFINED.tsCheck<ShadowRoot>(this.shadowRoot).querySelector(".---WaXCode.--SVManager.--Option.-Current"),
-              HTMLElement,
-            ).dataset.cbOption,
+          const selectedOption = this.insertSelectedOption(
+            eventTarget,
+            selectionStart,
+            shadow,
+            (option) => ` { ${option} > } `,
           );
-
-          eventTarget.value = `${eventTarget.value.substring(0, selectionStart - 1)} { ${selectedOption} > } ${eventTarget.value.substring(selectionStart)}`;
-
-          eventTarget.setSelectionRange(
-            selectionStart + selectedOption.length + 5,
-            selectionStart + selectedOption.length + 5,
-          );
-
-          this.currentStartCaret = undefined;
-          this.currentFilter = "";
-          this.countStrokes = 0;
-          this.enteringEP = false;
-          this.enabled = false;
 
           for (const handler of this.onOptionSelected) {
             handler(selectedOption ?? "");
@@ -311,7 +283,7 @@ export class EPManager extends SVManager {
       // #region Handle character deletion
       if (this.enteringEP && event.key === "Delete") {
         this.countStrokes--;
-        const startCaret = DEFINED.tsCheck<number>(this.currentStartCaret);
+        const startCaret = DEFINED.tsCheck<number | null>(this.currentStartCaret);
 
         this.currentFilter =
           this.currentFilter.substring(0, selectionStart - startCaret) +

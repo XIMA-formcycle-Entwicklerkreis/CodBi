@@ -6,6 +6,11 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { CodBiError } from "../global-scope.js";
+import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
+import { TYPE } from "xdbc/src/DBC/TYPE.js";
+import { IF } from "xdbc/src/DBC/IF.js";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
+import { EQ } from "xdbc/src/DBC/EQ.js";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -31,7 +36,14 @@ export class Time_Frame {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @REGEX.PRE(REGEX.stdExp.cssSelector, "maxfield") toLoad: { [key: string]: unknown },
+    @DEFINED.PRE("maxfield")
+    @TYPE.PRE("string", "maxfield :: msgmininvalid :: msgmaxinvalid")
+    @REGEX.PRE(REGEX.stdExp.cssSelector, "maxfield")
+    @IF.PRE(new TYPE("string"), new REGEX(/^(TRUE|FALSE)$/i), "equalitypermitted")
+    toLoad: { [key: string]: unknown },
+
+    @INSTANCE.PRE(HTMLInputElement, "Is it not an <input> that is tagged with this functionality?")
+    @EQ.PRE("text", false, "type", 'Is it not an <input type = "time"> that is tagged with this functionality?')
     toProcess: Element,
   ): void {
     const maximumField: HTMLInputElement = toProcess.parentElement.parentElement.querySelector(
@@ -117,12 +129,6 @@ export class Time_Frame {
     maximumField.addEventListener("input", onNewMaximum);
     // #endregion Bind necessary events.
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Time_Frame } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("Time.Frame", Time_Frame.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("Time.Frame", Time_Frame.functionality.bind(Time_Frame)); // Initialization

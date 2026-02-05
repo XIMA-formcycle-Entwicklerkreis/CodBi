@@ -19,7 +19,7 @@ import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
  * This **E**lement-**P**laceholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
  *
  * Placeholder Parameter:
- *  - 1st: The ID of the authority to retrieve.
+ *  - 1st: The Name of the authority to retrieve.
  *
  *  - resolves to a {@link Array < string >} of authorities IDs with matching "bezeichnung".
  *
@@ -44,10 +44,8 @@ export class BayVIS_Behoerden_ID {
    * @throws A {@link CodBiError } if no data could be retrieved from the BayVIS-endpoint. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    /*@GREATER.PRE(1, true, false, "length")
+    @GREATER.PRE(1, true, false, "length", "Has the name of the authority been specified?")
     @AE.PRE(new TYPE("string"))
-    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.authorityID), 0)
-    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)*/
     params: Array<unknown>,
   ): Promise<
     | Array<string>
@@ -111,12 +109,6 @@ export class BayVIS_Behoerden_ID {
         });
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link BayVIS_Behoerden_ID } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("BayVIS.Behoerden.ID", BayVIS_Behoerden_ID.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("BayVIS.Behoerden.ID", BayVIS_Behoerden_ID.retrieve.bind(BayVIS_Behoerden_ID)); // Initialization

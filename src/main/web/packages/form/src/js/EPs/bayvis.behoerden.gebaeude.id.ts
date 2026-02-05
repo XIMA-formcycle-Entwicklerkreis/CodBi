@@ -17,7 +17,7 @@ import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
  * Placeholder Parameter:
  *  - 1st: The ID of the authority to retrieve.
  *
- *  - resolves to a {@link Array < string >} with the building IDs that're references to the specified authority..
+ *  - resolves to an {@link Array < string >} with the building IDs that're references to the specified authority..
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
@@ -31,10 +31,10 @@ export class BayVIS_Behoerden_Gebaeude_ID {
    * @throws A {@link CodBiError } if no data could be retrieved from the BayVIS-endpoint. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    /*@GREATER.PRE(1, true, false, "length")
-    @AE.PRE(new TYPE("string"))
-    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.authorityID), 0)
-    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 1)*/
+    @GREATER.PRE(1, true, false, "length", "Has the ID of the authority been specified?")
+    @AE.PRE(new TYPE("string | object"))
+    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.authorityID), 0, 1)
+    @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 2)
     params: Array<unknown>,
   ): Promise<Array<string>> {
     return new Promise((resolve, reject) => {
@@ -61,12 +61,9 @@ export class BayVIS_Behoerden_Gebaeude_ID {
       });
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link BayVIS_Behoerden_Gebaeude_ID } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("BayVIS.Behoerden.Gebaeude.ID", BayVIS_Behoerden_Gebaeude_ID.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP(
+  "BayVIS.Behoerden.Gebaeude.ID",
+  BayVIS_Behoerden_Gebaeude_ID.retrieve.bind(BayVIS_Behoerden_Gebaeude_ID),
+); // Initialization

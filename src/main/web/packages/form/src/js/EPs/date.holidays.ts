@@ -5,6 +5,7 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
@@ -52,12 +53,12 @@ export class Date_Holidays {
     return `${sortedYears}_${sortedStates}_${from.augsburg ? "T" : "F"}_${from.catholic ? "T" : "F"}`;
   }
   /**
-   * Checks all "params" for specific data (see {@link Date_Holidays }) and return an {@link Array } of
-   * Date-{@link strings}.
+   * See {@link Date_Holidays }.
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
+    @GREATER.PRE(1, true, false, "length", "Hasn't at least the year been specified?")
     @AE.PRE(new TYPE("string"))
     params: Array<string>,
   ): Promise<Array<string>> {
@@ -205,11 +206,6 @@ export class Date_Holidays {
     // #endregion Buffer request promise.
     return promise;
   }
-  /**
-   * States whether this {@link Date_Holidays } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("Date.Holidays", Date_Holidays.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("Date.Holidays", Date_Holidays.retrieve.bind(Date_Holidays)); // Initialization

@@ -1,5 +1,15 @@
 // #region Imports
+// #region XDBC
+import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
+import { TYPE } from "xdbc/src/DBC/TYPE.js";
+import { REGEX } from "xdbc/src/DBC/REGEX.js";
+import { IF } from "xdbc/src/DBC/IF.js";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
+// #endregion XDBC
+// #region CodBi
 import { CodBiError } from "../global-scope.js";
+// #endregion CodBi
+// #region Imports
 // #endregion Imports
 /**
  * Provides the {@link HTML_Select_Injection.functionality }.
@@ -9,7 +19,7 @@ import { CodBiError } from "../global-scope.js";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Print_Remove {
   /**
-   * Registers the "Date.Frame"-Functionality.
+   * Registers the "Print.Remove"-Functionality.
    *
    * This functionality connects two {@link HTMLInputElement }s to not permit the designated
    * Minimum-{@link HTMLInputElement } to have a date that is after the maximum one (JQuery Datepicker supported).
@@ -26,7 +36,16 @@ export class Print_Remove {
    *                      when printed (defaults to **NOT SET**).
    *                      If set **ParentalLevel** will be set to "1" if it has not been set, since the
    *                      CodBi does not allow to remove the {@link HTMLElement } **toProcess**. */
-  public static functionality(toLoad: { [key: string]: string }, toProcess: Element): void {
+  public static functionality(
+    @DEFINED.PRE("documentselector")
+    @TYPE.PRE("string", "documentselector")
+    @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "parentallevel")
+    @IF.PRE(new TYPE("string"), new REGEX(/^(TRUE|FALSE)$/i), "invert")
+    toLoad: { [key: string]: string },
+
+    @INSTANCE.PRE(HTMLElement, "Is it not an HTML-Element that is tagged with this functionality?")
+    toProcess: Element,
+  ): void {
     let invert = false;
 
     if (toLoad.invert && (toLoad.invert as string).toLowerCase() === "true") {
@@ -62,12 +81,6 @@ export class Print_Remove {
       toProcess.remove();
     }
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Date_Frame } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("Print.Remove", Print_Remove.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality("Print.Remove", Print_Remove.functionality.bind(Print_Remove)); // Initialization

@@ -2,13 +2,22 @@
 // #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
+// #region XDBC
+import { DBC } from "xdbc/src/DBC";
+import { AE } from "xdbc/src/DBC/AE";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+import { EQ } from "xdbc/src/DBC/EQ";
+import { OR } from "xdbc/src/DBC/OR";
+import { REGEX } from "xdbc/src/DBC/REGEX";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+// #endregion XDBC
 // #endregion Imports
 /**
  * Retrieves data from the **CodBi_OpenPLZ_Verwaltungseinheiten**-Servlet according to the parameter specified.
  * This is the base class for accessing the **[OpenPLZ REST API](https://www.openplzapi.org/de/)**, thus making all
  * features that the REST-Service provides accessible.
  *
- * Config Parameter:
+ * ### Config Parameter:
  * - 1st: The optional **country** to retrieve the data of (if not provided either the country specified in
  *        the CodBi's Configuration **OpenPLZ_Country** will be used or, if not specified, "de").
  * - 2nd: The **orgaUnit** to retrieve (e.g. **FederalStates**, **FederalProvinces** or **Cantons**).
@@ -33,7 +42,15 @@ export class OpenPLZ {
    * Joins all {@link object }s in "params" into one.
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
-  public static retrieve(params: Array<unknown>): Array<unknown> | unknown {
+  @DBC.ParamvalueProvider
+  public static retrieve(
+    @GREATER.PRE(1, true, false, "length", "Hasn't at least the Orga-Unit been specified?")
+    @AE.PRE(new TYPE("string"), 0)
+    @AE.PRE(new OR([new EQ(""), new REGEX(/(de|en|at|li|ch)/i)]), 0)
+    @AE.PRE(new TYPE("string"), 2)
+    @AE.PRE(new OR([new EQ(""), new REGEX(/^\d+$/)]), 2)
+    params: Array<unknown>,
+  ): Array<unknown> | unknown {
     return new Promise((resolve, reject) => {
       getJQuery()
         .ajax({
@@ -57,12 +74,6 @@ export class OpenPLZ {
         });
     });
   }
-  // #region Initialization
-  /**
-   * States whether this {@link OpenPLZ } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("OpenPLZ", OpenPLZ.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("OpenPLZ", OpenPLZ.retrieve.bind(OpenPLZ)); // Initialization

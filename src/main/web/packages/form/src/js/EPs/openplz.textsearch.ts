@@ -1,4 +1,14 @@
 // #region Imports
+// #region XDBC
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+import { AE } from "xdbc/src/DBC/AE";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+import { REGEX } from "xdbc/src/DBC/REGEX";
+import { IF } from "xdbc/src/DBC/IF";
+import { OR } from "xdbc/src/DBC/OR.js";
+import { EQ } from "xdbc/src/DBC/EQ.js";
+import { DBC } from "xdbc/src/DBC";
+// #endregion XDBC
 import { OpenPLZ } from "./openplz.js";
 // #endregion Imports
 /**
@@ -17,7 +27,15 @@ export class OpenPLZ_TextSearch extends OpenPLZ {
    * Joins all {@link object }s in "params" into one.
    *
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
-  public static override retrieve(params: Array<unknown>): Array<unknown> | unknown {
+  @DBC.ParamvalueProvider
+  public static override retrieve(
+    @GREATER.PRE(1, true, false, "length", "Hasn't at least the RegEx to search with been specified?")
+    @AE.PRE(new TYPE("string"), 0, 1)
+    @AE.PRE(new OR([new EQ(""), new REGEX(/(de|en|at|li|ch)/i)]), 0)
+    @AE.PRE(new TYPE("string | number"), 2)
+    @AE.PRE(new IF(new TYPE("string"), new REGEX(/^\d+$/)), 2)
+    params: Array<unknown>,
+  ): Array<unknown> | unknown {
     return OpenPLZ.retrieve([
       params[0],
       "FullTextSearch",
@@ -30,12 +48,6 @@ export class OpenPLZ_TextSearch extends OpenPLZ {
       params[2] ? (params[2] as string) : "",
     ]);
   }
-  // #region Initialization
-  /**
-   * States whether this {@link OpenPLZ_TextSearch } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static override registered: boolean = (() => {
-    return window.codbi.registerEP("OpenPLZ.TextSearch", OpenPLZ_TextSearch.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("OpenPLZ.TextSearch", OpenPLZ_TextSearch.retrieve.bind(OpenPLZ_TextSearch)); // Initialization

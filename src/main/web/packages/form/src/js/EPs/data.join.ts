@@ -2,6 +2,7 @@
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
@@ -22,6 +23,7 @@ export class Data_Join {
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
+    @GREATER.PRE(1, true, false, "length", "Weren't the objects to join specified?")
     @AE.PRE([new TYPE("object")])
     params: Array<unknown>,
   ): Array<unknown> {
@@ -35,12 +37,6 @@ export class Data_Join {
 
     return [result];
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Data_Join } was successfully registered
-   * via {@link CodbiGlobal.registerEP } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("Data.Join", Data_Join.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("Data.Join", Data_Join.retrieve.bind(Data_Join)); // Initialization

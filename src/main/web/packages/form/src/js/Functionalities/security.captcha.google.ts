@@ -4,7 +4,10 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
+import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -31,9 +34,13 @@ export class Security_Captcha_Google {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
+    @DEFINED.PRE("sitekey :: script")
+    @TYPE.PRE("string", "sitekey :: datacallback :: datacallbackcode :: script")
     @REGEX.PRE(/^[0-9A-Za-z_-]{40}$/, "sitekey")
     @REGEX.PRE(REGEX.stdExp.url, "script")
+    @REGEX.PRE(REGEX.stdExp.property, "datacallback")
     toLoad: { [key: string]: unknown },
+
     toProcess: Element,
   ): void {
     const script: HTMLScriptElement = document.createElement("script");
@@ -65,12 +72,9 @@ export class Security_Captcha_Google {
 
     document.head.appendChild(script);
   }
-  // #region Initialization
-  /**
-   * States whether this {@link Security_Captcha_Google } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("Security.Captcha.Google", Security_Captcha_Google.functionality);
-  })();
-  // #endregion Initialization
 }
+
+window.codbi.registerFunctionality(
+  "Security.Captcha.Google",
+  Security_Captcha_Google.functionality.bind(Security_Captcha_Google),
+); // Initialization

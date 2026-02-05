@@ -4,6 +4,11 @@ import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 // #endregion XDBC
 import { CodBiError } from "../global-scope";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+import { AE } from "xdbc/src/DBC/AE";
+import { TYPE } from "xdbc/src/DBC/TYPE";
+import { OR } from "xdbc/src/DBC/OR";
+import { IF } from "xdbc/src/DBC/IF";
 // #endregion Imports
 /**
  * This **E**lement-**P**laceholder acquires a specific element
@@ -25,7 +30,9 @@ export class I {
    * @throws A {@link CodBiError } if the specified global variable couldn't be found. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @REGEX.PRE(REGEX.stdExp.cssSelector)
+    @GREATER.PRE(1, true, false, "length", "Hasn't the index to receive has been specified?")
+    @AE.PRE(new OR([new TYPE("string"), new TYPE("number")]), 0)
+    @AE.PRE(new IF(new TYPE("string"), new REGEX(REGEX.stdExp.cssSelector)), 0)
     params: Array<string>,
   ): string {
     if (!Array.isArray(params[1])) {
@@ -38,11 +45,6 @@ export class I {
 
     return params[1][Number.parseInt(params[0].trim())];
   }
-  /**
-   * States whether this {@link I } was successfully registered via {@link CodbiGlobal.registerEP } with the CodBi and
-   * performs the registration upon class usage. */
-  public static registered: boolean = (() => {
-    return window.codbi.registerEP("I", I.retrieve);
-  })();
-  // #region Initialization
 }
+
+window.codbi.registerEP("I", I.retrieve.bind(I)); // Initialization

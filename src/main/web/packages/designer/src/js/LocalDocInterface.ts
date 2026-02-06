@@ -68,7 +68,136 @@ function addTemporaryKeyblocker(durationMs: number): void {
 
   document.addEventListener("keydown", blocker);
 }
+/** Finds the first element that matches any of the given selectors.
+ *
+ * @param selectors CSS selectors to try in order.
+ *
+ * @returns The first matching element or null. */
+function queryFirst<T extends Element>(selectors: Array<string>): T | null {
+  for (const selector of selectors) {
+    const found = document.querySelector(selector);
+
+    if (found) {
+      return found as T;
+    }
+  }
+
+  return null;
+}
+/** Finds the first element that matches any of the given selectors within a root.
+ *
+ * @param root Root element to search in.
+ * @param selectors CSS selectors to try in order.
+ *
+ * @returns The first matching element or null. */
+function queryFirstWithin<T extends Element>(root: Element, selectors: Array<string>): T | null {
+  for (const selector of selectors) {
+    const found = root.querySelector(selector);
+
+    if (found) {
+      return found as T;
+    }
+  }
+
+  return null;
+}
+/** Attempts to resolve a grid cell by class with fallbacks for grid renderers.
+ *
+ * @param root Root element to search in.
+ * @param cellClass Grid cell class name (e.g., "r1").
+ *
+ * @returns The matching grid cell or null. */
+function queryGridCell(root: Element, cellClass: "r1" | "r2" | "r4"): HTMLElement | null {
+  return queryFirstWithin<HTMLElement>(root, [`.${cellClass}`, `.slick-cell.${cellClass}`, `[class~="${cellClass}"]`]);
+}
+/** Returns all grid cells matching a class with fallbacks for grid renderers.
+ *
+ * @param root Root element to search in.
+ * @param cellClass Grid cell class name (e.g., "r1").
+ *
+ * @returns Array of matching grid cells. */
+function queryGridCells(root: Element, cellClass: "r1" | "r2" | "r4"): Array<HTMLElement> {
+  const selectors = [`.${cellClass}`, `.slick-cell.${cellClass}`, `[class~="${cellClass}"]`];
+  const results = new Set<HTMLElement>();
+
+  for (const selector of selectors) {
+    for (const element of root.querySelectorAll(selector)) {
+      results.add(element as HTMLElement);
+    }
+  }
+
+  return Array.from(results);
+}
+/** Checks if an element matches a grid cell class with fallbacks.
+ *
+ * @param element Element to test.
+ * @param cellClass Grid cell class name (e.g., "r1").
+ *
+ * @returns True if the element matches. */
+function matchesGridCellClass(element: Element, cellClass: "r1" | "r2" | "r4"): boolean {
+  return element.matches(`.${cellClass}, .slick-cell.${cellClass}, [class~="${cellClass}"]`);
+}
+/** Safely walks up the DOM tree.
+ *
+ * @param element Starting element.
+ * @param levels Number of parent levels to climb.
+ *
+ * @returns The ancestor element or null. */
+function getAncestor(element: Element | null | undefined, levels: number): HTMLElement | null {
+  let current: Element | null | undefined = element;
+
+  for (let i = 0; i < levels; i += 1) {
+    if (!current?.parentElement) {
+      return null;
+    }
+
+    current = current.parentElement;
+  }
+
+  return (current as HTMLElement) ?? null;
+}
+/** Finds the attributes panel using fallback selectors.
+ *
+ * @returns The attributes panel element or null. */
+function getAttributesPanel(): HTMLElement | null {
+  return queryFirst<HTMLElement>([
+    '[data-panel-id="attributes"]',
+    '[data-panel-id*="attributes"]',
+    '[id$="attributes"]',
+    '[id*="attributes"]',
+  ]);
+}
+/** Safely retrieves the <object> element inside the details container.
+ *
+ * @param container The details container.
+ *
+ * @returns The object element or null. */
+function getDetailsObject(container: Element): HTMLObjectElement | null {
+  const obj = container.querySelector("object");
+
+  return obj instanceof HTMLObjectElement ? obj : null;
+}
+/** Normalizes an element's text content to lower case.
+ *
+ * @param element The element to read.
+ *
+ * @returns Lower-case trimmed text. */
+function getLowerText(element: Element | null | undefined): string {
+  return (element?.textContent ?? "").trim().toLowerCase();
+}
+/** Safely extracts a description string.
+ *
+ * @param value Object containing optional Description.
+ *
+ * @returns Description or empty string. */
+function getDescription(value: { Description?: string } | null | undefined): string {
+  return value?.Description ?? "";
+}
 // #endregion Helper
+/* Creates and manages the CodBi interface for the local API documentation within the XIMA Form Cycle Designer.
+ * This interface includes components for browsing functionalities and element placeholders, viewing corresponding
+ * documentation, and inserting code templates. It also handles the retrieval of local API documentation and integrates
+ * it into the interface. */
 export function enableLocalDocInterface(): void {
   let codbiToggle: HTMLElement | undefined;
 
@@ -90,10 +219,8 @@ export function enableLocalDocInterface(): void {
     // #endregion Determine current language.
     // Initiate if every needed component is fine only...
     if (SVManager.registered && EPManager.registered) {
-      const baseDocURL =
-        window.CodbiPluginData.docsAPI[currentLanguage] === undefined
-          ? window.CodbiPluginData.docsAPI.en
-          : window.CodbiPluginData.docsAPI[currentLanguage];
+      const docsApi = window.CodbiPluginData.docsAPI ?? {};
+      const baseDocURL = docsApi[currentLanguage] ?? docsApi.en ?? "";
       // #region Define Flag for Keystroke blocking
       let keystrokeBlockingStart: Date | undefined = new Date();
       // #endregion Define Flag for Keystroke blocking
@@ -113,18 +240,40 @@ export function enableLocalDocInterface(): void {
                         </style>
           <div  is          = "xc-epmanager"
                 options     = "${buildFileList(window.CodbiPluginData.fslFunctionalities)}"
-                epoptions  = "${buildFileList(window.CodbiPluginData.fslElementplaceholder)}"><bv/div>
+                epoptions  = "${buildFileList(window.CodbiPluginData.fslElementplaceholder)}"></div>
           <div  is = "xc-optioninput"></div>`,
       );
       // #endregion Inject <XC-EPManager> & <XC-OptionInput>.
       // #region Acquire references to <XC-EPManager> & <XC-OptionInput>.
       const epManager = INSTANCE.tsCheck<EPManager>(document.querySelector('div[is="xc-epmanager"]'), EPManager);
-      const epManagerElement = INSTANCE.tsCheck<HTMLElement>(epManager, HTMLElement);
       const optioninput = INSTANCE.tsCheck<Optioninput>(
         document.querySelector('div[is="xc-optioninput"]'),
         Optioninput,
       );
       // #endregion Acquire references to <XC-EPManager> & <XC-OptionInput>.
+      // #region View corresponding API-Doc
+      epManager.onOptionChanged.push((newOption: string) => {
+        if (newOption === "") {
+          return;
+        }
+
+        const description = getDescription(
+          window.CodbiPluginData[epManager.mode === "SV" ? "detFunctionalities" : "detElementplaceholder"][
+            newOption.replace(".js", "").toLowerCase()
+          ],
+        );
+
+        if (description.startsWith("/")) {
+          cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
+        } else {
+          cDetails.innerHTML = `
+                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
+                              ${description}</div>`;
+        }
+
+        cDetails.style.display = "block";
+      });
+      // #endregion View corresponding API-Doc
       // #region Attach event to set keystroke blocker.
       epManager.onAutocomplete.push((completedOption: string) => {
         keystrokeBlockingStart = new Date();
@@ -204,10 +353,13 @@ export function enableLocalDocInterface(): void {
           cDetails.style.display = "none";
           optioninput.enabled = false;
 
-          const valueColumn = INSTANCE.tsCheck<HTMLElement>(
-            optioninput.target.parentElement.parentElement.querySelector(".r2"),
-            HTMLElement,
-          );
+          const optionTargetRow = getAncestor(optioninput.target, 2);
+
+          if (!optionTargetRow) {
+            return;
+          }
+
+          const valueColumn = INSTANCE.tsCheck<HTMLElement>(queryGridCell(optionTargetRow, "r2"), HTMLElement);
           // #region Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
           addTemporaryKeyblocker(250);
           // #endregion Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
@@ -226,10 +378,13 @@ export function enableLocalDocInterface(): void {
           cDetails.style.display = "none";
           optioninput.enabled = false;
 
-          const valueColumn = INSTANCE.tsCheck<HTMLElement>(
-            optioninput.target.parentElement.parentElement.querySelector(".r4"),
-            HTMLElement,
-          );
+          const optionTargetRow = getAncestor(optioninput.target, 2);
+
+          if (!optionTargetRow) {
+            return;
+          }
+
+          const valueColumn = INSTANCE.tsCheck<HTMLElement>(queryGridCell(optionTargetRow, "r4"), HTMLElement);
           // #region Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
           addTemporaryKeyblocker(250);
           // #endregion Prevent keystrokes for 250ms to avoid accidentally typing into the next field.
@@ -238,12 +393,13 @@ export function enableLocalDocInterface(): void {
           return;
         }
 
-        const r2 = INSTANCE.tsCheck<HTMLElement>(
-          DEFINED.tsCheck<HTMLElement>(
-            DEFINED.tsCheck<HTMLElement>(DEFINED.tsCheck<HTMLElement>(optioninput.target).parentElement).parentElement,
-          ).querySelector(".r2"),
-          HTMLElement,
-        );
+        const optionTargetRow = getAncestor(optioninput.target, 2);
+
+        if (!optionTargetRow) {
+          return;
+        }
+
+        const r2 = INSTANCE.tsCheck<HTMLElement>(queryGridCell(optionTargetRow, "r2"), HTMLElement);
         // #region Create separate observer for the case of autocompletion necessary.
         const cellObserver = new MutationObserver((mutationsList, observer) => {
           for (const mutation of mutationsList) {
@@ -251,8 +407,15 @@ export function enableLocalDocInterface(): void {
               for (const added of mutation.addedNodes) {
                 let bound = false; // States whether the epManager's target is already bound to this <input>.
 
-                if (added.nodeName === "INPUT") {
-                  added.addEventListener("keydown", (event) => {
+                const addedElement = added instanceof HTMLElement ? added : null;
+                const inputs = addedElement
+                  ? addedElement instanceof HTMLInputElement
+                    ? [addedElement]
+                    : Array.from(addedElement.querySelectorAll("input"))
+                  : [];
+
+                for (const input of inputs) {
+                  input.addEventListener("keydown", (event) => {
                     const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
 
                     if (keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === "e") {
@@ -264,22 +427,26 @@ export function enableLocalDocInterface(): void {
                       epManager.mode = "SV";
                       epManager.mode = "EP";
                       // #region Rebuild listing.
-                      epManagerElement.setAttribute(
-                        "epoptions",
-                        buildFileList(window.CodbiPluginData.fslElementplaceholder),
-                      );
+                      INSTANCE.tsCheck<HTMLElement>(
+                        document.querySelector('div[is = "xc-epmanager"]'),
+                        HTMLElement,
+                      ).setAttribute("epoptions", buildFileList(window.CodbiPluginData.fslElementplaceholder));
                       // #endregion Rebuild listing.
                       // First time load of APIDoc
-                      DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                        "data",
-                        `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
-                      );
+                      const detailsObject = getDetailsObject(cDetails);
+
+                      if (detailsObject) {
+                        detailsObject.setAttribute(
+                          "data",
+                          `${window.CodbiPluginData.docsAPI?.[currentLanguage] ?? window.CodbiPluginData.docsAPI?.en ?? ""}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
+                        );
+                      }
                       // #region Show interface.
                       epManager.enabled = true;
                       epManager.enteringEP = true;
                       cDetails.style.display = "block";
 
-                      updateLayoutEPManager(added as HTMLInputElement);
+                      updateLayoutEPManager(input);
                       updateLayoutCDetails(epManager);
                       // #endregion Show interface.
                       // #region Bind epManager's target to this <input> evading unnecessary multiple binding.
@@ -297,7 +464,13 @@ export function enableLocalDocInterface(): void {
           }
         });
         // #region Create separate observer for the case of autocompletion necessary.
-        cellObserver.observe(r2.parentElement.parentElement, {
+        const r2Container = getAncestor(r2, 2);
+
+        if (!r2Container) {
+          return;
+        }
+
+        cellObserver.observe(r2Container, {
           childList: true,
           subtree: true,
         });
@@ -308,11 +481,11 @@ export function enableLocalDocInterface(): void {
       optioninput.onOptionChanged.push((newOption: string) => {
         // #region Determining and setting the correct documentation of standard configurations.
         if (inTag) {
-          const description = DEFINED.tsCheck<string>(
-            window.CodbiPluginData.detStandards[newOption.substring(0, newOption.indexOf("/") - 1).trim()]?.Description,
+          const description = getDescription(
+            window.CodbiPluginData.detStandards[newOption.substring(0, newOption.indexOf("/") - 1).trim()],
           );
 
-          if (description[0] === "/") {
+          if (description.startsWith("/")) {
             cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
           } else {
             cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
@@ -322,22 +495,26 @@ export function enableLocalDocInterface(): void {
         }
         // #endregion Determining and setting the correct documentation of standard configurations.
         // #region Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
-        const description = DEFINED.tsCheck<string>(
-          window.CodbiPluginData.detFunctionalities[
-            newOption
-              .substring(0, newOption.indexOf("/") - 1)
-              .toLowerCase()
-              .trim()
-          ]?.Description ??
-            (newOption.indexOf("[") !== -1
-              ? window.CodbiPluginData.detStandards[newOption.substring(1, newOption.indexOf("]") - 1).trim()]
-                  ?.Description
-              : window.CodbiPluginData.detFunctionalities[
+        const description =
+          getDescription(
+            window.CodbiPluginData.detFunctionalities[
+              newOption
+                .substring(0, newOption.indexOf("/") - 1)
+                .toLowerCase()
+                .trim()
+            ],
+          ) ||
+          (newOption.indexOf("[") !== -1
+            ? getDescription(
+                window.CodbiPluginData.detStandards[newOption.substring(1, newOption.indexOf("]") - 1).trim()],
+              )
+            : getDescription(
+                window.CodbiPluginData.detFunctionalities[
                   newOption.substring(0, newOption.lastIndexOf("_")).replace(/_/g, ".").trim()
-                ]?.Description),
-        );
+                ],
+              ));
         // #endregion Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
-        if (description[0] === "/") {
+        if (description.startsWith("/")) {
           cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
         } else {
           cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
@@ -352,23 +529,15 @@ export function enableLocalDocInterface(): void {
 
         cDetails.style.display = "none";
 
-        INSTANCE.tsCheck<HTMLElement>(
-          DEFINED.tsCheck<HTMLElement>(
-            DEFINED.tsCheck<HTMLElement>(DEFINED.tsCheck<HTMLElement>(optioninput.target).parentElement).parentElement,
-          ).querySelector(".r2"),
-          HTMLElement,
-        ).click();
+        const optionTargetRow = getAncestor(optioninput.target, 2);
 
-        if (optioninput.target.parentElement === null) {
+        if (!optionTargetRow) {
           return;
         }
 
-        const parent = INSTANCE.tsCheck<HTMLElement>(
-          DEFINED.tsCheck<HTMLElement>(
-            DEFINED.tsCheck<HTMLElement>(DEFINED.tsCheck<HTMLElement>(optioninput.target).parentElement).parentElement,
-          ).querySelector(".r2"),
-          HTMLElement,
-        );
+        INSTANCE.tsCheck<HTMLElement>(queryGridCell(optionTargetRow, "r2"), HTMLElement).click();
+
+        const parent = INSTANCE.tsCheck<HTMLElement>(queryGridCell(optionTargetRow, "r2"), HTMLElement);
 
         const cell = parent.querySelector("input");
 
@@ -390,10 +559,14 @@ export function enableLocalDocInterface(): void {
           epManager.setAttribute("epoptions", buildFileList(window.CodbiPluginData.fslElementplaceholder));
           // #endregion Rebuild listing.
           // First time load of APIDoc
-          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-            "data",
-            `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
-          );
+          const detailsObject = getDetailsObject(cDetails);
+
+          if (detailsObject) {
+            detailsObject.setAttribute(
+              "data",
+              `${window.CodbiPluginData.docsAPI?.[currentLanguage] ?? window.CodbiPluginData.docsAPI?.en ?? ""}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
+            );
+          }
           // #region Show interface.
           epManager.enabled = true;
           epManager.enteringEP = true;
@@ -548,10 +721,10 @@ export function enableLocalDocInterface(): void {
       const onFirstDocLoad = (event: Event) => {
         (cDetails.querySelector(".APIDocLoader") as HTMLDivElement).remove();
 
-        (cDetails.querySelector("object") as HTMLObjectElement).removeEventListener("load", onFirstDocLoad);
+        getDetailsObject(cDetails)?.removeEventListener("load", onFirstDocLoad);
       };
 
-      (cDetails.querySelector("object") as HTMLObjectElement).addEventListener("load", onFirstDocLoad);
+      getDetailsObject(cDetails)?.addEventListener("load", onFirstDocLoad);
       // #endregion Remove loader when having loaded for the first time in session
       // #region Retrieve Local API Doc
       const $ = getJQuery();
@@ -578,11 +751,8 @@ export function enableLocalDocInterface(): void {
               success: (response) => {
                 if (response.result !== "NONE") {
                   if (document.readyState === "complete") {
-                    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                    (window.CodbiPluginData.detFunctionalities[functionality] as any).Code = response.result.replaceAll(
-                      "<|>",
-                      '"',
-                    );
+                    (window.CodbiPluginData.detFunctionalities[functionality] as unknown as { Code: string }).Code =
+                      response.result.replaceAll("<|>", '"');
                   }
                 }
               },
@@ -607,8 +777,7 @@ export function enableLocalDocInterface(): void {
               success: (response) => {
                 if (response.result !== "NONE") {
                   if (document.readyState === "complete") {
-                    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                    (window.CodbiPluginData.detElementplaceholder[placeholder] as any).Code =
+                    (window.CodbiPluginData.detElementplaceholder[placeholder] as unknown as { Code: string }).Code =
                       response.result.replaceAll("<|>", '"');
                   }
                 }
@@ -635,8 +804,8 @@ export function enableLocalDocInterface(): void {
                 success: (response) => {
                   if (response.result !== "NONE") {
                     if (document.readyState === "complete") {
-                      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                      (window.CodbiPluginData.detStandards[key] as any).Code = response.result.replaceAll("<|>", '"');
+                      (window.CodbiPluginData.detStandards[key] as unknown as { Code: string }).Code =
+                        response.result.replaceAll("<|>", '"');
                     }
                   }
                 },
@@ -652,9 +821,15 @@ export function enableLocalDocInterface(): void {
             window.CodbiPluginData.populateStandards();
           });
 
-          epManagerElement.setAttribute("options", buildFileList(window.CodbiPluginData.fslFunctionalities));
+          INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
+            "options",
+            buildFileList(window.CodbiPluginData.fslFunctionalities),
+          );
 
-          epManagerElement.setAttribute("epoptions", buildFileList(window.CodbiPluginData.fslElementplaceholder));
+          INSTANCE.tsCheck<HTMLElement>(document.querySelector('div[is = "xc-epmanager"]'), HTMLElement).setAttribute(
+            "epoptions",
+            buildFileList(window.CodbiPluginData.fslElementplaceholder),
+          );
           // #endregion Load into global structures and components
           // #region Load and inject Angular local API-Documentation-Manager web component
           const scriptAPIManager = document.createElement("script");
@@ -698,9 +873,19 @@ export function enableLocalDocInterface(): void {
                 return;
               }
               // #region Do nothing if CodBi-Toggle is not checked.
-              if (
-                document.getElementById("scriptForm:scriptTabs:xm-editor-js_editor").contains(document.activeElement)
-              ) {
+              const scriptEditor = queryFirst<HTMLElement>([
+                "#scriptForm\\:scriptTabs\\:xm-editor-js_editor",
+                '[id$=":xm-editor-js_editor"]',
+                '[id*="xm-editor-js_editor"]',
+              ]);
+
+              const activeElement = document.activeElement;
+
+              if (scriptEditor?.contains(activeElement)) {
+                if (!(activeElement instanceof HTMLElement)) {
+                  return;
+                }
+
                 if (optioninput.enabled) {
                   optioninput.enabled = false;
                 } else {
@@ -708,15 +893,15 @@ export function enableLocalDocInterface(): void {
                   const listener = (event) => {
                     if (optioninput.enabled && optioninput.mode === "Code Template") {
                       optioninput.enabled = false;
-                      document.activeElement.removeEventListener("blur", listener);
+                      activeElement.removeEventListener("blur", listener);
                     }
                   };
 
-                  document.activeElement.addEventListener("blur", listener);
+                  activeElement.addEventListener("blur", listener);
                   // #endregion Hide options for code templates when JS-Editor gets blurred.
                   // #region Calculate Layout
-                  const clientRect = document.activeElement.getBoundingClientRect();
-                  const emPixels = getEmSizeInPixels(document.activeElement) * 22;
+                  const clientRect = activeElement.getBoundingClientRect();
+                  const emPixels = getEmSizeInPixels(activeElement) * 22;
                   const top = clientRect.top + clientRect.height;
 
                   optioninput.style.top = `${(top > 0 ? top : 0) + emPixels / 11}px`;
@@ -736,7 +921,19 @@ export function enableLocalDocInterface(): void {
                   ];
                   // #endregion Define Code Template Options
                   optioninput.enabled = true;
-                  optioninput.target = document.activeElement as HTMLInputElement;
+                  const target =
+                    activeElement instanceof HTMLInputElement
+                      ? activeElement
+                      : activeElement instanceof HTMLTextAreaElement
+                        ? (activeElement as unknown as HTMLInputElement)
+                        : null;
+
+                  if (!target) {
+                    optioninput.enabled = false;
+                    return;
+                  }
+
+                  optioninput.target = target;
                   optioninput.targetOptionTransformer = (toTransform: string): string => {
                     return "";
                   };
@@ -785,18 +982,20 @@ export function enableLocalDocInterface(): void {
       let attributesEditorProcessed = false; // Set up processing just once.
       let inTag = false;
       // #region Extend the variables tab.
-      for (const globalVarsEditor of document.querySelectorAll('a[href="#scriptForm:scriptTabs:varTab"]')) {
+      for (const globalVarsEditor of document.querySelectorAll(
+        'a[href="#scriptForm:scriptTabs:varTab"], a[href$=":varTab"]',
+      )) {
         globalVarsEditor.addEventListener("click", (event) => {
           const cellObserver = new MutationObserver((mutationsList, observer) => {
             for (const mutation of mutationsList) {
               if (mutation.type === "childList") {
                 for (const added of mutation.addedNodes) {
-                  if (
-                    added instanceof HTMLInputElement &&
-                    DEFINED.tsCheck<HTMLElement>(added.parentElement).classList.contains("r2")
-                  ) {
+                  const addedParent = added instanceof HTMLElement ? added.parentElement : null;
+
+                  if (added instanceof HTMLInputElement && addedParent && matchesGridCellClass(addedParent, "r2")) {
                     // #region Do nothing if CodBi-Toggle is not checked.
                     codbiToggle = document.querySelector("#form-codbi-prop-enable-input");
+
                     if (codbiToggle && !(codbiToggle as HTMLInputElement).checked) {
                       return;
                     }
@@ -847,20 +1046,24 @@ export function enableLocalDocInterface(): void {
                             return;
                           }
 
-                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                            "data",
-                            `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${
-                              newOption.indexOf("[") !== -1
-                                ? window.CodbiPluginData.detStandards[
-                                    newOption
-                                      .substring(newOption.indexOf("[") + 1, newOption.lastIndexOf("]") - 1)
-                                      .trim()
-                                  ]?.Description
-                                : window.CodbiPluginData.detFunctionalities[
-                                    newOption.substring(0, newOption.lastIndexOf("_")).replace(/_/g, ".").trim()
-                                  ]?.Description
-                            }`,
-                          );
+                          const detailsObject = getDetailsObject(cDetails);
+
+                          if (detailsObject) {
+                            detailsObject.setAttribute(
+                              "data",
+                              `${window.CodbiPluginData.docsAPI?.[currentLanguage] ?? window.CodbiPluginData.docsAPI?.en ?? ""}${
+                                newOption.indexOf("[") !== -1
+                                  ? window.CodbiPluginData.detStandards[
+                                      newOption
+                                        .substring(newOption.indexOf("[") + 1, newOption.lastIndexOf("]") - 1)
+                                        .trim()
+                                    ]?.Description
+                                  : window.CodbiPluginData.detFunctionalities[
+                                      newOption.substring(0, newOption.lastIndexOf("_")).replace(/_/g, ".").trim()
+                                    ]?.Description
+                              }`,
+                            );
+                          }
                         });
                         // #endregion Show corresponding documentation when <XC-OptionInput>'s current option changed.
                         // #region Insert proper global variable when <XC-OptionInput>'s current option was selected.
@@ -875,16 +1078,21 @@ export function enableLocalDocInterface(): void {
                             added.value = added.value.replace("data-cb-", "");
                           }
 
-                          INSTANCE.tsCheck<HTMLElement>(
-                            optioninput.target.parentElement.parentElement.querySelector(".r4"),
-                            HTMLElement,
-                          ).click();
+                          const optionTargetRow = getAncestor(optioninput.target, 2);
+
+                          if (!optionTargetRow) {
+                            return;
+                          }
+
+                          INSTANCE.tsCheck<HTMLElement>(queryGridCell(optionTargetRow, "r4"), HTMLElement).click();
                         });
                         // #endregion Insert proper global variable when <XC-OptionInput>'s current option was selected.
                         // #region Properly layout <XC-OptionInput>.
-                        if (added) {
+                        const addedContainer = added.parentElement;
+
+                        if (addedContainer) {
                           const rectAdded = INSTANCE.tsCheck<HTMLElement>(
-                            added.parentElement,
+                            addedContainer,
                             HTMLElement,
                           ).getBoundingClientRect();
 
@@ -899,30 +1107,35 @@ export function enableLocalDocInterface(): void {
                           // #endregion Properly layout <XC-OptionInput>.
                           // #region Initial API Doc loading
                           const baseDocURL =
-                            window.CodbiPluginData.docsAPI[currentLanguage] === undefined
-                              ? window.CodbiPluginData.docsAPI.en
-                              : window.CodbiPluginData.docsAPI[currentLanguage];
+                            window.CodbiPluginData.docsAPI?.[currentLanguage] ??
+                            window.CodbiPluginData.docsAPI?.en ??
+                            "";
                           // #region Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
-                          const description = DEFINED.tsCheck<string>(
-                            window.CodbiPluginData.detFunctionalities[
-                              globalVariables[0]
-                                .substring(0, globalVariables[0].indexOf("/") - 1)
-                                .toLowerCase()
-                                .trim()
-                            ]?.Description ??
-                              (globalVariables[0].indexOf("[") !== -1
-                                ? window.CodbiPluginData.detStandards[
+                          const description =
+                            getDescription(
+                              window.CodbiPluginData.detFunctionalities[
+                                globalVariables[0]
+                                  .substring(0, globalVariables[0].indexOf("/") - 1)
+                                  .toLowerCase()
+                                  .trim()
+                              ],
+                            ) ||
+                            (globalVariables[0].indexOf("[") !== -1
+                              ? getDescription(
+                                  window.CodbiPluginData.detStandards[
                                     globalVariables[0].substring(1, globalVariables[0].indexOf("]") - 1).trim()
-                                  ]?.Description
-                                : window.CodbiPluginData.detFunctionalities[
+                                  ],
+                                )
+                              : getDescription(
+                                  window.CodbiPluginData.detFunctionalities[
                                     globalVariables[0]
                                       .substring(0, globalVariables[0].lastIndexOf("_"))
                                       .replace(/_/g, ".")
                                       .trim()
-                                  ]?.Description),
-                          );
+                                  ],
+                                ));
                           // #endregion Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
-                          if (description[0] === "/") {
+                          if (description.startsWith("/")) {
                             cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
                           } else {
                             cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
@@ -950,7 +1163,13 @@ export function enableLocalDocInterface(): void {
             }
           });
           // #region Observe the global variables.
-          cellObserver.observe(DEFINED.tsCheck(document.querySelector("#varseditor")), {
+          const varsEditor = queryFirst<HTMLElement>(["#varseditor", '[id$="varseditor"]']);
+
+          if (!varsEditor) {
+            return;
+          }
+
+          cellObserver.observe(DEFINED.tsCheck(varsEditor), {
             childList: true,
             subtree: true,
           });
@@ -959,7 +1178,7 @@ export function enableLocalDocInterface(): void {
       }
       // #endregion Extend the variables tab.
       // #region Extend the extended tab.
-      for (const tabEditor of document.querySelectorAll('a[href="#tabsRight:extendedTab"]')) {
+      for (const tabEditor of document.querySelectorAll('a[href="#tabsRight:extendedTab"], a[href$=":extendedTab"]')) {
         tabEditor.addEventListener("click", (event) => {
           // #region Parametercells
           const paramCellObserver = new MutationObserver((mutationsList, observer) => {
@@ -1020,11 +1239,9 @@ export function enableLocalDocInterface(): void {
                             optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1).trim(),
                           );
 
-                          const description = DEFINED.tsCheck<string>(
-                            window.CodbiPluginData.detStandards[realName]?.Description,
-                          );
+                          const description = getDescription(window.CodbiPluginData.detStandards[realName]);
 
-                          if (window.CodbiPluginData.detStandards[realName]?.Description[0] === "/") {
+                          if (description.startsWith("/")) {
                             cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
                           } else {
                             cDetails.innerHTML = `
@@ -1127,12 +1344,14 @@ export function enableLocalDocInterface(): void {
                             optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1).trim(),
                           );
 
-                          const description = DEFINED.tsCheck<string>(
-                            window.CodbiPluginData.detStandards[realName]?.Description,
-                          );
+                          const description = getDescription(window.CodbiPluginData.detStandards[realName]);
 
-                          if (window.CodbiPluginData.detStandards[realName]?.Description[0] === "/") {
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).remove();
+                          if (description.startsWith("/")) {
+                            const detailsObject = getDetailsObject(cDetails);
+
+                            if (detailsObject) {
+                              detailsObject.remove();
+                            }
 
                             cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
                           } else {
@@ -1146,24 +1365,24 @@ export function enableLocalDocInterface(): void {
                   }
                   // #endregion Handle CSS-Class inout
                   if (added instanceof HTMLInputElement) {
+                    const addedRow = getAncestor(added, 2);
+
+                    if (!addedRow) {
+                      continue;
+                    }
                     // #region Handle sole clicks on a [data-cb-func] value field
-                    if (
-                      INSTANCE.tsCheck<HTMLElement>(
-                        DEFINED.tsCheck<HTMLElement>(
-                          DEFINED.tsCheck<HTMLElement>(added.parentElement).parentElement,
-                        ).querySelector(".r1"),
-                        HTMLElement,
-                      ).innerHTML.toLowerCase() === "data-cb-func"
-                    ) {
+                    const dataFuncRowHeader = queryGridCell(addedRow, "r1");
+
+                    if (getLowerText(dataFuncRowHeader) === "data-cb-func") {
                       window.CodbiPluginData.updateSVManager(window.CodbiPluginData.fslFunctionalities);
 
                       if (!epManager.enabled) {
                         added.setSelectionRange(added.value.length, added.value.length);
                         // #region Refresh listing.
-                        epManagerElement.setAttribute(
-                          "options",
-                          buildFileList(window.CodbiPluginData.fslFunctionalities),
-                        );
+                        INSTANCE.tsCheck<HTMLElement>(
+                          document.querySelector('div[is = "xc-epmanager"]'),
+                          HTMLElement,
+                        ).setAttribute("options", buildFileList(window.CodbiPluginData.fslFunctionalities));
                         // #endregion Refresh listing.
                         epManager.mode = "SV";
                         epManager.target = INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement);
@@ -1181,18 +1400,28 @@ export function enableLocalDocInterface(): void {
                               cDetails.style.display = "none";
                             };
                           }
+
+                          return;
                         });
                         // #endregion Hide CodBi-Interface
-                        if (cDetails.querySelector("object")) {
-                          DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                            "data",
-                            `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[epManager.currentOption]?.Description}`,
-                          );
-                        }
                       }
 
                       if (cDetails.style.display !== "block") {
                         cDetails.style.display = "block";
+
+                        const description = getDescription(
+                          window.CodbiPluginData[
+                            epManager.mode === "SV" ? "detFunctionalities" : "detElementplaceholder"
+                          ][epManager.currentOption.replace(".js", "").toLowerCase()],
+                        );
+
+                        if (description.startsWith("/")) {
+                          cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
+                        } else {
+                          cDetails.innerHTML = `
+                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
+                              ${description}</div>`;
+                        }
 
                         updateLayoutCDetails(epManager);
                       }
@@ -1200,19 +1429,16 @@ export function enableLocalDocInterface(): void {
                     // #endregion Handle sole clicks on a [data-cb-func] value field
                     if (added.parentElement) {
                       const addedParent = added.parentElement;
-                      if (added.classList.contains("editor-text") && addedParent.classList.contains("r1")) {
+                      if (added.classList.contains("editor-text") && matchesGridCellClass(addedParent, "r1")) {
                         let cbFUNCs: string | undefined;
 
-                        if (added.parentElement.parentElement) {
-                          for (const possibleCBFunc of DEFINED.tsCheck<HTMLElement>(
-                            DEFINED.tsCheck<HTMLElement>(addedParent.parentElement).parentElement,
-                          ).querySelectorAll(".r1")) {
-                            if (
-                              possibleCBFunc.parentElement &&
-                              possibleCBFunc.innerHTML.toLowerCase() === "data-cb-func"
-                            ) {
+                        const addedRow = getAncestor(addedParent, 2);
+
+                        if (addedRow) {
+                          for (const possibleCBFunc of queryGridCells(addedRow, "r1")) {
+                            if (possibleCBFunc.parentElement && getLowerText(possibleCBFunc) === "data-cb-func") {
                               cbFUNCs = INSTANCE.tsCheck<HTMLElement>(
-                                DEFINED.tsCheck<HTMLElement>(possibleCBFunc.parentElement).querySelector(".r2"),
+                                queryGridCell(DEFINED.tsCheck<HTMLElement>(possibleCBFunc.parentElement), "r2"),
                                 HTMLElement,
                               ).innerHTML;
 
@@ -1344,12 +1570,7 @@ export function enableLocalDocInterface(): void {
 
                               added.value = "data-cb-func";
 
-                              INSTANCE.tsCheck<HTMLElement>(
-                                DEFINED.tsCheck<HTMLElement>(
-                                  DEFINED.tsCheck<HTMLElement>(added.parentElement).parentElement,
-                                ).querySelector(".r2"),
-                                HTMLElement,
-                              ).click();
+                              INSTANCE.tsCheck<HTMLElement>(queryGridCell(addedRow, "r2"), HTMLElement).click();
                             }
                           });
                           // #endregion Create a data-cb-func field on ALT + F.
@@ -1358,19 +1579,16 @@ export function enableLocalDocInterface(): void {
                       }
                     }
 
+                    const rowHeader = queryGridCell(addedRow, "r1");
+
+                    const rowHeaderText = getLowerText(rowHeader);
+
                     if (
-                      added.parentElement?.parentElement?.querySelector(".r1")?.innerHTML.toLowerCase() !==
-                        "data-cb-apply" &&
-                      added.parentElement?.parentElement?.querySelector(".r1")?.innerHTML.toLowerCase() !==
-                        "data-cb-func" &&
-                      added.parentElement?.parentElement?.querySelector(".r1")?.innerHTML.indexOf("data-cb-") !== -1
+                      rowHeaderText !== "data-cb-apply" &&
+                      rowHeaderText !== "data-cb-func" &&
+                      rowHeaderText.includes("data-cb-")
                     ) {
-                      const cell = INSTANCE.tsCheck<HTMLElement>(
-                        DEFINED.tsCheck<HTMLElement>(
-                          DEFINED.tsCheck<HTMLElement>(added.parentElement).parentElement,
-                        ).querySelector(".r2"),
-                        HTMLElement,
-                      );
+                      const cell = INSTANCE.tsCheck<HTMLElement>(queryGridCell(addedRow, "r2"), HTMLElement);
 
                       const currentFunctionalityParameterInput = cell.querySelector("input");
 
@@ -1385,11 +1603,12 @@ export function enableLocalDocInterface(): void {
 
                           const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
                           // #region If ALT + X...
-                          if (keyboardEvent.altKey && (keyboardEvent.key === "x" || keyboardEvent.key === "X")) {
-                            const attributePanel = INSTANCE.tsCheck<HTMLElement>(
-                              document.querySelector('[ data-panel-id ="attributes"]'),
-                              HTMLElement,
-                            );
+                          if (keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === "x") {
+                            const attributePanel = getAttributesPanel();
+
+                            if (!attributePanel) {
+                              return;
+                            }
 
                             attributePanelForcedToEnlarge = attributePanel.style.position !== "fixed";
 
@@ -1419,20 +1638,24 @@ export function enableLocalDocInterface(): void {
                             epManager.mode = "SV";
                             epManager.mode = "EP";
                             // #region Rebuild listing.
-                            epManagerElement.setAttribute(
-                              "epoptions",
-                              buildFileList(window.CodbiPluginData.fslElementplaceholder),
-                            );
+                            INSTANCE.tsCheck<HTMLElement>(
+                              document.querySelector('div[is = "xc-epmanager"]'),
+                              HTMLElement,
+                            ).setAttribute("epoptions", buildFileList(window.CodbiPluginData.fslElementplaceholder));
                             // #endregion Rebuild listing.
                             // First time load of APIDoc
                             if (cDetails.querySelector("object") === null) {
                               cDetails.innerHTML = "<object style = 'width : 100% ; height: 100% ;'></object>";
                             }
 
-                            DEFINED.tsCheck<HTMLObjectElement>(cDetails.querySelector("object")).setAttribute(
-                              "data",
-                              `${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
-                            );
+                            const detailsObject = getDetailsObject(cDetails);
+
+                            if (detailsObject) {
+                              detailsObject.setAttribute(
+                                "data",
+                                `${window.CodbiPluginData.docsAPI?.[currentLanguage] ?? window.CodbiPluginData.docsAPI?.en ?? ""}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
+                              );
+                            }
 
                             // #region Show interface.
                             epManager.enabled = true;
@@ -1458,10 +1681,11 @@ export function enableLocalDocInterface(): void {
                       currentFunctionalityParameterInput?.addEventListener("blur", (event) => {
                         // #region End forced enlargement of the attributes panel, if necessary.
                         if (attributePanelForcedToEnlarge) {
-                          const attributePanel = INSTANCE.tsCheck<HTMLElement>(
-                            document.querySelector('[ data-panel-id ="attributes"]'),
-                            HTMLElement,
-                          );
+                          const attributePanel = getAttributesPanel();
+
+                          if (!attributePanel) {
+                            return;
+                          }
 
                           attributePanelForcedToEnlarge = false;
                           attributePanel.style.position = "relative";
@@ -1495,16 +1719,20 @@ export function enableLocalDocInterface(): void {
             }
           });
           // #endregion Parametercells
-          paramCellObserver.observe(
-            INSTANCE.tsCheck<HTMLElement>(
-              document.querySelector('[id="tabsRight:extendedTab"] .xm-editor-panel'),
-              HTMLElement,
-            ),
-            {
-              childList: true,
-              subtree: true,
-            },
-          );
+          const extendedPanel = queryFirst<HTMLElement>([
+            "#tabsRight\\:extendedTab .xm-editor-panel",
+            '[id$=":extendedTab"] .xm-editor-panel',
+            '[id*="extendedTab"] .xm-editor-panel',
+          ]);
+
+          if (!extendedPanel) {
+            return;
+          }
+
+          paramCellObserver.observe(extendedPanel, {
+            childList: true,
+            subtree: true,
+          });
 
           if (attributesEditorProcessed) {
             return;
@@ -1519,11 +1747,21 @@ export function enableLocalDocInterface(): void {
             for (const mutation of mutationsList) {
               if (mutation.type === "childList") {
                 for (const added of mutation.addedNodes) {
-                  const addedHTMLElement = INSTANCE.tsCheck<HTMLElement>(added, HTMLElement);
+                  if (!(added instanceof HTMLElement)) {
+                    continue;
+                  }
 
-                  if (addedHTMLElement.classList.contains("slick-row")) {
+                  const rowCandidates: Array<HTMLElement> = [];
+
+                  if (added.classList.contains("slick-row")) {
+                    rowCandidates.push(added);
+                  }
+
+                  rowCandidates.push(...Array.from(added.querySelectorAll<HTMLElement>(".slick-row")));
+
+                  for (const rowElement of rowCandidates) {
                     // #region Register each cell of class .r2
-                    const cell = INSTANCE.tsCheck<HTMLElement>(addedHTMLElement.querySelector(".r2"), HTMLElement);
+                    const cell = INSTANCE.tsCheck<HTMLElement>(queryGridCell(rowElement, "r2"), HTMLElement);
                     // #region Register Keyblocker to block keystrokes for a certain amount of time after a CodBi-Option was selected
                     cell.addEventListener("keydown", (event) => {
                       if (event.key !== ",") {
@@ -1548,17 +1786,22 @@ export function enableLocalDocInterface(): void {
                       for (const mutation of mutationsList) {
                         if (mutation.type === "childList") {
                           for (const added of mutation.addedNodes) {
-                            // Only if the <input> is for a [data-cb-func]-attributefield...
-                            if (
-                              INSTANCE.tsCheck<HTMLElement>(
-                                DEFINED.tsCheck<HTMLElement>(
-                                  DEFINED.tsCheck<HTMLElement>(added.parentElement).parentElement,
-                                ).querySelector(".r1"),
-                                HTMLElement,
-                              ).innerHTML.toLowerCase() === "data-cb-func"
-                            ) {
-                              if (addedHTMLElement.classList) {
-                                if (addedHTMLElement.classList.contains("editor-text")) {
+                            const addedElement = added instanceof HTMLElement ? added : null;
+                            const inputs = addedElement
+                              ? addedElement instanceof HTMLInputElement
+                                ? [addedElement]
+                                : Array.from(addedElement.querySelectorAll("input"))
+                              : [];
+
+                            for (const input of inputs) {
+                              const addedRow = getAncestor(input, 2);
+
+                              if (!addedRow) {
+                                continue;
+                              }
+                              // Only if the <input> is for a [data-cb-func]-attributefield...
+                              if (getLowerText(queryGridCell(addedRow, "r1")) === "data-cb-func") {
+                                if (input.classList.contains("editor-text")) {
                                   if (!epManager.enabled) {
                                     epManager.enabled = true;
                                   }
@@ -1567,20 +1810,20 @@ export function enableLocalDocInterface(): void {
                                   }
                                 }
                               }
-                            }
-                            // #region Disable CodBi-Interface when this newly created <input> looses focus
-                            addedHTMLElement.addEventListener("blur", (event) => {
-                              if (!flagMouseOverCDetails) {
-                                epManager.enabled = false;
-                                cDetails.style.display = "none";
-                              } else {
-                                currentCDetailBlurAction = () => {
+                              // #region Disable CodBi-Interface when this newly created <input> looses focus
+                              input.addEventListener("blur", (event) => {
+                                if (!flagMouseOverCDetails) {
                                   epManager.enabled = false;
                                   cDetails.style.display = "none";
-                                };
-                              }
-                            });
-                            // #endregion Disable CodBi-Interface when this newly created <input> looses focus
+                                } else {
+                                  currentCDetailBlurAction = () => {
+                                    epManager.enabled = false;
+                                    cDetails.style.display = "none";
+                                  };
+                                }
+                              });
+                              // #endregion Disable CodBi-Interface when this newly created <input> looses focus
+                            }
                           }
                         }
                       }
@@ -1596,10 +1839,8 @@ export function enableLocalDocInterface(): void {
                     registeredCells.push(cell);
                     // Check if the corresponding cell of class .r1 has "data-cb-func" (case insensitive)...
                     if (
-                      INSTANCE.tsCheck<HTMLElement>(
-                        DEFINED.tsCheck<HTMLElement>(cell.parentElement).querySelector(".r1"),
-                        HTMLElement,
-                      ).innerHTML.toLowerCase() === "data-cb-func"
+                      getLowerText(queryGridCell(DEFINED.tsCheck<HTMLElement>(cell.parentElement), "r1")) ===
+                      "data-cb-func"
                     ) {
                       const currentFunctionalityInput = cell.querySelector("input");
                       // If a new <input> was generated by clicking into a cell of class .r2
@@ -1633,10 +1874,10 @@ export function enableLocalDocInterface(): void {
                         });
                         // #region Show interface.
                         // #region Refresh listing.
-                        epManagerElement.setAttribute(
-                          "options",
-                          buildFileList(window.CodbiPluginData.fslFunctionalities),
-                        );
+                        INSTANCE.tsCheck<HTMLElement>(
+                          document.querySelector('div[is = "xc-epmanager"]'),
+                          HTMLElement,
+                        ).setAttribute("options", buildFileList(window.CodbiPluginData.fslFunctionalities));
                         // #endregion Refresh listing.
                         epManager.mode = "SV";
                         epManager.target = currentFunctionalityInput;
@@ -1650,29 +1891,6 @@ export function enableLocalDocInterface(): void {
                         // #endregion Style SVManager including dimensions and target input setting
                       }
                     }
-                    // #region View corresponding API-Doc
-                    epManager.onOptionChanged.push((newOption: string) => {
-                      if (newOption === "") {
-                        return;
-                      }
-
-                      const description = DEFINED.tsCheck<string>(
-                        window.CodbiPluginData[
-                          epManager.mode === "SV" ? "detFunctionalities" : "detElementplaceholder"
-                        ][newOption.replace(".js", "").toLowerCase()]?.Description,
-                      );
-
-                      if (description[0] === "/") {
-                        cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-                      } else {
-                        cDetails.innerHTML = `
-                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
-                              ${description}</div>`;
-                      }
-
-                      cDetails.style.display = "block";
-                    });
-                    // #endregion View corresponding API-Doc
                     // #endregion Register each cell of class .r2
                   }
                 }
@@ -1681,15 +1899,19 @@ export function enableLocalDocInterface(): void {
             // #endregion Process each element of class slick-row
           });
 
-          observer.observe(
-            INSTANCE.tsCheck<HTMLElement>(
-              document.querySelector('[id="tabsRight:extendedTab"] .grid-canvas'),
-              HTMLElement,
-            ),
-            {
-              childList: true,
-            },
-          );
+          const extendedGrid = queryFirst<HTMLElement>([
+            "#tabsRight\\:extendedTab .grid-canvas",
+            '[id$=":extendedTab"] .grid-canvas',
+            '[id*="extendedTab"] .grid-canvas',
+          ]);
+
+          if (!extendedGrid) {
+            return;
+          }
+
+          observer.observe(extendedGrid, {
+            childList: true,
+          });
         });
       }
       // #endregion Extend the extended tab.

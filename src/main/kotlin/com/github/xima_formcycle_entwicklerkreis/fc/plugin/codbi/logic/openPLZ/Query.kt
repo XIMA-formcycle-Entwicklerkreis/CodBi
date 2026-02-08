@@ -16,6 +16,8 @@ import java.net.URI
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import org.slf4j.LoggerFactory
 
 /**
@@ -56,9 +58,11 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
   /** The country code to use if none is provided. */
   protected var country: String = "de"
   /** Buffers the OpenPLZ-Request result to minimize re-requests. */
-  protected var buffer: MutableMap<String, String> = mutableMapOf()
+  protected val buffer: MutableMap<String, String> = ConcurrentHashMap()
   /** Stores the time the OpenPLZ-API was lastly contacted. */
-  protected var lastContact: Long = System.currentTimeMillis()
+  protected val lastContact = AtomicLong(System.currentTimeMillis())
+  /** Guards cache eviction to avoid concurrent update races. */
+  private val cacheLock = Any()
 
   /**
    * Retrieves the requested data from the OpenPLZ REST-Service.
@@ -80,7 +84,7 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
       statusCode = connection.getResponseCode()
       buffer[toRetrieveFrom] =
           if (statusCode in 200..299) {
-            lastContact = System.currentTimeMillis()
+            lastContact.set(System.currentTimeMillis())
 
             connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
           } else {
@@ -150,7 +154,14 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
    * of data and re-requesting after a certain amounts of hours.
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
-    if (buffer.keys.count() > 100) buffer.remove(buffer.keys.first())
+    synchronized(cacheLock) {
+      if (buffer.size > 100) {
+        val firstKey = buffer.keys.firstOrNull()
+        if (firstKey != null) {
+          buffer.remove(firstKey)
+        }
+      }
+    }
     // region Initialization
     var statusCode = -1
     val allResults = StringBuilder()
@@ -196,7 +207,7 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
       val finalBufferKey = pagedUrl
       val isBufferValid =
           buffer.containsKey(finalBufferKey) &&
-              (System.currentTimeMillis() - lastContact) / 3600000 < hrsTillUpdate
+              (System.currentTimeMillis() - lastContact.get()) / 3600000 < hrsTillUpdate
 
       if (!isBufferValid) {
         LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)

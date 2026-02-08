@@ -39,14 +39,6 @@ export class HTML_Input_NoAutocomplete {
       }
     }
   }
-  // #region Initialization
-  /**
-   * States whether this {@link HTML_Input_NoAutocomplete } was successfully registered
-   * via {@link CodbiGlobal.registerFunctionality } with the CodBi and performs the registration upon class usage.*/
-  public static registered: boolean = (() => {
-    return window.codbi.registerFunctionality("HTML.Input.NoAutocomplete", HTML_Input_NoAutocomplete.functionality);
-  })();
-  // #endregion Initialization
 }
 
 window.codbi.registerFunctionality(

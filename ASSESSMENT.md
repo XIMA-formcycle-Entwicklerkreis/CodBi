@@ -24,9 +24,7 @@ Based on comprehensive codebase analysis, the CodBi plugin is a **full-stack For
 
 ### 1. AI & OCR (4 functionalities)
 - `AI.OCR` - Tesseract OCR with 4 modes (Print, Extract, Verify, Extract Fields)
-- `AI.OCR.Cam` - Camera-based OCR
 - `AI.ONNX.Donut.QA` - ONNX document understanding
-- `AI.ONNX.Donut.QA.Cam` - Camera-based document QA
 
 ### 2. Date & Time (10 functionalities)
 - `Date.Frame` (1-5) - Date range validation
@@ -78,7 +76,6 @@ Based on comprehensive codebase analysis, the CodBi plugin is a **full-stack For
 
 ### 9. Utilities (5+ functionalities)
 - `JSON.Set` - JSON data manipulation
-- `Net.XRURL.Normalize` - URL normalization
 - `OnChange.Conditional` - Conditional logic
 
 ---
@@ -190,5 +187,5 @@ Based on comprehensive codebase analysis, the CodBi plugin is a **full-stack For
 
 ---
 
-*Assessment Date: January 31, 2026*  
+*Assessment Date: February 02, 2026*  
 *Repository: XIMA-formcycle-Entwicklerkreis/CodBi-Dev*

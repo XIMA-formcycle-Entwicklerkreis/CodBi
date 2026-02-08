@@ -13,9 +13,7 @@
 ## Risks / Maintainability
 - No timeout or retry handling on HTTP calls.
 - Basic auth errors are not surfaced clearly to clients.
-- Shared `buffer` and `lastContact` are not thread-safe.
 
 ## Suggested Next Improvement (Optional)
 - Add connection/read timeouts and better error propagation.
-- Use concurrent map or synchronization for shared state.
 - Validate required config properties and handle missing values.

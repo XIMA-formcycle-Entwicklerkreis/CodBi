@@ -12,6 +12,9 @@ import { SVManager } from "./SVManager.js";
  * A {@link HTMLDivElement } that manages the **e**lement **p**laceholder within an {@link HTMLInputElement }
  * of type **text** backed by the {@link SVManager }'s functionality. */
 export class EPManager extends SVManager {
+  private static readonly SELECTOR_OPTION_INPUT = '[ part = "Optioninput"]';
+  private static readonly SELECTOR_OPTION_TEXT = '[ part = "Optiontext"]';
+  private static readonly SELECTOR_OPTION_CURRENT = ".---WaXCode.--SVManager.--Option.-Current";
   /** Holds the web-component definition of observed attributes. */
   static override get observedAttributes(): Array<string> {
     return [...SVManager.observedAttributes, "mode", "epoptions"];
@@ -64,7 +67,7 @@ export class EPManager extends SVManager {
 
       this.render();
 
-      for (const checkbox of shadow.querySelectorAll('[ part = "Optioninput"]')) {
+      for (const checkbox of shadow.querySelectorAll(EPManager.SELECTOR_OPTION_INPUT)) {
         INSTANCE.tsCheck<HTMLElement>(checkbox, HTMLElement).style.display = "inline-block";
       }
     } else {
@@ -77,13 +80,13 @@ export class EPManager extends SVManager {
 
         this.render();
 
-        for (const checkbox of shadow.querySelectorAll('[ part = "Optioninput"]')) {
+        for (const checkbox of shadow.querySelectorAll(EPManager.SELECTOR_OPTION_INPUT)) {
           const cb = INSTANCE.tsCheck<HTMLElement>(checkbox, HTMLElement);
 
           cb.style.display = "none";
 
           const text = INSTANCE.tsCheck<HTMLElement>(
-            DEFINED.tsCheck<HTMLElement>(cb.parentElement).querySelector('[ part = "Optiontext"]'),
+            DEFINED.tsCheck<HTMLElement>(cb.parentElement).querySelector(EPManager.SELECTOR_OPTION_TEXT),
             HTMLElement,
           );
 
@@ -177,7 +180,6 @@ export class EPManager extends SVManager {
   ): string {
     // #region Remove the characters that were typed during filtering.
     const inputElement = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
-
     const remainingOne = inputElement.value.substring(0, selectionStart - this.currentFilter.length);
     const remainingTwo = inputElement.value.substring(selectionStart);
 
@@ -185,17 +187,31 @@ export class EPManager extends SVManager {
 
     const adjustedSelectionStart = selectionStart - this.currentFilter.length;
     // #endregion Remove the characters that were typed during filtering.
-    const selectedOption = DEFINED.tsCheck<string>(
-      INSTANCE.tsCheck<HTMLElement>(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"), HTMLElement)
-        .dataset.cbOption,
+    const currentOptionElement = INSTANCE.tsCheck<HTMLElement>(
+      shadow.querySelector(EPManager.SELECTOR_OPTION_CURRENT),
+      HTMLElement,
     );
+    const selectedOption = DEFINED.tsCheck<string>(currentOptionElement.dataset.cbOption);
 
-    eventTarget.value = `${eventTarget.value.substring(0, selectionStart - 1)}${format(selectedOption)}${eventTarget.value.substring(selectionStart)}`;
+    const insertionStart = adjustedSelectionStart - 1;
+    const insertionText = format(selectedOption);
 
-    eventTarget.setSelectionRange(
-      selectionStart + selectedOption.length + 5,
-      selectionStart + selectedOption.length + 5,
-    );
+    eventTarget.value = `${eventTarget.value.substring(0, insertionStart)}${insertionText}${eventTarget.value.substring(adjustedSelectionStart)}`;
+
+    const caretPosition = insertionStart + insertionText.indexOf(">") + 2;
+
+    eventTarget.setSelectionRange(caretPosition, caretPosition);
+
+    const keyBlocker = (keyboardEvent: KeyboardEvent) => {
+      keyboardEvent.preventDefault();
+      keyboardEvent.stopImmediatePropagation();
+      keyboardEvent.stopPropagation();
+    };
+
+    eventTarget.addEventListener("keydown", keyBlocker, true);
+    setTimeout(() => {
+      eventTarget.removeEventListener("keydown", keyBlocker, true);
+    }, 1000);
 
     this.currentStartCaret = undefined;
     this.currentFilter = "";
@@ -212,11 +228,24 @@ export class EPManager extends SVManager {
    * @param event The {@link Event } received. */
   protected override onInputTarget(event: Event): void {
     if (this.mode === "EP") {
+      const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+      const selectionStart = eventTarget.selectionStart ?? 0;
+
+      if (this.enteringEP && this.currentStartCaret !== undefined && this.currentStartCaret !== null) {
+        this.currentFilter = eventTarget.value.substring(this.currentStartCaret, selectionStart);
+        this.countStrokes = this.currentFilter.length;
+        this.enabled = true;
+      }
+
       const remainingOptions = this.filter(this.currentFilter);
 
       const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
 
-      shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current")?.classList.remove("-Current");
+      if (remainingOptions.length === 0) {
+        return;
+      }
+
+      shadow.querySelector(EPManager.SELECTOR_OPTION_CURRENT)?.classList.remove("-Current");
       DEFINED.tsCheck<HTMLElement>(
         INSTANCE.tsCheck<HTMLDivElement>(
           shadow.querySelector(`.---WaXCode.--SVManager.--Option[ data-cb-option = "${remainingOptions[0]}"]`),
@@ -225,9 +254,6 @@ export class EPManager extends SVManager {
       ).classList.add("-Current");
 
       if (this.lastKey !== "Backspace" && this.lastKey !== "Delete" && remainingOptions.length === 1) {
-        const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
-        const selectionStart = eventTarget.selectionStart ?? 0;
-
         this.insertSelectedOption(eventTarget, selectionStart, shadow, (selectedOption) => `{ ${selectedOption} >  } `);
 
         for (const handler of this.onAutocomplete) {
@@ -281,18 +307,24 @@ export class EPManager extends SVManager {
         // #endregion Inject selected option into the {@link SVManager.target } and close [enteringEP]-mode
       }
       // #region Handle character deletion
-      if (this.enteringEP && event.key === "Delete") {
-        this.countStrokes--;
+      if (this.enteringEP && (event.key === "Delete" || event.key === "Backspace")) {
         const startCaret = DEFINED.tsCheck<number | null>(this.currentStartCaret);
+        const selectionEnd = eventTarget.selectionEnd ?? selectionStart;
+        const relativeStart = Math.max(0, selectionStart - startCaret);
+        const relativeEnd = Math.max(0, selectionEnd - startCaret);
 
-        this.currentFilter =
-          this.currentFilter.substring(0, selectionStart - startCaret) +
-          this.currentFilter.substring(selectionStart - startCaret + 1);
-      }
+        if (relativeEnd > relativeStart) {
+          this.currentFilter =
+            this.currentFilter.substring(0, relativeStart) + this.currentFilter.substring(relativeEnd);
+        } else if (event.key === "Backspace" && relativeStart > 0) {
+          this.currentFilter =
+            this.currentFilter.substring(0, relativeStart - 1) + this.currentFilter.substring(relativeStart);
+        } else if (event.key === "Delete" && relativeStart < this.currentFilter.length) {
+          this.currentFilter =
+            this.currentFilter.substring(0, relativeStart) + this.currentFilter.substring(relativeStart + 1);
+        }
 
-      if (this.enteringEP && event.key === "Backspace") {
-        this.countStrokes--;
-        this.currentFilter = this.currentFilter.substring(0, this.currentFilter.length - 1);
+        this.countStrokes = Math.max(0, this.currentFilter.length);
       }
       // #endregion Handle character deletion
     } else {
@@ -312,7 +344,7 @@ export class EPManager extends SVManager {
     if (this.mode === "EP") {
       const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
 
-      if (this.currentStartCaret) {
+      if (this.currentStartCaret !== undefined && this.currentStartCaret !== null) {
         return eventTarget.value.substring(this.currentStartCaret, this.currentStartCaret + this.countStrokes);
       } else {
         return "";

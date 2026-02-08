@@ -193,6 +193,50 @@ function getLowerText(element: Element | null | undefined): string {
 function getDescription(value: { Description?: string } | null | undefined): string {
   return value?.Description ?? "";
 }
+/** Renders API documentation into the details container safely.
+ *
+ * @param container Target element.
+ * @param baseDocURL Base URL for API docs.
+ * @param description Description or doc path.
+ */
+function renderDetails(container: HTMLElement, baseDocURL: string, description: string): void {
+  container.replaceChildren();
+
+  if (description.startsWith("/")) {
+    const detailsObject = document.createElement("object");
+
+    detailsObject.style.cssText = "width: 100%; height: 100%; opacity: .8;";
+    detailsObject.setAttribute("data", `${baseDocURL}${description}`);
+    container.appendChild(detailsObject);
+
+    return;
+  }
+
+  const wrapper = document.createElement("div");
+
+  wrapper.style.cssText = "width: 100%; height: 100%; overflow: auto;";
+  wrapper.textContent = description;
+  container.appendChild(wrapper);
+}
+/** Ensures the details container has a placeholder object element.
+ *
+ * @param container Target element.
+ * @returns The object element.
+ */
+function ensureDetailsObject(container: HTMLElement): HTMLObjectElement {
+  const existing = getDetailsObject(container);
+
+  if (existing) {
+    return existing;
+  }
+
+  const detailsObject = document.createElement("object");
+
+  detailsObject.style.cssText = "width: 100%; height: 100%;";
+  container.appendChild(detailsObject);
+
+  return detailsObject;
+}
 // #endregion Helper
 /* Creates and manages the CodBi interface for the local API documentation within the XIMA Form Cycle Designer.
  * This interface includes components for browsing functionalities and element placeholders, viewing corresponding
@@ -263,13 +307,7 @@ export function enableLocalDocInterface(): void {
           ],
         );
 
-        if (description.startsWith("/")) {
-          cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-        } else {
-          cDetails.innerHTML = `
-                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
-                              ${description}</div>`;
-        }
+        renderDetails(cDetails, baseDocURL, description);
 
         cDetails.style.display = "block";
       });
@@ -485,11 +523,7 @@ export function enableLocalDocInterface(): void {
             window.CodbiPluginData.detStandards[newOption.substring(0, newOption.indexOf("/") - 1).trim()],
           );
 
-          if (description.startsWith("/")) {
-            cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-          } else {
-            cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
-          }
+          renderDetails(cDetails, baseDocURL, description);
 
           return;
         }
@@ -514,11 +548,7 @@ export function enableLocalDocInterface(): void {
                 ],
               ));
         // #endregion Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
-        if (description.startsWith("/")) {
-          cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-        } else {
-          cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
-        }
+        renderDetails(cDetails, baseDocURL, description);
       });
       // #endregion Define handler for the <XC-OptionInput>'s changes in option.
       // #region Define handler for the <XC-OptionInput>'s selection.
@@ -686,14 +716,20 @@ export function enableLocalDocInterface(): void {
       // #endregion Styling
       cDetails.classList.add("---CodBi", "--Panel", "--APIDoc");
       // #region Injection
-      cDetails.innerHTML = `
-          <div class = "APIDocLoader"></div>
+      const loader = document.createElement("div");
 
-          <object id = "CodBi_APIDocViewer"></object>`;
+      loader.classList.add("APIDocLoader");
+
+      const docViewer = document.createElement("object");
+
+      docViewer.id = "CodBi_APIDocViewer";
+
+      cDetails.appendChild(loader);
+      cDetails.appendChild(docViewer);
 
       const cssDetails = document.createElement("style");
 
-      cssDetails.innerHTML = `
+      cssDetails.textContent = `
           @keyframes kfSpinner { 100% { transform : rotate( 1turn )}}
           .APIDocLoader          { align-self : anchor-center ; justify-self : anchor-center ; width : 10% ; position : absolute ; text-align : center ; margin : auto ; aspect-ratio : 1 ;
                                    display : grid ; border : 2px solid #0000 ; border-radius : 50% ;
@@ -967,10 +1003,17 @@ export function enableLocalDocInterface(): void {
       const updateLayoutCDetails = (alignTo: HTMLElement) => {
         const rectToAlignTo = alignTo.getBoundingClientRect();
         const top = rectToAlignTo.top + (rectToAlignTo.height / 100) * 4.5;
+        const margin = (window.innerWidth / 100) * 1;
+        const leftSpace = rectToAlignTo.left;
+        const rightSpace = window.innerWidth - rectToAlignTo.right;
+        const useRightSide = rightSpace >= leftSpace;
+        const availableWidth = Math.max(0, (useRightSide ? rightSpace : leftSpace) - margin * 2);
 
-        cDetails.style.left = `${Math.ceil(rectToAlignTo.left + rectToAlignTo.width > window.innerWidth / 2 ? (window.innerWidth / 100) * 1 : rectToAlignTo.left + rectToAlignTo.width + (window.innerWidth / 100) * 1)}px`;
+        cDetails.style.left = `${Math.ceil(
+          useRightSide ? rectToAlignTo.right + margin : rectToAlignTo.left - availableWidth - margin,
+        )}px`;
         cDetails.style.top = `${top > window.innerHeight / 2 ? window.innerHeight / 2 : top}px`;
-        cDetails.style.width = `${Math.ceil(rectToAlignTo.left + rectToAlignTo.width > window.innerWidth / 2 ? rectToAlignTo.left - (window.innerWidth / 100) * 2 : window.innerWidth - rectToAlignTo.right - (window.innerWidth / 100) * 2)}px`;
+        cDetails.style.width = `${Math.ceil(availableWidth)}px`;
         cDetails.style.height = `${(rectToAlignTo.height < window.innerHeight / 2 ? window.innerHeight / 2 : rectToAlignTo.height) - (rectToAlignTo.height / 100) * 10}px`;
       };
       // #endregion Define API-Doc layout update
@@ -1135,11 +1178,7 @@ export function enableLocalDocInterface(): void {
                                   ],
                                 ));
                           // #endregion Retrieve the proper description according to the new option's structure that identifies the type of dialogue we're actually in.
-                          if (description.startsWith("/")) {
-                            cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-                          } else {
-                            cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${description}</div>`;
-                          }
+                          renderDetails(cDetails, baseDocURL, description);
                           // #endregion Initial API Doc loading
                         }
                       }
@@ -1241,13 +1280,7 @@ export function enableLocalDocInterface(): void {
 
                           const description = getDescription(window.CodbiPluginData.detStandards[realName]);
 
-                          if (description.startsWith("/")) {
-                            cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-                          } else {
-                            cDetails.innerHTML = `
-                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
-                              ${description}</div>`;
-                          }
+                          renderDetails(cDetails, baseDocURL, description);
                           // #endregion First load of documentation.
                           optioninput.enabled = true;
                           optioninput.optionTransformer = undefined;
@@ -1346,19 +1379,7 @@ export function enableLocalDocInterface(): void {
 
                           const description = getDescription(window.CodbiPluginData.detStandards[realName]);
 
-                          if (description.startsWith("/")) {
-                            const detailsObject = getDetailsObject(cDetails);
-
-                            if (detailsObject) {
-                              detailsObject.remove();
-                            }
-
-                            cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-                          } else {
-                            cDetails.innerHTML = `
-                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
-                              ${description}</div>`;
-                          }
+                          renderDetails(cDetails, baseDocURL, description);
                         }
                       }
                     });
@@ -1415,13 +1436,7 @@ export function enableLocalDocInterface(): void {
                           ][epManager.currentOption.replace(".js", "").toLowerCase()],
                         );
 
-                        if (description.startsWith("/")) {
-                          cDetails.innerHTML = `<object data = '${baseDocURL}${description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-                        } else {
-                          cDetails.innerHTML = `
-                            <div style = "width: 100% ; height: 100% ; overflow : auto ;">
-                              ${description}</div>`;
-                        }
+                        renderDetails(cDetails, baseDocURL, description);
 
                         updateLayoutCDetails(epManager);
                       }
@@ -1503,25 +1518,14 @@ export function enableLocalDocInterface(): void {
                                 updateLayoutCDetails(optioninput);
                                 // #region Show the interface.
                                 // #region Set initial documentation details.
-                                if (
+                                const description = getDescription(
                                   window.CodbiPluginData.detFunctionalities[
                                     optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)
-                                  ]?.Description[0] === "/"
-                                ) {
-                                  cDetails.innerHTML = `<object data = '${window.CodbiPluginData.docsAPI[currentLanguage] === undefined ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
-                                } else {
-                                  const docLoader = cDetails.querySelector(".APIDocLoader");
+                                  ],
+                                );
 
-                                  if (docLoader) {
-                                    docLoader.remove();
-                                  }
-
-                                  cDetails.innerHTML = `
-                                  <div style = "width: 100% ; height: 100% ; overflow : auto ;">
-                                    ${window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detFunctionalities[optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1)]?.Description}</div>`;
-                                }
+                                renderDetails(cDetails, baseDocURL, description);
                                 // #endregion Set initial documentation details.
-                                cDetails.innerHTML = cDetails.innerHTML.replace("undefined", "");
                               }
                             }
                             // #endregion Show listing of available functionality parameter.
@@ -1645,7 +1649,7 @@ export function enableLocalDocInterface(): void {
                             // #endregion Rebuild listing.
                             // First time load of APIDoc
                             if (cDetails.querySelector("object") === null) {
-                              cDetails.innerHTML = "<object style = 'width : 100% ; height: 100% ;'></object>";
+                              ensureDetailsObject(cDetails);
                             }
 
                             const detailsObject = getDetailsObject(cDetails);

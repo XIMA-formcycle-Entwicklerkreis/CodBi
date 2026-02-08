@@ -27,6 +27,7 @@ import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
 import java.awt.geom.AffineTransform
 import java.awt.image.AffineTransformOp
 import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.net.URI
 import java.net.URLDecoder
@@ -74,6 +75,21 @@ import net.sourceforge.tess4j.TessAPI1
  * - **raw.githubusercontent.com**
  * - **api.github.com**
  * - **objects.githubusercontent.com**
+ *
+ * ### DSGVO, EU-AI ACT & technical Advantages vs Dedicated Server AI Approach
+ * - No separate AI server setup (fewer systems to secure and audit).
+ * - Reduced data transfer: processing stays within the plugin runtime.
+ * - Simpler compliance scope: fewer endpoints and lower operational overhead.
+ * - Lower latency and fewer network dependencies for OCR execution.
+ * - Easier data minimization: fewer data copies and storage locations.
+ * - Clearer accountability boundaries for processor/controller roles.
+ * - Simplified breach response: no separate AI server to manage in case of incidents.
+ * - Easier implementation of data subject rights (access, deletion) without coordinating with a
+ *   separate AI service.
+ * - Plugin does not store image data or OCR results persistently, minimizing data retention
+ *   concerns.
+ * - Most unproblematic deletion request response: Data is never stored not even in server-backups
+ *   so no deletion necessary.
  */
 class TesseractAction : AI() {
   /**
@@ -304,6 +320,74 @@ class TesseractAction : AI() {
   }
 
   /**
+   * Reads DPI metadata from image bytes.
+   *
+   * @param imageBytes The image bytes to read DPI from.
+   * @return The DPI value, or 300 as default if not found.
+   */
+  private fun readImageDPI(imageBytes: ByteArray): Int {
+    try {
+      ByteArrayInputStream(imageBytes).use { input ->
+        val iis = ImageIO.createImageInputStream(input) ?: return 300
+
+        iis.use {
+          val readers = ImageIO.getImageReaders(iis)
+          if (!readers.hasNext()) return 300
+
+          val reader = readers.next()
+
+          try {
+            reader.input = iis
+
+            val metadata = reader.getImageMetadata(0)
+            val formatName = metadata.nativeMetadataFormatName
+            val tree = metadata.getAsTree(formatName)
+
+            if (tree is IIOMetadataNode) {
+              val physNode = findNode(tree, "pHYs")
+              if (physNode != null) {
+                val pixelsPerUnitX = physNode.getAttribute("pixelsPerUnitXAxis")?.toIntOrNull()
+                val unitSpecifier = physNode.getAttribute("unitSpecifier")?.toIntOrNull()
+
+                if (pixelsPerUnitX != null && unitSpecifier == 1) {
+                  val dpi = (pixelsPerUnitX * 0.0254).toInt()
+                  log(LogLevel.INFO, "Read DPI from image bytes: $dpi")
+                  return dpi
+                }
+              }
+
+              val jfifNode = findNode(tree, "app0JFIF")
+              if (jfifNode != null) {
+                val resX = jfifNode.getAttribute("Xdensity")?.toIntOrNull()
+                val resUnits = jfifNode.getAttribute("resUnits")?.toIntOrNull()
+
+                if (resX != null) {
+                  val dpi =
+                      when (resUnits) {
+                        1 -> resX
+                        2 -> (resX * 2.54).toInt()
+                        else -> resX
+                      }
+                  log(LogLevel.INFO, "Read DPI from image bytes: $dpi")
+                  return dpi
+                }
+              }
+            }
+          } finally {
+            reader.dispose()
+          }
+        }
+      }
+    } catch (e: Exception) {
+      log(LogLevel.WARNING, "Failed to read DPI from image bytes: ${e.message}")
+    }
+
+    log(LogLevel.INFO, "No DPI metadata found in image bytes, using default 300 DPI")
+
+    return 300
+  }
+
+  /**
    * Recursively finds a node by name in metadata tree.
    *
    * @param node The metadata node to search in.
@@ -399,6 +483,32 @@ class TesseractAction : AI() {
   }
 
   /**
+   * Sets the given [BufferedImage] on the Tesseract handle using an in-memory buffer.
+   *
+   * @param handle The Tesseract handle.
+   * @param image The image to set.
+   * @param dpi The DPI to apply as source resolution.
+   */
+  private fun setImageToTesseract(handle: ITessAPI.TessBaseAPI, image: BufferedImage, dpi: Int) {
+    val width = image.width
+    val height = image.height
+    val pixels = image.getRGB(0, 0, width, height, null, 0, width)
+    val buffer = ByteBuffer.allocateDirect(width * height * 4)
+
+    for (pixel in pixels) {
+      buffer.put((pixel shr 16 and 0xFF).toByte())
+      buffer.put((pixel shr 8 and 0xFF).toByte())
+      buffer.put((pixel and 0xFF).toByte())
+      buffer.put((pixel shr 24 and 0xFF).toByte())
+    }
+
+    buffer.rewind()
+
+    TessAPI1.TessBaseAPISetImage(handle, buffer, width, height, 4, width * 4)
+    TessAPI1.TessBaseAPISetSourceResolution(handle, dpi)
+  }
+
+  /**
    * Detects the orientation of an image using Tesseract's built-in OSD (Orientation and Script
    * Detection).
    *
@@ -407,74 +517,53 @@ class TesseractAction : AI() {
    * @return The rotation angle (0, 90, 180, or 270) that should be applied to correct the
    *   orientation.
    */
-  private fun detectBestOrientation(image: BufferedImage, tempFile: File): Int {
+  private fun detectBestOrientation(image: BufferedImage, dpi: Int): Int {
     try {
-      val testFile = kotlin.io.path.createTempFile("ocr_osd_", ".png").toFile()
+      val osdHandle = TessAPI1.TessBaseAPICreate()
+
       try {
-        writeImageWithDPI(image, testFile, 300)
-
-        val osdHandle = TessAPI1.TessBaseAPICreate()
-
-        try {
-          if (TessAPI1.TessBaseAPIInit3(osdHandle, tessDataDir!!.absolutePath, "osd") != 0) {
-            log(
-                LogLevel.WARNING,
-                "Failed to initialize Tesseract with OSD data - osd.traineddata may be missing")
-            TessAPI1.TessBaseAPIDelete(osdHandle)
-
-            return 0
-          }
-
-          TessAPI1.TessBaseAPISetPageSegMode(osdHandle, 0) // 0 = PSM_OSD_ONLY
-
-          val width = image.width
-          val height = image.height
-          val pixels = image.getRGB(0, 0, width, height, null, 0, width)
-          val buffer = java.nio.ByteBuffer.allocateDirect(width * height * 4)
-
-          for (pixel in pixels) {
-            buffer.put((pixel shr 16 and 0xFF).toByte()) // R
-            buffer.put((pixel shr 8 and 0xFF).toByte()) // G
-            buffer.put((pixel and 0xFF).toByte()) // B
-            buffer.put((pixel shr 24 and 0xFF).toByte()) // A
-          }
-
-          buffer.rewind()
-
-          TessAPI1.TessBaseAPISetImage(osdHandle, buffer, width, height, 4, width * 4)
-
-          val orientDegPtr = java.nio.IntBuffer.allocate(1)
-          val orientConfPtr = java.nio.FloatBuffer.allocate(1)
-          val scriptNamePtr = com.sun.jna.ptr.PointerByReference()
-          val scriptConfPtr = java.nio.FloatBuffer.allocate(1)
-
-          val result =
-              TessAPI1.TessBaseAPIDetectOrientationScript(
-                  osdHandle, orientDegPtr, orientConfPtr, scriptNamePtr, scriptConfPtr)
-
-          if (result == 1) {
-            val orientDeg = orientDegPtr.get(0)
-            val orientConf = orientConfPtr.get(0)
-            log(
-                LogLevel.INFO,
-                "Tesseract OSD detected orientation: ${orientDeg}° (confidence: ${orientConf})")
-
-            val correctionAngle =
-                when (orientDeg) {
-                  0 -> 0
-                  90 -> 270
-                  180 -> 180
-                  270 -> 90
-                  else -> 0
-                }
-
-            return correctionAngle
-          }
-        } finally {
+        if (TessAPI1.TessBaseAPIInit3(osdHandle, tessDataDir!!.absolutePath, "osd") != 0) {
+          log(
+              LogLevel.WARNING,
+              "Failed to initialize Tesseract with OSD data - osd.traineddata may be missing")
           TessAPI1.TessBaseAPIDelete(osdHandle)
+
+          return 0
+        }
+
+        TessAPI1.TessBaseAPISetPageSegMode(osdHandle, 0) // 0 = PSM_OSD_ONLY
+
+        setImageToTesseract(osdHandle, image, dpi)
+
+        val orientDegPtr = IntBuffer.allocate(1)
+        val orientConfPtr = FloatBuffer.allocate(1)
+        val scriptNamePtr = com.sun.jna.ptr.PointerByReference()
+        val scriptConfPtr = FloatBuffer.allocate(1)
+
+        val result =
+            TessAPI1.TessBaseAPIDetectOrientationScript(
+                osdHandle, orientDegPtr, orientConfPtr, scriptNamePtr, scriptConfPtr)
+
+        if (result == 1) {
+          val orientDeg = orientDegPtr.get(0)
+          val orientConf = orientConfPtr.get(0)
+          log(
+              LogLevel.INFO,
+              "Tesseract OSD detected orientation: ${orientDeg}° (confidence: ${orientConf})")
+
+          val correctionAngle =
+              when (orientDeg) {
+                0 -> 0
+                90 -> 270
+                180 -> 180
+                270 -> 90
+                else -> 0
+              }
+
+          return correctionAngle
         }
       } finally {
-        testFile.delete()
+        TessAPI1.TessBaseAPIDelete(osdHandle)
       }
     } catch (e: Exception) {
       log(LogLevel.WARNING, "Tesseract OSD failed: ${e.message}")
@@ -605,6 +694,198 @@ class TesseractAction : AI() {
           "Image preprocessing failed for ${ inputFile.name }, using original image: ${ X.message }")
 
       return inputFile
+    }
+  }
+
+  /**
+   * Preprocesses an image in-memory to improve OCR accuracy.
+   *
+   * @param image The original image.
+   * @param dpi The image DPI to preserve for downstream processing.
+   * @param params The servlet action parameters to check for X-Preprocess header.
+   * @return The preprocessed image or the original if preprocessing is disabled or fails.
+   */
+  private fun preprocessImage(
+      image: BufferedImage,
+      dpi: Int,
+      params: IPluginServletActionParams
+  ): BufferedImage {
+    val preprocessHeader =
+        params.headerMap.entries
+            .find { it.key.equals("X-Preprocess", ignoreCase = true) }
+            ?.value
+            ?.trim()
+            ?.lowercase()
+
+    if (preprocessHeader != "true" && preprocessHeader != "1") {
+      log(LogLevel.INFO, "Image preprocessing disabled (use X-Preprocess: true to enable)")
+
+      return image
+    }
+
+    try {
+      val grayscaleImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_BYTE_GRAY)
+      val graphics = grayscaleImage.createGraphics()
+
+      graphics.drawImage(image, 0, 0, null)
+      graphics.dispose()
+
+      val histogram = IntArray(256)
+
+      for (y in 0 until grayscaleImage.height) {
+        for (x in 0 until grayscaleImage.width) {
+          val gray = grayscaleImage.getRGB(x, y) and 0xFF
+          histogram[gray]++
+        }
+      }
+
+      val total = grayscaleImage.width * grayscaleImage.height
+      var sum = 0.0
+
+      for (i in 0..255) sum += i * histogram[i]
+
+      var sumB = 0.0
+      var wB = 0
+      var wF: Int
+      var maxVariance = 0.0
+      var threshold = 0
+
+      for (t in 0..255) {
+        wB += histogram[t]
+
+        if (wB == 0) continue
+
+        wF = total - wB
+
+        if (wF == 0) break
+
+        sumB += (t * histogram[t]).toDouble()
+
+        val mB = sumB / wB
+        val mF = (sum - sumB) / wF
+        val variance = wB.toDouble() * wF.toDouble() * (mB - mF) * (mB - mF)
+
+        if (variance > maxVariance) {
+          maxVariance = variance
+          threshold = t
+        }
+      }
+
+      val binarizedImage =
+          BufferedImage(grayscaleImage.width, grayscaleImage.height, BufferedImage.TYPE_BYTE_BINARY)
+
+      for (y in 0 until grayscaleImage.height) {
+        for (x in 0 until grayscaleImage.width) {
+          val gray = grayscaleImage.getRGB(x, y) and 0xFF
+          val binary = if (gray > threshold) 0xFFFFFF else 0x000000
+
+          binarizedImage.setRGB(x, y, binary)
+        }
+      }
+
+      val denoisedImage =
+          BufferedImage(binarizedImage.width, binarizedImage.height, BufferedImage.TYPE_BYTE_BINARY)
+
+      for (y in 1 until binarizedImage.height - 1) {
+        for (x in 1 until binarizedImage.width - 1) {
+          val neighbors = mutableListOf<Int>()
+
+          for (dy in -1..1) {
+            for (dx in -1..1) {
+              neighbors.add(binarizedImage.getRGB(x + dx, y + dy) and 0xFF)
+            }
+          }
+
+          neighbors.sort()
+          val median = neighbors[4]
+          val color = if (median > 127) 0xFFFFFF else 0x000000
+
+          denoisedImage.setRGB(x, y, color)
+        }
+      }
+
+      log(LogLevel.INFO, "Image preprocessing successful: Otsu threshold=$threshold")
+
+      return denoisedImage
+    } catch (X: Exception) {
+      log(LogLevel.ERROR, "Image preprocessing failed, using original image: ${X.message}")
+
+      return image
+    }
+  }
+
+  /**
+   * Runs OCR fully in-memory without writing the image to disk.
+   *
+   * @param imageBytes The original image bytes.
+   * @param params The servlet action parameters.
+   * @return The extracted text.
+   */
+  private fun runOcrOnImageBytes(
+      imageBytes: ByteArray,
+      params: IPluginServletActionParams
+  ): String {
+    val originalDPI = readImageDPI(imageBytes)
+    val originalImage = ImageIO.read(ByteArrayInputStream(imageBytes)) ?: return ""
+    var correctedImage = originalImage
+
+    val manualRotation =
+        params.headerMap.entries
+            .find { it.key.equals("X-Rotate", ignoreCase = true) }
+            ?.value
+            ?.trim()
+            ?.toIntOrNull() ?: 0
+
+    if (manualRotation != 0) {
+      log(LogLevel.INFO, "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+      correctedImage =
+          when (manualRotation) {
+            90 -> rotate90(correctedImage)
+            180 -> rotate180(correctedImage)
+            270 -> rotate270(correctedImage)
+            else -> {
+              log(
+                  LogLevel.WARNING,
+                  "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
+              correctedImage
+            }
+          }
+    } else {
+      log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+      val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
+
+      if (detectedAngle != 0) {
+        correctedImage =
+            when (detectedAngle) {
+              90 -> rotate90(correctedImage)
+              180 -> rotate180(correctedImage)
+              270 -> rotate270(correctedImage)
+              else -> correctedImage
+            }
+        log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
+      }
+    }
+
+    val preprocessedImage = preprocessImage(correctedImage, originalDPI, params)
+
+    val handle =
+        pool.poll(10, TimeUnit.SECONDS)
+            ?: throw IllegalStateException("[[ CodBi / AI / Tesseract ] Pool exhausted ]")
+
+    try {
+      setImageToTesseract(handle, preprocessedImage, originalDPI)
+
+      val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
+
+      val result = ptr?.getString(0, "UTF-8") ?: ""
+
+      if (ptr != null) TessAPI1.TessDeleteText(ptr)
+
+      TessAPI1.TessBaseAPIClear(handle)
+
+      return result
+    } finally {
+      pool.offer(handle)
     }
   }
 
@@ -893,10 +1174,26 @@ class TesseractAction : AI() {
 
     val ocrResults = mutableMapOf<String, String>()
     val filesToDelete = mutableListOf<File>()
+    val allowDiskCache = !params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()
 
     try {
       if (!params.uploadFiles.isNullOrEmpty()) {
         params.uploadFiles?.forEach { (inputName, fileItem) ->
+          if (!allowDiskCache) {
+            val bytes =
+                fileItem.stream().use { input ->
+                  input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
+                }
+
+            val rawText = runOcrOnImageBytes(bytes, params)
+
+            if (params.headerMap["X-Pattern"].isNullOrEmpty())
+                ocrResults[inputName] = rawText.trim()
+            else ocrResults[inputName] = rawText
+
+            return@forEach
+          }
+
           val distinctImageID = "${ params.headerMap["X-OCR-Image-ID"]}::${ inputName }"
           var tempFile: File? = null
           var shouldDeleteThisFile = true
@@ -963,7 +1260,7 @@ class TesseractAction : AI() {
                 } else {
                   // Always use Tesseract orientation detection for best results
                   log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
-                  val detectedAngle = detectBestOrientation(correctedImage, tempFile!!)
+                  val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
 
                   if (detectedAngle != 0) {
                     correctedImage =
@@ -1108,10 +1405,29 @@ class TesseractAction : AI() {
     val ocrResults = mutableMapOf<String, List<String>>()
     val filesToDelete = mutableListOf<File>()
     val regexFlags = parseRegexFlags(params)
+    val allowDiskCache = !params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()
 
     try {
       if (!params.uploadFiles.isNullOrEmpty()) {
         params.uploadFiles?.forEach { (inputName, fileItem) ->
+          if (!allowDiskCache) {
+            val bytes =
+                fileItem.stream().use { input ->
+                  input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
+                }
+
+            val rawText = runOcrOnImageBytes(bytes, params)
+
+            ocrResults[inputName] =
+                try {
+                  patternHeader.toRegex(regexFlags).findAll(rawText).map { it.value }.toList()
+                } catch (X: Exception) {
+                  listOf("Regex Error: ${ X.message }")
+                }
+
+            return@forEach
+          }
+
           val distinctImageID = "${params.headerMap["X-OCR-Image-ID"]}::${inputName}"
           var tempFile: File? = null
           var shouldDeleteThisFile = true
@@ -1176,7 +1492,7 @@ class TesseractAction : AI() {
                 } else {
                   // Always use Tesseract orientation detection for best results
                   log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
-                  val detectedAngle = detectBestOrientation(correctedImage, tempFile!!)
+                  val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
 
                   if (detectedAngle != 0) {
                     correctedImage =
@@ -1334,10 +1650,31 @@ class TesseractAction : AI() {
     val verifyResults = mutableMapOf<String, Boolean>()
     val filesToDelete = mutableListOf<File>()
     val regexFlags = parseRegexFlags(params)
+    val allowDiskCache = !params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()
 
     try {
       if (!params.uploadFiles.isNullOrEmpty()) {
         params.uploadFiles?.forEach { (inputName, fileItem) ->
+          if (!allowDiskCache) {
+            val bytes =
+                fileItem.stream().use { input ->
+                  input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
+                }
+
+            val rawText = runOcrOnImageBytes(bytes, params)
+
+            verifyResults[inputName] =
+                try {
+                  patternHeader.toRegex(regexFlags).containsMatchIn(rawText)
+                } catch (X: Exception) {
+                  log(LogLevel.ERROR, "Regex Error in verify mode: ${ X.message }")
+
+                  false
+                }
+
+            return@forEach
+          }
+
           val distinctImageID = "${ params.headerMap["X-OCR-Image-ID"]}::${ inputName }"
           var tempFile: File? = null
           var shouldDeleteThisFile = true
@@ -1402,7 +1739,7 @@ class TesseractAction : AI() {
                 } else {
                   // Always use Tesseract orientation detection for best results
                   log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
-                  val detectedAngle = detectBestOrientation(correctedImage, tempFile!!)
+                  val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
 
                   if (detectedAngle != 0) {
                     correctedImage =
@@ -1603,10 +1940,37 @@ class TesseractAction : AI() {
     val fieldResults = mutableMapOf<String, Map<String, List<String>>>()
     val filesToDelete = mutableListOf<File>()
     val regexFlags = parseRegexFlags(params)
+    val allowDiskCache = !params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()
 
     try {
       if (!params.uploadFiles.isNullOrEmpty()) {
         params.uploadFiles?.forEach { (inputName, fileItem) ->
+          if (!allowDiskCache) {
+            val bytes =
+                fileItem.stream().use { input ->
+                  input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
+                }
+
+            val rawText = runOcrOnImageBytes(bytes, params)
+            val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
+            val imageFields = allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
+
+            fieldPatterns.forEach { fieldPatternMap ->
+              fieldPatternMap.forEach { (fieldName, pattern) ->
+                imageFields[fieldName] =
+                    try {
+                      pattern.toRegex(regexFlags).findAll(rawText).map { it.value }.toList()
+                    } catch (X: Exception) {
+                      listOf("Regex Error: ${ X.message }")
+                    }
+              }
+            }
+
+            fieldResults[inputName] = imageFields
+
+            return@forEach
+          }
+
           val distinctImageID = "${ params.headerMap["X-OCR-Image-ID"]}::${ inputName }"
           var tempFile: File? = null
           var shouldDeleteThisFile = true
@@ -1673,7 +2037,7 @@ class TesseractAction : AI() {
                 } else {
                   // Always use Tesseract orientation detection for best results
                   log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
-                  val detectedAngle = detectBestOrientation(correctedImage, tempFile!!)
+                  val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
 
                   if (detectedAngle != 0) {
                     correctedImage =

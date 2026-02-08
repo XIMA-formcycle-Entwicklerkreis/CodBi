@@ -24,7 +24,6 @@ import { ChangeDetectorRef, Component, ViewEncapsulation, Input, ViewChild, Elem
 import { HttpClient } from "@angular/common/http";
 import { BrowserAnimationsModule } from "@angular/platform-browser/animations";
 import { BrowserModule } from "@angular/platform-browser";
-import { trigger, state, style, animate, transition } from "@angular/animations";
 import { CommonModule } from "@angular/common";
 import { Injectable } from "@angular/core";
 // #endregion Angular
@@ -202,11 +201,11 @@ export class TranslocoHttpLoader implements TranslocoLoader {
 /** An actual {@link ApiParameter }-Implementation. */
 class CommonApiParameter implements ApiParameter {
   /** See {@link ApiParameter.Name }. */
-  Name = "";
+  Name: string = "";
   /** See {@link ApiParameter.Description }. */
-  Description = "";
+  Description: string = "";
   /** See {@link ApiParameter.id }. */
-  id;
+  id: number;
   /**
    * Creates this {@link ApiParameter } by setting it's {@link ApiParameter.Name },
    * {@link ApiParameter.Description } and a {@link Math.random } id.
@@ -215,7 +214,7 @@ class CommonApiParameter implements ApiParameter {
    * @param description The {@link ApiParameter.Description }.
    * @param id          The optional {@link ApiParameter.id } that will be generate {@link Math.random }ly,
    *                    if omitted. */
-  constructor(name: string, description: string, id = Math.random()) {
+  constructor(name: string, description: string, id: number = Math.random()) {
     this.Name = name;
     this.Description = description;
     this.id = id;
@@ -1539,6 +1538,8 @@ export class Manager implements AfterViewInit {
   public synchronized = true;
   /** Stores a {@link boolean } stating whether this {@link Manager } is currently synchronizing or not. */
   public synchronizing = false;
+  /** Stores whether the current user is allowed to trigger synchronization. */
+  public syncAllowed = false;
   /** Marks this {@link Manager } as not to {@link Manager.synchronized }. */
   protected onBlurNotes() {
     this.synchronized = false;
@@ -1829,16 +1830,6 @@ export class Manager implements AfterViewInit {
     // #endregion Code Deletion
   }
   // #endregion Synchronization
-  protected importNode(toImport: { detElementplaceholder: object; detFunctionalities: object; detStandards: object }) {
-    for (const key in toImport.detFunctionalities) {
-    }
-    for (const key in toImport.detElementplaceholder) {
-    }
-    for (const key in toImport.detStandards) {
-    }
-
-    this.synchronized = false;
-  }
   // #region API-Doc Updates
   /**
    * Updates the API documentation for the specified {@link Manager.currentlySelectedTreeNode } **toUpdate**.
@@ -2310,9 +2301,10 @@ export class Manager implements AfterViewInit {
         "X-Action": "Sync Allowed",
       },
       success: (response) => {
-        if (response.message === "FALSE") {
-          this.CodBi_LocalAPIDoc_RightPanel_Options_Sync.nativeElement.style.display = "none";
-        }
+        this.syncAllowed = response.message !== "FALSE";
+      },
+      error: () => {
+        this.syncAllowed = false;
       },
     });
     // #region Apply Watermark
@@ -3136,12 +3128,8 @@ export class Manager implements AfterViewInit {
         let node = currentNodes.find((n) => n.label === labelPart);
 
         if (!node) {
-          node = { label: labelPart, children: [], data: [] };
+          node = { label: labelPart, children: [], data: { Description: "" } as TreeNodeData };
 
-          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-          (node as any).Description = "";
-
-          node.data.Description = "";
           currentNodes.push(node);
         }
 
@@ -3250,19 +3238,17 @@ export class Manager implements AfterViewInit {
           const item = dataSection[key];
           const itemNode = getOrCreateNode(targetArray, key);
 
-          if (
-            item.Description !== undefined &&
-            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-            (itemNode as any).Description === undefined
-          ) {
-            // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-            (itemNode as any).Description = item.Description;
+          if (item.Description !== undefined && itemNode.data?.Description === undefined) {
+            if (!itemNode.data) {
+              itemNode.data = { Description: item.Description };
+            } else {
+              itemNode.data.Description = item.Description;
+            }
           }
 
           if (!itemNode.data) {
             itemNode.data = {
-              // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-              Description: (itemNode as any).Description,
+              Description: "",
             };
           } else {
             if (item.Description !== undefined) {

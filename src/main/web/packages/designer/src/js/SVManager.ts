@@ -253,23 +253,65 @@ export class SVManager extends HTMLDivElement {
       toRemove.remove();
     }
     // #region Options injection
-    for (const option of this.options) {
-      shadow.innerHTML += `
-        <div  class           = "---WaXCode --SVManager --Option ${this.options[0] === option ? "-Current" : ""}"
-              part            = "Optioncontainer"
-              data-cb-option  = "${option}">
-          <input  part  = "Optioninput"
-                  type  = "checkbox"></input>
+    const fragment = document.createDocumentFragment();
 
-          <p part = "Optiontext">${this._optionTransformer ? this._optionTransformer(option.replace(".js", "")) : option.replace(".js", "")}</p></div>`;
+    for (const option of this.options) {
+      const container = document.createElement("div");
+      const checkbox = document.createElement("input");
+      const label = document.createElement("p");
+
+      container.classList.add("---WaXCode", "--SVManager", "--Option");
+
+      if (this.options[0] === option) {
+        container.classList.add("-Current");
+      }
+
+      container.setAttribute("part", "Optioncontainer");
+      container.dataset.cbOption = option;
+
+      checkbox.setAttribute("part", "Optioninput");
+      checkbox.type = "checkbox";
+
+      label.setAttribute("part", "Optiontext");
+      label.textContent = this._optionTransformer
+        ? this._optionTransformer(option.replace(".js", ""))
+        : option.replace(".js", "");
+
+      container.appendChild(checkbox);
+      container.appendChild(label);
+      fragment.appendChild(container);
     }
+
+    shadow.appendChild(fragment);
     // #endregion Options injection
     // #region Bind event handler
-    for (const checkbox of shadow.querySelectorAll('[part="Optioninput"]')) {
-      checkbox.addEventListener("click", this.onCheckbox.bind(this));
-    }
-    for (const option of shadow.querySelectorAll('[part="Optiontext"]')) {
-      option.addEventListener("click", this.onOption.bind(this));
+    const checkboxSelector = '[part="Optioninput"]';
+    const optionSelector = '[part="Optiontext"]';
+
+    if (!shadow.querySelector('[data-codbi-svmanager-listeners="true"]')) {
+      const listenerMarker = document.createElement("span");
+
+      listenerMarker.dataset.codbiSvmanagerListeners = "true";
+      listenerMarker.hidden = true;
+      shadow.appendChild(listenerMarker);
+
+      shadow.addEventListener("click", (event) => {
+        const target = event.target as HTMLElement | null;
+
+        if (!target) {
+          return;
+        }
+
+        if (target.matches(checkboxSelector)) {
+          this.onCheckbox(event);
+
+          return;
+        }
+
+        if (target.matches(optionSelector)) {
+          this.onOption(event);
+        }
+      });
     }
     // #endregion Bind event handler
   }

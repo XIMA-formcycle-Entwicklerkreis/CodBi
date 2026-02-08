@@ -27,21 +27,21 @@ import java.nio.charset.StandardCharsets
  */
 class CodBiBayVISAuskunftAnsprechpartnerdetailsAction : IPluginServletAction {
   /** Stores the username to use to log into the BayVIS-API. */
-  protected var username: String? = ""
+  private var username: String? = ""
   /** Stores the password to use to log into the BayVIS-API. */
-  protected var password: String? = ""
+  private var password: String? = ""
   /** Stores the URL of the BayVIS-Endpoint */
-  protected var url: String =
+  private var url: String =
       "https://www.bayernportal-webservices.bayern.de/rest/allgemein/v3/ansprechpartner/"
   /**
    * Stores the amount of hours that have to pass since a request to the BayVIS-API was made in
    * order to perform a re-request on request.
    */
-  protected var hrsTillUpdate: Int = 18
+  private var hrsTillUpdate: Int = 18
   /** Stores the time the BayVIS-API was lastly contacted. */
-  protected var lastContact: Long = System.currentTimeMillis()
+  private var lastContact: Long = System.currentTimeMillis()
   /** Stores the result's of BayVIS-Requests by ID. */
-  protected var buffer: MutableMap<String, String> = mutableMapOf()
+  private var buffer: MutableMap<String, String> = mutableMapOf()
 
   /**
    * Retrieves the contact details from the BayVIS-API storing the result into the [buffer] and
@@ -51,7 +51,7 @@ class CodBiBayVISAuskunftAnsprechpartnerdetailsAction : IPluginServletAction {
    * @return A [Pair] of [Int] & [String] stating the statuscode and the request's result (error
    *   message).
    */
-  protected fun retrieveData(id: String): Pair<Int, String?> {
+  private fun retrieveData(id: String): Pair<Int, String?> {
     var statusCode = -1
 
     try {

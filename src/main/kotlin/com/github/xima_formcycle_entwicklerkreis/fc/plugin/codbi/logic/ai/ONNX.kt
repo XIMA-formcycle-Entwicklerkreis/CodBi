@@ -49,6 +49,21 @@ import java.util.jar.JarFile
  * - **Disk** : ~20–40 MB cached jar + ~10–50 MB extracted natives per run dir (Windows DLLs can be
  *   locked until JVM exit, so old run dirs may remain until the next successful purge).
  * - **CPU/RAM** : **~100–400 MB RAM**
+ *
+ * ### DSGVO, EU-AI ACT & technical Advantages vs Dedicated Server AI Approach
+ * - No separate AI server setup (fewer systems to secure and audit).
+ * - Reduced data transfer: processing stays within the plugin runtime.
+ * - Simpler compliance scope: fewer endpoints and lower operational overhead.
+ * - Lower latency and fewer network dependencies for OCR execution.
+ * - Easier data minimization: fewer data copies and storage locations.
+ * - Clearer accountability boundaries for processor/controller roles.
+ * - Simplified breach response: no separate AI server to manage in case of incidents.
+ * - Easier implementation of data subject rights (access, deletion) without coordinating with a
+ *   separate AI service.
+ * - Plugin does not store image data or OCR results persistently, minimizing data retention
+ *   concerns.
+ * - Most unproblematic deletion request response: Data is never stored not even in server-backups
+ *   so no deletion necessary.
  */
 abstract class ONNX : AI() {
   companion object {

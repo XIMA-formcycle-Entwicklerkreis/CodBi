@@ -65,7 +65,7 @@ class DocVQATranslator(
      */
     public var maxTokens: Int = 100,
     /** The logger to use. */
-    protected val log: (importance: AI.LogLevel, toLog: String, exception: Throwable?) -> Unit
+    private val log: (importance: AI.LogLevel, toLog: String, exception: Throwable?) -> Unit
 ) : Translator<Pair<DjlImage, String>, String> {
   /** The [HuggingFaceTokenizer] for text encoding/decoding. */
   private var tokenizer: HuggingFaceTokenizer? = null
@@ -233,7 +233,7 @@ class DocVQATranslator(
               ?: throw IllegalStateException(
                   "[[ CodBi / AI / ONNX / DONUT ] Decoder predictor not initialized ]")
 
-      for (i in 0 until 50) {
+      for (i in 0 until maxTokens) {
         if (nextTokenId == 2L) break
 
         val currentArray = currentIds.toLongArray()
@@ -1087,7 +1087,7 @@ class DonutDocVQAAction : ONNX() {
 
     val currentIds = promptIds.toMutableList()
 
-    for (i in 0 until 50) {
+    for (i in 0 until maxTokens) {
       val currentArray = currentIds.toLongArray()
       val decoderInput = manager.create(currentArray)
       val output = predictor.predict(NDList(decoderInput, encoderHiddenStates))

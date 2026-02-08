@@ -12,10 +12,8 @@
 
 ## Risks / Maintainability
 - No timeouts or retry logic for HTTP calls.
-- Shared `buffer` and `lastContact` are not thread-safe.
 - No null checks for `GebaeudeID` header before use.
 
 ## Suggested Next Improvement (Optional)
 - Add connection/read timeouts and structured error responses.
-- Use concurrent structures or synchronization for shared state.
 - Validate required headers and return clear errors when missing.

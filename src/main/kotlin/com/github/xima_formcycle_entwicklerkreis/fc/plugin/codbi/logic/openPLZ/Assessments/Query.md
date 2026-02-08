@@ -13,7 +13,6 @@
 ## Risks / Maintainability
 - Error JSON appears malformed in `retrieveData` (quote mismatch).
 - Uses `!!` on headers without validation.
-- Shared cache and timestamps are not thread-safe.
 - No timeouts or retry handling.
 
 ## Suggested Next Improvement (Optional)

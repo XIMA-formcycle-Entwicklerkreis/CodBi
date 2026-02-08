@@ -14,6 +14,8 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * This servlet retrieves german holidays from **get.api-feiertage.de** acting as a cache for
@@ -29,7 +31,7 @@ class FeiertageDEAction : IPluginServletAction {
   )
 
   /** Stores the result's of **get.api-feiertage.de**-Requests by [HolidaysRequest]. */
-  protected var buffer: MutableMap<HolidaysRequest, String?> = mutableMapOf()
+  protected val buffer: MutableMap<HolidaysRequest, String?> = ConcurrentHashMap()
   /** Stores the URL of the Holiday-API endpoint. */
   protected var url: String = "https://get.api-feiertage.de"
   /**
@@ -38,7 +40,9 @@ class FeiertageDEAction : IPluginServletAction {
    */
   protected var hrsTillUpdate: Int = 18
   /** Stores the time the BayVIS-API was lastly contacted. */
-  protected var lastContact: Long = System.currentTimeMillis()
+  protected val lastContact = AtomicLong(System.currentTimeMillis())
+  /** Guards refresh decisions to avoid concurrent update races. */
+  private val cacheLock = Any()
 
   /**
    * Retrieves the holidays from **get.api-feiertage.de**storing the result into the [buffer].
@@ -75,7 +79,7 @@ class FeiertageDEAction : IPluginServletAction {
       statusCode = connection.getResponseCode()
       buffer[HolidaysRequest(years, states, augsburg, catholic)] =
           if (statusCode in 200..299) {
-            lastContact = System.currentTimeMillis()
+            lastContact.set(System.currentTimeMillis())
 
             connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
           } else {
@@ -140,30 +144,27 @@ class FeiertageDEAction : IPluginServletAction {
    * have passed.
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
-    if (buffer[
+    val request =
         HolidaysRequest(
             p0.headerMap["years"]!!,
             p0.headerMap["states"]!!,
             p0.headerMap["augsburg"]!!.toBoolean(),
-            p0.headerMap["catholic"]!!.toBoolean())] == null ||
-        (System.currentTimeMillis() - lastContact) / 3600000 >= hrsTillUpdate) {
+            p0.headerMap["catholic"]!!.toBoolean())
 
-      retrieveData(
-          p0.headerMap["years"]!!,
-          p0.headerMap["states"]!!,
-          p0.headerMap["augsburg"]!!.toBoolean(),
-          p0.headerMap["catholic"]!!.toBoolean())
+    var needsFetch = false
+    synchronized(cacheLock) {
+      if (buffer[request] == null ||
+          (System.currentTimeMillis() - lastContact.get()) / 3600000 >= hrsTillUpdate) {
+        needsFetch = true
+      }
+    }
+    if (needsFetch) {
+      retrieveData(request.years, request.states, request.augsburg, request.katholic)
     }
 
     val servletResponse = ServletResponse(EResponseType.HTML)
     servletResponse.encoding = StandardCharsets.UTF_8.name()
-    servletResponse.value =
-        buffer[
-            HolidaysRequest(
-                p0.headerMap["years"]!!,
-                p0.headerMap["states"]!!,
-                p0.headerMap["augsburg"]!!.toBoolean(),
-                p0.headerMap["catholic"]!!.toBoolean())]
+    servletResponse.value = buffer[request]
 
     return PluginServletActionRetVal(servletResponse)
   }

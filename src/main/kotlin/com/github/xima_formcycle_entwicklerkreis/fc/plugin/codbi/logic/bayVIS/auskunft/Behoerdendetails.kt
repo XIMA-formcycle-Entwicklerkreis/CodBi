@@ -14,6 +14,8 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * This servlet acts as a nano server to pass request from a form using the CodBi along with the
@@ -40,9 +42,11 @@ class CodBiBayVISAuskunftBehoerdendetailsAction : IPluginServletAction {
   protected var hrsTillUpdate: Int = 18
 
   /** Stores the time the BayVIS-API was lastly contacted. */
-  protected var lastContact: Long = System.currentTimeMillis()
+  protected val lastContact = AtomicLong(System.currentTimeMillis())
   /** Stores the result's of BayVIS-Requests by ID. */
-  protected var buffer: MutableMap<String, String> = mutableMapOf()
+  protected val buffer: MutableMap<String, String> = ConcurrentHashMap()
+  /** Guards refresh decisions to avoid concurrent update races. */
+  private val cacheLock = Any()
 
   /**
    * Retrieves the contact details from the BayVIS-API storing the result into the [buffer] and
@@ -69,7 +73,7 @@ class CodBiBayVISAuskunftBehoerdendetailsAction : IPluginServletAction {
       statusCode = connection.getResponseCode()
       buffer[id] =
           if (statusCode in 200..299) {
-            lastContact = System.currentTimeMillis()
+            lastContact.set(System.currentTimeMillis())
 
             connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
           } else {
@@ -139,17 +143,23 @@ class CodBiBayVISAuskunftBehoerdendetailsAction : IPluginServletAction {
    * the [hrsTillUpdate] have passed.
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
-    if (p0.headerMap["ID"] == null)
-        return PluginServletActionRetVal(ServletResponse(EResponseType.HTML))
+    val id =
+        p0.headerMap["ID"] ?: return PluginServletActionRetVal(ServletResponse(EResponseType.HTML))
 
-    if (buffer[p0.headerMap["ID"]] == null ||
-        (lastContact - System.currentTimeMillis()) / 3600000 >= hrsTillUpdate) {
-      retrieveData(p0.headerMap["ID"]!!)
+    var needsFetch = false
+    synchronized(cacheLock) {
+      if (buffer[id] == null ||
+          (lastContact.get() - System.currentTimeMillis()) / 3600000 >= hrsTillUpdate) {
+        needsFetch = true
+      }
+    }
+    if (needsFetch) {
+      retrieveData(id)
     }
 
     val servletResponse = ServletResponse(EResponseType.HTML)
     servletResponse.encoding = StandardCharsets.UTF_8.name()
-    servletResponse.value = buffer[p0.headerMap["ID"]]
+    servletResponse.value = buffer[id]
 
     return PluginServletActionRetVal(servletResponse)
   }

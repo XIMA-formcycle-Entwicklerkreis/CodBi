@@ -12,10 +12,8 @@
 
 ## Risks / Maintainability
 - No timeouts or retry logic on HTTP requests.
-- Shared `buffer` and `lastContact` are not thread-safe.
 - Errors are returned as raw JSON strings without structured error types.
 
 ## Suggested Next Improvement (Optional)
 - Add connection/read timeouts and better error propagation.
-- Use concurrent structures or synchronization for shared state.
 - Standardize error responses (e.g., status + message).

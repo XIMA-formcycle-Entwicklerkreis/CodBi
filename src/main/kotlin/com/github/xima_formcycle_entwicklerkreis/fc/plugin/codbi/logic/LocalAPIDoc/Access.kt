@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory
  */
 class StructuredDataStoreAction : IPluginServletAction {
   /** Stores a CSV of all usernames that're allowed to sync the API-Documentation. */
-  protected var syncUsers: List<String>? = emptyList()
+  @Volatile private var syncUsers: List<String> = emptyList()
   /** Stores the local API documentation. */
   private var documentation: String = ""
   /** Stores the retrieved functionality code. */
@@ -52,7 +52,7 @@ class StructuredDataStoreAction : IPluginServletAction {
    */
   override fun initialize(configData: IPluginInitializeData) {
     this.fileHelper = configData.fileHelper
-    syncUsers = configData.properties.getProperty("APIDoc_UsersAllowedToSYNC")?.split(",")
+    setSyncUsers(configData.properties.getProperty("APIDoc_UsersAllowedToSYNC"))
   }
 
   /**
@@ -64,7 +64,7 @@ class StructuredDataStoreAction : IPluginServletAction {
   override fun validateConfigurationData(
       configData: IPluginValidationData
   ): IPluginInitializeValidationResult? {
-    syncUsers = configData.properties.getProperty("APIDoc_UsersAllowedToSYNC")?.split(",")
+    setSyncUsers(configData.properties.getProperty("APIDoc_UsersAllowedToSYNC"))
 
     return null
   }
@@ -91,12 +91,11 @@ class StructuredDataStoreAction : IPluginServletAction {
     val servletResponse = ServletResponse(EResponseType.JSON)
 
     servletResponse.encoding = StandardCharsets.UTF_8.name()
-
-    syncUsers = syncUsers?.map { rawString -> rawString.trim().lowercase() }
+    val currentUser = params.user.userName?.trim()?.lowercase()
 
     when (mode?.uppercase()) {
       "SYNC ALLOWED" ->
-          if (syncUsers?.contains(params.user.userName?.lowercase()?.trim()) != true) {
+          if (!isSyncAllowed(currentUser)) {
             servletResponse.value =
                 "{\"status\": \"error for ${params.user.userName}. Not in ${ syncUsers.toString()}\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
             servletResponse.httpStatusCode = HttpURLConnection.HTTP_OK
@@ -110,7 +109,7 @@ class StructuredDataStoreAction : IPluginServletAction {
           }
 
       "RENAME CODE" -> {
-        if (syncUsers?.contains(params.user.userName?.trim()) != true) {
+        if (!isSyncAllowed(currentUser)) {
           servletResponse.value = "{\"status\": \"error\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
 
@@ -126,7 +125,7 @@ class StructuredDataStoreAction : IPluginServletAction {
       }
 
       "UPDATE CODE" -> {
-        if (syncUsers?.contains(params.user.userName?.trim()) != true) {
+        if (!isSyncAllowed(currentUser)) {
           servletResponse.value = "{\"status\": \"error\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
 
@@ -222,7 +221,7 @@ class StructuredDataStoreAction : IPluginServletAction {
         }
       }
       "UPDATE" -> {
-        if (syncUsers?.contains(params.user.userName?.lowercase()?.trim()) != true) {
+        if (!isSyncAllowed(currentUser)) {
           servletResponse.value =
               "{\"status\": \"error for ${params.user.userName}. Not in ${ syncUsers.toString()}\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_REQUEST
@@ -292,6 +291,17 @@ class StructuredDataStoreAction : IPluginServletAction {
       }
     }
     return PluginServletActionRetVal(servletResponse)
+  }
+
+  /** Normalizes and stores the allowed sync users list. */
+  private fun setSyncUsers(csv: String?) {
+    syncUsers =
+        csv?.split(",")?.map { it.trim().lowercase() }?.filter { it.isNotEmpty() } ?: emptyList()
+  }
+
+  /** Checks whether the current user is allowed to sync. */
+  private fun isSyncAllowed(userName: String?): Boolean {
+    return userName != null && syncUsers.contains(userName)
   }
 
   /**

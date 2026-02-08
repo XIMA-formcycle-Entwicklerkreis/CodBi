@@ -14,6 +14,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * This servlet acts as a nano server to pass request from a form using the CodBi along with the
@@ -76,9 +77,11 @@ class CodBiBayVISAuskunftAnsprechpartnerverzeichnisAction : IPluginServletAction
   protected var url: String =
       "https://www.bayernportal-webservices.bayern.de/rest/allgemein/v3/ansprechpartner"
   /** Buffers the BayVIS-Request result to minimize re-requests. */
-  protected var buffer: String? = null
+  @Volatile protected var buffer: String? = null
   /** Stores the time the BayVIS-API was lastly contacted. */
-  protected var lastContact: Long = System.currentTimeMillis()
+  protected val lastContact = AtomicLong(System.currentTimeMillis())
+  /** Guards refresh decisions to avoid concurrent update races. */
+  private val cacheLock = Any()
 
   /**
    * Retrieves the contact directory from the BayVIS-API storing the result into the [buffer] and
@@ -104,7 +107,7 @@ class CodBiBayVISAuskunftAnsprechpartnerverzeichnisAction : IPluginServletAction
       statusCode = connection.getResponseCode()
       buffer =
           if (statusCode in 200..299) {
-            lastContact = System.currentTimeMillis()
+            lastContact.set(System.currentTimeMillis())
 
             connection.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
           } else {
@@ -191,7 +194,14 @@ class CodBiBayVISAuskunftAnsprechpartnerverzeichnisAction : IPluginServletAction
    * of data and re-requesting after a certain amounts of hours.
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
-    if (buffer == null || (System.currentTimeMillis() - lastContact) / 3600000 >= hrsTillUpdate) {
+    var needsFetch = false
+    synchronized(cacheLock) {
+      if (buffer == null ||
+          (System.currentTimeMillis() - lastContact.get()) / 3600000 >= hrsTillUpdate) {
+        needsFetch = true
+      }
+    }
+    if (needsFetch) {
       retrieveData()
     }
 

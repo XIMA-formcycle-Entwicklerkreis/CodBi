@@ -1,3 +1,5 @@
+// #region Imports
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { OR } from "xdbc/src/DBC/OR";
 import { EQ } from "xdbc/src/DBC/EQ";
@@ -6,8 +8,11 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { HasAttribute } from "xdbc/src/DBC/HasAttribute";
+// #endregion XDBC
+// #region XIMA
 import { allByCssAs, allByCssHtml, byCssAs, byCssHtml } from "@de-xima/xima-common-js-dom";
-import { instance } from "@de-xima/fc-form-designer";
+// #endregion XIMA
+// #endregion Imports
 /**
  *  A {@link HTMLDivElement } that bound to an {@link HTMLInputElement } only allows one of a
  *  certain set of {@link options }. */
@@ -25,12 +30,14 @@ export class Optioninput extends HTMLDivElement {
   public readonly onOptionSelected: Array<(newOption: string) => void> = new Array<(newOption: string) => void>();
   // #endregion Events
   /** Holds the web-component definition of observed attributes. */
-  static get observedAttributes(): Array<string> {
-    return ["options", "separator", "cssEnabled", "cssDisabled", "enabled"];
-  }
+  static readonly observedAttributes: Array<string> = ["options", "separator", "cssEnabled", "cssDisabled", "enabled"];
   // #region Options
   /** Holds the {@link string }s that're the actual options. */
   protected _options: Array<string> = new Array<string>();
+  /** Caches the concatenated options key to optimize render performance by detecting changes. */
+  private _renderCacheKey: string | null = null;
+  /** Caches the current option transformer function to detect when re-rendering is needed. */
+  private _renderCacheTransformer: ((toTransform: string) => string) | undefined;
   /**
    * Gets the {@link Optioninput._options }.
    *
@@ -43,7 +50,7 @@ export class Optioninput extends HTMLDivElement {
    *
    * @param toSet The {@link optioninput.options }. */
   public set options(toSet: Array<string>) {
-    this._options = toSet;
+    this._options = toSet.map((option) => this.normalizeOptionToken(option));
 
     if (this._options.length !== 0) {
       this.render();
@@ -156,20 +163,20 @@ export class Optioninput extends HTMLDivElement {
    *          **.---WaXCode.--Optioninput.--Option**does not return an {@link HTMLDivElement }.*/
   public set target(toSet: HTMLInputElement) {
     if (this._target && this._target !== toSet) {
-      this._target.removeEventListener("focus", this.onFocusTarget);
-      this._target.removeEventListener("keyup", this.onKeyupTarget);
-      this._target.removeEventListener("keydown", this.onKeydownTarget);
-      this._target.removeEventListener("input", this.onInputTarget);
-      this._target.removeEventListener("selectionchange", this.onInputTarget);
+      this._target.removeEventListener("focus", this.boundOnFocusTarget);
+      this._target.removeEventListener("keyup", this.boundOnKeyupTarget);
+      this._target.removeEventListener("keydown", this.boundOnKeydownTarget);
+      this._target.removeEventListener("input", this.boundOnInputTarget);
+      this._target.removeEventListener("selectionchange", this.boundOnInputTarget);
     }
 
     this._target = toSet;
 
-    this._target.addEventListener("focus", this.onFocusTarget.bind(this));
-    this._target.addEventListener("keyup", this.onKeyupTarget.bind(this));
-    this._target.addEventListener("keydown", this.onKeydownTarget.bind(this));
-    this._target.addEventListener("input", this.onInputTarget.bind(this));
-    this._target.addEventListener("selectionchange", this.onInputTarget.bind(this));
+    this._target.addEventListener("focus", this.boundOnFocusTarget);
+    this._target.addEventListener("keyup", this.boundOnKeyupTarget);
+    this._target.addEventListener("keydown", this.boundOnKeydownTarget);
+    this._target.addEventListener("input", this.boundOnInputTarget);
+    this._target.addEventListener("selectionchange", this.boundOnInputTarget);
 
     if (document.activeElement === this._target) {
       this.onFocusTarget(new Event("focus"));
@@ -211,6 +218,14 @@ export class Optioninput extends HTMLDivElement {
   // #region Info
   /** Stores whether the {@link Optioninput.target } is focused for the first time. */
   protected newFocusTarget = false;
+  /** Bound {@link Optioninput.onFocusTarget } event handler for the {@link Optioninput.target }. */
+  private readonly boundOnFocusTarget = this.onFocusTarget.bind(this);
+  /** Bound {@link Optioninput.onKeyupTarget } event handler for the {@link Optioninput.target }. */
+  private readonly boundOnKeyupTarget = this.onKeyupTarget.bind(this);
+  /** Bound {@link Optioninput.onKeydownTarget } event handler for the {@link Optioninput.target }. */
+  private readonly boundOnKeydownTarget = this.onKeydownTarget.bind(this);
+  /** Bound {@link Optioninput.onInputTarget } event handler for the {@link Optioninput.target }. */
+  private readonly boundOnInputTarget = this.onInputTarget.bind(this);
   // #endregion Info
   /**
    * Creates this {@link HTMLDivElement } by mapping it's properties to it's attributes and injecting a
@@ -263,25 +278,90 @@ export class Optioninput extends HTMLDivElement {
   /** Render's all {@link Optioninput.options }. */
   protected render(): void {
     const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
+    const optionsKey = this.options.join("\u0000");
+    const existingCount = shadow.querySelectorAll("div.---WaXCode.--Optioninput.--Option").length;
 
-    for (const toRemove of shadow.querySelectorAll("div.---WaXCode.--Optioninput.--Option")) {
-      toRemove.remove();
+    if (
+      optionsKey === this._renderCacheKey &&
+      this._optionTransformer === this._renderCacheTransformer &&
+      existingCount === this.options.length
+    ) {
+      return;
     }
-    // #region Options injection
-    for (const option of this.options) {
-      shadow.innerHTML += `
-        <div  class           = "---WaXCode --Optioninput --Option ${this.options[0] === option ? "-Current" : ""}"
-              part            = "Optioncontainer"
-              data-cb-option  = "${option}">
-          <p part = "Optiontext">${this._optionTransformer ? this._optionTransformer(option) : option}</p></div>`;
+
+    const existingOptions = Array.from(
+      shadow.querySelectorAll("div.---WaXCode.--Optioninput.--Option"),
+    ) as HTMLDivElement[];
+    const currentValue = this.currentOption;
+    let currentFound = false;
+
+    for (let index = 0; index < this.options.length; index += 1) {
+      const option = this.options[index];
+      let container = existingOptions[index];
+
+      if (!container) {
+        container = document.createElement("div");
+        container.classList.add("---WaXCode", "--Optioninput", "--Option");
+        container.setAttribute("part", "Optioncontainer");
+        shadow.appendChild(container);
+      }
+
+      container.dataset.cbOption = option;
+      container.classList.remove("-Current");
+
+      if (currentValue && currentValue === option) {
+        container.classList.add("-Current");
+        currentFound = true;
+      }
+
+      let label = container.querySelector('[part="Optiontext"]') as HTMLParagraphElement | null;
+
+      if (!label) {
+        label = document.createElement("p");
+        label.setAttribute("part", "Optiontext");
+        container.appendChild(label);
+      }
+
+      label.textContent = this._optionTransformer ? this._optionTransformer(option) : option;
     }
+
+    for (let index = this.options.length; index < existingOptions.length; index += 1) {
+      existingOptions[index]?.remove();
+    }
+
+    this.ensureCurrentOption(shadow);
+
+    this._renderCacheKey = optionsKey;
+    this._renderCacheTransformer = this._optionTransformer;
     // #endregion Options injection
     // #region Bind event handler
-    for (const checkbox of shadow.querySelectorAll('[part="Optioninput"]')) {
-      checkbox.addEventListener("click", this.onCheckbox.bind(this));
-    }
-    for (const option of shadow.querySelectorAll('[part="Optiontext"]')) {
-      option.addEventListener("click", this.onOption.bind(this));
+    const checkboxSelector = '[part="Optioninput"]';
+    const optionSelector = '[part="Optiontext"]';
+
+    if (!shadow.querySelector('[data-codbi-optioninput-listeners="true"]')) {
+      const listenerMarker = document.createElement("span");
+
+      listenerMarker.dataset.codbiOptioninputListeners = "true";
+      listenerMarker.hidden = true;
+      shadow.appendChild(listenerMarker);
+
+      shadow.addEventListener("click", (event) => {
+        const target = event.target as HTMLElement | null;
+
+        if (!target) {
+          return;
+        }
+
+        if (target.matches(checkboxSelector)) {
+          this.onCheckbox(event);
+
+          return;
+        }
+
+        if (target.matches(optionSelector)) {
+          this.onOption(event);
+        }
+      });
     }
     // #endregion Bind event handler
   }
@@ -350,6 +430,143 @@ export class Optioninput extends HTMLDivElement {
   // #endregion Registration as custom element
   // #region Checkbox handling
   /**
+   * Normalizes an option token by trimming whitespace from the input string.
+   *
+   * @param value The option token to normalize.
+   *
+   * @returns The normalized option token with leading and trailing whitespace removed.
+   */
+  private normalizeOptionToken(value: string): string {
+    return value.trim();
+  }
+  /**
+   * Ensures that there is a current option selected in the shadow DOM.
+   *
+   * If no option is currently marked as <code>-Current</code>, selects the first available option.
+   *
+   * @param shadow The {@link ShadowRoot} containing the option elements.
+   *
+   * @returns void
+   */
+  private ensureCurrentOption(shadow: ShadowRoot): void {
+    if (shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current")) {
+      return;
+    }
+
+    const firstOption = shadow.querySelector("div.---WaXCode.--Optioninput.--Option");
+
+    firstOption?.classList.add("-Current");
+  }
+  /**
+   * Formats an option token by normalizing it and adding quotes if necessary.
+   *
+   * If the normalized token contains the separator or double quotes, it will be wrapped in double quotes
+   * and any internal double quotes will be escaped by doubling them.
+   *
+   * @param value The option token to format.
+   *
+   * @returns The formatted option token, with quotes added if the token contains special characters.
+   */
+  private formatOptionToken(value: string): string {
+    const normalized = this.normalizeOptionToken(value);
+    const needsQuotes = normalized.includes(this.separator) || normalized.includes('"');
+
+    if (!needsQuotes) {
+      return normalized;
+    }
+
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  /**
+   * Parses option tokens from a string, handling quoted values and separators.
+   *
+   * Processes a delimited string into individual option tokens. Supports quoted tokens that may contain
+   * the separator character. Double quotes within quoted strings are escaped by doubling them.
+   *
+   * @param value The delimited string containing option tokens to parse.
+   *
+   * @returns An array of parsed and normalized option tokens, with empty tokens filtered out.
+   */
+  private parseOptionTokens(value: string): Array<string> {
+    const tokens: Array<string> = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let index = 0; index < value.length; index += 1) {
+      const ch = value[index];
+
+      if (ch === '"') {
+        if (inQuotes && value[index + 1] === '"') {
+          current += '"';
+          index += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+
+        continue;
+      }
+
+      if (!inQuotes && value.startsWith(this.separator, index)) {
+        tokens.push(current.trim());
+        current = "";
+        index += this.separator.length - 1;
+
+        continue;
+      }
+
+      current += ch;
+    }
+
+    if (current.length > 0 || value.endsWith(this.separator)) {
+      tokens.push(current.trim());
+    }
+
+    return tokens.map((entry) => this.normalizeOptionToken(entry)).filter((entry) => entry.length > 0);
+  }
+  /**
+   * Determines the start and end positions of the segment containing the given position.
+   *
+   * Finds the boundaries of a delimited segment at the specified position in the input string.
+   * Handles quoted values that may contain the separator character.
+   *
+   * @param input The input string to search within.
+   * @param position The position within the input string to find the segment for.
+   *
+   * @returns An object with `start` and `end` properties indicating the segment boundaries.
+   */
+  private getSegmentRangeForValue(input: string, position: number): { start: number; end: number } {
+    let inQuotes = false;
+    let start = 0;
+    let end = input.length;
+
+    for (let index = 0; index < input.length; index += 1) {
+      const ch = input[index];
+
+      if (ch === '"') {
+        if (inQuotes && input[index + 1] === '"') {
+          index += 1;
+        } else {
+          inQuotes = !inQuotes;
+        }
+
+        continue;
+      }
+
+      if (!inQuotes && input.startsWith(this.separator, index)) {
+        if (index < position) {
+          start = index + this.separator.length;
+          index += this.separator.length - 1;
+        } else {
+          end = index;
+
+          break;
+        }
+      }
+    }
+
+    return { start, end };
+  }
+  /**
    * If the {@link Optioninput.target } is defined, clicking a checkbox will either result in the corresponding
    * functionality to be removed or added to the {@link Optioninput.target }'s value.
    *
@@ -362,46 +579,37 @@ export class Optioninput extends HTMLDivElement {
 
     const option = eventTarget.parentElement?.getAttribute("data-cb-option")?.toUpperCase() ?? "";
 
+    const normalizedOption = this.normalizeOptionToken(option);
+    const formattedOption = this.formatOptionToken(normalizedOption);
+    const value = target.value;
+    const selectionStart = target.selectionStart ?? value.length;
+    const selectionEnd = target.selectionEnd ?? selectionStart;
+    const separator = this.separator;
+
     if (eventTarget.checked) {
       // #region Add functionality
-      // If caret is at the end of the <input>...
-      if (target.selectionStart === 0) {
-        target.value = `${option.trim()}${target.value.length === 0 ? "" : ","}`;
+      const replacement = `${formattedOption}${separator}`;
+
+      if (value.length === 0) {
+        target.value = formattedOption;
+        target.setSelectionRange(target.value.length, target.value.length);
+      } else if (selectionEnd > selectionStart) {
+        target.setRangeText(replacement, selectionStart, selectionEnd, "end");
       } else {
-        if (target.selectionStart !== null) {
-          // #region Determine indices for replacement
-          let segmentStart = target.selectionStart;
+        const range = this.getSegmentRangeForValue(value, selectionStart);
 
-          while (target.value[--segmentStart] !== this.separator && segmentStart !== 0) {}
-          let segmentEnd = target.selectionStart - 1;
-
-          while (target.value[++segmentEnd] !== this.separator && segmentEnd !== target.value.length) {}
-          // #endregion Determine indices for replacement
-          // #region Replace properly leaving the [separator] untouched
-          target.value = target.value.replace(
-            target.value
-              .trim()
-              .substring(segmentStart + (target.value[segmentStart] === this.separator ? +1 : 0), segmentEnd),
-            `${option.trim()},`,
-          );
-          // #endregion Replace properly leaving the [separator] untouched
-          target.setSelectionRange(segmentEnd, segmentEnd);
-        }
+        target.setRangeText(replacement, range.start, range.end, "end");
       }
-
       // #endregion Add functionality
     } else {
       // #region Remove functionality
-      const targetValue = target.value.trim();
+      const updated = this.parseOptionTokens(value)
+        .filter((entry) => entry.toUpperCase() !== normalizedOption.toUpperCase())
+        .map((entry) => this.formatOptionToken(entry))
+        .join(separator);
 
-      target.value = targetValue
-        .toUpperCase()
-        .replace(
-          (targetValue.indexOf(`,${option}`) === -1 ? "" : ",") +
-            option +
-            (targetValue.indexOf(`,${option}`) === -1 ? "," : ""),
-          "",
-        );
+      target.value = updated;
+      target.setSelectionRange(target.value.length, target.value.length);
       // #endregion Remove functionality
     }
   }

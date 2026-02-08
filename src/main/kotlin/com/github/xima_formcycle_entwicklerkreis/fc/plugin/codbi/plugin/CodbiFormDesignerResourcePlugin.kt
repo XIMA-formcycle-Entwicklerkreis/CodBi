@@ -72,23 +72,14 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     val detFunctionalities = getDetails("$resourceRoot/Functionalities")
     val detElementplaceholder = getDetails("$resourceRoot/EPs")
     val detStandards = getDetails("$resourceRoot/Configurations")
-
     val localCode = "ddd:" + fileHelper?.pluginFolder?.name
-    /*fileHelper
-    ?.pluginFolder
-    ?.listFiles()
-    ?.filter { it.isFile }
-    ?.filter { it.name.lowercase().endsWith(".js") }
-    ?.map { it.nameWithoutExtension }
-    ?.joinToString(separator = ",")*/
 
     jsResource =
         createDynamicJsResource(
             "designer.js",
             RESOURCE_PATH_DESIGNER_SCRIPT,
             version,
-            fileListing, // The fileListingString is now empty as the configurations are not read
-            // that way anymore.
+            fileListing,
             fslFunctionalities,
             detFunctionalities,
             fslElementplaceholder,

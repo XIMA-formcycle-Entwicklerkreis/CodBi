@@ -47,17 +47,17 @@ import org.slf4j.LoggerFactory
  */
 class CodBiOpenPLZQueryAction : IPluginServletAction {
   /**
-   * Stores the amount of hours that have to pass since a request to the BayVIS-API was made in
+   * Stores the amount of hours that have to pass since a request to the OpenPLZ-API was made in
    * order to perform a re-request on request.
    */
   protected var hrsTillUpdate: Int = 18
-  /** Stores the URL of the BayVIS-Endpoint. */
+  /** Stores the URL of the OpenPLZ-Endpoint. */
   protected var url: String = "https://openplzapi.org"
   /** The country code to use if none is provided. */
   protected var country: String = "de"
   /** Buffers the OpenPLZ-Request result to minimize re-requests. */
   protected var buffer: MutableMap<String, String> = mutableMapOf()
-  /** Stores the time the BayVIS-API was lastly contacted. */
+  /** Stores the time the OpenPLZ-API was lastly contacted. */
   protected var lastContact: Long = System.currentTimeMillis()
 
   /**
@@ -113,8 +113,8 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
   override fun validateConfigurationData(
       configData: IPluginValidationData
   ): IPluginInitializeValidationResult? {
-    if (configData.properties.getProperty("BayVIS_UpdateCycle") != null)
-        hrsTillUpdate = configData.properties.getProperty("BayVIS_UpdateCycle").toInt()
+    if (configData.properties.getProperty("OpenPLZ_UpdateCycle") != null)
+        hrsTillUpdate = configData.properties.getProperty("OpenPLZ_UpdateCycle").toInt()
     if (configData.properties.getProperty("OpenPLZ_URL") != null)
         url = configData.properties.getProperty("OpenPLZ_URL")
     else url = "https://openplzapi.org"
@@ -125,7 +125,7 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
     return null
   }
 
-  /** Returns "CodBi_BayVIS_Auskunft_Behoerdenverzeichnis" */
+  /** Returns "CodBi_OpenPLZ_Query" */
   override fun getName(): String {
     return "CodBi_OpenPLZ_Query"
   }

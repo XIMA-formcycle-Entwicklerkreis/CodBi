@@ -30,6 +30,7 @@
             "stylePreprocessorOptions": {
               "includePaths": ["node_modules"]
             },
+            "allowedCommonJsDependencies": ["@de-xima/fc-form-designer"],
             "styles": ["projects/manager/src/styles.scss"]
           },
           "configurations": {
@@ -42,8 +43,8 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "4kB",
-                  "maximumError": "160kB"
+                  "maximumWarning": "20kB",
+                  "maximumError": "200kB"
                 }
               ],
               "outputHashing": "none"

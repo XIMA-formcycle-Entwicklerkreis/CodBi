@@ -54,7 +54,6 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { ZOD } from "xdbc/src/DBC/ZOD";
 // #endregion XDBC
-import { SafeHtmlPipe } from "./SafeHtmlPipe";
 // #endregion Imports
 // #region Interfaces
 /** Defines a contract for {@link object }s representing API-Doc Parameter. */
@@ -236,7 +235,6 @@ class CommonApiParameter implements ApiParameter {
     TreeModule,
     SplitterModule,
     AccordionModule,
-    SafeHtmlPipe,
     EditorModule,
     BrowserAnimationsModule,
     BrowserModule,

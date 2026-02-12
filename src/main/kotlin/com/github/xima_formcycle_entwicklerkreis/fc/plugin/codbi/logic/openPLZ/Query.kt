@@ -75,7 +75,7 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
         .info(
             "[[ CodBiOpenPLZQueryAction ] Fetching data from OpenPLZ REST with following URL: $toRetrieveFrom ]")
 
-    var statusCode = -1
+    var statusCode: Int
 
     try {
       val url: URL = URI(toRetrieveFrom).toURL()
@@ -163,7 +163,6 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
       }
     }
     // region Initialization
-    var statusCode = -1
     val allResults = StringBuilder()
     var currentPage = 1
     var hasMorePages = true
@@ -214,8 +213,6 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
             .info("Retrieving:" + finalBufferKey)
         val (currentStatusCode, currentJson) = retrieveData(finalBufferKey)
 
-        statusCode = currentStatusCode
-
         if (currentStatusCode !in 200..299 ||
             currentJson == null ||
             currentJson.contains("\"error\"")) {
@@ -223,8 +220,6 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
           allResults.append(
               currentJson
                   ?: "{\"error\": \"Unbekannter Fehler beim Abrufen von Seite $currentPage\"}")
-
-          hasMorePages = false
 
           break
         }

@@ -7,13 +7,14 @@ import MatomoTracker from "@jonkoops/matomo-tracker";
 // #endregion Matomo
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
-import { IF } from "xdbc/src/DBC/IF.js";
+import { IF } from "xdbc/src/DBC/IF";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
-import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
-import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
+import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
-import { CodBiError } from "../global-scope.js";
+import { CodBi, CodBiError } from "../global-scope";
+import { OR } from "xdbc/src/DBC/OR";
 // #endregion Imports
 /**
  * Provides the {@link HTML_Select_Injection.functionality }.
@@ -36,7 +37,7 @@ export class Matomo_Tracking {
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "url")
-    @TYPE.PRE("string | number", "siteid")
+    @TYPE.PRE("string", "siteid")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "siteid")
     @IF.PRE(new DEFINED(), new REGEX(REGEX.stdExp.url), "url")
     toLoad: { [key: string]: string },
@@ -44,16 +45,37 @@ export class Matomo_Tracking {
     @INSTANCE.PRE(HTMLElement)
     toProcess: Element,
   ): void {
-    const siteID = Number.parseInt(toLoad.siteid || window.codbiSettings.Matomo.SiteID);
-    const url = toLoad.url || window.codbiSettings.Matomo.URL;
+    console.log("g");
+    let siteID: number | undefined;
+    let url: string | undefined;
 
-    if (siteID === undefined || url === undefined) {
-      throw new CodBiError(
-        `Functionality / Matomo.Tracking was activated but ${siteID === undefined ? (url === undefined ? "no SiteID and no Matomo-Server-URL" : "no SiteID") : "no Matomo-Server-URL"} was specified.`,
+    if (toLoad.siteID === undefined || toLoad.siteID === "") {
+      siteID = Number.parseInt(
+        OR.tsCheck<string>(
+          window.codbiSettings.Matomo.SiteID,
+          [new DEFINED(), new REGEX(/^\d+$/)],
+          "SiteID was not specified in the functionality parameter and is also not specified in the Plugin-Config.",
+        ),
       );
+    } else {
+      siteID = Number.parseInt(toLoad.siteid);
     }
 
-    new MatomoTracker({ siteId: Number.parseInt(toLoad.siteid), urlBase: toLoad.url }).trackPageView();
+    if (toLoad.url === undefined || toLoad.url === "") {
+      url = OR.tsCheck<string>(
+        window.codbiSettings.Matomo.URL,
+        [new DEFINED(), new REGEX(REGEX.stdExp.url)],
+        "URL was not specified in the functionality parameter and is also not specified in the Plugin-Config.",
+      );
+    } else {
+      url = toLoad.url;
+    }
+    console.log("Matomo Tracking initialized with URL: ", url, " and SiteID: ", siteID);
+    try {
+      new MatomoTracker({ siteId: siteID, urlBase: url }).trackPageView();
+    } catch (X) {
+      window.codbi.log("WARNING", `Matomo Tracking failed due to: ${(X as Error).message}`);
+    }
   }
 }
 

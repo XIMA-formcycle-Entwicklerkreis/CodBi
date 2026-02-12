@@ -218,8 +218,9 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     val objectMapper = ObjectMapper().registerKotlinModule()
     val combinedJsonContent = mutableMapOf<String, Any>()
     val classLoader = CodbiFormDesignerResourcePlugin::class.java.classLoader
-    val resource =
-        classLoader.getResource(toExtractFrom) ?: return "{\"problem\":\"directory not found\"}"
+    if (classLoader.getResource(toExtractFrom) == null) {
+      return "{\"problem\":\"directory not found\"}"
+    }
 
     val filesInJar =
         try {

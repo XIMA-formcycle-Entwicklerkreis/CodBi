@@ -59,7 +59,7 @@ class FeiertageDEAction : IPluginServletAction {
       augsburg: Boolean,
       catholic: Boolean
   ): Pair<Int, String?> {
-    var statusCode = -1
+    var statusCode: Int
 
     try {
       val url: URL =

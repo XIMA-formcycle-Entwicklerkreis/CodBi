@@ -454,7 +454,7 @@ class TesseractAction : AI() {
       val root = metadata.getAsTree("javax_imageio_png_1.0") as IIOMetadataNode
 
       // Find or create pHYs node
-      var physNode: IIOMetadataNode? = null
+      var physNode: IIOMetadataNode?
       val nodeList = root.getElementsByTagName("pHYs")
       if (nodeList.length > 0) {
         physNode = nodeList.item(0) as IIOMetadataNode
@@ -518,11 +518,17 @@ class TesseractAction : AI() {
    *   orientation.
    */
   private fun detectBestOrientation(image: BufferedImage, dpi: Int): Int {
+    val dataDir =
+        tessDataDir
+            ?: run {
+              log(LogLevel.WARNING, "Tesseract data directory not initialized")
+              return 0
+            }
     try {
       val osdHandle = TessAPI1.TessBaseAPICreate()
 
       try {
-        if (TessAPI1.TessBaseAPIInit3(osdHandle, tessDataDir!!.absolutePath, "osd") != 0) {
+        if (TessAPI1.TessBaseAPIInit3(osdHandle, dataDir.absolutePath, "osd") != 0) {
           log(
               LogLevel.WARNING,
               "Failed to initialize Tesseract with OSD data - osd.traineddata may be missing")
@@ -707,7 +713,6 @@ class TesseractAction : AI() {
    */
   private fun preprocessImage(
       image: BufferedImage,
-      dpi: Int,
       params: IPluginServletActionParams
   ): BufferedImage {
     val preprocessHeader =
@@ -866,7 +871,7 @@ class TesseractAction : AI() {
       }
     }
 
-    val preprocessedImage = preprocessImage(correctedImage, originalDPI, params)
+    val preprocessedImage = preprocessImage(correctedImage, params)
 
     val handle =
         pool.poll(10, TimeUnit.SECONDS)
@@ -939,24 +944,25 @@ class TesseractAction : AI() {
           return false
         }
         // region Clone libs into a fresh run dir (avoid locked DLLs)
-        if (dirTempNativeLibs == null || !dirTempNativeLibs!!.exists()) {
+        if (dirTempNativeLibs?.exists() != true) {
           val tmpDir = root.resolve("Resources/AI/Tesseract/TmpNatives").apply { mkdirs() }
           // Remove former library-clones
           tmpDir
               .listFiles { file -> file.isDirectory && file.name.startsWith("tesseract_run_") }
               ?.forEach { oldFolder -> oldFolder.deleteRecursively() }
 
-          dirTempNativeLibs = File(tmpDir, "tesseract_run_${ System.currentTimeMillis()}")
-
-          dirTempNativeLibs!!.mkdirs()
+          val tempNativeLibs = File(tmpDir, "tesseract_run_${ System.currentTimeMillis()}")
+          tempNativeLibs.mkdirs()
+          dirTempNativeLibs = tempNativeLibs
 
           dirNativeLibs.listFiles()?.forEach { file ->
-            file.copyTo(File(dirTempNativeLibs, file.name), overwrite = true)
+            file.copyTo(File(tempNativeLibs, file.name), overwrite = true)
           }
         }
         // endregion Clone libs into a fresh run dir (avoid locked DLLs)
-        System.setProperty("jna.library.path", dirTempNativeLibs!!.absolutePath)
-        System.setProperty("net.sourceforge.tess4j.extract.path", dirTempNativeLibs!!.absolutePath)
+        val tempNativeLibs = dirTempNativeLibs ?: return false
+        System.setProperty("jna.library.path", tempNativeLibs.absolutePath)
+        System.setProperty("net.sourceforge.tess4j.extract.path", tempNativeLibs.absolutePath)
         System.setProperty("net.sourceforge.tess4j.skip.extract", "true")
         // region Ensure that the model files are available
         tessDataDir = root.resolve("Resources/AI/Tesseract/Models").apply { mkdirs() }
@@ -1019,9 +1025,17 @@ class TesseractAction : AI() {
    */
   private fun addHandleToPool(lang: String) {
     try {
+      val dataDir =
+          tessDataDir
+              ?: run {
+                log(
+                    LogLevel.WARNING,
+                    "Tesseract data directory not initialized for pool handle ($lang)")
+                return
+              }
       val tesseract = TessAPI1.TessBaseAPICreate()
 
-      if (TessAPI1.TessBaseAPIInit3(tesseract, tessDataDir!!.absolutePath, lang) != 0)
+      if (TessAPI1.TessBaseAPIInit3(tesseract, dataDir.absolutePath, lang) != 0)
           throw ServletException(
               "[[ CodBi / AI /Tesseract ] Unknown initialization failure while creating a new handle ($lang) ]")
 
@@ -1211,26 +1225,31 @@ class TesseractAction : AI() {
           if (tempFile == null || !tempFile.exists()) {
             tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
 
+            val createdTempFile =
+                requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+
             fileItem.stream().use { input ->
               val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
 
-              tempFile!!.writeBytes(bytes)
+              createdTempFile.writeBytes(bytes)
             }
 
             if (params.headerMap["X-OCR-Image-ID"] != null && distinctImageID.isNotBlank()) {
-              cacheIDedImages[distinctImageID] = CachedImage(tempFile!!)
+              cacheIDedImages[distinctImageID] = CachedImage(createdTempFile)
               shouldDeleteThisFile = false
             }
           }
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
+          val tempFileLocal =
+              requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+          if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
           // region OCR Processing
           // Apply orientation correction: Manual override or auto-detection using Tesseract
           val orientationCorrectedFile =
               try {
                 // Read original DPI first
-                val originalDPI = readImageDPI(tempFile!!)
-                var correctedImage = ImageIO.read(tempFile!!)
+                val originalDPI = readImageDPI(tempFileLocal)
+                var correctedImage = ImageIO.read(tempFileLocal)
 
                 // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
                 // 270)
@@ -1280,7 +1299,7 @@ class TesseractAction : AI() {
                 correctedFile
               } catch (e: Exception) {
                 log(LogLevel.WARNING, "Orientation correction failed, using original: ${e.message}")
-                tempFile!!
+                tempFileLocal
               }
 
           val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
@@ -1318,7 +1337,7 @@ class TesseractAction : AI() {
         cacheIDedImages.entries
             .filter { it.key.startsWith("${ params.headerMap["X-OCR-Image-ID"] }::") }
             .map { it.value }
-            .forEach { (image, key) ->
+            .forEach { (image, _) ->
               // region OCR Processing
               val preprocessedFile = preprocessImage(image, params)
               if (preprocessedFile != image) filesToDelete.add(preprocessedFile)
@@ -1443,26 +1462,31 @@ class TesseractAction : AI() {
           if (tempFile == null || !tempFile.exists()) {
             tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
 
+            val createdTempFile =
+                requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+
             fileItem.stream().use { input ->
               val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
 
-              tempFile!!.writeBytes(bytes)
+              createdTempFile.writeBytes(bytes)
             }
 
             if (params.headerMap["X-OCR-Image-ID"] != null && distinctImageID.isNotBlank()) {
-              cacheIDedImages[distinctImageID] = CachedImage(tempFile!!)
+              cacheIDedImages[distinctImageID] = CachedImage(createdTempFile)
               shouldDeleteThisFile = false
             }
           }
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
+          val tempFileLocal =
+              requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+          if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
           // region OCR Processing
           // Apply orientation correction: Manual override or auto-detection using Tesseract
           val orientationCorrectedFile =
               try {
                 // Read original DPI first
-                val originalDPI = readImageDPI(tempFile!!)
-                var correctedImage = ImageIO.read(tempFile!!)
+                val originalDPI = readImageDPI(tempFileLocal)
+                var correctedImage = ImageIO.read(tempFileLocal)
 
                 // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
                 // 270)
@@ -1512,7 +1536,7 @@ class TesseractAction : AI() {
                 correctedFile
               } catch (e: Exception) {
                 log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
-                tempFile!!
+                tempFileLocal
               }
           val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
           if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
@@ -1690,26 +1714,31 @@ class TesseractAction : AI() {
           if (tempFile == null || !tempFile.exists()) {
             tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
 
+            val createdTempFile =
+                requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+
             fileItem.stream().use { input ->
               val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
 
-              tempFile!!.writeBytes(bytes)
+              createdTempFile.writeBytes(bytes)
             }
 
             if (params.headerMap["X-OCR-Image-ID"] != null && distinctImageID.isNotBlank()) {
-              cacheIDedImages[distinctImageID] = CachedImage(tempFile!!)
+              cacheIDedImages[distinctImageID] = CachedImage(createdTempFile)
               shouldDeleteThisFile = false
             }
           }
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
+          val tempFileLocal =
+              requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+          if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
           // region OCR Processing
           // Apply orientation correction: Manual override or auto-detection using Tesseract
           val orientationCorrectedFile =
               try {
                 // Read original DPI first
-                val originalDPI = readImageDPI(tempFile!!)
-                var correctedImage = ImageIO.read(tempFile!!)
+                val originalDPI = readImageDPI(tempFileLocal)
+                var correctedImage = ImageIO.read(tempFileLocal)
 
                 // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
                 // 270)
@@ -1759,7 +1788,7 @@ class TesseractAction : AI() {
                 correctedFile
               } catch (e: Exception) {
                 log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
-                tempFile!!
+                tempFileLocal
               }
           val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
           if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
@@ -1986,28 +2015,33 @@ class TesseractAction : AI() {
           if (tempFile == null || !tempFile.exists()) {
             tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
 
-            log(LogLevel.INFO, "Processing ${ tempFile!!.absolutePath }")
+            val createdTempFile =
+                requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+
+            log(LogLevel.INFO, "Processing ${ createdTempFile.absolutePath }")
 
             fileItem.stream().use { input ->
               val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
 
-              tempFile!!.writeBytes(bytes)
+              createdTempFile.writeBytes(bytes)
             }
 
             if (params.headerMap["X-OCR-Image-ID"] != null && distinctImageID.isNotBlank()) {
-              cacheIDedImages[distinctImageID] = CachedImage(tempFile!!)
+              cacheIDedImages[distinctImageID] = CachedImage(createdTempFile)
               shouldDeleteThisFile = false
             }
           }
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
+          val tempFileLocal =
+              requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+          if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
           // region OCR Processing
           // Apply orientation correction: Manual override or auto-detection using Tesseract
           val orientationCorrectedFile =
               try {
                 // Read original DPI first
-                val originalDPI = readImageDPI(tempFile!!)
-                var correctedImage = ImageIO.read(tempFile!!)
+                val originalDPI = readImageDPI(tempFileLocal)
+                var correctedImage = ImageIO.read(tempFileLocal)
 
                 // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
                 // 270)
@@ -2057,7 +2091,7 @@ class TesseractAction : AI() {
                 correctedFile
               } catch (e: Exception) {
                 log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
-                tempFile!!
+                tempFileLocal
               }
           val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
           if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
@@ -2322,13 +2356,14 @@ class TesseractAction : AI() {
    * @param language The languages to ensure the availability of.
    */
   private fun ensureTessData(tessDataDir: File?, language: String) {
-    if (!tessDataDir?.exists()!!) tessDataDir.mkdirs()
+    val dataDir = tessDataDir ?: return
+    if (!dataDir.exists()) dataDir.mkdirs()
 
     val languagesToDownload = listOf("$language.traineddata", "osd.traineddata")
     val baseUrl = "https://github.com/tesseract-ocr/tessdata_best/raw/main/"
 
     languagesToDownload.forEach { fileName ->
-      val localFile = File(tessDataDir, fileName)
+      val localFile = File(dataDir, fileName)
 
       if (!localFile.exists() || localFile.length() == 0L) {
         log(LogLevel.INFO, "Downloading $fileName from GitHub...")

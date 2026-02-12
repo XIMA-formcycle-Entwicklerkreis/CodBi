@@ -2,19 +2,17 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "types": []
+    "types": [],
+    "noImplicitAny": false,
+    "noImplicitOverride": false,
+    "strictPropertyInitialization": false,
+    "strictNullChecks": false,
+    "noUnusedLocals": false
   },
   "include": [
     "src",
     "__tests__",
     "__mocks__",
     "Angular/Components/codbi-apidoc/projects/manager/src/app/manager/CodbiPluginData.d.ts"
-  ],
-  "compilerOptions": {
-    "noImplicitAny": false,
-    "noImplicitOverride": false,
-    "strictPropertyInitialization": false,
-    "strictNullChecks": false,
-    "noUnusedLocals": false
-  }
+  ]
 }

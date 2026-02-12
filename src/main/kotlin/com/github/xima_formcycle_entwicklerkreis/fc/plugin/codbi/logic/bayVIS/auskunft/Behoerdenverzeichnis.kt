@@ -55,7 +55,7 @@ class CodBiBayVISAuskunftBehoerdenverzeichnisAction : IPluginServletAction {
    *   message).
    */
   protected fun retrieveData(): Pair<Int, String?> {
-    var statusCode = -1
+    var statusCode: Int
 
     try {
       val url: URL = URI(url).toURL()
@@ -145,10 +145,7 @@ class CodBiBayVISAuskunftBehoerdenverzeichnisAction : IPluginServletAction {
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
     // region Initialization
-    val username = this.username
-    val password = this.password
-    val serviceUrl = this.url
-    var statusCode = -1
+
     // endregion Initialization
     var needsFetch = false
     synchronized(cacheLock) {

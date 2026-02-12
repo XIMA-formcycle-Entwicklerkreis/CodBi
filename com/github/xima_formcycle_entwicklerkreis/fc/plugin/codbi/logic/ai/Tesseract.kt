@@ -303,24 +303,29 @@ class TesseractAction : AI() {
           if (tempFile == null || !tempFile.exists()) {
             tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
 
+            val createdTempFile =
+                requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+
             fileItem.stream().use { input ->
               val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
 
-              tempFile!!.writeBytes(bytes)
+              createdTempFile.writeBytes(bytes)
             }
 
             if (distinctImageID.isNotBlank()) {
-              cacheIDedImages[distinctImageID] = CachedImage(tempFile!!)
+              cacheIDedImages[distinctImageID] = CachedImage(createdTempFile)
               shouldDeleteThisFile = false
             }
           }
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          if (shouldDeleteThisFile) filesToDelete.add(tempFile!!)
+          val tempFileLocal =
+              requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+          if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
           // region OCR Processing
           val handle =
               pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
           try {
-            TessAPI1.TessBaseAPIProcessPages(handle, tempFile!!.absolutePath, null, 0, null)
+            TessAPI1.TessBaseAPIProcessPages(handle, tempFileLocal.absolutePath, null, 0, null)
 
             val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
 
@@ -428,13 +433,14 @@ class TesseractAction : AI() {
    * @param language The languages to ensure the availability of.
    */
   private fun ensureTessData(tessDataDir: File?, language: String) {
-    if (!tessDataDir?.exists()!!) tessDataDir.mkdirs()
+    val dataDir = tessDataDir ?: return
+    if (!dataDir.exists()) dataDir.mkdirs()
 
     val languagesToDownload = listOf("$language.traineddata", "osd.traineddata")
     val baseUrl = "https://github.com/tesseract-ocr/tessdata_best/raw/main/"
 
     languagesToDownload.forEach { fileName ->
-      val localFile = File(tessDataDir, fileName)
+      val localFile = File(dataDir, fileName)
 
       if (!localFile.exists() || localFile.length() == 0L) {
         log(LogLevel.INFO, "Downloading $fileName from GitHub...")

@@ -947,13 +947,11 @@ export function enableLocalDocInterface(): void {
                   optioninput.mode = "Code Template";
                   // #region Define Code Template Options
                   optioninput.options = [
-                    window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_OnLoaded"),
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality"),
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP"),
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Standard"),
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality_Extend"),
                     window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend"),
-                    window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Start"),
                   ];
                   // #endregion Define Code Template Options
                   optioninput.enabled = true;

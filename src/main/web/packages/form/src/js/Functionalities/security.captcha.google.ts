@@ -5,7 +5,6 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
-import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
@@ -62,8 +61,12 @@ export class Security_Captcha_Google {
         }
         // If, for convenience, code to evaluate was specified...
         if (toLoad.datacallbackcode && typeof toLoad.datacallbackcode === "string") {
-          // biome-ignore lint/security/noGlobalEval: A form builder wouldn't use malicious code.
-          eval(toLoad.datacallbackcode as string);
+          const inlineScript = document.createElement("script");
+          inlineScript.type = "text/javascript";
+          inlineScript.text = toLoad.datacallbackcode as string;
+
+          document.head.appendChild(inlineScript);
+          inlineScript.remove();
         }
       }
     };

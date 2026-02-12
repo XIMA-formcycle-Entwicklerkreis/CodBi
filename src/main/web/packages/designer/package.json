@@ -24,7 +24,7 @@
     "codbi-common": "workspace:*",
     "tinymce": "^7.9.1",
     "tslib": "~2.8.1",
-    "xdbc": "^1.0.197",
+    "xdbc": "^1.0.198",
     "zod": "^4.0.5"
   },
   "devDependencies": {

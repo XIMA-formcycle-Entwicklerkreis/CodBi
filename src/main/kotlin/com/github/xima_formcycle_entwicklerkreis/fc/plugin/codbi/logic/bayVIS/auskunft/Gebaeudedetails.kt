@@ -57,7 +57,7 @@ class CodBiBayVISAuskunftGebaeudedetailsAction : IPluginServletAction {
    *   message).
    */
   protected fun retrieveData(id: String, gebaeudeID: String): Pair<Int, String?> {
-    var statusCode = -1
+    var statusCode: Int
 
     try {
       val url: URL = URI("$url$id/gebaeude/$gebaeudeID").toURL()

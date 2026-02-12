@@ -57,7 +57,7 @@ class CodBiBayVISAuskunftBehoerdendetailsAction : IPluginServletAction {
    *   message).
    */
   protected fun retrieveData(id: String): Pair<Int, String?> {
-    var statusCode = -1
+    var statusCode: Int
 
     try {
       val url: URL = URI(url + id).toURL()

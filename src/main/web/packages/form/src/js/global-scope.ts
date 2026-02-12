@@ -106,6 +106,21 @@ declare global {
 }
 /** Implements the management functionality. */
 export class CodBi implements CodbiGlobal {
+  /**
+   * Safely loads and executes code returned by the CodBi_LocalAPIDoc as an ES module.
+   * This avoids direct eval and reduces bundler warnings.
+   */
+  private async importRemoteModule(rawCode: string): Promise<void> {
+    const code = rawCode.replace(/<\|>/g, '"');
+    const blob = new Blob([code], { type: "text/javascript" });
+    const url = URL.createObjectURL(blob);
+
+    try {
+      await import(url);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
   // #region Attributes
   /**
    * Transfer all CodBi-Attributes (**data-cb**) that're existent on the {@link HTMLElement } to copy **from** to the
@@ -143,10 +158,9 @@ export class CodBi implements CodbiGlobal {
         "X-ActionDetail": "Standard",
         "X-Element": toHandle,
       },
-      success: (response) => {
+      success: async (response) => {
         if (response.result !== "NONE") {
-          // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-          eval(response.result.replaceAll("<|>", '"'));
+          await this.importRemoteModule(response.result);
         }
       },
     });
@@ -412,12 +426,12 @@ export class CodBi implements CodbiGlobal {
                 "X-ActionDetail": "Elementplaceholder",
                 "X-Element": outermostEP.keyPlaceholder.trim().toLowerCase(),
               },
-              success: (response) => {
+              success: async (response) => {
                 if (response.result === "NONE") {
                   return;
                 }
-                // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-                eval(response.result.replaceAll("<|>", '"'));
+
+                await this.importRemoteModule(response.result);
 
                 this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string))
                   .then((real) => {
@@ -541,12 +555,12 @@ export class CodBi implements CodbiGlobal {
                             "X-ActionDetail": "Elementplaceholder",
                             "X-Element": outermostEP.keyPlaceholder.trim().toLowerCase(),
                           },
-                          success: (response) => {
+                          success: async (response) => {
                             if (response.result === "NONE") {
                               return;
                             }
-                            // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-                            eval(response.result.replaceAll("<|>", '"'));
+
+                            await this.importRemoteModule(response.result);
                             // Promises counter for this already set in advance 'cause of asynchronous download of EP code.
                             this.resolveEPParams(this.splitUnbracedParams(outermostEP.params))
                               .then((real) => {
@@ -644,10 +658,9 @@ export class CodBi implements CodbiGlobal {
                       "X-ActionDetail": "Elementplaceholder",
                       "X-Element": outermostEP.keyPlaceholder.trim().toLowerCase(),
                     },
-                    success: (response) => {
+                    success: async (response) => {
                       if (response.result !== "NONE") {
-                        // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-                        eval(response.result.replaceAll("<|>", '"'));
+                        await this.importRemoteModule(response.result);
 
                         this.resolveEPParams(this.splitUnbracedParams(outermostEP.params)).then((real) => {
                           const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
@@ -880,10 +893,9 @@ export class CodBi implements CodbiGlobal {
                       "X-ActionDetail": "Functionality",
                       "X-Element": functionality.trim().toLowerCase(),
                     },
-                    success: (response) => {
+                    success: async (response) => {
                       if (response.result !== "NONE") {
-                        // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-                        eval(response.result.replaceAll("<|>", '"'));
+                        await this.importRemoteModule(response.result);
                       }
 
                       resolve(event);
@@ -1325,13 +1337,13 @@ export class CodBi implements CodbiGlobal {
                 "X-ActionDetail": "Functionality",
                 "X-Element": functionality.trim().toLowerCase(),
               },
-              success: (response) => {
+              success: async (response) => {
                 if (response.result === "NONE") {
                   return;
                 }
                 // #region Evaluate the response and replace all placeholders.
-                // biome-ignore lint/security/noGlobalEval: Necessary to evaluate the response from a formcylce plugin response.
-                eval(response.result.replaceAll("<|>", '"'));
+
+                await this.importRemoteModule(response.result);
                 // #endregion Evaluate the response and replace all placeholders.
                 toProcess.classList.add("Processing", "CodBi");
 

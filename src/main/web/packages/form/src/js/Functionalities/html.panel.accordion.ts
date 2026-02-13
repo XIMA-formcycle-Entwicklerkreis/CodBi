@@ -3,6 +3,7 @@
 import { DBC } from "xdbc/src/DBC";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
+import { OR } from "xdbc/src/DBC/OR";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
@@ -31,7 +32,11 @@ export class HTML_Panel_Accordion {
     @TYPE.PRE("string", "accordion")
     @DEFINED.PRE("accordion", "Is the data-cb-Accordion not defined?")
     toLoad: { [key: string]: unknown },
-    @INSTANCE.PRE(HTMLDivElement, undefined, "Is it not a <div/> that is tagged with this functionality?")
+    @OR.PRE(
+      [new INSTANCE(HTMLDivElement), new INSTANCE(HTMLFieldSetElement)],
+      undefined,
+      "Is it not a <div> or <fieldset> that is tagged with this functionality?",
+    )
     toProcess: Element,
   ): undefined {
     if (toLoad.accordion === undefined || XFC_METADATA.requestType === "print") {

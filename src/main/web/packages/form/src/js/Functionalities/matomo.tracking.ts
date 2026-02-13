@@ -45,7 +45,6 @@ export class Matomo_Tracking {
     @INSTANCE.PRE(HTMLElement)
     toProcess: Element,
   ): void {
-    console.log("g");
     let siteID: number | undefined;
     let url: string | undefined;
 
@@ -70,7 +69,7 @@ export class Matomo_Tracking {
     } else {
       url = toLoad.url;
     }
-    console.log("Matomo Tracking initialized with URL: ", url, " and SiteID: ", siteID);
+
     try {
       new MatomoTracker({ siteId: siteID, urlBase: url }).trackPageView();
     } catch (X) {

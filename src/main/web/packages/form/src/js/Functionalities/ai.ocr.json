@@ -10,6 +10,8 @@
     "Preprocess": "",
     "ProcessingImageText": "",
     "InvalidImageText": "",
-    "WrongFileMessage": ""
+    "WrongFileMessage": "",
+    "Maximum": "",
+    "Field": ""
   }
 }

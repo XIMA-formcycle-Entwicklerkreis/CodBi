@@ -28,7 +28,7 @@ export function loadConfig(): void {
       Replacements: "$&",
     },
     {
-      targets: ".AI_TESSERACT_Name",
+      targets: ".CodBi_AI_OCR_Receiver",
       FUNC: "HTML.Input.Trans.RegEx",
       Extractor: ".*",
       Replacements: "$&",

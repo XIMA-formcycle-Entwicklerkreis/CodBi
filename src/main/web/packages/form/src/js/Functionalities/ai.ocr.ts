@@ -1,3 +1,4 @@
+// IMPORTANT: When adding code to this file, wrap every block of code you add with a proper //#region & //#endregion comment.
 //region Imports
 //region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
@@ -40,7 +41,7 @@ export class AI_OCR {
    *  - **Pattern**:              The {@link RegEx } to use to either extract the substrings from the scanned text or to verify that
    *                              the scanned text matches the pattern.
    *                              When the mode is **Extract Fields** all fields within the parent container of the one containing
-   *                              the {@link HTMLInputElement } toProcess that have the CodBi-CSS-Class **AI_TESSERACT_Name** are
+   *                              the {@link HTMLInputElement } toProcess that have the CodBi-CSS-Class **CodBi_AI_OCR_Receiver** are
    *                              used to receive the extracted fields. For each such field, a corresponding parameter
    *                              **Pattern_...** must be defined to specify the {@link RegEx } to use to extract the substrings
    *                              from the scanned text for that field. The name of the field is specified after the dash and are
@@ -58,12 +59,18 @@ export class AI_OCR {
    *                              mode **Verify**.
    *  - **WrongFileMessage**:     The text to display for the manual verification checkbox label in mode **Verify**.
    *  - **ProcessingImageText**:  The text to append to the label of the {@link HTMLInputElement } toProcess while the images
+   *                              are processed.
+   *  - **Maximum**               The number of files that may be uploaded. If the number of selected files exceeds this number,
+   *                              the processing is aborted and a warning is logged in the console.
    *
    * ### CSS Classes:
    * - **AI_TESSERACT_Name**: Elements with this class within the parent container of the one holding the
    *                          {@link HTMLInputElement } **toProcess** are used to receive the extracted fields when **Mode** is
    *                          set to **Extract Fields**. Each such element should have **data-cb-Field** set to the name of the
-   *                          field to receive the extracted text for (see **Pattern_...** config parameter).   *
+   *                          field to receive the extracted text for (see **Pattern_...** config parameter).
+   * - **AI_OCR_Receiver**:   Elements with this class are used to receive the results.
+   *                          In **Print** mode, a single <textarea> with this class is expected to receive the full OCR text
+   *                          output.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -95,6 +102,18 @@ export class AI_OCR {
       const files = (toProcess as HTMLInputElement).files;
       // Configure PDF.js worker if needed
       AI_OCR.ensurePdfJsWorkerConfigured();
+
+      //#region Check Maximum parameter
+      const maximum = toLoad.maximum ? Number(toLoad.maximum) : 2;
+      if (maximum && files.length > maximum) {
+        window.codbi.log(
+          "WARNING",
+          `Maximum file limit exceeded. Number of selected files(${files.length}) exceeds > ${maximum}, thus processing will occur.`,
+          "AI / OCR",
+        );
+        return;
+      }
+      //#endregion Check Maximum parameter
 
       const formData = new FormData();
       const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
@@ -130,7 +149,7 @@ export class AI_OCR {
 
       if ((toLoad.mode as string).toLowerCase() === "extract fields") {
         const patternKeys = Object.keys(toLoad).filter((key) => key.startsWith("pattern_"));
-        console.log("Pattern Keys:", patternKeys, " toLoad:", toLoad);
+
         for (const patternKey of patternKeys) {
           const fieldName = patternKey.substring(8);
           const pattern = TYPE.tsCheck<string>(
@@ -409,7 +428,7 @@ export class AI_OCR {
     const results: { [key: string]: unknown } = {};
 
     for (const [filename, text] of Object.entries(pdfTextResults)) {
-      switch (mode) {
+      switch (mode.toLowerCase()) {
         case "print":
           results[filename] = text;
           break;
@@ -475,15 +494,18 @@ export class AI_OCR {
 
         if (receiverElem) {
           let responseText = "";
-
+          let responseKeys = [];
+          let textValues = [];
           switch (typeof response) {
             case "string":
               responseText = response;
               break;
             case "object":
               if (response !== null) {
-                const values = Object.values(response);
-                const textValues = values.map((val) => (typeof val === "string" ? val : JSON.stringify(val)));
+                responseKeys = Object.keys(response);
+                textValues = Object.values(response).map((val) =>
+                  typeof val === "string" ? val : JSON.stringify(val),
+                );
                 responseText = textValues.join("\n\n");
               } else {
                 responseText = JSON.stringify(response);
@@ -538,7 +560,7 @@ export class AI_OCR {
                 }
               }
             }
-            console.log("Collected Values for field", field, ":", collectedValues);
+
             if (collectedValues.length > 0) {
               const joinedValue = collectedValues.join(separator);
 
@@ -564,31 +586,24 @@ export class AI_OCR {
         // #region Add styles for manual verification checkbox
         if (!toProcess.querySelector("#CodBi_AI_OCR_ManualVerify_Styles")) {
           const style = document.createElement("style");
-
           style.textContent = `
             .CodBi_AI_OCR_ManualVerify { display: flex ; align-items: center ; margin-top: 8px ; gap: 8px ;
               flex-wrap: nowrap ;}
-
             .CodBi_AI_OCR_ManualVerify_Checkbox { cursor: pointer ; opacity: 1 !important ; position: relative !important ;
               flex-shrink: 0 ;}
-
             .CodBi_AI_OCR_ManualVerify label { margin-bottom: 0 ; position: relative !important ;}
-            
             @keyframes highlight {
               0%    { opacity:1; }
               50%   { opacity:0; }
               100%  { opacity:1; }}
-            
             .CodBi_AI_OCR_ManualVerify label span { font-weight: bold ; color: darkorange ;
               animation: highlight 2s ease-in-out infinite ;}`;
-
           toProcess.appendChild(style);
         }
         // #endregion Add styles for manual verification checkbox
         // #region Remove existing manual verify checkbox
         const existingManualVerify =
           toProcess.parentElement.parentElement.querySelectorAll(".CodBi_AI_OCR_ManualVerify");
-
         for (let i = 0; i < existingManualVerify.length; i++) {
           existingManualVerify[i].remove();
         }
@@ -600,19 +615,16 @@ export class AI_OCR {
         checkboxContainer.style.alignItems = "center";
         checkboxContainer.style.marginTop = "8px";
         checkboxContainer.style.gap = "8px";
-
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
         checkbox.id = `manual-verify-${toProcess.id}`;
         checkbox.className = "CodBi_AI_OCR_ManualVerify_Checkbox";
-
         const label = document.createElement("label");
         label.htmlFor = checkbox.id;
         label.textContent = toLoad.wrongfilemessage
           ? (toLoad.wrongfilemessage as string)
           : "The content is not as expected. Please check if you selected the correct file(s). You may manually verify that it is the correct one by clicking the checkbox.";
         label.style.marginBottom = "0";
-
         checkboxContainer.appendChild(checkbox);
         checkboxContainer.appendChild(label);
         toProcess.parentElement.insertAdjacentElement("afterend", checkboxContainer);
@@ -628,6 +640,13 @@ export class AI_OCR {
         // #endregion Handle checkbox change
       } else {
         $(toProcess).error("");
+        // #region Remove manual verify checkbox and text if present
+        const existingManualVerify =
+          toProcess.parentElement.parentElement.querySelectorAll(".CodBi_AI_OCR_ManualVerify");
+        for (let i = 0; i < existingManualVerify.length; i++) {
+          existingManualVerify[i].remove();
+        }
+        // #endregion Remove manual verify checkbox and text if present
       }
     }
     // #endregion Validate verify mode results

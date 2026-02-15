@@ -43,7 +43,6 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
-import java.util.jar.JarFile
 import javax.imageio.ImageIO
 import net.sourceforge.tess4j.TessAPI1
 
@@ -154,7 +153,7 @@ class DocVQATranslator(
     val image = input.first
     val question = input.second
     // region Image preprocessing
-    val resizedImage = image.resize(960, 1280, true)
+    val resizedImage = image.resize(1280, 960, true)
     var array = resizedImage.toNDArray(manager)
     array = array.transpose(2, 0, 1).toType(DataType.FLOAT32, false)
     val mean = manager.create(floatArrayOf(0.485f, 0.456f, 0.406f)).reshape(3, 1, 1)
@@ -353,7 +352,7 @@ class DonutDocVQAAction : ONNX() {
   /** The plugin's root folder. */
   private var pluginFolder: File? = null
   /** Current run dir for extracted tokenizers natives. */
-  private var tokenizersNativeRunDir: File? = null
+  private var tokenizersNativeRunDir: File? = null // Now set by TokenizersHelper
   /** The base URL for downloading the model files. */
   private var modelBaseUrl =
       "https://huggingface.co/Xenova/donut-base-finetuned-docvqa/resolve/main"
@@ -404,196 +403,52 @@ class DonutDocVQAAction : ONNX() {
    * @param cacheRootDir The directory where all temporary native library folders reside.
    * @param keepNewest The number of directories to keep in order to prevent race conditions.
    */
-  private fun purgeOldTokenizersRunDirs(cacheRootDir: File, keepNewest: Int) {
-    val runs =
-        cacheRootDir
-            .listFiles()
-            ?.filter { it.isDirectory && it.name.startsWith("run-") }
-            ?.sortedByDescending { it.lastModified() } ?: return
-
-    runs.drop(keepNewest).forEach { dir ->
-      try {
-        dir.deleteRecursively()
-
-        log(LogLevel.INFO, "Deleted old tokenizers native dir: ${ dir.absolutePath }")
-      } catch (X: Exception) {
-        log(
-            LogLevel.WARNING,
-            "Could not delete old tokenizers native dir (likely locked): ${ dir.absolutePath }",
-            "",
-            X)
-      }
-    }
-  }
+  // Removed: purgeOldTokenizersRunDirs, now handled by TokenizersHelper
 
   /**
    * Determines the current tokinzer version.
    *
    * @return Either the system property **codbi.djl.tokenizers.version** or 0.36.0 .
    */
-  private fun resolveTokenizersVersion(): String {
-    val override = System.getProperty("codbi.djl.tokenizers.version")?.trim()
-
-    if (!override.isNullOrEmpty()) return override
-
-    return "0.36.0"
-  }
+  // Removed: resolveTokenizersVersion, now handled by TokenizersHelper
 
   /**
    * Determines the tokenizer directory according to the server's os and archetype.
    *
    * @return The path to the directory.
    */
-  private fun detectTokenizersJarDir(): String? {
-    val os = (System.getProperty("os.name") ?: "").lowercase()
-    val arch = (System.getProperty("os.arch") ?: "").lowercase()
-
-    if (os.contains("windows")) return "native/lib/win-x86_64/cpu"
-    if (os.contains("linux")) {
-      if (arch.contains("aarch64") || arch.contains("arm64")) return "native/lib/linux-aarch64/cpu"
-
-      return "native/lib/linux-x86_64/cpu"
-    }
-    if (os.contains("mac")) return "native/lib/osx-aarch64/cpu"
-
-    return null
-  }
+  // Removed: detectTokenizersJarDir, now handled by TokenizersHelper
 
   /**
-   * Acquires the native tokenizer libraries corresponding to the server's os and archetype and puts
-   * them into a temporary directory for this run.
+   * Acquires the native tokenizer libraries using TokenizersHelper and sets up environment
+   * variables.
    *
-   * @return Either **true**, if the libraries could be acquired and properly placed, otherwise
-   *   **false**.
+   * @return true if successful, false otherwise.
    */
   private fun ensureTokenizersNativeLibraries(): Boolean {
-    val jarDir = detectTokenizersJarDir()
-
-    if (jarDir == null) {
-      log(
-          LogLevel.ERROR,
-          "Unsupported OS/Arch for tokenizers natives (os.name = ${System.getProperty("os.name")}, os.arch = ${System.getProperty("os.arch")})")
-
+    val pluginRoot =
+        pluginFolder
+            ?: run {
+              log(AI.LogLevel.ERROR, "Tokenizers natives: pluginFolder not initialized yet")
+              return false
+            }
+    val runDir = TokenizersHelper.ensureTokenizersNativeLibraries(pluginRoot, this::log, 3)
+    if (runDir == null) {
+      log(AI.LogLevel.ERROR, "Failed to set up tokenizers native libraries via TokenizersHelper")
       return false
     }
-
-    val pluginRoot = pluginFolder
-
-    if (pluginRoot == null) {
-      log(AI.LogLevel.ERROR, "Tokenizers natives: pluginFolder not initialized yet")
-
-      return false
-    }
-
-    val version = resolveTokenizersVersion()
-    val root = File(pluginRoot, "ai/tokenizers/native")
-    val runDir = File(root, "run-${System.currentTimeMillis()}")
-    val cache = File(root, "maven-cache")
-
-    root.mkdirs()
-    runDir.mkdirs()
-    cache.mkdirs()
-    purgeOldTokenizersRunDirs(root, keepNewest = 3)
-
-    val repo =
-        System.getProperty("codbi.maven.repo.url")?.trim()?.trimEnd('/')
-            ?: "https://repo1.maven.org/maven2"
-    val jarUrl = "$repo/ai/djl/huggingface/tokenizers/$version/tokenizers-$version.jar"
-    val jar = File(cache, "tokenizers-$version.jar")
-
-    if (!jar.exists()) {
-      try {
-        log(LogLevel.INFO, "Downloading tokenizers natives from Maven repo: $jarUrl")
-
-        downloadTo(jarUrl, jar)
-      } catch (X: Exception) {
-        log(AI.LogLevel.ERROR, "Failed to download tokenizers jar: ${X.message}", "", X)
-
-        return false
-      }
-    }
-
-    val requiredNames =
-        when {
-          jarDir.contains("win-x86_64") ->
-              listOf(
-                  "tokenizers.dll", "libwinpthread-1.dll", "libstdc++-6.dll", "libgcc_s_seh-1.dll")
-          jarDir.contains("linux-") -> listOf("libtokenizers.so")
-          jarDir.contains("osx-") -> listOf("libtokenizers.dylib")
-          else -> emptyList()
-        }
-
-    try {
-      JarFile(jar).use { jf ->
-        for (name in requiredNames) {
-          val entryName = "$jarDir/$name"
-          val entry =
-              jf.getJarEntry(entryName)
-                  ?: throw IllegalStateException(
-                      "Missing tokenizers native entry in jar: $entryName")
-
-          val outFile = File(runDir, name)
-
-          jf.getInputStream(entry).use { input ->
-            outFile.outputStream().use { output -> input.copyTo(output) }
-          }
-        }
-      }
-    } catch (X: Exception) {
-      log(LogLevel.ERROR, "Failed to extract tokenizers natives: ${X.message}", "", X)
-
-      return false
-    }
-
-    val missing = requiredNames.filter { !File(runDir, it).exists() }
-
-    if (missing.isNotEmpty()) {
-      log(LogLevel.ERROR, "Tokenizers natives missing after extraction: $missing")
-      log(LogLevel.ERROR, "Expected files in: ${runDir.absolutePath}")
-      runDir.listFiles()?.forEach { file ->
-        log(LogLevel.ERROR, "  Found: ${ file.name} (${ file.length()} bytes)")
-      }
-
-      return false
-    }
-
-    // Verify all required files exist and log their sizes
-    requiredNames.forEach { name ->
-      val file = File(runDir, name)
-      if (file.exists()) {
-        log(
-            AI.LogLevel.INFO,
-            "Tokenizers native library verified: ${file.name} (${file.length()} bytes)")
-      } else {
-        log(AI.LogLevel.ERROR, "Tokenizers native library missing: ${file.absolutePath}")
-      }
-    }
-
-    if (System.getProperty("RUST_FLAVOR").isNullOrEmpty()) System.setProperty("RUST_FLAVOR", "cpu")
-
-    // Add tokenizers native directory to java.library.path so JNA can find the libraries
+    // Set java.library.path and RUST_LIBRARY_PATH as before
     val currentLibraryPath = System.getProperty("java.library.path") ?: ""
     val newLibraryPath =
-        if (currentLibraryPath.isEmpty()) {
-          runDir.absolutePath
-        } else {
-          "$currentLibraryPath${File.pathSeparator}${runDir.absolutePath}"
-        }
+        if (currentLibraryPath.isEmpty()) runDir.absolutePath
+        else "$currentLibraryPath${File.pathSeparator}${runDir.absolutePath}"
     System.setProperty("java.library.path", newLibraryPath)
-    log(
-        AI.LogLevel.INFO,
-        "Added tokenizers native dir to java.library.path: ${runDir.absolutePath}")
-
-    // IMPORTANT:
-    // tokenizers-0.36.0 has a Windows CPU bug: when RUST_LIBRARY_PATH points to a directory,
-    // it tries to call `cudaArch.isEmpty()` and crashes if cudaArch is null.
-    // If we point RUST_LIBRARY_PATH directly at the library file, it takes the "regular file" path
-    // and avoids that NPE.
+    val os = (System.getProperty("os.name") ?: "").lowercase()
     val libFile =
         when {
-          jarDir.contains("win-x86_64") -> File(runDir, "tokenizers.dll")
-          jarDir.contains("linux-") -> File(runDir, "libtokenizers.so")
-          jarDir.contains("osx-") -> File(runDir, "libtokenizers.dylib")
+          os.contains("windows") -> File(runDir, "tokenizers.dll")
+          os.contains("linux") -> File(runDir, "libtokenizers.so")
+          os.contains("mac") -> File(runDir, "libtokenizers.dylib")
           else -> File(runDir, "tokenizers.dll")
         }
     System.setProperty("RUST_LIBRARY_PATH", libFile.absolutePath)
@@ -624,7 +479,8 @@ class DonutDocVQAAction : ONNX() {
     val candidateMaxTokens =
         configData.properties.getProperty("AI_ONNX_DONUT_MaxTokens")?.toIntOrNull()
 
-    maxTokens = if (candidateMaxTokens != null && candidateMaxTokens > 0) candidateMaxTokens else 2
+    maxTokens =
+        if (candidateMaxTokens != null && candidateMaxTokens > 0) candidateMaxTokens else maxTokens
     // endregion Read the [maxTokens]
     // region Read [keepNewest]
     val candidateKeepNewest =
@@ -1269,9 +1125,15 @@ class DonutDocVQAAction : ONNX() {
     params.headerMap.forEach { (headerName, headerValue) ->
       if (headerName.startsWith("x-question-", ignoreCase = true)) {
         val key = headerName.lowercase().substringAfter("x-question-", "").lowercase()
-
         if (key.isNotBlank() && headerValue != null) {
-          questionsToAsk[key] = headerValue
+          // Try to decode header value as UTF-8 if misencoded
+          val decodedValue =
+              try {
+                String(headerValue.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
+              } catch (ex: Exception) {
+                headerValue // fallback
+              }
+          questionsToAsk[key] = decodedValue
         }
       }
     }
@@ -1286,8 +1148,6 @@ class DonutDocVQAAction : ONNX() {
       val tokenizer = tokenizer ?: return errorResponse("Tokenizer not loaded.")
 
       params.uploadFiles?.forEach { (inputName, fileItem) ->
-        log(LogLevel.INFO, "Processing: $inputName")
-
         val combinedBytes =
             fileItem.stream().use { stream ->
               stream.map { it.data }.reduce { acc, bytes -> acc + bytes }.orElse(byteArrayOf())
@@ -1296,8 +1156,6 @@ class DonutDocVQAAction : ONNX() {
         // region Apply orientation correction (manual X-Rotate or automatic OSD)
         val rotatedBytes =
             try {
-              // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
-              // 270)
               val manualRotation =
                   params.headerMap.entries
                       .find { it.key.equals("X-Rotate", ignoreCase = true) }
@@ -1306,7 +1164,6 @@ class DonutDocVQAAction : ONNX() {
                       ?.toIntOrNull()
 
               if (manualRotation != null && manualRotation != 0) {
-                // Manual rotation via X-Rotate header
                 log(
                     LogLevel.INFO,
                     "Applying manual rotation from X-Rotate header: ${manualRotation}°")
@@ -1328,6 +1185,7 @@ class DonutDocVQAAction : ONNX() {
                       }
 
                   val baos = ByteArrayOutputStream()
+
                   ImageIO.write(rotatedImg, "PNG", baos)
                   baos.toByteArray()
                 } else {
@@ -1388,9 +1246,28 @@ class DonutDocVQAAction : ONNX() {
           val results = mutableMapOf<String, String>()
 
           NDManager.newBaseManager().use { manager ->
-            // region Image preprocessing
-            val resizedImage = djlImg.resize(960, 1280, true)
-            var array = resizedImage.toNDArray(manager)
+            // region Image preprocessing (Letterboxing statt Stretching)
+            val targetW = 960
+            val targetH = 1280
+            val origW = djlImg.width
+            val origH = djlImg.height
+            val scale = minOf(targetW.toFloat() / origW, targetH.toFloat() / origH)
+            val newW = (origW * scale).toInt()
+            val newH = (origH * scale).toInt()
+            val resized = djlImg.resize(newH, newW, true)
+            val factory = ImageFactory.getInstance()
+            val base =
+                java.awt.image.BufferedImage(
+                    targetW, targetH, java.awt.image.BufferedImage.TYPE_INT_RGB)
+            val g = base.createGraphics()
+            g.color = java.awt.Color.WHITE
+            g.fillRect(0, 0, targetW, targetH)
+            val x = (targetW - newW) / 2
+            val y = (targetH - newH) / 2
+            g.drawImage(resized.getWrappedImage() as java.awt.Image, x, y, newW, newH, null)
+            g.dispose()
+            val padded: DjlImage = factory.fromImage(base)
+            var array = padded.toNDArray(manager)
             array = array.transpose(2, 0, 1).toType(DataType.FLOAT32, false)
             val mean = manager.create(floatArrayOf(0.485f, 0.456f, 0.406f)).reshape(3, 1, 1)
             val std = manager.create(floatArrayOf(0.229f, 0.224f, 0.225f)).reshape(3, 1, 1)

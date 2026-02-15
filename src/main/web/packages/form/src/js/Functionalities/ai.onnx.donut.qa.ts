@@ -64,7 +64,8 @@ export class AI_ONNX_DONUT_QA {
    * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_ONNX_DONUT_QA_Question**.
    * Each such element should have:
    *  - An **id** attribute (used as the question key)
-   *  - A **data-cb-Question** attribute (contains the question text)
+   *  - A **data-cb-Question**  attribute (contains the question text which may include symbols like <[FieldName]>
+   *                            that get resolved to the value of the field with class "FieldName" in the same container).
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -136,13 +137,23 @@ export class AI_ONNX_DONUT_QA {
       // #endregion Determine the container of the upload input
       // #region Acquire Questions
       const questionElements = container.querySelectorAll(".AI_ONNX_DONUT_QA_Question");
-
+      const cordQuestions: { id: string; element: Element }[] = [];
+      const vqaHeaders: { [key: string]: string } = {};
       for (const element of questionElements) {
         const id = element.id;
-        const question = element.getAttribute("data-cb-Question");
-
+        let question = element.getAttribute("data-cb-Question");
         if (id && question) {
-          headers[`X-Question-${id}`] = question;
+          // Symbol resolution: replace <[Identifier]> with value of field with class 'Identifier'
+          question = question.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
+            const trimmed = identifier.trim();
+            // Find the first element with this class (Formcycle field)
+            const field = document.querySelector(`.${trimmed}`) as HTMLInputElement | null;
+            if (field && "value" in field) {
+              return field.value;
+            }
+            return match; // fallback: leave symbol as-is
+          });
+          vqaHeaders[`X-Question-${id}`] = question;
         } else {
           if (!id) {
             window.codbi.log(
@@ -160,104 +171,136 @@ export class AI_ONNX_DONUT_QA {
           }
         }
       }
-
-      if (Object.keys(headers).length === 0) {
-        window.codbi.log(
-          "ERROR",
-          `No question elements found with class AI_ONNX_DONUT_QA_Question in container "${container.getAttribute("id") || "unknown"}". Cannot proceed without questions. Add elements with class "AI_ONNX_DONUT_QA_Question" and attribute "data-cb-Question" to ask questions.`,
-          "AI / ONNX / DONUT",
-        );
-
-        return;
-      }
       // #endregion Acquire Questions
-      // #region Disable input and show loading animation
-      const tsToProcess = toProcess as HTMLElement;
-      tsToProcess.style.pointerEvents = "none";
-      tsToProcess.style.opacity = "0.5";
 
-      window.codbi.injectLoadingAnim(toProcess);
-
-      const uploadLabel = tsToProcess.parentElement?.querySelector("label") as HTMLElement | null;
-      const uploadFormerText = uploadLabel ? uploadLabel.innerHTML : "";
-
-      if (uploadLabel) {
-        uploadLabel.innerHTML = `${uploadFormerText}
-          <style>
-            @keyframes highlight {
-              0%    { opacity:1; }
-              50%   { opacity:0; }
-              100%  { opacity:1; }}
-                    
-            .DONUT_Processing { font-weight: bold ; color: darkorange ; animation: highlight 2s ease-in-out infinite ;}</style>
-
-          <span class = "DONUT_Processing">Processing...</span>`;
-      }
-
-      const questionLabelData: Map<HTMLElement, string> = new Map();
-
-      for (const element of questionElements) {
-        const questionLabel = element.parentElement?.querySelector("label") as HTMLElement | null;
-
-        if (questionLabel) {
-          const originalText = questionLabel.innerHTML;
-          questionLabelData.set(questionLabel, originalText);
-          questionLabel.innerHTML = `${originalText}
-            <span class = "DONUT_Processing">Processing...</span>`;
+      // #region If any CORD questions, call CORD action for each
+      if (cordQuestions.length > 0) {
+        for (const { id, element } of cordQuestions) {
+          // Only send the file(s), no question headers
+          $.ajax({
+            url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Donut_CORDv2`,
+            type: "POST",
+            data: formData,
+            dataType: "json",
+            processData: false,
+            contentType: false,
+            cache: false,
+            success: (response) => {
+              // Place the returned JSON into the field tagged with this question
+              const field = document.querySelector(`#${id}`) as HTMLInputElement;
+              if (field) {
+                field.value = typeof response === "string" ? response : JSON.stringify(response);
+                // Dispatch change event after setting value
+                const event = new Event("change", { bubbles: true });
+                field.dispatchEvent(event);
+              }
+            },
+            error: (xhr, status, error) => {
+              window.codbi.log(
+                "ERROR",
+                `CORD REST failed with status "${status}" cause: "${error}"`,
+                "AI / ONNX / DONUT",
+              );
+            },
+          });
         }
       }
-      // #endregion Disable input and show loading animation
-      // #region Define how to remove the loading animation and restore labels
-      const unanimate = () => {
-        window.codbi.removeLoaderAnim(toProcess);
+      // #endregion If any CORD questions, call CORD action for each
 
-        tsToProcess.style.pointerEvents = "all";
-        tsToProcess.style.opacity = "1";
+      // #region If any VQA questions, call VQA action as before
+      if (Object.keys(vqaHeaders).length > 0) {
+        // #region Disable input and show loading animation
+        const tsToProcess = toProcess as HTMLElement;
+        tsToProcess.style.pointerEvents = "none";
+        tsToProcess.style.opacity = "0.5";
+
+        window.codbi.injectLoadingAnim(toProcess);
+
+        const uploadLabel = tsToProcess.parentElement?.querySelector("label") as HTMLElement | null;
+        const uploadFormerText = uploadLabel ? uploadLabel.innerHTML : "";
 
         if (uploadLabel) {
-          uploadLabel.innerHTML = uploadFormerText;
+          uploadLabel.innerHTML = `${uploadFormerText}
+            <style>
+              @keyframes highlight {
+                0%    { opacity:1; }
+                50%   { opacity:0; }
+                100%  { opacity:1; }}
+                    
+              .DONUT_Processing { font-weight: bold ; color: darkorange ; animation: highlight 2s ease-in-out infinite ;}</style>
+
+            <span class = "DONUT_Processing">Processing...</span>`;
         }
 
-        // Restore all question labels
-        for (const [label, originalText] of questionLabelData.entries()) {
-          label.innerHTML = originalText;
+        const questionLabelData: Map<HTMLElement, string> = new Map();
+
+        for (const element of questionElements) {
+          const questionLabel = element.parentElement?.querySelector("label") as HTMLElement | null;
+
+          if (questionLabel) {
+            const originalText = questionLabel.innerHTML;
+            questionLabelData.set(questionLabel, originalText);
+            questionLabel.innerHTML = `${originalText}
+              <span class = "DONUT_Processing">Processing...</span>`;
+          }
         }
-      };
-      // #endregion Define how to remove the loading animation and restore labels
-      // #region Contact ONNX Donut vQA Plugin via AJAX
-      $.ajax({
-        url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Donut_vQA`,
-        type: "POST",
-        data: formData,
-        dataType: "json",
-        processData: false,
-        contentType: false,
-        cache: false,
-        beforeSend: (xhr) => {
-          for (const headerName of Object.keys(headers)) {
-            xhr.setRequestHeader(headerName, headers[headerName]);
+        // #endregion Disable input and show loading animation
+        // #region Define how to remove the loading animation and restore labels
+        const unanimate = () => {
+          window.codbi.removeLoaderAnim(toProcess);
+
+          tsToProcess.style.pointerEvents = "all";
+          tsToProcess.style.opacity = "1";
+
+          if (uploadLabel) {
+            uploadLabel.innerHTML = uploadFormerText;
           }
-        },
-        success: (response) => {
-          unanimate();
-          // #region AI error handling
-          if (response.error) {
-            window.codbi.log("ERROR", `REST failed with: ${response.error}`, "AI / ONNX / DONUT");
-            return;
+
+          // Restore all question labels
+          for (const [label, originalText] of questionLabelData.entries()) {
+            label.innerHTML = originalText;
           }
-          // #endregion AI error handling
-          for (const key in response) {
-            for (const key2 in response[key]) {
-              (document.querySelector(`#${key2}`) as HTMLInputElement).value = response[key][key2];
+        };
+        // #endregion Define how to remove the loading animation and restore labels
+        // #region Contact ONNX Donut vQA Plugin via AJAX
+        $.ajax({
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Donut_vQA`,
+          type: "POST",
+          data: formData,
+          dataType: "json",
+          processData: false,
+          contentType: false,
+          cache: false,
+          beforeSend: (xhr) => {
+            for (const headerName of Object.keys(vqaHeaders)) {
+              xhr.setRequestHeader(headerName, vqaHeaders[headerName]);
             }
-          }
-        },
-        error: (xhr, status, error) => {
-          unanimate();
-
-          window.codbi.log("ERROR", `REST failed with status "${status}" cause: "${error}"`, "AI / ONNX / DONUT");
-        },
-      });
+          },
+          success: (response) => {
+            unanimate();
+            if (response.error) {
+              window.codbi.log("ERROR", `REST failed with: ${response.error}`, "AI / ONNX / DONUT");
+              return;
+            }
+            for (const key in response) {
+              for (const key2 in response[key]) {
+                const field = document.querySelector(`#${key2}`) as HTMLInputElement;
+                if (field) {
+                  field.value = response[key][key2];
+                  // Dispatch change event after setting value
+                  const event = new Event("change", { bubbles: true });
+                  field.dispatchEvent(event);
+                }
+              }
+            }
+          },
+          error: (xhr, status, error) => {
+            unanimate();
+            window.codbi.log("ERROR", `REST failed with status "${status}" cause: "${error}"`, "AI / ONNX / DONUT");
+          },
+        });
+      }
+      // #endregion If any VQA questions, call VQA action as before
       // #endregion Contact ONNX Donut vQA Plugin via AJAX
     });
   }

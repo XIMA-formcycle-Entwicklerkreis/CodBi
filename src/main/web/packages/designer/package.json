@@ -28,6 +28,7 @@
     "zod": "^4.0.5"
   },
   "devDependencies": {
+    "@angular/cli": "~21.1.4",
     "@biomejs/biome": "1.9.4",
     "@de-xima/esbuild-plugin-postcss": "~1.0.0",
     "@jest/globals": "~29.7.0",

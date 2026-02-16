@@ -44,7 +44,7 @@ async function buildAngularWebComponent() {
   console.log(`Building Angular web component in ${angularWebComponentProjectRoot}...`);
 
   try {
-    const buildCommand = `ng build manager`;
+    const buildCommand = `yarn ng build manager`;
     const { stdout, stderr } = await execPromise(buildCommand, { cwd: angularWebComponentProjectRoot });
 
     if (stdout) console.log(`Angular Build (stdout):\n${stdout}`);

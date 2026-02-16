@@ -159,6 +159,8 @@ function createIndividualTsBuildsWithSplitting(toProcess, basePath, outputDir) {
   ];
 }
 
+await fs.mkdir(outputDir, { recursive: true });
+
 await Promise.all([
   copyPdfJsWorker(),
   ...configTemplates.map((configTemplate) =>

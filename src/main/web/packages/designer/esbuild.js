@@ -62,8 +62,8 @@ async function copyTinyMCEAssets() {
   console.log(`Copying TinyMCE assets from ${tinymceSourceDir} to ${tinymceOutputDir}...`);
 
   try {
+    await fs.rm(tinymceOutputDir, { recursive: true, force: true });
     await fs.mkdir(outputDir, { recursive: true });
-    await fsExtra.emptyDir(tinymceOutputDir);
     await fsExtra.copy(tinymceSourceDir, tinymceOutputDir, { recursive: true, overwrite: true });
 
     console.log("TinyMCE assets copied successfully.");
@@ -78,8 +78,8 @@ async function copyI18nAssets() {
   console.log(`Copying i18n assets from ${i18nSourceDir} to ${i18nOutputDir}...`);
 
   try {
+    await fs.rm(i18nOutputDir, { recursive: true, force: true });
     await fs.mkdir(i18nOutputDir, { recursive: true });
-    await fsExtra.emptyDir(i18nOutputDir);
     await fsExtra.copy(i18nSourceDir, i18nOutputDir, { recursive: true, overwrite: true });
     console.log("i18n assets copied successfully.");
   } catch (X) {
@@ -95,10 +95,10 @@ async function copyAngularWebComponentSvgAssets() {
   );
 
   try {
+    // Remove the destination directory before copying to ensure a clean copy
+    await fs.rm(angularWebComponentSvgOutputDir, { recursive: true, force: true });
     // Ensure the output directory for SVGs exists
     await fs.mkdir(angularWebComponentSvgOutputDir, { recursive: true });
-    // Clear the destination directory before copying to ensure a clean copy
-    await fsExtra.emptyDir(angularWebComponentSvgOutputDir);
     // Copy all contents from source to destination
     await fsExtra.copy(angularWebComponentSvgSourceDir, angularWebComponentSvgOutputDir, {
       recursive: true,
@@ -118,9 +118,7 @@ async function copyAngularWebComponentSvgAssets() {
 }
 
 (async () => {
-  console.log(`Cleaning output directory: ${outputDir}...`);
-
-  await fsExtra.emptyDir(outputDir);
+  await fs.mkdir(outputDir, { recursive: true });
   await buildAngularWebComponent();
   await copyTinyMCEAssets();
   await copyI18nAssets();

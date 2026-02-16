@@ -1237,27 +1237,6 @@
 					<target>9</target>
 				</configuration>
 			</plugin>
-
-			<!-- Play sound notification when build completes -->
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>exec-maven-plugin</artifactId>
-				<version>${maven-exec-plugin.version}</version>
-				<executions>
-					<execution>
-						<id>play-build-complete-sound</id>
-						<goals>
-							<goal>exec</goal>
-						</goals>
-						<phase>package</phase>
-						<configuration>
-							<executable>powershell</executable>
-							<commandlineArgs>-Command "[console]::beep(800, 500)"</commandlineArgs>
-						</configuration>
-					</execution>
-				</executions>
-			</plugin>
-
 		</plugins>
 
 		<sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>

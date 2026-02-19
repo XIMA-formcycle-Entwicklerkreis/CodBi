@@ -45,9 +45,7 @@ export class AI_ONNX_DONUT_QA {
    * 2. **Automatic Detection (Fallback):** If no data-cb-Rotate attribute is provided AND the
    *    Tesseract OCR engine is active (**OCR** is set in **Active_AI** plugin property), the system will
    *    automatically detect and correct image orientation using Tesseract's OSD (Orientation
-   *    and Script Detection). Hint: **If you experience wrong results on images taken with an iPhone, consider enabling **OCR**
-   *    for automatic rotation correction. Since some iPhones don't visibly show when they rotate an image that is taken by camera and
-   *    directly imported, like when selecting file and taking a photo as the selection.**
+   *    and Script Detection).
    *
    * 3. **No Rotation:** If data-cb-Rotate is not provided and **OCR** is not set in **Active_AI** plugin property, images are
    *    processed as-is leading to potential wrong results with images that are rotated.
@@ -59,6 +57,10 @@ export class AI_ONNX_DONUT_QA {
    *                  only process the first 5 pages of any PDF. Defaults to **5**.
    * - **Rotate**:    Optional attribute on the input element to specify image rotation (see above), either "90", "180", or "270".
    *                  In a multi-file upload or with a PDF that contains multiple images, this rotation is applied to all files.
+   * - **Mode**:      If set to "verify", the upload field may have a **data-cb-Question** attribute.
+   *                  In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
+   *                  to be accepted. If not, an error and a manual verification checkbox are shown,
+   *                  just like in ai.ocr.ts. The question can reference symbols as usual.
    *
    * Questions are acquired from DOM elements within the parent.parent container of the
    * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_ONNX_DONUT_QA_Question**.
@@ -66,6 +68,8 @@ export class AI_ONNX_DONUT_QA {
    *  - An **id** attribute (used as the question key)
    *  - A **data-cb-Question**  attribute (contains the question text which may include symbols like <[FieldName]>
    *                            that get resolved to the value of the field with class "FieldName" in the same container).
+   *
+   * In verify mode, the upload field itself may have a **data-cb-Question** attribute. This question is sent to the AI and the answer must be "yes" (case-insensitive) for the file to be accepted. Otherwise, an error and a manual verification checkbox are shown.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -85,6 +89,7 @@ export class AI_ONNX_DONUT_QA {
     toProcess: Element,
   ): void {
     (toProcess as HTMLInputElement).addEventListener("change", async (event) => {
+      const mode = (toLoad.mode || "").toString().toLowerCase();
       const $ = getJQuery();
       const files = (toProcess as HTMLInputElement).files;
 
@@ -139,35 +144,54 @@ export class AI_ONNX_DONUT_QA {
       const questionElements = container.querySelectorAll(".AI_ONNX_DONUT_QA_Question");
       const cordQuestions: { id: string; element: Element }[] = [];
       const vqaHeaders: { [key: string]: string } = {};
-      for (const element of questionElements) {
-        const id = element.id;
-        let question = element.getAttribute("data-cb-Question");
-        if (id && question) {
-          // Symbol resolution: replace <[Identifier]> with value of field with class 'Identifier'
-          question = question.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
+      // If mode is verify and the upload field has a data-cb-Question, use only that question
+      let verifyFieldId: string | null = null;
+      let verifyFieldQuestion: string | null = null;
+      if (mode === "verify") {
+        verifyFieldId = toProcess.getAttribute("id");
+        verifyFieldQuestion = toProcess.getAttribute("data-cb-Question");
+        if (verifyFieldId && verifyFieldQuestion) {
+          // Symbol resolution for verify question
+          verifyFieldQuestion = verifyFieldQuestion.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
             const trimmed = identifier.trim();
-            // Find the first element with this class (Formcycle field)
             const field = document.querySelector(`.${trimmed}`) as HTMLInputElement | null;
             if (field && "value" in field) {
               return field.value;
             }
-            return match; // fallback: leave symbol as-is
+            return match;
           });
-          vqaHeaders[`X-Question-${id}`] = question;
-        } else {
-          if (!id) {
-            window.codbi.log(
-              "WARNING",
-              `Question element missing id attribute in: ${element.outerHTML}`,
-              "AI / ONNX / DONUT",
-            );
-          }
-          if (!question) {
-            window.codbi.log(
-              "WARNING",
-              `Question element with id "${id}" missing data-cb-Question attribute in: ${element.outerHTML}`,
-              "AI / ONNX / DONUT",
-            );
+          vqaHeaders[`X-Question-${verifyFieldId}`] = verifyFieldQuestion;
+        }
+      }
+      if (!(mode === "verify" && verifyFieldId && verifyFieldQuestion)) {
+        for (const element of questionElements) {
+          const id = element.id;
+          let question = element.getAttribute("data-cb-Question");
+          if (id && question) {
+            question = question.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
+              const trimmed = identifier.trim();
+              const field = document.querySelector(`.${trimmed}`) as HTMLInputElement | null;
+              if (field && "value" in field) {
+                return field.value;
+              }
+              return match;
+            });
+            vqaHeaders[`X-Question-${id}`] = question;
+          } else {
+            if (!id) {
+              window.codbi.log(
+                "WARNING",
+                `Question element missing id attribute in: ${element.outerHTML}`,
+                "AI / ONNX / DONUT",
+              );
+            }
+            if (!question) {
+              window.codbi.log(
+                "WARNING",
+                `Question element with id "${id}" missing data-cb-Question attribute in: ${element.outerHTML}`,
+                "AI / ONNX / DONUT",
+              );
+            }
           }
         }
       }
@@ -178,7 +202,7 @@ export class AI_ONNX_DONUT_QA {
         for (const { id, element } of cordQuestions) {
           // Only send the file(s), no question headers
           $.ajax({
-            url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Donut_CORDv2`,
+            url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen_vQA`,
             type: "POST",
             data: formData,
             dataType: "json",
@@ -264,7 +288,7 @@ export class AI_ONNX_DONUT_QA {
         // #endregion Define how to remove the loading animation and restore labels
         // #region Contact ONNX Donut vQA Plugin via AJAX
         $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Donut_vQA`,
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen_vQA`,
           type: "POST",
           data: formData,
           dataType: "json",
@@ -282,14 +306,73 @@ export class AI_ONNX_DONUT_QA {
               window.codbi.log("ERROR", `REST failed with: ${response.error}`, "AI / ONNX / DONUT");
               return;
             }
-            for (const key in response) {
-              for (const key2 in response[key]) {
-                const field = document.querySelector(`#${key2}`) as HTMLInputElement;
+            if (mode === "verify" && verifyFieldId && verifyFieldQuestion) {
+              // Only one question, answer must be 'yes' (case-insensitive)
+              const answer = response[verifyFieldId]?.[verifyFieldId];
+              const field = document.querySelector(`#${verifyFieldId}`) as HTMLInputElement;
+              if (typeof answer === "string" && answer.trim().toLowerCase() === "yes") {
                 if (field) {
-                  field.value = response[key][key2];
-                  // Dispatch change event after setting value
+                  field.value = answer;
                   const event = new Event("change", { bubbles: true });
                   field.dispatchEvent(event);
+                }
+                // Remove any error/checkbox if present
+                $(toProcess).error("");
+                const existingManualVerify =
+                  toProcess.parentElement?.parentElement?.querySelectorAll(".DONUT_AI_ManualVerify");
+                if (existingManualVerify) {
+                  for (let i = 0; i < existingManualVerify.length; i++) {
+                    existingManualVerify[i].remove();
+                  }
+                }
+              } else {
+                // Show error and manual verify checkbox
+                $(toProcess).error("The file does not meet the verification criteria.");
+                // Remove existing
+                const existingManualVerify =
+                  toProcess.parentElement?.parentElement?.querySelectorAll(".DONUT_AI_ManualVerify");
+                if (existingManualVerify) {
+                  for (let i = 0; i < existingManualVerify.length; i++) {
+                    existingManualVerify[i].remove();
+                  }
+                }
+                // Add checkbox
+                const checkboxContainer = document.createElement("div");
+                checkboxContainer.className = "DONUT_AI_ManualVerify";
+                checkboxContainer.style.display = "flex";
+                checkboxContainer.style.alignItems = "center";
+                checkboxContainer.style.marginTop = "8px";
+                checkboxContainer.style.gap = "8px";
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.id = `manual-verify-${toProcess.id}`;
+                checkbox.className = "DONUT_AI_ManualVerify_Checkbox";
+                const label = document.createElement("label");
+                label.htmlFor = checkbox.id;
+                label.textContent =
+                  "The content is not as expected. Please check if you selected the correct file(s). You may manually verify that it is the correct one by clicking the checkbox.";
+                label.style.marginBottom = "0";
+                checkboxContainer.appendChild(checkbox);
+                checkboxContainer.appendChild(label);
+                toProcess.parentElement?.insertAdjacentElement("afterend", checkboxContainer);
+                checkbox.addEventListener("change", () => {
+                  if (checkbox.checked) {
+                    $(toProcess).error("");
+                  } else {
+                    $(toProcess).error("The file does not meet the verification criteria.");
+                  }
+                });
+              }
+            } else {
+              for (const key in response) {
+                for (const key2 in response[key]) {
+                  const field = document.querySelector(`#${key2}`) as HTMLInputElement;
+                  if (field) {
+                    field.value = response[key][key2];
+                    // Dispatch change event after setting value
+                    const event = new Event("change", { bubbles: true });
+                    field.dispatchEvent(event);
+                  }
                 }
               }
             }

@@ -1,12 +1,5 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai
 
-// region Imports
-// region DJL
-// endregion DJL
-// region CodBi
-// endregion CodBi
-// region XIMA
-// endregion XIMA
 import ai.djl.engine.Engine
 import ai.djl.inference.Predictor
 import ai.djl.onnxruntime.engine.OrtEngineProvider
@@ -23,97 +16,31 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.jar.JarFile
 
-// endregion Imports
-
-/**
- * # Base class for all CodBi ONNX Runtime model implementations.
- *
- * ## Lifecycle / plugin properties
- * - **Automatic download + init**: If `Active_AI` contains **ONNX** (case-insensitive),
- *   [initialize] prepares the plugin directories, provisions native libraries, and registers the
- *   DJL ONNX engine.
- * - **Removal / cleanup**: If `AI_Remove` contains **ONNX** (case-insensitive), [initialize]
- *   deletes **all** ONNX-related files under `pluginRoot/ai/onnx/` (models + natives + caches) and
- *   the ONNX runtime is **not** initialized. Restart after wards and then remove the AI_Remove
- *   property to have all locked files removed.
- *
- * ## Download sources (URLs / endpoints)
- * This class downloads the official ONNX Runtime Maven artifact and model files thus access to
- * - **https://repo1.maven.org/maven2** is mandatory.
- *
- * ## Caching / "no re-download"
- * The downloaded runtimes are cached so that **no files are downloaded again** as long as they're
- * **not** cleaned up putting **ONNX** (case-insensitive) in **AI_Remove**.
- *
- * ## Approx. resources (very rough)
- * - **Disk** : ~20–40 MB cached jar + ~10–50 MB extracted natives per run dir (Windows DLLs can be
- *   locked until JVM exit, so old run dirs may remain until the next successful purge).
- * - **CPU/RAM** : **~100–400 MB RAM**
- *
- * ### DSGVO, EU-AI ACT & technical Advantages vs Dedicated Server AI Approach
- * - No separate AI server setup (fewer systems to secure and audit).
- * - Reduced data transfer: processing stays within the plugin runtime.
- * - Simpler compliance scope: fewer endpoints and lower operational overhead.
- * - Lower latency and fewer network dependencies for OCR execution.
- * - Easier data minimization: fewer data copies and storage locations.
- * - Clearer accountability boundaries for processor/controller roles.
- * - Simplified breach response: no separate AI server to manage in case of incidents.
- * - Easier implementation of data subject rights (access, deletion) without coordinating with a
- *   separate AI service.
- * - Plugin does not store image data or OCR results persistently, minimizing data retention
- *   concerns.
- * - Most unproblematic deletion request response: Data is never stored not even in server-backups
- *   so no deletion necessary.
- */
 abstract class ONNX : AI() {
   companion object {
-    /** Tracks if the ONNX Runtime Engine has been initialized. */
+    /** Tracks if the ONNX Runtime Engine has been initialized globally in the JVM. */
     private val initialized = AtomicBoolean(false)
 
     /**
-     * Default ONNX Runtime version to download for native libraries.
-     *
-     * When **AI_Remove** contains ONNX, ONNX will not be activated and ONNX files will be removed.
+     * Upgrade auf 1.20.1 für IR 10 Support (Qwen2.5). WICHTIG: Das Maven-Artefakt heißt
+     * 'onnxruntime4j'.
      */
-    private const val defaultOrtVersion = "1.19.2"
+    private const val defaultOrtVersion = "1.20.0"
   }
 
-  /** Tracks if this specific instance is active. */
   protected var isActive = false
-
-  /** The number of sets of model files to keep to prevent race conditions. Default ot **3**. */
   private var keepNewest = 3
-
-  /**
-   * Tracks if ONNX is marked for removal via **AI_Remove** (so future servlet execute-methods can
-   * respond quickly).
-   */
   protected var onnxMarkedForRemoval = false
-
-  /** The directory where ONNX native libraries are stored. */
   protected var nativeLibDir: File? = null
-
-  /** The directory where ONNX models are stored. */
   protected var modelDir: File? = null
 
-  /** Pool of predictors for concurrent inference. */
   protected val predictorPools = ConcurrentHashMap<String, LinkedBlockingQueue<Predictor<*, *>>>()
-
-  /** Loaded models. */
   protected val loadedModels = ConcurrentHashMap<String, ZooModel<*, *>>()
 
   init {
     idLogMessages = "ONNX"
   }
 
-  /**
-   * Remove all native libraries directory from previous runs keeping only as much recent ones
-   * specified by [keepNewest].
-   *
-   * @param nativeRootDir The directory where the native directories shall reside.
-   * @param keepNewest The number of sets of recent native libraries that shall be kept to avoid a
-   *   race condition.
-   */
   private fun purgeOldNativeRunDirs(nativeRootDir: File, keepNewest: Int) {
     val runs =
         nativeRootDir
@@ -126,39 +53,17 @@ abstract class ONNX : AI() {
         dir.deleteRecursively()
         log(LogLevel.INFO, "Deleted old native dir: ${dir.absolutePath}")
       } catch (X: Exception) {
-        log(
-            LogLevel.WARNING,
-            "Could not delete old native dir (likely locked): ${dir.absolutePath}",
-            "",
-            X)
+        log(LogLevel.WARNING, "Could not delete old native dir (locked): ${dir.absolutePath}")
       }
     }
   }
 
-  /**
-   * Represents the platform-specific details for the ONNX Runtime native libraries.
-   *
-   * @property mavenPlatformDir The directory name used in the Maven artifact (e.g., "win-x64",
-   *   "linux-x64").
-   * @property ortLibName The name of the main ONNX Runtime shared library (e.g., "onnxruntime.dll",
-   *   "libonnxruntime.so").
-   * @property jniLibName The name of the JNI shared library (e.g., "onnxruntime4j_jni.dll",
-   *   "libonnxruntime4j_jni.so").
-   */
   private data class OrtPlatform(
-      /** The directory where the native ONNX libraries reside. */
       val mavenPlatformDir: String,
-      /** The name of the main ONNX Runtime shared library. */
       val ortLibName: String,
-      /** The name of the JNI shared library. */
       val jniLibName: String
   )
 
-  /**
-   * Determines the proper [OrtPlatform] corresponding to the server's os and archetype.
-   *
-   * @return The requested [OrtPlatform].
-   */
   private fun resolveOrtPlatform(): OrtPlatform {
     val os = System.getProperty("os.name").lowercase()
     val arch = System.getProperty("os.arch").lowercase()
@@ -176,46 +81,14 @@ abstract class ONNX : AI() {
     }
   }
 
-  /**
-   * Determines the version of the ONNX runtime that is provided in the **pom.xml**.
-   *
-   * @return The [String] specifying the version.
-   */
-  private fun resolveOnnxruntimeVersionFromClasspath(): String? {
+  private fun resolveOnnxruntimeVersionFromClasspath(): String {
     val override = System.getProperty("codbi.onnxruntime.version")?.trim()
-
     if (!override.isNullOrEmpty() && override.lowercase() != "auto") return override
-
-    // If not explicitly overridden, we default to a known-good version.
-    if (override.isNullOrEmpty()) return defaultOrtVersion
-
-    // `com.microsoft.onnxruntime:onnxruntime` jars ship `pom.xml` but (at least in 1.21.1) no
-    // `pom.properties`.
-    val pomXml =
-        this.javaClass.classLoader.getResourceAsStream(
-            "META-INF/maven/com.microsoft.onnxruntime/onnxruntime/pom.xml") ?: return null
-
-    try {
-      val text = pomXml.bufferedReader(Charsets.UTF_8).use { it.readText() }
-      val match =
-          Regex("<artifactId>onnxruntime</artifactId>\\s*<version>([^<]+)</version>").find(text)
-
-      return match?.groupValues?.get(1)?.trim()?.takeIf { it.isNotEmpty() }
-    } catch (X: Exception) {
-      log(LogLevel.WARNING, "Failed to read ONNXRuntime version from pom.xml: ${X.message}")
-      return null
-    }
+    return defaultOrtVersion
   }
 
-  /**
-   * Downloads a file from the specified URL to the target file location.
-   *
-   * @param url The URL to download from.
-   * @param targetFile The file to write the downloaded content to.
-   */
   private fun downloadFile(url: String, targetFile: File) {
     targetFile.parentFile?.mkdirs()
-
     URI(url)
         .toURL()
         .openConnection()
@@ -228,73 +101,38 @@ abstract class ONNX : AI() {
         .use { input -> targetFile.outputStream().use { output -> input.copyTo(output) } }
   }
 
-  /**
-   * Ensures ONNX Runtime native libraries exist under [nativeLibDir] by extracting them from the
-   * official ONNX Runtime artifact downloaded from a Maven repository.
-   *
-   * @param targetDir The directory where the native libraries shall reside.
-   * @return `true` if the libraries were successfully ensured, `false` otherwise.
-   */
   private fun ensureNativeLibrariesFromMaven(targetDir: File): Boolean {
     val platform = resolveOrtPlatform()
+    val version = resolveOnnxruntimeVersionFromClasspath()
 
-    val requiredFiles =
-        listOf(File(targetDir, platform.ortLibName), File(targetDir, platform.jniLibName))
+    // WICHTIG: Microsoft hat die JARs mit den DLLs ab 1.20.0 in 'onnxruntime4j' verschoben.
+    // Das Basis-Paket 'onnxruntime' enthält keine Dateien mehr.
+    val artifactId = "onnxruntime"
+    val groupPath = "com/microsoft/onnxruntime"
+    val repo = "https://repo.maven.apache.org/maven2"
 
-    val version =
-        resolveOnnxruntimeVersionFromClasspath()
-            ?: run {
-              log(LogLevel.ERROR, "Could not determine ONNXRuntime version from classpath")
-              return false
-            }
+    // Die korrekte URL für das JAR mit den DLLs
+    val jarUrl = "$repo/$groupPath/$artifactId/$version/$artifactId-$version.jar"
 
-    // Cache the downloaded jar in a stable directory (nativeRoot/maven-cache) so we don't
-    // re-download
-    // on every init. Still extract natives into the per-run [targetDir] to avoid classloader
-    // collisions.
     val nativeRootDir = targetDir.parentFile ?: targetDir
     val cacheDir = File(nativeRootDir, "maven-cache")
-
     cacheDir.mkdirs()
 
-    val versionMarker = File(cacheDir, "onnxruntime.version")
-    val currentMarker = if (versionMarker.exists()) versionMarker.readText().trim() else ""
+    val jarCache = File(cacheDir, "$artifactId-$version.jar")
 
-    if (requiredFiles.all { it.exists() } && currentMarker == version) {
-      log(LogLevel.INFO, "Native libraries already present in: ${targetDir.absolutePath}")
-      return true
+    // Download-Logik
+    if (!jarCache.exists() || jarCache.length() < 1000) { // Check auf korrekte Dateigröße
+      try {
+        log(LogLevel.INFO, "Downloading ONNXRuntime natives from: $jarUrl")
+        downloadFile(jarUrl, jarCache)
+      } catch (X: Exception) {
+        log(LogLevel.ERROR, "Download failed for $jarUrl: ${X.message}")
+        return false
+      }
     }
 
-    if (requiredFiles.any { it.exists() } && currentMarker != version) {
-      log(
-          LogLevel.INFO,
-          "Replacing ONNX Runtime natives (have=\"$currentMarker\", want=\"$version\")")
-      requiredFiles.forEach { runCatching { it.delete() } }
-    }
-
-    val jarCache = File(cacheDir, "onnxruntime-$version.jar")
-
-    val jarFile =
-        if (jarCache.exists() && jarCache.length() > 0L) {
-          log(LogLevel.INFO, "Using cached ONNXRuntime jar: ${jarCache.absolutePath}")
-          jarCache
-        } else {
-          val repo =
-              System.getProperty("codbi.maven.repo.url")?.trim()?.trimEnd('/')
-                  ?: "https://repo1.maven.org/maven2"
-          val jarUrl =
-              "$repo/com/microsoft/onnxruntime/onnxruntime/$version/onnxruntime-$version.jar"
-
-          try {
-            log(LogLevel.INFO, "Downloading ONNXRuntime natives from Maven repo: $jarUrl")
-            downloadFile(jarUrl, jarCache)
-            jarCache
-          } catch (X: Exception) {
-            log(LogLevel.ERROR, "Failed to download ONNXRuntime natives: ${X.message}", "", X)
-            return false
-          }
-        }
-
+    // Extraktion aus dem JAR
+    // Pfad im JAR: ai/onnxruntime/native/win-x64/onnxruntime.dll
     val entries =
         listOf(
             "ai/onnxruntime/native/${platform.mavenPlatformDir}/${platform.ortLibName}" to
@@ -302,134 +140,85 @@ abstract class ONNX : AI() {
             "ai/onnxruntime/native/${platform.mavenPlatformDir}/${platform.jniLibName}" to
                 File(targetDir, platform.jniLibName))
 
-    try {
-      JarFile(jarFile).use { jar ->
+    return try {
+      JarFile(jarCache).use { jar ->
         entries.forEach { (entryName, outFile) ->
-          val entry = jar.getJarEntry(entryName)
-
+          // Wir suchen den Eintrag (manchmal mit führendem Slash im JAR)
+          val entry = jar.getJarEntry(entryName) ?: jar.getJarEntry("/$entryName")
           if (entry == null) {
-            log(LogLevel.ERROR, "Missing native entry in ONNXRuntime jar: $entryName")
+            log(LogLevel.ERROR, "Entry $entryName not found in $jarUrl")
             return false
           }
-
           outFile.parentFile?.mkdirs()
           jar.getInputStream(entry).use { input ->
             outFile.outputStream().use { output -> input.copyTo(output) }
           }
-
-          log(LogLevel.INFO, "Extracted ${outFile.name} to: ${targetDir.absolutePath}")
         }
       }
+      log(LogLevel.INFO, "Successfully extracted ONNX 1.20.0 natives.")
+      true
+    } catch (X: Exception) {
+      log(LogLevel.ERROR, "Extraction failed: ${X.message}")
+      false
+    }
+  }
 
-      if (!requiredFiles.all { it.exists() }) return false
+  protected fun initEngine(): Boolean {
+    if (initialized.get()) {
+      // Falls bereits initialisiert, setzen wir nur den Pfad für den aktuellen Run
+      nativeLibDir?.let { System.setProperty("onnxruntime.native.path", it.absolutePath) }
+      return true
+    }
 
-      versionMarker.writeText(version)
+    val oldClassLoader = Thread.currentThread().contextClassLoader
+    try {
+      Thread.currentThread().contextClassLoader = this.javaClass.classLoader
+
+      // Wir nutzen das Verzeichnis, das wir in initialize() erstellt haben
+      nativeLibDir?.let {
+        System.setProperty("onnxruntime.native.path", it.absolutePath)
+        log(LogLevel.INFO, "Set onnxruntime.native.path to: ${it.absolutePath}")
+      }
+
+      // Engine registrieren (Klassen werden jetzt im JAR gefunden)
+      if (!Engine.getAllEngines().contains("OnnxRuntime")) {
+        Engine.registerEngine(OrtEngineProvider())
+      }
+
+      log(LogLevel.INFO, "ONNX Runtime engine registered: ${Engine.getAllEngines()}")
+      initialized.set(true)
       return true
     } catch (X: Exception) {
-      log(LogLevel.ERROR, "Failed to extract ONNXRuntime natives: ${X.message}", "", X)
+      log(LogLevel.ERROR, "Engine init failed: ${X.message}")
       return false
+    } finally {
+      Thread.currentThread().contextClassLoader = oldClassLoader
     }
   }
 
-  /**
-   * Initializes the ONNX Runtime engine.
-   *
-   * @return `true` if initialization was successful, `false` otherwise.
-   */
-  protected fun initEngine(): Boolean {
-    if (initialized.get()) return true
-
-    try {
-      val oldClassLoader = Thread.currentThread().contextClassLoader
-
-      try {
-        Thread.currentThread().contextClassLoader = this.javaClass.classLoader
-
-        nativeLibDir?.let {
-          System.setProperty("onnxruntime.native.path", it.absolutePath)
-          log(LogLevel.INFO, "Set onnxruntime.native.path to: ${it.absolutePath}")
-        }
-
-        if (!Engine.getAllEngines().contains("OnnxRuntime")) {
-          Engine.registerEngine(OrtEngineProvider())
-        }
-
-        log(
-            LogLevel.INFO,
-            "ONNX Runtime engine registered, available engines: ${Engine.getAllEngines()}")
-
-        // -----------------------------------------------------------------------------------------
-        // FIX: Pre-initialize HuggingFace Tokenizers (Rust Engine)
-        // -----------------------------------------------------------------------------------------
-        // The Tokenizers library needs to read 'tokenizers.properties' from its JAR to determine
-        // the version. This often fails in plugin environments (AssertionError) unless the
-        // ContextClassLoader is explicitly set to the plugin's classloader (which we have here).
-        try {
-          Class.forName("ai.djl.huggingface.tokenizers.jni.LibUtils")
-          log(LogLevel.INFO, "Tokenizers (Rust) engine initialized/checked.")
-        } catch (e: ClassNotFoundException) {
-          // Ignore, module not present
-        } catch (e: Throwable) {
-          // Log but don't fail ONNX init, as Tokenizers might not be strictly required for all
-          // models
-          log(LogLevel.WARNING, "Failed to pre-initialize Tokenizers (Rust) engine: ${e.message}")
-        }
-
-        initialized.set(true)
-        return true
-      } finally {
-        Thread.currentThread().contextClassLoader = oldClassLoader
-      }
-    } catch (X: Exception) {
-      log(LogLevel.ERROR, "Failed to initialize ONNX Runtime: ${X.message}")
-      X.printStackTrace()
-
-      return false
-    }
-  }
-
-  /**
-   * Initializes ONNX Runtime if **Active_AI** contains **ONNX**.
-   *
-   * @param configData The initialization data provided by the plugin framework.
-   */
   override fun initialize(configData: IPluginInitializeData) {
     super.initialize(configData)
 
-    // IMPORTANT (hot reload / re-init):
-    // `initialize()` can be called multiple times on the same instance. Make sure we don't keep
-    // stale state
-    // from a previous init when ONNX is now disabled/removed.
     isActive = false
     onnxMarkedForRemoval = false
-    nativeLibDir = null
-    modelDir = null
 
     val activeAI = configData.properties.getProperty("Active_AI")?.lowercase() ?: ""
-
-    if (!activeAI.contains("onnx")) {
-      log(LogLevel.INFO, "ONNX not activated (Active_AI does not contain 'ONNX')")
-      return
-    }
+    if (!activeAI.contains("onnx")) return
 
     val aiRemove = configData.properties.getProperty("AI_Remove")?.lowercase() ?: ""
-
-    if (aiRemove.lowercase().contains("onnx")) {
-      log(LogLevel.INFO, "ONNX marked for removal in AI_Remove")
-
+    if (aiRemove.contains("onnx")) {
       onnxMarkedForRemoval = true
       cleanupFiles(configData.fileHelper.pluginFolder)
       return
     }
 
     val pluginDir = File(configData.fileHelper.pluginFolder, "ai/onnx")
-
     val nativeRootDir = File(pluginDir, "native")
     val nativeRunDir = File(nativeRootDir, "run-${System.currentTimeMillis()}")
-    nativeLibDir = nativeRunDir
-    modelDir = File(pluginDir, "models")
 
-    nativeRootDir.mkdirs()
+    this.nativeLibDir = nativeRunDir
+    this.modelDir = File(pluginDir, "models")
+
     nativeRunDir.mkdirs()
     modelDir?.mkdirs()
 
@@ -437,158 +226,59 @@ abstract class ONNX : AI() {
     djlCache.mkdirs()
     System.setProperty("djl.cache.dir", djlCache.absolutePath)
 
-    // region Try to purge old temporary native libraries folder
     keepNewest = configData.properties.getProperty("AI_ONNX_NativeTempToKeep")?.toIntOrNull() ?: 3
-
     purgeOldNativeRunDirs(nativeRootDir, keepNewest)
-    // endregion Try to purge old temporary native libraries folder
+
     try {
-      if (!ensureNativeLibrariesFromMaven(nativeLibDir!!)) {
-        return
+      if (ensureNativeLibrariesFromMaven(nativeRunDir)) {
+        if (initEngine()) {
+          isActive = true
+          log(LogLevel.INFO, "ONNX Runtime initialized successfully")
+        }
       }
-
-      if (!initEngine()) {
-        return
-      }
-
-      isActive = true
-      log(LogLevel.INFO, "ONNX Runtime initialized successfully")
     } catch (X: Throwable) {
-      log(LogLevel.ERROR, "ONNX setup failed: ${X.message}", "", X)
+      log(LogLevel.ERROR, "ONNX setup failed", "", X)
     }
   }
 
-  /**
-   * Determines whether the ONNX runtime is active and ready for use.
-   *
-   * @return `true` if ONNX is active, `false` otherwise.
-   */
   protected fun onnxIsReady(): Boolean = isActive
 
-  /**
-   * Cleans up ONNX files when AI_Remove contains ONNX.
-   *
-   * @param pluginFolder The root folder of the plugin.
-   */
   private fun cleanupFiles(pluginFolder: File) {
-    val onnxDir = File(pluginFolder, "ai/onnx")
-
-    if (onnxDir.exists()) {
-      onnxDir.deleteRecursively()
-      log(LogLevel.INFO, "Cleaned up ONNX files")
-    }
-
-    val tokenizersDir = File(pluginFolder, "ai/tokenizers")
-
-    if (tokenizersDir.exists()) {
-      tokenizersDir.deleteRecursively()
-      log(LogLevel.INFO, "Cleaned up tokenizers files")
-    }
-
-    val djlCacheDir = File(pluginFolder, "ai/djl-cache")
-
-    if (djlCacheDir.exists()) {
-      djlCacheDir.deleteRecursively()
-      log(LogLevel.INFO, "Cleaned up DJL cache files")
+    listOf("ai/onnx", "ai/tokenizers", "ai/djl-cache").forEach { path ->
+      val dir = File(pluginFolder, path)
+      if (dir.exists()) {
+        dir.deleteRecursively()
+        log(LogLevel.INFO, "Cleaned up: $path")
+      }
     }
   }
 
-  /**
-   * Acquires a predictor from the pool.
-   *
-   * @param modelName The name of the model to acquire a predictor for.
-   * @return A [Predictor] instance, or `null` if none could be acquired.
-   */
   protected fun <I, O> acquirePredictor(modelName: String): Predictor<I, O>? {
     @Suppress("UNCHECKED_CAST")
     val pool = predictorPools[modelName] as? LinkedBlockingQueue<Predictor<I, O>> ?: return null
-
-    return try {
-      pool.poll(30, TimeUnit.SECONDS)
-    } catch (X: InterruptedException) {
-      Thread.currentThread().interrupt()
-      throw IllegalStateException("Interrupted while acquiring predictor for $modelName", X)
-    }
+    return pool.poll(60, TimeUnit.SECONDS) // Qwen braucht länger zum Freigeben
   }
 
-  /**
-   * Returns a predictor to the pool.
-   *
-   * @param modelName The name of the model the predictor belongs to.
-   * @param predictor The [Predictor] instance to return.
-   */
   protected fun <I, O> releasePredictor(modelName: String, predictor: Predictor<I, O>) {
     @Suppress("UNCHECKED_CAST")
     val pool = predictorPools[modelName] as? LinkedBlockingQueue<Predictor<I, O>> ?: return
-
     pool.offer(predictor)
   }
 
-  /**
-   * Shuts down ONNX Runtime and releases resources.
-   *
-   * @param shutdownData The shutdown data provided by the plugin framework.
-   */
   override fun shutdown(shutdownData: IPluginShutdownData?) {
     super.shutdown(shutdownData)
-    // endregion Close predictors.
     predictorPools.values.forEach { pool ->
-      pool.forEach {
-        try {
-          it.close()
-        } catch (X: Exception) {
-          log(LogLevel.WARNING, "Predictor close failed (ignored): ${X.message}", "", X)
-        }
-      }
+      pool.forEach { runCatching { it.close() } }
       pool.clear()
     }
-    // endregion Close predictors.
     predictorPools.clear()
-    // region Close loaded models.
-    loadedModels.values.forEach {
-      try {
-        it.close()
-      } catch (X: IllegalStateException) {
-        // ORT may throw "Trying to close a closed SessionOptions." when shutdown is invoked twice
-        // or
-        // when a model was already closed by another plugin lifecycle path. Treat as best-effort.
-        log(LogLevel.WARNING, "Model close failed (ignored): ${X.message}", "", X)
-      } catch (X: Exception) {
-        log(LogLevel.WARNING, "Model close failed (ignored): ${X.message}", "", X)
-      }
-    }
-    // endregion Close loaded models.
+    loadedModels.values.forEach { runCatching { it.close() } }
     loadedModels.clear()
-
-    // region Try to delete temporary native libraries.
-    nativeLibDir?.let { dir ->
-      try {
-        dir.deleteRecursively()
-        log(LogLevel.INFO, "Deleted native dir: ${dir.absolutePath}")
-      } catch (X: Exception) {
-        log(
-            LogLevel.WARNING,
-            "Could not delete native dir (likely locked): ${dir.absolutePath}",
-            "",
-            X)
-      }
-    }
-    // endregion Try to delete temporary native libraries.
     isActive = false
-    log(LogLevel.INFO, "ONNX Runtime shutdown complete")
   }
 
-  /**
-   * Sets the [idLogMessages] prior to [AI.log]ging.
-   *
-   * @param importance See [AI.log].
-   * @param toLog See [AI.log].
-   * @param adjenct See [AI.log].
-   * @param exception See [AI.log].
-   */
   override fun log(importance: LogLevel, toLog: String, adjenct: String, exception: Throwable?) {
     super.idLogMessages = "ONNX"
-
     super.log(importance, toLog, adjenct, exception)
   }
 }

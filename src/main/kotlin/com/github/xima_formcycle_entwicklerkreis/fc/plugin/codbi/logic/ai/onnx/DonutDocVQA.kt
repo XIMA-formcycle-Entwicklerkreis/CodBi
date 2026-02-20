@@ -1,302 +1,432 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.onnx
 
+// region Imports
+// region DJL
+// endregion DJL
+// region CodBi
+// endregion CodBi
+// region XIMA
+// endregion XIMA
 import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer
-import ai.djl.inference.Predictor
 import ai.djl.modality.cv.Image as DjlImage
 import ai.djl.modality.cv.ImageFactory
+import ai.djl.ndarray.NDArray
 import ai.djl.ndarray.NDList
 import ai.djl.ndarray.NDManager
 import ai.djl.ndarray.types.DataType
 import ai.djl.repository.zoo.Criteria
 import ai.djl.repository.zoo.ZooModel
+import ai.djl.translate.Batchifier
 import ai.djl.translate.Translator
 import ai.djl.translate.TranslatorContext
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.ONNX
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeValidationResult
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginValidationData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
 import de.xima.fc.mdl.fdv.EResponseType
 import de.xima.fc.mdl.response.ServletResponse
+import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
 import java.awt.geom.AffineTransform
 import java.awt.image.AffineTransformOp
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.URI
+import java.nio.file.Paths
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import javax.imageio.ImageIO
 import net.sourceforge.tess4j.TessAPI1
 
-/** Translator logic for Qwen2.5-VL. Handles dynamic gridding and KV-cached decoding. */
-class QwenVLTranslator(
-    private val tokenizer: HuggingFaceTokenizer,
+// endregion Imports
+/**
+ * The specific Translator logic for the [DonutDocVQAAction]. Handles resizing, prompt generation,
+ * and the autoregressive decoding loop for ONNX models.
+ */
+class DocVQATranslator(
+    /** The directory where the models reside. */
+    private val modelDir: String,
+    /** The model used for encoding the images to process. */
+    private val encoderModel: ZooModel<NDList, NDList>,
+    /** The model to use for inference. */
+    private var decoderModel: ZooModel<NDList, NDList>?,
+    /**
+     * The number of tokens at which the processing of an image will stop in order to prevent
+     * endless processing (defaults to **100**).
+     */
+    public var maxTokens: Int = 1000,
+    /** The logger to use. */
     private val log: (importance: AI.LogLevel, toLog: String, exception: Throwable?) -> Unit
-) : Translator<Pair<DjlImage, String>, NDList> {
+) : Translator<Pair<DjlImage, String>, String> {
+  /** The [HuggingFaceTokenizer] for text encoding/decoding. */
+  private var tokenizer: HuggingFaceTokenizer? = null
+  /** Cached predictor for encoder. */
+  private var encoderPredictor: ai.djl.inference.Predictor<NDList, NDList>? = null
+  /** Cached predictor for autoregressive decoding. */
+  private var decoderPredictor: ai.djl.inference.Predictor<NDList, NDList>? = null
 
-  private val mean = floatArrayOf(0.481f, 0.458f, 0.408f)
-  private val std = floatArrayOf(0.269f, 0.261f, 0.276f)
+  /**
+   * Sets the encoder model and creates a predictor.
+   *
+   * @param model The [ZooModel] to use for encoding.
+   */
+  fun setEncoderModel(model: ZooModel<NDList, NDList>) {
+    val passThroughTranslator =
+        object : Translator<NDList, NDList> {
+          override fun processInput(ctx: TranslatorContext, input: NDList) = input
 
-  override fun prepare(ctx: TranslatorContext) {
-    // Ignored. We are using the globally loaded tokenizer.
+          override fun processOutput(ctx: TranslatorContext, list: NDList) = list
+
+          override fun getBatchifier() = Batchifier.STACK
+        }
+    encoderPredictor = model.newPredictor(passThroughTranslator)
   }
 
+  /**
+   * Sets the decoder model after it's loaded. Also creates a predictor from a separate model
+   * instance for the autoregressive loop.
+   *
+   * @param model The [ZooModel] to use for the first part of the decoding.
+   * @param loopModel The [ZooModel] to use for all further decoding steps.
+   */
+  fun setDecoderModel(model: ZooModel<NDList, NDList>, loopModel: ZooModel<NDList, NDList>) {
+    decoderModel = model
+    val passThroughTranslator =
+        object : Translator<NDList, NDList> {
+          override fun processInput(ctx: TranslatorContext, input: NDList) = input
+
+          override fun processOutput(ctx: TranslatorContext, list: NDList) = list
+
+          override fun getBatchifier() = Batchifier.STACK
+        }
+    decoderPredictor = loopModel.newPredictor(passThroughTranslator)
+  }
+
+  /** Closes the cached predictors. */
+  fun closePredictor() {
+    encoderPredictor?.close()
+
+    encoderPredictor = null
+
+    decoderPredictor?.close()
+
+    decoderPredictor = null
+  }
+
+  /**
+   * Initializes the tokenizer.
+   *
+   * @param ctx The [TranslatorContext] to use.
+   */
+  override fun prepare(ctx: TranslatorContext) {
+    val oldClassLoader = Thread.currentThread().contextClassLoader
+
+    try {
+      Thread.currentThread().contextClassLoader = this.javaClass.classLoader
+
+      val tokenizerPath = Paths.get(modelDir, "tokenizer.json")
+      tokenizer = HuggingFaceTokenizer.newInstance(tokenizerPath)
+
+      log(AI.LogLevel.INFO, "Tokenizer loaded from $tokenizerPath", null)
+    } finally {
+      Thread.currentThread().contextClassLoader = oldClassLoader
+    }
+  }
+
+  /**
+   * Processes the input image and question, runs the encoder, and prepares decoder inputs.
+   *
+   * @param ctx The [TranslatorContext] to use.
+   * @param input The [Pair] to process.
+   * @return The resulting [NDList].
+   */
   override fun processInput(ctx: TranslatorContext, input: Pair<DjlImage, String>): NDList {
     val manager = ctx.ndManager
     val image = input.first
     val question = input.second
+    log(AI.LogLevel.INFO, "Processing question: $question", null)
+    // region Image preprocessing
+    val resizedImage = image.resize(2560, 1920, true)
+    var array = resizedImage.toNDArray(manager)
+    array = array.transpose(2, 0, 1).toType(DataType.FLOAT32, false)
+    val mean = manager.create(floatArrayOf(0.485f, 0.456f, 0.406f)).reshape(3, 1, 1)
+    val std = manager.create(floatArrayOf(0.229f, 0.224f, 0.225f)).reshape(3, 1, 1)
+    array = array.div(255.0f).sub(mean).div(std)
+    val pixelValues = array
+    // endregion Image preprocessing
+    // region Run encoder
+    val encPredictor =
+        encoderPredictor
+            ?: throw IllegalStateException(
+                "[[ CodBi / AI / ONNX / DONUT ] Encoder predictor not initialized }")
+    val encoderInput = NDList(pixelValues)
 
-    // 1. Resize auf Vielfaches von 56
-    val factor = 56
-    val newW = (image.width / factor).coerceAtLeast(1) * factor
-    val newH = (image.height / factor).coerceAtLeast(1) * factor
-    val resized = image.resize(newW, newH, true)
+    try {
+      val encoderOutput = encPredictor.predict(encoderInput)
+      val encoderHiddenStates = encoderOutput[0]
+      val encoderHiddenStatesDetached = encoderHiddenStates.duplicate()
 
-    // 2. Normalisierung
-    var array = resized.toNDArray(manager).transpose(2, 0, 1).toType(DataType.FLOAT32, false)
-    val meanND = manager.create(mean).reshape(3, 1, 1)
-    val stdND = manager.create(std).reshape(3, 1, 1)
-    array = array.div(255f).sub(meanND).div(stdND)
+      ctx.setAttachment("encoder_hidden_states", encoderHiddenStatesDetached)
 
-    // 3. Patching
-    val p = 14L
-    val h = newH.toLong()
-    val w = newW.toLong()
-    val gridH = h / p
-    val gridW = w / p
+      encoderOutput.close()
+    } catch (X: Exception) {
+      log(AI.LogLevel.ERROR, "Encoder prediction failed: ${ X.message }", X)
 
-    val pixelValues =
-        array
-            .reshape(3L, gridH, p, gridW, p)
-            .transpose(1, 3, 0, 2, 4)
-            .reshape(gridH * gridW, 3 * p * p)
+      encoderInput.close()
 
-    // 4. Grid Fix
-    val t = 1L
-    val thwData = longArrayOf(t, gridH, gridW / 2)
-    val imageGridThw = manager.create(thwData).reshape(1, 3)
-
-    // 5. Tokenisierung (Now guaranteed to work!)
-    val prompt =
-        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n" +
-            "<|im_start|>user\n<|vision_start|><|image_pad|><|vision_end|>$question<|im_end|>\n" +
-            "<|im_start|>assistant\n"
-
-    val ids = tokenizer.encode(prompt).ids
-    val inputIdsND = manager.create(ids).reshape(1, ids.size.toLong())
-
-    return NDList().apply {
-      add(pixelValues.apply { name = "pixel_values" })
-      add(imageGridThw.apply { name = "grid_thw" })
-      add(inputIdsND.apply { name = "input_ids" })
+      throw X
     }
+    // endregion Run encoder
+    // region Prompt encoding
+    val prompt = "<s_docvqa><s_question>$question</s_question><s_answer>"
+    var finalIDs = tokenizer?.encode(prompt)?.ids ?: longArrayOf()
+
+    if (finalIDs.isNotEmpty() && finalIDs.last() == 2L)
+        finalIDs = finalIDs.dropLast(1).toLongArray()
+
+    ctx.setAttachment("promptIds", finalIDs)
+    // endregion Prompt encoding
+    val encoderHiddenStates =
+        ctx.getAttachment("encoder_hidden_states") as? NDArray
+            ?: throw IllegalStateException(
+                "[[ CodBi / AI / ONNX / DONUT ] Encoder hidden states not found in context ]")
+    val decoderInputIds = manager.create(finalIDs)
+
+    return NDList(decoderInputIds, encoderHiddenStates)
   }
 
-  override fun processOutput(ctx: TranslatorContext, list: NDList): NDList = list
+  /**
+   * Autoregressive decoding loop.
+   *
+   * @param ctx The [TranslatorContext] to use.
+   * @param list The [NDList] from [processInput].
+   * @return The generated answer.
+   */
+  override fun processOutput(ctx: TranslatorContext, list: NDList): String {
+    val manager = ctx.ndManager
+    val encoderHiddenStates =
+        ctx.getAttachment("encoder_hidden_states") as? NDArray
+            ?: throw IllegalStateException(
+                "[[ CodBi / AI / ONNX / DONUT ] Encoder hidden states not found ]")
+    val promptIds = ctx.getAttachment("promptIds") as LongArray
+    val currentIds = promptIds.toMutableList()
+
+    try {
+      val initialLogits = list[0]
+
+      val seqLen = currentIds.size.toLong()
+      val lastTokenLogits = initialLogits.get(seqLen - 1)
+      var nextTokenId = lastTokenLogits.argMax(0).getLong()
+
+      if (nextTokenId != 2L) currentIds.add(nextTokenId)
+
+      val predictor =
+          decoderPredictor
+              ?: throw IllegalStateException(
+                  "[[ CodBi / AI / ONNX / DONUT ] Decoder predictor not initialized ]")
+
+      for (i in 0 until maxTokens) {
+        if (nextTokenId == 2L) break
+
+        val currentArray = currentIds.toLongArray()
+        val decoderInput = manager.create(currentArray)
+        val inputs = NDList(decoderInput, encoderHiddenStates)
+        val output = predictor.predict(inputs)
+        val logits = output[0]
+        val newSeqLen = currentArray.size.toLong()
+        val lastLogits = logits.get(newSeqLen - 1)
+
+        nextTokenId = lastLogits.argMax(0).getLong()
+
+        decoderInput.close()
+        output.close()
+
+        if (nextTokenId == 2L) break
+
+        currentIds.add(nextTokenId)
+      }
+    } catch (X: Exception) {
+      println("Error in Donut generation loop: ${ X.message }")
+    } finally {
+      val encoderOutput = ctx.getAttachment("encoder_output") as? NDList
+
+      encoderOutput?.close()
+    }
+
+    val answerIds = currentIds.drop(promptIds.size).toLongArray()
+    val rawAnswer = tokenizer?.decode(answerIds) ?: ""
+    val finalAnswer = rawAnswer.replace("</s_answer>", "").replace("<s>", "").trim()
+    log(AI.LogLevel.INFO, "Sending response: $finalAnswer", null)
+    return finalAnswer
+  }
 }
 
+/**
+ * # ONNX-based Donut Document Visual Question & Answering Action.
+ *
+ * Activated by adding **DONUT** and **ONNX** to the **Active_AI** plugin property.
+ *
+ * ## URLs needed for initialization
+ * - [https://repo1.maven.org/maven2/ai/djl/huggingface/tokenizers/0.36.0/tokenizers-0.36.0.ja](https://repo1.maven.org/maven2/ai/djl/huggingface/tokenizers/0.36.0/tokenizers-0.36.0.ja)
+ * - [https://huggingface.co/Xenova/donut-base-finetuned-docvqa/resolve/main/onnx/encoder_model_fp16.onnx](https://huggingface.co/Xenova/donut-base-finetuned-docvqa/resolve/main/onnx/encoder_model_fp16.onnx)
+ * - [https://huggingface.co/Xenova/donut-base-finetuned-docvqa/resolve/main/onnx/decoder_model_fp16.onnx](https://huggingface.co/Xenova/donut-base-finetuned-docvqa/resolve/main/onnx/decoder_model_fp16.onnx)
+ * - [https://huggingface.co/Xenova/donut-base-finetuned-docvqa/resolve/main/tokenizer.jso](https://huggingface.co/Xenova/donut-base-finetuned-docvqa/resolve/main/tokenizer.jso)
+ *
+ * **Once downloaded the initialization will reuse these files**.
+ *
+ * ## Plugin Options
+ * * - **AI_ONNX_DONUT_NativeTempToKeep** States how many sets of native libraries shall be kept on
+ *   disk in order to avoid race conditions. Default to **3**.
+ * * - **AI_ONNX_DONUT_MaxTokens** States the number of tokens that have to be reached to force
+ *   aborting processing to avoid infinite processing.
+ * * - **AI_ONNX_DONUT_ModelDirectory** The direcotry where the model files shall be stored.
+ * * - **AI_ONNX_DONUT_OSDPoolSize** Number of Tesseract OSD handles to keep in pool for automatic
+ *   orientation detection. Defaults to **2**. Only used when OCR is active in Active_AI.
+ *
+ * ## Image Orientation Correction
+ * The Donut model is sensitive to image orientation. There are two ways to handle rotation:
+ *
+ * **1. Manual Rotation (Priority):** Provide an **X-Rotate** header with the rotation angle:
+ * - **X-Rotate: 90** - Rotate image 90° clockwise
+ * - **X-Rotate: 180** - Rotate image 180°
+ * - **X-Rotate: 270** - Rotate image 270° clockwise (90° counter-clockwise)
+ *
+ * **2. Automatic Detection (Fallback):** If no X-Rotate header is provided AND **OCR** is in the
+ * **Active_AI** plugin property, Tesseract's OSD (Orientation and Script Detection) will
+ * automatically detect and correct image orientation. This requires:
+ * - **OCR** in Active_AI property (enables Tesseract)
+ * - Tesseract's **osd.traineddata** file must be available
+ *
+ * **3. No Rotation:** If X-Rotate is not provided and OCR is not active, images are processed
+ * as-is.
+ *
+ * Common use case: Photos taken in portrait mode on mobile devices often need 90° or 270° rotation.
+ */
 class DonutDocVQAAction : ONNX() {
-  // toSafeF16 is no longer needed; engine handles types internally.
+  /** States the files to use for all instances. */
+  companion object {
+    val resModelFiles =
+        listOf("encoder_model_fp16.onnx", "decoder_model_fp16.onnx", "tokenizer.json")
+  }
+
   /**
-   * Rotates a BufferedImage by the specified degrees (90, 180, or 270).
-   *
-   * @param img The image to rotate.
-   * @param degrees The rotation angle in degrees (90, 180, or 270).
-   * @return The rotated image.
+   * The number of tokens at which the [execute] will stop in order to prevent endless processing
+   * (defaults to **100**).
    */
-  private fun rotateImage(img: BufferedImage, degrees: Int): BufferedImage {
-    val width = img.width
-    val height = img.height
-    val at = AffineTransform()
-    val (resultWidth, resultHeight) =
-        when (degrees) {
-          90 -> {
-            at.translate(height.toDouble(), 0.0)
-            at.rotate(Math.PI / 2)
-            Pair(height, width)
-          }
-          180 -> {
-            at.translate(width.toDouble(), height.toDouble())
-            at.rotate(Math.PI)
-            Pair(width, height)
-          }
-          270 -> {
-            at.translate(0.0, width.toDouble())
-            at.rotate(-Math.PI / 2)
-            Pair(height, width)
-          }
-          else -> return img
-        }
-    val result = BufferedImage(resultWidth, resultHeight, img.type)
-    val op = AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR)
-    return op.filter(img, result)
-  }
-
-  @Volatile private var loadError: Throwable? = null
-  private var tokenizersNativeRunDir: File? = null
-  private var maxTokens = 128
+  private var maxTokens = 100
+  /** The number of sets of model files to keep to prevent race conditions. Default ot **3**. */
   private var keepNewest = 3
-  private var qwenActive = false
+  /** Tracks if DONUT is present in Active_AI. */
+  private var donutActive = false
+  /** Tracks if OCR (Tesseract) is present in Active_AI for orientation detection. */
   private var ocrActive = false
-  private val osdPool = LinkedBlockingQueue<net.sourceforge.tess4j.ITessAPI.TessBaseAPI>()
+  /** The size of the OSD handle pool for orientation detection. Defaults to 2. */
+  private var osdPoolSize = 2
+  /** Pool of Tesseract OSD handles for orientation detection. */
+  private val osdPool =
+      java.util.concurrent.LinkedBlockingQueue<net.sourceforge.tess4j.ITessAPI.TessBaseAPI>()
+  /** Tracks whether the OSD pool has been initialized. */
   private var isOsdPoolInitialized = false
-
-  private var visionEncoder: ZooModel<NDList, NDList>? = null
+  /** The encoder model. */
+  private var encoderModel: ZooModel<NDList, NDList>? = null
+  /** The decoder model. */
   private var decoderModel: ZooModel<NDList, NDList>? = null
-  private var embedModel: ZooModel<NDList, NDList>? = null
+  /** Separate decoder model for autoregressive loop. */
+  private var decoderModelForLoop: ZooModel<NDList, NDList>? = null
+  /** The translator instance. */
+  private var translator: DocVQATranslator? = null
+  /** The [HuggingFaceTokenizer] for prompt encoding / answer decoding. */
   private var tokenizer: HuggingFaceTokenizer? = null
-
+  /** Remember last load error so execute() can return a helpful message. */
+  @Volatile private var loadError: Throwable? = null
+  /** Tracks if models are fully loaded. */
   @Volatile private var modelsReady = false
+  /** Directory containing model files. */
   private var donutModelDir: File? = null
+  /** The plugin's root folder. */
   private var pluginFolder: File? = null
+  /** Current run dir for extracted tokenizers natives. */
+  private var tokenizersNativeRunDir: File? = null // Now set by TokenizersHelper
+  /** The base URL for downloading the model files. */
   private var modelBaseUrl =
-      "https://huggingface.co/onnx-community/Qwen2-VL-2B-Instruct/resolve/main"
+      "https://huggingface.co/Xenova/donut-base-finetuned-docvqa/resolve/main"
 
-  // Use predictorPools from base class ONNX; do not redeclare or override
-  override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    log(AI.LogLevel.INFO, "Processing VQA request received")
+  /**
+   * Sets the [idLogMessages] prior to [AI.log]ging.
+   *
+   * @param importance See [AI.log].
+   * @param toLog See [AI.log].
+   */
+  override fun log(importance: LogLevel, toLog: String, adjenct: String, exception: Throwable?) {
+    super.idLogMessages = "ONNX / DONUT"
 
-    if (loadError != null) {
-      return PluginServletActionRetVal(
-          ServletResponse(
-              EResponseType.JSON, "{\"error\":\"Failed to load model: ${loadError?.message}\"}"))
-    }
-    if (!modelsReady || visionEncoder == null || decoderModel == null || tokenizer == null) {
-      return PluginServletActionRetVal(
-          ServletResponse(EResponseType.JSON, "{\"error\":\"Qwen-VL is not initialized.\"}"))
-    }
+    super.log(importance, toLog, adjenct, exception)
+  }
 
-    // 1. Parse questions from headers
-    val questionsToAsk = mutableMapOf<String, String>()
-    params.headerMap.forEach { (headerName, headerValue) ->
-      if (headerName.startsWith("x-question-", ignoreCase = true)) {
-        val key = headerName.lowercase().substringAfter("x-question-", "").lowercase()
-        if (key.isNotBlank() && headerValue != null) {
-          val decodedValue =
-              try {
-                String(headerValue.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
-              } catch (_: Exception) {
-                headerValue
-              }
-          questionsToAsk[key] = decodedValue
-        }
+  /**
+   * Removes the temporary native libs that couldn't be removed before due to file locking.
+   *
+   * @param cacheRootDir The directory where all temporary native library folders reside.
+   * @param keepNewest The number of directories to keep in order to prevent race conditions.
+   */
+  private fun purgeOldDjlRunDirs(cacheRootDir: File) {
+    val runs =
+        cacheRootDir
+            .listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith("run-") }
+            ?.sortedByDescending { it.lastModified() } ?: return
+
+    runs.drop(keepNewest).forEach { dir ->
+      try {
+        dir.deleteRecursively()
+
+        log(LogLevel.INFO, "Deleted old DJL cache dir: ${ dir.absolutePath}")
+      } catch (X: Exception) {
+        log(
+            LogLevel.WARNING,
+            "Could not delete old DJL cache dir (likely locked): ${ dir.absolutePath }",
+            "",
+            X)
       }
-    }
-    if (questionsToAsk.isEmpty()) {
-      return PluginServletActionRetVal(
-          ServletResponse(EResponseType.JSON, "{\"error\":\"No questions asked.\"}"))
-    }
-
-    val finalResults = mutableMapOf<String, Map<String, String>>()
-    try {
-      val tokenizer =
-          tokenizer
-              ?: return PluginServletActionRetVal(
-                  ServletResponse(EResponseType.JSON, "{\"error\":\"Tokenizer not loaded.\"}"))
-      params.uploadFiles?.forEach { (inputName, fileItem) ->
-        val combinedBytes =
-            fileItem.stream().use { stream ->
-              stream.map { it.data }.reduce { acc, bytes -> acc + bytes }.orElse(byteArrayOf())
-            }
-
-        // Orientation correction (manual X-Rotate or OSD)
-        val rotatedBytes =
-            try {
-              val manualRotation =
-                  params.headerMap.entries
-                      .find { it.key.equals("X-Rotate", ignoreCase = true) }
-                      ?.value
-                      ?.trim()
-                      ?.toIntOrNull()
-              if (manualRotation != null && manualRotation != 0) {
-                val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
-                if (bufferedImg != null) {
-                  val rotatedImg =
-                      when (manualRotation) {
-                        90,
-                        180,
-                        270 -> rotateImage(bufferedImg, manualRotation)
-                        else -> bufferedImg
-                      }
-                  val baos = java.io.ByteArrayOutputStream()
-                  ImageIO.write(rotatedImg, "PNG", baos)
-                  baos.toByteArray()
-                } else combinedBytes
-              } else if (ocrActive) {
-                val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
-                if (bufferedImg != null) {
-                  val tessDataDir = File(pluginFolder, "Resources/AI/Tesseract/Models")
-                  if (tessDataDir.exists()) {
-                    val detectedAngle = 0 // OSD logic placeholder (implement if needed)
-                    if (detectedAngle != 0) {
-                      val rotatedImg = rotateImage(bufferedImg, detectedAngle)
-                      val baos = java.io.ByteArrayOutputStream()
-                      ImageIO.write(rotatedImg, "PNG", baos)
-                      baos.toByteArray()
-                    } else combinedBytes
-                  } else combinedBytes
-                } else combinedBytes
-              } else combinedBytes
-            } catch (_: Exception) {
-              combinedBytes
-            }
-
-        rotatedBytes.inputStream().use { inputStream ->
-          val djlImg = ImageFactory.getInstance().fromInputStream(inputStream)
-          val results = mutableMapOf<String, String>()
-          val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
-          (ortEngine as ai.djl.engine.Engine).newBaseManager().use { manager: NDManager ->
-            val visionPredictor =
-                acquirePredictor<NDList, NDList>("qwen-encoder")
-                    ?: throw IllegalStateException("No predictor available for qwen-encoder")
-            val decoderPredictor =
-                acquirePredictor<NDList, NDList>("qwen-decoder")
-                    ?: throw IllegalStateException("No predictor available for qwen-decoder")
-            try {
-              questionsToAsk.forEach { (key, question) ->
-                try {
-                  results[key] =
-                      runQwenInference(manager, visionPredictor, decoderPredictor, djlImg, question)
-                } catch (ex: Exception) {
-                  results[key] = "Error: ${ex.message}"
-                  log(AI.LogLevel.ERROR, "Error processing '$question': ${ex.message}", "", ex)
-                }
-              }
-            } finally {
-              releasePredictor("qwen-encoder", visionPredictor)
-              releasePredictor("qwen-decoder", decoderPredictor)
-            }
-          }
-          finalResults[inputName] = results.toMap()
-        }
-      }
-      // Build JSON response
-      val jsonResponse = buildString {
-        append("{")
-        finalResults.entries.forEachIndexed { fileIdx, (fileName, fileResults) ->
-          if (fileIdx > 0) append(",")
-          append("\"").append(fileName.replace("\"", "\\\"")).append("\":{")
-          fileResults.entries.forEachIndexed { idx, (key, value) ->
-            if (idx > 0) append(",")
-            append("\"").append(key.replace("\"", "\\\"")).append("\": \"")
-            append(value.replace("\"", "\\\"")).append("\"")
-          }
-          append("}")
-        }
-        append("}")
-      }
-      return PluginServletActionRetVal(ServletResponse(EResponseType.JSON, jsonResponse))
-    } catch (ex: Exception) {
-      log(AI.LogLevel.ERROR, "Error processing VQA request: ${ex.message}", "", ex)
-      return PluginServletActionRetVal(
-          ServletResponse(EResponseType.JSON, "{\"error\":\"Processing error: ${ex.message}\"}"))
     }
   }
 
-  override fun getName(): String = "CodBi_AI_Qwen_vQA"
+  /**
+   * Removes the temporary tokenizer directories.
+   *
+   * @param cacheRootDir The directory where all temporary native library folders reside.
+   * @param keepNewest The number of directories to keep in order to prevent race conditions.
+   */
+  // Removed: purgeOldTokenizersRunDirs, now handled by TokenizersHelper
 
+  /**
+   * Determines the current tokinzer version.
+   *
+   * @return Either the system property **codbi.djl.tokenizers.version** or 0.36.0 .
+   */
+  // Removed: resolveTokenizersVersion, now handled by TokenizersHelper
+
+  /**
+   * Determines the tokenizer directory according to the server's os and archetype.
+   *
+   * @return The path to the directory.
+   */
+  // Removed: detectTokenizersJarDir, now handled by TokenizersHelper
+
+  /**
+   * Acquires the native tokenizer libraries using TokenizersHelper and sets up environment
+   * variables.
+   *
+   * @return true if successful, false otherwise.
+   */
   private fun ensureTokenizersNativeLibraries(): Boolean {
     val pluginRoot =
         pluginFolder
@@ -330,138 +460,402 @@ class DonutDocVQAAction : ONNX() {
     return true
   }
 
+  /**
+   * Specifies name of this [IPluginServletAction].
+   *
+   * @return The requested [String].
+   */
+  override fun getName(): String = "CodBi_AI_Donut_vQA"
+
+  /**
+   * Sets [keepNewest] according to **AI_ONNX_DONUT_NativeTempToKeep**, if available. Default to
+   * **3**. Also sets [maxTokens] according to **AI_ONNX_DONUT_MaxTokens**, if available. Defaults
+   * to **100**.
+   *
+   * @param configData As provided by the Formcycle environment.
+   */
+  override fun validateConfigurationData(
+      configData: IPluginValidationData
+  ): IPluginInitializeValidationResult? {
+    // region Read the [maxTokens]
+    val candidateMaxTokens =
+        configData.properties.getProperty("AI_ONNX_DONUT_MaxTokens")?.toIntOrNull()
+
+    maxTokens =
+        if (candidateMaxTokens != null && candidateMaxTokens > 0) candidateMaxTokens else maxTokens
+    // endregion Read the [maxTokens]
+    // region Read [keepNewest]
+    val candidateKeepNewest =
+        configData.properties.getProperty("AI_ONNX_DONUT_NativeTempToKeep")?.toIntOrNull()
+
+    keepNewest =
+        if (candidateKeepNewest != null && candidateKeepNewest > 0) candidateKeepNewest else 3
+    // endregion Read [keepNewest]
+    // region Read [modelBaseUrl]
+    val candidateModelBaseUrl =
+        configData.properties.getProperty("AI_ONNX_DONUT_ModelDirectory")?.trim()
+
+    if (!candidateModelBaseUrl.isNullOrEmpty()) modelBaseUrl = candidateModelBaseUrl
+    // endregion Read [modelBaseUrl]
+    return null
+  }
+
+  /** Initializes DONUT models if Active_AI contains both DONUT and ONNX. */
   override fun initialize(configData: IPluginInitializeData) {
-    // 1. Grundlegende Pfade aus configData sofort setzen
-    this.pluginFolder = configData.fileHelper.pluginFolder
+    donutActive = false
+    loadError = null
+    modelsReady = false
+    pluginFolder = configData.fileHelper.pluginFolder
+    // region Read the [maxTokens]
+    val candidateMaxTokens =
+        configData.properties.getProperty("AI_ONNX_DONUT_MaxTokens")?.toIntOrNull()
+    maxTokens = if (candidateMaxTokens != null && candidateMaxTokens > 0) candidateMaxTokens else 2
+    // endregion Read the [maxTokens]
+    // region Read [keepNewest]
+    val candidateKeepNewest =
+        configData.properties.getProperty("AI_ONNX_DONUT_NativeTempToKeep")?.toIntOrNull()
+    keepNewest =
+        if (candidateKeepNewest != null && candidateKeepNewest > 0) candidateKeepNewest else 3
+    // endregion Read [keepNewest]
+    // region Read [modelBaseUrl]
+    val candidateModelBaseUrl =
+        configData.properties.getProperty("AI_ONNX_DONUT_ModelDirectory")?.trim()
 
-    // 2. Deine spezifischen Pfade initialisieren (WICHTIG: VOR loadModels)
-    // 'modelDir' kommt aus der Basisklasse ONNX, wir hängen unseren Unterordner an
-    val baseModelDir = File(configData.fileHelper.pluginFolder, "ai/onnx/models")
-    this.donutModelDir = File(baseModelDir, "qwen-vl")
-    this.donutModelDir?.mkdirs()
+    if (!candidateModelBaseUrl.isNullOrEmpty()) modelBaseUrl = candidateModelBaseUrl
+    // endregion Read [modelBaseUrl]
+    val aiRemove = configData.properties.getProperty("AI_Remove")?.lowercase() ?: ""
+    // region Check if files shall be purged
+    if (aiRemove.contains("donut")) {
+      cleanupDonutFiles()
 
-    // 3. Tokenizer-Natives (Rust) bereitstellen
-    ensureTokenizersNativeLibraries()
+      return
+    }
+    // endregion Check if files shall be purged
+    val activeAI = configData.properties.getProperty("Active_AI")?.lowercase() ?: ""
+    donutActive = activeAI.contains("donut") && !activeAI.contains("donut_pytorch")
+    ocrActive = activeAI.contains("ocr")
 
-    // 4. Basis-Initialisierung (Kopiert ONNX-DLLs, registriert Engine)
+    if (ocrActive) {
+      log(AI.LogLevel.INFO, "OCR is active - automatic orientation detection will be available")
+
+      // Read OSD pool size
+      val candidateOsdPoolSize =
+          configData.properties.getProperty("AI_ONNX_DONUT_OSDPoolSize")?.toIntOrNull()
+      osdPoolSize =
+          if (candidateOsdPoolSize != null && candidateOsdPoolSize > 0) candidateOsdPoolSize else 2
+      log(AI.LogLevel.INFO, "OSD pool size set to: $osdPoolSize")
+
+      // Initialize OSD pool
+      val tessDataDir = File(configData.fileHelper.pluginFolder, "Resources/AI/Tesseract/Models")
+      if (tessDataDir.exists()) {
+        try {
+          repeat(osdPoolSize) {
+            val osdHandle = TessAPI1.TessBaseAPICreate()
+            if (TessAPI1.TessBaseAPIInit3(osdHandle, tessDataDir.absolutePath, "osd") == 0) {
+              TessAPI1.TessBaseAPISetPageSegMode(osdHandle, 0) // PSM_OSD_ONLY
+              osdPool.put(osdHandle)
+              log(AI.LogLevel.INFO, "Created OSD handle ${it + 1}/${osdPoolSize}")
+            } else {
+              log(AI.LogLevel.WARNING, "Failed to initialize OSD handle ${it + 1}")
+              TessAPI1.TessBaseAPIDelete(osdHandle)
+            }
+          }
+          isOsdPoolInitialized = true
+          log(AI.LogLevel.INFO, "OSD pool initialized with ${osdPool.size} handles")
+        } catch (e: Exception) {
+          log(AI.LogLevel.WARNING, "Failed to initialize OSD pool: ${e.message}")
+        }
+      } else {
+        log(
+            AI.LogLevel.WARNING,
+            "Tesseract tessdata directory not found at ${tessDataDir.absolutePath} - OSD pool not initialized")
+      }
+    }
+    // region Check if tokenizer library can be made available
+    if (donutActive)
+        if (!ensureTokenizersNativeLibraries())
+            log(
+                AI.LogLevel.ERROR,
+                "Failed to set up tokenizers native libraries before ONNX initialization")
+    // endregion Check if tokenizer library can be made available
+    val djlCacheRoot = File(configData.fileHelper.pluginFolder, "ai/djl-cache")
+    val djlRunDir = File(djlCacheRoot, "run-${System.currentTimeMillis()}")
+
+    djlCacheRoot.mkdirs()
+    djlRunDir.mkdirs()
+    purgeOldDjlRunDirs(djlCacheRoot)
+
+    System.setProperty("DJL_CACHE_DIR", djlRunDir.absolutePath)
+    System.setProperty("ENGINE_CACHE_DIR", djlRunDir.absolutePath)
+
+    log(AI.LogLevel.INFO, "Set DJL_CACHE_DIR / ENGINE_CACHE_DIR to: ${djlRunDir.absolutePath}")
+
     super.initialize(configData)
 
-    // 5. Erst jetzt, wo Pfade UND Engine bereit sind, Modelle laden
-    if (onnxIsReady()) {
+    if (!donutActive) {
+      log(AI.LogLevel.INFO, "DONUT not activated")
+
+      return
+    }
+
+    try {
+      if (onnxMarkedForRemoval || !onnxIsReady())
+          throw IllegalStateException("ONNX Runtime is not available")
+
+      donutModelDir = File(modelDir, "donut-docvqa")
+
+      donutModelDir?.mkdirs()
+      ensureDonutModelFiles()
+      loadModels()
+
+      modelsReady = true
+
+      log(AI.LogLevel.INFO, "DONUT setup complete")
+    } catch (X: Throwable) {
+      loadError = X
+
+      log(AI.LogLevel.ERROR, "DONUT setup failed cause: ${X.message}", "", X)
+    }
+  }
+
+  /**
+   * Run code as a [CompletableFuture] timing out.
+   *
+   * @param name The ijd of this run.
+   * @param timeoutSeconds The number of seconds to wait 'till aborting.
+   * @param work The code ot run.
+   * @return The result of the runned code.
+   */
+  private fun <T> runWithTimeout(name: String, timeoutSeconds: Long, work: () -> T): T {
+    val future = CompletableFuture.supplyAsync { work() }
+
+    try {
+      return future.get(timeoutSeconds, TimeUnit.SECONDS)
+    } catch (X: TimeoutException) {
+      future.cancel(true)
+
+      throw TimeoutException(
+          "[[ CodBi / AI / ONNX / DONUT ] Future \"$name\" timed out after ${timeoutSeconds}s ]")
+    }
+  }
+
+  /** Loads encoder and decoder ONNX models. */
+  private fun loadModels() {
+    val modelPath =
+        donutModelDir?.absolutePath
+            ?: throw IllegalStateException(
+                "[[ CodBi / AI / ONNX / DONUT ] Model directory not set ]")
+
+    val encoderFile = File(modelPath, "encoder_model_fp16.onnx")
+    val decoderFile = File(modelPath, "decoder_model_fp16.onnx")
+    val encoderCriteria =
+        Criteria.builder()
+            .setTypes(NDList::class.java, NDList::class.java)
+            .optEngine("OnnxRuntime")
+            .optModelPath(encoderFile.toPath())
+            .build()
+
+    log(AI.LogLevel.INFO, "Loading encoder model...")
+
+    try {
+      val oldClassLoader = Thread.currentThread().contextClassLoader
+
       try {
-        ensureModelFiles() // Prüft/Downloadet die 4GB Dateien
-        loadModels()
-        this.modelsReady = true
-      } catch (e: Exception) {
-        this.loadError = e
-        log(AI.LogLevel.ERROR, "Fehler beim Laden der Qwen-Modelle", "", e)
+        Thread.currentThread().contextClassLoader = this.javaClass.classLoader
+        encoderModel = encoderCriteria.loadModel() as ZooModel<NDList, NDList>
+      } finally {
+        Thread.currentThread().contextClassLoader = oldClassLoader
+      }
+
+      loadedModels["donut-encoder"] = encoderModel!!
+    } catch (X: Throwable) {
+      log(AI.LogLevel.ERROR, "Failed to load encoder: ${ X.javaClass.name }: ${ X.message }", "", X)
+
+      X.cause?.let {
+        log(AI.LogLevel.ERROR, "Caused by: ${ it.javaClass.name}: ${ it.message}", "", it)
+      }
+
+      throw X
+    }
+
+    val translatorInstance =
+        DocVQATranslator(modelPath, encoderModel!!, null, maxTokens) { level, msg, exc ->
+          log(level, msg, "", exc)
+        }
+
+    translator = translatorInstance
+
+    translatorInstance.setEncoderModel(encoderModel!!)
+
+    log(LogLevel.INFO, "Building decoder criteria...")
+
+    @Suppress("UNCHECKED_CAST")
+    val decoderCriteria =
+        Criteria.builder()
+            .setTypes(Pair::class.java as Class<Pair<DjlImage, String>>, String::class.java)
+            .optEngine("OnnxRuntime")
+            .optModelPath(decoderFile.toPath())
+            .optTranslator(translatorInstance as Translator<Pair<DjlImage, String>, String>)
+            .build()
+
+    log(LogLevel.INFO, "Loading decoder model...")
+
+    decoderModel =
+        runWithTimeout("decoderCriteria.loadModel()", 180) {
+          decoderCriteria.loadModel() as ZooModel<NDList, NDList>
+        }
+    loadedModels["donut-decoder"] = decoderModel!!
+
+    log(AI.LogLevel.INFO, "Loading decoder model for autoregressive loop...")
+
+    val loopCriteria =
+        Criteria.builder()
+            .setTypes(NDList::class.java, NDList::class.java)
+            .optEngine("OnnxRuntime")
+            .optModelPath(decoderFile.toPath())
+            .build()
+
+    decoderModelForLoop =
+        runWithTimeout("loopCriteria.loadModel()", 180) {
+          loopCriteria.loadModel() as ZooModel<NDList, NDList>
+        }
+
+    loadedModels["donut-decoder-loop-model"] = decoderModelForLoop!!
+
+    translatorInstance.setDecoderModel(decoderModel!!, decoderModelForLoop!!)
+
+    log(LogLevel.INFO, "Encoder and decoder models loaded")
+
+    loadTokenizer(modelPath)
+    initPredictorPools()
+  }
+
+  /**
+   * Downloads the specified [url] into the [targetFile].
+   *
+   * @param url The resource to download from.
+   * @param targetFile The [File] to download to.
+   */
+  private fun downloadTo(url: String, targetFile: File) {
+    targetFile.parentFile?.mkdirs()
+
+    URI(url)
+        .toURL()
+        .openConnection()
+        .apply {
+          connectTimeout = 15_000
+          readTimeout = 600_000
+
+          setRequestProperty("User-Agent", "CodBi-DONUT/1.0")
+        }
+        .getInputStream()
+        .use { input -> targetFile.outputStream().use { output -> input.copyTo(output) } }
+  }
+
+  /**
+   * Acquires the model-files from
+   * **https://huggingface.co/Xenova/donut-base-finetuned-docvqa/resolve/main**, if necessary.
+   */
+  private fun ensureDonutModelFiles() {
+    val dir = donutModelDir ?: return
+    val base = modelBaseUrl
+    val files =
+        mapOf(
+            "encoder_model_fp16.onnx" to "$base/onnx/encoder_model_fp16.onnx",
+            "decoder_model_fp16.onnx" to "$base/onnx/decoder_model_fp16.onnx",
+            "tokenizer.json" to "$base/tokenizer.json")
+
+    files.forEach { (name, url) ->
+      val target = File(dir, name)
+
+      if (target.exists()) return@forEach
+
+      try {
+        log(AI.LogLevel.INFO, "Downloading $name from Hugging Face")
+
+        downloadTo(url, target)
+      } catch (X: Exception) {
+        log(AI.LogLevel.ERROR, "Failed to download $name: ${X.message}", "", X)
       }
     }
   }
 
   /**
-   * Loads the Qwen-VL Vision Encoder and Decoder models using the ONNX Runtime engine. Ensures the
-   * thread context classloader is set correctly for the formcycle environment.
+   * Loads the tokanizer depending on which os formcycle is running on.
+   *
+   * @param modelPath the directory where the model files for all os and arches reside.
    */
-  private fun loadModels() {
-    // 1. Lokale Referenz auf das Model-Verzeichnis (Null-Safety für Zeile 172)
-    val safeModelDir =
-        donutModelDir
-            ?: throw IllegalStateException(
-                "Modellverzeichnis (donutModelDir) ist nicht initialisiert.")
-    val modelPath = safeModelDir.toPath()
-
+  private fun loadTokenizer(modelPath: String) {
     val oldClassLoader = Thread.currentThread().contextClassLoader
 
     try {
-      // 2. ClassLoader auf das Plugin-JAR umbiegen (verhindert JNI-Fehler in Servlet-Containern)
       Thread.currentThread().contextClassLoader = this.javaClass.classLoader
 
-      log(AI.LogLevel.INFO, "Initialisiere Qwen-Infrastruktur...", " / QWEN")
+      val nativeRunDir = tokenizersNativeRunDir
 
-      // 3. ONNX Engine Check (verhindert 'OrtEnvironment already exists' Fehler)
-      try {
-        // Wir prüfen, ob die Engine über die Basisklasse bereits im Register ist
-        ai.djl.engine.Engine.getEngine("OnnxRuntime")
-        log(AI.LogLevel.INFO, "ONNX Runtime Engine ist bereit.", " / QWEN")
-      } catch (e: Exception) {
-        log(AI.LogLevel.INFO, "Registriere ONNX Engine manuell...", " / QWEN")
-        ai.djl.engine.Engine.registerEngine(ai.djl.onnxruntime.engine.OrtEngineProvider())
+      if (nativeRunDir != null && nativeRunDir.exists()) {
+        val os = (System.getProperty("os.name") ?: "").lowercase()
+        val libFile =
+            when {
+              os.contains("windows") -> File(nativeRunDir, "tokenizers.dll")
+              os.contains("linux") -> File(nativeRunDir, "libtokenizers.so")
+              os.contains("mac") -> File(nativeRunDir, "libtokenizers.dylib")
+              else -> File(nativeRunDir, "tokenizers.dll")
+            }
+
+        if (libFile.exists()) {
+          try {
+            log(
+                AI.LogLevel.INFO,
+                "Explicitly loading tokenizers native library: ${libFile.absolutePath}")
+            System.load(libFile.absolutePath)
+            log(LogLevel.INFO, "Tokenizers native library loaded successfully")
+          } catch (X: UnsatisfiedLinkError) {
+            log(
+                AI.LogLevel.ERROR,
+                "Failed to load tokenizers native library: ${ X.message }",
+                "",
+                X)
+          }
+        } else
+            log(
+                LogLevel.WARNING,
+                "Tokenizers native library file not found: ${libFile.absolutePath}")
+      } else log(LogLevel.WARNING, "Tokenizers native run directory not set or doesn't exist")
+
+      val tokenizerPath = Paths.get(modelPath, "tokenizer.json")
+      val tokenizerFile = File(tokenizerPath.toUri())
+
+      if (!tokenizerFile.exists())
+          throw IllegalStateException(
+              "Following tokenizer file does not exist: ${ tokenizerFile.absolutePath }")
+
+      log(AI.LogLevel.INFO, "Loading tokenizer from ${ tokenizerFile.absolutePath }")
+
+      tokenizer = HuggingFaceTokenizer.newInstance(tokenizerPath)
+
+      log(LogLevel.INFO, "Tokenizer loaded successfully from $tokenizerPath")
+    } catch (X: Throwable) {
+      log(
+          AI.LogLevel.ERROR,
+          "Failed to load tokenizer: ${ X.javaClass.name }: ${ X.message }",
+          "",
+          X)
+
+      X.cause?.let {
+        log(LogLevel.ERROR, "Caused by: ${ it.javaClass.name }: ${ it.message }", "", it)
       }
 
-      // --- VISION ENCODER LADEN ---
-      log(
-          AI.LogLevel.INFO,
-          "Lade Vision Encoder: ${modelPath.resolve("vision_encoder_fp16.onnx")}",
-          " / QWEN")
-
-      val visionCriteria =
-          Criteria.builder()
-              .setTypes(NDList::class.java, NDList::class.java)
-              .optModelPath(modelPath.resolve("vision_encoder_fp16.onnx"))
-              .optEngine("OnnxRuntime")
-              .optOption("inter_op_num_threads", "1") // Verringert CPU-Last während Initialisierung
-              .build()
-
-      visionEncoder = visionCriteria.loadModel()
-
-      // --- DECODER MODEL LADEN ---
-      log(
-          AI.LogLevel.INFO,
-          "Lade Decoder Model (dieser Schritt benötigt ca. 4GB RAM)...",
-          " / QWEN")
-      val decoderCriteria =
-          Criteria.builder()
-              .setTypes(NDList::class.java, NDList::class.java)
-              .optModelPath(modelPath.resolve("decoder_model_merged_fp16.onnx"))
-              .optEngine("OnnxRuntime")
-              .build()
-      decoderModel = decoderCriteria.loadModel()
-
-      // --- EMBEDDING MODEL LADEN ---
-      log(AI.LogLevel.INFO, "Lade Embedding Model...", " / QWEN")
-      val embedCriteria =
-          Criteria.builder()
-              .setTypes(NDList::class.java, NDList::class.java)
-              .optModelPath(modelPath.resolve("embed_tokens_fp16.onnx"))
-              .optEngine("OnnxRuntime")
-              .build()
-      embedModel = embedCriteria.loadModel()
-
-      // --- TOKENIZER & POOLS ---
-      log(AI.LogLevel.INFO, "Initialisiere Tokenizer und Predictor-Pools...", " / QWEN")
-
-      tokenizer = HuggingFaceTokenizer.newInstance(modelPath.resolve("tokenizer.json"))
-
-      // Pools initialisieren (begrenzt auf 1, um OOM in formcycle zu vermeiden)
-      initPredictorPools()
-
-      log(AI.LogLevel.INFO, "Qwen-VL erfolgreich geladen und einsatzbereit.", " / QWEN")
-    } catch (e: Exception) {
-      // Spezielle Behandlung für das "OrtEnvironment"-Singleton Problem
-      if (e.cause?.message?.contains("OrtEnvironment") == true ||
-          e.message?.contains("already exists") == true) {
-        log(
-            AI.LogLevel.WARNING,
-            "ONNX Environment ist bereits aktiv. Modelle werden eventuell trotzdem geladen...",
-            " / QWEN")
-      } else {
-        log(
-            AI.LogLevel.ERROR,
-            "Kritischer Fehler beim Laden der Qwen-Modelle: ${e.message}",
-            " / QWEN",
-            e)
-        throw e
-      }
+      throw X
     } finally {
-      // 4. ClassLoader unbedingt zurücksetzen
       Thread.currentThread().contextClassLoader = oldClassLoader
     }
   }
 
+  /** Generates the en- & de-coder predictors. */
   private fun initPredictorPools() {
-    val encoder = visionEncoder ?: return
-    val decoder = decoderModel ?: return
+    val encoderModel = encoderModel ?: return
+    val loopModel = decoderModelForLoop ?: return
 
     val passThroughTranslator =
         object : Translator<NDList, NDList> {
@@ -469,381 +863,547 @@ class DonutDocVQAAction : ONNX() {
 
           override fun processOutput(ctx: TranslatorContext, list: NDList) = list
 
-          override fun getBatchifier() = null // Disable batchifier to avoid extra batch dimension
+          override fun getBatchifier() = Batchifier.STACK
         }
+    val poolSize = Runtime.getRuntime().availableProcessors().coerceAtLeast(2).coerceAtMost(8)
 
-    // --- WICHTIG: POOL-GRÖSSE LIMITIEREN ---
-    // Da Qwen ca. 4GB RAM pro Instanz schluckt, limitieren wir auf 1 (oder max 2 bei viel RAM)
-    val maxParallelInferences = 1
+    if (!predictorPools.containsKey("donut-encoder")) {
+      val pool = LinkedBlockingQueue<ai.djl.inference.Predictor<*, *>>()
 
-    log(
-        AI.LogLevel.INFO,
-        "Initialisiere Qwen Predictor-Pools (Size: $maxParallelInferences)...",
-        " / QWEN")
+      repeat(poolSize) {
+        pool.offer(
+            encoderModel.newPredictor(passThroughTranslator) as ai.djl.inference.Predictor<*, *>)
+      }
 
-    // Encoder-Pool (Vision)
-    if (!predictorPools.containsKey("qwen-encoder")) {
-      val pool = LinkedBlockingQueue<Predictor<*, *>>()
-      repeat(maxParallelInferences) { pool.offer(encoder.newPredictor(passThroughTranslator)) }
-      predictorPools["qwen-encoder"] = pool
+      predictorPools["donut-encoder"] = pool
+
+      log(AI.LogLevel.INFO, "Initialized encoder predictor pool (size = $poolSize)")
     }
 
-    // Decoder-Pool (Sprache/Logik)
-    if (!predictorPools.containsKey("qwen-decoder")) {
-      val pool = LinkedBlockingQueue<Predictor<*, *>>()
-      repeat(maxParallelInferences) { pool.offer(decoder.newPredictor(passThroughTranslator)) }
-      predictorPools["qwen-decoder"] = pool
-    }
+    if (!predictorPools.containsKey("donut-decoder-loop")) {
+      val pool = LinkedBlockingQueue<ai.djl.inference.Predictor<*, *>>()
 
-    log(
-        AI.LogLevel.INFO,
-        "Predictor-Pools bereit. Parallele Inferenz limitiert auf $maxParallelInferences.",
-        " / QWEN")
+      repeat(poolSize) {
+        pool.offer(
+            loopModel.newPredictor(passThroughTranslator) as ai.djl.inference.Predictor<*, *>)
+      }
+
+      predictorPools["donut-decoder-loop"] = pool
+
+      log(AI.LogLevel.INFO, "Initialized decoder predictor pool (size = $poolSize)")
+    }
   }
 
-  private fun runQwenInference(
+  /** Cleans up DONUT model files. */
+  private fun cleanupDonutFiles() {
+    donutModelDir?.deleteRecursively()
+
+    pluginFolder?.let { root ->
+      val tokenizersDir = File(root, "ai/tokenizers")
+
+      if (tokenizersDir.exists()) {
+        tokenizersDir.deleteRecursively()
+
+        log(AI.LogLevel.INFO, "Cleaned up tokenizers files")
+      }
+
+      val djlCacheDir = File(root, "ai/djl-cache")
+
+      if (djlCacheDir.exists()) {
+        djlCacheDir.deleteRecursively()
+
+        log(AI.LogLevel.INFO, "Cleaned up DJL cache files")
+      }
+    }
+
+    log(AI.LogLevel.INFO, "DONUT ONNX files cleaned up")
+  }
+
+  /**
+   * Inferes the answer to the specified **question** using the given **tokenizer** for translation
+   * into XML with human-readable content and the given **predictor**.
+   *
+   * @param manager The [NDManager] to use.
+   * @param tokenizer The [HuggingFaceTokenizer] to use to translate the tokens.
+   * @param predictor The [ai.djl.inference.Predictor].
+   * @param encoderHiddenStates The [NDArray] that accumulates the previous inference state to be
+   *   used for the next inference.
+   * @param question The XML-Question to respond to.
+   */
+  private fun runDocVqaDecode(
       manager: NDManager,
-      visionPredictor: Predictor<NDList, NDList>,
-      decoderPredictor: Predictor<NDList, NDList>,
-      image: DjlImage,
+      tokenizer: HuggingFaceTokenizer,
+      predictor: ai.djl.inference.Predictor<NDList, NDList>,
+      encoderHiddenStates: NDArray,
       question: String
   ): String {
-    val translator = QwenVLTranslator(this.tokenizer!!) { _, _, _ -> }
-    val ctx =
-        object : TranslatorContext {
-          override fun getNDManager() = manager
+    val prompt = "<s_docvqa><s_question>$question</s_question><s_answer>"
+    var promptIds = tokenizer.encode(prompt).ids
 
-          override fun getPredictorManager() = manager
+    if (promptIds.isNotEmpty() && promptIds.last() == 2L)
+        promptIds = promptIds.dropLast(1).toLongArray()
 
-          override fun getModel() = null
+    val currentIds = promptIds.toMutableList()
 
-          override fun getBlock() = null
-
-          override fun getMetrics() = null
-
-          override fun getAttachment(key: String) = null
-
-          override fun setAttachment(key: String, value: Any) {}
-
-          override fun close() {}
-        }
-
-    // 1. Vision Encoding
-    val inputs = translator.processInput(ctx, Pair(image, question))
-    val visionOutput =
-        visionPredictor.predict(
-            NDList(
-                inputs[0].apply { name = "pixel_values" }, inputs[1].apply { name = "grid_thw" }))
-    val imageEmbeds = visionOutput[0] // Features extracted from the image
-
-    // 2. Setup Loop Variables
-    var currentInputIds = inputs[2]
-    var pastKeyValues: NDList? = null
-    var finalAnswer = ""
-    var pastSeqLen = 0
-    val numKv = 28
-
-    val embedPredictor =
-        embedModel?.newPredictor(
-            object : Translator<NDList, NDList> {
-              override fun processInput(ctx: TranslatorContext, input: NDList) = input
-
-              override fun processOutput(ctx: TranslatorContext, list: NDList) = list
-
-              override fun getBatchifier() = null
-            }) ?: throw IllegalStateException("No predictor available for embed-tokens")
-
-    // 3. Decoding Loop
     for (i in 0 until maxTokens) {
-      val seqLen = currentInputIds.shape[1].toInt()
-
-      // A. Get text embeddings
-      var inputEmbeds = embedPredictor.predict(NDList(currentInputIds))[0]
-
-      // B. VISION INJECTION: Robust concat on Axis 1
-      if (i == 0) {
-        val ids = currentInputIds.toLongArray()
-        val imagePadTokenId = 151655L
-        val padIdx = ids.indexOf(imagePadTokenId)
-        if (padIdx != -1) {
-          // Ensure imageEmbeds has the batch dimension [1, num_patches, 1536]
-          val reshapedVision =
-              if (imageEmbeds.shape.dimension() == 2) {
-                imageEmbeds.reshape(1, imageEmbeds.shape[0], imageEmbeds.shape[1])
-              } else {
-                imageEmbeds
-              }
-          val pre = inputEmbeds.get(":, :$padIdx, :")
-          val post = inputEmbeds.get(":, ${padIdx + 1}:, :")
-          // Explicitly concat on axis 1
-          inputEmbeds = pre.concat(reshapedVision, 1).concat(post, 1)
-          log(AI.LogLevel.INFO, "Vision injected. New embed shape: ${inputEmbeds.shape}")
-          // After vision injection, only use the first token for the first decoding step
-          inputEmbeds = inputEmbeds.get(":, 0:1, :")
-        }
-      }
-
-      val currentSeqLen = inputEmbeds.shape[1].toInt()
-      val totalSeqLen = pastSeqLen + currentSeqLen
-      val attentionMask =
-          manager.ones(ai.djl.ndarray.types.Shape(1, totalSeqLen.toLong()), DataType.INT64)
-      // position_ids shape per exporter: (3, batch_size, sequence_length)
-      val posLen = totalSeqLen
-      val posArray = LongArray(3 * 1 * posLen) { ((it % posLen) + pastSeqLen).toLong() }
-      val positionIds = manager.create(posArray).reshape(3, 1, posLen.toLong())
-
-      val decoderInputs = NDList()
-      decoderInputs.add(inputEmbeds.apply { name = "inputs_embeds" })
-      decoderInputs.add(attentionMask.apply { name = "attention_mask" })
-      decoderInputs.add(positionIds.apply { name = "position_ids" })
-
-      // C. KV Cache Handling
-      // To avoid ONNXRuntime attempting to re-use output buffers with differing
-      // sequence lengths we allocate fixed-size KV caches of shape
-      // (1, 2, maxTokens, 128) and keep concatenating new single-step outputs
-      // into that fixed-size container (padding the tail with zeros). This
-      // ensures the shapes passed to the runtime remain constant across steps.
-      val kvHeadDim = 128L
-      val kvSeqMax = maxTokens.toLong()
-      if (pastKeyValues != null) {
-        // Add duplicates of our fixed-shape past KV buffers
-        val past = pastKeyValues!!
-        for (k in 0 until past.size) {
-          val arr = past[k].duplicate()
-          val nm = past[k].name
-          arr.apply { if (nm != null) name = nm }
-          decoderInputs.add(arr)
-        }
-      } else {
-        // Initial zero caches: use seqLen=0 for the very first step (per ONNX exporter)
-        for (j in 0 until numKv) {
-          decoderInputs.add(
-              manager
-                  .zeros(ai.djl.ndarray.types.Shape(1, 2, 0, kvHeadDim), DataType.FLOAT32)
-                  .apply { name = "past_key_values.$j.key" })
-          decoderInputs.add(
-              manager
-                  .zeros(ai.djl.ndarray.types.Shape(1, 2, 0, kvHeadDim), DataType.FLOAT32)
-                  .apply { name = "past_key_values.$j.value" })
-        }
-      }
-
-      // D. Forward Pass inside a per-iteration sub-manager to avoid ONNX
-      // buffer reuse between runs. We copy inputs into the sub-manager,
-      // run predict, then copy outputs back into the parent manager.
-      val output: NDList =
-          manager.newSubManager().use { sub ->
-            val subInputs = NDList()
-            // copy inputs into sub manager
-            val subInputEmbeds = sub.create(inputEmbeds.toFloatArray()).reshape(inputEmbeds.shape)
-            val subAttention = sub.create(attentionMask.toLongArray()).reshape(attentionMask.shape)
-            val subPosition = sub.create(positionIds.toLongArray()).reshape(positionIds.shape)
-            subInputs.add(subInputEmbeds.apply { name = "inputs_embeds" })
-            subInputs.add(subAttention.apply { name = "attention_mask" })
-            subInputs.add(subPosition.apply { name = "position_ids" })
-
-            // copy past KV into sub inputs
-            if (pastKeyValues != null) {
-              val past = pastKeyValues!!
-              for (k in 0 until past.size) {
-                val p = past[k]
-                val arr = sub.create(p.toFloatArray()).reshape(p.shape)
-                val nm = p.name
-                arr.apply { if (nm != null) name = nm }
-                subInputs.add(arr)
-              }
-            } else {
-              // if no past, add zero-length tensors in sub as well
-              for (j in 0 until numKv) {
-                subInputs.add(
-                    sub.zeros(ai.djl.ndarray.types.Shape(1, 2, 0, kvHeadDim), DataType.FLOAT32)
-                        .apply { name = "past_key_values.$j.key" })
-                subInputs.add(
-                    sub.zeros(ai.djl.ndarray.types.Shape(1, 2, 0, kvHeadDim), DataType.FLOAT32)
-                        .apply { name = "past_key_values.$j.value" })
-              }
-            }
-
-            // run predict in sub-manager
-            val subOut = decoderPredictor.predict(subInputs)
-
-            // copy outputs back into parent manager
-            val parentOut = NDList()
-            for (o in subOut) {
-              val floats = o.toFloatArray()
-              val arr = manager.create(floats, o.shape)
-              val nm = o.name
-              arr.apply { if (nm != null) name = nm }
-              parentOut.add(arr)
-            }
-            subOut.forEach { it.close() }
-            parentOut
-          }
+      val currentArray = currentIds.toLongArray()
+      val decoderInput = manager.create(currentArray)
+      val output = predictor.predict(NDList(decoderInput, encoderHiddenStates))
       val logits = output[0]
-      val nextTokenId = logits.get(0, -1).argMax(0).getLong()
+      val seqLen = currentArray.size.toLong()
+      val nextTokenId = logits.get(seqLen - 1).argMax(0).getLong()
 
-      // E. Terminate on End-Of-String
-      if (nextTokenId == 151643L || nextTokenId == 151645L) break
+      output.close()
+      decoderInput.close()
 
-      val textChunk = tokenizer!!.decode(longArrayOf(nextTokenId))
-      finalAnswer += textChunk
+      if (nextTokenId == 2L) break
 
-      // F. Prepare next iteration
-      currentInputIds = manager.create(longArrayOf(nextTokenId)).reshape(1, 1)
-      pastSeqLen += 1
-
-      // Re-wrap outputs into inputs for next step
-      // Outputs are single-step KV pairs (seq_len == 1). We merge them into
-      // our preallocated fixed-size buffers by concatenating the previous
-      // used portion, the new single-step KV and padding zeros to keep the
-      // final shape constant: (1,2,kvSeqMax,kvHeadDim).
-      val nextKVs = NDList()
-      for (j in 0 until numKv) {
-        val outK = output[1 + (j * 2)].duplicate()
-        val outV = output[2 + (j * 2)].duplicate()
-
-        // Determine previous used length (before the increment done earlier)
-        val prevUsedLen = (pastSeqLen - 1).coerceAtLeast(0)
-
-        if (pastKeyValues != null) {
-          val prevK = pastKeyValues!![j * 2]
-          val prevV = pastKeyValues!![j * 2 + 1]
-
-          val outLen = outK.shape[2].toInt()
-
-          val finalK =
-              when {
-                // Model returned full 'present' (length == pastSeqLen), use as-is
-                outLen == pastSeqLen -> outK
-                // Model returned single-step outputs (length == 1), append to previous used prefix
-                outLen == 1 -> {
-                  val prevKUsed =
-                      if (prevUsedLen > 0) prevK.get(":, :, 0:$prevUsedLen, :") else null
-                  if (prevKUsed != null) prevKUsed.concat(outK, 2) else outK
-                }
-                else -> {
-                  // Fallback: use whatever the model returned
-                  outK
-                }
-              }
-
-          val finalV =
-              when {
-                outV.shape[2].toInt() == pastSeqLen -> outV
-                outV.shape[2].toInt() == 1 -> {
-                  val prevVUsed =
-                      if (prevUsedLen > 0) prevV.get(":, :, 0:$prevUsedLen, :") else null
-                  if (prevVUsed != null) prevVUsed.concat(outV, 2) else outV
-                }
-                else -> outV
-              }
-
-          // pad/truncate to kvSeqMax
-          val padKLen = (kvSeqMax - finalK.shape[2]).toInt()
-          val padVLen = (kvSeqMax - finalV.shape[2]).toInt()
-          val paddedK =
-              if (padKLen > 0)
-                  finalK.concat(
-                      manager.zeros(
-                          ai.djl.ndarray.types.Shape(1, 2, padKLen.toLong(), kvHeadDim),
-                          DataType.FLOAT32),
-                      2)
-              else finalK
-          val paddedV =
-              if (padVLen > 0)
-                  finalV.concat(
-                      manager.zeros(
-                          ai.djl.ndarray.types.Shape(1, 2, padVLen.toLong(), kvHeadDim),
-                          DataType.FLOAT32),
-                      2)
-              else finalV
-
-          paddedK.apply { name = "past_key_values.$j.key" }
-          paddedV.apply { name = "past_key_values.$j.value" }
-          nextKVs.add(paddedK)
-          nextKVs.add(paddedV)
-        } else {
-          // No previous KV: model may return single-step or full present; pad to kvSeqMax
-          val padLen = (kvSeqMax - outK.shape[2]).toInt()
-          val finalK =
-              if (padLen > 0)
-                  outK.concat(
-                      manager.zeros(
-                          ai.djl.ndarray.types.Shape(1, 2, padLen.toLong(), kvHeadDim),
-                          DataType.FLOAT32),
-                      2)
-              else outK
-          val finalV =
-              if (padLen > 0)
-                  outV.concat(
-                      manager.zeros(
-                          ai.djl.ndarray.types.Shape(1, 2, padLen.toLong(), kvHeadDim),
-                          DataType.FLOAT32),
-                      2)
-              else outV
-          finalK.apply { name = "past_key_values.$j.key" }
-          finalV.apply { name = "past_key_values.$j.value" }
-          nextKVs.add(finalK)
-          nextKVs.add(finalV)
-        }
-      }
-      pastKeyValues = nextKVs
+      currentIds.add(nextTokenId)
     }
 
-    embedPredictor.close()
-    return finalAnswer.trim()
+    val answerIds = currentIds.drop(promptIds.size).toLongArray()
+    val rawAnswer = tokenizer.decode(answerIds)
+
+    return rawAnswer.replace("</s_answer>", "").replace("<s>", "").trim()
   }
 
-  // [Rest of your Orientation and Servlet Logic remains unchanged...]
+  /**
+   * Detects the orientation of an image using Tesseract's OSD (Orientation and Script Detection).
+   * This method uses a pool of pre-initialized OSD handles for better performance.
+   *
+   * @param image The image to analyze.
+   * @param tessDataDir The directory containing Tesseract's tessdata (included for logging
+   *   purposes).
+   * @return The rotation angle (0, 90, 180, or 270) that should be applied to correct the
+   *   orientation, or 0 if detection fails or OCR is not active.
+   */
+  private fun detectOrientation(image: BufferedImage, tessDataDir: File): Int {
+    if (!ocrActive || !isOsdPoolInitialized) {
+      log(
+          LogLevel.INFO,
+          "OSD not available - OCR active: $ocrActive, pool initialized: $isOsdPoolInitialized")
+      return 0
+    }
 
-  private fun ensureModelFiles() {
-    val dir = donutModelDir ?: return
-    val base = modelBaseUrl
-    val files =
-        mapOf(
-            "vision_encoder_fp16.onnx" to "$base/onnx/vision_encoder_fp16.onnx",
-            "decoder_model_merged_fp16.onnx" to "$base/onnx/decoder_model_merged_fp16.onnx",
-            "decoder_model_merged_fp16.onnx_data" to
-                "$base/onnx/decoder_model_merged_fp16.onnx_data",
-            "embed_tokens_fp16.onnx" to "$base/onnx/embed_tokens_fp16.onnx",
-            "tokenizer.json" to "$base/tokenizer.json")
-    files.forEach { (name, url) ->
-      val target = File(dir, name)
-      if (!target.exists()) {
-        log(AI.LogLevel.INFO, "Downloading model file: $name from $url", "AI / ONNX / QWEN", null)
-        val connection = URI(url).toURL().openConnection().apply { connectTimeout = 15000 }
-        var bytesCopied: Long = 0
-        connection.getInputStream().use { input ->
-          target.outputStream().use { output -> bytesCopied = input.copyTo(output) }
+    // Acquire OSD handle from pool with timeout
+    val osdHandle =
+        try {
+          osdPool.poll(10, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (e: InterruptedException) {
+          log(LogLevel.WARNING, "Interrupted while waiting for OSD handle")
+          return 0
         }
-        val sizeStr =
-            when {
-              bytesCopied >= 1024L * 1024 * 1024 ->
-                  String.format("%.2f GB", bytesCopied / (1024.0 * 1024 * 1024))
-              bytesCopied >= 1024L * 1024 -> String.format("%.2f MB", bytesCopied / (1024.0 * 1024))
-              else -> String.format("%.2f KB", bytesCopied / 1024.0)
-            }
-        log(AI.LogLevel.INFO, "Downloaded $name ($sizeStr)", "AI / ONNX / QWEN")
-      } else {
-        val existingSize = target.length()
-        val sizeStr =
-            when {
-              existingSize >= 1024L * 1024 * 1024 ->
-                  String.format("%.2f GB", existingSize / (1024.0 * 1024 * 1024))
-              existingSize >= 1024L * 1024 ->
-                  String.format("%.2f MB", existingSize / (1024.0 * 1024))
-              else -> String.format("%.2f KB", existingSize / 1024.0)
-            }
-        log(AI.LogLevel.INFO, "Model file already exists: $name ($sizeStr)", "AI / ONNX / QWEN")
+
+    if (osdHandle == null) {
+      log(LogLevel.WARNING, "OSD pool exhausted - no handle available")
+      return 0
+    }
+
+    try {
+      val width = image.width
+      val height = image.height
+      val pixels = image.getRGB(0, 0, width, height, null, 0, width)
+      val buffer = java.nio.ByteBuffer.allocateDirect(width * height * 4)
+
+      for (pixel in pixels) {
+        buffer.put((pixel shr 16 and 0xFF).toByte()) // R
+        buffer.put((pixel shr 8 and 0xFF).toByte()) // G
+        buffer.put((pixel and 0xFF).toByte()) // B
+        buffer.put((pixel shr 24 and 0xFF).toByte()) // A
       }
+
+      buffer.rewind()
+
+      TessAPI1.TessBaseAPISetImage(osdHandle, buffer, width, height, 4, width * 4)
+
+      val orientDegPtr = java.nio.IntBuffer.allocate(1)
+      val orientConfPtr = java.nio.FloatBuffer.allocate(1)
+      val scriptNamePtr = com.sun.jna.ptr.PointerByReference()
+      val scriptConfPtr = java.nio.FloatBuffer.allocate(1)
+
+      val result =
+          TessAPI1.TessBaseAPIDetectOrientationScript(
+              osdHandle, orientDegPtr, orientConfPtr, scriptNamePtr, scriptConfPtr)
+
+      if (result == 1) {
+        val orientDeg = orientDegPtr.get(0)
+        val orientConf = orientConfPtr.get(0)
+        log(
+            LogLevel.INFO,
+            "Tesseract OSD detected orientation: ${orientDeg}° (confidence: ${orientConf})")
+
+        // Convert Tesseract's detected orientation to correction angle
+        val correctionAngle =
+            when (orientDeg) {
+              0 -> 0
+              90 -> 270 // Image is 90° rotated, need to rotate 270° to correct
+              180 -> 180
+              270 -> 90 // Image is 270° rotated, need to rotate 90° to correct
+              else -> 0
+            }
+
+        return correctionAngle
+      }
+    } catch (e: Exception) {
+      log(LogLevel.WARNING, "Tesseract OSD failed: ${e.message}")
+    } finally {
+      // Return handle to pool
+      try {
+        osdPool.put(osdHandle)
+      } catch (e: InterruptedException) {
+        log(LogLevel.WARNING, "Interrupted while returning OSD handle to pool")
+      }
+    }
+
+    log(LogLevel.INFO, "Could not detect orientation, assuming no rotation needed")
+    return 0
+  }
+
+  /**
+   * Rotates a BufferedImage by the specified degrees (90, 180, or 270).
+   *
+   * @param img The image to rotate.
+   * @param degrees The rotation angle in degrees (90, 180, or 270).
+   * @return The rotated image.
+   */
+  private fun rotateImage(img: BufferedImage, degrees: Int): BufferedImage {
+    val width = img.width
+    val height = img.height
+    val at = AffineTransform()
+
+    val (resultWidth, resultHeight) =
+        when (degrees) {
+          90 -> {
+            at.translate(height.toDouble(), 0.0)
+            at.rotate(Math.PI / 2)
+            Pair(height, width)
+          }
+          180 -> {
+            at.translate(width.toDouble(), height.toDouble())
+            at.rotate(Math.PI)
+            Pair(width, height)
+          }
+          270 -> {
+            at.translate(0.0, width.toDouble())
+            at.rotate(-Math.PI / 2)
+            Pair(height, width)
+          }
+          else -> return img
+        }
+
+    val result = BufferedImage(resultWidth, resultHeight, img.type)
+    val op = AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR)
+    return op.filter(img, result)
+  }
+
+  /** Handles incoming requests. */
+  override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    log(AI.LogLevel.INFO, "Processing request received")
+
+    if (onnxMarkedForRemoval) {
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              "{\"error\":\"ONNX is disabled because AI_Remove contains ONNX.\"}"))
+    }
+
+    if (!donutActive || !isActive) {
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              "{\"error\":\"DONUT ONNX is not active. Check the plugin properties.}"))
+    }
+
+    loadError?.let { err ->
+      return errorResponse("Failed to load model cause: ${err.message}.")
+    }
+
+    if (!modelsReady || encoderModel == null || decoderModelForLoop == null || tokenizer == null) {
+      return errorResponse("DONUT is not initialized.")
+    }
+
+    val questionsToAsk = mutableMapOf<String, String>()
+
+    params.headerMap.forEach { (headerName, headerValue) ->
+      if (headerName.startsWith("x-question-", ignoreCase = true)) {
+        val key = headerName.lowercase().substringAfter("x-question-", "").lowercase()
+        if (key.isNotBlank() && headerValue != null) {
+          // Try to decode header value as UTF-8 if misencoded
+          val decodedValue =
+              try {
+                String(headerValue.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
+              } catch (ex: Exception) {
+                headerValue // fallback
+              }
+          questionsToAsk[key] = decodedValue
+          log(
+              LogLevel.INFO,
+              "Added question from header: $headerName -> ${decodedValue.take(50)}${if (decodedValue.length > 50) "..." else ""}")
+        }
+      }
+    }
+
+    if (questionsToAsk.isEmpty()) {
+      return errorResponse("No questions asked.")
+    }
+
+    val finalResults = mutableMapOf<String, Map<String, String>>()
+
+    try {
+      val tokenizer = tokenizer ?: return errorResponse("Tokenizer not loaded.")
+
+      params.uploadFiles?.forEach { (inputName, fileItem) ->
+        val combinedBytes =
+            fileItem.stream().use { stream ->
+              stream.map { it.data }.reduce { acc, bytes -> acc + bytes }.orElse(byteArrayOf())
+            }
+
+        // region Apply orientation correction (manual X-Rotate or automatic OSD)
+        val rotatedBytes =
+            try {
+              val manualRotation =
+                  params.headerMap.entries
+                      .find { it.key.equals("X-Rotate", ignoreCase = true) }
+                      ?.value
+                      ?.trim()
+                      ?.toIntOrNull()
+
+              if (manualRotation != null && manualRotation != 0) {
+                log(
+                    LogLevel.INFO,
+                    "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+
+                val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
+
+                if (bufferedImg != null) {
+                  val rotatedImg =
+                      when (manualRotation) {
+                        90,
+                        180,
+                        270 -> rotateImage(bufferedImg, manualRotation)
+                        else -> {
+                          log(
+                              LogLevel.WARNING,
+                              "Invalid X-Rotate value: $manualRotation (use 90, 180, or 270)")
+                          bufferedImg
+                        }
+                      }
+
+                  val baos = ByteArrayOutputStream()
+
+                  ImageIO.write(rotatedImg, "PNG", baos)
+                  baos.toByteArray()
+                } else {
+                  log(LogLevel.WARNING, "Failed to read image for rotation, using original")
+                  combinedBytes
+                }
+              } else if (ocrActive) {
+                // Automatic orientation detection using Tesseract OSD
+                log(
+                    LogLevel.INFO,
+                    "No X-Rotate header provided - using Tesseract OSD for automatic orientation detection")
+
+                val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
+
+                if (bufferedImg != null) {
+                  // Find tessdata directory (same as Tesseract plugin uses)
+                  val tessDataDir = File(pluginFolder, "Resources/AI/Tesseract/Models")
+
+                  if (tessDataDir.exists()) {
+                    val detectedAngle = detectOrientation(bufferedImg, tessDataDir)
+
+                    if (detectedAngle != 0) {
+                      log(LogLevel.INFO, "Applying auto-detected rotation: ${detectedAngle}°")
+                      val rotatedImg = rotateImage(bufferedImg, detectedAngle)
+
+                      val baos = ByteArrayOutputStream()
+                      ImageIO.write(rotatedImg, "PNG", baos)
+                      baos.toByteArray()
+                    } else {
+                      log(LogLevel.INFO, "No rotation needed according to OSD")
+                      combinedBytes
+                    }
+                  } else {
+                    log(
+                        LogLevel.WARNING,
+                        "Tesseract tessdata directory not found at ${tessDataDir.absolutePath} - skipping OSD")
+                    combinedBytes
+                  }
+                } else {
+                  log(LogLevel.WARNING, "Failed to read image for OSD, using original")
+                  combinedBytes
+                }
+              } else {
+                // No rotation - neither manual nor automatic
+                log(LogLevel.INFO, "No rotation applied - X-Rotate not provided and OCR not active")
+                combinedBytes
+              }
+            } catch (e: Exception) {
+              log(
+                  LogLevel.WARNING,
+                  "Image orientation correction failed: ${e.message}, using original image")
+              combinedBytes
+            }
+        // endregion Apply orientation correction (manual X-Rotate or automatic OSD)
+
+        rotatedBytes.inputStream().use { inputStream ->
+          val djlImg = ImageFactory.getInstance().fromInputStream(inputStream)
+          val results = mutableMapOf<String, String>()
+
+          NDManager.newBaseManager().use { manager ->
+            // region Image preprocessing (Letterboxing statt Stretching)
+            val targetW = 1920
+            val targetH = 2560
+            val origW = djlImg.width
+            val origH = djlImg.height
+            val scale = minOf(targetW.toFloat() / origW, targetH.toFloat() / origH)
+            val newW = (origW * scale).toInt()
+            val newH = (origH * scale).toInt()
+            val resized = djlImg.resize(newH, newW, true)
+            val factory = ImageFactory.getInstance()
+            val base =
+                java.awt.image.BufferedImage(
+                    targetW, targetH, java.awt.image.BufferedImage.TYPE_INT_RGB)
+            val g = base.createGraphics()
+            g.color = java.awt.Color.WHITE
+            g.fillRect(0, 0, targetW, targetH)
+            val x = (targetW - newW) / 2
+            val y = (targetH - newH) / 2
+            g.drawImage(resized.getWrappedImage() as java.awt.Image, x, y, newW, newH, null)
+            g.dispose()
+            val padded: DjlImage = factory.fromImage(base)
+            var array = padded.toNDArray(manager)
+            array = array.transpose(2, 0, 1).toType(DataType.FLOAT32, false)
+            val mean = manager.create(floatArrayOf(0.485f, 0.456f, 0.406f)).reshape(3, 1, 1)
+            val std = manager.create(floatArrayOf(0.229f, 0.224f, 0.225f)).reshape(3, 1, 1)
+            array = array.div(255.0f).sub(mean).div(std)
+            val pixelValues = array
+            // endregion Image preprocessing
+            val encoderPredictor =
+                acquirePredictor<NDList, NDList>("donut-encoder")
+                    ?: throw IllegalStateException("No predictor available for donut-encoder")
+            // region Predict
+            val encoderOutput =
+                try {
+                  encoderPredictor.predict(NDList(pixelValues))
+                } finally {
+                  releasePredictor("donut-encoder", encoderPredictor)
+                }
+            val encoderHiddenStates = encoderOutput[0].duplicate()
+
+            encoderOutput.close()
+
+            val decoderPredictor =
+                acquirePredictor<NDList, NDList>("donut-decoder-loop")
+                    ?: throw IllegalStateException("No predictor available for donut-decoder-loop")
+
+            try {
+              questionsToAsk.forEach { (key, question) ->
+                try {
+                  results[key] =
+                      runDocVqaDecode(
+                          manager, tokenizer, decoderPredictor, encoderHiddenStates, question)
+                } catch (X: Exception) {
+                  results[key] = "Error: ${ X.message }"
+
+                  log(LogLevel.ERROR, "Error processing \"$question\" cause: ${ X.message }", "", X)
+                }
+              }
+            } finally {
+              releasePredictor("donut-decoder-loop", decoderPredictor)
+            }
+            // endregion Predict
+          }
+
+          finalResults[inputName] = results.toMap()
+        }
+      }
+      // region Format response
+      val jsonResponse = buildString {
+        append("{")
+
+        finalResults.entries.forEachIndexed { fileIdx, (fileName, fileResults) ->
+          if (fileIdx > 0) append(",")
+          append("\"${fileName.replace("\"", "\\\"")}\":{")
+
+          fileResults.entries.forEachIndexed { idx, (key, value) ->
+            if (idx > 0) append(",")
+            append("\"${key.replace("\"", "\\\"")}\": \"${value.replace("\"", "\\\"")}\"")
+          }
+
+          append("}")
+        }
+
+        append("}")
+      }
+      // endregion Format response
+      return PluginServletActionRetVal(ServletResponse(EResponseType.JSON, jsonResponse))
+    } catch (X: Exception) {
+      log(LogLevel.ERROR, "Error processing request: ${ X.message }", "", X)
+
+      return errorResponse("Processing error: ${ X.message }")
     }
   }
 
-  // Use acquirePredictor and releasePredictor from base class ONNX; do not override
+  /**
+   * Creates a JSON-Error-Response containing an **error** element holding the [message].
+   *
+   * @param message The message that shall be included in the response.
+   * @return The requested [IPluginServletActionRetVal].
+   */
+  private fun errorResponse(message: String): IPluginServletActionRetVal {
+    return PluginServletActionRetVal(
+        ServletResponse(EResponseType.JSON, "{\"error\":\"$message\"}"))
+  }
 
-  override fun shutdown(data: IPluginShutdownData?) {
-    while (osdPool.isNotEmpty()) TessAPI1.TessBaseAPIDelete(osdPool.poll())
+  /**
+   * Closes the [translator]'s predictor and releases the
+   * [encoderModel],[decoderModel],[decoderModelForLoop] & the [tokenizer]. The [modelsReady] and
+   * [donutActive] flags will are set to **false**. Also tries to delete the
+   * [tokenizersNativeRunDir] for this run. There is a high probability that this will be locked. In
+   * that case the initialization routine does clear the old temp directories anyways.
+   *
+   * @param shutdownData Provided by the Formcycle environment.
+   */
+  override fun shutdown(shutdownData: IPluginShutdownData?) {
+    translator?.closePredictor()
+
+    // Clean up OSD pool
+    while (osdPool.isNotEmpty()) {
+      val handle = osdPool.poll()
+      if (handle != null) {
+        try {
+          TessAPI1.TessBaseAPIDelete(handle)
+        } catch (e: Exception) {
+          log(AI.LogLevel.WARNING, "Error deleting OSD handle during shutdown: ${e.message}")
+        }
+      }
+    }
+    isOsdPoolInitialized = false
+    log(AI.LogLevel.INFO, "OSD pool cleaned up")
+
+    encoderModel = null
+    decoderModel = null
+    decoderModelForLoop = null
+    translator = null
     modelsReady = false
-    super.shutdown(data)
+    donutActive = false
+
+    tokenizersNativeRunDir?.let { dir ->
+      try {
+        dir.deleteRecursively()
+        log(AI.LogLevel.INFO, "Deleted tokenizers native dir: ${dir.absolutePath}")
+      } catch (X: Exception) {
+        log(
+            AI.LogLevel.WARNING,
+            "Could not delete tokenizers native dir (likely locked): ${dir.absolutePath}",
+            "",
+            X)
+      }
+    }
+
+    super.shutdown(shutdownData)
+
+    log(LogLevel.INFO, "DONUT ONNX shutdown complete")
   }
 }

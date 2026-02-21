@@ -1,4 +1,4 @@
-package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.openvino
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.openvino.onnx
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.ONNX

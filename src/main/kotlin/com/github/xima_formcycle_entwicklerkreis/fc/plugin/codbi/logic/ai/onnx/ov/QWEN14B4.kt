@@ -207,6 +207,10 @@ class QWEN2B164CPU : OpenVINO() {
 
   @Volatile private var loadError: Throwable? = null
   @Volatile private var openVinoEPAvailable = false
+  /** Controls whether the Vision Encoder uses OpenVINO EP (true) or optimized ORT CPU (false). */
+  private var useOpenVinoVisionEP = false
+  /** Describes which Vision Encoder variant is loaded (for logging). */
+  private var activeVisionLabel = "not loaded"
   private var tokenizersNativeRunDir: File? = null
   private var maxTokens = 128
   private var keepNewest = 3
@@ -227,8 +231,11 @@ class QWEN2B164CPU : OpenVINO() {
       "https://huggingface.co/onnx-community/Qwen2-VL-2B-Instruct/resolve/main"
 
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    val epStatus = if (openVinoEPAvailable) "OpenVINO EP" else "CPU"
-    log(AI.LogLevel.INFO, "Processing VQA request received (EP: $epStatus)", " / QWEN", null)
+    log(
+        AI.LogLevel.INFO,
+        "Processing VQA request received (Vision: $activeVisionLabel)",
+        " / QWEN",
+        null)
 
     if (loadError != null) {
       val resp =
@@ -341,10 +348,13 @@ class QWEN2B164CPU : OpenVINO() {
                 acquirePredictor<NDList, NDList>("qwen-decoder")
                     ?: throw IllegalStateException("No predictor available for qwen-decoder")
             try {
+              // Run vision encoding ONCE for all questions on the same image.
+              // This saves ~11s per additional question.
+              val visionResult = encodeVision(manager, visionPredictor, djlImg)
+
               questionsToAsk.forEach { (key, question) ->
                 try {
-                  results[key] =
-                      runQwenInference(manager, visionPredictor, decoderPredictor, djlImg, question)
+                  results[key] = runQwenDecode(manager, decoderPredictor, question, visionResult)
                 } catch (ex: Exception) {
                   results[key] = "Error: ${ex.message}"
                   log(AI.LogLevel.ERROR, "Error processing '$question': ${ex.message}", "", ex)
@@ -472,6 +482,18 @@ class QWEN2B164CPU : OpenVINO() {
     // ONNX.initialize() (before the engine singleton is loaded into the JVM).
     // Read the result from the parent class field.
     openVinoEPAvailable = openVinoOrtReplaced
+    // Plugin property to toggle OpenVINO EP for Vision Encoder.
+    // Default: false (ORT CPU is ~2s faster than OpenVINO EP on consumer CPUs).
+    // Set to "true" on server-grade CPUs (Xeon with AVX-512/AMX) where OpenVINO EP may help.
+    useOpenVinoVisionEP =
+        configData.properties.getProperty("AI_ONNX_UseOpenVinoVisionEP")?.trim()?.lowercase()?.let {
+          it == "true" || it == "1" || it == "yes"
+        } ?: false
+    log(
+        AI.LogLevel.INFO,
+        "OpenVINO EP available: $openVinoEPAvailable, Vision EP enabled: $useOpenVinoVisionEP",
+        " / QWEN",
+        null)
     if (openVinoEPAvailable) {
       log(
           AI.LogLevel.INFO,
@@ -529,112 +551,239 @@ class QWEN2B164CPU : OpenVINO() {
             override fun getBatchifier() = null
           }
 
+      // Use physical core count (not logical) to avoid Hyper-Threading contention
+      // on P-cores. On hybrid Intel CPUs (12th/13th gen), HT threads share AVX2
+      // execution units, which HURTS compute-bound ViT/MatMul workloads.
+      val physicalCores = getPhysicalCoreCount()
+      log(
+          AI.LogLevel.INFO,
+          "CPU topology: ${Runtime.getRuntime().availableProcessors()} logical, $physicalCores physical cores",
+          " / QWEN",
+          null)
+
+      // --- Vision Encoder ---
+      // Try quantized (QDQ format) vision encoder first — half the size (669 MB vs 1.33 GB),
+      // uses QuantizeLinear/DequantizeLinear ops supported by both ORT CPU and OpenVINO EP.
+      // The _int8.onnx variant uses ConvInteger ops which are NOT supported by either EP.
+      // Falls back to FP16 if quantized model fails to load.
+      val visionModelName: String
       if (openVinoEPAvailable) {
-        log(
-            AI.LogLevel.INFO,
-            "Loading models — Vision Encoder with OpenVINO EP, others on CPU...",
-            " / QWEN",
-            null)
+        // Try QDQ quantized model with OpenVINO EP first
         try {
-          // Only the vision encoder benefits meaningfully from OpenVINO EP acceleration.
-          // The Q4-quantized decoder uses MatMulNBits/DequantizeLinear ops that trigger
-          // "invalid vector subscript" in OpenVINO 2024.4.  The embed_tokens model is a
-          // simple embedding lookup that's already fast on CPU.
+          visionModelName = "vision_encoder_quantized.onnx"
+          log(
+              AI.LogLevel.INFO,
+              "Lade Vision Encoder (QDQ INT8 + OpenVINO EP): ${modelPath.resolve(visionModelName)}",
+              " / QWEN",
+              null)
+          visionEncoder =
+              loadModelWithOpenVinoEP(modelPath, visionModelName, emptyMap(), passThroughTranslator)
+          activeVisionLabel = "QDQ INT8 + OpenVINO EP"
+          log(AI.LogLevel.INFO, "Vision Encoder loaded ($activeVisionLabel)", " / QWEN", null)
+        } catch (e: Exception) {
+          val rootMsg = (e.cause?.message ?: e.message ?: e.toString())
+          log(
+              AI.LogLevel.WARNING,
+              "QDQ quantized vision encoder failed on OpenVINO EP: $rootMsg. Falling back to FP16...",
+              " / QWEN",
+              null)
+          visionEncoder?.close()
+          visionEncoder = null
+          // Fallback: FP16 with OpenVINO EP
+          log(
+              AI.LogLevel.INFO,
+              "Lade Vision Encoder (FP16 + OpenVINO EP): ${modelPath.resolve("vision_encoder_fp16.onnx")}",
+              " / QWEN",
+              null)
           visionEncoder =
               loadModelWithOpenVinoEP(
                   modelPath, "vision_encoder_fp16.onnx", emptyMap(), passThroughTranslator)
-          log(AI.LogLevel.INFO, "Vision Encoder loaded with OpenVINO EP", " / QWEN", null)
-
-          log(AI.LogLevel.INFO, "Lade Decoder Model (CPU, ~4GB RAM)...", " / QWEN", null)
-          decoderModel =
-              Criteria.builder()
-                  .setTypes(NDList::class.java, NDList::class.java)
-                  .optOption("memoryPatternOptimization", "false")
-                  .optOption("cpuArenaAllocator", "false")
-                  .optModelPath(modelPath.resolve("decoder_model_merged_q4.onnx"))
-                  .optEngine("OnnxRuntime")
-                  .build()
-                  .loadModel()
-          log(AI.LogLevel.INFO, "Decoder Model loaded (CPU)", " / QWEN", null)
-
-          log(AI.LogLevel.INFO, "Lade Embedding Model (CPU)...", " / QWEN", null)
-          embedModel =
-              Criteria.builder()
-                  .setTypes(NDList::class.java, NDList::class.java)
-                  .optModelPath(modelPath.resolve("embed_tokens_fp16.onnx"))
-                  .optEngine("OnnxRuntime")
-                  .build()
-                  .loadModel()
-          log(AI.LogLevel.INFO, "Embedding Model loaded (CPU)", " / QWEN", null)
-        } catch (e: Exception) {
-          // InvocationTargetException.message is null; the real error is in .cause
-          val rootCause = if (e is java.lang.reflect.InvocationTargetException) e.cause ?: e else e
-          val msg = rootCause.message ?: e.cause?.message ?: e.toString()
-          log(AI.LogLevel.WARNING, "OpenVINO EP model loading failed: $msg", " / QWEN", rootCause)
+          activeVisionLabel = "FP16 + OpenVINO EP"
+          log(AI.LogLevel.INFO, "Vision Encoder loaded ($activeVisionLabel)", " / QWEN", null)
+        }
+      } else {
+        // No OpenVINO EP — try QDQ on ORT CPU, then FP16 fallback
+        try {
+          visionModelName = "vision_encoder_quantized.onnx"
           log(
-              AI.LogLevel.WARNING,
-              "Exception chain: ${e::class.simpleName} → ${e.cause?.let { it::class.simpleName + ": " + it.message } ?: "(no cause)"}",
+              AI.LogLevel.INFO,
+              "Lade Vision Encoder (QDQ INT8 + ORT CPU): ${modelPath.resolve(visionModelName)}",
               " / QWEN",
               null)
-          openVinoEPAvailable = false
-          // Close any partially loaded models before retrying
+          run {
+            val visOpts = ai.onnxruntime.OrtSession.SessionOptions()
+            visOpts.setOptimizationLevel(ai.onnxruntime.OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            visOpts.setExecutionMode(
+                ai.onnxruntime.OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
+            visOpts.setIntraOpNumThreads(physicalCores)
+            visOpts.setMemoryPatternOptimization(true)
+            visOpts.setCPUArenaAllocator(true)
+            val visOptFile = modelPath.resolve("vision_encoder_quantized_cpu_optimized.onnx")
+            visOpts.setOptimizedModelFilePath(visOptFile.toString())
+            val visOptions = HashMap<String, Any>()
+            visOptions["sessionOptions"] = visOpts
+            val visM = ai.djl.Model.newInstance("vision_encoder_quantized", "OnnxRuntime")
+            visM.load(modelPath.resolve(visionModelName), null, visOptions)
+            visionEncoder = ZooModel(visM, passThroughTranslator)
+          }
+          activeVisionLabel = "QDQ INT8 + ORT CPU (threads=$physicalCores)"
+          log(AI.LogLevel.INFO, "Vision Encoder loaded ($activeVisionLabel)", " / QWEN", null)
+        } catch (e: Exception) {
+          val rootMsg = (e.cause?.message ?: e.message ?: e.toString())
+          log(
+              AI.LogLevel.WARNING,
+              "QDQ quantized vision encoder failed on ORT CPU: $rootMsg. Falling back to FP16...",
+              " / QWEN",
+              null)
           visionEncoder?.close()
           visionEncoder = null
-          decoderModel?.close()
-          decoderModel = null
-          embedModel?.close()
-          embedModel = null
+          log(
+              AI.LogLevel.INFO,
+              "Lade Vision Encoder (FP16 + ORT CPU): ${modelPath.resolve("vision_encoder_fp16.onnx")}",
+              " / QWEN",
+              null)
+          run {
+            val visOpts = ai.onnxruntime.OrtSession.SessionOptions()
+            visOpts.setOptimizationLevel(ai.onnxruntime.OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            visOpts.setExecutionMode(
+                ai.onnxruntime.OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
+            visOpts.setIntraOpNumThreads(physicalCores)
+            visOpts.setMemoryPatternOptimization(true)
+            visOpts.setCPUArenaAllocator(true)
+            val visOptFile = modelPath.resolve("vision_encoder_fp16_cpu_optimized.onnx")
+            visOpts.setOptimizedModelFilePath(visOptFile.toString())
+            val visOptions = HashMap<String, Any>()
+            visOptions["sessionOptions"] = visOpts
+            val visM = ai.djl.Model.newInstance("vision_encoder_fp16", "OnnxRuntime")
+            visM.load(modelPath.resolve("vision_encoder_fp16.onnx"), null, visOptions)
+            visionEncoder = ZooModel(visM, passThroughTranslator)
+          }
+          activeVisionLabel = "FP16 + ORT CPU (threads=$physicalCores)"
+          log(AI.LogLevel.INFO, "Vision Encoder loaded ($activeVisionLabel)", " / QWEN", null)
         }
       }
 
-      // Fallback: standard CPU-only Criteria loading
-      if (!openVinoEPAvailable) {
-        log(AI.LogLevel.INFO, "Loading models with standard OnnxRuntime (CPU)...", " / QWEN", null)
-
-        log(
-            AI.LogLevel.INFO,
-            "Lade Vision Encoder: ${modelPath.resolve("vision_encoder_fp16.onnx")}",
-            " / QWEN",
-            null)
-        visionEncoder =
-            Criteria.builder()
-                .setTypes(NDList::class.java, NDList::class.java)
-                .optModelPath(modelPath.resolve("vision_encoder_fp16.onnx"))
-                .optEngine("OnnxRuntime")
-                .build()
-                .loadModel()
-
-        log(
-            AI.LogLevel.INFO,
-            "Lade Decoder Model (dieser Schritt benötigt ca. 4GB RAM)...",
-            " / QWEN",
-            null)
-        decoderModel =
-            Criteria.builder()
-                .setTypes(NDList::class.java, NDList::class.java)
-                .optOption("memoryPatternOptimization", "false")
-                .optOption("cpuArenaAllocator", "false")
-                .optModelPath(modelPath.resolve("decoder_model_merged_q4.onnx"))
-                .optEngine("OnnxRuntime")
-                .build()
-                .loadModel()
-
-        log(AI.LogLevel.INFO, "Lade Embedding Model...", " / QWEN", null)
-        embedModel =
-            Criteria.builder()
-                .setTypes(NDList::class.java, NDList::class.java)
-                .optModelPath(modelPath.resolve("embed_tokens_fp16.onnx"))
-                .optEngine("OnnxRuntime")
-                .build()
-                .loadModel()
+      // --- Decoder Model ---
+      log(AI.LogLevel.INFO, "Lade Decoder Model (CPU, ~4GB RAM)...", " / QWEN", null)
+      run {
+        val decOpts = ai.onnxruntime.OrtSession.SessionOptions()
+        decOpts.setOptimizationLevel(ai.onnxruntime.OrtSession.SessionOptions.OptLevel.ALL_OPT)
+        decOpts.setExecutionMode(ai.onnxruntime.OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
+        decOpts.setIntraOpNumThreads(physicalCores)
+        decOpts.setMemoryPatternOptimization(true)
+        decOpts.setCPUArenaAllocator(true)
+        val decOptFile = modelPath.resolve("decoder_model_merged_q4_optimized.onnx")
+        decOpts.setOptimizedModelFilePath(decOptFile.toString())
+        val decOptions = HashMap<String, Any>()
+        decOptions["sessionOptions"] = decOpts
+        val decM = ai.djl.Model.newInstance("decoder_model_merged_q4", "OnnxRuntime")
+        decM.load(modelPath.resolve("decoder_model_merged_q4.onnx"), null, decOptions)
+        decoderModel = ZooModel(decM, passThroughTranslator)
       }
+      log(
+          AI.LogLevel.INFO,
+          "Decoder Model loaded (CPU, ALL_OPT, SEQUENTIAL, threads=$physicalCores)",
+          " / QWEN",
+          null)
+
+      // --- Embedding Model ---
+      log(AI.LogLevel.INFO, "Lade Embedding Model (CPU)...", " / QWEN", null)
+      embedModel =
+          Criteria.builder()
+              .setTypes(NDList::class.java, NDList::class.java)
+              .optModelPath(modelPath.resolve("embed_tokens_fp16.onnx"))
+              .optEngine("OnnxRuntime")
+              .build()
+              .loadModel()
+      log(AI.LogLevel.INFO, "Embedding Model loaded (CPU)", " / QWEN", null)
 
       log(AI.LogLevel.INFO, "Initialisiere Tokenizer und Predictor-Pools...", " / QWEN", null)
 
       tokenizer = HuggingFaceTokenizer.newInstance(modelPath.resolve("tokenizer.json"))
       initPredictorPools()
 
-      val epLabel = if (openVinoEPAvailable) "OpenVINO EP" else "CPU"
+      // --- Warmup inference ---
+      // The first ORT predict() call is significantly slower due to:
+      // 1) Memory arena initialization & allocation pattern discovery
+      // 2) OpenVINO IR compilation from ONNX (if not in cache_dir yet)
+      // 3) CPU instruction cache warming (branch prediction, TLB)
+      // Running a dummy inference here moves that cost from the first user request
+      // to the server startup phase.
+      try {
+        log(AI.LogLevel.INFO, "Running warmup inference...", " / QWEN", null)
+        val t0w = System.currentTimeMillis()
+        val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
+        (ortEngine as ai.djl.engine.Engine).newBaseManager().use { warmupMgr ->
+          // Warmup vision encoder: minimal 1-patch input
+          val visionPred = acquirePredictor<NDList, NDList>("qwen-encoder")
+          if (visionPred != null) {
+            try {
+              val dummyPixels =
+                  warmupMgr.zeros(ai.djl.ndarray.types.Shape(1, 4704), DataType.FLOAT32).apply {
+                    name = "pixel_values"
+                  }
+              val dummyThw =
+                  warmupMgr.create(longArrayOf(1, 1, 1)).reshape(1, 3).apply { name = "grid_thw" }
+              visionPred.predict(NDList(dummyPixels, dummyThw))
+            } catch (_: Exception) {
+              /* warmup failure is non-fatal */
+            } finally {
+              releasePredictor("qwen-encoder", visionPred)
+            }
+          }
+
+          // Warmup embed model: single token
+          val embedPred = acquirePredictor<NDList, NDList>("qwen-embed")
+          if (embedPred != null) {
+            try {
+              val dummyIds = warmupMgr.create(longArrayOf(151643L)).reshape(1, 1)
+              embedPred.predict(NDList(dummyIds))
+            } catch (_: Exception) {} finally {
+              releasePredictor("qwen-embed", embedPred)
+            }
+          }
+
+          // Warmup decoder: minimal 1-token prefill with empty KV cache
+          val decPred = acquirePredictor<NDList, NDList>("qwen-decoder")
+          if (decPred != null) {
+            try {
+              val dummyEmbed =
+                  warmupMgr.zeros(ai.djl.ndarray.types.Shape(1, 1, 1536), DataType.FLOAT32).apply {
+                    name = "inputs_embeds"
+                  }
+              val dummyMask =
+                  warmupMgr.ones(ai.djl.ndarray.types.Shape(1, 1), DataType.INT64).apply {
+                    name = "attention_mask"
+                  }
+              val dummyPos =
+                  warmupMgr.zeros(ai.djl.ndarray.types.Shape(3, 1, 1), DataType.INT64).apply {
+                    name = "position_ids"
+                  }
+              val decInput = NDList(dummyEmbed, dummyMask, dummyPos)
+              // 28 KV pairs with empty sequence dimension
+              for (j in 0 until 28) {
+                decInput.add(
+                    warmupMgr
+                        .zeros(ai.djl.ndarray.types.Shape(1, 2, 0, 128), DataType.FLOAT32)
+                        .apply { name = "past_key_values.$j.key" })
+                decInput.add(
+                    warmupMgr
+                        .zeros(ai.djl.ndarray.types.Shape(1, 2, 0, 128), DataType.FLOAT32)
+                        .apply { name = "past_key_values.$j.value" })
+              }
+              decPred.predict(decInput)
+            } catch (_: Exception) {} finally {
+              releasePredictor("qwen-decoder", decPred)
+            }
+          }
+        }
+        val warmupMs = System.currentTimeMillis() - t0w
+        log(AI.LogLevel.INFO, "Warmup complete: ${warmupMs}ms", " / QWEN / PERF", null)
+      } catch (e: Exception) {
+        log(AI.LogLevel.WARNING, "Warmup failed (non-fatal): ${e.message}", " / QWEN", null)
+      }
+
+      val epLabel = "Vision: $activeVisionLabel, Decoder: ORT CPU SEQUENTIAL"
       log(
           AI.LogLevel.INFO,
           "Qwen-VL erfolgreich geladen und einsatzbereit ($epLabel).",
@@ -662,6 +811,28 @@ class QWEN2B164CPU : OpenVINO() {
   }
 
   /**
+   * Returns the number of **physical** CPU cores (not logical/HT processors). On Intel hybrid
+   * architectures (12th/13th/14th gen), [Runtime.availableProcessors] returns the logical count
+   * (P-cores×2 for HT + E-cores), but for compute-bound AVX2 workloads like ViT inference, using
+   * only physical core count avoids Hyper-Threading contention where two logical threads on the
+   * same P-core compete for the same SIMD execution units.
+   */
+  private fun getPhysicalCoreCount(): Int {
+    return try {
+      val process =
+          ProcessBuilder("wmic", "cpu", "get", "NumberOfCores", "/value")
+              .redirectErrorStream(true)
+              .start()
+      val output = process.inputStream.bufferedReader().readText()
+      process.waitFor()
+      val match = Regex("""NumberOfCores=(\d+)""").find(output)
+      match?.groupValues?.get(1)?.toIntOrNull() ?: Runtime.getRuntime().availableProcessors()
+    } catch (_: Exception) {
+      Runtime.getRuntime().availableProcessors()
+    }
+  }
+
+  /**
    * Loads an ONNX model using DJL's Model API with a pre-configured ORT SessionOptions that
    * includes the OpenVINO execution provider. DJL's `OrtModel.getSessionOptions()` recognises the
    * `"sessionOptions"` key and uses the supplied object instead of creating a new one, while still
@@ -674,6 +845,15 @@ class QWEN2B164CPU : OpenVINO() {
       translator: Translator<NDList, NDList>
   ): ZooModel<NDList, NDList> {
     val sessionOptions = ai.onnxruntime.OrtSession.SessionOptions()
+    sessionOptions.setOptimizationLevel(ai.onnxruntime.OrtSession.SessionOptions.OptLevel.ALL_OPT)
+    // SEQUENTIAL mode: all intra-op threads collaborate on each operator.
+    // Avoids thread over-subscription from concurrent inter-op + intra-op threads.
+    sessionOptions.setExecutionMode(
+        ai.onnxruntime.OrtSession.SessionOptions.ExecutionMode.SEQUENTIAL)
+    sessionOptions.setIntraOpNumThreads(Runtime.getRuntime().availableProcessors())
+    // Cache the optimized graph to disk so subsequent loads skip graph optimization.
+    val optFile = modelDir.resolve(modelFileName.removeSuffix(".onnx") + "_optimized.onnx")
+    sessionOptions.setOptimizedModelFilePath(optFile.toString())
     addOpenVinoEPViaReflection(sessionOptions)
     // Build an options map: the pre-configured SessionOptions + any extra string options
     val options = HashMap<String, Any>()
@@ -758,17 +938,21 @@ class QWEN2B164CPU : OpenVINO() {
             apiHandle,
             nativeHandle,
             // The ORT C API uses a case-sensitive comparison: "OpenVINO" (mixed case).
-            // device_type=CPU_FP32 forces FP32 precision to avoid FP16 inference issues.
+            // CPU_FP32 is deprecated but the only device_type that works in ORT-OpenVINO
+            // 1.19. The newer "CPU" + "precision" API is not supported in this version.
             "OpenVINO",
-            arrayOf("device_type", "num_threads"),
-            arrayOf("CPU_FP32", "0"))
-        if (attempt > 1) {
-          log(
-              AI.LogLevel.INFO,
-              "OpenVINO EP registered successfully on attempt $attempt",
-              " / QWEN / EP",
-              null)
-        }
+            arrayOf("device_type", "num_of_threads", "cache_dir"),
+            arrayOf(
+                "CPU_FP32",
+                "${Runtime.getRuntime().availableProcessors()}",
+                (donutModelDir?.resolve("ov_cache")?.also { it.mkdirs() }?.absolutePath ?: "")))
+        val cacheDir = donutModelDir?.resolve("ov_cache")
+        val cacheFiles = cacheDir?.listFiles()?.size ?: 0
+        log(
+            AI.LogLevel.INFO,
+            "OpenVINO EP registered (attempt $attempt). Threads: ${Runtime.getRuntime().availableProcessors()}, cache_dir: ${cacheDir?.absolutePath} ($cacheFiles cached files)",
+            " / QWEN / EP",
+            null)
         return // success
       } catch (ite: java.lang.reflect.InvocationTargetException) {
         val cause = ite.cause ?: ite
@@ -856,6 +1040,7 @@ class QWEN2B164CPU : OpenVINO() {
   private fun initPredictorPools() {
     val encoder = visionEncoder ?: return
     val decoder = decoderModel ?: return
+    val embed = embedModel ?: return
 
     val passThroughTranslator =
         object : Translator<NDList, NDList> {
@@ -886,6 +1071,12 @@ class QWEN2B164CPU : OpenVINO() {
       predictorPools["qwen-decoder"] = pool
     }
 
+    if (!predictorPools.containsKey("qwen-embed")) {
+      val pool = LinkedBlockingQueue<Predictor<*, *>>()
+      repeat(maxParallelInferences) { pool.offer(embed.newPredictor(passThroughTranslator)) }
+      predictorPools["qwen-embed"] = pool
+    }
+
     log(
         AI.LogLevel.INFO,
         "Predictor-Pools bereit. Parallele Inferenz limitiert auf $maxParallelInferences.",
@@ -893,13 +1084,25 @@ class QWEN2B164CPU : OpenVINO() {
         null)
   }
 
-  private fun runQwenInference(
+  /** Pre-computed vision encoder output, reusable across multiple questions on the same image. */
+  private data class VisionResult(
+      val imageEmbeds: ai.djl.ndarray.NDArray,
+      val actualVisionTokens: Int,
+      val mH: Int,
+      val mW: Int
+  )
+
+  /**
+   * Encodes an image through the vision encoder ONCE. The result can be reused for multiple
+   * questions on the same image, saving ~11s per additional question.
+   */
+  private fun encodeVision(
       manager: NDManager,
       visionPredictor: Predictor<NDList, NDList>,
-      decoderPredictor: Predictor<NDList, NDList>,
-      image: DjlImage,
-      question: String
-  ): String {
+      image: DjlImage
+  ): VisionResult {
+    // Use a dummy question to get the preprocessed pixel_values and grid_thw.
+    // The question text does not affect vision preprocessing.
     val translator = QwenVLTranslator(this.tokenizer!!) { _, _, _ -> }
     val ctx =
         object : TranslatorContext {
@@ -919,9 +1122,7 @@ class QWEN2B164CPU : OpenVINO() {
 
           override fun close() {}
         }
-
-    // 1. Vision Encoding
-    val inputs = translator.processInput(ctx, Pair(image, question))
+    val inputs = translator.processInput(ctx, Pair(image, ""))
 
     val t0Vision = System.currentTimeMillis()
     val visionOutput =
@@ -937,12 +1138,10 @@ class QWEN2B164CPU : OpenVINO() {
         null)
 
     // DYNAMIC 3D GRID CALCULATION
-    // Vision encoder output is post-spatial-merge: [numMergedPatches, hidden_size]
     var actualVisionTokens =
         if (imageEmbeds.shape.dimension() == 2) imageEmbeds.shape[0].toInt()
         else imageEmbeds.shape[1].toInt()
 
-    // Validate against grid_thw: after spatial merge, expected = gridT * (gridH/2) * (gridW/2)
     var mH = 1
     var mW = actualVisionTokens
     try {
@@ -971,7 +1170,6 @@ class QWEN2B164CPU : OpenVINO() {
           "Failed to validate grid_thw against vision output: ${e.message}",
           " / QWEN",
           e)
-      // Fallback: try to factor actualVisionTokens into mH x mW
       val root = Math.sqrt(actualVisionTokens.toDouble()).toInt()
       for (i in root downTo 1) {
         if (actualVisionTokens % i == 0) {
@@ -982,8 +1180,32 @@ class QWEN2B164CPU : OpenVINO() {
       }
     }
 
+    return VisionResult(imageEmbeds, actualVisionTokens, mH, mW)
+  }
+
+  /** Runs the decode loop for a single question, reusing pre-computed vision embeddings. */
+  private fun runQwenDecode(
+      manager: NDManager,
+      decoderPredictor: Predictor<NDList, NDList>,
+      question: String,
+      vision: VisionResult
+  ): String {
+    // Build input_ids directly from tokenizer — avoids re-running the full image
+    // preprocessing (resize, normalize, reshape) which is wasteful since vision
+    // embeddings are already computed.
+    val tokenizer = this.tokenizer!!
+    val prePrompt =
+        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|vision_start|>"
+    val postPrompt = "<|vision_end|>\n$question<|im_end|>\n<|im_start|>assistant\n"
+    val preIds = tokenizer.encode(prePrompt).ids
+    val postIds = tokenizer.encode(postPrompt).ids
+    val combinedIds = LongArray(preIds.size + 1 + postIds.size)
+    System.arraycopy(preIds, 0, combinedIds, 0, preIds.size)
+    combinedIds[preIds.size] = 151655L // <|image_pad|>
+    System.arraycopy(postIds, 0, combinedIds, preIds.size + 1, postIds.size)
+
     // 2. Setup Loop Variables
-    var currentInputIds = inputs[2]
+    var currentInputIds = manager.create(combinedIds).reshape(1, combinedIds.size.toLong())
     var pastKeyValues: NDList? = null
     val generatedIds = mutableListOf<Long>()
     var pastSeqLen = 0
@@ -994,22 +1216,19 @@ class QWEN2B164CPU : OpenVINO() {
     val numKvHeads = 2L
     val kvHeadDim = 128L
 
+    @Suppress("UNCHECKED_CAST")
     val embedPredictor =
-        embedModel?.newPredictor(
-            object : Translator<NDList, NDList> {
-              override fun processInput(ctx: TranslatorContext, input: NDList) = input
-
-              override fun processOutput(ctx: TranslatorContext, list: NDList) = list
-
-              override fun getBatchifier() = null
-            }) ?: throw IllegalStateException("No predictor available for embed-tokens")
+        acquirePredictor<NDList, NDList>("qwen-embed")
+            ?: throw IllegalStateException("No predictor available for qwen-embed")
 
     // 3. Decoding Loop
     val t0Loop = System.currentTimeMillis()
     var totalEmbedMs = 0L
     var totalDecodeMs = 0L
     var totalKvMs = 0L
+    var prefillMs = 0L
     for (i in 0 until maxTokens) {
+      val tStep = System.currentTimeMillis()
       val tEmbed = System.currentTimeMillis()
       var inputEmbeds = embedPredictor.predict(NDList(currentInputIds))[0]
       totalEmbedMs += System.currentTimeMillis() - tEmbed
@@ -1022,10 +1241,11 @@ class QWEN2B164CPU : OpenVINO() {
 
         if (padIdx != -1) {
           val reshapedVision =
-              if (imageEmbeds.shape.dimension() == 2) {
-                imageEmbeds.reshape(1, imageEmbeds.shape[0], imageEmbeds.shape[1])
+              if (vision.imageEmbeds.shape.dimension() == 2) {
+                vision.imageEmbeds.reshape(
+                    1, vision.imageEmbeds.shape[0], vision.imageEmbeds.shape[1])
               } else {
-                imageEmbeds
+                vision.imageEmbeds
               }
 
           val pre = inputEmbeds.get(":, :$padIdx, :")
@@ -1044,103 +1264,94 @@ class QWEN2B164CPU : OpenVINO() {
       val currentSeqLen = inputEmbeds.shape[1].toInt()
       val totalSeqLen = pastSeqLen + currentSeqLen
 
-      // C. Forward Pass inside a sub-manager
-      val loopOutput =
-          manager.newSubManager().use { sub ->
-            val subInputs = NDList()
+      // C. Forward Pass — zero-copy optimized
+      //    Old version copied ALL tensors through Java heap (including ~191MB logits tensor).
+      //    Now: inputs passed by reference, logits accessed directly, only KV cache copied.
+      val decInputs = NDList()
 
-            // 1. Inputs Embeds
-            subInputs.add(
-                sub.create(inputEmbeds.toFloatArray()).reshape(inputEmbeds.shape).apply {
-                  name = "inputs_embeds"
-                })
+      // 1. Inputs Embeds — pass by reference, no copy!
+      decInputs.add(inputEmbeds.apply { name = "inputs_embeds" })
 
-            // 2. Attention Mask
-            // Follow ONNX export spec: 2D INT64 mask (batch, seq_len) with ones.
-            val attentionMaskShape = ai.djl.ndarray.types.Shape(1, totalSeqLen.toLong())
-            val attentionMask = sub.ones(attentionMaskShape, DataType.INT64)
-            subInputs.add(attentionMask.apply { name = "attention_mask" })
+      // 2. Attention Mask (INT64 ones — cheap to create)
+      val attentionMask =
+          manager.ones(ai.djl.ndarray.types.Shape(1, totalSeqLen.toLong()), DataType.INT64)
+      decInputs.add(attentionMask.apply { name = "attention_mask" })
 
-            // 3. Position IDs (Dynamic 3D mRoPE implementation)
-            // Shape: (3, batch=1, seq_len) where dim 0 = [temporal_ids, height_ids, width_ids]
-            val posArray = LongArray(3 * currentSeqLen)
+      // 3. Position IDs (Dynamic 3D mRoPE implementation)
+      // Shape: (3, batch=1, seq_len) where dim 0 = [temporal_ids, height_ids, width_ids]
+      val posArray = LongArray(3 * currentSeqLen)
 
-            if (i == 0 && padIdx != -1 && inputEmbeds.shape[1] > 1) {
-              // Spatial "island" for merged image tokens with mRoPE coordinates.
-              // mH = mergedGridH, mW = mergedGridW from the vision encoder output.
-              val stepPadIdx = padIdx
-              for (pos in 0 until currentSeqLen) {
-                if (pos >= stepPadIdx && pos < stepPadIdx + actualVisionTokens) {
-                  // VISION COORDINATES: T stays at logicalPos, H/W get offsets
-                  val gridPos = pos - stepPadIdx
-                  val hPos = (gridPos / mW).toLong()
-                  val wPos = (gridPos % mW).toLong()
-                  posArray[pos] = logicalPos // temporal
-                  posArray[currentSeqLen + pos] = logicalPos + hPos // height
-                  posArray[2 * currentSeqLen + pos] = logicalPos + wPos // width
-                } else {
-                  // TEXT COORDINATES: all three axes equal
-                  posArray[pos] = logicalPos
-                  posArray[currentSeqLen + pos] = logicalPos
-                  posArray[2 * currentSeqLen + pos] = logicalPos
-                  logicalPos++
-                  // After the image island, bump logicalPos for spatial separation
-                  if (pos == stepPadIdx + actualVisionTokens - 1) {
-                    logicalPos++
-                  }
-                }
-              }
-            } else {
-              for (pos in 0 until currentSeqLen) {
-                posArray[pos] = logicalPos
-                posArray[currentSeqLen + pos] = logicalPos
-                posArray[2 * currentSeqLen + pos] = logicalPos
-                logicalPos++
-              }
+      if (i == 0 && padIdx != -1 && inputEmbeds.shape[1] > 1) {
+        // Spatial "island" for merged image tokens with mRoPE coordinates.
+        // mH = mergedGridH, mW = mergedGridW from the vision encoder output.
+        val stepPadIdx = padIdx
+        for (pos in 0 until currentSeqLen) {
+          if (pos >= stepPadIdx && pos < stepPadIdx + vision.actualVisionTokens) {
+            // VISION COORDINATES: T stays at logicalPos, H/W get offsets
+            val gridPos = pos - stepPadIdx
+            val hPos = (gridPos / vision.mW).toLong()
+            val wPos = (gridPos % vision.mW).toLong()
+            posArray[pos] = logicalPos // temporal
+            posArray[currentSeqLen + pos] = logicalPos + hPos // height
+            posArray[2 * currentSeqLen + pos] = logicalPos + wPos // width
+          } else {
+            // TEXT COORDINATES: all three axes equal
+            posArray[pos] = logicalPos
+            posArray[currentSeqLen + pos] = logicalPos
+            posArray[2 * currentSeqLen + pos] = logicalPos
+            logicalPos++
+            // After the image island, bump logicalPos for spatial separation
+            if (pos == stepPadIdx + vision.actualVisionTokens - 1) {
+              logicalPos++
             }
-
-            subInputs.add(
-                sub.create(posArray)
-                    .toType(DataType.INT64, false)
-                    .reshape(3L, 1L, currentSeqLen.toLong())
-                    .apply { name = "position_ids" })
-
-            // 4. Past Key Values
-            if (pastKeyValues != null) {
-              for (k in 0 until pastKeyValues!!.size) {
-                val p = pastKeyValues!![k]
-                subInputs.add(sub.create(p.toFloatArray()).reshape(p.shape).apply { name = p.name })
-              }
-            } else {
-              for (j in 0 until numKv) {
-                subInputs.add(
-                    sub.zeros(
-                            ai.djl.ndarray.types.Shape(1, numKvHeads, 0L, kvHeadDim),
-                            DataType.FLOAT32)
-                        .apply { name = "past_key_values.$j.key" })
-                subInputs.add(
-                    sub.zeros(
-                            ai.djl.ndarray.types.Shape(1, numKvHeads, 0L, kvHeadDim),
-                            DataType.FLOAT32)
-                        .apply { name = "past_key_values.$j.value" })
-              }
-            }
-
-            val tDec = System.currentTimeMillis()
-            val subOut = decoderPredictor.predict(subInputs)
-            totalDecodeMs += System.currentTimeMillis() - tDec
-
-            val parentOut = NDList()
-            for (o in subOut) {
-              parentOut.add(manager.create(o.toFloatArray(), o.shape).apply { name = o.name })
-            }
-
-            subOut.close()
-            parentOut
           }
+        }
+      } else {
+        for (pos in 0 until currentSeqLen) {
+          posArray[pos] = logicalPos
+          posArray[currentSeqLen + pos] = logicalPos
+          posArray[2 * currentSeqLen + pos] = logicalPos
+          logicalPos++
+        }
+      }
 
-      // ROBUST LOGIT EXTRACTION
-      val logits = loopOutput[0]
+      val posIds =
+          manager
+              .create(posArray)
+              .toType(DataType.INT64, false)
+              .reshape(3L, 1L, currentSeqLen.toLong())
+      decInputs.add(posIds.apply { name = "position_ids" })
+
+      // 4. Past Key Values — pass by reference, no copy!
+      //    KV tensors live in the parent manager (or are empty on first step).
+      //    The predictor only reads them during inference.
+      if (pastKeyValues != null) {
+        for (p in pastKeyValues!!) decInputs.add(p)
+      } else {
+        for (j in 0 until numKv) {
+          decInputs.add(
+              manager
+                  .zeros(ai.djl.ndarray.types.Shape(1, numKvHeads, 0L, kvHeadDim), DataType.FLOAT32)
+                  .apply { name = "past_key_values.$j.key" })
+          decInputs.add(
+              manager
+                  .zeros(ai.djl.ndarray.types.Shape(1, numKvHeads, 0L, kvHeadDim), DataType.FLOAT32)
+                  .apply { name = "past_key_values.$j.value" })
+        }
+      }
+
+      val tDec = System.currentTimeMillis()
+      val decOutput = decoderPredictor.predict(decInputs)
+      totalDecodeMs += System.currentTimeMillis() - tDec
+
+      // Clean up single-use input tensors (predict is synchronous, safe to close)
+      attentionMask.close()
+      posIds.close()
+
+      // LOGIT EXTRACTION — directly from predictor output.
+      // Avoids copying the ~191MB logits tensor (seqLen × 151,936 vocab × 4 bytes)
+      // through Java heap just to extract a single Long token ID.
+      val logits = decOutput[0]
       val nextTokenId =
           if (logits.shape.dimension() == 3) {
             logits.get(":, -1, :").squeeze().argMax().getLong()
@@ -1150,7 +1361,6 @@ class QWEN2B164CPU : OpenVINO() {
 
       // D. Terminate on End-Of-String
       if (nextTokenId == 151643L || nextTokenId == 151645L) {
-        loopOutput.close()
         break
       }
 
@@ -1161,35 +1371,55 @@ class QWEN2B164CPU : OpenVINO() {
       currentInputIds.close()
       currentInputIds = manager.create(longArrayOf(nextTokenId)).reshape(1, 1)
 
-      // F. Update KV Cache dynamically
+      // F. Update KV Cache — copy only the 56 KV tensors to parent manager.
+      //    Outputs live in the predictor's internal manager which resets on next predict().
+      //    We skip the logits tensor entirely (token ID already extracted above).
+      val tKv = System.currentTimeMillis()
       val nextKVs = NDList()
       for (j in 0 until numKv) {
-        val outK = loopOutput[1 + (j * 2)]
-        val outV = loopOutput[2 + (j * 2)]
+        val outK = decOutput[1 + (j * 2)]
+        val outV = decOutput[2 + (j * 2)]
         val outLen = outK.shape[2].toInt()
 
         val finalK =
-            if (outLen == totalSeqLen) {
-              outK
-            } else if (outLen == currentSeqLen && pastKeyValues != null) {
-              pastKeyValues!![j * 2].concat(outK, 2)
-            } else outK
+            if (outLen == totalSeqLen) outK
+            else if (outLen == currentSeqLen && pastKeyValues != null)
+                pastKeyValues!![j * 2].concat(outK, 2)
+            else outK
 
         val finalV =
-            if (outV.shape[2].toInt() == totalSeqLen) {
-              outV
-            } else if (outV.shape[2].toInt() == currentSeqLen && pastKeyValues != null) {
-              pastKeyValues!![j * 2 + 1].concat(outV, 2)
-            } else outV
+            if (outV.shape[2].toInt() == totalSeqLen) outV
+            else if (outV.shape[2].toInt() == currentSeqLen && pastKeyValues != null)
+                pastKeyValues!![j * 2 + 1].concat(outV, 2)
+            else outV
 
-        nextKVs.add(finalK.duplicate().apply { name = "past_key_values.$j.key" })
-        nextKVs.add(finalV.duplicate().apply { name = "past_key_values.$j.value" })
+        // Copy KV tensors to parent manager (predictor resets its internal manager on
+        // next predict() call, freeing all output tensors). Use toByteBuffer() instead of
+        // toFloatArray() to avoid the Java float[] heap allocation — ByteBuffer can be a
+        // direct native buffer, cutting the copy from 2 passes (native→heap→native) to 1.
+        nextKVs.add(
+            manager.create(finalK.toByteBuffer(), finalK.shape, DataType.FLOAT32).apply {
+              name = "past_key_values.$j.key"
+            })
+        nextKVs.add(
+            manager.create(finalV.toByteBuffer(), finalV.shape, DataType.FLOAT32).apply {
+              name = "past_key_values.$j.value"
+            })
       }
 
-      val tKv = System.currentTimeMillis()
       pastKeyValues?.close()
       pastKeyValues = nextKVs
       totalKvMs += System.currentTimeMillis() - tKv
+
+      val stepMs = System.currentTimeMillis() - tStep
+      if (i == 0) {
+        prefillMs = stepMs
+        log(
+            AI.LogLevel.INFO,
+            "Prefill step (${currentSeqLen} tokens → 1): ${stepMs}ms",
+            " / QWEN / PERF",
+            null)
+      }
 
       pastSeqLen += currentSeqLen
     }
@@ -1199,12 +1429,12 @@ class QWEN2B164CPU : OpenVINO() {
     val tokPerSec = if (loopMs > 0) tokens * 1000.0 / loopMs else 0.0
     log(
         AI.LogLevel.INFO,
-        "Decoding loop: ${loopMs}ms, $tokens tokens (%.1f tok/s). Embed: ${totalEmbedMs}ms, Decode: ${totalDecodeMs}ms, KV-cache: ${totalKvMs}ms"
+        "Decoding loop: ${loopMs}ms, $tokens tokens (%.1f tok/s). Prefill: ${prefillMs}ms, Embed: ${totalEmbedMs}ms, Decode: ${totalDecodeMs}ms, KV-cache: ${totalKvMs}ms"
             .format(tokPerSec),
         " / QWEN / PERF",
         null)
 
-    embedPredictor.close()
+    releasePredictor("qwen-embed", embedPredictor)
 
     // Decode all generated ids at once to avoid garbled unicode from per-token decoding
     return try {
@@ -1225,6 +1455,7 @@ class QWEN2B164CPU : OpenVINO() {
     val base = modelBaseUrl
     val files =
         mapOf(
+            "vision_encoder_quantized.onnx" to "$base/onnx/vision_encoder_quantized.onnx",
             "vision_encoder_fp16.onnx" to "$base/onnx/vision_encoder_fp16.onnx",
             "decoder_model_merged_q4.onnx" to "$base/onnx/decoder_model_merged_q4.onnx",
             "embed_tokens_fp16.onnx" to "$base/onnx/embed_tokens_fp16.onnx",

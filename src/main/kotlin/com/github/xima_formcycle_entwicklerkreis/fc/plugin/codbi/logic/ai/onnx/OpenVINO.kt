@@ -34,6 +34,9 @@ import java.net.URI
  */
 abstract class OpenVINO : ONNX() {
 
+  /** Directory containing the OpenVINO runtime DLLs (openvino.dll, tbb12.dll, etc.). */
+  protected var openVinoBinDir: File? = null
+
   init {
     idLogMessages = "OpenVINO"
   }
@@ -244,6 +247,12 @@ abstract class OpenVINO : ONNX() {
     val binDir = File(base, "openvino_runtime/bin")
     if (!binDir.exists()) binDir.mkdirs()
 
+    // onnxruntime-openvino 1.19.0 was built against OpenVINO 2024.4.
+    // Using a mismatched version (e.g. 2025.x) causes DllMain to fail (error 1114).
+    val expectedVersion = "2024.4.0"
+    val zipUrl =
+        "https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.4/windows/w_openvino_toolkit_windows_2024.4.0.16579.c3152d32c9c_x86_64.zip"
+
     val requiredDlls =
         listOf(
             "openvino.dll",
@@ -251,31 +260,83 @@ abstract class OpenVINO : ONNX() {
             "openvino_onnx_frontend.dll",
             "tbb12.dll")
 
-    // Only download/extract the DLLs that are missing to avoid unnecessary downloads
+    // Version marker: if the installed version doesn't match, DLLs need replacing.
+    val versionFile = File(binDir, ".openvino_version")
+    val installedVersion = if (versionFile.exists()) versionFile.readText().trim() else ""
+    val versionMismatch = installedVersion != expectedVersion
+
+    if (versionMismatch && installedVersion.isNotEmpty()) {
+      log(
+          AI.LogLevel.INFO,
+          "OpenVINO version mismatch: installed=$installedVersion, expected=$expectedVersion. " +
+              "Replacing DLLs...")
+      // Try to delete wrong-version DLLs. Locked files (loaded in JVM) can be renamed
+      // on Windows — the OS keeps the handle to the old name, but the filename slot is freed.
+      for (dll in requiredDlls) {
+        val f = File(binDir, dll)
+        if (f.exists()) {
+          try {
+            f.delete()
+          } catch (_: Exception) {
+            // File locked — rename it so the new version can be extracted
+            try {
+              val renamed = File(binDir, "$dll.old-$installedVersion")
+              f.renameTo(renamed)
+              log(AI.LogLevel.INFO, "  Renamed locked $dll → ${renamed.name}")
+            } catch (_: Exception) {
+              log(AI.LogLevel.WARNING, "  Cannot delete or rename $dll (loaded by OS)")
+            }
+          }
+        }
+      }
+    }
+
     val missing = requiredDlls.filterNot { File(binDir, it).exists() }.toMutableList()
+    openVinoBinDir = binDir
+    if (missing.isEmpty() && !versionMismatch) {
+      log(AI.LogLevel.INFO, "OpenVINO Runtime $installedVersion bereits lokal vorhanden.")
+      addDirToPath(binDir)
+      return
+    }
     if (missing.isEmpty()) {
-      log(AI.LogLevel.INFO, "OpenVINO Runtime bereits lokal vorhanden.")
+      // All DLLs exist but they're locked at the wrong version — nothing we can do
+      // until a full server restart. Log a clear message.
+      log(
+          AI.LogLevel.WARNING,
+          "OpenVINO DLLs are present but at version $installedVersion (need $expectedVersion). " +
+              "A server restart is required to apply the correct version.")
+      versionFile.writeText(expectedVersion)
       addDirToPath(binDir)
       return
     }
 
-    val zipUrl =
-        "https://storage.openvinotoolkit.org/repositories/openvino/packages/2025.4/windows/openvino_toolkit_windows_2025.4.0.20398.8fdad55727d_x86_64.zip"
-    val tempZip = File(base, "openvino_temp.zip")
+    // Cache the ZIP so it survives hot-deploy cycles and doesn't need to be re-downloaded.
+    val cacheDir = File(base, "openvino_runtime/cache")
+    if (!cacheDir.exists()) cacheDir.mkdirs()
+    val cachedZip = File(cacheDir, zipUrl.substringAfterLast("/"))
 
     try {
-      log(
-          AI.LogLevel.INFO,
-          "Fehlende OpenVINO-DLLs: ${missing.joinToString(", ")}. Lade OpenVINO Runtime herunter (nur fehlende Dateien)...")
-      URI(zipUrl)
-          .toURL()
-          .openConnection()
-          .apply { connectTimeout = 30000 }
-          .getInputStream()
-          .use { input -> tempZip.outputStream().use { output -> input.copyTo(output) } }
+      if (cachedZip.exists() && cachedZip.length() > 0) {
+        log(
+            AI.LogLevel.INFO,
+            "Fehlende OpenVINO-DLLs: ${missing.joinToString(", ")}. Verwende gecachtes ZIP: ${cachedZip.name} (${cachedZip.length() / 1_048_576} MB)")
+      } else {
+        log(
+            AI.LogLevel.INFO,
+            "Fehlende OpenVINO-DLLs: ${missing.joinToString(", ")}. Lade OpenVINO Runtime $expectedVersion herunter...")
+        URI(zipUrl)
+            .toURL()
+            .openConnection()
+            .apply { connectTimeout = 30000 }
+            .getInputStream()
+            .use { input -> cachedZip.outputStream().use { output -> input.copyTo(output) } }
+        log(
+            AI.LogLevel.INFO,
+            "OpenVINO ZIP gecacht: ${cachedZip.absolutePath} (${cachedZip.length() / 1_048_576} MB)")
+      }
 
       log(AI.LogLevel.INFO, "Extrahiere benötigte DLLs...")
-      java.util.zip.ZipFile(tempZip).use { zip ->
+      java.util.zip.ZipFile(cachedZip).use { zip ->
         val candidatePaths =
             listOf("runtime/bin/intel64/Release/", "runtime/bin/", "runtime/3rdparty/tbb/bin/")
         zip.entries().asSequence().forEach { entry ->
@@ -291,12 +352,10 @@ abstract class OpenVINO : ONNX() {
           }
         }
       }
-      tempZip.delete()
 
       if (missing.isEmpty()) {
-        log(
-            AI.LogLevel.INFO,
-            "OpenVINO Runtime erfolgreich installiert (fehlende Dateien ergänzt).")
+        versionFile.writeText(expectedVersion)
+        log(AI.LogLevel.INFO, "OpenVINO Runtime $expectedVersion erfolgreich installiert.")
       } else {
         log(
             AI.LogLevel.WARNING,

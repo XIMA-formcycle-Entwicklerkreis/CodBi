@@ -12,8 +12,8 @@ import ai.djl.repository.zoo.ZooModel
 import ai.djl.translate.Translator
 import ai.djl.translate.TranslatorContext
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.ONNX
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.onnx.TokenizersHelper
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.openvino.onnx.OpenVINO
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
@@ -169,7 +169,7 @@ class QwenVLTranslator(
   override fun processOutput(ctx: TranslatorContext, list: NDList): NDList = list
 }
 
-class QWEN2B164CPU : ONNX() {
+class QWEN2B164CPU : OpenVINO() {
   /**
    * Rotates a BufferedImage by the specified degrees (90, 180, or 270).
    *
@@ -206,6 +206,7 @@ class QWEN2B164CPU : ONNX() {
   }
 
   @Volatile private var loadError: Throwable? = null
+  @Volatile private var openVinoEPAvailable = false
   private var tokenizersNativeRunDir: File? = null
   private var maxTokens = 128
   private var keepNewest = 3
@@ -226,7 +227,8 @@ class QWEN2B164CPU : ONNX() {
       "https://huggingface.co/onnx-community/Qwen2-VL-2B-Instruct/resolve/main"
 
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    log(AI.LogLevel.INFO, "Processing VQA request received", " / QWEN", null)
+    val epStatus = if (openVinoEPAvailable) "OpenVINO EP" else "CPU"
+    log(AI.LogLevel.INFO, "Processing VQA request received (EP: $epStatus)", " / QWEN", null)
 
     if (loadError != null) {
       val resp =
@@ -465,6 +467,25 @@ class QWEN2B164CPU : ONNX() {
     super.initialize(configData)
 
     qwenActive = true
+
+    // The Maven onnxruntime.dll is replaced with the OpenVINO-enabled build in
+    // ONNX.initialize() (before the engine singleton is loaded into the JVM).
+    // Read the result from the parent class field.
+    openVinoEPAvailable = openVinoOrtReplaced
+    if (openVinoEPAvailable) {
+      log(
+          AI.LogLevel.INFO,
+          "OpenVINO EP is available — models will use OpenVINO acceleration",
+          " / QWEN",
+          null)
+    } else {
+      log(
+          AI.LogLevel.INFO,
+          "OpenVINO EP not available — models will use CPU-only ORT",
+          " / QWEN",
+          null)
+    }
+
     if (onnxIsReady()) {
       try {
         ensureModelFiles()
@@ -498,52 +519,127 @@ class QWEN2B164CPU : ONNX() {
         ai.djl.engine.Engine.registerEngine(ai.djl.onnxruntime.engine.OrtEngineProvider())
       }
 
-      log(
-          AI.LogLevel.INFO,
-          "Lade Vision Encoder: ${modelPath.resolve("vision_encoder_fp16.onnx")}",
-          " / QWEN",
-          null)
+      // Create a pass-through translator used for all three models
+      val passThroughTranslator =
+          object : Translator<NDList, NDList> {
+            override fun processInput(ctx: TranslatorContext, input: NDList) = input
 
-      val visionCriteria =
-          Criteria.builder()
-              .setTypes(NDList::class.java, NDList::class.java)
-              .optModelPath(modelPath.resolve("vision_encoder_fp16.onnx"))
-              .optEngine("OnnxRuntime")
-              .optOption("inter_op_num_threads", "1")
-              .build()
+            override fun processOutput(ctx: TranslatorContext, list: NDList) = list
 
-      visionEncoder = visionCriteria.loadModel()
+            override fun getBatchifier() = null
+          }
 
-      log(
-          AI.LogLevel.INFO,
-          "Lade Decoder Model (dieser Schritt benötigt ca. 4GB RAM)...",
-          " / QWEN",
-          null)
-      val decoderCriteria =
-          Criteria.builder()
-              .setTypes(NDList::class.java, NDList::class.java)
-              .optOption("memoryPatternOptimization", "false")
-              .optOption("cpuArenaAllocator", "false")
-              .optModelPath(modelPath.resolve("decoder_model_merged_q4.onnx"))
-              .optEngine("OnnxRuntime")
-              .build()
-      decoderModel = decoderCriteria.loadModel()
+      if (openVinoEPAvailable) {
+        log(
+            AI.LogLevel.INFO,
+            "Loading models — Vision Encoder with OpenVINO EP, others on CPU...",
+            " / QWEN",
+            null)
+        try {
+          // Only the vision encoder benefits meaningfully from OpenVINO EP acceleration.
+          // The Q4-quantized decoder uses MatMulNBits/DequantizeLinear ops that trigger
+          // "invalid vector subscript" in OpenVINO 2024.4.  The embed_tokens model is a
+          // simple embedding lookup that's already fast on CPU.
+          visionEncoder =
+              loadModelWithOpenVinoEP(
+                  modelPath, "vision_encoder_fp16.onnx", emptyMap(), passThroughTranslator)
+          log(AI.LogLevel.INFO, "Vision Encoder loaded with OpenVINO EP", " / QWEN", null)
 
-      log(AI.LogLevel.INFO, "Lade Embedding Model...", " / QWEN", null)
-      val embedCriteria =
-          Criteria.builder()
-              .setTypes(NDList::class.java, NDList::class.java)
-              .optModelPath(modelPath.resolve("embed_tokens_fp16.onnx"))
-              .optEngine("OnnxRuntime")
-              .build()
-      embedModel = embedCriteria.loadModel()
+          log(AI.LogLevel.INFO, "Lade Decoder Model (CPU, ~4GB RAM)...", " / QWEN", null)
+          decoderModel =
+              Criteria.builder()
+                  .setTypes(NDList::class.java, NDList::class.java)
+                  .optOption("memoryPatternOptimization", "false")
+                  .optOption("cpuArenaAllocator", "false")
+                  .optModelPath(modelPath.resolve("decoder_model_merged_q4.onnx"))
+                  .optEngine("OnnxRuntime")
+                  .build()
+                  .loadModel()
+          log(AI.LogLevel.INFO, "Decoder Model loaded (CPU)", " / QWEN", null)
+
+          log(AI.LogLevel.INFO, "Lade Embedding Model (CPU)...", " / QWEN", null)
+          embedModel =
+              Criteria.builder()
+                  .setTypes(NDList::class.java, NDList::class.java)
+                  .optModelPath(modelPath.resolve("embed_tokens_fp16.onnx"))
+                  .optEngine("OnnxRuntime")
+                  .build()
+                  .loadModel()
+          log(AI.LogLevel.INFO, "Embedding Model loaded (CPU)", " / QWEN", null)
+        } catch (e: Exception) {
+          // InvocationTargetException.message is null; the real error is in .cause
+          val rootCause = if (e is java.lang.reflect.InvocationTargetException) e.cause ?: e else e
+          val msg = rootCause.message ?: e.cause?.message ?: e.toString()
+          log(AI.LogLevel.WARNING, "OpenVINO EP model loading failed: $msg", " / QWEN", rootCause)
+          log(
+              AI.LogLevel.WARNING,
+              "Exception chain: ${e::class.simpleName} → ${e.cause?.let { it::class.simpleName + ": " + it.message } ?: "(no cause)"}",
+              " / QWEN",
+              null)
+          openVinoEPAvailable = false
+          // Close any partially loaded models before retrying
+          visionEncoder?.close()
+          visionEncoder = null
+          decoderModel?.close()
+          decoderModel = null
+          embedModel?.close()
+          embedModel = null
+        }
+      }
+
+      // Fallback: standard CPU-only Criteria loading
+      if (!openVinoEPAvailable) {
+        log(AI.LogLevel.INFO, "Loading models with standard OnnxRuntime (CPU)...", " / QWEN", null)
+
+        log(
+            AI.LogLevel.INFO,
+            "Lade Vision Encoder: ${modelPath.resolve("vision_encoder_fp16.onnx")}",
+            " / QWEN",
+            null)
+        visionEncoder =
+            Criteria.builder()
+                .setTypes(NDList::class.java, NDList::class.java)
+                .optModelPath(modelPath.resolve("vision_encoder_fp16.onnx"))
+                .optEngine("OnnxRuntime")
+                .build()
+                .loadModel()
+
+        log(
+            AI.LogLevel.INFO,
+            "Lade Decoder Model (dieser Schritt benötigt ca. 4GB RAM)...",
+            " / QWEN",
+            null)
+        decoderModel =
+            Criteria.builder()
+                .setTypes(NDList::class.java, NDList::class.java)
+                .optOption("memoryPatternOptimization", "false")
+                .optOption("cpuArenaAllocator", "false")
+                .optModelPath(modelPath.resolve("decoder_model_merged_q4.onnx"))
+                .optEngine("OnnxRuntime")
+                .build()
+                .loadModel()
+
+        log(AI.LogLevel.INFO, "Lade Embedding Model...", " / QWEN", null)
+        embedModel =
+            Criteria.builder()
+                .setTypes(NDList::class.java, NDList::class.java)
+                .optModelPath(modelPath.resolve("embed_tokens_fp16.onnx"))
+                .optEngine("OnnxRuntime")
+                .build()
+                .loadModel()
+      }
 
       log(AI.LogLevel.INFO, "Initialisiere Tokenizer und Predictor-Pools...", " / QWEN", null)
 
       tokenizer = HuggingFaceTokenizer.newInstance(modelPath.resolve("tokenizer.json"))
       initPredictorPools()
 
-      log(AI.LogLevel.INFO, "Qwen-VL erfolgreich geladen und einsatzbereit.", " / QWEN", null)
+      val epLabel = if (openVinoEPAvailable) "OpenVINO EP" else "CPU"
+      log(
+          AI.LogLevel.INFO,
+          "Qwen-VL erfolgreich geladen und einsatzbereit ($epLabel).",
+          " / QWEN",
+          null)
     } catch (e: Exception) {
       if (e.cause?.message?.contains("OrtEnvironment") == true ||
           e.message?.contains("already exists") == true) {
@@ -562,6 +658,198 @@ class QWEN2B164CPU : ONNX() {
       }
     } finally {
       Thread.currentThread().contextClassLoader = oldClassLoader
+    }
+  }
+
+  /**
+   * Loads an ONNX model using DJL's Model API with a pre-configured ORT SessionOptions that
+   * includes the OpenVINO execution provider. DJL's `OrtModel.getSessionOptions()` recognises the
+   * `"sessionOptions"` key and uses the supplied object instead of creating a new one, while still
+   * applying additional string options (like `interOpNumThreads`).
+   */
+  private fun loadModelWithOpenVinoEP(
+      modelDir: java.nio.file.Path,
+      modelFileName: String,
+      extraOpts: Map<String, String>,
+      translator: Translator<NDList, NDList>
+  ): ZooModel<NDList, NDList> {
+    val sessionOptions = ai.onnxruntime.OrtSession.SessionOptions()
+    addOpenVinoEPViaReflection(sessionOptions)
+    // Build an options map: the pre-configured SessionOptions + any extra string options
+    val options = HashMap<String, Any>()
+    options["sessionOptions"] = sessionOptions
+    options.putAll(extraOpts)
+
+    val model = ai.djl.Model.newInstance(modelFileName.removeSuffix(".onnx"), "OnnxRuntime")
+    model.load(modelDir.resolve(modelFileName), null, options)
+    return ZooModel(model, translator)
+  }
+
+  /**
+   * Registers the OpenVINO Execution Provider on the given [SessionOptions] by calling the generic
+   * (non-`#ifdef`-guarded) **private native** method `addExecutionProvider` via reflection.
+   *
+   * ### Why reflection?
+   *
+   * The Maven `onnxruntime` JAR ships an `onnxruntime4j_jni.dll` compiled **without**
+   * `USE_OPENVINO`. The public `SessionOptions.addOpenVINO()` Java method delegates to a JNI native
+   * whose C++ body is wrapped in `#ifdef USE_OPENVINO … #else throw … #endif`, so it always throws
+   * *"This binary was not compiled with OpenVINO support"*.
+   *
+   * However the same JNI DLL also exposes a **generic** native method `addExecutionProvider(long
+   * apiHandle, long nativeHandle, String epName, String[] keys, String[] vals)` which is **not**
+   * guarded by any `#ifdef`. It forwards directly to
+   * `OrtApi::SessionOptionsAppendExecutionProvider` in `onnxruntime.dll`. Because we replaced
+   * Maven's CPU-only `onnxruntime.dll` with the OpenVINO-enabled build from PyPI, that C-API
+   * function **does** recognise the `"OpenVINO"` name (mixed case — the error message misleadingly
+   * shows `'OPENVINO'`) and registers the EP successfully.
+   *
+   * @throws RuntimeException if the reflective call fails for any reason (missing method, security
+   *   manager, etc.).
+   */
+  private fun addOpenVinoEPViaReflection(sessionOptions: ai.onnxruntime.OrtSession.SessionOptions) {
+    val epDir = openVinoEpNativeDir
+
+    // 1. Obtain OnnxRuntime.ortApiHandle (package-private static field)
+    val ortClass = Class.forName("ai.onnxruntime.OnnxRuntime")
+    val apiHandleField = ortClass.getDeclaredField("ortApiHandle")
+    apiHandleField.isAccessible = true
+    val apiHandle = apiHandleField.getLong(null)
+
+    // 2. Obtain SessionOptions.nativeHandle (private instance field)
+    val soClass = ai.onnxruntime.OrtSession.SessionOptions::class.java
+    val nativeHandleField = soClass.getDeclaredField("nativeHandle")
+    nativeHandleField.isAccessible = true
+    val nativeHandle = nativeHandleField.getLong(sessionOptions)
+
+    // 3. Obtain the private native addExecutionProvider method
+    val addEpMethod =
+        soClass.getDeclaredMethod(
+            "addExecutionProvider",
+            Long::class.javaPrimitiveType,
+            Long::class.javaPrimitiveType,
+            String::class.java,
+            Array<String>::class.java,
+            Array<String>::class.java)
+    addEpMethod.isAccessible = true
+
+    // --- EP registration with error-parse-retry ----------------------------------
+    // ORT's C code (provider_bridge_ort.cc) locates provider DLLs relative to the
+    // loaded onnxruntime.dll using GetModuleFileName(). That path is set at the OS
+    // level when System.load() first loads the DLL and NEVER changes — even across
+    // hot-deploy cycles that create new run directories and delete old ones.
+    //
+    // Neither Java's onnxruntime.native.path property nor OnnxRuntime.libraryDirPathProperty
+    // reliably reflects the true OS-level load path (they get reset when the ORT Java
+    // class reloads in a new ClassLoader, while the OS module path stays the same).
+    //
+    // Strategy: attempt the EP registration; if the C code fails with "LoadLibrary
+    // failed … when trying to load <full_path>", parse that path to learn the EXACT
+    // directory the C code expects, recreate it, copy all EP DLLs there, and retry.
+    val epDllNames =
+        listOf("onnxruntime_providers_shared.dll", "onnxruntime_providers_openvino.dll")
+    val repairedDirs = mutableSetOf<String>()
+    var lastError: Throwable? = null
+
+    for (attempt in 1..3) {
+      try {
+        addEpMethod.invoke(
+            sessionOptions,
+            apiHandle,
+            nativeHandle,
+            // The ORT C API uses a case-sensitive comparison: "OpenVINO" (mixed case).
+            // device_type=CPU_FP32 forces FP32 precision to avoid FP16 inference issues.
+            "OpenVINO",
+            arrayOf("device_type", "num_threads"),
+            arrayOf("CPU_FP32", "0"))
+        if (attempt > 1) {
+          log(
+              AI.LogLevel.INFO,
+              "OpenVINO EP registered successfully on attempt $attempt",
+              " / QWEN / EP",
+              null)
+        }
+        return // success
+      } catch (ite: java.lang.reflect.InvocationTargetException) {
+        val cause = ite.cause ?: ite
+        lastError = cause
+        val msg = cause.message ?: ""
+
+        // Parse the directory the C code tried to load from:
+        //   LoadLibrary failed with error 126 "" when trying to load "<full_path>"
+        val pathMatch = Regex("""when trying to load "(.+?)"""").find(msg)
+        if (pathMatch != null && epDir != null) {
+          val expectedDllPath = java.io.File(pathMatch.groupValues[1])
+          val expectedDir = expectedDllPath.parentFile
+
+          if (expectedDir != null && !repairedDirs.contains(expectedDir.absolutePath)) {
+            log(
+                AI.LogLevel.INFO,
+                "Attempt $attempt: ORT C code expects EP DLLs in ${expectedDir.absolutePath} " +
+                    "(exists=${expectedDir.exists()}). Copying from ${epDir.absolutePath}...",
+                " / QWEN / EP",
+                null)
+            if (!expectedDir.exists()) expectedDir.mkdirs()
+
+            // Copy EP DLLs (onnxruntime_providers_shared.dll, onnxruntime_providers_openvino.dll)
+            for (dllName in epDllNames) {
+              val src = java.io.File(epDir, dllName)
+              val dst = java.io.File(expectedDir, dllName)
+              if (src.exists()) {
+                safeCopyDll(src, dst)
+              }
+            }
+
+            // Also copy OpenVINO runtime DLLs (openvino.dll, tbb12.dll, etc.) into the
+            // same directory.  When ORT's LoadLibrary loads onnxruntime_providers_openvino.dll,
+            // Windows resolves its transitive imports by searching the DLL's own directory
+            // FIRST.  Having the OpenVINO runtime DLLs there guarantees they are found
+            // regardless of whether System.load() pre-loading makes them visible to the
+            // native loader.
+            val ovBinDir = openVinoBinDir
+            if (ovBinDir != null && ovBinDir.isDirectory) {
+              ovBinDir
+                  .listFiles()
+                  ?.filter { it.name.endsWith(".dll") }
+                  ?.forEach { ovDll ->
+                    val dst = java.io.File(expectedDir, ovDll.name)
+                    safeCopyDll(ovDll, dst)
+                  }
+              log(
+                  AI.LogLevel.INFO,
+                  "  Copied OpenVINO runtime DLLs from ${ovBinDir.absolutePath}",
+                  " / QWEN / EP",
+                  null)
+            } else {
+              log(
+                  AI.LogLevel.WARNING,
+                  "  OpenVINO bin dir not available — cannot copy runtime DLLs",
+                  " / QWEN / EP",
+                  null)
+            }
+            repairedDirs.add(expectedDir.absolutePath)
+            continue // retry with the EP DLLs now in place
+          }
+        }
+        // Cannot parse the expected directory or already tried — give up
+        throw cause
+      }
+    }
+    throw lastError ?: RuntimeException("OpenVINO EP registration failed after retries")
+  }
+
+  /**
+   * Copies a DLL to [dst], tolerating locked files (common on Windows when the DLL is loaded by the
+   * OS from a previous deploy cycle).
+   */
+  private fun safeCopyDll(src: java.io.File, dst: java.io.File) {
+    try {
+      src.copyTo(dst, overwrite = true)
+    } catch (ex: java.nio.file.FileAlreadyExistsException) {
+      // Destination is locked — file exists, which is all we need.
+    } catch (ex: java.io.IOException) {
+      if (!dst.exists()) throw ex
+      // Copy failed but file exists at destination — acceptable.
     }
   }
 
@@ -635,11 +923,18 @@ class QWEN2B164CPU : ONNX() {
     // 1. Vision Encoding
     val inputs = translator.processInput(ctx, Pair(image, question))
 
+    val t0Vision = System.currentTimeMillis()
     val visionOutput =
         visionPredictor.predict(
             NDList(
                 inputs[0].apply { name = "pixel_values" }, inputs[1].apply { name = "grid_thw" }))
     val imageEmbeds = visionOutput[0]
+    val visionMs = System.currentTimeMillis() - t0Vision
+    log(
+        AI.LogLevel.INFO,
+        "Vision encoding: ${visionMs}ms (shape: ${imageEmbeds.shape})",
+        " / QWEN / PERF",
+        null)
 
     // DYNAMIC 3D GRID CALCULATION
     // Vision encoder output is post-spatial-merge: [numMergedPatches, hidden_size]
@@ -710,8 +1005,14 @@ class QWEN2B164CPU : ONNX() {
             }) ?: throw IllegalStateException("No predictor available for embed-tokens")
 
     // 3. Decoding Loop
+    val t0Loop = System.currentTimeMillis()
+    var totalEmbedMs = 0L
+    var totalDecodeMs = 0L
+    var totalKvMs = 0L
     for (i in 0 until maxTokens) {
+      val tEmbed = System.currentTimeMillis()
       var inputEmbeds = embedPredictor.predict(NDList(currentInputIds))[0]
+      totalEmbedMs += System.currentTimeMillis() - tEmbed
 
       // B. VISION INJECTION: Splice vision features on first step
       if (i == 0) {
@@ -825,7 +1126,9 @@ class QWEN2B164CPU : ONNX() {
               }
             }
 
+            val tDec = System.currentTimeMillis()
             val subOut = decoderPredictor.predict(subInputs)
+            totalDecodeMs += System.currentTimeMillis() - tDec
 
             val parentOut = NDList()
             for (o in subOut) {
@@ -883,11 +1186,23 @@ class QWEN2B164CPU : ONNX() {
         nextKVs.add(finalV.duplicate().apply { name = "past_key_values.$j.value" })
       }
 
+      val tKv = System.currentTimeMillis()
       pastKeyValues?.close()
       pastKeyValues = nextKVs
+      totalKvMs += System.currentTimeMillis() - tKv
 
       pastSeqLen += currentSeqLen
     }
+
+    val loopMs = System.currentTimeMillis() - t0Loop
+    val tokens = generatedIds.size
+    val tokPerSec = if (loopMs > 0) tokens * 1000.0 / loopMs else 0.0
+    log(
+        AI.LogLevel.INFO,
+        "Decoding loop: ${loopMs}ms, $tokens tokens (%.1f tok/s). Embed: ${totalEmbedMs}ms, Decode: ${totalDecodeMs}ms, KV-cache: ${totalKvMs}ms"
+            .format(tokPerSec),
+        " / QWEN / PERF",
+        null)
 
     embedPredictor.close()
 

@@ -76,10 +76,41 @@ abstract class ONNX : AI() {
      * When **AI_Remove** contains ONNX, ONNX will not be activated and ONNX files will be removed.
      */
     private const val defaultOrtVersion = "1.19.2"
+
+    /**
+     * `onnxruntime-openvino` version from PyPI whose native DLL is ABI-compatible with the Maven
+     * [defaultOrtVersion] JNI wrapper. The C API is stable within the same `major.minor` series, so
+     * 1.19.0 works with the 1.19.2 `onnxruntime4j_jni.dll`.
+     */
+    private const val defaultOrtOpenVinoVersion = "1.19.0"
   }
 
   /** Tracks if this specific instance is active. */
   protected var isActive = false
+
+  /**
+   * `true` when the Maven `onnxruntime.dll` (CPU-only) was successfully replaced with the
+   * OpenVINO-EP-enabled build from the `onnxruntime-openvino` PyPI wheel. Subclasses read this to
+   * decide whether to register the OpenVINO EP (via the generic `addExecutionProvider` native
+   * method, called through reflection).
+   */
+  protected var openVinoOrtReplaced = false
+
+  /**
+   * The directory that contains the OpenVINO EP DLLs (`onnxruntime_providers_shared.dll`,
+   * `onnxruntime_providers_openvino.dll`) extracted from the PyPI wheel. This is the ONNX native
+   * run directory at the time of extraction, which may differ from [nativeLibDir] if a subclass
+   * (e.g.
+   * [OpenVINO][com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.openvino.onnx.OpenVINO])
+   * overrides [nativeLibDir] during its own initialisation.
+   *
+   * Subclasses use this to pre-load the EP DLLs via `System.load()` before registering the EP,
+   * which is necessary on Windows because the ORT C code uses `GetModuleFileName()` to locate
+   * provider DLLs relative to the loaded `onnxruntime.dll` — a path that may point to a now-deleted
+   * run directory after hot reloads. Pre-loading places the DLLs in the OS module cache so that
+   * `LoadLibrary` deduplicates by base name and returns the cached handle.
+   */
+  protected var openVinoEpNativeDir: File? = null
 
   /** The number of sets of model files to keep to prevent race conditions. Default ot **3**. */
   private var keepNewest = 3
@@ -123,8 +154,14 @@ abstract class ONNX : AI() {
 
     runs.drop(keepNewest).forEach { dir ->
       try {
-        dir.deleteRecursively()
-        log(LogLevel.INFO, "Deleted old native dir: ${dir.absolutePath}")
+        val deleted = dir.deleteRecursively()
+        if (deleted) {
+          log(LogLevel.INFO, "Deleted old native dir: ${dir.absolutePath}")
+        } else {
+          log(
+              LogLevel.INFO,
+              "Partially deleted old native dir (some files locked): ${dir.absolutePath}")
+        }
       } catch (X: Exception) {
         log(
             LogLevel.WARNING,
@@ -447,6 +484,21 @@ abstract class ONNX : AI() {
         return
       }
 
+      // Hook: allow subclasses to modify native libraries (e.g. replace
+      // onnxruntime.dll with an EP-enabled build) BEFORE the engine is loaded.
+      // Once initEngine() runs and a model calls Engine.getEngine("OnnxRuntime"),
+      // the DLL is memory-mapped and can no longer be swapped.
+      onNativeLibrariesExtracted()
+
+      // If OpenVINO EP is desired (Active_AI contains "openvino"), replace Maven's
+      // CPU-only onnxruntime.dll with the OpenVINO-enabled build from the PyPI
+      // onnxruntime-openvino wheel. The ORT engine is a process-wide JVM singleton —
+      // whichever ONNX subclass initialises first determines the DLL for ALL models.
+      // This MUST happen before initEngine() / Engine.getEngine().
+      if (activeAI.contains("openvino") && !openVinoOrtReplaced) {
+        openVinoOrtReplaced = replaceOrtWithOpenVinoEnabled(nativeLibDir!!)
+      }
+
       if (!initEngine()) {
         return
       }
@@ -457,6 +509,140 @@ abstract class ONNX : AI() {
       log(LogLevel.ERROR, "ONNX setup failed: ${X.message}", "", X)
     }
   }
+
+  /**
+   * Hook called after ONNX Runtime native libraries have been extracted from the Maven artifact but
+   * **before** the engine is initialised (and the DLL loaded into the JVM process).
+   *
+   * Subclasses can override this to replace or augment the native libraries — for example to swap
+   * Maven's CPU-only `onnxruntime.dll` with an Execution-Provider-enabled build from PyPI.
+   *
+   * The default implementation is a no-op.
+   */
+  protected open fun onNativeLibrariesExtracted() {
+    // no-op — subclasses override as needed
+  }
+
+  // region OpenVINO-enabled ORT replacement ------------------------------------------------
+
+  /**
+   * Replaces the Maven-downloaded `onnxruntime.dll` (CPU-only) with the OpenVINO-EP-enabled build
+   * from Intel's `onnxruntime-openvino` PyPI wheel. The wheel additionally contains
+   * `onnxruntime_providers_openvino.dll`, `onnxruntime_providers_shared.dll`, and bundled OpenVINO
+   * runtime libraries.
+   *
+   * The JNI wrapper (`onnxruntime4j_jni.dll`) extracted from Maven is kept — it uses the stable ORT
+   * C API which is backward-compatible within the same major.minor series.
+   *
+   * @param nativeDir The run directory that already contains the Maven-extracted DLLs.
+   * @return `true` if the replacement succeeded, `false` on any error (models will fall back to
+   *   CPU-only ORT in that case).
+   */
+  private fun replaceOrtWithOpenVinoEnabled(nativeDir: File): Boolean {
+    // Currently Windows-only (win_amd64 wheel).  Linux/macOS can be added later.
+    val os = (System.getProperty("os.name") ?: "").lowercase()
+    if (!os.contains("win")) {
+      log(LogLevel.INFO, "OpenVINO ORT replacement skipped — not a Windows system")
+      return false
+    }
+
+    val ortOvVersion = defaultOrtOpenVinoVersion
+    try {
+      // ---- 1. Discover the wheel download URL via PyPI JSON API ----
+      val pypiJson =
+          URI("https://pypi.org/pypi/onnxruntime-openvino/$ortOvVersion/json")
+              .toURL()
+              .openConnection()
+              .apply {
+                connectTimeout = 15_000
+                readTimeout = 30_000
+              }
+              .getInputStream()
+              .bufferedReader()
+              .readText()
+
+      // Any Windows wheel works — the native DLLs inside are identical across Python versions.
+      val wheelUrlMatch =
+          Regex("\"url\"\\s*:\\s*\"(https://[^\"]+cp31[0-9][^\"]*win_amd64\\.whl)\"").find(pypiJson)
+      val wheelUrl =
+          wheelUrlMatch?.groupValues?.get(1)
+              ?: throw RuntimeException(
+                  "No Windows wheel found in PyPI metadata for onnxruntime-openvino $ortOvVersion")
+
+      // ---- 2. Download wheel to a stable cache directory ----
+      val cacheDir = File(nativeDir.parentFile ?: nativeDir, "maven-cache")
+      cacheDir.mkdirs()
+      val wheelFile = File(cacheDir, "onnxruntime-openvino-$ortOvVersion.whl")
+
+      if (!wheelFile.exists() || wheelFile.length() < 10_000) {
+        log(LogLevel.INFO, "Downloading onnxruntime-openvino $ortOvVersion wheel from PyPI...")
+        URI(wheelUrl)
+            .toURL()
+            .openConnection()
+            .apply {
+              connectTimeout = 15_000
+              readTimeout = 300_000
+            }
+            .getInputStream()
+            .use { input -> wheelFile.outputStream().use { output -> input.copyTo(output) } }
+        val sizeMB = String.format("%.1f", wheelFile.length() / (1024.0 * 1024.0))
+        log(LogLevel.INFO, "Downloaded onnxruntime-openvino wheel ($sizeMB MB)")
+      }
+
+      // ---- 3. Back up the Maven onnxruntime.dll ----
+      val originalOrt = File(nativeDir, "onnxruntime.dll")
+      val backupOrt = File(nativeDir, "onnxruntime.dll.maven-original")
+      if (originalOrt.exists() && !backupOrt.exists()) {
+        originalOrt.copyTo(backupOrt)
+        log(LogLevel.INFO, "Backed up Maven onnxruntime.dll → onnxruntime.dll.maven-original")
+      }
+
+      // ---- 4. Extract ALL DLLs from onnxruntime/capi/ in the wheel ----
+      // This replaces onnxruntime.dll with the OpenVINO build and adds EP bridge DLLs
+      // plus bundled OpenVINO runtime libraries.
+      var extractedCount = 0
+      java.util.zip.ZipFile(wheelFile).use { zip ->
+        zip.entries()
+            .asSequence()
+            .filter {
+              !it.isDirectory && it.name.startsWith("onnxruntime/capi/") && it.name.endsWith(".dll")
+            }
+            .forEach { entry ->
+              val fileName = entry.name.substringAfterLast('/')
+              val targetFile = File(nativeDir, fileName)
+              zip.getInputStream(entry).use { input ->
+                targetFile.outputStream().use { output -> input.copyTo(output) }
+              }
+              extractedCount++
+              log(
+                  LogLevel.INFO,
+                  "Extracted $fileName (${targetFile.length()} bytes) → ${nativeDir.absolutePath}")
+            }
+      }
+
+      val epDll = File(nativeDir, "onnxruntime_providers_openvino.dll")
+      if (epDll.exists()) {
+        openVinoEpNativeDir = nativeDir
+        log(LogLevel.INFO, "Replaced Maven ORT with OpenVINO-enabled build ($extractedCount DLLs)")
+        return true
+      } else {
+        log(
+            LogLevel.WARNING,
+            "onnxruntime_providers_openvino.dll not found after extraction — " +
+                "wheel may have a different internal layout")
+        return false
+      }
+    } catch (e: Exception) {
+      log(
+          LogLevel.WARNING,
+          "Failed to provision OpenVINO ORT: ${e.message}. Models will use CPU-only.",
+          "",
+          e)
+      return false
+    }
+  }
+
+  // endregion OpenVINO-enabled ORT replacement ------------------------------------------------
 
   /**
    * Determines whether the ONNX runtime is active and ready for use.

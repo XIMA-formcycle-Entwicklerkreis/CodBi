@@ -26,6 +26,7 @@ import java.awt.image.AffineTransformOp
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.lang.management.ManagementFactory
 import java.net.URI
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -262,6 +263,21 @@ class QWEN2B164CPU : OpenVINO() {
     }
   }
 
+  // ── Resource monitoring ──────────────────────────────────────────────────
+  /**
+   * Maximum allowed system RAM usage (0–100%). Inference is paused/rejected when exceeded.
+   * Configurable via plugin property **AI_ONNX_QWEN_MaxRAMPercent**. Default: 85.
+   */
+  private var maxRAMPercent = 85.0
+  /**
+   * Maximum allowed system CPU usage (0–100%). Inference is paused/rejected when exceeded.
+   * Configurable via plugin property **AI_ONNX_QWEN_MaxCPUPercent**. Default: 90.
+   */
+  private var maxCPUPercent = 90.0
+  /** Background thread that samples CPU/RAM every second and exposes latest readings. */
+  private var resourceMonitor: ResourceMonitor? = null
+  // ── End resource monitoring ──────────────────────────────────────────────
+
   @Volatile private var loadError: Throwable? = null
   @Volatile private var openVinoEPAvailable = false
   /**
@@ -327,6 +343,11 @@ class QWEN2B164CPU : OpenVINO() {
     @Volatile var done = false
     @Volatile var error: String? = null
     @Volatile var stopRequested = false
+    /**
+     * Resource status notification for the frontend overlay (e.g. "paused", "resumed", "timeout").
+     * Cleared after each poll read.
+     */
+    @Volatile var resourceStatus: String? = null
 
     /** Decodes all tokens accumulated so far into a UTF-8 string. */
     fun currentText(): String {
@@ -341,6 +362,108 @@ class QWEN2B164CPU : OpenVINO() {
 
   /** Active streaming sessions, keyed by UUID. Cleaned up on completion or after 5 min TTL. */
   private val streamingSessions = ConcurrentHashMap<String, StreamingSession>()
+
+  // ── ResourceMonitor inner class ────────────────────────────────────────────
+  /**
+   * Lightweight daemon thread that samples system CPU load and RAM usage every second. Provides
+   * [cpuPercent] and [ramPercent] as volatile fields for lock-free reads. Also exposes
+   * [awaitResources] which blocks the calling thread until both metrics drop below the configured
+   * thresholds (or the given timeout expires).
+   */
+  private inner class ResourceMonitor : Thread("codbi-resource-monitor") {
+    @Volatile
+    var cpuPercent = 0.0
+      private set
+
+    @Volatile
+    var ramPercent = 0.0
+      private set
+
+    @Volatile var running = true
+
+    private val osMxBean: com.sun.management.OperatingSystemMXBean? =
+        try {
+          ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
+        } catch (_: Exception) {
+          null
+        }
+
+    init {
+      isDaemon = true
+    }
+
+    override fun run() {
+      while (running) {
+        try {
+          osMxBean?.let {
+            val cpu = it.cpuLoad * 100.0 // JDK 14+; fallback = getSystemCpuLoad()
+            cpuPercent = if (cpu >= 0) cpu else 0.0
+            val totalMem = it.totalMemorySize
+            val freeMem = it.freeMemorySize
+            ramPercent =
+                if (totalMem > 0) (totalMem - freeMem).toDouble() / totalMem * 100.0 else 0.0
+          }
+          sleep(1000)
+        } catch (_: InterruptedException) {
+          break
+        } catch (_: Exception) {
+          /* keep sampling */
+        }
+      }
+    }
+
+    /** @return `true` if both CPU and RAM are below their configured thresholds right now. */
+    fun resourcesAvailable(): Boolean = cpuPercent < maxCPUPercent && ramPercent < maxRAMPercent
+
+    /**
+     * Returns a human-readable reason string if resources are currently exceeded, or `null` if OK.
+     */
+    fun exceedReason(): String? {
+      val parts = mutableListOf<String>()
+      if (cpuPercent >= maxCPUPercent)
+          parts.add("CPU %.1f%% >= %.0f%%".format(cpuPercent, maxCPUPercent))
+      if (ramPercent >= maxRAMPercent)
+          parts.add("RAM %.1f%% >= %.0f%%".format(ramPercent, maxRAMPercent))
+      return if (parts.isEmpty()) null else parts.joinToString(", ")
+    }
+
+    /**
+     * Blocks until resources drop below thresholds or [maxWaitMs] elapses.
+     *
+     * @return estimated remaining wait in ms (0 = resources OK, -1 = timed out)
+     */
+    fun awaitResources(maxWaitMs: Long = 60_000L): Long {
+      val t0 = System.currentTimeMillis()
+      while (!resourcesAvailable()) {
+        val elapsed = System.currentTimeMillis() - t0
+        if (elapsed >= maxWaitMs) return -1
+        try {
+          sleep(500)
+        } catch (_: InterruptedException) {
+          return -1
+        }
+      }
+      return 0
+    }
+
+    /**
+     * Estimates how many seconds until resources may become available, based on recent readings.
+     * Simple heuristic: 1 second per 5% overshoot per exceeded metric.
+     */
+    fun estimateWaitSeconds(): Int {
+      var estimate = 0.0
+      if (cpuPercent >= maxCPUPercent) estimate += (cpuPercent - maxCPUPercent) / 5.0
+      if (ramPercent >= maxRAMPercent) estimate += (ramPercent - maxRAMPercent) / 5.0
+      return estimate.toInt().coerceAtLeast(2)
+    }
+
+    fun shutdown() {
+      running = false
+      interrupt()
+    }
+  }
+
+  // ── End ResourceMonitor inner class ────────────────────────────────────────
 
   /** Evicts sessions older than 5 minutes (safety net for abandoned polls). */
   private fun cleanupStaleSessions() {
@@ -378,6 +501,9 @@ class QWEN2B164CPU : OpenVINO() {
       val text = session.currentText()
       val done = session.done
       val err = session.error
+      // Read and clear the resource status (consumed once per poll)
+      val resStatus = session.resourceStatus
+      session.resourceStatus = null
       if (done) streamingSessions.remove(pollId)
       fun jsonEscapePoll(s: String): String = buildString {
         for (c in s) {
@@ -393,11 +519,13 @@ class QWEN2B164CPU : OpenVINO() {
           }
         }
       }
+      val resStatusJson =
+          if (resStatus != null) ",\"resourceStatus\":\"${jsonEscapePoll(resStatus)}\"" else ""
       val jsonValue =
           if (err != null) {
-            "{\"text\":\"${jsonEscapePoll(text)}\",\"done\":true,\"error\":\"${jsonEscapePoll(err)}\"}"
+            "{\"text\":\"${jsonEscapePoll(text)}\",\"done\":true,\"error\":\"${jsonEscapePoll(err)}\"$resStatusJson}"
           } else {
-            "{\"text\":\"${jsonEscapePoll(text)}\",\"done\":$done}"
+            "{\"text\":\"${jsonEscapePoll(text)}\",\"done\":$done$resStatusJson}"
           }
       val resp =
           ServletResponse(EResponseType.JSON).apply {
@@ -413,6 +541,33 @@ class QWEN2B164CPU : OpenVINO() {
         "Processing VQA request received (Vision: $activeVisionLabel)",
         " / QWEN",
         null)
+
+    // ── Resource gate: reject if system is overloaded ─────────────────────────
+    resourceMonitor?.let { monitor ->
+      val reason = monitor.exceedReason()
+      if (reason != null) {
+        val waitSec = monitor.estimateWaitSeconds()
+        log(
+            AI.LogLevel.WARNING,
+            "Resource gate BLOCKED: $reason — estimated wait ${waitSec}s",
+            " / QWEN",
+            null)
+        val resp =
+            ServletResponse(EResponseType.JSON).apply {
+              value =
+                  "{\"error\":\"Server resources exceeded ($reason). Please retry in ~${waitSec} seconds.\",\"retryAfter\":$waitSec}"
+              encoding = java.nio.charset.StandardCharsets.UTF_8.name()
+            }
+        return PluginServletActionRetVal(resp)
+      }
+      log(
+          AI.LogLevel.INFO,
+          "Resource gate OK: CPU=%.1f%% (max %.0f%%), RAM=%.1f%% (max %.0f%%)"
+              .format(monitor.cpuPercent, maxCPUPercent, monitor.ramPercent, maxRAMPercent),
+          " / QWEN",
+          null)
+    }
+    // ── End resource gate ─────────────────────────────────────────────────────
 
     if (loadError != null) {
       val resp =
@@ -519,6 +674,32 @@ class QWEN2B164CPU : OpenVINO() {
           }
         }
       }
+      // Fallback: decode images sent as base64 data-URL text parameters
+      // (bypasses formcycle's multipart parser which returns 0-byte FileData).
+      params.requestParameters?.forEach { (key, values) ->
+        if (key.startsWith("codbi-base64:")) {
+          val imageName = key.removePrefix("codbi-base64:")
+          val dataUrl = values.firstOrNull() ?: return@forEach
+          val base64 = dataUrl.substringAfter(",")
+          try {
+            val bytes = java.util.Base64.getDecoder().decode(base64)
+            if (bytes.isNotEmpty()) {
+              fileDataMap[imageName] = bytes
+              log(
+                  AI.LogLevel.INFO,
+                  "Base64 param image '$imageName': ${bytes.size} bytes",
+                  " / QWEN / STREAM",
+                  null)
+            }
+          } catch (e: Exception) {
+            log(
+                AI.LogLevel.WARNING,
+                "Failed to decode base64 for '$imageName': ${e.message}",
+                " / QWEN / STREAM",
+                null)
+          }
+        }
+      }
       log(
           AI.LogLevel.INFO,
           "Streaming: fileDataMap entries = ${fileDataMap.size}, path = ${if (fileDataMap.isNotEmpty()) "IMAGE" else "TEXT-ONLY"}",
@@ -595,7 +776,8 @@ class QWEN2B164CPU : OpenVINO() {
                           visionResult,
                           onToken = { tokenId -> session.generatedIds.add(tokenId) },
                           shouldStop = { session.stopRequested },
-                          chatHistory = chatHistory)
+                          chatHistory = chatHistory,
+                          resourceNotify = { status -> session.resourceStatus = status })
                     } finally {
                       releasePredictor("qwen-encoder", visionPred)
                       releasePredictor("qwen-decoder", decoderPred)
@@ -617,7 +799,8 @@ class QWEN2B164CPU : OpenVINO() {
                         question,
                         onToken = { tokenId -> session.generatedIds.add(tokenId) },
                         shouldStop = { session.stopRequested },
-                        chatHistory = chatHistory)
+                        chatHistory = chatHistory,
+                        resourceNotify = { status -> session.resourceStatus = status })
                   } finally {
                     releasePredictor("qwen-decoder", decoderPred)
                   }
@@ -661,19 +844,50 @@ class QWEN2B164CPU : OpenVINO() {
                   })
 
       val uploadedFilesSync = params.uploadFiles
-      val hasFiles = uploadedFilesSync != null && uploadedFilesSync.isNotEmpty()
+      // Build file data map from both uploadFiles and base64 request parameters
+      val fileDataMapSync = mutableMapOf<String, ByteArray>()
+      uploadedFilesSync?.forEach { (inputName, fileDataList) ->
+        val combinedBytes =
+            fileDataList.fold(byteArrayOf()) { acc, fd -> acc + (fd.data ?: byteArrayOf()) }
+        if (combinedBytes.isNotEmpty()) {
+          fileDataMapSync[inputName] = combinedBytes
+        }
+      }
+      // Fallback: decode images sent as base64 data-URL text parameters
+      params.requestParameters?.forEach { (key, values) ->
+        if (key.startsWith("codbi-base64:")) {
+          val imageName = key.removePrefix("codbi-base64:")
+          val dataUrl = values.firstOrNull() ?: return@forEach
+          val base64 = dataUrl.substringAfter(",")
+          try {
+            val bytes = java.util.Base64.getDecoder().decode(base64)
+            if (bytes.isNotEmpty()) {
+              fileDataMapSync[imageName] = bytes
+              log(
+                  AI.LogLevel.INFO,
+                  "Base64 param image '$imageName': ${bytes.size} bytes",
+                  " / QWEN",
+                  null)
+            }
+          } catch (e: Exception) {
+            log(
+                AI.LogLevel.WARNING,
+                "Failed to decode base64 for '$imageName': ${e.message}",
+                " / QWEN",
+                null)
+          }
+        }
+      }
+      val hasFiles = fileDataMapSync.isNotEmpty()
       log(
           AI.LogLevel.INFO,
-          "Non-streaming: hasFiles = $hasFiles (uploadFiles size = ${uploadedFilesSync?.size ?: 0})",
+          "Non-streaming: hasFiles = $hasFiles (uploadFiles size = ${uploadedFilesSync?.size ?: 0}, fileDataMap = ${fileDataMapSync.size})",
           " / QWEN",
           null)
 
       if (hasFiles) {
         // --- Image-based VQA path ---
-        uploadedFilesSync?.forEach { (inputName, fileDataList) ->
-          val combinedBytes =
-              fileDataList.fold(byteArrayOf()) { acc, fd -> acc + (fd.data ?: byteArrayOf()) }
-          if (combinedBytes.isEmpty()) return@forEach
+        fileDataMapSync.forEach { (inputName, combinedBytes) ->
 
           // Orientation correction (manual X-Rotate or OSD)
           val rotatedBytes =
@@ -943,6 +1157,25 @@ class QWEN2B164CPU : OpenVINO() {
         log(AI.LogLevel.INFO, "MaxPixels set to $it from config", " / QWEN", null)
       }
     }
+    // Read resource-monitoring thresholds
+    configData.properties.getProperty("AI_ONNX_QWEN_MaxRAMPercent")?.trim()?.toDoubleOrNull()?.let {
+      if (it in 1.0..100.0) {
+        maxRAMPercent = it
+      }
+    }
+    configData.properties.getProperty("AI_ONNX_QWEN_MaxCPUPercent")?.trim()?.toDoubleOrNull()?.let {
+      if (it in 1.0..100.0) {
+        maxCPUPercent = it
+      }
+    }
+    log(
+        AI.LogLevel.INFO,
+        "Resource thresholds: MaxRAM=${maxRAMPercent}%, MaxCPU=${maxCPUPercent}%",
+        " / QWEN",
+        null)
+    // Start resource monitor daemon thread
+    resourceMonitor?.shutdown()
+    resourceMonitor = ResourceMonitor().also { it.start() }
     log(
         AI.LogLevel.INFO,
         "OpenVINO EP available: $openVinoEPAvailable, Vision encoder mode: $visionEncoderMode",
@@ -1539,6 +1772,12 @@ class QWEN2B164CPU : OpenVINO() {
         }
     val inputs = translator.processInput(ctx, Pair(image, ""))
 
+    log(
+        AI.LogLevel.INFO,
+        "Image to encode: ${image.width}×${image.height} (${image.width * image.height} px)",
+        " / QWEN / PERF",
+        null)
+
     val t0Vision = System.currentTimeMillis()
     val visionOutput =
         visionPredictor.predict(
@@ -1725,7 +1964,8 @@ class QWEN2B164CPU : OpenVINO() {
       tokenLimit: Int = maxTokens,
       onToken: ((Long) -> Unit)? = null,
       shouldStop: (() -> Boolean)? = null,
-      chatHistory: List<Pair<String, String>> = emptyList()
+      chatHistory: List<Pair<String, String>> = emptyList(),
+      resourceNotify: ((String) -> Unit)? = null
   ): String {
     val tokenizer = this.tokenizer!!
     val prompt =
@@ -1827,6 +2067,31 @@ class QWEN2B164CPU : OpenVINO() {
       if (nextTokenId == 151643L || nextTokenId == 151645L) break
       if (shouldStop?.invoke() == true) break
 
+      // Resource throttle: pause token generation if CPU/RAM thresholds exceeded
+      resourceMonitor?.let { monitor ->
+        if (!monitor.resourcesAvailable()) {
+          val reason = monitor.exceedReason() ?: "resources exceeded"
+          log(
+              AI.LogLevel.INFO,
+              "TextOnly decode PAUSED at token $i: $reason",
+              " / QWEN / PERF",
+              null)
+          resourceNotify?.invoke("\u23F8 Paused \u2014 $reason. Waiting for resources...")
+          val waitResult = monitor.awaitResources(30_000L)
+          if (waitResult == -1L) {
+            log(
+                AI.LogLevel.WARNING,
+                "TextOnly decode TIMEOUT waiting for resources after 30s",
+                " / QWEN / PERF",
+                null)
+            resourceNotify?.invoke("\u26A0 Timed out after 30s \u2014 continuing anyway")
+          } else {
+            log(AI.LogLevel.INFO, "TextOnly decode RESUMED (resources OK)", " / QWEN / PERF", null)
+            resourceNotify?.invoke("\u25B6 Resumed")
+          }
+        }
+      }
+
       generatedIds.add(nextTokenId)
       onToken?.invoke(nextTokenId)
       currentInputIds.close()
@@ -1905,7 +2170,8 @@ class QWEN2B164CPU : OpenVINO() {
       tokenLimit: Int = maxTokens,
       onToken: ((Long) -> Unit)? = null,
       shouldStop: (() -> Boolean)? = null,
-      chatHistory: List<Pair<String, String>> = emptyList()
+      chatHistory: List<Pair<String, String>> = emptyList(),
+      resourceNotify: ((String) -> Unit)? = null
   ): String {
     // Build input_ids directly from tokenizer — avoids re-running the full image
     // preprocessing (resize, normalize, reshape) which is wasteful since vision
@@ -2103,6 +2369,31 @@ class QWEN2B164CPU : OpenVINO() {
         break
       }
 
+      // Resource throttle: pause token generation if CPU/RAM thresholds exceeded
+      resourceMonitor?.let { monitor ->
+        if (!monitor.resourcesAvailable()) {
+          val reason = monitor.exceedReason() ?: "resources exceeded"
+          log(
+              AI.LogLevel.INFO,
+              "Vision decode PAUSED at token ${generatedIds.size}: $reason",
+              " / QWEN / PERF",
+              null)
+          resourceNotify?.invoke("\u23F8 Paused \u2014 $reason. Waiting for resources...")
+          val waitResult = monitor.awaitResources(30_000L)
+          if (waitResult == -1L) {
+            log(
+                AI.LogLevel.WARNING,
+                "Vision decode TIMEOUT waiting for resources after 30s",
+                " / QWEN / PERF",
+                null)
+            resourceNotify?.invoke("\u26A0 Timed out after 30s \u2014 continuing anyway")
+          } else {
+            log(AI.LogLevel.INFO, "Vision decode RESUMED (resources OK)", " / QWEN / PERF", null)
+            resourceNotify?.invoke("\u25B6 Resumed")
+          }
+        }
+      }
+
       // Collect token id (decode once after loop to avoid per-token unicode issues)
       generatedIds.add(nextTokenId)
       onToken?.invoke(nextTokenId)
@@ -2241,6 +2532,8 @@ class QWEN2B164CPU : OpenVINO() {
   }
 
   override fun shutdown(data: IPluginShutdownData?) {
+    resourceMonitor?.shutdown()
+    resourceMonitor = null
     streamingSessions.clear()
     synchronized(visionCacheLock) { visionCache.clear() }
     while (osdPool.isNotEmpty()) TessAPI1.TessBaseAPIDelete(osdPool.poll())

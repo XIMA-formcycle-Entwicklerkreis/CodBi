@@ -10,6 +10,7 @@ import { IF } from "xdbc/src/DBC/IF";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { OR } from "xdbc/src/DBC/OR";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
 //endregion XDBC
 //region PDF.js
 import * as pdfjsLib from "pdfjs-dist";
@@ -50,8 +51,11 @@ export class AI_ONNX_QWEN_CHAT {
    * attribute and automatic OSD detection.
    *
    * ### Config Parameters:
-   * - **maxPages**: Maximum PDF pages to process (default: 5).
-   * - **Rotate**:   Image rotation in degrees (90, 180, or 270).
+   * - **maxPages**:      Maximum PDF pages to process (default: 5).
+   * - **Rotate**:        Image rotation in degrees (90, 180, or 270).
+   * - **MaxPixelSize**:  Maximum total pixel budget (width×height). Images exceeding this
+   *                      are downscaled client-side while preserving the aspect ratio.
+   *                      Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. Must be a `<textarea>` element (the chat display). */
@@ -60,6 +64,7 @@ export class AI_ONNX_QWEN_CHAT {
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages")
     @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotate")
     @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotate")
+    @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxPixelSize")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(HTMLTextAreaElement, undefined, "Must be a <textarea> element tagged with this functionality.")
@@ -89,30 +94,25 @@ export class AI_ONNX_QWEN_CHAT {
       return;
     }
 
-    const chatInput = container.querySelector(".AI_ONNX_QWEN_Chat_Input") as
-      | HTMLInputElement
-      | HTMLTextAreaElement
-      | null;
-    const sendButton = container.querySelector(".AI_ONNX_QWEN_Chat_Send") as HTMLButtonElement | null;
-    const stopButton = container.querySelector(".AI_ONNX_QWEN_Chat_Stop") as HTMLButtonElement | null;
-    const fileUpload = container.querySelector(".AI_ONNX_QWEN_Chat_Upload") as HTMLInputElement | null;
+    const chatInput = OR.tsCheck<HTMLInputElement | HTMLTextAreaElement>(
+      DEFINED.tsCheck(container.querySelector(".AI_ONNX_QWEN_Chat_Input")),
+      [new INSTANCE(HTMLInputElement), new INSTANCE(HTMLTextAreaElement)],
+      'Did you forget to tag the chat input element with CSS-Class "AI_ONNX_QWEN_Chat_Input"?',
+    );
 
-    if (!chatInput) {
-      window.codbi.log(
-        "ERROR",
-        "No element with class .AI_ONNX_QWEN_Chat_Input found in container.",
-        "AI / ONNX / QWEN / CHAT",
-      );
-      return;
-    }
-    if (!sendButton) {
-      window.codbi.log(
-        "ERROR",
-        "No element with class .AI_ONNX_QWEN_Chat_Send found in container.",
-        "AI / ONNX / QWEN / CHAT",
-      );
-      return;
-    }
+    const sendButton = INSTANCE.tsCheck<HTMLButtonElement>(
+      DEFINED.tsCheck(container.querySelector(".AI_ONNX_QWEN_Chat_Send")),
+      HTMLButtonElement,
+    );
+    const stopButton = INSTANCE.tsCheck<HTMLButtonElement>(
+      container.querySelector(".AI_ONNX_QWEN_Chat_Stop"),
+      HTMLButtonElement,
+    );
+    const fileUpload = INSTANCE.tsCheck<HTMLInputElement>(
+      container.querySelector(".AI_ONNX_QWEN_Chat_Upload"),
+      HTMLInputElement,
+    );
+
     // #endregion Discover sibling elements
 
     let isBusy = false;
@@ -123,6 +123,78 @@ export class AI_ONNX_QWEN_CHAT {
     let activeStreamId: string | null = null;
     /** Multi-turn conversation history. Sent to the backend so Qwen can remember prior turns. */
     const conversationHistory: { role: string; content: string }[] = [];
+
+    // #region Resource status overlay
+    /** Timer ID for auto-hiding the resource overlay after transient messages (e.g. "Resumed"). */
+    let overlayHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+    /** Lazily-created overlay badge anchored to the top-right corner of the chat textarea. */
+    let resourceOverlay: HTMLDivElement | null = null;
+    const getOverlay = (): HTMLDivElement => {
+      if (resourceOverlay) {
+        return resourceOverlay;
+      }
+      const el = document.createElement("div");
+      el.style.cssText =
+        "position:absolute;top:6px;right:6px;" +
+        "display:none;align-items:center;justify-content:center;" +
+        "background:rgba(0,0,0,0.72);color:#fff;font-size:12px;font-weight:600;" +
+        "padding:6px 14px;text-align:center;pointer-events:none;z-index:1000;" +
+        "border-radius:6px;backdrop-filter:blur(2px);transition:opacity 0.3s ease;" +
+        "max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+      // Anchor relative to the textarea's parent
+      const anchor = chatDisplay.parentElement;
+      if (anchor) {
+        const cs = window.getComputedStyle(anchor);
+        if (cs.position === "static") {
+          (anchor as HTMLElement).style.position = "relative";
+        }
+        anchor.appendChild(el);
+      }
+      resourceOverlay = el;
+      return el;
+    };
+
+    const showResourceOverlay = (message: string): void => {
+      if (overlayHideTimer) {
+        clearTimeout(overlayHideTimer);
+        overlayHideTimer = null;
+      }
+      const overlay = getOverlay();
+      overlay.textContent = message;
+      overlay.style.display = "flex";
+      overlay.style.opacity = "1";
+    };
+
+    const hideResourceOverlay = (): void => {
+      if (!resourceOverlay) {
+        return;
+      }
+      resourceOverlay.style.opacity = "0";
+      overlayHideTimer = setTimeout(() => {
+        if (resourceOverlay) {
+          resourceOverlay.style.display = "none";
+        }
+        overlayHideTimer = null;
+      }, 400);
+    };
+
+    /**
+     * Handles `resourceStatus` from the poll response.
+     * "Resumed" and timeout messages auto-hide after 2.5 seconds;
+     * pause messages stay visible until superseded.
+     */
+    const handleResourceStatus = (status: string | undefined): void => {
+      if (!status) {
+        return;
+      }
+      showResourceOverlay(status);
+      // Transient statuses auto-hide after a short delay
+      if (status.includes("\u25B6") || status.includes("\u26A0")) {
+        overlayHideTimer = setTimeout(hideResourceOverlay, 2500);
+      }
+    };
+    // #endregion Resource status overlay
 
     // #region Helper: append a message block to the chat display
     const appendToChat = (text: string): void => {
@@ -186,6 +258,8 @@ export class AI_ONNX_QWEN_CHAT {
 
         const formData = new FormData();
         const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
+        const maxPixelSize =
+          toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_ONNX_QWEN_CHAT.DEFAULT_MAX_PIXELS;
 
         // #region Process attached files (PDF or Image)
         for (const file of attachedFiles) {
@@ -193,22 +267,45 @@ export class AI_ONNX_QWEN_CHAT {
             const processedImages = await AI_ONNX_QWEN_CHAT.processPdfFile(file, maxPages);
             for (let i = 0; i < processedImages.length; i++) {
               const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
-              formData.append(imageName, processedImages[i], imageName);
+              let imageFile = new File([processedImages[i]], imageName, { type: "image/png" });
+              // Downscale PDF page if it exceeds the pixel budget
+              if (maxPixelSize > 0) {
+                const downscaled = await AI_ONNX_QWEN_CHAT.downscaleImageIfNeeded(imageFile, maxPixelSize);
+                imageFile =
+                  downscaled instanceof File
+                    ? downscaled
+                    : new File([downscaled], imageName, { type: downscaled.type || "image/png" });
+              }
+              // Send as base64 text param — formcycle's multipart parser returns 0-byte FileData.
+              const dataUrl = await AI_ONNX_QWEN_CHAT.blobToDataUrl(imageFile);
+              formData.append(`codbi-base64:${imageName}`, dataUrl);
             }
-          } else {
-            // Downscale large images client-side to reduce upload size and inference time
-            const downscaled = await AI_ONNX_QWEN_CHAT.downscaleImageIfNeeded(file);
+          } else if (maxPixelSize > 0) {
+            // Downscale if the image exceeds the pixel budget.
+            const downscaled = await AI_ONNX_QWEN_CHAT.downscaleImageIfNeeded(file, maxPixelSize);
+            const dataUrl = await AI_ONNX_QWEN_CHAT.blobToDataUrl(downscaled);
             window.codbi.log(
               "INFO",
-              `Appending '${file.name}' to FormData: blob.size=${downscaled.size}, blob.type=${downscaled.type}`,
+              `Appending '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
               "AI / ONNX / QWEN / CHAT",
             );
-            formData.append(file.name, downscaled, file.name);
+            formData.append(`codbi-base64:${file.name}`, dataUrl);
+          } else {
+            // maxPixelSize=0 → skip client-side downscaling; backend enforces the limit.
+            const dataUrl = await AI_ONNX_QWEN_CHAT.blobToDataUrl(file);
+            window.codbi.log(
+              "INFO",
+              `Appending '${file.name}' as base64 param (no client downscale): ${Math.round(dataUrl.length / 1024)} KB`,
+              "AI / ONNX / QWEN / CHAT",
+            );
+            formData.append(`codbi-base64:${file.name}`, dataUrl);
           }
         }
         // Clear after processing — files are only sent once, not on every message
         attachedFiles = [];
-        if (fileUpload) fileUpload.value = "";
+        if (fileUpload) {
+          fileUpload.value = "";
+        }
         // #endregion Process attached files (PDF or Image)
 
         // #region Build request headers
@@ -234,6 +331,7 @@ export class AI_ONNX_QWEN_CHAT {
           if ("disabled" in chatInput) {
             (chatInput as HTMLInputElement).disabled = false;
           }
+          hideResourceOverlay();
           chatInput.focus();
         };
         // #endregion Helper: finish streaming and re-enable UI
@@ -255,6 +353,8 @@ export class AI_ONNX_QWEN_CHAT {
                 xhr.setRequestHeader("X-Stream-Poll", streamId);
               },
               success: (pollResponse) => {
+                // Handle resource status overlay (pause/resume/timeout notifications)
+                handleResourceStatus(pollResponse.resourceStatus);
                 if (pollResponse.error && pollResponse.done === undefined) {
                   // Session not found or expired
                   clearInterval(interval);
@@ -454,30 +554,65 @@ export class AI_ONNX_QWEN_CHAT {
 
   // #region Image downscaling helper
   /**
-   * Maximum pixel dimension (width or height) for images sent to the backend.
-   * Images exceeding this on either axis are downscaled proportionally using a canvas.
-   * 1792px aligns with the backend's default maxPixels budget (3211264 ≈ 1792×1792).
+   * Default total-pixel budget (width × height). Matches the backend's default maxPixels.
+   * ≈ 1792 × 1792.
    */
-  private static readonly MAX_IMAGE_DIMENSION = 1792;
+  private static readonly DEFAULT_MAX_PIXELS = 3211264;
 
   /**
-   * Downscales an image file if either dimension exceeds {@link MAX_IMAGE_DIMENSION}.
-   * Returns the original file (as-is) if it's already within limits, otherwise a
-   * downscaled PNG Blob.
+   * Converts a canvas to a {@link File} built from raw bytes.
+   * Formcycle's multipart parser returns 0 bytes for canvas {@link Blob} objects,
+   * so we go through {@link HTMLCanvasElement.toDataURL toDataURL} → base64 decode → {@link ArrayBuffer} → {@link File}.
    */
-  private static async downscaleImageIfNeeded(file: File): Promise<Blob> {
+  private static canvasToFile(canvas: HTMLCanvasElement, fileName: string): File {
+    const dataUrl = canvas.toDataURL("image/png");
+    const base64 = dataUrl.split(",")[1];
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new File([bytes.buffer], fileName, { type: "image/png" });
+  }
+
+  /**
+   * Reads a {@link Blob} (or {@link File}) as a
+   * {@link https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs data URL}
+   * string ({@code data:<mime>;base64,...}).
+   *
+   * Used to send image data as a regular text parameter in FormData,
+   * bypassing formcycle's multipart file parser which returns 0-byte {@code FileData}.
+   */
+  private static blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * Downscales an image file if its total pixel count (width × height) exceeds
+   * {@link maxPixels}, preserving the aspect ratio. Returns the original file
+   * unchanged when it is already within the budget.
+   *
+   * @param file      The image file to check.
+   * @param maxPixels Total-pixel budget (width × height).
+   */
+  private static async downscaleImageIfNeeded(file: File, maxPixels: number): Promise<Blob> {
     return new Promise<Blob>((resolve, reject) => {
       const img = new Image();
       img.onload = () => {
-        const maxDim = AI_ONNX_QWEN_CHAT.MAX_IMAGE_DIMENSION;
-        if (img.width <= maxDim && img.height <= maxDim) {
+        const totalPixels = img.width * img.height;
+        if (totalPixels <= maxPixels) {
           URL.revokeObjectURL(img.src);
           resolve(file);
           return;
         }
-        const scale = Math.min(maxDim / img.width, maxDim / img.height);
-        const newW = Math.round(img.width * scale);
-        const newH = Math.round(img.height * scale);
+        const scale = Math.sqrt(maxPixels / totalPixels);
+        const newW = Math.max(28, Math.round(img.width * scale));
+        const newH = Math.max(28, Math.round(img.height * scale));
 
         window.codbi.log(
           "INFO",
@@ -496,13 +631,7 @@ export class AI_ONNX_QWEN_CHAT {
         }
         ctx.drawImage(img, 0, 0, newW, newH);
         URL.revokeObjectURL(img.src);
-        canvas.toBlob((blob) => {
-          if (blob) {
-            resolve(blob);
-          } else {
-            resolve(file); // fallback
-          }
-        }, "image/png");
+        resolve(AI_ONNX_QWEN_CHAT.canvasToFile(canvas, file.name));
       };
       img.onerror = () => {
         URL.revokeObjectURL(img.src);
@@ -573,7 +702,7 @@ export class AI_ONNX_QWEN_CHAT {
     return images;
   }
 
-  private static async renderPdfPageToImage(page: PDFPageProxy): Promise<Blob> {
+  private static async renderPdfPageToImage(page: PDFPageProxy): Promise<File> {
     const viewport = page.getViewport({ scale: 2.0 });
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
@@ -590,15 +719,7 @@ export class AI_ONNX_QWEN_CHAT {
       viewport: viewport,
     }).promise;
 
-    return new Promise<Blob>((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (blob) {
-          resolve(blob);
-        } else {
-          reject(new Error("Failed to convert canvas to blob"));
-        }
-      }, "image/png");
-    });
+    return AI_ONNX_QWEN_CHAT.canvasToFile(canvas, "page.png");
   }
 
   private static async extractImagesFromPdfPage(page: PDFPageProxy): Promise<Blob[]> {
@@ -633,17 +754,7 @@ export class AI_ONNX_QWEN_CHAT {
 
                   ctx.putImageData(imageData, 0, 0);
 
-                  const blob = await new Promise<Blob>((resolve, reject) => {
-                    canvas.toBlob((b) => {
-                      if (b) {
-                        resolve(b);
-                      } else {
-                        reject(new Error("Failed to create blob from image"));
-                      }
-                    }, "image/png");
-                  });
-
-                  images.push(blob);
+                  images.push(AI_ONNX_QWEN_CHAT.canvasToFile(canvas, `${imageName}.png`));
                 }
               }
             }

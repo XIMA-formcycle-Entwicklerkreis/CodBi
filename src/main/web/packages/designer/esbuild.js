@@ -118,7 +118,31 @@ async function copyAngularWebComponentSvgAssets() {
 }
 
 (async () => {
-  await fs.mkdir(outputDir, { recursive: true });
+  console.log(`Cleaning output directory: ${outputDir}...`);
+
+  // Retry logic for cleaning output directory (handles ENOTEMPTY/EBUSY on Windows)
+  async function retryEmptyDir(dir, maxRetries = 5, delayMs = 500) {
+    let lastErr;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await fs.mkdir(outputDir, { recursive: true });
+        return;
+      } catch (err) {
+        if (err && (err.code === "ENOTEMPTY" || err.code === "EBUSY" || err.code === "EPERM")) {
+          lastErr = err;
+          console.warn(
+            `Attempt ${attempt} to clean directory '${dir}' failed with ${err.code}. Retrying in ${delayMs}ms...`,
+          );
+          await new Promise((res) => setTimeout(res, delayMs));
+        } else {
+          throw err;
+        }
+      }
+    }
+    throw lastErr || new Error(`Failed to clean directory '${dir}' after retries`);
+  }
+
+  await retryEmptyDir(outputDir);
   await buildAngularWebComponent();
   await copyTinyMCEAssets();
   await copyI18nAssets();

@@ -92,12 +92,35 @@ console.log("Standard configurations found: ", configurationsTsFiles);
  * @param {string} sourcePath The source directory path.
  * @param {string} destinationPath The destination directory path. */
 async function copyFiles(filesToCopy, sourcePath, destinationPath) {
-  await fs.mkdir(destinationPath, { recursive: true });
+  // Retry logic for mkdir and file copy
+  const maxRetries = 3;
+  let mkdirSuccess = false;
+  for (let attempt = 1; attempt <= maxRetries && !mkdirSuccess; attempt++) {
+    try {
+      await fs.mkdir(destinationPath, { recursive: true });
+      mkdirSuccess = true;
+    } catch (err) {
+      if (attempt === maxRetries) throw err;
+      console.warn(`[copyFiles] mkdir failed (attempt ${attempt}): ${err.message}`);
+      await new Promise((res) => setTimeout(res, 100 * attempt));
+    }
+  }
+
   await Promise.all(
     filesToCopy.map(async (file) => {
       const sourceFile = path.join(sourcePath, file);
       const destinationFile = path.join(destinationPath, file);
-      await fs.copyFile(sourceFile, destinationFile);
+      let copySuccess = false;
+      for (let attempt = 1; attempt <= maxRetries && !copySuccess; attempt++) {
+        try {
+          await fs.copyFile(sourceFile, destinationFile);
+          copySuccess = true;
+        } catch (err) {
+          if (attempt === maxRetries) throw err;
+          console.warn(`[copyFiles] copyFile failed for ${file} (attempt ${attempt}): ${err.message}`);
+          await new Promise((res) => setTimeout(res, 100 * attempt));
+        }
+      }
     }),
   );
 }

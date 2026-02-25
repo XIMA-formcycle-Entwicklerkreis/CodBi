@@ -98,6 +98,33 @@ export class AI_OCR {
   ): void {
     (toProcess as HTMLInputElement).addEventListener("change", async (event) => {
       const container = document.querySelector(`div .CXUpload:has( #${toProcess.getAttribute("id")})`).parentElement;
+
+      // #region Symbol resolution for pattern/question
+      // If the pattern contains symbols like <[FieldName]>, replace them with the value of the field with that CSS class in the same container
+      if (typeof toLoad.pattern === "string") {
+        toLoad.pattern = toLoad.pattern.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
+          const trimmed = identifier.trim();
+          const field = container.querySelector(`.${trimmed}`) as HTMLInputElement | null;
+          if (field && "value" in field) {
+            return field.value;
+          }
+          return match;
+        });
+      }
+      // Also resolve symbols in Pattern_* fields (for Extract Fields mode)
+      Object.keys(toLoad).forEach((key) => {
+        if (key.startsWith("pattern_") && typeof toLoad[key] === "string") {
+          toLoad[key] = (toLoad[key] as string).replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
+            const trimmed = identifier.trim();
+            const field = container.querySelector(`.${trimmed}`) as HTMLInputElement | null;
+            if (field && "value" in field) {
+              return field.value;
+            }
+            return match;
+          });
+        }
+      });
+      // #endregion Symbol resolution for pattern/question
       const $ = getJQuery();
       const files = (toProcess as HTMLInputElement).files;
       // Configure PDF.js worker if needed

@@ -62,7 +62,7 @@ class DocVQATranslator(
      * The number of tokens at which the processing of an image will stop in order to prevent
      * endless processing (defaults to **100**).
      */
-    public var maxTokens: Int = 100,
+    public var maxTokens: Int = 1000,
     /** The logger to use. */
     private val log: (importance: AI.LogLevel, toLog: String, exception: Throwable?) -> Unit
 ) : Translator<Pair<DjlImage, String>, String> {
@@ -152,8 +152,9 @@ class DocVQATranslator(
     val manager = ctx.ndManager
     val image = input.first
     val question = input.second
+    log(AI.LogLevel.INFO, "Processing question: $question", null)
     // region Image preprocessing
-    val resizedImage = image.resize(1280, 960, true)
+    val resizedImage = image.resize(2560, 1920, true)
     var array = resizedImage.toNDArray(manager)
     array = array.transpose(2, 0, 1).toType(DataType.FLOAT32, false)
     val mean = manager.create(floatArrayOf(0.485f, 0.456f, 0.406f)).reshape(3, 1, 1)
@@ -262,8 +263,9 @@ class DocVQATranslator(
 
     val answerIds = currentIds.drop(promptIds.size).toLongArray()
     val rawAnswer = tokenizer?.decode(answerIds) ?: ""
-
-    return rawAnswer.replace("</s_answer>", "").replace("<s>", "").trim()
+    val finalAnswer = rawAnswer.replace("</s_answer>", "").replace("<s>", "").trim()
+    log(AI.LogLevel.INFO, "Sending response: $finalAnswer", null)
+    return finalAnswer
   }
 }
 
@@ -1134,6 +1136,9 @@ class DonutDocVQAAction : ONNX() {
                 headerValue // fallback
               }
           questionsToAsk[key] = decodedValue
+          log(
+              LogLevel.INFO,
+              "Added question from header: $headerName -> ${decodedValue.take(50)}${if (decodedValue.length > 50) "..." else ""}")
         }
       }
     }
@@ -1247,8 +1252,8 @@ class DonutDocVQAAction : ONNX() {
 
           NDManager.newBaseManager().use { manager ->
             // region Image preprocessing (Letterboxing statt Stretching)
-            val targetW = 960
-            val targetH = 1280
+            val targetW = 1920
+            val targetH = 2560
             val origW = djlImg.width
             val origH = djlImg.height
             val scale = minOf(targetW.toFloat() / origW, targetH.toFloat() / origH)

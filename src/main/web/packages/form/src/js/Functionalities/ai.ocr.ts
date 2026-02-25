@@ -112,7 +112,7 @@ export class AI_OCR {
         });
       }
       // Also resolve symbols in Pattern_* fields (for Extract Fields mode)
-      Object.keys(toLoad).forEach((key) => {
+      for (const key of Object.keys(toLoad)) {
         if (key.startsWith("pattern_") && typeof toLoad[key] === "string") {
           toLoad[key] = (toLoad[key] as string).replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
             const trimmed = identifier.trim();
@@ -123,7 +123,7 @@ export class AI_OCR {
             return match;
           });
         }
-      });
+      }
       // #endregion Symbol resolution for pattern/question
       const $ = getJQuery();
       const files = (toProcess as HTMLInputElement).files;
@@ -217,7 +217,7 @@ export class AI_OCR {
             0%    { opacity:1; }
             50%   { opacity:0; }
             100%  { opacity:1; }}
-                  
+
           .OCR_Verification { font-weight: bold ; color: darkorange ; animation: highlight 2s ease-in-out infinite ;}</style>
 
         <span class = "OCR_Verification">${toLoad.processingimagetext}</span>`;

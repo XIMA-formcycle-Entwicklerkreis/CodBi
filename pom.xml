@@ -64,6 +64,7 @@
 		<node.version>v22.14.0</node.version>
 		<xfc.version>8.3.3</xfc.version>
 		<yarn.version>v1.22.22</yarn.version>
+		<java.version>11</java.version>
 
 		<!-- Dependency versions -->
 		<jakarta-servlet-api.version>4.0.4</jakarta-servlet-api.version>
@@ -459,7 +460,7 @@
 					<configuration>
 						<apiVersion>1.9</apiVersion>
 						<languageVersion>1.9</languageVersion>
-						<jvmTarget>11</jvmTarget>
+						<jvmTarget>${java.version}</jvmTarget>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -1204,8 +1205,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
-					<source>9</source>
-					<target>9</target>
+					<release>${java.version}</release>
 				</configuration>
 			</plugin>
 		</plugins>

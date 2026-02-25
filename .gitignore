@@ -2,6 +2,7 @@
 *.onnx_data
 qwen-vl/
 
+dependency-reduced-pom.xml
 docs
 docs2
 

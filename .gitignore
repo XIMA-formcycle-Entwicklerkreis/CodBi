@@ -2,6 +2,9 @@
 *.onnx_data
 qwen-vl/
 
+docs
+docs2
+
 xfc-server
 
 localization.ts

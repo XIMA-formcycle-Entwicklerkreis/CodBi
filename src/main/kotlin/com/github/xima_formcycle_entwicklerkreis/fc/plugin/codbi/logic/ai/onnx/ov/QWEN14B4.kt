@@ -396,10 +396,10 @@ class QWEN2B164CPU : OpenVINO() {
       while (running) {
         try {
           osMxBean?.let {
-            val cpu = it.cpuLoad * 100.0 // JDK 14+; fallback = getSystemCpuLoad()
+            val cpu = it.systemCpuLoad * 100.0 // JDK 14+; fallback = getSystemCpuLoad()
             cpuPercent = if (cpu >= 0) cpu else 0.0
-            val totalMem = it.totalMemorySize
-            val freeMem = it.freeMemorySize
+            val totalMem = it.totalPhysicalMemorySize
+            val freeMem = it.freePhysicalMemorySize
             ramPercent =
                 if (totalMem > 0) (totalMem - freeMem).toDouble() / totalMem * 100.0 else 0.0
           }

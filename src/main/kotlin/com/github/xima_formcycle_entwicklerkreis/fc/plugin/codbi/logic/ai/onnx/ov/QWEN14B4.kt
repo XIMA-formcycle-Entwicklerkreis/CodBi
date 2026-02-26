@@ -268,12 +268,12 @@ class QWEN2B164CPU : OpenVINO() {
    * Maximum allowed system RAM usage (0–100%). Inference is paused/rejected when exceeded.
    * Configurable via plugin property **AI_ONNX_QWEN_MaxRAMPercent**. Default: 85.
    */
-  private var maxRAMPercent = 85.0
+  private var maxRAMPercent = 99.0
   /**
    * Maximum allowed system CPU usage (0–100%). Inference is paused/rejected when exceeded.
    * Configurable via plugin property **AI_ONNX_QWEN_MaxCPUPercent**. Default: 90.
    */
-  private var maxCPUPercent = 90.0
+  private var maxCPUPercent = 101.0
   /** Background thread that samples CPU/RAM every second and exposes latest readings. */
   private var resourceMonitor: ResourceMonitor? = null
   // ── End resource monitoring ──────────────────────────────────────────────
@@ -717,71 +717,98 @@ class QWEN2B164CPU : OpenVINO() {
             try {
               if (fileDataMap.isNotEmpty()) {
                 // --- Image path (streaming) ---
-                val (inputName, combinedBytes) = fileDataMap.entries.first()
-                val rotatedBytes =
-                    try {
-                      if (manualRotation != null && manualRotation != 0) {
-                        val buf = ImageIO.read(ByteArrayInputStream(combinedBytes))
-                        if (buf != null) {
-                          val rot =
-                              when (manualRotation) {
-                                90,
-                                180,
-                                270 -> rotateImage(buf, manualRotation)
-                                else -> buf
-                              }
-                          val baos = java.io.ByteArrayOutputStream()
-                          ImageIO.write(rot, "PNG", baos)
-                          baos.toByteArray()
-                        } else combinedBytes
-                      } else combinedBytes
-                    } catch (_: Exception) {
-                      combinedBytes
+                val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
+                (ortEngine as ai.djl.engine.Engine).newBaseManager().use { manager: NDManager ->
+                  val visionPred =
+                      acquirePredictor<NDList, NDList>("qwen-encoder")
+                          ?: throw IllegalStateException("No predictor available for qwen-encoder")
+                  val decoderPred =
+                      acquirePredictor<NDList, NDList>("qwen-decoder")
+                          ?: throw IllegalStateException("No predictor available for qwen-decoder")
+                  try {
+                    val question = questions.values.first()
+                    val entries =
+                        fileDataMap.entries.sortedWith(
+                            compareBy {
+                              Regex("_(\\d+)\\.[^.]+$")
+                                  .find(it.key)
+                                  ?.groupValues
+                                  ?.get(1)
+                                  ?.toIntOrNull() ?: 0
+                            })
+
+                    // Encode all images first, then decode once with all vision embeddings
+                    val visionResults = mutableListOf<VisionResult>()
+                    for (entry in entries) {
+                      if (session.stopRequested) break
+                      val (inputName, combinedBytes) = entry
+
+                      val rotatedBytes =
+                          try {
+                            if (manualRotation != null && manualRotation != 0) {
+                              val buf = ImageIO.read(ByteArrayInputStream(combinedBytes))
+                              if (buf != null) {
+                                val rot =
+                                    when (manualRotation) {
+                                      90,
+                                      180,
+                                      270 -> rotateImage(buf, manualRotation)
+                                      else -> buf
+                                    }
+                                val baos = java.io.ByteArrayOutputStream()
+                                ImageIO.write(rot, "PNG", baos)
+                                baos.toByteArray()
+                              } else combinedBytes
+                            } else combinedBytes
+                          } catch (_: Exception) {
+                            combinedBytes
+                          }
+
+                      // Server-side downscale gate: enforce maxPixels even if client skipped it
+                      val finalBytes = downscaleIfNeeded(rotatedBytes)
+
+                      finalBytes.inputStream().use { inputStream ->
+                        val djlImg = ImageFactory.getInstance().fromInputStream(inputStream)
+                        val contentHash =
+                            java.security.MessageDigest.getInstance("SHA-256")
+                                .digest(finalBytes)
+                                .joinToString("") { "%02x".format(it) }
+                        val cached = synchronized(visionCacheLock) { visionCache[contentHash] }
+                        val visionResult =
+                            if (cached != null) {
+                              cached
+                            } else {
+                              val r = encodeVision(manager, visionPred, djlImg)
+                              synchronized(visionCacheLock) { visionCache[contentHash] = r }
+                              r
+                            }
+                        visionResults.add(visionResult)
+                      }
                     }
 
-                // Server-side downscale gate: enforce maxPixels even if client skipped it
-                val finalBytes = downscaleIfNeeded(rotatedBytes)
-
-                finalBytes.inputStream().use { inputStream ->
-                  val djlImg = ImageFactory.getInstance().fromInputStream(inputStream)
-                  val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
-                  (ortEngine as ai.djl.engine.Engine).newBaseManager().use { manager: NDManager ->
-                    val visionPred =
-                        acquirePredictor<NDList, NDList>("qwen-encoder")
-                            ?: throw IllegalStateException(
-                                "No predictor available for qwen-encoder")
-                    val decoderPred =
-                        acquirePredictor<NDList, NDList>("qwen-decoder")
-                            ?: throw IllegalStateException(
-                                "No predictor available for qwen-decoder")
-                    try {
-                      val contentHash =
-                          java.security.MessageDigest.getInstance("SHA-256")
-                              .digest(finalBytes)
-                              .joinToString("") { "%02x".format(it) }
-                      val cached = synchronized(visionCacheLock) { visionCache[contentHash] }
-                      val visionResult =
-                          if (cached != null) {
-                            cached
-                          } else {
-                            val r = encodeVision(manager, visionPred, djlImg)
-                            synchronized(visionCacheLock) { visionCache[contentHash] = r }
-                            r
-                          }
-                      val question = questions.values.first()
-                      runQwenDecode(
+                    if (!session.stopRequested && visionResults.isNotEmpty()) {
+                      // Single decode pass with all images as one document
+                      log(
+                          AI.LogLevel.INFO,
+                          "Streaming: calling runQwenDecodeMultiVision with ${visionResults.size} images. " +
+                              "Vision token counts: ${visionResults.map { it.actualVisionTokens }}. " +
+                              "Question: '${question.take(100)}'. " +
+                              "chatHistory.size=${chatHistory.size}",
+                          " / QWEN / STREAM",
+                          null)
+                      runQwenDecodeMultiVision(
                           manager,
                           decoderPred,
                           question,
-                          visionResult,
+                          visionResults,
                           onToken = { tokenId -> session.generatedIds.add(tokenId) },
                           shouldStop = { session.stopRequested },
                           chatHistory = chatHistory,
                           resourceNotify = { status -> session.resourceStatus = status })
-                    } finally {
-                      releasePredictor("qwen-encoder", visionPred)
-                      releasePredictor("qwen-decoder", decoderPred)
                     }
+                  } finally {
+                    releasePredictor("qwen-encoder", visionPred)
+                    releasePredictor("qwen-decoder", decoderPred)
                   }
                 }
               } else {
@@ -887,72 +914,78 @@ class QWEN2B164CPU : OpenVINO() {
 
       if (hasFiles) {
         // --- Image-based VQA path ---
-        fileDataMapSync.forEach { (inputName, combinedBytes) ->
+        val sortedEntries =
+            fileDataMapSync.entries.sortedWith(
+                compareBy {
+                  Regex("_(\\d+)\\.[^.]+$").find(it.key)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                })
 
-          // Orientation correction (manual X-Rotate or OSD)
-          val rotatedBytes =
-              try {
-                val manualRotation =
-                    params.headerMap.entries
-                        .find { it.key.equals("X-Rotate", ignoreCase = true) }
-                        ?.value
-                        ?.trim()
-                        ?.toIntOrNull()
-                if (manualRotation != null && manualRotation != 0) {
-                  val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
-                  if (bufferedImg != null) {
-                    val rotatedImg =
-                        when (manualRotation) {
-                          90,
-                          180,
-                          270 -> rotateImage(bufferedImg, manualRotation)
-                          else -> bufferedImg
-                        }
-                    val baos = java.io.ByteArrayOutputStream()
-                    ImageIO.write(rotatedImg, "PNG", baos)
-                    baos.toByteArray()
-                  } else combinedBytes
-                } else if (ocrActive) {
-                  val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
-                  if (bufferedImg != null) {
-                    val tessDataDir = File(pluginFolder, "Resources/AI/Tesseract/Models")
-                    if (tessDataDir.exists()) {
-                      val detectedAngle = 0 // OSD logic placeholder
-                      if (detectedAngle != 0) {
-                        val rotatedImg = rotateImage(bufferedImg, detectedAngle)
+        val manualRotation =
+            params.headerMap.entries
+                .find { it.key.equals("X-Rotate", ignoreCase = true) }
+                ?.value
+                ?.trim()
+                ?.toIntOrNull()
+
+        // Pre-process all images: rotate + downscale
+        val processedImages =
+            sortedEntries.map { (inputName, combinedBytes) ->
+              val rotatedBytes =
+                  try {
+                    if (manualRotation != null && manualRotation != 0) {
+                      val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
+                      if (bufferedImg != null) {
+                        val rotatedImg =
+                            when (manualRotation) {
+                              90,
+                              180,
+                              270 -> rotateImage(bufferedImg, manualRotation)
+                              else -> bufferedImg
+                            }
                         val baos = java.io.ByteArrayOutputStream()
                         ImageIO.write(rotatedImg, "PNG", baos)
                         baos.toByteArray()
                       } else combinedBytes
+                    } else if (ocrActive) {
+                      val bufferedImg = ImageIO.read(ByteArrayInputStream(combinedBytes))
+                      if (bufferedImg != null) {
+                        val tessDataDir = File(pluginFolder, "Resources/AI/Tesseract/Models")
+                        if (tessDataDir.exists()) {
+                          val detectedAngle = 0 // OSD logic placeholder
+                          if (detectedAngle != 0) {
+                            val rotatedImg = rotateImage(bufferedImg, detectedAngle)
+                            val baos = java.io.ByteArrayOutputStream()
+                            ImageIO.write(rotatedImg, "PNG", baos)
+                            baos.toByteArray()
+                          } else combinedBytes
+                        } else combinedBytes
+                      } else combinedBytes
                     } else combinedBytes
-                  } else combinedBytes
-                } else combinedBytes
-              } catch (_: Exception) {
-                combinedBytes
-              }
+                  } catch (_: Exception) {
+                    combinedBytes
+                  }
+              inputName to downscaleIfNeeded(rotatedBytes)
+            }
 
-          // Server-side downscale gate: enforce maxPixels even if client skipped it
-          val finalBytes = downscaleIfNeeded(rotatedBytes)
-
-          finalBytes.inputStream().use { inputStream ->
-            val djlImg = ImageFactory.getInstance().fromInputStream(inputStream)
-            val results = mutableMapOf<String, String>()
-            val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
-            (ortEngine as ai.djl.engine.Engine).newBaseManager().use { manager: NDManager ->
-              val visionPredictor =
-                  acquirePredictor<NDList, NDList>("qwen-encoder")
-                      ?: throw IllegalStateException("No predictor available for qwen-encoder")
-              val decoderPredictor =
-                  acquirePredictor<NDList, NDList>("qwen-decoder")
-                      ?: throw IllegalStateException("No predictor available for qwen-decoder")
-              try {
-                // Vision caching: hash file bytes to avoid re-encoding unchanged images.
-                val contentHash =
-                    java.security.MessageDigest.getInstance("SHA-256")
-                        .digest(finalBytes)
-                        .joinToString("") { "%02x".format(it) }
-                val cached = synchronized(visionCacheLock) { visionCache[contentHash] }
-                val visionResult =
+        val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
+        (ortEngine as ai.djl.engine.Engine).newBaseManager().use { manager: NDManager ->
+          val visionPredictor =
+              acquirePredictor<NDList, NDList>("qwen-encoder")
+                  ?: throw IllegalStateException("No predictor available for qwen-encoder")
+          val decoderPredictor =
+              acquirePredictor<NDList, NDList>("qwen-decoder")
+                  ?: throw IllegalStateException("No predictor available for qwen-decoder")
+          try {
+            // Encode all images and collect VisionResults
+            val visionResults =
+                processedImages.map { (inputName, finalBytes) ->
+                  finalBytes.inputStream().use { inputStream ->
+                    val djlImg = ImageFactory.getInstance().fromInputStream(inputStream)
+                    val contentHash =
+                        java.security.MessageDigest.getInstance("SHA-256")
+                            .digest(finalBytes)
+                            .joinToString("") { "%02x".format(it) }
+                    val cached = synchronized(visionCacheLock) { visionCache[contentHash] }
                     if (cached != null) {
                       log(
                           AI.LogLevel.INFO,
@@ -970,18 +1003,28 @@ class QWEN2B164CPU : OpenVINO() {
                       synchronized(visionCacheLock) { visionCache[contentHash] = result }
                       result
                     }
+                  }
+                }
 
-                // Batch ALL questions into a single decode pass.
-                // This avoids redundant ~10s prefill per additional question.
-                val batchedResults =
-                    runQwenDecodeMulti(manager, decoderPredictor, questionsToAsk, visionResult)
-                results.putAll(batchedResults)
-              } finally {
-                releasePredictor("qwen-encoder", visionPredictor)
-                releasePredictor("qwen-decoder", decoderPredictor)
-              }
+            if (visionResults.size == 1) {
+              // Single image: use batched multi-question decode as before
+              val results = mutableMapOf<String, String>()
+              val batchedResults =
+                  runQwenDecodeMulti(manager, decoderPredictor, questionsToAsk, visionResults[0])
+              results.putAll(batchedResults)
+              finalResults[processedImages[0].first] = results.toMap()
+            } else {
+              // Multiple images: decode once with all vision embeddings as one document
+              val question = questionsToAsk.values.first()
+              val answer =
+                  runQwenDecodeMultiVision(
+                      manager, decoderPredictor, question, visionResults, chatHistory = chatHistory)
+              // Put the combined answer under a "document" key
+              finalResults["document"] = mapOf(questionsToAsk.keys.first() to answer)
             }
-            finalResults[inputName] = results.toMap()
+          } finally {
+            releasePredictor("qwen-encoder", visionPredictor)
+            releasePredictor("qwen-decoder", decoderPredictor)
           }
         }
       } else {
@@ -1159,12 +1202,12 @@ class QWEN2B164CPU : OpenVINO() {
     }
     // Read resource-monitoring thresholds
     configData.properties.getProperty("AI_ONNX_QWEN_MaxRAMPercent")?.trim()?.toDoubleOrNull()?.let {
-      if (it in 1.0..100.0) {
+      if (it in 1.0..110.0) {
         maxRAMPercent = it
       }
     }
     configData.properties.getProperty("AI_ONNX_QWEN_MaxCPUPercent")?.trim()?.toDoubleOrNull()?.let {
-      if (it in 1.0..100.0) {
+      if (it in 1.0..110.0) {
         maxCPUPercent = it
       }
     }
@@ -2157,6 +2200,367 @@ class QWEN2B164CPU : OpenVINO() {
     return try {
       tokenizer.decode(generatedIds.toLongArray()).trim()
     } catch (e: Exception) {
+      generatedIds.joinToString(" ")
+    }
+  }
+
+  /**
+   * Runs a decode loop with multiple images injected into a single prompt. Each image gets its own
+   * `<|vision_start|><|image_pad|><|vision_end|>` block, so the model sees all pages as parts of a
+   * single document.
+   */
+  private fun runQwenDecodeMultiVision(
+      manager: NDManager,
+      decoderPredictor: Predictor<NDList, NDList>,
+      question: String,
+      visions: List<VisionResult>,
+      tokenLimit: Int = maxTokens,
+      onToken: ((Long) -> Unit)? = null,
+      shouldStop: (() -> Boolean)? = null,
+      chatHistory: List<Pair<String, String>> = emptyList(),
+      resourceNotify: ((String) -> Unit)? = null
+  ): String {
+    require(visions.isNotEmpty()) { "At least one VisionResult required" }
+    // Delegate single-image case to the optimized single-image path
+    if (visions.size == 1) {
+      return runQwenDecode(
+          manager,
+          decoderPredictor,
+          question,
+          visions[0],
+          tokenLimit,
+          onToken,
+          shouldStop,
+          chatHistory,
+          resourceNotify)
+    }
+
+    val tokenizer = this.tokenizer!!
+    val imagePadTokenId = 151655L // <|image_pad|>
+
+    // Build prompt with multiple vision blocks, manually inserting <|image_pad|>
+    // token ID 151655 (the tokenizer may not encode it as a special token).
+    // This mirrors the single-image runQwenDecode approach.
+    //
+    // Target layout:
+    //   <|im_start|>system\nYou are a helpful assistant.<|im_end|>\n
+    //   [optional chat history turns]
+    //   <|im_start|>user\n
+    //   <|vision_start|> [151655] <|vision_end|>\n     ← image 1
+    //   <|vision_start|> [151655] <|vision_end|>\n     ← image 2
+    //   ...
+    //   question<|im_end|>\n<|im_start|>assistant\n
+    val visionStartIds = tokenizer.encode("<|vision_start|>").ids
+    val visionEndIds = tokenizer.encode("<|vision_end|>\n").ids
+
+    log(
+        AI.LogLevel.INFO,
+        "MultiVision tokenizer probe: visionStartIds=${visionStartIds.toList()}, " +
+            "visionEndIds=${visionEndIds.toList()}, imagePadTokenId=$imagePadTokenId. " +
+            "chatHistory.size=${chatHistory.size}, question='${question.take(80)}'",
+        " / QWEN / DIAG",
+        null)
+
+    val allIds = mutableListOf<Long>()
+    val padPositions = mutableListOf<Int>()
+
+    if (chatHistory.size > 1) {
+      // System prompt + prior history turns
+      val historyPrompt = buildString {
+        append("<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n")
+        for (k in 0 until chatHistory.size - 1) {
+          val (role, content) = chatHistory[k]
+          append("<|im_start|>").append(role).append("\n")
+          append(content).append("<|im_end|>\n")
+        }
+        append("<|im_start|>user\n")
+      }
+      allIds.addAll(tokenizer.encode(historyPrompt).ids.toList())
+
+      // Vision blocks — one per image, <|image_pad|> manually inserted
+      for (j in visions.indices) {
+        allIds.addAll(visionStartIds.toList())
+        padPositions.add(allIds.size) // record position BEFORE adding the pad token
+        allIds.add(imagePadTokenId)
+        allIds.addAll(visionEndIds.toList())
+      }
+
+      // Last chat message as question + assistant turn-start
+      val lastContent = chatHistory.last().second
+      allIds.addAll(
+          tokenizer.encode("$lastContent<|im_end|>\n<|im_start|>assistant\n").ids.toList())
+    } else {
+      // System prompt + user turn-start
+      allIds.addAll(
+          tokenizer
+              .encode(
+                  "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\n")
+              .ids
+              .toList())
+
+      // Vision blocks — one per image, <|image_pad|> manually inserted
+      for (j in visions.indices) {
+        allIds.addAll(visionStartIds.toList())
+        padPositions.add(allIds.size) // record position BEFORE adding the pad token
+        allIds.add(imagePadTokenId)
+        allIds.addAll(visionEndIds.toList())
+      }
+
+      // Question + assistant turn-start
+      allIds.addAll(tokenizer.encode("$question<|im_end|>\n<|im_start|>assistant\n").ids.toList())
+    }
+
+    val combinedIds = allIds.toLongArray()
+
+    log(
+        AI.LogLevel.INFO,
+        "Multi-image decode: ${visions.size} images, ${combinedIds.size} input tokens, pad positions: $padPositions",
+        " / QWEN / PERF",
+        null)
+
+    // Setup loop variables
+    var currentInputIds = manager.create(combinedIds).reshape(1, combinedIds.size.toLong())
+    var pastKeyValues: NDList? = null
+    val generatedIds = mutableListOf<Long>()
+    var pastSeqLen = 0
+    var logicalPos = 0L
+    val numKv = 28
+    val numKvHeads = 2L
+    val kvHeadDim = 128L
+
+    @Suppress("UNCHECKED_CAST")
+    val embedPredictor =
+        acquirePredictor<NDList, NDList>("qwen-embed")
+            ?: throw IllegalStateException("No predictor available for qwen-embed")
+
+    val t0Loop = System.currentTimeMillis()
+    var totalEmbedMs = 0L
+    var totalDecodeMs = 0L
+    var totalKvMs = 0L
+    var prefillMs = 0L
+
+    for (i in 0 until tokenLimit) {
+      val tStep = System.currentTimeMillis()
+      val tEmbed = System.currentTimeMillis()
+      var inputEmbeds = embedPredictor.predict(NDList(currentInputIds))[0]
+      totalEmbedMs += System.currentTimeMillis() - tEmbed
+
+      // MULTI-IMAGE VISION INJECTION on first step
+      if (i == 0 && padPositions.isNotEmpty()) {
+        val ids = currentInputIds.toLongArray()
+        // Build list of (padIdx, visionResult) — process in reverse order so
+        // indices remain valid after earlier splices shift positions
+        val spliceTargets = padPositions.zip(visions).reversed()
+        for ((padIdx, vision) in spliceTargets) {
+          val visionArray = vision.toNDArray(manager)
+          val reshapedVision =
+              if (visionArray.shape.dimension() == 2)
+                  visionArray.reshape(1, visionArray.shape[0], visionArray.shape[1])
+              else visionArray
+
+          val pre = inputEmbeds.get(":, :$padIdx, :")
+          val post = inputEmbeds.get(":, ${padIdx + 1}:, :")
+          inputEmbeds = pre.concat(reshapedVision, 1).concat(post, 1)
+        }
+        log(
+            AI.LogLevel.INFO,
+            "MultiVision splice done: inputEmbeds shape=${inputEmbeds.shape} " +
+                "(expected seq_len = ${combinedIds.size - padPositions.size + visions.sumOf { it.actualVisionTokens }})",
+            " / QWEN / DIAG",
+            null)
+      }
+
+      val currentSeqLen = inputEmbeds.shape[1].toInt()
+      val totalSeqLen = pastSeqLen + currentSeqLen
+
+      // Forward pass
+      val decInputs = NDList()
+      decInputs.add(inputEmbeds.apply { name = "inputs_embeds" })
+
+      val attentionMask =
+          manager.ones(ai.djl.ndarray.types.Shape(1, totalSeqLen.toLong()), DataType.INT64)
+      decInputs.add(attentionMask.apply { name = "attention_mask" })
+
+      // Position IDs with multi-image mRoPE spatial islands
+      val posArray = LongArray(3 * currentSeqLen)
+      if (i == 0 && padPositions.isNotEmpty()) {
+        // Build a map of expanded ranges: for each original padIdx, compute the
+        // new start position after all vision token expansions (each pad token
+        // is replaced by actualVisionTokens tokens).
+        // Since we already spliced in reverse, the embedding tensor is correctly ordered.
+        // Compute expanded positions in forward order.
+        data class ImageIsland(val start: Int, val tokens: Int, val mH: Int, val mW: Int)
+        val islands = mutableListOf<ImageIsland>()
+        var offset = 0
+        for ((origIdx, vision) in padPositions.zip(visions)) {
+          val expandedStart = origIdx + offset
+          islands.add(ImageIsland(expandedStart, vision.actualVisionTokens, vision.mH, vision.mW))
+          // Each pad token (1 token) was replaced by actualVisionTokens, adding (n-1) tokens
+          offset += vision.actualVisionTokens - 1
+        }
+
+        for (pos in 0 until currentSeqLen) {
+          val island = islands.find { pos >= it.start && pos < it.start + it.tokens }
+          if (island != null) {
+            val gridPos = pos - island.start
+            val hPos = (gridPos / island.mW).toLong()
+            val wPos = (gridPos % island.mW).toLong()
+            posArray[pos] = logicalPos // temporal
+            posArray[currentSeqLen + pos] = logicalPos + hPos // height
+            posArray[2 * currentSeqLen + pos] = logicalPos + wPos // width
+            // At last token of island, bump logicalPos for separation
+            if (gridPos == island.tokens - 1) {
+              logicalPos++
+            }
+          } else {
+            posArray[pos] = logicalPos
+            posArray[currentSeqLen + pos] = logicalPos
+            posArray[2 * currentSeqLen + pos] = logicalPos
+            logicalPos++
+          }
+        }
+      } else {
+        for (pos in 0 until currentSeqLen) {
+          posArray[pos] = logicalPos
+          posArray[currentSeqLen + pos] = logicalPos
+          posArray[2 * currentSeqLen + pos] = logicalPos
+          logicalPos++
+        }
+      }
+
+      val posIds =
+          manager
+              .create(posArray)
+              .toType(DataType.INT64, false)
+              .reshape(3L, 1L, currentSeqLen.toLong())
+      decInputs.add(posIds.apply { name = "position_ids" })
+
+      if (pastKeyValues != null) {
+        for (p in pastKeyValues!!) decInputs.add(p)
+      } else {
+        for (j in 0 until numKv) {
+          decInputs.add(
+              manager
+                  .zeros(ai.djl.ndarray.types.Shape(1, numKvHeads, 0L, kvHeadDim), DataType.FLOAT32)
+                  .apply { name = "past_key_values.$j.key" })
+          decInputs.add(
+              manager
+                  .zeros(ai.djl.ndarray.types.Shape(1, numKvHeads, 0L, kvHeadDim), DataType.FLOAT32)
+                  .apply { name = "past_key_values.$j.value" })
+        }
+      }
+
+      val tDec = System.currentTimeMillis()
+      val decOutput = decoderPredictor.predict(decInputs)
+      totalDecodeMs += System.currentTimeMillis() - tDec
+
+      attentionMask.close()
+      posIds.close()
+
+      val logits = decOutput[0]
+      val nextTokenId =
+          if (logits.shape.dimension() == 3) logits.get(":, -1, :").squeeze().argMax().getLong()
+          else logits.get("-1, :").squeeze().argMax().getLong()
+
+      if (nextTokenId == 151643L || nextTokenId == 151645L) break
+      if (shouldStop?.invoke() == true) break
+
+      // Resource throttle
+      resourceMonitor?.let { monitor ->
+        if (!monitor.resourcesAvailable()) {
+          val reason = monitor.exceedReason() ?: "resources exceeded"
+          log(
+              AI.LogLevel.INFO,
+              "MultiVision decode PAUSED at token ${generatedIds.size}: $reason",
+              " / QWEN / PERF",
+              null)
+          resourceNotify?.invoke("\u23F8 Paused \u2014 $reason. Waiting for resources...")
+          val waitResult = monitor.awaitResources(30_000L)
+          if (waitResult == -1L) {
+            log(
+                AI.LogLevel.WARNING,
+                "MultiVision decode TIMEOUT waiting for resources after 30s",
+                " / QWEN / PERF",
+                null)
+            resourceNotify?.invoke("\u26A0 Timed out after 30s \u2014 continuing anyway")
+          } else {
+            log(
+                AI.LogLevel.INFO,
+                "MultiVision decode RESUMED (resources OK)",
+                " / QWEN / PERF",
+                null)
+            resourceNotify?.invoke("\u25B6 Resumed")
+          }
+        }
+      }
+
+      generatedIds.add(nextTokenId)
+      onToken?.invoke(nextTokenId)
+
+      currentInputIds.close()
+      currentInputIds = manager.create(longArrayOf(nextTokenId)).reshape(1, 1)
+
+      val tKv = System.currentTimeMillis()
+      val nextKVs = NDList()
+      for (j in 0 until numKv) {
+        val outK = decOutput[1 + (j * 2)]
+        val outV = decOutput[2 + (j * 2)]
+        val outLen = outK.shape[2].toInt()
+        val finalK =
+            if (outLen == totalSeqLen) outK
+            else if (outLen == currentSeqLen && pastKeyValues != null)
+                pastKeyValues!![j * 2].concat(outK, 2)
+            else outK
+        val finalV =
+            if (outV.shape[2].toInt() == totalSeqLen) outV
+            else if (outV.shape[2].toInt() == currentSeqLen && pastKeyValues != null)
+                pastKeyValues!![j * 2 + 1].concat(outV, 2)
+            else outV
+        nextKVs.add(
+            manager.create(finalK.toByteBuffer(), finalK.shape, DataType.FLOAT32).apply {
+              name = "past_key_values.$j.key"
+            })
+        nextKVs.add(
+            manager.create(finalV.toByteBuffer(), finalV.shape, DataType.FLOAT32).apply {
+              name = "past_key_values.$j.value"
+            })
+      }
+      pastKeyValues?.close()
+      pastKeyValues = nextKVs
+      totalKvMs += System.currentTimeMillis() - tKv
+
+      val stepMs = System.currentTimeMillis() - tStep
+      if (i == 0) {
+        prefillMs = stepMs
+        log(
+            AI.LogLevel.INFO,
+            "MultiVision prefill (${currentSeqLen} tokens → 1): ${stepMs}ms",
+            " / QWEN / PERF",
+            null)
+      }
+      pastSeqLen += currentSeqLen
+    }
+
+    val loopMs = System.currentTimeMillis() - t0Loop
+    val tokens = generatedIds.size
+    val tokPerSec = if (loopMs > 0) tokens * 1000.0 / loopMs else 0.0
+    log(
+        AI.LogLevel.INFO,
+        "MultiVision decode: ${loopMs}ms, $tokens tokens (%.1f tok/s). Prefill: ${prefillMs}ms, Embed: ${totalEmbedMs}ms, Decode: ${totalDecodeMs}ms, KV-cache: ${totalKvMs}ms"
+            .format(tokPerSec),
+        " / QWEN / PERF",
+        null)
+
+    releasePredictor("qwen-embed", embedPredictor)
+
+    return try {
+      tokenizer.decode(generatedIds.toLongArray()).trim()
+    } catch (e: Exception) {
+      log(
+          AI.LogLevel.WARNING,
+          "Failed to decode generated tokens as whole: ${e.message}",
+          " / QWEN",
+          e)
       generatedIds.joinToString(" ")
     }
   }

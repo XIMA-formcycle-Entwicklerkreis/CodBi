@@ -57,6 +57,12 @@ export class AI_ONNX_DONUT_QA {
    *                  only process the first 5 pages of any PDF. Defaults to **5**.
    * - **Rotate**:    Optional attribute on the input element to specify image rotation (see above), either "90", "180", or "270".
    *                  In a multi-file upload or with a PDF that contains multiple images, this rotation is applied to all files.
+   * - **MaxPixelSize**:  Maximum total pixel budget (width×height). Images exceeding this
+   *                      are downscaled client-side while preserving the aspect ratio.
+   *                      Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
+   * - **AIHint**:    Text shown inside AI-populated fields (right-aligned for inputs, bottom-right
+   *                  for textareas) until the user edits the value. Default: "✨ AI-Generated".
+   *                  Set to an empty string to disable.
    * - **Mode**:      If set to "verify", the upload field may have a **data-cb-Question** attribute.
    *                  In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
    *                  to be accepted. If not, an error and a manual verification checkbox are shown,
@@ -78,6 +84,7 @@ export class AI_ONNX_DONUT_QA {
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages")
     @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotate")
     @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotate")
+    @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxPixelSize")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(
@@ -101,17 +108,46 @@ export class AI_ONNX_DONUT_QA {
 
       const formData = new FormData();
       const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
+      const maxPixelSize =
+        toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_ONNX_DONUT_QA.DEFAULT_MAX_PIXELS;
+      const aiHintText = toLoad.aihint != null ? String(toLoad.aihint) : "\u2728 AI-Generated";
       // #region Process files (PDF or Image)
+      // Send as base64 text params — formcycle's multipart parser returns 0-byte FileData.
       for (const file of Array.from(files)) {
         if (file.type === "application/pdf") {
           const processedImages = await AI_ONNX_DONUT_QA.processPdfFile(file, maxPages);
 
           for (let i = 0; i < processedImages.length; i++) {
             const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
-            formData.append(imageName, processedImages[i], imageName);
+            let imageFile = new File([processedImages[i]], imageName, { type: "image/png" });
+            // Downscale PDF page if it exceeds the pixel budget
+            if (maxPixelSize > 0) {
+              const downscaled = await AI_ONNX_DONUT_QA.downscaleImageIfNeeded(imageFile, maxPixelSize);
+              imageFile =
+                downscaled instanceof File
+                  ? downscaled
+                  : new File([downscaled], imageName, { type: downscaled.type || "image/png" });
+            }
+            const dataUrl = await AI_ONNX_DONUT_QA.blobToDataUrl(imageFile);
+            formData.append(`codbi-base64:${imageName}`, dataUrl);
           }
+        } else if (maxPixelSize > 0) {
+          const downscaled = await AI_ONNX_DONUT_QA.downscaleImageIfNeeded(file, maxPixelSize);
+          const dataUrl = await AI_ONNX_DONUT_QA.blobToDataUrl(downscaled);
+          window.codbi.log(
+            "INFO",
+            `Appending '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
+            "AI / ONNX / DONUT",
+          );
+          formData.append(`codbi-base64:${file.name}`, dataUrl);
         } else {
-          formData.append(file.name, file);
+          const dataUrl = await AI_ONNX_DONUT_QA.blobToDataUrl(file);
+          window.codbi.log(
+            "INFO",
+            `Appending '${file.name}' as base64 param (no client downscale): ${Math.round(dataUrl.length / 1024)} KB`,
+            "AI / ONNX / DONUT",
+          );
+          formData.append(`codbi-base64:${file.name}`, dataUrl);
         }
       }
       // #endregion Process files (PDF or Image)
@@ -307,12 +343,22 @@ export class AI_ONNX_DONUT_QA {
               return;
             }
             if (mode === "verify" && verifyFieldId && verifyFieldQuestion) {
-              // Only one question, answer must be 'yes' (case-insensitive)
-              const answer = response[verifyFieldId]?.[verifyFieldId];
+              // Iterate over all file-keyed results and check the verify answer
+              let answer: string | undefined;
+              for (const fileKey of Object.keys(response)) {
+                const candidate = response[fileKey]?.[verifyFieldId];
+                if (typeof candidate === "string") {
+                  answer = candidate;
+                  break;
+                }
+              }
               const field = document.querySelector(`#${verifyFieldId}`) as HTMLInputElement;
               if (typeof answer === "string" && answer.trim().toLowerCase() === "yes") {
                 if (field) {
                   field.value = answer;
+                  if (aiHintText) {
+                    AI_ONNX_DONUT_QA.attachAiHint(field, aiHintText);
+                  }
                   const event = new Event("change", { bubbles: true });
                   field.dispatchEvent(event);
                 }
@@ -328,6 +374,19 @@ export class AI_ONNX_DONUT_QA {
               } else {
                 // Show error and manual verify checkbox
                 $(toProcess).error("The file does not meet the verification criteria.");
+                // #region Add styles for manual verification checkbox
+                if (!document.querySelector("#DONUT_AI_ManualVerify_Styles")) {
+                  const style = document.createElement("style");
+                  style.id = "DONUT_AI_ManualVerify_Styles";
+                  style.textContent = `
+                    .DONUT_AI_ManualVerify { display: flex ; align-items: center ; margin-top: 8px ; gap: 8px ;
+                      flex-wrap: nowrap ;}
+                    .DONUT_AI_ManualVerify_Checkbox { cursor: pointer ; opacity: 1 !important ; position: relative !important ;
+                      flex-shrink: 0 ;}
+                    .DONUT_AI_ManualVerify label { margin-bottom: 0 ; position: relative !important ;}`;
+                  document.head.appendChild(style);
+                }
+                // #endregion Add styles for manual verification checkbox
                 // Remove existing
                 const existingManualVerify =
                   toProcess.parentElement?.parentElement?.querySelectorAll(".DONUT_AI_ManualVerify");
@@ -339,10 +398,6 @@ export class AI_ONNX_DONUT_QA {
                 // Add checkbox
                 const checkboxContainer = document.createElement("div");
                 checkboxContainer.className = "DONUT_AI_ManualVerify";
-                checkboxContainer.style.display = "flex";
-                checkboxContainer.style.alignItems = "center";
-                checkboxContainer.style.marginTop = "8px";
-                checkboxContainer.style.gap = "8px";
                 const checkbox = document.createElement("input");
                 checkbox.type = "checkbox";
                 checkbox.id = `manual-verify-${toProcess.id}`;
@@ -351,7 +406,6 @@ export class AI_ONNX_DONUT_QA {
                 label.htmlFor = checkbox.id;
                 label.textContent =
                   "The content is not as expected. Please check if you selected the correct file(s). You may manually verify that it is the correct one by clicking the checkbox.";
-                label.style.marginBottom = "0";
                 checkboxContainer.appendChild(checkbox);
                 checkboxContainer.appendChild(label);
                 toProcess.parentElement?.insertAdjacentElement("afterend", checkboxContainer);
@@ -369,6 +423,9 @@ export class AI_ONNX_DONUT_QA {
                   const field = document.querySelector(`#${key2}`) as HTMLInputElement;
                   if (field) {
                     field.value = response[key][key2];
+                    if (aiHintText) {
+                      AI_ONNX_DONUT_QA.attachAiHint(field, aiHintText);
+                    }
                     // Dispatch change event after setting value
                     const event = new Event("change", { bubbles: true });
                     field.dispatchEvent(event);
@@ -413,6 +470,149 @@ export class AI_ONNX_DONUT_QA {
       "AI / ONNX / DONUT",
     );
   }
+
+  // #region AI-Generated hint
+  /**
+   * Injects global styles for the AI-Generated badge (once).
+   */
+  private static ensureAiHintStyles(): void {
+    if (document.querySelector("#DONUT_AI_Hint_Styles")) {
+      return;
+    }
+    const style = document.createElement("style");
+    style.id = "DONUT_AI_Hint_Styles";
+    style.textContent = `
+      .DONUT_AI_Hint_Wrapper { position: relative ; display: inline-block ; width: 100% ;}
+      .DONUT_AI_Hint { position: absolute ; pointer-events: none ; color: rgba(0,0,0,0.38) ;
+        font-size: 11px ; line-height: 1 ; white-space: nowrap ; user-select: none ;}
+      input  + .DONUT_AI_Hint { right: 8px ; top: 50% ; transform: translateY(-50%) ;}
+      textarea + .DONUT_AI_Hint { right: 8px ; bottom: 6px ;}`;
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Attaches an AI-Generated badge to a field. The badge is removed as soon as the
+   * user changes the field value (keyboard input). Repeat calls on the same field
+   * replace the previous badge.
+   *
+   * @param field    The input or textarea element.
+   * @param hintText The label to display, e.g. "✨ AI-Generated".
+   */
+  private static attachAiHint(field: HTMLInputElement | HTMLTextAreaElement, hintText: string): void {
+    AI_ONNX_DONUT_QA.ensureAiHintStyles();
+
+    // Remove any existing hint on this field
+    const existingHint = field.parentElement?.querySelector(".DONUT_AI_Hint");
+    if (existingHint) {
+      existingHint.remove();
+    }
+
+    // Wrap the field in a relative container if not already wrapped
+    let wrapper = field.parentElement;
+    if (!wrapper?.classList.contains("DONUT_AI_Hint_Wrapper")) {
+      wrapper = document.createElement("span");
+      wrapper.className = "DONUT_AI_Hint_Wrapper";
+      field.parentElement?.insertBefore(wrapper, field);
+      wrapper.appendChild(field);
+    }
+
+    const badge = document.createElement("span");
+    badge.className = "DONUT_AI_Hint";
+    badge.textContent = hintText;
+    wrapper.appendChild(badge);
+
+    // Remove hint on first user input
+    const removeHint = () => {
+      badge.remove();
+      field.removeEventListener("input", removeHint);
+    };
+    field.addEventListener("input", removeHint);
+  }
+  // #endregion AI-Generated hint
+
+  // #region Image downscaling helper
+  /**
+   * Default total-pixel budget (width × height). Matches the backend's default maxPixels.
+   * ≈ 1792 × 1792.
+   */
+  private static readonly DEFAULT_MAX_PIXELS = 3211264;
+
+  /**
+   * Converts a {@link Blob} (or {@link File}) to a base64 data-URL string,
+   * bypassing formcycle's multipart file parser which returns 0-byte {@code FileData}.
+   */
+  private static blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  /**
+   * Converts a canvas to a {@link File} built from raw bytes.
+   */
+  private static canvasToFile(canvas: HTMLCanvasElement, fileName: string): File {
+    const dataUrl = canvas.toDataURL("image/png");
+    const base64 = dataUrl.split(",")[1];
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new File([bytes.buffer], fileName, { type: "image/png" });
+  }
+
+  /**
+   * Downscales an image file if its total pixel count (width × height) exceeds
+   * {@link maxPixels}, preserving the aspect ratio. Returns the original file
+   * unchanged when it is already within the budget.
+   *
+   * @param file      The image file to check.
+   * @param maxPixels Total-pixel budget (width × height).
+   */
+  private static async downscaleImageIfNeeded(file: File, maxPixels: number): Promise<Blob> {
+    return new Promise<Blob>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const totalPixels = img.width * img.height;
+        if (totalPixels <= maxPixels) {
+          URL.revokeObjectURL(img.src);
+          resolve(file);
+          return;
+        }
+        const scale = Math.sqrt(maxPixels / totalPixels);
+        const newW = Math.max(28, Math.round(img.width * scale));
+        const newH = Math.max(28, Math.round(img.height * scale));
+
+        window.codbi.log(
+          "INFO",
+          `Downscaling ${file.name}: ${img.width}×${img.height} → ${newW}×${newH}`,
+          "AI / ONNX / DONUT",
+        );
+
+        const canvas = document.createElement("canvas");
+        canvas.width = newW;
+        canvas.height = newH;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(img.src);
+          resolve(file); // fallback: send original
+          return;
+        }
+        ctx.drawImage(img, 0, 0, newW, newH);
+        URL.revokeObjectURL(img.src);
+        resolve(AI_ONNX_DONUT_QA.canvasToFile(canvas, file.name));
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(img.src);
+        resolve(file); // cannot decode → send original
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  // #endregion Image downscaling helper
 
   /**
    * Processes a PDF file and returns image blobs for each page or extracted image.

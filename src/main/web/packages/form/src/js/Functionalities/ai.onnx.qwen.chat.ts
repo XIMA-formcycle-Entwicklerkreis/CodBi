@@ -32,11 +32,28 @@ export class AI_ONNX_QWEN_CHAT {
    *
    * | CSS Class                      | Element                                | Purpose                                          |
    * |-------------------------------|----------------------------------------|--------------------------------------------------|
-   * | *(functionality class)*        | `<textarea>`                           | Chat display (read-only conversation history)    |
+   * | *The class tagged with this functionality*        | `<textarea>`                           | Chat display (read-only conversation history)    |
    * | `AI_ONNX_QWEN_Chat_Input`     | `<input type="text">` or `<textarea>` | Text input where the user types messages         |
    * | `AI_ONNX_QWEN_Chat_Send`      | `<button>`                             | Send button (triggers inference)                 |
    * | `AI_ONNX_QWEN_Chat_Stop`      | `<button>`                             | Stop button (aborts running inference)           |
-   * | `AI_ONNX_QWEN_Chat_Upload`    | `<input type="file">`                  | File upload for images/PDFs to chat about        |
+   * | `AI_ONNX_QWEN_Chat_UploadOptional)    | `<input type="file">`                  | File upload for images/PDFs to chat about        |
+   *
+   * **Generated CSS Classes (injected at runtime):**
+   *
+   * | CSS Class                       | Element     | Purpose                                                        |
+   * |--------------------------------|-------------|----------------------------------------------------------------|
+   * | `QWEN_Chat_Container`          | `<div>`     | Scrollable chat wrapper replacing the hidden `<textarea>`      |
+   * | `QWEN_Chat_Row`                | `<div>`     | Flex row holding a single bubble                               |
+   * | `QWEN_Chat_Row--user`          | `<div>`     | Row modifier: right-aligned (user message)                     |
+   * | `QWEN_Chat_Row--qwen`          | `<div>`     | Row modifier: left-aligned (Qwen response)                     |
+   * | `QWEN_Chat_Row--system`        | `<div>`     | Row modifier: centered (system/info messages)                  |
+   * | `QWEN_Chat_Bubble`             | `<div>`     | Base speech-bubble styling (padding, border-radius, shadow)    |
+   * | `QWEN_Chat_Bubble--user`       | `<div>`     | User bubble colors (background via `--user-bubble-bg`)         |
+   * | `QWEN_Chat_Bubble--qwen`       | `<div>`     | Qwen bubble colors (background via `--qwen-bubble-bg`)        |
+   * | `QWEN_Chat_Bubble--system`     | `<div>`     | System bubble: transparent, italic, muted                      |
+   * | `QWEN_Chat_Bubble--thinking`   | `<div>`     | Temporary "thinking" indicator (dimmed, italic)                |
+   * | `QWEN_Chat_Bubble--error`      | `<div>`     | Error bubble: red-tinted background                            |
+   * | `QWEN_Chat_AiHint`            | `<span>`    | Small "AI-Generated" label inside a Qwen bubble               |
    *
    * **Behavior:**
    * - The display textarea is made read-only and shows the full conversation history.
@@ -56,6 +73,8 @@ export class AI_ONNX_QWEN_CHAT {
    * - **MaxPixelSize**:  Maximum total pixel budget (width×height). Images exceeding this
    *                      are downscaled client-side while preserving the aspect ratio.
    *                      Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
+   * - **qwenbubble**:    Background color for Qwen (AI) bubbles (default: `#e5e5ea`).
+   * - **userbubble**:    Background color for user bubbles (default: `#0b93f6`).
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. Must be a `<textarea>` element (the chat display). */
@@ -73,7 +92,22 @@ export class AI_ONNX_QWEN_CHAT {
     const $ = getJQuery();
     const chatDisplay = toProcess as HTMLTextAreaElement;
     chatDisplay.readOnly = true;
-    chatDisplay.style.resize = "vertical";
+    chatDisplay.style.display = "none";
+    const aiHintText = toLoad.aihint != null ? String(toLoad.aihint) : "\u2728 AI-Generated";
+
+    // #region Create speech-bubble chat container
+    AI_ONNX_QWEN_CHAT.ensureChatBubbleStyles();
+    const chatContainer = document.createElement("div");
+    chatContainer.className = "QWEN_Chat_Container";
+    // Apply custom bubble colors from toLoad
+    if (toLoad.qwenbubble != null) {
+      chatContainer.style.setProperty("--qwen-bubble-bg", String(toLoad.qwenbubble));
+    }
+    if (toLoad.userbubble != null) {
+      chatContainer.style.setProperty("--user-bubble-bg", String(toLoad.userbubble));
+    }
+    chatDisplay.parentElement?.insertBefore(chatContainer, chatDisplay.nextSibling);
+    // #endregion Create speech-bubble chat container
 
     // #region Discover sibling elements by walking up to the nearest common ancestor
     let container: Element | null = toProcess.parentElement;
@@ -117,12 +151,50 @@ export class AI_ONNX_QWEN_CHAT {
 
     let isBusy = false;
     let attachedFiles: File[] = [];
-    /** Character position in chatDisplay.value before the "thinking" indicator was appended. */
-    let thinkingCursorPos = -1;
+    /** The "thinking" bubble element, replaced when the real response arrives. */
+    let thinkingBubble: HTMLDivElement | null = null;
     /** The active stream session ID, used by the stop button to abort inference. */
     let activeStreamId: string | null = null;
     /** Multi-turn conversation history. Sent to the backend so Qwen can remember prior turns. */
     const conversationHistory: { role: string; content: string }[] = [];
+    /**
+     * Maximum number of recent history entries to keep verbatim (the rest are
+     * condensed into a single summary entry so the context window is not exhausted).
+     * Must be even to keep user/assistant pairs intact.
+     */
+    const MAX_VERBATIM_ENTRIES = 6;
+
+    // #region Helper: compact conversation history
+    /**
+     * Returns a compacted copy of `conversationHistory`.
+     * - If the history has at most {@link MAX_VERBATIM_ENTRIES} entries it is returned as-is.
+     * - Otherwise the oldest turns are condensed into a single "system" entry
+     *   (each turn truncated to ~120 chars) and the most recent turns are kept verbatim.
+     */
+    const compactHistory = (): { role: string; content: string }[] => {
+      if (conversationHistory.length <= MAX_VERBATIM_ENTRIES) {
+        return conversationHistory;
+      }
+      const cutoff = conversationHistory.length - MAX_VERBATIM_ENTRIES;
+      const oldTurns = conversationHistory.slice(0, cutoff);
+      const recentTurns = conversationHistory.slice(cutoff);
+
+      // Build a condensed summary of the older turns
+      const lines: string[] = [];
+      for (let i = 0; i < oldTurns.length; i += 2) {
+        const userMsg = oldTurns[i]?.content ?? "";
+        const asstMsg = oldTurns[i + 1]?.content ?? "";
+        const uShort = userMsg.length > 120 ? `${userMsg.substring(0, 117)}...` : userMsg;
+        const aShort = asstMsg.length > 120 ? `${asstMsg.substring(0, 117)}...` : asstMsg;
+        lines.push(`- User: ${uShort}  Assistant: ${aShort}`);
+      }
+      const summaryEntry: { role: string; content: string } = {
+        role: "system",
+        content: `Summary of earlier conversation:\n${lines.join("\n")}`,
+      };
+      return [summaryEntry, ...recentTurns];
+    };
+    // #endregion Helper: compact conversation history
 
     // #region Resource status overlay
     /** Timer ID for auto-hiding the resource overlay after transient messages (e.g. "Resumed"). */
@@ -142,8 +214,8 @@ export class AI_ONNX_QWEN_CHAT {
         "padding:6px 14px;text-align:center;pointer-events:none;z-index:1000;" +
         "border-radius:6px;backdrop-filter:blur(2px);transition:opacity 0.3s ease;" +
         "max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-      // Anchor relative to the textarea's parent
-      const anchor = chatDisplay.parentElement;
+      // Anchor relative to the chat container
+      const anchor = chatContainer.parentElement;
       if (anchor) {
         const cs = window.getComputedStyle(anchor);
         if (cs.position === "static") {
@@ -196,21 +268,46 @@ export class AI_ONNX_QWEN_CHAT {
     };
     // #endregion Resource status overlay
 
+    // #region Helper: create a chat bubble
+    /**
+     * Creates a speech-bubble element and appends it to the chat container.
+     * @param text    Message text.
+     * @param role    `"user"` (right-aligned), `"qwen"` (left-aligned), or `"system"` (centered, muted).
+     * @returns The created bubble `<div>` so callers can update it later (e.g. streaming).
+     */
+    const appendBubble = (text: string, role: "user" | "qwen" | "system"): HTMLDivElement => {
+      const row = document.createElement("div");
+      row.className = `QWEN_Chat_Row QWEN_Chat_Row--${role}`;
+
+      const bubble = document.createElement("div");
+      bubble.className = `QWEN_Chat_Bubble QWEN_Chat_Bubble--${role}`;
+      bubble.textContent = text;
+      row.appendChild(bubble);
+
+      chatContainer.appendChild(row);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      return bubble;
+    };
+    // #endregion Helper: create a chat bubble
+
     // #region Helper: append a message block to the chat display
     const appendToChat = (text: string): void => {
-      if (chatDisplay.value.length > 0) {
-        chatDisplay.value += "\n\n";
+      // Detect role from prefix
+      if (text.startsWith("You: ")) {
+        appendBubble(text.substring(5), "user");
+      } else if (text.startsWith("Qwen: ")) {
+        appendBubble(text.substring(6), "qwen");
+      } else {
+        appendBubble(text, "system");
       }
-      chatDisplay.value += text;
-      chatDisplay.scrollTop = chatDisplay.scrollHeight;
     };
     // #endregion Helper: append a message block to the chat display
 
     // #region Helper: replace the "thinking" indicator with the real response
     const replaceThinking = (text: string): void => {
-      if (thinkingCursorPos >= 0) {
-        chatDisplay.value = chatDisplay.value.substring(0, thinkingCursorPos);
-        thinkingCursorPos = -1;
+      if (thinkingBubble) {
+        thinkingBubble.parentElement?.remove();
+        thinkingBubble = null;
       }
       appendToChat(text);
     };
@@ -222,6 +319,9 @@ export class AI_ONNX_QWEN_CHAT {
         const files = fileUpload.files;
         if (files && files.length > 0) {
           attachedFiles = Array.from(files);
+          // New files = new topic — clear old history so previous image
+          // Q&A does not confuse the model about the current image.
+          conversationHistory.length = 0;
           const names = attachedFiles.map((f) => f.name).join(", ");
           appendToChat(`📎 ${attachedFiles.length} file(s) attached: ${names}`);
           window.codbi.log("INFO", `Chat files attached: ${names}`, "AI / ONNX / QWEN / CHAT");
@@ -239,7 +339,7 @@ export class AI_ONNX_QWEN_CHAT {
         return;
       }
 
-      appendToChat(`You: ${message}`);
+      appendBubble(message, "user");
       chatInput.value = "";
       conversationHistory.push({ role: "user", content: message });
 
@@ -249,9 +349,10 @@ export class AI_ONNX_QWEN_CHAT {
         (chatInput as HTMLInputElement).disabled = true;
       }
 
-      // Show thinking indicator and remember position for replacement
-      thinkingCursorPos = chatDisplay.value.length;
-      appendToChat("Qwen: ⏳ Thinking...");
+      // Show thinking indicator bubble (will be replaced with real response)
+      thinkingBubble = appendBubble("⏳ Thinking...", "qwen");
+      thinkingBubble.innerHTML = `<span class="QWEN_Hourglass">⏳</span> Thinking...`;
+      thinkingBubble.classList.add("QWEN_Chat_Bubble--thinking");
 
       try {
         AI_ONNX_QWEN_CHAT.ensurePdfJsWorkerConfigured();
@@ -317,7 +418,7 @@ export class AI_ONNX_QWEN_CHAT {
 
         headers["X-Question-chat"] = message;
         headers["X-Stream"] = "true";
-        headers["X-Chat-History"] = btoa(unescape(encodeURIComponent(JSON.stringify(conversationHistory))));
+        headers["X-Chat-History"] = btoa(unescape(encodeURIComponent(JSON.stringify(compactHistory()))));
         // #endregion Build request headers
 
         // #region Helper: finish streaming and re-enable UI
@@ -339,8 +440,8 @@ export class AI_ONNX_QWEN_CHAT {
         // #region Helper: poll a streaming session until done
         const pollStream = (streamId: string): void => {
           let lastText = "";
-          /** Position in chatDisplay.value where the stream output starts (after "Qwen: "). */
-          let streamStartPos = -1;
+          /** The bubble element used for streaming output; created on first text chunk. */
+          let streamBubble: HTMLDivElement | null = null;
           const interval = setInterval(() => {
             $.ajax({
               url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen_vQA`,
@@ -365,28 +466,32 @@ export class AI_ONNX_QWEN_CHAT {
                 const text: string = pollResponse.text ?? "";
                 if (text.length > lastText.length) {
                   lastText = text;
-                  // First update: remove "⏳ Thinking..." and mark start position
-                  if (thinkingCursorPos >= 0) {
-                    chatDisplay.value = chatDisplay.value.substring(0, thinkingCursorPos);
-                    thinkingCursorPos = -1;
-                    streamStartPos = chatDisplay.value.length;
+                  // First chunk: replace thinking bubble with a real one
+                  if (thinkingBubble) {
+                    thinkingBubble.parentElement?.remove();
+                    thinkingBubble = null;
+                    streamBubble = appendBubble(text, "qwen");
+                  } else if (streamBubble) {
+                    // Update existing stream bubble in-place
+                    streamBubble.textContent = text;
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
                   }
-                  // Overwrite previous partial output, then re-append
-                  if (streamStartPos >= 0) {
-                    chatDisplay.value = chatDisplay.value.substring(0, streamStartPos);
-                  }
-                  appendToChat(`Qwen: ${text}`);
                 }
                 if (pollResponse.done) {
                   clearInterval(interval);
                   if (pollResponse.error) {
-                    if (streamStartPos >= 0) {
-                      chatDisplay.value = chatDisplay.value.substring(0, streamStartPos);
+                    if (streamBubble) {
+                      streamBubble.textContent = `! ${pollResponse.error}`;
+                      streamBubble.classList.add("QWEN_Chat_Bubble--error");
+                    } else {
+                      replaceThinking(`Qwen: ! ${pollResponse.error}`);
                     }
-                    appendToChat(`Qwen: ! ${pollResponse.error}`);
                     conversationHistory.pop(); // remove failed user turn
                   } else if (lastText) {
                     conversationHistory.push({ role: "assistant", content: lastText });
+                    if (aiHintText && streamBubble) {
+                      AI_ONNX_QWEN_CHAT.attachAiHintToBubble(streamBubble, aiHintText);
+                    }
                   }
                   finishStreaming();
                 }
@@ -443,27 +548,33 @@ export class AI_ONNX_QWEN_CHAT {
               return;
             }
 
+            let answerText: string;
             if (fileKeys.length === 1) {
               const fileAnswers = response[fileKeys[0]];
               const answerKeys = Object.keys(fileAnswers || {});
-              const answer =
+              answerText =
                 fileAnswers?.chat ?? (answerKeys.length > 0 ? String(fileAnswers[answerKeys[0]]) : "(no answer)");
-              replaceThinking(`Qwen: ${answer}`);
-              conversationHistory.push({ role: "assistant", content: answer });
+              conversationHistory.push({ role: "assistant", content: answerText });
             } else {
-              let combined = "Qwen:";
+              const parts: string[] = [];
               for (const fileKey of fileKeys) {
                 const fileAnswers = response[fileKey];
                 const answerKeys = Object.keys(fileAnswers || {});
                 const answer =
                   fileAnswers?.chat ?? (answerKeys.length > 0 ? String(fileAnswers[answerKeys[0]]) : "(no answer)");
-                combined += `\n\n📄 ${fileKey}:\n${answer}`;
+                parts.push(`📄 ${fileKey}:\n${answer}`);
               }
-              replaceThinking(combined);
-              conversationHistory.push({
-                role: "assistant",
-                content: combined.substring(combined.indexOf(":") + 1).trim(),
-              });
+              answerText = parts.join("\n\n");
+              conversationHistory.push({ role: "assistant", content: answerText });
+            }
+            // Replace thinking bubble with the answer
+            if (thinkingBubble) {
+              thinkingBubble.parentElement?.remove();
+              thinkingBubble = null;
+            }
+            const answerBubble = appendBubble(answerText, "qwen");
+            if (aiHintText) {
+              AI_ONNX_QWEN_CHAT.attachAiHintToBubble(answerBubble, aiHintText);
             }
             finishStreaming();
           },
@@ -527,7 +638,7 @@ export class AI_ONNX_QWEN_CHAT {
     }) as EventListener);
     // #endregion Wire up event listeners
 
-    appendToChat("💬 Qwen Chat ready. Attach file(s) and type your question.");
+    appendBubble("💬 Qwen Chat ready. Attach file(s) and type your question.", "system");
 
     window.codbi.log("INFO", "Qwen Chat functionality initialized", "AI / ONNX / QWEN / CHAT");
   }
@@ -551,6 +662,87 @@ export class AI_ONNX_QWEN_CHAT {
       "AI / ONNX / QWEN / CHAT",
     );
   }
+
+  // #region Chat bubble styles
+  /** Injects global CSS for the speech-bubble chat UI (once). */
+  private static ensureChatBubbleStyles(): void {
+    if (document.querySelector("#QWEN_Chat_Bubble_Styles")) {
+      return;
+    }
+    const style = document.createElement("style");
+    style.id = "QWEN_Chat_Bubble_Styles";
+    style.textContent = `
+      .QWEN_Chat_Container {
+        --user-bubble-bg: #0b93f6 ;
+        --qwen-bubble-bg: #e5e5ea ;
+        display: flex ; flex-direction: column ; gap: 10px ; padding: 12px ;
+        overflow-y: auto ; min-height: 120px ; max-height: 500px ;
+        border: 1px solid #d0d0d0 ; border-radius: 8px ; background: #f5f5f5 ;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif ;
+        font-size: 14px ; line-height: 1.45 ;
+      }
+      .QWEN_Chat_Row { display: flex ; }
+      .QWEN_Chat_Row--user  { justify-content: flex-end ; }
+      .QWEN_Chat_Row--qwen  { justify-content: flex-start ; }
+      .QWEN_Chat_Row--system { justify-content: center ; }
+      .QWEN_Chat_Bubble {
+        max-width: 75% ; padding: 10px 14px ; border-radius: 16px ;
+        word-wrap: break-word ; white-space: pre-wrap ; position: relative ;
+        box-shadow: 0 0 .25em black ;
+      }
+      .QWEN_Chat_Bubble--user {
+        background: var(--user-bubble-bg) ; color: #fff ;
+        border-bottom-right-radius: 4px ;
+      }
+      .QWEN_Chat_Bubble--qwen {
+        background: var(--qwen-bubble-bg) ; color: #1c1c1e ;
+        border-bottom-left-radius: 4px ;
+      }
+      .QWEN_Chat_Bubble--system {
+        background: transparent ; color: #8e8e93 ;
+        font-size: 12px ; font-style: italic ; text-align: center ;
+      }
+      @keyframes QWEN_hourglass_spin {
+        0%   { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .QWEN_Chat_Bubble--thinking {
+        opacity: 0.7 ; font-style: italic ;
+      }
+      .QWEN_Chat_Bubble--thinking .QWEN_Hourglass {
+        display: inline-block ;
+        animation: QWEN_hourglass_spin 1.2s linear infinite ;
+      }
+      .QWEN_Chat_Bubble--error {
+        background: #ffe0e0 ; color: #c00 ;
+      }
+      .QWEN_Chat_AiHint {
+        display: block ; margin-top: 4px ; font-size: 10px ;
+        color: rgba(0,0,0,0.35) ; text-align: right ; user-select: none ;
+      }`;
+    document.head.appendChild(style);
+  }
+  // #endregion Chat bubble styles
+
+  // #region AI-Generated hint (bubble variant)
+  /**
+   * Appends a small AI-Generated hint label inside a chat bubble.
+   *
+   * @param bubble   The bubble `<div>` to annotate.
+   * @param hintText The label to display, e.g. "✨ AI-Generated".
+   */
+  private static attachAiHintToBubble(bubble: HTMLDivElement, hintText: string): void {
+    // Remove any existing hint inside this bubble
+    const existing = bubble.querySelector(".QWEN_Chat_AiHint");
+    if (existing) {
+      existing.remove();
+    }
+    const hint = document.createElement("span");
+    hint.className = "QWEN_Chat_AiHint";
+    hint.textContent = hintText;
+    bubble.appendChild(hint);
+  }
+  // #endregion AI-Generated hint (bubble variant)
 
   // #region Image downscaling helper
   /**

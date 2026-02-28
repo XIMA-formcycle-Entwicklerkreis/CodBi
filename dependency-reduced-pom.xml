@@ -926,6 +926,13 @@
   </pluginRepositories>
   <dependencies>
     <dependency>
+      <groupId>ai.djl.pytorch</groupId>
+      <artifactId>pytorch-native-cpu</artifactId>
+      <version>2.7.1</version>
+      <classifier>win-x86_64</classifier>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
       <groupId>de.xima.fc</groupId>
       <artifactId>fc-plugin-common</artifactId>
       <version>8.3.3</version>

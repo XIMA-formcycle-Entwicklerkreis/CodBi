@@ -698,6 +698,19 @@ abstract class ONNX : AI() {
   }
 
   /**
+   * Non-blocking variant of [acquirePredictor]. Returns a predictor immediately if one is idle in
+   * the pool, or `null` without waiting.
+   *
+   * @param modelName The name of the model to acquire a predictor for.
+   * @return A [Predictor] instance, or `null` if none is currently available.
+   */
+  protected fun <I, O> tryAcquirePredictor(modelName: String): Predictor<I, O>? {
+    @Suppress("UNCHECKED_CAST")
+    val pool = predictorPools[modelName] as? LinkedBlockingQueue<Predictor<I, O>> ?: return null
+    return pool.poll() // non-blocking — returns null immediately if pool is empty
+  }
+
+  /**
    * Returns a predictor to the pool.
    *
    * @param modelName The name of the model the predictor belongs to.

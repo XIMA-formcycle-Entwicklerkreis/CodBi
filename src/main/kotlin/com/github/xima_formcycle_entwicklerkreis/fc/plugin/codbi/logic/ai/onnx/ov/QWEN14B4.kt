@@ -182,7 +182,7 @@ class QwenVLTranslator(
   override fun processOutput(ctx: TranslatorContext, list: NDList): NDList = list
 }
 
-class QWEN2B164CPU : OpenVINO() {
+class QWEN2BQ4 : OpenVINO() {
   /**
    * Rotates a BufferedImage by the specified degrees (90, 180, or 270).
    *
@@ -268,7 +268,7 @@ class QWEN2B164CPU : OpenVINO() {
    * Maximum allowed system RAM usage (0–100%). Inference is paused/rejected when exceeded.
    * Configurable via plugin property **AI_ONNX_QWEN_MaxRAMPercent**. Default: 85.
    */
-  private var maxRAMPercent = 99.0
+  private var maxRAMPercent = 101.0
   /**
    * Maximum allowed system CPU usage (0–100%). Inference is paused/rejected when exceeded.
    * Configurable via plugin property **AI_ONNX_QWEN_MaxCPUPercent**. Default: 90.
@@ -311,6 +311,36 @@ class QWEN2B164CPU : OpenVINO() {
   private var tokenizer: HuggingFaceTokenizer? = null
 
   @Volatile private var modelsReady = false
+
+  // ── Inference timing statistics (for "AI busy" estimation) ──
+  /**
+   * Running average of milliseconds spent per vision-encoder token. Updated after every
+   * [encodeVision] call. Initial value is a conservative estimate.
+   */
+  @Volatile private var avgMsPerVisionToken: Double = 3.0
+  /**
+   * Running average of milliseconds spent per decode (text-generation) token. Updated at the end of
+   * every decode loop. Initial value is a conservative estimate.
+   */
+  @Volatile private var avgMsPerDecodeToken: Double = 120.0
+  /**
+   * Running average of how many text tokens a decode pass generates. Updated at the end of every
+   * decode loop. Initial value is a conservative estimate.
+   */
+  @Volatile private var avgDecodeTokenCount: Double = 200.0
+  /** Number of completed inferences used to weight the running averages. */
+  @Volatile private var inferenceCount: Long = 0L
+
+  // ── Current inference metadata (volatile, read by busy-estimation) ──
+  /** Epoch millis when the current inference started, or 0 if idle. */
+  @Volatile private var inferenceStartTimeMs: Long = 0L
+  /** `true` when the running inference includes image(s). */
+  @Volatile private var currentInferenceHasImages: Boolean = false
+  /** Total pixel count of images in the running inference (width × height, summed). */
+  @Volatile private var currentInferenceTotalPixels: Long = 0L
+  /** Number of images in the running inference. */
+  @Volatile private var currentInferenceImageCount: Int = 0
+
   private var donutModelDir: File? = null
   private var pluginFolder: File? = null
   /**
@@ -327,8 +357,22 @@ class QWEN2B164CPU : OpenVINO() {
           return size > MAX_VISION_CACHE_ENTRIES
         }
       }
-  private var modelBaseUrl =
+  private var modelRepoUrl =
       "https://huggingface.co/onnx-community/Qwen2-VL-2B-Instruct/resolve/main"
+
+  // ── Per-file remote paths (configurable via plugin properties) ──
+  // Each value is the path within the repository.  The local filename is the last segment.
+  // Override with: AI_ONNX_QWEN_RepoUrl, AI_ONNX_QWEN_File_VisionEncoderQuantized, etc.
+  private var fileVisionEncoderQuantized = "onnx/vision_encoder_quantized.onnx"
+  private var fileVisionEncoderFp16 = "onnx/vision_encoder_fp16.onnx"
+  private var fileDecoder = "onnx/decoder_model_merged_q4.onnx"
+  private var fileEmbed = "onnx/embed_tokens_fp16.onnx"
+  private var fileTokenizer = "tokenizer.json"
+  /** Relative path within the plugin folder where model files are stored. */
+  private var qwenModelDir = "ai/onnx/models/qwen-vl"
+
+  /** Extracts the local filename (last path segment) from a remote path. */
+  private fun localFileName(remotePath: String): String = remotePath.substringAfterLast("/")
 
   // ── Token Streaming Infrastructure ──────────────────────────────────────────
   /**
@@ -362,6 +406,91 @@ class QWEN2B164CPU : OpenVINO() {
 
   /** Active streaming sessions, keyed by UUID. Cleaned up on completion or after 5 min TTL. */
   private val streamingSessions = ConcurrentHashMap<String, StreamingSession>()
+
+  // ── Predictor-busy helpers ─────────────────────────────────────────────────
+
+  /**
+   * Estimates the remaining wall-clock time for the currently running inference based on per-token
+   * averages and the current inference's image/pixel metadata.
+   *
+   * Vision tokens are estimated from pixel count using Qwen2-VL's smart-resize grid: `visionTokens
+   * ≈ totalPixels / (14 × 14 × 4)` (patch 14×14, merge 2×2)
+   *
+   * The estimate is: `visionEncodeTime + decodeTime − elapsed`.
+   */
+  private fun estimateWaitTime(): String {
+    val startMs = inferenceStartTimeMs
+    val elapsedMs = if (startMs > 0L) System.currentTimeMillis() - startMs else 0L
+
+    // Estimate total inference time from per-token averages
+    var estimatedTotalMs = 0.0
+    if (currentInferenceHasImages && currentInferenceTotalPixels > 0) {
+      // Approximate vision tokens from pixel budget (14×14 patch, merge factor 2 → /784)
+      val estimatedVisionTokens = (currentInferenceTotalPixels / 784.0).coerceAtLeast(1.0)
+      estimatedTotalMs += estimatedVisionTokens * avgMsPerVisionToken
+    }
+    estimatedTotalMs += avgDecodeTokenCount * avgMsPerDecodeToken
+
+    val remainingMs = (estimatedTotalMs - elapsedMs).toLong().coerceAtLeast(5_000L)
+    val remainingSec = remainingMs / 1000
+    return if (remainingSec < 120) "$remainingSec seconds" else "${remainingSec / 60} minutes"
+  }
+
+  /** Error message returned when the predictor pool is exhausted. */
+  private fun busyErrorMessage(): String =
+      "The AI is currently answering other requests. Estimated availability: ~${estimateWaitTime()}. Please try again shortly."
+
+  /**
+   * Marks inference start with metadata about the request. Call in tandem with [recordInferenceEnd]
+   * in a finally block.
+   */
+  private fun recordInferenceStart(
+      hasImages: Boolean = false,
+      totalPixels: Long = 0L,
+      imageCount: Int = 0
+  ) {
+    currentInferenceHasImages = hasImages
+    currentInferenceTotalPixels = totalPixels
+    currentInferenceImageCount = imageCount
+    inferenceStartTimeMs = System.currentTimeMillis()
+  }
+
+  /** Records inference duration and clears the start timestamp. */
+  private fun recordInferenceEnd() {
+    inferenceStartTimeMs = 0L
+    currentInferenceHasImages = false
+    currentInferenceTotalPixels = 0L
+    currentInferenceImageCount = 0
+  }
+
+  /**
+   * Updates the running average for vision-encoding speed. Called after each [encodeVision] with
+   * the encoding wall time and the number of vision tokens.
+   */
+  private fun recordVisionStats(encodingMs: Long, visionTokens: Int) {
+    if (visionTokens <= 0) return
+    val msPerToken = encodingMs.toDouble() / visionTokens
+    synchronized(this) {
+      val n = inferenceCount.coerceAtLeast(1)
+      avgMsPerVisionToken = avgMsPerVisionToken + (msPerToken - avgMsPerVisionToken) / (n + 1)
+    }
+  }
+
+  /**
+   * Updates the running averages for decode speed and token count. Called at the end of every
+   * decode loop.
+   */
+  private fun recordDecodeStats(decodeMs: Long, tokenCount: Int) {
+    if (tokenCount <= 0) return
+    val msPerToken = decodeMs.toDouble() / tokenCount
+    synchronized(this) {
+      val n = inferenceCount.coerceAtLeast(1)
+      avgMsPerDecodeToken = avgMsPerDecodeToken + (msPerToken - avgMsPerDecodeToken) / (n + 1)
+      avgDecodeTokenCount =
+          avgDecodeTokenCount + (tokenCount.toDouble() - avgDecodeTokenCount) / (n + 1)
+      inferenceCount++
+    }
+  }
 
   // ── ResourceMonitor inner class ────────────────────────────────────────────
   /**
@@ -720,11 +849,18 @@ class QWEN2B164CPU : OpenVINO() {
                 val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
                 (ortEngine as ai.djl.engine.Engine).newBaseManager().use { manager: NDManager ->
                   val visionPred =
-                      acquirePredictor<NDList, NDList>("qwen-encoder")
-                          ?: throw IllegalStateException("No predictor available for qwen-encoder")
+                      tryAcquirePredictor<NDList, NDList>("qwen-encoder")
+                          ?: throw IllegalStateException(busyErrorMessage())
                   val decoderPred =
-                      acquirePredictor<NDList, NDList>("qwen-decoder")
-                          ?: throw IllegalStateException("No predictor available for qwen-decoder")
+                      tryAcquirePredictor<NDList, NDList>("qwen-decoder")
+                          ?: run {
+                            releasePredictor("qwen-encoder", visionPred)
+                            throw IllegalStateException(busyErrorMessage())
+                          }
+                  recordInferenceStart(
+                      hasImages = true,
+                      totalPixels = maxPixels.toLong() * fileDataMap.size,
+                      imageCount = fileDataMap.size)
                   try {
                     val question = questions.values.first()
                     val entries =
@@ -788,14 +924,6 @@ class QWEN2B164CPU : OpenVINO() {
 
                     if (!session.stopRequested && visionResults.isNotEmpty()) {
                       // Single decode pass with all images as one document
-                      log(
-                          AI.LogLevel.INFO,
-                          "Streaming: calling runQwenDecodeMultiVision with ${visionResults.size} images. " +
-                              "Vision token counts: ${visionResults.map { it.actualVisionTokens }}. " +
-                              "Question: '${question.take(100)}'. " +
-                              "chatHistory.size=${chatHistory.size}",
-                          " / QWEN / STREAM",
-                          null)
                       runQwenDecodeMultiVision(
                           manager,
                           decoderPred,
@@ -807,6 +935,7 @@ class QWEN2B164CPU : OpenVINO() {
                           resourceNotify = { status -> session.resourceStatus = status })
                     }
                   } finally {
+                    recordInferenceEnd()
                     releasePredictor("qwen-encoder", visionPred)
                     releasePredictor("qwen-decoder", decoderPred)
                   }
@@ -816,8 +945,9 @@ class QWEN2B164CPU : OpenVINO() {
                 val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
                 (ortEngine as ai.djl.engine.Engine).newBaseManager().use { manager: NDManager ->
                   val decoderPred =
-                      acquirePredictor<NDList, NDList>("qwen-decoder")
-                          ?: throw IllegalStateException("No predictor available for qwen-decoder")
+                      tryAcquirePredictor<NDList, NDList>("qwen-decoder")
+                          ?: throw IllegalStateException(busyErrorMessage())
+                  recordInferenceStart(hasImages = false)
                   try {
                     val question = questions.values.first()
                     runQwenDecodeTextOnly(
@@ -829,6 +959,7 @@ class QWEN2B164CPU : OpenVINO() {
                         chatHistory = chatHistory,
                         resourceNotify = { status -> session.resourceStatus = status })
                   } finally {
+                    recordInferenceEnd()
                     releasePredictor("qwen-decoder", decoderPred)
                   }
                 }
@@ -970,11 +1101,26 @@ class QWEN2B164CPU : OpenVINO() {
         val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
         (ortEngine as ai.djl.engine.Engine).newBaseManager().use { manager: NDManager ->
           val visionPredictor =
-              acquirePredictor<NDList, NDList>("qwen-encoder")
-                  ?: throw IllegalStateException("No predictor available for qwen-encoder")
+              tryAcquirePredictor<NDList, NDList>("qwen-encoder")
+                  ?: return PluginServletActionRetVal(
+                      ServletResponse(EResponseType.JSON).apply {
+                        value = "{\"error\":\"${busyErrorMessage()}\"}"
+                        encoding = java.nio.charset.StandardCharsets.UTF_8.name()
+                      })
           val decoderPredictor =
-              acquirePredictor<NDList, NDList>("qwen-decoder")
-                  ?: throw IllegalStateException("No predictor available for qwen-decoder")
+              tryAcquirePredictor<NDList, NDList>("qwen-decoder")
+                  ?: run {
+                    releasePredictor("qwen-encoder", visionPredictor)
+                    return PluginServletActionRetVal(
+                        ServletResponse(EResponseType.JSON).apply {
+                          value = "{\"error\":\"${busyErrorMessage()}\"}"
+                          encoding = java.nio.charset.StandardCharsets.UTF_8.name()
+                        })
+                  }
+          recordInferenceStart(
+              hasImages = true,
+              totalPixels = maxPixels.toLong() * processedImages.size,
+              imageCount = processedImages.size)
           try {
             // Encode all images and collect VisionResults
             val visionResults =
@@ -1023,6 +1169,7 @@ class QWEN2B164CPU : OpenVINO() {
               finalResults["document"] = mapOf(questionsToAsk.keys.first() to answer)
             }
           } finally {
+            recordInferenceEnd()
             releasePredictor("qwen-encoder", visionPredictor)
             releasePredictor("qwen-decoder", decoderPredictor)
           }
@@ -1034,8 +1181,13 @@ class QWEN2B164CPU : OpenVINO() {
         val ortEngine = ai.djl.engine.Engine.getEngine("OnnxRuntime")
         (ortEngine as ai.djl.engine.Engine).newBaseManager().use { manager: NDManager ->
           val decoderPredictor =
-              acquirePredictor<NDList, NDList>("qwen-decoder")
-                  ?: throw IllegalStateException("No predictor available for qwen-decoder")
+              tryAcquirePredictor<NDList, NDList>("qwen-decoder")
+                  ?: return PluginServletActionRetVal(
+                      ServletResponse(EResponseType.JSON).apply {
+                        value = "{\"error\":\"${busyErrorMessage()}\"}"
+                        encoding = java.nio.charset.StandardCharsets.UTF_8.name()
+                      })
+          recordInferenceStart(hasImages = false)
           try {
             questionsToAsk.forEach { (key, question) ->
               try {
@@ -1052,6 +1204,7 @@ class QWEN2B164CPU : OpenVINO() {
               }
             }
           } finally {
+            recordInferenceEnd()
             releasePredictor("qwen-decoder", decoderPredictor)
           }
         }
@@ -1165,7 +1318,7 @@ class QWEN2B164CPU : OpenVINO() {
     if (!activeAi.contains("qwen2q4")) {
       log(
           AI.LogLevel.INFO,
-          "QWEN14B4CPU initialization skipped because Active_AI='$activeAiRaw'",
+          "QWEN2BQ4 initialization skipped because Active_AI='$activeAiRaw'",
           " / QWEN",
           null)
       qwenActive = false
@@ -1173,9 +1326,15 @@ class QWEN2B164CPU : OpenVINO() {
     }
 
     this.pluginFolder = configData.fileHelper.pluginFolder
-    val baseModelDir = File(configData.fileHelper.pluginFolder, "ai/onnx/models")
-    this.donutModelDir = File(baseModelDir, "qwen-vl")
+    // Read model directory override before creating the directory
+    configData.properties
+        .getProperty("AI_ONNX_QWEN_ModelDir")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { qwenModelDir = it }
+    this.donutModelDir = File(configData.fileHelper.pluginFolder, qwenModelDir)
     this.donutModelDir?.mkdirs()
+    log(AI.LogLevel.INFO, "Model directory: ${donutModelDir?.absolutePath}", " / QWEN", null)
 
     ensureTokenizersNativeLibraries()
     super.initialize(configData)
@@ -1200,6 +1359,46 @@ class QWEN2B164CPU : OpenVINO() {
         log(AI.LogLevel.INFO, "MaxPixels set to $it from config", " / QWEN", null)
       }
     }
+    // Read configurable model repository URL and per-file remote paths
+    configData.properties
+        .getProperty("AI_ONNX_QWEN_RepoUrl")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let {
+          modelRepoUrl = it.trimEnd('/')
+          log(AI.LogLevel.INFO, "Model repo URL set to: $modelRepoUrl", " / QWEN", null)
+        }
+    configData.properties
+        .getProperty("AI_ONNX_QWEN_File_VisionEncoderQuantized")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { fileVisionEncoderQuantized = it }
+    configData.properties
+        .getProperty("AI_ONNX_QWEN_File_VisionEncoderFp16")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { fileVisionEncoderFp16 = it }
+    configData.properties
+        .getProperty("AI_ONNX_QWEN_File_Decoder")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { fileDecoder = it }
+    configData.properties
+        .getProperty("AI_ONNX_QWEN_File_Embed")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { fileEmbed = it }
+    configData.properties
+        .getProperty("AI_ONNX_QWEN_File_Tokenizer")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { fileTokenizer = it }
+    log(
+        AI.LogLevel.INFO,
+        "Model files: VisionQ=${localFileName(fileVisionEncoderQuantized)}, VisionFP16=${localFileName(fileVisionEncoderFp16)}, " +
+            "Decoder=${localFileName(fileDecoder)}, Embed=${localFileName(fileEmbed)}, Tokenizer=${localFileName(fileTokenizer)}",
+        " / QWEN",
+        null)
     // Read resource-monitoring thresholds
     configData.properties.getProperty("AI_ONNX_QWEN_MaxRAMPercent")?.trim()?.toDoubleOrNull()?.let {
       if (it in 1.0..110.0) {
@@ -1298,7 +1497,8 @@ class QWEN2B164CPU : OpenVINO() {
       // Each variant tries OpenVINO EP first (if available), then falls back to ORT CPU.
       val wantFP16 = visionEncoderMode == "fp16"
       val visionModelFile =
-          if (wantFP16) "vision_encoder_fp16.onnx" else "vision_encoder_quantized.onnx"
+          if (wantFP16) localFileName(fileVisionEncoderFp16)
+          else localFileName(fileVisionEncoderQuantized)
       val visionModeTag = if (wantFP16) "FP16" else "QDQ INT8"
       log(
           AI.LogLevel.INFO,
@@ -1354,12 +1554,14 @@ class QWEN2B164CPU : OpenVINO() {
         decOpts.setIntraOpNumThreads(physicalCores)
         decOpts.setMemoryPatternOptimization(true)
         decOpts.setCPUArenaAllocator(true)
-        val decOptFile = modelPath.resolve("decoder_model_merged_q4_optimized.onnx")
+        val decoderFileName = localFileName(fileDecoder)
+        val decoderBaseName = decoderFileName.removeSuffix(".onnx")
+        val decOptFile = modelPath.resolve("${decoderBaseName}_optimized.onnx")
         decOpts.setOptimizedModelFilePath(decOptFile.toString())
         val decOptions = HashMap<String, Any>()
         decOptions["sessionOptions"] = decOpts
-        val decM = ai.djl.Model.newInstance("decoder_model_merged_q4", "OnnxRuntime")
-        decM.load(modelPath.resolve("decoder_model_merged_q4.onnx"), null, decOptions)
+        val decM = ai.djl.Model.newInstance(decoderBaseName, "OnnxRuntime")
+        decM.load(modelPath.resolve(decoderFileName), null, decOptions)
         decoderModel = ZooModel(decM, passThroughTranslator)
       }
       log(
@@ -1373,7 +1575,7 @@ class QWEN2B164CPU : OpenVINO() {
       embedModel =
           Criteria.builder()
               .setTypes(NDList::class.java, NDList::class.java)
-              .optModelPath(modelPath.resolve("embed_tokens_fp16.onnx"))
+              .optModelPath(modelPath.resolve(localFileName(fileEmbed)))
               .optEngine("OnnxRuntime")
               .build()
               .loadModel()
@@ -1381,7 +1583,7 @@ class QWEN2B164CPU : OpenVINO() {
 
       log(AI.LogLevel.INFO, "Initialisiere Tokenizer und Predictor-Pools...", " / QWEN", null)
 
-      tokenizer = HuggingFaceTokenizer.newInstance(modelPath.resolve("tokenizer.json"))
+      tokenizer = HuggingFaceTokenizer.newInstance(modelPath.resolve(localFileName(fileTokenizer)))
       initPredictorPools()
 
       // --- Warmup inference ---
@@ -1880,6 +2082,7 @@ class QWEN2B164CPU : OpenVINO() {
     // Copy to JVM heap so the cached result survives after the request-scoped NDManager closes.
     val embedData = imageEmbeds.toFloatArray()
     val embedShape = imageEmbeds.shape.shape
+    recordVisionStats(visionMs, actualVisionTokens)
     return VisionResult(embedData, embedShape, actualVisionTokens, mH, mW)
   }
 
@@ -2188,6 +2391,7 @@ class QWEN2B164CPU : OpenVINO() {
     val loopMs = System.currentTimeMillis() - t0Loop
     val tokens = generatedIds.size
     val tokPerSec = if (loopMs > 0) tokens * 1000.0 / loopMs else 0.0
+    recordDecodeStats(loopMs, tokens)
     log(
         AI.LogLevel.INFO,
         "TextOnly decode: ${loopMs}ms, $tokens tokens (%.1f tok/s). Prefill: ${prefillMs}ms"
@@ -2252,14 +2456,6 @@ class QWEN2B164CPU : OpenVINO() {
     //   question<|im_end|>\n<|im_start|>assistant\n
     val visionStartIds = tokenizer.encode("<|vision_start|>").ids
     val visionEndIds = tokenizer.encode("<|vision_end|>\n").ids
-
-    log(
-        AI.LogLevel.INFO,
-        "MultiVision tokenizer probe: visionStartIds=${visionStartIds.toList()}, " +
-            "visionEndIds=${visionEndIds.toList()}, imagePadTokenId=$imagePadTokenId. " +
-            "chatHistory.size=${chatHistory.size}, question='${question.take(80)}'",
-        " / QWEN / DIAG",
-        null)
 
     val allIds = mutableListOf<Long>()
     val padPositions = mutableListOf<Int>()
@@ -2362,12 +2558,6 @@ class QWEN2B164CPU : OpenVINO() {
           val post = inputEmbeds.get(":, ${padIdx + 1}:, :")
           inputEmbeds = pre.concat(reshapedVision, 1).concat(post, 1)
         }
-        log(
-            AI.LogLevel.INFO,
-            "MultiVision splice done: inputEmbeds shape=${inputEmbeds.shape} " +
-                "(expected seq_len = ${combinedIds.size - padPositions.size + visions.sumOf { it.actualVisionTokens }})",
-            " / QWEN / DIAG",
-            null)
       }
 
       val currentSeqLen = inputEmbeds.shape[1].toInt()
@@ -2544,6 +2734,7 @@ class QWEN2B164CPU : OpenVINO() {
     val loopMs = System.currentTimeMillis() - t0Loop
     val tokens = generatedIds.size
     val tokPerSec = if (loopMs > 0) tokens * 1000.0 / loopMs else 0.0
+    recordDecodeStats(loopMs, tokens)
     log(
         AI.LogLevel.INFO,
         "MultiVision decode: ${loopMs}ms, $tokens tokens (%.1f tok/s). Prefill: ${prefillMs}ms, Embed: ${totalEmbedMs}ms, Decode: ${totalDecodeMs}ms, KV-cache: ${totalKvMs}ms"
@@ -2862,6 +3053,7 @@ class QWEN2B164CPU : OpenVINO() {
     val loopMs = System.currentTimeMillis() - t0Loop
     val tokens = generatedIds.size
     val tokPerSec = if (loopMs > 0) tokens * 1000.0 / loopMs else 0.0
+    recordDecodeStats(loopMs, tokens)
     log(
         AI.LogLevel.INFO,
         "Decoding loop: ${loopMs}ms, $tokens tokens (%.1f tok/s). Prefill: ${prefillMs}ms, Embed: ${totalEmbedMs}ms, Decode: ${totalDecodeMs}ms, KV-cache: ${totalKvMs}ms"
@@ -2887,14 +3079,16 @@ class QWEN2B164CPU : OpenVINO() {
 
   private fun ensureModelFiles() {
     val dir = donutModelDir ?: return
-    val base = modelBaseUrl
+    val base = modelRepoUrl
+    // Map: local filename → full download URL.  Remote paths are configurable via plugin
+    // properties.
     val files =
         mapOf(
-            "vision_encoder_quantized.onnx" to "$base/onnx/vision_encoder_quantized.onnx",
-            "vision_encoder_fp16.onnx" to "$base/onnx/vision_encoder_fp16.onnx",
-            "decoder_model_merged_q4.onnx" to "$base/onnx/decoder_model_merged_q4.onnx",
-            "embed_tokens_fp16.onnx" to "$base/onnx/embed_tokens_fp16.onnx",
-            "tokenizer.json" to "$base/tokenizer.json")
+            localFileName(fileVisionEncoderQuantized) to "$base/$fileVisionEncoderQuantized",
+            localFileName(fileVisionEncoderFp16) to "$base/$fileVisionEncoderFp16",
+            localFileName(fileDecoder) to "$base/$fileDecoder",
+            localFileName(fileEmbed) to "$base/$fileEmbed",
+            localFileName(fileTokenizer) to "$base/$fileTokenizer")
     files.forEach { (name, url) ->
       val target = File(dir, name)
       if (!target.exists()) {

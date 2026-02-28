@@ -18,14 +18,18 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 //endregion PDF.js
 //endregion Imports
 /**
- * Provides the {@link AI_ONNX_QWEN_CHAT.functionality }.
+ * Provides the {@link AI_ONNX_LLAMA_CHAT.functionality }.
  *
  * @remarks
+ * Chat interface for the Qwen3-VL-2B model served via llama-server (Swan Architecture).
+ * Connects to the {@code CodBi_AI_Qwen3_Server} plugin endpoint.
+ *
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
-export class AI_ONNX_QWEN_CHAT {
+export class AI_ONNX_LLAMA_CHAT {
   /**
-   * This functionality turns a set of HTML elements into a chat interface for the Qwen2-VL vision-language model.
+   * This functionality turns a set of HTML elements into a chat interface for the Qwen3-VL
+   * vision-language model served by llama-server (Swan Architecture / LlamaCpp).
    * It enables interactive, multi-turn conversations about uploaded images and PDF documents.
    *
    * **Required Elements (found by CSS class within the nearest common ancestor):**
@@ -33,33 +37,34 @@ export class AI_ONNX_QWEN_CHAT {
    * | CSS Class                      | Element                                | Purpose                                          |
    * |-------------------------------|----------------------------------------|--------------------------------------------------|
    * | *The class tagged with this functionality*        | `<textarea>`                           | Chat display (read-only conversation history)    |
-   * | `AI_ONNX_QWEN_Chat_Input`     | `<input type="text">` or `<textarea>` | Text input where the user types messages         |
-   * | `AI_ONNX_QWEN_Chat_Send`      | `<button>`                             | Send button (triggers inference)                 |
-   * | `AI_ONNX_QWEN_Chat_Stop`      | `<button>`                             | Stop button (aborts running inference)           |
-   * | `AI_ONNX_QWEN_Chat_UploadOptional)    | `<input type="file">`                  | File upload for images/PDFs to chat about        |
+   * | `AI_ONNX_LLAMA_Chat_Input`    | `<input type="text">` or `<textarea>` | Text input where the user types messages         |
+   * | `AI_ONNX_LLAMA_Chat_Send`     | `<button>`                             | Send button (triggers inference)                 |
+   * | `AI_ONNX_LLAMA_Chat_Stop`     | `<button>`                             | Stop button (aborts running inference)           |
+   * | `AI_ONNX_LLAMA_Chat_Upload` (Optional)   | `<input type="file">`                  | File upload for images/PDFs to chat about        |
+   * | `AI_ONNX_LLAMA_Chat_Thinking` (Optional)  | `<input type="checkbox">`              | Toggles thinking mode (chain-of-thought) on/off  |
    *
    * **Generated CSS Classes (injected at runtime):**
    *
    * | CSS Class                       | Element     | Purpose                                                        |
    * |--------------------------------|-------------|----------------------------------------------------------------|
-   * | `QWEN_Chat_Container`          | `<div>`     | Scrollable chat wrapper replacing the hidden `<textarea>`      |
-   * | `QWEN_Chat_Row`                | `<div>`     | Flex row holding a single bubble                               |
-   * | `QWEN_Chat_Row--user`          | `<div>`     | Row modifier: right-aligned (user message)                     |
-   * | `QWEN_Chat_Row--qwen`          | `<div>`     | Row modifier: left-aligned (Qwen response)                     |
-   * | `QWEN_Chat_Row--system`        | `<div>`     | Row modifier: centered (system/info messages)                  |
-   * | `QWEN_Chat_Bubble`             | `<div>`     | Base speech-bubble styling (padding, border-radius, shadow)    |
-   * | `QWEN_Chat_Bubble--user`       | `<div>`     | User bubble colors (background via `--user-bubble-bg`)         |
-   * | `QWEN_Chat_Bubble--qwen`       | `<div>`     | Qwen bubble colors (background via `--qwen-bubble-bg`)        |
-   * | `QWEN_Chat_Bubble--system`     | `<div>`     | System bubble: transparent, italic, muted                      |
-   * | `QWEN_Chat_Bubble--thinking`   | `<div>`     | Temporary "thinking" indicator (dimmed, italic)                |
-   * | `QWEN_Chat_Bubble--error`      | `<div>`     | Error bubble: red-tinted background                            |
-   * | `QWEN_Chat_AiHint`            | `<span>`    | Small "AI-Generated" label inside a Qwen bubble               |
+   * | `LLAMA_Chat_Container`         | `<div>`     | Scrollable chat wrapper replacing the hidden `<textarea>`      |
+   * | `LLAMA_Chat_Row`               | `<div>`     | Flex row holding a single bubble                               |
+   * | `LLAMA_Chat_Row--user`         | `<div>`     | Row modifier: right-aligned (user message)                     |
+   * | `LLAMA_Chat_Row--llama`        | `<div>`     | Row modifier: left-aligned (Llama response)                    |
+   * | `LLAMA_Chat_Row--system`       | `<div>`     | Row modifier: centered (system/info messages)                  |
+   * | `LLAMA_Chat_Bubble`            | `<div>`     | Base speech-bubble styling (padding, border-radius, shadow)    |
+   * | `LLAMA_Chat_Bubble--user`      | `<div>`     | User bubble colors (background via `--user-bubble-bg`)         |
+   * | `LLAMA_Chat_Bubble--llama`     | `<div>`     | Llama bubble colors (background via `--llama-bubble-bg`)       |
+   * | `LLAMA_Chat_Bubble--system`    | `<div>`     | System bubble: transparent, italic, muted                      |
+   * | `LLAMA_Chat_Bubble--thinking`  | `<div>`     | Temporary "thinking" indicator (dimmed, italic)                |
+   * | `LLAMA_Chat_Bubble--error`     | `<div>`     | Error bubble: red-tinted background                            |
+   * | `LLAMA_Chat_AiHint`           | `<span>`    | Small "AI-Generated" label inside an AI bubble                 |
    *
    * **Behavior:**
    * - The display textarea is made read-only and shows the full conversation history.
    * - When files are selected via the upload input, they are attached for subsequent messages.
    * - When the user clicks Send (or presses Enter in the input), the message and any attached files
-   *   are sent to the Qwen2-VL backend. The response is displayed in the chat.
+   *   are sent to the Qwen3-VL backend (via llama-server). The response is displayed in the chat.
    * - PDF files are automatically detected and processed (rendered to images or extracted).
    * - Multiple files can be attached; each is processed independently by the model.
    * - The send button and input are disabled during inference to prevent duplicate requests.
@@ -73,7 +78,7 @@ export class AI_ONNX_QWEN_CHAT {
    * - **MaxPixelSize**:  Maximum total pixel budget (width×height). Images exceeding this
    *                      are downscaled client-side while preserving the aspect ratio.
    *                      Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
-   * - **qwenbubble**:    Background color for Qwen (AI) bubbles (default: `#e5e5ea`).
+   * - **llamabubble**:   Background color for Llama (AI) bubbles (default: `#e5e5ea`).
    * - **userbubble**:    Background color for user bubbles (default: `#0b93f6`).
    *
    * @param toLoad    Provided by the CodBi.
@@ -96,12 +101,12 @@ export class AI_ONNX_QWEN_CHAT {
     const aiHintText = toLoad.aihint != null ? String(toLoad.aihint) : "\u2728 AI-Generated";
 
     // #region Create speech-bubble chat container
-    AI_ONNX_QWEN_CHAT.ensureChatBubbleStyles();
+    AI_ONNX_LLAMA_CHAT.ensureChatBubbleStyles();
     const chatContainer = document.createElement("div");
-    chatContainer.className = "QWEN_Chat_Container";
+    chatContainer.className = "LLAMA_Chat_Container";
     // Apply custom bubble colors from toLoad
-    if (toLoad.qwenbubble != null) {
-      chatContainer.style.setProperty("--qwen-bubble-bg", String(toLoad.qwenbubble));
+    if (toLoad.llamabubble != null) {
+      chatContainer.style.setProperty("--llama-bubble-bg", String(toLoad.llamabubble));
     }
     if (toLoad.userbubble != null) {
       chatContainer.style.setProperty("--user-bubble-bg", String(toLoad.userbubble));
@@ -115,7 +120,7 @@ export class AI_ONNX_QWEN_CHAT {
     // #region Discover sibling elements by walking up to the nearest common ancestor
     let container: Element | null = toProcess.parentElement;
     while (container && container !== document.body) {
-      if (container.querySelector(".AI_ONNX_QWEN_Chat_Input") && container.querySelector(".AI_ONNX_QWEN_Chat_Send")) {
+      if (container.querySelector(".AI_ONNX_LLAMA_Chat_Input") && container.querySelector(".AI_ONNX_LLAMA_Chat_Send")) {
         break;
       }
       container = container.parentElement;
@@ -124,29 +129,33 @@ export class AI_ONNX_QWEN_CHAT {
     if (!container || container === document.body) {
       window.codbi.log(
         "ERROR",
-        "Could not find a container with .AI_ONNX_QWEN_Chat_Input and .AI_ONNX_QWEN_Chat_Send elements. " +
+        "Could not find a container with .AI_ONNX_LLAMA_Chat_Input and .AI_ONNX_LLAMA_Chat_Send elements. " +
           "Ensure these elements exist within a common ancestor of the chat display textarea.",
-        "AI / ONNX / QWEN / CHAT",
+        "AI / LLAMA / CHAT",
       );
       return;
     }
 
     const chatInput = OR.tsCheck<HTMLInputElement | HTMLTextAreaElement>(
-      DEFINED.tsCheck(container.querySelector(".AI_ONNX_QWEN_Chat_Input")),
+      DEFINED.tsCheck(container.querySelector(".AI_ONNX_LLAMA_Chat_Input")),
       [new INSTANCE(HTMLInputElement), new INSTANCE(HTMLTextAreaElement)],
-      'Did you forget to tag the chat input element with CSS-Class "AI_ONNX_QWEN_Chat_Input"?',
+      'Did you forget to tag the chat input element with CSS-Class "AI_ONNX_LLAMA_Chat_Input"?',
     );
 
     const sendButton = INSTANCE.tsCheck<HTMLButtonElement>(
-      DEFINED.tsCheck(container.querySelector(".AI_ONNX_QWEN_Chat_Send")),
+      DEFINED.tsCheck(container.querySelector(".AI_ONNX_LLAMA_Chat_Send")),
       HTMLButtonElement,
     );
     const stopButton = INSTANCE.tsCheck<HTMLButtonElement>(
-      container.querySelector(".AI_ONNX_QWEN_Chat_Stop"),
+      container.querySelector(".AI_ONNX_LLAMA_Chat_Stop"),
       HTMLButtonElement,
     );
     const fileUpload = INSTANCE.tsCheck<HTMLInputElement>(
-      container.querySelector(".AI_ONNX_QWEN_Chat_Upload"),
+      container.querySelector(".AI_ONNX_LLAMA_Chat_Upload"),
+      HTMLInputElement,
+    );
+    const thinkingCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
+      container.querySelector(".AI_ONNX_LLAMA_Chat_Thinking"),
       HTMLInputElement,
     );
 
@@ -158,7 +167,7 @@ export class AI_ONNX_QWEN_CHAT {
     let thinkingBubble: HTMLDivElement | null = null;
     /** The active stream session ID, used by the stop button to abort inference. */
     let activeStreamId: string | null = null;
-    /** Multi-turn conversation history. Sent to the backend so Qwen can remember prior turns. */
+    /** Multi-turn conversation history. Sent to the backend so the model can remember prior turns. */
     const conversationHistory: { role: string; content: string }[] = [];
     /**
      * Maximum number of recent history entries to keep verbatim (the rest are
@@ -275,15 +284,15 @@ export class AI_ONNX_QWEN_CHAT {
     /**
      * Creates a speech-bubble element and appends it to the chat container.
      * @param text    Message text.
-     * @param role    `"user"` (right-aligned), `"qwen"` (left-aligned), or `"system"` (centered, muted).
+     * @param role    `"user"` (right-aligned), `"llama"` (left-aligned), or `"system"` (centered, muted).
      * @returns The created bubble `<div>` so callers can update it later (e.g. streaming).
      */
-    const appendBubble = (text: string, role: "user" | "qwen" | "system"): HTMLDivElement => {
+    const appendBubble = (text: string, role: "user" | "llama" | "system"): HTMLDivElement => {
       const row = document.createElement("div");
-      row.className = `QWEN_Chat_Row QWEN_Chat_Row--${role}`;
+      row.className = `LLAMA_Chat_Row LLAMA_Chat_Row--${role}`;
 
       const bubble = document.createElement("div");
-      bubble.className = `QWEN_Chat_Bubble QWEN_Chat_Bubble--${role}`;
+      bubble.className = `LLAMA_Chat_Bubble LLAMA_Chat_Bubble--${role}`;
       bubble.textContent = text;
       row.appendChild(bubble);
 
@@ -298,8 +307,8 @@ export class AI_ONNX_QWEN_CHAT {
       // Detect role from prefix
       if (text.startsWith("You: ")) {
         appendBubble(text.substring(5), "user");
-      } else if (text.startsWith("Qwen: ")) {
-        appendBubble(text.substring(6), "qwen");
+      } else if (text.startsWith("Qwen3: ")) {
+        appendBubble(text.substring(7), "llama");
       } else {
         appendBubble(text, "system");
       }
@@ -326,8 +335,8 @@ export class AI_ONNX_QWEN_CHAT {
           // Q&A does not confuse the model about the current image.
           conversationHistory.length = 0;
           const names = attachedFiles.map((f) => f.name).join(", ");
-          appendToChat(`📎 ${attachedFiles.length} file(s) attached: ${names}`);
-          window.codbi.log("INFO", `Chat files attached: ${names}`, "AI / ONNX / QWEN / CHAT");
+          appendToChat(`\u{1F4CE} ${attachedFiles.length} file(s) attached: ${names}`);
+          window.codbi.log("INFO", `Chat files attached: ${names}`, "AI / LLAMA / CHAT");
         } else {
           attachedFiles = [];
         }
@@ -353,54 +362,54 @@ export class AI_ONNX_QWEN_CHAT {
       }
 
       // Show thinking indicator bubble (will be replaced with real response)
-      thinkingBubble = appendBubble("", "qwen");
-      thinkingBubble.innerHTML = `<div class="CodBiLoader_Spinner QWEN_ThinkingSpinner"></div><span class="QWEN_ThinkingLabel">Thinking...</span>`;
-      thinkingBubble.classList.add("QWEN_Chat_Bubble--thinking");
+      thinkingBubble = appendBubble("", "llama");
+      thinkingBubble.innerHTML = `<div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div><span class="LLAMA_ThinkingLabel">Thinking...</span>`;
+      thinkingBubble.classList.add("LLAMA_Chat_Bubble--thinking");
 
       try {
-        AI_ONNX_QWEN_CHAT.ensurePdfJsWorkerConfigured();
+        AI_ONNX_LLAMA_CHAT.ensurePdfJsWorkerConfigured();
 
         const formData = new FormData();
         const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
         const maxPixelSize =
-          toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_ONNX_QWEN_CHAT.DEFAULT_MAX_PIXELS;
+          toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_ONNX_LLAMA_CHAT.DEFAULT_MAX_PIXELS;
 
         // #region Process attached files (PDF or Image)
         for (const file of attachedFiles) {
           if (file.type === "application/pdf") {
-            const processedImages = await AI_ONNX_QWEN_CHAT.processPdfFile(file, maxPages);
+            const processedImages = await AI_ONNX_LLAMA_CHAT.processPdfFile(file, maxPages);
             for (let i = 0; i < processedImages.length; i++) {
               const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
               let imageFile = new File([processedImages[i]], imageName, { type: "image/png" });
               // Downscale PDF page if it exceeds the pixel budget
               if (maxPixelSize > 0) {
-                const downscaled = await AI_ONNX_QWEN_CHAT.downscaleImageIfNeeded(imageFile, maxPixelSize);
+                const downscaled = await AI_ONNX_LLAMA_CHAT.downscaleImageIfNeeded(imageFile, maxPixelSize);
                 imageFile =
                   downscaled instanceof File
                     ? downscaled
                     : new File([downscaled], imageName, { type: downscaled.type || "image/png" });
               }
               // Send as base64 text param — formcycle's multipart parser returns 0-byte FileData.
-              const dataUrl = await AI_ONNX_QWEN_CHAT.blobToDataUrl(imageFile);
+              const dataUrl = await AI_ONNX_LLAMA_CHAT.blobToDataUrl(imageFile);
               formData.append(`codbi-base64:${imageName}`, dataUrl);
             }
           } else if (maxPixelSize > 0) {
             // Downscale if the image exceeds the pixel budget.
-            const downscaled = await AI_ONNX_QWEN_CHAT.downscaleImageIfNeeded(file, maxPixelSize);
-            const dataUrl = await AI_ONNX_QWEN_CHAT.blobToDataUrl(downscaled);
+            const downscaled = await AI_ONNX_LLAMA_CHAT.downscaleImageIfNeeded(file, maxPixelSize);
+            const dataUrl = await AI_ONNX_LLAMA_CHAT.blobToDataUrl(downscaled);
             window.codbi.log(
               "INFO",
               `Appending '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
-              "AI / ONNX / QWEN / CHAT",
+              "AI / LLAMA / CHAT",
             );
             formData.append(`codbi-base64:${file.name}`, dataUrl);
           } else {
             // maxPixelSize=0 → skip client-side downscaling; backend enforces the limit.
-            const dataUrl = await AI_ONNX_QWEN_CHAT.blobToDataUrl(file);
+            const dataUrl = await AI_ONNX_LLAMA_CHAT.blobToDataUrl(file);
             window.codbi.log(
               "INFO",
               `Appending '${file.name}' as base64 param (no client downscale): ${Math.round(dataUrl.length / 1024)} KB`,
-              "AI / ONNX / QWEN / CHAT",
+              "AI / LLAMA / CHAT",
             );
             formData.append(`codbi-base64:${file.name}`, dataUrl);
           }
@@ -423,6 +432,9 @@ export class AI_ONNX_QWEN_CHAT {
         headers["X-Question-chat"] = message.replace(/[\r\n]+/g, " ").trim();
         headers["X-Stream"] = "true";
         headers["X-Chat-History"] = btoa(unescape(encodeURIComponent(JSON.stringify(compactHistory()))));
+        if (thinkingCheckbox) {
+          headers["X-Thinking"] = thinkingCheckbox.checked ? "true" : "false";
+        }
         // #endregion Build request headers
 
         // #region Helper: finish streaming and re-enable UI
@@ -448,7 +460,7 @@ export class AI_ONNX_QWEN_CHAT {
           let streamBubble: HTMLDivElement | null = null;
           const interval = setInterval(() => {
             $.ajax({
-              url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen_vQA`,
+              url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen3_Server`,
               type: "POST",
               dataType: "json",
               processData: false,
@@ -463,7 +475,7 @@ export class AI_ONNX_QWEN_CHAT {
                 if (pollResponse.error && pollResponse.done === undefined) {
                   // Session not found or expired
                   clearInterval(interval);
-                  replaceThinking(`Qwen: ! ${pollResponse.error}`);
+                  replaceThinking(`Qwen3: \u26A0 ${pollResponse.error}`);
                   finishStreaming();
                   return;
                 }
@@ -474,7 +486,7 @@ export class AI_ONNX_QWEN_CHAT {
                   if (thinkingBubble) {
                     thinkingBubble.parentElement?.remove();
                     thinkingBubble = null;
-                    streamBubble = appendBubble(text, "qwen");
+                    streamBubble = appendBubble(text, "llama");
                   } else if (streamBubble) {
                     // Update existing stream bubble in-place
                     streamBubble.textContent = text;
@@ -485,16 +497,16 @@ export class AI_ONNX_QWEN_CHAT {
                   clearInterval(interval);
                   if (pollResponse.error) {
                     if (streamBubble) {
-                      streamBubble.textContent = `! ${pollResponse.error}`;
-                      streamBubble.classList.add("QWEN_Chat_Bubble--error");
+                      streamBubble.textContent = `\u26A0 ${pollResponse.error}`;
+                      streamBubble.classList.add("LLAMA_Chat_Bubble--error");
                     } else {
-                      replaceThinking(`Qwen: ! ${pollResponse.error}`);
+                      replaceThinking(`Qwen3: \u26A0 ${pollResponse.error}`);
                     }
                     conversationHistory.pop(); // remove failed user turn
                   } else if (lastText) {
                     conversationHistory.push({ role: "assistant", content: lastText });
                     if (aiHintText && streamBubble) {
-                      AI_ONNX_QWEN_CHAT.attachAiHintToBubble(streamBubble, aiHintText);
+                      AI_ONNX_LLAMA_CHAT.attachAiHintToBubble(streamBubble, aiHintText);
                     }
                   }
                   finishStreaming();
@@ -502,7 +514,7 @@ export class AI_ONNX_QWEN_CHAT {
               },
               error: () => {
                 clearInterval(interval);
-                replaceThinking("Qwen: ! Stream polling failed.");
+                replaceThinking("Qwen3: \u26A0 Stream polling failed.");
                 finishStreaming();
               },
             });
@@ -510,9 +522,9 @@ export class AI_ONNX_QWEN_CHAT {
         };
         // #endregion Helper: poll a streaming session until done
 
-        // #region Send AJAX request to Qwen backend
+        // #region Send AJAX request to Qwen3 backend (via llama-server)
         $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen_vQA`,
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen3_Server`,
           type: "POST",
           data: formData,
           dataType: "json",
@@ -526,7 +538,7 @@ export class AI_ONNX_QWEN_CHAT {
           },
           success: (response) => {
             if (response.error) {
-              replaceThinking(`Qwen: ! ${response.error}`);
+              replaceThinking(`Qwen3: \u26A0 ${response.error}`);
               conversationHistory.pop(); // remove failed user turn
               finishStreaming();
               return;
@@ -538,7 +550,7 @@ export class AI_ONNX_QWEN_CHAT {
               if (stopButton) {
                 stopButton.disabled = false;
               }
-              window.codbi.log("INFO", `Stream started: ${response.streamId}`, "AI / ONNX / QWEN / CHAT");
+              window.codbi.log("INFO", `Stream started: ${response.streamId}`, "AI / LLAMA / CHAT");
               pollStream(response.streamId);
               return;
             }
@@ -547,7 +559,7 @@ export class AI_ONNX_QWEN_CHAT {
             const fileKeys = Object.keys(response);
 
             if (fileKeys.length === 0) {
-              replaceThinking("Qwen: (no response received)");
+              replaceThinking("Qwen3: (no response received)");
               finishStreaming();
               return;
             }
@@ -566,7 +578,7 @@ export class AI_ONNX_QWEN_CHAT {
                 const answerKeys = Object.keys(fileAnswers || {});
                 const answer =
                   fileAnswers?.chat ?? (answerKeys.length > 0 ? String(fileAnswers[answerKeys[0]]) : "(no answer)");
-                parts.push(`📄 ${fileKey}:\n${answer}`);
+                parts.push(`\u{1F4C4} ${fileKey}:\n${answer}`);
               }
               answerText = parts.join("\n\n");
               conversationHistory.push({ role: "assistant", content: answerText });
@@ -576,22 +588,22 @@ export class AI_ONNX_QWEN_CHAT {
               thinkingBubble.parentElement?.remove();
               thinkingBubble = null;
             }
-            const answerBubble = appendBubble(answerText, "qwen");
+            const answerBubble = appendBubble(answerText, "llama");
             if (aiHintText) {
-              AI_ONNX_QWEN_CHAT.attachAiHintToBubble(answerBubble, aiHintText);
+              AI_ONNX_LLAMA_CHAT.attachAiHintToBubble(answerBubble, aiHintText);
             }
             finishStreaming();
           },
           error: (xhr, status, error) => {
-            replaceThinking(`Qwen: ! Request failed (${status}): ${error}`);
-            window.codbi.log("ERROR", `Chat request failed: ${status} — ${error}`, "AI / ONNX / QWEN / CHAT");
+            replaceThinking(`Qwen3: \u26A0 Request failed (${status}): ${error}`);
+            window.codbi.log("ERROR", `Chat request failed: ${status} — ${error}`, "AI / LLAMA / CHAT");
             conversationHistory.pop(); // remove failed user turn
             finishStreaming();
           },
         });
-        // #endregion Send AJAX request to Qwen backend
+        // #endregion Send AJAX request to Qwen3 backend (via llama-server)
       } catch (ex) {
-        replaceThinking(`Qwen: ! Error: ${ex}`);
+        replaceThinking(`Qwen3: \u26A0 Error: ${ex}`);
         conversationHistory.pop(); // remove failed user turn
         isBusy = false;
         sendButton.disabled = false;
@@ -615,9 +627,9 @@ export class AI_ONNX_QWEN_CHAT {
           return;
         }
         const idToStop = activeStreamId;
-        window.codbi.log("INFO", `Stop requested for stream: ${idToStop}`, "AI / ONNX / QWEN / CHAT");
+        window.codbi.log("INFO", `Stop requested for stream: ${idToStop}`, "AI / LLAMA / CHAT");
         $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen_vQA`,
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen3_Server`,
           type: "POST",
           dataType: "json",
           processData: false,
@@ -642,9 +654,9 @@ export class AI_ONNX_QWEN_CHAT {
     }) as EventListener);
     // #endregion Wire up event listeners
 
-    appendBubble("💬 Qwen Chat ready. Attach file(s) and type your question.", "system");
+    appendBubble("\u{1F4AC} Qwen3 Chat ready. Attach file(s) and type your question.", "system");
 
-    window.codbi.log("INFO", "Qwen Chat functionality initialized", "AI / ONNX / QWEN / CHAT");
+    window.codbi.log("INFO", "Llama Chat functionality initialized", "AI / LLAMA / CHAT");
   }
 
   // #region PDF.js helpers (shared logic with ai.onnx.donut.qa.ts)
@@ -652,77 +664,77 @@ export class AI_ONNX_QWEN_CHAT {
   private static pdfJsWorkerConfigured = false;
 
   private static ensurePdfJsWorkerConfigured(): void {
-    if (AI_ONNX_QWEN_CHAT.pdfJsWorkerConfigured) {
+    if (AI_ONNX_LLAMA_CHAT.pdfJsWorkerConfigured) {
       return;
     }
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.codbi.baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.worker.min.js`;
 
-    AI_ONNX_QWEN_CHAT.pdfJsWorkerConfigured = true;
+    AI_ONNX_LLAMA_CHAT.pdfJsWorkerConfigured = true;
 
     window.codbi.log(
       "INFO",
       `PDF.js worker configured: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`,
-      "AI / ONNX / QWEN / CHAT",
+      "AI / LLAMA / CHAT",
     );
   }
 
   // #region Chat bubble styles
   /** Injects global CSS for the speech-bubble chat UI (once). */
   private static ensureChatBubbleStyles(): void {
-    if (document.querySelector("#QWEN_Chat_Bubble_Styles")) {
+    if (document.querySelector("#LLAMA_Chat_Bubble_Styles")) {
       return;
     }
     const style = document.createElement("style");
-    style.id = "QWEN_Chat_Bubble_Styles";
+    style.id = "LLAMA_Chat_Bubble_Styles";
     style.textContent = `
-      .QWEN_Chat_Container {
+      .LLAMA_Chat_Container {
         --user-bubble-bg: #0b93f6 ;
-        --qwen-bubble-bg: #e5e5ea ;
+        --llama-bubble-bg: #e5e5ea ;
         display: flex ; flex-direction: column ; gap: 10px ; padding: 12px ;
         overflow-y: auto ; min-height: 120px ; max-height: 500px ;
         border: 1px solid #d0d0d0 ; border-radius: 8px ; background: #f5f5f5 ;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif ;
         font-size: 14px ; line-height: 1.45 ;
       }
-      .QWEN_Chat_Row { display: flex ; }
-      .QWEN_Chat_Row--user  { justify-content: flex-end ; }
-      .QWEN_Chat_Row--qwen  { justify-content: flex-start ; }
-      .QWEN_Chat_Row--system { justify-content: center ; }
-      .QWEN_Chat_Bubble {
+      .LLAMA_Chat_Row { display: flex ; }
+      .LLAMA_Chat_Row--user  { justify-content: flex-end ; }
+      .LLAMA_Chat_Row--llama { justify-content: flex-start ; }
+      .LLAMA_Chat_Row--system { justify-content: center ; }
+      .LLAMA_Chat_Bubble {
         max-width: 75% ; padding: 10px 14px ; border-radius: 16px ;
         word-wrap: break-word ; white-space: pre-wrap ; position: relative ;
         box-shadow: 0 0 .25em black ;
       }
-      .QWEN_Chat_Bubble--user {
+      .LLAMA_Chat_Bubble--user {
         background: var(--user-bubble-bg) ; color: #fff ;
         border-bottom-right-radius: 4px ;
       }
-      .QWEN_Chat_Bubble--qwen {
-        background: var(--qwen-bubble-bg) ; color: #1c1c1e ;
+      .LLAMA_Chat_Bubble--llama {
+        background: var(--llama-bubble-bg) ; color: #1c1c1e ;
         border-bottom-left-radius: 4px ;
       }
-      .QWEN_Chat_Bubble--system {
+      .LLAMA_Chat_Bubble--system {
         background: transparent ; color: #8e8e93 ;
         font-size: 12px ; font-style: italic ; text-align: center ;
       }
-      .QWEN_Chat_Bubble--thinking {
+      .LLAMA_Chat_Bubble--thinking {
         opacity: 0.7 ; font-style: italic ;
         display: flex ; align-items: center ; gap: 8px ;
       }
-      .QWEN_ThinkingSpinner {
+      .LLAMA_ThinkingSpinner {
         width: 20px ; height: 20px ; flex-shrink: 0 ;
       }
-      .QWEN_ThinkingSpinner::before {
+      .LLAMA_ThinkingSpinner::before {
         display: none ;
       }
-      .QWEN_ThinkingLabel {
+      .LLAMA_ThinkingLabel {
         line-height: 20px ;
       }
-      .QWEN_Chat_Bubble--error {
+      .LLAMA_Chat_Bubble--error {
         background: #ffe0e0 ; color: #c00 ;
       }
-      .QWEN_Chat_AiHint {
+      .LLAMA_Chat_AiHint {
         display: block ; margin-top: 4px ; font-size: 10px ;
         color: rgba(0,0,0,0.35) ; text-align: right ; user-select: none ;
       }`;
@@ -739,12 +751,12 @@ export class AI_ONNX_QWEN_CHAT {
    */
   private static attachAiHintToBubble(bubble: HTMLDivElement, hintText: string): void {
     // Remove any existing hint inside this bubble
-    const existing = bubble.querySelector(".QWEN_Chat_AiHint");
+    const existing = bubble.querySelector(".LLAMA_Chat_AiHint");
     if (existing) {
       existing.remove();
     }
     const hint = document.createElement("span");
-    hint.className = "QWEN_Chat_AiHint";
+    hint.className = "LLAMA_Chat_AiHint";
     hint.textContent = hintText;
     bubble.appendChild(hint);
   }
@@ -814,8 +826,8 @@ export class AI_ONNX_QWEN_CHAT {
 
         window.codbi.log(
           "INFO",
-          `Downscaling ${file.name}: ${img.width}×${img.height} → ${newW}×${newH}`,
-          "AI / ONNX / QWEN / CHAT",
+          `Downscaling ${file.name}: ${img.width}\u00d7${img.height} \u2192 ${newW}\u00d7${newH}`,
+          "AI / LLAMA / CHAT",
         );
 
         const canvas = document.createElement("canvas");
@@ -829,7 +841,7 @@ export class AI_ONNX_QWEN_CHAT {
         }
         ctx.drawImage(img, 0, 0, newW, newH);
         URL.revokeObjectURL(img.src);
-        resolve(AI_ONNX_QWEN_CHAT.canvasToFile(canvas, file.name));
+        resolve(AI_ONNX_LLAMA_CHAT.canvasToFile(canvas, file.name));
       };
       img.onerror = () => {
         URL.revokeObjectURL(img.src);
@@ -849,7 +861,7 @@ export class AI_ONNX_QWEN_CHAT {
     window.codbi.log(
       "INFO",
       `Processing PDF with ${pdf.numPages} page(s), limiting to ${pagesToProcess} page(s): ${file.name}`,
-      "AI / ONNX / QWEN / CHAT",
+      "AI / LLAMA / CHAT",
     );
 
     for (let pageNum = 1; pageNum <= pagesToProcess; pageNum++) {
@@ -863,35 +875,35 @@ export class AI_ONNX_QWEN_CHAT {
       if (textLength > 100) {
         window.codbi.log(
           "INFO",
-          `PDF page ${pageNum} contains ${textLength} characters of text — rendering to image`,
-          "AI / ONNX / QWEN / CHAT",
+          `PDF page ${pageNum} contains ${textLength} characters of text \u2014 rendering to image`,
+          "AI / LLAMA / CHAT",
         );
 
-        const blob = await AI_ONNX_QWEN_CHAT.renderPdfPageToImage(page);
+        const blob = await AI_ONNX_LLAMA_CHAT.renderPdfPageToImage(page);
         images.push(blob);
       } else {
         window.codbi.log(
           "INFO",
-          `PDF page ${pageNum} has minimal text (${textLength} chars) — attempting image extraction`,
-          "AI / ONNX / QWEN / CHAT",
+          `PDF page ${pageNum} has minimal text (${textLength} chars) \u2014 attempting image extraction`,
+          "AI / LLAMA / CHAT",
         );
 
-        const extractedImages = await AI_ONNX_QWEN_CHAT.extractImagesFromPdfPage(page);
+        const extractedImages = await AI_ONNX_LLAMA_CHAT.extractImagesFromPdfPage(page);
 
         if (extractedImages.length > 0) {
           images.push(...extractedImages);
           window.codbi.log(
             "INFO",
             `Extracted ${extractedImages.length} image(s) from PDF page ${pageNum}`,
-            "AI / ONNX / QWEN / CHAT",
+            "AI / LLAMA / CHAT",
           );
         } else {
           window.codbi.log(
             "INFO",
-            `No extractable images found on page ${pageNum} — rendering page to image`,
-            "AI / ONNX / QWEN / CHAT",
+            `No extractable images found on page ${pageNum} \u2014 rendering page to image`,
+            "AI / LLAMA / CHAT",
           );
-          const blob = await AI_ONNX_QWEN_CHAT.renderPdfPageToImage(page);
+          const blob = await AI_ONNX_LLAMA_CHAT.renderPdfPageToImage(page);
           images.push(blob);
         }
       }
@@ -917,7 +929,7 @@ export class AI_ONNX_QWEN_CHAT {
       viewport: viewport,
     }).promise;
 
-    return AI_ONNX_QWEN_CHAT.canvasToFile(canvas, "page.png");
+    return AI_ONNX_LLAMA_CHAT.canvasToFile(canvas, "page.png");
   }
 
   private static async extractImagesFromPdfPage(page: PDFPageProxy): Promise<Blob[]> {
@@ -952,17 +964,17 @@ export class AI_ONNX_QWEN_CHAT {
 
                   ctx.putImageData(imageData, 0, 0);
 
-                  images.push(AI_ONNX_QWEN_CHAT.canvasToFile(canvas, `${imageName}.png`));
+                  images.push(AI_ONNX_LLAMA_CHAT.canvasToFile(canvas, `${imageName}.png`));
                 }
               }
             }
           } catch (imgError) {
-            window.codbi.log("WARNING", `Failed to extract individual image: ${imgError}`, "AI / ONNX / QWEN / CHAT");
+            window.codbi.log("WARNING", `Failed to extract individual image: ${imgError}`, "AI / LLAMA / CHAT");
           }
         }
       }
     } catch (error) {
-      window.codbi.log("WARNING", `Image extraction failed: ${error}`, "AI / ONNX / QWEN / CHAT");
+      window.codbi.log("WARNING", `Image extraction failed: ${error}`, "AI / LLAMA / CHAT");
     }
 
     return images;
@@ -971,4 +983,4 @@ export class AI_ONNX_QWEN_CHAT {
   // #endregion PDF.js helpers
 }
 
-window.codbi.registerFunctionality("AI.ONNX.QWEN.CHAT", AI_ONNX_QWEN_CHAT.functionality.bind(AI_ONNX_QWEN_CHAT));
+window.codbi.registerFunctionality("AI.ONNX.LLAMA.CHAT", AI_ONNX_LLAMA_CHAT.functionality.bind(AI_ONNX_LLAMA_CHAT));

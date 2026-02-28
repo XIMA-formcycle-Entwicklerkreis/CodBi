@@ -1217,6 +1217,11 @@ export function enableLocalDocInterface(): void {
       // #region Extend the extended tab.
       for (const tabEditor of document.querySelectorAll('a[href="#tabsRight:extendedTab"], a[href$=":extendedTab"]')) {
         tabEditor.addEventListener("click", (event) => {
+          // #region Prevent duplicate observer creation on repeated tab clicks.
+          if (attributesEditorProcessed) {
+            return;
+          }
+          // #endregion Prevent duplicate observer creation on repeated tab clicks.
           // #region Parametercells
           const paramCellObserver = new MutationObserver((mutationsList, observer) => {
             for (const mutation of mutationsList) {
@@ -1606,6 +1611,11 @@ export function enableLocalDocInterface(): void {
                           const keyboardEvent = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent);
                           // #region If ALT + X...
                           if (keyboardEvent.altKey && keyboardEvent.key.toLowerCase() === "x") {
+                            // #region Prevent default actions & bubbling.
+                            keyboardEvent.preventDefault();
+                            keyboardEvent.stopImmediatePropagation();
+                            keyboardEvent.stopPropagation();
+                            // #endregion Prevent default actions & bubbling.
                             const attributePanel = getAttributesPanel();
 
                             if (!attributePanel) {
@@ -1617,8 +1627,8 @@ export function enableLocalDocInterface(): void {
                             attributePanel.style.position =
                               attributePanel.style.position === "fixed" ? "relative" : "fixed";
                             attributePanel.style.zIndex = attributePanel.style.position === "fixed" ? "1001" : "0";
-                            attributePanel.style.left = attributePanel.style.position === "fixed" ? "10vh" : "";
-                            attributePanel.style.top = attributePanel.style.position === "fixed" ? "10vw" : "";
+                            attributePanel.style.left = attributePanel.style.position === "fixed" ? "10vw" : "";
+                            attributePanel.style.top = attributePanel.style.position === "fixed" ? "10vh" : "";
                             attributePanel.style.width = attributePanel.style.position === "fixed" ? "80vw" : "";
                             attributePanel.style.height =
                               attributePanel.style.position === "fixed" ? "fit-content" : "";
@@ -1731,16 +1741,12 @@ export function enableLocalDocInterface(): void {
             return;
           }
 
+          attributesEditorProcessed = true;
+
           paramCellObserver.observe(extendedPanel, {
             childList: true,
             subtree: true,
           });
-
-          if (attributesEditorProcessed) {
-            return;
-          }
-
-          attributesEditorProcessed = true;
 
           const registeredCells = new Array<HTMLElement>();
 

@@ -229,7 +229,6 @@
 
 		</dependency>
 
-		<!--
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-engine</artifactId>
@@ -263,7 +262,6 @@
 			<version>2.7.1-0.36.0</version>
 			<scope>compile</scope>
 		</dependency>
-		-->
 
 		<dependency>
 			<groupId>ai.djl.huggingface</groupId>

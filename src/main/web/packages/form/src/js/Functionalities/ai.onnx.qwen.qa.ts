@@ -17,12 +17,12 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 //endregion PDF.js
 //endregion Imports
 /**
- * Provides the {@link AI_ONNX_DONUT_QA.functionality }.
+ * Provides the {@link AI_ONNX_QWEN_QA.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
-export class AI_ONNX_DONUT_QA {
+export class AI_ONNX_QWEN_QA {
   /**
    * This functionality processes uploaded images using a Donut AI-Model running on the DJL ONNX-Engine to
    * answer questions about documents. As soon as the file(s) selected changes the AI
@@ -68,12 +68,18 @@ export class AI_ONNX_DONUT_QA {
    *                  to be accepted. If not, an error and a manual verification checkbox are shown,
    *                  just like in ai.ocr.ts. The question can reference symbols as usual.
    *
-   * Questions are acquired from DOM elements within the parent.parent container of the
-   * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_ONNX_DONUT_QA_Question**.
+   * Questions are acquired from DOM elements within the nearest ancestor **XContainer** of the
+   * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_ONNX_QWEN_QA_Question**.
    * Each such element should have:
    *  - An **id** attribute (used as the question key)
    *  - A **data-cb-Question**  attribute (contains the question text which may include symbols like <[FieldName]>
    *                            that get resolved to the value of the field with class "FieldName" in the same container).
+   *
+   * **Sub-container exclusion:** Nested **XContainer** elements within the search scope can be
+   * tagged with the CSS class **AI_ONNX_QA_Exclude** to exclude their contents from the question
+   * search. This allows partitioning a form so that each upload field only picks up its own
+   * questions. An upload field that resides *inside* an excluded sub-container naturally searches
+   * that sub-container (its own nearest XContainer) and is not affected by the exclusion.
    *
    * In verify mode, the upload field itself may have a **data-cb-Question** attribute. This question is sent to the AI and the answer must be "yes" (case-insensitive) for the file to be accepted. Otherwise, an error and a manual verification checkbox are shown.
    *
@@ -104,36 +110,36 @@ export class AI_ONNX_DONUT_QA {
         return;
       }
 
-      AI_ONNX_DONUT_QA.ensurePdfJsWorkerConfigured();
+      AI_ONNX_QWEN_QA.ensurePdfJsWorkerConfigured();
 
       const formData = new FormData();
       const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
       const maxPixelSize =
-        toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_ONNX_DONUT_QA.DEFAULT_MAX_PIXELS;
+        toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_ONNX_QWEN_QA.DEFAULT_MAX_PIXELS;
       const aiHintText = toLoad.aihint != null ? String(toLoad.aihint) : "\u2728 AI-Generated";
       // #region Process files (PDF or Image)
       // Send as base64 text params — formcycle's multipart parser returns 0-byte FileData.
       for (const file of Array.from(files)) {
         if (file.type === "application/pdf") {
-          const processedImages = await AI_ONNX_DONUT_QA.processPdfFile(file, maxPages);
+          const processedImages = await AI_ONNX_QWEN_QA.processPdfFile(file, maxPages);
 
           for (let i = 0; i < processedImages.length; i++) {
             const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
             let imageFile = new File([processedImages[i]], imageName, { type: "image/png" });
             // Downscale PDF page if it exceeds the pixel budget
             if (maxPixelSize > 0) {
-              const downscaled = await AI_ONNX_DONUT_QA.downscaleImageIfNeeded(imageFile, maxPixelSize);
+              const downscaled = await AI_ONNX_QWEN_QA.downscaleImageIfNeeded(imageFile, maxPixelSize);
               imageFile =
                 downscaled instanceof File
                   ? downscaled
                   : new File([downscaled], imageName, { type: downscaled.type || "image/png" });
             }
-            const dataUrl = await AI_ONNX_DONUT_QA.blobToDataUrl(imageFile);
+            const dataUrl = await AI_ONNX_QWEN_QA.blobToDataUrl(imageFile);
             formData.append(`codbi-base64:${imageName}`, dataUrl);
           }
         } else if (maxPixelSize > 0) {
-          const downscaled = await AI_ONNX_DONUT_QA.downscaleImageIfNeeded(file, maxPixelSize);
-          const dataUrl = await AI_ONNX_DONUT_QA.blobToDataUrl(downscaled);
+          const downscaled = await AI_ONNX_QWEN_QA.downscaleImageIfNeeded(file, maxPixelSize);
+          const dataUrl = await AI_ONNX_QWEN_QA.blobToDataUrl(downscaled);
           window.codbi.log(
             "INFO",
             `Appending '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
@@ -141,7 +147,7 @@ export class AI_ONNX_DONUT_QA {
           );
           formData.append(`codbi-base64:${file.name}`, dataUrl);
         } else {
-          const dataUrl = await AI_ONNX_DONUT_QA.blobToDataUrl(file);
+          const dataUrl = await AI_ONNX_QWEN_QA.blobToDataUrl(file);
           window.codbi.log(
             "INFO",
             `Appending '${file.name}' as base64 param (no client downscale): ${Math.round(dataUrl.length / 1024)} KB`,
@@ -162,22 +168,44 @@ export class AI_ONNX_DONUT_QA {
         );
       }
       // #endregion Determine user-set rotation
-      // #region Determine the container of the upload input
-      const uploadContainer = document.querySelector(`div .CXUpload:has(#${toProcess.getAttribute("id")})`);
-
-      if (!uploadContainer || !uploadContainer.parentElement) {
+      // #region Determine the search container
+      // Walk up from the upload input to find the right .CXContainer scope.
+      // Strategy: find the nearest .CXContainer, then go one level up to the parent
+      // .CXContainer that groups the upload with its question fields.
+      // Exception: if the immediate .CXContainer is tagged AI_ONNX_QA_Exclude, it IS
+      // the intended scope (the upload lives inside an excluded sub-container).
+      const immediateCX = (toProcess as HTMLElement).closest(".CXContainer");
+      let container: Element | null;
+      if (immediateCX?.classList.contains("AI_ONNX_QA_Exclude")) {
+        // Upload is inside an excluded sub-container — search within it
+        container = immediateCX;
+      } else {
+        // Go one level up: the immediate .CXContainer is just the upload wrapper
+        container = immediateCX?.parentElement?.closest(".CXContainer") ?? immediateCX;
+      }
+      if (!container) {
         window.codbi.log(
           "ERROR",
-          `Could not find upload container for element #${toProcess.getAttribute("id")}. Make sure the input is inside a CXUpload container.`,
+          `Could not find ancestor .CXContainer for element #${toProcess.getAttribute("id")}. Make sure the input is inside a CXContainer.`,
           "AI / ONNX / DONUT",
         );
         return;
       }
-
-      const container = uploadContainer.parentElement;
-      // #endregion Determine the container of the upload input
+      // #endregion Determine the search container
       // #region Acquire Questions
-      const questionElements = container.querySelectorAll(".AI_ONNX_DONUT_QA_Question");
+      // Find all question elements, then filter out those inside an excluded sub-container.
+      // A nested .CXContainer.AI_ONNX_QA_Exclude signals "don't search here".
+      const allQuestionElements = container.querySelectorAll(".AI_ONNX_QWEN_QA_Question");
+      const questionElements: Element[] = [];
+      for (const qEl of allQuestionElements) {
+        // Walk up from the question element — if we hit an excluded sub-container
+        // before reaching our search container, skip this question.
+        const innerContainer = qEl.closest(".CXContainer");
+        if (innerContainer && innerContainer !== container && innerContainer.classList.contains("AI_ONNX_QA_Exclude")) {
+          continue; // question is inside an excluded sub-container
+        }
+        questionElements.push(qEl);
+      }
       const cordQuestions: { id: string; element: Element }[] = [];
       const vqaHeaders: { [key: string]: string } = {};
       // If mode is verify and the upload field has a data-cb-Question, use only that question
@@ -294,14 +322,18 @@ export class AI_ONNX_DONUT_QA {
 
         const questionLabelData: Map<HTMLElement, string> = new Map();
 
-        for (const element of questionElements) {
-          const questionLabel = element.parentElement?.querySelector("label") as HTMLElement | null;
+        // In verify mode, only the upload field's own question is sent — don't animate
+        // the labels of unrelated question fields that happen to share the same container.
+        if (!(mode === "verify" && verifyFieldId && verifyFieldQuestion)) {
+          for (const element of questionElements) {
+            const questionLabel = element.parentElement?.querySelector("label") as HTMLElement | null;
 
-          if (questionLabel) {
-            const originalText = questionLabel.innerHTML;
-            questionLabelData.set(questionLabel, originalText);
-            questionLabel.innerHTML = `${originalText}
-              <span class = "DONUT_Processing">Processing...</span>`;
+            if (questionLabel) {
+              const originalText = questionLabel.innerHTML;
+              questionLabelData.set(questionLabel, originalText);
+              questionLabel.innerHTML = `${originalText}
+                <span class = "DONUT_Processing">Processing...</span>`;
+            }
           }
         }
         // #endregion Disable input and show loading animation
@@ -357,7 +389,7 @@ export class AI_ONNX_DONUT_QA {
                 if (field) {
                   field.value = answer;
                   if (aiHintText) {
-                    AI_ONNX_DONUT_QA.attachAiHint(field, aiHintText);
+                    AI_ONNX_QWEN_QA.attachAiHint(field, aiHintText);
                   }
                   const event = new Event("change", { bubbles: true });
                   field.dispatchEvent(event);
@@ -424,7 +456,7 @@ export class AI_ONNX_DONUT_QA {
                   if (field) {
                     field.value = response[key][key2];
                     if (aiHintText) {
-                      AI_ONNX_DONUT_QA.attachAiHint(field, aiHintText);
+                      AI_ONNX_QWEN_QA.attachAiHint(field, aiHintText);
                     }
                     // Dispatch change event after setting value
                     const event = new Event("change", { bubbles: true });
@@ -453,16 +485,16 @@ export class AI_ONNX_DONUT_QA {
    *
    * @remarks
    * Sets {@link pdfjsLib.GlobalWorkerOptions.workerSrc} to the Resource plugin URL
-   * and guards against repeated initialization via {@link AI_ONNX_DONUT_QA.pdfJsWorkerConfigured}.
+   * and guards against repeated initialization via {@link AI_ONNX_QWEN_QA.pdfJsWorkerConfigured}.
    */
   private static ensurePdfJsWorkerConfigured(): void {
-    if (AI_ONNX_DONUT_QA.pdfJsWorkerConfigured) {
+    if (AI_ONNX_QWEN_QA.pdfJsWorkerConfigured) {
       return;
     }
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.codbi.baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.worker.min.js`;
 
-    AI_ONNX_DONUT_QA.pdfJsWorkerConfigured = true;
+    AI_ONNX_QWEN_QA.pdfJsWorkerConfigured = true;
 
     window.codbi.log(
       "INFO",
@@ -499,7 +531,7 @@ export class AI_ONNX_DONUT_QA {
    * @param hintText The label to display, e.g. "✨ AI-Generated".
    */
   private static attachAiHint(field: HTMLInputElement | HTMLTextAreaElement, hintText: string): void {
-    AI_ONNX_DONUT_QA.ensureAiHintStyles();
+    AI_ONNX_QWEN_QA.ensureAiHintStyles();
 
     // Remove any existing hint on this field
     const existingHint = field.parentElement?.querySelector(".DONUT_AI_Hint");
@@ -603,7 +635,7 @@ export class AI_ONNX_DONUT_QA {
         }
         ctx.drawImage(img, 0, 0, newW, newH);
         URL.revokeObjectURL(img.src);
-        resolve(AI_ONNX_DONUT_QA.canvasToFile(canvas, file.name));
+        resolve(AI_ONNX_QWEN_QA.canvasToFile(canvas, file.name));
       };
       img.onerror = () => {
         URL.revokeObjectURL(img.src);
@@ -649,7 +681,7 @@ export class AI_ONNX_DONUT_QA {
           "AI / ONNX / DONUT",
         );
 
-        const blob = await AI_ONNX_DONUT_QA.renderPdfPageToImage(page);
+        const blob = await AI_ONNX_QWEN_QA.renderPdfPageToImage(page);
 
         images.push(blob);
       } else {
@@ -659,7 +691,7 @@ export class AI_ONNX_DONUT_QA {
           "AI / ONNX / DONUT",
         );
 
-        const extractedImages = await AI_ONNX_DONUT_QA.extractImagesFromPdfPage(page);
+        const extractedImages = await AI_ONNX_QWEN_QA.extractImagesFromPdfPage(page);
 
         if (extractedImages.length > 0) {
           images.push(...extractedImages);
@@ -675,7 +707,7 @@ export class AI_ONNX_DONUT_QA {
             `No extractable images found on page ${pageNum} - rendering page to image`,
             "AI / ONNX / DONUT",
           );
-          const blob = await AI_ONNX_DONUT_QA.renderPdfPageToImage(page);
+          const blob = await AI_ONNX_QWEN_QA.renderPdfPageToImage(page);
 
           images.push(blob);
         }
@@ -786,4 +818,4 @@ export class AI_ONNX_DONUT_QA {
   }
 }
 
-window.codbi.registerFunctionality("AI.ONNX.DONUT.QA", AI_ONNX_DONUT_QA.functionality.bind(AI_ONNX_DONUT_QA)); // Initialization
+window.codbi.registerFunctionality("AI.ONNX.QWEN.QA", AI_ONNX_QWEN_QA.functionality.bind(AI_ONNX_QWEN_QA)); // Initialization

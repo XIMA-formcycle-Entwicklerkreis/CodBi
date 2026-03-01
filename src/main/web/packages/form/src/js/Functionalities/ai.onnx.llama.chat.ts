@@ -22,14 +22,14 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
  *
  * @remarks
  * Chat interface for the Qwen3-VL-2B model served via llama-server (Swan Architecture).
- * Connects to the {@code CodBi_AI_Qwen3_Server} plugin endpoint.
+ * Connects to the {@code CodBi_AI_LLAMA_STD} plugin endpoint.
  *
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class AI_ONNX_LLAMA_CHAT {
   /**
    * This functionality turns a set of HTML elements into a chat interface for the Qwen3-VL
-   * vision-language model served by llama-server (Swan Architecture / LlamaCpp).
+   * vision-language model served by llama-server (Swan Architecture / LLAMA).
    * It enables interactive, multi-turn conversations about uploaded images and PDF documents.
    *
    * **Required Elements (found by CSS class within the nearest common ancestor):**
@@ -167,6 +167,8 @@ export class AI_ONNX_LLAMA_CHAT {
     let thinkingBubble: HTMLDivElement | null = null;
     /** The active stream session ID, used by the stop button to abort inference. */
     let activeStreamId: string | null = null;
+    /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
+    const pageSessionId: string = crypto.randomUUID();
     /** Multi-turn conversation history. Sent to the backend so the model can remember prior turns. */
     const conversationHistory: { role: string; content: string }[] = [];
     /**
@@ -280,6 +282,81 @@ export class AI_ONNX_LLAMA_CHAT {
     };
     // #endregion Resource status overlay
 
+    // #region Helper: linkify URLs in plain text
+    /**
+     * HTML-escapes the given plain text, then converts:
+     *   1. Markdown links `[label](url)` → clickable `<a>` with the label text
+     *   2. Bare URLs (`https://…` / `http://…`) → clickable `<a>` showing the hostname
+     *
+     * Uses a placeholder strategy so that URLs inside already-created `<a>` tags
+     * are never matched again by the bare-URL pass.
+     *
+     * All links open in a new tab with `rel="noopener noreferrer"`.
+     *
+     * @param text  Raw plain text (may contain URLs or Markdown links).
+     * @returns     Safe HTML string with clickable links.
+     */
+    const linkifyUrls = (text: string): string => {
+      const links: string[] = [];
+      const placeholder = (idx: number): string => `\x00LINK${idx}\x00`;
+
+      // 1. HTML-escape to prevent XSS
+      const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+      // 2. Convert Markdown-style links [label](url) → placeholder
+      const withMdPlaceholders = escaped.replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi,
+        (_match, label: string, url: string) => {
+          const idx = links.length;
+          links.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+          return placeholder(idx);
+        },
+      );
+
+      // 3. Wrap remaining bare URLs → placeholder (can't accidentally match inside step 2)
+      const withAllPlaceholders = withMdPlaceholders.replace(/https?:\/\/[^\s<>&"'\x00)\]]+/gi, (url) => {
+        let label = url;
+        try {
+          const u = new URL(url);
+          label = u.hostname.replace(/^www\./, "");
+        } catch {
+          /* keep full URL as label */
+        }
+        const idx = links.length;
+        links.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+        return placeholder(idx);
+      });
+
+      // 4. Restore placeholders with actual <a> tags
+      const restored = withAllPlaceholders.replace(/\x00LINK(\d+)\x00/g, (_m, idx: string) => links[Number(idx)]);
+
+      // 5. Extract trailing cluster of links into a styled sources section.
+      //    Matches: optional punctuation/whitespace, then 2+ consecutive <a> tags
+      //    separated only by whitespace, commas, periods, or "and".
+      const trailingLinksPattern = /[.,;:\s]*(<a\s[^>]*>[^<]*<\/a>(?:[\s.,]*(?:and\s+)?<a\s[^>]*>[^<]*<\/a>)+)[\s.]*$/i;
+      const trailingMatch = restored.match(trailingLinksPattern);
+      if (trailingMatch) {
+        const body = restored.slice(0, trailingMatch.index).replace(/[\s.,:;]+$/, "");
+        // Wrap each <a> in a badge <span>
+        const badges = trailingMatch[1].replace(
+          /(<a\s[^>]*>[^<]*<\/a>)/g,
+          '<span class="LLAMA_Chat_SourceBadge">$1</span>',
+        );
+        // Remove separators between badges (commas, "and", whitespace)
+        const cleanBadges = badges.replace(/<\/span>[\s.,]*(?:and\s+)?<span/g, "</span><span").trim();
+        return (
+          body +
+          '<div class="LLAMA_Chat_Sources">' +
+          '<span class="LLAMA_Chat_SourcesLabel">Sources:</span> ' +
+          cleanBadges +
+          "</div>"
+        );
+      }
+
+      return restored;
+    };
+    // #endregion Helper: linkify URLs in plain text
+
     // #region Helper: create a chat bubble
     /**
      * Creates a speech-bubble element and appends it to the chat container.
@@ -293,7 +370,7 @@ export class AI_ONNX_LLAMA_CHAT {
 
       const bubble = document.createElement("div");
       bubble.className = `LLAMA_Chat_Bubble LLAMA_Chat_Bubble--${role}`;
-      bubble.textContent = text;
+      bubble.innerHTML = linkifyUrls(text);
       row.appendChild(bubble);
 
       chatContainer.appendChild(row);
@@ -431,6 +508,7 @@ export class AI_ONNX_LLAMA_CHAT {
         // HTTP headers must not contain newlines — collapse to single line
         headers["X-Question-chat"] = message.replace(/[\r\n]+/g, " ").trim();
         headers["X-Stream"] = "true";
+        headers["X-Session-Id"] = pageSessionId;
         headers["X-Chat-History"] = btoa(unescape(encodeURIComponent(JSON.stringify(compactHistory()))));
         if (thinkingCheckbox) {
           headers["X-Thinking"] = thinkingCheckbox.checked ? "true" : "false";
@@ -460,7 +538,7 @@ export class AI_ONNX_LLAMA_CHAT {
           let streamBubble: HTMLDivElement | null = null;
           const interval = setInterval(() => {
             $.ajax({
-              url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen3_Server`,
+              url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
               type: "POST",
               dataType: "json",
               processData: false,
@@ -480,6 +558,38 @@ export class AI_ONNX_LLAMA_CHAT {
                   return;
                 }
                 const text: string = pollResponse.text ?? "";
+
+                // Handle web search phase: text may reset when search results replace CALL:search
+                if (pollResponse.searching && text.length === 0 && streamBubble) {
+                  // Model requested a search — show animated indicator below the bubble
+                  if (!chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                    const indicator = document.createElement("div");
+                    indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
+                    indicator.innerHTML =
+                      '<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator">' +
+                      '<div class="LLAMA_SearchDots"><span></span><span></span><span></span></div>' +
+                      '<span class="LLAMA_SearchLabel">\u{1F50D} Searching the internet\u2026</span>' +
+                      "</div>";
+                    chatContainer.appendChild(indicator);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                  }
+                  lastText = "";
+                  return;
+                }
+
+                // When search completes, text arrives fresh — handle text reset
+                if (text.length > 0 && text.length < lastText.length) {
+                  // Text was replaced (search results arrived) — remove search indicator
+                  const indicator = chatContainer.querySelector(".LLAMA_SearchIndicator");
+                  if (indicator?.parentElement) {
+                    indicator.parentElement.remove();
+                  }
+                  lastText = "";
+                  // Create a new bubble for the search-augmented answer
+                  streamBubble = appendBubble(text, "llama");
+                  return;
+                }
+
                 if (text.length > lastText.length) {
                   lastText = text;
                   // First chunk: replace thinking bubble with a real one
@@ -489,12 +599,17 @@ export class AI_ONNX_LLAMA_CHAT {
                     streamBubble = appendBubble(text, "llama");
                   } else if (streamBubble) {
                     // Update existing stream bubble in-place
-                    streamBubble.textContent = text;
+                    streamBubble.innerHTML = linkifyUrls(text);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                   }
                 }
                 if (pollResponse.done) {
                   clearInterval(interval);
+                  // Clean up search indicator if still present
+                  const searchInd = chatContainer.querySelector(".LLAMA_SearchIndicator");
+                  if (searchInd?.parentElement) {
+                    searchInd.parentElement.remove();
+                  }
                   if (pollResponse.error) {
                     if (streamBubble) {
                       streamBubble.textContent = `\u26A0 ${pollResponse.error}`;
@@ -522,9 +637,9 @@ export class AI_ONNX_LLAMA_CHAT {
         };
         // #endregion Helper: poll a streaming session until done
 
-        // #region Send AJAX request to Qwen3 backend (via llama-server)
+        // #region Send AJAX request to backend (via llama-server)
         $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen3_Server`,
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
           type: "POST",
           data: formData,
           dataType: "json",
@@ -629,7 +744,7 @@ export class AI_ONNX_LLAMA_CHAT {
         const idToStop = activeStreamId;
         window.codbi.log("INFO", `Stop requested for stream: ${idToStop}`, "AI / LLAMA / CHAT");
         $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen3_Server`,
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
           type: "POST",
           dataType: "json",
           processData: false,
@@ -734,9 +849,66 @@ export class AI_ONNX_LLAMA_CHAT {
       .LLAMA_Chat_Bubble--error {
         background: #ffe0e0 ; color: #c00 ;
       }
+      .LLAMA_SearchIndicator {
+        display: flex ; align-items: center ; gap: 8px ;
+        opacity: 0.85 ; font-style: italic ; font-size: 13px ;
+        background: #f0f4ff ; border: 1px dashed #b0c4de ;
+      }
+      .LLAMA_SearchLabel { color: #3a6ea5 ; }
+      .LLAMA_SearchDots {
+        display: inline-flex ; gap: 4px ; align-items: center ;
+      }
+      .LLAMA_SearchDots span {
+        width: 6px ; height: 6px ; border-radius: 50% ;
+        background: #3a6ea5 ; animation: llama-dot-bounce 1.2s ease-in-out infinite ;
+      }
+      .LLAMA_SearchDots span:nth-child(2) { animation-delay: 0.2s ; }
+      .LLAMA_SearchDots span:nth-child(3) { animation-delay: 0.4s ; }
+      @keyframes llama-dot-bounce {
+        0%, 80%, 100% { transform: scale(0.6) ; opacity: 0.4 ; }
+        40% { transform: scale(1) ; opacity: 1 ; }
+      }
       .LLAMA_Chat_AiHint {
         display: block ; margin-top: 4px ; font-size: 10px ;
         color: rgba(0,0,0,0.35) ; text-align: right ; user-select: none ;
+      }
+      .LLAMA_Chat_Bubble a {
+        color: inherit ; text-decoration: underline ;
+        word-break: break-all ;
+      }
+      .LLAMA_Chat_Bubble--user a {
+        color: #fff ;
+      }
+      .LLAMA_Chat_Bubble--llama a {
+        color: #0b6abf ;
+      }
+      .LLAMA_Chat_Bubble a:hover {
+        text-decoration-thickness: 2px ;
+      }
+      .LLAMA_Chat_Sources {
+        display: flex ; flex-wrap: wrap ; align-items: center ; gap: 6px ;
+        margin-top: 10px ; padding-top: 8px ;
+        border-top: 1px solid rgba(0,0,0,0.1) ;
+        white-space: normal ;
+      }
+      .LLAMA_Chat_SourcesLabel {
+        font-size: 11px ; color: rgba(0,0,0,0.45) ; font-weight: 600 ;
+        user-select: none ;
+      }
+      .LLAMA_Chat_SourceBadge {
+        display: inline-flex ; align-items: center ;
+        padding: 2px 10px ; border-radius: 12px ;
+        background: rgba(11,106,191,0.1) ; font-size: 12px ;
+        transition: background 0.15s ;
+      }
+      .LLAMA_Chat_SourceBadge:hover {
+        background: rgba(11,106,191,0.2) ;
+      }
+      .LLAMA_Chat_SourceBadge a {
+        color: #0b6abf ; text-decoration: none ; word-break: normal ;
+      }
+      .LLAMA_Chat_SourceBadge a:hover {
+        text-decoration: underline ;
       }`;
     document.head.appendChild(style);
   }

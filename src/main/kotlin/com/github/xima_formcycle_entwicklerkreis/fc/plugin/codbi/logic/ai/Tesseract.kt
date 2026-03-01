@@ -9,7 +9,9 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai
 // endregion XIMA
 // region Tesseract
 // endregion Tesseract
-// region Java/Javax
+// region Java
+// endregion Java
+// region Javax
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -43,7 +45,7 @@ import javax.servlet.ServletException
 import net.sourceforge.tess4j.ITessAPI
 import net.sourceforge.tess4j.TessAPI1
 
-// endregion Java/Javax
+// endregion Javax
 // endregion Imports
 /**
  * # Performs OCR on one or multiple images using the
@@ -53,7 +55,7 @@ import net.sourceforge.tess4j.TessAPI1
  * header, the text matching a specified regular expression, the text matching multiple named
  * regular expressions or whether the text matches a specified regular expression.
  *
- * Formcycle upload-fields that take advantage of CodBi's **Media.MultipleDownload** thus uploaded
+ * Formcycle upload-fields that take advantage of CodBi's **Media.MultipleDownload** thus uploading
  * more than one image are supported. The JSON returned will hold the properties named according to
  * the transmitted file's names holding the found text.
  *
@@ -66,6 +68,7 @@ import net.sourceforge.tess4j.TessAPI1
  * ## URLs needed for proper initialization:
  * - **[https://repo1.maven.org/maven2](https://repo1.maven.org/maven2)**
  * - **[https://github.com/tesseract-ocr/tessdata_best/raw/main/](https://github.com/tesseract-ocr/tessdata_best)**
+ *
  *   **The Maven repository's URL may be changed using the AI_Tesseract_MavenRepository plugin
  *   property.**
  *

@@ -17,14 +17,17 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 //endregion PDF.js
 //endregion Imports
 /**
- * Provides the {@link AI_ONNX_QWEN_QA.functionality }.
+ * Provides the {@link AI_LLAMA_STANDARD_QA.functionality }.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
-export class AI_ONNX_QWEN_QA {
+export class AI_LLAMA_STANDARD_QA {
+  /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
+  private static readonly PAGE_SESSION_ID: string = crypto.randomUUID();
+
   /**
-   * This functionality processes uploaded images using a Donut AI-Model running on the DJL ONNX-Engine to
+   * This functionality processes uploaded images using a local llama-server process to
    * answer questions about documents. As soon as the file(s) selected changes the AI
    * is contacted via AJAX and the questions are answered. Nothing happens if no file is
    * selected.
@@ -34,7 +37,7 @@ export class AI_ONNX_QWEN_QA {
    * - If PDF contains images (scanned documents), those images are extracted and sent to AI
    * - Multiple files can be selected, mixing PDFs and images
    *
-   * **Image Orientation:** The Donut model is sensitive to image rotation. There are two ways
+   * **Image Orientation:** The model is sensitive to image rotation. There are two ways
    * to provide orientation of the image to process:
    *
    * 1. **Manual Rotation (Priority):** Add a **data-cb-Rotate** attribute to the input element:
@@ -69,14 +72,14 @@ export class AI_ONNX_QWEN_QA {
    *                  just like in ai.ocr.ts. The question can reference symbols as usual.
    *
    * Questions are acquired from DOM elements within the nearest ancestor **XContainer** of the
-   * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_ONNX_QWEN_QA_Question**.
+   * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_LLAMA_STANDARD_QA_Question**.
    * Each such element should have:
    *  - An **id** attribute (used as the question key)
    *  - A **data-cb-Question**  attribute (contains the question text which may include symbols like <[FieldName]>
    *                            that get resolved to the value of the field with class "FieldName" in the same container).
    *
    * **Sub-container exclusion:** Nested **XContainer** elements within the search scope can be
-   * tagged with the CSS class **AI_ONNX_QA_Exclude** to exclude their contents from the question
+   * tagged with the CSS class **AI_LLAMA_QA_Exclude** to exclude their contents from the question
    * search. This allows partitioning a form so that each upload field only picks up its own
    * questions. An upload field that resides *inside* an excluded sub-container naturally searches
    * that sub-container (its own nearest XContainer) and is not affected by the exclusion.
@@ -110,73 +113,70 @@ export class AI_ONNX_QWEN_QA {
         return;
       }
 
-      AI_ONNX_QWEN_QA.ensurePdfJsWorkerConfigured();
+      AI_LLAMA_STANDARD_QA.ensurePdfJsWorkerConfigured();
 
       const formData = new FormData();
       const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
       const maxPixelSize =
-        toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_ONNX_QWEN_QA.DEFAULT_MAX_PIXELS;
+        toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_LLAMA_STANDARD_QA.DEFAULT_MAX_PIXELS;
       const aiHintText = toLoad.aihint != null ? String(toLoad.aihint) : "\u2728 AI-Generated";
       // #region Process files (PDF or Image)
       // Send as base64 text params — formcycle's multipart parser returns 0-byte FileData.
       for (const file of Array.from(files)) {
         if (file.type === "application/pdf") {
-          const processedImages = await AI_ONNX_QWEN_QA.processPdfFile(file, maxPages);
+          const processedImages = await AI_LLAMA_STANDARD_QA.processPdfFile(file, maxPages);
 
           for (let i = 0; i < processedImages.length; i++) {
             const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
             let imageFile = new File([processedImages[i]], imageName, { type: "image/png" });
             // Downscale PDF page if it exceeds the pixel budget
             if (maxPixelSize > 0) {
-              const downscaled = await AI_ONNX_QWEN_QA.downscaleImageIfNeeded(imageFile, maxPixelSize);
+              const downscaled = await AI_LLAMA_STANDARD_QA.downscaleImageIfNeeded(imageFile, maxPixelSize);
               imageFile =
                 downscaled instanceof File
                   ? downscaled
                   : new File([downscaled], imageName, { type: downscaled.type || "image/png" });
             }
-            const dataUrl = await AI_ONNX_QWEN_QA.blobToDataUrl(imageFile);
+            const dataUrl = await AI_LLAMA_STANDARD_QA.blobToDataUrl(imageFile);
             formData.append(`codbi-base64:${imageName}`, dataUrl);
           }
         } else if (maxPixelSize > 0) {
-          const downscaled = await AI_ONNX_QWEN_QA.downscaleImageIfNeeded(file, maxPixelSize);
-          const dataUrl = await AI_ONNX_QWEN_QA.blobToDataUrl(downscaled);
+          const downscaled = await AI_LLAMA_STANDARD_QA.downscaleImageIfNeeded(file, maxPixelSize);
+          const dataUrl = await AI_LLAMA_STANDARD_QA.blobToDataUrl(downscaled);
           window.codbi.log(
             "INFO",
             `Appending '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
-            "AI / ONNX / DONUT",
+            "AI / LLAMA / QA",
           );
           formData.append(`codbi-base64:${file.name}`, dataUrl);
         } else {
-          const dataUrl = await AI_ONNX_QWEN_QA.blobToDataUrl(file);
+          const dataUrl = await AI_LLAMA_STANDARD_QA.blobToDataUrl(file);
           window.codbi.log(
             "INFO",
             `Appending '${file.name}' as base64 param (no client downscale): ${Math.round(dataUrl.length / 1024)} KB`,
-            "AI / ONNX / DONUT",
+            "AI / LLAMA / QA",
           );
           formData.append(`codbi-base64:${file.name}`, dataUrl);
         }
       }
       // #endregion Process files (PDF or Image)
       const headers: { [key: string]: string } = {};
+      headers["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
       // #region Determine user-set rotation
       if (toLoad.rotate && toLoad.rotate !== "0" && toLoad.rotate !== 0) {
         headers["X-Rotate"] = toLoad.rotate.toString();
-        window.codbi.log(
-          "INFO",
-          `Setting image rotation to ${toLoad.rotate}° via X-Rotate header`,
-          "AI / ONNX / DONUT",
-        );
+        window.codbi.log("INFO", `Setting image rotation to ${toLoad.rotate}° via X-Rotate header`, "AI / LLAMA / QA");
       }
       // #endregion Determine user-set rotation
       // #region Determine the search container
       // Walk up from the upload input to find the right .CXContainer scope.
       // Strategy: find the nearest .CXContainer, then go one level up to the parent
       // .CXContainer that groups the upload with its question fields.
-      // Exception: if the immediate .CXContainer is tagged AI_ONNX_QA_Exclude, it IS
+      // Exception: if the immediate .CXContainer is tagged AI_LLAMA_QA_Exclude, it IS
       // the intended scope (the upload lives inside an excluded sub-container).
       const immediateCX = (toProcess as HTMLElement).closest(".CXContainer");
       let container: Element | null;
-      if (immediateCX?.classList.contains("AI_ONNX_QA_Exclude")) {
+      if (immediateCX?.classList.contains("AI_LLAMA_QA_Exclude")) {
         // Upload is inside an excluded sub-container — search within it
         container = immediateCX;
       } else {
@@ -187,27 +187,32 @@ export class AI_ONNX_QWEN_QA {
         window.codbi.log(
           "ERROR",
           `Could not find ancestor .CXContainer for element #${toProcess.getAttribute("id")}. Make sure the input is inside a CXContainer.`,
-          "AI / ONNX / DONUT",
+          "AI / LLAMA / QA",
         );
         return;
       }
       // #endregion Determine the search container
       // #region Acquire Questions
       // Find all question elements, then filter out those inside an excluded sub-container.
-      // A nested .CXContainer.AI_ONNX_QA_Exclude signals "don't search here".
-      const allQuestionElements = container.querySelectorAll(".AI_ONNX_QWEN_QA_Question");
+      // A nested .CXContainer.AI_LLAMA_QA_Exclude signals "don't search here".
+      const allQuestionElements = container.querySelectorAll(".AI_LLAMA_STANDARD_QA_Question");
       const questionElements: Element[] = [];
       for (const qEl of allQuestionElements) {
         // Walk up from the question element — if we hit an excluded sub-container
         // before reaching our search container, skip this question.
         const innerContainer = qEl.closest(".CXContainer");
-        if (innerContainer && innerContainer !== container && innerContainer.classList.contains("AI_ONNX_QA_Exclude")) {
+        if (
+          innerContainer &&
+          innerContainer !== container &&
+          innerContainer.classList.contains("AI_LLAMA_QA_Exclude")
+        ) {
           continue; // question is inside an excluded sub-container
         }
         questionElements.push(qEl);
       }
       const cordQuestions: { id: string; element: Element }[] = [];
       const vqaHeaders: { [key: string]: string } = {};
+      vqaHeaders["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
       // If mode is verify and the upload field has a data-cb-Question, use only that question
       let verifyFieldId: string | null = null;
       let verifyFieldQuestion: string | null = null;
@@ -246,14 +251,14 @@ export class AI_ONNX_QWEN_QA {
               window.codbi.log(
                 "WARNING",
                 `Question element missing id attribute in: ${element.outerHTML}`,
-                "AI / ONNX / DONUT",
+                "AI / LLAMA / QA",
               );
             }
             if (!question) {
               window.codbi.log(
                 "WARNING",
                 `Question element with id "${id}" missing data-cb-Question attribute in: ${element.outerHTML}`,
-                "AI / ONNX / DONUT",
+                "AI / LLAMA / QA",
               );
             }
           }
@@ -266,13 +271,16 @@ export class AI_ONNX_QWEN_QA {
         for (const { id, element } of cordQuestions) {
           // Only send the file(s), no question headers
           $.ajax({
-            url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen_vQA`,
+            url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
             type: "POST",
             data: formData,
             dataType: "json",
             processData: false,
             contentType: false,
             cache: false,
+            beforeSend: (xhr) => {
+              xhr.setRequestHeader("X-Session-Id", AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID);
+            },
             success: (response) => {
               // Place the returned JSON into the field tagged with this question
               const field = document.querySelector(`#${id}`) as HTMLInputElement;
@@ -287,7 +295,7 @@ export class AI_ONNX_QWEN_QA {
               window.codbi.log(
                 "ERROR",
                 `CORD REST failed with status "${status}" cause: "${error}"`,
-                "AI / ONNX / DONUT",
+                "AI / LLAMA / QA",
               );
             },
           });
@@ -315,9 +323,9 @@ export class AI_ONNX_QWEN_QA {
                 50%   { opacity:0; }
                 100%  { opacity:1; }}
                     
-              .DONUT_Processing { font-weight: bold ; color: darkorange ; animation: highlight 2s ease-in-out infinite ;}</style>
+              .LLAMA_Processing { font-weight: bold ; color: darkorange ; animation: highlight 2s ease-in-out infinite ;}</style>
 
-            <span class = "DONUT_Processing">Processing...</span>`;
+            <span class = "LLAMA_Processing">Processing...</span>`;
         }
 
         const questionLabelData: Map<HTMLElement, string> = new Map();
@@ -332,7 +340,7 @@ export class AI_ONNX_QWEN_QA {
               const originalText = questionLabel.innerHTML;
               questionLabelData.set(questionLabel, originalText);
               questionLabel.innerHTML = `${originalText}
-                <span class = "DONUT_Processing">Processing...</span>`;
+                <span class = "LLAMA_Processing">Processing...</span>`;
             }
           }
         }
@@ -354,9 +362,9 @@ export class AI_ONNX_QWEN_QA {
           }
         };
         // #endregion Define how to remove the loading animation and restore labels
-        // #region Contact ONNX Donut vQA Plugin via AJAX
+        // #region Contact llama-server via AJAX
         $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen_vQA`,
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
           type: "POST",
           data: formData,
           dataType: "json",
@@ -371,25 +379,22 @@ export class AI_ONNX_QWEN_QA {
           success: (response) => {
             unanimate();
             if (response.error) {
-              window.codbi.log("ERROR", `REST failed with: ${response.error}`, "AI / ONNX / DONUT");
+              window.codbi.log("ERROR", `REST failed with: ${response.error}`, "AI / LLAMA / QA");
               return;
             }
             if (mode === "verify" && verifyFieldId && verifyFieldQuestion) {
-              // Iterate over all file-keyed results and check the verify answer
+              // Backend returns: { "fieldId": { "answer": "yes" } }
               let answer: string | undefined;
-              for (const fileKey of Object.keys(response)) {
-                const candidate = response[fileKey]?.[verifyFieldId];
-                if (typeof candidate === "string") {
-                  answer = candidate;
-                  break;
-                }
+              const verifyResult = response[verifyFieldId];
+              if (verifyResult && typeof verifyResult.answer === "string") {
+                answer = verifyResult.answer;
               }
               const field = document.querySelector(`#${verifyFieldId}`) as HTMLInputElement;
               if (typeof answer === "string" && answer.trim().toLowerCase() === "yes") {
                 if (field) {
                   field.value = answer;
                   if (aiHintText) {
-                    AI_ONNX_QWEN_QA.attachAiHint(field, aiHintText);
+                    AI_LLAMA_STANDARD_QA.attachAiHint(field, aiHintText);
                   }
                   const event = new Event("change", { bubbles: true });
                   field.dispatchEvent(event);
@@ -397,7 +402,7 @@ export class AI_ONNX_QWEN_QA {
                 // Remove any error/checkbox if present
                 $(toProcess).error("");
                 const existingManualVerify =
-                  toProcess.parentElement?.parentElement?.querySelectorAll(".DONUT_AI_ManualVerify");
+                  toProcess.parentElement?.parentElement?.querySelectorAll(".LLAMA_AI_ManualVerify");
                 if (existingManualVerify) {
                   for (let i = 0; i < existingManualVerify.length; i++) {
                     existingManualVerify[i].remove();
@@ -407,21 +412,21 @@ export class AI_ONNX_QWEN_QA {
                 // Show error and manual verify checkbox
                 $(toProcess).error("The file does not meet the verification criteria.");
                 // #region Add styles for manual verification checkbox
-                if (!document.querySelector("#DONUT_AI_ManualVerify_Styles")) {
+                if (!document.querySelector("#LLAMA_AI_ManualVerify_Styles")) {
                   const style = document.createElement("style");
-                  style.id = "DONUT_AI_ManualVerify_Styles";
+                  style.id = "LLAMA_AI_ManualVerify_Styles";
                   style.textContent = `
-                    .DONUT_AI_ManualVerify { display: flex ; align-items: center ; margin-top: 8px ; gap: 8px ;
+                    .LLAMA_AI_ManualVerify { display: flex ; align-items: center ; margin-top: 8px ; gap: 8px ;
                       flex-wrap: nowrap ;}
-                    .DONUT_AI_ManualVerify_Checkbox { cursor: pointer ; opacity: 1 !important ; position: relative !important ;
+                    .LLAMA_AI_ManualVerify_Checkbox { cursor: pointer ; opacity: 1 !important ; position: relative !important ;
                       flex-shrink: 0 ;}
-                    .DONUT_AI_ManualVerify label { margin-bottom: 0 ; position: relative !important ;}`;
+                    .LLAMA_AI_ManualVerify label { margin-bottom: 0 ; position: relative !important ;}`;
                   document.head.appendChild(style);
                 }
                 // #endregion Add styles for manual verification checkbox
                 // Remove existing
                 const existingManualVerify =
-                  toProcess.parentElement?.parentElement?.querySelectorAll(".DONUT_AI_ManualVerify");
+                  toProcess.parentElement?.parentElement?.querySelectorAll(".LLAMA_AI_ManualVerify");
                 if (existingManualVerify) {
                   for (let i = 0; i < existingManualVerify.length; i++) {
                     existingManualVerify[i].remove();
@@ -429,11 +434,11 @@ export class AI_ONNX_QWEN_QA {
                 }
                 // Add checkbox
                 const checkboxContainer = document.createElement("div");
-                checkboxContainer.className = "DONUT_AI_ManualVerify";
+                checkboxContainer.className = "LLAMA_AI_ManualVerify";
                 const checkbox = document.createElement("input");
                 checkbox.type = "checkbox";
                 checkbox.id = `manual-verify-${toProcess.id}`;
-                checkbox.className = "DONUT_AI_ManualVerify_Checkbox";
+                checkbox.className = "LLAMA_AI_ManualVerify_Checkbox";
                 const label = document.createElement("label");
                 label.htmlFor = checkbox.id;
                 label.textContent =
@@ -450,30 +455,33 @@ export class AI_ONNX_QWEN_QA {
                 });
               }
             } else {
-              for (const key in response) {
-                for (const key2 in response[key]) {
-                  const field = document.querySelector(`#${key2}`) as HTMLInputElement;
-                  if (field) {
-                    field.value = response[key][key2];
-                    if (aiHintText) {
-                      AI_ONNX_QWEN_QA.attachAiHint(field, aiHintText);
-                    }
-                    // Dispatch change event after setting value
-                    const event = new Event("change", { bubbles: true });
-                    field.dispatchEvent(event);
+              // Backend returns: { "questionId": { "answer": "text" }, ... }
+              for (const questionId in response) {
+                const answerText = response[questionId]?.answer;
+                if (answerText == null) {
+                  continue;
+                }
+                const field = document.querySelector(`#${questionId}`) as HTMLInputElement;
+                if (field) {
+                  field.value = answerText;
+                  if (aiHintText) {
+                    AI_LLAMA_STANDARD_QA.attachAiHint(field, aiHintText);
                   }
+                  // Dispatch change event after setting value
+                  const event = new Event("change", { bubbles: true });
+                  field.dispatchEvent(event);
                 }
               }
             }
           },
           error: (xhr, status, error) => {
             unanimate();
-            window.codbi.log("ERROR", `REST failed with status "${status}" cause: "${error}"`, "AI / ONNX / DONUT");
+            window.codbi.log("ERROR", `REST failed with status "${status}" cause: "${error}"`, "AI / LLAMA / QA");
           },
         });
       }
       // #endregion If any VQA questions, call VQA action as before
-      // #endregion Contact ONNX Donut vQA Plugin via AJAX
+      // #endregion Contact llama-server via AJAX
     });
   }
 
@@ -485,22 +493,18 @@ export class AI_ONNX_QWEN_QA {
    *
    * @remarks
    * Sets {@link pdfjsLib.GlobalWorkerOptions.workerSrc} to the Resource plugin URL
-   * and guards against repeated initialization via {@link AI_ONNX_QWEN_QA.pdfJsWorkerConfigured}.
+   * and guards against repeated initialization via {@link AI_LLAMA_STANDARD_QA.pdfJsWorkerConfigured}.
    */
   private static ensurePdfJsWorkerConfigured(): void {
-    if (AI_ONNX_QWEN_QA.pdfJsWorkerConfigured) {
+    if (AI_LLAMA_STANDARD_QA.pdfJsWorkerConfigured) {
       return;
     }
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.codbi.baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.worker.min.js`;
 
-    AI_ONNX_QWEN_QA.pdfJsWorkerConfigured = true;
+    AI_LLAMA_STANDARD_QA.pdfJsWorkerConfigured = true;
 
-    window.codbi.log(
-      "INFO",
-      `PDF.js worker configured: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`,
-      "AI / ONNX / DONUT",
-    );
+    window.codbi.log("INFO", `PDF.js worker configured: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`, "AI / LLAMA / QA");
   }
 
   // #region AI-Generated hint
@@ -508,17 +512,17 @@ export class AI_ONNX_QWEN_QA {
    * Injects global styles for the AI-Generated badge (once).
    */
   private static ensureAiHintStyles(): void {
-    if (document.querySelector("#DONUT_AI_Hint_Styles")) {
+    if (document.querySelector("#LLAMA_AI_Hint_Styles")) {
       return;
     }
     const style = document.createElement("style");
-    style.id = "DONUT_AI_Hint_Styles";
+    style.id = "LLAMA_AI_Hint_Styles";
     style.textContent = `
-      .DONUT_AI_Hint_Wrapper { position: relative ; display: inline-block ; width: 100% ;}
-      .DONUT_AI_Hint { position: absolute ; pointer-events: none ; color: rgba(0,0,0,0.38) ;
+      .LLAMA_AI_Hint_Wrapper { position: relative ; display: inline-block ; width: 100% ;}
+      .LLAMA_AI_Hint { position: absolute ; pointer-events: none ; color: rgba(0,0,0,0.38) ;
         font-size: 11px ; line-height: 1 ; white-space: nowrap ; user-select: none ;}
-      input  + .DONUT_AI_Hint { right: 8px ; top: 50% ; transform: translateY(-50%) ;}
-      textarea + .DONUT_AI_Hint { right: 8px ; bottom: 6px ;}`;
+      input  + .LLAMA_AI_Hint { right: 8px ; top: 50% ; transform: translateY(-50%) ;}
+      textarea + .LLAMA_AI_Hint { right: 8px ; bottom: 6px ;}`;
     document.head.appendChild(style);
   }
 
@@ -531,25 +535,25 @@ export class AI_ONNX_QWEN_QA {
    * @param hintText The label to display, e.g. "✨ AI-Generated".
    */
   private static attachAiHint(field: HTMLInputElement | HTMLTextAreaElement, hintText: string): void {
-    AI_ONNX_QWEN_QA.ensureAiHintStyles();
+    AI_LLAMA_STANDARD_QA.ensureAiHintStyles();
 
     // Remove any existing hint on this field
-    const existingHint = field.parentElement?.querySelector(".DONUT_AI_Hint");
+    const existingHint = field.parentElement?.querySelector(".LLAMA_AI_Hint");
     if (existingHint) {
       existingHint.remove();
     }
 
     // Wrap the field in a relative container if not already wrapped
     let wrapper = field.parentElement;
-    if (!wrapper?.classList.contains("DONUT_AI_Hint_Wrapper")) {
+    if (!wrapper?.classList.contains("LLAMA_AI_Hint_Wrapper")) {
       wrapper = document.createElement("span");
-      wrapper.className = "DONUT_AI_Hint_Wrapper";
+      wrapper.className = "LLAMA_AI_Hint_Wrapper";
       field.parentElement?.insertBefore(wrapper, field);
       wrapper.appendChild(field);
     }
 
     const badge = document.createElement("span");
-    badge.className = "DONUT_AI_Hint";
+    badge.className = "LLAMA_AI_Hint";
     badge.textContent = hintText;
     wrapper.appendChild(badge);
 
@@ -621,7 +625,7 @@ export class AI_ONNX_QWEN_QA {
         window.codbi.log(
           "INFO",
           `Downscaling ${file.name}: ${img.width}×${img.height} → ${newW}×${newH}`,
-          "AI / ONNX / DONUT",
+          "AI / LLAMA / QA",
         );
 
         const canvas = document.createElement("canvas");
@@ -635,7 +639,7 @@ export class AI_ONNX_QWEN_QA {
         }
         ctx.drawImage(img, 0, 0, newW, newH);
         URL.revokeObjectURL(img.src);
-        resolve(AI_ONNX_QWEN_QA.canvasToFile(canvas, file.name));
+        resolve(AI_LLAMA_STANDARD_QA.canvasToFile(canvas, file.name));
       };
       img.onerror = () => {
         URL.revokeObjectURL(img.src);
@@ -663,7 +667,7 @@ export class AI_ONNX_QWEN_QA {
     window.codbi.log(
       "INFO",
       `Processing PDF with ${pdf.numPages} page(s), limiting to ${pagesToProcess} page(s): ${file.name}`,
-      "AI / ONNX / DONUT",
+      "AI / LLAMA / QA",
     );
 
     for (let pageNum = 1; pageNum <= pagesToProcess; pageNum++) {
@@ -678,20 +682,20 @@ export class AI_ONNX_QWEN_QA {
         window.codbi.log(
           "INFO",
           `PDF page ${pageNum} contains ${textLength} characters of text - rendering to image`,
-          "AI / ONNX / DONUT",
+          "AI / LLAMA / QA",
         );
 
-        const blob = await AI_ONNX_QWEN_QA.renderPdfPageToImage(page);
+        const blob = await AI_LLAMA_STANDARD_QA.renderPdfPageToImage(page);
 
         images.push(blob);
       } else {
         window.codbi.log(
           "INFO",
           `PDF page ${pageNum} has minimal text (${textLength} chars) - attempting image extraction`,
-          "AI / ONNX / DONUT",
+          "AI / LLAMA / QA",
         );
 
-        const extractedImages = await AI_ONNX_QWEN_QA.extractImagesFromPdfPage(page);
+        const extractedImages = await AI_LLAMA_STANDARD_QA.extractImagesFromPdfPage(page);
 
         if (extractedImages.length > 0) {
           images.push(...extractedImages);
@@ -699,15 +703,15 @@ export class AI_ONNX_QWEN_QA {
           window.codbi.log(
             "INFO",
             `Extracted ${extractedImages.length} image(s) from PDF page ${pageNum}`,
-            "AI / ONNX / DONUT",
+            "AI / LLAMA / QA",
           );
         } else {
           window.codbi.log(
             "INFO",
             `No extractable images found on page ${pageNum} - rendering page to image`,
-            "AI / ONNX / DONUT",
+            "AI / LLAMA / QA",
           );
-          const blob = await AI_ONNX_QWEN_QA.renderPdfPageToImage(page);
+          const blob = await AI_LLAMA_STANDARD_QA.renderPdfPageToImage(page);
 
           images.push(blob);
         }
@@ -806,16 +810,19 @@ export class AI_ONNX_QWEN_QA {
               }
             }
           } catch (imgError) {
-            window.codbi.log("WARNING", `Failed to extract individual image: ${imgError}`, "AI / ONNX / DONUT");
+            window.codbi.log("WARNING", `Failed to extract individual image: ${imgError}`, "AI / LLAMA / QA");
           }
         }
       }
     } catch (error) {
-      window.codbi.log("WARNING", `Image extraction failed: ${error}`, "AI / ONNX / DONUT");
+      window.codbi.log("WARNING", `Image extraction failed: ${error}`, "AI / LLAMA / QA");
     }
 
     return images;
   }
 }
 
-window.codbi.registerFunctionality("AI.ONNX.QWEN.QA", AI_ONNX_QWEN_QA.functionality.bind(AI_ONNX_QWEN_QA)); // Initialization
+window.codbi.registerFunctionality(
+  "AI.LLAMA.STANDARD.QA",
+  AI_LLAMA_STANDARD_QA.functionality.bind(AI_LLAMA_STANDARD_QA),
+); // Initialization

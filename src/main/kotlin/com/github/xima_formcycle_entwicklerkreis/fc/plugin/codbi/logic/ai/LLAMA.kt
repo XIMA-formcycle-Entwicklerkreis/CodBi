@@ -11,11 +11,12 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
+import java.net.ServerSocket
 import java.net.URI
 import java.util.zip.ZipInputStream
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  LlamaCpp — "Swan Architecture" base class
+//  LLAMA — "Swan Architecture" base class
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // Manages the full lifecycle of a llama.cpp server running as an external OS
@@ -57,21 +58,22 @@ import java.util.zip.ZipInputStream
  * llama-server process — but the Formcycle Tomcat JVM does not even feel a bump.
  *
  * ## Plugin properties
- * | Property                 | Default        | Description                          |
- * |--------------------------|----------------|--------------------------------------|
- * | `Active_AI`              | —              | Must contain `llamacpp`              |
- * | `AI_Remove`              | —              | If contains `llamacpp`, clean up all |
- * | `AI_LlamaCpp_Port`       | `8392`         | Local port for llama-server          |
- * | `AI_LlamaCpp_Threads`    | physical cores | Number of CPU threads                |
- * | `AI_LlamaCpp_CtxSize`    | `4096`         | Context window size                  |
- * | `AI_LlamaCpp_GpuLayers`  | `0`            | Layers offloaded to GPU (0 = CPU)    |
- * | `AI_LlamaCpp_ServerArgs` | —              | Extra CLI args for llama-server      |
+ * | Property                 | Default        | Description                                        |
+ * |--------------------------|----------------|----------------------------------------------------|
+ * | `Active_AI`              | —              | Must contain `llamacpp`                            |
+ * | `AI_Remove`              | —              | If contains `llamacpp`, clean up all               |
+ * | `AI_LlamaCpp_Port`       | `8392`         | Local port for llama-server                        |
+ * | `AI_LlamaCpp_Threads`    | physical cores | Number of CPU threads                              |
+ * | `AI_LlamaCpp_CtxSize`    | `32768`        | Context window size (shared across parallel slots) |
+ * | `AI_LlamaCpp_GpuLayers`  | auto-detect    | Layers offloaded to GPU (-1 = auto)                |
+ * | `AI_LlamaCpp_Release`    | `b8175`        | llama.cpp release tag for downloads                |
+ * | `AI_LlamaCpp_ServerArgs` | —              | Extra CLI args for llama-server                    |
  *
  * ## DSGVO / EU-AI Act
  * All data stays on the local machine. No external API calls. Same compliance advantages as all
  * other CodBi AI implementations — see [AI] for details.
  */
-abstract class LlamaCpp : AI() {
+abstract class LLAMA : AI() {
 
   companion object {
     /** How long to wait for the server to become healthy after launch. */
@@ -84,7 +86,20 @@ abstract class LlamaCpp : AI() {
     private const val DOWNLOAD_BUFFER_SIZE = 65_536
 
     /** User-Agent for download requests. */
-    private const val USER_AGENT = "CodBi-LlamaCpp/1.0"
+    private const val USER_AGENT = "CodBi-LLAMA/1.0"
+
+    /** Default llama-server release tag for download URLs. */
+    private const val DEFAULT_LLAMA_RELEASE = "b8175"
+
+    /**
+     * The port currently used by the active llama-server instance. Set when a [LLAMA] subclass
+     * configures its [serverPort]. Used by [AiProxy] to route requests. `0` means no server is
+     * configured yet.
+     */
+    @Volatile
+    @JvmStatic
+    var activeServerPort: Int = 0
+      internal set
   }
 
   // ── Configuration (set by subclass or plugin properties) ─────────────
@@ -96,16 +111,96 @@ abstract class LlamaCpp : AI() {
   protected var threadCount: Int? = null
 
   /** Context window size in tokens. */
-  protected var ctxSize: Int = 4096
+  protected var ctxSize: Int = 32768
 
-  /** Number of model layers to offload to GPU. 0 = pure CPU. */
-  protected var gpuLayers: Int = 0
+  /**
+   * Number of model layers to offload to GPU.
+   * - `-1` = auto-detect (all layers offloaded when GPU is available, 0 otherwise)
+   * - `0` = pure CPU
+   * - `N` = offload exactly N layers
+   */
+  protected var gpuLayers: Int = -1
+
+  /** The detected GPU backend, populated during [detectGpu]. */
+  protected var detectedGpu: GpuBackend = GpuBackend.NONE
 
   /** Additional CLI arguments appended to the llama-server command. */
   protected var extraServerArgs: List<String> = emptyList()
 
   /** Maximum concurrent requests (slots) the server serves. */
-  protected var parallelSlots: Int = 1
+  protected var parallelSlots: Int = 4
+
+  // ── Server binary download URLs ──────────────────────────────────────
+
+  /**
+   * Effective llama.cpp release tag used for building download URLs. Defaults to
+   * [DEFAULT_LLAMA_RELEASE]. May be overridden by subclasses or plugin properties.
+   */
+  protected var llamaRelease: String = DEFAULT_LLAMA_RELEASE
+
+  /**
+   * CPU-only server binary download URLs per platform key (e.g. `"windows_x86_64"`). Populated by
+   * [buildServerUrls] and may be partially overridden by subclass plugin properties.
+   */
+  protected val serverUrls: MutableMap<String, String> = buildServerUrls(DEFAULT_LLAMA_RELEASE)
+
+  /** Builds the platform→URL map for a given llama.cpp release tag (CPU-only). */
+  protected fun buildServerUrls(release: String): MutableMap<String, String> {
+    val base = "https://github.com/ggml-org/llama.cpp/releases/download/$release"
+    return mutableMapOf(
+        "windows_x86_64" to "$base/llama-$release-bin-win-cpu-x64.zip",
+        "linux_x86_64" to "$base/llama-$release-bin-ubuntu-x64.tar.gz",
+        "macos_x86_64" to "$base/llama-$release-bin-macos-x64.tar.gz",
+        "macos_aarch64" to "$base/llama-$release-bin-macos-arm64.tar.gz")
+  }
+
+  /**
+   * Resolves the best server binary download URL based on detected GPU backend.
+   *
+   * Priority: CUDA 12 → Vulkan → CPU.
+   *
+   * For CUDA builds on Windows, also returns the CUDA runtime DLL URL that must be downloaded and
+   * extracted alongside the main binary.
+   *
+   * @return A pair of (serverBinaryUrl, cudaDllUrl?). cudaDllUrl is non-null only for CUDA builds.
+   */
+  private fun resolveServerUrl(
+      release: String,
+      platformKey: String,
+      gpuBackend: GpuBackend
+  ): Pair<String, String?> {
+    val base = "https://github.com/ggml-org/llama.cpp/releases/download/$release"
+
+    // macOS: standard binary already includes Metal/GPU — always use it
+    if (platformKey.startsWith("macos")) {
+      return Pair(serverUrls[platformKey] ?: buildServerUrls(release)[platformKey]!!, null)
+    }
+
+    if (gpuBackend == GpuBackend.CUDA) {
+      return when (platformKey) {
+        "windows_x86_64" ->
+            Pair(
+                "$base/llama-$release-bin-win-cuda-12.4-x64.zip",
+                "$base/cudart-llama-bin-win-cuda-12.4-x64.zip")
+        "linux_x86_64" ->
+            Pair(
+                "$base/llama-$release-bin-ubuntu-vulkan-x64.tar.gz",
+                null) // Linux CUDA builds are not consistently available — use Vulkan as NVIDIA
+        // fallback
+        else -> Pair(serverUrls[platformKey] ?: buildServerUrls(release)[platformKey]!!, null)
+      }
+    }
+
+    if (gpuBackend == GpuBackend.VULKAN) {
+      return when (platformKey) {
+        "windows_x86_64" -> Pair("$base/llama-$release-bin-win-vulkan-x64.zip", null)
+        "linux_x86_64" -> Pair("$base/llama-$release-bin-ubuntu-vulkan-x64.tar.gz", null)
+        else -> Pair(serverUrls[platformKey] ?: buildServerUrls(release)[platformKey]!!, null)
+      }
+    }
+
+    return Pair(serverUrls[platformKey] ?: buildServerUrls(release)[platformKey]!!, null)
+  }
 
   // ── State ────────────────────────────────────────────────────────────
 
@@ -134,7 +229,7 @@ abstract class LlamaCpp : AI() {
   protected var binDir: File? = null
 
   init {
-    idLogMessages = "LlamaCpp"
+    idLogMessages = "LLAMA"
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -152,6 +247,19 @@ abstract class LlamaCpp : AI() {
     /** True if the server binary needs `chmod +x` before it can be executed. */
     val needsChmod: Boolean
       get() = os != "windows"
+  }
+
+  /**
+   * Detected GPU backend on the current system. Used to select the correct llama-server binary
+   * variant.
+   */
+  enum class GpuBackend {
+    /** No GPU or GPU detection disabled. Use CPU-only binary. */
+    NONE,
+    /** NVIDIA GPU detected via `nvidia-smi`. Use CUDA binary. */
+    CUDA,
+    /** Vulkan-capable GPU detected via `vulkaninfo`. Works with AMD, Intel, and NVIDIA. */
+    VULKAN
   }
 
   /** Detects the current server platform from JVM system properties. */
@@ -175,6 +283,67 @@ abstract class LlamaCpp : AI() {
 
     log(LogLevel.INFO, "Detected platform: $os / $arch → binary: $exeName")
     return Platform(os, arch, exeName)
+  }
+
+  /**
+   * Detects the best available GPU backend on the current system.
+   *
+   * Detection order:
+   * 1. **NVIDIA CUDA** — runs `nvidia-smi` and checks for a valid GPU name.
+   * 2. **Vulkan** — runs `vulkaninfo --summary` and checks for a GPU device.
+   * 3. **NONE** — if neither is available, falls back to CPU-only.
+   *
+   * macOS is excluded because llama.cpp uses Metal natively (the standard macOS binary already
+   * includes Metal/GPU support, no separate build is needed).
+   *
+   * @return The detected [GpuBackend].
+   */
+  protected fun detectGpu(): GpuBackend {
+    val osName = System.getProperty("os.name").lowercase()
+
+    // macOS always uses Metal via the standard binary — no separate GPU build needed
+    if (osName.contains("mac") || osName.contains("darwin")) {
+      log(LogLevel.INFO, "GPU detection: macOS — Metal is built into the standard binary")
+      return GpuBackend.NONE
+    }
+
+    // 1. Try NVIDIA CUDA via nvidia-smi
+    try {
+      val proc =
+          ProcessBuilder("nvidia-smi", "--query-gpu=name", "--format=csv,noheader")
+              .redirectErrorStream(true)
+              .start()
+      val output = proc.inputStream.bufferedReader().readText().trim()
+      val exitCode = proc.waitFor()
+      if (exitCode == 0 && output.isNotBlank() && !output.contains("failed", ignoreCase = true)) {
+        log(LogLevel.INFO, "GPU detection: NVIDIA CUDA available — $output")
+        return GpuBackend.CUDA
+      }
+    } catch (_: Exception) {
+      // nvidia-smi not found or not executable
+    }
+
+    // 2. Try Vulkan via vulkaninfo
+    try {
+      val proc = ProcessBuilder("vulkaninfo", "--summary").redirectErrorStream(true).start()
+      val output = proc.inputStream.bufferedReader().readText().trim()
+      val exitCode = proc.waitFor()
+      if (exitCode == 0 && output.contains("deviceName", ignoreCase = true)) {
+        val deviceMatch =
+            Regex("""deviceName\s*=\s*(.+)""", RegexOption.IGNORE_CASE)
+                .find(output)
+                ?.groupValues
+                ?.get(1)
+                ?.trim()
+        log(LogLevel.INFO, "GPU detection: Vulkan available — ${deviceMatch ?: "device found"}")
+        return GpuBackend.VULKAN
+      }
+    } catch (_: Exception) {
+      // vulkaninfo not found or not executable
+    }
+
+    log(LogLevel.INFO, "GPU detection: no GPU backend found — using CPU-only")
+    return GpuBackend.NONE
   }
 
   /**
@@ -435,6 +604,131 @@ abstract class LlamaCpp : AI() {
   }
 
   // ═══════════════════════════════════════════════════════════════════════
+  //  Server Binary Download (GPU auto-detection + download + extraction)
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Downloads, extracts, and locates the llama-server binary for the current platform.
+   *
+   * This method handles:
+   * 1. GPU detection (CUDA / Vulkan / CPU fallback)
+   * 2. Release and GPU change detection (purges old downloads when the config changes)
+   * 3. Download of the correct llama-server archive (with resume support)
+   * 4. Download of CUDA runtime DLLs when needed (Windows + NVIDIA)
+   * 5. Archive extraction (ZIP or tar.gz)
+   * 6. `chmod +x` on Unix
+   *
+   * The result is stored in [serverBinary]. Subsequent calls skip the download if the binary is
+   * already present and the release + GPU backend have not changed.
+   *
+   * @param platform The detected [Platform].
+   * @return The llama-server binary [File], or `null` on failure.
+   */
+  protected fun downloadServerBinary(platform: Platform): File? {
+    // Detect GPU backend
+    detectedGpu = detectGpu()
+    log(LogLevel.INFO, "GPU backend: $detectedGpu")
+
+    // Check if the installed release or GPU backend changed
+    val releaseMarker = File(binDir, "release-tag.txt")
+    val gpuMarker = File(binDir, "gpu-backend.txt")
+    val installedRelease = if (releaseMarker.exists()) releaseMarker.readText().trim() else null
+    val installedGpu = if (gpuMarker.exists()) gpuMarker.readText().trim() else null
+
+    val releaseChanged = installedRelease != null && installedRelease != llamaRelease
+    val gpuChanged = installedGpu != null && installedGpu != detectedGpu.name
+
+    if (releaseChanged || gpuChanged) {
+      val reason =
+          when {
+            releaseChanged && gpuChanged ->
+                "release changed from $installedRelease to $llamaRelease " +
+                    "and GPU changed from $installedGpu to ${detectedGpu.name}"
+            releaseChanged -> "release changed from $installedRelease to $llamaRelease"
+            else -> "GPU backend changed from $installedGpu to ${detectedGpu.name}"
+          }
+      log(LogLevel.INFO, "$reason — purging old binaries")
+      binDir?.listFiles()?.forEach { f ->
+        if (f.name != "release-tag.txt" && f.name != "gpu-backend.txt") {
+          if (f.isDirectory) f.deleteRecursively() else f.delete()
+        }
+      }
+    }
+
+    // Resolve the best server binary URL based on detected GPU
+    val platformKey = "${platform.os}_${platform.arch}"
+    val (serverArchiveUrl, cudaDllUrl) = resolveServerUrl(llamaRelease, platformKey, detectedGpu)
+    log(LogLevel.INFO, "Server binary URL: $serverArchiveUrl")
+    if (cudaDllUrl != null) {
+      log(LogLevel.INFO, "CUDA runtime DLL URL: $cudaDllUrl")
+    }
+
+    val archiveFileName = serverArchiveUrl.substringAfterLast("/")
+    val archiveFile = File(binDir, archiveFileName)
+    val archiveMarker = File(binDir, "$archiveFileName.complete")
+
+    if (!archiveMarker.exists()) {
+      if (!downloadWithResume(serverArchiveUrl, archiveFile, "llama-server binary")) {
+        log(LogLevel.ERROR, "Failed to download llama-server binary")
+        return null
+      }
+      // Extract the archive
+      val extractDir = File(binDir, "extracted")
+      if (archiveFileName.endsWith(".zip")) {
+        extractZip(archiveFile, extractDir)
+      } else {
+        extractTarGz(archiveFile, extractDir)
+      }
+
+      // Download and extract CUDA runtime DLLs if needed
+      if (cudaDllUrl != null) {
+        val cudaArchiveName = cudaDllUrl.substringAfterLast("/")
+        val cudaArchive = File(binDir, cudaArchiveName)
+        if (downloadWithResume(cudaDllUrl, cudaArchive, "CUDA runtime DLLs")) {
+          if (cudaArchiveName.endsWith(".zip")) {
+            extractZip(cudaArchive, extractDir)
+          } else {
+            extractTarGz(cudaArchive, extractDir)
+          }
+          log(LogLevel.INFO, "CUDA runtime DLLs extracted")
+        } else {
+          log(
+              LogLevel.WARNING,
+              "Failed to download CUDA runtime DLLs — GPU acceleration may not work")
+        }
+      }
+
+      // Record the installed release tag and GPU backend for future change detection
+      releaseMarker.writeText(llamaRelease)
+      gpuMarker.writeText(detectedGpu.name)
+    }
+
+    // Find the executable
+    val extractDir = File(binDir, "extracted")
+    val binary = findExecutable(extractDir, platform.exeName)
+    if (binary == null) {
+      log(LogLevel.ERROR, "Could not find ${platform.exeName} in extracted archive")
+      return null
+    }
+
+    // Make executable on Unix
+    if (platform.needsChmod) {
+      try {
+        ProcessBuilder("chmod", "+x", binary.absolutePath)
+            .redirectErrorStream(true)
+            .start()
+            .waitFor()
+        log(LogLevel.INFO, "chmod +x: ${binary.absolutePath}")
+      } catch (e: Exception) {
+        log(LogLevel.WARNING, "chmod failed: ${e.message}")
+      }
+    }
+
+    serverBinary = binary
+    return binary
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
   //  Phase 3 — Ignition (ProcessBuilder)
   // ═══════════════════════════════════════════════════════════════════════
 
@@ -452,7 +746,20 @@ abstract class LlamaCpp : AI() {
       stopServer()
     }
 
+    // Auto-detect a free port if the configured one is already taken
+    serverPort = findFreePort(serverPort)
+    activeServerPort = serverPort
+
     val resolvedThreads = threadCount ?: detectPhysicalCores()
+
+    // Resolve GPU layers: -1 means auto (offload everything when a GPU build is used)
+    val resolvedGpuLayers =
+        when {
+          gpuLayers >= 0 -> gpuLayers
+          detectedGpu != GpuBackend.NONE -> 999 // offload all layers; server clamps to actual count
+          else -> 0
+        }
+
     log(LogLevel.INFO, "Starting llama-server:")
     log(LogLevel.INFO, "  Binary:  ${binary.absolutePath}")
     log(
@@ -462,7 +769,7 @@ abstract class LlamaCpp : AI() {
     log(LogLevel.INFO, "  Port:    $serverPort")
     log(LogLevel.INFO, "  Threads: $resolvedThreads")
     log(LogLevel.INFO, "  Context: $ctxSize tokens")
-    log(LogLevel.INFO, "  GPU layers: $gpuLayers")
+    log(LogLevel.INFO, "  GPU layers: $resolvedGpuLayers (detected: $detectedGpu)")
     log(LogLevel.INFO, "  Parallel slots: $parallelSlots")
 
     val command =
@@ -481,7 +788,7 @@ abstract class LlamaCpp : AI() {
             "--parallel",
             parallelSlots.toString(),
             "--n-gpu-layers",
-            gpuLayers.toString())
+            resolvedGpuLayers.toString())
 
     if (mmProjFile != null && mmProjFile.exists()) {
       command.addAll(listOf("--mmproj", mmProjFile.absolutePath))
@@ -558,6 +865,42 @@ abstract class LlamaCpp : AI() {
       log(LogLevel.ERROR, "Failed to start llama-server: ${e.message}", "", e)
       stopServer()
       return false
+    }
+  }
+
+  /**
+   * Finds a free TCP port starting from [preferredPort]. Probes upward (up to 20 attempts) until an
+   * available port is found. Falls back to an OS-assigned ephemeral port if all probed ports are
+   * busy.
+   */
+  private fun findFreePort(preferredPort: Int): Int {
+    for (offset in 0 until 20) {
+      val candidate = preferredPort + offset
+      if (candidate > 65535) break
+      try {
+        ServerSocket(candidate).use { /* port is free */ }
+        if (offset > 0) {
+          log(LogLevel.INFO, "Port $preferredPort is busy — using $candidate instead")
+        }
+        return candidate
+      } catch (_: Exception) {
+        // Port is in use, try next
+      }
+    }
+    // All probed ports busy — let the OS pick one
+    return try {
+      ServerSocket(0)
+          .use { it.localPort }
+          .also { port ->
+            log(
+                LogLevel.WARNING,
+                "Ports $preferredPort–${preferredPort + 19} all busy — OS assigned port $port")
+          }
+    } catch (e: Exception) {
+      log(
+          LogLevel.WARNING,
+          "Could not find free port, falling back to $preferredPort: ${e.message}")
+      preferredPort
     }
   }
 
@@ -709,6 +1052,7 @@ abstract class LlamaCpp : AI() {
       endpoint: String,
       jsonBody: String,
       onLine: (String) -> Unit,
+      shouldStop: () -> Boolean = { false },
       timeoutMs: Int = 300_000
   ) {
     val url = "$serverBaseUrl$endpoint"
@@ -734,17 +1078,24 @@ abstract class LlamaCpp : AI() {
       throw RuntimeException("llama-server returned HTTP $responseCode: $errorBody")
     }
 
-    BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { reader ->
-      reader.lineSequence().forEach { line ->
-        if (line.startsWith("data: ")) {
-          val data = line.removePrefix("data: ").trim()
-          if (data != "[DONE]") {
-            onLine(data)
+    try {
+      BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { reader ->
+        reader.lineSequence().forEach { line ->
+          if (shouldStop()) {
+            log(LogLevel.INFO, "Streaming aborted by stop request — disconnecting")
+            return@use
+          }
+          if (line.startsWith("data: ")) {
+            val data = line.removePrefix("data: ").trim()
+            if (data != "[DONE]") {
+              onLine(data)
+            }
           }
         }
       }
+    } finally {
+      connection.disconnect()
     }
-    connection.disconnect()
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -752,22 +1103,22 @@ abstract class LlamaCpp : AI() {
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * Initializes the LlamaCpp infrastructure: creates directories, reads plugin properties.
-   * Subclasses should call `super.initialize(configData)` then proceed with downloading and
-   * starting the server.
+   * Initializes the LLAMA infrastructure: creates directories, reads plugin properties. Subclasses
+   * should call `super.initialize(configData)` then proceed with downloading and starting the
+   * server.
    */
   override fun initialize(configData: IPluginInitializeData) {
     super.initialize(configData)
 
     val activeAI = configData.properties.getProperty("Active_AI")?.lowercase() ?: ""
     if (!activeAI.contains("llamacpp")) {
-      log(LogLevel.INFO, "LlamaCpp not activated (Active_AI does not contain 'llamacpp')")
+      log(LogLevel.INFO, "LLAMA not activated (Active_AI does not contain 'llamacpp')")
       return
     }
 
     val aiRemove = configData.properties.getProperty("AI_Remove")?.lowercase() ?: ""
     if (aiRemove.contains("llamacpp")) {
-      log(LogLevel.INFO, "LlamaCpp marked for removal — cleaning up all files")
+      log(LogLevel.INFO, "LLAMA marked for removal — cleaning up all files")
       val llamaDir = File(configData.fileHelper.pluginFolder, "ai/llamacpp")
       if (llamaDir.exists()) llamaDir.deleteRecursively()
       return
@@ -783,7 +1134,10 @@ abstract class LlamaCpp : AI() {
 
     // Read plugin properties
     configData.properties.getProperty("AI_LlamaCpp_Port")?.trim()?.toIntOrNull()?.let {
-      if (it in 1024..65535) serverPort = it
+      if (it in 1024..65535) {
+        serverPort = it
+        activeServerPort = it
+      }
     }
     configData.properties.getProperty("AI_LlamaCpp_Threads")?.trim()?.toIntOrNull()?.let {
       if (it > 0) threadCount = it
@@ -792,7 +1146,7 @@ abstract class LlamaCpp : AI() {
       if (it > 0) ctxSize = it
     }
     configData.properties.getProperty("AI_LlamaCpp_GpuLayers")?.trim()?.toIntOrNull()?.let {
-      if (it >= 0) gpuLayers = it
+      if (it >= -1) gpuLayers = it
     }
     configData.properties.getProperty("AI_LlamaCpp_Parallel")?.trim()?.toIntOrNull()?.let {
       if (it > 0) parallelSlots = it
@@ -802,13 +1156,24 @@ abstract class LlamaCpp : AI() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { extraServerArgs = it.split(" ").filter { arg -> arg.isNotBlank() } }
+    configData.properties
+        .getProperty("AI_LlamaCpp_Release")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { customRelease ->
+          llamaRelease = customRelease
+          val rebuilt = buildServerUrls(customRelease)
+          serverUrls.clear()
+          serverUrls.putAll(rebuilt)
+        }
 
-    log(LogLevel.INFO, "LlamaCpp infrastructure initialized")
+    log(LogLevel.INFO, "LLAMA infrastructure initialized")
     log(LogLevel.INFO, "  Dir:     ${llamaCppDir!!.absolutePath}")
     log(LogLevel.INFO, "  Port:    $serverPort")
+    log(LogLevel.INFO, "  Release: $llamaRelease")
     log(LogLevel.INFO, "  Threads: ${threadCount ?: "auto-detect"}")
     log(LogLevel.INFO, "  Context: $ctxSize")
-    log(LogLevel.INFO, "  GPU:     $gpuLayers layers")
+    log(LogLevel.INFO, "  GPU:     ${if (gpuLayers == -1) "auto-detect" else "$gpuLayers layers"}")
   }
 
   /** Shuts down the llama-server process and releases resources. */
@@ -823,7 +1188,7 @@ abstract class LlamaCpp : AI() {
   // ═══════════════════════════════════════════════════════════════════════
 
   override fun log(importance: LogLevel, toLog: String, adjenct: String, exception: Throwable?) {
-    super.idLogMessages = "LlamaCpp"
+    super.idLogMessages = "LLAMA"
     super.log(importance, toLog, adjenct, exception)
   }
 }

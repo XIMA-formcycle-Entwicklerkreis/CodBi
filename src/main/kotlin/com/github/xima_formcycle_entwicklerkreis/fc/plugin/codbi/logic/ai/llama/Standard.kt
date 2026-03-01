@@ -1,7 +1,8 @@
-package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.pytorch
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.llama
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI.LogLevel
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.LlamaCpp
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.BraveSearch
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.LLAMA
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
@@ -11,30 +12,70 @@ import de.xima.fc.mdl.response.ServletResponse
 import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
 import java.awt.geom.AffineTransform
 import java.awt.image.BufferedImage
+import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import java.lang.management.ManagementFactory
+import java.net.HttpURLConnection
+import java.net.Socket
+import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Properties
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.imageio.ImageIO
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  QWEN3VL2B — Qwen3-VL-2B-Instruct via local llama-server process
+//  Standard — Generic GGUF model runner via local llama-server process
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// Implements the "Swan Architecture" for Qwen3-VL-2B-Instruct:
+// Implements the "Swan Architecture" for any GGUF model:
 //   1. Downloads llama-server binary (platform-specific)
-//   2. Downloads Qwen3-VL-2B-Instruct GGUF model + vision projector
+//   2. Downloads a configurable GGUF model + optional vision projector
 //   3. Launches llama-server as a separate OS process
 //   4. Sends OpenAI-compatible /v1/chat/completions requests with base64 images
 //
 // All AI computation happens in the external llama-server process.
 // If it OOMs the Tomcat JVM stays alive — only the llama-server dies.
+//
+// ## Plugin Properties
+//
+// | Property                           | Type    | Default                          | Description
+//                                                |
+// |------------------------------------|---------|----------------------------------|--------------------------------------------------------------|
+// | `Active_AI`                        | String  | —                                | Must contain
+// `qwen3srv` to activate this model               |
+// | `AI_Qwen3Srv_ModelUrl`             | URL     | Qwen3-VL-2B Q4_K_M HuggingFace  | Download URL
+// for the GGUF model file                         |
+// | `AI_Qwen3Srv_MmprojUrl`            | URL     | Qwen3-VL-2B mmproj HuggingFace  | Download URL
+// for the vision projector (mmproj) file          |
+// | `AI_Qwen3Srv_MaxPixels`            | Int     | `3211264`                        | Max pixel
+// budget for image downscaling (min 3136)            |
+// | `AI_Qwen3Srv_MaxTokens`            | Int     | `2048`                           | Maximum
+// tokens to generate per response                      |
+// | `AI_Qwen3Srv_MaxRAMPercent`        | Double  | `101.0`                          | RAM usage
+// threshold (%) — blocks requests when exceeded      |
+// | `AI_Qwen3Srv_MaxCPUPercent`        | Double  | `101.0`                          | CPU usage
+// threshold (%) — blocks requests when exceeded      |
+// | `AI_Qwen3Srv_LlamaRelease`         | String  | `b8175`                          | llama.cpp
+// release tag for server binary download             |
+// | `AI_Qwen3Srv_ServerUrl_<platform>` | URL     | (auto from release tag)          | Per-platform
+// override for the llama-server binary URL        |
+// | `AI_Qwen3Srv_UpdateCheckHours`     | Long    | `24`                             | Hours between
+// GitHub release checks (0 = disabled)           |
+// | `AI_Qwen3Srv_NotifyEmail`          | String  | —                                | Email address
+// for update notifications                       |
+// | `AI_BraveSearch_ApiKey`            | String  | —                                | Brave Search
+// API key — enables web search tool for the model |
+//
 // ═══════════════════════════════════════════════════════════════════════════════
 
-class QWEN3VL2B : LlamaCpp() {
+class Standard : LLAMA() {
 
   companion object {
     /** Plugin property name prefix for this model. */
@@ -48,21 +89,13 @@ class QWEN3VL2B : LlamaCpp() {
     private const val DEFAULT_MMPROJ_URL =
         "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-2B-Instruct-F16.gguf"
 
-    /** Default llama-server release tag for download URLs. */
-    private const val LLAMA_RELEASE = "b8175"
+    /** GitHub API endpoint for the latest llama.cpp release. */
+    private const val GITHUB_RELEASES_API =
+        "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
 
-    /** GitHub release base URL for llama.cpp binaries. */
-    private const val LLAMA_RELEASE_BASE =
-        "https://github.com/ggml-org/llama.cpp/releases/download/$LLAMA_RELEASE"
+    /** Default interval (hours) between update checks. 0 = disabled. */
+    private const val DEFAULT_CHECK_INTERVAL_HOURS = 24L
   }
-
-  // ── Server binary download URLs per platform ──────────────────────────────
-  private val serverUrls: Map<String, String> =
-      mapOf(
-          "windows_x86_64" to "$LLAMA_RELEASE_BASE/llama-$LLAMA_RELEASE-bin-win-cpu-x64.zip",
-          "linux_x86_64" to "$LLAMA_RELEASE_BASE/llama-$LLAMA_RELEASE-bin-ubuntu-x64.tar.gz",
-          "macos_x86_64" to "$LLAMA_RELEASE_BASE/llama-$LLAMA_RELEASE-bin-macos-x64.tar.gz",
-          "macos_aarch64" to "$LLAMA_RELEASE_BASE/llama-$LLAMA_RELEASE-bin-macos-arm64.tar.gz")
 
   // ── Configurable URLs (overridable via plugin properties) ─────────────────
   private var modelUrl = DEFAULT_MODEL_URL
@@ -94,6 +127,22 @@ class QWEN3VL2B : LlamaCpp() {
   /** Whether the server is ready for requests. */
   @Volatile private var serverReady = false
 
+  // ── Version check settings ────────────────────────────────────────────
+  /** Hours between GitHub release checks. 0 = disabled. */
+  private var checkIntervalHours = DEFAULT_CHECK_INTERVAL_HOURS
+
+  /** Optional override for the notification recipient email. */
+  private var notifyEmail: String? = null
+
+  /** Plugin folder root — used to locate system-mail.properties. */
+  private var pluginFolder: File? = null
+
+  /** Daemon thread that periodically checks for new releases. */
+  private var updateChecker: Thread? = null
+
+  /** Last release tag for which a notification was already sent (in-memory + persisted). */
+  @Volatile private var lastNotifiedRelease: String? = null
+
   // ── Token Streaming Infrastructure ────────────────────────────────────────
 
   /**
@@ -107,6 +156,8 @@ class QWEN3VL2B : LlamaCpp() {
     @Volatile var error: String? = null
     @Volatile var stopRequested = false
     @Volatile var resourceStatus: String? = null
+    /** When true the client should show a "searching the web" animation. */
+    @Volatile var searching = false
 
     fun currentText(): String = textChunks.joinToString("")
   }
@@ -122,7 +173,7 @@ class QWEN3VL2B : LlamaCpp() {
 
   // ── ResourceMonitor inner class ───────────────────────────────────────────
 
-  private inner class ResourceMonitor : Thread("codbi-qwen3srv-resource-monitor") {
+  private inner class ResourceMonitor : Thread("codbi-llama-resource-monitor") {
     @Volatile
     var cpuPercent = 0.0
       private set
@@ -189,20 +240,20 @@ class QWEN3VL2B : LlamaCpp() {
   //  Lifecycle
   // ═══════════════════════════════════════════════════════════════════════════
 
-  override fun getName(): String = "CodBi_AI_Qwen3_Server"
+  override fun getName(): String = "CodBi_AI_LLAMA_STD"
 
   override fun initialize(configData: IPluginInitializeData) {
-    idLogMessages = "Qwen3Srv"
+    idLogMessages = "LlamaSrv"
 
     // Check activation: must contain "qwen3srv"
     val activeAiRaw = configData.properties.getProperty("Active_AI") ?: ""
     val activeAi = activeAiRaw.lowercase()
     if (!activeAi.contains("qwen3srv")) {
-      log(LogLevel.INFO, "QWEN3VL2B initialization skipped because Active_AI='$activeAiRaw'")
+      log(LogLevel.INFO, "Standard initialization skipped because Active_AI='$activeAiRaw'")
       return
     }
 
-    // Let base class set up directories and read LlamaCpp properties
+    // Let base class set up directories and read LLAMA properties
     super.initialize(configData)
 
     // Read model-specific plugin properties
@@ -233,22 +284,62 @@ class QWEN3VL2B : LlamaCpp() {
         ?.toDoubleOrNull()
         ?.let { if (it in 1.0..110.0) maxCPUPercent = it }
 
+    // Override llama.cpp release tag if configured
+    configData.properties
+        .getProperty("${PROP_PREFIX}_LlamaRelease")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { customRelease ->
+          llamaRelease = customRelease
+          val rebuilt = buildServerUrls(customRelease)
+          serverUrls.clear()
+          serverUrls.putAll(rebuilt)
+          log(LogLevel.INFO, "Llama release overridden to: $customRelease")
+        }
+
     // Override server URLs if configured per-platform
-    serverUrls.keys.forEach { platform ->
+    serverUrls.keys.toList().forEach { platform ->
       configData.properties
           .getProperty("${PROP_PREFIX}_ServerUrl_$platform")
           ?.trim()
           ?.takeIf { it.isNotEmpty() }
-          ?.let { customUrl ->
-            // Mutable copy for dynamic URL override
-            (serverUrls as? MutableMap)?.put(platform, customUrl)
-          }
+          ?.let { customUrl -> serverUrls[platform] = customUrl }
     }
 
+    // Read update-check properties
+    configData.properties
+        .getProperty("${PROP_PREFIX}_UpdateCheckHours")
+        ?.trim()
+        ?.toLongOrNull()
+        ?.let { if (it >= 0) checkIntervalHours = it }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_NotifyEmail")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { notifyEmail = it }
+
+    // Store plugin folder for locating system-mail.properties later
+    pluginFolder = configData.fileHelper.pluginFolder
+
+    // ── Brave Search API key ────────────────────────────────────────────
+    configData.properties
+        .getProperty("AI_BraveSearch_ApiKey")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { BraveSearch.apiKey = it }
+
+    log(LogLevel.INFO, "Llama release: $llamaRelease")
     log(LogLevel.INFO, "Model URL:   $modelUrl")
     log(LogLevel.INFO, "mmproj URL:  $mmprojUrl")
     log(LogLevel.INFO, "MaxPixels:   $maxPixels")
     log(LogLevel.INFO, "MaxTokens:   $maxTokens")
+    log(
+        LogLevel.INFO,
+        "BraveSearch: ${if (BraveSearch.isAvailable) "enabled" else "disabled (no API key)"}")
+    log(
+        LogLevel.INFO,
+        "Update check: every ${checkIntervalHours}h" +
+            (if (checkIntervalHours == 0L) " (disabled)" else ""))
 
     // Start resource monitor
     resourceMonitor?.shutdown()
@@ -263,58 +354,12 @@ class QWEN3VL2B : LlamaCpp() {
                 log(LogLevel.INFO, "Platform: ${platform.os}/${platform.arch}")
 
                 // ── Phase 2: Fetch ──
-                // Download server binary
-                val serverArchiveUrl = serverUrls["${platform.os}_${platform.arch}"]
-                if (serverArchiveUrl == null) {
-                  loadError =
-                      IllegalStateException(
-                          "No llama-server binary available for ${platform.os}/${platform.arch}")
-                  log(LogLevel.ERROR, loadError!!.message!!)
-                  return@Thread
-                }
-
-                val archiveFileName = serverArchiveUrl.substringAfterLast("/")
-                val archiveFile = File(binDir, archiveFileName)
-                val archiveMarker = File(binDir, "$archiveFileName.complete")
-
-                if (!archiveMarker.exists()) {
-                  if (!downloadWithResume(serverArchiveUrl, archiveFile, "llama-server binary")) {
-                    loadError = IllegalStateException("Failed to download llama-server binary")
-                    return@Thread
-                  }
-                  // Extract the archive
-                  val extractDir = File(binDir, "extracted")
-                  if (archiveFileName.endsWith(".zip")) {
-                    extractZip(archiveFile, extractDir)
-                  } else {
-                    extractTarGz(archiveFile, extractDir)
-                  }
-                }
-
-                // Find the executable
-                val extractDir = File(binDir, "extracted")
-                val binary = findExecutable(extractDir, platform.exeName)
+                // Download llama-server binary (GPU auto-detection, change detection, CUDA DLLs)
+                val binary = downloadServerBinary(platform)
                 if (binary == null) {
-                  loadError =
-                      IllegalStateException(
-                          "Could not find ${platform.exeName} in extracted archive")
-                  log(LogLevel.ERROR, loadError!!.message!!)
+                  loadError = IllegalStateException("Failed to download llama-server binary")
                   return@Thread
                 }
-
-                // Make executable on Unix
-                if (platform.needsChmod) {
-                  try {
-                    ProcessBuilder("chmod", "+x", binary.absolutePath)
-                        .redirectErrorStream(true)
-                        .start()
-                        .waitFor()
-                    log(LogLevel.INFO, "chmod +x: ${binary.absolutePath}")
-                  } catch (e: Exception) {
-                    log(LogLevel.WARNING, "chmod failed: ${e.message}")
-                  }
-                }
-                serverBinary = binary
 
                 // Download model GGUF
                 val modelFileName = modelUrl.substringAfterLast("/")
@@ -341,18 +386,23 @@ class QWEN3VL2B : LlamaCpp() {
 
                 isActive = true
                 serverReady = true
-                log(LogLevel.INFO, "QWEN3VL2B fully initialized and ready for requests")
+                log(LogLevel.INFO, "Standard (llama) fully initialized and ready for requests")
               } catch (e: Exception) {
                 loadError = e
                 log(LogLevel.ERROR, "Initialization failed: ${e.message}", "", e)
               }
             },
-            "qwen3srv-init")
+            "llama-srv-init")
         .apply { isDaemon = true }
         .start()
+
+    // Start the update checker independently of server startup
+    startVersionChecker()
   }
 
   override fun shutdown(shutdownData: IPluginShutdownData?) {
+    updateChecker?.interrupt()
+    updateChecker = null
     resourceMonitor?.shutdown()
     resourceMonitor = null
     serverReady = false
@@ -392,11 +442,12 @@ class QWEN3VL2B : LlamaCpp() {
 
       val resStatusJson =
           if (resStatus != null) ",\"resourceStatus\":\"${jsonEscape(resStatus)}\"" else ""
+      val searchingJson = if (session.searching) ",\"searching\":true" else ""
       val jsonValue =
           if (err != null) {
-            "{\"text\":\"${jsonEscape(text)}\",\"done\":true,\"error\":\"${jsonEscape(err)}\"$resStatusJson}"
+            "{\"text\":\"${jsonEscape(text)}\",\"done\":true,\"error\":\"${jsonEscape(err)}\"$resStatusJson$searchingJson}"
           } else {
-            "{\"text\":\"${jsonEscape(text)}\",\"done\":$done$resStatusJson}"
+            "{\"text\":\"${jsonEscape(text)}\",\"done\":$done$resStatusJson$searchingJson}"
           }
       return jsonResponse(jsonValue)
     }
@@ -439,7 +490,7 @@ class QWEN3VL2B : LlamaCpp() {
       }
       if (!serverReady) {
         return jsonResponse(
-            "{\"error\":\"Qwen3-VL is not ready yet. Model may still be downloading or loading.\"}")
+            "{\"error\":\"Model is not ready yet. It may still be downloading or loading.\"}")
       }
     }
 
@@ -496,6 +547,16 @@ class QWEN3VL2B : LlamaCpp() {
             ?.trim()
             ?.toIntOrNull()
 
+    // ── Session-based slot isolation ─────────────────────────────────────────
+    val slotId: Int = run {
+      val sid =
+          params.headerMap.entries.find { it.key.equals("X-Session-Id", ignoreCase = true) }?.value
+              ?: return@run -1
+      Math.floorMod(sid.hashCode(), parallelSlots).also {
+        log(LogLevel.INFO, "Session ${sid.take(8)}… → slot $it (of $parallelSlots)")
+      }
+    }
+
     // ── Thinking mode ─────────────────────────────────────────────────────────
     val enableThinking =
         params.headerMap.entries.any {
@@ -520,6 +581,7 @@ class QWEN3VL2B : LlamaCpp() {
       val images = fileDataMap.toMap()
       val rotation = manualRotation
       val history = chatHistory.toList()
+      val slot = slotId
 
       Thread(
               {
@@ -531,7 +593,23 @@ class QWEN3VL2B : LlamaCpp() {
                       } else emptyList()
 
                   val messages = buildMessages(question, imageParts, history)
-                  streamChatCompletion(messages, session, enableThinking)
+
+                  // Always stream directly to the user for immediate feedback
+                  streamChatCompletion(messages, session, enableThinking, slot)
+                  val fullText = session.currentText()
+
+                  // After streaming completes, check if the model wants a web search
+                  if (BraveSearch.isAvailable &&
+                      BraveSearch.CALL_SEARCH_PATTERN.containsMatchIn(fullText)) {
+                    // Signal the client to show a search animation
+                    session.searching = true
+                    // Strip the CALL:search text so it's not displayed
+                    session.textChunks.clear()
+
+                    handleSearchToolCallStreaming(
+                        fullText, question, imageParts, history, session, enableThinking, slot)
+                    session.searching = false
+                  }
                 } catch (ex: Exception) {
                   session.error = ex.message ?: "Unknown error"
                   log(LogLevel.ERROR, "Streaming error: ${ex.message}", "", ex)
@@ -539,7 +617,7 @@ class QWEN3VL2B : LlamaCpp() {
                   session.done = true
                 }
               },
-              "qwen3srv-stream-$sessionId")
+              "llama-srv-stream-$sessionId")
           .apply { isDaemon = true }
           .start()
 
@@ -558,7 +636,12 @@ class QWEN3VL2B : LlamaCpp() {
 
       for ((questionKey, question) in questionsToAsk) {
         val messages = buildMessages(question, imageParts, chatHistory)
-        val answer = chatCompletion(messages, enableThinking)
+        var answer = chatCompletion(messages, enableThinking, slotId)
+
+        // ── CALL:search tool loop ──────────────────────────────────────
+        answer =
+            handleSearchToolCall(answer, question, imageParts, chatHistory, enableThinking, slotId)
+
         finalResults[questionKey] = mapOf("answer" to answer)
         log(LogLevel.INFO, "Q[$questionKey]: ${question.take(80)}… → ${answer.take(80)}…")
       }
@@ -737,6 +820,113 @@ class QWEN3VL2B : LlamaCpp() {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  Web Search Tool (CALL:search) handling
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Maximum number of search round-trips to prevent infinite loops. */
+  private val maxSearchRoundTrips = 2
+
+  /**
+   * Checks if the model's response contains a `CALL:search(query='...')` marker. If so, performs a
+   * Brave web search and re-queries the model with the results injected into the conversation
+   * history.
+   *
+   * @param initialAnswer The model's first response (may contain CALL:search).
+   * @param originalQuestion The user's original question.
+   * @param imageParts Base64 image URIs (carried forward).
+   * @param chatHistory Previous conversation turns.
+   * @param enableThinking Whether thinking mode is on.
+   * @param slotId The slot ID for inference.
+   * @return The final answer (either the original or the search-augmented one).
+   */
+  private fun handleSearchToolCall(
+      initialAnswer: String,
+      originalQuestion: String,
+      imageParts: List<String>,
+      chatHistory: List<Pair<String, String>>,
+      enableThinking: Boolean,
+      slotId: Int
+  ): String {
+    if (!BraveSearch.isAvailable) return initialAnswer
+
+    var answer = initialAnswer
+    for (round in 1..maxSearchRoundTrips) {
+      val match = BraveSearch.CALL_SEARCH_PATTERN.find(answer) ?: break
+      val query = match.groupValues[1]
+      log(LogLevel.INFO, "Model requested web search (round $round): '$query'")
+
+      val results = BraveSearch.search(query)
+      if (results.isEmpty()) {
+        log(LogLevel.WARNING, "Web search returned no results for: '$query'")
+        break
+      }
+
+      val searchContext = BraveSearch.formatResultsForModel(results)
+
+      // Build extended conversation: original history + user question + assistant's CALL + search
+      // results
+      val extendedHistory = chatHistory.toMutableList()
+      extendedHistory.add("user" to originalQuestion)
+      extendedHistory.add("assistant" to answer)
+      extendedHistory.add("user" to searchContext)
+
+      val messages =
+          buildMessages(
+              "Use the search results to give a direct answer. Summarize the facts. Never say you cannot answer. Add [Source](URL) links.",
+              imageParts,
+              extendedHistory)
+      answer = chatCompletion(messages, enableThinking, slotId)
+      log(LogLevel.INFO, "Search-augmented answer (round $round): ${answer.take(120)}…")
+    }
+    return answer
+  }
+
+  /**
+   * Handles `CALL:search` in streaming mode. When the completed stream text contains a search call,
+   * performs the search and streams a follow-up completion.
+   */
+  private fun handleSearchToolCallStreaming(
+      fullText: String,
+      originalQuestion: String,
+      imageParts: List<String>,
+      chatHistory: List<Pair<String, String>>,
+      session: StreamingSession,
+      enableThinking: Boolean,
+      slotId: Int
+  ) {
+    if (!BraveSearch.isAvailable) return
+
+    val match = BraveSearch.CALL_SEARCH_PATTERN.find(fullText) ?: return
+    val query = match.groupValues[1]
+    log(LogLevel.INFO, "Streaming: Model raw output: '${fullText.take(200)}'")
+    log(LogLevel.INFO, "Streaming: Model requested web search: '$query'")
+
+    val results = BraveSearch.search(query)
+    if (results.isEmpty()) {
+      session.textChunks.clear()
+      session.textChunks.add("The web search returned no results. Please try a different query.")
+      return
+    }
+
+    val searchContext = BraveSearch.formatResultsForModel(results)
+
+    // Clear the CALL:search text from the stream and replace with new completion
+    session.textChunks.clear()
+
+    val extendedHistory = chatHistory.toMutableList()
+    extendedHistory.add("user" to originalQuestion)
+    extendedHistory.add("assistant" to fullText)
+    extendedHistory.add("user" to searchContext)
+
+    val messages =
+        buildMessages(
+            "Use the search results to give a direct answer. Summarize the facts. Never say you cannot answer. Add [Source](URL) links.",
+            imageParts,
+            extendedHistory)
+    streamChatCompletion(messages, session, enableThinking, slotId)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  OpenAI-Compatible Chat Completion
   // ═══════════════════════════════════════════════════════════════════════════
 
@@ -757,9 +947,16 @@ class QWEN3VL2B : LlamaCpp() {
       append("[")
 
       // System prompt
-      append("{\"role\":\"system\",\"content\":\"You are a helpful document analysis assistant. ")
-      append("Answer questions about the provided documents precisely and concisely. ")
-      append("If you cannot determine the answer from the image, say so clearly.\"}")
+      append(
+          "{\"role\":\"system\",\"content\":\"You are a helpful assistant. Answer precisely and concisely. ")
+      if (BraveSearch.isAvailable) {
+        append(
+            "If you need current info from the internet, reply ONLY with CALL:search(query='your actual question'). ")
+        append(
+            "Example: User asks 'weather tomorrow in Berlin' you reply CALL:search(query='weather forecast Berlin tomorrow'). ")
+        append("Replace the query with the real search terms, never use '...' as the query.")
+      }
+      append("\"}")
 
       // Chat history
       for ((role, content) in chatHistory) {
@@ -792,13 +989,20 @@ class QWEN3VL2B : LlamaCpp() {
    * @param messagesJson The JSON messages array string.
    * @return The generated text response.
    */
-  private fun chatCompletion(messagesJson: String, enableThinking: Boolean = false): String {
+  private fun chatCompletion(
+      messagesJson: String,
+      enableThinking: Boolean = false,
+      idSlot: Int = -1
+  ): String {
     val requestBody = buildString {
       append("{\"messages\":$messagesJson")
       append(",\"max_tokens\":$maxTokens")
       append(",\"temperature\":${if (enableThinking) "0.6" else "0.1"}")
+      append(",\"repetition_penalty\":1.1")
+      append(",\"frequency_penalty\":0.5")
       append(",\"enable_thinking\":$enableThinking")
       append(",\"stream\":false")
+      if (idSlot >= 0) append(",\"id_slot\":$idSlot")
       append("}")
     }
 
@@ -829,7 +1033,8 @@ class QWEN3VL2B : LlamaCpp() {
   private fun streamChatCompletion(
       messagesJson: String,
       session: StreamingSession,
-      enableThinking: Boolean = false
+      enableThinking: Boolean = false,
+      idSlot: Int = -1
   ) {
     /** Tracks whether we are inside a `<think>…</think>` block so those tokens are suppressed. */
     var insideThinkBlock = false
@@ -840,8 +1045,11 @@ class QWEN3VL2B : LlamaCpp() {
       append("{\"messages\":$messagesJson")
       append(",\"max_tokens\":$maxTokens")
       append(",\"temperature\":${if (enableThinking) "0.6" else "0.1"}")
+      append(",\"repetition_penalty\":1.1")
+      append(",\"frequency_penalty\":0.5")
       append(",\"enable_thinking\":$enableThinking")
       append(",\"stream\":true")
+      if (idSlot >= 0) append(",\"id_slot\":$idSlot")
       append("}")
     }
 
@@ -849,7 +1057,6 @@ class QWEN3VL2B : LlamaCpp() {
         "/v1/chat/completions",
         requestBody,
         onLine = { data ->
-          if (session.stopRequested) return@httpPostStreaming
           try {
             val json = com.google.gson.JsonParser.parseString(data).asJsonObject
             val delta =
@@ -867,7 +1074,8 @@ class QWEN3VL2B : LlamaCpp() {
           } catch (_: Exception) {
             /* skip malformed SSE chunk */
           }
-        })
+        },
+        shouldStop = { session.stopRequested })
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -969,11 +1177,341 @@ class QWEN3VL2B : LlamaCpp() {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  Version Check — periodic check for new llama.cpp releases
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Launches a daemon thread that periodically queries the GitHub API for the latest llama.cpp
+   * release. When a newer version is available (and downloadable for the current platform), an
+   * email notification is sent via the Formcycle system mail configuration.
+   */
+  private fun startVersionChecker() {
+    if (checkIntervalHours <= 0L) {
+      log(LogLevel.INFO, "Update check disabled (interval = 0)")
+      return
+    }
+
+    // Restore last-notified release from disk so we don't re-notify after restart
+    val markerFile = llamaCppDir?.let { File(it, "last-notified-release.txt") }
+    if (markerFile != null && markerFile.exists()) {
+      lastNotifiedRelease = markerFile.readText().trim().takeIf { it.isNotEmpty() }
+    }
+
+    updateChecker =
+        Thread(
+                {
+                  // Initial delay: 2 minutes after plugin startup
+                  try {
+                    Thread.sleep(2 * 60 * 1000L)
+                  } catch (_: InterruptedException) {
+                    return@Thread
+                  }
+
+                  while (!Thread.currentThread().isInterrupted) {
+                    try {
+                      checkForNewRelease()
+                    } catch (e: Exception) {
+                      log(LogLevel.WARNING, "Update check failed: ${e.message}")
+                    }
+                    try {
+                      Thread.sleep(checkIntervalHours * 3600 * 1000L)
+                    } catch (_: InterruptedException) {
+                      break
+                    }
+                  }
+                },
+                "codbi-llama-update-checker")
+            .apply {
+              isDaemon = true
+              start()
+            }
+
+    log(LogLevel.INFO, "Update checker started (interval: ${checkIntervalHours}h)")
+  }
+
+  /**
+   * Queries the GitHub API for the latest llama.cpp release, compares it with the configured
+   * [llamaRelease], and sends an email notification if a newer version is available.
+   */
+  private fun checkForNewRelease() {
+    val latestTag = fetchLatestReleaseTag()
+    if (latestTag == null) {
+      log(LogLevel.WARNING, "Could not determine latest llama.cpp release")
+      return
+    }
+
+    if (latestTag == llamaRelease) {
+      log(LogLevel.INFO, "llama.cpp is up to date ($llamaRelease)")
+      return
+    }
+
+    // Already notified for this version?
+    if (latestTag == lastNotifiedRelease) {
+      log(LogLevel.INFO, "Already notified about llama.cpp $latestTag (current: $llamaRelease)")
+      return
+    }
+
+    // Verify that the new release actually has a binary for our platform
+    val platform = detectPlatform()
+    val platformKey = "${platform.os}_${platform.arch}"
+    if (!isReleaseAvailableForPlatform(latestTag, platformKey)) {
+      log(
+          LogLevel.INFO,
+          "llama.cpp $latestTag has no binary for $platformKey yet — skipping notification")
+      return
+    }
+
+    log(
+        LogLevel.INFO,
+        "New llama.cpp release available: $latestTag (current: $llamaRelease) — sending notification")
+
+    if (sendUpdateNotification(latestTag, platformKey)) {
+      lastNotifiedRelease = latestTag
+      // Persist to disk so we don't re-notify after restart
+      llamaCppDir?.let { File(it, "last-notified-release.txt").writeText(latestTag) }
+    }
+  }
+
+  /**
+   * Fetches the latest release tag from the GitHub API.
+   *
+   * @return The tag name (e.g. `"b8200"`), or `null` on error.
+   */
+  private fun fetchLatestReleaseTag(): String? {
+    try {
+      val connection = URI(GITHUB_RELEASES_API).toURL().openConnection() as HttpURLConnection
+      connection.requestMethod = "GET"
+      connection.connectTimeout = 15_000
+      connection.readTimeout = 15_000
+      connection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+      connection.setRequestProperty("User-Agent", "CodBi-LLAMA/1.0")
+
+      val responseCode = connection.responseCode
+      if (responseCode != 200) {
+        log(LogLevel.WARNING, "GitHub API returned HTTP $responseCode")
+        connection.disconnect()
+        return null
+      }
+
+      val body = connection.inputStream.bufferedReader().readText()
+      connection.disconnect()
+
+      // Extract "tag_name" from JSON without a full parser
+      val match = Regex(""""tag_name"\s*:\s*"([^"]+)"""").find(body)
+      return match?.groupValues?.get(1)
+    } catch (e: Exception) {
+      log(LogLevel.WARNING, "GitHub API request failed: ${e.message}")
+      return null
+    }
+  }
+
+  /**
+   * Checks whether a given release has a downloadable archive for the specified platform by sending
+   * an HTTP HEAD request to the expected download URL.
+   */
+  private fun isReleaseAvailableForPlatform(release: String, platformKey: String): Boolean {
+    val urls = buildServerUrls(release)
+    val url = urls[platformKey] ?: return false
+    return try {
+      val connection = URI(url).toURL().openConnection() as HttpURLConnection
+      connection.requestMethod = "HEAD"
+      connection.connectTimeout = 15_000
+      connection.instanceFollowRedirects = true
+      val code = connection.responseCode
+      connection.disconnect()
+      code in 200..399
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  /**
+   * Sends an update notification email using the SMTP configuration from Formcycle's
+   * `system-mail.properties`.
+   *
+   * @param newRelease The new release tag that is available.
+   * @param platformKey The current platform identifier (e.g. `"windows_x86_64"`).
+   * @return `true` if the email was sent successfully.
+   */
+  private fun sendUpdateNotification(newRelease: String, platformKey: String): Boolean {
+    // Locate system-mail.properties by navigating up from the plugin folder
+    val mailPropsFile = findSystemMailProperties()
+    if (mailPropsFile == null) {
+      log(
+          LogLevel.WARNING,
+          "Cannot send update notification — system-mail.properties not found. " +
+              "Expected 3 directories above the plugin folder.")
+      return false
+    }
+
+    val mailProps = Properties()
+    mailPropsFile.inputStream().use { mailProps.load(it) }
+
+    val smtpHost = mailProps.getProperty("mail.smtp.host")?.trim()
+    if (smtpHost.isNullOrEmpty()) {
+      log(
+          LogLevel.WARNING,
+          "Cannot send update notification — mail.smtp.host is not configured " +
+              "in ${mailPropsFile.absolutePath}")
+      return false
+    }
+
+    val smtpPort = mailProps.getProperty("mail.smtp.port")?.trim()?.toIntOrNull() ?: 25
+    val fromAddr =
+        mailProps.getProperty("mail.smtp.from")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "codbi-noreply@localhost"
+    val recipient =
+        notifyEmail ?: mailProps.getProperty("mail.smtp.from")?.trim()?.takeIf { it.isNotEmpty() }
+    if (recipient.isNullOrEmpty()) {
+      log(
+          LogLevel.WARNING,
+          "Cannot send update notification — no recipient email. " +
+              "Set ${PROP_PREFIX}_NotifyEmail or configure mail.smtp.from in Formcycle.")
+      return false
+    }
+
+    val authUser = mailProps.getProperty("mail.smtp.auth.user")?.trim()?.takeIf { it.isNotEmpty() }
+    val authPass =
+        mailProps.getProperty("mail.smtp.auth.password")?.trim()?.takeIf { it.isNotEmpty() }
+
+    val subject = "[CodBi] New llama.cpp release available: $newRelease (current: $llamaRelease)"
+    val body = buildString {
+      appendLine("A new version of llama.cpp is available.")
+      appendLine()
+      appendLine("  Current release : $llamaRelease")
+      appendLine("  Latest release  : $newRelease")
+      appendLine("  Platform        : $platformKey")
+      appendLine()
+      appendLine("Release page:")
+      appendLine("  https://github.com/ggml-org/llama.cpp/releases/tag/$newRelease")
+      appendLine()
+      appendLine("To upgrade, set the plugin property:")
+      appendLine("  ${PROP_PREFIX}_LlamaRelease = $newRelease")
+      appendLine()
+      appendLine("The server will automatically download the new binaries on next restart.")
+      appendLine()
+      appendLine("-- CodBi AI / LLAMA update checker")
+    }
+
+    return sendSmtpEmail(smtpHost, smtpPort, fromAddr, recipient, authUser, authPass, subject, body)
+  }
+
+  /**
+   * Locates Formcycle's `system-mail.properties` by navigating upward from the plugin folder.
+   *
+   * Plugin folder layout: `xfc-server/config/plugins/system/<uuid>/` Target file:
+   * `xfc-server/config/system-mail.properties` → 3 directories up from the plugin folder.
+   */
+  private fun findSystemMailProperties(): File? {
+    var dir = pluginFolder ?: return null
+    // Navigate up 3 levels: <uuid>/ → system/ → plugins/ → config/
+    repeat(3) { dir = dir.parentFile ?: return null }
+    val candidate = File(dir, "system-mail.properties")
+    return if (candidate.exists()) candidate else null
+  }
+
+  /**
+   * Sends a plain-text email via raw SMTP (no external mail library required).
+   *
+   * Supports optional AUTH LOGIN. Does **not** support STARTTLS — suitable for localhost or
+   * trusted-network relay servers as typically configured in Formcycle.
+   *
+   * @return `true` if the server accepted the message (250 response after DATA).
+   */
+  private fun sendSmtpEmail(
+      host: String,
+      port: Int,
+      from: String,
+      to: String,
+      user: String?,
+      password: String?,
+      subject: String,
+      body: String
+  ): Boolean {
+    try {
+      Socket(host, port).use { socket ->
+        socket.soTimeout = 30_000
+        val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+        val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8)
+
+        /** Reads a (possibly multi-line) SMTP response and returns the last line. */
+        fun readResponse(): String {
+          var line: String
+          do {
+            line = reader.readLine() ?: throw Exception("SMTP connection closed unexpectedly")
+          } while (line.length >= 4 && line[3] == '-') // multi-line continues with "250-..."
+          return line
+        }
+
+        /** Sends a command and reads the response. */
+        fun send(cmd: String): String {
+          writer.write(cmd + "\r\n")
+          writer.flush()
+          return readResponse()
+        }
+
+        // Read server greeting
+        readResponse()
+
+        // EHLO
+        send("EHLO codbi-llama")
+
+        // AUTH LOGIN if credentials are provided
+        if (!user.isNullOrEmpty() && !password.isNullOrEmpty()) {
+          send("AUTH LOGIN")
+          send(java.util.Base64.getEncoder().encodeToString(user.toByteArray()))
+          val authResp = send(java.util.Base64.getEncoder().encodeToString(password.toByteArray()))
+          if (!authResp.startsWith("235")) {
+            log(LogLevel.WARNING, "SMTP AUTH failed: $authResp")
+            return false
+          }
+        }
+
+        // Envelope
+        send("MAIL FROM:<$from>")
+        send("RCPT TO:<$to>")
+        send("DATA")
+
+        // Message headers + body (dot-stuffed)
+        val now = ZonedDateTime.now().format(DateTimeFormatter.RFC_1123_DATE_TIME)
+        writer.write("Date: $now\r\n")
+        writer.write("From: CodBi AI <$from>\r\n")
+        writer.write("To: $to\r\n")
+        writer.write("Subject: $subject\r\n")
+        writer.write("Content-Type: text/plain; charset=UTF-8\r\n")
+        writer.write("X-Mailer: CodBi-LLAMA/1.0\r\n")
+        writer.write("\r\n")
+        // Dot-stuff lines that start with a period (RFC 5321 §4.5.2)
+        for (line in body.lines()) {
+          if (line.startsWith(".")) writer.write(".")
+          writer.write(line + "\r\n")
+        }
+        writer.write(".\r\n")
+        writer.flush()
+
+        val dataResp = readResponse()
+        send("QUIT")
+
+        if (dataResp.startsWith("250")) {
+          log(LogLevel.INFO, "Update notification email sent to $to")
+          return true
+        } else {
+          log(LogLevel.WARNING, "SMTP server rejected message: $dataResp")
+          return false
+        }
+      }
+    } catch (e: Exception) {
+      log(LogLevel.ERROR, "Failed to send notification email: ${e.message}")
+      return false
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  Logging override
   // ═══════════════════════════════════════════════════════════════════════════
 
   override fun log(importance: LogLevel, toLog: String, adjenct: String, exception: Throwable?) {
-    super.idLogMessages = "Qwen3Srv"
+    super.idLogMessages = "LlamaSrv"
     super.log(importance, toLog, adjenct, exception)
   }
 }

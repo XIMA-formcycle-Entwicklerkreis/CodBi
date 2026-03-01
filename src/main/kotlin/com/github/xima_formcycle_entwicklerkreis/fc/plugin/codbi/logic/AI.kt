@@ -1,6 +1,8 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic
 
 // region Imports
+// region CodBi
+// endregion CodBi
 // region XIMA
 // endregion XIMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.TesseractAction
@@ -19,15 +21,15 @@ import org.slf4j.LoggerFactory
  *
  * In order to enable the re-usage of images that were already uploaded, this class sets up a cache
  * ([cacheIDedImages]) that is managed by a janitor ([janitorIDedImages]) with a specific expiration
- * time for the images defined ([msExpirationIDedImages]).
+ * time for the images defined ([msExpirationIDedImages]). **DSGVO Notice**: IDed images are
+ * temporarily stored as files on the server.
  *
  * A dedicated [log]ger posts messages in following manner to the console **[[ CodBi / AI /
  * [idLogMessages] ] **...message...** ]**.
  *
  * ## AI on Formcylce server benefits
  * - **Lean Compliance**: Simpler DSGVO and EU AI Act handling. Most easy approval from your Data
- *   Protection Officer (DSGVO), No Data Transit Mapping, No extra TOMs, no extra VVTs, remain User
- *   instead of becoming an infrastructure operator or even a provider regarding the EU-AI Act.
+ *   Protection Officer (DSGVO), No Data Transit Mapping, No extra TOMs, no extra VVTs.
  * - **Infrastructure Efficiency**: No second OS to patch, monitor, or license. Dramatically lowers
  *   TCO (Total Cost of Ownership) and prevents "server sprawl."
  * - **Maximum Performance**: Zero network latency. Localhost communication bypasses the physical
@@ -39,11 +41,16 @@ import org.slf4j.LoggerFactory
  *
  * **Bottom Line**: Hosting on the same server is the most pragmatic, cost-effective, and
  * low-maintenance approach for high-speed, internalized workflows.
+ *
+ * ## Plugin Properties
+ * |Property                  |Type|Default |Description                                                          |
+ * |--------------------------|----|--------|---------------------------------------------------------------------|
+ * |`AI_CachedImageExpiration`|Long|`600000`|Time in ms before a cached image expires and is purged by the janitor|
  */
 abstract class AI : IPluginServletAction {
   /**
-   * The predicate used to [log] messages related to CodBi / AI to the console (defaults to **CodBi
-   * / AI**).
+   * The predicate used to [log] messages related to CodBi / AI to the console (defaults to an empty
+   * string ).
    */
   protected var idLogMessages = ""
 

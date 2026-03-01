@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <changeSet id="codbi-ai-proxy-1" author="codbi">
+        <comment>Create audit log table for the CodBi AI Proxy</comment>
+        <createTable tableName="codbi_ai_proxy">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="ts" type="TIMESTAMP" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_hash" type="VARCHAR(12)"/>
+            <column name="ip_masked" type="VARCHAR(15)"/>
+            <column name="endpoint" type="VARCHAR(100)"/>
+            <column name="status" type="INT"/>
+            <column name="detail" type="VARCHAR(500)"/>
+            <column name="elapsed_ms" type="BIGINT"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="codbi-ai-proxy-2" author="codbi">
+        <comment>Widen ip_masked column to accommodate IPv6 addresses (max 45 chars)</comment>
+        <modifyDataType tableName="codbi_ai_proxy" columnName="ip_masked" newDataType="VARCHAR(45)"/>
+    </changeSet>
+
+</databaseChangeLog>

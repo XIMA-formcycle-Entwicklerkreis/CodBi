@@ -49,27 +49,33 @@ import javax.imageio.ImageIO
 //                                                |
 // |------------------------------------|---------|----------------------------------|--------------------------------------------------------------|
 // | `Active_AI`                        | String  | —                                | Must contain
-// `qwen3srv` to activate this model               |
-// | `AI_Qwen3Srv_ModelUrl`             | URL     | Qwen3-VL-2B Q4_K_M HuggingFace  | Download URL
+// `llama_std` to activate this model               |
+// | `AI_LLAMA_STD_ModelUrl`             | URL     | Qwen3-VL-2B Q4_K_M HuggingFace  | Download URL
 // for the GGUF model file                         |
-// | `AI_Qwen3Srv_MmprojUrl`            | URL     | Qwen3-VL-2B mmproj HuggingFace  | Download URL
+// | `AI_LLAMA_STD_MmprojUrl`            | URL     | Qwen3-VL-2B mmproj HuggingFace  | Download URL
 // for the vision projector (mmproj) file          |
-// | `AI_Qwen3Srv_MaxPixels`            | Int     | `3211264`                        | Max pixel
+// | `AI_LLAMA_STD_MaxPixels`            | Int     | `3211264`                        | Max pixel
 // budget for image downscaling (min 3136)            |
-// | `AI_Qwen3Srv_MaxTokens`            | Int     | `2048`                           | Maximum
+// | `AI_LLAMA_STD_MaxTokens`            | Int     | `2048`                           | Maximum
 // tokens to generate per response                      |
-// | `AI_Qwen3Srv_MaxRAMPercent`        | Double  | `101.0`                          | RAM usage
+// | `AI_LLAMA_STD_MaxRAMPercent`        | Double  | `101.0`                          | RAM usage
 // threshold (%) — blocks requests when exceeded      |
-// | `AI_Qwen3Srv_MaxCPUPercent`        | Double  | `101.0`                          | CPU usage
+// | `AI_LLAMA_STD_MaxCPUPercent`        | Double  | `101.0`                          | CPU usage
 // threshold (%) — blocks requests when exceeded      |
-// | `AI_Qwen3Srv_LlamaRelease`         | String  | `b8175`                          | llama.cpp
+// | `AI_LLAMA_STD_LlamaRelease`         | String  | `b8175`                          | llama.cpp
 // release tag for server binary download             |
-// | `AI_Qwen3Srv_ServerUrl_<platform>` | URL     | (auto from release tag)          | Per-platform
+// | `AI_LLAMA_STD_ServerUrl_<platform>` | URL     | (auto from release tag)          | Per-platform
 // override for the llama-server binary URL        |
-// | `AI_Qwen3Srv_UpdateCheckHours`     | Long    | `24`                             | Hours between
+// | `AI_LLAMA_STD_UpdateCheckHours`     | Long    | `24`                             | Hours
+// between
 // GitHub release checks (0 = disabled)           |
-// | `AI_Qwen3Srv_NotifyEmail`          | String  | —                                | Email address
+// | `AI_LLAMA_STD_NotifyEmail`          | String  | —                                | Email
+// address
 // for update notifications                       |
+// | `AI_LLAMA_STD_ThinkingModelUrl`    | URL     | —                                | Download URL
+// for a dedicated thinking model GGUF (optional) |
+// | `AI_LLAMA_STD_ThinkingMmprojUrl`   | URL     | —                                | Download URL
+// for the thinking model's mmproj file (optional)|
 // | `AI_BraveSearch_ApiKey`            | String  | —                                | Brave Search
 // API key — enables web search tool for the model |
 //
@@ -79,7 +85,7 @@ class Standard : LLAMA() {
 
   companion object {
     /** Plugin property name prefix for this model. */
-    private const val PROP_PREFIX = "AI_Qwen3Srv"
+    private const val PROP_PREFIX = "AI_LLAMA_STD"
 
     /** Default GGUF model URL: Qwen3-VL-2B-Instruct Q4_K_M quantization (~1.1 GB). */
     private const val DEFAULT_MODEL_URL =
@@ -100,6 +106,34 @@ class Standard : LLAMA() {
   // ── Configurable URLs (overridable via plugin properties) ─────────────────
   private var modelUrl = DEFAULT_MODEL_URL
   private var mmprojUrl = DEFAULT_MMPROJ_URL
+
+  // ── Thinking model URLs (optional — enables dedicated thinking server) ────
+  private var thinkingModelUrl: String? = null
+  private var thinkingMmprojUrl: String? = null
+
+  // ── Thinking model state ──────────────────────────────────────────────────
+  /** Whether a dedicated thinking model is configured (separate from the fast model). */
+  private val hasThinkingModel: Boolean
+    get() = thinkingModelUrl != null
+
+  /** Downloaded thinking model GGUF file. */
+  private var thinkingModelFile: File? = null
+
+  /** Downloaded thinking model mmproj file (may be null if no vision needed). */
+  private var thinkingMmprojFile: File? = null
+
+  /** The port the thinking model's llama-server listens on. */
+  @Volatile private var thinkingServerPort: Int = 0
+
+  /** The running thinking llama-server process. */
+  @Volatile private var thinkingServerProcess: Process? = null
+
+  /** Whether the thinking server is ready for requests. */
+  @Volatile private var thinkingServerReady = false
+
+  /** Threads consuming thinking server stdout/stderr. */
+  private var thinkingStdoutThread: Thread? = null
+  private var thinkingStderrThread: Thread? = null
 
   // ── Model / inference settings ────────────────────────────────────────────
   /** Maximum pixel budget for downscaling images before encoding as base64. */
@@ -149,26 +183,44 @@ class Standard : LLAMA() {
    * Holds the state of an in-flight streaming request. The background thread appends generated text
    * chunks; polling requests read them.
    */
-  private class StreamingSession(val startTime: Long = System.currentTimeMillis()) {
+  private class StreamingSession(
+      val startTime: Long = System.currentTimeMillis(),
+      /** Whether this session uses thinking mode (longer TTL). */
+      val enableThinking: Boolean = false
+  ) {
     /** Accumulated generated text so far. */
     val textChunks = java.util.concurrent.CopyOnWriteArrayList<String>()
+    /** Accumulated thinking/reasoning text (from <think> blocks). */
+    val thinkingChunks = java.util.concurrent.CopyOnWriteArrayList<String>()
     @Volatile var done = false
     @Volatile var error: String? = null
     @Volatile var stopRequested = false
     @Volatile var resourceStatus: String? = null
     /** When true the client should show a "searching the web" animation. */
     @Volatile var searching = false
+    /** The search query text shown to the user while searching. */
+    @Volatile var searchQuery: String? = null
+    /** Which model produced the response: "fast" or "thinking". */
+    @Volatile var modelType: String = if (enableThinking) "thinking" else "fast"
 
     fun currentText(): String = textChunks.joinToString("")
+
+    fun currentThinking(): String = thinkingChunks.joinToString("")
   }
 
-  /** Active streaming sessions, keyed by UUID. Cleaned up on completion or after 5 min TTL. */
+  /**
+   * Active streaming sessions, keyed by UUID. Cleaned up on completion or after TTL (5 min normal,
+   * 10 min thinking).
+   */
   private val streamingSessions = ConcurrentHashMap<String, StreamingSession>()
 
-  /** Removes streaming sessions older than 5 minutes. */
+  /** Removes streaming sessions past their TTL: 5 min for normal, 10 min for thinking mode. */
   private fun cleanupStaleSessions() {
-    val cutoff = System.currentTimeMillis() - 5 * 60 * 1000
-    streamingSessions.entries.removeIf { it.value.startTime < cutoff }
+    val now = System.currentTimeMillis()
+    streamingSessions.entries.removeIf {
+      val ttl = if (it.value.enableThinking) 10 * 60 * 1000L else 5 * 60 * 1000L
+      it.value.startTime + ttl < now
+    }
   }
 
   // ── ResourceMonitor inner class ───────────────────────────────────────────
@@ -245,10 +297,10 @@ class Standard : LLAMA() {
   override fun initialize(configData: IPluginInitializeData) {
     idLogMessages = "LlamaSrv"
 
-    // Check activation: must contain "qwen3srv"
+    // Check activation: must contain "llama_std" (case-insensitive)
     val activeAiRaw = configData.properties.getProperty("Active_AI") ?: ""
     val activeAi = activeAiRaw.lowercase()
-    if (!activeAi.contains("qwen3srv")) {
+    if (!activeAi.contains("llama_std")) {
       log(LogLevel.INFO, "Standard initialization skipped because Active_AI='$activeAiRaw'")
       return
     }
@@ -267,6 +319,19 @@ class Standard : LLAMA() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { mmprojUrl = it }
+
+    // Read optional thinking model URLs (dedicated thinking server)
+    configData.properties
+        .getProperty("${PROP_PREFIX}_ThinkingModelUrl")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { thinkingModelUrl = it }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_ThinkingMmprojUrl")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { thinkingMmprojUrl = it }
+
     configData.properties.getProperty("${PROP_PREFIX}_MaxPixels")?.trim()?.toIntOrNull()?.let {
       if (it >= 3136) maxPixels = it
     }
@@ -333,6 +398,12 @@ class Standard : LLAMA() {
     log(LogLevel.INFO, "mmproj URL:  $mmprojUrl")
     log(LogLevel.INFO, "MaxPixels:   $maxPixels")
     log(LogLevel.INFO, "MaxTokens:   $maxTokens")
+    if (hasThinkingModel) {
+      log(LogLevel.INFO, "Thinking model URL:   $thinkingModelUrl")
+      log(LogLevel.INFO, "Thinking mmproj URL:  $thinkingMmprojUrl")
+    } else {
+      log(LogLevel.INFO, "Thinking model: hybrid mode (no separate model configured)")
+    }
     log(
         LogLevel.INFO,
         "BraveSearch: ${if (BraveSearch.isAvailable) "enabled" else "disabled (no API key)"}")
@@ -377,7 +448,9 @@ class Standard : LLAMA() {
                   return@Thread
                 }
 
-                // ── Phase 3: Ignition ──
+                // ── Phase 3: Ignition — Start fast/normal model server ──
+                // Start the fast model FIRST so it's available immediately,
+                // even while the thinking model is still downloading.
                 val started = startServer(binary, modelFile!!, mmprojFile)
                 if (!started) {
                   loadError = IllegalStateException("llama-server failed to start")
@@ -386,6 +459,48 @@ class Standard : LLAMA() {
 
                 isActive = true
                 serverReady = true
+                log(LogLevel.INFO, "Standard (llama) fast model initialized and ready for requests")
+
+                // ── Phase 4: Download + start thinking model (if configured) ──
+                // This happens AFTER the fast server is ready, so requests
+                // can be served while the thinking model downloads.
+                if (hasThinkingModel) {
+                  val thinkingModelFileName = thinkingModelUrl!!.substringAfterLast("/")
+                  thinkingModelFile = File(modelsDir, thinkingModelFileName)
+                  if (!downloadWithResume(
+                      thinkingModelUrl!!, thinkingModelFile!!, "Thinking GGUF model")) {
+                    log(
+                        LogLevel.WARNING,
+                        "Failed to download thinking model — using fast model only")
+                    thinkingModelFile = null
+                  }
+
+                  if (thinkingModelFile != null && thinkingMmprojUrl != null) {
+                    val thinkingMmprojFileName = thinkingMmprojUrl!!.substringAfterLast("/")
+                    thinkingMmprojFile = File(modelsDir, thinkingMmprojFileName)
+                    if (!downloadWithResume(
+                        thinkingMmprojUrl!!, thinkingMmprojFile!!, "Thinking mmproj")) {
+                      log(
+                          LogLevel.WARNING,
+                          "Failed to download thinking mmproj — using fast model only")
+                      thinkingModelFile = null
+                      thinkingMmprojFile = null
+                    }
+                  }
+                }
+
+                if (thinkingModelFile != null) {
+                  val thinkingStarted = startThinkingServer(binary)
+                  if (thinkingStarted) {
+                    thinkingServerReady = true
+                    activeThinkingServerPort = thinkingServerPort
+                    log(LogLevel.INFO, "Thinking model server started on port $thinkingServerPort")
+                  } else {
+                    log(LogLevel.WARNING, "Thinking server failed to start — using fast model only")
+                    thinkingModelFile = null
+                  }
+                }
+
                 log(LogLevel.INFO, "Standard (llama) fully initialized and ready for requests")
               } catch (e: Exception) {
                 loadError = e
@@ -406,8 +521,232 @@ class Standard : LLAMA() {
     resourceMonitor?.shutdown()
     resourceMonitor = null
     serverReady = false
+    thinkingServerReady = false
+    stopThinkingServer()
     streamingSessions.clear()
     super.shutdown(shutdownData)
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Thinking Model Server
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Starts a second llama-server instance for the dedicated thinking model. Uses the same binary
+   * but a different port and model file.
+   *
+   * @param binary The llama-server executable (shared with the fast server).
+   * @return `true` if the thinking server started and passed health checks.
+   */
+  private fun startThinkingServer(binary: File): Boolean {
+    val thinkModel = thinkingModelFile ?: return false
+
+    // Pick a port offset from the main server
+    thinkingServerPort = findThinkingPort(serverPort + 100)
+
+    val resolvedThreads = threadCount ?: detectPhysicalCores()
+
+    val resolvedGpuLayers =
+        when {
+          gpuLayers >= 0 -> gpuLayers
+          detectedGpu != GpuBackend.NONE -> 999
+          else -> 0
+        }
+
+    log(LogLevel.INFO, "Starting thinking llama-server:")
+    log(LogLevel.INFO, "  Binary:  ${binary.absolutePath}")
+    log(
+        LogLevel.INFO,
+        "  Model:   ${thinkModel.absolutePath} (${"%.0f".format(thinkModel.length() / (1024.0 * 1024.0))} MB)")
+    thinkingMmprojFile?.let { log(LogLevel.INFO, "  mmproj:  ${it.absolutePath}") }
+    log(LogLevel.INFO, "  Port:    $thinkingServerPort")
+
+    // Write the Qwen3 Jinja template for thinking (same template, the model is expected to think)
+    val templateFile = File(binary.parentFile, "qwen3-thinking-template.jinja")
+    templateFile.writeText(
+        """{%- if messages[0].role == 'system' %}{%- set system_message = messages[0].content %}{%- set loop_messages = messages[1:] %}{%- else %}{%- set system_message = 'You are a helpful assistant.' %}{%- set loop_messages = messages %}{%- endif %}{{- '<|im_start|>system\n' + system_message + '<|im_end|>\n' }}{%- for message in loop_messages %}{%- if message.role == 'user' %}{%- if message.content is string %}{{- '<|im_start|>user\n' + message.content + '<|im_end|>\n' }}{%- else %}{{- '<|im_start|>user\n' }}{%- for part in message.content %}{%- if part.type == 'text' %}{{- part.text }}{%- endif %}{%- endfor %}{{- '<|im_end|>\n' }}{%- endif %}{%- elif message.role == 'assistant' %}{%- if message.reasoning_content is defined and message.reasoning_content is not none %}{{- '<|im_start|>assistant\n<think>\n' + message.reasoning_content + '\n</think>\n' + message.content + '<|im_end|>\n' }}{%- else %}{{- '<|im_start|>assistant\n' + message.content + '<|im_end|>\n' }}{%- endif %}{%- endif %}{%- endfor %}{%- if add_generation_prompt %}{{- '<|im_start|>assistant\n' }}{%- if enable_thinking is defined and enable_thinking is true %}{{- '<think>\n' }}{%- endif %}{%- endif %}"""
+            .trimIndent())
+
+    val command =
+        mutableListOf(
+            binary.absolutePath,
+            "--model",
+            thinkModel.absolutePath,
+            "--host",
+            "127.0.0.1",
+            "--port",
+            thinkingServerPort.toString(),
+            "--threads",
+            resolvedThreads.toString(),
+            "--ctx-size",
+            ctxSize.toString(),
+            "--parallel",
+            parallelSlots.toString(),
+            "--n-gpu-layers",
+            resolvedGpuLayers.toString(),
+            "--jinja",
+            "--chat-template-file",
+            templateFile.absolutePath)
+    // Note: --reasoning-format deepseek is intentionally NOT used here.
+    // We handle <think>/</ think> separation ourselves via filterThinkTags + pre-fill seeding,
+    // which allows us to seed the reasoning language (e.g. German) via the <think> pre-fill.
+
+    if (thinkingMmprojFile != null && thinkingMmprojFile!!.exists()) {
+      command.addAll(listOf("--mmproj", thinkingMmprojFile!!.absolutePath))
+    }
+
+    command.addAll(extraServerArgs)
+
+    log(LogLevel.INFO, "Thinking server command: ${command.joinToString(" ")}")
+
+    try {
+      val pb = ProcessBuilder(command)
+      pb.directory(binary.parentFile)
+      pb.redirectErrorStream(false)
+      pb.environment()["LLAMA_LOG_TIMESTAMPS"] = "1"
+
+      val process = pb.start()
+      thinkingServerProcess = process
+
+      thinkingStdoutThread =
+          Thread(
+                  {
+                    try {
+                      BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                        reader.lineSequence().forEach { line ->
+                          log(LogLevel.INFO, "[thinking-server] $line")
+                        }
+                      }
+                    } catch (_: Exception) {}
+                  },
+                  "thinking-stdout")
+              .apply {
+                isDaemon = true
+                start()
+              }
+
+      thinkingStderrThread =
+          Thread(
+                  {
+                    try {
+                      BufferedReader(InputStreamReader(process.errorStream)).use { reader ->
+                        reader.lineSequence().forEach { line ->
+                          log(LogLevel.INFO, "[thinking-server/err] $line")
+                        }
+                      }
+                    } catch (_: Exception) {}
+                  },
+                  "thinking-stderr")
+              .apply {
+                isDaemon = true
+                start()
+              }
+
+      // Wait for thinking server health
+      val healthy = waitForThinkingHealth()
+      if (!healthy) {
+        log(LogLevel.ERROR, "Thinking server failed to become healthy")
+        stopThinkingServer()
+        return false
+      }
+
+      log(LogLevel.INFO, "Thinking llama-server is healthy on port $thinkingServerPort")
+      return true
+    } catch (e: Exception) {
+      log(LogLevel.ERROR, "Failed to start thinking server: ${e.message}", "", e)
+      stopThinkingServer()
+      return false
+    }
+  }
+
+  /** Finds a free port for the thinking server, starting from [preferredPort]. */
+  private fun findThinkingPort(preferredPort: Int): Int {
+    for (offset in 0 until 20) {
+      val candidate = preferredPort + offset
+      if (candidate > 65535 || candidate == serverPort) continue
+      try {
+        java.net.ServerSocket(candidate).use { /* port is free */ }
+        return candidate
+      } catch (_: Exception) {
+        /* in use */
+      }
+    }
+    return try {
+      java.net.ServerSocket(0).use { it.localPort }
+    } catch (_: Exception) {
+      preferredPort
+    }
+  }
+
+  /** Polls the thinking server `/health` endpoint until it reports healthy. */
+  private fun waitForThinkingHealth(): Boolean {
+    val deadline = System.currentTimeMillis() + 120_000L
+    var lastError = ""
+
+    while (System.currentTimeMillis() < deadline) {
+      thinkingServerProcess?.let { proc ->
+        if (!proc.isAlive) {
+          log(LogLevel.ERROR, "Thinking server process died (exit code: ${proc.exitValue()})")
+          return false
+        }
+      }
+
+      try {
+        val connection =
+            URI("http://127.0.0.1:$thinkingServerPort/health").toURL().openConnection()
+                as HttpURLConnection
+        connection.connectTimeout = 2_000
+        connection.readTimeout = 2_000
+        connection.requestMethod = "GET"
+
+        val responseCode = connection.responseCode
+        val body =
+            try {
+              connection.inputStream.bufferedReader().readText()
+            } catch (_: Exception) {
+              ""
+            }
+        connection.disconnect()
+
+        if (responseCode == 200 &&
+            (body.contains("ok", ignoreCase = true) || body.contains("\"status\""))) {
+          return true
+        }
+        lastError = "HTTP $responseCode: $body"
+      } catch (e: Exception) {
+        lastError = e.message ?: "connection refused"
+      }
+
+      Thread.sleep(1_000L)
+    }
+
+    log(LogLevel.ERROR, "Thinking server health check timed out. Last error: $lastError")
+    return false
+  }
+
+  /** Stops the thinking llama-server process. */
+  private fun stopThinkingServer() {
+    thinkingServerProcess?.let { proc ->
+      log(LogLevel.INFO, "Stopping thinking llama-server...")
+      try {
+        proc.destroy()
+        if (!proc.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) {
+          proc.destroyForcibly()
+          proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        log(LogLevel.INFO, "Thinking server stopped (exit code: ${proc.exitValue()})")
+      } catch (e: Exception) {
+        log(LogLevel.WARNING, "Error stopping thinking server: ${e.message}")
+        try {
+          proc.destroyForcibly()
+        } catch (_: Exception) {}
+      }
+    }
+    thinkingServerProcess = null
+    thinkingStdoutThread = null
+    thinkingStderrThread = null
+    thinkingServerReady = false
+    activeThinkingServerPort = 0
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -438,16 +777,27 @@ class Standard : LLAMA() {
       val err = session.error
       val resStatus = session.resourceStatus
       session.resourceStatus = null
-      if (done) streamingSessions.remove(pollId)
+      // Don't remove session immediately on done — the client may miss the done signal
+      // (e.g. if it returns early on CALL:search detection). TTL cleanup handles removal.
+
+      // Suppress CALL:search command text from ever reaching the client.
+      // If the accumulated text contains CALL it is a tool invocation — return empty text.
+      val visibleText = if (!session.searching && text.trimStart().startsWith("CALL")) "" else text
 
       val resStatusJson =
           if (resStatus != null) ",\"resourceStatus\":\"${jsonEscape(resStatus)}\"" else ""
       val searchingJson = if (session.searching) ",\"searching\":true" else ""
+      val searchQueryJson =
+          session.searchQuery?.let { ",\"searchQuery\":\"${jsonEscape(it)}\"" } ?: ""
+      val thinkingText = session.currentThinking()
+      val thinkingJson =
+          if (thinkingText.isNotEmpty()) ",\"thinking\":\"${jsonEscape(thinkingText)}\"" else ""
+      val modelTypeJson = ",\"modelType\":\"${session.modelType}\""
       val jsonValue =
           if (err != null) {
-            "{\"text\":\"${jsonEscape(text)}\",\"done\":true,\"error\":\"${jsonEscape(err)}\"$resStatusJson$searchingJson}"
+            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":true,\"error\":\"${jsonEscape(err)}\"$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson}"
           } else {
-            "{\"text\":\"${jsonEscape(text)}\",\"done\":$done$resStatusJson$searchingJson}"
+            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":$done$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson}"
           }
       return jsonResponse(jsonValue)
     }
@@ -500,11 +850,18 @@ class Standard : LLAMA() {
       if (headerName.startsWith("x-question-", ignoreCase = true)) {
         val key = headerName.lowercase().substringAfter("x-question-", "").lowercase()
         if (key.isNotBlank() && headerValue != null) {
+          // Header value is Base64-encoded UTF-8 from the client
           val decodedValue =
               try {
-                String(headerValue.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
+                val bytes = java.util.Base64.getDecoder().decode(headerValue)
+                String(bytes, Charsets.UTF_8)
               } catch (_: Exception) {
-                headerValue
+                // Fallback: try raw ISO-8859-1 → UTF-8 re-interpretation
+                try {
+                  String(headerValue.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
+                } catch (_: Exception) {
+                  headerValue
+                }
               }
           questionsToAsk[key] = decodedValue
         }
@@ -558,12 +915,30 @@ class Standard : LLAMA() {
     }
 
     // ── Thinking mode ─────────────────────────────────────────────────────────
-    val enableThinking =
+    // Only enable thinking when the dedicated thinking server is available.
+    // The fast (Instruct) model cannot handle <think> pre-fill — it produces
+    // garbage/nothing. Without a dedicated thinking model, skip thinking entirely.
+    val userWantsThinking =
         params.headerMap.entries.any {
           it.key.equals("X-Thinking", ignoreCase = true) &&
               it.value.equals("true", ignoreCase = true)
         }
-    log(LogLevel.INFO, "Thinking mode: $enableThinking")
+    val enableThinking = userWantsThinking && thinkingServerReady
+    val thinkingMode =
+        when {
+          enableThinking -> "dedicated (port $thinkingServerPort)"
+          userWantsThinking -> "unavailable (thinking server not ready, using fast model)"
+          else -> "off"
+        }
+    log(LogLevel.INFO, "Thinking mode: $thinkingMode")
+
+    // ── Search toggle ─────────────────────────────────────────────────────────
+    val searchEnabled =
+        params.headerMap.entries.none {
+          it.key.equals("X-Search", ignoreCase = true) &&
+              it.value.equals("false", ignoreCase = true)
+        }
+    log(LogLevel.INFO, "Search enabled: $searchEnabled")
 
     // ── Streaming path ────────────────────────────────────────────────────────
     val wantsStream =
@@ -574,7 +949,7 @@ class Standard : LLAMA() {
     if (wantsStream) {
       cleanupStaleSessions()
       val sessionId = UUID.randomUUID().toString()
-      val session = StreamingSession()
+      val session = StreamingSession(enableThinking = enableThinking)
       streamingSessions[sessionId] = session
 
       val questions = questionsToAsk.toMap()
@@ -592,15 +967,31 @@ class Standard : LLAMA() {
                         prepareImageParts(images, rotation)
                       } else emptyList()
 
-                  val messages = buildMessages(question, imageParts, history)
+                  val messages =
+                      buildMessages(question, imageParts, history, searchEnabled, enableThinking)
+                  if (enableThinking)
+                      log(LogLevel.INFO, "Messages JSON (first 400): ${messages.take(400)}")
 
                   // Always stream directly to the user for immediate feedback
                   streamChatCompletion(messages, session, enableThinking, slot)
                   val fullText = session.currentText()
+                  val thinkText = session.currentThinking()
+                  log(
+                      LogLevel.INFO,
+                      "Stream done. Text: ${fullText.take(80)}…, Thinking: ${thinkText.take(120)}… (${thinkText.length} chars)")
 
-                  // After streaming completes, check if the model wants a web search
-                  if (BraveSearch.isAvailable &&
+                  // After streaming completes, check if the model wants a web search.
+                  // Only check visible text for CALL:search — if the model placed it inside
+                  // <think> tags, it was reasoning about searching, not requesting it.
+                  // The auto-search fallback in the finally block handles the case where
+                  // thinking produced no visible answer.
+                  if (searchEnabled &&
+                      BraveSearch.isAvailable &&
                       BraveSearch.CALL_SEARCH_PATTERN.containsMatchIn(fullText)) {
+                    // Extract the search query for the client indicator (sanitized)
+                    val rawQuery =
+                        BraveSearch.CALL_SEARCH_PATTERN.find(fullText)?.groupValues?.get(1) ?: ""
+                    session.searchQuery = BraveSearch.sanitizeQuery(rawQuery)
                     // Signal the client to show a search animation
                     session.searching = true
                     // Strip the CALL:search text so it's not displayed
@@ -609,11 +1000,51 @@ class Standard : LLAMA() {
                     handleSearchToolCallStreaming(
                         fullText, question, imageParts, history, session, enableThinking, slot)
                     session.searching = false
+                    session.searchQuery = null
                   }
                 } catch (ex: Exception) {
                   session.error = ex.message ?: "Unknown error"
                   log(LogLevel.ERROR, "Streaming error: ${ex.message}", "", ex)
                 } finally {
+                  // If the model produced only reasoning (no visible answer), keep reasoning
+                  // in the collapsible section and show a helpful visible message instead
+                  // of dumping raw reasoning into the chat bubble.
+                  if (enableThinking &&
+                      session.currentText().isBlank() &&
+                      session.currentThinking().isNotBlank()) {
+                    val question = questions.values.first()
+                    // Thinking model failed to produce a visible answer — fall back to
+                    // the fast model (non-thinking) and let IT decide whether a web search
+                    // is needed via CALL:search, rather than forcing a search every time.
+                    log(
+                        LogLevel.INFO,
+                        "Thinking model failed to produce answer — falling back to fast model")
+                    session.thinkingChunks.add(
+                        "\n⚠ The thinking model used all available tokens for reasoning without producing a final answer. The fast model was used to generate this response instead.\n")
+                    session.modelType = "fast"
+                    session.textChunks.clear()
+                    val fallbackMessages =
+                        buildMessages(
+                            question, emptyList(), history, searchEnabled, enableThinking = false)
+                    streamChatCompletion(fallbackMessages, session, false, slot)
+                    val fallbackText = session.currentText()
+
+                    // If the fast model emitted CALL:search, handle it
+                    if (searchEnabled &&
+                        BraveSearch.isAvailable &&
+                        BraveSearch.CALL_SEARCH_PATTERN.containsMatchIn(fallbackText)) {
+                      val rawQuery =
+                          BraveSearch.CALL_SEARCH_PATTERN.find(fallbackText)?.groupValues?.get(1)
+                              ?: ""
+                      session.searchQuery = BraveSearch.sanitizeQuery(rawQuery)
+                      session.searching = true
+                      session.textChunks.clear()
+                      handleSearchToolCallStreaming(
+                          fallbackText, question, emptyList(), history, session, false, slot)
+                      session.searching = false
+                      session.searchQuery = null
+                    }
+                  }
                   session.done = true
                 }
               },
@@ -635,12 +1066,16 @@ class Standard : LLAMA() {
           } else emptyList()
 
       for ((questionKey, question) in questionsToAsk) {
-        val messages = buildMessages(question, imageParts, chatHistory)
+        val messages =
+            buildMessages(question, imageParts, chatHistory, searchEnabled, enableThinking)
         var answer = chatCompletion(messages, enableThinking, slotId)
 
         // ── CALL:search tool loop ──────────────────────────────────────
-        answer =
-            handleSearchToolCall(answer, question, imageParts, chatHistory, enableThinking, slotId)
+        if (searchEnabled) {
+          answer =
+              handleSearchToolCall(
+                  answer, question, imageParts, chatHistory, enableThinking, slotId)
+        }
 
         finalResults[questionKey] = mapOf("answer" to answer)
         log(LogLevel.INFO, "Q[$questionKey]: ${question.take(80)}… → ${answer.take(80)}…")
@@ -864,18 +1299,17 @@ class Standard : LLAMA() {
       val searchContext = BraveSearch.formatResultsForModel(results)
 
       // Build extended conversation: original history + user question + assistant's CALL + search
-      // results
+      // results. Only pass the CALL:search command, not any surrounding reasoning text.
       val extendedHistory = chatHistory.toMutableList()
       extendedHistory.add("user" to originalQuestion)
-      extendedHistory.add("assistant" to answer)
+      extendedHistory.add("assistant" to match.value)
       extendedHistory.add("user" to searchContext)
 
+      val followUpQuestion = searchFollowUpPrompt(originalQuestion)
+      // Don't pre-fill thinking for the follow-up — the answer must be visible text
       val messages =
-          buildMessages(
-              "Use the search results to give a direct answer. Summarize the facts. Never say you cannot answer. Add [Source](URL) links.",
-              imageParts,
-              extendedHistory)
-      answer = chatCompletion(messages, enableThinking, slotId)
+          buildMessages(followUpQuestion, imageParts, extendedHistory, enableThinking = false)
+      answer = chatCompletion(messages, false, slotId)
       log(LogLevel.INFO, "Search-augmented answer (round $round): ${answer.take(120)}…")
     }
     return answer
@@ -910,20 +1344,41 @@ class Standard : LLAMA() {
 
     val searchContext = BraveSearch.formatResultsForModel(results)
 
+    // Preserve any actual reasoning the model produced before requesting search
+    val priorReasoning = session.currentThinking().trim()
+
     // Clear the CALL:search text from the stream and replace with new completion
     session.textChunks.clear()
+    session.thinkingChunks.clear()
+
+    // Build the collapsible section content:
+    // - If there was real reasoning before the search, show it first
+    // - Then show the search sources
+    if (priorReasoning.isNotEmpty()) {
+      session.thinkingChunks.add(priorReasoning)
+      session.thinkingChunks.add("\n\n---\n\n")
+    }
+    session.thinkingChunks.add("\uD83D\uDD0D Searching the web for: \"$query\"\n\n")
+    for ((index, result) in results.withIndex()) {
+      session.thinkingChunks.add(
+          "[${index + 1}] ${result.title}\n    ${result.url}\n    ${result.description.take(150)}\n\n")
+    }
+    session.thinkingChunks.add("Analyzing ${results.size} results to formulate an answer.")
 
     val extendedHistory = chatHistory.toMutableList()
     extendedHistory.add("user" to originalQuestion)
-    extendedHistory.add("assistant" to fullText)
+    // Only pass the CALL:search command as assistant context, NOT the entire (possibly repetitive)
+    // thinking text.
+    // The full thinking text can be thousands of chars and would overflow the fast model's context.
+    val assistantContext = match.value
+    extendedHistory.add("assistant" to assistantContext)
     extendedHistory.add("user" to searchContext)
 
+    val followUpQuestion = searchFollowUpPrompt(originalQuestion)
+    // Don't pre-fill thinking for the follow-up — the answer must be visible text
     val messages =
-        buildMessages(
-            "Use the search results to give a direct answer. Summarize the facts. Never say you cannot answer. Add [Source](URL) links.",
-            imageParts,
-            extendedHistory)
-    streamChatCompletion(messages, session, enableThinking, slotId)
+        buildMessages(followUpQuestion, imageParts, extendedHistory, enableThinking = false)
+    streamChatCompletion(messages, session, false, slotId)
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -941,29 +1396,74 @@ class Standard : LLAMA() {
   private fun buildMessages(
       question: String,
       imageParts: List<String>,
-      chatHistory: List<Pair<String, String>>
+      chatHistory: List<Pair<String, String>>,
+      searchEnabled: Boolean = true,
+      enableThinking: Boolean = false
   ): String {
     return buildString {
       append("[")
 
       // System prompt
-      append(
-          "{\"role\":\"system\",\"content\":\"You are a helpful assistant. Answer precisely and concisely. ")
-      if (BraveSearch.isAvailable) {
+      val today =
+          java.time.LocalDate.now()
+              .format(
+                  java.time.format.DateTimeFormatter.ofPattern(
+                      "d MMMM yyyy", java.util.Locale.ENGLISH))
+      append("{\"role\":\"system\",\"content\":\"")
+      append("You are a helpful assistant. Today is $today. Answer precisely and concisely. ")
+      if (searchEnabled && BraveSearch.isAvailable) {
         append(
-            "If you need current info from the internet, reply ONLY with CALL:search(query='your actual question'). ")
+            "When you need current info, reply ONLY with CALL:search(query='your search query'). ")
         append(
-            "Example: User asks 'weather tomorrow in Berlin' you reply CALL:search(query='weather forecast Berlin tomorrow'). ")
-        append("Replace the query with the real search terms, never use '...' as the query.")
+            "The search query MUST be about the user's ACTUAL topic. Extract the core subject from the user's question. ")
+        append(
+            "SANITIZE: remove person names, serial numbers, IDs, and any code mixing letters+digits. Keep brand names and topic keywords. ")
+        append(
+            "Example: user asks about a product error → CALL:search(query='[product] [error] fix'). ")
+        append(
+            "Example: user asks about contract law → CALL:search(query='[topic] contract termination'). ")
+        append("Example: user asks about weather → CALL:search(query='weather forecast [city]'). ")
+        append(
+            "EXCEPTION: If the user wraps a word in << >>, copy it into the query verbatim with the << >> markers. ")
+        append(
+            "Example: 'What did << Elon Musk >> say about AI?' → CALL:search(query='<< Elon Musk >> AI statements'). ")
+        append(
+            "Never include person names in the query UNLESS they are wrapped in << >>. Never use '...' as the query. ")
+        append(
+            "IMPORTANT: The search query must match the user's actual question topic — never copy an example query. ")
+        if (enableThinking) {
+          append("THINKING MODE: You MUST reason thoroughly FIRST inside <think>...</think>. ")
+          append(
+              "Only AFTER you have finished thinking and closed </think>, output CALL:search as your visible answer if needed. ")
+          append("NEVER put CALL:search inside <think> tags. Think first, then decide. ")
+        }
       }
+      append(
+          "CRITICAL RULE: You MUST respond in the SAME language the user uses. If the user writes in German, you MUST think AND answer in German. If in English, think and answer in English. Match the user's language exactly — this applies to ALL output including your reasoning/thinking.")
       append("\"}")
 
-      // Chat history
-      for ((role, content) in chatHistory) {
+      // Chat history — skip the last entry if it duplicates the current question
+      // (the frontend pushes the user message to history before sending the request)
+      val effectiveHistory =
+          if (chatHistory.isNotEmpty() &&
+              chatHistory.last().first == "user" &&
+              chatHistory.last().second == question) {
+            chatHistory.dropLast(1)
+          } else {
+            chatHistory
+          }
+      for ((role, content) in effectiveHistory) {
         append(",{\"role\":\"${jsonEscape(role)}\",\"content\":\"${jsonEscape(content)}\"}")
       }
 
       // User message with optional images
+      // Detect the user's language and inject an immediate reminder right before their message.
+      // Models attend most to the tokens closest to generation, so this is far more effective
+      // than a system prompt instruction alone.
+      val langHint = detectLanguageHint(question)
+      if (langHint != null) {
+        append(",{\"role\":\"system\",\"content\":\"${jsonEscape(langHint)}\"}")
+      }
       append(",{\"role\":\"user\",\"content\":")
       if (imageParts.isNotEmpty()) {
         // Multi-part content (images + text)
@@ -979,8 +1479,290 @@ class Standard : LLAMA() {
       }
       append("}")
 
+      // Pre-fill assistant response with <think> + language seed for ALL thinking modes.
+      // This forces the model to start reasoning in the user's language.
+      // We handle the <think>/</think> separation ourselves via filterThinkTags
+      // instead of relying on reasoning_content (which doesn't support language seeding).
+      if (enableThinking) {
+        val thinkSeed = detectThinkingSeed(question)
+        append(",{\"role\":\"assistant\",\"content\":\"<think>\\n$thinkSeed\"}")
+      }
+
       append("]")
     }
+  }
+
+  /**
+   * Detects the user's language from their question and returns a short instruction telling the
+   * model to reason and answer in that language. Returns null if the language appears to be English
+   * (the model's default).
+   */
+  private fun detectLanguageHint(question: String): String? {
+    // Pad with spaces so first/last words match markers like " ist "
+    val lower = " ${question.lowercase()} "
+    // German indicators: common words, umlauts, ß
+    val germanMarkers =
+        listOf(
+            "ä",
+            "ö",
+            "ü",
+            "ß",
+            " ist ",
+            " der ",
+            " die ",
+            " das ",
+            " und ",
+            " wie ",
+            " wer ",
+            " was ",
+            " ein ",
+            " eine ",
+            " für ",
+            " auf ",
+            " nicht ",
+            " mit ",
+            " von ",
+            " nach ",
+            " bei ",
+            " aus ",
+            " über ",
+            " werden ",
+            " haben ",
+            " sind ",
+            " kann ",
+            " bitte ",
+            " welche",
+            " warum",
+            " aktuell",
+            " gerade",
+            " heute")
+    val germanHits = germanMarkers.count { lower.contains(it) }
+    if (germanHits >= 2 ||
+        (germanHits >= 1 && listOf("ä", "ö", "ü", "ß").any { lower.contains(it) })) {
+      return "WICHTIG: Der Benutzer schreibt auf Deutsch. Du MUSST auf Deutsch denken UND antworten. Alle Überlegungen (reasoning/thinking) und die finale Antwort MÜSSEN auf Deutsch sein."
+    }
+    // Italian indicators — checked BEFORE French/Spanish since they share markers like "una",
+    // "per", "con"
+    val italianMarkers =
+        listOf(
+            " è ",
+            " il ",
+            " la ",
+            " gli ",
+            " dei ",
+            " del ",
+            " della ",
+            " delle ",
+            " nella ",
+            " nel ",
+            " per ",
+            " con ",
+            " che ",
+            " come ",
+            " sono ",
+            " non ",
+            " una ",
+            " questo ",
+            " questa ",
+            " quale ",
+            " perché",
+            " anche ",
+            " stato ",
+            " essere ",
+            " hanno ",
+            " può ",
+            " chi ",
+            " cosa ",
+            " dove ",
+            " quando ",
+            " molto ",
+            " più ",
+            " alla ",
+            " allo ",
+            " agli ",
+            " alle ",
+            " dall",
+            " sull",
+            " qual ",
+            " attuale",
+            " città",
+            " sindaco",
+            " oggi")
+    if (italianMarkers.count { lower.contains(it) } >= 2) {
+      return "IMPORTANTE: L'utente scrive in italiano. DEVI pensare E rispondere in italiano. Tutti i ragionamenti (reasoning/thinking) e la risposta finale DEVONO essere in italiano."
+    }
+    // French indicators
+    val frenchMarkers =
+        listOf(
+            " est ",
+            " les ",
+            " des ",
+            " une ",
+            " dans ",
+            " pour ",
+            " avec ",
+            " que ",
+            " qui ",
+            " sur ",
+            " pas ",
+            " sont ",
+            "é",
+            "è",
+            "ê",
+            "ç")
+    if (frenchMarkers.count { lower.contains(it) } >= 2) {
+      return "IMPORTANT : L'utilisateur écrit en français. Tu DOIS penser ET répondre en français."
+    }
+    // Spanish indicators
+    val spanishMarkers =
+        listOf(
+            " es ",
+            " los ",
+            " las ",
+            " una ",
+            " para ",
+            " con ",
+            " del ",
+            " por ",
+            " que ",
+            "ñ",
+            "¿",
+            "¡")
+    if (spanishMarkers.count { lower.contains(it) } >= 2) {
+      return "IMPORTANTE: El usuario escribe en español. DEBES pensar Y responder en español."
+    }
+    return null // English or unknown — no extra hint needed
+  }
+
+  /**
+   * Returns a short opening phrase in the user's language to seed the `<think>` block. By
+   * pre-filling the start of reasoning in the target language, the model continues reasoning in
+   * that language instead of defaulting to English.
+   */
+  private fun detectThinkingSeed(question: String): String {
+    // Pad with spaces so first/last words match markers like " ist "
+    val lower = " ${question.lowercase()} "
+    val germanMarkers =
+        listOf(
+            "ä",
+            "ö",
+            "ü",
+            "ß",
+            " ist ",
+            " der ",
+            " die ",
+            " das ",
+            " und ",
+            " wie ",
+            " wer ",
+            " was ",
+            " ein ",
+            " eine ",
+            " für ",
+            " auf ",
+            " nicht ",
+            " mit ",
+            " von ",
+            " nach ",
+            " bei ",
+            " aus ",
+            " über ")
+    val germanHits = germanMarkers.count { lower.contains(it) }
+    if (germanHits >= 2 ||
+        (germanHits >= 1 && listOf("ä", "ö", "ü", "ß").any { lower.contains(it) })) {
+      return "SPRACHE: Deutsch. Denke auf Deutsch. Antworte auf Deutsch. Kurz denken, NICHT wiederholen."
+    }
+    val frenchMarkers =
+        listOf(" est ", " les ", " des ", " une ", " dans ", " pour ", " avec ", "é", "è", "ç")
+    if (frenchMarkers.count { lower.contains(it) } >= 2) {
+      return "LANGUE: Français. Réfléchis en français. Réponds en français. Sois bref, NE te répète PAS."
+    }
+    val spanishMarkers = listOf(" es ", " los ", " las ", " una ", " para ", " con ", "ñ", "¿")
+    if (spanishMarkers.count { lower.contains(it) } >= 2) {
+      return "IDIOMA: Español. Piensa en español. Responde en español. Sé breve, NO repitas."
+    }
+    val italianMarkers =
+        listOf(
+            " è ",
+            " il ",
+            " la ",
+            " le ",
+            " gli ",
+            " dei ",
+            " della ",
+            " per ",
+            " con ",
+            " che ",
+            " come ",
+            " sono ",
+            " non ")
+    if (italianMarkers.count { lower.contains(it) } >= 2) {
+      return "LINGUA: Italiano. Pensa in italiano. Rispondi in italiano. Sii breve, NON ripetere."
+    }
+    return "Think briefly. Do NOT repeat yourself." // English
+  }
+
+  /** Returns a follow-up prompt for answering from search results in the user's language. */
+  private fun searchFollowUpPrompt(originalQuestion: String): String {
+    val lower = " ${originalQuestion.lowercase()} "
+    val germanMarkers =
+        listOf(
+            "ä",
+            "ö",
+            "ü",
+            "ß",
+            " ist ",
+            " der ",
+            " die ",
+            " das ",
+            " und ",
+            " wie ",
+            " wer ",
+            " was ",
+            " ein ",
+            " eine ",
+            " für ",
+            " auf ",
+            " nicht ",
+            " mit ",
+            " von ",
+            " nach ",
+            " bei ",
+            " aus ",
+            " über ")
+    val germanHits = germanMarkers.count { lower.contains(it) }
+    if (germanHits >= 2 ||
+        (germanHits >= 1 && listOf("ä", "ö", "ü", "ß").any { lower.contains(it) })) {
+      return "Gib eine kurze, direkte Antwort auf Deutsch in 2-4 Sätzen basierend auf den Suchergebnissen. Füge Links wie [Norton](https://norton.com) oder [Dell](https://dell.com) hinzu. Wiederhole dich nicht. Antworte AUF DEUTSCH."
+    }
+    val italianMarkers =
+        listOf(
+            " è ",
+            " il ",
+            " la ",
+            " le ",
+            " gli ",
+            " dei ",
+            " della ",
+            " per ",
+            " con ",
+            " che ",
+            " come ",
+            " sono ",
+            " non ")
+    if (italianMarkers.count { lower.contains(it) } >= 2) {
+      return "Dai una risposta breve e diretta in italiano in 2-4 frasi usando i risultati di ricerca. Aggiungi link come [Norton](https://norton.com) o [Dell](https://dell.com). Non ripetere. Rispondi IN ITALIANO."
+    }
+    val frenchMarkers =
+        listOf(" est ", " les ", " des ", " une ", " dans ", " pour ", " avec ", "é", "è", "ç")
+    if (frenchMarkers.count { lower.contains(it) } >= 2) {
+      return "Donne une réponse courte et directe en français en 2-4 phrases en utilisant les résultats de recherche. Ajoute des liens comme [Norton](https://norton.com) ou [Dell](https://dell.com). Ne te répète pas. Réponds EN FRANÇAIS."
+    }
+    val spanishMarkers = listOf(" es ", " los ", " las ", " una ", " para ", " con ", "ñ", "¿")
+    if (spanishMarkers.count { lower.contains(it) } >= 2) {
+      return "Da una respuesta corta y directa en español en 2-4 oraciones usando los resultados de búsqueda. Agrega enlaces como [Norton](https://norton.com) o [Dell](https://dell.com). No te repitas. Responde EN ESPAÑOL."
+    }
+    return "Give a short, direct answer in 2-4 sentences using the search results. Add links like [Norton](https://norton.com) or [Dell](https://dell.com). Do not repeat yourself."
   }
 
   /**
@@ -994,32 +1776,55 @@ class Standard : LLAMA() {
       enableThinking: Boolean = false,
       idSlot: Int = -1
   ): String {
+    // Route to dedicated thinking server if available, otherwise use main server
+    val useThinkingServer = enableThinking && thinkingServerReady
+    val targetPort = if (useThinkingServer) thinkingServerPort else serverPort
+
     val requestBody = buildString {
       append("{\"messages\":$messagesJson")
-      append(",\"max_tokens\":$maxTokens")
-      append(",\"temperature\":${if (enableThinking) "0.6" else "0.1"}")
-      append(",\"repetition_penalty\":1.1")
-      append(",\"frequency_penalty\":0.5")
-      append(",\"enable_thinking\":$enableThinking")
+      // Thinking mode needs a larger token budget: reasoning tokens + answer
+      val effectiveMaxTokens =
+          if (enableThinking) (maxTokens * 2).coerceAtLeast(3072) else maxTokens
+      append(",\"max_tokens\":$effectiveMaxTokens")
+      append(",\"temperature\":${if (enableThinking) "0.5" else "0.1"}")
+      append(",\"repetition_penalty\":${if (enableThinking) "1.5" else "1.1"}")
+      append(",\"frequency_penalty\":${if (enableThinking) "1.0" else "0.5"}")
+      append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":false")
+      // Thinking is handled via <think> pre-fill + filterThinkTags, not server-side enable_thinking
       if (idSlot >= 0) append(",\"id_slot\":$idSlot")
       append("}")
     }
 
-    val response = httpPost("/v1/chat/completions", requestBody)
+    if (useThinkingServer) {
+      log(LogLevel.INFO, "Routing to thinking server on port $thinkingServerPort")
+    }
+
+    // Thinking mode needs longer timeout: reasoning tokens + answer vs just answer
+    val timeoutMs = if (enableThinking) 600_000 else 300_000
+    val response =
+        httpPost("/v1/chat/completions", requestBody, timeoutMs = timeoutMs, port = targetPort)
 
     // Parse the response to extract generated text
     return try {
       val json = com.google.gson.JsonParser.parseString(response).asJsonObject
-      val raw =
-          json
-              .getAsJsonArray("choices")
-              ?.get(0)
-              ?.asJsonObject
-              ?.getAsJsonObject("message")
-              ?.get("content")
-              ?.asString ?: response
-      stripThinkTags(raw)
+      val message = json.getAsJsonArray("choices")?.get(0)?.asJsonObject?.getAsJsonObject("message")
+      var raw = message?.get("content")?.asString ?: response
+
+      if (useThinkingServer) {
+        // Dedicated thinking server: content is already clean, reasoning is in reasoning_content
+        raw
+      } else if (enableThinking) {
+        // Hybrid mode / pre-fill approach: response doesn't include the opening <think> we sent,
+        // so prepend it for stripThinkTags to match correctly.
+        raw = "<think>$raw"
+        var result = stripThinkTags(raw)
+        // If model didn't close </think>, stripThinkTags leaves <think> prefix — remove it
+        if (result.startsWith("<think>")) result = result.removePrefix("<think>").trimStart()
+        result
+      } else {
+        raw
+      }
     } catch (e: Exception) {
       log(LogLevel.WARNING, "Failed to parse completion response: ${e.message}")
       response
@@ -1036,21 +1841,43 @@ class Standard : LLAMA() {
       enableThinking: Boolean = false,
       idSlot: Int = -1
   ) {
-    /** Tracks whether we are inside a `<think>…</think>` block so those tokens are suppressed. */
-    var insideThinkBlock = false
+    // Route to dedicated thinking server if available, otherwise use main server
+    val useThinkingServer = enableThinking && thinkingServerReady
+    val targetPort = if (useThinkingServer) thinkingServerPort else serverPort
+
+    /**
+     * Tracks whether we are inside a `<think>…</think>` block so those tokens are suppressed.
+     * Starts true for ALL thinking modes because we pre-fill `<think>\n` with a language seed. We
+     * handle separation via filterThinkTags rather than relying on reasoning_content.
+     */
+    var insideThinkBlock = enableThinking
     /** Buffer for detecting partial `<think>` or `</think>` tags at chunk boundaries. */
     val tagBuffer = StringBuilder()
+    /** Accumulates all reasoning text for repetition detection. */
+    val reasoningAccum = StringBuilder()
+    /** Accumulates visible answer text for repetition detection. */
+    val answerAccum = StringBuilder()
+    /** Set to true once repetition is detected, to force-close the think block. */
+    var repetitionDetected = false
 
     val requestBody = buildString {
       append("{\"messages\":$messagesJson")
-      append(",\"max_tokens\":$maxTokens")
-      append(",\"temperature\":${if (enableThinking) "0.6" else "0.1"}")
-      append(",\"repetition_penalty\":1.1")
-      append(",\"frequency_penalty\":0.5")
-      append(",\"enable_thinking\":$enableThinking")
+      // Thinking mode needs a larger token budget: reasoning tokens + answer
+      val effectiveMaxTokens =
+          if (enableThinking) (maxTokens * 2).coerceAtLeast(3072) else maxTokens
+      append(",\"max_tokens\":$effectiveMaxTokens")
+      append(",\"temperature\":${if (enableThinking) "0.5" else "0.1"}")
+      append(",\"repetition_penalty\":${if (enableThinking) "1.5" else "1.1"}")
+      append(",\"frequency_penalty\":${if (enableThinking) "1.0" else "0.5"}")
+      append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":true")
+      // Thinking is handled via <think> pre-fill + filterThinkTags, not server-side enable_thinking
       if (idSlot >= 0) append(",\"id_slot\":$idSlot")
       append("}")
+    }
+
+    if (useThinkingServer) {
+      log(LogLevel.INFO, "Routing stream to thinking server on port $thinkingServerPort")
     }
 
     httpPostStreaming(
@@ -1061,21 +1888,123 @@ class Standard : LLAMA() {
             val json = com.google.gson.JsonParser.parseString(data).asJsonObject
             val delta =
                 json.getAsJsonArray("choices")?.get(0)?.asJsonObject?.getAsJsonObject("delta")
+
+            // DEBUG: Log entire delta to see what fields are available
+            if (delta != null && session.thinkingChunks.isEmpty() && session.textChunks.size < 3) {
+              log(LogLevel.INFO, "SSE delta keys: ${delta.keySet()}, raw: ${delta}")
+            }
+
             val content = delta?.get("content")?.asString
             if (content != null) {
-              // Strip <think>…</think> blocks from streaming output
+              // Separate <think>…</think> blocks from visible output
               val filtered = filterThinkTags(content, tagBuffer, insideThinkBlock)
               insideThinkBlock = filtered.second
               val cleanText = filtered.first
+              val thinkText = filtered.third
               if (cleanText.isNotEmpty()) {
                 session.textChunks.add(cleanText)
+                // --- Repetition detection for visible answer text ---
+                if (!repetitionDetected) {
+                  answerAccum.append(cleanText)
+                  if (answerAccum.length > 150) {
+                    val text = answerAccum.toString()
+                    val tail = text.takeLast(50)
+                    val searchIn = text.substring(0, text.length - 50)
+                    if (searchIn.contains(tail)) {
+                      repetitionDetected = true
+                      // Trim the repeated tail from the visible output
+                      val firstOccurrence = searchIn.indexOf(tail)
+                      val trimPoint = firstOccurrence + tail.length
+                      session.textChunks.clear()
+                      session.textChunks.add(text.substring(0, trimPoint))
+                      log(
+                          LogLevel.INFO,
+                          "Answer repetition detected after ${answerAccum.length} chars, trimming output")
+                    }
+                  }
+                }
+              }
+              if (thinkText.isNotEmpty()) {
+                session.thinkingChunks.add(thinkText)
+                // --- Repetition detection for reasoning ---
+                // Use relaxed thresholds for reasoning: the model needs more room to
+                // explore ideas before we declare it stuck in a loop.
+                if (insideThinkBlock && !repetitionDetected) {
+                  reasoningAccum.append(thinkText)
+                  if (reasoningAccum.length > 400) {
+                    val text = reasoningAccum.toString()
+                    val tail = text.takeLast(80)
+                    val searchIn = text.substring(0, text.length - 80)
+                    if (searchIn.contains(tail)) {
+                      repetitionDetected = true
+                      insideThinkBlock = false
+                      session.thinkingChunks.add("\n[Reasoning truncated — repetition detected]")
+                      log(
+                          LogLevel.INFO,
+                          "Repetition detected (exact n-gram) in reasoning after ${reasoningAccum.length} chars")
+                    }
+                    if (!repetitionDetected && text.length > 600) {
+                      val sentences = text.split(Regex("""[.!?\n]\s*""")).filter { it.length > 20 }
+                      val starts = sentences.map { it.take(30).lowercase().trim() }
+                      val mostCommon = starts.groupingBy { it }.eachCount().maxByOrNull { it.value }
+                      if (mostCommon != null && mostCommon.value >= 4) {
+                        repetitionDetected = true
+                        insideThinkBlock = false
+                        session.thinkingChunks.add(
+                            "\n[Reasoning truncated — repetitive pattern detected]")
+                        log(
+                            LogLevel.INFO,
+                            "Repetition detected (sentence pattern) in reasoning after ${reasoningAccum.length} chars")
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            // llama.cpp with enable_thinking sends reasoning in a separate field
+            val reasoning = delta?.get("reasoning_content")?.asString
+            if (reasoning != null && reasoning.isNotEmpty()) {
+              session.thinkingChunks.add(reasoning)
+              // Also check reasoning_content for repetition
+              if (!repetitionDetected) {
+                reasoningAccum.append(reasoning)
+                if (reasoningAccum.length > 400) {
+                  val text = reasoningAccum.toString()
+                  val tail = text.takeLast(80)
+                  val searchIn = text.substring(0, text.length - 80)
+                  if (searchIn.contains(tail)) {
+                    repetitionDetected = true
+                    insideThinkBlock = false
+                    session.thinkingChunks.add("\n[Reasoning truncated — repetition detected]")
+                    log(
+                        LogLevel.INFO,
+                        "Repetition detected in reasoning_content after ${reasoningAccum.length} chars")
+                  }
+                  if (!repetitionDetected && text.length > 600) {
+                    val sentences = text.split(Regex("""[.!?\n]\s*""")).filter { it.length > 20 }
+                    val starts = sentences.map { it.take(30).lowercase().trim() }
+                    val mostCommon = starts.groupingBy { it }.eachCount().maxByOrNull { it.value }
+                    if (mostCommon != null && mostCommon.value >= 4) {
+                      repetitionDetected = true
+                      insideThinkBlock = false
+                      session.thinkingChunks.add(
+                          "\n[Reasoning truncated — repetitive pattern detected]")
+                      log(
+                          LogLevel.INFO,
+                          "Repetition detected (sentence pattern) in reasoning_content after ${reasoningAccum.length} chars")
+                    }
+                  }
+                }
               }
             }
           } catch (_: Exception) {
             /* skip malformed SSE chunk */
           }
         },
-        shouldStop = { session.stopRequested })
+        shouldStop = { session.stopRequested || repetitionDetected },
+        // Thinking mode needs longer timeout: reasoning tokens + answer vs just answer
+        timeoutMs = if (enableThinking) 600_000 else 300_000,
+        port = targetPort)
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1094,15 +2023,16 @@ class Standard : LLAMA() {
    * Incrementally filters `<think>…</think>` blocks from streaming chunks. Handles partial tags
    * that span chunk boundaries via [tagBuffer].
    *
-   * @return Pair of (filtered text to emit, updated insideThinkBlock flag).
+   * @return Triple of (visible text to emit, updated insideThinkBlock flag, thinking text).
    */
   private fun filterThinkTags(
       chunk: String,
       tagBuffer: StringBuilder,
       insideThinkBlock: Boolean
-  ): Pair<String, Boolean> {
+  ): Triple<String, Boolean, String> {
     var inside = insideThinkBlock
     val output = StringBuilder()
+    val thinkOutput = StringBuilder()
     var i = 0
     val combined = tagBuffer.toString() + chunk
     tagBuffer.clear()
@@ -1112,13 +2042,18 @@ class Standard : LLAMA() {
         // Look for </think>
         val closeIdx = combined.indexOf("</think>", i)
         if (closeIdx == -1) {
+          // Accumulate thinking text
+          val remaining = combined.substring(i)
           // Might end with a partial </think> tag
           val possiblePartial = combined.length - i
-          if (possiblePartial < 8 && combined.substring(i).let { "</think>".startsWith(it) }) {
-            tagBuffer.append(combined.substring(i))
+          if (possiblePartial < 8 && remaining.let { "</think>".startsWith(it) }) {
+            tagBuffer.append(remaining)
+          } else {
+            thinkOutput.append(remaining)
           }
           break
         }
+        thinkOutput.append(combined.substring(i, closeIdx))
         i = closeIdx + 8 // skip past </think>
         inside = false
       } else {
@@ -1147,7 +2082,7 @@ class Standard : LLAMA() {
         inside = true
       }
     }
-    return Pair(output.toString(), inside)
+    return Triple(output.toString(), inside, thinkOutput.toString())
   }
 
   /** Escapes a string for safe inclusion in a hand-built JSON value. */
@@ -1192,7 +2127,7 @@ class Standard : LLAMA() {
     }
 
     // Restore last-notified release from disk so we don't re-notify after restart
-    val markerFile = llamaCppDir?.let { File(it, "last-notified-release.txt") }
+    val markerFile = llamaEngineDir?.let { File(it, "last-notified-release.txt") }
     if (markerFile != null && markerFile.exists()) {
       lastNotifiedRelease = markerFile.readText().trim().takeIf { it.isNotEmpty() }
     }
@@ -1268,7 +2203,7 @@ class Standard : LLAMA() {
     if (sendUpdateNotification(latestTag, platformKey)) {
       lastNotifiedRelease = latestTag
       // Persist to disk so we don't re-notify after restart
-      llamaCppDir?.let { File(it, "last-notified-release.txt").writeText(latestTag) }
+      llamaEngineDir?.let { File(it, "last-notified-release.txt").writeText(latestTag) }
     }
   }
 

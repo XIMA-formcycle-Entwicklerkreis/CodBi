@@ -1,44 +1,57 @@
-import { a as E } from "./chunk-BGFHKOW7.js";
-import { a as p } from "./chunk-K3A632J4.js";
-import { a as h } from "./chunk-QM2ZX7FA.js";
-import { a as v } from "./chunk-W23DHSE2.js";
-import { a as A } from "./chunk-MUWAMKOD.js";
-import { f as b, g as u, h as m } from "./chunk-RS4WWU7K.js";
-var w = b(v(), 1);
-var s = class s {
-  static functionality(r, i) {
-    (r.separator = r.separator ? r.separator : ", "),
-      Array.isArray(r.prefix) && (r.prefix = r.prefix[0]),
-      Array.isArray(r.postfix) && (r.postfix = r.postfix[0]),
-      Array.isArray(r.separator) && (r.separator = r.separator),
-      Array.isArray(r.showblacklist) && (r.showblacklist = r.showblacklist[0]);
-    let t = (0, w.getJQuery)();
-    t(i).data("datepicker") === 1 && t(i).datepicker();
-    let l = (e, n, g) => {
-        if (n.includes(e)) {
-          let y = `${r.prefix ? r.prefix : ""}${r.showblacklist && p.tsCheck(r.showblacklist, "string").toLowerCase() === "true" ? n.join(r.separator ? p.tsCheck(r.separator, "string") : "") : ""}${r.postfix ? r.postfix : ""}`;
-          t(g).error(y.length > 0 ? y : "The entered value is not allowed.");
-        } else t(g).error("");
+import { a as w } from "./chunk-PSEWTT4Z.js";
+import { a as b } from "./chunk-4JLAI42Q.js";
+import { a as E } from "./chunk-KEJSWGMR.js";
+import { a } from "./chunk-CDLTIEKC.js";
+import { f as k, g as m, h as s, p as h } from "./chunk-UTJJRBTX.js";
+var y = k(b(), 1);
+var l = class {
+  static functionality(e, i) {
+    (e.separator = e.separator || ", "),
+      (e.showblacklist = e.showblacklist
+        ? typeof e.showblacklist == "string"
+          ? e.showblacklist.toLowerCase() === "true"
+          : e.showblacklist
+        : !1);
+    let r = (0, y.getJQuery)();
+    r(i).data("datepicker") === 1 && r(i).datepicker();
+    let f = (t, n, u) => {
+        if (n.includes(t)) {
+          let g = `${e.prefix ? e.prefix : ""}${e.showblacklist && a.tsCheck(e.showblacklist, "string").toLowerCase() === "true" ? n.join(e.separator ? a.tsCheck(e.separator, "string") : "") : ""}${e.postfix ? e.postfix : ""}`;
+          r(u).error(g.length > 0 ? g : "The entered value is not allowed.");
+        } else r(u).error("");
       },
-      a = r.list ? (typeof r.list == "string" ? r.list.split(",") : r.list) : new Array(),
-      f = t(i).datepicker("option", "onSelect");
-    t(i).on("change", (e) => {
-      f && f(e), l(E.tsCheck(e.target, HTMLInputElement).value, a, i);
+      p = e.list ? (typeof e.list == "string" ? e.list.split(",") : e.list) : new Array(),
+      c = r(i).datepicker("option", "onSelect");
+    r(i).on("change", (t) => {
+      c && c(t), f(t.target.value, p, i);
     }),
-      i.addEventListener("input", (e) => {
-        l(e.target.value, a, e.target);
+      i.addEventListener("input", (t) => {
+        f(t.target.value, p, t.target);
       });
-    let c = t(i).datepicker("option", "beforeShowDay");
-    t(i).datepicker("option", "beforeShowDay", (e) => {
-      if (c) {
-        let n = c(e);
+    let o = r(i).datepicker("option", "beforeShowDay");
+    r(i).datepicker("option", "beforeShowDay", (t) => {
+      if (o) {
+        let n = o(t);
         if (n && n[0] === !1) return !1;
       }
-      return [!a.includes(e.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }))];
+      return [!p.includes(t.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" }))];
     });
   }
 };
-(s.registered = window.codbi.registerFunctionality("HTML.Input.Blacklist", s.functionality)),
-  u([A.ParamvalueProvider, m(1, h.PRE("INPUT", !1, "tagName"))], s, "functionality", 1);
-var k = s;
-export { k as HTML_Input_Blacklist };
+m(
+  [
+    h.ParamvalueProvider,
+    s(0, a.PRE("string", "prefix :: postfix :: separator")),
+    s(0, a.PRE("string | boolean", "showblacklist")),
+    s(
+      1,
+      E.PRE(HTMLInputElement, void 0, 'Is it not an <input type = "text"/> that is tagged with this functionality?'),
+    ),
+    s(1, w.PRE("text", !1, "type")),
+  ],
+  l,
+  "functionality",
+  1,
+);
+window.codbi.registerFunctionality("HTML.Input.Blacklist", l.functionality.bind(l));
+export { l as HTML_Input_Blacklist };

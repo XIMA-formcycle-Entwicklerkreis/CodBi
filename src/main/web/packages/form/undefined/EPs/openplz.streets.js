@@ -1,10 +1,15 @@
-import { a as t } from "./chunk-PZ4L54Z5.js";
-import { a as o } from "./chunk-EEU2ZRMO.js";
-import { b as n } from "./chunk-REJDLPRJ.js";
-var l = n(o(), 1);
-var r = class r extends t {
+import { a as n } from "./chunk-RQ2OISH5.js";
+import { a as c } from "./chunk-44HOFY3R.js";
+import { a as f } from "./chunk-CTQLZ4AL.js";
+import { a as E } from "./chunk-JDZ7GIHA.js";
+import "./chunk-HV3SPSHE.js";
+import { a as s } from "./chunk-BQCZFAYZ.js";
+import { a as m } from "./chunk-PN2FQ2K5.js";
+import { a as i } from "./chunk-2NFNCZZA.js";
+import { c as o, d as t, g as l } from "./chunk-WWJ6UWS7.js";
+var r = class extends n {
   static retrieve(e) {
-    return t.retrieve([
+    return n.retrieve([
       e[0] ? e[0] : "",
       "Streets",
       "",
@@ -17,6 +22,16 @@ var r = class r extends t {
     ]);
   }
 };
-r.registered = window.codbi.registerEP("OpenPLZ.Streets", r.retrieve);
-var i = r;
-export { i as OpenPLZ_Streets };
+o(
+  [
+    l.ParamvalueProvider,
+    t(0, s.PRE(2, !0, !1, "length", "Hasn't at least the Street and City RegEx been specified?")),
+    t(0, i.PRE(new m("string"), 0, 4)),
+    t(0, i.PRE(new f([new c(""), new E(/(de|en|at|li|ch)/i)]), 0)),
+  ],
+  r,
+  "retrieve",
+  1,
+);
+window.codbi.registerEP("OpenPLZ.Streets", r.retrieve.bind(r));
+export { r as OpenPLZ_Streets };

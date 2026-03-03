@@ -1,95 +1,122 @@
-import { a as c } from "./chunk-Y62HKEFT.js";
-import { a as b } from "./chunk-W3SPBNH5.js";
-import "./chunk-IZMXAPWV.js";
-import "./chunk-XMOSKO55.js";
-import { a as D } from "./chunk-EEU2ZRMO.js";
-import "./chunk-PR6DYHSM.js";
-import { a as h } from "./chunk-TNKBSIBG.js";
-import { b as k, c as g, f as s } from "./chunk-REJDLPRJ.js";
-var m = k(D(), 1);
-var u = class u {
-  static functionality(e, n) {
-    n.addEventListener("blur", (r) =>
-      s(this, null, function* () {
-        let i = ["AND", `${e.property}=${n.value}`];
-        e.url && i.push(e.url),
-          (yield c.retrieve(i)).length === 0
-            ? (0, m.getJQuery)()(n).error(
+import { a as w } from "./chunk-56FEFFTH.js";
+import "./chunk-HK3DXGDG.js";
+import { a as M } from "./chunk-44HOFY3R.js";
+import { a as m } from "./chunk-X7STRZ54.js";
+import { a as s } from "./chunk-JDZ7GIHA.js";
+import "./chunk-SBHCT576.js";
+import { a as k } from "./chunk-ZAZUS2LA.js";
+import { a as T } from "./chunk-HV3SPSHE.js";
+import { a as R } from "./chunk-BQCZFAYZ.js";
+import { a as h } from "./chunk-PN2FQ2K5.js";
+import { a as v } from "./chunk-2NFNCZZA.js";
+import { b as P, c as y, d as i, f as l, g } from "./chunk-WWJ6UWS7.js";
+var b = P(T(), 1);
+var d = class {
+  static functionality(e, t) {
+    t.addEventListener("blur", (n) =>
+      l(this, null, function* () {
+        let a = ["AND", `${e.property}=${t.value}`];
+        e.url && a.push(e.url),
+          (yield w.retrieve(a)).length === 0
+            ? (0, b.getJQuery)()(t).error(
                 e.msgnotinldap ? e.msgnotinldap : "Only values that're present in the Active Directory are permitted.",
               )
-            : (document.activeElement !== t && t.remove(), (0, m.getJQuery)()(n).error(""));
+            : (document.activeElement !== r && r.remove(), (0, b.getJQuery)()(t).error(""));
       }),
     );
-    let a = !1,
-      t = document.createElement("select");
-    t.classList.add("---CodBi", "--LDAP_Autocomplete", "-Proposals"),
-      t.setAttribute(
+    let p = !1,
+      r = document.createElement("select");
+    r.classList.add("---CodBi", "--LDAP_Autocomplete", "-Proposals"),
+      r.setAttribute(
         "style",
         e.cssproposals
           ? e.cssproposals
           : "margin-top: .5em ; max-width: 100% ; border-color: darkorange ; border-radius: .5em ; box-shadow: 0 0 .5em darkorange ; color: green ; font-weight: bolder ; cursor: pointer;",
       );
-    let v = () =>
-      s(this, null, function* () {
-        if (((n.value = t.value), t.remove(), n.codbiLDAPSetMatchListeners)) {
-          let r = ["AND", `${e.property}=${t.value}`];
-          e.url && r.push(e.url);
-          let i = yield c.retrieve(r);
-          for (let l of n.codbiLDAPSetMatchListeners) l(i, n);
+    let D = () =>
+      l(this, null, function* () {
+        if (((t.value = r.value), r.remove(), t.codbiLDAPSetMatchListeners)) {
+          let n = ["AND", `${e.property}=${r.value}`];
+          e.url && n.push(e.url);
+          let a = yield w.retrieve(n);
+          for (let o of t.codbiLDAPSetMatchListeners) o(a, t);
         }
       });
-    t.addEventListener("change", (r) =>
-      s(this, null, function* () {
-        v();
+    r.addEventListener("change", (n) =>
+      l(this, null, function* () {
+        D();
       }),
     ),
-      t.addEventListener("keydown", (r) =>
-        s(this, null, function* () {
-          (r.key === "Enter" || r.key === "Space") && v();
+      r.addEventListener("keydown", (n) =>
+        l(this, null, function* () {
+          (n.key === "Enter" || n.key === "Space") && D();
         }),
       ),
-      n.addEventListener("keydown", (r) =>
-        s(this, null, function* () {
-          a && (r.stopPropagation(), r.preventDefault(), r.stopImmediatePropagation());
-          let i = b.tsCheck(r, KeyboardEvent).key;
-          if (i.length !== 1 && i !== "Backspace" && i !== "Delete") return;
-          let l = ["AND", `${e.property}=${n.value}${i.length === 1 ? i : ""}`];
-          e.url && l.push(e.url);
-          let p = d(yield c.retrieve(l), e.property);
-          if (p.length === 1) {
-            if (((n.value = p[0][e.property]), (a = !0), t.remove(), n.codbiLDAPSetMatchListeners))
-              for (let o of n.codbiLDAPSetMatchListeners) o(p, n);
+      t.addEventListener("keydown", (n) =>
+        l(this, null, function* () {
+          p && (n.stopPropagation(), n.preventDefault(), n.stopImmediatePropagation());
+          let a = m.tsCheck(n, KeyboardEvent).key;
+          if (a.length !== 1 && a !== "Backspace" && a !== "Delete") return;
+          let o = ["AND", `${e.property}=${t.value}${a.length === 1 ? a : ""}`];
+          e.url && o.push(e.url);
+          let u = A(yield w.retrieve(o), e.property);
+          if (u.length === 1) {
+            if (((t.value = u[0][e.property]), (p = !0), r.remove(), t.codbiLDAPSetMatchListeners))
+              for (let E of t.codbiLDAPSetMatchListeners) E(u, t);
             setTimeout(() => {
-              a = !1;
+              p = !1;
             }, 500);
           }
-          if (p.length > 1) {
-            t.innerHTML = "";
-            for (let o of p) t.options.add(new Option(o[e.property], o[e.property]));
-            n.parentElement.appendChild(t);
+          if (u.length > 1) {
+            r.innerHTML = "";
+            for (let E of u) r.options.add(new Option(E[e.property], E[e.property]));
+            t.parentElement.appendChild(r);
           }
         }),
       );
   }
 };
-(u.registered = window.codbi.registerFunctionality("LDAP.Autocomplete", u.functionality)),
-  g([h.ParamvalueProvider], u, "functionality", 1);
-var w = u;
-function d(y, e = void 0) {
+y(
+  [
+    g.ParamvalueProvider,
+    i(0, k.PRE("property")),
+    i(0, h.PRE("string", "property :: cssproposals :: url :: msgnotinldap")),
+    i(0, s.PRE(s.stdExp.property, "property")),
+    i(0, s.PRE(s.stdExp.url, "url")),
+    i(1, m.PRE(HTMLInputElement, void 0, "Is it not an <input> that is tagged with this functionality?")),
+    i(1, M.PRE("text", !1, "type", `Isn't the tagged <input type = "text"/> ?`)),
+  ],
+  d,
+  "functionality",
+  1,
+);
+window.codbi.registerFunctionality("LDAP.Autocomplete", d.functionality.bind(d));
+function A(c, e = void 0) {
   if (e) {
-    let n = new Map();
-    for (let a of y) {
-      let t = a[e];
-      n.has(t) || n.set(t, a);
+    let t = new Map();
+    for (let p of c) {
+      let r = p[e];
+      t.has(r) || t.set(r, p);
     }
-    return Array.from(n.values());
-  } else return [...new Set(y)];
+    return Array.from(t.values());
+  } else return [...new Set(c)];
 }
-var f = class f {
+var f = class {
   static retrieve(e) {
-    return e.length === 1 ? d(e[0]) : d(e[0], e[1]);
+    return e.length === 1 ? A(e[0]) : A(e[0], e[1]);
   }
 };
-f.registered = window.codbi.registerEP("Unique", f.retrieve);
-var E = f;
-export { E as Unique };
+y(
+  [
+    g.ParamvalueProvider,
+    i(0, R.PRE(1, !0, !1, "length", "Hasn't at least the Array to filter been provided?")),
+    i(0, v.PRE(new m(Array), 0)),
+    i(0, v.PRE(new h("string"), 1)),
+    i(0, v.PRE(new s(s.stdExp.property), 1)),
+  ],
+  f,
+  "retrieve",
+  1,
+);
+window.codbi.registerEP("Unique", f.retrieve.bind(f));
+export { f as Unique };

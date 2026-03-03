@@ -58,16 +58,16 @@ import java.util.zip.ZipInputStream
  * llama-server process — but the Formcycle Tomcat JVM does not even feel a bump.
  *
  * ## Plugin properties
- * | Property                 | Default        | Description                                        |
- * |--------------------------|----------------|----------------------------------------------------|
- * | `Active_AI`              | —              | Must contain `llamacpp`                            |
- * | `AI_Remove`              | —              | If contains `llamacpp`, clean up all               |
- * | `AI_LlamaCpp_Port`       | `8392`         | Local port for llama-server                        |
- * | `AI_LlamaCpp_Threads`    | physical cores | Number of CPU threads                              |
- * | `AI_LlamaCpp_CtxSize`    | `32768`        | Context window size (shared across parallel slots) |
- * | `AI_LlamaCpp_GpuLayers`  | auto-detect    | Layers offloaded to GPU (-1 = auto)                |
- * | `AI_LlamaCpp_Release`    | `b8175`        | llama.cpp release tag for downloads                |
- * | `AI_LlamaCpp_ServerArgs` | —              | Extra CLI args for llama-server                    |
+ * |Property                    |Default       |Description                                       |
+ * |----------------------------|--------------|--------------------------------------------------|
+ * |`Active_AI`                 |—             |Must contain `llama_engine`                       |
+ * |`AI_Remove`                 |—             |If contains `llama_engine`, clean up all          |
+ * |`AI_LLAMA_ENGINE_Port`      |`8392`        |Local port for llama-server                       |
+ * |`AI_LLAMA_ENGINE_Threads`   |physical cores|Number of CPU threads                             |
+ * |`AI_LLAMA_ENGINE_CtxSize`   |`32768`       |Context window size (shared across parallel slots)|
+ * |`AI_LLAMA_ENGINE_GpuLayers` |auto-detect   |Layers offloaded to GPU (-1 = auto)               |
+ * |`AI_LLAMA_ENGINE_Release`   |`b8175`       |llama.cpp release tag for downloads               |
+ * |`AI_LLAMA_ENGINE_ServerArgs`|—             |Extra CLI args for llama-server                   |
  *
  * ## DSGVO / EU-AI Act
  * All data stays on the local machine. No external API calls. Same compliance advantages as all
@@ -99,6 +99,16 @@ abstract class LLAMA : AI() {
     @Volatile
     @JvmStatic
     var activeServerPort: Int = 0
+      internal set
+
+    /**
+     * The port used by the dedicated thinking llama-server instance (if configured). Used by
+     * [AiProxy] to route thinking-mode requests to the correct server. `0` means no dedicated
+     * thinking server is running (hybrid mode or not configured).
+     */
+    @Volatile
+    @JvmStatic
+    var activeThinkingServerPort: Int = 0
       internal set
   }
 
@@ -219,8 +229,8 @@ abstract class LLAMA : AI() {
   /** The server binary executable file. */
   protected var serverBinary: File? = null
 
-  /** Root directory for llama.cpp files under the plugin folder. */
-  protected var llamaCppDir: File? = null
+  /** Root directory for llama engine files under the plugin folder. */
+  protected var llamaEngineDir: File? = null
 
   /** Directory where model files (GGUF) are stored. */
   protected var modelsDir: File? = null
@@ -772,6 +782,15 @@ abstract class LLAMA : AI() {
     log(LogLevel.INFO, "  GPU layers: $resolvedGpuLayers (detected: $detectedGpu)")
     log(LogLevel.INFO, "  Parallel slots: $parallelSlots")
 
+    // Write a Qwen3-compatible Jinja chat template that supports native thinking.
+    // The GGUF model embeds a "Hermes 2 Pro" template with thinking=0, which prevents
+    // native <think> block handling. This override enables proper enable_thinking support.
+    val templateFile = File(binary.parentFile, "qwen3-chat-template.jinja")
+    templateFile.writeText(
+        """{%- if messages[0].role == 'system' %}{%- set system_message = messages[0].content %}{%- set loop_messages = messages[1:] %}{%- else %}{%- set system_message = 'You are a helpful assistant.' %}{%- set loop_messages = messages %}{%- endif %}{{- '<|im_start|>system\n' + system_message + '<|im_end|>\n' }}{%- for message in loop_messages %}{%- if message.role == 'user' %}{%- if message.content is string %}{{- '<|im_start|>user\n' + message.content + '<|im_end|>\n' }}{%- else %}{{- '<|im_start|>user\n' }}{%- for part in message.content %}{%- if part.type == 'text' %}{{- part.text }}{%- endif %}{%- endfor %}{{- '<|im_end|>\n' }}{%- endif %}{%- elif message.role == 'assistant' %}{%- if message.reasoning_content is defined and message.reasoning_content is not none %}{{- '<|im_start|>assistant\n<think>\n' + message.reasoning_content + '\n</think>\n' + message.content + '<|im_end|>\n' }}{%- else %}{{- '<|im_start|>assistant\n' + message.content + '<|im_end|>\n' }}{%- endif %}{%- endif %}{%- endfor %}{%- if add_generation_prompt %}{{- '<|im_start|>assistant\n' }}{%- if enable_thinking is defined and enable_thinking is true %}{{- '<think>\n' }}{%- endif %}{%- endif %}"""
+            .trimIndent())
+    log(LogLevel.INFO, "  Template: ${templateFile.absolutePath}")
+
     val command =
         mutableListOf(
             binary.absolutePath,
@@ -788,7 +807,10 @@ abstract class LLAMA : AI() {
             "--parallel",
             parallelSlots.toString(),
             "--n-gpu-layers",
-            resolvedGpuLayers.toString())
+            resolvedGpuLayers.toString(),
+            "--jinja",
+            "--chat-template-file",
+            templateFile.absolutePath)
 
     if (mmProjFile != null && mmProjFile.exists()) {
       command.addAll(listOf("--mmproj", mmProjFile.absolutePath))
@@ -1001,17 +1023,26 @@ abstract class LLAMA : AI() {
   protected val serverBaseUrl: String
     get() = "http://127.0.0.1:$serverPort"
 
+  /** Base URL for a specific port. */
+  protected fun serverBaseUrl(port: Int): String = "http://127.0.0.1:$port"
+
   /**
    * Sends a POST request to the llama-server and returns the response body.
    *
    * @param endpoint The API endpoint path (e.g., `/v1/chat/completions`).
    * @param jsonBody The JSON request body.
    * @param timeoutMs Read timeout in milliseconds.
+   * @param port Optional port override. Defaults to [serverPort].
    * @return The response body as a String.
    * @throws Exception on connection/IO errors.
    */
-  protected fun httpPost(endpoint: String, jsonBody: String, timeoutMs: Int = 300_000): String {
-    val url = "$serverBaseUrl$endpoint"
+  protected fun httpPost(
+      endpoint: String,
+      jsonBody: String,
+      timeoutMs: Int = 300_000,
+      port: Int = serverPort
+  ): String {
+    val url = "${serverBaseUrl(port)}$endpoint"
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     connection.requestMethod = "POST"
     connection.doOutput = true
@@ -1053,9 +1084,10 @@ abstract class LLAMA : AI() {
       jsonBody: String,
       onLine: (String) -> Unit,
       shouldStop: () -> Boolean = { false },
-      timeoutMs: Int = 300_000
+      timeoutMs: Int = 300_000,
+      port: Int = serverPort
   ) {
-    val url = "$serverBaseUrl$endpoint"
+    val url = "${serverBaseUrl(port)}$endpoint"
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     connection.requestMethod = "POST"
     connection.doOutput = true
@@ -1111,53 +1143,53 @@ abstract class LLAMA : AI() {
     super.initialize(configData)
 
     val activeAI = configData.properties.getProperty("Active_AI")?.lowercase() ?: ""
-    if (!activeAI.contains("llamacpp")) {
-      log(LogLevel.INFO, "LLAMA not activated (Active_AI does not contain 'llamacpp')")
+    if (!activeAI.contains("llama_engine")) {
+      log(LogLevel.INFO, "LLAMA not activated (Active_AI does not contain 'llama_engine')")
       return
     }
 
     val aiRemove = configData.properties.getProperty("AI_Remove")?.lowercase() ?: ""
-    if (aiRemove.contains("llamacpp")) {
+    if (aiRemove.contains("llama_engine")) {
       log(LogLevel.INFO, "LLAMA marked for removal — cleaning up all files")
-      val llamaDir = File(configData.fileHelper.pluginFolder, "ai/llamacpp")
+      val llamaDir = File(configData.fileHelper.pluginFolder, "ai/llama_engine")
       if (llamaDir.exists()) llamaDir.deleteRecursively()
       return
     }
 
     // Set up directories
-    llamaCppDir = File(configData.fileHelper.pluginFolder, "ai/llamacpp")
-    binDir = File(llamaCppDir!!, "bin")
-    modelsDir = File(llamaCppDir!!, "models")
-    llamaCppDir!!.mkdirs()
+    llamaEngineDir = File(configData.fileHelper.pluginFolder, "ai/llama_engine")
+    binDir = File(llamaEngineDir!!, "bin")
+    modelsDir = File(llamaEngineDir!!, "models")
+    llamaEngineDir!!.mkdirs()
     binDir!!.mkdirs()
     modelsDir!!.mkdirs()
 
     // Read plugin properties
-    configData.properties.getProperty("AI_LlamaCpp_Port")?.trim()?.toIntOrNull()?.let {
+    configData.properties.getProperty("AI_LLAMA_ENGINE_Port")?.trim()?.toIntOrNull()?.let {
       if (it in 1024..65535) {
         serverPort = it
         activeServerPort = it
       }
     }
-    configData.properties.getProperty("AI_LlamaCpp_Threads")?.trim()?.toIntOrNull()?.let {
+    configData.properties.getProperty("AI_LLAMA_ENGINE_Threads")?.trim()?.toIntOrNull()?.let {
       if (it > 0) threadCount = it
     }
-    configData.properties.getProperty("AI_LlamaCpp_CtxSize")?.trim()?.toIntOrNull()?.let {
+    configData.properties.getProperty("AI_LLAMA_ENGINE_CtxSize")?.trim()?.toIntOrNull()?.let {
       if (it > 0) ctxSize = it
     }
-    configData.properties.getProperty("AI_LlamaCpp_GpuLayers")?.trim()?.toIntOrNull()?.let {
+    configData.properties.getProperty("AI_LLAMA_ENGINE_GpuLayers")?.trim()?.toIntOrNull()?.let {
       if (it >= -1) gpuLayers = it
     }
-    configData.properties.getProperty("AI_LlamaCpp_Parallel")?.trim()?.toIntOrNull()?.let {
+    configData.properties.getProperty("AI_LLAMA_ENGINE_Parallel")?.trim()?.toIntOrNull()?.let {
       if (it > 0) parallelSlots = it
     }
     configData.properties
-        .getProperty("AI_LlamaCpp_ServerArgs")
+        .getProperty("AI_LLAMA_ENGINE_ServerArgs")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { extraServerArgs = it.split(" ").filter { arg -> arg.isNotBlank() } }
     configData.properties
-        .getProperty("AI_LlamaCpp_Release")
+        .getProperty("AI_LLAMA_ENGINE_Release")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { customRelease ->
@@ -1168,7 +1200,7 @@ abstract class LLAMA : AI() {
         }
 
     log(LogLevel.INFO, "LLAMA infrastructure initialized")
-    log(LogLevel.INFO, "  Dir:     ${llamaCppDir!!.absolutePath}")
+    log(LogLevel.INFO, "  Dir:     ${llamaEngineDir!!.absolutePath}")
     log(LogLevel.INFO, "  Port:    $serverPort")
     log(LogLevel.INFO, "  Release: $llamaRelease")
     log(LogLevel.INFO, "  Threads: ${threadCount ?: "auto-detect"}")

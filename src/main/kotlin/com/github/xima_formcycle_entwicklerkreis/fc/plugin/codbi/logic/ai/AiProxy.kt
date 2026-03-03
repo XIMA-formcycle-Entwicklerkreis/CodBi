@@ -233,8 +233,8 @@ class AiProxy : IPluginServletAction {
     }
 
     // ── Check llama-server availability ──────────────────────────────────
-    val port = LLAMA.activeServerPort
-    if (port == 0) {
+    val basePort = LLAMA.activeServerPort
+    if (basePort == 0) {
       log("WARNING", "llama-server port not set — is the AI activated?")
       auditLog(
           clientIP,
@@ -247,10 +247,23 @@ class AiProxy : IPluginServletAction {
           503, """{"error":"Service Unavailable","message":"AI server is not running"}""")
     }
 
+    // ── Determine target server (fast vs thinking) ───────────────────────
+    val thinkingPort = LLAMA.activeThinkingServerPort
+    val wantsThinking = isThinkingRequest(params, requestBody)
+    val port = if (wantsThinking && thinkingPort > 0) thinkingPort else basePort
+    if (wantsThinking) {
+      log(
+          "INFO",
+          "Thinking mode requested — routing to port $port" +
+              if (thinkingPort > 0) " (dedicated)" else " (hybrid, no dedicated thinking server)")
+    }
+
     // ── Forward to llama-server ──────────────────────────────────────────
+    // Thinking mode needs longer timeout: reasoning tokens + answer
+    val readTimeoutMs = if (wantsThinking) 600_000 else 300_000
     return try {
       val serverUrl = "http://127.0.0.1:$port$endpoint"
-      var response = forwardPost(serverUrl, requestBody)
+      var response = forwardPost(serverUrl, requestBody, readTimeoutMs)
 
       // ── CALL:search tool handling ──────────────────────────────────
       if (BraveSearch.isAvailable && endpoint == "/v1/chat/completions") {
@@ -274,6 +287,25 @@ class AiProxy : IPluginServletAction {
           502,
           """{"error":"Bad Gateway","message":"Failed to reach AI server: ${escapeJson(ex.message ?: "unknown error")}"}""")
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  //  Thinking mode detection
+  // ═══════════════════════════════════════════════════════════════════════
+
+  /**
+   * Determines whether the request wants thinking/reasoning mode. Checks (in order):
+   * 1. `X-Thinking: true` header (used by CodBi chat frontend)
+   * 2. `"enable_thinking":true` in the JSON request body (OpenAI-compatible)
+   */
+  private fun isThinkingRequest(params: IPluginServletActionParams, requestBody: String): Boolean {
+    // Check X-Thinking header
+    val xThinking =
+        params.headerMap.entries.find { it.key.equals("X-Thinking", ignoreCase = true) }?.value
+    if (xThinking.equals("true", ignoreCase = true)) return true
+
+    // Check enable_thinking in JSON body (lightweight regex — avoid full JSON parse)
+    return requestBody.contains(""""enable_thinking"\s*:\s*true""".toRegex())
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -521,12 +553,12 @@ class AiProxy : IPluginServletAction {
    * @return The response body as a String.
    * @throws Exception on connection or HTTP errors.
    */
-  private fun forwardPost(url: String, jsonBody: String): String {
+  private fun forwardPost(url: String, jsonBody: String, readTimeoutMs: Int = 300_000): String {
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
     connection.requestMethod = "POST"
     connection.doOutput = true
     connection.connectTimeout = 5_000
-    connection.readTimeout = 300_000
+    connection.readTimeout = readTimeoutMs
     connection.setRequestProperty("Content-Type", "application/json")
     connection.setRequestProperty("Accept", "application/json")
 

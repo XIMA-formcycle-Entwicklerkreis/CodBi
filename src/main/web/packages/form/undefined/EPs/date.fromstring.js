@@ -1,27 +1,28 @@
-import { a as p } from "./chunk-W3SPBNH5.js";
-import { a as n } from "./chunk-IZMXAPWV.js";
-import { b as m } from "./chunk-XMOSKO55.js";
-import "./chunk-EEU2ZRMO.js";
-import { a as r } from "./chunk-CVDXS2Z7.js";
-import { a as e } from "./chunk-PR6DYHSM.js";
-import { a as s } from "./chunk-TNKBSIBG.js";
-import { c as a, d as o } from "./chunk-REJDLPRJ.js";
-var t = class t {
+import { a as d } from "./chunk-X7STRZ54.js";
+import { a as t } from "./chunk-JDZ7GIHA.js";
+import { b as p } from "./chunk-SBHCT576.js";
+import "./chunk-ZAZUS2LA.js";
+import "./chunk-HV3SPSHE.js";
+import { a as m } from "./chunk-BQCZFAYZ.js";
+import { a as n } from "./chunk-PN2FQ2K5.js";
+import { a as o } from "./chunk-2NFNCZZA.js";
+import { c as a, d as e, g as s } from "./chunk-WWJ6UWS7.js";
+var r = class {
   static retrieve(i) {
-    return [m(i[0], i.length === 2 ? i[1] : "DD.MM.YYYY")];
+    return [p(i[0], i.length === 2 ? i[1] : "DD.MM.YYYY")];
   }
 };
-(t.registered = window.codbi.registerEP("Date.FromString", t.retrieve)),
-  a(
-    [
-      s.ParamvalueProvider,
-      e.POST(new p(Date)),
-      o(0, e.PRE([new n("string"), new r(r.stdExp.date)], 0)),
-      o(0, e.PRE([new n("string"), new r(r.stdExp.dateFormat)], 1)),
-    ],
-    t,
-    "retrieve",
-    1,
-  );
-var d = t;
-export { d as DATE_FromString };
+a(
+  [
+    s.ParamvalueProvider,
+    o.POST(new d(Date)),
+    e(0, m.PRE(2, !0, !1, "length", "Was the date string to convert and the operation to perform not specified?")),
+    e(0, o.PRE([new n("string"), new t(t.stdExp.date)], 0)),
+    e(0, o.PRE([new n("string"), new t(t.stdExp.dateFormat)], 1)),
+  ],
+  r,
+  "retrieve",
+  1,
+);
+window.codbi.registerEP("Date.FromString", r.retrieve.bind(r));
+export { r as DATE_FromString };

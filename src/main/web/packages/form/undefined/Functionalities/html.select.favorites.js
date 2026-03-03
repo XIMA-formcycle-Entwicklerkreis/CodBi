@@ -1,49 +1,65 @@
-import { a as g } from "./chunk-BGFHKOW7.js";
-import { a as m } from "./chunk-K3A632J4.js";
-import { a as v } from "./chunk-QM2ZX7FA.js";
-import { a as E } from "./chunk-W23DHSE2.js";
-import { a as d } from "./chunk-MUWAMKOD.js";
-import { f as c, g as f, h as r } from "./chunk-RS4WWU7K.js";
-var u = c(E(), 1);
-var n = class n {
-  static functionality(i, e) {
-    let t = (0, u.getJQuery)(),
-      a =
-        i.initialelement && typeof i.initialelement == "string"
-          ? i.initialelement
-          : e.querySelector("option").getAttribute("value");
-    e.addEventListener("change", () => {
-      t(e).val() === "Divider"
-        ? i.dividertarget && typeof i.dividertarget == "string"
-          ? (t(e).val(i.dividertarget), (a = i.dividertarget))
-          : t(e).val(a)
-        : (a = t(e).val());
+import { a as g } from "./chunk-JH6KRLLF.js";
+import { a as m } from "./chunk-PSEWTT4Z.js";
+import { a as c } from "./chunk-4JLAI42Q.js";
+import { a as v } from "./chunk-KEJSWGMR.js";
+import { a as f } from "./chunk-CDLTIEKC.js";
+import { f as y, g as d, h as t, p as s } from "./chunk-UTJJRBTX.js";
+var o = y(c(), 1);
+var n = class {
+  static functionality(e, i) {
+    let r = (0, o.getJQuery)(),
+      l =
+        e.initialelement && typeof e.initialelement == "string"
+          ? e.initialelement
+          : i.querySelector("option").getAttribute("value");
+    i.addEventListener("change", () => {
+      r(i).val() === "Divider"
+        ? e.dividertarget && typeof e.dividertarget == "string"
+          ? (r(i).val(e.dividertarget), (l = e.dividertarget))
+          : r(i).val(l)
+        : (l = r(i).val());
     }),
-      (e.innerHTML = `
+      (i.innerHTML = `
           <option value = "Divider"
                   class = "---CodBi --HTML_Select_Favorites --Divider">
-                  ${i.divider && typeof i.divider == "string" ? i.divider : ""}</option>
-                  ${e.innerHTML}`);
-    let s = e.querySelector(".---CodBi.--HTML_Select_Favorites.--Divider");
-    for (let y of i.favorites)
-      for (let l of e.querySelectorAll("option"))
-        l.innerHTML === y &&
-          (l.classList.add("---CodBi", "--HTML_Select_Favorites", "--Favorite"), l.remove(), e.insertBefore(l, s));
-    i.initialelement && typeof i.initialelement == "string" && t(e).val(i.initialelement);
+                  ${e.divider && typeof e.divider == "string" ? e.divider : ""}</option>
+                  ${i.innerHTML}`);
+    let p = i.querySelector(".---CodBi.--HTML_Select_Favorites.--Divider");
+    for (let u of e.favorites)
+      for (let a of i.querySelectorAll("option"))
+        a.innerHTML === u &&
+          (a.classList.add("---CodBi", "--HTML_Select_Favorites", "--Favorite"), a.remove(), i.insertBefore(a, p));
+    e.initialelement && typeof e.initialelement == "string" && r(i).val(e.initialelement);
   }
 };
-(n.registered = window.codbi.registerFunctionality("HTML.Select.Favorites", n.functionality)),
-  f(
-    [
-      d.ParamvalueProvider,
-      r(0, m.PRE("string", "dividertarget")),
-      r(0, g.PRE(Array, "favorites")),
-      r(0, v.PRE(0, !0, "favorites.length")),
-      r(1, v.PRE("SELECT", !1, "tagName")),
-    ],
-    n,
-    "functionality",
-    1,
-  );
-var p = n;
-export { p as HTML_Select_Favorites };
+d(
+  [
+    s.ParamvalueProvider,
+    t(
+      0,
+      f.PRE(
+        "string",
+        "dividertarget :: initialelement :: divider",
+        'Is one or more of the parameters "dividertarget", "initialelement" or "divider" not of type string?',
+      ),
+    ),
+    t(0, v.PRE(Array, "favorites", 'Is the parameter "favorites" not an array of strings?')),
+    t(0, m.PRE(0, !0, "favorites.length", "Isn't at least one favorite specified?")),
+    t(
+      0,
+      g.PRE(
+        [new f("string")],
+        void 0,
+        void 0,
+        "favorites",
+        `Aren't all elements of parameter "favorites" of type string?`,
+      ),
+    ),
+    t(1, v.PRE(HTMLSelectElement, void 0, "Is it not a <select/> that is tagged with this functionality?")),
+  ],
+  n,
+  "functionality",
+  1,
+);
+window.codbi.registerFunctionality("HTML.Select.Favorites", n.functionality.bind(n));
+export { n as HTML_Select_Favorites };

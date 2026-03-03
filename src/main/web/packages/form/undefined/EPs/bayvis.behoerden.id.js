@@ -1,43 +1,50 @@
-import "./chunk-6BQ5WEIU.js";
-import "./chunk-2P4INLEO.js";
-import "./chunk-IZMXAPWV.js";
-import { a as m } from "./chunk-INDLVHJ6.js";
-import { a } from "./chunk-XMOSKO55.js";
-import { a as l } from "./chunk-EEU2ZRMO.js";
-import "./chunk-CVDXS2Z7.js";
-import "./chunk-PR6DYHSM.js";
-import { a as b } from "./chunk-TNKBSIBG.js";
-import { b as h, c as f } from "./chunk-REJDLPRJ.js";
-var c = h(l(), 1);
+import { a as y } from "./chunk-INDLVHJ6.js";
+import { a as f } from "./chunk-SBHCT576.js";
+import "./chunk-ZAZUS2LA.js";
+import { a as B } from "./chunk-HV3SPSHE.js";
+import { a as l } from "./chunk-BQCZFAYZ.js";
+import { a as c } from "./chunk-PN2FQ2K5.js";
+import { a as h } from "./chunk-2NFNCZZA.js";
+import { b as A, c as m, d as u, g as p } from "./chunk-WWJ6UWS7.js";
+var w = A(B(), 1);
 var e = class e {
-  static retrieve(t) {
-    return new Promise((o, u) => {
-      e.buffer && (t.length >= 2 ? o(e.buffer.map((r) => r[t[1]])) : o(e.buffer)),
-        (0, c.getJQuery)()
+  static retrieve(o) {
+    return new Promise((s, d) => {
+      e.buffer && (o.length >= 2 ? s(e.buffer.map((r) => r[o[1]])) : s(e.buffer)),
+        (0, w.getJQuery)()
           .ajax({
             url: `${window.codbi.baseURL}plugin?name=CodBi_BayVIS_Auskunft_Behoerdenverzeichnis`,
             type: "GET",
             headers: { Accept: "application/xml" },
           })
           .done((r) => {
-            var d;
-            let i = new m({ attributeNamePrefix: "", ignoreAttributes: !1 }).parse(r)["ns2:behoerden"];
-            i === void 0 && (i = JSON.parse(r)),
-              i === void 0 && u(new a("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdenverzeichnis"));
-            let s = i.behoerde,
+            var b;
+            let n = new y({ attributeNamePrefix: "", ignoreAttributes: !1 }).parse(r)["ns2:behoerden"];
+            n === void 0 && (n = JSON.parse(r)),
+              n === void 0 && d(new f("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdenverzeichnis"));
+            let a = n.behoerde,
               g = new Array();
-            for (let n = 0; n < s.length; n++)
-              ((d = s[n]) == null ? void 0 : d.bezeichnung.toLowerCase()) === t[0].toLowerCase() &&
-                g.push(s[n].id.toString());
-            o(g);
+            for (let i = 0; i < a.length; i++)
+              ((b = a[i]) == null ? void 0 : b.bezeichnung.toLowerCase()) === o[0].toLowerCase() &&
+                g.push(a[i].id.toString());
+            s(g);
           })
           .fail((r) => {
-            u(new a("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdenverzeichnis"));
+            d(new f("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdenverzeichnis"));
           });
     });
   }
 };
-(e.registered = window.codbi.registerEP("BayVIS.Behoerden.ID", e.retrieve)),
-  f([b.ParamvalueProvider], e, "retrieve", 1);
-var p = e;
-export { p as BayVIS_Behoerden_ID };
+m(
+  [
+    p.ParamvalueProvider,
+    u(0, l.PRE(1, !0, !1, "length", "Has the name of the authority been specified?")),
+    u(0, h.PRE(new c("string"))),
+  ],
+  e,
+  "retrieve",
+  1,
+);
+var t = e;
+window.codbi.registerEP("BayVIS.Behoerden.ID", t.retrieve.bind(t));
+export { t as BayVIS_Behoerden_ID };

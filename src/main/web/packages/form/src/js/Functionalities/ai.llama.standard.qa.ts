@@ -66,6 +66,9 @@ export class AI_LLAMA_STANDARD_QA {
    * - **AIHint**:    Text shown inside AI-populated fields (right-aligned for inputs, bottom-right
    *                  for textareas) until the user edits the value. Default: "✨ AI-Generated".
    *                  Set to an empty string to disable.
+   * - **InternetAccess**: If set to `true`, enables Brave Search internet access for this
+   *                  functionality instance. The model may use web search results to improve
+   *                  its answers. Default: `false` (no internet search).
    * - **Mode**:      If set to "verify", the upload field may have a **data-cb-Question** attribute.
    *                  In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
    *                  to be accepted. If not, an error and a manual verification checkbox are shown,
@@ -213,6 +216,9 @@ export class AI_LLAMA_STANDARD_QA {
       const cordQuestions: { id: string; element: Element }[] = [];
       const vqaHeaders: { [key: string]: string } = {};
       vqaHeaders["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
+      // ── Brave Search internet access toggle (from toLoad.InternetAccess) ──
+      const internetAccess = toLoad.InternetAccess != null && String(toLoad.InternetAccess).toLowerCase() === "true";
+      vqaHeaders["X-Search"] = internetAccess ? "true" : "false";
       // If mode is verify and the upload field has a data-cb-Question, use only that question
       let verifyFieldId: string | null = null;
       let verifyFieldQuestion: string | null = null;
@@ -280,6 +286,7 @@ export class AI_LLAMA_STANDARD_QA {
             cache: false,
             beforeSend: (xhr) => {
               xhr.setRequestHeader("X-Session-Id", AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID);
+              xhr.setRequestHeader("X-Search", internetAccess ? "true" : "false");
             },
             success: (response) => {
               // Place the returned JSON into the field tagged with this question

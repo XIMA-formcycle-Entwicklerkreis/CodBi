@@ -1,37 +1,46 @@
-import { a as t } from "./chunk-JL2EL352.js";
-import { a as r } from "./chunk-W23DHSE2.js";
-import { a as n } from "./chunk-MUWAMKOD.js";
-import { f as c, g as o, h as a } from "./chunk-RS4WWU7K.js";
-var i = c(r(), 1);
-var _Security_Captcha_Google = class _Security_Captcha_Google {
-  static functionality(toLoad, toProcess) {
-    let script = document.createElement("script");
-    (script.onload = () => {
-      let captchaContainer = (0, i.getJQuery)()(".g-recaptcha")[0];
-      captchaContainer &&
-        toLoad.sitekey &&
-        typeof toLoad.sitekey == "string" &&
-        (captchaContainer.setAttribute("data-sitekey", toLoad.sitekey),
-        toLoad.datacallback &&
-          typeof toLoad.datacallback == "string" &&
-          typeof window[toLoad.datacallback] == "function" &&
-          window[toLoad.datacallback].length === 0 &&
-          captchaContainer.setAttribute("data-callback", toLoad.datacallback),
-        toLoad.datacallbackcode && typeof toLoad.datacallbackcode == "string" && eval(toLoad.datacallbackcode));
+import { a as d } from "./chunk-7ZUEWSHL.js";
+import { a as m } from "./chunk-4JLAI42Q.js";
+import { a } from "./chunk-SEUS6MHP.js";
+import { a as p } from "./chunk-CDLTIEKC.js";
+import { f as o, g as r, h as e, p as l } from "./chunk-UTJJRBTX.js";
+var k = o(m(), 1);
+var n = class {
+  static functionality(t, y) {
+    let c = document.createElement("script");
+    (c.onload = () => {
+      let s = (0, k.getJQuery)()(".g-recaptcha")[0];
+      if (
+        s &&
+        t.sitekey &&
+        typeof t.sitekey == "string" &&
+        (s.setAttribute("data-sitekey", t.sitekey),
+        t.datacallback &&
+          typeof t.datacallback == "string" &&
+          typeof window[t.datacallback] == "function" &&
+          window[t.datacallback].length === 0 &&
+          s.setAttribute("data-callback", t.datacallback),
+        t.datacallbackcode && typeof t.datacallbackcode == "string")
+      ) {
+        let i = document.createElement("script");
+        (i.type = "text/javascript"), (i.text = t.datacallbackcode), document.head.appendChild(i), i.remove();
+      }
     }),
-      (script.src = toLoad.script),
-      document.head.appendChild(script);
+      (c.src = t.script),
+      document.head.appendChild(c);
   }
 };
-(_Security_Captcha_Google.registered = window.codbi.registerFunctionality(
-  "Security.Captcha.Google",
-  _Security_Captcha_Google.functionality,
-)),
-  o(
-    [n.ParamvalueProvider, a(0, t.PRE(/^[0-9A-Za-z_-]{40}$/, "sitekey")), a(0, t.PRE(t.stdExp.url, "script"))],
-    _Security_Captcha_Google,
-    "functionality",
-    1,
-  );
-var e = _Security_Captcha_Google;
-export { e as Security_Captcha_Google };
+r(
+  [
+    l.ParamvalueProvider,
+    e(0, d.PRE("sitekey :: script")),
+    e(0, p.PRE("string", "sitekey :: datacallback :: datacallbackcode :: script")),
+    e(0, a.PRE(/^[0-9A-Za-z_-]{40}$/, "sitekey")),
+    e(0, a.PRE(a.stdExp.url, "script")),
+    e(0, a.PRE(a.stdExp.property, "datacallback")),
+  ],
+  n,
+  "functionality",
+  1,
+);
+window.codbi.registerFunctionality("Security.Captcha.Google", n.functionality.bind(n));
+export { n as Security_Captcha_Google };

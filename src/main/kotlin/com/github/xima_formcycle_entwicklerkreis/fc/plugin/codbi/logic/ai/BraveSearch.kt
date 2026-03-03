@@ -56,9 +56,69 @@ object BraveSearch {
   // ── Public API ────────────────────────────────────────────────────────
 
   /**
+   * Sanitizes a search query by removing personally identifiable information (PII) and identifiers
+   * that should not be forwarded to an external search engine.
+   *
+   * Strips:
+   * - Serial numbers (`S/N...`, `SN:...`, `s/n ...`)
+   * - Case references / Aktenzeichen (`Az.`, `Az:`, `Aktenzeichen`)
+   * - Generic alphanumeric IDs that look like codes (6+ chars with mixed letters/digits/dashes)
+   * - "unless / except / not" clauses that typically reference specific people
+   * - Likely person names (2+ consecutive Title Case words not preceded by a location preposition)
+   * - Trailing noise (whitespace, commas, dots)
+   *
+   * Words wrapped in `<< WORD >>` bypass all sieve rules and are kept verbatim.
+   */
+  fun sanitizeQuery(raw: String): String {
+    // ── Extract << protected >> tokens before sanitization ──
+    val protectedPattern = Regex("""<<\s*(.+?)\s*>>""")
+    val protectedTokens = mutableListOf<String>()
+    var q =
+        protectedPattern.replace(raw) { match ->
+          val placeholder = "\u0000KEEP${protectedTokens.size}\u0000"
+          protectedTokens.add(match.groupValues[1])
+          placeholder
+        }
+
+    // Remove serial-number patterns:  S/N87233-12, SN: 12345, s/n 87233-12
+    q = q.replace(Regex("""(?i)\b[Ss]/?[Nn][:\s]*[\w-]{3,}\b"""), "")
+
+    // Remove Aktenzeichen patterns:  Az. 123/45, Aktenzeichen 2 BvR 1/23
+    q = q.replace(Regex("""(?i)\b(?:Az\.?|Aktenzeichen)\s*[\w/\s-]{2,20}"""), "")
+
+    // Remove "unless/except/not [Name]" clauses (negative conditions about people)
+    q = q.replace(Regex("""(?i)\b(?:unless|except|excluding|not)\b.*$"""), "")
+
+    // Remove likely person names: 2+ consecutive Title Case words (e.g. "Leopold Gustav",
+    // "Maria Halberg") unless preceded by a location/topic preposition (in, from, at, near, von,
+    // aus, bei, nach) which would indicate a place name like "in New York".
+    q =
+        q.replace(
+            Regex(
+                """(?<!\b(?:in|from|at|near|to|von|aus|bei|nach|für|of)\s)[A-ZÄÖÜ][a-zäöüßa-z]+(?:\s+[A-ZÄÖÜ][a-zäöüßa-z]+)+"""),
+            "")
+
+    // Remove long alphanumeric ID-like tokens (e.g. 87233-12, ABC-12345-XY) — 2+ groups of alnum
+    // separated by dashes, or pure digit sequences 5+ chars that aren't postal codes (exactly 5
+    // digits)
+    q = q.replace(Regex("""\b[A-Za-z0-9]{2,}-[A-Za-z0-9-]{2,}\b"""), "")
+    q = q.replace(Regex("""\b\d{6,}\b"""), "")
+
+    // Collapse whitespace and trim trailing punctuation
+    q = q.replace(Regex("""\s{2,}"""), " ").trim().trimEnd(',', '.', ';', ':')
+
+    // ── Restore << protected >> tokens ──
+    for ((i, token) in protectedTokens.withIndex()) {
+      q = q.replace("\u0000KEEP$i\u0000", token)
+    }
+
+    return q
+  }
+
+  /**
    * Searches the web using the Brave Search API.
    *
-   * @param query The search query string.
+   * @param query The search query string (will be sanitized before sending).
    * @return A list of [SearchResult] objects, or an empty list on failure.
    */
   fun search(query: String): List<SearchResult> {
@@ -68,11 +128,20 @@ object BraveSearch {
       return emptyList()
     }
 
+    val cleanQuery = sanitizeQuery(query)
+    if (cleanQuery.isBlank()) {
+      log("WARNING", "Query empty after sanitization — skipping search (original: '$query')")
+      return emptyList()
+    }
+    if (cleanQuery != query) {
+      log("INFO", "Query sanitized: '$query' → '$cleanQuery'")
+    }
+
     return try {
-      val encodedQuery = URLEncoder.encode(query, "UTF-8")
+      val encodedQuery = URLEncoder.encode(cleanQuery, "UTF-8")
       val url = "$API_URL?q=$encodedQuery&count=$MAX_RESULTS&text_decorations=false"
 
-      log("INFO", "Searching: '$query' → $url")
+      log("INFO", "Searching: '$cleanQuery' → $url")
 
       val connection = URI(url).toURL().openConnection() as HttpURLConnection
       connection.requestMethod = "GET"
@@ -126,14 +195,12 @@ object BraveSearch {
         }
         append("\n")
       }
-      append("INSTRUCTIONS: Use the search results above to write a direct, helpful answer. ")
-      append("Summarize the key facts you found. ")
+      append("INSTRUCTIONS: Answer in 2-4 sentences. Be concise, do not repeat yourself. ")
       append("Do NOT say 'the results do not contain' or 'I cannot provide'. ")
       append("Do NOT tell the user to visit a website. ")
-      append("Cite sources as inline links: write [SiteName](URL) in the text. ")
       append(
-          "Example: 'Tomorrow will be 12°C and cloudy ([AccuWeather](https://accuweather.com/forecast)).' ")
-      append("Never write the website name AND a separate link — combine them into one.")
+          "Add links like [AccuWeather](https://accuweather.com/forecast) or [Wikipedia](https://en.wikipedia.org). ")
+      append("Never write 'Source', 'SiteName', or 'website name' as a link label.")
     }
   }
 

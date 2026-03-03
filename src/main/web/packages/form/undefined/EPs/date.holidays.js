@@ -1,9 +1,9 @@
-import { a as A } from "./chunk-IZMXAPWV.js";
-import { a as C } from "./chunk-EEU2ZRMO.js";
-import { a as b } from "./chunk-PR6DYHSM.js";
-import { a as f } from "./chunk-TNKBSIBG.js";
-import { b as w, c as l, d as p } from "./chunk-REJDLPRJ.js";
-var d = w(C(), 1);
+import { a as R } from "./chunk-HV3SPSHE.js";
+import { a as d } from "./chunk-BQCZFAYZ.js";
+import { a as A } from "./chunk-PN2FQ2K5.js";
+import { a as m } from "./chunk-2NFNCZZA.js";
+import { b as C, c as p, d as y, g as b } from "./chunk-WWJ6UWS7.js";
+var h = C(R(), 1);
 var r = class r {
   static genComparableKey(s) {
     let g = [...s.years].sort().join("-"),
@@ -33,18 +33,18 @@ var r = class r {
         e.toLowerCase().indexOf("friedensfest") === -1 &&
           e.toLowerCase().indexOf("katholisch") === -1 &&
           a.push(e.toLowerCase());
-    let c = new Promise((e) => {
+    let f = new Promise((e) => {
       if (r.buffer.has(r.genComparableKey({ years: t, states: a, augsburg: i, catholic: n }))) {
         if (Array.isArray(r.buffer.get(r.genComparableKey({ years: t, states: a, augsburg: i, catholic: n })))) {
           e(r.buffer.get(r.genComparableKey({ years: t, states: a, augsburg: i, catholic: n })));
           return;
         } else
-          r.buffer.get(r.genComparableKey({ years: t, states: a, augsburg: i, catholic: n })).then((u) => {
-            e(u);
+          r.buffer.get(r.genComparableKey({ years: t, states: a, augsburg: i, catholic: n })).then((c) => {
+            e(c);
           });
         return;
       }
-      (0, d.getJQuery)()
+      (0, h.getJQuery)()
         .ajax({
           url: `${window.codbi.baseURL}plugin?name=CodBi_Holidays_FeiertageDE`,
           type: "GET",
@@ -55,12 +55,12 @@ var r = class r {
             catholic: n ? "true" : "false",
           },
         })
-        .done((u) => {
-          let y = JSON.parse(u);
-          if (y.status !== "error") {
-            for (let h of y.feiertage)
+        .done((c) => {
+          let l = JSON.parse(c);
+          if (l.status !== "error") {
+            for (let w of l.feiertage)
               g.push(
-                new Date(h.date.replace(/\./g, "/").replace(/-/g, "/")).toLocaleDateString("de-DE", {
+                new Date(w.date.replace(/\./g, "/").replace(/-/g, "/")).toLocaleDateString("de-DE", {
                   year: "numeric",
                   month: "2-digit",
                   day: "2-digit",
@@ -70,11 +70,20 @@ var r = class r {
           }
         });
     });
-    return r.buffer.set(r.genComparableKey({ years: t, states: a, augsburg: i, catholic: n }), c), c;
+    return r.buffer.set(r.genComparableKey({ years: t, states: a, augsburg: i, catholic: n }), f), f;
   }
 };
 (r.buffer = new Map()),
-  (r.registered = window.codbi.registerEP("Date.Holidays", r.retrieve)),
-  l([f.ParamvalueProvider, p(0, b.PRE(new A("string")))], r, "retrieve", 1);
-var m = r;
-export { m as Date_Holidays };
+  p(
+    [
+      b.ParamvalueProvider,
+      y(0, d.PRE(1, !0, !1, "length", "Hasn't at least the year been specified?")),
+      y(0, m.PRE(new A("string"))),
+    ],
+    r,
+    "retrieve",
+    1,
+  );
+var u = r;
+window.codbi.registerEP("Date.Holidays", u.retrieve.bind(u));
+export { u as Date_Holidays };

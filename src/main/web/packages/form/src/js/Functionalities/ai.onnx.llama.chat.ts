@@ -42,6 +42,7 @@ export class AI_ONNX_LLAMA_CHAT {
    * | `AI_ONNX_LLAMA_Chat_Stop`     | `<button>`                             | Stop button (aborts running inference)           |
    * | `AI_ONNX_LLAMA_Chat_Upload` (Optional)   | `<input type="file">`                  | File upload for images/PDFs to chat about        |
    * | `AI_ONNX_LLAMA_Chat_Thinking` (Optional)  | `<input type="checkbox">`              | Toggles thinking mode (chain-of-thought) on/off  |
+   * | `AI_ONNX_LLAMA_Chat_Internet` (Optional)    | `<input type="checkbox">`              | Toggles internet search availability on/off      |
    *
    * **Generated CSS Classes (injected at runtime):**
    *
@@ -158,6 +159,10 @@ export class AI_ONNX_LLAMA_CHAT {
       container.querySelector(".AI_ONNX_LLAMA_Chat_Thinking"),
       HTMLInputElement,
     );
+    const searchCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
+      container.querySelector(".AI_ONNX_LLAMA_Chat_Internet"),
+      HTMLInputElement,
+    );
 
     // #endregion Discover sibling elements
 
@@ -171,6 +176,26 @@ export class AI_ONNX_LLAMA_CHAT {
     const pageSessionId: string = crypto.randomUUID();
     /** Multi-turn conversation history. Sent to the backend so the model can remember prior turns. */
     const conversationHistory: { role: string; content: string }[] = [];
+
+    /**
+     * Strips markdown links, bare URLs, and truncates assistant text before
+     * storing it in conversation history. This prevents the 2B model from
+     * parrot-copying content from previous turns into unrelated answers.
+     */
+    const stripLinksForHistory = (text: string): string => {
+      // [label](url) → label
+      let cleaned = text.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+      // bare URLs
+      cleaned = cleaned.replace(/https?:\/\/[^\s)]+/g, "");
+      // collapse multiple spaces / trim
+      cleaned = cleaned.replace(/ {2,}/g, " ").trim();
+      // Truncate to prevent the model from parroting long previous answers
+      if (cleaned.length > 150) {
+        cleaned = `${cleaned.substring(0, 147)}...`;
+      }
+      return cleaned;
+    };
+
     /**
      * Maximum number of recent history entries to keep verbatim (the rest are
      * condensed into a single summary entry so the context window is not exhausted).
@@ -314,6 +339,7 @@ export class AI_ONNX_LLAMA_CHAT {
       );
 
       // 3. Wrap remaining bare URLs → placeholder (can't accidentally match inside step 2)
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: <explanation>
       const withAllPlaceholders = withMdPlaceholders.replace(/https?:\/\/[^\s<>&"'\x00)\]]+/gi, (url) => {
         let label = url;
         try {
@@ -327,31 +353,12 @@ export class AI_ONNX_LLAMA_CHAT {
         return placeholder(idx);
       });
 
-      // 4. Restore placeholders with actual <a> tags
-      const restored = withAllPlaceholders.replace(/\x00LINK(\d+)\x00/g, (_m, idx: string) => links[Number(idx)]);
-
-      // 5. Extract trailing cluster of links into a styled sources section.
-      //    Matches: optional punctuation/whitespace, then 2+ consecutive <a> tags
-      //    separated only by whitespace, commas, periods, or "and".
-      const trailingLinksPattern = /[.,;:\s]*(<a\s[^>]*>[^<]*<\/a>(?:[\s.,]*(?:and\s+)?<a\s[^>]*>[^<]*<\/a>)+)[\s.]*$/i;
-      const trailingMatch = restored.match(trailingLinksPattern);
-      if (trailingMatch) {
-        const body = restored.slice(0, trailingMatch.index).replace(/[\s.,:;]+$/, "");
-        // Wrap each <a> in a badge <span>
-        const badges = trailingMatch[1].replace(
-          /(<a\s[^>]*>[^<]*<\/a>)/g,
-          '<span class="LLAMA_Chat_SourceBadge">$1</span>',
-        );
-        // Remove separators between badges (commas, "and", whitespace)
-        const cleanBadges = badges.replace(/<\/span>[\s.,]*(?:and\s+)?<span/g, "</span><span").trim();
-        return (
-          body +
-          '<div class="LLAMA_Chat_Sources">' +
-          '<span class="LLAMA_Chat_SourcesLabel">Sources:</span> ' +
-          cleanBadges +
-          "</div>"
-        );
-      }
+      // 4. Restore placeholders with actual <a> tags, each wrapped in a badge
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: <explanation>
+      const restored = withAllPlaceholders.replace(
+        /\x00LINK(\d+)\x00/g,
+        (_m, idx: string) => `<span class="LLAMA_Chat_SourceBadge">${links[Number(idx)]}</span>`,
+      );
 
       return restored;
     };
@@ -505,13 +512,16 @@ export class AI_ONNX_LLAMA_CHAT {
           headers["X-Rotate"] = toLoad.rotate.toString();
         }
 
-        // HTTP headers must not contain newlines — collapse to single line
-        headers["X-Question-chat"] = message.replace(/[\r\n]+/g, " ").trim();
+        // HTTP headers are ASCII-only — Base64-encode to preserve Unicode (e.g. ü, ö, ä)
+        headers["X-Question-chat"] = btoa(unescape(encodeURIComponent(message.replace(/[\r\n]+/g, " ").trim())));
         headers["X-Stream"] = "true";
         headers["X-Session-Id"] = pageSessionId;
         headers["X-Chat-History"] = btoa(unescape(encodeURIComponent(JSON.stringify(compactHistory()))));
         if (thinkingCheckbox) {
           headers["X-Thinking"] = thinkingCheckbox.checked ? "true" : "false";
+        }
+        if (searchCheckbox) {
+          headers["X-Search"] = searchCheckbox.checked ? "true" : "false";
         }
         // #endregion Build request headers
 
@@ -559,16 +569,31 @@ export class AI_ONNX_LLAMA_CHAT {
                 }
                 const text: string = pollResponse.text ?? "";
 
-                // Handle web search phase: text may reset when search results replace CALL:search
-                if (pollResponse.searching && text.length === 0 && streamBubble) {
-                  // Model requested a search — show animated indicator below the bubble
-                  if (!chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                // ── Client-side CALL:search detection — suppress display immediately ──
+                // Detect early: as soon as "CALL:" appears (tokens stream one-by-one)
+                // But only suppress if the request is still in progress — if done is true,
+                // the server already processed the search and the text is the final answer.
+                if (/CALL:/.test(text) && !pollResponse.done) {
+                  const callMatch = text.match(/CALL:search\((?:\s*)query(?:\s*)=(?:\s*)['"]([^'"]*)['"]\s*\)/);
+                  // Hide bubble immediately — even before full pattern matches
+                  if (streamBubble) {
+                    streamBubble.parentElement?.remove();
+                    streamBubble = null;
+                  }
+                  if (thinkingBubble) {
+                    thinkingBubble.parentElement?.remove();
+                    thinkingBubble = null;
+                  }
+                  if (callMatch && !chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                    // Full command detected — show search indicator with query
+                    const searchQuery = callMatch[1];
                     const indicator = document.createElement("div");
                     indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
                     indicator.innerHTML =
+                      // biome-ignore lint/style/useTemplate: <explanation>
                       '<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator">' +
-                      '<div class="LLAMA_SearchDots"><span></span><span></span><span></span></div>' +
-                      '<span class="LLAMA_SearchLabel">\u{1F50D} Searching the internet\u2026</span>' +
+                      '<div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div>' +
+                      `<span class="LLAMA_SearchLabel">Searching the internet for \u201C${searchQuery}\u201D\u2026</span>` +
                       "</div>";
                     chatContainer.appendChild(indicator);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -577,22 +602,83 @@ export class AI_ONNX_LLAMA_CHAT {
                   return;
                 }
 
-                // When search completes, text arrives fresh — handle text reset
+                // Server-side searching flag — show indicator if not already shown (fallback)
+                if (pollResponse.searching && text.length === 0) {
+                  if (!chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                    if (streamBubble) {
+                      streamBubble.parentElement?.remove();
+                      streamBubble = null;
+                    }
+                    if (thinkingBubble) {
+                      thinkingBubble.parentElement?.remove();
+                      thinkingBubble = null;
+                    }
+                    const searchQuery: string = pollResponse.searchQuery ?? "";
+                    const indicator = document.createElement("div");
+                    indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
+                    indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">Searching the internet${searchQuery ? ` for \u201C${searchQuery}\u201D` : ""}\u2026</span></div>`;
+                    chatContainer.appendChild(indicator);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                  }
+                  lastText = "";
+                  return;
+                }
+
+                // When search completes or repetition trimming shortened the text,
+                // the new text is shorter than what was displayed — update in-place
+                // or replace the bubble so we don't leave a stale duplicate in the DOM.
                 if (text.length > 0 && text.length < lastText.length) {
-                  // Text was replaced (search results arrived) — remove search indicator
                   const indicator = chatContainer.querySelector(".LLAMA_SearchIndicator");
                   if (indicator?.parentElement) {
                     indicator.parentElement.remove();
                   }
                   lastText = "";
-                  // Create a new bubble for the search-augmented answer
-                  streamBubble = appendBubble(text, "llama");
+                  if (streamBubble) {
+                    // Update existing bubble in-place (e.g. repetition trimmed)
+                    streamBubble.innerHTML = linkifyUrls(text);
+                  } else {
+                    // No existing bubble (e.g. post-search) — create fresh
+                    streamBubble = appendBubble(text, "llama");
+                  }
+                  return;
+                }
+
+                // ── Live reasoning: stream thinking chunks in real-time ──
+                // While the model is reasoning (text empty, thinking arriving),
+                // show reasoning live instead of the static "Thinking..." spinner.
+                const liveThinking: string | undefined = pollResponse.thinking;
+                if (liveThinking && text.length === 0 && !pollResponse.done && thinkingBubble) {
+                  let reasoningEl = thinkingBubble.querySelector(
+                    ".LLAMA_LiveReasoningContent",
+                  ) as HTMLDivElement | null;
+                  if (!reasoningEl) {
+                    // First reasoning chunk — replace spinner with live reasoning view
+                    thinkingBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+                    thinkingBubble.innerHTML =
+                      '<details class="LLAMA_Chat_Thinking" open>' +
+                      '<summary style="display:flex;align-items:center;gap:6px">' +
+                      '<div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div>' +
+                      "<span>Reasoning\u2026</span>" +
+                      "</summary>" +
+                      '<div class="LLAMA_Chat_ThinkingContent LLAMA_LiveReasoningContent"></div>' +
+                      "</details>";
+                    reasoningEl = thinkingBubble.querySelector(".LLAMA_LiveReasoningContent") as HTMLDivElement;
+                  }
+                  if (reasoningEl) {
+                    // Only auto-scroll if user is already near the bottom of the reasoning box
+                    const isNearBottom =
+                      reasoningEl.scrollHeight - reasoningEl.scrollTop - reasoningEl.clientHeight < 40;
+                    reasoningEl.innerHTML = linkifyUrls(liveThinking);
+                    if (isNearBottom) {
+                      reasoningEl.scrollTop = reasoningEl.scrollHeight;
+                      chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }
+                  }
                   return;
                 }
 
                 if (text.length > lastText.length) {
                   lastText = text;
-                  // First chunk: replace thinking bubble with a real one
                   if (thinkingBubble) {
                     thinkingBubble.parentElement?.remove();
                     thinkingBubble = null;
@@ -601,6 +687,13 @@ export class AI_ONNX_LLAMA_CHAT {
                     // Update existing stream bubble in-place
                     streamBubble.innerHTML = linkifyUrls(text);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
+                  } else {
+                    // No existing bubble — post-search streaming: remove indicator, create bubble
+                    const searchInd = chatContainer.querySelector(".LLAMA_SearchIndicator");
+                    if (searchInd?.parentElement) {
+                      searchInd.parentElement.remove();
+                    }
+                    streamBubble = appendBubble(text, "llama");
                   }
                 }
                 if (pollResponse.done) {
@@ -619,9 +712,41 @@ export class AI_ONNX_LLAMA_CHAT {
                     }
                     conversationHistory.pop(); // remove failed user turn
                   } else if (lastText) {
-                    conversationHistory.push({ role: "assistant", content: lastText });
+                    const searchOn = searchCheckbox ? searchCheckbox.checked : true;
+                    conversationHistory.push({
+                      role: "assistant",
+                      content: searchOn ? stripLinksForHistory(lastText) : lastText,
+                    });
+                    // Show thinking/reasoning in a collapsible section if available
+                    const thinkingText: string | undefined = pollResponse.thinking;
+                    if (thinkingText && streamBubble) {
+                      const details = document.createElement("details");
+                      details.className = "LLAMA_Chat_Thinking";
+                      const summary = document.createElement("summary");
+                      // Use "Show sources" when the content is primarily search results,
+                      // "Show reasoning" when it contains actual model reasoning
+                      const hasSearchSources = /\uD83D\uDD0D Searching the web/.test(thinkingText);
+                      const hasRealReasoning = thinkingText.includes("---\n\n\uD83D\uDD0D") || !hasSearchSources;
+                      summary.textContent = hasRealReasoning ? "Show reasoning" : "Show sources";
+                      details.appendChild(summary);
+                      const pre = document.createElement("div");
+                      pre.className = "LLAMA_Chat_ThinkingContent";
+                      pre.innerHTML = linkifyUrls(thinkingText);
+                      details.appendChild(pre);
+                      streamBubble.appendChild(details);
+                    }
                     if (aiHintText && streamBubble) {
                       AI_ONNX_LLAMA_CHAT.attachAiHintToBubble(streamBubble, aiHintText);
+                    }
+                    // Tag the bubble with a model type icon — only when the thinking
+                    // checkbox is present (i.e. thinking mode is available in the UI)
+                    const modelType: string | undefined = pollResponse.modelType;
+                    if (thinkingCheckbox && modelType && streamBubble) {
+                      const badge = document.createElement("span");
+                      badge.className = "LLAMA_ModelBadge";
+                      badge.textContent = modelType === "thinking" ? "\uD83D\uDCA1" : "\u26A1";
+                      badge.title = modelType === "thinking" ? "Thinking model" : "Fast model";
+                      streamBubble.insertBefore(badge, streamBubble.firstChild);
                     }
                   }
                   finishStreaming();
@@ -685,7 +810,11 @@ export class AI_ONNX_LLAMA_CHAT {
               const answerKeys = Object.keys(fileAnswers || {});
               answerText =
                 fileAnswers?.chat ?? (answerKeys.length > 0 ? String(fileAnswers[answerKeys[0]]) : "(no answer)");
-              conversationHistory.push({ role: "assistant", content: answerText });
+              const searchOn1 = searchCheckbox ? searchCheckbox.checked : true;
+              conversationHistory.push({
+                role: "assistant",
+                content: searchOn1 ? stripLinksForHistory(answerText) : answerText,
+              });
             } else {
               const parts: string[] = [];
               for (const fileKey of fileKeys) {
@@ -696,7 +825,11 @@ export class AI_ONNX_LLAMA_CHAT {
                 parts.push(`\u{1F4C4} ${fileKey}:\n${answer}`);
               }
               answerText = parts.join("\n\n");
-              conversationHistory.push({ role: "assistant", content: answerText });
+              const searchOn2 = searchCheckbox ? searchCheckbox.checked : true;
+              conversationHistory.push({
+                role: "assistant",
+                content: searchOn2 ? stripLinksForHistory(answerText) : answerText,
+              });
             }
             // Replace thinking bubble with the answer
             if (thinkingBubble) {
@@ -829,6 +962,15 @@ export class AI_ONNX_LLAMA_CHAT {
         background: var(--llama-bubble-bg) ; color: #1c1c1e ;
         border-bottom-left-radius: 4px ;
       }
+      .LLAMA_ModelBadge {
+        position: absolute ; top: -10px ; left: -6px ;
+        font-size: 12px ; line-height: 1 ;
+        width: 22px ; height: 22px ;
+        display: flex ; align-items: center ; justify-content: center ;
+        background: #fff ; border: 1px solid #ccc ; border-radius: 50% ;
+        box-shadow: 0 1px 3px rgba(0,0,0,.2) ;
+        cursor: default ; user-select: none ;
+      }
       .LLAMA_Chat_Bubble--system {
         background: transparent ; color: #8e8e93 ;
         font-size: 12px ; font-style: italic ; text-align: center ;
@@ -855,18 +997,26 @@ export class AI_ONNX_LLAMA_CHAT {
         background: #f0f4ff ; border: 1px dashed #b0c4de ;
       }
       .LLAMA_SearchLabel { color: #3a6ea5 ; }
-      .LLAMA_SearchDots {
-        display: inline-flex ; gap: 4px ; align-items: center ;
+      .LLAMA_SearchSpinner {
+        width: 20px ; height: 20px ; flex-shrink: 0 ;
       }
-      .LLAMA_SearchDots span {
-        width: 6px ; height: 6px ; border-radius: 50% ;
-        background: #3a6ea5 ; animation: llama-dot-bounce 1.2s ease-in-out infinite ;
+      .LLAMA_SearchSpinner::before {
+        display: none ;
       }
-      .LLAMA_SearchDots span:nth-child(2) { animation-delay: 0.2s ; }
-      .LLAMA_SearchDots span:nth-child(3) { animation-delay: 0.4s ; }
-      @keyframes llama-dot-bounce {
-        0%, 80%, 100% { transform: scale(0.6) ; opacity: 0.4 ; }
-        40% { transform: scale(1) ; opacity: 1 ; }
+      .LLAMA_Chat_Thinking {
+        margin-top: 10px ; border-top: 1px solid rgba(0,0,0,0.1) ;
+        padding-top: 6px ; font-size: 12px ;
+      }
+      .LLAMA_Chat_Thinking summary {
+        cursor: pointer ; color: #666 ; font-style: italic ;
+        user-select: none ; font-size: 11px ;
+      }
+      .LLAMA_Chat_Thinking summary:hover { color: #333 ; }
+      .LLAMA_Chat_ThinkingContent {
+        margin-top: 6px ; padding: 8px ; background: rgba(0,0,0,0.04) ;
+        border-radius: 6px ; white-space: pre-wrap ; word-break: break-word ;
+        color: #555 ; font-size: 12px ; line-height: 1.5 ;
+        max-height: 300px ; overflow-y: auto ;
       }
       .LLAMA_Chat_AiHint {
         display: block ; margin-top: 4px ; font-size: 10px ;
@@ -884,16 +1034,6 @@ export class AI_ONNX_LLAMA_CHAT {
       }
       .LLAMA_Chat_Bubble a:hover {
         text-decoration-thickness: 2px ;
-      }
-      .LLAMA_Chat_Sources {
-        display: flex ; flex-wrap: wrap ; align-items: center ; gap: 6px ;
-        margin-top: 10px ; padding-top: 8px ;
-        border-top: 1px solid rgba(0,0,0,0.1) ;
-        white-space: normal ;
-      }
-      .LLAMA_Chat_SourcesLabel {
-        font-size: 11px ; color: rgba(0,0,0,0.45) ; font-weight: 600 ;
-        user-select: none ;
       }
       .LLAMA_Chat_SourceBadge {
         display: inline-flex ; align-items: center ;

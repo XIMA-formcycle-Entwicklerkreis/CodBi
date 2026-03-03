@@ -1,15 +1,13 @@
-import { a as e } from "./chunk-UZQUFYYL.js";
-import "./chunk-W23DHSE2.js";
-import "./chunk-MUWAMKOD.js";
-import "./chunk-RS4WWU7K.js";
-var r = class r extends e {
+import { a as i } from "./chunk-VGUXA7EO.js";
+import "./chunk-4JLAI42Q.js";
+import "./chunk-UTJJRBTX.js";
+var r = class e extends i {
   static get transformer() {
-    return (n, t) => n.replace(t.extractor, t.replacements);
+    return (t, n) => t.replace(n.extractor, n.replacements);
   }
-  static functionality(n, t) {
-    e.functionality(n, t, r.transformer);
+  static functionality(t, n) {
+    i.functionality(t, n, e.transformer);
   }
 };
-r.registered = window.codbi.registerFunctionality("HTML.Input.Trans.RegEx", r.functionality);
-var i = r;
-export { i as HTML_Input_Trans_RegEx };
+window.codbi.registerFunctionality("HTML.Input.Trans.RegEx", r.functionality.bind(r));
+export { r as HTML_Input_Trans_RegEx };

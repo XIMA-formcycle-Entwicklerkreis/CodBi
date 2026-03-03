@@ -1,8 +1,8 @@
-import { a as me } from "./chunk-K3A632J4.js";
-import { a as pe } from "./chunk-QM2ZX7FA.js";
-import { a as fe } from "./chunk-MUWAMKOD.js";
-import { g as ce, h as de } from "./chunk-RS4WWU7K.js";
-var M =
+import { a as he } from "./chunk-PSEWTT4Z.js";
+import { a as pe } from "./chunk-KEJSWGMR.js";
+import { a as me } from "./chunk-CDLTIEKC.js";
+import { g as de, h as H, p as fe } from "./chunk-UTJJRBTX.js";
+var A =
     typeof window != "undefined"
       ? window
       : typeof global != "undefined"
@@ -73,7 +73,7 @@ _.prototype = {
   },
 };
 var Re = _,
-  he = function (e, t, n) {
+  ge = function (e, t, n) {
     var a = this;
     (a.date = []),
       (a.blocks = []),
@@ -94,7 +94,7 @@ var Re = _,
       a.dateMax.length === 2 && a.dateMax.unshift(0),
       a.initBlocks();
   };
-he.prototype = {
+ge.prototype = {
   initBlocks: function () {
     var e = this;
     e.datePattern.forEach(function (t) {
@@ -250,12 +250,12 @@ he.prototype = {
     return t ? (e < 10 ? "000" : e < 100 ? "00" : e < 1e3 ? "0" : "") + e : (e < 10 ? "0" : "") + e;
   },
 };
-var Oe = he,
-  ge = function (e, t) {
+var Le = ge,
+  ye = function (e, t) {
     var n = this;
     (n.time = []), (n.blocks = []), (n.timePattern = e), (n.timeFormat = t), n.initBlocks();
   };
-ge.prototype = {
+ye.prototype = {
   initBlocks: function () {
     var e = this;
     e.timePattern.forEach(function () {
@@ -381,12 +381,12 @@ ge.prototype = {
     return (e < 10 ? "0" : "") + e;
   },
 };
-var Le = ge,
-  ye = function (e, t) {
+var Oe = ye,
+  we = function (e, t) {
     var n = this;
     (n.delimiter = t || t === "" ? t : " "), (n.delimiterRE = t ? new RegExp("\\" + t, "g") : ""), (n.formatter = e);
   };
-ye.prototype = {
+we.prototype = {
   setFormatter: function (e) {
     this.formatter = e;
   },
@@ -401,8 +401,8 @@ ye.prototype = {
     return (n = n.replace(/[()]/g, "")), (n = n.replace(/[\s-]/g, t.delimiter)), n;
   },
 };
-var Ue = ye,
-  H = {
+var je = we,
+  Y = {
     blocks: {
       uatp: [4, 5, 6],
       amex: [4, 6, 5],
@@ -441,8 +441,8 @@ var Ue = ye,
       return e.concat(19 - t);
     },
     getInfo: function (e, t) {
-      var n = H.blocks,
-        a = H.re;
+      var n = Y.blocks,
+        a = Y.re;
       t = !!t;
       for (var o in a)
         if (a[o].test(e)) {
@@ -452,7 +452,7 @@ var Ue = ye,
       return { type: "unknown", blocks: t ? this.getStrictBlocks(n.general) : n.general };
     },
   },
-  je = H,
+  Ue = Y,
   Ne = {
     noop: function () {},
     strip: function (e, t) {
@@ -643,7 +643,7 @@ var Ue = ye,
         (e.delimiters = t.delimiters || []),
         (e.blocks = t.blocks || []),
         (e.blocksLength = e.blocks.length),
-        (e.root = typeof M == "object" && M ? M : window),
+        (e.root = typeof A == "object" && A ? A : window),
         (e.document = t.document || e.root.document),
         (e.maxLength = 0),
         (e.backspace = !1),
@@ -945,15 +945,15 @@ y.prototype = {
   },
 };
 y.NumeralFormatter = Re;
-y.DateFormatter = Oe;
-y.TimeFormatter = Le;
-y.PhoneFormatter = Ue;
-y.CreditCardDetector = je;
+y.DateFormatter = Le;
+y.TimeFormatter = Oe;
+y.PhoneFormatter = je;
+y.CreditCardDetector = Ue;
 y.Util = Ze;
 y.DefaultProperties = Ye;
-(typeof M == "object" && M ? M : window).Cleave = y;
+(typeof A == "object" && A ? A : window).Cleave = y;
 var Ge = y,
-  we = Ge;
+  xe = Ge;
 (function () {
   function e(r, i) {
     var l = r.split("."),
@@ -1090,7 +1090,7 @@ var Ge = y,
   function I(r, i, l) {
     (r.a[i] = l), r.b && (r.b[i] = l);
   }
-  function L(r, i) {
+  function O(r, i) {
     var l,
       s = [];
     for (l in i) l != 0 && s.push(new g(l, i[l]));
@@ -1106,26 +1106,26 @@ var Ge = y,
     m.call(this);
   }
   function R() {}
-  function U() {}
+  function j() {}
   function V() {}
-  function A() {
+  function M() {
     this.a = {};
   }
-  function Y(r) {
-    return r.length == 0 || Ae.test(r);
+  function G(r) {
+    return r.length == 0 || Me.test(r);
   }
-  function j(r, i) {
+  function U(r, i) {
     if (i == null) return null;
     i = i.toUpperCase();
     var l = r.a[i];
     if (l == null) {
-      if (((l = oe[i]), l == null)) return null;
+      if (((l = se[i]), l == null)) return null;
       (l = new V().a($.j(), l)), (r.a[i] = l);
     }
     return l;
   }
-  function G(r) {
-    return (r = le[r]), r == null ? "ZZ" : r[0];
+  function K(r) {
+    return (r = oe[r]), r == null ? "ZZ" : r[0];
   }
   function T(r) {
     (this.H = RegExp("\u2008")),
@@ -1136,7 +1136,7 @@ var Ge = y,
       (this.u = new n()),
       (this.l = !0),
       (this.A = this.o = this.F = !1),
-      (this.G = A.b()),
+      (this.G = M.b()),
       (this.s = 0),
       (this.b = new n()),
       (this.B = !1),
@@ -1148,13 +1148,13 @@ var Ge = y,
   }
   function N(r, i) {
     var l;
-    if (i != null && isNaN(i) && i.toUpperCase() in oe) {
-      if (((l = j(r.G, i)), l == null)) throw Error("Invalid region code: " + i);
+    if (i != null && isNaN(i) && i.toUpperCase() in se) {
+      if (((l = U(r.G, i)), l == null)) throw Error("Invalid region code: " + i);
       l = D(l, 10);
     } else l = 0;
-    return (l = j(r.G, G(l))), l != null ? l : se;
+    return (l = U(r.G, K(l))), l != null ? l : ue;
   }
-  function K(r) {
+  function q(r) {
     for (var i = r.f.length, l = 0; l < i; ++l) {
       var s = r.f[l],
         d = D(s, 1);
@@ -1165,7 +1165,7 @@ var Ge = y,
         F = D(x, 1);
       if (F.indexOf("|") != -1) f = !1;
       else {
-        (F = F.replace(Me, "\\d")), (F = F.replace(Ve, "\\d")), a(f.m);
+        (F = F.replace(Ae, "\\d")), (F = F.replace(Ve, "\\d")), a(f.m);
         var k;
         k = f;
         var x = D(x, 2),
@@ -1175,11 +1175,11 @@ var Ge = y,
           : ((k = E.replace(new RegExp(F, "g"), x)), (k = k.replace(RegExp("9", "g"), "\u2008"))),
           0 < k.length ? (f.m.a(k), (f = !0)) : (f = !1);
       }
-      if (f) return (r.w = d), (r.B = ue.test(w(s, 4))), (r.s = 0), !0;
+      if (f) return (r.w = d), (r.B = ce.test(w(s, 4))), (r.s = 0), !0;
     }
     return (r.l = !1);
   }
-  function q(r, i) {
+  function z(r, i) {
     for (var l = [], s = i.length - 3, d = r.f.length, f = 0; f < d; ++f) {
       var x = r.f[f];
       C(x, 3) == 0 ? l.push(r.f[f]) : ((x = w(x, 3, Math.min(s, C(x, 3) - 1))), i.search(x) == 0 && l.push(r.f[f]));
@@ -1196,8 +1196,8 @@ var Ge = y,
     } else (r.l = !1), (r.F = !0);
     if (!r.l) {
       if (!r.F) {
-        if (X(r)) {
-          if (ee(r)) return z(r);
+        if (ee(r)) {
+          if (te(r)) return J(r);
         } else if (
           (0 < r.h.length &&
             ((l = r.a.toString()),
@@ -1208,9 +1208,9 @@ var Ge = y,
             (s = l.lastIndexOf(r.h)),
             a(r.b),
             r.b.a(l.substring(0, s))),
-          r.h != W(r))
+          r.h != X(r))
         )
-          return r.b.a(" "), z(r);
+          return r.b.a(" "), J(r);
       }
       return r.i.toString();
     }
@@ -1220,31 +1220,31 @@ var Ge = y,
       case 2:
         return r.i.toString();
       case 3:
-        if (!X(r)) return (r.h = W(r)), Z(r);
+        if (!ee(r)) return (r.h = X(r)), Z(r);
         r.A = !0;
       default:
         return r.A
-          ? (ee(r) && (r.A = !1), r.b.toString() + r.a.toString())
+          ? (te(r) && (r.A = !1), r.b.toString() + r.a.toString())
           : 0 < r.f.length
-            ? ((l = te(r, i)),
-              (s = J(r)),
-              0 < s.length ? s : (q(r, r.a.toString()), K(r) ? Q(r) : r.l ? O(r, l) : r.i.toString()))
+            ? ((l = re(r, i)),
+              (s = Q(r)),
+              0 < s.length ? s : (z(r, r.a.toString()), q(r) ? W(r) : r.l ? L(r, l) : r.i.toString()))
             : Z(r);
     }
   }
-  function z(r) {
+  function J(r) {
     return (r.l = !0), (r.A = !1), (r.f = []), (r.s = 0), a(r.m), (r.w = ""), Z(r);
   }
-  function J(r) {
+  function Q(r) {
     for (var i = r.a.toString(), l = r.f.length, s = 0; s < l; ++s) {
       var d = r.f[s],
         f = D(d, 1);
       if (new RegExp("^(?:" + f + ")$").test(i))
-        return (r.B = ue.test(w(d, 4))), (i = i.replace(new RegExp(f, "g"), w(d, 2))), O(r, i);
+        return (r.B = ce.test(w(d, 4))), (i = i.replace(new RegExp(f, "g"), w(d, 2))), L(r, i);
     }
     return "";
   }
-  function O(r, i) {
+  function L(r, i) {
     var l = r.b.b.length;
     return r.B && 0 < l && r.b.toString().charAt(l - 1) != " " ? r.b + " " + i : r.b + i;
   }
@@ -1257,23 +1257,23 @@ var Ge = y,
         ++d
       ) {
         var f = l[d];
-        (0 < r.h.length && Y(D(f, 4)) && !w(f, 6) && f.a[5] == null) ||
-          ((r.h.length != 0 || r.o || Y(D(f, 4)) || w(f, 6)) && Te.test(D(f, 2)) && r.f.push(f));
+        (0 < r.h.length && G(D(f, 4)) && !w(f, 6) && f.a[5] == null) ||
+          ((r.h.length != 0 || r.o || G(D(f, 4)) || w(f, 6)) && Te.test(D(f, 2)) && r.f.push(f));
       }
-      return q(r, i), (i = J(r)), 0 < i.length ? i : K(r) ? Q(r) : r.i.toString();
+      return z(r, i), (i = Q(r)), 0 < i.length ? i : q(r) ? W(r) : r.i.toString();
     }
-    return O(r, i);
+    return L(r, i);
   }
-  function Q(r) {
+  function W(r) {
     var i = r.a.toString(),
       l = i.length;
     if (0 < l) {
-      for (var s = "", d = 0; d < l; d++) s = te(r, i.charAt(d));
-      return r.l ? O(r, s) : r.i.toString();
+      for (var s = "", d = 0; d < l; d++) s = re(r, i.charAt(d));
+      return r.l ? L(r, s) : r.i.toString();
     }
     return r.b.toString();
   }
-  function W(r) {
+  function X(r) {
     var i,
       l = r.a.toString(),
       s = 0;
@@ -1292,7 +1292,7 @@ var Ge = y,
       l.substring(0, s)
     );
   }
-  function X(r) {
+  function ee(r) {
     var i = r.u.toString(),
       l = new RegExp("^(?:\\+|" + w(r.g, 11) + ")"),
       l = i.match(l);
@@ -1310,14 +1310,14 @@ var Ge = y,
       !0)
     );
   }
-  function ee(r) {
+  function te(r) {
     if (r.a.b.length == 0) return !1;
     var i,
       l = new n();
     e: {
       if (((i = r.a.toString()), i.length != 0 && i.charAt(0) != "0")) {
         for (var s, d = i.length, f = 1; 3 >= f && f <= d; ++f)
-          if (((s = parseInt(i.substring(0, f), 10)), s in le)) {
+          if (((s = parseInt(i.substring(0, f), 10)), s in oe)) {
             l.a(i.substring(f)), (i = s);
             break e;
           }
@@ -1328,14 +1328,14 @@ var Ge = y,
       i != 0 &&
       (a(r.a),
       r.a.a(l.toString()),
-      (l = G(i)),
-      l == "001" ? (r.g = j(r.G, "" + i)) : l != r.D && (r.g = N(r, l)),
+      (l = K(i)),
+      l == "001" ? (r.g = U(r.G, "" + i)) : l != r.D && (r.g = N(r, l)),
       r.b.a("" + i).a(" "),
       (r.h = ""),
       !0)
     );
   }
-  function te(r, i) {
+  function re(r, i) {
     var l = r.m.toString();
     if (0 <= l.substring(r.s).search(r.H)) {
       var s = l.search(r.H),
@@ -1371,17 +1371,17 @@ var Ge = y,
       return r != this && ((r.a = {}), r.b && (r.b = {}), S(r, this)), r;
     }),
     t(P, m);
-  var re = null;
-  t(b, m);
   var ne = null;
-  t($, m);
+  t(b, m);
   var ie = null;
+  t($, m);
+  var ae = null;
   (P.prototype.j = function () {
-    var r = re;
+    var r = ne;
     return (
       r ||
-        (re = r =
-          L(P, {
+        (ne = r =
+          O(P, {
             0: { name: "NumberFormat", I: "i18n.phonenumbers.NumberFormat" },
             1: { name: "pattern", required: !0, c: 9, type: String },
             2: { name: "format", required: !0, c: 9, type: String },
@@ -1395,11 +1395,11 @@ var Ge = y,
   }),
     (P.j = P.prototype.j),
     (b.prototype.j = function () {
-      var r = ne;
+      var r = ie;
       return (
         r ||
-          (ne = r =
-            L(b, {
+          (ie = r =
+            O(b, {
               0: { name: "PhoneNumberDesc", I: "i18n.phonenumbers.PhoneNumberDesc" },
               2: { name: "national_number_pattern", c: 9, type: String },
               9: { name: "possible_length", v: !0, c: 5, type: Number },
@@ -1411,11 +1411,11 @@ var Ge = y,
     }),
     (b.j = b.prototype.j),
     ($.prototype.j = function () {
-      var r = ie;
+      var r = ae;
       return (
         r ||
-          (ie = r =
-            L($, {
+          (ae = r =
+            O($, {
               0: { name: "PhoneMetadata", I: "i18n.phonenumbers.PhoneMetadata" },
               1: { name: "general_desc", c: 11, type: b },
               2: { name: "fixed_line", c: 11, type: b },
@@ -1459,7 +1459,7 @@ var Ge = y,
     (R.prototype.b = function (r, i) {
       if (r.a == 11 || r.a == 10) return i instanceof m ? i : this.a(r.i.prototype.j(), i);
       if (r.a == 14) {
-        if (typeof i == "string" && ae.test(i)) {
+        if (typeof i == "string" && le.test(i)) {
           var l = Number(i);
           if (0 < l) return l;
         }
@@ -1471,26 +1471,26 @@ var Ge = y,
       } else if (
         l === Number &&
         typeof i == "string" &&
-        (i === "Infinity" || i === "-Infinity" || i === "NaN" || ae.test(i))
+        (i === "Infinity" || i === "-Infinity" || i === "NaN" || le.test(i))
       )
         return Number(i);
       return i;
     });
-  var ae = /^-?[0-9]+$/;
-  t(U, R),
-    (U.prototype.a = function (r, i) {
+  var le = /^-?[0-9]+$/;
+  t(j, R),
+    (j.prototype.a = function (r, i) {
       var l = new r.b();
       return (l.g = this), (l.a = i), (l.b = {}), l;
     }),
-    t(V, U),
+    t(V, j),
     (V.prototype.b = function (r, i) {
       return r.a == 8 ? !!i : R.prototype.b.apply(this, arguments);
     }),
     (V.prototype.a = function (r, i) {
       return V.M.a.call(this, r, i);
     });
-  var le = { 49: ["DE"] },
-    oe = {
+  var oe = { 49: ["DE"] },
+    se = {
       DE: [
         null,
         [
@@ -1639,8 +1639,8 @@ var Ge = y,
         ],
       ],
     };
-  A.b = function () {
-    return A.a ? A.a : (A.a = new A());
+  M.b = function () {
+    return M.a ? M.a : (M.a = new M());
   };
   var $e = {
       0: "0",
@@ -1686,15 +1686,15 @@ var Ge = y,
     },
     Ee = RegExp("[+\uFF0B]+"),
     _e = RegExp("([0-9\uFF10-\uFF19\u0660-\u0669\u06F0-\u06F9])"),
-    Ae = /^\(?\$1\)?$/,
-    se = new $();
-  I(se, 11, "NA");
-  var Me = /\[([^\[\]])*\]/g,
+    Me = /^\(?\$1\)?$/,
+    ue = new $();
+  I(ue, 11, "NA");
+  var Ae = /\[([^\[\]])*\]/g,
     Ve = /\d(?=[^,}][^,}])/g,
     Te = RegExp(
       "^[-x\u2010-\u2015\u2212\u30FC\uFF0D-\uFF0F \xA0\xAD\u200B\u2060\u3000()\uFF08\uFF09\uFF3B\uFF3D.\\[\\]/~\u2053\u223C\uFF5E]*(\\$\\d[-x\u2010-\u2015\u2212\u30FC\uFF0D-\uFF0F \xA0\xAD\u200B\u2060\u3000()\uFF08\uFF09\uFF3B\uFF3D.\\[\\]/~\u2053\u223C\uFF5E]*)+$",
     ),
-    ue = /[- ]/;
+    ce = /[- ]/;
   (T.prototype.K = function () {
     (this.C = ""),
       a(this.i),
@@ -1718,7 +1718,7 @@ var Ge = y,
     e("Cleave.AsYouTypeFormatter.prototype.inputDigit", T.prototype.L),
     e("Cleave.AsYouTypeFormatter.prototype.clear", T.prototype.K);
 }).call(typeof global == "object" && global ? global : window);
-var B = class B {
+var B = class {
   static functionality(t, n) {
     if (
       (Array.isArray(t.config) && (t.config = t.config[0]),
@@ -1741,10 +1741,21 @@ var B = class B {
           delimiter: t.delimiter && typeof t.delimiter == "string" ? t.delimiter : ".",
           datePattern: t.datepattern ? me.tsCheck(t.datepattern, "string").split("-") : ["d", "m", "Y"],
         };
-    new we(n, a);
+    new xe(n, a);
   }
 };
-(B.registered = window.codbi.registerFunctionality("HTML.Input.Cleave", B.functionality)),
-  ce([fe.ParamvalueProvider, de(1, pe.PRE("INPUT", !1, "tagName"))], B, "functionality", 1);
-var xe = B;
-export { xe as HTML_Input_Cleave };
+de(
+  [
+    fe.ParamvalueProvider,
+    H(
+      1,
+      pe.PRE(HTMLInputElement, void 0, 'Is it not an <input type = "text"/> that is tagged with this functionality?'),
+    ),
+    H(1, he.PRE("text", !1, "type")),
+  ],
+  B,
+  "functionality",
+  1,
+);
+window.codbi.registerFunctionality("HTML.Input.Cleave", B.functionality.bind(B));
+export { B as HTML_Input_Cleave };

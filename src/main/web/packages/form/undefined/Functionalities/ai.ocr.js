@@ -1,65 +1,89 @@
-import { a as _ } from "./chunk-BGFHKOW7.js";
-import { a as H } from "./chunk-SGIEOVFR.js";
-import { a as B } from "./chunk-K6ISRTTP.js";
-import { a as v } from "./chunk-K3A632J4.js";
-import { a as N } from "./chunk-W23DHSE2.js";
-import { a as M } from "./chunk-MUWAMKOD.js";
-import { b as R, f as S, g as I, o as O } from "./chunk-RS4WWU7K.js";
-var V = S(N(), 1);
-var A = S(H(), 1);
-var C = class C {
-  static functionality(e, o) {
-    o.addEventListener("change", (y) =>
-      O(this, null, function* () {
-        let n = v.tsCheck(e.mode, "string").toLowerCase(),
-          h = document.querySelector(`div .CXUpload:has( #${o.getAttribute("id")})`).parentElement;
-        if (n === "extract fields") {
-          let c = h.querySelectorAll(".AI_TESSERACT_Name");
-          for (let f of c) {
-            let x = f.id,
-              E = f.getAttribute("data-cb-Name");
-          }
-          if (n === "extract fields" && c.length === 0) return;
+import { a as V } from "./chunk-N3EQ4ZW6.js";
+import { a as H } from "./chunk-DCP5OS4S.js";
+import "./chunk-7ZUEWSHL.js";
+import { a as B } from "./chunk-PSEWTT4Z.js";
+import { a as A } from "./chunk-M2SNI3IN.js";
+import { a as D } from "./chunk-4JLAI42Q.js";
+import { a as T } from "./chunk-KEJSWGMR.js";
+import { a as R } from "./chunk-SEUS6MHP.js";
+import { a as k } from "./chunk-CDLTIEKC.js";
+import { b as j, f as P, g as S, h as E, o as I, p as N } from "./chunk-UTJJRBTX.js";
+var F = P(D(), 1);
+var M = P(V(), 1);
+var x = class x {
+  static functionality(e, r) {
+    r.addEventListener("change", (s) =>
+      I(this, null, function* () {
+        let m = document.querySelector(`div .CXUpload:has( #${r.getAttribute("id")})`).parentElement;
+        typeof e.pattern == "string" &&
+          (e.pattern = e.pattern.replace(/<\[([^\]]+)\]>/g, (a, p) => {
+            let h = p.trim(),
+              C = m.querySelector(`.${h}`);
+            return C && "value" in C ? C.value : a;
+          })),
+          Object.keys(e).forEach((a) => {
+            a.startsWith("pattern_") &&
+              typeof e[a] == "string" &&
+              (e[a] = e[a].replace(/<\[([^\]]+)\]>/g, (p, h) => {
+                let C = h.trim(),
+                  v = m.querySelector(`.${C}`);
+                return v && "value" in v ? v.value : p;
+              }));
+          });
+        let g = (0, F.getJQuery)(),
+          f = r.files;
+        x.ensurePdfJsWorkerConfigured();
+        let y = e.maximum ? Number(e.maximum) : 2;
+        if (y && f.length > y) {
+          window.codbi.log(
+            "WARNING",
+            `Maximum file limit exceeded. Number of selected files(${f.length}) exceeds > ${y}, thus processing will occur.`,
+            "AI / OCR",
+          );
+          return;
         }
-        let l = (0, V.getJQuery)(),
-          d = _.tsCheck(o, HTMLInputElement).files;
-        C.ensurePdfJsWorkerConfigured();
-        let g = new FormData(),
-          a = e.maxpages ? Number(e.maxpages) : 5,
-          u = e.processingimagetext ? v.tsCheck(e.processingimagetext, "string") : void 0,
-          r = e.invalidimagetext
-            ? v.tsCheck(e.invalidimagetext, "string")
-            : "At least one of the images you selected did not contain the expected content.",
-          i = {};
-        for (let c of Array.from(d))
-          if (c.type === "application/pdf") {
-            let f = yield C.processPdfFile(c, a);
-            if (f.hasText) i[c.name] = f.text;
+        let u = new FormData(),
+          o = e.maxpages ? Number(e.maxpages) : 5;
+        (e.processingimagetext = e.processingimagetext ? e.processingimagetext : "Processing..."),
+          (e.invalidimagetext = e.invalidimagetext
+            ? e.invalidimagetext
+            : "At least one of the images you selected did not contain the expected content.");
+        let i = {};
+        for (let a of Array.from(f))
+          if (a.type === "application/pdf") {
+            let p = yield x.processPdfFile(a, o);
+            if (p.hasText) i[a.name] = p.text;
             else
-              for (let x = 0; x < f.images.length; x++) {
-                let E = `${c.name.replace(".pdf", "")}_page_${x + 1}.png`;
-                g.append(E, f.images[x], E);
+              for (let h = 0; h < p.images.length; h++) {
+                let C = `${a.name.replace(".pdf", "")}_page_${h + 1}.png`;
+                u.append(C, p.images[h], C);
               }
-          } else g.append(c.name, c);
-        let t = [];
-        if (n === "extract fields") {
-          let c = Object.keys(e).filter((f) => f.startsWith("pattern_"));
-          for (let f of c) {
-            let x = f.substring(8),
-              E = e[f];
-            if (x && E) {
-              let j = {};
-              (j[x] = encodeURIComponent(E.replace(/°/, "^"))), t.push(j);
+          } else {
+            let p = yield x.downscaleImageForOCR(a);
+            u.append(a.name, p, a.name);
+          }
+        let n = [];
+        if (e.mode.toLowerCase() === "extract fields") {
+          let a = Object.keys(e).filter((p) => p.startsWith("pattern_"));
+          for (let p of a) {
+            let h = p.substring(8),
+              C = k.tsCheck(e[p], "string", `Does the attribute "${p}" contain a regular expression pattern?`);
+            if (h && C) {
+              let v = {};
+              (v[h] = encodeURIComponent(C.replace(/°/, "^"))), n.push(v);
             }
           }
         }
-        let p = t.length > 0 ? JSON.stringify(t) : "",
-          s = _.tsCheck(o, HTMLElement);
-        (s.style.pointerEvents = "none"), (s.style.opacity = "0.5"), window.codbi.injectLoadingAnim(o);
-        let m = _.tsCheck(s.parentElement.querySelector("label"), HTMLElement),
-          b = m ? m.innerHTML : "";
-        u &&
-          (m.innerHTML = `${b}
+        let t = n.length > 0 ? JSON.stringify(n) : "";
+        (r.style.pointerEvents = "none"), (r.style.opacity = "0.5"), window.codbi.injectLoadingAnim(r);
+        let l = T.tsCheck(
+            r.parentElement.querySelector("label"),
+            HTMLLabelElement,
+            "Does the tagged <input> not have a label?.",
+          ),
+          c = l ? l.innerHTML : "";
+        e.processingimagetext &&
+          (l.innerHTML = `${c}
         <style>
           @keyframes highlight {
             0%    { opacity:1; }
@@ -68,208 +92,298 @@ var C = class C {
                   
           .OCR_Verification { font-weight: bold ; color: darkorange ; animation: highlight 2s ease-in-out infinite ;}</style>
 
-        <span class = "OCR_Verification">${u}</span>`);
-        let w = () => {
-            window.codbi.removeLoaderAnim(o),
-              (s.style.pointerEvents = "all"),
-              (s.style.opacity = "1"),
-              (m.innerHTML = b);
+        <span class = "OCR_Verification">${e.processingimagetext}</span>`);
+        let d = () => {
+            window.codbi.removeLoaderAnim(r),
+              (r.style.pointerEvents = "all"),
+              (r.style.opacity = "1"),
+              (l.innerHTML = c);
           },
-          k = {};
+          w = {};
         if (
-          (Object.keys(i).length > 0 && (k = C.processTextClientSide(i, n, e.pattern, t, e.regexflags)),
-          !g.has(g.keys().next().value))
+          (Object.keys(i).length > 0 && (w = x.processTextClientSide(i, e.mode, e.pattern, n, e.regexflags)),
+          !u.has(u.keys().next().value))
         ) {
-          C.handleResponse(k, n, e, o, r, l), w();
+          x.handleResponse(w, e, r, e.invalidimagetext, g), d();
           return;
         }
-        let T = { "X-Mode": e.mode };
+        let b = { "X-Mode": e.mode };
         if (
-          (n !== "print" &&
-            ((T["X-Pattern"] = encodeURIComponent(e.pattern ? e.pattern.replace(/°/, "^") : "")),
-            (T["X-FieldPatterns"] = p.length > 0 ? encodeURIComponent(p) : "")),
-          e.regexflags && (T["X-RegexFlags"] = v.tsCheck(e.regexflags, "string")),
-          e.preprocess)
-        ) {
-          let c = v.tsCheck(e.preprocess, "string").toLowerCase();
-          T["X-Preprocess"] = c === "true" || c === "1" ? "true" : "false";
-        }
-        l.ajax({
+          (e.mode.toLowerCase() !== "print" &&
+            (b["X-Pattern"] = encodeURIComponent(e.pattern ? e.pattern.replace(/°/, "^") : "")),
+          e.mode.toLowerCase() === "extract fields" && t.length > 0 && (b["X-FieldPatterns"] = encodeURIComponent(t)),
+          e.regexflags && (b["X-RegexFlags"] = e.regexflags),
+          e.preprocess && e.preprocess.toLowerCase() === "true")
+        )
+          if (typeof e.preprocess == "string") {
+            let a = e.preprocess.toLowerCase();
+            b["X-Preprocess"] = a === "true" || a === "t" ? "true" : "false";
+          } else b["X-Preprocess"] = e.preprocess ? "true" : "false";
+        g.ajax({
           url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Tesseract`,
           type: "POST",
-          data: g,
+          data: u,
           processData: !1,
           contentType: !1,
           cache: !1,
-          headers: T,
-          success: (c) => {
-            let f = R(R({}, k), c);
-            C.handleResponse(f, n, e, o, r, l), w();
+          headers: b,
+          success: (a) => {
+            let p = typeof a == "string" ? JSON.parse(a) : a,
+              h = j(j({}, w), p);
+            x.handleResponse(h, e, r, e.invalidimagetext, g), d();
           },
-          error: (c, f, x) => {
-            throw (w(), new B(`\u274C Tesseract AI OCR request failed with status (${f}) due to: ${x}`));
+          error: (a, p, h) => {
+            throw (d(), new H(`\u274C Tesseract AI OCR request failed with status (${p}) due to: ${h}`));
           },
         });
       }),
     );
   }
-  static ensurePdfJsWorkerConfigured() {
-    A.GlobalWorkerOptions.workerSrc ||
-      (A.GlobalWorkerOptions.workerSrc = `${window.codbi.baseURL}js/pdf.worker.min.mjs`);
-  }
-  static processPdfFile(e, o) {
-    return O(this, null, function* () {
-      let y = yield e.arrayBuffer(),
-        n = yield A.getDocument({ data: y }).promise,
-        h = Math.min(n.numPages, o),
-        l = "",
-        d = [];
-      for (let a = 1; a <= h; a++) {
-        let i = (yield (yield n.getPage(a)).getTextContent()).items.map((t) => ("str" in t ? t.str : "")).join(" ");
-        l += `${i}
-`;
-      }
-      let g = l.trim().length > 0;
-      if (!g)
-        for (let a = 1; a <= h; a++) {
-          let u = yield n.getPage(a),
-            r = u.getViewport({ scale: 2 }),
-            i = document.createElement("canvas"),
-            t = i.getContext("2d");
-          (i.height = r.height), (i.width = r.width), yield u.render({ canvasContext: t, viewport: r }).promise;
-          let p = yield new Promise((s) => {
-            i.toBlob((m) => s(m), "image/png");
-          });
-          d.push(p);
-        }
-      return { hasText: g, text: l, images: d };
+  static downscaleImageForOCR(e) {
+    return I(this, null, function* () {
+      return new Promise((s) => {
+        let m = new Image(),
+          g = URL.createObjectURL(e);
+        (m.onload = () => {
+          URL.revokeObjectURL(g);
+          let { width: f, height: y } = m,
+            u = Math.max(f, y);
+          if (u <= 2048) {
+            s(e);
+            return;
+          }
+          let o = 2048 / u,
+            i = Math.round(f * o),
+            n = Math.round(y * o),
+            t = document.createElement("canvas");
+          (t.width = i),
+            (t.height = n),
+            t.getContext("2d").drawImage(m, 0, 0, i, n),
+            t.toBlob(
+              (c) => {
+                s(c || e);
+              },
+              e.type.startsWith("image/png") ? "image/png" : "image/jpeg",
+              0.92,
+            );
+        }),
+          (m.onerror = () => {
+            URL.revokeObjectURL(g), s(e);
+          }),
+          (m.src = g);
+      });
     });
   }
-  static processTextClientSide(e, o, y, n, h) {
-    let l = {};
-    for (let [d, g] of Object.entries(e))
-      if (o === "print") l[d] = g;
-      else if (o === "verify" && y) {
-        let a = new RegExp(y, h || "");
-        l[d] = a.test(g);
-      } else if (o === "extract fields" && n) {
-        let a = {};
-        for (let u of n)
-          for (let [r, i] of Object.entries(u)) {
-            let t = decodeURIComponent(i),
-              p = new RegExp(t, h || ""),
-              s = g.match(p);
-            s && (a[r] || (a[r] = []), a[r].push(...s.slice(1).filter(Boolean)));
-          }
-        l[d] = a;
-      }
-    return l;
+  static ensurePdfJsWorkerConfigured() {
+    x.pdfJsWorkerConfigured ||
+      ((M.GlobalWorkerOptions.workerSrc = `${window.codbi.baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.worker.min.js`),
+      (x.pdfJsWorkerConfigured = !0),
+      window.codbi.log("INFO", `PDF.js worker configured: ${M.GlobalWorkerOptions.workerSrc}`, "AI / OCR"));
   }
-  static handleResponse(e, o, y, n, h, l) {
-    var d, g, a, u;
-    if (o === "print") {
-      let r =
-        ((g = (d = n.parentElement) == null ? void 0 : d.parentElement) == null ? void 0 : g.parentElement) || null;
-      if (r) {
-        let i = r.querySelector(".CodBi_AI_Tesseract_Receiver");
-        if (i) {
-          let t = "";
-          typeof e == "string"
-            ? (t = e)
-            : e && typeof e == "object"
-              ? (t = Object.values(e)
-                  .map((m) => (typeof m == "string" ? m : JSON.stringify(m)))
-                  .join(`
+  static processPdfFile(e, r) {
+    return I(this, null, function* () {
+      let s = yield e.arrayBuffer(),
+        m = yield M.getDocument({ data: s }).promise,
+        g = Math.min(m.numPages, r),
+        f = "",
+        y = [];
+      for (let o = 1; o <= g; o++) {
+        let t = (yield (yield m.getPage(o)).getTextContent()).items.map((l) => ("str" in l ? l.str : "")).join(" ");
+        f += `${t}
+`;
+      }
+      let u = f.trim().length > 0;
+      if (!u)
+        for (let o = 1; o <= g; o++) {
+          let i = yield m.getPage(o),
+            n = i.getViewport({ scale: 2 }),
+            t = document.createElement("canvas"),
+            l = t.getContext("2d");
+          (t.height = n.height), (t.width = n.width), yield i.render({ canvasContext: l, viewport: n }).promise;
+          let c = yield new Promise((d) => {
+            t.toBlob((w) => d(w), "image/png");
+          });
+          y.push(c);
+        }
+      return { hasText: u, text: f, images: y };
+    });
+  }
+  static processTextClientSide(e, r, s, m, g) {
+    let f = {};
+    for (let [y, u] of Object.entries(e))
+      switch (r.toLowerCase()) {
+        case "print":
+          f[y] = u;
+          break;
+        case "verify":
+          if (s) {
+            let o = new RegExp(s, g || "");
+            f[y] = o.test(u);
+          }
+          break;
+        case "extract fields":
+          if (m) {
+            let o = {};
+            for (let i of m)
+              for (let [n, t] of Object.entries(i)) {
+                let l = decodeURIComponent(t),
+                  c = new RegExp(l, g || ""),
+                  d = u.match(c);
+                d && (o[n] || (o[n] = []), o[n].push(...d.slice(1).filter(Boolean)));
+              }
+            f[y] = o;
+          }
+          break;
+      }
+    return f;
+  }
+  static handleResponse(e, r, s, m, g) {
+    var f, y, u, o;
+    if (r.mode.toLowerCase() === "print") {
+      let i =
+        ((y = (f = s.parentElement) == null ? void 0 : f.parentElement) == null ? void 0 : y.parentElement) || null;
+      if (i) {
+        let n = T.tsCheck(
+          i.querySelector(".CodBi_AI_OCR_Receiver"),
+          HTMLTextAreaElement,
+          "The receiver element for the OCR results in Print-Mode has to be a <textarea>.",
+        );
+        if (n) {
+          let t = "",
+            l = [],
+            c = [];
+          switch (typeof e) {
+            case "string":
+              t = e;
+              break;
+            case "object":
+              e !== null
+                ? ((l = Object.keys(e)),
+                  (c = Object.values(e).map((d) => (typeof d == "string" ? d : JSON.stringify(d)))),
+                  (t = c.join(`
 
-`))
-              : (t = JSON.stringify(e)),
-            (i.value = t.replace(
-              /\\n/g,
-              `
-`,
-            ));
+`)))
+                : (t = JSON.stringify(e));
+              break;
+            default:
+              t = JSON.stringify(e);
+              break;
+          }
+          n.value = t;
         } else
           window.codbi.log(
             "INFO",
-            `Receiver element with class 'CodBi_AI_Tesseract_Receiver' not found in #${n.parentElement.parentElement.getAttribute("id")}.`,
-            "AI / TESSERACT",
+            `Receiver element with class 'CodBi_AI_Tesseract_Receiver' not found in #${s.parentElement.parentElement.getAttribute("id")}.`,
+            "AI / OCR",
           );
       }
     }
-    if (o === "extract fields" && typeof e == "object" && e !== null) {
-      let r =
-        ((u = (a = n.parentElement) == null ? void 0 : a.parentElement) == null ? void 0 : u.parentElement) || null;
-      if (r) {
-        let i = r.querySelectorAll(".CodBi_AI_OCR_Receiver");
-        for (let t of i) {
-          let p = t.getAttribute("data-cb-Field").toLowerCase();
-          if (p) {
-            let s = y.separator ? y.separator : ",",
-              m = [];
-            for (let b in e)
-              if (Object.prototype.hasOwnProperty.call(e, b)) {
-                let w = e[b];
-                if (w && typeof w == "object" && Object.prototype.hasOwnProperty.call(w, p)) {
-                  let k = w[p];
-                  Array.isArray(k) ? m.push(...k) : typeof k == "string" && m.push(k);
+    if (r.mode.toLowerCase() === "extract fields" && typeof e == "object" && e !== null) {
+      let i =
+        ((o = (u = s.parentElement) == null ? void 0 : u.parentElement) == null ? void 0 : o.parentElement) || null;
+      if (i) {
+        let n = i.querySelectorAll(".CodBi_AI_OCR_Receiver");
+        for (let t of n) {
+          let l = t.getAttribute("data-cb-Field").toLowerCase();
+          if (l) {
+            let c = r.separator ? r.separator : ",",
+              d = [];
+            for (let w in e)
+              if (Object.prototype.hasOwnProperty.call(e, w)) {
+                let O = e[w];
+                if (O && typeof O == "object" && Object.prototype.hasOwnProperty.call(O, l)) {
+                  let b = O[l];
+                  Array.isArray(b) ? d.push(...b) : typeof b == "string" && d.push(b);
                 }
               }
-            if (m.length > 0) {
-              let b = m.join(s);
-              "value" in t ? (t.value = b) : (t.textContent = b);
+            if (d.length > 0) {
+              let w = d.join(c);
+              "value" in t
+                ? (T.tsCheckMulti(
+                    t,
+                    [HTMLInputElement, HTMLTextAreaElement],
+                    "The OCR receiver element has to be an <input> or <textarea> when in Extract Fields mode.",
+                  ).value = w)
+                : (t.textContent = w);
             }
           }
         }
       }
     }
-    if (o === "verify")
-      if (Object.values(e).some((r) => r === !1)) {
-        if ((l(n).error(h), !n.querySelector("#CodBi_AI_OCR_ManualVerify_Styles"))) {
-          let s = document.createElement("style");
-          (s.textContent = `
+    if (r.mode.toLowerCase() === "verify")
+      if (Object.values(e).some((i) => i === !1)) {
+        if ((g(s).error(m), !s.querySelector("#CodBi_AI_OCR_ManualVerify_Styles"))) {
+          let c = document.createElement("style");
+          (c.textContent = `
             .CodBi_AI_OCR_ManualVerify { display: flex ; align-items: center ; margin-top: 8px ; gap: 8px ;
               flex-wrap: nowrap ;}
-
             .CodBi_AI_OCR_ManualVerify_Checkbox { cursor: pointer ; opacity: 1 !important ; position: relative !important ;
               flex-shrink: 0 ;}
-
-            .CodBi_AI_OCR_ManualVerify label { margin-bottom: 0 ; position: relative !important ; white-space: nowrap ;}
-            
+            .CodBi_AI_OCR_ManualVerify label { margin-bottom: 0 ; position: relative !important ;}
             @keyframes highlight {
               0%    { opacity:1; }
               50%   { opacity:0; }
               100%  { opacity:1; }}
-            
             .CodBi_AI_OCR_ManualVerify label span { font-weight: bold ; color: darkorange ;
               animation: highlight 2s ease-in-out infinite ;}`),
-            n.appendChild(s);
+            s.appendChild(c);
         }
-        let r = n.parentElement.parentElement.querySelectorAll(".CodBi_AI_OCR_ManualVerify");
-        for (let s = 0; s < r.length; s++) r[s].remove();
-        let i = document.createElement("div");
-        (i.className = "CodBi_AI_OCR_ManualVerify"),
-          (i.style.display = "flex"),
-          (i.style.alignItems = "center"),
-          (i.style.marginTop = "8px"),
-          (i.style.gap = "8px");
+        let i = s.parentElement.parentElement.querySelectorAll(".CodBi_AI_OCR_ManualVerify");
+        for (let c = 0; c < i.length; c++) i[c].remove();
+        let n = document.createElement("div");
+        (n.className = "CodBi_AI_OCR_ManualVerify"),
+          (n.style.display = "flex"),
+          (n.style.alignItems = "center"),
+          (n.style.marginTop = "8px"),
+          (n.style.gap = "8px");
         let t = document.createElement("input");
-        (t.type = "checkbox"), (t.id = `manual-verify-${n.id}`), (t.className = "CodBi_AI_OCR_ManualVerify_Checkbox");
-        let p = document.createElement("label");
-        (p.htmlFor = t.id),
-          (p.textContent = y.wrongfilemessage
-            ? y.wrongfilemessage
-            : "The content is not as expected. You may manually verify that it is the correct one by clicking the checkbox."),
-          (p.style.marginBottom = "0"),
-          i.appendChild(t),
-          i.appendChild(p),
-          n.parentElement.insertAdjacentElement("afterend", i),
+        (t.type = "checkbox"), (t.id = `manual-verify-${s.id}`), (t.className = "CodBi_AI_OCR_ManualVerify_Checkbox");
+        let l = document.createElement("label");
+        (l.htmlFor = t.id),
+          (l.textContent = r.wrongfilemessage
+            ? r.wrongfilemessage
+            : "The content is not as expected. Please check if you selected the correct file(s). You may manually verify that it is the correct one by clicking the checkbox."),
+          (l.style.marginBottom = "0"),
+          n.appendChild(t),
+          n.appendChild(l),
+          s.parentElement.insertAdjacentElement("afterend", n),
           t.addEventListener("change", () => {
-            t.checked ? l(n).error("") : l(n).error(h);
+            t.checked ? g(s).error("") : g(s).error(m);
           });
-      } else l(n).error("");
+      } else {
+        g(s).error("");
+        let i = s.parentElement.parentElement.querySelectorAll(".CodBi_AI_OCR_ManualVerify");
+        for (let n = 0; n < i.length; n++) i[n].remove();
+      }
   }
 };
-(C.registered = window.codbi.registerFunctionality("AI.OCR", C.functionality)),
-  I([M.ParamvalueProvider], C, "functionality", 1);
-var P = C;
-export { P as AI_OCR };
+(x.pdfJsWorkerConfigured = !1),
+  S(
+    [
+      N.ParamvalueProvider,
+      E(
+        0,
+        k.PRE(
+          "string",
+          "mode :: pattern :: invalidimagetext :: wrongfilemessage :: processingimagetext :: separator :: regexflags",
+        ),
+      ),
+      E(0, R.PRE(/^(Print|Verify|Extract Fields)$/i, "mode")),
+      E(0, R.PRE(/^\S+$/, "separator")),
+      E(0, R.PRE(/^\d+$/, "maxpages")),
+      E(0, A.PRE(new k("string"), new R(/^\d+$/), "maxpages")),
+      E(0, A.PRE(new k("string"), new R(R.stdExp.boolean), "preprocess")),
+      E(0, A.PRE(new k("string"), new k("boolean"), "preprocess", !0)),
+      E(
+        1,
+        T.PRE(HTMLInputElement, void 0, 'Is it not an <input type = "file"/> that is tagged with this functionality?'),
+      ),
+      E(1, B.PRE("file", !1, "type")),
+    ],
+    x,
+    "functionality",
+    1,
+  );
+var _ = x;
+window.codbi.registerFunctionality("AI.OCR", _.functionality.bind(_));
+export { _ as AI_OCR };

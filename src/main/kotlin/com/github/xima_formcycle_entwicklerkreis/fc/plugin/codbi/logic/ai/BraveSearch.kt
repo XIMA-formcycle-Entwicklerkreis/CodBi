@@ -89,10 +89,15 @@ object BraveSearch {
     // Remove "unless/except/not [Name]" clauses (negative conditions about people)
     q = q.replace(Regex("""(?i)\b(?:unless|except|excluding|not)\b.*$"""), "")
 
-    // Remove likely person names: 2+ consecutive Title Case words not preceded by a location
-    // preposition (in/near/at/around) — these are probably names leaking from the user's query.
+    // Remove likely person names: 2+ consecutive Title Case words (e.g. "Leopold Gustav",
+    // "Maria Halberg") unless preceded by a location/topic preposition (in, from, at, near, von,
+    // aus, bei, nach) which would indicate a place name like "in New York".
     // Protected tokens are safe (already replaced with placeholders above).
-    q = q.replace(Regex("""(?<!\b(?:in|near|at|around|from|to)\s)(?<![<\w])\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b"""), "")
+    q =
+        q.replace(
+            Regex(
+                """(?<!\b(?:in|from|at|near|to|von|aus|bei|nach|für|of)\s)[A-ZÄÖÜ][a-zäöüßa-z]+(?:\s+[A-ZÄÖÜ][a-zäöüßa-z]+)+"""),
+            "")
 
     // Remove long alphanumeric ID-like tokens (e.g. 87233-12, ABC-12345-XY) — 2+ groups of alnum
     // separated by dashes, or pure digit sequences 5+ chars that aren't postal codes (exactly 5

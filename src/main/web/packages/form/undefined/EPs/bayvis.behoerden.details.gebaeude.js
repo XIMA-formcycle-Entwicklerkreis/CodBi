@@ -1,40 +1,41 @@
-import { a as c } from "./chunk-2P4INLEO.js";
-import { a as p } from "./chunk-INDLVHJ6.js";
-import { a as u } from "./chunk-XMOSKO55.js";
-import { a as y } from "./chunk-EEU2ZRMO.js";
-import { a as g } from "./chunk-CVDXS2Z7.js";
-import { a } from "./chunk-PR6DYHSM.js";
-import { a as h } from "./chunk-TNKBSIBG.js";
-import { b as E, c as d, d as n } from "./chunk-REJDLPRJ.js";
-var m = E(y(), 1);
+import { a as u } from "./chunk-JDZ7GIHA.js";
+import { a as m } from "./chunk-INDLVHJ6.js";
+import { a as f } from "./chunk-SBHCT576.js";
+import "./chunk-ZAZUS2LA.js";
+import { a as P } from "./chunk-HV3SPSHE.js";
+import { a as b } from "./chunk-BQCZFAYZ.js";
+import { a as p } from "./chunk-PN2FQ2K5.js";
+import { a as i } from "./chunk-2NFNCZZA.js";
+import { b as y, c as l, d as n, g as c } from "./chunk-WWJ6UWS7.js";
+var w = y(P(), 1);
 var r = class r {
-  static retrieve(t) {
-    return new Promise((i, f) => {
-      if (r.buffer.has(t[1])) {
-        i(r.buffer[t[1]]);
+  static retrieve(e) {
+    return new Promise((o, d) => {
+      if (r.buffer.has(e[1])) {
+        o(r.buffer[e[1]]);
         return;
       }
-      let w = (0, m.getJQuery)(),
-        s = new Array();
-      w.ajax({
+      let E = (0, w.getJQuery)(),
+        a = new Array();
+      E.ajax({
         url: `${window.codbi.baseURL}plugin?name=CodBi_BayVIS_Auskunft_Gebaeudedetails`,
         type: "GET",
-        headers: { Accept: "application/xml", ID: t[0], GebaeudeID: t[1] },
+        headers: { Accept: "application/xml", ID: e[0], GebaeudeID: e[1] },
       })
-        .done((o) => {
-          let e = new p({ attributeNamePrefix: "", ignoreAttributes: !1 }).parse(o)["ns2:GetBehoerdenGebaeudeResponse"];
+        .done((g) => {
+          let t = new m({ attributeNamePrefix: "", ignoreAttributes: !1 }).parse(g)["ns2:GetBehoerdenGebaeudeResponse"];
           if (
-            (e === void 0 && ((e = JSON.parse(o)), (e.BehoerdenGebaeude = e.behoerdenGebaeude)),
-            (s = e.BehoerdenGebaeude),
-            t.length >= 3)
+            (t === void 0 && ((t = JSON.parse(g)), (t.BehoerdenGebaeude = t.behoerdenGebaeude)),
+            (a = t.BehoerdenGebaeude),
+            e.length >= 3)
           ) {
-            let l = s[t[2]];
-            l === void 0 && f(new u(`Detail "${t[2]}" of authorities is not available.`)), i(l);
+            let h = a[e[2]];
+            h === void 0 && d(new f(`Detail "${e[2]}" of authorities is not available.`)), o(h);
           }
-          i(s);
+          o(a);
         })
-        .fail((o) => {
-          f(new u("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdendetails"));
+        .fail((g) => {
+          d(new f("Unable to retrieve data from CodBi_BayVIS_Auskunft_Behoerdendetails"));
         });
     });
   }
@@ -45,17 +46,18 @@ var r = class r {
     /^(behoerdenart|behoerdengruppe|bezeichnung|email|id|sortierreihenfolge|logo|behoerdeZuordnungen|behoerdenGebaeudeZuordnungen)$/,
 }),
   (r.buffer = new Map()),
-  (r.registered = window.codbi.registerEP("BayVIS.Behoerden.Details.Gebaeude", r.retrieve)),
-  d(
+  l(
     [
-      h.ParamvalueProvider,
-      n(0, c.PRE(2, !0, !1, "length")),
-      n(0, a.PRE(new g(r.stdExp.authorityID), 0, 1)),
-      n(0, a.PRE(new g(r.stdExp.directoryMember), 2)),
+      c.ParamvalueProvider,
+      n(0, b.PRE(2, !1, !1, "length", "Has the authority and building ID been specified?")),
+      n(0, i.PRE(new p("string | object"))),
+      n(0, i.PRE(new u(r.stdExp.authorityID), 0, 1)),
+      n(0, i.PRE(new u(r.stdExp.directoryMember), 2)),
     ],
     r,
     "retrieve",
     1,
   );
-var b = r;
-export { b as BayVIS_Behoerden_Details_Gebaeude };
+var s = r;
+window.codbi.registerEP("BayVIS.Behoerden.Details.Gebaeude", s.retrieve.bind(s));
+export { s as BayVIS_Behoerden_Details_Gebaeude };

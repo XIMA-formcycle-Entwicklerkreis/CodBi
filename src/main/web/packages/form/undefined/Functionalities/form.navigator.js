@@ -1,51 +1,49 @@
-import { a as p } from "./chunk-W23DHSE2.js";
-import { f } from "./chunk-RS4WWU7K.js";
-var c = f(p(), 1),
-  l = class l {
-    static functionality(t, s) {
-      (t.ccsnavbuttons = t.cssnavbuttons && Array.isArray(t.cssnavbuttons) ? t.cssnavbuttons[0] : t.cssnavbuttons),
-        (t.csshovernavbuttons =
-          t.csshovernavbuttons && Array.isArray(t.csshovernavbuttons) ? t.csshovernavbuttons[0] : t.csshovernavbuttons),
-        (t.cssblockednavbuttons =
-          t.cssblockednavbuttons && Array.isArray(t.cssblockednavbuttons)
-            ? t.cssblockednavbuttons[0]
-            : t.cssblockednavbuttons);
-      let u = (0, c.getJQuery)(),
-        i = u(".XPage")
-          .toArray()
-          .map((e) => e.getAttribute("data-name")),
-        b = Math.floor(
-          (i.reduce((e, a) => e + a.length, 0) *
-            Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize)) /
-            1.2,
-        );
-      (0, c.getJQuery)()("FORM.xm-form").on("addRow", (e) => {
+import { a as f } from "./chunk-M2SNI3IN.js";
+import { a as E } from "./chunk-4JLAI42Q.js";
+import { a as m } from "./chunk-KEJSWGMR.js";
+import { a as b } from "./chunk-SEUS6MHP.js";
+import { a as s } from "./chunk-CDLTIEKC.js";
+import { f as N, g as C, h as l } from "./chunk-UTJJRBTX.js";
+var p = N(E(), 1);
+var c = class {
+  static functionality(e, d) {
+    let g = (0, p.getJQuery)(),
+      i = g(".XPage")
+        .toArray()
+        .map((t) => t.getAttribute("data-name")),
+      h = Math.floor(
+        (i.reduce((t, r) => t + r.length, 0) *
+          Number.parseFloat(window.getComputedStyle(document.documentElement).fontSize)) /
+          1.2,
+      );
+    (0, p.getJQuery)()("FORM.xm-form").on("addRow", (t) => {
+      setTimeout(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+    }),
+      new MutationObserver((t, r) => {
         setTimeout(() => {
           window.dispatchEvent(new Event("resize"));
         });
-      }),
-        new MutationObserver((e, a) => {
-          setTimeout(() => {
-            window.dispatchEvent(new Event("resize"));
-          });
-        }).observe(document.body, { attributes: !0, attributeFilter: ["style"], subtree: !0, childList: !0 }),
-        window.addEventListener("resize", () => {
-          let e = s.getBoundingClientRect().width;
-          b > e ? s.classList.add("-BurgerMode") : s.classList.remove("-BurgerMode");
-        });
-      let o = i[0],
-        m = "";
-      for (let e of i)
-        m += `
-        <button ${(t.preview && t.preview.trim().toLowerCase() !== "true") || t.preview === void 0 ? 'style = "pointer-events : none ;"' : ""}
-                class = "---CodBi --Form_Navigator -Container -NavButton ${e === o ? "-current" : "blocked"}"
-                page  = "${e}"
-                type  = "button">${e}</button>`;
-      s.innerHTML = `
+      }).observe(document.body, { attributes: !0, attributeFilter: ["style"], subtree: !0, childList: !0 }),
+      window.addEventListener("resize", () => {
+        let t = d.getBoundingClientRect().width;
+        h > t ? d.classList.add("-BurgerMode") : d.classList.remove("-BurgerMode");
+      });
+    let n = i[0],
+      B = "";
+    e.preview = e.preview ? (typeof e.preview == "boolean" ? e.preview : e.preview.toLowerCase() === "true") : !1;
+    for (let t of i)
+      B += `
+        <button ${e.preview ? "" : 'style = "pointer-events : none ;"'}
+                class = "---CodBi --Form_Navigator -Container -NavButton ${t === n ? "-current" : "blocked"}"
+                page  = "${t}"
+                type  = "button">${t}</button>`;
+    d.innerHTML = `
       <style>
-        .---CodBi.--Form_Navigator.-Container.-NavButton          { ${t.cssnavbuttons ? t.cssnavbuttons : "scale: 1 ; font-weight : bold ; cursor : pointer ; margin-left : .25em ; margin-right : .25em ; padding : .5em ; box-shadow : 0 0 .25em black ; background : linear-gradient( 122deg, rgba( 255, 255, 255, 1 ) 0%, rgba( 235, 235, 200, 1 ) 10%, rgba( 235, 235, 230, 1 ) 60%, rgba( 255, 255, 255, 1 ) 100% ); transition : .5s all ;"}}
-        .---CodBi.--Form_Navigator.-Container.-NavButton:hover    { ${t.csshovernavbuttons ? t.csshovernavbuttons : "scale : 1.1 ; box-shadow : 0 0 5em darkorange ;"}}
-        .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked { ${t.cssBlockedNavButtons ? t.cssBlockedNavButtons : "opacity : .5 ; cursor : not-allowed ;"}}
+        .---CodBi.--Form_Navigator.-Container.-NavButton          { ${e.cssnavbuttons ? e.cssnavbuttons : "scale: 1 ; font-weight : bold ; cursor : pointer ; margin-left : .25em ; margin-right : .25em ; padding : .5em ; box-shadow : 0 0 .25em black ; background : linear-gradient( 122deg, rgba( 255, 255, 255, 1 ) 0%, rgba( 235, 235, 200, 1 ) 10%, rgba( 235, 235, 230, 1 ) 60%, rgba( 255, 255, 255, 1 ) 100% ); transition : .5s all ;"}}
+        .---CodBi.--Form_Navigator.-Container.-NavButton:hover    { ${e.csshovernavbuttons ? e.csshovernavbuttons : "scale : 1.1 ; box-shadow : 0 0 5em darkorange ;"}}
+        .---CodBi.--Form_Navigator.-Container.-NavButton.-blocked { ${e.cssBlockedNavButtons ? e.cssBlockedNavButtons : "opacity : .5 ; cursor : not-allowed ;"}}
 
 
         .---CodBi.--Form_Navigator.-Container.-NavButton.-current     { border-radius: .5em ; scale : 1.2 ; border-color: green ; box-shadow : 0 0 .25em green ; cursor : default ;}
@@ -60,52 +58,61 @@ var c = f(p(), 1),
         .-BurgerMode .---CodBi.--Form_Navigator.-Container.-NavButton.-current     { border-radius: .5em ; scale: 1.2 ; border-color: green ; box-shadow : 0 0 .25em green ; cursor : default ;}
 
         .-BurgerMode .---CodBi.--Form_Navigator.-Container { margin: auto ; width: fit-content ; display: table ; text-align: center ; border-style: solid ; border-width: .02em ; filter: drop-shadow( 0 0 .2em black ); height: 1.5em ;}</style>
-      <div class = "---CodBi --Form_Navigator -Container">${m}</div>`;
-      let d = new Map();
-      xm_validator.on("progress", (e) => {
-        e.item[0] && e.item[0].hasAttribute("data-name") && d.set(e.item[0].getAttribute("data-name"), e.valid);
+      <div class = "---CodBi --Form_Navigator -Container">${B}</div>`;
+    let v = new Map();
+    xm_validator.on("progress", (t) => {
+      var r;
+      (r = t.item[0]) != null && r.hasAttribute("data-name") && v.set(t.item[0].getAttribute("data-name"), t.valid);
+    });
+    let w = window.gotoPage;
+    window.gotoPage = (t, r, o) => {
+      for (let a of document.querySelectorAll(".---CodBi.--Form_Navigator.-Container.-NavButton.-current"))
+        a.classList.remove("-current");
+      for (let a of document.querySelectorAll(`.---CodBi.--Form_Navigator.-Container.-NavButton[ page = "${n}"]`))
+        a && (m.tsCheck(a, HTMLElement).classList.add("-current"), (a.style.pointerEvents = "all"));
+      w(t, r);
+    };
+    for (let t of d.querySelectorAll(".---CodBi.--Form_Navigator.-Container.-NavButton"))
+      t.addEventListener("click", (r) => {
+        if (!m.tsCheck(r.target, HTMLElement).hasAttribute("page")) return;
+        let o = s.tsCheck(m.tsCheck(r.target, HTMLElement).getAttribute("page"), "string");
+        if (i.filter((a) => i.indexOf(a) < i.indexOf(o) && v.get(a) === !1).length === 0) {
+          let a = i.indexOf(n) < i.indexOf(o);
+          if (
+            (e.preview ? (gotoPage(n, !0), gotoPage(o, a)) : (gotoPage(n, !1), gotoPage(o, !1)),
+            e.preview && a && !v.get(n))
+          )
+            return;
+          for (let u of g(".---CodBi.--Form_Navigator.-Container.-NavButton.-current"))
+            u.classList.remove("-current"), (u.style.pointerEvents = "all");
+          n = o;
+          for (let u of g(`.---CodBi.--Form_Navigator.-Container.-NavButton[ page = "${n}"]`))
+            (u.style.pointerEvents = "none"), u.classList.add("-current");
+        }
       });
-      let B = window.gotoPage;
-      window.gotoPage = (e, a, r) => {
-        for (let n of document.querySelectorAll(".---CodBi.--Form_Navigator.-Container.-NavButton.-current"))
-          n.classList.remove("-current");
-        for (let n of document.querySelectorAll(`.---CodBi.--Form_Navigator.-Container.-NavButton[ page = "${o}"]`))
-          n && (n.classList.add("-current"), (n.style.pointerEvents = "all"));
-        B(e, a);
-      };
-      for (let e of s.querySelectorAll(".---CodBi.--Form_Navigator.-Container.-NavButton"))
-        e.addEventListener("click", (a) => {
-          if (!a.target.hasAttribute("page")) return;
-          let r = a.target.getAttribute("page");
-          if (i.filter((n) => i.indexOf(n) < i.indexOf(r) && d.get(n) === !1).length === 0) {
-            let n = i.indexOf(o) < i.indexOf(r);
-            if (
-              ((t.preview && t.preview.trim().toLowerCase() !== "true") || t.preview === void 0
-                ? (gotoPage(o, !0), gotoPage(r, n))
-                : (gotoPage(o, !1), gotoPage(r, !1)),
-              ((t.preview && t.preview.trim().toLowerCase() !== "true") || t.preview === void 0) && n && !d.get(o))
-            )
-              return;
-            for (let g of u(".---CodBi.--Form_Navigator.-Container.-NavButton.-current"))
-              g.classList.remove("-current"), (g.style.pointerEvents = "all");
-            o = r;
-            for (let g of u(`.---CodBi.--Form_Navigator.-Container.-NavButton[ page = "${o}"]`))
-              (g.style.pointerEvents = "none"), g.classList.add("-current");
+    for (let t of document.querySelectorAll(".XButton[data-target-page]"))
+      t.getAttribute("data-check-page") === "true" &&
+        t.addEventListener("click", (r) => {
+          if (v.get(n)) {
+            for (let o of g(".---CodBi.--Form_Navigator.-Container.-NavButton.-current"))
+              (o.style.pointerEvents = "all"), o.classList.remove("-current");
+            n = r.target.getAttribute("data-target-page");
+            for (let o of g(`.---CodBi.--Form_Navigator.-Container.-NavButton[ page = "${n}"]`))
+              o.classList.add("-current"), o.classList.remove("-blocked");
           }
         });
-      for (let e of document.querySelectorAll(".XButton[data-target-page]"))
-        e.getAttribute("data-check-page") === "true" &&
-          e.addEventListener("click", (a) => {
-            if (d.get(o)) {
-              for (let r of u(".---CodBi.--Form_Navigator.-Container.-NavButton.-current"))
-                (r.style.pointerEvents = "all"), r.classList.remove("-current");
-              o = a.target.getAttribute("data-target-page");
-              for (let r of u(`.---CodBi.--Form_Navigator.-Container.-NavButton[ page = "${o}"]`))
-                r.classList.add("-current"), r.classList.remove("-blocked");
-            }
-          });
-    }
-  };
-l.registered = window.codbi.registerFunctionality("Form.Navigator", l.functionality);
-var v = l;
-export { v as Form_Navigator };
+  }
+};
+C(
+  [
+    l(0, s.PRE("string", "cssnavbuttons :: csshovernavbuttons :: cssblockednavbuttons")),
+    l(0, f.PRE(new s("string"), new b(b.stdExp.boolean), "preview")),
+    l(0, f.PRE(new s("string"), new s("boolean"), "preview", !0)),
+    l(1, m.PRE(HTMLDivElement, void 0, "Is it not a <div> that is tagged with this functionality?")),
+  ],
+  c,
+  "functionality",
+  1,
+);
+window.codbi.registerFunctionality("Form.Navigator", c.functionality.bind(c));
+export { c as Form_Navigator };

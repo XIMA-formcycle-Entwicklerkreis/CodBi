@@ -1,20 +1,29 @@
-import { a as u } from "./chunk-XMOSKO55.js";
-import "./chunk-EEU2ZRMO.js";
-import { a as i } from "./chunk-CVDXS2Z7.js";
-import { a as s } from "./chunk-TNKBSIBG.js";
-import { c as n, d as l } from "./chunk-REJDLPRJ.js";
-var r = class r {
-  static retrieve(e) {
-    var o;
-    let t = (o = document.querySelector(`[ data-name = "${e[0].trim()}"]`)) == null ? void 0 : o.getAttribute("value");
+import { a } from "./chunk-JDZ7GIHA.js";
+import { a as u } from "./chunk-SBHCT576.js";
+import "./chunk-ZAZUS2LA.js";
+import "./chunk-HV3SPSHE.js";
+import { a as s } from "./chunk-BQCZFAYZ.js";
+import { c as o, d as i, g as l } from "./chunk-WWJ6UWS7.js";
+var e = class {
+  static retrieve(r) {
+    var n;
+    let t = (n = document.querySelector(`[ data-name = "${r[0].trim()}"]`)) == null ? void 0 : n.getAttribute("value");
     if (t == null) {
-      if (e.length === 2 && e[1].toLowerCase() === "report") throw new u(`No global variable "${e[0]}" existent.`);
+      if (r.length === 2 && r[1].toLowerCase() === "report") throw new u(`No global variable "${r[0]}" existent.`);
       return "";
     }
     return t;
   }
 };
-(r.registered = window.codbi.registerEP("V", r.retrieve)),
-  n([s.ParamvalueProvider, l(0, i.PRE(i.stdExp.cssSelector))], r, "retrieve", 1);
-var a = r;
-export { a as V };
+o(
+  [
+    l.ParamvalueProvider,
+    i(0, s.PRE(1, !0, !1, "length", "Hasn't at least the the variable's CSS-Selector been specified?")),
+    i(0, a.PRE(/\w+/)),
+  ],
+  e,
+  "retrieve",
+  1,
+);
+window.codbi.registerEP("V", e.retrieve.bind(e));
+export { e as V };

@@ -1,13 +1,19 @@
-import { a as s } from "./chunk-PZ4L54Z5.js";
-import { a as d } from "./chunk-EEU2ZRMO.js";
-import { b as u } from "./chunk-REJDLPRJ.js";
-var X = u(d(), 1);
-var t = class t extends s {
+import { a as y } from "./chunk-RQ2OISH5.js";
+import { a as f } from "./chunk-44HOFY3R.js";
+import { a as u } from "./chunk-CTQLZ4AL.js";
+import { a as l } from "./chunk-JDZ7GIHA.js";
+import { a as O } from "./chunk-HV3SPSHE.js";
+import { a as P } from "./chunk-BQCZFAYZ.js";
+import { a as d } from "./chunk-PN2FQ2K5.js";
+import { a as s } from "./chunk-2NFNCZZA.js";
+import { b as E, c as X, d as r, g as c } from "./chunk-WWJ6UWS7.js";
+var w = E(O(), 1);
+var n = class extends y {
   static retrieve(e) {
-    return new Promise((r, P) => {
-      let n = (0, X.getJQuery)();
+    return new Promise((a, L) => {
+      let t = (0, w.getJQuery)();
       e.length === 2
-        ? n
+        ? t
             .ajax({
               url: `${window.codbi.baseURL}plugin?name=CodBi_OpenPLZ_Query`,
               type: "GET",
@@ -25,10 +31,10 @@ var t = class t extends s {
               },
             })
             .done((i) => {
-              r(JSON.parse(i));
+              a(JSON.parse(i));
             })
-        : l(e[2])
-          ? n
+        : b(e[2])
+          ? t
               .ajax({
                 url: `${window.codbi.baseURL}plugin?name=CodBi_OpenPLZ_Query`,
                 type: "GET",
@@ -46,9 +52,9 @@ var t = class t extends s {
                 },
               })
               .done((i) => {
-                r(JSON.parse(i));
+                a(JSON.parse(i));
               })
-          : n
+          : t
               .ajax({
                 url: `${window.codbi.baseURL}plugin?name=CodBi_OpenPLZ_Query`,
                 type: "GET",
@@ -65,9 +71,9 @@ var t = class t extends s {
                 },
               })
               .done((i) => {
-                for (let a of JSON.parse(i))
-                  e[2] === a.name &&
-                    n
+                for (let g of JSON.parse(i))
+                  e[2] === g.name &&
+                    t
                       .ajax({
                         url: `${window.codbi.baseURL}plugin?name=CodBi_OpenPLZ_Query`,
                         type: "GET",
@@ -75,7 +81,7 @@ var t = class t extends s {
                           Accept: "application/json",
                           "X-Country": e[0] ? e[0] : "",
                           "X-OrgaUnit": e[1] ? e[1] : "",
-                          "X-OfficialKey": a.key,
+                          "X-OfficialKey": g.key,
                           "X-Detail": e[3] ? e[3] : "",
                           "X-Param1": "",
                           "X-Param2": "",
@@ -84,18 +90,28 @@ var t = class t extends s {
                           "X-PagesToLoad": e[4] ? e[4] : "",
                         },
                       })
-                      .done((c) => {
-                        r(JSON.parse(c));
+                      .done((m) => {
+                        a(JSON.parse(m));
                       });
               });
     });
   }
 };
-t.registered = window.codbi.registerEP("OpenPLZ.OrganizationalUnits", t.retrieve);
-var g = t;
-function l(o) {
+X(
+  [
+    c.ParamvalueProvider,
+    r(0, P.PRE(1, !0, !1, "length", "Hasn't at least the Locality's or the Postalcode RegEx been specified?")),
+    r(0, s.PRE(new d("string"), 0, 4)),
+    r(0, s.PRE(new u([new f(""), new l(/(de|en|at|li|ch)/i)]), 0)),
+  ],
+  n,
+  "retrieve",
+  1,
+);
+window.codbi.registerEP("OpenPLZ.OrganizationalUnits", n.retrieve.bind(n));
+function b(o) {
   if (o.trim() === "") return !1;
   let e = +o;
   return !Number.isNaN(e) && Number.isFinite(e);
 }
-export { g as OpenPLZ_OrganizationalUnits };
+export { n as OpenPLZ_OrganizationalUnits };

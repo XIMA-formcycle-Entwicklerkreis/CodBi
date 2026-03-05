@@ -22,14 +22,14 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
  *
  * @remarks
  * Chat interface for the Qwen3-VL-2B model served via llama-server (Swan Architecture).
- * Connects to the {@code CodBi_AI_Qwen3_Server} plugin endpoint.
+ * Connects to the {@code CodBi_AI_LLAMA_STD} plugin endpoint.
  *
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class AI_ONNX_LLAMA_CHAT {
   /**
    * This functionality turns a set of HTML elements into a chat interface for the Qwen3-VL
-   * vision-language model served by llama-server (Swan Architecture / LlamaCpp).
+   * vision-language model served by llama-server (Swan Architecture / LLAMA).
    * It enables interactive, multi-turn conversations about uploaded images and PDF documents.
    *
    * **Required Elements (found by CSS class within the nearest common ancestor):**
@@ -42,6 +42,8 @@ export class AI_ONNX_LLAMA_CHAT {
    * | `AI_ONNX_LLAMA_Chat_Stop`     | `<button>`                             | Stop button (aborts running inference)           |
    * | `AI_ONNX_LLAMA_Chat_Upload` (Optional)   | `<input type="file">`                  | File upload for images/PDFs to chat about        |
    * | `AI_ONNX_LLAMA_Chat_Thinking` (Optional)  | `<input type="checkbox">`              | Toggles thinking mode (chain-of-thought) on/off  |
+   * | `AI_ONNX_LLAMA_Chat_Internet` (Optional)    | `<input type="checkbox">`              | Toggles internet search availability on/off      |
+   * | `AI_ONNX_LLAMA_Chat_Location` (Optional)    | `<input type="checkbox">`              | Toggles geolocation (get_current_location) on/off |
    *
    * **Generated CSS Classes (injected at runtime):**
    *
@@ -158,6 +160,14 @@ export class AI_ONNX_LLAMA_CHAT {
       container.querySelector(".AI_ONNX_LLAMA_Chat_Thinking"),
       HTMLInputElement,
     );
+    const searchCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
+      container.querySelector(".AI_ONNX_LLAMA_Chat_Internet"),
+      HTMLInputElement,
+    );
+    const locationCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
+      container.querySelector(".AI_ONNX_LLAMA_Chat_Location"),
+      HTMLInputElement,
+    );
 
     // #endregion Discover sibling elements
 
@@ -167,8 +177,30 @@ export class AI_ONNX_LLAMA_CHAT {
     let thinkingBubble: HTMLDivElement | null = null;
     /** The active stream session ID, used by the stop button to abort inference. */
     let activeStreamId: string | null = null;
+    /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
+    const pageSessionId: string = crypto.randomUUID();
     /** Multi-turn conversation history. Sent to the backend so the model can remember prior turns. */
     const conversationHistory: { role: string; content: string }[] = [];
+
+    /**
+     * Strips markdown links, bare URLs, and truncates assistant text before
+     * storing it in conversation history. This prevents the 2B model from
+     * parrot-copying content from previous turns into unrelated answers.
+     */
+    const stripLinksForHistory = (text: string): string => {
+      // [label](url) → label
+      let cleaned = text.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+      // bare URLs
+      cleaned = cleaned.replace(/https?:\/\/[^\s)]+/g, "");
+      // collapse multiple spaces / trim
+      cleaned = cleaned.replace(/ {2,}/g, " ").trim();
+      // Truncate to prevent the model from parroting long previous answers
+      if (cleaned.length > 150) {
+        cleaned = `${cleaned.substring(0, 147)}...`;
+      }
+      return cleaned;
+    };
+
     /**
      * Maximum number of recent history entries to keep verbatim (the rest are
      * condensed into a single summary entry so the context window is not exhausted).
@@ -280,6 +312,103 @@ export class AI_ONNX_LLAMA_CHAT {
     };
     // #endregion Resource status overlay
 
+    // #region Helper: linkify URLs in plain text
+    /**
+     * HTML-escapes the given plain text, then converts:
+     *   1. Markdown links `[label](url)` → clickable `<a>` with the label text
+     *   2. Bare URLs (`https://…` / `http://…`) → clickable `<a>` showing the hostname
+     *   3. Phone numbers → clickable `tel:` link in a badge
+     *   4. Email addresses → clickable `mailto:` link in a badge
+     *
+     * Uses a placeholder strategy so that URLs inside already-created `<a>` tags
+     * are never matched again by the bare-URL pass.
+     *
+     * All links open in a new tab with `rel="noopener noreferrer"`.
+     *
+     * @param text  Raw plain text (may contain URLs or Markdown links).
+     * @returns     Safe HTML string with clickable links.
+     */
+    const linkifyUrls = (text: string): string => {
+      const links: string[] = [];
+      const placeholder = (idx: number): string => `\x00LINK${idx}\x00`;
+
+      // 1. HTML-escape to prevent XSS
+      const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+      // 2. Convert Markdown-style links [label](url) → placeholder
+      const withMdPlaceholders = escaped.replace(
+        /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi,
+        (_match, label: string, url: string) => {
+          const idx = links.length;
+          links.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+          return placeholder(idx);
+        },
+      );
+
+      // 3. Wrap remaining bare URLs → placeholder (can't accidentally match inside step 2)
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: <explanation>
+      const withAllPlaceholders = withMdPlaceholders.replace(/https?:\/\/[^\s<>&"'\x00)\]]+/gi, (url) => {
+        let label = url;
+        try {
+          const u = new URL(url);
+          label = u.hostname.replace(/^www\./, "");
+        } catch {
+          /* keep full URL as label */
+        }
+        const idx = links.length;
+        links.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+        return placeholder(idx);
+      });
+
+      // 4. Convert phone numbers → tel: link placeholder
+      //    Matches patterns like +49 911 1234567, (0911) 123-4567, 0911/1234567, etc.
+      //    Requires at least 7 digits (ignoring separators) to avoid false positives.
+      const withPhonePlaceholders = withAllPlaceholders.replace(
+        /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,5}\)?[\s.\/-]?){1,3}\d{3,8}/g,
+        (match) => {
+          const digitsOnly = match.replace(/\D/g, "");
+          if (digitsOnly.length < 7 || digitsOnly.length > 15) {
+            return match;
+          }
+          const idx = links.length;
+          const telHref = `tel:${match.replace(/[^\d+]/g, "")}`;
+          links.push(
+            `<span class="LLAMA_Chat_PhoneBadge"><span class="LLAMA_Chat_BadgeIcon">📞</span><a href="${telHref}">${match}</a></span>`,
+          );
+          return placeholder(idx);
+        },
+      );
+
+      // 5. Convert email addresses → mailto: link placeholder
+      const withEmailPlaceholders = withPhonePlaceholders.replace(
+        /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
+        (match) => {
+          const idx = links.length;
+          links.push(
+            `<span class="LLAMA_Chat_EmailBadge"><span class="LLAMA_Chat_BadgeIcon">✉</span><a href="mailto:${match}">${match}</a></span>`,
+          );
+          return placeholder(idx);
+        },
+      );
+
+      // 6. Restore placeholders with actual <a> tags, wrapping URL badges
+      const restored = withEmailPlaceholders.replace(
+        // biome-ignore lint/suspicious/noControlCharactersInRegex: placeholder pattern uses \x00
+        /\x00LINK(\d+)\x00/g,
+        (_m, idx: string) => {
+          const html = links[Number(idx)];
+          // Phone and email badges are already fully wrapped — return as-is
+          if (html.startsWith('<span class="LLAMA_Chat_Phone') || html.startsWith('<span class="LLAMA_Chat_Email')) {
+            return html;
+          }
+          return `<span class="LLAMA_Chat_SourceBadge">${html}</span>`;
+        },
+      );
+
+      return restored;
+    };
+    // #endregion Helper: linkify URLs in plain text
+
     // #region Helper: create a chat bubble
     /**
      * Creates a speech-bubble element and appends it to the chat container.
@@ -293,7 +422,7 @@ export class AI_ONNX_LLAMA_CHAT {
 
       const bubble = document.createElement("div");
       bubble.className = `LLAMA_Chat_Bubble LLAMA_Chat_Bubble--${role}`;
-      bubble.textContent = text;
+      bubble.innerHTML = linkifyUrls(text);
       row.appendChild(bubble);
 
       chatContainer.appendChild(row);
@@ -428,12 +557,40 @@ export class AI_ONNX_LLAMA_CHAT {
           headers["X-Rotate"] = toLoad.rotate.toString();
         }
 
-        // HTTP headers must not contain newlines — collapse to single line
-        headers["X-Question-chat"] = message.replace(/[\r\n]+/g, " ").trim();
+        // HTTP headers are ASCII-only — Base64-encode to preserve Unicode (e.g. ü, ö, ä)
+        headers["X-Question-chat"] = btoa(unescape(encodeURIComponent(message.replace(/[\r\n]+/g, " ").trim())));
         headers["X-Stream"] = "true";
+        headers["X-Session-Id"] = pageSessionId;
         headers["X-Chat-History"] = btoa(unescape(encodeURIComponent(JSON.stringify(compactHistory()))));
         if (thinkingCheckbox) {
           headers["X-Thinking"] = thinkingCheckbox.checked ? "true" : "false";
+        }
+        if (searchCheckbox) {
+          headers["X-Search"] = searchCheckbox.checked ? "true" : "false";
+        }
+        if (locationCheckbox?.checked) {
+          headers["X-Location"] = "true";
+          // Pre-fetch browser geolocation so the model already knows the user's position
+          if (navigator.geolocation) {
+            try {
+              const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                  enableHighAccuracy: false,
+                  timeout: 5000,
+                  maximumAge: 300000, // 5 min cache
+                });
+              });
+              headers["X-Latitude"] = pos.coords.latitude.toFixed(4);
+              headers["X-Longitude"] = pos.coords.longitude.toFixed(4);
+              window.codbi.log(
+                "INFO",
+                `Geolocation: ${headers["X-Latitude"]}, ${headers["X-Longitude"]}`,
+                "AI / LLAMA / CHAT",
+              );
+            } catch (geoErr) {
+              window.codbi.log("WARNING", `Geolocation unavailable: ${geoErr}`, "AI / LLAMA / CHAT");
+            }
+          }
         }
         // #endregion Build request headers
 
@@ -458,9 +615,16 @@ export class AI_ONNX_LLAMA_CHAT {
           let lastText = "";
           /** The bubble element used for streaming output; created on first text chunk. */
           let streamBubble: HTMLDivElement | null = null;
+          // ── i18n labels (updated from first poll response) ──
+          let i18nReasoningLabel = "Reasoning\u2026";
+          let i18nShowReasoningLabel = "Show reasoning";
+          let i18nShowSourcesLabel = "Show sources";
+          let i18nSearchingLabel = "Searching the internet for \u201C%s\u201D\u2026";
+          let i18nSearchingLabelNoQuery = "Searching the internet\u2026";
+          let i18nThinkingLabel = "Thinking\u2026";
           const interval = setInterval(() => {
             $.ajax({
-              url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen3_Server`,
+              url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
               type: "POST",
               dataType: "json",
               processData: false,
@@ -472,6 +636,32 @@ export class AI_ONNX_LLAMA_CHAT {
               success: (pollResponse) => {
                 // Handle resource status overlay (pause/resume/timeout notifications)
                 handleResourceStatus(pollResponse.resourceStatus);
+                // Update i18n labels from server response
+                if (pollResponse.i18n) {
+                  if (pollResponse.i18n.reasoningLabel) {
+                    i18nReasoningLabel = pollResponse.i18n.reasoningLabel;
+                  }
+                  if (pollResponse.i18n.showReasoningLabel) {
+                    i18nShowReasoningLabel = pollResponse.i18n.showReasoningLabel;
+                  }
+                  if (pollResponse.i18n.showSourcesLabel) {
+                    i18nShowSourcesLabel = pollResponse.i18n.showSourcesLabel;
+                  }
+                  if (pollResponse.i18n.searchingLabel) {
+                    i18nSearchingLabel = pollResponse.i18n.searchingLabel;
+                  }
+                  if (pollResponse.i18n.searchingLabelNoQuery) {
+                    i18nSearchingLabelNoQuery = pollResponse.i18n.searchingLabelNoQuery;
+                  }
+                  if (pollResponse.i18n.thinkingLabel) {
+                    i18nThinkingLabel = pollResponse.i18n.thinkingLabel;
+                    // Update the "Thinking..." bubble if it's still visible
+                    const thinkingLabelEl = thinkingBubble?.querySelector(".LLAMA_ThinkingLabel");
+                    if (thinkingLabelEl) {
+                      thinkingLabelEl.textContent = i18nThinkingLabel;
+                    }
+                  }
+                }
                 if (pollResponse.error && pollResponse.done === undefined) {
                   // Session not found or expired
                   clearInterval(interval);
@@ -480,21 +670,134 @@ export class AI_ONNX_LLAMA_CHAT {
                   return;
                 }
                 const text: string = pollResponse.text ?? "";
+
+                // ── Client-side CALL:search detection — suppress display immediately ──
+                // Detect early: as soon as "CALL:" appears (tokens stream one-by-one)
+                // But only suppress if the request is still in progress — if done is true,
+                // the server already processed the search and the text is the final answer.
+                if (/CALL:/.test(text) && !pollResponse.done) {
+                  const callMatch = text.match(/CALL:search\((?:\s*)query(?:\s*)=(?:\s*)['"]([^'"]*)['"]\s*\)/);
+                  // Hide bubble immediately — even before full pattern matches
+                  if (streamBubble) {
+                    streamBubble.parentElement?.remove();
+                    streamBubble = null;
+                  }
+                  if (thinkingBubble) {
+                    thinkingBubble.parentElement?.remove();
+                    thinkingBubble = null;
+                  }
+                  if (callMatch && !chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                    // Full command detected — show search indicator with query
+                    const searchQuery = callMatch[1];
+                    const indicator = document.createElement("div");
+                    indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
+                    indicator.innerHTML =
+                      // biome-ignore lint/style/useTemplate: <explanation>
+                      '<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator">' +
+                      '<div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div>' +
+                      `<span class="LLAMA_SearchLabel">${i18nSearchingLabel.replace("%s", searchQuery)}</span>` +
+                      "</div>";
+                    chatContainer.appendChild(indicator);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                  }
+                  lastText = "";
+                  return;
+                }
+
+                // Server-side searching flag — show indicator if not already shown (fallback)
+                if (pollResponse.searching && text.length === 0) {
+                  if (!chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                    if (streamBubble) {
+                      streamBubble.parentElement?.remove();
+                      streamBubble = null;
+                    }
+                    if (thinkingBubble) {
+                      thinkingBubble.parentElement?.remove();
+                      thinkingBubble = null;
+                    }
+                    const searchQuery: string = pollResponse.searchQuery ?? "";
+                    const indicator = document.createElement("div");
+                    indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
+                    indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">${searchQuery ? i18nSearchingLabel.replace("%s", searchQuery) : i18nSearchingLabelNoQuery}</span></div>`;
+                    chatContainer.appendChild(indicator);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                  }
+                  lastText = "";
+                  return;
+                }
+
+                // When search completes or repetition trimming shortened the text,
+                // the new text is shorter than what was displayed — update in-place
+                // or replace the bubble so we don't leave a stale duplicate in the DOM.
+                if (text.length > 0 && text.length < lastText.length) {
+                  const indicator = chatContainer.querySelector(".LLAMA_SearchIndicator");
+                  if (indicator?.parentElement) {
+                    indicator.parentElement.remove();
+                  }
+                  lastText = "";
+                  if (streamBubble) {
+                    // Update existing bubble in-place (e.g. repetition trimmed)
+                    streamBubble.innerHTML = linkifyUrls(text);
+                  } else {
+                    // No existing bubble (e.g. post-search) — create fresh
+                    streamBubble = appendBubble(text, "llama");
+                  }
+                  return;
+                }
+
+                // ── Live reasoning: stream thinking chunks in real-time ──
+                // While the model is reasoning (text empty, thinking arriving),
+                // show reasoning live instead of the static "Thinking..." spinner.
+                const liveThinking: string | undefined = pollResponse.thinking;
+                if (liveThinking && text.length === 0 && !pollResponse.done && thinkingBubble) {
+                  let reasoningEl = thinkingBubble.querySelector(
+                    ".LLAMA_LiveReasoningContent",
+                  ) as HTMLDivElement | null;
+                  if (!reasoningEl) {
+                    // First reasoning chunk — replace spinner with live reasoning view
+                    thinkingBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+                    thinkingBubble.innerHTML = `<details class="LLAMA_Chat_Thinking" open><summary style="display:flex;align-items:center;gap:6px"><div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div><span>${i18nReasoningLabel}</span></summary><div class="LLAMA_Chat_ThinkingContent LLAMA_LiveReasoningContent"></div></details>`;
+                    reasoningEl = thinkingBubble.querySelector(".LLAMA_LiveReasoningContent") as HTMLDivElement;
+                  }
+                  if (reasoningEl) {
+                    // Only auto-scroll if user is already near the bottom of the reasoning box
+                    const isNearBottom =
+                      reasoningEl.scrollHeight - reasoningEl.scrollTop - reasoningEl.clientHeight < 40;
+                    reasoningEl.innerHTML = linkifyUrls(liveThinking);
+                    if (isNearBottom) {
+                      reasoningEl.scrollTop = reasoningEl.scrollHeight;
+                      chatContainer.scrollTop = chatContainer.scrollHeight;
+                    }
+                  }
+                  return;
+                }
+
                 if (text.length > lastText.length) {
                   lastText = text;
-                  // First chunk: replace thinking bubble with a real one
                   if (thinkingBubble) {
                     thinkingBubble.parentElement?.remove();
                     thinkingBubble = null;
                     streamBubble = appendBubble(text, "llama");
                   } else if (streamBubble) {
                     // Update existing stream bubble in-place
-                    streamBubble.textContent = text;
+                    streamBubble.innerHTML = linkifyUrls(text);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
+                  } else {
+                    // No existing bubble — post-search streaming: remove indicator, create bubble
+                    const searchInd = chatContainer.querySelector(".LLAMA_SearchIndicator");
+                    if (searchInd?.parentElement) {
+                      searchInd.parentElement.remove();
+                    }
+                    streamBubble = appendBubble(text, "llama");
                   }
                 }
                 if (pollResponse.done) {
                   clearInterval(interval);
+                  // Clean up search indicator if still present
+                  const searchInd = chatContainer.querySelector(".LLAMA_SearchIndicator");
+                  if (searchInd?.parentElement) {
+                    searchInd.parentElement.remove();
+                  }
                   if (pollResponse.error) {
                     if (streamBubble) {
                       streamBubble.textContent = `\u26A0 ${pollResponse.error}`;
@@ -504,9 +807,41 @@ export class AI_ONNX_LLAMA_CHAT {
                     }
                     conversationHistory.pop(); // remove failed user turn
                   } else if (lastText) {
-                    conversationHistory.push({ role: "assistant", content: lastText });
+                    const searchOn = searchCheckbox ? searchCheckbox.checked : true;
+                    conversationHistory.push({
+                      role: "assistant",
+                      content: searchOn ? stripLinksForHistory(lastText) : lastText,
+                    });
+                    // Show thinking/reasoning in a collapsible section if available
+                    const thinkingText: string | undefined = pollResponse.thinking;
+                    if (thinkingText && streamBubble) {
+                      const details = document.createElement("details");
+                      details.className = "LLAMA_Chat_Thinking";
+                      const summary = document.createElement("summary");
+                      // Use "Show sources" when the content is primarily search results,
+                      // "Show reasoning" when it contains actual model reasoning
+                      const hasSearchSources = /\uD83D\uDD0D Searching the web/.test(thinkingText);
+                      const hasRealReasoning = thinkingText.includes("---\n\n\uD83D\uDD0D") || !hasSearchSources;
+                      summary.textContent = hasRealReasoning ? i18nShowReasoningLabel : i18nShowSourcesLabel;
+                      details.appendChild(summary);
+                      const pre = document.createElement("div");
+                      pre.className = "LLAMA_Chat_ThinkingContent";
+                      pre.innerHTML = linkifyUrls(thinkingText);
+                      details.appendChild(pre);
+                      streamBubble.appendChild(details);
+                    }
                     if (aiHintText && streamBubble) {
                       AI_ONNX_LLAMA_CHAT.attachAiHintToBubble(streamBubble, aiHintText);
+                    }
+                    // Tag the bubble with a model type icon — only when the thinking
+                    // checkbox is present (i.e. thinking mode is available in the UI)
+                    const modelType: string | undefined = pollResponse.modelType;
+                    if (thinkingCheckbox && modelType && streamBubble) {
+                      const badge = document.createElement("span");
+                      badge.className = "LLAMA_ModelBadge";
+                      badge.textContent = modelType === "thinking" ? "\uD83D\uDCA1" : "\u26A1";
+                      badge.title = modelType === "thinking" ? "Thinking model" : "Fast model";
+                      streamBubble.insertBefore(badge, streamBubble.firstChild);
                     }
                   }
                   finishStreaming();
@@ -522,9 +857,9 @@ export class AI_ONNX_LLAMA_CHAT {
         };
         // #endregion Helper: poll a streaming session until done
 
-        // #region Send AJAX request to Qwen3 backend (via llama-server)
+        // #region Send AJAX request to backend (via llama-server)
         $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen3_Server`,
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
           type: "POST",
           data: formData,
           dataType: "json",
@@ -570,7 +905,11 @@ export class AI_ONNX_LLAMA_CHAT {
               const answerKeys = Object.keys(fileAnswers || {});
               answerText =
                 fileAnswers?.chat ?? (answerKeys.length > 0 ? String(fileAnswers[answerKeys[0]]) : "(no answer)");
-              conversationHistory.push({ role: "assistant", content: answerText });
+              const searchOn1 = searchCheckbox ? searchCheckbox.checked : true;
+              conversationHistory.push({
+                role: "assistant",
+                content: searchOn1 ? stripLinksForHistory(answerText) : answerText,
+              });
             } else {
               const parts: string[] = [];
               for (const fileKey of fileKeys) {
@@ -581,7 +920,11 @@ export class AI_ONNX_LLAMA_CHAT {
                 parts.push(`\u{1F4C4} ${fileKey}:\n${answer}`);
               }
               answerText = parts.join("\n\n");
-              conversationHistory.push({ role: "assistant", content: answerText });
+              const searchOn2 = searchCheckbox ? searchCheckbox.checked : true;
+              conversationHistory.push({
+                role: "assistant",
+                content: searchOn2 ? stripLinksForHistory(answerText) : answerText,
+              });
             }
             // Replace thinking bubble with the answer
             if (thinkingBubble) {
@@ -629,7 +972,7 @@ export class AI_ONNX_LLAMA_CHAT {
         const idToStop = activeStreamId;
         window.codbi.log("INFO", `Stop requested for stream: ${idToStop}`, "AI / LLAMA / CHAT");
         $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Qwen3_Server`,
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
           type: "POST",
           dataType: "json",
           processData: false,
@@ -654,7 +997,89 @@ export class AI_ONNX_LLAMA_CHAT {
     }) as EventListener);
     // #endregion Wire up event listeners
 
-    appendBubble("\u{1F4AC} Qwen3 Chat ready. Attach file(s) and type your question.", "system");
+    // ── Health check: poll the backend until the model is ready ──────────────
+    // Disable input and send button until the model is confirmed ready
+    chatInput.disabled = true;
+    sendButton.disabled = true;
+    sendButton.disabled = true;
+
+    const statusBubble = appendBubble("", "system");
+    statusBubble.innerHTML = `<div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div><span class="LLAMA_HealthLabel">Loading AI model\u2026</span>`;
+    statusBubble.classList.add("LLAMA_Chat_Bubble--thinking");
+
+    const setHealthLabel = (text: string) => {
+      const label = statusBubble.querySelector(".LLAMA_HealthLabel");
+      if (label) {
+        label.textContent = text;
+      }
+    };
+
+    const showReady = (modelName?: string) => {
+      statusBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+      const name = modelName || "AI";
+      statusBubble.innerHTML = `\u{1F4AC} ${name} Chat ready. Attach file(s) and type your question.`;
+      chatInput.disabled = false;
+      sendButton.disabled = false;
+      chatInput.focus();
+    };
+
+    const showError = (msg: string) => {
+      statusBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+      statusBubble.innerHTML = `\u26A0 ${msg}`;
+      statusBubble.classList.add("LLAMA_Chat_Bubble--error");
+      // Keep input and send button disabled on error
+    };
+
+    const healthCheck = setInterval(() => {
+      $.ajax({
+        url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
+        type: "POST",
+        dataType: "json",
+        processData: false,
+        contentType: false,
+        cache: false,
+        beforeSend: (xhr) => {
+          xhr.setRequestHeader("X-Health-Check", "true");
+        },
+        success: (response) => {
+          if (response.error) {
+            const msg = String(response.error);
+            if (/not ready|downloading|loading/i.test(msg)) {
+              setHealthLabel(msg);
+            } else {
+              clearInterval(healthCheck);
+              showError(msg);
+            }
+          } else {
+            clearInterval(healthCheck);
+            showReady(response.model);
+          }
+        },
+        error: () => {
+          setHealthLabel("Waiting for AI server\u2026");
+        },
+      });
+    }, 3000);
+    // Do an immediate check without waiting for the first interval
+    setTimeout(() => {
+      $.ajax({
+        url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
+        type: "POST",
+        dataType: "json",
+        processData: false,
+        contentType: false,
+        cache: false,
+        beforeSend: (xhr) => {
+          xhr.setRequestHeader("X-Health-Check", "true");
+        },
+        success: (response) => {
+          if (!response.error) {
+            clearInterval(healthCheck);
+            showReady(response.model);
+          }
+        },
+      });
+    }, 100);
 
     window.codbi.log("INFO", "Llama Chat functionality initialized", "AI / LLAMA / CHAT");
   }
@@ -714,6 +1139,15 @@ export class AI_ONNX_LLAMA_CHAT {
         background: var(--llama-bubble-bg) ; color: #1c1c1e ;
         border-bottom-left-radius: 4px ;
       }
+      .LLAMA_ModelBadge {
+        position: absolute ; top: -10px ; left: -6px ;
+        font-size: 12px ; line-height: 1 ;
+        width: 22px ; height: 22px ;
+        display: flex ; align-items: center ; justify-content: center ;
+        background: #fff ; border: 1px solid #ccc ; border-radius: 50% ;
+        box-shadow: 0 1px 3px rgba(0,0,0,.2) ;
+        cursor: default ; user-select: none ;
+      }
       .LLAMA_Chat_Bubble--system {
         background: transparent ; color: #8e8e93 ;
         font-size: 12px ; font-style: italic ; text-align: center ;
@@ -734,9 +1168,95 @@ export class AI_ONNX_LLAMA_CHAT {
       .LLAMA_Chat_Bubble--error {
         background: #ffe0e0 ; color: #c00 ;
       }
+      .LLAMA_SearchIndicator {
+        display: flex ; align-items: center ; gap: 8px ;
+        opacity: 0.85 ; font-style: italic ; font-size: 13px ;
+        background: #f0f4ff ; border: 1px dashed #b0c4de ;
+      }
+      .LLAMA_SearchLabel { color: #3a6ea5 ; }
+      .LLAMA_SearchSpinner {
+        width: 20px ; height: 20px ; flex-shrink: 0 ;
+      }
+      .LLAMA_SearchSpinner::before {
+        display: none ;
+      }
+      .LLAMA_Chat_Thinking {
+        margin-top: 10px ; border-top: 1px solid rgba(0,0,0,0.1) ;
+        padding-top: 6px ; font-size: 12px ;
+      }
+      .LLAMA_Chat_Thinking summary {
+        cursor: pointer ; color: #666 ; font-style: italic ;
+        user-select: none ; font-size: 11px ;
+      }
+      .LLAMA_Chat_Thinking summary:hover { color: #333 ; }
+      .LLAMA_Chat_ThinkingContent {
+        margin-top: 6px ; padding: 8px ; background: rgba(0,0,0,0.04) ;
+        border-radius: 6px ; white-space: pre-wrap ; word-break: break-word ;
+        color: #555 ; font-size: 12px ; line-height: 1.5 ;
+        max-height: 300px ; overflow-y: auto ;
+      }
       .LLAMA_Chat_AiHint {
         display: block ; margin-top: 4px ; font-size: 10px ;
         color: rgba(0,0,0,0.35) ; text-align: right ; user-select: none ;
+      }
+      .LLAMA_Chat_Bubble a {
+        color: inherit ; text-decoration: underline ;
+        word-break: break-all ;
+      }
+      .LLAMA_Chat_Bubble--user a {
+        color: #fff ;
+      }
+      .LLAMA_Chat_Bubble--llama a {
+        color: #0b6abf ;
+      }
+      .LLAMA_Chat_Bubble a:hover {
+        text-decoration-thickness: 2px ;
+      }
+      .LLAMA_Chat_SourceBadge {
+        display: inline-flex ; align-items: center ;
+        padding: 2px 10px ; border-radius: 12px ;
+        background: rgba(11,106,191,0.1) ; font-size: 12px ;
+        transition: background 0.15s ;
+      }
+      .LLAMA_Chat_SourceBadge:hover {
+        background: rgba(11,106,191,0.2) ;
+      }
+      .LLAMA_Chat_SourceBadge a {
+        color: #0b6abf ; text-decoration: none ; word-break: normal ;
+      }
+      .LLAMA_Chat_SourceBadge a:hover {
+        text-decoration: underline ;
+      }
+      .LLAMA_Chat_PhoneBadge,
+      .LLAMA_Chat_EmailBadge {
+        display: inline-flex ; align-items: center ; gap: 4px ;
+        padding: 2px 10px ; border-radius: 12px ;
+        font-size: 12px ; transition: background 0.15s ;
+      }
+      .LLAMA_Chat_PhoneBadge {
+        background: rgba(40,167,69,0.12) ;
+      }
+      .LLAMA_Chat_PhoneBadge:hover {
+        background: rgba(40,167,69,0.22) ;
+      }
+      .LLAMA_Chat_EmailBadge {
+        background: rgba(220,130,0,0.12) ;
+      }
+      .LLAMA_Chat_EmailBadge:hover {
+        background: rgba(220,130,0,0.22) ;
+      }
+      .LLAMA_Chat_PhoneBadge a {
+        color: #28a745 ; text-decoration: none ; word-break: normal ;
+      }
+      .LLAMA_Chat_EmailBadge a {
+        color: #c27800 ; text-decoration: none ; word-break: normal ;
+      }
+      .LLAMA_Chat_PhoneBadge a:hover,
+      .LLAMA_Chat_EmailBadge a:hover {
+        text-decoration: underline ;
+      }
+      .LLAMA_Chat_BadgeIcon {
+        font-size: 13px ; line-height: 1 ;
       }`;
     document.head.appendChild(style);
   }

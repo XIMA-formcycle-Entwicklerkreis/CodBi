@@ -1,52 +1,56 @@
-import { a as m } from "./chunk-IZMXAPWV.js";
-import { a as f } from "./chunk-INDLVHJ6.js";
-import { a as c } from "./chunk-XMOSKO55.js";
-import { a as A } from "./chunk-EEU2ZRMO.js";
-import { a } from "./chunk-CVDXS2Z7.js";
-import { a as g } from "./chunk-PR6DYHSM.js";
-import { a as d } from "./chunk-TNKBSIBG.js";
-import { b as z, c as b, d as s } from "./chunk-REJDLPRJ.js";
-var h = z(A(), 1);
+import { a as c } from "./chunk-JDZ7GIHA.js";
+import { a as h } from "./chunk-INDLVHJ6.js";
+import { a as l } from "./chunk-SBHCT576.js";
+import "./chunk-ZAZUS2LA.js";
+import { a as E } from "./chunk-HV3SPSHE.js";
+import { a as f } from "./chunk-BQCZFAYZ.js";
+import { a as b } from "./chunk-PN2FQ2K5.js";
+import { a as o } from "./chunk-2NFNCZZA.js";
+import { b as A, c as d, d as s, g as m } from "./chunk-WWJ6UWS7.js";
+var p = A(E(), 1);
 var e = class e {
   static retrieve(n) {
-    return new Promise((i, p) => {
+    return new Promise((i, w) => {
       e.buffer && (n.length >= 1 ? i(e.buffer.map((r) => r[n[0]])) : i(e.buffer));
-      let w = (0, h.getJQuery)(),
-        o = new Array();
-      w.ajax({
+      let y = (0, p.getJQuery)(),
+        g = new Array();
+      y.ajax({
         url: `${window.codbi.baseURL}plugin?name=CodBi_BayVIS_Auskunft_Ansprechpartnerverzeichnis`,
         type: "GET",
         headers: { Accept: "application/xml" },
       })
         .done((r) => {
-          let t = new f({ attributeNamePrefix: "", ignoreAttributes: !1 }).parse(r)["ns2:ansprechpartner"];
+          let t = new h({ attributeNamePrefix: "", ignoreAttributes: !1 }).parse(r)["ns2:ansprechpartner"];
           if ((t === void 0 && (t = JSON.parse(r)), t !== void 0)) {
-            if (((o = e.buffer = t.ap), n.length >= 1)) {
+            if (((g = e.buffer = t.ap), n.length >= 1)) {
               let u = new Array();
-              for (let y of o) u.push(y[n[0]]);
+              for (let z of g) u.push(z[n[0]]);
               i(u);
             }
-            i(o);
+            i(g);
           }
         })
         .fail((r) => {
-          p(new c("Unable to retrieve data from Servlet CodBi_BayVIS_Auskunft_Ansprechpartnerverzeichnis."));
+          w(new l("Unable to retrieve data from Servlet CodBi_BayVIS_Auskunft_Ansprechpartnerverzeichnis."));
         });
     });
   }
 };
-(e.stdExp = { directoryMember: /^(behoerdenart|behoerdengruppe|bezeichnung|email|id|sortierreihenfolge)$/ }),
-  (e.registered = window.codbi.registerEP("BayVIS.Ansprechpartner", e.retrieve)),
-  b(
+(e.stdExp = {
+  directoryMember:
+    /^(anrede|vorname|nachname|funktion|stellenbezeichnung|email|website|zimmer|sortierreihenfolge|behoerdeId|behoerdeBezeichnung|gebaeudeId|gebaeudeBezeichnung|ansprechpartnerId)$/,
+}),
+  d(
     [
-      d.ParamvalueProvider,
-      s(0, g.PRE(new m("string"))),
-      s(0, g.PRE(new a(a.stdExp.url), 0)),
-      s(0, g.PRE(new a(e.stdExp.directoryMember), 1)),
+      m.ParamvalueProvider,
+      s(0, f.PRE(1, !1, !1, "length", "Has directory property been specified?")),
+      s(0, o.PRE(new b("string"))),
+      s(0, o.PRE(new c(e.stdExp.directoryMember), 0)),
     ],
     e,
     "retrieve",
     1,
   );
-var l = e;
-export { l as BayVIS_Ansprechpartner };
+var a = e;
+window.codbi.registerEP("BayVIS.Ansprechpartner", a.retrieve.bind(a));
+export { a as BayVIS_Ansprechpartner };

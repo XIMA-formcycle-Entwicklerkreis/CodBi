@@ -1733,7 +1733,7 @@ class Standard : LLAMA() {
         }
       }
       append(
-          "Always respond in the same language the user writes in. Never mention or reference products, brands, or services that are not part of the user's question. ")
+          "CRITICAL LANGUAGE RULE: Always respond in the EXACT language of the user's CURRENT message. If the user switches language mid-conversation, switch with them immediately. Never mention or reference products, brands, or services that are not part of the user's question. ")
       append(
           "When mentioning measurements, always show BOTH metric and imperial units: °C (°F), km (mi), m (ft), kg (lbs), km/h (mph), liters (gallons), cm (in), etc. ")
       append(
@@ -1761,6 +1761,13 @@ class Standard : LLAMA() {
       if (lang != null) {
         append(",{\"role\":\"user\",\"content\":\"${jsonEscape(lang.userTurn)}\"}")
         append(",{\"role\":\"assistant\",\"content\":\"${jsonEscape(lang.assistantTurn)}\"}")
+        // When conversation has prior history (possibly in a different language), add a
+        // hard system-level language directive right before the user's message.  Without
+        // this the model tends to default to the dominant language in the history.
+        if (effectiveHistory.isNotEmpty()) {
+          append(
+              ",{\"role\":\"system\",\"content\":\"LANGUAGE SWITCH: The user is now writing in ${lang.languageName}. You MUST respond ENTIRELY in ${lang.languageName}, regardless of what language was used earlier in the conversation.\"}")
+        }
       }
 
       // User message with optional images

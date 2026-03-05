@@ -76,6 +76,12 @@ import javax.imageio.ImageIO
 // for a dedicated thinking model GGUF (optional) |
 // | `AI_LLAMA_STD_ThinkingMmprojUrl`   | URL     | —                                | Download URL
 // for the thinking model's mmproj file (optional)|
+// | `AI_LLAMA_STD_ExternalUrl`          | URL     | —                                | Base URL of
+// an external OpenAI-compatible API; overrides local model |
+// | `AI_LLAMA_STD_ExternalApiKey`       | String  | —                                | API key for
+// the external AI (sent as Bearer token)                   |
+// | `AI_LLAMA_STD_ExternalModel`        | String  | —                                | Model name
+// for the external API (e.g. gpt-4o, claude-3-opus)       |
 // | `AI_BraveSearch_ApiKey`            | String  | —                                | Brave Search
 // API key — enables web search tool for the model |
 //
@@ -106,6 +112,17 @@ class Standard : LLAMA() {
   // ── Configurable URLs (overridable via plugin properties) ─────────────────
   private var modelUrl = DEFAULT_MODEL_URL
   private var mmprojUrl = DEFAULT_MMPROJ_URL
+
+  // ── External AI settings (overrides local model when set) ─────────────────
+  /** Base URL for an external OpenAI-compatible API (e.g. "https://api.openai.com/v1"). */
+  private var externalUrl: String? = null
+  /** API key for the external AI service (sent as Bearer token). */
+  private var externalApiKey: String? = null
+  /** Model identifier for the external API (e.g. "gpt-4o", "claude-3-opus-20240229"). */
+  private var externalModel: String? = null
+  /** Whether to use an external AI service instead of the local llama-server. */
+  private val isExternalMode: Boolean
+    get() = externalUrl != null
 
   // ── Thinking model URLs (optional — enables dedicated thinking server) ────
   private var thinkingModelUrl: String? = null
@@ -202,6 +219,14 @@ class Standard : LLAMA() {
     @Volatile var searchQuery: String? = null
     /** Which model produced the response: "fast" or "thinking". */
     @Volatile var modelType: String = if (enableThinking) "thinking" else "fast"
+
+    // ── Localized UI labels (set after language detection) ──
+    @Volatile var uiReasoningLabel: String = "Reasoning\u2026"
+    @Volatile var uiShowReasoningLabel: String = "Show reasoning"
+    @Volatile var uiShowSourcesLabel: String = "Show sources"
+    @Volatile var uiSearchingLabel: String = "Searching the internet for \u201C%s\u201D\u2026"
+    @Volatile var uiSearchingLabelNoQuery: String = "Searching the internet\u2026"
+    @Volatile var uiThinkingLabel: String = "Thinking\u2026"
 
     fun currentText(): String = textChunks.joinToString("")
 
@@ -308,6 +333,23 @@ class Standard : LLAMA() {
     // Let base class set up directories and read LLAMA properties
     super.initialize(configData)
 
+    // Read external AI properties (if set, overrides local model entirely)
+    configData.properties
+        .getProperty("${PROP_PREFIX}_ExternalUrl")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { externalUrl = it.trimEnd('/') }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_ExternalApiKey")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { externalApiKey = it }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_ExternalModel")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { externalModel = it }
+
     // Read model-specific plugin properties
     configData.properties
         .getProperty("${PROP_PREFIX}_ModelUrl")
@@ -398,6 +440,9 @@ class Standard : LLAMA() {
     log(LogLevel.INFO, "mmproj URL:  $mmprojUrl")
     log(LogLevel.INFO, "MaxPixels:   $maxPixels")
     log(LogLevel.INFO, "MaxTokens:   $maxTokens")
+    if (isExternalMode) {
+      log(LogLevel.INFO, "External AI: $externalUrl (model: ${externalModel ?: "default"})")
+    }
     if (hasThinkingModel) {
       log(LogLevel.INFO, "Thinking model URL:   $thinkingModelUrl")
       log(LogLevel.INFO, "Thinking mmproj URL:  $thinkingMmprojUrl")
@@ -411,6 +456,26 @@ class Standard : LLAMA() {
         LogLevel.INFO,
         "Update check: every ${checkIntervalHours}h" +
             (if (checkIntervalHours == 0L) " (disabled)" else ""))
+
+    // ── External AI mode: skip local server startup entirely ────────────────
+    if (isExternalMode) {
+      log(LogLevel.INFO, "External AI mode — skipping local model download and server startup")
+      log(LogLevel.INFO, "  URL:   $externalUrl")
+      log(
+          LogLevel.INFO,
+          "  Model: ${externalModel ?: "(not set — WARNING: most APIs require a model name)"}")
+      log(
+          LogLevel.INFO,
+          "  Key:   ${if (externalApiKey != null) "(set, ${externalApiKey!!.length} chars)" else "(not set)"}")
+      isActive = true
+      serverReady = true
+      // Start resource monitor (still useful for resource-gate even with external AI)
+      resourceMonitor?.shutdown()
+      resourceMonitor = ResourceMonitor().also { it.start() }
+      startVersionChecker()
+      log(LogLevel.INFO, "Standard (external) initialized and ready for requests")
+      return
+    }
 
     // Start resource monitor
     resourceMonitor?.shutdown()
@@ -567,6 +632,12 @@ class Standard : LLAMA() {
         """{%- if messages[0].role == 'system' %}{%- set system_message = messages[0].content %}{%- set loop_messages = messages[1:] %}{%- else %}{%- set system_message = 'You are a helpful assistant.' %}{%- set loop_messages = messages %}{%- endif %}{{- '<|im_start|>system\n' + system_message + '<|im_end|>\n' }}{%- for message in loop_messages %}{%- if message.role == 'user' %}{%- if message.content is string %}{{- '<|im_start|>user\n' + message.content + '<|im_end|>\n' }}{%- else %}{{- '<|im_start|>user\n' }}{%- for part in message.content %}{%- if part.type == 'text' %}{{- part.text }}{%- endif %}{%- endfor %}{{- '<|im_end|>\n' }}{%- endif %}{%- elif message.role == 'assistant' %}{%- if message.reasoning_content is defined and message.reasoning_content is not none %}{{- '<|im_start|>assistant\n<think>\n' + message.reasoning_content + '\n</think>\n' + message.content + '<|im_end|>\n' }}{%- else %}{{- '<|im_start|>assistant\n' + message.content + '<|im_end|>\n' }}{%- endif %}{%- endif %}{%- endfor %}{%- if add_generation_prompt %}{{- '<|im_start|>assistant\n' }}{%- if enable_thinking is defined and enable_thinking is true %}{{- '<think>\n' }}{%- endif %}{%- endif %}"""
             .trimIndent())
 
+    // Thinking needs a bigger per-slot context: max_tokens is up to maxTokens*4 and the
+    // remaining budget must still hold the system prompt, chat history, and (optionally bulky)
+    // search instructions.  Double the base ctxSize so the per-slot context is 2× the fast
+    // server's, without touching parallelSlots.
+    val thinkingCtxSize = ctxSize * 2
+
     val command =
         mutableListOf(
             binary.absolutePath,
@@ -579,7 +650,7 @@ class Standard : LLAMA() {
             "--threads",
             resolvedThreads.toString(),
             "--ctx-size",
-            ctxSize.toString(),
+            thinkingCtxSize.toString(),
             "--parallel",
             parallelSlots.toString(),
             "--n-gpu-layers",
@@ -793,17 +864,61 @@ class Standard : LLAMA() {
       val thinkingJson =
           if (thinkingText.isNotEmpty()) ",\"thinking\":\"${jsonEscape(thinkingText)}\"" else ""
       val modelTypeJson = ",\"modelType\":\"${session.modelType}\""
+      val i18nJson =
+          ",\"i18n\":{" +
+              "\"reasoningLabel\":\"${jsonEscape(session.uiReasoningLabel)}\"," +
+              "\"showReasoningLabel\":\"${jsonEscape(session.uiShowReasoningLabel)}\"," +
+              "\"showSourcesLabel\":\"${jsonEscape(session.uiShowSourcesLabel)}\"," +
+              "\"searchingLabel\":\"${jsonEscape(session.uiSearchingLabel)}\"," +
+              "\"searchingLabelNoQuery\":\"${jsonEscape(session.uiSearchingLabelNoQuery)}\"," +
+              "\"thinkingLabel\":\"${jsonEscape(session.uiThinkingLabel)}\"" +
+              "}"
       val jsonValue =
           if (err != null) {
-            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":true,\"error\":\"${jsonEscape(err)}\"$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson}"
+            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":true,\"error\":\"${jsonEscape(err)}\"$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson$i18nJson}"
           } else {
-            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":$done$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson}"
+            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":$done$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson$i18nJson}"
           }
       return jsonResponse(jsonValue)
     }
     // ── End stream-poll shortcut ──────────────────────────────────────────────
 
-    log(LogLevel.INFO, "Processing VQA request (llama-server on port $serverPort)")
+    // ── Health-check shortcut ─────────────────────────────────────────────────
+    val isHealthCheck =
+        params.headerMap.entries.any {
+          it.key.equals("X-Health-Check", ignoreCase = true) &&
+              it.value.equals("true", ignoreCase = true)
+        }
+    if (isHealthCheck) {
+      if (loadError != null) {
+        return jsonResponse(
+            "{\"error\":\"Failed to initialize: ${jsonEscape(loadError?.message ?: "unknown")}\"}")
+      }
+      if (!isExternalMode && !serverReady) {
+        return jsonResponse(
+            "{\"error\":\"Model is not ready yet. It may still be downloading or loading.\"}")
+      }
+      // Model is ready (or in external mode) — include model name for the UI
+      val displayModel =
+          if (isExternalMode) {
+            // External model name, e.g. "meta-llama/llama-4-scout-17b-16e-instruct"
+            // Show only the part after the last slash for cleaner display
+            (externalModel ?: "External AI").substringAfterLast("/")
+          } else {
+            // Local GGUF filename → friendly name: strip extension + quantization suffix
+            // e.g. "Qwen3VL-2B-Instruct-Q4_K_M.gguf" → "Qwen3VL-2B-Instruct"
+            val raw = modelUrl.substringAfterLast("/").removeSuffix(".gguf")
+            raw.replace(Regex("-[QFqf][0-9_]+[A-Za-z_]*$"), "")
+          }
+      return jsonResponse("{\"status\":\"ready\",\"model\":\"${jsonEscape(displayModel)}\"}")
+    }
+    // ── End health-check shortcut ─────────────────────────────────────────────
+
+    log(
+        LogLevel.INFO,
+        "Processing VQA request" +
+            if (isExternalMode) " (external: $externalUrl)"
+            else " (llama-server on port $serverPort)")
 
     // ── Resource gate ─────────────────────────────────────────────────────────
     resourceMonitor?.let { monitor ->
@@ -821,7 +936,7 @@ class Standard : LLAMA() {
       return jsonResponse(
           "{\"error\":\"Failed to initialize: ${jsonEscape(loadError?.message ?: "unknown")}\"}")
     }
-    if (!serverReady || !isServerAlive()) {
+    if (!isExternalMode && (!serverReady || !isServerAlive())) {
       // Attempt restart if server died
       if (serverReady && !isServerAlive()) {
         log(LogLevel.WARNING, "llama-server process died — attempting restart")
@@ -940,6 +1055,40 @@ class Standard : LLAMA() {
         }
     log(LogLevel.INFO, "Search enabled: $searchEnabled")
 
+    // ── Location toggle ───────────────────────────────────────────────────────
+    val locationEnabled =
+        params.headerMap.entries.any {
+          it.key.equals("X-Location", ignoreCase = true) &&
+              it.value.equals("true", ignoreCase = true)
+        }
+    val userLatitude =
+        params.headerMap.entries
+            .firstOrNull { it.key.equals("X-Latitude", ignoreCase = true) }
+            ?.value
+    val userLongitude =
+        params.headerMap.entries
+            .firstOrNull { it.key.equals("X-Longitude", ignoreCase = true) }
+            ?.value
+    log(
+        LogLevel.INFO,
+        "Location enabled: $locationEnabled" +
+            if (userLatitude != null && userLongitude != null)
+                " (lat=$userLatitude, lon=$userLongitude)"
+            else "")
+
+    // Resolve client IP for IP-based geolocation fallback
+    val clientIP =
+        if (locationEnabled) {
+          val headers = params.headerMap
+          val xff =
+              headers.entries.find { it.key.equals("X-Forwarded-For", ignoreCase = true) }?.value
+          if (!xff.isNullOrBlank()) xff.split(",").first().trim()
+          else {
+            val xri = headers.entries.find { it.key.equals("X-Real-IP", ignoreCase = true) }?.value
+            if (!xri.isNullOrBlank()) xri.trim() else params.remoteAddr?.trim() ?: "unknown"
+          }
+        } else null
+
     // ── Streaming path ────────────────────────────────────────────────────────
     val wantsStream =
         params.headerMap.entries.any {
@@ -960,17 +1109,50 @@ class Standard : LLAMA() {
 
       Thread(
               {
+                // Detect language via a fast model call BEFORE the main completion.
+                // Declared outside try so it's available in the finally fallback path.
+                val question = questions.values.first()
+                val detectedLang = detectLanguageViaModel(question)
+                // Set localized UI labels on the session for the poll response
+                if (detectedLang != null) {
+                  session.uiReasoningLabel = detectedLang.uiReasoningLabel
+                  session.uiShowReasoningLabel = detectedLang.uiShowReasoningLabel
+                  session.uiShowSourcesLabel = detectedLang.uiShowSourcesLabel
+                  session.uiSearchingLabel = detectedLang.uiSearchingLabel
+                  session.uiSearchingLabelNoQuery = detectedLang.uiSearchingLabelNoQuery
+                  session.uiThinkingLabel = detectedLang.uiThinkingLabel
+                }
+                val userLocation =
+                    if (locationEnabled) {
+                      if (userLatitude != null && userLongitude != null)
+                          reverseGeocode(userLatitude, userLongitude)
+                      else
+                          clientIP?.let { geolocateByIP(it) }
+                              ?: "Ansbach, Nürnberger Straße 32, Bayern, Deutschland" // TODO:
+                      // remove
+                      // hardcoded
+                      // test
+                      // fallback
+                    } else null
+
                 try {
-                  val question = questions.values.first()
                   val imageParts =
                       if (images.isNotEmpty()) {
                         prepareImageParts(images, rotation)
                       } else emptyList()
 
                   val messages =
-                      buildMessages(question, imageParts, history, searchEnabled, enableThinking)
-                  if (enableThinking)
-                      log(LogLevel.INFO, "Messages JSON (first 400): ${messages.take(400)}")
+                      buildMessages(
+                          question,
+                          imageParts,
+                          history,
+                          searchEnabled,
+                          enableThinking,
+                          detectedLang,
+                          locationEnabled,
+                          userLocation)
+                  if (enableThinking || locationEnabled)
+                      log(LogLevel.INFO, "Messages JSON (first 500): ${messages.take(500)}")
 
                   // Always stream directly to the user for immediate feedback
                   streamChatCompletion(messages, session, enableThinking, slot)
@@ -991,14 +1173,22 @@ class Standard : LLAMA() {
                     // Extract the search query for the client indicator (sanitized)
                     val rawQuery =
                         BraveSearch.CALL_SEARCH_PATTERN.find(fullText)?.groupValues?.get(1) ?: ""
-                    session.searchQuery = BraveSearch.sanitizeQuery(rawQuery)
+                    session.searchQuery =
+                        BraveSearch.sanitizeQuery(rawQuery, detectedLang?.languageName)
                     // Signal the client to show a search animation
                     session.searching = true
                     // Strip the CALL:search text so it's not displayed
                     session.textChunks.clear()
 
                     handleSearchToolCallStreaming(
-                        fullText, question, imageParts, history, session, enableThinking, slot)
+                        fullText,
+                        question,
+                        imageParts,
+                        history,
+                        session,
+                        enableThinking,
+                        slot,
+                        detectedLang)
                     session.searching = false
                     session.searchQuery = null
                   }
@@ -1012,7 +1202,6 @@ class Standard : LLAMA() {
                   if (enableThinking &&
                       session.currentText().isBlank() &&
                       session.currentThinking().isNotBlank()) {
-                    val question = questions.values.first()
                     // Thinking model failed to produce a visible answer — fall back to
                     // the fast model (non-thinking) and let IT decide whether a web search
                     // is needed via CALL:search, rather than forcing a search every time.
@@ -1025,7 +1214,14 @@ class Standard : LLAMA() {
                     session.textChunks.clear()
                     val fallbackMessages =
                         buildMessages(
-                            question, emptyList(), history, searchEnabled, enableThinking = false)
+                            question,
+                            emptyList(),
+                            history,
+                            searchEnabled,
+                            enableThinking = false,
+                            detectedLang = detectedLang,
+                            locationEnabled = locationEnabled,
+                            userLocation = userLocation)
                     streamChatCompletion(fallbackMessages, session, false, slot)
                     val fallbackText = session.currentText()
 
@@ -1036,11 +1232,19 @@ class Standard : LLAMA() {
                       val rawQuery =
                           BraveSearch.CALL_SEARCH_PATTERN.find(fallbackText)?.groupValues?.get(1)
                               ?: ""
-                      session.searchQuery = BraveSearch.sanitizeQuery(rawQuery)
+                      session.searchQuery =
+                          BraveSearch.sanitizeQuery(rawQuery, detectedLang?.languageName)
                       session.searching = true
                       session.textChunks.clear()
                       handleSearchToolCallStreaming(
-                          fallbackText, question, emptyList(), history, session, false, slot)
+                          fallbackText,
+                          question,
+                          emptyList(),
+                          history,
+                          session,
+                          false,
+                          slot,
+                          detectedLang)
                       session.searching = false
                       session.searchQuery = null
                     }
@@ -1066,15 +1270,36 @@ class Standard : LLAMA() {
           } else emptyList()
 
       for ((questionKey, question) in questionsToAsk) {
+        // Detect language via a fast model call BEFORE the main completion
+        val detectedLang = detectLanguageViaModel(question)
+        val userLocation =
+            if (locationEnabled) {
+              if (userLatitude != null && userLongitude != null)
+                  reverseGeocode(userLatitude, userLongitude)
+              else
+                  clientIP?.let { geolocateByIP(it) }
+                      ?: "Ansbach, Nürnberger Straße 32, Bayern, Deutschland" // TODO: remove
+              // hardcoded test
+              // fallback
+            } else null
+
         val messages =
-            buildMessages(question, imageParts, chatHistory, searchEnabled, enableThinking)
+            buildMessages(
+                question,
+                imageParts,
+                chatHistory,
+                searchEnabled,
+                enableThinking,
+                detectedLang,
+                locationEnabled,
+                userLocation)
         var answer = chatCompletion(messages, enableThinking, slotId)
 
         // ── CALL:search tool loop ──────────────────────────────────────
         if (searchEnabled) {
           answer =
               handleSearchToolCall(
-                  answer, question, imageParts, chatHistory, enableThinking, slotId)
+                  answer, question, imageParts, chatHistory, enableThinking, slotId, detectedLang)
         }
 
         finalResults[questionKey] = mapOf("answer" to answer)
@@ -1280,7 +1505,8 @@ class Standard : LLAMA() {
       imageParts: List<String>,
       chatHistory: List<Pair<String, String>>,
       enableThinking: Boolean,
-      slotId: Int
+      slotId: Int,
+      detectedLang: DetectedLanguage? = null
   ): String {
     if (!BraveSearch.isAvailable) return initialAnswer
 
@@ -1290,7 +1516,8 @@ class Standard : LLAMA() {
       val query = match.groupValues[1]
       log(LogLevel.INFO, "Model requested web search (round $round): '$query'")
 
-      val results = BraveSearch.search(query)
+      val results =
+          BraveSearch.search(query, detectedLang?.braveCountry, detectedLang?.languageName)
       if (results.isEmpty()) {
         log(LogLevel.WARNING, "Web search returned no results for: '$query'")
         break
@@ -1305,10 +1532,15 @@ class Standard : LLAMA() {
       extendedHistory.add("assistant" to match.value)
       extendedHistory.add("user" to searchContext)
 
-      val followUpQuestion = searchFollowUpPrompt(originalQuestion)
+      val followUpQuestion = searchFollowUpPrompt(originalQuestion, detectedLang)
       // Don't pre-fill thinking for the follow-up — the answer must be visible text
       val messages =
-          buildMessages(followUpQuestion, imageParts, extendedHistory, enableThinking = false)
+          buildMessages(
+              followUpQuestion,
+              imageParts,
+              extendedHistory,
+              enableThinking = false,
+              detectedLang = detectedLang)
       answer = chatCompletion(messages, false, slotId)
       log(LogLevel.INFO, "Search-augmented answer (round $round): ${answer.take(120)}…")
     }
@@ -1326,7 +1558,8 @@ class Standard : LLAMA() {
       chatHistory: List<Pair<String, String>>,
       session: StreamingSession,
       enableThinking: Boolean,
-      slotId: Int
+      slotId: Int,
+      detectedLang: DetectedLanguage? = null
   ) {
     if (!BraveSearch.isAvailable) return
 
@@ -1335,7 +1568,7 @@ class Standard : LLAMA() {
     log(LogLevel.INFO, "Streaming: Model raw output: '${fullText.take(200)}'")
     log(LogLevel.INFO, "Streaming: Model requested web search: '$query'")
 
-    val results = BraveSearch.search(query)
+    val results = BraveSearch.search(query, detectedLang?.braveCountry, detectedLang?.languageName)
     if (results.isEmpty()) {
       session.textChunks.clear()
       session.textChunks.add("The web search returned no results. Please try a different query.")
@@ -1358,12 +1591,18 @@ class Standard : LLAMA() {
       session.thinkingChunks.add(priorReasoning)
       session.thinkingChunks.add("\n\n---\n\n")
     }
-    session.thinkingChunks.add("\uD83D\uDD0D Searching the web for: \"$query\"\n\n")
+    val searchLabel =
+        detectedLang?.searchingLabel?.format(query)
+            ?: "\uD83D\uDD0D Searching the web for: \"$query\""
+    session.thinkingChunks.add("$searchLabel\n\n")
     for ((index, result) in results.withIndex()) {
       session.thinkingChunks.add(
           "[${index + 1}] ${result.title}\n    ${result.url}\n    ${result.description.take(150)}\n\n")
     }
-    session.thinkingChunks.add("Analyzing ${results.size} results to formulate an answer.")
+    val analyzeLabel =
+        detectedLang?.analyzingLabel?.format(results.size)
+            ?: "Analyzing ${results.size} results to formulate an answer."
+    session.thinkingChunks.add(analyzeLabel)
 
     val extendedHistory = chatHistory.toMutableList()
     extendedHistory.add("user" to originalQuestion)
@@ -1374,10 +1613,15 @@ class Standard : LLAMA() {
     extendedHistory.add("assistant" to assistantContext)
     extendedHistory.add("user" to searchContext)
 
-    val followUpQuestion = searchFollowUpPrompt(originalQuestion)
+    val followUpQuestion = searchFollowUpPrompt(originalQuestion, detectedLang)
     // Don't pre-fill thinking for the follow-up — the answer must be visible text
     val messages =
-        buildMessages(followUpQuestion, imageParts, extendedHistory, enableThinking = false)
+        buildMessages(
+            followUpQuestion,
+            imageParts,
+            extendedHistory,
+            enableThinking = false,
+            detectedLang = detectedLang)
     streamChatCompletion(messages, session, false, slotId)
   }
 
@@ -1398,7 +1642,10 @@ class Standard : LLAMA() {
       imageParts: List<String>,
       chatHistory: List<Pair<String, String>>,
       searchEnabled: Boolean = true,
-      enableThinking: Boolean = false
+      enableThinking: Boolean = false,
+      detectedLang: DetectedLanguage? = null,
+      locationEnabled: Boolean = false,
+      userLocation: String? = null
   ): String {
     return buildString {
       append("[")
@@ -1411,6 +1658,18 @@ class Standard : LLAMA() {
                       "d MMMM yyyy", java.util.Locale.ENGLISH))
       append("{\"role\":\"system\",\"content\":\"")
       append("You are a helpful assistant. Today is $today. Answer precisely and concisely. ")
+      // Location context — inject early so the model sees it before search instructions
+      if (locationEnabled && userLocation != null) {
+        append(
+            "IMPORTANT: The user is located near $userLocation. " +
+                "Use this as the DEFAULT area for any location-dependent question (weather, nearby places, directions, local events). " +
+                "This is the user's approximate area, NOT a specific address — never cite it as an address in answers. " +
+                "If the user EXPLICITLY names a different city or place, use that location instead. ")
+      } else if (locationEnabled) {
+        append(
+            "The user enabled location sharing but their location could not be determined. " +
+                "If the question depends on location, ask the user to specify their city or region. ")
+      }
       if (searchEnabled && BraveSearch.isAvailable) {
         append(
             "When you need current info, reply ONLY with CALL:search(query='your search query'). ")
@@ -1418,11 +1677,42 @@ class Standard : LLAMA() {
             "The search query MUST be about the user's ACTUAL topic. Extract the core subject from the user's question. ")
         append(
             "SANITIZE: remove person names, serial numbers, IDs, and any code mixing letters+digits. Keep brand names and topic keywords. ")
-        append(
-            "Example: user asks about a product error → CALL:search(query='[product] [error] fix'). ")
-        append(
-            "Example: user asks about contract law → CALL:search(query='[topic] contract termination'). ")
-        append("Example: user asks about weather → CALL:search(query='weather forecast [city]'). ")
+        if (detectedLang != null && detectedLang.languageName != "English") {
+          append(
+              "IMPORTANT: Always write search queries in ${detectedLang.languageName}, NEVER in English. ")
+          val productQ = detectedLang.exampleProductQuery
+          val lawQ = detectedLang.exampleLawQuery
+          val weatherQ = detectedLang.exampleWeatherQuery
+          val localQ = detectedLang.exampleLocalQuery
+          append("Example: user asks about a product error → CALL:search(query='$productQ'). ")
+          append("Example: user asks about contract law → CALL:search(query='$lawQ'). ")
+          if (locationEnabled && userLocation != null) {
+            val shortLocation = userLocation.substringBefore(",").trim()
+            append(
+                "Example: user asks about weather → CALL:search(query='$weatherQ $shortLocation'). ")
+            append(
+                "Example: user asks where to eat → CALL:search(query='$localQ $shortLocation'). ")
+          } else {
+            append("Example: user asks about weather → CALL:search(query='$weatherQ'). ")
+            append("Example: user asks where to eat → CALL:search(query='$localQ'). ")
+          }
+        } else {
+          append(
+              "Example: user asks about a product error → CALL:search(query='ProductName error fix'). ")
+          append(
+              "Example: user asks about contract law → CALL:search(query='contract termination rules'). ")
+          if (locationEnabled && userLocation != null) {
+            val shortLocation = userLocation.substringBefore(",").trim()
+            append(
+                "Example: user asks about weather → CALL:search(query='weather forecast $shortLocation'). ")
+            append(
+                "Example: user asks where to eat → CALL:search(query='restaurants near me $shortLocation'). ")
+          } else {
+            append(
+                "Example: user asks about weather → CALL:search(query='weather forecast tomorrow'). ")
+            append("Example: user asks where to eat → CALL:search(query='restaurants near me'). ")
+          }
+        }
         append(
             "EXCEPTION: If the user wraps a word in << >>, copy it into the query verbatim with the << >> markers. ")
         append(
@@ -1433,13 +1723,21 @@ class Standard : LLAMA() {
             "IMPORTANT: The search query must match the user's actual question topic — never copy an example query. ")
         if (enableThinking) {
           append("THINKING MODE: You MUST reason thoroughly FIRST inside <think>...</think>. ")
+          if (detectedLang != null && detectedLang.languageName != "English") {
+            append(
+                "CRITICAL: Your reasoning inside <think> tags MUST be written in ${detectedLang.languageName}, NOT in English. ")
+          }
           append(
               "Only AFTER you have finished thinking and closed </think>, output CALL:search as your visible answer if needed. ")
           append("NEVER put CALL:search inside <think> tags. Think first, then decide. ")
         }
       }
       append(
-          "CRITICAL RULE: You MUST respond in the SAME language the user uses. If the user writes in German, you MUST think AND answer in German. If in English, think and answer in English. Match the user's language exactly — this applies to ALL output including your reasoning/thinking.")
+          "Always respond in the same language the user writes in. Never mention or reference products, brands, or services that are not part of the user's question. ")
+      append(
+          "When mentioning measurements, always show BOTH metric and imperial units: °C (°F), km (mi), m (ft), kg (lbs), km/h (mph), liters (gallons), cm (in), etc. ")
+      append(
+          "Each question is independent — answer ONLY the current question. Do NOT repeat or mix in information from previous answers unless the user explicitly refers to them.")
       append("\"}")
 
       // Chat history — skip the last entry if it duplicates the current question
@@ -1456,14 +1754,16 @@ class Standard : LLAMA() {
         append(",{\"role\":\"${jsonEscape(role)}\",\"content\":\"${jsonEscape(content)}\"}")
       }
 
-      // User message with optional images
-      // Detect the user's language and inject an immediate reminder right before their message.
-      // Models attend most to the tokens closest to generation, so this is far more effective
-      // than a system prompt instruction alone.
-      val langHint = detectLanguageHint(question)
-      if (langHint != null) {
-        append(",{\"role\":\"system\",\"content\":\"${jsonEscape(langHint)}\"}")
+      // Language negotiation: inject a short user→assistant turn that naturally sets the
+      // conversation language.  "Let's talk in [X]" → "Sure!" is far more reliable than
+      // system-prompt instructions for small models.
+      val lang = detectedLang ?: detectLanguage(question)
+      if (lang != null) {
+        append(",{\"role\":\"user\",\"content\":\"${jsonEscape(lang.userTurn)}\"}")
+        append(",{\"role\":\"assistant\",\"content\":\"${jsonEscape(lang.assistantTurn)}\"}")
       }
+
+      // User message with optional images
       append(",{\"role\":\"user\",\"content\":")
       if (imageParts.isNotEmpty()) {
         // Multi-part content (images + text)
@@ -1484,7 +1784,8 @@ class Standard : LLAMA() {
       // We handle the <think>/</think> separation ourselves via filterThinkTags
       // instead of relying on reasoning_content (which doesn't support language seeding).
       if (enableThinking) {
-        val thinkSeed = detectThinkingSeed(question)
+        val thinkSeed =
+            if (lang != null) lang.thinkSeed else "Think briefly. Do NOT repeat yourself."
         append(",{\"role\":\"assistant\",\"content\":\"<think>\\n$thinkSeed\"}")
       }
 
@@ -1493,14 +1794,544 @@ class Standard : LLAMA() {
   }
 
   /**
-   * Detects the user's language from their question and returns a short instruction telling the
-   * model to reason and answer in that language. Returns null if the language appears to be English
-   * (the model's default).
+   * Holds the language-negotiation strings for a detected non-English language.
+   *
+   * @property userTurn "Let's talk in [language]" — injected as a fake user turn.
+   * @property assistantTurn Short confirmation — injected as the assistant's reply.
+   * @property thinkSeed Opening phrase pre-filled into the `<think>` block.
+   * @property searchPrompt Follow-up instruction for answering from search results.
+   * @property searchingLabel Localized "Searching the web for" label (with %s placeholder for
+   *   query).
+   * @property analyzingLabel Localized "Analyzing N results" label (with %d placeholder for count).
    */
-  private fun detectLanguageHint(question: String): String? {
-    // Pad with spaces so first/last words match markers like " ist "
+  private data class DetectedLanguage(
+      val userTurn: String,
+      val assistantTurn: String,
+      val thinkSeed: String,
+      val searchPrompt: String,
+      val searchingLabel: String = "\uD83D\uDD0D Searching the web for: \"%s\"",
+      val analyzingLabel: String = "Analyzing %d results to formulate an answer.",
+      val braveCountry: String? = null,
+      val languageName: String = "English",
+      val exampleProductQuery: String = "ProductName error fix",
+      val exampleLawQuery: String = "contract termination rules",
+      val exampleWeatherQuery: String = "weather forecast",
+      val exampleLocalQuery: String = "restaurants near me",
+      // ── Frontend UI labels (sent to client for i18n) ──
+      /** Label shown while the model is generating reasoning tokens (e.g. "Reasoning…"). */
+      val uiReasoningLabel: String = "Reasoning\u2026",
+      /** Label for the collapsible reasoning section (e.g. "Show reasoning"). */
+      val uiShowReasoningLabel: String = "Show reasoning",
+      /** Label for the collapsible sources section (e.g. "Show sources"). */
+      val uiShowSourcesLabel: String = "Show sources",
+      /**
+       * Label shown while searching the internet with query (e.g. "Searching the internet for
+       * \"%s\"…").
+       */
+      val uiSearchingLabel: String = "Searching the internet for \u201C%s\u201D\u2026",
+      /**
+       * Label shown while searching the internet without query (e.g. "Searching the internet…").
+       */
+      val uiSearchingLabelNoQuery: String = "Searching the internet\u2026",
+      /** Label shown as initial "Thinking..." bubble before response starts. */
+      val uiThinkingLabel: String = "Thinking\u2026"
+  )
+
+  /** Pre-built language negotiation objects keyed by lowercase language name. */
+  private val languageMap: Map<String, DetectedLanguage> =
+      mapOf(
+              "german" to
+                  DetectedLanguage(
+                      userTurn = "Lass uns auf Deutsch reden.",
+                      assistantTurn = "Klar, ich antworte auf Deutsch!",
+                      thinkSeed =
+                          "SPRACHE: Deutsch. Alles auf Deutsch — auch dieses Denken. Denke auf Deutsch. Antworte auf Deutsch. Kurz denken, NICHT wiederholen.",
+                      searchPrompt =
+                          "Gib eine kurze, direkte Antwort auf Deutsch in 2-4 Sätzen basierend auf den Suchergebnissen. Füge relevante Links aus den Ergebnissen als Markdown-Links hinzu. Wiederhole dich nicht. Antworte AUF DEUTSCH.",
+                      searchingLabel = "\uD83D\uDD0D Suche im Web: \"%s\"",
+                      analyzingLabel = "%d Ergebnisse werden analysiert…",
+                      braveCountry = "DE",
+                      languageName = "German",
+                      exampleProductQuery = "ProduktName Fehler Lösung",
+                      exampleLawQuery = "Vertragskündigung Regeln",
+                      exampleWeatherQuery = "Wettervorhersage",
+                      exampleLocalQuery = "Restaurant in der Nähe",
+                      uiReasoningLabel = "Denkt nach\u2026",
+                      uiShowReasoningLabel = "Denkprozess anzeigen",
+                      uiShowSourcesLabel = "Quellen anzeigen",
+                      uiSearchingLabel = "Suche im Internet nach \u201E%s\u201C\u2026",
+                      uiSearchingLabelNoQuery = "Suche im Internet\u2026",
+                      uiThinkingLabel = "Denkt nach\u2026"),
+              "deutsch" to null, // alias — resolved below
+              "italian" to
+                  DetectedLanguage(
+                      userTurn = "Parliamo in italiano.",
+                      assistantTurn = "Certo, rispondo in italiano!",
+                      thinkSeed =
+                          "LINGUA: Italiano. Tutto in italiano — anche questo ragionamento. Pensa in italiano. Rispondi in italiano. Sii breve, NON ripetere.",
+                      searchPrompt =
+                          "Dai una risposta breve e diretta in italiano in 2-4 frasi usando i risultati di ricerca. Aggiungi link rilevanti dai risultati come link Markdown. Non ripetere. Rispondi IN ITALIANO.",
+                      searchingLabel = "\uD83D\uDD0D Ricerca web: \"%s\"",
+                      analyzingLabel = "Analisi di %d risultati in corso…",
+                      braveCountry = "IT",
+                      languageName = "Italian",
+                      exampleProductQuery = "NomeProdotto errore soluzione",
+                      exampleLawQuery = "risoluzione contratto regole",
+                      exampleWeatherQuery = "previsioni meteo",
+                      exampleLocalQuery = "ristoranti vicino a me",
+                      uiReasoningLabel = "Ragionamento\u2026",
+                      uiShowReasoningLabel = "Mostra ragionamento",
+                      uiShowSourcesLabel = "Mostra fonti",
+                      uiSearchingLabel = "Ricerca in Internet per \u201C%s\u201D\u2026",
+                      uiSearchingLabelNoQuery = "Ricerca in Internet\u2026",
+                      uiThinkingLabel = "Sto pensando\u2026"),
+              "italiano" to null,
+              "french" to
+                  DetectedLanguage(
+                      userTurn = "Parlons en français.",
+                      assistantTurn = "Bien sûr, je réponds en français !",
+                      thinkSeed =
+                          "LANGUE: Français. Tout en français — y compris cette réflexion. Réfléchis en français. Réponds en français. Sois bref, NE te répète PAS.",
+                      searchPrompt =
+                          "Donne une réponse courte et directe en français en 2-4 phrases en utilisant les résultats de recherche. Ajoute des liens pertinents depuis les résultats comme liens Markdown. Ne te répète pas. Réponds EN FRANÇAIS.",
+                      searchingLabel = "\uD83D\uDD0D Recherche web : \u00ab %s \u00bb",
+                      analyzingLabel = "Analyse de %d résultats en cours…",
+                      braveCountry = "FR",
+                      languageName = "French",
+                      exampleProductQuery = "NomProduit erreur solution",
+                      exampleLawQuery = "résiliation contrat règles",
+                      exampleWeatherQuery = "prévisions météo",
+                      exampleLocalQuery = "restaurants près de moi",
+                      uiReasoningLabel = "Réflexion\u2026",
+                      uiShowReasoningLabel = "Afficher le raisonnement",
+                      uiShowSourcesLabel = "Afficher les sources",
+                      uiSearchingLabel = "Recherche sur Internet \u00ab %s \u00bb\u2026",
+                      uiSearchingLabelNoQuery = "Recherche sur Internet\u2026",
+                      uiThinkingLabel = "Réflexion en cours\u2026"),
+              "français" to null,
+              "francais" to null,
+              "spanish" to
+                  DetectedLanguage(
+                      userTurn = "Hablemos en español.",
+                      assistantTurn = "¡Claro, respondo en español!",
+                      thinkSeed =
+                          "IDIOMA: Español. Todo en español — incluido este razonamiento. Piensa en español. Responde en español. Sé breve, NO repitas.",
+                      searchPrompt =
+                          "Da una respuesta corta y directa en español en 2-4 oraciones usando los resultados de búsqueda. Agrega enlaces relevantes de los resultados como enlaces Markdown. No te repitas. Responde EN ESPAÑOL.",
+                      searchingLabel = "\uD83D\uDD0D Búsqueda web: \"%s\"",
+                      analyzingLabel = "Analizando %d resultados…",
+                      braveCountry = "ES",
+                      languageName = "Spanish",
+                      exampleProductQuery = "NombreProducto error solución",
+                      exampleLawQuery = "rescisión contrato reglas",
+                      exampleWeatherQuery = "pronóstico del tiempo",
+                      exampleLocalQuery = "restaurantes cerca de mí",
+                      uiReasoningLabel = "Razonando\u2026",
+                      uiShowReasoningLabel = "Mostrar razonamiento",
+                      uiShowSourcesLabel = "Mostrar fuentes",
+                      uiSearchingLabel = "Buscando en Internet \u201C%s\u201D\u2026",
+                      uiSearchingLabelNoQuery = "Buscando en Internet\u2026",
+                      uiThinkingLabel = "Pensando\u2026"),
+              "español" to null,
+              "espanol" to null,
+              "portuguese" to
+                  DetectedLanguage(
+                      userTurn = "Vamos falar em português.",
+                      assistantTurn = "Claro, respondo em português!",
+                      thinkSeed =
+                          "IDIOMA: Português. Tudo em português — incluindo este raciocínio. Pense em português. Responda em português. Seja breve, NÃO repita.",
+                      searchPrompt =
+                          "Dê uma resposta curta e direta em português em 2-4 frases usando os resultados de pesquisa. Adicione links relevantes dos resultados como links Markdown. Não se repita. Responda EM PORTUGUÊS.",
+                      searchingLabel = "\uD83D\uDD0D Busca na web: \"%s\"",
+                      analyzingLabel = "Analisando %d resultados…",
+                      braveCountry = "BR",
+                      languageName = "Portuguese",
+                      exampleProductQuery = "NomeProduto erro solução",
+                      exampleLawQuery = "rescisão contrato regras",
+                      exampleWeatherQuery = "previsão do tempo",
+                      exampleLocalQuery = "restaurantes perto de mim",
+                      uiReasoningLabel = "Raciocinando\u2026",
+                      uiShowReasoningLabel = "Mostrar raciocínio",
+                      uiShowSourcesLabel = "Mostrar fontes",
+                      uiSearchingLabel = "Pesquisando na Internet por \u201C%s\u201D\u2026",
+                      uiSearchingLabelNoQuery = "Pesquisando na Internet\u2026",
+                      uiThinkingLabel = "Pensando\u2026"),
+              "português" to null,
+              "portugues" to null,
+              "dutch" to
+                  DetectedLanguage(
+                      userTurn = "Laten we Nederlands praten.",
+                      assistantTurn = "Natuurlijk, ik antwoord in het Nederlands!",
+                      thinkSeed =
+                          "TAAL: Nederlands. Alles in het Nederlands — ook dit denkproces. Denk in het Nederlands. Antwoord in het Nederlands. Wees kort, herhaal NIET.",
+                      searchPrompt =
+                          "Geef een kort, direct antwoord in het Nederlands in 2-4 zinnen op basis van de zoekresultaten. Voeg relevante links uit de resultaten toe als Markdown-links. Herhaal niet. Antwoord IN HET NEDERLANDS.",
+                      searchingLabel = "\uD83D\uDD0D Zoeken op het web: \"%s\"",
+                      analyzingLabel = "%d resultaten worden geanalyseerd…",
+                      braveCountry = "NL",
+                      languageName = "Dutch",
+                      exampleProductQuery = "ProductNaam fout oplossing",
+                      exampleLawQuery = "contractontbinding regels",
+                      exampleWeatherQuery = "weersvoorspelling",
+                      exampleLocalQuery = "restaurants in de buurt",
+                      uiReasoningLabel = "Aan het nadenken\u2026",
+                      uiShowReasoningLabel = "Redenering tonen",
+                      uiShowSourcesLabel = "Bronnen tonen",
+                      uiSearchingLabel = "Zoeken op internet naar \u201C%s\u201D\u2026",
+                      uiSearchingLabelNoQuery = "Zoeken op internet\u2026",
+                      uiThinkingLabel = "Aan het nadenken\u2026"),
+              "nederlands" to null,
+              "turkish" to
+                  DetectedLanguage(
+                      userTurn = "Türkçe konuşalım.",
+                      assistantTurn = "Tabii, Türkçe cevap veriyorum!",
+                      thinkSeed =
+                          "DİL: Türkçe. Her şeyi Türkçe yaz — bu düşünme süreci dahil. Türkçe düşün. Türkçe cevapla. Kısa tut, tekrar ETME.",
+                      searchPrompt =
+                          "Arama sonuçlarını kullanarak Türkçe olarak 2-4 cümlelik kısa ve doğrudan bir yanıt ver. Sonuçlardan ilgili bağlantıları Markdown bağlantıları olarak ekle. Tekrar etme. TÜRKÇE CEVAPLA.",
+                      searchingLabel = "\uD83D\uDD0D Web'de aranıyor: \"%s\"",
+                      analyzingLabel = "%d sonuç analiz ediliyor…",
+                      braveCountry = "TR",
+                      languageName = "Turkish",
+                      exampleProductQuery = "ÜrünAdı hata çözüm",
+                      exampleLawQuery = "sözleşme feshi kuralları",
+                      exampleWeatherQuery = "hava durumu tahmini",
+                      exampleLocalQuery = "yakınımdaki restoranlar",
+                      uiReasoningLabel = "Düşünüyor\u2026",
+                      uiShowReasoningLabel = "Akıl yürütmeyi göster",
+                      uiShowSourcesLabel = "Kaynakları göster",
+                      uiSearchingLabel = "İnternette aranıyor: \u201C%s\u201D\u2026",
+                      uiSearchingLabelNoQuery = "İnternette aranıyor\u2026",
+                      uiThinkingLabel = "Düşünüyor\u2026"),
+              "türkçe" to null,
+              "turkce" to null,
+              "japanese" to
+                  DetectedLanguage(
+                      userTurn = "日本語で話しましょう。",
+                      assistantTurn = "はい、日本語で答えます！",
+                      thinkSeed = "言語: 日本語。この思考も含め、すべて日本語で書いて。日本語で考えて。日本語で答えて。簡潔に、繰り返さないで。",
+                      searchPrompt =
+                          "検索結果を使って、日本語で2〜4文の短く直接的な回答をしてください。結果から関連リンクをMarkdownリンクとして追加してください。繰り返さないでください。日本語で回答してください。",
+                      searchingLabel = "\uD83D\uDD0D ウェブで検索中：「%s」",
+                      analyzingLabel = "検索結果 %d 件を分析中…",
+                      braveCountry = "JP",
+                      languageName = "Japanese",
+                      exampleProductQuery = "製品名 エラー 解決方法",
+                      exampleLawQuery = "契約解除 ルール",
+                      exampleWeatherQuery = "天気予報",
+                      exampleLocalQuery = "近くのレストラン",
+                      uiReasoningLabel = "思考中\u2026",
+                      uiShowReasoningLabel = "推論を表示",
+                      uiShowSourcesLabel = "ソースを表示",
+                      uiSearchingLabel = "インターネットで「%s」を検索中\u2026",
+                      uiSearchingLabelNoQuery = "インターネットで検索中\u2026",
+                      uiThinkingLabel = "考え中\u2026"),
+              "日本語" to null,
+              "chinese" to
+                  DetectedLanguage(
+                      userTurn = "我们用中文交流吧。",
+                      assistantTurn = "好的，我用中文回复！",
+                      thinkSeed = "语言：中文。一切都用中文写——包括这个思考过程。用中文思考。用中文回答。简洁，不要重复。",
+                      searchPrompt = "请使用搜索结果，用中文给出2-4句简短直接的回答。将结果中的相关链接添加为Markdown链接。不要重复。请用中文回答。",
+                      searchingLabel = "\uD83D\uDD0D 正在搜索：「%s」",
+                      analyzingLabel = "正在分析 %d 条搜索结果…",
+                      braveCountry = "CN",
+                      languageName = "Chinese",
+                      exampleProductQuery = "产品名称 错误 解决方法",
+                      exampleLawQuery = "合同解除 规则",
+                      exampleWeatherQuery = "天气预报",
+                      exampleLocalQuery = "附近的餐厅",
+                      uiReasoningLabel = "思考中\u2026",
+                      uiShowReasoningLabel = "显示推理",
+                      uiShowSourcesLabel = "显示来源",
+                      uiSearchingLabel = "正在搜索\u201C%s\u201D\u2026",
+                      uiSearchingLabelNoQuery = "正在搜索\u2026",
+                      uiThinkingLabel = "思考中\u2026"),
+              "中文" to null,
+              "korean" to
+                  DetectedLanguage(
+                      userTurn = "한국어로 이야기합시다.",
+                      assistantTurn = "네, 한국어로 답변하겠습니다!",
+                      thinkSeed =
+                          "언어: 한국어. 이 사고 과정을 포함하여 모든 것을 한국어로 작성해. 한국어로 생각해. 한국어로 답해. 간결하게, 반복하지 마.",
+                      searchPrompt =
+                          "검색 결과를 사용하여 한국어로 2-4문장의 짧고 직접적인 답변을 해주세요. 결과에서 관련 링크를 Markdown 링크로 추가하세요. 반복하지 마세요. 한국어로 답변하세요.",
+                      searchingLabel = "\uD83D\uDD0D 웹 검색 중: \"%s\"",
+                      analyzingLabel = "%d개의 검색 결과 분석 중…",
+                      braveCountry = "KR",
+                      languageName = "Korean",
+                      exampleProductQuery = "제품명 오류 해결방법",
+                      exampleLawQuery = "계약 해지 규칙",
+                      exampleWeatherQuery = "일기예보",
+                      exampleLocalQuery = "근처 맛집",
+                      uiReasoningLabel = "생각 중\u2026",
+                      uiShowReasoningLabel = "추론 보기",
+                      uiShowSourcesLabel = "출처 보기",
+                      uiSearchingLabel = "인터넷에서 \u201C%s\u201D 검색 중\u2026",
+                      uiSearchingLabelNoQuery = "인터넷에서 검색 중\u2026",
+                      uiThinkingLabel = "생각 중\u2026"),
+              "한국어" to null,
+              "russian" to
+                  DetectedLanguage(
+                      userTurn = "Давайте говорить по-русски.",
+                      assistantTurn = "Конечно, отвечаю на русском!",
+                      thinkSeed =
+                          "ЯЗЫК: Русский. Всё на русском — включая эти рассуждения. Думай на русском. Отвечай на русском. Кратко, НЕ повторяй.",
+                      searchPrompt =
+                          "Дайте короткий, прямой ответ на русском языке в 2-4 предложениях, используя результаты поиска. Добавьте релевантные ссылки из результатов как Markdown-ссылки. Не повторяйтесь. Отвечайте НА РУССКОМ.",
+                      searchingLabel = "\uD83D\uDD0D Поиск в интернете: \u00ab%s\u00bb",
+                      analyzingLabel = "Анализ %d результатов…",
+                      braveCountry = "RU",
+                      languageName = "Russian",
+                      exampleProductQuery = "НазваниеПродукта ошибка решение",
+                      exampleLawQuery = "расторжение договора правила",
+                      exampleWeatherQuery = "прогноз погоды",
+                      exampleLocalQuery = "рестораны рядом",
+                      uiReasoningLabel = "Размышляю\u2026",
+                      uiShowReasoningLabel = "Показать рассуждения",
+                      uiShowSourcesLabel = "Показать источники",
+                      uiSearchingLabel = "Поиск в интернете: \u00ab%s\u00bb\u2026",
+                      uiSearchingLabelNoQuery = "Поиск в интернете\u2026",
+                      uiThinkingLabel = "Думаю\u2026"),
+              "русский" to null)
+          .let { raw ->
+            // Resolve aliases: "deutsch" → same as "german", etc.
+            val resolved = raw.toMutableMap()
+            val aliases =
+                mapOf(
+                    "deutsch" to "german",
+                    "italiano" to "italian",
+                    "français" to "french",
+                    "francais" to "french",
+                    "español" to "spanish",
+                    "espanol" to "spanish",
+                    "português" to "portuguese",
+                    "portugues" to "portuguese",
+                    "nederlands" to "dutch",
+                    "türkçe" to "turkish",
+                    "turkce" to "turkish",
+                    "日本語" to "japanese",
+                    "中文" to "chinese",
+                    "mandarin" to "chinese",
+                    "한국어" to "korean",
+                    "русский" to "russian")
+            for ((alias, canon) in aliases) {
+              resolved[alias] = resolved[canon]
+            }
+            resolved.filterValues { it != null }.mapValues { it.value!! }
+          }
+
+  /**
+   * Resolves latitude/longitude to a human-readable city and country name via the OpenStreetMap
+   * Nominatim reverse geocoding API (free, no API key required).
+   *
+   * @return A string like "Frankfurt am Main, Germany" or `null` if the lookup fails.
+   */
+  private fun reverseGeocode(latitude: String, longitude: String): String? {
+    return try {
+      val url =
+          "https://nominatim.openstreetmap.org/reverse?lat=$latitude&lon=$longitude&format=json&zoom=18&addressdetails=1"
+      log(LogLevel.INFO, "Reverse geocoding: lat=$latitude, lon=$longitude")
+      val connection = java.net.URI(url).toURL().openConnection() as HttpURLConnection
+      connection.requestMethod = "GET"
+      connection.connectTimeout = 5000
+      connection.readTimeout = 5000
+      connection.setRequestProperty("User-Agent", "CodBi-FormcyclePlugin/1.0")
+      connection.setRequestProperty("Accept", "application/json")
+
+      val responseCode = connection.responseCode
+      if (responseCode !in 200..299) {
+        log(LogLevel.WARNING, "Nominatim returned HTTP $responseCode")
+        connection.disconnect()
+        return null
+      }
+
+      val body = connection.inputStream.bufferedReader().readText()
+      connection.disconnect()
+
+      // Parse the JSON response to extract street, city, state, country
+      val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+      val root = mapper.readTree(body)
+      val address = root.get("address")
+      if (address == null) {
+        log(LogLevel.WARNING, "Nominatim response has no address field")
+        return null
+      }
+
+      val road = address.get("road")?.asText()
+      val houseNumber = address.get("house_number")?.asText()
+      val city =
+          address.get("city")?.asText()
+              ?: address.get("town")?.asText()
+              ?: address.get("village")?.asText()
+              ?: address.get("municipality")?.asText()
+              ?: address.get("county")?.asText()
+      val state = address.get("state")?.asText()
+      val country = address.get("country")?.asText()
+
+      // Build street part: "Nürnberger Straße 32" or just "Nürnberger Straße"
+      val street = if (road != null && houseNumber != null) "$road $houseNumber" else road
+      val parts = listOfNotNull(city, street, state, country).filter { it.isNotBlank() }
+      if (parts.isEmpty()) {
+        log(LogLevel.WARNING, "Nominatim address has no usable fields: $body")
+        return null
+      }
+      val result = parts.joinToString(", ")
+      log(LogLevel.INFO, "Reverse geocoded: $result")
+      result
+    } catch (ex: Exception) {
+      log(LogLevel.WARNING, "Reverse geocoding failed: ${ex.message}")
+      null
+    }
+  }
+
+  /**
+   * Resolves the user's location from the client IP address via the ip-api.com free service. This
+   * is a fallback when browser geolocation is unavailable (e.g. HTTP, permission denied).
+   *
+   * @return A string like "Frankfurt am Main, Hessen, Germany" or `null` if lookup fails or IP is
+   *   localhost.
+   */
+  private fun geolocateByIP(clientIP: String): String? {
+    // Skip loopback / private IPs — they can't be geolocated
+    if (clientIP == "127.0.0.1" ||
+        clientIP == "::1" ||
+        clientIP == "unknown" ||
+        clientIP.startsWith("192.168.") ||
+        clientIP.startsWith("10.") ||
+        clientIP.startsWith("172.")) {
+      log(LogLevel.INFO, "IP geolocation skipped: private/loopback IP '$clientIP'")
+      return null
+    }
+    return try {
+      val url = "http://ip-api.com/json/$clientIP?fields=status,city,regionName,country"
+      log(LogLevel.INFO, "IP geolocation for: $clientIP")
+      val connection = java.net.URI(url).toURL().openConnection() as HttpURLConnection
+      connection.requestMethod = "GET"
+      connection.connectTimeout = 3000
+      connection.readTimeout = 3000
+      connection.setRequestProperty("Accept", "application/json")
+
+      val responseCode = connection.responseCode
+      if (responseCode !in 200..299) {
+        log(LogLevel.WARNING, "ip-api.com returned HTTP $responseCode")
+        connection.disconnect()
+        return null
+      }
+
+      val body = connection.inputStream.bufferedReader().readText()
+      connection.disconnect()
+
+      val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+      val root = mapper.readTree(body)
+      if (root.get("status")?.asText() != "success") {
+        log(LogLevel.WARNING, "ip-api.com lookup failed: $body")
+        return null
+      }
+
+      val city = root.get("city")?.asText()
+      val region = root.get("regionName")?.asText()
+      val country = root.get("country")?.asText()
+      val parts = listOfNotNull(city, region, country).filter { it.isNotBlank() }
+      if (parts.isEmpty()) return null
+      val result = parts.joinToString(", ")
+      log(LogLevel.INFO, "IP geolocation result: $result")
+      result
+    } catch (ex: Exception) {
+      log(LogLevel.WARNING, "IP geolocation failed: ${ex.message}")
+      null
+    }
+  }
+
+  /**
+   * Asks the fast model to identify the language of the user's question. Returns a
+   * [DetectedLanguage] with conversation-turn and think-seed strings, or `null` for English.
+   *
+   * This is a very lightweight call: a tiny prompt, max 8 output tokens, low temperature. It always
+   * uses the **fast** server regardless of which model will handle the real question.
+   */
+  private fun detectLanguageViaModel(question: String): DetectedLanguage? {
+    try {
+      val messagesJson = buildString {
+        append("[")
+        append(
+            "{\"role\":\"system\",\"content\":\"You are a language detector. The text may be in its native script OR romanized (written in Latin alphabet). Identify the ACTUAL language, not the script. Reply with ONLY the language name in English, nothing else. Examples: English, German, French, Italian, Spanish, Portuguese, Dutch, Turkish, Japanese, Chinese, Korean, Arabic, Russian, Hindi.\"}")
+        append(",{\"role\":\"user\",\"content\":\"${jsonEscape(question)}\"}")
+        append("]")
+      }
+      var requestBody = buildString {
+        append("{\"messages\":$messagesJson")
+        append(",\"max_tokens\":8")
+        append(",\"temperature\":0.0")
+        append(",\"stream\":false")
+        append("}")
+      }
+      val response =
+          if (isExternalMode) {
+            requestBody = injectModelField(requestBody)
+            externalHttpPost("/v1/chat/completions", requestBody, timeoutMs = 15_000)
+          } else {
+            httpPost("/v1/chat/completions", requestBody, timeoutMs = 15_000, port = serverPort)
+          }
+      val json = com.google.gson.JsonParser.parseString(response).asJsonObject
+      val raw =
+          json
+              .getAsJsonArray("choices")
+              ?.get(0)
+              ?.asJsonObject
+              ?.getAsJsonObject("message")
+              ?.get("content")
+              ?.asString ?: ""
+      // The model should respond with a single word like "German" or "French"
+      val langName =
+          raw.trim().lowercase().removeSuffix(".").removeSuffix("!").removeSuffix(",").trim()
+      log(LogLevel.INFO, "Model-detected language: '$langName' (raw: '${raw.trim()}')")
+
+      if (langName == "english") return null
+      // Look up in our language map
+      val detected = languageMap[langName]
+      if (detected != null) return detected
+
+      // Try partial match (e.g. model says "brazilian portuguese" → "portuguese")
+      for ((key, value) in languageMap) {
+        if (langName.contains(key) || key.contains(langName)) {
+          log(LogLevel.INFO, "Partial language match: '$langName' → '$key'")
+          return value
+        }
+      }
+
+      log(
+          LogLevel.INFO,
+          "Language '$langName' not in language map — building generic negotiation turn")
+      // Dynamically build a DetectedLanguage for any language the model identifies.
+      // The "Let's talk in [X]" turn works universally even for languages we don't have
+      // pre-built templates for.
+      return DetectedLanguage(
+          userTurn = "Let's talk in $langName.",
+          assistantTurn = "Sure, I'll respond in $langName!",
+          thinkSeed =
+              "${langName.replaceFirstChar { it.uppercase() }}. Everything in $langName — including this reasoning. Think in $langName. Answer in $langName. Be brief, do NOT repeat.",
+          searchPrompt =
+              "Give a short, direct answer in $langName in 2-4 sentences using the search results. Include relevant links from the results as Markdown links. Do not repeat yourself. Answer in ${langName.uppercase()}.",
+          languageName = langName.replaceFirstChar { it.uppercase() })
+    } catch (e: Exception) {
+      log(LogLevel.WARNING, "Model-based language detection failed: ${e.message}")
+    }
+    // Fallback to regex-based detection
+    return detectLanguage(question)
+  }
+
+  /**
+   * Detects the user's language from their question and returns conversation-turn strings that
+   * naturally set the model's response language. Returns `null` for English (the default).
+   *
+   * The approach is deliberately simple: a fake "Let's talk in [X]" → "Sure!" exchange at the start
+   * of the conversation is far more reliable than system-prompt instructions for small models.
+   */
+  private fun detectLanguage(question: String): DetectedLanguage? {
     val lower = " ${question.lowercase()} "
-    // German indicators: common words, umlauts, ß
+
+    // --- German ---
     val germanMarkers =
         listOf(
             "ä",
@@ -1539,10 +2370,10 @@ class Standard : LLAMA() {
     val germanHits = germanMarkers.count { lower.contains(it) }
     if (germanHits >= 2 ||
         (germanHits >= 1 && listOf("ä", "ö", "ü", "ß").any { lower.contains(it) })) {
-      return "WICHTIG: Der Benutzer schreibt auf Deutsch. Du MUSST auf Deutsch denken UND antworten. Alle Überlegungen (reasoning/thinking) und die finale Antwort MÜSSEN auf Deutsch sein."
+      return languageMap["german"]
     }
-    // Italian indicators — checked BEFORE French/Spanish since they share markers like "una",
-    // "per", "con"
+
+    // --- Italian (before French/Spanish — they share markers) ---
     val italianMarkers =
         listOf(
             " è ",
@@ -1589,9 +2420,46 @@ class Standard : LLAMA() {
             " sindaco",
             " oggi")
     if (italianMarkers.count { lower.contains(it) } >= 2) {
-      return "IMPORTANTE: L'utente scrive in italiano. DEVI pensare E rispondere in italiano. Tutti i ragionamenti (reasoning/thinking) e la risposta finale DEVONO essere in italiano."
+      return languageMap["italian"]
     }
-    // French indicators
+
+    // --- Portuguese (before French/Spanish — ã and õ are uniquely Portuguese) ---
+    val portugueseMarkers =
+        listOf(
+            "ã",
+            "õ",
+            " é ",
+            " para ",
+            " com ",
+            " que ",
+            " não ",
+            " uma ",
+            " um ",
+            " você ",
+            " está ",
+            " são ",
+            " tem ",
+            " como ",
+            " mais ",
+            " muito ",
+            " bem ",
+            " também ",
+            " qual ",
+            " melhor",
+            " pode ",
+            " fazer ",
+            " sobre ",
+            " quando ",
+            " onde ")
+    val portugueseHits = portugueseMarkers.count { lower.contains(it) }
+    if (portugueseHits >= 2 ||
+        (portugueseHits >= 1 && listOf("ã", "õ").any { lower.contains(it) })) {
+      return languageMap["portuguese"]
+    }
+
+    // --- French ---
+    // French uses heavy apostrophe contractions (l', d', c', j', n', qu') that break
+    // space-padded matching.  Include those as highly distinctive markers.
     val frenchMarkers =
         listOf(
             " est ",
@@ -1606,14 +2474,40 @@ class Standard : LLAMA() {
             " sur ",
             " pas ",
             " sont ",
+            " très ",
+            " mais ",
+            " aussi ",
+            " cette ",
+            " nous ",
+            " vous ",
+            " ils ",
+            " elle ",
+            " faire ",
+            " avoir ",
+            " peut ",
+            " fait ",
+            " tout ",
+            " bien ",
+            " comment ",
+            " pourquoi",
+            " quel",
+            " quoi ",
             "é",
             "è",
             "ê",
-            "ç")
+            "ç",
+            "l'",
+            "d'",
+            "c'",
+            "j'",
+            "n'",
+            "s'",
+            "qu'")
     if (frenchMarkers.count { lower.contains(it) } >= 2) {
-      return "IMPORTANT : L'utilisateur écrit en français. Tu DOIS penser ET répondre en français."
+      return languageMap["french"]
     }
-    // Spanish indicators
+
+    // --- Spanish ---
     val spanishMarkers =
         listOf(
             " es ",
@@ -1629,144 +2523,162 @@ class Standard : LLAMA() {
             "¿",
             "¡")
     if (spanishMarkers.count { lower.contains(it) } >= 2) {
-      return "IMPORTANTE: El usuario escribe en español. DEBES pensar Y responder en español."
+      return languageMap["spanish"]
     }
+
+    // --- Turkish ---
+    val turkishMarkers =
+        listOf(
+            "ı",
+            "ğ",
+            "ş",
+            "ç",
+            " bir ",
+            " ve ",
+            " bu ",
+            " için ",
+            " ile ",
+            " ne ",
+            " nasıl",
+            " hangi",
+            " nedir",
+            " var ",
+            " olan ",
+            " gibi ",
+            " daha ",
+            " en ")
+    if (turkishMarkers.count { lower.contains(it) } >= 2) {
+      return languageMap["turkish"]
+    }
+
     return null // English or unknown — no extra hint needed
   }
 
-  /**
-   * Returns a short opening phrase in the user's language to seed the `<think>` block. By
-   * pre-filling the start of reasoning in the target language, the model continues reasoning in
-   * that language instead of defaulting to English.
-   */
-  private fun detectThinkingSeed(question: String): String {
-    // Pad with spaces so first/last words match markers like " ist "
-    val lower = " ${question.lowercase()} "
-    val germanMarkers =
-        listOf(
-            "ä",
-            "ö",
-            "ü",
-            "ß",
-            " ist ",
-            " der ",
-            " die ",
-            " das ",
-            " und ",
-            " wie ",
-            " wer ",
-            " was ",
-            " ein ",
-            " eine ",
-            " für ",
-            " auf ",
-            " nicht ",
-            " mit ",
-            " von ",
-            " nach ",
-            " bei ",
-            " aus ",
-            " über ")
-    val germanHits = germanMarkers.count { lower.contains(it) }
-    if (germanHits >= 2 ||
-        (germanHits >= 1 && listOf("ä", "ö", "ü", "ß").any { lower.contains(it) })) {
-      return "SPRACHE: Deutsch. Denke auf Deutsch. Antworte auf Deutsch. Kurz denken, NICHT wiederholen."
-    }
-    val frenchMarkers =
-        listOf(" est ", " les ", " des ", " une ", " dans ", " pour ", " avec ", "é", "è", "ç")
-    if (frenchMarkers.count { lower.contains(it) } >= 2) {
-      return "LANGUE: Français. Réfléchis en français. Réponds en français. Sois bref, NE te répète PAS."
-    }
-    val spanishMarkers = listOf(" es ", " los ", " las ", " una ", " para ", " con ", "ñ", "¿")
-    if (spanishMarkers.count { lower.contains(it) } >= 2) {
-      return "IDIOMA: Español. Piensa en español. Responde en español. Sé breve, NO repitas."
-    }
-    val italianMarkers =
-        listOf(
-            " è ",
-            " il ",
-            " la ",
-            " le ",
-            " gli ",
-            " dei ",
-            " della ",
-            " per ",
-            " con ",
-            " che ",
-            " come ",
-            " sono ",
-            " non ")
-    if (italianMarkers.count { lower.contains(it) } >= 2) {
-      return "LINGUA: Italiano. Pensa in italiano. Rispondi in italiano. Sii breve, NON ripetere."
-    }
-    return "Think briefly. Do NOT repeat yourself." // English
-  }
+  // detectThinkingSeed is no longer needed — the think seed is part of DetectedLanguage.
+  // Language detection for the think seed is done once in detectLanguage() and reused.
 
   /** Returns a follow-up prompt for answering from search results in the user's language. */
-  private fun searchFollowUpPrompt(originalQuestion: String): String {
-    val lower = " ${originalQuestion.lowercase()} "
-    val germanMarkers =
-        listOf(
-            "ä",
-            "ö",
-            "ü",
-            "ß",
-            " ist ",
-            " der ",
-            " die ",
-            " das ",
-            " und ",
-            " wie ",
-            " wer ",
-            " was ",
-            " ein ",
-            " eine ",
-            " für ",
-            " auf ",
-            " nicht ",
-            " mit ",
-            " von ",
-            " nach ",
-            " bei ",
-            " aus ",
-            " über ")
-    val germanHits = germanMarkers.count { lower.contains(it) }
-    if (germanHits >= 2 ||
-        (germanHits >= 1 && listOf("ä", "ö", "ü", "ß").any { lower.contains(it) })) {
-      return "Gib eine kurze, direkte Antwort auf Deutsch in 2-4 Sätzen basierend auf den Suchergebnissen. Füge Links wie [Norton](https://norton.com) oder [Dell](https://dell.com) hinzu. Wiederhole dich nicht. Antworte AUF DEUTSCH."
+  private fun searchFollowUpPrompt(
+      originalQuestion: String,
+      lang: DetectedLanguage? = null
+  ): String {
+    val resolved = lang ?: detectLanguage(originalQuestion)
+    if (resolved != null) return resolved.searchPrompt
+    return "Give a short, direct answer in 2-4 sentences using the search results. Include relevant links from the results as Markdown links. Do not repeat yourself."
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  External AI HTTP helpers
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Sends a synchronous POST request to the external OpenAI-compatible API. Adds Authorization
+   * header and returns the response body.
+   */
+  private fun externalHttpPost(
+      endpoint: String,
+      jsonBody: String,
+      timeoutMs: Int = 300_000
+  ): String {
+    val url = "${externalUrl}$endpoint"
+    val connection = URI(url).toURL().openConnection() as HttpURLConnection
+    connection.requestMethod = "POST"
+    connection.doOutput = true
+    connection.connectTimeout = 10_000
+    connection.readTimeout = timeoutMs
+    connection.setRequestProperty("Content-Type", "application/json")
+    connection.setRequestProperty("Accept", "application/json")
+    externalApiKey?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+
+    connection.outputStream.use { os -> os.write(jsonBody.toByteArray(Charsets.UTF_8)) }
+
+    val responseCode = connection.responseCode
+    val body =
+        try {
+          (if (responseCode in 200..299) connection.inputStream else connection.errorStream)
+              .bufferedReader()
+              .readText()
+        } catch (_: Exception) {
+          ""
+        }
+    connection.disconnect()
+
+    if (responseCode !in 200..299) {
+      throw RuntimeException("External AI returned HTTP $responseCode: $body")
     }
-    val italianMarkers =
-        listOf(
-            " è ",
-            " il ",
-            " la ",
-            " le ",
-            " gli ",
-            " dei ",
-            " della ",
-            " per ",
-            " con ",
-            " che ",
-            " come ",
-            " sono ",
-            " non ")
-    if (italianMarkers.count { lower.contains(it) } >= 2) {
-      return "Dai una risposta breve e diretta in italiano in 2-4 frasi usando i risultati di ricerca. Aggiungi link come [Norton](https://norton.com) o [Dell](https://dell.com). Non ripetere. Rispondi IN ITALIANO."
-    }
-    val frenchMarkers =
-        listOf(" est ", " les ", " des ", " une ", " dans ", " pour ", " avec ", "é", "è", "ç")
-    if (frenchMarkers.count { lower.contains(it) } >= 2) {
-      return "Donne une réponse courte et directe en français en 2-4 phrases en utilisant les résultats de recherche. Ajoute des liens comme [Norton](https://norton.com) ou [Dell](https://dell.com). Ne te répète pas. Réponds EN FRANÇAIS."
-    }
-    val spanishMarkers = listOf(" es ", " los ", " las ", " una ", " para ", " con ", "ñ", "¿")
-    if (spanishMarkers.count { lower.contains(it) } >= 2) {
-      return "Da una respuesta corta y directa en español en 2-4 oraciones usando los resultados de búsqueda. Agrega enlaces como [Norton](https://norton.com) o [Dell](https://dell.com). No te repitas. Responde EN ESPAÑOL."
-    }
-    return "Give a short, direct answer in 2-4 sentences using the search results. Add links like [Norton](https://norton.com) or [Dell](https://dell.com). Do not repeat yourself."
+    return body
   }
 
   /**
-   * Sends a synchronous chat completion request to the local llama-server.
+   * Sends a streaming POST request to the external OpenAI-compatible API. Processes Server-Sent
+   * Events (SSE) and invokes the callback for each data line.
+   */
+  private fun externalHttpPostStreaming(
+      endpoint: String,
+      jsonBody: String,
+      onLine: (String) -> Unit,
+      shouldStop: () -> Boolean = { false },
+      timeoutMs: Int = 300_000
+  ) {
+    val url = "${externalUrl}$endpoint"
+    val connection = URI(url).toURL().openConnection() as HttpURLConnection
+    connection.requestMethod = "POST"
+    connection.doOutput = true
+    connection.connectTimeout = 10_000
+    connection.readTimeout = timeoutMs
+    connection.setRequestProperty("Content-Type", "application/json")
+    connection.setRequestProperty("Accept", "text/event-stream")
+    externalApiKey?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+
+    connection.outputStream.use { os -> os.write(jsonBody.toByteArray(Charsets.UTF_8)) }
+
+    val responseCode = connection.responseCode
+    if (responseCode !in 200..299) {
+      val errorBody =
+          try {
+            connection.errorStream.bufferedReader().readText()
+          } catch (_: Exception) {
+            ""
+          }
+      connection.disconnect()
+      throw RuntimeException("External AI returned HTTP $responseCode: $errorBody")
+    }
+
+    try {
+      BufferedReader(InputStreamReader(connection.inputStream, Charsets.UTF_8)).use { reader ->
+        reader.lineSequence().forEach { line ->
+          if (shouldStop()) {
+            log(LogLevel.INFO, "External streaming aborted by stop request — disconnecting")
+            return@use
+          }
+          if (line.startsWith("data: ")) {
+            val data = line.removePrefix("data: ").trim()
+            if (data != "[DONE]") {
+              onLine(data)
+            }
+          }
+        }
+      }
+    } finally {
+      connection.disconnect()
+    }
+  }
+
+  /**
+   * Injects `"model":"<name>"` into an existing JSON request body when in external mode. Inserts
+   * the field right after the opening `{`.
+   */
+  private fun injectModelField(requestBody: String): String {
+    val model = externalModel ?: return requestBody
+    return if (requestBody.startsWith("{")) {
+      "{\"model\":\"${jsonEscape(model)}\"," + requestBody.substring(1)
+    } else {
+      requestBody
+    }
+  }
+
+  /**
+   * Sends a synchronous chat completion request to the llama-server or external AI.
    *
    * @param messagesJson The JSON messages array string.
    * @return The generated text response.
@@ -1777,33 +2689,40 @@ class Standard : LLAMA() {
       idSlot: Int = -1
   ): String {
     // Route to dedicated thinking server if available, otherwise use main server
-    val useThinkingServer = enableThinking && thinkingServerReady
+    val useThinkingServer = !isExternalMode && enableThinking && thinkingServerReady
     val targetPort = if (useThinkingServer) thinkingServerPort else serverPort
 
-    val requestBody = buildString {
+    var requestBody = buildString {
       append("{\"messages\":$messagesJson")
       // Thinking mode needs a larger token budget: reasoning tokens + answer
       val effectiveMaxTokens =
-          if (enableThinking) (maxTokens * 2).coerceAtLeast(3072) else maxTokens
+          if (enableThinking) (maxTokens * 4).coerceAtLeast(4096) else maxTokens
       append(",\"max_tokens\":$effectiveMaxTokens")
       append(",\"temperature\":${if (enableThinking) "0.5" else "0.1"}")
-      append(",\"repetition_penalty\":${if (enableThinking) "1.5" else "1.1"}")
+      if (!isExternalMode) append(",\"repetition_penalty\":${if (enableThinking) "1.5" else "1.1"}")
       append(",\"frequency_penalty\":${if (enableThinking) "1.0" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":false")
       // Thinking is handled via <think> pre-fill + filterThinkTags, not server-side enable_thinking
-      if (idSlot >= 0) append(",\"id_slot\":$idSlot")
+      if (!isExternalMode && idSlot >= 0) append(",\"id_slot\":$idSlot")
       append("}")
     }
 
-    if (useThinkingServer) {
+    if (isExternalMode) {
+      requestBody = injectModelField(requestBody)
+      log(LogLevel.INFO, "Routing to external AI: $externalUrl")
+    } else if (useThinkingServer) {
       log(LogLevel.INFO, "Routing to thinking server on port $thinkingServerPort")
     }
 
     // Thinking mode needs longer timeout: reasoning tokens + answer vs just answer
     val timeoutMs = if (enableThinking) 600_000 else 300_000
     val response =
-        httpPost("/v1/chat/completions", requestBody, timeoutMs = timeoutMs, port = targetPort)
+        if (isExternalMode) {
+          externalHttpPost("/v1/chat/completions", requestBody, timeoutMs = timeoutMs)
+        } else {
+          httpPost("/v1/chat/completions", requestBody, timeoutMs = timeoutMs, port = targetPort)
+        }
 
     // Parse the response to extract generated text
     return try {
@@ -1842,7 +2761,7 @@ class Standard : LLAMA() {
       idSlot: Int = -1
   ) {
     // Route to dedicated thinking server if available, otherwise use main server
-    val useThinkingServer = enableThinking && thinkingServerReady
+    val useThinkingServer = !isExternalMode && enableThinking && thinkingServerReady
     val targetPort = if (useThinkingServer) thinkingServerPort else serverPort
 
     /**
@@ -1860,30 +2779,44 @@ class Standard : LLAMA() {
     /** Set to true once repetition is detected, to force-close the think block. */
     var repetitionDetected = false
 
-    val requestBody = buildString {
+    var requestBody = buildString {
       append("{\"messages\":$messagesJson")
       // Thinking mode needs a larger token budget: reasoning tokens + answer
       val effectiveMaxTokens =
-          if (enableThinking) (maxTokens * 2).coerceAtLeast(3072) else maxTokens
+          if (enableThinking) (maxTokens * 4).coerceAtLeast(4096) else maxTokens
       append(",\"max_tokens\":$effectiveMaxTokens")
       append(",\"temperature\":${if (enableThinking) "0.5" else "0.1"}")
-      append(",\"repetition_penalty\":${if (enableThinking) "1.5" else "1.1"}")
+      if (!isExternalMode) append(",\"repetition_penalty\":${if (enableThinking) "1.5" else "1.1"}")
       append(",\"frequency_penalty\":${if (enableThinking) "1.0" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":true")
       // Thinking is handled via <think> pre-fill + filterThinkTags, not server-side enable_thinking
-      if (idSlot >= 0) append(",\"id_slot\":$idSlot")
+      if (!isExternalMode && idSlot >= 0) append(",\"id_slot\":$idSlot")
       append("}")
     }
 
-    if (useThinkingServer) {
+    if (isExternalMode) {
+      requestBody = injectModelField(requestBody)
+      log(LogLevel.INFO, "Routing stream to external AI: $externalUrl")
+    } else if (useThinkingServer) {
       log(LogLevel.INFO, "Routing stream to thinking server on port $thinkingServerPort")
     }
 
-    httpPostStreaming(
-        "/v1/chat/completions",
-        requestBody,
-        onLine = { data ->
+    val streamFn: ((String) -> Unit, () -> Boolean, Int) -> Unit =
+        if (isExternalMode) {
+          { onLine, shouldStopFn, timeout ->
+            externalHttpPostStreaming(
+                "/v1/chat/completions", requestBody, onLine, shouldStopFn, timeout)
+          }
+        } else {
+          { onLine, shouldStopFn, timeout ->
+            httpPostStreaming(
+                "/v1/chat/completions", requestBody, onLine, shouldStopFn, timeout, targetPort)
+          }
+        }
+
+    streamFn(
+        { data ->
           try {
             val json = com.google.gson.JsonParser.parseString(data).asJsonObject
             val delta =
@@ -2001,10 +2934,9 @@ class Standard : LLAMA() {
             /* skip malformed SSE chunk */
           }
         },
-        shouldStop = { session.stopRequested || repetitionDetected },
+        { session.stopRequested || repetitionDetected },
         // Thinking mode needs longer timeout: reasoning tokens + answer vs just answer
-        timeoutMs = if (enableThinking) 600_000 else 300_000,
-        port = targetPort)
+        if (enableThinking) 600_000 else 300_000)
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

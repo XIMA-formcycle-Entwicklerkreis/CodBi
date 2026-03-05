@@ -43,6 +43,7 @@ export class AI_ONNX_LLAMA_CHAT {
    * | `AI_ONNX_LLAMA_Chat_Upload` (Optional)   | `<input type="file">`                  | File upload for images/PDFs to chat about        |
    * | `AI_ONNX_LLAMA_Chat_Thinking` (Optional)  | `<input type="checkbox">`              | Toggles thinking mode (chain-of-thought) on/off  |
    * | `AI_ONNX_LLAMA_Chat_Internet` (Optional)    | `<input type="checkbox">`              | Toggles internet search availability on/off      |
+   * | `AI_ONNX_LLAMA_Chat_Location` (Optional)    | `<input type="checkbox">`              | Toggles geolocation (get_current_location) on/off |
    *
    * **Generated CSS Classes (injected at runtime):**
    *
@@ -161,6 +162,10 @@ export class AI_ONNX_LLAMA_CHAT {
     );
     const searchCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
       container.querySelector(".AI_ONNX_LLAMA_Chat_Internet"),
+      HTMLInputElement,
+    );
+    const locationCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
+      container.querySelector(".AI_ONNX_LLAMA_Chat_Location"),
       HTMLInputElement,
     );
 
@@ -312,6 +317,8 @@ export class AI_ONNX_LLAMA_CHAT {
      * HTML-escapes the given plain text, then converts:
      *   1. Markdown links `[label](url)` → clickable `<a>` with the label text
      *   2. Bare URLs (`https://…` / `http://…`) → clickable `<a>` showing the hostname
+     *   3. Phone numbers → clickable `tel:` link in a badge
+     *   4. Email addresses → clickable `mailto:` link in a badge
      *
      * Uses a placeholder strategy so that URLs inside already-created `<a>` tags
      * are never matched again by the bare-URL pass.
@@ -353,11 +360,50 @@ export class AI_ONNX_LLAMA_CHAT {
         return placeholder(idx);
       });
 
-      // 4. Restore placeholders with actual <a> tags, each wrapped in a badge
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: <explanation>
-      const restored = withAllPlaceholders.replace(
+      // 4. Convert phone numbers → tel: link placeholder
+      //    Matches patterns like +49 911 1234567, (0911) 123-4567, 0911/1234567,
+      //    +49 981 51-0 (switchboard), etc.
+      //    Requires at least 7 digits (ignoring separators) to avoid false positives.
+      const withPhonePlaceholders = withAllPlaceholders.replace(
+        /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,5}\)?[\s.\/-]?){1,3}\d{1,8}/g,
+        (match) => {
+          const digitsOnly = match.replace(/\D/g, "");
+          if (digitsOnly.length < 7 || digitsOnly.length > 15) {
+            return match;
+          }
+          const idx = links.length;
+          const telHref = `tel:${match.replace(/[^\d+]/g, "")}`;
+          links.push(
+            `<span class="LLAMA_Chat_PhoneBadge"><span class="LLAMA_Chat_BadgeIcon">📞</span><a href="${telHref}">${match}</a></span>`,
+          );
+          return placeholder(idx);
+        },
+      );
+
+      // 5. Convert email addresses → mailto: link placeholder
+      const withEmailPlaceholders = withPhonePlaceholders.replace(
+        /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
+        (match) => {
+          const idx = links.length;
+          links.push(
+            `<span class="LLAMA_Chat_EmailBadge"><span class="LLAMA_Chat_BadgeIcon">✉</span><a href="mailto:${match}">${match}</a></span>`,
+          );
+          return placeholder(idx);
+        },
+      );
+
+      // 6. Restore placeholders with actual <a> tags, wrapping URL badges
+      const restored = withEmailPlaceholders.replace(
+        // biome-ignore lint/suspicious/noControlCharactersInRegex: placeholder pattern uses \x00
         /\x00LINK(\d+)\x00/g,
-        (_m, idx: string) => `<span class="LLAMA_Chat_SourceBadge">${links[Number(idx)]}</span>`,
+        (_m, idx: string) => {
+          const html = links[Number(idx)];
+          // Phone and email badges are already fully wrapped — return as-is
+          if (html.startsWith('<span class="LLAMA_Chat_Phone') || html.startsWith('<span class="LLAMA_Chat_Email')) {
+            return html;
+          }
+          return `<span class="LLAMA_Chat_SourceBadge">${html}</span>`;
+        },
       );
 
       return restored;
@@ -523,6 +569,30 @@ export class AI_ONNX_LLAMA_CHAT {
         if (searchCheckbox) {
           headers["X-Search"] = searchCheckbox.checked ? "true" : "false";
         }
+        if (locationCheckbox?.checked) {
+          headers["X-Location"] = "true";
+          // Pre-fetch browser geolocation so the model already knows the user's position
+          if (navigator.geolocation) {
+            try {
+              const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                  enableHighAccuracy: false,
+                  timeout: 5000,
+                  maximumAge: 300000, // 5 min cache
+                });
+              });
+              headers["X-Latitude"] = pos.coords.latitude.toFixed(4);
+              headers["X-Longitude"] = pos.coords.longitude.toFixed(4);
+              window.codbi.log(
+                "INFO",
+                `Geolocation: ${headers["X-Latitude"]}, ${headers["X-Longitude"]}`,
+                "AI / LLAMA / CHAT",
+              );
+            } catch (geoErr) {
+              window.codbi.log("WARNING", `Geolocation unavailable: ${geoErr}`, "AI / LLAMA / CHAT");
+            }
+          }
+        }
         // #endregion Build request headers
 
         // #region Helper: finish streaming and re-enable UI
@@ -546,6 +616,13 @@ export class AI_ONNX_LLAMA_CHAT {
           let lastText = "";
           /** The bubble element used for streaming output; created on first text chunk. */
           let streamBubble: HTMLDivElement | null = null;
+          // ── i18n labels (updated from first poll response) ──
+          let i18nReasoningLabel = "Reasoning\u2026";
+          let i18nShowReasoningLabel = "Show reasoning";
+          let i18nShowSourcesLabel = "Show sources";
+          let i18nSearchingLabel = "Searching the internet for \u201C%s\u201D\u2026";
+          let i18nSearchingLabelNoQuery = "Searching the internet\u2026";
+          let i18nThinkingLabel = "Thinking\u2026";
           const interval = setInterval(() => {
             $.ajax({
               url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
@@ -560,6 +637,32 @@ export class AI_ONNX_LLAMA_CHAT {
               success: (pollResponse) => {
                 // Handle resource status overlay (pause/resume/timeout notifications)
                 handleResourceStatus(pollResponse.resourceStatus);
+                // Update i18n labels from server response
+                if (pollResponse.i18n) {
+                  if (pollResponse.i18n.reasoningLabel) {
+                    i18nReasoningLabel = pollResponse.i18n.reasoningLabel;
+                  }
+                  if (pollResponse.i18n.showReasoningLabel) {
+                    i18nShowReasoningLabel = pollResponse.i18n.showReasoningLabel;
+                  }
+                  if (pollResponse.i18n.showSourcesLabel) {
+                    i18nShowSourcesLabel = pollResponse.i18n.showSourcesLabel;
+                  }
+                  if (pollResponse.i18n.searchingLabel) {
+                    i18nSearchingLabel = pollResponse.i18n.searchingLabel;
+                  }
+                  if (pollResponse.i18n.searchingLabelNoQuery) {
+                    i18nSearchingLabelNoQuery = pollResponse.i18n.searchingLabelNoQuery;
+                  }
+                  if (pollResponse.i18n.thinkingLabel) {
+                    i18nThinkingLabel = pollResponse.i18n.thinkingLabel;
+                    // Update the "Thinking..." bubble if it's still visible
+                    const thinkingLabelEl = thinkingBubble?.querySelector(".LLAMA_ThinkingLabel");
+                    if (thinkingLabelEl) {
+                      thinkingLabelEl.textContent = i18nThinkingLabel;
+                    }
+                  }
+                }
                 if (pollResponse.error && pollResponse.done === undefined) {
                   // Session not found or expired
                   clearInterval(interval);
@@ -593,7 +696,7 @@ export class AI_ONNX_LLAMA_CHAT {
                       // biome-ignore lint/style/useTemplate: <explanation>
                       '<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator">' +
                       '<div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div>' +
-                      `<span class="LLAMA_SearchLabel">Searching the internet for \u201C${searchQuery}\u201D\u2026</span>` +
+                      `<span class="LLAMA_SearchLabel">${i18nSearchingLabel.replace("%s", searchQuery)}</span>` +
                       "</div>";
                     chatContainer.appendChild(indicator);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -616,7 +719,7 @@ export class AI_ONNX_LLAMA_CHAT {
                     const searchQuery: string = pollResponse.searchQuery ?? "";
                     const indicator = document.createElement("div");
                     indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
-                    indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">Searching the internet${searchQuery ? ` for \u201C${searchQuery}\u201D` : ""}\u2026</span></div>`;
+                    indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">${searchQuery ? i18nSearchingLabel.replace("%s", searchQuery) : i18nSearchingLabelNoQuery}</span></div>`;
                     chatContainer.appendChild(indicator);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                   }
@@ -654,14 +757,7 @@ export class AI_ONNX_LLAMA_CHAT {
                   if (!reasoningEl) {
                     // First reasoning chunk — replace spinner with live reasoning view
                     thinkingBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
-                    thinkingBubble.innerHTML =
-                      '<details class="LLAMA_Chat_Thinking" open>' +
-                      '<summary style="display:flex;align-items:center;gap:6px">' +
-                      '<div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div>' +
-                      "<span>Reasoning\u2026</span>" +
-                      "</summary>" +
-                      '<div class="LLAMA_Chat_ThinkingContent LLAMA_LiveReasoningContent"></div>' +
-                      "</details>";
+                    thinkingBubble.innerHTML = `<details class="LLAMA_Chat_Thinking" open><summary style="display:flex;align-items:center;gap:6px"><div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div><span>${i18nReasoningLabel}</span></summary><div class="LLAMA_Chat_ThinkingContent LLAMA_LiveReasoningContent"></div></details>`;
                     reasoningEl = thinkingBubble.querySelector(".LLAMA_LiveReasoningContent") as HTMLDivElement;
                   }
                   if (reasoningEl) {
@@ -727,7 +823,7 @@ export class AI_ONNX_LLAMA_CHAT {
                       // "Show reasoning" when it contains actual model reasoning
                       const hasSearchSources = /\uD83D\uDD0D Searching the web/.test(thinkingText);
                       const hasRealReasoning = thinkingText.includes("---\n\n\uD83D\uDD0D") || !hasSearchSources;
-                      summary.textContent = hasRealReasoning ? "Show reasoning" : "Show sources";
+                      summary.textContent = hasRealReasoning ? i18nShowReasoningLabel : i18nShowSourcesLabel;
                       details.appendChild(summary);
                       const pre = document.createElement("div");
                       pre.className = "LLAMA_Chat_ThinkingContent";
@@ -902,7 +998,89 @@ export class AI_ONNX_LLAMA_CHAT {
     }) as EventListener);
     // #endregion Wire up event listeners
 
-    appendBubble("\u{1F4AC} Qwen3 Chat ready. Attach file(s) and type your question.", "system");
+    // ── Health check: poll the backend until the model is ready ──────────────
+    // Disable input and send button until the model is confirmed ready
+    chatInput.disabled = true;
+    sendButton.disabled = true;
+    sendButton.disabled = true;
+
+    const statusBubble = appendBubble("", "system");
+    statusBubble.innerHTML = `<div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div><span class="LLAMA_HealthLabel">Loading AI model\u2026</span>`;
+    statusBubble.classList.add("LLAMA_Chat_Bubble--thinking");
+
+    const setHealthLabel = (text: string) => {
+      const label = statusBubble.querySelector(".LLAMA_HealthLabel");
+      if (label) {
+        label.textContent = text;
+      }
+    };
+
+    const showReady = (modelName?: string) => {
+      statusBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+      const name = modelName || "AI";
+      statusBubble.innerHTML = `\u{1F4AC} ${name} Chat ready. Attach file(s) and type your question.`;
+      chatInput.disabled = false;
+      sendButton.disabled = false;
+      chatInput.focus();
+    };
+
+    const showError = (msg: string) => {
+      statusBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+      statusBubble.innerHTML = `\u26A0 ${msg}`;
+      statusBubble.classList.add("LLAMA_Chat_Bubble--error");
+      // Keep input and send button disabled on error
+    };
+
+    const healthCheck = setInterval(() => {
+      $.ajax({
+        url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
+        type: "POST",
+        dataType: "json",
+        processData: false,
+        contentType: false,
+        cache: false,
+        beforeSend: (xhr) => {
+          xhr.setRequestHeader("X-Health-Check", "true");
+        },
+        success: (response) => {
+          if (response.error) {
+            const msg = String(response.error);
+            if (/not ready|downloading|loading/i.test(msg)) {
+              setHealthLabel(msg);
+            } else {
+              clearInterval(healthCheck);
+              showError(msg);
+            }
+          } else {
+            clearInterval(healthCheck);
+            showReady(response.model);
+          }
+        },
+        error: () => {
+          setHealthLabel("Waiting for AI server\u2026");
+        },
+      });
+    }, 3000);
+    // Do an immediate check without waiting for the first interval
+    setTimeout(() => {
+      $.ajax({
+        url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
+        type: "POST",
+        dataType: "json",
+        processData: false,
+        contentType: false,
+        cache: false,
+        beforeSend: (xhr) => {
+          xhr.setRequestHeader("X-Health-Check", "true");
+        },
+        success: (response) => {
+          if (!response.error) {
+            clearInterval(healthCheck);
+            showReady(response.model);
+          }
+        },
+      });
+    }, 100);
 
     window.codbi.log("INFO", "Llama Chat functionality initialized", "AI / LLAMA / CHAT");
   }
@@ -1049,6 +1227,37 @@ export class AI_ONNX_LLAMA_CHAT {
       }
       .LLAMA_Chat_SourceBadge a:hover {
         text-decoration: underline ;
+      }
+      .LLAMA_Chat_PhoneBadge,
+      .LLAMA_Chat_EmailBadge {
+        display: inline-flex ; align-items: center ; gap: 4px ;
+        padding: 2px 10px ; border-radius: 12px ;
+        font-size: 12px ; transition: background 0.15s ;
+      }
+      .LLAMA_Chat_PhoneBadge {
+        background: rgba(40,167,69,0.12) ;
+      }
+      .LLAMA_Chat_PhoneBadge:hover {
+        background: rgba(40,167,69,0.22) ;
+      }
+      .LLAMA_Chat_EmailBadge {
+        background: rgba(220,130,0,0.12) ;
+      }
+      .LLAMA_Chat_EmailBadge:hover {
+        background: rgba(220,130,0,0.22) ;
+      }
+      .LLAMA_Chat_PhoneBadge a {
+        color: #28a745 ; text-decoration: none ; word-break: normal ;
+      }
+      .LLAMA_Chat_EmailBadge a {
+        color: #c27800 ; text-decoration: none ; word-break: normal ;
+      }
+      .LLAMA_Chat_PhoneBadge a:hover,
+      .LLAMA_Chat_EmailBadge a:hover {
+        text-decoration: underline ;
+      }
+      .LLAMA_Chat_BadgeIcon {
+        font-size: 13px ; line-height: 1 ;
       }`;
     document.head.appendChild(style);
   }

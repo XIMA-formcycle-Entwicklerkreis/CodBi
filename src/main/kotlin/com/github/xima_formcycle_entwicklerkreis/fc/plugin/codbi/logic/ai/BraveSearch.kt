@@ -69,7 +69,7 @@ object BraveSearch {
    *
    * Words wrapped in `<< WORD >>` bypass all sieve rules and are kept verbatim.
    */
-  fun sanitizeQuery(raw: String): String {
+  fun sanitizeQuery(raw: String, language: String? = null): String {
     // ── Extract << protected >> tokens before sanitization ──
     val protectedPattern = Regex("""<<\s*(.+?)\s*>>""")
     val protectedTokens = mutableListOf<String>()
@@ -88,15 +88,6 @@ object BraveSearch {
 
     // Remove "unless/except/not [Name]" clauses (negative conditions about people)
     q = q.replace(Regex("""(?i)\b(?:unless|except|excluding|not)\b.*$"""), "")
-
-    // Remove likely person names: 2+ consecutive Title Case words (e.g. "Leopold Gustav",
-    // "Maria Halberg") unless preceded by a location/topic preposition (in, from, at, near, von,
-    // aus, bei, nach) which would indicate a place name like "in New York".
-    q =
-        q.replace(
-            Regex(
-                """(?<!\b(?:in|from|at|near|to|von|aus|bei|nach|für|of)\s)[A-ZÄÖÜ][a-zäöüßa-z]+(?:\s+[A-ZÄÖÜ][a-zäöüßa-z]+)+"""),
-            "")
 
     // Remove long alphanumeric ID-like tokens (e.g. 87233-12, ABC-12345-XY) — 2+ groups of alnum
     // separated by dashes, or pure digit sequences 5+ chars that aren't postal codes (exactly 5
@@ -121,14 +112,14 @@ object BraveSearch {
    * @param query The search query string (will be sanitized before sending).
    * @return A list of [SearchResult] objects, or an empty list on failure.
    */
-  fun search(query: String): List<SearchResult> {
+  fun search(query: String, country: String? = null, language: String? = null): List<SearchResult> {
     val key = apiKey
     if (key.isNullOrBlank()) {
       log("WARNING", "Brave Search API key not configured — skipping search")
       return emptyList()
     }
 
-    val cleanQuery = sanitizeQuery(query)
+    val cleanQuery = sanitizeQuery(query, language)
     if (cleanQuery.isBlank()) {
       log("WARNING", "Query empty after sanitization — skipping search (original: '$query')")
       return emptyList()
@@ -139,7 +130,12 @@ object BraveSearch {
 
     return try {
       val encodedQuery = URLEncoder.encode(cleanQuery, "UTF-8")
-      val url = "$API_URL?q=$encodedQuery&count=$MAX_RESULTS&text_decorations=false"
+      val urlBuilder =
+          StringBuilder("$API_URL?q=$encodedQuery&count=$MAX_RESULTS&text_decorations=false")
+      if (!country.isNullOrBlank()) {
+        urlBuilder.append("&country=$country")
+      }
+      val url = urlBuilder.toString()
 
       log("INFO", "Searching: '$cleanQuery' → $url")
 

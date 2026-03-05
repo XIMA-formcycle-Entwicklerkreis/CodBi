@@ -219,6 +219,31 @@ export class AI_LLAMA_STANDARD_QA {
       // ── Brave Search internet access toggle (from toLoad.InternetAccess) ──
       const internetAccess = toLoad.InternetAccess != null && String(toLoad.InternetAccess).toLowerCase() === "true";
       vqaHeaders["X-Search"] = internetAccess ? "true" : "false";
+      // ── Location toggle (from toLoad.location) ──
+      const locationAccess = toLoad.location != null && String(toLoad.location).toLowerCase() === "true";
+      if (locationAccess) {
+        vqaHeaders["X-Location"] = "true";
+        if (navigator.geolocation) {
+          try {
+            const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: false,
+                timeout: 5000,
+                maximumAge: 300_000,
+              });
+            });
+            vqaHeaders["X-Latitude"] = pos.coords.latitude.toFixed(4);
+            vqaHeaders["X-Longitude"] = pos.coords.longitude.toFixed(4);
+            window.codbi.log(
+              "INFO",
+              `Geolocation: ${vqaHeaders["X-Latitude"]}, ${vqaHeaders["X-Longitude"]}`,
+              "AI / LLAMA / QA",
+            );
+          } catch (geoErr) {
+            window.codbi.log("WARNING", `Geolocation unavailable: ${geoErr}`, "AI / LLAMA / QA");
+          }
+        }
+      }
       // If mode is verify and the upload field has a data-cb-Question, use only that question
       let verifyFieldId: string | null = null;
       let verifyFieldQuestion: string | null = null;

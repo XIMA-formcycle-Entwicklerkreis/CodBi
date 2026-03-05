@@ -361,10 +361,11 @@ export class AI_ONNX_LLAMA_CHAT {
       });
 
       // 4. Convert phone numbers → tel: link placeholder
-      //    Matches patterns like +49 911 1234567, (0911) 123-4567, 0911/1234567, etc.
+      //    Matches patterns like +49 911 1234567, (0911) 123-4567, 0911/1234567,
+      //    +49 981 51-0 (switchboard), etc.
       //    Requires at least 7 digits (ignoring separators) to avoid false positives.
       const withPhonePlaceholders = withAllPlaceholders.replace(
-        /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,5}\)?[\s.\/-]?){1,3}\d{3,8}/g,
+        /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,5}\)?[\s.\/-]?){1,3}\d{1,8}/g,
         (match) => {
           const digitsOnly = match.replace(/\D/g, "");
           if (digitsOnly.length < 7 || digitsOnly.length > 15) {

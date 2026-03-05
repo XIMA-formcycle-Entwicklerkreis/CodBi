@@ -64,6 +64,7 @@ object BraveSearch {
    * - Case references / Aktenzeichen (`Az.`, `Az:`, `Aktenzeichen`)
    * - Generic alphanumeric IDs that look like codes (6+ chars with mixed letters/digits/dashes)
    * - "unless / except / not" clauses that typically reference specific people
+   * - Likely person names (2+ consecutive Title Case words not preceded by a location preposition)
    * - Trailing noise (whitespace, commas, dots)
    *
    * Words wrapped in `<< WORD >>` bypass all sieve rules and are kept verbatim.
@@ -87,6 +88,11 @@ object BraveSearch {
 
     // Remove "unless/except/not [Name]" clauses (negative conditions about people)
     q = q.replace(Regex("""(?i)\b(?:unless|except|excluding|not)\b.*$"""), "")
+
+    // Remove likely person names: 2+ consecutive Title Case words not preceded by a location
+    // preposition (in/near/at/around) — these are probably names leaking from the user's query.
+    // Protected tokens are safe (already replaced with placeholders above).
+    q = q.replace(Regex("""(?<!\b(?:in|near|at|around|from|to)\s)(?<![<\w])\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b"""), "")
 
     // Remove long alphanumeric ID-like tokens (e.g. 87233-12, ABC-12345-XY) — 2+ groups of alnum
     // separated by dashes, or pure digit sequences 5+ chars that aren't postal codes (exactly 5

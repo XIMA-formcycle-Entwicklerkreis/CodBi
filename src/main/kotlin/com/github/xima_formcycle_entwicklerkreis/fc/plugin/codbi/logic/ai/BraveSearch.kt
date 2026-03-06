@@ -83,8 +83,8 @@ object BraveSearch {
     // Remove serial-number patterns:  S/N87233-12, SN: 12345, s/n 87233-12
     q = q.replace(Regex("""(?i)\b[Ss]/?[Nn][:\s]*[\w-]{3,}\b"""), "")
 
-    // Remove Aktenzeichen patterns:  Az. 123/45, Aktenzeichen 2 BvR 1/23
-    q = q.replace(Regex("""(?i)\b(?:Az\.?|Aktenzeichen)\s*[\w/\s-]{2,20}"""), "")
+    // Remove Aktenzeichen patterns:  Az. 123/45, Akt  q =
+    // q.replace(Regex("""(?i)\b(?:Az\.?|Aktenzeichen)\s*[\w/\s-]{2,20}"""), "")
 
     // Remove "unless/except/not [Name]" clauses (negative conditions about people)
     q = q.replace(Regex("""(?i)\b(?:unless|except|excluding|not)\b.*$"""), "")

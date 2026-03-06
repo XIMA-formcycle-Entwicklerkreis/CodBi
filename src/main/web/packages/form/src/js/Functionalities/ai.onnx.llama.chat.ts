@@ -17,6 +17,59 @@ import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 //endregion PDF.js
 //endregion Imports
+
+// ── Web Speech API type declarations (not in TS dom lib for ES5 target) ──
+interface SpeechRecognitionAlternative {
+  readonly transcript: string;
+  readonly confidence: number;
+}
+
+interface SpeechRecognitionResult {
+  readonly isFinal: boolean;
+  readonly length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionResultList {
+  readonly length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  readonly resultIndex: number;
+  readonly results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  readonly error: string;
+  readonly message: string;
+}
+
+interface SpeechRecognitionInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+interface SpeechRecognitionConstructor {
+  new (): SpeechRecognitionInstance;
+}
+
+declare global {
+  interface Window {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  }
+}
+
 /**
  * Provides the {@link AI_ONNX_LLAMA_CHAT.functionality }.
  *
@@ -82,6 +135,13 @@ export class AI_ONNX_LLAMA_CHAT {
    *                      Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
    * - **llamabubble**:   Background color for Llama (AI) bubbles (default: `#e5e5ea`).
    * - **userbubble**:    Background color for user bubbles (default: `#0b93f6`).
+   * - **welcometext**:   Text shown after the model name(s) in the ready message
+   *                      (default: `"Chat ready. Attach file(s) and type your question."`).
+   * - **voicehotkey**:   Keyboard shortcut to toggle voice input, e.g. `"Alt+A"` (default).
+   *                      Format: modifier(s) + key separated by `+`. Recognised modifiers:
+   *                      `Alt`, `Ctrl`, `Shift`, `Meta`. The key part is case-insensitive.
+   * - **voiceplaceholder**: Placeholder text shown in the chat input when voice input is available.
+   *                      Default: `"Alt+A = 🎙"` (reflects the configured hotkey).
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. Must be a `<textarea>` element (the chat display). */
@@ -170,6 +230,139 @@ export class AI_ONNX_LLAMA_CHAT {
     );
 
     // #endregion Discover sibling elements
+
+    // #region Microphone button (speech-to-text via Web Speech API)
+    const SpeechRecognitionCtor: SpeechRecognitionConstructor | undefined =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    let micButton: HTMLButtonElement | null = null;
+    let recognition: SpeechRecognitionInstance | null = null;
+    let isRecording = false;
+    let sendHotkeyKey = "";
+    let sendNeedAlt = false;
+    let sendNeedCtrl = false;
+    let sendNeedShift = false;
+    let sendNeedMeta = false;
+
+    if (SpeechRecognitionCtor) {
+      // Wrap the chat input in a relative container so the mic floats inside it
+      const inputWrapper = document.createElement("div");
+      inputWrapper.className = "LLAMA_Chat_InputWrapper";
+      DEFINED.tsCheck<HTMLElement>(chatInput.parentElement).insertBefore(inputWrapper, chatInput);
+      inputWrapper.appendChild(chatInput);
+
+      micButton = document.createElement("button");
+      micButton.type = "button";
+      micButton.className = "LLAMA_Chat_MicButton";
+      micButton.title = "Voice input";
+      micButton.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm-1-9a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V5zm6 6a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11h-2z"/></svg>`;
+      inputWrapper.appendChild(micButton);
+      // Local non-null aliases — valid for the rest of this block
+      const mic = micButton;
+
+      recognition = new SpeechRecognitionCtor();
+      const rec = recognition;
+      rec.continuous = true;
+      rec.interimResults = true;
+
+      // Text that was in the input before recording started — serves as the
+      // immutable prefix so we never duplicate previously committed text.
+      let preRecordingText = "";
+
+      rec.onresult = (event: SpeechRecognitionEvent) => {
+        let sessionFinal = "";
+        let interim = "";
+        for (let i = 0; i < event.results.length; i++) {
+          if (event.results[i].isFinal) {
+            sessionFinal += event.results[i][0].transcript;
+          } else {
+            interim += event.results[i][0].transcript;
+          }
+        }
+        chatInput.value = preRecordingText + sessionFinal + interim;
+      };
+
+      rec.onend = () => {
+        if (isRecording) {
+          // Silence-timeout restart: save current value as the new baseline
+          // so the next recognition session appends rather than overwrites.
+          preRecordingText = chatInput.value;
+          try {
+            rec.start();
+          } catch (_e) {
+            /* ignore */
+          }
+        }
+      };
+
+      rec.onerror = (event: SpeechRecognitionErrorEvent) => {
+        if (event.error === "not-allowed" || event.error === "service-not-available") {
+          mic.classList.add("LLAMA_Chat_MicButton--unavailable");
+          mic.title = "Microphone access denied";
+          mic.disabled = true;
+        }
+        isRecording = false;
+        mic.classList.remove("LLAMA_Chat_MicButton--recording");
+      };
+
+      const toggleRecording = () => {
+        if (mic.disabled) {
+          return;
+        }
+        if (isRecording) {
+          isRecording = false;
+          rec.stop();
+          mic.classList.remove("LLAMA_Chat_MicButton--recording");
+        } else {
+          isRecording = true;
+          preRecordingText = chatInput.value;
+          rec.lang = "";
+          try {
+            rec.start();
+            mic.classList.add("LLAMA_Chat_MicButton--recording");
+          } catch (_e) {
+            isRecording = false;
+          }
+        }
+      };
+
+      micButton.addEventListener("click", toggleRecording);
+
+      // Voice-input hotkey (configurable via toLoad.voicehotkey, default Alt+A)
+      const hotkeyDef = (typeof toLoad.voicehotkey === "string" && toLoad.voicehotkey.trim()) || "Alt+A";
+      const hotkeyParts = hotkeyDef.split("+").map((p: string) => p.trim());
+      const hotkeyKey = hotkeyParts[hotkeyParts.length - 1].toUpperCase();
+      const needAlt = hotkeyParts.some((p: string) => /^alt$/i.test(p));
+      const needCtrl = hotkeyParts.some((p: string) => /^ctrl$/i.test(p));
+      const needShift = hotkeyParts.some((p: string) => /^shift$/i.test(p));
+      const needMeta = hotkeyParts.some((p: string) => /^meta$/i.test(p));
+      chatInput.placeholder =
+        (typeof toLoad.voiceplaceholder === "string" && toLoad.voiceplaceholder.trim()) ||
+        `${hotkeyDef} = \uD83C\uDF99\uFE0F`;
+      micButton.title = `Voice input (${hotkeyDef})`;
+
+      document.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (
+          e.key.toUpperCase() === hotkeyKey &&
+          e.altKey === needAlt &&
+          e.ctrlKey === needCtrl &&
+          e.shiftKey === needShift &&
+          e.metaKey === needMeta
+        ) {
+          e.preventDefault();
+          toggleRecording();
+        }
+      });
+
+      // Voice-send hotkey (configurable via toLoad.voicesendhotkey, default Alt+Q)
+      const sendHotkeyDef = (typeof toLoad.voicesendhotkey === "string" && toLoad.voicesendhotkey.trim()) || "Alt+Q";
+      const sendHotkeyParts = sendHotkeyDef.split("+").map((p: string) => p.trim());
+      sendHotkeyKey = sendHotkeyParts[sendHotkeyParts.length - 1].toUpperCase();
+      sendNeedAlt = sendHotkeyParts.some((p: string) => /^alt$/i.test(p));
+      sendNeedCtrl = sendHotkeyParts.some((p: string) => /^ctrl$/i.test(p));
+      sendNeedShift = sendHotkeyParts.some((p: string) => /^shift$/i.test(p));
+      sendNeedMeta = sendHotkeyParts.some((p: string) => /^meta$/i.test(p));
+    }
+    // #endregion Microphone button
 
     let isBusy = false;
     let attachedFiles: File[] = [];
@@ -487,6 +680,14 @@ export class AI_ONNX_LLAMA_CHAT {
 
       isBusy = true;
       sendButton.disabled = true;
+      if (micButton) {
+        if (isRecording) {
+          isRecording = false;
+          DEFINED.tsCheck(recognition).stop();
+          micButton.classList.remove("LLAMA_Chat_MicButton--recording");
+        }
+        micButton.disabled = true;
+      }
       if ("disabled" in chatInput) {
         (chatInput as HTMLInputElement).disabled = true;
       }
@@ -600,6 +801,9 @@ export class AI_ONNX_LLAMA_CHAT {
           activeStreamId = null;
           isBusy = false;
           sendButton.disabled = false;
+          if (micButton) {
+            micButton.disabled = false;
+          }
           if (stopButton) {
             stopButton.disabled = true;
           }
@@ -951,6 +1155,9 @@ export class AI_ONNX_LLAMA_CHAT {
         conversationHistory.pop(); // remove failed user turn
         isBusy = false;
         sendButton.disabled = false;
+        if (micButton) {
+          micButton.disabled = false;
+        }
         if ("disabled" in chatInput) {
           (chatInput as HTMLInputElement).disabled = false;
         }
@@ -996,6 +1203,29 @@ export class AI_ONNX_LLAMA_CHAT {
         sendMessage();
       }
     }) as EventListener);
+
+    // Alt+Q (default): stop recording and send — only when speech API is available
+    if (SpeechRecognitionCtor && sendHotkeyKey) {
+      document.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (
+          e.key.toUpperCase() === sendHotkeyKey &&
+          e.altKey === sendNeedAlt &&
+          e.ctrlKey === sendNeedCtrl &&
+          e.shiftKey === sendNeedShift &&
+          e.metaKey === sendNeedMeta
+        ) {
+          e.preventDefault();
+          if (isRecording) {
+            isRecording = false;
+            DEFINED.tsCheck(recognition).stop();
+            if (micButton) {
+              micButton.classList.remove("LLAMA_Chat_MicButton--recording");
+            }
+          }
+          sendMessage();
+        }
+      });
+    }
     // #endregion Wire up event listeners
 
     // ── Health check: poll the backend until the model is ready ──────────────
@@ -1003,6 +1233,9 @@ export class AI_ONNX_LLAMA_CHAT {
     chatInput.disabled = true;
     sendButton.disabled = true;
     sendButton.disabled = true;
+    if (micButton) {
+      micButton.disabled = true;
+    }
 
     const statusBubble = appendBubble("", "system");
     statusBubble.innerHTML = `<div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div><span class="LLAMA_HealthLabel">Loading AI model\u2026</span>`;
@@ -1015,12 +1248,19 @@ export class AI_ONNX_LLAMA_CHAT {
       }
     };
 
-    const showReady = (modelName?: string) => {
+    const welcomeText =
+      toLoad.welcometext != null ? String(toLoad.welcometext) : "Chat ready. Attach file(s) and type your question.";
+
+    const showReady = (modelName?: string, thinkingModelName?: string) => {
       statusBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
       const name = modelName || "AI";
-      statusBubble.innerHTML = `\u{1F4AC} ${name} Chat ready. Attach file(s) and type your question.`;
+      const thinkingInfo = thinkingModelName ? ` + \u{1F4A1} ${thinkingModelName}` : "";
+      statusBubble.innerHTML = `\u{1F4AC} ${name}${thinkingInfo} ${welcomeText}`;
       chatInput.disabled = false;
       sendButton.disabled = false;
+      if (micButton) {
+        micButton.disabled = false;
+      }
       chatInput.focus();
     };
 
@@ -1053,7 +1293,7 @@ export class AI_ONNX_LLAMA_CHAT {
             }
           } else {
             clearInterval(healthCheck);
-            showReady(response.model);
+            showReady(response.model, response.thinkingModel);
           }
         },
         error: () => {
@@ -1076,7 +1316,7 @@ export class AI_ONNX_LLAMA_CHAT {
         success: (response) => {
           if (!response.error) {
             clearInterval(healthCheck);
-            showReady(response.model);
+            showReady(response.model, response.thinkingModel);
           }
         },
       });
@@ -1258,6 +1498,37 @@ export class AI_ONNX_LLAMA_CHAT {
       }
       .LLAMA_Chat_BadgeIcon {
         font-size: 13px ; line-height: 1 ;
+      }
+      .LLAMA_Chat_InputWrapper {
+        position: relative ; display: inline-block ; width: 100% ;
+      }
+      .LLAMA_Chat_InputWrapper > input,
+      .LLAMA_Chat_InputWrapper > textarea {
+        width: 100% ; box-sizing: border-box ; padding-right: 36px ;
+      }
+      .LLAMA_Chat_MicButton {
+        position: absolute ; right: 4px ; bottom: 4px ;
+        width: 28px ; height: 28px ; border: none ; border-radius: 50% ;
+        background: transparent ; color: #888 ; cursor: pointer ;
+        display: flex ; align-items: center ; justify-content: center ;
+        padding: 0 ; transition: color 0.2s, background 0.2s ;
+      }
+      .LLAMA_Chat_MicButton:hover {
+        color: #333 ; background: rgba(0,0,0,0.06) ;
+      }
+      .LLAMA_Chat_MicButton--recording {
+        color: #fff ; background: #e53935 ;
+        animation: LLAMA_mic_pulse 1.2s ease-in-out infinite ;
+      }
+      .LLAMA_Chat_MicButton--recording:hover {
+        background: #c62828 ; color: #fff ;
+      }
+      .LLAMA_Chat_MicButton--unavailable {
+        color: #ccc ; cursor: not-allowed ;
+      }
+      @keyframes LLAMA_mic_pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0.5) ; }
+        50% { box-shadow: 0 0 0 8px rgba(229,57,53,0) ; }
       }`;
     document.head.appendChild(style);
   }

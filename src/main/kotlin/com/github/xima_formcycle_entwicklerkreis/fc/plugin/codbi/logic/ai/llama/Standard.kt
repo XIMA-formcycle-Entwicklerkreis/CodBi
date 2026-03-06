@@ -82,6 +82,22 @@ import javax.imageio.ImageIO
 // the external AI (sent as Bearer token)                   |
 // | `AI_LLAMA_STD_ExternalModel`        | String  | —                                | Model name
 // for the external API (e.g. gpt-4o, claude-3-opus)       |
+// | `AI_LLAMA_STD_ExternalNoPrompt`     | Boolean | `false`                          | When `true`,
+// skips all built-in system-prompt sections (§1–§6) for the external AI — sends only the user
+// message and chat history. |
+// | `AI_LLAMA_STD_PromptIdentity`       | String  | (built-in)                       | Override the
+// identity/role sentence ("You are a helpful assistant..."). Use `{date}` as placeholder for
+// today's date. |
+// | `AI_LLAMA_STD_PromptLocation`       | String  | (built-in)                       | Override the
+// location-context instruction. Use `{location}` as placeholder. |
+// | `AI_LLAMA_STD_PromptSearch`         | String  | (built-in)                       | Override the
+// CALL:search instruction block (before examples). |
+// | `AI_LLAMA_STD_PromptThinking`       | String  | (built-in)                       | Override the
+// thinking-mode instruction. Use `{language}` as placeholder. |
+// | `AI_LLAMA_STD_PromptNoInternet`     | String  | (built-in)                       | Override the
+// no-internet-access warning. |
+// | `AI_LLAMA_STD_PromptRules`          | String  | (built-in)                       | Override the
+// general rules (language, measurements, independence). |
 // | `AI_BraveSearch_ApiKey`            | String  | —                                | Brave Search
 // API key — enables web search tool for the model |
 //
@@ -124,6 +140,9 @@ class Standard : LLAMA() {
   private val isExternalMode: Boolean
     get() = externalUrl != null
 
+  /** When true, all built-in system-prompt sections (§1–§6) are skipped for external AI. */
+  private var externalNoPrompt = false
+
   // ── Thinking model URLs (optional — enables dedicated thinking server) ────
   private var thinkingModelUrl: String? = null
   private var thinkingMmprojUrl: String? = null
@@ -151,6 +170,26 @@ class Standard : LLAMA() {
   /** Threads consuming thinking server stdout/stderr. */
   private var thinkingStdoutThread: Thread? = null
   private var thinkingStderrThread: Thread? = null
+
+  // ── Prompt overrides (customizable via plugin properties) ────────────────
+  /** Override for the identity/role sentence. `{date}` is replaced with today's date. */
+  private var promptIdentity: String? = null
+  /**
+   * Override for the location-context instruction. `{location}` is replaced with the resolved
+   * location.
+   */
+  private var promptLocation: String? = null
+  /** Override for the CALL:search instruction block (before examples). */
+  private var promptSearch: String? = null
+  /**
+   * Override for the thinking-mode instruction. `{language}` is replaced with the detected language
+   * name.
+   */
+  private var promptThinking: String? = null
+  /** Override for the no-internet-access warning. */
+  private var promptNoInternet: String? = null
+  /** Override for the general rules (language, measurements, question independence). */
+  private var promptRules: String? = null
 
   // ── Model / inference settings ────────────────────────────────────────────
   /** Maximum pixel budget for downscaling images before encoding as base64. */
@@ -350,6 +389,11 @@ class Standard : LLAMA() {
         ?.takeIf { it.isNotEmpty() }
         ?.let { externalModel = it }
 
+    // Read external no-prompt flag
+    configData.properties.getProperty("${PROP_PREFIX}_ExternalNoPrompt")?.trim()?.lowercase()?.let {
+      externalNoPrompt = it == "true" || it == "1" || it == "yes"
+    }
+
     // Read model-specific plugin properties
     configData.properties
         .getProperty("${PROP_PREFIX}_ModelUrl")
@@ -373,6 +417,38 @@ class Standard : LLAMA() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { thinkingMmprojUrl = it }
+
+    // Read prompt override properties
+    configData.properties
+        .getProperty("${PROP_PREFIX}_PromptIdentity")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { promptIdentity = it }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_PromptLocation")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { promptLocation = it }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_PromptSearch")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { promptSearch = it }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_PromptThinking")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { promptThinking = it }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_PromptNoInternet")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { promptNoInternet = it }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_PromptRules")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { promptRules = it }
 
     configData.properties.getProperty("${PROP_PREFIX}_MaxPixels")?.trim()?.toIntOrNull()?.let {
       if (it >= 3136) maxPixels = it
@@ -910,7 +986,14 @@ class Standard : LLAMA() {
             val raw = modelUrl.substringAfterLast("/").removeSuffix(".gguf")
             raw.replace(Regex("-[QFqf][0-9_]+[A-Za-z_]*$"), "")
           }
-      return jsonResponse("{\"status\":\"ready\",\"model\":\"${jsonEscape(displayModel)}\"}")
+      val thinkingModelJson =
+          if (thinkingServerReady && thinkingModelUrl != null) {
+            val raw = thinkingModelUrl!!.substringAfterLast("/").removeSuffix(".gguf")
+            val name = raw.replace(Regex("-[QFqf][0-9_]+[A-Za-z_]*$"), "")
+            ",\"thinkingModel\":\"${jsonEscape(name)}\""
+          } else ""
+      return jsonResponse(
+          "{\"status\":\"ready\",\"model\":\"${jsonEscape(displayModel)}\"$thinkingModelJson}")
     }
     // ── End health-check shortcut ─────────────────────────────────────────────
 
@@ -1657,87 +1740,137 @@ class Standard : LLAMA() {
                   java.time.format.DateTimeFormatter.ofPattern(
                       "d MMMM yyyy", java.util.Locale.ENGLISH))
       append("{\"role\":\"system\",\"content\":\"")
-      append("You are a helpful assistant. Today is $today. Answer precisely and concisely. ")
-      // Location context — inject early so the model sees it before search instructions
-      if (locationEnabled && userLocation != null) {
-        append(
-            "IMPORTANT: The user is located near $userLocation. " +
-                "Use this as the DEFAULT area for any location-dependent question (weather, nearby places, directions, local events). " +
-                "This is the user's approximate area, NOT a specific address — never cite it as an address in answers. " +
-                "If the user EXPLICITLY names a different city or place, use that location instead. ")
-      } else if (locationEnabled) {
-        append(
-            "The user enabled location sharing but their location could not be determined. " +
-                "If the question depends on location, ask the user to specify their city or region. ")
-      }
-      if (searchEnabled && BraveSearch.isAvailable) {
-        append(
-            "When you need current info, reply ONLY with CALL:search(query='your search query'). ")
-        append(
-            "The search query MUST be about the user's ACTUAL topic. Extract the core subject from the user's question. ")
-        append(
-            "SANITIZE: remove person names, serial numbers, IDs, and any code mixing letters+digits. Keep brand names and topic keywords. ")
-        if (detectedLang != null && detectedLang.languageName != "English") {
-          append(
-              "IMPORTANT: Always write search queries in ${detectedLang.languageName}, NEVER in English. ")
-          val productQ = detectedLang.exampleProductQuery
-          val lawQ = detectedLang.exampleLawQuery
-          val weatherQ = detectedLang.exampleWeatherQuery
-          val localQ = detectedLang.exampleLocalQuery
-          append("Example: user asks about a product error → CALL:search(query='$productQ'). ")
-          append("Example: user asks about contract law → CALL:search(query='$lawQ'). ")
-          if (locationEnabled && userLocation != null) {
-            val shortLocation = userLocation.substringBefore(",").trim()
-            append(
-                "Example: user asks about weather → CALL:search(query='$weatherQ $shortLocation'). ")
-            append(
-                "Example: user asks where to eat → CALL:search(query='$localQ $shortLocation'). ")
-          } else {
-            append("Example: user asks about weather → CALL:search(query='$weatherQ'). ")
-            append("Example: user asks where to eat → CALL:search(query='$localQ'). ")
-          }
+      // When externalNoPrompt is set and we're in external mode, skip all prompt sections
+      val skipPrompts = isExternalMode && externalNoPrompt
+      if (!skipPrompts) {
+        // §1 Identity / role
+        if (promptIdentity != null) {
+          append(promptIdentity!!.replace("{date}", today))
+          append(" ")
         } else {
-          append(
-              "Example: user asks about a product error → CALL:search(query='ProductName error fix'). ")
-          append(
-              "Example: user asks about contract law → CALL:search(query='contract termination rules'). ")
-          if (locationEnabled && userLocation != null) {
-            val shortLocation = userLocation.substringBefore(",").trim()
-            append(
-                "Example: user asks about weather → CALL:search(query='weather forecast $shortLocation'). ")
-            append(
-                "Example: user asks where to eat → CALL:search(query='restaurants near me $shortLocation'). ")
+          append("You are a helpful assistant. Today is $today. Answer precisely and concisely. ")
+        }
+        // §2 Location context — inject early so the model sees it before search instructions
+        if (locationEnabled && userLocation != null) {
+          if (promptLocation != null) {
+            append(promptLocation!!.replace("{location}", userLocation))
+            append(" ")
           } else {
             append(
-                "Example: user asks about weather → CALL:search(query='weather forecast tomorrow'). ")
-            append("Example: user asks where to eat → CALL:search(query='restaurants near me'). ")
+                "IMPORTANT: The user is located near $userLocation. " +
+                    "Use this as the DEFAULT area for any location-dependent question (weather, nearby places, directions, local events). " +
+                    "This is the user's approximate area, NOT a specific address — never cite it as an address in answers. " +
+                    "If the user EXPLICITLY names a different city or place, use that location instead. ")
           }
+        } else if (locationEnabled) {
+          append(
+              "The user enabled location sharing but their location could not be determined. " +
+                  "If the question depends on location, ask the user to specify their city or region. ")
         }
-        append(
-            "EXCEPTION: If the user wraps a word in << >>, copy it into the query verbatim with the << >> markers. ")
-        append(
-            "Example: 'What did << Elon Musk >> say about AI?' → CALL:search(query='<< Elon Musk >> AI statements'). ")
-        append(
-            "Never include person names in the query UNLESS they are wrapped in << >>. Never use '...' as the query. ")
-        append(
-            "IMPORTANT: The search query must match the user's actual question topic — never copy an example query. ")
-        if (enableThinking) {
-          append("THINKING MODE: You MUST reason thoroughly FIRST inside <think>...</think>. ")
+        // §3 Search instructions
+        if (searchEnabled && BraveSearch.isAvailable) {
+          if (promptSearch != null) {
+            append(promptSearch!!)
+            append(" ")
+          } else {
+            append(
+                "When you need current info, reply ONLY with CALL:search(query='your search query'). ")
+            append(
+                "CRITICAL: For questions about specific factual details (phone numbers, addresses, opening hours, prices, contact info, official data), " +
+                    "you MUST ALWAYS use CALL:search — NEVER answer from memory alone. " +
+                    "Even if a similar question was answered earlier in this conversation, ALWAYS search again — previous answers may have been given without internet access and could be wrong. ")
+            append(
+                "The search query MUST be about the user's ACTUAL topic. Extract the core subject from the user's question. ")
+            append(
+                "SANITIZE: remove person names, serial numbers, IDs, and any code mixing letters+digits. Keep brand names and topic keywords. ")
+          }
           if (detectedLang != null && detectedLang.languageName != "English") {
             append(
-                "CRITICAL: Your reasoning inside <think> tags MUST be written in ${detectedLang.languageName}, NOT in English. ")
+                "IMPORTANT: Always write search queries in ${detectedLang.languageName}, NEVER in English. ")
+            val productQ = detectedLang.exampleProductQuery
+            val lawQ = detectedLang.exampleLawQuery
+            val weatherQ = detectedLang.exampleWeatherQuery
+            val localQ = detectedLang.exampleLocalQuery
+            append("Example: user asks about a product error → CALL:search(query='$productQ'). ")
+            append("Example: user asks about contract law → CALL:search(query='$lawQ'). ")
+            if (locationEnabled && userLocation != null) {
+              val shortLocation = userLocation.substringBefore(",").trim()
+              append(
+                  "Example: user asks about weather → CALL:search(query='$weatherQ $shortLocation'). ")
+              append(
+                  "Example: user asks where to eat → CALL:search(query='$localQ $shortLocation'). ")
+            } else {
+              append("Example: user asks about weather → CALL:search(query='$weatherQ'). ")
+              append("Example: user asks where to eat → CALL:search(query='$localQ'). ")
+            }
+          } else {
+            append(
+                "Example: user asks about a product error → CALL:search(query='ProductName error fix'). ")
+            append(
+                "Example: user asks about contract law → CALL:search(query='contract termination rules'). ")
+            if (locationEnabled && userLocation != null) {
+              val shortLocation = userLocation.substringBefore(",").trim()
+              append(
+                  "Example: user asks about weather → CALL:search(query='weather forecast $shortLocation'). ")
+              append(
+                  "Example: user asks where to eat → CALL:search(query='restaurants near me $shortLocation'). ")
+            } else {
+              append(
+                  "Example: user asks about weather → CALL:search(query='weather forecast tomorrow'). ")
+              append("Example: user asks where to eat → CALL:search(query='restaurants near me'). ")
+            }
           }
           append(
-              "Only AFTER you have finished thinking and closed </think>, output CALL:search as your visible answer if needed. ")
-          append("NEVER put CALL:search inside <think> tags. Think first, then decide. ")
+              "EXCEPTION: If the user wraps a word in << >>, copy it into the query verbatim with the << >> markers. ")
+          append(
+              "Example: 'What did << Elon Musk >> say about AI?' → CALL:search(query='<< Elon Musk >> AI statements'). ")
+          append(
+              "Never include person names in the query UNLESS they are wrapped in << >>. Never use '...' as the query. ")
+          append(
+              "IMPORTANT: The search query must match the user's actual question topic — never copy an example query. ")
+          // §4 Thinking mode instructions
+          if (enableThinking) {
+            if (promptThinking != null) {
+              val langName = detectedLang?.languageName ?: "English"
+              append(promptThinking!!.replace("{language}", langName))
+              append(" ")
+            } else {
+              append("THINKING MODE: You MUST reason thoroughly FIRST inside <think>...</think>. ")
+              if (detectedLang != null && detectedLang.languageName != "English") {
+                append(
+                    "CRITICAL: Your reasoning inside <think> tags MUST be written in ${detectedLang.languageName}, NOT in English. ")
+              }
+              append(
+                  "Only AFTER you have finished thinking and closed </think>, output CALL:search as your visible answer if needed. ")
+              append("NEVER put CALL:search inside <think> tags. Think first, then decide. ")
+            }
+          }
         }
-      }
-      append(
-          "CRITICAL LANGUAGE RULE: Always respond in the EXACT language of the user's CURRENT message. If the user switches language mid-conversation, switch with them immediately. Never mention or reference products, brands, or services that are not part of the user's question. ")
-      append(
-          "When mentioning measurements, always show BOTH metric and imperial units: °C (°F), km (mi), m (ft), kg (lbs), km/h (mph), liters (gallons), cm (in), etc. ")
-      append(
-          "Each question is independent — answer ONLY the current question. Do NOT repeat or mix in information from previous answers unless the user explicitly refers to them.")
+        // §5 No-internet warning
+        if (!searchEnabled || !BraveSearch.isAvailable) {
+          if (promptNoInternet != null) {
+            append(promptNoInternet!!)
+            append(" ")
+          } else {
+            append(
+                "IMPORTANT: You do NOT have internet access. " +
+                    "NEVER fabricate or guess ANY information you are not certain about. " +
+                    "If you do not know something, clearly say so and suggest the user enable internet search or look it up directly. " +
+                    "Do NOT invent plausible-sounding answers — honesty about your limits is always better than a wrong answer. ")
+          }
+        }
+        // §6 General rules
+        if (promptRules != null) {
+          append(promptRules!!)
+        } else {
+          append(
+              "CRITICAL LANGUAGE RULE: Always respond in the EXACT language of the user's CURRENT message. If the user switches language mid-conversation, switch with them immediately. Never mention or reference products, brands, or services that are not part of the user's question. ")
+          append(
+              "When mentioning measurements, always show BOTH metric and imperial units: °C (°F), km (mi), m (ft), kg (lbs), km/h (mph), liters (gallons), cm (in), etc. ")
+          append(
+              "Each question is independent — answer ONLY the current question. Do NOT repeat or mix in information from previous answers unless the user explicitly refers to them.")
+        }
+      } // end if (!skipPrompts)
       append("\"}")
 
       // Chat history — skip the last entry if it duplicates the current question

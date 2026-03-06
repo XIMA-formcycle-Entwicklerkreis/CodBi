@@ -1,11 +1,7 @@
-package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
 // region Imports
-// region CodBi
-// endregion CodBi
-// region XIMA
-// endregion XIMA
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.TesseractAction
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
@@ -13,7 +9,6 @@ import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
-import org.slf4j.LoggerFactory
 
 // endregion Imports
 /**
@@ -47,22 +42,7 @@ import org.slf4j.LoggerFactory
  * |--------------------------|----|--------|---------------------------------------------------------------------|
  * |`AI_CachedImageExpiration`|Long|`600000`|Time in ms before a cached image expires and is purged by the janitor|
  */
-abstract class AI : IPluginServletAction {
-  /**
-   * The predicate used to [log] messages related to CodBi / AI to the console (defaults to an empty
-   * string ).
-   */
-  protected var idLogMessages = ""
-
-  /** Defines the various importance-states that can be passed to the [log]ger. */
-  enum class LogLevel {
-    INFO,
-    WARNING,
-    ERROR
-  }
-
-  /** The [org.slf4j.Logger] for this [TesseractAction]. */
-  protected val logger = LoggerFactory.getLogger(TesseractAction::class.java)
+abstract class AI : CodBi(), IPluginServletAction {
 
   /**
    * Stores [File] and timestamp so we can clean up old ones that passed the
@@ -88,7 +68,7 @@ abstract class AI : IPluginServletAction {
    * @param configData Provided by the Formcycle environment.
    */
   override fun initialize(configData: IPluginInitializeData) {
-    idLogMessages = "Tesseract"
+    idLogMessages = "AI"
 
     val expirationValue = configData.properties.getProperty("AI_CachedImageExpiration")
 
@@ -100,37 +80,6 @@ abstract class AI : IPluginServletAction {
           log(
               LogLevel.WARNING,
               "AI_CachedImageExpiration must be a positive number, but was '$expirationValue'. Using default.")
-        }
-      }
-    }
-  }
-
-  /**
-   * Posts log message to the console signed with **[[ CodBi / AI / [idLogMessages] ]
-   * **...message...** ]** of a specified importance (info or error).
-   *
-   * @param importance The [LogLevel] for this message.
-   * @param toLog The message itself.
-   * @param adjenct A message to append to the message.
-   * @param exception The [Throwable] [Object] this message is about.
-   */
-  protected open fun log(
-      importance: LogLevel,
-      toLog: String,
-      adjenct: String = "",
-      exception: Throwable? = null
-  ) {
-    val message =
-        "[[ CodBi / AI${ if( idLogMessages.isEmpty()) "" else " / $idLogMessages$adjenct"} ] $toLog ]"
-
-    when (importance) {
-      LogLevel.INFO -> logger.info(message)
-      LogLevel.WARNING -> logger.warn(message)
-      LogLevel.ERROR -> {
-        if (exception != null) {
-          logger.error(message, exception)
-        } else {
-          logger.error(message)
         }
       }
     }

@@ -1,7 +1,7 @@
-package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai
 
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI.LogLevel
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AI
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import java.io.BufferedReader

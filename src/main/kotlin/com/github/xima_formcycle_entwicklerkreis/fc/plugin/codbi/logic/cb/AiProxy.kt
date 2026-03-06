@@ -1,6 +1,7 @@
-package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
 // region Imports
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.LLAMA
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams

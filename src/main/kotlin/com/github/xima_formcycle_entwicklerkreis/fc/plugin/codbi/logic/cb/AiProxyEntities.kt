@@ -1,4 +1,4 @@
-package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
 // region Imports
 import de.xima.fc.interfaces.plugin.param.entities.IPluginEntitiesParams

@@ -1,4 +1,4 @@
-package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai
 
 // region Imports
 // region CodBi
@@ -12,7 +12,7 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai
 // region Java
 // endregion Java
 // region Javax
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AI
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken

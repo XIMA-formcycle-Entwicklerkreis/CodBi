@@ -1,8 +1,8 @@
-package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.llama
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama
 
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.AI.LogLevel
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.BraveSearch
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.ai.LLAMA
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.BraveSearch
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.LLAMA
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
@@ -1271,7 +1271,8 @@ class Standard : LLAMA() {
                         session,
                         enableThinking,
                         slot,
-                        detectedLang)
+                        detectedLang,
+                        userLocation)
                     session.searching = false
                     session.searchQuery = null
                   }
@@ -1327,9 +1328,34 @@ class Standard : LLAMA() {
                           session,
                           false,
                           slot,
-                          detectedLang)
+                          detectedLang,
+                          userLocation)
                       session.searching = false
                       session.searchQuery = null
+                    }
+                  }
+                  // Final safety net: if after all attempts the visible text is still
+                  // empty (and no error was set), ask the model to generate a localized
+                  // fallback message so the user sees something in their language.
+                  if (session.currentText().isBlank() && session.error == null) {
+                    log(
+                        LogLevel.WARNING,
+                        "Model produced no visible text for question: '${question.take(100)}' — generating fallback")
+                    try {
+                      val lang = detectedLang?.languageName ?: "English"
+                      val fallbackPrompt =
+                          """[{"role":"user","content":"Translate the following message to $lang. Output ONLY the translated sentence, nothing else: 'I was unable to generate a response. Please try rephrasing your question.'"}]"""
+                      val translated =
+                          chatCompletion(fallbackPrompt, enableThinking = false, idSlot = slot)
+                              .trim()
+                              .removeSurrounding("\"")
+                              .removeSurrounding("'")
+                      if (translated.isNotBlank()) {
+                        session.textChunks.clear()
+                        session.textChunks.add(translated)
+                      }
+                    } catch (ex: Exception) {
+                      log(LogLevel.WARNING, "Fallback translation failed: ${ex.message}")
                     }
                   }
                   session.done = true
@@ -1382,7 +1408,14 @@ class Standard : LLAMA() {
         if (searchEnabled) {
           answer =
               handleSearchToolCall(
-                  answer, question, imageParts, chatHistory, enableThinking, slotId, detectedLang)
+                  answer,
+                  question,
+                  imageParts,
+                  chatHistory,
+                  enableThinking,
+                  slotId,
+                  detectedLang,
+                  userLocation)
         }
 
         finalResults[questionKey] = mapOf("answer" to answer)
@@ -1589,15 +1622,25 @@ class Standard : LLAMA() {
       chatHistory: List<Pair<String, String>>,
       enableThinking: Boolean,
       slotId: Int,
-      detectedLang: DetectedLanguage? = null
+      detectedLang: DetectedLanguage? = null,
+      userLocation: String? = null
   ): String {
     if (!BraveSearch.isAvailable) return initialAnswer
 
     var answer = initialAnswer
     for (round in 1..maxSearchRoundTrips) {
       val match = BraveSearch.CALL_SEARCH_PATTERN.find(answer) ?: break
-      val query = match.groupValues[1]
+      var query = match.groupValues[1]
       log(LogLevel.INFO, "Model requested web search (round $round): '$query'")
+
+      // Automatically append location to location-dependent queries
+      if (userLocation != null) {
+        val shortLocation = userLocation.substringBefore(",").trim()
+        if (shortLocation.isNotEmpty() && !query.contains(shortLocation, ignoreCase = true)) {
+          query = "$query $shortLocation"
+          log(LogLevel.INFO, "Location-enriched search query: '$query'")
+        }
+      }
 
       val results =
           BraveSearch.search(query, detectedLang?.braveCountry, detectedLang?.languageName)
@@ -1642,14 +1685,26 @@ class Standard : LLAMA() {
       session: StreamingSession,
       enableThinking: Boolean,
       slotId: Int,
-      detectedLang: DetectedLanguage? = null
+      detectedLang: DetectedLanguage? = null,
+      userLocation: String? = null
   ) {
     if (!BraveSearch.isAvailable) return
 
     val match = BraveSearch.CALL_SEARCH_PATTERN.find(fullText) ?: return
-    val query = match.groupValues[1]
+    var query = match.groupValues[1]
     log(LogLevel.INFO, "Streaming: Model raw output: '${fullText.take(200)}'")
     log(LogLevel.INFO, "Streaming: Model requested web search: '$query'")
+
+    // When the user has location enabled, automatically append their city to
+    // location-dependent queries so the search returns local results.
+    // The 2B model often omits the location even when instructed to include it.
+    if (userLocation != null) {
+      val shortLocation = userLocation.substringBefore(",").trim()
+      if (shortLocation.isNotEmpty() && !query.contains(shortLocation, ignoreCase = true)) {
+        query = "$query $shortLocation"
+        log(LogLevel.INFO, "Streaming: Location-enriched search query: '$query'")
+      }
+    }
 
     val results = BraveSearch.search(query, detectedLang?.braveCountry, detectedLang?.languageName)
     if (results.isEmpty()) {
@@ -1875,7 +1930,7 @@ class Standard : LLAMA() {
 
       // Chat history — skip the last entry if it duplicates the current question
       // (the frontend pushes the user message to history before sending the request)
-      val effectiveHistory =
+      var effectiveHistory =
           if (chatHistory.isNotEmpty() &&
               chatHistory.last().first == "user" &&
               chatHistory.last().second == question) {
@@ -1883,6 +1938,7 @@ class Standard : LLAMA() {
           } else {
             chatHistory
           }
+
       for ((role, content) in effectiveHistory) {
         append(",{\"role\":\"${jsonEscape(role)}\",\"content\":\"${jsonEscape(content)}\"}")
       }
@@ -1900,6 +1956,29 @@ class Standard : LLAMA() {
         if (effectiveHistory.isNotEmpty()) {
           append(
               ",{\"role\":\"system\",\"content\":\"LANGUAGE SWITCH: The user is now writing in ${lang.languageName}. You MUST respond ENTIRELY in ${lang.languageName}, regardless of what language was used earlier in the conversation.\"}")
+        }
+      }
+
+      // When search or location has been enabled mid-conversation, inject a fake
+      // user→assistant demonstration turn.  Small models parrot their own prior
+      // refusals ("I can't search / I don't know your location") even after the
+      // system prompt changes.  A system message alone is too weak to break the
+      // pattern, but a fake assistant turn that *demonstrates* the model using the
+      // new capability is a strong in-context signal that works for ANY language.
+      if (effectiveHistory.isNotEmpty()) {
+        val capabilities = mutableListOf<String>()
+        if (searchEnabled && BraveSearch.isAvailable) {
+          capabilities.add("internet search via CALL:search")
+        }
+        if (locationEnabled && userLocation != null) {
+          capabilities.add("the user's location ($userLocation)")
+        }
+        if (capabilities.isNotEmpty()) {
+          val capList = capabilities.joinToString(" and ")
+          append(",{\"role\":\"user\",\"content\":\"Do you have access to $capList now?\"}")
+          append(
+              ",{\"role\":\"assistant\",\"content\":\"Yes! I now have access to $capList. " +
+                  "Disregard anything I said earlier about not being able to help — I can now answer fully.\"}")
         }
       }
 
@@ -2839,8 +2918,9 @@ class Standard : LLAMA() {
           if (enableThinking) (maxTokens * 4).coerceAtLeast(4096) else maxTokens
       append(",\"max_tokens\":$effectiveMaxTokens")
       append(",\"temperature\":${if (enableThinking) "0.5" else "0.1"}")
-      if (!isExternalMode) append(",\"repetition_penalty\":${if (enableThinking) "1.5" else "1.1"}")
-      append(",\"frequency_penalty\":${if (enableThinking) "1.0" else "0.5"}")
+      if (!isExternalMode)
+          append(",\"repetition_penalty\":${if (enableThinking) "1.15" else "1.1"}")
+      append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":false")
       // Thinking is handled via <think> pre-fill + filterThinkTags, not server-side enable_thinking
@@ -2926,8 +3006,9 @@ class Standard : LLAMA() {
           if (enableThinking) (maxTokens * 4).coerceAtLeast(4096) else maxTokens
       append(",\"max_tokens\":$effectiveMaxTokens")
       append(",\"temperature\":${if (enableThinking) "0.5" else "0.1"}")
-      if (!isExternalMode) append(",\"repetition_penalty\":${if (enableThinking) "1.5" else "1.1"}")
-      append(",\"frequency_penalty\":${if (enableThinking) "1.0" else "0.5"}")
+      if (!isExternalMode)
+          append(",\"repetition_penalty\":${if (enableThinking) "1.15" else "1.1"}")
+      append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":true")
       // Thinking is handled via <think> pre-fill + filterThinkTags, not server-side enable_thinking
@@ -2979,10 +3060,10 @@ class Standard : LLAMA() {
                 // --- Repetition detection for visible answer text ---
                 if (!repetitionDetected) {
                   answerAccum.append(cleanText)
-                  if (answerAccum.length > 150) {
+                  if (answerAccum.length > 400) {
                     val text = answerAccum.toString()
-                    val tail = text.takeLast(50)
-                    val searchIn = text.substring(0, text.length - 50)
+                    val tail = text.takeLast(80)
+                    val searchIn = text.substring(0, text.length - 80)
                     if (searchIn.contains(tail)) {
                       repetitionDetected = true
                       // Trim the repeated tail from the visible output
@@ -3004,10 +3085,10 @@ class Standard : LLAMA() {
                 // explore ideas before we declare it stuck in a loop.
                 if (insideThinkBlock && !repetitionDetected) {
                   reasoningAccum.append(thinkText)
-                  if (reasoningAccum.length > 400) {
+                  if (reasoningAccum.length > 1200) {
                     val text = reasoningAccum.toString()
-                    val tail = text.takeLast(80)
-                    val searchIn = text.substring(0, text.length - 80)
+                    val tail = text.takeLast(150)
+                    val searchIn = text.substring(0, text.length - 150)
                     if (searchIn.contains(tail)) {
                       repetitionDetected = true
                       insideThinkBlock = false
@@ -3016,11 +3097,11 @@ class Standard : LLAMA() {
                           LogLevel.INFO,
                           "Repetition detected (exact n-gram) in reasoning after ${reasoningAccum.length} chars")
                     }
-                    if (!repetitionDetected && text.length > 600) {
+                    if (!repetitionDetected && text.length > 2000) {
                       val sentences = text.split(Regex("""[.!?\n]\s*""")).filter { it.length > 20 }
                       val starts = sentences.map { it.take(30).lowercase().trim() }
                       val mostCommon = starts.groupingBy { it }.eachCount().maxByOrNull { it.value }
-                      if (mostCommon != null && mostCommon.value >= 4) {
+                      if (mostCommon != null && mostCommon.value >= 6) {
                         repetitionDetected = true
                         insideThinkBlock = false
                         session.thinkingChunks.add(
@@ -3041,10 +3122,10 @@ class Standard : LLAMA() {
               // Also check reasoning_content for repetition
               if (!repetitionDetected) {
                 reasoningAccum.append(reasoning)
-                if (reasoningAccum.length > 400) {
+                if (reasoningAccum.length > 1200) {
                   val text = reasoningAccum.toString()
-                  val tail = text.takeLast(80)
-                  val searchIn = text.substring(0, text.length - 80)
+                  val tail = text.takeLast(150)
+                  val searchIn = text.substring(0, text.length - 150)
                   if (searchIn.contains(tail)) {
                     repetitionDetected = true
                     insideThinkBlock = false
@@ -3053,11 +3134,11 @@ class Standard : LLAMA() {
                         LogLevel.INFO,
                         "Repetition detected in reasoning_content after ${reasoningAccum.length} chars")
                   }
-                  if (!repetitionDetected && text.length > 600) {
+                  if (!repetitionDetected && text.length > 2000) {
                     val sentences = text.split(Regex("""[.!?\n]\s*""")).filter { it.length > 20 }
                     val starts = sentences.map { it.take(30).lowercase().trim() }
                     val mostCommon = starts.groupingBy { it }.eachCount().maxByOrNull { it.value }
-                    if (mostCommon != null && mostCommon.value >= 4) {
+                    if (mostCommon != null && mostCommon.value >= 6) {
                       repetitionDetected = true
                       insideThinkBlock = false
                       session.thinkingChunks.add(

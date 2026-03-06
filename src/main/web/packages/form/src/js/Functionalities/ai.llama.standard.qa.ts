@@ -1,8 +1,8 @@
-//region Imports
-//region XIMA
+// #region Imports
+// #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
-//endregion XIMA
-//region XDBC
+// #endregion XIMA
+// #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { TYPE } from "xdbc/src/DBC/TYPE";
@@ -10,12 +10,13 @@ import { IF } from "xdbc/src/DBC/IF";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { OR } from "xdbc/src/DBC/OR";
-//endregion XDBC
-//region PDF.js
+// #endregion XDBC
+// #region PDF.js
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
-//endregion PDF.js
-//endregion Imports
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+// #endregion PDF.js
+// #endregion Imports
 /**
  * Provides the {@link AI_LLAMA_STANDARD_QA.functionality }.
  *
@@ -23,9 +24,8 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class AI_LLAMA_STANDARD_QA {
-  /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
+  /** The Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
   private static readonly PAGE_SESSION_ID: string = crypto.randomUUID();
-
   /**
    * This functionality processes uploaded images using a local llama-server process to
    * answer questions about documents. As soon as the file(s) selected changes the AI
@@ -33,17 +33,17 @@ export class AI_LLAMA_STANDARD_QA {
    * selected.
    *
    * **PDF Support:** The functionality automatically detects PDF files and processes them accordingly:
-   * - If PDF contains mainly text, the text is rendered to an image before sending to AI
-   * - If PDF contains images (scanned documents), those images are extracted and sent to AI
+   * - If PDF contains mainly text, the text is rendered to an image before sending to AI.
+   * - If PDF contains images (scanned documents), those images are extracted and sent to AI.
    * - Multiple files can be selected, mixing PDFs and images
    *
    * **Image Orientation:** The model is sensitive to image rotation. There are two ways
    * to provide orientation of the image to process:
    *
    * 1. **Manual Rotation (Priority):** Add a **data-cb-Rotate** attribute to the input element:
-   *    - `data-cb-Rotate="90"` - Rotate image 90° clockwise
-   *    - `data-cb-Rotate="180"` - Rotate image 180°
-   *    - `data-cb-Rotate="270"` - Rotate image 270° clockwise (90° counter-clockwise)
+   *    - `data-cb-Rotate="90"`   - Rotate image 90° clockwise
+   *    - `data-cb-Rotate="180"`  - Rotate image 180°
+   *    - `data-cb-Rotate="270"`  - Rotate image 270° clockwise (90° counter-clockwise)
    *
    * 2. **Automatic Detection (Fallback):** If no data-cb-Rotate attribute is provided AND the
    *    Tesseract OCR engine is active (**OCR** is set in **Active_AI** plugin property), the system will
@@ -51,41 +51,44 @@ export class AI_LLAMA_STANDARD_QA {
    *    and Script Detection).
    *
    * 3. **No Rotation:** If data-cb-Rotate is not provided and **OCR** is not set in **Active_AI** plugin property, images are
-   *    processed as-is leading to potential wrong results with images that are rotated.
+   *    processed as-is leading to potential wrong results with images that are rotated unless a sophisticated AI model like LLMs
+   *    is used.
    *
    * ### Config Parameters:
-   * - **maxPages**:  Optional number limiting how many pages from a PDF are processed and sent to the AI.
-   *                  Useful for large PDFs to avoid overwhelming the AI or hitting processing limits.
-   *                  If not specified or set to 0, all pages are processed. Example: `maxPages: 5` will
-   *                  only process the first 5 pages of any PDF. Defaults to **5**.
-   * - **Rotate**:    Optional attribute on the input element to specify image rotation (see above), either "90", "180", or "270".
-   *                  In a multi-file upload or with a PDF that contains multiple images, this rotation is applied to all files.
-   * - **MaxPixelSize**:  Maximum total pixel budget (width×height). Images exceeding this
-   *                      are downscaled client-side while preserving the aspect ratio.
-   *                      Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
-   * - **AIHint**:    Text shown inside AI-populated fields (right-aligned for inputs, bottom-right
-   *                  for textareas) until the user edits the value. Default: "✨ AI-Generated".
-   *                  Set to an empty string to disable.
-   * - **InternetAccess**: If set to `true`, enables Brave Search internet access for this
-   *                  functionality instance. The model may use web search results to improve
-   *                  its answers. Default: `false` (no internet search).
-   * - **Mode**:      If set to "verify", the upload field may have a **data-cb-Question** attribute.
-   *                  In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
-   *                  to be accepted. If not, an error and a manual verification checkbox are shown,
-   *                  just like in ai.ocr.ts. The question can reference symbols as usual.
+   * - **maxPages**:        Optional number limiting how many pages from a PDF are processed and sent to the AI.
+   *                        Useful for large PDFs to avoid overwhelming the AI or hitting processing limits.
+   *                        If set to 0, all pages are processed. Example: `maxPages: 5` will
+   *                        only process the first 5 pages of any PDF. Defaults to **5**.
+   * - **Rotate**:          Optional attribute on the input element to specify image rotation (see above), either "90", "180", or "270".
+   *                        In a multi-file upload or with a PDF that contains multiple images, this rotation is applied to all files.
+   * - **MaxPixelSize**:    Maximum total pixel budget (width×height). Images exceeding this
+   *                        are downscaled client-side while preserving the aspect ratio.
+   *                        Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
+   * - **AIHint**:          Text shown inside AI-populated fields (right-aligned for inputs, bottom-right
+   *                        for textarea) until the user edits the value. Default: "✨ AI-Generated".
+   *                        Set to an empty string to disable.
+   *
+   *                        Note: **According to the EU AI Act, AI-generated content must be clearly labeled. Changing or
+   *                        disabling the AIHint may lead to non-compliance in certain jurisdictions.**
+   * - **InternetAccess**:  If set to `true`, enables Brave Search internet access for this
+   *                        functionality instance. The model may use web search results to improve
+   *                        its answers. Default: `false` (no internet search).
+   * - **Mode**:            If set to "verify", the upload field may have a **data-cb-Question** attribute.
+   *                        In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
+   *                        to be accepted. If not, an error and a manual verification checkbox are shown,
+   *                        just like in ai.ocr.ts. The question can reference symbols as usual.
    *
    * Questions are acquired from DOM elements within the nearest ancestor **XContainer** of the
    * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_LLAMA_STANDARD_QA_Question**.
    * Each such element should have:
    *  - An **id** attribute (used as the question key)
    *  - A **data-cb-Question**  attribute (contains the question text which may include symbols like <[FieldName]>
-   *                            that get resolved to the value of the field with class "FieldName" in the same container).
+   *                            that get resolved to the value of the field with CSS-Class "FieldName" in the same container).
    *
-   * **Sub-container exclusion:** Nested **XContainer** elements within the search scope can be
-   * tagged with the CSS class **AI_LLAMA_QA_Exclude** to exclude their contents from the question
-   * search. This allows partitioning a form so that each upload field only picks up its own
-   * questions. An upload field that resides *inside* an excluded sub-container naturally searches
-   * that sub-container (its own nearest XContainer) and is not affected by the exclusion.
+   * **Sub-container exclusion:** Nested **XContainer** elements within the search scope can be tagged with the CSS-Class
+   * **AI_LLAMA_QA_Exclude** to exclude their contents from the question search. This allows partitioning a form so that each
+   * upload field only picks up its own questions. An upload field that resides *inside* an excluded sub-container naturally
+   * searches that sub-container (its own nearest XContainer) and is not affected by the exclusion.
    *
    * In verify mode, the upload field itself may have a **data-cb-Question** attribute. This question is sent to the AI and the answer must be "yes" (case-insensitive) for the file to be accepted. Otherwise, an error and a manual verification checkbox are shown.
    *
@@ -93,6 +96,14 @@ export class AI_LLAMA_STANDARD_QA {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
+    @TYPE.PRE("string", "aihint")
+    @GREATER.PRE(
+      3,
+      true,
+      false,
+      "aihint.length",
+      "According to the EU AI Act, AI-generated content must be clearly labeled. Changing or disabling the AIHint may lead to non-compliance in certain jurisdictions.",
+    )
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages")
     @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotate")
     @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotate")
@@ -108,6 +119,7 @@ export class AI_LLAMA_STANDARD_QA {
     toProcess: Element,
   ): void {
     (toProcess as HTMLInputElement).addEventListener("change", async (event) => {
+      // #region Initialize mode, files, and config from toLoad
       const mode = (toLoad.mode || "").toString().toLowerCase();
       const $ = getJQuery();
       const files = (toProcess as HTMLInputElement).files;
@@ -122,7 +134,8 @@ export class AI_LLAMA_STANDARD_QA {
       const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
       const maxPixelSize =
         toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_LLAMA_STANDARD_QA.DEFAULT_MAX_PIXELS;
-      const aiHintText = toLoad.aihint != null ? String(toLoad.aihint) : "\u2728 AI-Generated";
+      const aiHintText = toLoad.aihint != null ? `\u2728 ${String(toLoad.aihint)}` : "\u2728 AI-Generated";
+      // #endregion Initialize mode, files, and config from toLoad
       // #region Process files (PDF or Image)
       // Send as base64 text params — formcycle's multipart parser returns 0-byte FileData.
       for (const file of Array.from(files)) {
@@ -163,8 +176,10 @@ export class AI_LLAMA_STANDARD_QA {
         }
       }
       // #endregion Process files (PDF or Image)
+      // #region Build request headers
       const headers: { [key: string]: string } = {};
       headers["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
+      // #endregion Build request headers
       // #region Determine user-set rotation
       if (toLoad.rotate && toLoad.rotate !== "0" && toLoad.rotate !== 0) {
         headers["X-Rotate"] = toLoad.rotate.toString();
@@ -216,6 +231,7 @@ export class AI_LLAMA_STANDARD_QA {
       const cordQuestions: { id: string; element: Element }[] = [];
       const vqaHeaders: { [key: string]: string } = {};
       vqaHeaders["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
+      // #region Brave Search and geolocation toggles
       // ── Brave Search internet access toggle (from toLoad.InternetAccess) ──
       const internetAccess = toLoad.InternetAccess != null && String(toLoad.InternetAccess).toLowerCase() === "true";
       vqaHeaders["X-Search"] = internetAccess ? "true" : "false";
@@ -244,6 +260,8 @@ export class AI_LLAMA_STANDARD_QA {
           }
         }
       }
+      // #endregion Brave Search and geolocation toggles
+      // #region Resolve verify-mode question or collect question headers
       // If mode is verify and the upload field has a data-cb-Question, use only that question
       let verifyFieldId: string | null = null;
       let verifyFieldQuestion: string | null = null;
@@ -295,6 +313,7 @@ export class AI_LLAMA_STANDARD_QA {
           }
         }
       }
+      // #endregion Resolve verify-mode question or collect question headers
       // #endregion Acquire Questions
 
       // #region If any CORD questions, call CORD action for each
@@ -415,6 +434,7 @@ export class AI_LLAMA_STANDARD_QA {
               return;
             }
             if (mode === "verify" && verifyFieldId && verifyFieldQuestion) {
+              // #region Verify mode — check AI answer and show error or accept
               // Backend returns: { "fieldId": { "answer": "yes" } }
               let answer: string | undefined;
               const verifyResult = response[verifyFieldId];
@@ -486,7 +506,9 @@ export class AI_LLAMA_STANDARD_QA {
                   }
                 });
               }
+              // #endregion Verify mode — check AI answer and show error or accept
             } else {
+              // #region Normal mode — populate answer fields
               // Backend returns: { "questionId": { "answer": "text" }, ... }
               for (const questionId in response) {
                 const answerText = response[questionId]?.answer;
@@ -504,6 +526,7 @@ export class AI_LLAMA_STANDARD_QA {
                   field.dispatchEvent(event);
                 }
               }
+              // #endregion Normal mode — populate answer fields
             }
           },
           error: (xhr, status, error) => {
@@ -511,12 +534,13 @@ export class AI_LLAMA_STANDARD_QA {
             window.codbi.log("ERROR", `REST failed with status "${status}" cause: "${error}"`, "AI / LLAMA / QA");
           },
         });
+        // #endregion Contact llama-server via AJAX
       }
       // #endregion If any VQA questions, call VQA action as before
-      // #endregion Contact llama-server via AJAX
     });
   }
 
+  // #region PDF.js worker configuration
   /** Ensures PDF.js worker is configured with the correct URL. */
   private static pdfJsWorkerConfigured = false;
 
@@ -538,6 +562,7 @@ export class AI_LLAMA_STANDARD_QA {
 
     window.codbi.log("INFO", `PDF.js worker configured: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`, "AI / LLAMA / QA");
   }
+  // #endregion PDF.js worker configuration
 
   // #region AI-Generated hint
   /**
@@ -682,6 +707,7 @@ export class AI_LLAMA_STANDARD_QA {
   }
   // #endregion Image downscaling helper
 
+  // #region PDF processing — split pages into images or render text pages
   /**
    * Processes a PDF file and returns image blobs for each page or extracted image.
    * Detects whether the PDF contains mainly text or images and processes accordingly.
@@ -752,7 +778,9 @@ export class AI_LLAMA_STANDARD_QA {
 
     return images;
   }
+  // #endregion PDF processing — split pages into images or render text pages
 
+  // #region Render a single PDF page to a PNG image
   /**
    * Renders a PDF page (including text) to a canvas and returns it as an image blob.
    *
@@ -787,7 +815,9 @@ export class AI_LLAMA_STANDARD_QA {
       }, "image/png");
     });
   }
+  // #endregion Render a single PDF page to a PNG image
 
+  // #region Extract embedded images from a PDF page
   /**
    * Extracts embedded images from a PDF page.
    *
@@ -852,9 +882,12 @@ export class AI_LLAMA_STANDARD_QA {
 
     return images;
   }
+  // #endregion Extract embedded images from a PDF page
 }
 
+// #region Register functionality with CodBi
 window.codbi.registerFunctionality(
   "AI.LLAMA.STANDARD.QA",
   AI_LLAMA_STANDARD_QA.functionality.bind(AI_LLAMA_STANDARD_QA),
 ); // Initialization
+// #endregion Register functionality with CodBi

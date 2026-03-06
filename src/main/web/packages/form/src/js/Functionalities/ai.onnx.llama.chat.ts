@@ -1048,6 +1048,11 @@ export class AI_ONNX_LLAMA_CHAT {
                       badge.title = modelType === "thinking" ? "Thinking model" : "Fast model";
                       streamBubble.insertBefore(badge, streamBubble.firstChild);
                     }
+                  } else {
+                    // Model produced no visible text and no error — show fallback
+                    // (The server normally generates a localized fallback; this is a last resort)
+                    replaceThinking("\u26A0 No response was generated. Please try again.");
+                    conversationHistory.pop(); // remove failed user turn
                   }
                   finishStreaming();
                 }

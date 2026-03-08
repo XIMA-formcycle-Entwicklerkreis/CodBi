@@ -991,6 +991,8 @@ class Standard : LLAMA() {
             val raw = thinkingModelUrl!!.substringAfterLast("/").removeSuffix(".gguf")
             val name = raw.replace(Regex("-[QFqf][0-9_]+[A-Za-z_]*$"), "")
             ",\"thinkingModel\":\"${jsonEscape(name)}\""
+          } else if (hasThinkingModel && !thinkingServerReady) {
+            ",\"pendingThinkingModel\":true"
           } else ""
       return jsonResponse(
           "{\"status\":\"ready\",\"model\":\"${jsonEscape(displayModel)}\"$thinkingModelJson}")
@@ -1129,6 +1131,16 @@ class Standard : LLAMA() {
           else -> "off"
         }
     log(LogLevel.INFO, "Thinking mode: $thinkingMode")
+
+    // ── Thinking token budget ─────────────────────────────────────────────────
+    // Optional per-request limit on the thinking token budget (multiplier of maxTokens).
+    // Default: maxTokens*4. Useful for verify mode where only a yes/no is needed.
+    val thinkingTokenBudget =
+        params.headerMap.entries
+            .find { it.key.equals("X-Max-Thinking-Tokens", ignoreCase = true) }
+            ?.value
+            ?.trim()
+            ?.toIntOrNull()
 
     // ── Search toggle ─────────────────────────────────────────────────────────
     val searchEnabled =
@@ -1402,7 +1414,29 @@ class Standard : LLAMA() {
                 detectedLang,
                 locationEnabled,
                 userLocation)
-        var answer = chatCompletion(messages, enableThinking, slotId)
+        var answer = chatCompletion(messages, enableThinking, slotId, thinkingTokenBudget)
+
+        // ── Thinking fallback ──────────────────────────────────────────
+        // If thinking mode produced an empty or thinking-only answer (the model
+        // burned all tokens reasoning without producing a visible answer), fall
+        // back to the fast model without thinking — same pattern as the chat
+        // streaming path.
+        if (enableThinking && answer.isBlank()) {
+          log(
+              LogLevel.INFO,
+              "Thinking model produced no visible answer for Q[$questionKey] — falling back to fast model")
+          val fallbackMessages =
+              buildMessages(
+                  question,
+                  imageParts,
+                  chatHistory,
+                  searchEnabled,
+                  enableThinking = false,
+                  detectedLang,
+                  locationEnabled,
+                  userLocation)
+          answer = chatCompletion(fallbackMessages, enableThinking = false, idSlot = slotId)
+        }
 
         // ── CALL:search tool loop ──────────────────────────────────────
         if (searchEnabled) {
@@ -1419,7 +1453,7 @@ class Standard : LLAMA() {
         }
 
         finalResults[questionKey] = mapOf("answer" to answer)
-        log(LogLevel.INFO, "Q[$questionKey]: ${question.take(80)}… → ${answer.take(80)}…")
+        log(LogLevel.INFO, "Q[$questionKey]: ${question.take(80)}… → $answer")
       }
     } catch (e: Exception) {
       log(LogLevel.ERROR, "Inference error: ${e.message}", "", e)
@@ -2469,12 +2503,118 @@ class Standard : LLAMA() {
    * This is a very lightweight call: a tiny prompt, max 8 output tokens, low temperature. It always
    * uses the **fast** server regardless of which model will handle the real question.
    */
+  /** Recognized language names for validation of model-detected languages. */
+  private val knownLanguageNames: Set<String> =
+      setOf(
+          "english",
+          "german",
+          "french",
+          "italian",
+          "spanish",
+          "portuguese",
+          "dutch",
+          "turkish",
+          "japanese",
+          "chinese",
+          "korean",
+          "arabic",
+          "russian",
+          "hindi",
+          "polish",
+          "czech",
+          "slovak",
+          "hungarian",
+          "romanian",
+          "bulgarian",
+          "croatian",
+          "serbian",
+          "slovenian",
+          "greek",
+          "swedish",
+          "norwegian",
+          "danish",
+          "finnish",
+          "estonian",
+          "latvian",
+          "lithuanian",
+          "ukrainian",
+          "thai",
+          "vietnamese",
+          "indonesian",
+          "malay",
+          "tagalog",
+          "filipino",
+          "persian",
+          "farsi",
+          "hebrew",
+          "urdu",
+          "bengali",
+          "tamil",
+          "telugu",
+          "marathi",
+          "gujarati",
+          "punjabi",
+          "swahili",
+          "catalan",
+          "basque",
+          "galician",
+          "afrikaans",
+          "welsh",
+          "irish",
+          "scots gaelic",
+          "icelandic",
+          "maltese",
+          "albanian",
+          "macedonian",
+          "bosnian",
+          "georgian",
+          "armenian",
+          "azerbaijani",
+          "kazakh",
+          "uzbek",
+          "mongolian",
+          "nepali",
+          "sinhalese",
+          "sinhala",
+          "khmer",
+          "lao",
+          "burmese",
+          "amharic",
+          "yoruba",
+          "igbo",
+          "hausa",
+          "zulu",
+          "xhosa",
+          "sotho",
+          "tswana",
+          "shona",
+          "mandarin",
+          "cantonese",
+          "wu",
+          "hokkien",
+          "hakka",
+          "cebuano",
+          "javanese",
+          "sundanese")
+
   private fun detectLanguageViaModel(question: String): DetectedLanguage? {
     try {
       val messagesJson = buildString {
         append("[")
         append(
-            "{\"role\":\"system\",\"content\":\"You are a language detector. The text may be in its native script OR romanized (written in Latin alphabet). Identify the ACTUAL language, not the script. Reply with ONLY the language name in English, nothing else. Examples: English, German, French, Italian, Spanish, Portuguese, Dutch, Turkish, Japanese, Chinese, Korean, Arabic, Russian, Hindi.\"}")
+            "{\"role\":\"system\",\"content\":\"You are a language detector. " +
+                "Detect the LANGUAGE the text is WRITTEN IN based on its words and grammar. " +
+                "IGNORE the topic, subject matter, or any people/places/countries mentioned in the text. " +
+                "The text may be in its native script OR romanized (Latin alphabet). " +
+                "Reply with ONLY the language name in English, nothing else. " +
+                "Examples: English, German, French, Italian, Spanish, Portuguese, Dutch, Turkish, Japanese, Chinese, Korean, Arabic, Russian, Hindi.\"}")
+        // Few-shot examples to anchor the model
+        append(",{\"role\":\"user\",\"content\":\"Chi è Nelson Mandela?\"}")
+        append(",{\"role\":\"assistant\",\"content\":\"Italian\"}")
+        append(",{\"role\":\"user\",\"content\":\"Wie wird das Wetter in Tokyo?\"}")
+        append(",{\"role\":\"assistant\",\"content\":\"German\"}")
+        append(",{\"role\":\"user\",\"content\":\"¿Quién fue Mahatma Gandhi?\"}")
+        append(",{\"role\":\"assistant\",\"content\":\"Spanish\"}")
         append(",{\"role\":\"user\",\"content\":\"${jsonEscape(question)}\"}")
         append("]")
       }
@@ -2506,6 +2646,20 @@ class Standard : LLAMA() {
           raw.trim().lowercase().removeSuffix(".").removeSuffix("!").removeSuffix(",").trim()
       log(LogLevel.INFO, "Model-detected language: '$langName' (raw: '${raw.trim()}')")
 
+      // Cross-validate with regex-based detection. Small models can misidentify
+      // the language (e.g. returning "Italian" for a German question). If regex
+      // detects a different language than the model, prefer the regex result.
+      val regexLang = detectLanguage(question)
+      if (regexLang != null) {
+        val regexName = regexLang.languageName.lowercase()
+        if (langName != regexName && langName != "english") {
+          log(
+              LogLevel.WARNING,
+              "Model detected '$langName' but regex detected '${regexLang.languageName}' — preferring regex")
+          return regexLang
+        }
+      }
+
       if (langName == "english") return null
       // Look up in our language map
       val detected = languageMap[langName]
@@ -2521,7 +2675,17 @@ class Standard : LLAMA() {
 
       log(
           LogLevel.INFO,
-          "Language '$langName' not in language map — building generic negotiation turn")
+          "Language '$langName' not in language map — checking if it is a recognized language name")
+
+      // Validate: only build a dynamic DetectedLanguage for recognized language names.
+      // If the model returned a non-language (e.g. "south african", "mandela"), fall back to regex.
+      if (!knownLanguageNames.contains(langName)) {
+        log(
+            LogLevel.WARNING,
+            "Model returned '$langName' which is not a recognized language — falling back to regex detection")
+        return detectLanguage(question)
+      }
+
       // Dynamically build a DetectedLanguage for any language the model identifies.
       // The "Let's talk in [X]" turn works universally even for languages we don't have
       // pre-built templates for.
@@ -2638,7 +2802,11 @@ class Standard : LLAMA() {
             " città",
             " sindaco",
             " oggi")
-    if (italianMarkers.count { lower.contains(it) } >= 2) {
+    // Strong Italian-specific words that alone suffice (not shared with other Romance languages)
+    val strongItalianMarkers =
+        listOf(" chi ", " perché", " qual ", " quale ", " della ", " delle ", " degli ")
+    if (italianMarkers.count { lower.contains(it) } >= 2 ||
+        strongItalianMarkers.any { lower.contains(it) }) {
       return languageMap["italian"]
     }
 
@@ -2905,7 +3073,8 @@ class Standard : LLAMA() {
   private fun chatCompletion(
       messagesJson: String,
       enableThinking: Boolean = false,
-      idSlot: Int = -1
+      idSlot: Int = -1,
+      maxThinkingTokens: Int? = null
   ): String {
     // Route to dedicated thinking server if available, otherwise use main server
     val useThinkingServer = !isExternalMode && enableThinking && thinkingServerReady
@@ -2915,11 +3084,12 @@ class Standard : LLAMA() {
       append("{\"messages\":$messagesJson")
       // Thinking mode needs a larger token budget: reasoning tokens + answer
       val effectiveMaxTokens =
-          if (enableThinking) (maxTokens * 4).coerceAtLeast(4096) else maxTokens
+          if (enableThinking) {
+            maxThinkingTokens ?: (maxTokens * 4).coerceAtLeast(4096)
+          } else maxTokens
       append(",\"max_tokens\":$effectiveMaxTokens")
-      append(",\"temperature\":${if (enableThinking) "0.5" else "0.1"}")
-      if (!isExternalMode)
-          append(",\"repetition_penalty\":${if (enableThinking) "1.15" else "1.1"}")
+      append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
+      if (!isExternalMode) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
       append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":false")
@@ -2951,8 +3121,12 @@ class Standard : LLAMA() {
       var raw = message?.get("content")?.asString ?: response
 
       if (useThinkingServer) {
-        // Dedicated thinking server: content is already clean, reasoning is in reasoning_content
-        raw
+        // Dedicated thinking server: reasoning_content holds the thinking text.
+        // However some models still emit <think>…</think> inside content — strip it.
+        raw = "<think>$raw"
+        var result = stripThinkTags(raw)
+        if (result.startsWith("<think>")) result = result.removePrefix("<think>").trimStart()
+        result
       } else if (enableThinking) {
         // Hybrid mode / pre-fill approach: response doesn't include the opening <think> we sent,
         // so prepend it for stripThinkTags to match correctly.
@@ -3005,9 +3179,8 @@ class Standard : LLAMA() {
       val effectiveMaxTokens =
           if (enableThinking) (maxTokens * 4).coerceAtLeast(4096) else maxTokens
       append(",\"max_tokens\":$effectiveMaxTokens")
-      append(",\"temperature\":${if (enableThinking) "0.5" else "0.1"}")
-      if (!isExternalMode)
-          append(",\"repetition_penalty\":${if (enableThinking) "1.15" else "1.1"}")
+      append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
+      if (!isExternalMode) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
       append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":true")
@@ -3066,7 +3239,6 @@ class Standard : LLAMA() {
                     val searchIn = text.substring(0, text.length - 80)
                     if (searchIn.contains(tail)) {
                       repetitionDetected = true
-                      // Trim the repeated tail from the visible output
                       val firstOccurrence = searchIn.indexOf(tail)
                       val trimPoint = firstOccurrence + tail.length
                       session.textChunks.clear()
@@ -3081,18 +3253,17 @@ class Standard : LLAMA() {
               if (thinkText.isNotEmpty()) {
                 session.thinkingChunks.add(thinkText)
                 // --- Repetition detection for reasoning ---
-                // Use relaxed thresholds for reasoning: the model needs more room to
-                // explore ideas before we declare it stuck in a loop.
                 if (insideThinkBlock && !repetitionDetected) {
                   reasoningAccum.append(thinkText)
-                  if (reasoningAccum.length > 1200) {
+                  if (reasoningAccum.length > 500) {
                     val text = reasoningAccum.toString()
-                    val tail = text.takeLast(150)
-                    val searchIn = text.substring(0, text.length - 150)
+                    val tail = text.takeLast(500)
+                    val searchIn = text.substring(0, text.length - 500)
                     if (searchIn.contains(tail)) {
                       repetitionDetected = true
                       insideThinkBlock = false
-                      session.thinkingChunks.add("\n[Reasoning truncated — repetition detected]")
+                      session.thinkingChunks.add(
+                          "\n[Reasoning truncated \u2014 repetition detected]")
                       log(
                           LogLevel.INFO,
                           "Repetition detected (exact n-gram) in reasoning after ${reasoningAccum.length} chars")
@@ -3101,11 +3272,11 @@ class Standard : LLAMA() {
                       val sentences = text.split(Regex("""[.!?\n]\s*""")).filter { it.length > 20 }
                       val starts = sentences.map { it.take(30).lowercase().trim() }
                       val mostCommon = starts.groupingBy { it }.eachCount().maxByOrNull { it.value }
-                      if (mostCommon != null && mostCommon.value >= 6) {
+                      if (mostCommon != null && mostCommon.value >= 1000) {
                         repetitionDetected = true
                         insideThinkBlock = false
                         session.thinkingChunks.add(
-                            "\n[Reasoning truncated — repetitive pattern detected]")
+                            "\n[Reasoning truncated \u2014 repetitive pattern detected]")
                         log(
                             LogLevel.INFO,
                             "Repetition detected (sentence pattern) in reasoning after ${reasoningAccum.length} chars")
@@ -3122,14 +3293,14 @@ class Standard : LLAMA() {
               // Also check reasoning_content for repetition
               if (!repetitionDetected) {
                 reasoningAccum.append(reasoning)
-                if (reasoningAccum.length > 1200) {
+                if (reasoningAccum.length > 500) {
                   val text = reasoningAccum.toString()
-                  val tail = text.takeLast(150)
-                  val searchIn = text.substring(0, text.length - 150)
+                  val tail = text.takeLast(500)
+                  val searchIn = text.substring(0, text.length - 500)
                   if (searchIn.contains(tail)) {
                     repetitionDetected = true
                     insideThinkBlock = false
-                    session.thinkingChunks.add("\n[Reasoning truncated — repetition detected]")
+                    session.thinkingChunks.add("\n[Reasoning truncated \u2014 repetition detected]")
                     log(
                         LogLevel.INFO,
                         "Repetition detected in reasoning_content after ${reasoningAccum.length} chars")
@@ -3138,11 +3309,11 @@ class Standard : LLAMA() {
                     val sentences = text.split(Regex("""[.!?\n]\s*""")).filter { it.length > 20 }
                     val starts = sentences.map { it.take(30).lowercase().trim() }
                     val mostCommon = starts.groupingBy { it }.eachCount().maxByOrNull { it.value }
-                    if (mostCommon != null && mostCommon.value >= 6) {
+                    if (mostCommon != null && mostCommon.value >= 1000) {
                       repetitionDetected = true
                       insideThinkBlock = false
                       session.thinkingChunks.add(
-                          "\n[Reasoning truncated — repetitive pattern detected]")
+                          "\n[Reasoning truncated \u2014 repetitive pattern detected]")
                       log(
                           LogLevel.INFO,
                           "Repetition detected (sentence pattern) in reasoning_content after ${reasoningAccum.length} chars")

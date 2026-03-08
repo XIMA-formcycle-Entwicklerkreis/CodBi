@@ -1,0 +1,18 @@
+{
+  "Description": "/classes/Functionalities_ai.llama.standard.qa.AI_LLAMA_STANDARD_QA.html#functionality",
+  "Parameter": {
+    "MaxPages": "",
+    "Rotate": "",
+    "MaxPixelSize": "",
+    "AIHint": "",
+    "InternetAccess": "",
+    "Thinking": "",
+    "MaxThinkingTokens": "",
+    "Mode": "",
+    "PositiveResponse": "",
+    "CaseInsensitive": "",
+    "VerifyErrorText": "",
+    "VerifyCheckboxLabel": "",
+    "Location": ""
+  }
+}

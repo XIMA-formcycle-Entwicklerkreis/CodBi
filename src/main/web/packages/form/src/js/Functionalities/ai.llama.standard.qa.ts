@@ -10,11 +10,12 @@ import { IF } from "xdbc/src/DBC/IF";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { EQ } from "xdbc/src/DBC/EQ";
 import { OR } from "xdbc/src/DBC/OR";
+import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 // #region PDF.js
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
-import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 // #endregion PDF.js
 // #endregion Imports
 /**
@@ -73,6 +74,19 @@ export class AI_LLAMA_STANDARD_QA {
    * - **InternetAccess**:  If set to `true`, enables Brave Search internet access for this
    *                        functionality instance. The model may use web search results to improve
    *                        its answers. Default: `false` (no internet search).
+   * - **Thinking**:        If set to `true`, enables thinking mode. The AI will use a dedicated
+   *                        thinking model (if configured) for deeper reasoning. Default: `false`.
+   * - **MaxThinkingTokens**: Maximum token budget for thinking inference. In verify mode this
+   *                        defaults to `512` (enough for yes/no reasoning). Set higher if the
+   *                        model needs more room to reason. Has no effect when Thinking is `false`.
+   * - **PositiveResponse**: The expected positive answer from the AI in verify mode.
+   *                        The comparison is case-insensitive by default. Default: `"yes"`.
+   * - **CaseInsensitive**:  If `true` (default), the AI answer is lowercased before comparing
+   *                        with PositiveResponse. Set to `false` for an exact (case-sensitive) match.
+   * - **VerifyErrorText**:  Error message shown when the file does not pass verification.
+   *                        Default: `"The file does not meet the verification criteria."`
+   * - **VerifyCheckboxLabel**: Label for the manual verification checkbox.
+   *                        Default: `"The content is not as expected. Please check if you selected the correct file(s). You may manually verify that it is the correct one by clicking the checkbox."`
    * - **Mode**:            If set to "verify", the upload field may have a **data-cb-Question** attribute.
    *                        In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
    *                        to be accepted. If not, an error and a manual verification checkbox are shown,
@@ -119,25 +133,41 @@ export class AI_LLAMA_STANDARD_QA {
     toProcess: Element,
   ): void {
     (toProcess as HTMLInputElement).addEventListener("change", async (event) => {
-      // #region Initialize mode, files, and config from toLoad
-      const mode = (toLoad.mode || "").toString().toLowerCase();
-      const $ = getJQuery();
+      // #region Check if early exit is appropriate (no files selected)
       const files = (toProcess as HTMLInputElement).files;
 
       if (!files || files.length === 0) {
         return;
       }
-
-      AI_LLAMA_STANDARD_QA.ensurePdfJsWorkerConfigured();
-
+      // #endregion Check if early exit is appropriate (no files selected)
+      // #region Initialize mode, files, and config from toLoad
+      const mode = (toLoad.mode || "").toString().toLowerCase();
+      const $ = getJQuery();
       const formData = new FormData();
       const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
       const maxPixelSize =
         toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_LLAMA_STANDARD_QA.DEFAULT_MAX_PIXELS;
       const aiHintText = toLoad.aihint != null ? `\u2728 ${String(toLoad.aihint)}` : "\u2728 AI-Generated";
+      const caseInsensitive =
+        toLoad.caseinsensitive == null || String(toLoad.caseinsensitive).toLowerCase() !== "false";
+      const positiveResponse =
+        toLoad.positiveresponse != null
+          ? caseInsensitive
+            ? String(toLoad.positiveresponse).trim().toLowerCase()
+            : String(toLoad.positiveresponse).trim()
+          : "yes";
+      const verifyErrorText =
+        toLoad.verifyerrortext != null
+          ? String(toLoad.verifyerrortext)
+          : "The file does not meet the verification criteria.";
+      const verifyCheckboxLabel =
+        toLoad.verifycheckboxlabel != null
+          ? String(toLoad.verifycheckboxlabel)
+          : "The content is not as expected. Please check if you selected the correct file(s). You may manually verify that it is the correct one by clicking the checkbox.";
+
+      AI_LLAMA_STANDARD_QA.ensurePdfJsWorkerConfigured();
       // #endregion Initialize mode, files, and config from toLoad
       // #region Process files (PDF or Image)
-      // Send as base64 text params — formcycle's multipart parser returns 0-byte FileData.
       for (const file of Array.from(files)) {
         if (file.type === "application/pdf") {
           const processedImages = await AI_LLAMA_STANDARD_QA.processPdfFile(file, maxPages);
@@ -145,32 +175,38 @@ export class AI_LLAMA_STANDARD_QA {
           for (let i = 0; i < processedImages.length; i++) {
             const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
             let imageFile = new File([processedImages[i]], imageName, { type: "image/png" });
-            // Downscale PDF page if it exceeds the pixel budget
+            // #region Downscale PDF page if it exceeds the pixel budget
             if (maxPixelSize > 0) {
               const downscaled = await AI_LLAMA_STANDARD_QA.downscaleImageIfNeeded(imageFile, maxPixelSize);
+
               imageFile =
                 downscaled instanceof File
                   ? downscaled
                   : new File([downscaled], imageName, { type: downscaled.type || "image/png" });
             }
+            // #endregion Downscale PDF page if it exceeds the pixel budget
             const dataUrl = await AI_LLAMA_STANDARD_QA.blobToDataUrl(imageFile);
+
             formData.append(`codbi-base64:${imageName}`, dataUrl);
           }
         } else if (maxPixelSize > 0) {
           const downscaled = await AI_LLAMA_STANDARD_QA.downscaleImageIfNeeded(file, maxPixelSize);
           const dataUrl = await AI_LLAMA_STANDARD_QA.blobToDataUrl(downscaled);
+
           window.codbi.log(
             "INFO",
-            `Appending '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
-            "AI / LLAMA / QA",
+            `Appending downscaled '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
+            "AI / LLAMA / STD / QA",
           );
+
           formData.append(`codbi-base64:${file.name}`, dataUrl);
         } else {
           const dataUrl = await AI_LLAMA_STANDARD_QA.blobToDataUrl(file);
+
           window.codbi.log(
             "INFO",
-            `Appending '${file.name}' as base64 param (no client downscale): ${Math.round(dataUrl.length / 1024)} KB`,
-            "AI / LLAMA / QA",
+            `Appending original '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
+            "AI / LLAMA / STD / QA",
           );
           formData.append(`codbi-base64:${file.name}`, dataUrl);
         }
@@ -178,69 +214,77 @@ export class AI_LLAMA_STANDARD_QA {
       // #endregion Process files (PDF or Image)
       // #region Build request headers
       const headers: { [key: string]: string } = {};
+
       headers["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
       // #endregion Build request headers
       // #region Determine user-set rotation
       if (toLoad.rotate && toLoad.rotate !== "0" && toLoad.rotate !== 0) {
         headers["X-Rotate"] = toLoad.rotate.toString();
-        window.codbi.log("INFO", `Setting image rotation to ${toLoad.rotate}° via X-Rotate header`, "AI / LLAMA / QA");
+
+        window.codbi.log(
+          "INFO",
+          `Setting user provided image rotation to ${toLoad.rotate}° via X-Rotate header`,
+          "AI / LLAMA / STD / QA",
+        );
       }
       // #endregion Determine user-set rotation
       // #region Determine the search container
-      // Walk up from the upload input to find the right .CXContainer scope.
-      // Strategy: find the nearest .CXContainer, then go one level up to the parent
-      // .CXContainer that groups the upload with its question fields.
-      // Exception: if the immediate .CXContainer is tagged AI_LLAMA_QA_Exclude, it IS
-      // the intended scope (the upload lives inside an excluded sub-container).
       const immediateCX = (toProcess as HTMLElement).closest(".CXContainer");
       let container: Element | null;
+
       if (immediateCX?.classList.contains("AI_LLAMA_QA_Exclude")) {
-        // Upload is inside an excluded sub-container — search within it
         container = immediateCX;
       } else {
-        // Go one level up: the immediate .CXContainer is just the upload wrapper
         container = immediateCX?.parentElement?.closest(".CXContainer") ?? immediateCX;
-      }
-      if (!container) {
-        window.codbi.log(
-          "ERROR",
-          `Could not find ancestor .CXContainer for element #${toProcess.getAttribute("id")}. Make sure the input is inside a CXContainer.`,
-          "AI / LLAMA / QA",
-        );
-        return;
       }
       // #endregion Determine the search container
       // #region Acquire Questions
-      // Find all question elements, then filter out those inside an excluded sub-container.
-      // A nested .CXContainer.AI_LLAMA_QA_Exclude signals "don't search here".
       const allQuestionElements = container.querySelectorAll(".AI_LLAMA_STANDARD_QA_Question");
       const questionElements: Element[] = [];
+
       for (const qEl of allQuestionElements) {
-        // Walk up from the question element — if we hit an excluded sub-container
-        // before reaching our search container, skip this question.
         const innerContainer = qEl.closest(".CXContainer");
+        // #region Omit questions that're in an excluded sub-container.
         if (
           innerContainer &&
           innerContainer !== container &&
           innerContainer.classList.contains("AI_LLAMA_QA_Exclude")
         ) {
-          continue; // question is inside an excluded sub-container
+          continue;
         }
+        // #endregion Omit questions that're in an excluded sub-container.
         questionElements.push(qEl);
       }
-      const cordQuestions: { id: string; element: Element }[] = [];
       const vqaHeaders: { [key: string]: string } = {};
+
       vqaHeaders["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
       // #region Brave Search and geolocation toggles
-      // ── Brave Search internet access toggle (from toLoad.InternetAccess) ──
       const internetAccess = toLoad.InternetAccess != null && String(toLoad.InternetAccess).toLowerCase() === "true";
+
       vqaHeaders["X-Search"] = internetAccess ? "true" : "false";
-      // ── Location toggle (from toLoad.location) ──
-      const locationAccess = toLoad.location != null && String(toLoad.location).toLowerCase() === "true";
-      if (locationAccess) {
+      // #endregion Brave Search and geolocation toggles
+      // #region Thinking mode toggle
+      const thinking = toLoad.thinking != null && String(toLoad.thinking).toLowerCase() === "true";
+
+      vqaHeaders["X-Thinking"] = thinking ? "true" : "false";
+
+      if (thinking) {
+        const customBudget = toLoad.maxthinkingtokens != null ? Number(toLoad.maxthinkingtokens) : 0;
+
+        if (customBudget > 0) {
+          vqaHeaders["X-Max-Thinking-Tokens"] = String(customBudget);
+        } else if (mode === "verify") {
+          vqaHeaders["X-Max-Thinking-Tokens"] = "512";
+        }
+      }
+      // #endregion Thinking mode toggle
+      // #region Determine location, if requested, and add to headers
+      if (toLoad.location != null && String(toLoad.location).toLowerCase() === "true") {
         vqaHeaders["X-Location"] = "true";
+
         if (navigator.geolocation) {
           try {
+            // #region Acquire position
             const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
               navigator.geolocation.getCurrentPosition(resolve, reject, {
                 enableHighAccuracy: false,
@@ -248,23 +292,26 @@ export class AI_LLAMA_STANDARD_QA {
                 maximumAge: 300_000,
               });
             });
+            // #endregion Acquire position
             vqaHeaders["X-Latitude"] = pos.coords.latitude.toFixed(4);
             vqaHeaders["X-Longitude"] = pos.coords.longitude.toFixed(4);
+
             window.codbi.log(
               "INFO",
               `Geolocation: ${vqaHeaders["X-Latitude"]}, ${vqaHeaders["X-Longitude"]}`,
-              "AI / LLAMA / QA",
+              "AI / LLAMA / STD / QA",
             );
           } catch (geoErr) {
-            window.codbi.log("WARNING", `Geolocation unavailable: ${geoErr}`, "AI / LLAMA / QA");
+            window.codbi.log("WARNING", `Geolocation unavailable: ${geoErr}`, "AI / LLAMA / STD / QA");
           }
         }
       }
+      // #endregion Determine location, if requested, and add to headers
       // #endregion Brave Search and geolocation toggles
       // #region Resolve verify-mode question or collect question headers
-      // If mode is verify and the upload field has a data-cb-Question, use only that question
       let verifyFieldId: string | null = null;
       let verifyFieldQuestion: string | null = null;
+      // #region Verification-Mode. If mode is verify and the upload field has a data-cb-Question, use only that question.
       if (mode === "verify") {
         verifyFieldId = toProcess.getAttribute("id");
         verifyFieldQuestion = toProcess.getAttribute("data-cb-Question");
@@ -281,79 +328,47 @@ export class AI_LLAMA_STANDARD_QA {
           vqaHeaders[`X-Question-${verifyFieldId}`] = verifyFieldQuestion;
         }
       }
+      // #endregion Verification-Mode. If mode is verify and the upload field has a data-cb-Question, use only that question.
+      // #region Collect question headers since not in verify-mode or verify question is incomplete.
       if (!(mode === "verify" && verifyFieldId && verifyFieldQuestion)) {
         for (const element of questionElements) {
           const id = element.id;
           let question = element.getAttribute("data-cb-Question");
+
           if (id && question) {
             question = question.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
               const trimmed = identifier.trim();
               const field = document.querySelector(`.${trimmed}`) as HTMLInputElement | null;
+
               if (field && "value" in field) {
                 return field.value;
               }
+
               return match;
             });
+
             vqaHeaders[`X-Question-${id}`] = question;
           } else {
             if (!id) {
               window.codbi.log(
                 "WARNING",
-                `Question element missing id attribute in: ${element.outerHTML}`,
-                "AI / LLAMA / QA",
+                `Question element omitted cause of missing id attribute in: ${element.outerHTML}`,
+                "AI / LLAMA / STD / QA",
               );
             }
             if (!question) {
               window.codbi.log(
                 "WARNING",
-                `Question element with id "${id}" missing data-cb-Question attribute in: ${element.outerHTML}`,
-                "AI / LLAMA / QA",
+                `Question element omitted cause of missing data-cb-Question attribute in: ${element.outerHTML}`,
+                "AI / LLAMA / STD / QA",
               );
             }
           }
         }
       }
+      // #endregion Collect question headers since not in verify-mode or verify question is incomplete.
       // #endregion Resolve verify-mode question or collect question headers
       // #endregion Acquire Questions
-
-      // #region If any CORD questions, call CORD action for each
-      if (cordQuestions.length > 0) {
-        for (const { id, element } of cordQuestions) {
-          // Only send the file(s), no question headers
-          $.ajax({
-            url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
-            type: "POST",
-            data: formData,
-            dataType: "json",
-            processData: false,
-            contentType: false,
-            cache: false,
-            beforeSend: (xhr) => {
-              xhr.setRequestHeader("X-Session-Id", AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID);
-              xhr.setRequestHeader("X-Search", internetAccess ? "true" : "false");
-            },
-            success: (response) => {
-              // Place the returned JSON into the field tagged with this question
-              const field = document.querySelector(`#${id}`) as HTMLInputElement;
-              if (field) {
-                field.value = typeof response === "string" ? response : JSON.stringify(response);
-                // Dispatch change event after setting value
-                const event = new Event("change", { bubbles: true });
-                field.dispatchEvent(event);
-              }
-            },
-            error: (xhr, status, error) => {
-              window.codbi.log(
-                "ERROR",
-                `CORD REST failed with status "${status}" cause: "${error}"`,
-                "AI / LLAMA / QA",
-              );
-            },
-          });
-        }
-      }
-      // #endregion If any CORD questions, call CORD action for each
-
       // #region If any VQA questions, call VQA action as before
       if (Object.keys(vqaHeaders).length > 0) {
         // #region Disable input and show loading animation
@@ -381,8 +396,7 @@ export class AI_LLAMA_STANDARD_QA {
 
         const questionLabelData: Map<HTMLElement, string> = new Map();
 
-        // In verify mode, only the upload field's own question is sent — don't animate
-        // the labels of unrelated question fields that happen to share the same container.
+        // #region In verify mode, only the upload field's own question is sent so no animation.
         if (!(mode === "verify" && verifyFieldId && verifyFieldQuestion)) {
           for (const element of questionElements) {
             const questionLabel = element.parentElement?.querySelector("label") as HTMLElement | null;
@@ -395,6 +409,21 @@ export class AI_LLAMA_STANDARD_QA {
             }
           }
         }
+        // #endregion In verify mode, only the upload field's own question is sent so no animation.
+        // #region Disable answer fields during inference.
+        const disabledFields: HTMLInputElement[] = [];
+
+        if (!(mode === "verify" && verifyFieldId && verifyFieldQuestion)) {
+          for (const element of questionElements) {
+            const field = document.querySelector(`#${element.id}`) as HTMLInputElement | null;
+            if (field) {
+              field.disabled = true;
+              field.style.opacity = "0.5";
+              disabledFields.push(field);
+            }
+          }
+        }
+        // #endregion Disable answer fields during inference.
         // #endregion Disable input and show loading animation
         // #region Define how to remove the loading animation and restore labels
         const unanimate = () => {
@@ -411,9 +440,15 @@ export class AI_LLAMA_STANDARD_QA {
           for (const [label, originalText] of questionLabelData.entries()) {
             label.innerHTML = originalText;
           }
+
+          // Re-enable answer fields
+          for (const field of disabledFields) {
+            field.disabled = false;
+            field.style.opacity = "1";
+          }
         };
         // #endregion Define how to remove the loading animation and restore labels
-        // #region Contact llama-server via AJAX
+        // #region Contact LLAMA-Server via AJAX
         $.ajax({
           url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
           type: "POST",
@@ -429,40 +464,47 @@ export class AI_LLAMA_STANDARD_QA {
           },
           success: (response) => {
             unanimate();
+            // #region Display error if request failed.
             if (response.error) {
               window.codbi.log("ERROR", `REST failed with: ${response.error}`, "AI / LLAMA / QA");
               return;
             }
+            // #endregion Display error if request failed.
             if (mode === "verify" && verifyFieldId && verifyFieldQuestion) {
               // #region Verify mode — check AI answer and show error or accept
-              // Backend returns: { "fieldId": { "answer": "yes" } }
-              let answer: string | undefined;
-              const verifyResult = response[verifyFieldId];
-              if (verifyResult && typeof verifyResult.answer === "string") {
-                answer = verifyResult.answer;
+              // #region Contract checking.
+              const answer = TYPE.tsCheck<string>(response[verifyFieldId].answer, "string");
+              const field = INSTANCE.tsCheck<HTMLInputElement>(
+                DEFINED.tsCheck(document.querySelector(`#${verifyFieldId}`)),
+                HTMLInputElement,
+                "Is it not an <input> that is tagged with this functionality?",
+              );
+
+              if (field.getAttribute("type") !== "file") {
+                window.codbi.log(
+                  "ERROR",
+                  `Verification field #${verifyFieldId} is not an <input type="file">`,
+                  "AI / LLAMA / STD / QA",
+                );
+
+                return;
               }
-              const field = document.querySelector(`#${verifyFieldId}`) as HTMLInputElement;
-              if (typeof answer === "string" && answer.trim().toLowerCase() === "yes") {
-                if (field) {
-                  field.value = answer;
-                  if (aiHintText) {
-                    AI_LLAMA_STANDARD_QA.attachAiHint(field, aiHintText);
-                  }
-                  const event = new Event("change", { bubbles: true });
-                  field.dispatchEvent(event);
-                }
-                // Remove any error/checkbox if present
+              // #endregion Contract checking.
+              if ((caseInsensitive ? answer.trim().toLowerCase() : answer.trim()) === positiveResponse) {
+                // #region Remove any error/checkbox if present.
                 $(toProcess).error("");
+
                 const existingManualVerify =
                   toProcess.parentElement?.parentElement?.querySelectorAll(".LLAMA_AI_ManualVerify");
+
                 if (existingManualVerify) {
                   for (let i = 0; i < existingManualVerify.length; i++) {
                     existingManualVerify[i].remove();
                   }
                 }
+                // #endregion Remove any error/checkbox if present.
               } else {
-                // Show error and manual verify checkbox
-                $(toProcess).error("The file does not meet the verification criteria.");
+                $(toProcess).error(verifyErrorText);
                 // #region Add styles for manual verification checkbox
                 if (!document.querySelector("#LLAMA_AI_ManualVerify_Styles")) {
                   const style = document.createElement("style");
@@ -493,8 +535,7 @@ export class AI_LLAMA_STANDARD_QA {
                 checkbox.className = "LLAMA_AI_ManualVerify_Checkbox";
                 const label = document.createElement("label");
                 label.htmlFor = checkbox.id;
-                label.textContent =
-                  "The content is not as expected. Please check if you selected the correct file(s). You may manually verify that it is the correct one by clicking the checkbox.";
+                label.textContent = verifyCheckboxLabel;
                 checkboxContainer.appendChild(checkbox);
                 checkboxContainer.appendChild(label);
                 toProcess.parentElement?.insertAdjacentElement("afterend", checkboxContainer);
@@ -502,7 +543,7 @@ export class AI_LLAMA_STANDARD_QA {
                   if (checkbox.checked) {
                     $(toProcess).error("");
                   } else {
-                    $(toProcess).error("The file does not meet the verification criteria.");
+                    $(toProcess).error(verifyErrorText);
                   }
                 });
               }
@@ -531,10 +572,10 @@ export class AI_LLAMA_STANDARD_QA {
           },
           error: (xhr, status, error) => {
             unanimate();
-            window.codbi.log("ERROR", `REST failed with status "${status}" cause: "${error}"`, "AI / LLAMA / QA");
+            window.codbi.log("ERROR", `REST failed with status "${status}" cause: "${error}"`, "AI / LLAMA / STD / QA");
           },
         });
-        // #endregion Contact llama-server via AJAX
+        // #endregion Contact LLAMA-Server via AJAX
       }
       // #endregion If any VQA questions, call VQA action as before
     });
@@ -560,7 +601,11 @@ export class AI_LLAMA_STANDARD_QA {
 
     AI_LLAMA_STANDARD_QA.pdfJsWorkerConfigured = true;
 
-    window.codbi.log("INFO", `PDF.js worker configured: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`, "AI / LLAMA / QA");
+    window.codbi.log(
+      "INFO",
+      `PDF.js worker configured: ${pdfjsLib.GlobalWorkerOptions.workerSrc}`,
+      "AI / LLAMA / STD / QA",
+    );
   }
   // #endregion PDF.js worker configuration
 
@@ -740,7 +785,7 @@ export class AI_LLAMA_STANDARD_QA {
         window.codbi.log(
           "INFO",
           `PDF page ${pageNum} contains ${textLength} characters of text - rendering to image`,
-          "AI / LLAMA / QA",
+          "AI / LLAMA / STD / QA",
         );
 
         const blob = await AI_LLAMA_STANDARD_QA.renderPdfPageToImage(page);
@@ -750,7 +795,7 @@ export class AI_LLAMA_STANDARD_QA {
         window.codbi.log(
           "INFO",
           `PDF page ${pageNum} has minimal text (${textLength} chars) - attempting image extraction`,
-          "AI / LLAMA / QA",
+          "AI / LLAMA / STD / QA",
         );
 
         const extractedImages = await AI_LLAMA_STANDARD_QA.extractImagesFromPdfPage(page);
@@ -761,13 +806,13 @@ export class AI_LLAMA_STANDARD_QA {
           window.codbi.log(
             "INFO",
             `Extracted ${extractedImages.length} image(s) from PDF page ${pageNum}`,
-            "AI / LLAMA / QA",
+            "AI / LLAMA / STD / QA",
           );
         } else {
           window.codbi.log(
             "INFO",
             `No extractable images found on page ${pageNum} - rendering page to image`,
-            "AI / LLAMA / QA",
+            "AI / LLAMA / STD / QA",
           );
           const blob = await AI_LLAMA_STANDARD_QA.renderPdfPageToImage(page);
 
@@ -872,12 +917,12 @@ export class AI_LLAMA_STANDARD_QA {
               }
             }
           } catch (imgError) {
-            window.codbi.log("WARNING", `Failed to extract individual image: ${imgError}`, "AI / LLAMA / QA");
+            window.codbi.log("WARNING", `Failed to extract individual image: ${imgError}`, "AI / LLAMA / STD / QA");
           }
         }
       }
     } catch (error) {
-      window.codbi.log("WARNING", `Image extraction failed: ${error}`, "AI / LLAMA / QA");
+      window.codbi.log("WARNING", `Image extraction failed: ${error}`, "AI / LLAMA / STD / QA");
     }
 
     return images;

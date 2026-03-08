@@ -25,7 +25,9 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class AI_LLAMA_STANDARD_QA {
-  /** The Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
+  /**
+   * The Unique session ID generated on page load — ensures each session gets its own llama-server slot and thus
+   * no info from one conversation leaks into another one. */
   private static readonly PAGE_SESSION_ID: string = crypto.randomUUID();
   /**
    * This functionality processes uploaded images using a local llama-server process to
@@ -56,41 +58,42 @@ export class AI_LLAMA_STANDARD_QA {
    *    is used.
    *
    * ### Config Parameters:
-   * - **maxPages**:        Optional number limiting how many pages from a PDF are processed and sent to the AI.
-   *                        Useful for large PDFs to avoid overwhelming the AI or hitting processing limits.
-   *                        If set to 0, all pages are processed. Example: `maxPages: 5` will
-   *                        only process the first 5 pages of any PDF. Defaults to **5**.
-   * - **Rotate**:          Optional attribute on the input element to specify image rotation (see above), either "90", "180", or "270".
-   *                        In a multi-file upload or with a PDF that contains multiple images, this rotation is applied to all files.
-   * - **MaxPixelSize**:    Maximum total pixel budget (width×height). Images exceeding this
-   *                        are downscaled client-side while preserving the aspect ratio.
-   *                        Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
-   * - **AIHint**:          Text shown inside AI-populated fields (right-aligned for inputs, bottom-right
-   *                        for textarea) until the user edits the value. Default: "✨ AI-Generated".
-   *                        Set to an empty string to disable.
+   * - **maxPages**:            Optional number limiting how many pages from a PDF are processed and sent to the AI.
+   *                            Useful for large PDFs to avoid overwhelming the AI or hitting processing limits.
+   *                            If set to 0, all pages are processed. Example: `maxPages: 5` will
+   *                            only process the first 5 pages of any PDF. Defaults to **5**.
+   * - **Rotate**:              Optional attribute on the input element to specify image rotation (see above), either "90", "180", or "270".
+   *                            In a multi-file upload or with a PDF that contains multiple images, this rotation is applied to all files.
+   * - **MaxPixelSize**:        Maximum total pixel budget (width×height). Images exceeding this
+   *                            are downscaled client-side while preserving the aspect ratio.
+   *                            Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
+   * - **AIHint**:              Text shown inside AI-populated fields (right-aligned for inputs, bottom-right
+   *                            for textarea) until the user edits the value. Default: "✨ AI-Generated".
+   *                            Set to an empty string to disable.
    *
-   *                        Note: **According to the EU AI Act, AI-generated content must be clearly labeled. Changing or
-   *                        disabling the AIHint may lead to non-compliance in certain jurisdictions.**
-   * - **InternetAccess**:  If set to `true`, enables Brave Search internet access for this
-   *                        functionality instance. The model may use web search results to improve
-   *                        its answers. Default: `false` (no internet search).
-   * - **Thinking**:        If set to `true`, enables thinking mode. The AI will use a dedicated
-   *                        thinking model (if configured) for deeper reasoning. Default: `false`.
-   * - **MaxThinkingTokens**: Maximum token budget for thinking inference. In verify mode this
-   *                        defaults to `512` (enough for yes/no reasoning). Set higher if the
-   *                        model needs more room to reason. Has no effect when Thinking is `false`.
-   * - **PositiveResponse**: The expected positive answer from the AI in verify mode.
-   *                        The comparison is case-insensitive by default. Default: `"yes"`.
-   * - **CaseInsensitive**:  If `true` (default), the AI answer is lowercased before comparing
-   *                        with PositiveResponse. Set to `false` for an exact (case-sensitive) match.
-   * - **VerifyErrorText**:  Error message shown when the file does not pass verification.
-   *                        Default: `"The file does not meet the verification criteria."`
+   *                            Note: **According to the EU AI Act, AI-generated content must be clearly labeled. Changing or
+   *                            disabling the AIHint may lead to non-compliance in certain jurisdictions.**
+   * - **InternetAccess**:      If set to `true`, enables Brave Search internet access for this
+   *                            functionality instance. The model may use web search results to improve
+   *                            its answers. Default: `false` (no internet search).
+   * - **Thinking**:            If set to `true`, enables thinking mode. The AI will use a dedicated
+   *                            thinking model (if configured) for deeper reasoning. Default: `false`.
+   * - **MaxThinkingTokens**:   Maximum token budget for thinking inference. In verify mode this
+   *                            defaults to `512` (enough for yes/no reasoning). Set higher if the
+   *                            model needs more room to reason. Has no effect when Thinking is `false`.
+   * - **PositiveResponse**:    The expected positive answer from the AI in verify mode.
+   *                            The comparison is case-insensitive by default. Default: `"yes"`.
+   * - **CaseInsensitive**:     If `true` (default), the AI answer is lowercased before comparing
+   *                            with PositiveResponse. Set to `false` for an exact (case-sensitive) match.
+   * - **VerifyErrorText**:     Error message shown when the file does not pass verification.
+   *                            Default: `"The file does not meet the verification criteria."`
    * - **VerifyCheckboxLabel**: Label for the manual verification checkbox.
-   *                        Default: `"The content is not as expected. Please check if you selected the correct file(s). You may manually verify that it is the correct one by clicking the checkbox."`
-   * - **Mode**:            If set to "verify", the upload field may have a **data-cb-Question** attribute.
-   *                        In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
-   *                        to be accepted. If not, an error and a manual verification checkbox are shown,
-   *                        just like in ai.ocr.ts. The question can reference symbols as usual.
+   *                            Default: `"The content is not as expected. Please check if you selected the correct file(s).
+   *                            You may manually verify that it is the correct one by clicking the checkbox."`
+   * - **Mode**:                If set to "verify", the upload field may have a **data-cb-Question** attribute.
+   *                            In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
+   *                            to be accepted. If not, an error and a manual verification checkbox are shown,
+   *                            just like in ai.ocr.ts. The question can reference symbols as usual.
    *
    * Questions are acquired from DOM elements within the nearest ancestor **XContainer** of the
    * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_LLAMA_STANDARD_QA_Question**.
@@ -110,7 +113,7 @@ export class AI_LLAMA_STANDARD_QA {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE("string", "aihint")
+    @TYPE.PRE("string", "aihint, positiveresponse, verifyerrortext, verifycheckboxlabel, mode")
     @GREATER.PRE(
       3,
       true,
@@ -122,6 +125,8 @@ export class AI_LLAMA_STANDARD_QA {
     @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotate")
     @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotate")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxPixelSize")
+    @OR.PRE([new TYPE("string"), new TYPE("boolean")], "internetaccess, thinking, caseinsensitive")
+    @OR.PRE([new TYPE("number"), new TYPE("string")], "maxthinkingtokens")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(
@@ -242,8 +247,8 @@ export class AI_LLAMA_STANDARD_QA {
       const allQuestionElements = container.querySelectorAll(".AI_LLAMA_STANDARD_QA_Question");
       const questionElements: Element[] = [];
 
-      for (const qEl of allQuestionElements) {
-        const innerContainer = qEl.closest(".CXContainer");
+      for (const candidate of allQuestionElements) {
+        const innerContainer = candidate.closest(".CXContainer");
         // #region Omit questions that're in an excluded sub-container.
         if (
           innerContainer &&
@@ -253,8 +258,9 @@ export class AI_LLAMA_STANDARD_QA {
           continue;
         }
         // #endregion Omit questions that're in an excluded sub-container.
-        questionElements.push(qEl);
+        questionElements.push(candidate);
       }
+
       const vqaHeaders: { [key: string]: string } = {};
 
       vqaHeaders["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
@@ -315,8 +321,9 @@ export class AI_LLAMA_STANDARD_QA {
       if (mode === "verify") {
         verifyFieldId = toProcess.getAttribute("id");
         verifyFieldQuestion = toProcess.getAttribute("data-cb-Question");
+
         if (verifyFieldId && verifyFieldQuestion) {
-          // Symbol resolution for verify question
+          // #region Resolve symbols in the verify question
           verifyFieldQuestion = verifyFieldQuestion.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
             const trimmed = identifier.trim();
             const field = document.querySelector(`.${trimmed}`) as HTMLInputElement | null;
@@ -325,6 +332,7 @@ export class AI_LLAMA_STANDARD_QA {
             }
             return match;
           });
+          // #endregion Resolve symbols in the verify question
           vqaHeaders[`X-Question-${verifyFieldId}`] = verifyFieldQuestion;
         }
       }
@@ -336,6 +344,7 @@ export class AI_LLAMA_STANDARD_QA {
           let question = element.getAttribute("data-cb-Question");
 
           if (id && question) {
+            // #region Resolve symbols in the verify question
             question = question.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
               const trimmed = identifier.trim();
               const field = document.querySelector(`.${trimmed}`) as HTMLInputElement | null;
@@ -346,7 +355,7 @@ export class AI_LLAMA_STANDARD_QA {
 
               return match;
             });
-
+            // #endregion Resolve symbols in the verify question
             vqaHeaders[`X-Question-${id}`] = question;
           } else {
             if (!id) {
@@ -373,6 +382,7 @@ export class AI_LLAMA_STANDARD_QA {
       if (Object.keys(vqaHeaders).length > 0) {
         // #region Disable input and show loading animation
         const tsToProcess = toProcess as HTMLElement;
+
         tsToProcess.style.pointerEvents = "none";
         tsToProcess.style.opacity = "0.5";
 
@@ -395,11 +405,20 @@ export class AI_LLAMA_STANDARD_QA {
         }
 
         const questionLabelData: Map<HTMLElement, string> = new Map();
-
         // #region In verify mode, only the upload field's own question is sent so no animation.
         if (!(mode === "verify" && verifyFieldId && verifyFieldQuestion)) {
           for (const element of questionElements) {
-            const questionLabel = element.parentElement?.querySelector("label") as HTMLElement | null;
+            let labelParent = element.parentElement;
+
+            // attachAiHint / Whisper wrap the field — skip wrapper(s) to reach the real container with the label.
+            while (
+              labelParent?.classList.contains("LLAMA_AI_Hint_Wrapper") ||
+              labelParent?.classList.contains("MEDIA_Whisper_InputWrapper")
+            ) {
+              labelParent = labelParent.parentElement;
+            }
+
+            const questionLabel = labelParent?.querySelector("label") as HTMLElement | null;
 
             if (questionLabel) {
               const originalText = questionLabel.innerHTML;
@@ -416,9 +435,11 @@ export class AI_LLAMA_STANDARD_QA {
         if (!(mode === "verify" && verifyFieldId && verifyFieldQuestion)) {
           for (const element of questionElements) {
             const field = document.querySelector(`#${element.id}`) as HTMLInputElement | null;
+
             if (field) {
               field.disabled = true;
               field.style.opacity = "0.5";
+
               disabledFields.push(field);
             }
           }
@@ -435,12 +456,10 @@ export class AI_LLAMA_STANDARD_QA {
           if (uploadLabel) {
             uploadLabel.innerHTML = uploadFormerText;
           }
-
           // Restore all question labels
           for (const [label, originalText] of questionLabelData.entries()) {
             label.innerHTML = originalText;
           }
-
           // Re-enable answer fields
           for (const field of disabledFields) {
             field.disabled = false;
@@ -467,6 +486,7 @@ export class AI_LLAMA_STANDARD_QA {
             // #region Display error if request failed.
             if (response.error) {
               window.codbi.log("ERROR", `REST failed with: ${response.error}`, "AI / LLAMA / QA");
+
               return;
             }
             // #endregion Display error if request failed.
@@ -508,6 +528,7 @@ export class AI_LLAMA_STANDARD_QA {
                 // #region Add styles for manual verification checkbox
                 if (!document.querySelector("#LLAMA_AI_ManualVerify_Styles")) {
                   const style = document.createElement("style");
+
                   style.id = "LLAMA_AI_ManualVerify_Styles";
                   style.textContent = `
                     .LLAMA_AI_ManualVerify { display: flex ; align-items: center ; margin-top: 8px ; gap: 8px ;
@@ -515,12 +536,14 @@ export class AI_LLAMA_STANDARD_QA {
                     .LLAMA_AI_ManualVerify_Checkbox { cursor: pointer ; opacity: 1 !important ; position: relative !important ;
                       flex-shrink: 0 ;}
                     .LLAMA_AI_ManualVerify label { margin-bottom: 0 ; position: relative !important ;}`;
+
                   document.head.appendChild(style);
                 }
                 // #endregion Add styles for manual verification checkbox
                 // Remove existing
                 const existingManualVerify =
                   toProcess.parentElement?.parentElement?.querySelectorAll(".LLAMA_AI_ManualVerify");
+
                 if (existingManualVerify) {
                   for (let i = 0; i < existingManualVerify.length; i++) {
                     existingManualVerify[i].remove();
@@ -528,14 +551,16 @@ export class AI_LLAMA_STANDARD_QA {
                 }
                 // Add checkbox
                 const checkboxContainer = document.createElement("div");
-                checkboxContainer.className = "LLAMA_AI_ManualVerify";
                 const checkbox = document.createElement("input");
+                const label = document.createElement("label");
+
+                checkboxContainer.className = "LLAMA_AI_ManualVerify";
                 checkbox.type = "checkbox";
                 checkbox.id = `manual-verify-${toProcess.id}`;
                 checkbox.className = "LLAMA_AI_ManualVerify_Checkbox";
-                const label = document.createElement("label");
                 label.htmlFor = checkbox.id;
                 label.textContent = verifyCheckboxLabel;
+
                 checkboxContainer.appendChild(checkbox);
                 checkboxContainer.appendChild(label);
                 toProcess.parentElement?.insertAdjacentElement("afterend", checkboxContainer);
@@ -550,22 +575,27 @@ export class AI_LLAMA_STANDARD_QA {
               // #endregion Verify mode — check AI answer and show error or accept
             } else {
               // #region Normal mode — populate answer fields
-              // Backend returns: { "questionId": { "answer": "text" }, ... }
               for (const questionId in response) {
                 const answerText = response[questionId]?.answer;
+
                 if (answerText == null) {
                   continue;
                 }
-                const field = document.querySelector(`#${questionId}`) as HTMLInputElement;
-                if (field) {
-                  field.value = answerText;
-                  if (aiHintText) {
-                    AI_LLAMA_STANDARD_QA.attachAiHint(field, aiHintText);
-                  }
-                  // Dispatch change event after setting value
-                  const event = new Event("change", { bubbles: true });
-                  field.dispatchEvent(event);
+
+                const field = INSTANCE.tsCheck<HTMLInputElement>(
+                  document.querySelector(`#${questionId}`),
+                  HTMLInputElement,
+                );
+
+                field.value = answerText;
+
+                if (aiHintText) {
+                  AI_LLAMA_STANDARD_QA.attachAiHint(field, aiHintText);
                 }
+                // Dispatch change event after setting value
+                const event = new Event("change", { bubbles: true });
+
+                field.dispatchEvent(event);
               }
               // #endregion Normal mode — populate answer fields
             }
@@ -580,18 +610,15 @@ export class AI_LLAMA_STANDARD_QA {
       // #endregion If any VQA questions, call VQA action as before
     });
   }
-
   // #region PDF.js worker configuration
   /** Ensures PDF.js worker is configured with the correct URL. */
   private static pdfJsWorkerConfigured = false;
-
   /**
    * Ensures the PDF.js worker URL is configured once before any PDF operations.
    *
    * @remarks
    * Sets {@link pdfjsLib.GlobalWorkerOptions.workerSrc} to the Resource plugin URL
-   * and guards against repeated initialization via {@link AI_LLAMA_STANDARD_QA.pdfJsWorkerConfigured}.
-   */
+   * and guards against repeated initialization via {@link AI_LLAMA_STANDARD_QA.pdfJsWorkerConfigured}. */
   private static ensurePdfJsWorkerConfigured(): void {
     if (AI_LLAMA_STANDARD_QA.pdfJsWorkerConfigured) {
       return;
@@ -608,16 +635,15 @@ export class AI_LLAMA_STANDARD_QA {
     );
   }
   // #endregion PDF.js worker configuration
-
   // #region AI-Generated hint
-  /**
-   * Injects global styles for the AI-Generated badge (once).
-   */
+  /** Injects global styles for the AI-Generated badge (once). */
   private static ensureAiHintStyles(): void {
     if (document.querySelector("#LLAMA_AI_Hint_Styles")) {
       return;
     }
+
     const style = document.createElement("style");
+
     style.id = "LLAMA_AI_Hint_Styles";
     style.textContent = `
       .LLAMA_AI_Hint_Wrapper { position: relative ; display: inline-block ; width: 100% ;}
@@ -625,83 +651,91 @@ export class AI_LLAMA_STANDARD_QA {
         font-size: 11px ; line-height: 1 ; white-space: nowrap ; user-select: none ;}
       input  + .LLAMA_AI_Hint { right: 8px ; top: 50% ; transform: translateY(-50%) ;}
       textarea + .LLAMA_AI_Hint { right: 8px ; bottom: 6px ;}`;
+
     document.head.appendChild(style);
   }
-
   /**
    * Attaches an AI-Generated badge to a field. The badge is removed as soon as the
    * user changes the field value (keyboard input). Repeat calls on the same field
    * replace the previous badge.
    *
    * @param field    The input or textarea element.
-   * @param hintText The label to display, e.g. "✨ AI-Generated".
-   */
+   * @param hintText The label to display, e.g. "✨ AI-Generated". */
   private static attachAiHint(field: HTMLInputElement | HTMLTextAreaElement, hintText: string): void {
     AI_LLAMA_STANDARD_QA.ensureAiHintStyles();
-
-    // Remove any existing hint on this field
+    // #region Remove any existing hint on this field
     const existingHint = field.parentElement?.querySelector(".LLAMA_AI_Hint");
+
     if (existingHint) {
       existingHint.remove();
     }
-
-    // Wrap the field in a relative container if not already wrapped
+    // #endregion Remove any existing hint on this field
+    // #region Wrap the field in a relative container if not already wrapped
     let wrapper = field.parentElement;
+
     if (!wrapper?.classList.contains("LLAMA_AI_Hint_Wrapper")) {
       wrapper = document.createElement("span");
       wrapper.className = "LLAMA_AI_Hint_Wrapper";
+
       field.parentElement?.insertBefore(wrapper, field);
       wrapper.appendChild(field);
     }
-
+    // #endregion Wrap the field in a relative container if not already wrapped
     const badge = document.createElement("span");
+
     badge.className = "LLAMA_AI_Hint";
     badge.textContent = hintText;
+
     wrapper.appendChild(badge);
 
-    // Remove hint on first user input
+    // #region Remove hint on first user input
     const removeHint = () => {
       badge.remove();
       field.removeEventListener("input", removeHint);
     };
+
     field.addEventListener("input", removeHint);
+    // #endregion Remove hint on first user input
   }
   // #endregion AI-Generated hint
-
   // #region Image downscaling helper
-  /**
-   * Default total-pixel budget (width × height). Matches the backend's default maxPixels.
-   * ≈ 1792 × 1792.
-   */
+  /** Default total-pixel budget (width × height). Matches the backend's default maxPixels (≈ 1792 × 1792). */
   private static readonly DEFAULT_MAX_PIXELS = 3211264;
-
   /**
    * Converts a {@link Blob} (or {@link File}) to a base64 data-URL string,
    * bypassing formcycle's multipart file parser which returns 0-byte {@code FileData}.
-   */
+   *
+   * @param blob The Blob or File to convert.
+   *
+   * @returns A promise that resolves to a base64 data-URL string. */
   private static blobToDataUrl(blob: Blob): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
+
       reader.readAsDataURL(blob);
     });
   }
-
   /**
    * Converts a canvas to a {@link File} built from raw bytes.
-   */
-  private static canvasToFile(canvas: HTMLCanvasElement, fileName: string): File {
-    const dataUrl = canvas.toDataURL("image/png");
+   *
+   * @param toConvert The canvas element to convert.
+   * @param fileName  The name of the resulting file.
+   *
+   * @returns A File object representing the canvas image. */
+  private static canvasToFile(toConvert: HTMLCanvasElement, fileName: string): File {
+    const dataUrl = toConvert.toDataURL("image/png");
     const base64 = dataUrl.split(",")[1];
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
+
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
+
     return new File([bytes.buffer], fileName, { type: "image/png" });
   }
-
   /**
    * Downscales an image file if its total pixel count (width × height) exceeds
    * {@link maxPixels}, preserving the aspect ratio. Returns the original file
@@ -709,17 +743,24 @@ export class AI_LLAMA_STANDARD_QA {
    *
    * @param file      The image file to check.
    * @param maxPixels Total-pixel budget (width × height).
+   *
+   * @return  A promise that resolves to a Blob. This will be the original file if no downscaling was needed or if an error
+   *          occurred during processing. Otherwise, it will be a new Blob representing the downscaled image.
    */
   private static async downscaleImageIfNeeded(file: File, maxPixels: number): Promise<Blob> {
     return new Promise<Blob>((resolve, reject) => {
       const img = new Image();
+
       img.onload = () => {
         const totalPixels = img.width * img.height;
+
         if (totalPixels <= maxPixels) {
           URL.revokeObjectURL(img.src);
           resolve(file);
+
           return;
         }
+
         const scale = Math.sqrt(maxPixels / totalPixels);
         const newW = Math.max(28, Math.round(img.width * scale));
         const newH = Math.max(28, Math.round(img.height * scale));
@@ -731,36 +772,42 @@ export class AI_LLAMA_STANDARD_QA {
         );
 
         const canvas = document.createElement("canvas");
+
         canvas.width = newW;
         canvas.height = newH;
+
         const ctx = canvas.getContext("2d");
+        // #region Fallback to send original if canvas context cannot be created for some reason.
         if (!ctx) {
           URL.revokeObjectURL(img.src);
-          resolve(file); // fallback: send original
+          resolve(file);
+
           return;
         }
+        // #endregion Fallback to send original if canvas context cannot be created for some reason.
         ctx.drawImage(img, 0, 0, newW, newH);
         URL.revokeObjectURL(img.src);
         resolve(AI_LLAMA_STANDARD_QA.canvasToFile(canvas, file.name));
       };
+      // #region Fallback to send original if image cannot be decoded for some reason.
       img.onerror = () => {
         URL.revokeObjectURL(img.src);
         resolve(file); // cannot decode → send original
       };
+      // #endregion Fallback to send original if image cannot be decoded for some reason.
       img.src = URL.createObjectURL(file);
     });
   }
   // #endregion Image downscaling helper
-
   // #region PDF processing — split pages into images or render text pages
   /**
    * Processes a PDF file and returns image blobs for each page or extracted image.
    * Detects whether the PDF contains mainly text or images and processes accordingly.
    *
-   * @param file The PDF file to process
-   * @param maxPages Maximum number of pages to process (0 = no limit)
-   * @returns Array of Blob objects representing images
-   */
+   * @param file The PDF file to process.
+   * @param maxPages Maximum number of pages to process (0 = no limit).
+   *
+   * @returns Array of Blob objects representing images. */
   private static async processPdfFile(file: File, maxPages = 0): Promise<Blob[]> {
     const arrayBuffer = await file.arrayBuffer();
     const pdf: PDFDocumentProxy = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -814,6 +861,7 @@ export class AI_LLAMA_STANDARD_QA {
             `No extractable images found on page ${pageNum} - rendering page to image`,
             "AI / LLAMA / STD / QA",
           );
+
           const blob = await AI_LLAMA_STANDARD_QA.renderPdfPageToImage(page);
 
           images.push(blob);
@@ -824,17 +872,15 @@ export class AI_LLAMA_STANDARD_QA {
     return images;
   }
   // #endregion PDF processing — split pages into images or render text pages
-
   // #region Render a single PDF page to a PNG image
   /**
    * Renders a PDF page (including text) to a canvas and returns it as an image blob.
    *
-   * @param page The PDF page to render
+   * @param page The PDF page to render.
    *
-   * @returns Blob containing the rendered page as PNG
-   */
+   * @returns Blob containing the rendered page as PNG. */
   private static async renderPdfPageToImage(page: PDFPageProxy): Promise<Blob> {
-    const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality
+    const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better quality.
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
 
@@ -845,10 +891,7 @@ export class AI_LLAMA_STANDARD_QA {
     canvas.width = viewport.width;
     canvas.height = viewport.height;
 
-    await page.render({
-      canvasContext: context,
-      viewport: viewport,
-    }).promise;
+    await page.render({ canvasContext: context, viewport: viewport }).promise;
 
     return new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((blob) => {
@@ -861,15 +904,13 @@ export class AI_LLAMA_STANDARD_QA {
     });
   }
   // #endregion Render a single PDF page to a PNG image
-
   // #region Extract embedded images from a PDF page
   /**
    * Extracts embedded images from a PDF page.
    *
-   * @param page The PDF page to extract images from
+   * @param page The PDF page to extract images from.
    *
-   * @returns Array of Blob objects representing extracted images
-   */
+   * @returns Array of Blob objects representing extracted images. */
   private static async extractImagesFromPdfPage(page: PDFPageProxy): Promise<Blob[]> {
     const images: Blob[] = [];
 
@@ -899,7 +940,6 @@ export class AI_LLAMA_STANDARD_QA {
                     resources.width,
                     resources.height,
                   );
-
                   ctx.putImageData(imageData, 0, 0);
 
                   const blob = await new Promise<Blob>((resolve, reject) => {
@@ -929,7 +969,6 @@ export class AI_LLAMA_STANDARD_QA {
   }
   // #endregion Extract embedded images from a PDF page
 }
-
 // #region Register functionality with CodBi
 window.codbi.registerFunctionality(
   "AI.LLAMA.STANDARD.QA",

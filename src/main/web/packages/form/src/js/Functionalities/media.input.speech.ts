@@ -318,7 +318,7 @@ export class MEDIA_INPUT_SPEECH {
       }
       .MEDIA_Speech_InputWrapper > input,
       .MEDIA_Speech_InputWrapper > textarea {
-        width: 100% ; box-sizing: border-box ; padding-right: 36px ;
+        width: 100% ; box-sizing: border-box ; padding-right: 36px !important ;
       }
       .MEDIA_Speech_MicButton {
         position: absolute ; right: 4px ; bottom: 4px ;

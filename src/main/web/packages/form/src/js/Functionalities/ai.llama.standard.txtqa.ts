@@ -236,11 +236,6 @@ export class AI_LLAMA_STANDARD_TXTQA {
         const style = document.createElement("style");
         style.id = "LLAMA_TXTQA_Processing_Styles";
         style.textContent = `
-                  @keyframes highlight {
-                    0%    { opacity:1; }
-                    50%   { opacity:0; }
-                    100%  { opacity:1; }}
-                  .LLAMA_Processing { font-weight: bold ; color: darkorange ; animation: highlight 2s ease-in-out infinite ;}
                   @keyframes LLAMA_ResponseReady {
                     0%   { background-color: rgba(76,175,80,0.35); }
                     100% { background-color: transparent; }}
@@ -277,21 +272,6 @@ export class AI_LLAMA_STANDARD_TXTQA {
       // #endregion Ensure Processing animation styles exist
 
       // #region Show loading animation on question fields
-      const questionLabelData: Map<HTMLElement, string> = new Map();
-      for (const element of questionElements) {
-        // The field may be wrapped in a LLAMA_AI_Hint_Wrapper from a previous run,
-        // so look for the label in the wrapper's parent rather than the element's direct parent
-        const labelRoot = element.closest(".LLAMA_AI_Hint_Wrapper")?.parentElement ?? element.parentElement;
-        const questionLabel = labelRoot?.querySelector("label") as HTMLElement | null;
-        if (questionLabel) {
-          questionLabelData.set(questionLabel, questionLabel.innerHTML);
-          const processingSpan = document.createElement("span");
-          processingSpan.className = "LLAMA_Processing";
-          processingSpan.textContent = "Processing...";
-          questionLabel.appendChild(processingSpan);
-        }
-      }
-
       const tsToProcess = toProcess as HTMLElement;
       tsToProcess.style.pointerEvents = "none";
       tsToProcess.style.opacity = "0.5";
@@ -325,10 +305,6 @@ export class AI_LLAMA_STANDARD_TXTQA {
       const finalizeAll = () => {
         tsToProcess.style.pointerEvents = "all";
         tsToProcess.style.opacity = "1";
-        // Restore any remaining labels (already-handled ones are deleted from the map)
-        for (const [label, originalText] of questionLabelData.entries()) {
-          label.innerHTML = originalText;
-        }
         // Re-enable source elements
         for (const el of disabledSources) {
           (el as HTMLInputElement).disabled = false;
@@ -410,12 +386,11 @@ export class AI_LLAMA_STANDARD_TXTQA {
                 field.dispatchEvent(new Event("change", { bubbles: true }));
               }
             }
-            // Remove "Processing..." from this question's label
-            const labelRoot = element.closest(".LLAMA_AI_Hint_Wrapper")?.parentElement ?? element.parentElement;
-            const questionLabel = labelRoot?.querySelector("label") as HTMLElement | null;
-            if (questionLabel && questionLabelData.has(questionLabel)) {
-              questionLabel.innerHTML = questionLabelData.get(questionLabel)!;
-              questionLabelData.delete(questionLabel);
+            // Re-enable this question's field
+            if (field) {
+              field.disabled = false;
+              field.style.opacity = "1";
+              window.codbi.removeLoaderAnim(field);
             }
 
             if (response.error) {
@@ -583,6 +558,14 @@ export class AI_LLAMA_STANDARD_TXTQA {
       }
       if (/^\d{4}\s*[-\u2013\u2014]\s*\d{4}$/.test(match.trim())) {
         return match; // year range
+      }
+      // Skip date / datetime stamps like "2026-02-24", "2026-02-24-12-46-27"
+      if (/^\d{4}[-/.]\d{2}[-/.]\d{2}([-/.T]\d{2}([-/:]\d{2}){0,2})?$/.test(match.trim())) {
+        return match;
+      }
+      // Skip European dates like "30.09.2020", "01/12/2025", "15-03-2024"
+      if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(match.trim())) {
+        return match;
       }
       if (/^\d+\.\d+$/.test(match.trim())) {
         return match; // decimal / GPS

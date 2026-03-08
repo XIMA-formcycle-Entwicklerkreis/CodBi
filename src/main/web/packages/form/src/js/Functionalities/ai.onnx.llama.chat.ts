@@ -613,6 +613,8 @@ export class AI_ONNX_LLAMA_CHAT {
     let attachedFiles: File[] = [];
     /** The "thinking" bubble element, replaced when the real response arrives. */
     let thinkingBubble: HTMLDivElement | null = null;
+    /** The most recent user question — used by the reuse button on response bubbles. */
+    let lastUserQuestion = "";
     /** The active stream session ID, used by the stop button to abort inference. */
     let activeStreamId: string | null = null;
     /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
@@ -770,8 +772,32 @@ export class AI_ONNX_LLAMA_CHAT {
       const links: string[] = [];
       const placeholder = (idx: number): string => `\x00LINK${idx}\x00`;
 
+      // 0. Extract fenced code blocks (```...```) before HTML-escaping
+      const codeBlocks: string[] = [];
+      const codePlaceholder = (idx: number): string => `\x00CODE${idx}\x00`;
+      const withCodeExtracted = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang: string, code: string) => {
+        const idx = codeBlocks.length;
+        codeBlocks.push(
+          `<div class="LLAMA_Chat_CodeBlock"><div class="LLAMA_Chat_CodeHeader"><span class="LLAMA_Chat_CodeLang">${lang || "code"}</span><button type="button" class="LLAMA_Chat_CodeCopyBtn" title="Copy code"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg></button></div><pre class="LLAMA_Chat_CodePre"><code>${code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code></pre></div>`,
+        );
+        return codePlaceholder(idx);
+      });
+
+      // 0b. Extract inline code (`...`) before HTML-escaping
+      const withInlineCodeExtracted = withCodeExtracted.replace(/`([^`\n]+)`/g, (_m, code: string) => {
+        const idx = codeBlocks.length;
+        codeBlocks.push(
+          `<code class="LLAMA_Chat_InlineCode">${code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code>`,
+        );
+        return codePlaceholder(idx);
+      });
+
       // 1. HTML-escape to prevent XSS
-      const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+      const escaped = withInlineCodeExtracted
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
 
       // 2. Convert Markdown-style links [label](url) → placeholder
       const withMdPlaceholders = escaped.replace(
@@ -813,6 +839,14 @@ export class AI_ONNX_LLAMA_CHAT {
           if (/^\d{4}\s*[-–—]\s*\d{4}$/.test(match.trim())) {
             return match;
           }
+          // Skip date / datetime stamps like "2026-02-24", "2026-02-24-12-46-27"
+          if (/^\d{4}[-/.]\d{2}[-/.]\d{2}([-/.T]\d{2}([-/:]\d{2}){0,2})?$/.test(match.trim())) {
+            return match;
+          }
+          // Skip European dates like "30.09.2020", "01/12/2025", "15-03-2024"
+          if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(match.trim())) {
+            return match;
+          }
           // Skip decimal numbers (GPS coordinates, URL parameters like lat=49.300735)
           if (/^\d+\.\d+$/.test(match.trim())) {
             return match;
@@ -852,7 +886,11 @@ export class AI_ONNX_LLAMA_CHAT {
         },
       );
 
-      return restored;
+      // 7. Restore code block placeholders
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: placeholder pattern uses \x00
+      const withCode = restored.replace(/\x00CODE(\d+)\x00/g, (_m, idx: string) => codeBlocks[Number(idx)]);
+
+      return withCode;
     };
     // #endregion Helper: linkify URLs in plain text
 
@@ -871,6 +909,43 @@ export class AI_ONNX_LLAMA_CHAT {
       bubble.className = `LLAMA_Chat_Bubble LLAMA_Chat_Bubble--${role}`;
       bubble.innerHTML = linkifyUrls(text);
       row.appendChild(bubble);
+
+      if (role === "user") {
+        lastUserQuestion = text;
+        const question = text;
+        const toolbar = document.createElement("div");
+        toolbar.className = "LLAMA_Chat_BubbleToolbar";
+
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "LLAMA_Chat_ToolbarBtn";
+        copyBtn.title = "Copy question";
+        copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>`;
+        copyBtn.addEventListener("click", () => {
+          navigator.clipboard.writeText(question);
+          bubble.classList.remove("LLAMA_flash");
+          void bubble.offsetWidth;
+          bubble.classList.add("LLAMA_flash");
+        });
+        toolbar.appendChild(copyBtn);
+
+        const reuseBtn = document.createElement("button");
+        reuseBtn.type = "button";
+        reuseBtn.className = "LLAMA_Chat_ToolbarBtn LLAMA_Chat_ToolbarBtn--reuse";
+        reuseBtn.title = "Reuse this question";
+        reuseBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>`;
+        reuseBtn.addEventListener("click", () => {
+          chatInput.value = question;
+          chatInput.focus();
+          chatInput.classList.remove("LLAMA_input_flare");
+          void chatInput.offsetWidth;
+          chatInput.classList.add("LLAMA_input_flare");
+          setTimeout(() => chatInput.classList.remove("LLAMA_input_flare"), 2000);
+        });
+        toolbar.appendChild(reuseBtn);
+
+        bubble.appendChild(toolbar);
+      }
 
       chatContainer.appendChild(row);
       chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -919,6 +994,25 @@ export class AI_ONNX_LLAMA_CHAT {
       });
     }
     // #endregion File upload change handler
+
+    // #region Code block copy button (event delegation)
+    chatContainer.addEventListener("click", (e: Event) => {
+      const btn = (e.target as HTMLElement).closest(".LLAMA_Chat_CodeCopyBtn") as HTMLElement | null;
+      if (!btn) {
+        return;
+      }
+      const codeEl = btn.closest(".LLAMA_Chat_CodeBlock")?.querySelector("code");
+      if (codeEl) {
+        navigator.clipboard.writeText(codeEl.textContent || "");
+        const block = btn.closest(".LLAMA_Chat_CodeBlock") as HTMLElement;
+        if (block) {
+          block.classList.remove("LLAMA_flash");
+          void block.offsetWidth;
+          block.classList.add("LLAMA_flash");
+        }
+      }
+    });
+    // #endregion Code block copy button (event delegation)
 
     // #region Send message handler
     const sendMessage = async (): Promise<void> => {
@@ -1078,6 +1172,8 @@ export class AI_ONNX_LLAMA_CHAT {
           let i18nSearchingLabel = "Searching the internet for \u201C%s\u201D\u2026";
           let i18nSearchingLabelNoQuery = "Searching the internet\u2026";
           let i18nThinkingLabel = "Thinking\u2026";
+          let i18nCopyResponseLabel = "Response";
+          let i18nCopyReasoningLabel = "Reasoning";
           const interval = setInterval(() => {
             $.ajax({
               url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
@@ -1116,6 +1212,12 @@ export class AI_ONNX_LLAMA_CHAT {
                     if (thinkingLabelEl) {
                       thinkingLabelEl.textContent = i18nThinkingLabel;
                     }
+                  }
+                  if (pollResponse.i18n.copyResponseLabel) {
+                    i18nCopyResponseLabel = pollResponse.i18n.copyResponseLabel;
+                  }
+                  if (pollResponse.i18n.copyReasoningLabel) {
+                    i18nCopyReasoningLabel = pollResponse.i18n.copyReasoningLabel;
                   }
                 }
                 if (pollResponse.error && pollResponse.done === undefined) {
@@ -1298,6 +1400,30 @@ export class AI_ONNX_LLAMA_CHAT {
                       badge.textContent = modelType === "thinking" ? "\uD83D\uDCA1" : "\u26A1";
                       badge.title = modelType === "thinking" ? "Thinking model" : "Fast model";
                       streamBubble.insertBefore(badge, streamBubble.firstChild);
+                    }
+                    // Copy-response toolbar on the response bubble
+                    if (streamBubble) {
+                      const responseText = lastText;
+                      const reasoningText: string = thinkingText || "";
+                      const toolbar = document.createElement("div");
+                      toolbar.className = "LLAMA_Chat_BubbleToolbar LLAMA_Chat_BubbleToolbar--right";
+                      const copyBtn = document.createElement("button");
+                      copyBtn.type = "button";
+                      copyBtn.className = "LLAMA_Chat_ToolbarBtn";
+                      copyBtn.title = "Copy response";
+                      copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>`;
+                      copyBtn.addEventListener("click", () => {
+                        let md = `## ${i18nCopyResponseLabel}\n\n${responseText}`;
+                        if (reasoningText) {
+                          md += `\n\n---\n\n## ${i18nCopyReasoningLabel}\n\n${reasoningText}`;
+                        }
+                        navigator.clipboard.writeText(md);
+                        streamBubble.classList.remove("LLAMA_flash");
+                        void streamBubble.offsetWidth;
+                        streamBubble.classList.add("LLAMA_flash");
+                      });
+                      toolbar.appendChild(copyBtn);
+                      streamBubble.appendChild(toolbar);
                     }
                   } else {
                     // Model produced no visible text and no error — show fallback
@@ -1495,6 +1621,11 @@ export class AI_ONNX_LLAMA_CHAT {
       if (micButton) {
         micButton.disabled = false;
       }
+      // Disable thinking checkbox when no thinking model is available
+      if (!thinkingModelName && thinkingCheckbox && thinkingCheckbox.checked) {
+        thinkingCheckbox.disabled = true;
+        thinkingCheckbox.title = "Thinking model not available on this server";
+      }
       chatInput.focus();
     };
 
@@ -1600,7 +1731,7 @@ export class AI_ONNX_LLAMA_CHAT {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif ;
         font-size: 14px ; line-height: 1.45 ;
       }
-      .LLAMA_Chat_Row { display: flex ; }
+      .LLAMA_Chat_Row { display: flex ; overflow: visible ; }
       .LLAMA_Chat_Row--user  { justify-content: flex-end ; }
       .LLAMA_Chat_Row--llama { justify-content: flex-start ; }
       .LLAMA_Chat_Row--system { justify-content: center ; }
@@ -1616,6 +1747,31 @@ export class AI_ONNX_LLAMA_CHAT {
       .LLAMA_Chat_Bubble--llama {
         background: var(--llama-bubble-bg) ; color: #1c1c1e ;
         border-bottom-left-radius: 4px ;
+      }
+      .LLAMA_Chat_BubbleToolbar {
+        position: absolute ; top: -10px ; left: -8px ;
+        display: flex ; gap: 4px ;
+        opacity: 0 ; pointer-events: none ;
+        transition: opacity 0.2s ;
+      }
+      .LLAMA_Chat_BubbleToolbar--right {
+        left: auto ; right: -8px ;
+      }
+      .LLAMA_Chat_Bubble:hover .LLAMA_Chat_BubbleToolbar {
+        opacity: 1 ; pointer-events: auto ;
+      }
+      .LLAMA_Chat_ToolbarBtn {
+        width: 22px ; height: 22px ; border: 1px solid #ccc ; border-radius: 50% ;
+        background: #fff ; color: #888 ; cursor: pointer ;
+        display: flex ; align-items: center ; justify-content: center ;
+        padding: 0 ; box-shadow: 0 1px 3px rgba(0,0,0,.2) ;
+        transition: color 0.15s, background 0.15s ;
+      }
+      .LLAMA_Chat_ToolbarBtn:hover {
+        color: #0b6abf ; background: #e8f0fe ;
+      }
+      .LLAMA_Chat_ToolbarBtn--reuse {
+        margin-bottom: 2px ;
       }
       .LLAMA_ModelBadge {
         position: absolute ; top: -10px ; left: -6px ;
@@ -1676,6 +1832,38 @@ export class AI_ONNX_LLAMA_CHAT {
       .LLAMA_Chat_AiHint {
         display: block ; margin-top: 4px ; font-size: 10px ;
         color: rgba(0,0,0,0.35) ; text-align: right ; user-select: none ;
+      }
+      .LLAMA_Chat_CodeBlock {
+        margin: 8px 0 ; border-radius: 8px ; overflow: hidden ;
+        background: #1e1e1e ; color: #d4d4d4 ;
+      }
+      .LLAMA_Chat_CodeHeader {
+        display: flex ; align-items: center ; justify-content: space-between ;
+        padding: 4px 12px ; background: #2d2d2d ; font-size: 11px ; color: #999 ;
+      }
+      .LLAMA_Chat_CodeLang {
+        text-transform: uppercase ; letter-spacing: 0.5px ;
+      }
+      .LLAMA_Chat_CodeCopyBtn {
+        border: none ; background: transparent ; color: #999 ; cursor: pointer ;
+        padding: 2px 4px ; border-radius: 4px ; display: flex ; align-items: center ;
+        transition: color 0.15s, background 0.15s ;
+      }
+      .LLAMA_Chat_CodeCopyBtn:hover {
+        color: #fff ; background: rgba(255,255,255,0.1) ;
+      }
+      .LLAMA_Chat_CodePre {
+        margin: 0 ; padding: 12px ; overflow-x: auto ;
+        font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace ;
+        font-size: 13px ; line-height: 1.5 ; white-space: pre ;
+      }
+      .LLAMA_Chat_CodePre code {
+        font-family: inherit ; background: none ; padding: 0 ;
+      }
+      .LLAMA_Chat_InlineCode {
+        background: rgba(0,0,0,0.07) ; padding: 1px 5px ; border-radius: 4px ;
+        font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace ;
+        font-size: 0.9em ;
       }
       .LLAMA_Chat_Bubble a {
         color: inherit ; text-decoration: underline ;
@@ -1738,10 +1926,24 @@ export class AI_ONNX_LLAMA_CHAT {
       }
       .LLAMA_Chat_InputWrapper {
         position: relative ; display: inline-block ; width: 100% ;
+        overflow: visible ;
+      }
+      .LLAMA_input_flare {
+        animation: LLAMA_rect_flare 1s ease-out infinite ;
+        animation-duration: 1s ;
+        animation-iteration-count: 2 ;
+      }
+      @keyframes LLAMA_rect_flare {
+        0%   { box-shadow: 0 0 0 0 rgba(25,118,210,0.8),
+                           0 0 0 0 rgba(25,118,210,0.6),
+                           0 0 0 0 rgba(25,118,210,0.4) ; }
+        100% { box-shadow: 0 0 0 12px rgba(25,118,210,0),
+                           0 0 0 24px rgba(25,118,210,0),
+                           0 0 0 36px rgba(25,118,210,0) ; }
       }
       .LLAMA_Chat_InputWrapper > input,
       .LLAMA_Chat_InputWrapper > textarea {
-        width: 100% ; box-sizing: border-box ; padding-right: 36px ;
+        width: 100% ; box-sizing: border-box ; padding-right: 36px !important ;
       }
       .LLAMA_Chat_MicButton {
         position: absolute ; right: 4px ; bottom: 4px ;
@@ -1754,7 +1956,7 @@ export class AI_ONNX_LLAMA_CHAT {
         color: #333 ; background: rgba(0,0,0,0.06) ;
       }
       .LLAMA_Chat_MicButton--recording {
-        color: #fff ; background: #1565c0 ;
+        color: #fff ; background: #e53935 ;
         overflow: visible ;
       }
       .LLAMA_Chat_MicButton--recording::before,
@@ -1762,7 +1964,7 @@ export class AI_ONNX_LLAMA_CHAT {
         content: '' ; position: absolute ;
         top: 50% ; left: 50% ;
         width: 100% ; height: 100% ;
-        border-radius: 50% ; border: 2px solid #1565c0 ;
+        border-radius: 50% ; border: 2px solid #e53935 ;
         transform: translate(-50%, -50%) scale(1) ;
         animation: LLAMA_mic_flare 1.8s ease-out infinite ;
       }
@@ -1770,13 +1972,13 @@ export class AI_ONNX_LLAMA_CHAT {
         animation-delay: 0.6s ;
       }
       .LLAMA_Chat_MicButton--recording:hover {
-        background: #0d47a1 ; color: #fff ;
+        background: #c62828 ; color: #fff ;
       }
       .LLAMA_Chat_MicButton--unavailable {
         color: #ccc ; cursor: not-allowed ;
       }
       .LLAMA_Chat_MicButton--transcribing {
-        color: #fff ; background: #e53935 ;
+        color: #fff ; background: #1565c0 ;
         pointer-events: none ; overflow: visible ;
       }
       .LLAMA_Chat_MicButton--transcribing::before,
@@ -1784,7 +1986,7 @@ export class AI_ONNX_LLAMA_CHAT {
         content: '' ; position: absolute ;
         top: 50% ; left: 50% ;
         width: 100% ; height: 100% ;
-        border-radius: 50% ; border: 2px solid #e53935 ;
+        border-radius: 50% ; border: 2px solid #1565c0 ;
         transform: translate(-50%, -50%) scale(1) ;
         animation: LLAMA_mic_flare 1.8s ease-out infinite ;
       }
@@ -1794,7 +1996,13 @@ export class AI_ONNX_LLAMA_CHAT {
       @keyframes LLAMA_mic_flare {
         0%   { transform: translate(-50%, -50%) scale(1) ; opacity: 0.7 ; }
         100% { transform: translate(-50%, -50%) scale(2.8) ; opacity: 0 ; }
-      }`;
+      }
+      @keyframes LLAMA_flash {
+        0%   { filter: brightness(1) ; }
+        30%  { filter: brightness(1.35) ; }
+        100% { filter: brightness(1) ; }
+      }
+      .LLAMA_flash { animation: LLAMA_flash 0.35s ease-out ; }`;
     document.head.appendChild(style);
   }
   // #endregion Chat bubble styles

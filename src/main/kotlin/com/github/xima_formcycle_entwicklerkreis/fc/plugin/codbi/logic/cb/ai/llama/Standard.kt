@@ -266,6 +266,8 @@ class Standard : LLAMA() {
     @Volatile var uiSearchingLabel: String = "Searching the internet for \u201C%s\u201D\u2026"
     @Volatile var uiSearchingLabelNoQuery: String = "Searching the internet\u2026"
     @Volatile var uiThinkingLabel: String = "Thinking\u2026"
+    @Volatile var uiCopyResponseLabel: String = "Response"
+    @Volatile var uiCopyReasoningLabel: String = "Reasoning"
 
     fun currentText(): String = textChunks.joinToString("")
 
@@ -947,7 +949,9 @@ class Standard : LLAMA() {
               "\"showSourcesLabel\":\"${jsonEscape(session.uiShowSourcesLabel)}\"," +
               "\"searchingLabel\":\"${jsonEscape(session.uiSearchingLabel)}\"," +
               "\"searchingLabelNoQuery\":\"${jsonEscape(session.uiSearchingLabelNoQuery)}\"," +
-              "\"thinkingLabel\":\"${jsonEscape(session.uiThinkingLabel)}\"" +
+              "\"thinkingLabel\":\"${jsonEscape(session.uiThinkingLabel)}\"," +
+              "\"copyResponseLabel\":\"${jsonEscape(session.uiCopyResponseLabel)}\"," +
+              "\"copyReasoningLabel\":\"${jsonEscape(session.uiCopyReasoningLabel)}\"" +
               "}"
       val jsonValue =
           if (err != null) {
@@ -1216,6 +1220,8 @@ class Standard : LLAMA() {
                   session.uiSearchingLabel = detectedLang.uiSearchingLabel
                   session.uiSearchingLabelNoQuery = detectedLang.uiSearchingLabelNoQuery
                   session.uiThinkingLabel = detectedLang.uiThinkingLabel
+                  session.uiCopyResponseLabel = detectedLang.uiCopyResponseLabel
+                  session.uiCopyReasoningLabel = detectedLang.uiCopyReasoningLabel
                 }
                 val userLocation =
                     if (locationEnabled) {
@@ -1308,6 +1314,15 @@ class Standard : LLAMA() {
                         "\n⚠ The thinking model used all available tokens for reasoning without producing a final answer. The fast model was used to generate this response instead.\n")
                     session.modelType = "fast"
                     session.textChunks.clear()
+
+                    // Pass the thinking model's reasoning to the fast model so it can
+                    // build on the analysis already performed instead of starting fresh.
+                    val reasoning =
+                        session
+                            .currentThinking()
+                            .replace("[Reasoning truncated \u2014 repetition detected]", "")
+                            .replace("[Reasoning truncated \u2014 repetitive pattern detected]", "")
+                            .trim()
                     val fallbackMessages =
                         buildMessages(
                             question,
@@ -1318,7 +1333,28 @@ class Standard : LLAMA() {
                             detectedLang = detectedLang,
                             locationEnabled = locationEnabled,
                             userLocation = userLocation)
-                    streamChatCompletion(fallbackMessages, session, false, slot)
+                    // Inject reasoning context: replace the closing ] with an additional
+                    // system message containing the reasoning, then re-close.
+                    val messagesWithReasoning =
+                        if (reasoning.length > 50) {
+                          val reasoningSnippet =
+                              if (reasoning.length > 4000) {
+                                reasoning.takeLast(4000)
+                              } else {
+                                reasoning
+                              }
+                          val injection =
+                              ",{\"role\":\"system\",\"content\":\"" +
+                                  "A previous analysis of this question produced the following reasoning " +
+                                  "(it was interrupted before a final answer could be generated). " +
+                                  "Use these insights to formulate your answer:\\n\\n" +
+                                  jsonEscape(reasoningSnippet) +
+                                  "\"}]"
+                          fallbackMessages.removeSuffix("]") + injection
+                        } else {
+                          fallbackMessages
+                        }
+                    streamChatCompletion(messagesWithReasoning, session, false, slot)
                     val fallbackText = session.currentText()
 
                     // If the fast model emitted CALL:search, handle it
@@ -1959,6 +1995,15 @@ class Standard : LLAMA() {
           append(
               "Each question is independent — answer ONLY the current question. Do NOT repeat or mix in information from previous answers unless the user explicitly refers to them.")
         }
+        // §7 Document-grounding — when images (uploaded documents) are present
+        if (imageParts.isNotEmpty()) {
+          append(
+              " DOCUMENT GROUNDING: The user has uploaded a document. " +
+                  "Answer ONLY based on what you can actually see in the provided document image(s). " +
+                  "Do NOT recite general knowledge about the type of document, its typical contents, or information you may know from training data. " +
+                  "If the document is unreadable or a specific detail is not visible, say so honestly instead of guessing or filling in from general knowledge. " +
+                  "Internet search, if available, should only be used when the user explicitly asks for external information — never to supplement or replace what is in the document.")
+        }
       } // end if (!skipPrompts)
       append("\"}")
 
@@ -2087,7 +2132,11 @@ class Standard : LLAMA() {
        */
       val uiSearchingLabelNoQuery: String = "Searching the internet\u2026",
       /** Label shown as initial "Thinking..." bubble before response starts. */
-      val uiThinkingLabel: String = "Thinking\u2026"
+      val uiThinkingLabel: String = "Thinking\u2026",
+      /** Markdown heading for the response section when copying to clipboard. */
+      val uiCopyResponseLabel: String = "Response",
+      /** Markdown heading for the reasoning section when copying to clipboard. */
+      val uiCopyReasoningLabel: String = "Reasoning"
   )
 
   /** Pre-built language negotiation objects keyed by lowercase language name. */
@@ -2114,7 +2163,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "Quellen anzeigen",
                       uiSearchingLabel = "Suche im Internet nach \u201E%s\u201C\u2026",
                       uiSearchingLabelNoQuery = "Suche im Internet\u2026",
-                      uiThinkingLabel = "Denkt nach\u2026"),
+                      uiThinkingLabel = "Denkt nach\u2026",
+                      uiCopyResponseLabel = "Antwort",
+                      uiCopyReasoningLabel = "Denkprozess"),
               "deutsch" to null, // alias — resolved below
               "italian" to
                   DetectedLanguage(
@@ -2137,7 +2188,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "Mostra fonti",
                       uiSearchingLabel = "Ricerca in Internet per \u201C%s\u201D\u2026",
                       uiSearchingLabelNoQuery = "Ricerca in Internet\u2026",
-                      uiThinkingLabel = "Sto pensando\u2026"),
+                      uiThinkingLabel = "Sto pensando\u2026",
+                      uiCopyResponseLabel = "Risposta",
+                      uiCopyReasoningLabel = "Ragionamento"),
               "italiano" to null,
               "french" to
                   DetectedLanguage(
@@ -2160,7 +2213,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "Afficher les sources",
                       uiSearchingLabel = "Recherche sur Internet \u00ab %s \u00bb\u2026",
                       uiSearchingLabelNoQuery = "Recherche sur Internet\u2026",
-                      uiThinkingLabel = "Réflexion en cours\u2026"),
+                      uiThinkingLabel = "Réflexion en cours\u2026",
+                      uiCopyResponseLabel = "Réponse",
+                      uiCopyReasoningLabel = "Raisonnement"),
               "français" to null,
               "francais" to null,
               "spanish" to
@@ -2184,7 +2239,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "Mostrar fuentes",
                       uiSearchingLabel = "Buscando en Internet \u201C%s\u201D\u2026",
                       uiSearchingLabelNoQuery = "Buscando en Internet\u2026",
-                      uiThinkingLabel = "Pensando\u2026"),
+                      uiThinkingLabel = "Pensando\u2026",
+                      uiCopyResponseLabel = "Respuesta",
+                      uiCopyReasoningLabel = "Razonamiento"),
               "español" to null,
               "espanol" to null,
               "portuguese" to
@@ -2208,7 +2265,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "Mostrar fontes",
                       uiSearchingLabel = "Pesquisando na Internet por \u201C%s\u201D\u2026",
                       uiSearchingLabelNoQuery = "Pesquisando na Internet\u2026",
-                      uiThinkingLabel = "Pensando\u2026"),
+                      uiThinkingLabel = "Pensando\u2026",
+                      uiCopyResponseLabel = "Resposta",
+                      uiCopyReasoningLabel = "Raciocínio"),
               "português" to null,
               "portugues" to null,
               "dutch" to
@@ -2232,7 +2291,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "Bronnen tonen",
                       uiSearchingLabel = "Zoeken op internet naar \u201C%s\u201D\u2026",
                       uiSearchingLabelNoQuery = "Zoeken op internet\u2026",
-                      uiThinkingLabel = "Aan het nadenken\u2026"),
+                      uiThinkingLabel = "Aan het nadenken\u2026",
+                      uiCopyResponseLabel = "Antwoord",
+                      uiCopyReasoningLabel = "Redenering"),
               "nederlands" to null,
               "turkish" to
                   DetectedLanguage(
@@ -2255,7 +2316,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "Kaynakları göster",
                       uiSearchingLabel = "İnternette aranıyor: \u201C%s\u201D\u2026",
                       uiSearchingLabelNoQuery = "İnternette aranıyor\u2026",
-                      uiThinkingLabel = "Düşünüyor\u2026"),
+                      uiThinkingLabel = "Düşünüyor\u2026",
+                      uiCopyResponseLabel = "Yanıt",
+                      uiCopyReasoningLabel = "Akıl yürütme"),
               "türkçe" to null,
               "turkce" to null,
               "japanese" to
@@ -2278,7 +2341,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "ソースを表示",
                       uiSearchingLabel = "インターネットで「%s」を検索中\u2026",
                       uiSearchingLabelNoQuery = "インターネットで検索中\u2026",
-                      uiThinkingLabel = "考え中\u2026"),
+                      uiThinkingLabel = "考え中\u2026",
+                      uiCopyResponseLabel = "回答",
+                      uiCopyReasoningLabel = "推論"),
               "日本語" to null,
               "chinese" to
                   DetectedLanguage(
@@ -2299,7 +2364,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "显示来源",
                       uiSearchingLabel = "正在搜索\u201C%s\u201D\u2026",
                       uiSearchingLabelNoQuery = "正在搜索\u2026",
-                      uiThinkingLabel = "思考中\u2026"),
+                      uiThinkingLabel = "思考中\u2026",
+                      uiCopyResponseLabel = "回复",
+                      uiCopyReasoningLabel = "推理"),
               "中文" to null,
               "korean" to
                   DetectedLanguage(
@@ -2322,7 +2389,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "출처 보기",
                       uiSearchingLabel = "인터넷에서 \u201C%s\u201D 검색 중\u2026",
                       uiSearchingLabelNoQuery = "인터넷에서 검색 중\u2026",
-                      uiThinkingLabel = "생각 중\u2026"),
+                      uiThinkingLabel = "생각 중\u2026",
+                      uiCopyResponseLabel = "답변",
+                      uiCopyReasoningLabel = "추론"),
               "한국어" to null,
               "russian" to
                   DetectedLanguage(
@@ -2345,7 +2414,9 @@ class Standard : LLAMA() {
                       uiShowSourcesLabel = "Показать источники",
                       uiSearchingLabel = "Поиск в интернете: \u00ab%s\u00bb\u2026",
                       uiSearchingLabelNoQuery = "Поиск в интернете\u2026",
-                      uiThinkingLabel = "Думаю\u2026"),
+                      uiThinkingLabel = "Думаю\u2026",
+                      uiCopyResponseLabel = "Ответ",
+                      uiCopyReasoningLabel = "Рассуждение"),
               "русский" to null)
           .let { raw ->
             // Resolve aliases: "deutsch" → same as "german", etc.

@@ -18,58 +18,6 @@ import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 //endregion PDF.js
 //endregion Imports
 
-// ── Web Speech API type declarations (not in TS dom lib for ES5 target) ──
-interface SpeechRecognitionAlternative {
-  readonly transcript: string;
-  readonly confidence: number;
-}
-
-interface SpeechRecognitionResult {
-  readonly isFinal: boolean;
-  readonly length: number;
-  item(index: number): SpeechRecognitionAlternative;
-  [index: number]: SpeechRecognitionAlternative;
-}
-
-interface SpeechRecognitionResultList {
-  readonly length: number;
-  item(index: number): SpeechRecognitionResult;
-  [index: number]: SpeechRecognitionResult;
-}
-
-interface SpeechRecognitionEvent extends Event {
-  readonly resultIndex: number;
-  readonly results: SpeechRecognitionResultList;
-}
-
-interface SpeechRecognitionErrorEvent extends Event {
-  readonly error: string;
-  readonly message: string;
-}
-
-interface SpeechRecognitionInstance {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onend: (() => void) | null;
-  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
-  start(): void;
-  stop(): void;
-  abort(): void;
-}
-
-interface SpeechRecognitionConstructor {
-  new (): SpeechRecognitionInstance;
-}
-
-declare global {
-  interface Window {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-  }
-}
-
 /**
  * Provides the {@link AI_ONNX_LLAMA_CHAT.functionality }.
  *
@@ -141,7 +89,9 @@ export class AI_ONNX_LLAMA_CHAT {
    *                      Format: modifier(s) + key separated by `+`. Recognised modifiers:
    *                      `Alt`, `Ctrl`, `Shift`, `Meta`. The key part is case-insensitive.
    * - **voiceplaceholder**: Placeholder text shown in the chat input when voice input is available.
-   *                      Default: `"Alt+A = 🎙"` (reflects the configured hotkey).
+   *                      Default: `"Alt+A = 🎙 on/off | Alt+Q = 🎙 off + send"` (reflects the configured hotkeys).
+   * - **voicesendhotkey**: Keyboard shortcut to stop recording and send, e.g. `"Alt+Q"` (default).
+   *                      Same modifier format as `voicehotkey`.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. Must be a `<textarea>` element (the chat display). */
@@ -231,19 +181,30 @@ export class AI_ONNX_LLAMA_CHAT {
 
     // #endregion Discover sibling elements
 
-    // #region Microphone button (speech-to-text via Web Speech API)
-    const SpeechRecognitionCtor: SpeechRecognitionConstructor | undefined =
-      window.SpeechRecognition || window.webkitSpeechRecognition;
+    // #region Microphone button (speech-to-text via Whisper on CodBi server)
     let micButton: HTMLButtonElement | null = null;
-    let recognition: SpeechRecognitionInstance | null = null;
     let isRecording = false;
-    let sendHotkeyKey = "";
-    let sendNeedAlt = false;
-    let sendNeedCtrl = false;
-    let sendNeedShift = false;
-    let sendNeedMeta = false;
+    let isTranscribing = false;
+    let whisperMediaRecorder: MediaRecorder | null = null;
+    let whisperAudioChunks: Blob[] = [];
+    let whisperConvertSupported = true;
+    /** Stops the current recording (no-op when no mic is set up). */
+    let stopRecordingFn: (() => void) | null = null;
 
-    if (SpeechRecognitionCtor) {
+    // Resolve the Whisper plugin servlet URL
+    let whisperUrl: string | null = null;
+    try {
+      whisperUrl = `${window.codbi.baseURL}plugin?name=CodBi_AI_Whisper`;
+    } catch (_e) {
+      /* ignore */
+    }
+
+    /**
+     * Sets up the Whisper mic button. Called asynchronously after the health-check
+     * confirms the Whisper server is ready. If the health-check fails the mic is
+     * never created and speech input is simply unavailable.
+     */
+    const setupWhisperMic = (pluginUrl: string): void => {
       // Wrap the chat input in a relative container so the mic floats inside it
       const inputWrapper = document.createElement("div");
       inputWrapper.className = "LLAMA_Chat_InputWrapper";
@@ -253,79 +214,310 @@ export class AI_ONNX_LLAMA_CHAT {
       micButton = document.createElement("button");
       micButton.type = "button";
       micButton.className = "LLAMA_Chat_MicButton";
-      micButton.title = "Voice input";
+      micButton.title = "Voice input (Whisper)";
       micButton.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm-1-9a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V5zm6 6a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11h-2z"/></svg>`;
       inputWrapper.appendChild(micButton);
-      // Local non-null aliases — valid for the rest of this block
       const mic = micButton;
 
-      recognition = new SpeechRecognitionCtor();
-      const rec = recognition;
-      rec.continuous = true;
-      rec.interimResults = true;
+      // Disable mic if the LLAMA model hasn't loaded yet
+      if (chatInput.disabled) {
+        mic.disabled = true;
+      }
 
-      // Text that was in the input before recording started — serves as the
-      // immutable prefix so we never duplicate previously committed text.
+      // Language for Whisper (auto-detect when empty)
+      const lang = toLoad.language != null ? String(toLoad.language).trim() : "";
+
+      // ── MIME type detection ──
+      const preferredMimeType = (): string => {
+        const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+        for (const type of types) {
+          if (MediaRecorder.isTypeSupported(type)) {
+            return type;
+          }
+        }
+        return "";
+      };
+
+      // ── WAV conversion helpers ──
+      const writeWavString = (view: DataView, offset: number, str: string): void => {
+        for (let i = 0; i < str.length; i++) {
+          view.setUint8(offset + i, str.charCodeAt(i));
+        }
+      };
+
+      const convertToWav = async (audioBlob: Blob): Promise<Blob> => {
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioContext = new AudioContext();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const numFrames = audioBuffer.length;
+        const sampleRate = audioBuffer.sampleRate;
+        const mono = new Float32Array(numFrames);
+        for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+          const channelData = audioBuffer.getChannelData(ch);
+          for (let i = 0; i < numFrames; i++) {
+            mono[i] += channelData[i];
+          }
+        }
+        if (audioBuffer.numberOfChannels > 1) {
+          const scale = 1 / audioBuffer.numberOfChannels;
+          for (let i = 0; i < numFrames; i++) {
+            mono[i] *= scale;
+          }
+        }
+        const bytesPerSample = 2;
+        const dataLength = numFrames * bytesPerSample;
+        const buffer = new ArrayBuffer(44 + dataLength);
+        const view = new DataView(buffer);
+        writeWavString(view, 0, "RIFF");
+        view.setUint32(4, 36 + dataLength, true);
+        writeWavString(view, 8, "WAVE");
+        writeWavString(view, 12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * bytesPerSample, true);
+        view.setUint16(32, bytesPerSample, true);
+        view.setUint16(34, 16, true);
+        writeWavString(view, 36, "data");
+        view.setUint32(40, dataLength, true);
+        let offset = 44;
+        for (let i = 0; i < numFrames; i++) {
+          const sample = Math.max(-1, Math.min(1, mono[i]));
+          view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+          offset += 2;
+        }
+        await audioContext.close();
+        return new Blob([buffer], { type: "audio/wav" });
+      };
+
+      // ── Send audio to Whisper for transcription ──
+      let interimInterval: number | null = null;
+      let interimInFlight = false;
+      /** Text before recording started — interim results replace everything after this. */
       let preRecordingText = "";
 
-      rec.onresult = (event: SpeechRecognitionEvent) => {
-        let sessionFinal = "";
-        let interim = "";
-        for (let i = 0; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            sessionFinal += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
-          }
+      /** Sends accumulated audio for an interim (mid-recording) transcription.
+       *  The result replaces the text after preRecordingText.
+       *  Only one interim request runs at a time. */
+      const sendInterimTranscription = async (audioBlob: Blob) => {
+        if (interimInFlight) {
+          return;
         }
-        chatInput.value = preRecordingText + sessionFinal + interim;
+        interimInFlight = true;
+
+        try {
+          let blob = audioBlob;
+          if (!whisperConvertSupported) {
+            try {
+              blob = await convertToWav(blob);
+            } catch (_e) {
+              interimInFlight = false;
+              return;
+            }
+          }
+
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error("Failed to read audio blob"));
+            reader.readAsDataURL(blob);
+          });
+
+          const formData = new FormData();
+          formData.append("codbi-base64:audio", dataUrl);
+
+          const ajaxHeaders: Record<string, string> = {};
+          if (lang) {
+            ajaxHeaders["X-Language"] = lang;
+          }
+
+          $.ajax({
+            url: pluginUrl,
+            type: "POST",
+            data: formData,
+            processData: false,
+            contentType: false,
+            cache: false,
+            headers: ajaxHeaders,
+            success: (response: unknown) => {
+              if (!isRecording) {
+                return; // Recording ended before response arrived
+              }
+              const result = (typeof response === "string" ? JSON.parse(response) : response) as {
+                text?: string;
+                error?: string;
+              };
+              if (result.text) {
+                const separator = preRecordingText && !preRecordingText.endsWith(" ") ? " " : "";
+                chatInput.value = preRecordingText + separator + result.text.trim();
+              }
+            },
+            complete: () => {
+              interimInFlight = false;
+            },
+          });
+        } catch (_e) {
+          interimInFlight = false;
+        }
       };
 
-      rec.onend = () => {
-        if (isRecording) {
-          // Silence-timeout restart: save current value as the new baseline
-          // so the next recognition session appends rather than overwrites.
+      const sendForTranscription = async (audioBlob: Blob) => {
+        isTranscribing = true;
+        mic.classList.add("LLAMA_Chat_MicButton--transcribing");
+        mic.disabled = true;
+
+        try {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error("Failed to read audio blob"));
+            reader.readAsDataURL(audioBlob);
+          });
+
+          const formData = new FormData();
+          formData.append("codbi-base64:audio", dataUrl);
+
+          const ajaxHeaders: Record<string, string> = {};
+          if (lang) {
+            ajaxHeaders["X-Language"] = lang;
+          }
+
+          $.ajax({
+            url: pluginUrl,
+            type: "POST",
+            data: formData,
+            processData: false,
+            contentType: false,
+            cache: false,
+            headers: ajaxHeaders,
+            success: (response: unknown) => {
+              const result = (typeof response === "string" ? JSON.parse(response) : response) as {
+                text?: string;
+                error?: string;
+              };
+              if (result.error) {
+                window.codbi.log("ERROR", `Whisper: ${result.error}`, "AI / LLAMA / CHAT");
+                return;
+              }
+              if (result.text) {
+                const separator = preRecordingText && !preRecordingText.endsWith(" ") ? " " : "";
+                chatInput.value = preRecordingText + separator + result.text.trim();
+              }
+            },
+            error: (_xhr: unknown, _status: unknown, error: unknown) => {
+              window.codbi.log("ERROR", `Whisper transcription failed: ${String(error)}`, "AI / LLAMA / CHAT");
+            },
+            complete: () => {
+              isTranscribing = false;
+              mic.classList.remove("LLAMA_Chat_MicButton--transcribing");
+              mic.disabled = false;
+            },
+          });
+        } catch (e) {
+          window.codbi.log(
+            "ERROR",
+            `Whisper transcription failed: ${e instanceof Error ? e.message : String(e)}`,
+            "AI / LLAMA / CHAT",
+          );
+          isTranscribing = false;
+          mic.classList.remove("LLAMA_Chat_MicButton--transcribing");
+          mic.disabled = false;
+        }
+      };
+
+      // ── MediaRecorder start / stop ──
+      const startRecording = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          whisperAudioChunks = [];
+          whisperMediaRecorder = new MediaRecorder(stream, { mimeType: preferredMimeType() });
+
+          whisperMediaRecorder.ondataavailable = (e: BlobEvent) => {
+            if (e.data.size > 0) {
+              whisperAudioChunks.push(e.data);
+            }
+          };
+
+          whisperMediaRecorder.onstop = async () => {
+            for (const track of stream.getTracks()) {
+              track.stop();
+            }
+            if (interimInterval) {
+              clearInterval(interimInterval);
+              interimInterval = null;
+            }
+            if (whisperAudioChunks.length === 0) {
+              return;
+            }
+            let audioBlob = new Blob(whisperAudioChunks, {
+              type: whisperMediaRecorder?.mimeType ?? "audio/webm",
+            });
+            if (!whisperConvertSupported) {
+              try {
+                audioBlob = await convertToWav(audioBlob);
+              } catch (e) {
+                window.codbi.log(
+                  "ERROR",
+                  `WAV conversion failed: ${e instanceof Error ? e.message : String(e)}`,
+                  "AI / LLAMA / CHAT",
+                );
+                return;
+              }
+            }
+            sendForTranscription(audioBlob);
+          };
+
           preRecordingText = chatInput.value;
-          try {
-            rec.start();
-          } catch (_e) {
-            /* ignore */
-          }
-        }
-      };
+          whisperMediaRecorder.start();
+          isRecording = true;
+          mic.classList.add("LLAMA_Chat_MicButton--recording");
 
-      rec.onerror = (event: SpeechRecognitionErrorEvent) => {
-        if (event.error === "not-allowed" || event.error === "service-not-available") {
+          // Periodic interim transcription — flush and send accumulated audio every ~2.5s
+          const rec = whisperMediaRecorder;
+          interimInterval = window.setInterval(() => {
+            if (interimInFlight || rec.state !== "recording") {
+              return;
+            }
+            rec.requestData(); // Flush buffered data into ondataavailable
+            if (whisperAudioChunks.length === 0) {
+              return;
+            }
+            const blob = new Blob(whisperAudioChunks, { type: rec.mimeType });
+            sendInterimTranscription(blob);
+          }, 2500);
+        } catch (_e) {
           mic.classList.add("LLAMA_Chat_MicButton--unavailable");
           mic.title = "Microphone access denied";
           mic.disabled = true;
         }
+      };
+
+      const stopRecording = () => {
+        if (interimInterval) {
+          clearInterval(interimInterval);
+          interimInterval = null;
+        }
+        if (whisperMediaRecorder && whisperMediaRecorder.state !== "inactive") {
+          whisperMediaRecorder.stop();
+        }
         isRecording = false;
         mic.classList.remove("LLAMA_Chat_MicButton--recording");
       };
+      stopRecordingFn = stopRecording;
 
       const toggleRecording = () => {
-        if (mic.disabled) {
+        if (mic.disabled || isTranscribing) {
           return;
         }
         if (isRecording) {
-          isRecording = false;
-          rec.stop();
-          mic.classList.remove("LLAMA_Chat_MicButton--recording");
+          stopRecording();
         } else {
-          isRecording = true;
-          preRecordingText = chatInput.value;
-          rec.lang = "";
-          try {
-            rec.start();
-            mic.classList.add("LLAMA_Chat_MicButton--recording");
-          } catch (_e) {
-            isRecording = false;
-          }
+          startRecording();
         }
       };
 
-      micButton.addEventListener("click", toggleRecording);
+      mic.addEventListener("click", toggleRecording);
 
       // Voice-input hotkey (configurable via toLoad.voicehotkey, default Alt+A)
       const hotkeyDef = (typeof toLoad.voicehotkey === "string" && toLoad.voicehotkey.trim()) || "Alt+A";
@@ -335,10 +527,7 @@ export class AI_ONNX_LLAMA_CHAT {
       const needCtrl = hotkeyParts.some((p: string) => /^ctrl$/i.test(p));
       const needShift = hotkeyParts.some((p: string) => /^shift$/i.test(p));
       const needMeta = hotkeyParts.some((p: string) => /^meta$/i.test(p));
-      chatInput.placeholder =
-        (typeof toLoad.voiceplaceholder === "string" && toLoad.voiceplaceholder.trim()) ||
-        `${hotkeyDef} = \uD83C\uDF99\uFE0F`;
-      micButton.title = `Voice input (${hotkeyDef})`;
+      mic.title = `Voice input — Whisper (${hotkeyDef})`;
 
       document.addEventListener("keydown", (e: KeyboardEvent) => {
         if (
@@ -349,18 +538,74 @@ export class AI_ONNX_LLAMA_CHAT {
           e.metaKey === needMeta
         ) {
           e.preventDefault();
+          // Skip if a MEDIA_INPUT_SPEECH or MEDIA_WHISPER field is focused — they have their own handlers
+          if (
+            document.activeElement?.closest(".MEDIA_Speech_InputWrapper") ||
+            document.activeElement?.closest(".MEDIA_Whisper_InputWrapper")
+          ) {
+            return;
+          }
           toggleRecording();
         }
       });
 
       // Voice-send hotkey (configurable via toLoad.voicesendhotkey, default Alt+Q)
       const sendHotkeyDef = (typeof toLoad.voicesendhotkey === "string" && toLoad.voicesendhotkey.trim()) || "Alt+Q";
-      const sendHotkeyParts = sendHotkeyDef.split("+").map((p: string) => p.trim());
-      sendHotkeyKey = sendHotkeyParts[sendHotkeyParts.length - 1].toUpperCase();
-      sendNeedAlt = sendHotkeyParts.some((p: string) => /^alt$/i.test(p));
-      sendNeedCtrl = sendHotkeyParts.some((p: string) => /^ctrl$/i.test(p));
-      sendNeedShift = sendHotkeyParts.some((p: string) => /^shift$/i.test(p));
-      sendNeedMeta = sendHotkeyParts.some((p: string) => /^meta$/i.test(p));
+      const sHParts = sendHotkeyDef.split("+").map((p: string) => p.trim());
+      const sHKey = sHParts[sHParts.length - 1].toUpperCase();
+      const sHAlt = sHParts.some((p: string) => /^alt$/i.test(p));
+      const sHCtrl = sHParts.some((p: string) => /^ctrl$/i.test(p));
+      const sHShift = sHParts.some((p: string) => /^shift$/i.test(p));
+      const sHMeta = sHParts.some((p: string) => /^meta$/i.test(p));
+
+      document.addEventListener("keydown", (e: KeyboardEvent) => {
+        if (
+          e.key.toUpperCase() === sHKey &&
+          e.altKey === sHAlt &&
+          e.ctrlKey === sHCtrl &&
+          e.shiftKey === sHShift &&
+          e.metaKey === sHMeta
+        ) {
+          e.preventDefault();
+          if (isRecording) {
+            stopRecording();
+          }
+          sendMessage();
+        }
+      });
+
+      // Placeholder shows both hotkeys with mic on/off icons
+      chatInput.placeholder =
+        (typeof toLoad.voiceplaceholder === "string" && toLoad.voiceplaceholder.trim()) ||
+        `${hotkeyDef} = \uD83C\uDF99\uFE0F on/off | ${sendHotkeyDef} = \uD83C\uDF99\uFE0F off + send`;
+    };
+
+    // Async health-check: only create mic button if Whisper server is ready
+    if (whisperUrl) {
+      const wUrl = whisperUrl;
+      $.ajax({
+        url: wUrl,
+        type: "GET",
+        cache: false,
+        headers: { "X-Health-Check": "true" },
+        success: (response: unknown) => {
+          const result = (typeof response === "string" ? JSON.parse(response) : response) as {
+            status?: string;
+            convertSupported?: boolean;
+            error?: string;
+          };
+          if (result.error || result.status !== "ready") {
+            return; // Whisper not ready — no mic button
+          }
+          if (typeof result.convertSupported === "boolean") {
+            whisperConvertSupported = result.convertSupported;
+          }
+          setupWhisperMic(wUrl);
+        },
+        error: () => {
+          // Whisper not available — no mic button
+        },
+      });
     }
     // #endregion Microphone button
 
@@ -564,6 +809,14 @@ export class AI_ONNX_LLAMA_CHAT {
           if (digitsOnly.length < 7 || digitsOnly.length > 15) {
             return match;
           }
+          // Skip year ranges like "1918-2013", "2000–2025"
+          if (/^\d{4}\s*[-–—]\s*\d{4}$/.test(match.trim())) {
+            return match;
+          }
+          // Skip decimal numbers (GPS coordinates, URL parameters like lat=49.300735)
+          if (/^\d+\.\d+$/.test(match.trim())) {
+            return match;
+          }
           const idx = links.length;
           const telHref = `tel:${match.replace(/[^\d+]/g, "")}`;
           links.push(
@@ -681,10 +934,8 @@ export class AI_ONNX_LLAMA_CHAT {
       isBusy = true;
       sendButton.disabled = true;
       if (micButton) {
-        if (isRecording) {
-          isRecording = false;
-          DEFINED.tsCheck(recognition).stop();
-          micButton.classList.remove("LLAMA_Chat_MicButton--recording");
+        if (isRecording && stopRecordingFn) {
+          stopRecordingFn();
         }
         micButton.disabled = true;
       }
@@ -1209,28 +1460,6 @@ export class AI_ONNX_LLAMA_CHAT {
       }
     }) as EventListener);
 
-    // Alt+Q (default): stop recording and send — only when speech API is available
-    if (SpeechRecognitionCtor && sendHotkeyKey) {
-      document.addEventListener("keydown", (e: KeyboardEvent) => {
-        if (
-          e.key.toUpperCase() === sendHotkeyKey &&
-          e.altKey === sendNeedAlt &&
-          e.ctrlKey === sendNeedCtrl &&
-          e.shiftKey === sendNeedShift &&
-          e.metaKey === sendNeedMeta
-        ) {
-          e.preventDefault();
-          if (isRecording) {
-            isRecording = false;
-            DEFINED.tsCheck(recognition).stop();
-            if (micButton) {
-              micButton.classList.remove("LLAMA_Chat_MicButton--recording");
-            }
-          }
-          sendMessage();
-        }
-      });
-    }
     // #endregion Wire up event listeners
 
     // ── Health check: poll the backend until the model is ready ──────────────
@@ -1296,6 +1525,9 @@ export class AI_ONNX_LLAMA_CHAT {
               clearInterval(healthCheck);
               showError(msg);
             }
+          } else if (response.pendingThinkingModel) {
+            // Regular model ready, thinking model still loading — show ready but keep polling
+            showReady(response.model);
           } else {
             clearInterval(healthCheck);
             showReady(response.model, response.thinkingModel);
@@ -1522,18 +1754,46 @@ export class AI_ONNX_LLAMA_CHAT {
         color: #333 ; background: rgba(0,0,0,0.06) ;
       }
       .LLAMA_Chat_MicButton--recording {
-        color: #fff ; background: #e53935 ;
-        animation: LLAMA_mic_pulse 1.2s ease-in-out infinite ;
+        color: #fff ; background: #1565c0 ;
+        overflow: visible ;
+      }
+      .LLAMA_Chat_MicButton--recording::before,
+      .LLAMA_Chat_MicButton--recording::after {
+        content: '' ; position: absolute ;
+        top: 50% ; left: 50% ;
+        width: 100% ; height: 100% ;
+        border-radius: 50% ; border: 2px solid #1565c0 ;
+        transform: translate(-50%, -50%) scale(1) ;
+        animation: LLAMA_mic_flare 1.8s ease-out infinite ;
+      }
+      .LLAMA_Chat_MicButton--recording::after {
+        animation-delay: 0.6s ;
       }
       .LLAMA_Chat_MicButton--recording:hover {
-        background: #c62828 ; color: #fff ;
+        background: #0d47a1 ; color: #fff ;
       }
       .LLAMA_Chat_MicButton--unavailable {
         color: #ccc ; cursor: not-allowed ;
       }
-      @keyframes LLAMA_mic_pulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0.5) ; }
-        50% { box-shadow: 0 0 0 8px rgba(229,57,53,0) ; }
+      .LLAMA_Chat_MicButton--transcribing {
+        color: #fff ; background: #e53935 ;
+        pointer-events: none ; overflow: visible ;
+      }
+      .LLAMA_Chat_MicButton--transcribing::before,
+      .LLAMA_Chat_MicButton--transcribing::after {
+        content: '' ; position: absolute ;
+        top: 50% ; left: 50% ;
+        width: 100% ; height: 100% ;
+        border-radius: 50% ; border: 2px solid #e53935 ;
+        transform: translate(-50%, -50%) scale(1) ;
+        animation: LLAMA_mic_flare 1.8s ease-out infinite ;
+      }
+      .LLAMA_Chat_MicButton--transcribing::after {
+        animation-delay: 0.6s ;
+      }
+      @keyframes LLAMA_mic_flare {
+        0%   { transform: translate(-50%, -50%) scale(1) ; opacity: 0.7 ; }
+        100% { transform: translate(-50%, -50%) scale(2.8) ; opacity: 0 ; }
       }`;
     document.head.appendChild(style);
   }

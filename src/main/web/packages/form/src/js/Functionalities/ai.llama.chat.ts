@@ -15,36 +15,35 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 //region PDF.js
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
+import { CodBiError } from "../global-scope";
 //endregion PDF.js
 //endregion Imports
-
 /**
- * Provides the {@link AI_ONNX_LLAMA_CHAT.functionality }.
- *
- * @remarks
- * Chat interface for the Qwen3-VL-2B model served via llama-server (Swan Architecture).
- * Connects to the {@code CodBi_AI_LLAMA_STD} plugin endpoint.
+ * Provides the {@link AI_LLAMA_CHAT.functionality }.
  *
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
-export class AI_ONNX_LLAMA_CHAT {
+export class AI_LLAMA_CHAT {
   /**
-   * This functionality turns a set of HTML elements into a chat interface for the Qwen3-VL
-   * vision-language model served by llama-server (Swan Architecture / LLAMA).
-   * It enables interactive, multi-turn conversations about uploaded images and PDF documents.
+   * This functionality turns a set of HTML elements into a chat interface for the LLAMA Model served by the CodBi.
+   * It enables interactive, multi-turn conversations about uploaded images and PDF documents, provides internet query access
+   * to the model via the **Brave Search API** and the client's location via the Geolocation API.
+   * Voice input is supported via the **Media.Input.Speech.Whisper**-Functionality.
+   *
+   * If the model is not specified QWEN3-VL 2B is downloaded and utilized.
    *
    * **Required Elements (found by CSS class within the nearest common ancestor):**
    *
    * | CSS Class                      | Element                                | Purpose                                          |
    * |-------------------------------|----------------------------------------|--------------------------------------------------|
    * | *The class tagged with this functionality*        | `<textarea>`                           | Chat display (read-only conversation history)    |
-   * | `AI_ONNX_LLAMA_Chat_Input`    | `<input type="text">` or `<textarea>` | Text input where the user types messages         |
-   * | `AI_ONNX_LLAMA_Chat_Send`     | `<button>`                             | Send button (triggers inference)                 |
-   * | `AI_ONNX_LLAMA_Chat_Stop`     | `<button>`                             | Stop button (aborts running inference)           |
-   * | `AI_ONNX_LLAMA_Chat_Upload` (Optional)   | `<input type="file">`                  | File upload for images/PDFs to chat about        |
-   * | `AI_ONNX_LLAMA_Chat_Thinking` (Optional)  | `<input type="checkbox">`              | Toggles thinking mode (chain-of-thought) on/off  |
-   * | `AI_ONNX_LLAMA_Chat_Internet` (Optional)    | `<input type="checkbox">`              | Toggles internet search availability on/off      |
-   * | `AI_ONNX_LLAMA_Chat_Location` (Optional)    | `<input type="checkbox">`              | Toggles geolocation (get_current_location) on/off |
+   * | `AI_LLAMA_CHAT_Input`    | `<input type="text">` or `<textarea>` | Text input where the user types messages         |
+   * | `AI_LLAMA_CHAT_Send`     | `<button>`                             | Send button (triggers inference)                 |
+   * | `AI_LLAMA_CHAT_Stop`     | `<button>`                             | Stop button (aborts running inference)           |
+   * | `AI_LLAMA_CHAT_Upload` (Optional)   | `<input type="file">`                  | File upload for images/PDFs to chat about        |
+   * | `AI_LLAMA_CHAT_Thinking` (Optional)  | `<input type="checkbox">`              | Toggles thinking mode (chain-of-thought) on/off  |
+   * | `AI_LLAMA_CHAT_Internet` (Optional)    | `<input type="checkbox">`              | Toggles internet search availability on/off      |
+   * | `AI_LLAMA_CHAT_Location` (Optional)    | `<input type="checkbox">`              | Toggles geolocation (get_current_location) on/off |
    *
    * **Generated CSS Classes (injected at runtime):**
    *
@@ -66,149 +65,210 @@ export class AI_ONNX_LLAMA_CHAT {
    * **Behavior:**
    * - The display textarea is made read-only and shows the full conversation history.
    * - When files are selected via the upload input, they are attached for subsequent messages.
-   * - When the user clicks Send (or presses Enter in the input), the message and any attached files
-   *   are sent to the Qwen3-VL backend (via llama-server). The response is displayed in the chat.
+   * - When the user clicks Send (or presses CTRL+Enter in the input), the message and any attached files are sent to the
+   *   standard backend for processing by the AI model. The response is displayed in the chat.
    * - PDF files are automatically detected and processed (rendered to images or extracted).
    * - Multiple files can be attached; each is processed independently by the model.
    * - The send button and input are disabled during inference to prevent duplicate requests.
    *
-   * **Image Orientation:** Same as {@link AI_ONNX_DONUT_QA.functionality} — supports `data-cb-Rotate`
-   * attribute and automatic OSD detection.
-   *
    * ### Config Parameters:
-   * - **maxPages**:      Maximum PDF pages to process (default: 5).
-   * - **Rotate**:        Image rotation in degrees (90, 180, or 270).
-   * - **MaxPixelSize**:  Maximum total pixel budget (width×height). Images exceeding this
-   *                      are downscaled client-side while preserving the aspect ratio.
-   *                      Default: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
-   * - **llamabubble**:   Background color for Llama (AI) bubbles (default: `#e5e5ea`).
-   * - **userbubble**:    Background color for user bubbles (default: `#0b93f6`).
-   * - **welcometext**:   Text shown after the model name(s) in the ready message
-   *                      (default: `"Chat ready. Attach file(s) and type your question."`).
-   * - **voicehotkey**:   Keyboard shortcut to toggle voice input, e.g. `"Alt+A"` (default).
-   *                      Format: modifier(s) + key separated by `+`. Recognised modifiers:
-   *                      `Alt`, `Ctrl`, `Shift`, `Meta`. The key part is case-insensitive.
-   * - **voiceplaceholder**: Placeholder text shown in the chat input when voice input is available.
-   *                      Default: `"Alt+A = 🎙 on/off | Alt+Q = 🎙 off + send"` (reflects the configured hotkeys).
-   * - **voicesendhotkey**: Keyboard shortcut to stop recording and send, e.g. `"Alt+Q"` (default).
-   *                      Same modifier format as `voicehotkey`.
+   * - **maxPages**:          Maximum PDF pages to process (**default**: 5).
+   * - **Rotation**:          Image rotation in degrees (90, 180, or 270). If it is known that the image to process is rotated,
+   *                          this can be set to avoid Tesseract OSD (if available) or the AI having to deal with it, speeding up
+   *                          the inference. Not setting or setting to 0 means that rotation is unknown.
+   * - **MaxPixelSize**:      Maximum total pixel budget (width×height). Images exceeding this are downscaled client-side while
+   *                          preserving the aspect ratio.
+   *                          **Default**: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
+   * - **llamabubble**:       Background color for Llama (AI) bubbles (**default**: `#e5e5ea`).
+   * - **userbubble**:        Background color for user bubbles (**default**: `#0b93f6`).
+   * - **welcometext**:       Text shown after the model name(s) in the ready message
+   *                          (**default**: `"Chat ready. Attach file(s) and type your question."`).
+   * - **voicehotkey**:       Keyboard shortcut to toggle voice input, e.g. `"Alt+A"` (**default**: `"Alt+A"`).
+   *                          Format: modifier(s) + key separated by `+`. Recognized modifiers:
+   *                          `Alt`, `Ctrl`, `Shift`, `Meta`. The key part is case-insensitive.
+   * - **voiceplaceholder**:  Placeholder text shown in the chat input when voice input is available.
+   *                          **Default**: `"Alt+A = 🎙 on/off | Alt+Q = 🎙 off + send"` (reflects the configured hotkeys).
+   * - **voicesendhotkey**:   Keyboard shortcut to stop recording and send, e.g. `"Alt+Q"` (**default**: `"Alt+Q"`).
+   *                          Same modifier format as `voicehotkey`.
+   * - **language**:           Language code for Whisper speech-to-text (e.g. `"de"`, `"en"`).
+   *                          Empty or unset means auto-detect.
    *
    * @param toLoad    Provided by the CodBi.
-   * @param toProcess Provided by the CodBi. Must be a `<textarea>` element (the chat display). */
+   * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages")
-    @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotate")
-    @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotate")
-    @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxPixelSize")
+    @TYPE.PRE(
+      "string",
+      "llamabubble, userbubble, welcometext, voicehotkey, voiceplaceholder, voicesendhotkey, language",
+    )
+    @TYPE.PRE("string | number", "maxpages, rotation, maxpixelsize")
+    @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages, maxpixelsize")
+    // #region Rotation constraint.
+    @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotation")
+    @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotation")
+    @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{3}$/i), "language")
+    // #endregion Rotation constraint.
+    @REGEX.PRE(REGEX.stdExp.colorCodeHEX, "llamabubble, userbubble")
+    @REGEX.PRE(REGEX.stdExp.simpleHotkey, "voicehotkey, voicesendhotkey")
     toLoad: { [key: string]: unknown },
 
-    @INSTANCE.PRE(HTMLTextAreaElement, undefined, "Must be a <textarea> element tagged with this functionality.")
+    @INSTANCE.PRE(
+      HTMLTextAreaElement,
+      undefined,
+      "Isn't it a <textarea> (the conversation window) that is tagged by this functionality?",
+    )
     toProcess: Element,
   ): void {
+    // #region Config initialization
     const $ = getJQuery();
     const chatDisplay = toProcess as HTMLTextAreaElement;
-    chatDisplay.readOnly = true;
-    chatDisplay.style.display = "none";
     const aiHintText = toLoad.aihint != null ? String(toLoad.aihint) : "\u2728 AI-Generated";
 
+    chatDisplay.readOnly = true;
+    chatDisplay.style.display = "none";
+    // #endregion Config initialization
     // #region Create speech-bubble chat container
-    AI_ONNX_LLAMA_CHAT.ensureChatBubbleStyles();
+    AI_LLAMA_CHAT.ensureChatBubbleStyles();
+
     const chatContainer = document.createElement("div");
+
     chatContainer.className = "LLAMA_Chat_Container";
-    // Apply custom bubble colors from toLoad
+    // #region Apply custom bubble colors from toLoad.
     if (toLoad.llamabubble != null) {
       chatContainer.style.setProperty("--llama-bubble-bg", String(toLoad.llamabubble));
     }
     if (toLoad.userbubble != null) {
       chatContainer.style.setProperty("--user-bubble-bg", String(toLoad.userbubble));
     }
+    // #endregion Apply custom bubble colors from toLoad.
     if (toLoad.maxchatwindowheight != null) {
       chatContainer.style.maxHeight = `${String(toLoad.maxchatwindowheight)}px`;
     }
+
     chatDisplay.parentElement?.insertBefore(chatContainer, chatDisplay.nextSibling);
     // #endregion Create speech-bubble chat container
-
     // #region Discover sibling elements by walking up to the nearest common ancestor
     let container: Element | null = toProcess.parentElement;
+
     while (container && container !== document.body) {
-      if (container.querySelector(".AI_ONNX_LLAMA_Chat_Input") && container.querySelector(".AI_ONNX_LLAMA_Chat_Send")) {
+      if (container.querySelector(".AI_LLAMA_CHAT_Input") && container.querySelector(".AI_LLAMA_CHAT_Send")) {
         break;
       }
+
       container = container.parentElement;
     }
 
     if (!container || container === document.body) {
       window.codbi.log(
         "ERROR",
-        "Could not find a container with .AI_ONNX_LLAMA_Chat_Input and .AI_ONNX_LLAMA_Chat_Send elements. " +
+        "Could not find a container with .AI_LLAMA_CHAT_Input and .AI_LLAMA_CHAT_Send elements. " +
           "Ensure these elements exist within a common ancestor of the chat display textarea.",
         "AI / LLAMA / CHAT",
       );
+
       return;
     }
 
     const chatInput = OR.tsCheck<HTMLInputElement | HTMLTextAreaElement>(
-      DEFINED.tsCheck(container.querySelector(".AI_ONNX_LLAMA_Chat_Input")),
+      DEFINED.tsCheck(container.querySelector(".AI_LLAMA_CHAT_Input")),
       [new INSTANCE(HTMLInputElement), new INSTANCE(HTMLTextAreaElement)],
-      'Did you forget to tag the chat input element with CSS-Class "AI_ONNX_LLAMA_Chat_Input"?',
+      'Is there a chat input element tagged with CSS-Class "AI_LLAMA_CHAT_Input" in the same container as the conversation window?',
     );
 
     const sendButton = INSTANCE.tsCheck<HTMLButtonElement>(
-      DEFINED.tsCheck(container.querySelector(".AI_ONNX_LLAMA_Chat_Send")),
+      DEFINED.tsCheck(container.querySelector(".AI_LLAMA_CHAT_Send")),
       HTMLButtonElement,
+      'Is there a send button element tagged with CSS-Class "AI_LLAMA_CHAT_Send" in the same container as the conversation window?',
     );
+
     const stopButton = INSTANCE.tsCheck<HTMLButtonElement>(
-      container.querySelector(".AI_ONNX_LLAMA_Chat_Stop"),
+      container.querySelector(".AI_LLAMA_CHAT_Stop"),
       HTMLButtonElement,
+      `Isn't the element tagged with ".AI_LLAMA_CHAT_Stop" a <button>?`,
     );
+    // #region Check the upload element if it exists, but it's optional so it may be null.
     const fileUpload = INSTANCE.tsCheck<HTMLInputElement>(
-      container.querySelector(".AI_ONNX_LLAMA_Chat_Upload"),
+      container.querySelector(".AI_LLAMA_CHAT_Upload"),
       HTMLInputElement,
+      `Isn't the element tagged with ".AI_LLAMA_CHAT_Upload" an <input>?`,
     );
+
+    if (fileUpload) {
+      EQ.tsCheck(
+        fileUpload.type,
+        "file",
+        `Isn't the element tagged with ".AI_LLAMA_CHAT_Upload" an <input> of type "file"?`,
+      );
+    }
+    // #endregion Check the upload element if it exists, but it's optional so it may be null.
+    // #region Check the thinking mode checkbox if it exists, but it's optional so it may be null.
     const thinkingCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
-      container.querySelector(".AI_ONNX_LLAMA_Chat_Thinking"),
+      container.querySelector(".AI_LLAMA_CHAT_Thinking"),
       HTMLInputElement,
+      'Isn\'t the element tagged with ".AI_LLAMA_CHAT_Thinking" an <input> (checkbox)?',
     );
+
+    if (thinkingCheckbox) {
+      EQ.tsCheck(
+        thinkingCheckbox.type,
+        "checkbox",
+        `Isn't the element tagged with ".AI_LLAMA_CHAT_Thinking" an <input> of type "checkbox"?`,
+      );
+    }
+    // #endregion Check the thinking mode checkbox if it exists, but it's optional so it may be null.
+    // #region Check the internet access checkbox if it exists, but it's optional so it may be null.
     const searchCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
-      container.querySelector(".AI_ONNX_LLAMA_Chat_Internet"),
+      container.querySelector(".AI_LLAMA_CHAT_Internet"),
       HTMLInputElement,
     );
+
+    if (searchCheckbox) {
+      EQ.tsCheck(
+        searchCheckbox.type,
+        "checkbox",
+        `Isn't the element tagged with ".AI_LLAMA_CHAT_Internet" an <input> of type "checkbox"?`,
+      );
+    }
+    // #endregion Check the internet access checkbox if it exists, but it's optional so it may be null.
+    // #region Check the location access checkbox if it exists, but it's optional so it may be null.
     const locationCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
-      container.querySelector(".AI_ONNX_LLAMA_Chat_Location"),
+      container.querySelector(".AI_LLAMA_CHAT_Location"),
       HTMLInputElement,
     );
 
+    if (locationCheckbox) {
+      EQ.tsCheck(
+        locationCheckbox.type,
+        "checkbox",
+        `Isn't the element tagged with ".AI_LLAMA_CHAT_Location" an <input> of type "checkbox"?`,
+      );
+    }
+    // #endregion Check the location access checkbox if it exists, but it's optional so it may be null.
     // #endregion Discover sibling elements
-
-    // #region Microphone button (speech-to-text via Whisper on CodBi server)
-    let micButton: HTMLButtonElement | null = null;
+    let micButton: HTMLButtonElement | null = null; // Microphone button (speech-to-text via Whisper on CodBi server).
     let isRecording = false;
     let isTranscribing = false;
     let whisperMediaRecorder: MediaRecorder | null = null;
     let whisperAudioChunks: Blob[] = [];
     let whisperConvertSupported = true;
-    /** Stops the current recording (no-op when no mic is set up). */
-    let stopRecordingFn: (() => void) | null = null;
+    let stopRecordingFn: (() => void) | null = null; // Stops the current recording (no-op when no mic is set up).
+    let whisperUrl: string | null = null; // Resolve the Whisper plugin servlet URL
 
-    // Resolve the Whisper plugin servlet URL
-    let whisperUrl: string | null = null;
     try {
       whisperUrl = `${window.codbi.baseURL}plugin?name=CodBi_AI_Whisper`;
-    } catch (_e) {
-      /* ignore */
-    }
-
+    } catch (_e) {}
     /**
-     * Sets up the Whisper mic button. Called asynchronously after the health-check
-     * confirms the Whisper server is ready. If the health-check fails the mic is
-     * never created and speech input is simply unavailable.
-     */
+     * Sets up the Whisper mic button. Called asynchronously after the health-check confirms the Whisper server is ready.
+     * If the health-check fails the mic is never created and speech input is simply unavailable.
+     *
+     * @param pluginUrl The URL to send audio data to for transcription. */
     const setupWhisperMic = (pluginUrl: string): void => {
-      // Wrap the chat input in a relative container so the mic floats inside it
       const inputWrapper = document.createElement("div");
+
       inputWrapper.className = "LLAMA_Chat_InputWrapper";
+
       DEFINED.tsCheck<HTMLElement>(chatInput.parentElement).insertBefore(inputWrapper, chatInput);
+
       inputWrapper.appendChild(chatInput);
 
       micButton = document.createElement("button");
@@ -216,35 +276,42 @@ export class AI_ONNX_LLAMA_CHAT {
       micButton.className = "LLAMA_Chat_MicButton";
       micButton.title = "Voice input (Whisper)";
       micButton.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm-1-9a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V5zm6 6a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11h-2z"/></svg>`;
-      inputWrapper.appendChild(micButton);
-      const mic = micButton;
 
+      inputWrapper.appendChild(micButton);
+
+      const mic = micButton;
       // Disable mic if the LLAMA model hasn't loaded yet
       if (chatInput.disabled) {
         mic.disabled = true;
       }
 
-      // Language for Whisper (auto-detect when empty)
-      const lang = toLoad.language != null ? String(toLoad.language).trim() : "";
-
-      // ── MIME type detection ──
+      const lang = toLoad.language != null ? String(toLoad.language).trim() : ""; // Language for Whisper (auto-detect when empty)
+      // #region MIME-Type detection.
       const preferredMimeType = (): string => {
         const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+
         for (const type of types) {
           if (MediaRecorder.isTypeSupported(type)) {
             return type;
           }
         }
+
         return "";
       };
-
-      // ── WAV conversion helpers ──
+      // #endregion MIME-Type detection.
+      // #region WAV conversion (fallback for unsupported MIME-Types).
       const writeWavString = (view: DataView, offset: number, str: string): void => {
         for (let i = 0; i < str.length; i++) {
           view.setUint8(offset + i, str.charCodeAt(i));
         }
       };
-
+      /**
+       * Converts an audio Blob to WAV format by decoding and re-encoding the audio data. This is used as a fallback for
+       * browsers that don't support the preferred MIME types for MediaRecorder.
+       *
+       * @param audioBlob The input audio Blob to convert.
+       *
+       * @returns A Promise that resolves to a new Blob in WAV format. */
       const convertToWav = async (audioBlob: Blob): Promise<Blob> => {
         const arrayBuffer = await audioBlob.arrayBuffer();
         const audioContext = new AudioContext();
@@ -252,22 +319,28 @@ export class AI_ONNX_LLAMA_CHAT {
         const numFrames = audioBuffer.length;
         const sampleRate = audioBuffer.sampleRate;
         const mono = new Float32Array(numFrames);
+
         for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
           const channelData = audioBuffer.getChannelData(ch);
+
           for (let i = 0; i < numFrames; i++) {
             mono[i] += channelData[i];
           }
         }
+
         if (audioBuffer.numberOfChannels > 1) {
           const scale = 1 / audioBuffer.numberOfChannels;
+
           for (let i = 0; i < numFrames; i++) {
             mono[i] *= scale;
           }
         }
+
         const bytesPerSample = 2;
         const dataLength = numFrames * bytesPerSample;
         const buffer = new ArrayBuffer(44 + dataLength);
         const view = new DataView(buffer);
+
         writeWavString(view, 0, "RIFF");
         view.setUint32(4, 36 + dataLength, true);
         writeWavString(view, 8, "WAVE");
@@ -281,57 +354,71 @@ export class AI_ONNX_LLAMA_CHAT {
         view.setUint16(34, 16, true);
         writeWavString(view, 36, "data");
         view.setUint32(40, dataLength, true);
+
         let offset = 44;
+
         for (let i = 0; i < numFrames; i++) {
           const sample = Math.max(-1, Math.min(1, mono[i]));
+
           view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+
           offset += 2;
         }
+
         await audioContext.close();
+
         return new Blob([buffer], { type: "audio/wav" });
       };
-
-      // ── Send audio to Whisper for transcription ──
+      // #region WAV conversion (fallback for unsupported MIME-Types).
+      // #region Send audio to Whisper for transcription.
       let interimInterval: number | null = null;
       let interimInFlight = false;
-      /** Text before recording started — interim results replace everything after this. */
-      let preRecordingText = "";
-
-      /** Sends accumulated audio for an interim (mid-recording) transcription.
-       *  The result replaces the text after preRecordingText.
-       *  Only one interim request runs at a time. */
+      let preRecordingText = ""; // Text before recording started — interim results replace everything after this.
+      /**
+       * Sends accumulated audio for an interim (mid-recording) transcription.
+       * The result replaces the text after preRecordingText.
+       * Only one interim request runs at a time.
+       *
+       * @params audioBlob The audio data to send for transcription. */
       const sendInterimTranscription = async (audioBlob: Blob) => {
         if (interimInFlight) {
           return;
         }
+
         interimInFlight = true;
 
         try {
           let blob = audioBlob;
+
           if (!whisperConvertSupported) {
             try {
               blob = await convertToWav(blob);
-            } catch (_e) {
+            } catch (X) {
               interimInFlight = false;
+
               return;
             }
           }
-
+          // #region Convert audio Blob to data URL for transmission.
           const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
+
             reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = () => reject(new Error("Failed to read audio blob"));
+            reader.onerror = () => reject(new CodBiError("[AI / LLAMA / CHAT ] Failed to read audio blob"));
+
             reader.readAsDataURL(blob);
           });
-
+          // #endregion Convert audio Blob to data URL for transmission.
           const formData = new FormData();
+
           formData.append("codbi-base64:audio", dataUrl);
 
           const ajaxHeaders: Record<string, string> = {};
+
           if (lang) {
             ajaxHeaders["X-Language"] = lang;
           }
-
+          // #region Send AJAX request to Whisper plugin for transcription.
           $.ajax({
             url: pluginUrl,
             type: "POST",
@@ -342,47 +429,72 @@ export class AI_ONNX_LLAMA_CHAT {
             headers: ajaxHeaders,
             success: (response: unknown) => {
               if (!isRecording) {
-                return; // Recording ended before response arrived
-              }
+                return;
+              } // Ignore results arriving after recording stopped (e.g. from interim requests triggered right before stopping)
+              // #region Parse response.
               const result = (typeof response === "string" ? JSON.parse(response) : response) as {
                 text?: string;
                 error?: string;
               };
+              // #endregion Parse response.
+              // #region Show result.
               if (result.text) {
-                const separator = preRecordingText && !preRecordingText.endsWith(" ") ? " " : "";
-                chatInput.value = preRecordingText + separator + result.text.trim();
+                chatInput.value =
+                  preRecordingText +
+                  (preRecordingText && !preRecordingText.endsWith(" ") ? " " : "") +
+                  result.text.trim();
               }
+              // #endregion Show result.
             },
             complete: () => {
               interimInFlight = false;
             },
           });
-        } catch (_e) {
+          // #endregion Send AJAX request to Whisper plugin for transcription.
+        } catch (X) {
           interimInFlight = false;
         }
       };
-
+      /**
+       * Sends the given {@link Blob } to the CodBi's Whisper-Model fro transription.
+       *
+       * @param audiBlob The {@link Blob } to send. */
       const sendForTranscription = async (audioBlob: Blob) => {
         isTranscribing = true;
-        mic.classList.add("LLAMA_Chat_MicButton--transcribing");
-        mic.disabled = true;
 
+        mic.classList.add("LLAMA_Chat_MicButton--transcribing");
+
+        mic.disabled = true;
+        /**
+         * Disables the mic button and resets the transcribing state. Used in multiple places to ensure consistent cleanup after
+         * transcription ends, whether successful or due to an error. */
+        const disableMic = () => {
+          isTranscribing = false;
+
+          mic.classList.remove("LLAMA_Chat_MicButton--transcribing");
+
+          mic.disabled = false;
+        };
         try {
           const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
+
             reader.onloadend = () => resolve(reader.result as string);
-            reader.onerror = () => reject(new Error("Failed to read audio blob"));
+            reader.onerror = () => reject(new Error("Failed to read audio blob."));
+
             reader.readAsDataURL(audioBlob);
           });
 
           const formData = new FormData();
+
           formData.append("codbi-base64:audio", dataUrl);
 
           const ajaxHeaders: Record<string, string> = {};
+
           if (lang) {
             ajaxHeaders["X-Language"] = lang;
           }
-
+          // #region Send the [audioBlob].
           $.ajax({
             url: pluginUrl,
             type: "POST",
@@ -392,120 +504,154 @@ export class AI_ONNX_LLAMA_CHAT {
             cache: false,
             headers: ajaxHeaders,
             success: (response: unknown) => {
+              // #region Parse response.
               const result = (typeof response === "string" ? JSON.parse(response) : response) as {
                 text?: string;
                 error?: string;
               };
+              // #endregion Parse response.
+              // #region Log failure.
               if (result.error) {
                 window.codbi.log("ERROR", `Whisper: ${result.error}`, "AI / LLAMA / CHAT");
+
                 return;
               }
+              // #endregion Log failure.
+              // #region Show result.
               if (result.text) {
                 const separator = preRecordingText && !preRecordingText.endsWith(" ") ? " " : "";
+
                 chatInput.value = preRecordingText + separator + result.text.trim();
               }
+              // #endregion Show result.
             },
             error: (_xhr: unknown, _status: unknown, error: unknown) => {
               window.codbi.log("ERROR", `Whisper transcription failed: ${String(error)}`, "AI / LLAMA / CHAT");
             },
             complete: () => {
-              isTranscribing = false;
-              mic.classList.remove("LLAMA_Chat_MicButton--transcribing");
-              mic.disabled = false;
+              disableMic();
             },
           });
-        } catch (e) {
+          // #endregion Send the [audioBlob].
+        } catch (X) {
           window.codbi.log(
             "ERROR",
-            `Whisper transcription failed: ${e instanceof Error ? e.message : String(e)}`,
+            `Whisper transcription failed: ${X instanceof Error ? X.message : String(X)}`,
             "AI / LLAMA / CHAT",
           );
-          isTranscribing = false;
-          mic.classList.remove("LLAMA_Chat_MicButton--transcribing");
-          mic.disabled = false;
+
+          disableMic();
         }
       };
-
-      // ── MediaRecorder start / stop ──
+      // #endregion Send audio to Whisper for transcription
+      /**
+       * Starts recording audio from the user's microphone and sets up handlers to process the recorded data. The accumulated
+       * audio is sent for transcription. */
       const startRecording = async () => {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
           whisperAudioChunks = [];
           whisperMediaRecorder = new MediaRecorder(stream, { mimeType: preferredMimeType() });
-
+          // #region Accumulate data.
           whisperMediaRecorder.ondataavailable = (e: BlobEvent) => {
             if (e.data.size > 0) {
               whisperAudioChunks.push(e.data);
             }
           };
-
+          // #endregion Accumulate data.
+          /**
+           * Stops the recording, releases the microphone, and sends the accumulated audio for transcription. This is called
+           * when the user stops the recording.
+           *
+           * @returns A Promise that resolves when the stop process is complete. */
           whisperMediaRecorder.onstop = async () => {
             for (const track of stream.getTracks()) {
               track.stop();
             }
+
             if (interimInterval) {
               clearInterval(interimInterval);
+
               interimInterval = null;
             }
+
             if (whisperAudioChunks.length === 0) {
               return;
             }
-            let audioBlob = new Blob(whisperAudioChunks, {
-              type: whisperMediaRecorder?.mimeType ?? "audio/webm",
-            });
+
+            let audioBlob = new Blob(whisperAudioChunks, { type: whisperMediaRecorder?.mimeType ?? "audio/webm" });
+
             if (!whisperConvertSupported) {
               try {
                 audioBlob = await convertToWav(audioBlob);
-              } catch (e) {
+              } catch (X) {
                 window.codbi.log(
                   "ERROR",
-                  `WAV conversion failed: ${e instanceof Error ? e.message : String(e)}`,
+                  `WAV conversion failed: ${X instanceof Error ? X.message : String(X)}`,
                   "AI / LLAMA / CHAT",
                 );
+
                 return;
               }
             }
+
             sendForTranscription(audioBlob);
           };
 
           preRecordingText = chatInput.value;
+
           whisperMediaRecorder.start();
+
           isRecording = true;
+
           mic.classList.add("LLAMA_Chat_MicButton--recording");
 
-          // Periodic interim transcription — flush and send accumulated audio every ~2.5s
-          const rec = whisperMediaRecorder;
+          const rec = whisperMediaRecorder; // Periodic interim transcription — flush and send accumulated audio every ~2.5s
+
           interimInterval = window.setInterval(() => {
             if (interimInFlight || rec.state !== "recording") {
               return;
             }
-            rec.requestData(); // Flush buffered data into ondataavailable
+
+            rec.requestData();
+
             if (whisperAudioChunks.length === 0) {
               return;
             }
+
             const blob = new Blob(whisperAudioChunks, { type: rec.mimeType });
+
             sendInterimTranscription(blob);
           }, 2500);
-        } catch (_e) {
+        } catch (X) {
           mic.classList.add("LLAMA_Chat_MicButton--unavailable");
+
           mic.title = "Microphone access denied";
           mic.disabled = true;
         }
       };
-
+      /**
+       * Stops the current recording (if any), resets the mic button state, and releases the microphone. This is called when the
+       * user stops the recording. */
       const stopRecording = () => {
         if (interimInterval) {
           clearInterval(interimInterval);
+
           interimInterval = null;
         }
+
         if (whisperMediaRecorder && whisperMediaRecorder.state !== "inactive") {
           whisperMediaRecorder.stop();
         }
+
         isRecording = false;
+
         mic.classList.remove("LLAMA_Chat_MicButton--recording");
       };
-      stopRecordingFn = stopRecording;
 
+      stopRecordingFn = stopRecording;
+      /** Toggles the recording state. If recording is in progress, it stops the recording; otherwise, it starts a new recording. */
       const toggleRecording = () => {
         if (mic.disabled || isTranscribing) {
           return;
@@ -518,8 +664,7 @@ export class AI_ONNX_LLAMA_CHAT {
       };
 
       mic.addEventListener("click", toggleRecording);
-
-      // Voice-input hotkey (configurable via toLoad.voicehotkey, default Alt+A)
+      // #region Handle hotkeys.
       const hotkeyDef = (typeof toLoad.voicehotkey === "string" && toLoad.voicehotkey.trim()) || "Alt+A";
       const hotkeyParts = hotkeyDef.split("+").map((p: string) => p.trim());
       const hotkeyKey = hotkeyParts[hotkeyParts.length - 1].toUpperCase();
@@ -527,6 +672,7 @@ export class AI_ONNX_LLAMA_CHAT {
       const needCtrl = hotkeyParts.some((p: string) => /^ctrl$/i.test(p));
       const needShift = hotkeyParts.some((p: string) => /^shift$/i.test(p));
       const needMeta = hotkeyParts.some((p: string) => /^meta$/i.test(p));
+
       mic.title = `Voice input — Whisper (${hotkeyDef})`;
 
       document.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -538,18 +684,18 @@ export class AI_ONNX_LLAMA_CHAT {
           e.metaKey === needMeta
         ) {
           e.preventDefault();
-          // Skip if a MEDIA_INPUT_SPEECH or MEDIA_WHISPER field is focused — they have their own handlers
+          // #region Skip if a MEDIA_INPUT_SPEECH or MEDIA_WHISPER.
           if (
             document.activeElement?.closest(".MEDIA_Speech_InputWrapper") ||
             document.activeElement?.closest(".MEDIA_Whisper_InputWrapper")
           ) {
             return;
           }
+          // #endregion Skip if a MEDIA_INPUT_SPEECH or MEDIA_WHISPER.
           toggleRecording();
         }
       });
-
-      // Voice-send hotkey (configurable via toLoad.voicesendhotkey, default Alt+Q)
+      // #region Hotkey-Sending.
       const sendHotkeyDef = (typeof toLoad.voicesendhotkey === "string" && toLoad.voicesendhotkey.trim()) || "Alt+Q";
       const sHParts = sendHotkeyDef.split("+").map((p: string) => p.trim());
       const sHKey = sHParts[sHParts.length - 1].toUpperCase();
@@ -567,20 +713,21 @@ export class AI_ONNX_LLAMA_CHAT {
           e.metaKey === sHMeta
         ) {
           e.preventDefault();
+
           if (isRecording) {
             stopRecording();
           }
+
           sendMessage();
         }
       });
-
-      // Placeholder shows both hotkeys with mic on/off icons
+      // #endregion Hotkey-Sending.
+      // #endregion Handle hotkeys.
       chatInput.placeholder =
         (typeof toLoad.voiceplaceholder === "string" && toLoad.voiceplaceholder.trim()) ||
         `${hotkeyDef} = \uD83C\uDF99\uFE0F on/off | ${sendHotkeyDef} = \uD83C\uDF99\uFE0F off + send`;
     };
-
-    // Async health-check: only create mic button if Whisper server is ready
+    // #region Whisper health-check and mic setup.
     if (whisperUrl) {
       const wUrl = whisperUrl;
       $.ajax({
@@ -595,109 +742,101 @@ export class AI_ONNX_LLAMA_CHAT {
             error?: string;
           };
           if (result.error || result.status !== "ready") {
-            return; // Whisper not ready — no mic button
+            return;
           }
           if (typeof result.convertSupported === "boolean") {
             whisperConvertSupported = result.convertSupported;
           }
+
           setupWhisperMic(wUrl);
         },
-        error: () => {
-          // Whisper not available — no mic button
-        },
+        error: () => {},
       });
     }
-    // #endregion Microphone button
-
+    // #endregion Whisper health-check and mic setup
+    // #region State variables and conversation management
     let isBusy = false;
     let attachedFiles: File[] = [];
-    /** The "thinking" bubble element, replaced when the real response arrives. */
     let thinkingBubble: HTMLDivElement | null = null;
-    /** The most recent user question — used by the reuse button on response bubbles. */
     let lastUserQuestion = "";
-    /** The active stream session ID, used by the stop button to abort inference. */
     let activeStreamId: string | null = null;
-    /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
-    const pageSessionId: string = crypto.randomUUID();
-    /** Multi-turn conversation history. Sent to the backend so the model can remember prior turns. */
-    const conversationHistory: { role: string; content: string }[] = [];
 
+    const pageSessionId: string = crypto.randomUUID();
+    const conversationHistory: { role: string; content: string }[] = [];
     /**
-     * Strips markdown links, bare URLs, and truncates assistant text before
-     * storing it in conversation history. This prevents the 2B model from
-     * parrot-copying content from previous turns into unrelated answers.
-     */
+     * Strips markdown links, bare URLs, and truncates assistant text before storing it in conversation history. This prevents
+     * the small models from parrot-copying content from previous turns into unrelated answers.
+     *
+     * @param text The original message text to clean for history storage.
+     *
+     * @returns The cleaned text with links removed and truncated if necessary. */
     const stripLinksForHistory = (text: string): string => {
-      // [label](url) → label
-      let cleaned = text.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
-      // bare URLs
-      cleaned = cleaned.replace(/https?:\/\/[^\s)]+/g, "");
-      // collapse multiple spaces / trim
-      cleaned = cleaned.replace(/ {2,}/g, " ").trim();
+      let cleaned = text.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1"); // [label](url) → label
+
+      cleaned = cleaned.replace(/https?:\/\/[^\s)]+/g, ""); // Bare URLs.
+      cleaned = cleaned.replace(/ {2,}/g, " ").trim(); // Collapse multiple spaces / trim.
       // Truncate to prevent the model from parroting long previous answers
       if (cleaned.length > 150) {
         cleaned = `${cleaned.substring(0, 147)}...`;
       }
+
       return cleaned;
     };
-
     /**
-     * Maximum number of recent history entries to keep verbatim (the rest are
-     * condensed into a single summary entry so the context window is not exhausted).
-     * Must be even to keep user/assistant pairs intact.
-     */
+     * Maximum number of recent history entries to keep verbatim (the rest are condensed into a single summary entry so the
+     * context window is not exhausted). Must be even to keep user/assistant pairs intact. */
     const MAX_VERBATIM_ENTRIES = 6;
-
-    // #region Helper: compact conversation history
+    // #endregion State variables and conversation management
+    // #region Compact conversation history
     /**
-     * Returns a compacted copy of `conversationHistory`.
+     * Generates a compacted copy of `conversationHistory`.
      * - If the history has at most {@link MAX_VERBATIM_ENTRIES} entries it is returned as-is.
      * - Otherwise the oldest turns are condensed into a single "system" entry
-     *   (each turn truncated to ~120 chars) and the most recent turns are kept verbatim.
-     */
+     *   (each turn truncated to ~120 chars) and the most recent turns are kept verbatim. */
     const compactHistory = (): { role: string; content: string }[] => {
       if (conversationHistory.length <= MAX_VERBATIM_ENTRIES) {
         return conversationHistory;
       }
+
       const cutoff = conversationHistory.length - MAX_VERBATIM_ENTRIES;
       const oldTurns = conversationHistory.slice(0, cutoff);
       const recentTurns = conversationHistory.slice(cutoff);
-
-      // Build a condensed summary of the older turns
+      // #region Build a condensed summary of the older turns
       const lines: string[] = [];
+
       for (let i = 0; i < oldTurns.length; i += 2) {
         const userMsg = oldTurns[i]?.content ?? "";
         const asstMsg = oldTurns[i + 1]?.content ?? "";
         const uShort = userMsg.length > 120 ? `${userMsg.substring(0, 117)}...` : userMsg;
         const aShort = asstMsg.length > 120 ? `${asstMsg.substring(0, 117)}...` : asstMsg;
+
         lines.push(`- User: ${uShort}  Assistant: ${aShort}`);
       }
+      // #endregion Build a condensed summary of the older turns
       const summaryEntry: { role: string; content: string } = {
         role: "system",
         content: `Summary of earlier conversation:\n${lines.join("\n")}`,
       };
+
       return [summaryEntry, ...recentTurns];
     };
-    // #endregion Helper: compact conversation history
-
+    // #endregion Compact conversation history
     // #region Resource status overlay
-    /** Timer ID for auto-hiding the resource overlay after transient messages (e.g. "Resumed"). */
     let overlayHideTimer: ReturnType<typeof setTimeout> | null = null;
-
-    /** Lazily-created overlay badge anchored to the top-right corner of the chat textarea. */
     let resourceOverlay: HTMLDivElement | null = null;
+
     const getOverlay = (): HTMLDivElement => {
       if (resourceOverlay) {
         return resourceOverlay;
       }
+
       const el = document.createElement("div");
-      el.style.cssText =
-        "position:absolute;top:6px;right:6px;" +
-        "display:none;align-items:center;justify-content:center;" +
-        "background:rgba(0,0,0,0.72);color:#fff;font-size:12px;font-weight:600;" +
-        "padding:6px 14px;text-align:center;pointer-events:none;z-index:1000;" +
-        "border-radius:6px;backdrop-filter:blur(2px);transition:opacity 0.3s ease;" +
-        "max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+
+      el.style.cssText = `
+        position: absolute ; top: 6px ; right: 6px ; display: none ; align-items: center ; justify-content: center ;
+        background: rgba( 0, 0, 0, 0.72 ); color: #fff ;font-size: 12px ; font-weight: 600 ; padding: 6px 14px ;
+        text-align: center ; pointer-events: none ; z-index: 1000 ; border-radius: 6px ; backdrop-filter: blur( 2px );
+        transition:opacity 0.3s ease ; max-width: 60% ; white-space: nowrap; overflow: hidden ; text-overflow: ellipsis ;`;
       // Anchor relative to the chat container
       const anchor = chatContainer.parentElement;
       if (anchor) {
@@ -772,6 +911,7 @@ export class AI_ONNX_LLAMA_CHAT {
       const links: string[] = [];
       const placeholder = (idx: number): string => `\x00LINK${idx}\x00`;
 
+      // #region Extract code blocks and escape HTML (steps 0–1)
       // 0. Extract fenced code blocks (```...```) before HTML-escaping
       const codeBlocks: string[] = [];
       const codePlaceholder = (idx: number): string => `\x00CODE${idx}\x00`;
@@ -798,7 +938,9 @@ export class AI_ONNX_LLAMA_CHAT {
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
+      // #endregion Extract code blocks and escape HTML (steps 0–1)
 
+      // #region Convert links to placeholders (steps 2–3)
       // 2. Convert Markdown-style links [label](url) → placeholder
       const withMdPlaceholders = escaped.replace(
         /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi,
@@ -823,7 +965,9 @@ export class AI_ONNX_LLAMA_CHAT {
         links.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
         return placeholder(idx);
       });
+      // #endregion Convert links to placeholders (steps 2–3)
 
+      // #region Convert phone numbers and emails (steps 4–5)
       // 4. Convert phone numbers → tel: link placeholder
       //    Matches patterns like +49 911 1234567, (0911) 123-4567, 0911/1234567,
       //    +49 981 51-0 (switchboard), etc.
@@ -839,8 +983,8 @@ export class AI_ONNX_LLAMA_CHAT {
           if (/^\d{4}\s*[-–—]\s*\d{4}$/.test(match.trim())) {
             return match;
           }
-          // Skip date / datetime stamps like "2026-02-24", "2026-02-24-12-46-27"
-          if (/^\d{4}[-/.]\d{2}[-/.]\d{2}([-/.T]\d{2}([-/:]\d{2}){0,2})?$/.test(match.trim())) {
+          // Skip date / datetime stamps like "2026-02-24", "2026-02-24-12-46-27", "2025-09-18 133849"
+          if (/^\d{4}[-/.]\d{2}[-/.]\d{2}([-/.T\s]\d{2,6}([-/:]\d{2}){0,2})?$/.test(match.trim())) {
             return match;
           }
           // Skip European dates like "30.09.2020", "01/12/2025", "15-03-2024"
@@ -871,7 +1015,9 @@ export class AI_ONNX_LLAMA_CHAT {
           return placeholder(idx);
         },
       );
+      // #endregion Convert phone numbers and emails (steps 4–5)
 
+      // #region Restore placeholders (steps 6–7)
       // 6. Restore placeholders with actual <a> tags, wrapping URL badges
       const restored = withEmailPlaceholders.replace(
         // biome-ignore lint/suspicious/noControlCharactersInRegex: placeholder pattern uses \x00
@@ -889,6 +1035,7 @@ export class AI_ONNX_LLAMA_CHAT {
       // 7. Restore code block placeholders
       // biome-ignore lint/suspicious/noControlCharactersInRegex: placeholder pattern uses \x00
       const withCode = restored.replace(/\x00CODE(\d+)\x00/g, (_m, idx: string) => codeBlocks[Number(idx)]);
+      // #endregion Restore placeholders (steps 6–7)
 
       return withCode;
     };
@@ -1043,36 +1190,36 @@ export class AI_ONNX_LLAMA_CHAT {
       thinkingBubble.classList.add("LLAMA_Chat_Bubble--thinking");
 
       try {
-        AI_ONNX_LLAMA_CHAT.ensurePdfJsWorkerConfigured();
+        AI_LLAMA_CHAT.ensurePdfJsWorkerConfigured();
 
         const formData = new FormData();
         const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
         const maxPixelSize =
-          toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_ONNX_LLAMA_CHAT.DEFAULT_MAX_PIXELS;
+          toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_LLAMA_CHAT.DEFAULT_MAX_PIXELS;
 
         // #region Process attached files (PDF or Image)
         for (const file of attachedFiles) {
           if (file.type === "application/pdf") {
-            const processedImages = await AI_ONNX_LLAMA_CHAT.processPdfFile(file, maxPages);
+            const processedImages = await AI_LLAMA_CHAT.processPdfFile(file, maxPages);
             for (let i = 0; i < processedImages.length; i++) {
               const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
               let imageFile = new File([processedImages[i]], imageName, { type: "image/png" });
               // Downscale PDF page if it exceeds the pixel budget
               if (maxPixelSize > 0) {
-                const downscaled = await AI_ONNX_LLAMA_CHAT.downscaleImageIfNeeded(imageFile, maxPixelSize);
+                const downscaled = await AI_LLAMA_CHAT.downscaleImageIfNeeded(imageFile, maxPixelSize);
                 imageFile =
                   downscaled instanceof File
                     ? downscaled
                     : new File([downscaled], imageName, { type: downscaled.type || "image/png" });
               }
               // Send as base64 text param — formcycle's multipart parser returns 0-byte FileData.
-              const dataUrl = await AI_ONNX_LLAMA_CHAT.blobToDataUrl(imageFile);
+              const dataUrl = await AI_LLAMA_CHAT.blobToDataUrl(imageFile);
               formData.append(`codbi-base64:${imageName}`, dataUrl);
             }
           } else if (maxPixelSize > 0) {
             // Downscale if the image exceeds the pixel budget.
-            const downscaled = await AI_ONNX_LLAMA_CHAT.downscaleImageIfNeeded(file, maxPixelSize);
-            const dataUrl = await AI_ONNX_LLAMA_CHAT.blobToDataUrl(downscaled);
+            const downscaled = await AI_LLAMA_CHAT.downscaleImageIfNeeded(file, maxPixelSize);
+            const dataUrl = await AI_LLAMA_CHAT.blobToDataUrl(downscaled);
             window.codbi.log(
               "INFO",
               `Appending '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
@@ -1081,7 +1228,7 @@ export class AI_ONNX_LLAMA_CHAT {
             formData.append(`codbi-base64:${file.name}`, dataUrl);
           } else {
             // maxPixelSize=0 → skip client-side downscaling; backend enforces the limit.
-            const dataUrl = await AI_ONNX_LLAMA_CHAT.blobToDataUrl(file);
+            const dataUrl = await AI_LLAMA_CHAT.blobToDataUrl(file);
             window.codbi.log(
               "INFO",
               `Appending '${file.name}' as base64 param (no client downscale): ${Math.round(dataUrl.length / 1024)} KB`,
@@ -1100,8 +1247,8 @@ export class AI_ONNX_LLAMA_CHAT {
         // #region Build request headers
         const headers: { [key: string]: string } = {};
 
-        if (toLoad.rotate && toLoad.rotate !== "0" && toLoad.rotate !== 0) {
-          headers["X-Rotate"] = toLoad.rotate.toString();
+        if (toLoad.rotation && toLoad.rotation !== "0" && toLoad.rotation !== 0) {
+          headers["X-Rotate"] = toLoad.rotation.toString();
         }
 
         // HTTP headers are ASCII-only — Base64-encode to preserve Unicode (e.g. ü, ö, ä)
@@ -1389,7 +1536,7 @@ export class AI_ONNX_LLAMA_CHAT {
                       streamBubble.appendChild(details);
                     }
                     if (aiHintText && streamBubble) {
-                      AI_ONNX_LLAMA_CHAT.attachAiHintToBubble(streamBubble, aiHintText);
+                      AI_LLAMA_CHAT.attachAiHintToBubble(streamBubble, aiHintText);
                     }
                     // Tag the bubble with a model type icon — only when the thinking
                     // checkbox is present (i.e. thinking mode is available in the UI)
@@ -1520,7 +1667,7 @@ export class AI_ONNX_LLAMA_CHAT {
             }
             const answerBubble = appendBubble(answerText, "llama");
             if (aiHintText) {
-              AI_ONNX_LLAMA_CHAT.attachAiHintToBubble(answerBubble, aiHintText);
+              AI_LLAMA_CHAT.attachAiHintToBubble(answerBubble, aiHintText);
             }
             finishStreaming();
           },
@@ -1588,7 +1735,7 @@ export class AI_ONNX_LLAMA_CHAT {
 
     // #endregion Wire up event listeners
 
-    // ── Health check: poll the backend until the model is ready ──────────────
+    // #region Health check: poll backend until model is ready
     // Disable input and send button until the model is confirmed ready
     chatInput.disabled = true;
     sendButton.disabled = true;
@@ -1689,6 +1836,7 @@ export class AI_ONNX_LLAMA_CHAT {
         },
       });
     }, 100);
+    // #endregion Health check: poll backend until model is ready
 
     window.codbi.log("INFO", "Llama Chat functionality initialized", "AI / LLAMA / CHAT");
   }
@@ -1698,13 +1846,13 @@ export class AI_ONNX_LLAMA_CHAT {
   private static pdfJsWorkerConfigured = false;
 
   private static ensurePdfJsWorkerConfigured(): void {
-    if (AI_ONNX_LLAMA_CHAT.pdfJsWorkerConfigured) {
+    if (AI_LLAMA_CHAT.pdfJsWorkerConfigured) {
       return;
     }
 
     pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.codbi.baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.worker.min.js`;
 
-    AI_ONNX_LLAMA_CHAT.pdfJsWorkerConfigured = true;
+    AI_LLAMA_CHAT.pdfJsWorkerConfigured = true;
 
     window.codbi.log(
       "INFO",
@@ -2106,7 +2254,7 @@ export class AI_ONNX_LLAMA_CHAT {
         }
         ctx.drawImage(img, 0, 0, newW, newH);
         URL.revokeObjectURL(img.src);
-        resolve(AI_ONNX_LLAMA_CHAT.canvasToFile(canvas, file.name));
+        resolve(AI_LLAMA_CHAT.canvasToFile(canvas, file.name));
       };
       img.onerror = () => {
         URL.revokeObjectURL(img.src);
@@ -2144,7 +2292,7 @@ export class AI_ONNX_LLAMA_CHAT {
           "AI / LLAMA / CHAT",
         );
 
-        const blob = await AI_ONNX_LLAMA_CHAT.renderPdfPageToImage(page);
+        const blob = await AI_LLAMA_CHAT.renderPdfPageToImage(page);
         images.push(blob);
       } else {
         window.codbi.log(
@@ -2153,7 +2301,7 @@ export class AI_ONNX_LLAMA_CHAT {
           "AI / LLAMA / CHAT",
         );
 
-        const extractedImages = await AI_ONNX_LLAMA_CHAT.extractImagesFromPdfPage(page);
+        const extractedImages = await AI_LLAMA_CHAT.extractImagesFromPdfPage(page);
 
         if (extractedImages.length > 0) {
           images.push(...extractedImages);
@@ -2168,7 +2316,7 @@ export class AI_ONNX_LLAMA_CHAT {
             `No extractable images found on page ${pageNum} \u2014 rendering page to image`,
             "AI / LLAMA / CHAT",
           );
-          const blob = await AI_ONNX_LLAMA_CHAT.renderPdfPageToImage(page);
+          const blob = await AI_LLAMA_CHAT.renderPdfPageToImage(page);
           images.push(blob);
         }
       }
@@ -2194,7 +2342,7 @@ export class AI_ONNX_LLAMA_CHAT {
       viewport: viewport,
     }).promise;
 
-    return AI_ONNX_LLAMA_CHAT.canvasToFile(canvas, "page.png");
+    return AI_LLAMA_CHAT.canvasToFile(canvas, "page.png");
   }
 
   private static async extractImagesFromPdfPage(page: PDFPageProxy): Promise<Blob[]> {
@@ -2229,7 +2377,7 @@ export class AI_ONNX_LLAMA_CHAT {
 
                   ctx.putImageData(imageData, 0, 0);
 
-                  images.push(AI_ONNX_LLAMA_CHAT.canvasToFile(canvas, `${imageName}.png`));
+                  images.push(AI_LLAMA_CHAT.canvasToFile(canvas, `${imageName}.png`));
                 }
               }
             }
@@ -2248,4 +2396,6 @@ export class AI_ONNX_LLAMA_CHAT {
   // #endregion PDF.js helpers
 }
 
-window.codbi.registerFunctionality("AI.ONNX.LLAMA.CHAT", AI_ONNX_LLAMA_CHAT.functionality.bind(AI_ONNX_LLAMA_CHAT));
+// #region Register with CodBi
+window.codbi.registerFunctionality("AI.LLAMA.CHAT", AI_LLAMA_CHAT.functionality.bind(AI_LLAMA_CHAT));
+// #endregion Register with CodBi

@@ -62,7 +62,7 @@ export class AI_LLAMA_STANDARD_QA {
    *                            Useful for large PDFs to avoid overwhelming the AI or hitting processing limits.
    *                            If set to 0, all pages are processed. Example: `maxPages: 5` will
    *                            only process the first 5 pages of any PDF. Defaults to **5**.
-   * - **Rotate**:              Optional attribute on the input element to specify image rotation (see above), either "90", "180", or "270".
+   * - **Rotation**:            Optional attribute on the input element to specify image rotation (see above), either "90", "180", or "270".
    *                            In a multi-file upload or with a PDF that contains multiple images, this rotation is applied to all files.
    * - **MaxPixelSize**:        Maximum total pixel budget (width×height). Images exceeding this
    *                            are downscaled client-side while preserving the aspect ratio.
@@ -122,8 +122,8 @@ export class AI_LLAMA_STANDARD_QA {
       "According to the EU AI Act, AI-generated content must be clearly labeled. Changing or disabling the AIHint may lead to non-compliance in certain jurisdictions.",
     )
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages")
-    @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotate")
-    @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotate")
+    @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotation")
+    @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotation")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxPixelSize")
     @OR.PRE([new TYPE("string"), new TYPE("boolean")], "internetaccess, thinking, caseinsensitive")
     @OR.PRE([new TYPE("number"), new TYPE("string")], "maxthinkingtokens")
@@ -223,12 +223,12 @@ export class AI_LLAMA_STANDARD_QA {
       headers["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
       // #endregion Build request headers
       // #region Determine user-set rotation
-      if (toLoad.rotate && toLoad.rotate !== "0" && toLoad.rotate !== 0) {
-        headers["X-Rotate"] = toLoad.rotate.toString();
+      if (toLoad.rotation && toLoad.rotation !== "0" && toLoad.rotation !== 0) {
+        headers["X-Rotate"] = toLoad.rotation.toString();
 
         window.codbi.log(
           "INFO",
-          `Setting user provided image rotation to ${toLoad.rotate}° via X-Rotate header`,
+          `Setting user provided image rotation to ${toLoad.rotation}° via X-Rotate header`,
           "AI / LLAMA / STD / QA",
         );
       }

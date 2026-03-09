@@ -3,6 +3,7 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.ll
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.BraveSearch
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.LLAMA
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.TesseractAction
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
@@ -60,8 +61,11 @@ import javax.imageio.ImageIO
 // tokens to generate per response                      |
 // | `AI_LLAMA_STD_MaxRAMPercent`        | Double  | `101.0`                          | RAM usage
 // threshold (%) — blocks requests when exceeded      |
-// | `AI_LLAMA_STD_MaxCPUPercent`        | Double  | `101.0`                          | CPU usage
-// threshold (%) — blocks requests when exceeded      |
+// | `AI_LLAMA_STD_MaxComputePercent`     | Double  | `101.0`                          | Compute
+// usage threshold (%) — gates on GPU% (CUDA) or CPU% (fallback). Blocks requests when exceeded |
+// | `AI_LLAMA_STD_MaxCPUPercent`         | Double  | —                                | Legacy
+// alias
+// for MaxComputePercent (accepted as fallback)        |
 // | `AI_LLAMA_STD_LlamaRelease`         | String  | `b8175`                          | llama.cpp
 // release tag for server binary download             |
 // | `AI_LLAMA_STD_ServerUrl_<platform>` | URL     | (auto from release tag)          | Per-platform
@@ -200,7 +204,12 @@ class Standard : LLAMA() {
 
   /** Resource monitoring thresholds. */
   private var maxRAMPercent = 101.0
-  private var maxCPUPercent = 101.0
+  /**
+   * Compute utilization threshold (percentage). When the model runs on GPU (CUDA), this gates on
+   * GPU utilization via `nvidia-smi`. When the model runs on CPU, this gates on system-wide CPU
+   * utilization. Default `101.0` effectively disables the gate.
+   */
+  private var maxComputePercent = 101.0
 
   /** Resource monitor daemon thread. */
   private var resourceMonitor: ResourceMonitor? = null
@@ -300,6 +309,15 @@ class Standard : LLAMA() {
     var ramPercent = 0.0
       private set
 
+    /** GPU utilization (0–100). Only populated when the model offloads to a CUDA GPU. */
+    @Volatile
+    var gpuPercent = 0.0
+      private set
+
+    /** `true` when the model is offloaded to a CUDA GPU and `nvidia-smi` is available. */
+    val gpuMonitored: Boolean
+      get() = gpuPollingAvailable
+
     @Volatile var running = true
 
     private val osMxBean: com.sun.management.OperatingSystemMXBean? =
@@ -309,8 +327,42 @@ class Standard : LLAMA() {
           null
         }
 
+    /**
+     * Whether GPU polling is active. True when:
+     * - The detected backend is CUDA
+     * - The model offloads at least one layer to GPU (`gpuLayers != 0`)
+     * - The first `nvidia-smi` probe succeeded
+     */
+    @Volatile private var gpuPollingAvailable = false
+
     init {
       isDaemon = true
+      // Probe once: is GPU monitoring feasible?
+      val usesGpu = detectedGpu == GpuBackend.CUDA && gpuLayers != 0
+      if (usesGpu) {
+        try {
+          val probe =
+              ProcessBuilder(
+                      "nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+                  .redirectErrorStream(true)
+                  .start()
+          val output = probe.inputStream.bufferedReader().readText().trim()
+          probe.waitFor()
+          if (probe.exitValue() == 0 && output.toDoubleOrNull() != null) {
+            gpuPollingAvailable = true
+            log(
+                LogLevel.INFO,
+                "Resource monitor: GPU utilization polling active (CUDA via nvidia-smi)")
+          }
+        } catch (_: Exception) {
+          /* nvidia-smi not usable */
+        }
+      }
+      if (!gpuPollingAvailable && usesGpu) {
+        log(
+            LogLevel.INFO,
+            "Resource monitor: GPU detected but nvidia-smi unavailable — falling back to CPU monitoring")
+      }
     }
 
     override fun run() {
@@ -322,6 +374,9 @@ class Standard : LLAMA() {
             val freeMem = it.freeMemorySize.toDouble()
             ramPercent = if (totalMem > 0) (totalMem - freeMem) / totalMem * 100.0 else 0.0
           }
+          if (gpuPollingAvailable) {
+            gpuPercent = pollGpuUtilization()
+          }
           sleep(1000)
         } catch (_: InterruptedException) {
           break
@@ -331,21 +386,47 @@ class Standard : LLAMA() {
       }
     }
 
-    fun resourcesAvailable(): Boolean = cpuPercent < maxCPUPercent && ramPercent < maxRAMPercent
+    /** Queries `nvidia-smi` for the current GPU utilization percentage. */
+    private fun pollGpuUtilization(): Double {
+      return try {
+        val proc =
+            ProcessBuilder(
+                    "nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+                .redirectErrorStream(true)
+                .start()
+        val output = proc.inputStream.bufferedReader().readText().trim()
+        proc.waitFor()
+        // Multi-GPU: take the first line (primary GPU)
+        output.lines().firstOrNull()?.trim()?.toDoubleOrNull() ?: gpuPercent
+      } catch (_: Exception) {
+        gpuPercent // keep last known value on failure
+      }
+    }
+
+    /** The effective compute utilization: GPU% when offloaded to GPU, CPU% otherwise. */
+    val computePercent: Double
+      get() = if (gpuPollingAvailable) gpuPercent else cpuPercent
+
+    /** The label for the compute metric ("GPU" or "CPU"). */
+    val computeLabel: String
+      get() = if (gpuPollingAvailable) "GPU" else "CPU"
+
+    fun resourcesAvailable(): Boolean =
+        computePercent < maxComputePercent && ramPercent < maxRAMPercent
 
     fun exceedReason(): String? {
       val parts = mutableListOf<String>()
-      if (cpuPercent >= maxCPUPercent)
-          parts.add("CPU %.1f%% >= %.0f%%".format(cpuPercent, maxCPUPercent))
+      if (computePercent >= maxComputePercent)
+          parts.add("$computeLabel %.1f%% >= %.0f%%".format(computePercent, maxComputePercent))
       if (ramPercent >= maxRAMPercent)
           parts.add("RAM %.1f%% >= %.0f%%".format(ramPercent, maxRAMPercent))
       return if (parts.isEmpty()) null else parts.joinToString(", ")
     }
 
     fun estimateWaitSeconds(): Int {
-      val cpuOver = (cpuPercent - maxCPUPercent).coerceAtLeast(0.0)
+      val computeOver = (computePercent - maxComputePercent).coerceAtLeast(0.0)
       val ramOver = (ramPercent - maxRAMPercent).coerceAtLeast(0.0)
-      return ((cpuOver + ramOver) / 5.0).toInt().coerceIn(5, 120)
+      return ((computeOver + ramOver) / 5.0).toInt().coerceIn(5, 120)
     }
 
     fun shutdown() {
@@ -463,11 +544,12 @@ class Standard : LLAMA() {
         ?.trim()
         ?.toDoubleOrNull()
         ?.let { if (it in 1.0..110.0) maxRAMPercent = it }
-    configData.properties
-        .getProperty("${PROP_PREFIX}_MaxCPUPercent")
-        ?.trim()
-        ?.toDoubleOrNull()
-        ?.let { if (it in 1.0..110.0) maxCPUPercent = it }
+    // MaxComputePercent: gates on GPU% (when CUDA is active) or CPU% (when CPU-only).
+    // Legacy property name MaxCPUPercent is accepted as fallback for backward compatibility.
+    val computePropValue =
+        configData.properties.getProperty("${PROP_PREFIX}_MaxComputePercent")
+            ?: configData.properties.getProperty("${PROP_PREFIX}_MaxCPUPercent")
+    computePropValue?.trim()?.toDoubleOrNull()?.let { if (it in 1.0..110.0) maxComputePercent = it }
 
     // Override llama.cpp release tag if configured
     configData.properties
@@ -1576,23 +1658,37 @@ class Standard : LLAMA() {
 
     return entries.mapNotNull { (inputName, imageBytes) ->
       try {
-        // Apply manual rotation if requested
-        val rotatedBytes =
-            if (manualRotation != null && manualRotation != 0) {
-              val buf = ImageIO.read(ByteArrayInputStream(imageBytes))
-              if (buf != null) {
-                val rotated =
-                    when (manualRotation) {
-                      90,
-                      180,
-                      270 -> rotateImage(buf, manualRotation)
-                      else -> buf
-                    }
+        // Apply rotation: manual header first, then Tesseract OSD auto-detection
+        val rotatedBytes = run {
+          val buf = ImageIO.read(ByteArrayInputStream(imageBytes)) ?: return@run imageBytes
+
+          val degrees =
+              if (manualRotation != null && manualRotation != 0) {
+                manualRotation
+              } else if (TesseractAction.isOsdAvailable) {
+                val detected = TesseractAction.detectOrientation(buf)
+                if (detected != 0) {
+                  log(
+                      LogLevel.INFO,
+                      "Tesseract OSD auto-detected rotation for '$inputName': ${detected}°")
+                }
+                detected
+              } else 0
+
+          if (degrees != 0) {
+            when (degrees) {
+              90,
+              180,
+              270 -> {
+                val rotated = rotateImage(buf, degrees)
                 val baos = ByteArrayOutputStream()
                 ImageIO.write(rotated, "PNG", baos)
                 baos.toByteArray()
-              } else imageBytes
-            } else imageBytes
+              }
+              else -> imageBytes
+            }
+          } else imageBytes
+        }
 
         // Server-side downscale gate
         val finalBytes = downscaleIfNeeded(rotatedBytes)

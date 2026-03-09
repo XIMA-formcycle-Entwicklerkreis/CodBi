@@ -15,6 +15,7 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.io.RandomAccessFile
+import java.lang.management.ManagementFactory
 import java.net.HttpURLConnection
 import java.net.ServerSocket
 import java.net.URI
@@ -70,6 +71,12 @@ import java.util.zip.ZipInputStream
 // disable GPU and force CPU-only              |
 // | `AI_Whisper_Threads`         | Int    | physical cores                   | CPU threads for
 // whisper-server                           |
+// | `AI_Whisper_MaxRAMPercent`    | Double | `101.0`                          | RAM usage
+// threshold (%) — blocks requests when exceeded |
+// | `AI_Whisper_MaxComputePercent`| Double | `101.0`                          | Compute usage
+// threshold (%) — gates on GPU% (CUDA) or CPU% (fallback). Blocks requests when exceeded |
+// | `AI_Whisper_MaxCPUPercent`    | Double | —                                | Legacy alias
+// for MaxComputePercent (accepted as fallback)  |
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class Whisper : AI() {
@@ -111,6 +118,17 @@ class Whisper : AI() {
   private var whisperRelease = DEFAULT_WHISPER_RELEASE
   private var noGpu = false
   private var threadCount: Int? = null
+
+  // ── Resource monitoring thresholds ───────────────────────────────────
+  private var maxRAMPercent = 101.0
+  /**
+   * Compute utilization threshold (percentage). When Whisper runs on GPU (CUDA), this gates on GPU
+   * utilization via `nvidia-smi`. When Whisper runs on CPU, this gates on system-wide CPU
+   * utilization. Default `101.0` effectively disables the gate.
+   */
+  private var maxComputePercent = 101.0
+  /** Resource monitor daemon thread. */
+  private var resourceMonitor: ResourceMonitor? = null
 
   // ── State ────────────────────────────────────────────────────────────
 
@@ -195,6 +213,17 @@ class Whisper : AI() {
     configData.properties.getProperty("${PROP_PREFIX}_Threads")?.trim()?.toIntOrNull()?.let {
       if (it > 0) threadCount = it
     }
+    configData.properties
+        .getProperty("${PROP_PREFIX}_MaxRAMPercent")
+        ?.trim()
+        ?.toDoubleOrNull()
+        ?.let { if (it in 1.0..110.0) maxRAMPercent = it }
+    // MaxComputePercent: gates on GPU% (when CUDA is active) or CPU% (when CPU-only).
+    // Legacy property name MaxCPUPercent is accepted as fallback for backward compatibility.
+    val computePropValue =
+        configData.properties.getProperty("${PROP_PREFIX}_MaxComputePercent")
+            ?: configData.properties.getProperty("${PROP_PREFIX}_MaxCPUPercent")
+    computePropValue?.trim()?.toDoubleOrNull()?.let { if (it in 1.0..110.0) maxComputePercent = it }
 
     log(LogLevel.INFO, "Whisper infrastructure initialized")
     log(LogLevel.INFO, "  Dir:     ${whisperDir!!.absolutePath}")
@@ -235,6 +264,8 @@ class Whisper : AI() {
                   return@Thread
                 }
 
+                resourceMonitor?.shutdown()
+                resourceMonitor = ResourceMonitor().also { it.start() }
                 serverReady = true
                 log(LogLevel.INFO, "Whisper initialized and ready for requests on port $serverPort")
               } catch (e: Exception) {
@@ -248,6 +279,8 @@ class Whisper : AI() {
   }
 
   override fun shutdown(shutdownData: IPluginShutdownData?) {
+    resourceMonitor?.shutdown()
+    resourceMonitor = null
     stopServer()
     serverReady = false
     super.shutdown(shutdownData)
@@ -275,6 +308,17 @@ class Whisper : AI() {
       val displayModel = modelUrl.substringAfterLast("/").removeSuffix(".bin")
       return jsonResponse(
           "{\"status\":\"ready\",\"model\":\"${jsonEscape(displayModel)}\",\"convertSupported\":$ffmpegAvailable}")
+    }
+
+    // ── Resource gate ──────────────────────────────────────────────────
+    resourceMonitor?.let { monitor ->
+      val reason = monitor.exceedReason()
+      if (reason != null) {
+        val waitSec = monitor.estimateWaitSeconds()
+        log(LogLevel.WARNING, "Resource gate BLOCKED: $reason — estimated wait ${waitSec}s")
+        return jsonResponse(
+            "{\"error\":\"Server resources exceeded ($reason). Please retry in ~${waitSec} seconds.\",\"retryAfter\":$waitSec}")
+      }
     }
 
     // ── Readiness gate ──────────────────────────────────────────────────
@@ -1113,5 +1157,127 @@ class Whisper : AI() {
   override fun log(importance: LogLevel, toLog: String, adjenct: String, exception: Throwable?) {
     super.idLogMessages = "Whisper"
     super.log(importance, toLog, adjenct, exception)
+  }
+
+  // ── ResourceMonitor inner class ───────────────────────────────────────────
+
+  private inner class ResourceMonitor : Thread("codbi-whisper-resource-monitor") {
+    @Volatile
+    var cpuPercent = 0.0
+      private set
+
+    @Volatile
+    var ramPercent = 0.0
+      private set
+
+    /** GPU utilization (0–100). Only populated when Whisper offloads to a CUDA GPU. */
+    @Volatile
+    var gpuPercent = 0.0
+      private set
+
+    @Volatile var running = true
+
+    private val osMxBean: com.sun.management.OperatingSystemMXBean? =
+        try {
+          ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
+        } catch (_: Exception) {
+          null
+        }
+
+    @Volatile private var gpuPollingAvailable = false
+
+    init {
+      isDaemon = true
+      val usesGpu = detectedGpu == GpuBackend.CUDA && !noGpu
+      if (usesGpu) {
+        try {
+          val probe =
+              ProcessBuilder(
+                      "nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+                  .redirectErrorStream(true)
+                  .start()
+          val output = probe.inputStream.bufferedReader().readText().trim()
+          probe.waitFor()
+          if (probe.exitValue() == 0 && output.toDoubleOrNull() != null) {
+            gpuPollingAvailable = true
+            log(
+                LogLevel.INFO,
+                "Resource monitor: GPU utilization polling active (CUDA via nvidia-smi)")
+          }
+        } catch (_: Exception) {
+          /* nvidia-smi not usable */
+        }
+      }
+      if (!gpuPollingAvailable && usesGpu) {
+        log(
+            LogLevel.INFO,
+            "Resource monitor: GPU detected but nvidia-smi unavailable — falling back to CPU monitoring")
+      }
+    }
+
+    override fun run() {
+      while (running) {
+        try {
+          osMxBean?.let {
+            cpuPercent = it.cpuLoad * 100.0
+            val totalMem = it.totalMemorySize.toDouble()
+            val freeMem = it.freeMemorySize.toDouble()
+            ramPercent = if (totalMem > 0) (totalMem - freeMem) / totalMem * 100.0 else 0.0
+          }
+          if (gpuPollingAvailable) {
+            gpuPercent = pollGpuUtilization()
+          }
+          sleep(1000)
+        } catch (_: InterruptedException) {
+          break
+        } catch (_: Exception) {
+          /* ignore */
+        }
+      }
+    }
+
+    private fun pollGpuUtilization(): Double {
+      return try {
+        val proc =
+            ProcessBuilder(
+                    "nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+                .redirectErrorStream(true)
+                .start()
+        val output = proc.inputStream.bufferedReader().readText().trim()
+        proc.waitFor()
+        output.lines().firstOrNull()?.trim()?.toDoubleOrNull() ?: gpuPercent
+      } catch (_: Exception) {
+        gpuPercent
+      }
+    }
+
+    val computePercent: Double
+      get() = if (gpuPollingAvailable) gpuPercent else cpuPercent
+
+    val computeLabel: String
+      get() = if (gpuPollingAvailable) "GPU" else "CPU"
+
+    fun resourcesAvailable(): Boolean =
+        computePercent < maxComputePercent && ramPercent < maxRAMPercent
+
+    fun exceedReason(): String? {
+      val parts = mutableListOf<String>()
+      if (computePercent >= maxComputePercent)
+          parts.add("$computeLabel %.1f%% >= %.0f%%".format(computePercent, maxComputePercent))
+      if (ramPercent >= maxRAMPercent)
+          parts.add("RAM %.1f%% >= %.0f%%".format(ramPercent, maxRAMPercent))
+      return if (parts.isEmpty()) null else parts.joinToString(", ")
+    }
+
+    fun estimateWaitSeconds(): Int {
+      val computeOver = (computePercent - maxComputePercent).coerceAtLeast(0.0)
+      val ramOver = (ramPercent - maxRAMPercent).coerceAtLeast(0.0)
+      return ((computeOver + ramOver) / 5.0).toInt().coerceIn(5, 120)
+    }
+
+    fun shutdown() {
+      running = false
+      interrupt()
+    }
   }
 }

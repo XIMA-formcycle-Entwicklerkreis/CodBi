@@ -2,7 +2,7 @@
   "Description": "/classes/Functionalities_ai.llama.standard.qa.AI_LLAMA_STANDARD_QA.html#functionality",
   "Parameter": {
     "MaxPages": "",
-    "Rotate": "",
+    "Rotation": "",
     "MaxPixelSize": "",
     "AIHint": "",
     "InternetAccess": "",

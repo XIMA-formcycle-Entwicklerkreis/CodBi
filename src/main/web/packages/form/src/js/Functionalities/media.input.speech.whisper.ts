@@ -397,7 +397,9 @@ export class Media_Input_Speech_Whisper {
 
     // #region Toggle recording
     const toggleRecording = () => {
-      if (micButton.disabled || isTranscribing) return;
+      if (micButton.disabled || isTranscribing) {
+        return;
+      }
       if (isRecording) {
         stopRecording();
       } else {
@@ -487,7 +489,9 @@ export class Media_Input_Speech_Whisper {
   private static preferredMimeType(): string {
     const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
     for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) return type;
+      if (MediaRecorder.isTypeSupported(type)) {
+        return type;
+      }
     }
     return ""; // Let the browser pick its default
   }

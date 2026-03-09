@@ -31,6 +31,7 @@ import java.awt.image.AffineTransformOp
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.File
+import java.lang.management.ManagementFactory
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.ByteBuffer
@@ -64,6 +65,10 @@ import net.sourceforge.tess4j.TessAPI1
  *   Tesseract shall be able to recognize (defaults to **deu**). Multiple languages may be separated
  *   by a **+** (e.g. deu + eng). -- **AI_Tesseract_PoolSize ** Number of Tesseract-Instance that're
  *   concurrently available (see [sizePool]).
+ * - **AI_Tesseract_MaxCPUPercent** CPU usage threshold (%) — blocks OCR requests when exceeded
+ *   (default: `101.0`, effectively disabled).
+ * - **AI_Tesseract_MaxRAMPercent** RAM usage threshold (%) — blocks OCR requests when exceeded
+ *   (default: `101.0`, effectively disabled).
  *
  * ## URLs needed for proper initialization:
  * - **[https://repo1.maven.org/maven2](https://repo1.maven.org/maven2)**
@@ -95,6 +100,33 @@ import net.sourceforge.tess4j.TessAPI1
  *   so no deletion necessary.
  */
 class TesseractAction : AI() {
+  companion object {
+    /**
+     * The active [TesseractAction] instance — set when Tesseract is [ready], cleared on shutdown.
+     */
+    @Volatile @JvmStatic private var instance: TesseractAction? = null
+
+    /** Whether Tesseract OSD (Orientation and Script Detection) is currently available. */
+    @JvmStatic
+    val isOsdAvailable: Boolean
+      get() = instance?.ready == true && instance?.tessDataDir != null
+
+    /**
+     * Detects the orientation of the given image using Tesseract's OSD.
+     *
+     * @param image The image to analyze.
+     * @param dpi The image resolution in DPI (dots per inch).
+     * @return The correction angle (0, 90, 180, or 270) to apply, or 0 if detection is unavailable
+     *   or fails.
+     */
+    @JvmStatic
+    fun detectOrientation(image: BufferedImage, dpi: Int = 300): Int {
+      val inst = instance ?: return 0
+      if (!inst.ready) return 0
+      return inst.detectBestOrientation(image, dpi)
+    }
+  }
+
   /**
    * States whether this [TesseractAction] is currently active or not (**Active_AI** contains
    * **OCR** or not).
@@ -120,6 +152,12 @@ class TesseractAction : AI() {
   private var tessDataDir: File? = null
   /** Tracks whether the Tesseract pool has been initialized. */
   private var isPoolInitialized = false
+
+  // ── Resource monitoring thresholds ───────────────────────────────────
+  private var maxRAMPercent = 101.0
+  private var maxCPUPercent = 101.0
+  /** Resource monitor daemon thread. */
+  private var resourceMonitor: ResourceMonitor? = null
 
   /**
    * Parses the X-RegexFlags header and returns a set of RegexOption flags.
@@ -920,6 +958,7 @@ class TesseractAction : AI() {
 
       active = false
       ready = false
+      instance = null
 
       return false
     }
@@ -982,6 +1021,13 @@ class TesseractAction : AI() {
         val targetSize = if (poolSizeProp != null && poolSizeProp > 0) poolSizeProp else 2
         val langArg = if (languages.isNullOrBlank()) "de" else languages.replace(" ", "")
 
+        properties.getProperty("AI_Tesseract_MaxRAMPercent")?.trim()?.toDoubleOrNull()?.let {
+          if (it in 1.0..110.0) maxRAMPercent = it
+        }
+        properties.getProperty("AI_Tesseract_MaxCPUPercent")?.trim()?.toDoubleOrNull()?.let {
+          if (it in 1.0..110.0) maxCPUPercent = it
+        }
+
         if (!isPoolInitialized) {
           sizePool = targetSize
 
@@ -1008,9 +1054,13 @@ class TesseractAction : AI() {
           }
         }
         // endregion Initialize / Manage pool
+        resourceMonitor?.shutdown()
+        resourceMonitor = ResourceMonitor().also { it.start() }
         ready = true
+        instance = this
       } catch (X: Throwable) {
         ready = false
+        instance = null
 
         log(LogLevel.ERROR, "Initialization Failure: ${ X.message }", "", X)
 
@@ -1106,8 +1156,8 @@ class TesseractAction : AI() {
   ): IPluginInitializeValidationResult? {
     if (!commonInit(configData.properties, pluginRoot)) return null
 
-    if (!Regex("""^[a-z]{3}(\s*\+\s*[a-z]{3})*$""")
-        .matches(configData.properties.getProperty("AI_Tesseract_Languages")))
+    val languages = configData.properties.getProperty("AI_Tesseract_Languages")
+    if (languages != null && !Regex("""^[a-z]{3}(\s*\+\s*[a-z]{3})*$""").matches(languages))
         throw IllegalArgumentException(
             "[[ CodBi / AI / Tesseract ] Config property AI_Tesseract_Languages, if set, has to match to following regular expression: ^[a-z]{3}(\\s*\\+\\s*[a-z]{3})*\$.")
 
@@ -1150,6 +1200,18 @@ class TesseractAction : AI() {
             ServletResponse(
                 EResponseType.JSON,
                 "{\"error\":\"Tesseract is not active. In order to activate it the keyword OCR has to be placed into the CodBi-Plugin-Property Active_AI.\"}"))
+    // ── Resource gate ──────────────────────────────────────────────────
+    resourceMonitor?.let { monitor ->
+      val reason = monitor.exceedReason()
+      if (reason != null) {
+        val waitSec = monitor.estimateWaitSeconds()
+        log(LogLevel.WARNING, "Resource gate BLOCKED: $reason — estimated wait ${waitSec}s")
+        return PluginServletActionRetVal(
+            ServletResponse(
+                EResponseType.JSON,
+                "{\"error\":\"Server resources exceeded ($reason). Please retry in ~${waitSec} seconds.\",\"retryAfter\":$waitSec}"))
+      }
+    }
     // region Get mode from X-Mode header (case-insensitive)
     val modeHeader =
         params.headerMap.entries.find { it.key.equals("X-Mode", ignoreCase = true) }?.value?.trim()
@@ -2390,9 +2452,13 @@ class TesseractAction : AI() {
   override fun shutdown(shutdownData: IPluginShutdownData?) {
     super.shutdown(shutdownData)
 
+    resourceMonitor?.shutdown()
+    resourceMonitor = null
+
     emptyPool()
 
     ready = false
+    instance = null
   }
 
   /**
@@ -2405,5 +2471,70 @@ class TesseractAction : AI() {
     super.idLogMessages = "Tesseract"
 
     super.log(importance, toLog, adjenct, exception)
+  }
+
+  // ── ResourceMonitor inner class ───────────────────────────────────────────
+
+  private inner class ResourceMonitor : Thread("codbi-tesseract-resource-monitor") {
+    @Volatile
+    var cpuPercent = 0.0
+      private set
+
+    @Volatile
+    var ramPercent = 0.0
+      private set
+
+    @Volatile var running = true
+
+    private val osMxBean: com.sun.management.OperatingSystemMXBean? =
+        try {
+          ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
+        } catch (_: Exception) {
+          null
+        }
+
+    init {
+      isDaemon = true
+    }
+
+    override fun run() {
+      while (running) {
+        try {
+          osMxBean?.let {
+            cpuPercent = it.cpuLoad * 100.0
+            val totalMem = it.totalMemorySize.toDouble()
+            val freeMem = it.freeMemorySize.toDouble()
+            ramPercent = if (totalMem > 0) (totalMem - freeMem) / totalMem * 100.0 else 0.0
+          }
+          sleep(1000)
+        } catch (_: InterruptedException) {
+          break
+        } catch (_: Exception) {
+          /* ignore */
+        }
+      }
+    }
+
+    fun resourcesAvailable(): Boolean = cpuPercent < maxCPUPercent && ramPercent < maxRAMPercent
+
+    fun exceedReason(): String? {
+      val parts = mutableListOf<String>()
+      if (cpuPercent >= maxCPUPercent)
+          parts.add("CPU %.1f%% >= %.0f%%".format(cpuPercent, maxCPUPercent))
+      if (ramPercent >= maxRAMPercent)
+          parts.add("RAM %.1f%% >= %.0f%%".format(ramPercent, maxRAMPercent))
+      return if (parts.isEmpty()) null else parts.joinToString(", ")
+    }
+
+    fun estimateWaitSeconds(): Int {
+      val cpuOver = (cpuPercent - maxCPUPercent).coerceAtLeast(0.0)
+      val ramOver = (ramPercent - maxRAMPercent).coerceAtLeast(0.0)
+      return ((cpuOver + ramOver) / 5.0).toInt().coerceIn(5, 120)
+    }
+
+    fun shutdown() {
+      running = false
+      interrupt()
+    }
   }
 }

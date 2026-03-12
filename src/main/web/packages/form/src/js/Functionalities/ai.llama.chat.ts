@@ -92,6 +92,16 @@ export class AI_LLAMA_CHAT {
    *                          Same modifier format as `voicehotkey`.
    * - **language**:           Language code for Whisper speech-to-text (e.g. `"de"`, `"en"`).
    *                          Empty or unset means auto-detect.
+   * - **waitingtext**:        Text shown while waiting for the AI server to become available
+   *                          (**default**: `"Waiting for AI server\u2026"`).
+   * - **lowconfidencetext**:  Warning text shown when the AI response has low confidence
+   *                          (**default**: `"Low Confidence"`).
+   * - **rethinkbuttontext**:  Button label offering to re-answer with the thinking model
+   *                          (**default**: `"Rethink"`).
+   * - **uncertaintext**:      Tooltip text shown when hovering over uncertain (low-confidence) tokens
+   *                          (**default**: `"Low confidence"`).
+   * - **showuncertaintokens**: Whether to visually highlight uncertain tokens in AI responses.
+   *                          Set to `"false"` to disable highlighting (**default**: `"true"`).
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -99,7 +109,7 @@ export class AI_LLAMA_CHAT {
   public static functionality(
     @TYPE.PRE(
       "string",
-      "llamabubble, userbubble, welcometext, voicehotkey, voiceplaceholder, voicesendhotkey, language",
+      "llamabubble, userbubble, welcometext, waitingtext, lowconfidencetext, rethinkbuttontext, uncertaintext, showuncertaintokens, voicehotkey, voiceplaceholder, voicesendhotkey, language",
     )
     @TYPE.PRE("string | number", "maxpages, rotation, maxpixelsize")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages, maxpixelsize")
@@ -763,6 +773,8 @@ export class AI_LLAMA_CHAT {
 
     const pageSessionId: string = crypto.randomUUID();
     const conversationHistory: { role: string; content: string }[] = [];
+    /** Tracks assistant entries whose mean logprob fell below {@link LOW_CONFIDENCE_THRESHOLD}. */
+    const lowConfidenceEntries = new Set<object>();
     /**
      * Strips markdown links, bare URLs, and truncates assistant text before storing it in conversation history. This prevents
      * the small models from parrot-copying content from previous turns into unrelated answers.
@@ -794,13 +806,15 @@ export class AI_LLAMA_CHAT {
      * - Otherwise the oldest turns are condensed into a single "system" entry
      *   (each turn truncated to ~120 chars) and the most recent turns are kept verbatim. */
     const compactHistory = (): { role: string; content: string }[] => {
-      if (conversationHistory.length <= MAX_VERBATIM_ENTRIES) {
-        return conversationHistory;
+      const effective = conversationHistory.filter((e) => !lowConfidenceEntries.has(e));
+
+      if (effective.length <= MAX_VERBATIM_ENTRIES) {
+        return effective;
       }
 
-      const cutoff = conversationHistory.length - MAX_VERBATIM_ENTRIES;
-      const oldTurns = conversationHistory.slice(0, cutoff);
-      const recentTurns = conversationHistory.slice(cutoff);
+      const cutoff = effective.length - MAX_VERBATIM_ENTRIES;
+      const oldTurns = effective.slice(0, cutoff);
+      const recentTurns = effective.slice(cutoff);
       // #region Build a condensed summary of the older turns
       const lines: string[] = [];
 
@@ -836,62 +850,79 @@ export class AI_LLAMA_CHAT {
         position: absolute ; top: 6px ; right: 6px ; display: none ; align-items: center ; justify-content: center ;
         background: rgba( 0, 0, 0, 0.72 ); color: #fff ;font-size: 12px ; font-weight: 600 ; padding: 6px 14px ;
         text-align: center ; pointer-events: none ; z-index: 1000 ; border-radius: 6px ; backdrop-filter: blur( 2px );
-        transition:opacity 0.3s ease ; max-width: 60% ; white-space: nowrap; overflow: hidden ; text-overflow: ellipsis ;`;
+        transition: opacity 0.3s ease ; max-width: 60% ; white-space: nowrap; overflow: hidden ; text-overflow: ellipsis ;`;
       // Anchor relative to the chat container
       const anchor = chatContainer.parentElement;
+
       if (anchor) {
         const cs = window.getComputedStyle(anchor);
+
         if (cs.position === "static") {
           (anchor as HTMLElement).style.position = "relative";
         }
+
         anchor.appendChild(el);
       }
+
       resourceOverlay = el;
+
       return el;
     };
-
+    /**
+     * Shows a message in the resource status overlay. If another message is already showing, it is replaced and the hide timer
+     * is reset.
+     *
+     * @param message The message to display in the overlay. */
     const showResourceOverlay = (message: string): void => {
       if (overlayHideTimer) {
         clearTimeout(overlayHideTimer);
+
         overlayHideTimer = null;
       }
+
       const overlay = getOverlay();
+
       overlay.textContent = message;
       overlay.style.display = "flex";
       overlay.style.opacity = "1";
     };
-
+    /** Hides the resource status overlay. If a hide timer is active, it is cleared. */
     const hideResourceOverlay = (): void => {
       if (!resourceOverlay) {
         return;
       }
+
       resourceOverlay.style.opacity = "0";
+      /**
+       * Delay hiding the overlay until after the fade-out transition completes, to avoid a jarring abrupt disappearance. If another
+       * message is shown before the timer fires, the hide is canceled and the new message is shown immediately. */
       overlayHideTimer = setTimeout(() => {
         if (resourceOverlay) {
           resourceOverlay.style.display = "none";
         }
+
         overlayHideTimer = null;
       }, 400);
     };
-
     /**
      * Handles `resourceStatus` from the poll response.
      * "Resumed" and timeout messages auto-hide after 2.5 seconds;
      * pause messages stay visible until superseded.
-     */
+     *
+     * @param status The resource status message to show, or undefined to ignore. */
     const handleResourceStatus = (status: string | undefined): void => {
       if (!status) {
         return;
       }
+
       showResourceOverlay(status);
-      // Transient statuses auto-hide after a short delay
+
       if (status.includes("\u25B6") || status.includes("\u26A0")) {
         overlayHideTimer = setTimeout(hideResourceOverlay, 2500);
       }
     };
     // #endregion Resource status overlay
-
-    // #region Helper: linkify URLs in plain text
+    // #region Turn URLs, Mail-Addresses and Phone-Numbers in plain text into linked badges.
     /**
      * HTML-escapes the given plain text, then converts:
      *   1. Markdown links `[label](url)` → clickable `<a>` with the label text
@@ -899,79 +930,77 @@ export class AI_LLAMA_CHAT {
      *   3. Phone numbers → clickable `tel:` link in a badge
      *   4. Email addresses → clickable `mailto:` link in a badge
      *
-     * Uses a placeholder strategy so that URLs inside already-created `<a>` tags
-     * are never matched again by the bare-URL pass.
-     *
+     * Uses a placeholder strategy so that URLs inside already-created `<a>` tags are never matched again by the bare-URL pass.
      * All links open in a new tab with `rel="noopener noreferrer"`.
      *
      * @param text  Raw plain text (may contain URLs or Markdown links).
-     * @returns     Safe HTML string with clickable links.
-     */
+     *
+     * @returns     Safe HTML string with clickable links. */
     const linkifyUrls = (text: string): string => {
       const links: string[] = [];
       const placeholder = (idx: number): string => `\x00LINK${idx}\x00`;
-
-      // #region Extract code blocks and escape HTML (steps 0–1)
-      // 0. Extract fenced code blocks (```...```) before HTML-escaping
+      // #region Extract code blocks and escape HTML.
+      // #region Extract fenced code blocks (```...```) before HTML-Escaping.
       const codeBlocks: string[] = [];
       const codePlaceholder = (idx: number): string => `\x00CODE${idx}\x00`;
       const withCodeExtracted = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang: string, code: string) => {
         const idx = codeBlocks.length;
+
         codeBlocks.push(
           `<div class="LLAMA_Chat_CodeBlock"><div class="LLAMA_Chat_CodeHeader"><span class="LLAMA_Chat_CodeLang">${lang || "code"}</span><button type="button" class="LLAMA_Chat_CodeCopyBtn" title="Copy code"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg></button></div><pre class="LLAMA_Chat_CodePre"><code>${code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code></pre></div>`,
         );
+
         return codePlaceholder(idx);
       });
-
-      // 0b. Extract inline code (`...`) before HTML-escaping
+      // #endregion Extract fenced code blocks (```...```) before HTML-Escaping.
+      // #region Extract inline code (`...`) before HTML-Escaping.
       const withInlineCodeExtracted = withCodeExtracted.replace(/`([^`\n]+)`/g, (_m, code: string) => {
         const idx = codeBlocks.length;
+
         codeBlocks.push(
           `<code class="LLAMA_Chat_InlineCode">${code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code>`,
         );
+
         return codePlaceholder(idx);
       });
-
-      // 1. HTML-escape to prevent XSS
+      // #endregion Extract inline code (`...`) before HTML-Escaping.
+      // #region HTML-Escape to prevent XSS.
       const escaped = withInlineCodeExtracted
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;");
-      // #endregion Extract code blocks and escape HTML (steps 0–1)
-
-      // #region Convert links to placeholders (steps 2–3)
-      // 2. Convert Markdown-style links [label](url) → placeholder
+      // #endregion HTML-Escape to prevent XSS.
+      // #endregion Extract code blocks and escape HTML.
+      // #region Convert links to placeholders.
       const withMdPlaceholders = escaped.replace(
         /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi,
         (_match, label: string, url: string) => {
           const idx = links.length;
+
           links.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+
           return placeholder(idx);
         },
       );
-
-      // 3. Wrap remaining bare URLs → placeholder (can't accidentally match inside step 2)
       // biome-ignore lint/suspicious/noControlCharactersInRegex: <explanation>
       const withAllPlaceholders = withMdPlaceholders.replace(/https?:\/\/[^\s<>&"'\x00)\]]+/gi, (url) => {
         let label = url;
+
         try {
           const u = new URL(url);
+
           label = u.hostname.replace(/^www\./, "");
-        } catch {
-          /* keep full URL as label */
-        }
+        } catch {}
+
         const idx = links.length;
+
         links.push(`<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+
         return placeholder(idx);
       });
-      // #endregion Convert links to placeholders (steps 2–3)
-
-      // #region Convert phone numbers and emails (steps 4–5)
-      // 4. Convert phone numbers → tel: link placeholder
-      //    Matches patterns like +49 911 1234567, (0911) 123-4567, 0911/1234567,
-      //    +49 981 51-0 (switchboard), etc.
-      //    Requires at least 7 digits (ignoring separators) to avoid false positives.
+      // #endregion Convert links to placeholders.
+      // #region Convert Phone-Numbers and eMail-Addresses.
       const withPhonePlaceholders = withAllPlaceholders.replace(
         /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,5}\)?[\s.\/-]?){1,3}\d{1,8}/g,
         (match) => {
@@ -979,32 +1008,35 @@ export class AI_LLAMA_CHAT {
           if (digitsOnly.length < 7 || digitsOnly.length > 15) {
             return match;
           }
-          // Skip year ranges like "1918-2013", "2000–2025"
+
           if (/^\d{4}\s*[-–—]\s*\d{4}$/.test(match.trim())) {
             return match;
           }
-          // Skip date / datetime stamps like "2026-02-24", "2026-02-24-12-46-27", "2025-09-18 133849"
+
           if (/^\d{4}[-/.]\d{2}[-/.]\d{2}([-/.T\s]\d{2,6}([-/:]\d{2}){0,2})?$/.test(match.trim())) {
             return match;
           }
-          // Skip European dates like "30.09.2020", "01/12/2025", "15-03-2024"
+
           if (/^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(match.trim())) {
             return match;
           }
-          // Skip decimal numbers (GPS coordinates, URL parameters like lat=49.300735)
+
           if (/^\d+\.\d+$/.test(match.trim())) {
             return match;
           }
+
           const idx = links.length;
           const telHref = `tel:${match.replace(/[^\d+]/g, "")}`;
+
           links.push(
             `<span class="LLAMA_Chat_PhoneBadge"><span class="LLAMA_Chat_BadgeIcon">📞</span><a href="${telHref}">${match}</a></span>`,
           );
+
           return placeholder(idx);
         },
       );
 
-      // 5. Convert email addresses → mailto: link placeholder
+      // #region Convert eMail.Addresses.
       const withEmailPlaceholders = withPhonePlaceholders.replace(
         /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
         (match) => {
@@ -1015,72 +1047,80 @@ export class AI_LLAMA_CHAT {
           return placeholder(idx);
         },
       );
-      // #endregion Convert phone numbers and emails (steps 4–5)
-
-      // #region Restore placeholders (steps 6–7)
+      // #endregion Convert eMail.Addresses.
+      // #region Convert Phone-Numbers and eMail-Addresses.
+      // #region Restore placeholders.
       // 6. Restore placeholders with actual <a> tags, wrapping URL badges
       const restored = withEmailPlaceholders.replace(
         // biome-ignore lint/suspicious/noControlCharactersInRegex: placeholder pattern uses \x00
         /\x00LINK(\d+)\x00/g,
         (_m, idx: string) => {
           const html = links[Number(idx)];
-          // Phone and email badges are already fully wrapped — return as-is
           if (html.startsWith('<span class="LLAMA_Chat_Phone') || html.startsWith('<span class="LLAMA_Chat_Email')) {
             return html;
           }
+
           return `<span class="LLAMA_Chat_SourceBadge">${html}</span>`;
         },
       );
-
-      // 7. Restore code block placeholders
+      // #endregion Restore placeholders.
       // biome-ignore lint/suspicious/noControlCharactersInRegex: placeholder pattern uses \x00
       const withCode = restored.replace(/\x00CODE(\d+)\x00/g, (_m, idx: string) => codeBlocks[Number(idx)]);
-      // #endregion Restore placeholders (steps 6–7)
 
       return withCode;
     };
-    // #endregion Helper: linkify URLs in plain text
-
-    // #region Helper: create a chat bubble
+    // #region Turn URLs, Mail-Addresses and Phone-Numbers in plain text into linked badges.
+    // #region Create Chat-Bubble Elements
     /**
      * Creates a speech-bubble element and appends it to the chat container.
+     *
      * @param text    Message text.
      * @param role    `"user"` (right-aligned), `"llama"` (left-aligned), or `"system"` (centered, muted).
-     * @returns The created bubble `<div>` so callers can update it later (e.g. streaming).
-     */
+     *
+     * @returns The created bubble `<div>` so callers can update it later (e.g. streaming). */
     const appendBubble = (text: string, role: "user" | "llama" | "system"): HTMLDivElement => {
       const row = document.createElement("div");
+
       row.className = `LLAMA_Chat_Row LLAMA_Chat_Row--${role}`;
 
       const bubble = document.createElement("div");
+
       bubble.className = `LLAMA_Chat_Bubble LLAMA_Chat_Bubble--${role}`;
       bubble.innerHTML = linkifyUrls(text);
+
       row.appendChild(bubble);
 
       if (role === "user") {
         lastUserQuestion = text;
+
         const question = text;
         const toolbar = document.createElement("div");
+
         toolbar.className = "LLAMA_Chat_BubbleToolbar";
 
         const copyBtn = document.createElement("button");
+
         copyBtn.type = "button";
         copyBtn.className = "LLAMA_Chat_ToolbarBtn";
         copyBtn.title = "Copy question";
         copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>`;
+
         copyBtn.addEventListener("click", () => {
           navigator.clipboard.writeText(question);
           bubble.classList.remove("LLAMA_flash");
           void bubble.offsetWidth;
           bubble.classList.add("LLAMA_flash");
         });
+
         toolbar.appendChild(copyBtn);
 
         const reuseBtn = document.createElement("button");
+
         reuseBtn.type = "button";
         reuseBtn.className = "LLAMA_Chat_ToolbarBtn LLAMA_Chat_ToolbarBtn--reuse";
         reuseBtn.title = "Reuse this question";
         reuseBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>`;
+
         reuseBtn.addEventListener("click", () => {
           chatInput.value = question;
           chatInput.focus();
@@ -1089,20 +1129,20 @@ export class AI_LLAMA_CHAT {
           chatInput.classList.add("LLAMA_input_flare");
           setTimeout(() => chatInput.classList.remove("LLAMA_input_flare"), 2000);
         });
-        toolbar.appendChild(reuseBtn);
 
+        toolbar.appendChild(reuseBtn);
         bubble.appendChild(toolbar);
       }
 
       chatContainer.appendChild(row);
+
       chatContainer.scrollTop = chatContainer.scrollHeight;
+
       return bubble;
     };
-    // #endregion Helper: create a chat bubble
-
-    // #region Helper: append a message block to the chat display
+    // #endregion Create Chat-Bubble Elements
+    // #region Append message block to chat display.
     const appendToChat = (text: string): void => {
-      // Detect role from prefix
       if (text.startsWith("You: ")) {
         appendBubble(text.substring(5), "user");
       } else if (text.startsWith("Qwen3: ")) {
@@ -1111,84 +1151,99 @@ export class AI_LLAMA_CHAT {
         appendBubble(text, "system");
       }
     };
-    // #endregion Helper: append a message block to the chat display
-
-    // #region Helper: replace the "thinking" indicator with the real response
+    // #endregion Append message block to chat display.
+    // #region Replace thinking indicator with real response.
     const replaceThinking = (text: string): void => {
       if (thinkingBubble) {
         thinkingBubble.parentElement?.remove();
+
         thinkingBubble = null;
       }
+
       appendToChat(text);
     };
-    // #endregion Helper: replace the "thinking" indicator with the real response
-
-    // #region File upload change handler
+    // #endregion Replace thinking indicator with real response.
+    // #region Selected files changed handler.
     if (fileUpload) {
       fileUpload.addEventListener("change", () => {
         const files = fileUpload.files;
+
         if (files && files.length > 0) {
           attachedFiles = Array.from(files);
-          // New files = new topic — clear old history so previous image
-          // Q&A does not confuse the model about the current image.
           conversationHistory.length = 0;
+
           const names = attachedFiles.map((f) => f.name).join(", ");
+
           appendToChat(`\u{1F4CE} ${attachedFiles.length} file(s) attached: ${names}`);
+
           window.codbi.log("INFO", `Chat files attached: ${names}`, "AI / LLAMA / CHAT");
         } else {
           attachedFiles = [];
         }
       });
     }
-    // #endregion File upload change handler
-
-    // #region Code block copy button (event delegation)
+    // #endregion Selected files changed handler.
+    // #region Code block / Copy button
     chatContainer.addEventListener("click", (e: Event) => {
       const btn = (e.target as HTMLElement).closest(".LLAMA_Chat_CodeCopyBtn") as HTMLElement | null;
+
       if (!btn) {
         return;
       }
+
       const codeEl = btn.closest(".LLAMA_Chat_CodeBlock")?.querySelector("code");
+
       if (codeEl) {
         navigator.clipboard.writeText(codeEl.textContent || "");
+
         const block = btn.closest(".LLAMA_Chat_CodeBlock") as HTMLElement;
+
         if (block) {
           block.classList.remove("LLAMA_flash");
+
           void block.offsetWidth;
+
           block.classList.add("LLAMA_flash");
         }
       }
     });
-    // #endregion Code block copy button (event delegation)
-
-    // #region Send message handler
+    // #endregion Code block / Copy button
+    // #region EH / Send message.
     const sendMessage = async (): Promise<void> => {
       const message = chatInput.value.trim();
+
       if (!message || isBusy) {
         return;
       }
 
+      const modelLabel = thinkingCheckbox ? (thinkingCheckbox.checked ? "\uD83D\uDCA1 Thinking" : "\u26A1 Fast") : "AI";
+
       appendBubble(message, "user");
+
       chatInput.value = "";
       conversationHistory.push({ role: "user", content: message });
 
       isBusy = true;
       sendButton.disabled = true;
+
       if (micButton) {
         if (isRecording && stopRecordingFn) {
           stopRecordingFn();
         }
+
         micButton.disabled = true;
       }
+
       if ("disabled" in chatInput) {
-        (chatInput as HTMLInputElement).disabled = true;
+        chatInput.disabled = true;
       }
 
-      // Show thinking indicator bubble (will be replaced with real response)
+      // #region Show thinking indicator bubble.
       thinkingBubble = appendBubble("", "llama");
       thinkingBubble.innerHTML = `<div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div><span class="LLAMA_ThinkingLabel">Thinking...</span>`;
-      thinkingBubble.classList.add("LLAMA_Chat_Bubble--thinking");
 
+      thinkingBubble.classList.add("LLAMA_Chat_Bubble--thinking");
+      // #endregion Show thinking indicator bubble.
       try {
         AI_LLAMA_CHAT.ensurePdfJsWorkerConfigured();
 
@@ -1196,54 +1251,57 @@ export class AI_LLAMA_CHAT {
         const maxPages = toLoad.maxpages ? Number(toLoad.maxpages) : 5;
         const maxPixelSize =
           toLoad.maxpixelsize != null ? Number(toLoad.maxpixelsize) : AI_LLAMA_CHAT.DEFAULT_MAX_PIXELS;
-
-        // #region Process attached files (PDF or Image)
+        // #region Process attached files (PDF / Image)
         for (const file of attachedFiles) {
           if (file.type === "application/pdf") {
             const processedImages = await AI_LLAMA_CHAT.processPdfFile(file, maxPages);
+
             for (let i = 0; i < processedImages.length; i++) {
               const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
               let imageFile = new File([processedImages[i]], imageName, { type: "image/png" });
-              // Downscale PDF page if it exceeds the pixel budget
+              // #region Downscale PDF page if it exceeds the pixel budget.
               if (maxPixelSize > 0) {
                 const downscaled = await AI_LLAMA_CHAT.downscaleImageIfNeeded(imageFile, maxPixelSize);
+
                 imageFile =
                   downscaled instanceof File
                     ? downscaled
                     : new File([downscaled], imageName, { type: downscaled.type || "image/png" });
               }
-              // Send as base64 text param — formcycle's multipart parser returns 0-byte FileData.
-              const dataUrl = await AI_LLAMA_CHAT.blobToDataUrl(imageFile);
+              // #endregion Downscale PDF page if it exceeds the pixel budget.
+              const dataUrl = await AI_LLAMA_CHAT.blobToDataUrl(imageFile); // Send as base64 text param — formcycle's multipart parser returns 0-byte FileData.
+
               formData.append(`codbi-base64:${imageName}`, dataUrl);
             }
           } else if (maxPixelSize > 0) {
-            // Downscale if the image exceeds the pixel budget.
-            const downscaled = await AI_LLAMA_CHAT.downscaleImageIfNeeded(file, maxPixelSize);
+            const downscaled = await AI_LLAMA_CHAT.downscaleImageIfNeeded(file, maxPixelSize); // Downscale if the image exceeds the pixel budget.
             const dataUrl = await AI_LLAMA_CHAT.blobToDataUrl(downscaled);
+
             window.codbi.log(
               "INFO",
-              `Appending '${file.name}' as base64 param: ${Math.round(dataUrl.length / 1024)} KB`,
+              `Appending '${file.name}' as base64 param: ${dataUrl.length < 1024 ? `${dataUrl.length} B` : dataUrl.length < 1048576 ? `${Math.round(dataUrl.length / 1024)} KB` : `${(dataUrl.length / 1048576).toFixed(1)} MB`}`,
               "AI / LLAMA / CHAT",
             );
+
             formData.append(`codbi-base64:${file.name}`, dataUrl);
           } else {
-            // maxPixelSize=0 → skip client-side downscaling; backend enforces the limit.
-            const dataUrl = await AI_LLAMA_CHAT.blobToDataUrl(file);
+            const dataUrl = await AI_LLAMA_CHAT.blobToDataUrl(file); // Backend enforces the limit defined there.
+
             window.codbi.log(
               "INFO",
-              `Appending '${file.name}' as base64 param (no client downscale): ${Math.round(dataUrl.length / 1024)} KB`,
+              `Appending '${file.name}' as base64 param (no client downscale): ${dataUrl.length < 1024 ? `${dataUrl.length} B` : dataUrl.length < 1048576 ? `${Math.round(dataUrl.length / 1024)} KB` : `${(dataUrl.length / 1048576).toFixed(1)} MB`}`,
               "AI / LLAMA / CHAT",
             );
+
             formData.append(`codbi-base64:${file.name}`, dataUrl);
           }
         }
-        // Clear after processing — files are only sent once, not on every message
         attachedFiles = [];
+
         if (fileUpload) {
           fileUpload.value = "";
         }
-        // #endregion Process attached files (PDF or Image)
-
+        // #endregion Process attached files (PDF / Image)
         // #region Build request headers
         const headers: { [key: string]: string } = {};
 
@@ -1251,11 +1309,14 @@ export class AI_LLAMA_CHAT {
           headers["X-Rotate"] = toLoad.rotation.toString();
         }
 
-        // HTTP headers are ASCII-only — Base64-encode to preserve Unicode (e.g. ü, ö, ä)
-        headers["X-Question-chat"] = btoa(unescape(encodeURIComponent(message.replace(/[\r\n]+/g, " ").trim())));
+        // #region HTTP headers are ASCII-only — Base64-encode to preserve Unicode (e.g. ü, ö, ä)
+        const utf8ToBase64 = (str: string): string => btoa(String.fromCharCode(...new TextEncoder().encode(str)));
+
+        headers["X-Question-chat"] = utf8ToBase64(message.replace(/[\r\n]+/g, " ").trim());
         headers["X-Stream"] = "true";
         headers["X-Session-Id"] = pageSessionId;
-        headers["X-Chat-History"] = btoa(unescape(encodeURIComponent(JSON.stringify(compactHistory()))));
+        headers["X-Chat-History"] = utf8ToBase64(JSON.stringify(compactHistory()));
+        // #endregion HTTP headers are ASCII-only — Base64-encode to preserve Unicode (e.g. ü, ö, ä)
         if (thinkingCheckbox) {
           headers["X-Thinking"] = thinkingCheckbox.checked ? "true" : "false";
         }
@@ -1264,7 +1325,7 @@ export class AI_LLAMA_CHAT {
         }
         if (locationCheckbox?.checked) {
           headers["X-Location"] = "true";
-          // Pre-fetch browser geolocation so the model already knows the user's position
+          // #region Pre-fetch browser geolocation
           if (navigator.geolocation) {
             try {
               const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -1274,25 +1335,29 @@ export class AI_LLAMA_CHAT {
                   maximumAge: 300000, // 5 min cache
                 });
               });
+
               headers["X-Latitude"] = pos.coords.latitude.toFixed(4);
               headers["X-Longitude"] = pos.coords.longitude.toFixed(4);
+
               window.codbi.log(
                 "INFO",
                 `Geolocation: ${headers["X-Latitude"]}, ${headers["X-Longitude"]}`,
                 "AI / LLAMA / CHAT",
               );
             } catch (geoErr) {
-              window.codbi.log("WARNING", `Geolocation unavailable: ${geoErr}`, "AI / LLAMA / CHAT");
+              const msg =
+                geoErr instanceof GeolocationPositionError ? `${geoErr.message} (code ${geoErr.code})` : String(geoErr);
+              window.codbi.log("WARNING", `Geolocation unavailable: ${msg}`, "AI / LLAMA / CHAT");
             }
           }
         }
-        // #endregion Build request headers
-
-        // #region Helper: finish streaming and re-enable UI
+        // #endregion Pre-fetch browser geolocation
+        // #region Finish streaming and re-enable UI.
         const finishStreaming = (): void => {
           activeStreamId = null;
           isBusy = false;
           sendButton.disabled = false;
+
           if (micButton) {
             micButton.disabled = false;
           }
@@ -1302,17 +1367,16 @@ export class AI_LLAMA_CHAT {
           if ("disabled" in chatInput) {
             (chatInput as HTMLInputElement).disabled = false;
           }
+
           hideResourceOverlay();
           chatInput.focus();
         };
-        // #endregion Helper: finish streaming and re-enable UI
-
-        // #region Helper: poll a streaming session until done
+        // #endregion Finish streaming and re-enable UI.
+        // #region Poll a streaming session until done.
         const pollStream = (streamId: string): void => {
           let lastText = "";
-          /** The bubble element used for streaming output; created on first text chunk. */
           let streamBubble: HTMLDivElement | null = null;
-          // ── i18n labels (updated from first poll response) ──
+          // #region i18n labels (updated with poll response)
           let i18nReasoningLabel = "Reasoning\u2026";
           let i18nShowReasoningLabel = "Show reasoning";
           let i18nShowSourcesLabel = "Show sources";
@@ -1321,6 +1385,7 @@ export class AI_LLAMA_CHAT {
           let i18nThinkingLabel = "Thinking\u2026";
           let i18nCopyResponseLabel = "Response";
           let i18nCopyReasoningLabel = "Reasoning";
+          // #endregion i18n labels (updated with poll response)
           const interval = setInterval(() => {
             $.ajax({
               url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
@@ -1333,265 +1398,515 @@ export class AI_LLAMA_CHAT {
                 xhr.setRequestHeader("X-Stream-Poll", streamId);
               },
               success: (pollResponse) => {
-                // Handle resource status overlay (pause/resume/timeout notifications)
                 handleResourceStatus(pollResponse.resourceStatus);
-                // Update i18n labels from server response
+                // #region Get translated labels.
                 if (pollResponse.i18n) {
                   if (pollResponse.i18n.reasoningLabel) {
                     i18nReasoningLabel = pollResponse.i18n.reasoningLabel;
                   }
+
                   if (pollResponse.i18n.showReasoningLabel) {
                     i18nShowReasoningLabel = pollResponse.i18n.showReasoningLabel;
                   }
+
                   if (pollResponse.i18n.showSourcesLabel) {
                     i18nShowSourcesLabel = pollResponse.i18n.showSourcesLabel;
                   }
+
                   if (pollResponse.i18n.searchingLabel) {
                     i18nSearchingLabel = pollResponse.i18n.searchingLabel;
                   }
+
                   if (pollResponse.i18n.searchingLabelNoQuery) {
                     i18nSearchingLabelNoQuery = pollResponse.i18n.searchingLabelNoQuery;
                   }
+
                   if (pollResponse.i18n.thinkingLabel) {
                     i18nThinkingLabel = pollResponse.i18n.thinkingLabel;
-                    // Update the "Thinking..." bubble if it's still visible
+
                     const thinkingLabelEl = thinkingBubble?.querySelector(".LLAMA_ThinkingLabel");
+
                     if (thinkingLabelEl) {
                       thinkingLabelEl.textContent = i18nThinkingLabel;
                     }
                   }
+
                   if (pollResponse.i18n.copyResponseLabel) {
                     i18nCopyResponseLabel = pollResponse.i18n.copyResponseLabel;
                   }
                   if (pollResponse.i18n.copyReasoningLabel) {
                     i18nCopyReasoningLabel = pollResponse.i18n.copyReasoningLabel;
                   }
+                  // #endregion Get translated labels.
                 }
+
                 if (pollResponse.error && pollResponse.done === undefined) {
-                  // Session not found or expired
                   clearInterval(interval);
-                  replaceThinking(`Qwen3: \u26A0 ${pollResponse.error}`);
+                  replaceThinking(`${modelLabel}: \u26A0 ${pollResponse.error}`);
                   finishStreaming();
+
                   return;
                 }
-                const text: string = pollResponse.text ?? "";
 
-                // ── Client-side CALL:search detection — suppress display immediately ──
-                // Detect early: as soon as "CALL:" appears (tokens stream one-by-one)
-                // But only suppress if the request is still in progress — if done is true,
-                // the server already processed the search and the text is the final answer.
+                const text: string = pollResponse.text ?? "";
+                // #region Suppress the "CALL:search" if not outputting final answer.
                 if (/CALL:/.test(text) && !pollResponse.done) {
                   const callMatch = text.match(/CALL:search\((?:\s*)query(?:\s*)=(?:\s*)['"]([^'"]*)['"]\s*\)/);
-                  // Hide bubble immediately — even before full pattern matches
                   if (streamBubble) {
                     streamBubble.parentElement?.remove();
+
                     streamBubble = null;
                   }
+
                   if (thinkingBubble) {
                     thinkingBubble.parentElement?.remove();
+
                     thinkingBubble = null;
                   }
+
                   if (callMatch && !chatContainer.querySelector(".LLAMA_SearchIndicator")) {
-                    // Full command detected — show search indicator with query
                     const searchQuery = callMatch[1];
                     const indicator = document.createElement("div");
+
                     indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
-                    indicator.innerHTML =
-                      // biome-ignore lint/style/useTemplate: <explanation>
-                      '<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator">' +
-                      '<div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div>' +
-                      `<span class="LLAMA_SearchLabel">${i18nSearchingLabel.replace("%s", searchQuery)}</span>` +
-                      "</div>";
+                    indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">${i18nSearchingLabel.replace("%s", searchQuery)}</span></div>`;
+
                     chatContainer.appendChild(indicator);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                   }
+
                   lastText = "";
+
                   return;
                 }
-
-                // Server-side searching flag — show indicator if not already shown (fallback)
+                // #endregion Suppress the "CALL:search" if not outputting final answer.
+                // #region The "Thinking..."-Bubble.
                 if (pollResponse.searching && text.length === 0) {
                   if (!chatContainer.querySelector(".LLAMA_SearchIndicator")) {
                     if (streamBubble) {
                       streamBubble.parentElement?.remove();
+
                       streamBubble = null;
                     }
+
                     if (thinkingBubble) {
                       thinkingBubble.parentElement?.remove();
+
                       thinkingBubble = null;
                     }
+
                     const searchQuery: string = pollResponse.searchQuery ?? "";
                     const indicator = document.createElement("div");
+
                     indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
                     indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">${searchQuery ? i18nSearchingLabel.replace("%s", searchQuery) : i18nSearchingLabelNoQuery}</span></div>`;
+
                     chatContainer.appendChild(indicator);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                   }
+
                   lastText = "";
+
                   return;
                 }
-
-                // When search completes or repetition trimming shortened the text,
-                // the new text is shorter than what was displayed — update in-place
-                // or replace the bubble so we don't leave a stale duplicate in the DOM.
+                // #endregion The "Thinking..."-Bubble.
+                // #region Remove pre-shorted duplicate text.
                 if (text.length > 0 && text.length < lastText.length) {
                   const indicator = chatContainer.querySelector(".LLAMA_SearchIndicator");
+
                   if (indicator?.parentElement) {
                     indicator.parentElement.remove();
                   }
+
                   lastText = "";
+
                   if (streamBubble) {
-                    // Update existing bubble in-place (e.g. repetition trimmed)
                     streamBubble.innerHTML = linkifyUrls(text);
                   } else {
-                    // No existing bubble (e.g. post-search) — create fresh
                     streamBubble = appendBubble(text, "llama");
                   }
+
                   return;
                 }
-
-                // ── Live reasoning: stream thinking chunks in real-time ──
-                // While the model is reasoning (text empty, thinking arriving),
-                // show reasoning live instead of the static "Thinking..." spinner.
+                // #endregion Remove pre-shorted duplicate text.
+                // #region Live-Reasoning.
                 const liveThinking: string | undefined = pollResponse.thinking;
+
                 if (liveThinking && text.length === 0 && !pollResponse.done && thinkingBubble) {
                   let reasoningEl = thinkingBubble.querySelector(
                     ".LLAMA_LiveReasoningContent",
                   ) as HTMLDivElement | null;
+
                   if (!reasoningEl) {
-                    // First reasoning chunk — replace spinner with live reasoning view
                     thinkingBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+
                     thinkingBubble.innerHTML = `<details class="LLAMA_Chat_Thinking" open><summary style="display:flex;align-items:center;gap:6px"><div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div><span>${i18nReasoningLabel}</span></summary><div class="LLAMA_Chat_ThinkingContent LLAMA_LiveReasoningContent"></div></details>`;
+
                     reasoningEl = thinkingBubble.querySelector(".LLAMA_LiveReasoningContent") as HTMLDivElement;
                   }
+
                   if (reasoningEl) {
-                    // Only auto-scroll if user is already near the bottom of the reasoning box
                     const isNearBottom =
                       reasoningEl.scrollHeight - reasoningEl.scrollTop - reasoningEl.clientHeight < 40;
+
                     reasoningEl.innerHTML = linkifyUrls(liveThinking);
+
                     if (isNearBottom) {
                       reasoningEl.scrollTop = reasoningEl.scrollHeight;
                       chatContainer.scrollTop = chatContainer.scrollHeight;
                     }
                   }
+
                   return;
                 }
-
+                // #endregion Live-Reasoning.
                 if (text.length > lastText.length) {
                   lastText = text;
+
                   if (thinkingBubble) {
                     thinkingBubble.parentElement?.remove();
+
                     thinkingBubble = null;
                     streamBubble = appendBubble(text, "llama");
                   } else if (streamBubble) {
-                    // Update existing stream bubble in-place
                     streamBubble.innerHTML = linkifyUrls(text);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
                   } else {
-                    // No existing bubble — post-search streaming: remove indicator, create bubble
                     const searchInd = chatContainer.querySelector(".LLAMA_SearchIndicator");
+
                     if (searchInd?.parentElement) {
                       searchInd.parentElement.remove();
                     }
+
                     streamBubble = appendBubble(text, "llama");
                   }
                 }
+
                 if (pollResponse.done) {
                   clearInterval(interval);
-                  // Clean up search indicator if still present
                   const searchInd = chatContainer.querySelector(".LLAMA_SearchIndicator");
+
                   if (searchInd?.parentElement) {
                     searchInd.parentElement.remove();
                   }
+
                   if (pollResponse.error) {
                     if (streamBubble) {
                       streamBubble.textContent = `\u26A0 ${pollResponse.error}`;
+
                       streamBubble.classList.add("LLAMA_Chat_Bubble--error");
                     } else {
-                      replaceThinking(`Qwen3: \u26A0 ${pollResponse.error}`);
+                      replaceThinking(`${modelLabel}: \u26A0 ${pollResponse.error}`);
                     }
-                    conversationHistory.pop(); // remove failed user turn
+
+                    conversationHistory.pop();
                   } else if (lastText) {
                     const searchOn = searchCheckbox ? searchCheckbox.checked : true;
-                    conversationHistory.push({
+                    const assistantEntry = {
                       role: "assistant",
                       content: searchOn ? stripLinksForHistory(lastText) : lastText,
-                    });
-                    // Show thinking/reasoning in a collapsible section if available
+                    };
+
+                    conversationHistory.push(assistantEntry);
+                    // #region Confidence: selective caching + uncertain token highlighting
+                    const confidence:
+                      | {
+                          mean?: number;
+                          uncertainTokens?: { t: string; lp: number; o: number }[];
+                          logprobRepetition?: boolean;
+                        }
+                      | undefined = pollResponse.confidence;
+                    const isLowConfidence = confidence?.mean != null && confidence.mean < LOW_CONFIDENCE_THRESHOLD;
+
+                    if (isLowConfidence) {
+                      lowConfidenceEntries.add(assistantEntry);
+                    }
+
+                    if (showUncertainTokens && confidence?.uncertainTokens?.length && streamBubble) {
+                      let markedText = lastText;
+                      const sorted = [...confidence.uncertainTokens].sort(
+                        (a: { o: number }, b: { o: number }) => b.o - a.o,
+                      );
+
+                      for (const tok of sorted) {
+                        const end = tok.o + tok.t.length;
+
+                        if (end <= markedText.length) {
+                          markedText = `${markedText.substring(0, tok.o)}\uFFF9\uFFFB${tok.lp.toFixed(2)}\uFFFC${markedText.substring(tok.o, end)}\uFFFA${markedText.substring(end)}`;
+                        }
+                      }
+
+                      let html = linkifyUrls(markedText);
+
+                      html = html.replace(
+                        /\uFFF9\uFFFB([^\uFFFC]*)\uFFFC/g,
+                        (_, lp) => `<span class="LLAMA_UncertainSpan" title="${uncertainText} (${lp})">`,
+                      );
+                      html = html.replace(/\uFFFA/g, "</span>");
+                      streamBubble.innerHTML = html;
+                    }
+                    // #endregion Confidence: selective caching + uncertain token highlighting
+                    // #region Collapse reasoning, if available.
                     const thinkingText: string | undefined = pollResponse.thinking;
+
                     if (thinkingText && streamBubble) {
                       const details = document.createElement("details");
+
                       details.className = "LLAMA_Chat_Thinking";
+
                       const summary = document.createElement("summary");
-                      // Use "Show sources" when the content is primarily search results,
-                      // "Show reasoning" when it contains actual model reasoning
                       const hasSearchSources = /\uD83D\uDD0D Searching the web/.test(thinkingText);
                       const hasRealReasoning = thinkingText.includes("---\n\n\uD83D\uDD0D") || !hasSearchSources;
+
                       summary.textContent = hasRealReasoning ? i18nShowReasoningLabel : i18nShowSourcesLabel;
                       details.appendChild(summary);
+
                       const pre = document.createElement("div");
+
                       pre.className = "LLAMA_Chat_ThinkingContent";
                       pre.innerHTML = linkifyUrls(thinkingText);
+
                       details.appendChild(pre);
                       streamBubble.appendChild(details);
                     }
+                    // #endregion Collapse reasoning, if available.
                     if (aiHintText && streamBubble) {
                       AI_LLAMA_CHAT.attachAiHintToBubble(streamBubble, aiHintText);
                     }
-                    // Tag the bubble with a model type icon — only when the thinking
-                    // checkbox is present (i.e. thinking mode is available in the UI)
+                    // #region Create Model-Type indicator badge.
                     const modelType: string | undefined = pollResponse.modelType;
+
                     if (thinkingCheckbox && modelType && streamBubble) {
                       const badge = document.createElement("span");
+
                       badge.className = "LLAMA_ModelBadge";
                       badge.textContent = modelType === "thinking" ? "\uD83D\uDCA1" : "\u26A1";
                       badge.title = modelType === "thinking" ? "Thinking model" : "Fast model";
+
                       streamBubble.insertBefore(badge, streamBubble.firstChild);
                     }
-                    // Copy-response toolbar on the response bubble
+                    // #endregion Create Model-Type indicator badge.
+                    // #region Add copy button to response bubble.
                     if (streamBubble) {
                       const responseText = lastText;
                       const reasoningText: string = thinkingText || "";
                       const toolbar = document.createElement("div");
+
                       toolbar.className = "LLAMA_Chat_BubbleToolbar LLAMA_Chat_BubbleToolbar--right";
+
                       const copyBtn = document.createElement("button");
+
                       copyBtn.type = "button";
                       copyBtn.className = "LLAMA_Chat_ToolbarBtn";
                       copyBtn.title = "Copy response";
                       copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>`;
                       copyBtn.addEventListener("click", () => {
                         let md = `## ${i18nCopyResponseLabel}\n\n${responseText}`;
+
                         if (reasoningText) {
                           md += `\n\n---\n\n## ${i18nCopyReasoningLabel}\n\n${reasoningText}`;
                         }
+
                         navigator.clipboard.writeText(md);
                         streamBubble.classList.remove("LLAMA_flash");
+
                         void streamBubble.offsetWidth;
+
                         streamBubble.classList.add("LLAMA_flash");
                       });
+
                       toolbar.appendChild(copyBtn);
                       streamBubble.appendChild(toolbar);
                     }
+                    // #endregion Add copy button to response bubble.
+                    // #region Low-confidence warning + Rethink button
+                    const currentModelType: string | undefined = pollResponse.modelType;
+
+                    if (isLowConfidence && streamBubble) {
+                      const warning = document.createElement("div");
+
+                      warning.className = "LLAMA_Chat_ConfidenceWarning";
+                      warning.textContent = `\u26A0 ${lowConfidenceText}`;
+
+                      if (thinkingCheckbox && !thinkingCheckbox.disabled && currentModelType !== "thinking") {
+                        const rethinkQuestion = message;
+                        const targetRow = streamBubble.parentElement;
+
+                        if (!targetRow) {
+                          return;
+                        }
+                        const rethinkBtn = document.createElement("button");
+
+                        rethinkBtn.type = "button";
+                        rethinkBtn.className = "LLAMA_Chat_RethinkBtn";
+                        rethinkBtn.textContent = `\uD83D\uDCA1 ${rethinkButtonText}`;
+
+                        rethinkBtn.addEventListener("click", () => {
+                          rethinkBtn.disabled = true;
+                          rethinkBtn.textContent = "\u23F3";
+                          // #region Create rethink thinking bubble
+                          const rethinkRow = document.createElement("div");
+
+                          rethinkRow.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
+
+                          const rethinkBubble = document.createElement("div");
+
+                          rethinkBubble.className =
+                            "LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_Chat_Bubble--thinking";
+                          rethinkBubble.innerHTML =
+                            '<div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div>' +
+                            '<span class="LLAMA_ThinkingLabel">Rethinking\u2026</span>';
+
+                          rethinkRow.appendChild(rethinkBubble);
+                          targetRow.insertAdjacentElement("afterend", rethinkRow);
+                          chatContainer.scrollTop = chatContainer.scrollHeight;
+                          // #endregion Create rethink thinking bubble
+                          // #region Send rethink request
+                          const rethinkHeaders: Record<string, string> = {
+                            "X-Question-chat": utf8ToBase64(rethinkQuestion.replace(/[\r\n]+/g, " ").trim()),
+                            "X-Stream": "true",
+                            "X-Session-Id": pageSessionId,
+                            "X-Chat-History": utf8ToBase64(JSON.stringify(compactHistory())),
+                            "X-Thinking": "true",
+                          };
+
+                          if (searchCheckbox) {
+                            rethinkHeaders["X-Search"] = searchCheckbox.checked ? "true" : "false";
+                          }
+
+                          $.ajax({
+                            url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
+                            type: "POST",
+                            data: new FormData(),
+                            dataType: "json",
+                            processData: false,
+                            contentType: false,
+                            cache: false,
+                            beforeSend: (xhr) => {
+                              for (const h of Object.keys(rethinkHeaders)) {
+                                xhr.setRequestHeader(h, rethinkHeaders[h]);
+                              }
+                            },
+                            success: (rethinkResp) => {
+                              if (rethinkResp.error || !rethinkResp.streamId) {
+                                rethinkBubble.textContent = `\u26A0 ${rethinkResp.error || "No stream received"}`;
+                                rethinkBubble.classList.add("LLAMA_Chat_Bubble--error");
+                                rethinkBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+
+                                return;
+                              }
+
+                              let rethinkText = "";
+                              // #region Poll rethink stream
+                              const rethinkInterval = setInterval(() => {
+                                $.ajax({
+                                  url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
+                                  type: "POST",
+                                  dataType: "json",
+                                  processData: false,
+                                  contentType: false,
+                                  cache: false,
+                                  beforeSend: (xhr) => {
+                                    xhr.setRequestHeader("X-Stream-Poll", rethinkResp.streamId);
+                                  },
+                                  success: (poll) => {
+                                    const txt = typeof poll.text === "string" ? poll.text : "";
+
+                                    if (txt.length > rethinkText.length) {
+                                      rethinkText = txt;
+                                      rethinkBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+                                      rethinkBubble.innerHTML = linkifyUrls(txt);
+                                      chatContainer.scrollTop = chatContainer.scrollHeight;
+                                    }
+
+                                    if (poll.done) {
+                                      clearInterval(rethinkInterval);
+
+                                      if (poll.error) {
+                                        rethinkBubble.textContent = `\u26A0 ${poll.error}`;
+                                        rethinkBubble.classList.add("LLAMA_Chat_Bubble--error");
+                                      } else if (rethinkText) {
+                                        conversationHistory.push({
+                                          role: "assistant",
+                                          content: rethinkText,
+                                        });
+
+                                        const badge = document.createElement("span");
+
+                                        badge.className = "LLAMA_ModelBadge";
+                                        badge.textContent = "\uD83D\uDCA1";
+                                        badge.title = "Thinking model (rethink)";
+                                        rethinkBubble.insertBefore(badge, rethinkBubble.firstChild);
+
+                                        if (aiHintText) {
+                                          AI_LLAMA_CHAT.attachAiHintToBubble(rethinkBubble, aiHintText);
+                                        }
+
+                                        const rethinkThinking: string | undefined = poll.thinking;
+
+                                        if (rethinkThinking) {
+                                          const det = document.createElement("details");
+
+                                          det.className = "LLAMA_Chat_Thinking";
+
+                                          const sum = document.createElement("summary");
+
+                                          sum.textContent = i18nShowReasoningLabel;
+                                          det.appendChild(sum);
+
+                                          const pre = document.createElement("div");
+
+                                          pre.className = "LLAMA_Chat_ThinkingContent";
+                                          pre.innerHTML = linkifyUrls(rethinkThinking);
+                                          det.appendChild(pre);
+                                          rethinkBubble.appendChild(det);
+                                        }
+                                      }
+                                    }
+                                  },
+                                  error: () => {
+                                    clearInterval(rethinkInterval);
+                                    rethinkBubble.textContent = "\u26A0 Rethink polling failed.";
+                                    rethinkBubble.classList.add("LLAMA_Chat_Bubble--error");
+                                    rethinkBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+                                  },
+                                });
+                              }, 250);
+                              // #endregion Poll rethink stream
+                            },
+                            error: () => {
+                              rethinkBubble.textContent = "\u26A0 Rethink request failed.";
+                              rethinkBubble.classList.add("LLAMA_Chat_Bubble--error");
+                              rethinkBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+                            },
+                          });
+                          // #endregion Send rethink request
+                        });
+
+                        warning.appendChild(rethinkBtn);
+                      }
+
+                      streamBubble.appendChild(warning);
+                    }
+                    // #endregion Low-confidence warning + Rethink button
                   } else {
-                    // Model produced no visible text and no error — show fallback
-                    // (The server normally generates a localized fallback; this is a last resort)
                     replaceThinking("\u26A0 No response was generated. Please try again.");
-                    conversationHistory.pop(); // remove failed user turn
+                    conversationHistory.pop();
                   }
+
                   finishStreaming();
                 }
               },
               error: () => {
                 clearInterval(interval);
-                replaceThinking("Qwen3: \u26A0 Stream polling failed.");
+                replaceThinking(`${modelLabel}: \u26A0 Stream polling failed.`);
                 finishStreaming();
               },
             });
           }, 250);
         };
-        // #endregion Helper: poll a streaming session until done
-
-        // #region Send AJAX request to backend (via llama-server)
+        // #endregion Poll a streaming session until done.
+        // #region Send AJAX request to backend.
         $.ajax({
           url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
           type: "POST",
@@ -1607,28 +1922,31 @@ export class AI_LLAMA_CHAT {
           },
           success: (response) => {
             if (response.error) {
-              replaceThinking(`Qwen3: \u26A0 ${response.error}`);
-              conversationHistory.pop(); // remove failed user turn
+              replaceThinking(`${modelLabel}: \u26A0 ${response.error}`);
+              conversationHistory.pop();
               finishStreaming();
+
               return;
             }
 
-            // Streaming: backend returns { streamId: "..." }
             if (response.streamId) {
               activeStreamId = response.streamId;
+
               if (stopButton) {
                 stopButton.disabled = false;
               }
+
               window.codbi.log("INFO", `Stream started: ${response.streamId}`, "AI / LLAMA / CHAT");
+
               pollStream(response.streamId);
+
               return;
             }
-
-            // Non-streaming fallback: { "filename": { "chat": "answer" }, ... }
+            // #region Error-Indicators
             const fileKeys = Object.keys(response);
 
             if (fileKeys.length === 0) {
-              replaceThinking("Qwen3: (no response received)");
+              replaceThinking(`${modelLabel}: (no response received)`);
               finishStreaming();
               return;
             }
@@ -1637,15 +1955,19 @@ export class AI_LLAMA_CHAT {
             if (fileKeys.length === 1) {
               const fileAnswers = response[fileKeys[0]];
               const answerKeys = Object.keys(fileAnswers || {});
+
               answerText =
                 fileAnswers?.chat ?? (answerKeys.length > 0 ? String(fileAnswers[answerKeys[0]]) : "(no answer)");
+
               const searchOn1 = searchCheckbox ? searchCheckbox.checked : true;
+
               conversationHistory.push({
                 role: "assistant",
                 content: searchOn1 ? stripLinksForHistory(answerText) : answerText,
               });
             } else {
               const parts: string[] = [];
+
               for (const fileKey of fileKeys) {
                 const fileAnswers = response[fileKey];
                 const answerKeys = Object.keys(fileAnswers || {});
@@ -1653,61 +1975,78 @@ export class AI_LLAMA_CHAT {
                   fileAnswers?.chat ?? (answerKeys.length > 0 ? String(fileAnswers[answerKeys[0]]) : "(no answer)");
                 parts.push(`\u{1F4C4} ${fileKey}:\n${answer}`);
               }
+
               answerText = parts.join("\n\n");
+
               const searchOn2 = searchCheckbox ? searchCheckbox.checked : true;
+
               conversationHistory.push({
                 role: "assistant",
                 content: searchOn2 ? stripLinksForHistory(answerText) : answerText,
               });
             }
+            // #endregion Error-Indicators
             // Replace thinking bubble with the answer
             if (thinkingBubble) {
               thinkingBubble.parentElement?.remove();
+
               thinkingBubble = null;
             }
+
             const answerBubble = appendBubble(answerText, "llama");
+
             if (aiHintText) {
               AI_LLAMA_CHAT.attachAiHintToBubble(answerBubble, aiHintText);
             }
+
             finishStreaming();
           },
           error: (xhr, status, error) => {
-            replaceThinking(`Qwen3: \u26A0 Request failed (${status}): ${error}`);
+            replaceThinking(`${modelLabel}: \u26A0 Request failed (${status}): ${error}`);
+
             window.codbi.log("ERROR", `Chat request failed: ${status} — ${error}`, "AI / LLAMA / CHAT");
-            conversationHistory.pop(); // remove failed user turn
+
+            conversationHistory.pop();
+
             finishStreaming();
           },
         });
-        // #endregion Send AJAX request to Qwen3 backend (via llama-server)
-      } catch (ex) {
-        replaceThinking(`Qwen3: \u26A0 Error: ${ex}`);
-        conversationHistory.pop(); // remove failed user turn
+        // #endregion Send AJAX request to backend.
+      } catch (X) {
+        replaceThinking(`${modelLabel}: \u26A0 Error: ${X}`);
+
+        conversationHistory.pop();
+
         isBusy = false;
         sendButton.disabled = false;
+
         if (micButton) {
           micButton.disabled = false;
         }
+
         if ("disabled" in chatInput) {
           (chatInput as HTMLInputElement).disabled = false;
         }
       }
     };
-    // #endregion Send message handler
-
-    // #region Wire up event listeners
+    // #endregion EH / Send message
+    // #region Connect event listeners.
     sendButton.addEventListener("click", () => {
       sendMessage();
     });
-
-    // #region Stop button: sends X-Stream-Stop header to abort running inference
+    // #region Stop button.
     if (stopButton) {
       stopButton.disabled = true;
+
       stopButton.addEventListener("click", () => {
         if (!activeStreamId) {
           return;
         }
+
         const idToStop = activeStreamId;
+
         window.codbi.log("INFO", `Stop requested for stream: ${idToStop}`, "AI / LLAMA / CHAT");
+
         $.ajax({
           url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
           type: "POST",
@@ -1722,34 +2061,37 @@ export class AI_LLAMA_CHAT {
         });
       });
     }
-    // #endregion Stop button
-
-    chatInput.addEventListener("keydown", ((e: KeyboardEvent) => {
+    // #endregion Stop button.
+    // #region Chat-Input.
+    chatInput.addEventListener("keydown", ((event: KeyboardEvent) => {
       const isTextarea = chatInput instanceof HTMLTextAreaElement;
-      // <input>: Enter sends; <textarea>: Ctrl+Enter sends (Enter = newline)
-      if (e.key === "Enter" && (isTextarea ? e.ctrlKey : !e.shiftKey)) {
-        e.preventDefault();
+
+      if (event.key === "Enter" && (isTextarea ? event.ctrlKey : !event.shiftKey)) {
+        event.preventDefault();
         sendMessage();
       }
     }) as EventListener);
-
-    // #endregion Wire up event listeners
-
-    // #region Health check: poll backend until model is ready
+    // #endregion Chat-Input.
+    // #endregion Connect event listeners.
+    // #region Model Availability-Check.
     // Disable input and send button until the model is confirmed ready
     chatInput.disabled = true;
     sendButton.disabled = true;
     sendButton.disabled = true;
+
     if (micButton) {
       micButton.disabled = true;
     }
 
     const statusBubble = appendBubble("", "system");
+
     statusBubble.innerHTML = `<div class="CodBiLoader_Spinner LLAMA_ThinkingSpinner"></div><span class="LLAMA_HealthLabel">Loading AI model\u2026</span>`;
+
     statusBubble.classList.add("LLAMA_Chat_Bubble--thinking");
 
     const setHealthLabel = (text: string) => {
       const label = statusBubble.querySelector(".LLAMA_HealthLabel");
+
       if (label) {
         label.textContent = text;
       }
@@ -1758,31 +2100,52 @@ export class AI_LLAMA_CHAT {
     const welcomeText =
       toLoad.welcometext != null ? String(toLoad.welcometext) : "Chat ready. Attach file(s) and type your question.";
 
+    const waitingText = toLoad.waitingtext != null ? String(toLoad.waitingtext) : "Waiting for AI server\u2026";
+
+    const lowConfidenceText = toLoad.lowconfidencetext != null ? String(toLoad.lowconfidencetext) : "Low Confidence";
+
+    const rethinkButtonText = toLoad.rethinkbuttontext != null ? String(toLoad.rethinkbuttontext) : "Rethink";
+
+    const uncertainText = toLoad.uncertaintext != null ? String(toLoad.uncertaintext) : "Low confidence";
+
+    const showUncertainTokens = toLoad.showuncertaintokens == null || String(toLoad.showuncertaintokens) !== "false";
+
+    /** Mean logprob threshold below which a response is considered low-confidence. */
+    const LOW_CONFIDENCE_THRESHOLD = -2.5;
+
     const showReady = (modelName?: string, thinkingModelName?: string) => {
       statusBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
+
       const name = modelName || "AI";
       const thinkingInfo = thinkingModelName ? ` + \u{1F4A1} ${thinkingModelName}` : "";
+
       statusBubble.innerHTML = `\u{1F4AC} ${name}${thinkingInfo} ${welcomeText}`;
       chatInput.disabled = false;
       sendButton.disabled = false;
+
       if (micButton) {
         micButton.disabled = false;
       }
-      // Disable thinking checkbox when no thinking model is available
+      // #region Disable Thinking-Checkbox if thinking unavailable.
       if (!thinkingModelName && thinkingCheckbox && thinkingCheckbox.checked) {
         thinkingCheckbox.disabled = true;
         thinkingCheckbox.title = "Thinking model not available on this server";
       }
+      // #endregion Disable Thinking-Checkbox if thinking unavailable.
       chatInput.focus();
     };
-
+    /**
+     * Display an error message in the status bubble.
+     *
+     * @param msg The error message to display. */
     const showError = (msg: string) => {
       statusBubble.classList.remove("LLAMA_Chat_Bubble--thinking");
-      statusBubble.innerHTML = `\u26A0 ${msg}`;
-      statusBubble.classList.add("LLAMA_Chat_Bubble--error");
-      // Keep input and send button disabled on error
-    };
 
+      statusBubble.innerHTML = `\u26A0 ${msg}`;
+
+      statusBubble.classList.add("LLAMA_Chat_Bubble--error");
+    };
+    // #region Periodically poll the backend to check if the model is ready, and update the status bubble accordingly.
     const healthCheck = setInterval(() => {
       $.ajax({
         url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
@@ -1797,6 +2160,7 @@ export class AI_LLAMA_CHAT {
         success: (response) => {
           if (response.error) {
             const msg = String(response.error);
+
             if (/not ready|downloading|loading/i.test(msg)) {
               setHealthLabel(msg);
             } else {
@@ -1804,7 +2168,6 @@ export class AI_LLAMA_CHAT {
               showError(msg);
             }
           } else if (response.pendingThinkingModel) {
-            // Regular model ready, thinking model still loading — show ready but keep polling
             showReady(response.model);
           } else {
             clearInterval(healthCheck);
@@ -1812,11 +2175,12 @@ export class AI_LLAMA_CHAT {
           }
         },
         error: () => {
-          setHealthLabel("Waiting for AI server\u2026");
+          setHealthLabel(waitingText);
         },
       });
     }, 3000);
-    // Do an immediate check without waiting for the first interval
+    // #endregion Periodically poll the backend to check if the model is ready, and update the status bubble accordingly.
+    // #region Immediately poll the backend to check if the model is ready, and update the status bubble accordingly.
     setTimeout(() => {
       $.ajax({
         url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
@@ -1836,15 +2200,12 @@ export class AI_LLAMA_CHAT {
         },
       });
     }, 100);
-    // #endregion Health check: poll backend until model is ready
-
+    // #endregion Immediately poll the backend to check if the model is ready, and update the status bubble accordingly.
     window.codbi.log("INFO", "Llama Chat functionality initialized", "AI / LLAMA / CHAT");
   }
-
-  // #region PDF.js helpers (shared logic with ai.onnx.donut.qa.ts)
-
+  // #region PDF.js
   private static pdfJsWorkerConfigured = false;
-
+  /** Ensures that the PDF.js worker is configured. This is necessary for PDF.js to function correctly in a web environment. */
   private static ensurePdfJsWorkerConfigured(): void {
     if (AI_LLAMA_CHAT.pdfJsWorkerConfigured) {
       return;
@@ -1860,344 +2221,252 @@ export class AI_LLAMA_CHAT {
       "AI / LLAMA / CHAT",
     );
   }
-
-  // #region Chat bubble styles
+  // #endregion PDF.js
+  // #region Chat-Bubble CSS
   /** Injects global CSS for the speech-bubble chat UI (once). */
   private static ensureChatBubbleStyles(): void {
     if (document.querySelector("#LLAMA_Chat_Bubble_Styles")) {
       return;
     }
+
     const style = document.createElement("style");
+
     style.id = "LLAMA_Chat_Bubble_Styles";
     style.textContent = `
-      .LLAMA_Chat_Container {
-        --user-bubble-bg: #0b93f6 ;
-        --llama-bubble-bg: #e5e5ea ;
-        display: flex ; flex-direction: column ; gap: 10px ; padding: 12px ;
-        overflow-y: auto ; min-height: 120px ; max-height: 500px ;
-        border: 1px solid #d0d0d0 ; border-radius: 8px ; background: #f5f5f5 ;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif ;
-        font-size: 14px ; line-height: 1.45 ;
-      }
-      .LLAMA_Chat_Row { display: flex ; overflow: visible ; }
-      .LLAMA_Chat_Row--user  { justify-content: flex-end ; }
-      .LLAMA_Chat_Row--llama { justify-content: flex-start ; }
-      .LLAMA_Chat_Row--system { justify-content: center ; }
-      .LLAMA_Chat_Bubble {
-        max-width: 75% ; padding: 10px 14px ; border-radius: 16px ;
-        word-wrap: break-word ; white-space: pre-wrap ; position: relative ;
-        box-shadow: 0 0 .25em black ;
-      }
-      .LLAMA_Chat_Bubble--user {
-        background: var(--user-bubble-bg) ; color: #fff ;
-        border-bottom-right-radius: 4px ;
-      }
-      .LLAMA_Chat_Bubble--llama {
-        background: var(--llama-bubble-bg) ; color: #1c1c1e ;
-        border-bottom-left-radius: 4px ;
-      }
-      .LLAMA_Chat_BubbleToolbar {
-        position: absolute ; top: -10px ; left: -8px ;
-        display: flex ; gap: 4px ;
-        opacity: 0 ; pointer-events: none ;
-        transition: opacity 0.2s ;
-      }
-      .LLAMA_Chat_BubbleToolbar--right {
-        left: auto ; right: -8px ;
-      }
-      .LLAMA_Chat_Bubble:hover .LLAMA_Chat_BubbleToolbar {
-        opacity: 1 ; pointer-events: auto ;
-      }
-      .LLAMA_Chat_ToolbarBtn {
-        width: 22px ; height: 22px ; border: 1px solid #ccc ; border-radius: 50% ;
-        background: #fff ; color: #888 ; cursor: pointer ;
-        display: flex ; align-items: center ; justify-content: center ;
-        padding: 0 ; box-shadow: 0 1px 3px rgba(0,0,0,.2) ;
-        transition: color 0.15s, background 0.15s ;
-      }
-      .LLAMA_Chat_ToolbarBtn:hover {
-        color: #0b6abf ; background: #e8f0fe ;
-      }
-      .LLAMA_Chat_ToolbarBtn--reuse {
-        margin-bottom: 2px ;
-      }
-      .LLAMA_ModelBadge {
-        position: absolute ; top: -10px ; left: -6px ;
-        font-size: 12px ; line-height: 1 ;
-        width: 22px ; height: 22px ;
-        display: flex ; align-items: center ; justify-content: center ;
-        background: #fff ; border: 1px solid #ccc ; border-radius: 50% ;
-        box-shadow: 0 1px 3px rgba(0,0,0,.2) ;
-        cursor: default ; user-select: none ;
-      }
-      .LLAMA_Chat_Bubble--system {
-        background: transparent ; color: #8e8e93 ;
-        font-size: 12px ; font-style: italic ; text-align: center ;
-      }
-      .LLAMA_Chat_Bubble--thinking {
-        opacity: 0.7 ; font-style: italic ;
-        display: flex ; align-items: center ; gap: 8px ;
-      }
-      .LLAMA_ThinkingSpinner {
-        width: 20px ; height: 20px ; flex-shrink: 0 ;
-      }
-      .LLAMA_ThinkingSpinner::before {
-        display: none ;
-      }
-      .LLAMA_ThinkingLabel {
-        line-height: 20px ;
-      }
-      .LLAMA_Chat_Bubble--error {
-        background: #ffe0e0 ; color: #c00 ;
-      }
-      .LLAMA_SearchIndicator {
-        display: flex ; align-items: center ; gap: 8px ;
-        opacity: 0.85 ; font-style: italic ; font-size: 13px ;
-        background: #f0f4ff ; border: 1px dashed #b0c4de ;
-      }
+      .LLAMA_Chat_Container { --user-bubble-bg: #0b93f6 ; --llama-bubble-bg: #e5e5ea ; display: flex ;
+                              flex-direction: column ; gap: 10px ; padding: 12px ; overflow-y: auto ; min-height: 120px ;
+                              max-height: 500px ; border: 1px solid #d0d0d0 ; border-radius: 8px ; background: #f5f5f5 ;
+                              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif ; font-size: 14px ;
+                              line-height: 1.45 ;}
+      
+      .LLAMA_Chat_Row         { display: flex ; overflow: visible ;}
+      .LLAMA_Chat_Row--user   { justify-content: flex-end ;}
+      .LLAMA_Chat_Row--llama  { justify-content: flex-start ;}
+      .LLAMA_Chat_Row--system { justify-content: center ;}
+
+      .LLAMA_Chat_Bubble        { max-width: 75% ; padding: 10px 14px ; border-radius: 16px ; word-wrap: break-word ;
+                                  white-space: pre-wrap ; position: relative ; box-shadow: 0 0 .25em black ;}
+      .LLAMA_Chat_Bubble--user  { background: var(--user-bubble-bg) ; color: #fff ; border-bottom-right-radius: 4px ;}
+      .LLAMA_Chat_Bubble--llama { background: var(--llama-bubble-bg) ; color: #1c1c1e ; border-bottom-left-radius: 4px ;}
+
+      .LLAMA_Chat_BubbleToolbar         { position: absolute ; top: -10px ; left: -8px ; display: flex ; gap: 4px ; opacity: 0 ;
+                                          pointer-events: none ; transition: opacity 0.2s ;}
+      .LLAMA_Chat_BubbleToolbar--right  { left: auto ; right: -8px ;}
+
+      .LLAMA_Chat_Bubble:hover .LLAMA_Chat_BubbleToolbar { opacity: 1 ; pointer-events: auto ;}
+
+      .LLAMA_Chat_ToolbarBtn        { width: 22px ; height: 22px ; border: 1px solid #ccc ; border-radius: 50% ;
+                                      background: #fff ; color: #888 ; cursor: pointer ; display: flex ;
+                                      align-items: center ; justify-content: center ; padding: 0 ;
+                                      box-shadow: 0 1px 3px rgba( 0, 0, 0, .2 ) ; transition: color 0.15s, background 0.15s ;}
+      .LLAMA_Chat_ToolbarBtn:hover  { color: #0b6abf ; background: #e8f0fe ;}
+
+      .LLAMA_Chat_ToolbarBtn--reuse { margin-bottom: 2px ;}
+
+      .LLAMA_ModelBadge { position: absolute ; top: -10px ; left: -6px ; font-size: 12px ; line-height: 1 ; width: 22px ;
+                          height: 22px ; display: flex ; align-items: center ; justify-content: center ; background: #fff ;
+                          border: 1px solid #ccc ; border-radius: 50% ; box-shadow: 0 1px 3px rgba( 0, 0, 0, .2 );
+                          cursor: default ; user-select: none ;}
+
+      .LLAMA_Chat_Bubble--system {  background: transparent ; color: #8e8e93 ; font-size: 12px ; font-style: italic ;
+                                    text-align: center ;}
+
+      .LLAMA_Chat_Bubble--thinking { opacity: 0.7 ; font-style: italic ; display: flex ; align-items: center ; gap: 8px ;}
+
+      .LLAMA_ThinkingSpinner          { width: 20px ; height: 20px ; flex-shrink: 0 ;}
+      .LLAMA_ThinkingSpinner::before  { display: none ;}
+
+      .LLAMA_ThinkingLabel { line-height: 20px ;}
+
+      .LLAMA_Chat_Bubble--error { background: #ffe0e0 ; color: #c00 ;}
+
+      .LLAMA_SearchIndicator {  display: flex ; align-items: center ; gap: 8px ; opacity: 0.85 ; font-style: italic ;
+                                font-size: 13px ; background: #f0f4ff ; border: 1px dashed #b0c4de ;}
+
       .LLAMA_SearchLabel { color: #3a6ea5 ; }
-      .LLAMA_SearchSpinner {
-        width: 20px ; height: 20px ; flex-shrink: 0 ;
-      }
-      .LLAMA_SearchSpinner::before {
-        display: none ;
-      }
-      .LLAMA_Chat_Thinking {
-        margin-top: 10px ; border-top: 1px solid rgba(0,0,0,0.1) ;
-        padding-top: 6px ; font-size: 12px ;
-      }
-      .LLAMA_Chat_Thinking summary {
-        cursor: pointer ; color: #666 ; font-style: italic ;
-        user-select: none ; font-size: 11px ;
-      }
-      .LLAMA_Chat_Thinking summary:hover { color: #333 ; }
-      .LLAMA_Chat_ThinkingContent {
-        margin-top: 6px ; padding: 8px ; background: rgba(0,0,0,0.04) ;
-        border-radius: 6px ; white-space: pre-wrap ; word-break: break-word ;
-        color: #555 ; font-size: 12px ; line-height: 1.5 ;
-        max-height: 300px ; overflow-y: auto ;
-      }
-      .LLAMA_Chat_AiHint {
-        display: block ; margin-top: 4px ; font-size: 10px ;
-        color: rgba(0,0,0,0.35) ; text-align: right ; user-select: none ;
-      }
-      .LLAMA_Chat_CodeBlock {
-        margin: 8px 0 ; border-radius: 8px ; overflow: hidden ;
-        background: #1e1e1e ; color: #d4d4d4 ;
-      }
-      .LLAMA_Chat_CodeHeader {
-        display: flex ; align-items: center ; justify-content: space-between ;
-        padding: 4px 12px ; background: #2d2d2d ; font-size: 11px ; color: #999 ;
-      }
-      .LLAMA_Chat_CodeLang {
-        text-transform: uppercase ; letter-spacing: 0.5px ;
-      }
-      .LLAMA_Chat_CodeCopyBtn {
-        border: none ; background: transparent ; color: #999 ; cursor: pointer ;
-        padding: 2px 4px ; border-radius: 4px ; display: flex ; align-items: center ;
-        transition: color 0.15s, background 0.15s ;
-      }
-      .LLAMA_Chat_CodeCopyBtn:hover {
-        color: #fff ; background: rgba(255,255,255,0.1) ;
-      }
-      .LLAMA_Chat_CodePre {
-        margin: 0 ; padding: 12px ; overflow-x: auto ;
-        font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace ;
-        font-size: 13px ; line-height: 1.5 ; white-space: pre ;
-      }
-      .LLAMA_Chat_CodePre code {
-        font-family: inherit ; background: none ; padding: 0 ;
-      }
-      .LLAMA_Chat_InlineCode {
-        background: rgba(0,0,0,0.07) ; padding: 1px 5px ; border-radius: 4px ;
-        font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace ;
-        font-size: 0.9em ;
-      }
-      .LLAMA_Chat_Bubble a {
-        color: inherit ; text-decoration: underline ;
-        word-break: break-all ;
-      }
-      .LLAMA_Chat_Bubble--user a {
-        color: #fff ;
-      }
-      .LLAMA_Chat_Bubble--llama a {
-        color: #0b6abf ;
-      }
-      .LLAMA_Chat_Bubble a:hover {
-        text-decoration-thickness: 2px ;
-      }
-      .LLAMA_Chat_SourceBadge {
-        display: inline-flex ; align-items: center ;
-        padding: 2px 10px ; border-radius: 12px ;
-        background: rgba(11,106,191,0.1) ; font-size: 12px ;
-        transition: background 0.15s ;
-      }
-      .LLAMA_Chat_SourceBadge:hover {
-        background: rgba(11,106,191,0.2) ;
-      }
-      .LLAMA_Chat_SourceBadge a {
-        color: #0b6abf ; text-decoration: none ; word-break: normal ;
-      }
-      .LLAMA_Chat_SourceBadge a:hover {
-        text-decoration: underline ;
-      }
+
+      .LLAMA_SearchSpinner { width: 20px ; height: 20px ; flex-shrink: 0 ;}
+      
+      .LLAMA_SearchSpinner::before { display: none ;}
+
+      .LLAMA_Chat_Thinking { margin-top: 10px ; border-top: 1px solid rgba( 0, 0, 0, 0.1 ); padding-top: 6px ; font-size: 12px ;}
+
+      .LLAMA_Chat_Thinking summary        { cursor: pointer ; color: #666 ; font-style: italic ; user-select: none ;
+                                            font-size: 11px ;}
+      .LLAMA_Chat_Thinking summary:hover  { color: #333 ; }
+
+      .LLAMA_Chat_ThinkingContent { margin-top: 6px ; padding: 8px ; background: rgba( 0, 0, 0, 0.04 ); border-radius: 6px ;
+                                    white-space: pre-wrap ; word-break: break-word ; color: #555 ; font-size: 12px ;
+                                    line-height: 1.5 ; max-height: 300px ; overflow-y: auto ;}
+
+      .LLAMA_Chat_AiHint {  display: block ; margin-top: 4px ; font-size: 10px ; color: rgba( 0, 0, 0, 0.35 );
+                            text-align: right ; user-select: none ;}
+
+      .LLAMA_Chat_CodeBlock { margin: 8px 0 ; border-radius: 8px ; overflow: hidden ; background: #1e1e1e ; color: #d4d4d4 ;}
+
+      .LLAMA_Chat_CodeHeader {  display: flex ; align-items: center ; justify-content: space-between ; padding: 4px 12px ;
+                                background: #2d2d2d ; font-size: 11px ; color: #999 ;}
+
+      .LLAMA_Chat_CodeLang { text-transform: uppercase ; letter-spacing: 0.5px ;}
+
+      .LLAMA_Chat_CodeCopyBtn { border: none ; background: transparent ; color: #999 ; cursor: pointer ; padding: 2px 4px ;
+                                border-radius: 4px ; display: flex ; align-items: center ;
+                                transition: color 0.15s, background 0.15s ;}
+
+      .LLAMA_Chat_CodeCopyBtn:hover { color: #fff ; background: rgba(255,255,255,0.1) ;}
+
+      .LLAMA_Chat_CodePre { margin: 0 ; padding: 12px ; overflow-x: auto ;
+                            font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace ; font-size: 13px ;
+                            line-height: 1.5 ; white-space: pre ;}
+
+      .LLAMA_Chat_CodePre code { font-family: inherit ; background: none ; padding: 0 ;}
+
+      .LLAMA_Chat_InlineCode {  background: rgba( 0, 0, 0, 0.07 ); padding: 1px 5px ; border-radius: 4px ;
+                                font-family: 'Cascadia Code', 'Fira Code', 'Consolas', 'Monaco', monospace ; font-size: 0.9em ;}
+
+      .LLAMA_Chat_Bubble a { color: inherit ; text-decoration: underline ; word-break: break-all ;}
+
+      .LLAMA_Chat_Bubble--user a  { color: #fff ;}
+      .LLAMA_Chat_Bubble--llama a { color: #0b6abf ;}
+      .LLAMA_Chat_Bubble a:hover  { text-decoration-thickness: 2px ;}
+
+      .LLAMA_Chat_SourceBadge       { display: inline-flex ; align-items: center ; padding: 2px 10px ; border-radius: 12px ;
+                                      background: rgba( 11, 106, 191, 0.1) ; font-size: 12px ; transition: background 0.15s ;}
+      .LLAMA_Chat_SourceBadge:hover { background: rgba( 11, 106, 191, 0.2 );}
+
+      .LLAMA_Chat_SourceBadge a       { color: #0b6abf ; text-decoration: none ; word-break: normal ;}
+      .LLAMA_Chat_SourceBadge a:hover { text-decoration: underline ;}
+
       .LLAMA_Chat_PhoneBadge,
-      .LLAMA_Chat_EmailBadge {
-        display: inline-flex ; align-items: center ; gap: 4px ;
-        padding: 2px 10px ; border-radius: 12px ;
-        font-size: 12px ; transition: background 0.15s ;
-      }
-      .LLAMA_Chat_PhoneBadge {
-        background: rgba(40,167,69,0.12) ;
-      }
-      .LLAMA_Chat_PhoneBadge:hover {
-        background: rgba(40,167,69,0.22) ;
-      }
-      .LLAMA_Chat_EmailBadge {
-        background: rgba(220,130,0,0.12) ;
-      }
-      .LLAMA_Chat_EmailBadge:hover {
-        background: rgba(220,130,0,0.22) ;
-      }
-      .LLAMA_Chat_PhoneBadge a {
-        color: #28a745 ; text-decoration: none ; word-break: normal ;
-      }
-      .LLAMA_Chat_EmailBadge a {
-        color: #c27800 ; text-decoration: none ; word-break: normal ;
-      }
+      .LLAMA_Chat_EmailBadge {  display: inline-flex ; align-items: center ; gap: 4px ; padding: 2px 10px ; border-radius: 12px ;
+                                font-size: 12px ; transition: background 0.15s ;}
+
+      .LLAMA_Chat_PhoneBadge        { background: rgba( 40, 167, 69, 0.12 );}
+      .LLAMA_Chat_PhoneBadge:hover  { background: rgba( 40, 167, 69, 0.22 );}
+
+      .LLAMA_Chat_EmailBadge        { background: rgba( 220, 130, 0, 0.12 );}
+      .LLAMA_Chat_EmailBadge:hover  { background: rgba( 220, 130, 0, 0.22 );}
+
+      .LLAMA_Chat_PhoneBadge a { color: #28a745 ; text-decoration: none ; word-break: normal ;}
+      .LLAMA_Chat_EmailBadge a { color: #c27800 ; text-decoration: none ; word-break: normal ;}
+
       .LLAMA_Chat_PhoneBadge a:hover,
-      .LLAMA_Chat_EmailBadge a:hover {
-        text-decoration: underline ;
-      }
-      .LLAMA_Chat_BadgeIcon {
-        font-size: 13px ; line-height: 1 ;
-      }
-      .LLAMA_Chat_InputWrapper {
-        position: relative ; display: inline-block ; width: 100% ;
-        overflow: visible ;
-      }
-      .LLAMA_input_flare {
-        animation: LLAMA_rect_flare 1s ease-out infinite ;
-        animation-duration: 1s ;
-        animation-iteration-count: 2 ;
-      }
+      .LLAMA_Chat_EmailBadge a:hover { text-decoration: underline ;}
+
+      .LLAMA_Chat_BadgeIcon { font-size: 13px ; line-height: 1 ;}
+
+      .LLAMA_Chat_InputWrapper { position: relative ; display: inline-block ; width: 100% ; overflow: visible ;}
+
+      .LLAMA_input_flare {  animation: LLAMA_rect_flare 2s ease-out infinite ; animation-duration: 1s ;
+                            animation-iteration-count: 1 ;}
       @keyframes LLAMA_rect_flare {
-        0%   { box-shadow: 0 0 0 0 rgba(25,118,210,0.8),
-                           0 0 0 0 rgba(25,118,210,0.6),
-                           0 0 0 0 rgba(25,118,210,0.4) ; }
-        100% { box-shadow: 0 0 0 12px rgba(25,118,210,0),
-                           0 0 0 24px rgba(25,118,210,0),
-                           0 0 0 36px rgba(25,118,210,0) ; }
-      }
+        0%   { box-shadow: 0 0 0 0 rgba( 25, 118, 210, 0.8 ),
+                           0 0 0 0 rgba( 25, 118, 210, 0.6 ),
+                           0 0 0 0 rgba( 25, 118, 210, 0.4 );}
+        100% { box-shadow: 0 0 0 12px rgba( 25, 118, 210, 0 ),
+                           0 0 0 24px rgba( 25, 118, 210, 0 ),
+                           0 0 0 36px rgba( 25, 118, 210, 0 );}}
+
       .LLAMA_Chat_InputWrapper > input,
-      .LLAMA_Chat_InputWrapper > textarea {
-        width: 100% ; box-sizing: border-box ; padding-right: 36px !important ;
-      }
-      .LLAMA_Chat_MicButton {
-        position: absolute ; right: 4px ; bottom: 4px ;
-        width: 28px ; height: 28px ; border: none ; border-radius: 50% ;
-        background: transparent ; color: #888 ; cursor: pointer ;
-        display: flex ; align-items: center ; justify-content: center ;
-        padding: 0 ; transition: color 0.2s, background 0.2s ;
-      }
-      .LLAMA_Chat_MicButton:hover {
-        color: #333 ; background: rgba(0,0,0,0.06) ;
-      }
-      .LLAMA_Chat_MicButton--recording {
-        color: #fff ; background: #e53935 ;
-        overflow: visible ;
-      }
+      .LLAMA_Chat_InputWrapper > textarea { width: 100% ; box-sizing: border-box ; padding-right: 36px !important ;}
+
+      .LLAMA_Chat_MicButton       { position: absolute ; right: 4px ; bottom: 4px ; width: 28px ; height: 28px ; border: none ;
+                                    border-radius: 50% ; background: transparent ; color: #888 ; cursor: pointer ;
+                                    display: flex ; align-items: center ; justify-content: center ; padding: 0 ;
+                                    transition: color 0.2s, background 0.2s ;}
+      .LLAMA_Chat_MicButton:hover { color: #333 ; background: rgba( 0, 0, 0, 0.06 );}
+
+      .LLAMA_Chat_MicButton--recording { color: #fff ; background: #e53935 ; overflow: visible ;}
+
       .LLAMA_Chat_MicButton--recording::before,
-      .LLAMA_Chat_MicButton--recording::after {
-        content: '' ; position: absolute ;
-        top: 50% ; left: 50% ;
-        width: 100% ; height: 100% ;
-        border-radius: 50% ; border: 2px solid #e53935 ;
-        transform: translate(-50%, -50%) scale(1) ;
-        animation: LLAMA_mic_flare 1.8s ease-out infinite ;
-      }
-      .LLAMA_Chat_MicButton--recording::after {
-        animation-delay: 0.6s ;
-      }
-      .LLAMA_Chat_MicButton--recording:hover {
-        background: #c62828 ; color: #fff ;
-      }
-      .LLAMA_Chat_MicButton--unavailable {
-        color: #ccc ; cursor: not-allowed ;
-      }
-      .LLAMA_Chat_MicButton--transcribing {
-        color: #fff ; background: #1565c0 ;
-        pointer-events: none ; overflow: visible ;
-      }
+      .LLAMA_Chat_MicButton--recording::after { content: '' ; position: absolute ; top: 50% ; left: 50% ; width: 100% ;
+                                                height: 100% ; border-radius: 50% ; border: 2px solid #e53935 ;
+                                                transform: translate( -50%, -50% ) scale( 1 );
+                                                animation: LLAMA_mic_flare 1.8s ease-out infinite ;}
+      .LLAMA_Chat_MicButton--recording::after { animation-delay: 0.6s ;}
+      .LLAMA_Chat_MicButton--recording:hover  { background: #c62828 ; color: #fff ;}
+
+      .LLAMA_Chat_MicButton--unavailable { color: #ccc ; cursor: not-allowed ;}
+      .LLAMA_Chat_MicButton--transcribing { color: #fff ; background: #1565c0 ; pointer-events: none ; overflow: visible ;}
+
       .LLAMA_Chat_MicButton--transcribing::before,
-      .LLAMA_Chat_MicButton--transcribing::after {
-        content: '' ; position: absolute ;
-        top: 50% ; left: 50% ;
-        width: 100% ; height: 100% ;
-        border-radius: 50% ; border: 2px solid #1565c0 ;
-        transform: translate(-50%, -50%) scale(1) ;
-        animation: LLAMA_mic_flare 1.8s ease-out infinite ;
-      }
-      .LLAMA_Chat_MicButton--transcribing::after {
-        animation-delay: 0.6s ;
-      }
+      .LLAMA_Chat_MicButton--transcribing::after {  content: '' ; position: absolute ; top: 50% ; left: 50% ; width: 100% ;
+                                                    height: 100% ; border-radius: 50% ; border: 2px solid #1565c0 ;
+                                                    transform: translate( -50%, -50% ) scale( 1 );
+                                                    animation: LLAMA_mic_flare 1.8s ease-out infinite ;}
+      .LLAMA_Chat_MicButton--transcribing::after { animation-delay: 0.6s ;}
+
       @keyframes LLAMA_mic_flare {
         0%   { transform: translate(-50%, -50%) scale(1) ; opacity: 0.7 ; }
-        100% { transform: translate(-50%, -50%) scale(2.8) ; opacity: 0 ; }
-      }
+        100% { transform: translate(-50%, -50%) scale(2.8) ; opacity: 0 ; }}
+
+      /* #region Confidence / logprob styles */
+      .LLAMA_Chat_ConfidenceWarning { display: inline-flex ; align-items: center ; gap: 6px ; margin-top: 8px ;
+                                      padding: 4px 10px ; border-radius: 12px ; background: rgba( 255, 152, 0, 0.15 );
+                                      color: #b36b00 ; font-size: 12px ; line-height: 1 ; user-select: none ;}
+
+      .LLAMA_Chat_RethinkBtn        { border: 1px solid #b36b00 ; border-radius: 10px ; background: transparent ;
+                                      color: #b36b00 ; font-size: 11px ; padding: 2px 8px ; cursor: pointer ;
+                                      transition: background 0.15s, color 0.15s ;}
+      .LLAMA_Chat_RethinkBtn:hover  { background: #b36b00 ; color: #fff ;}
+
+      .LLAMA_UncertainSpan { background: rgba( 255, 152, 0, 0.18 ) ; border-bottom: 1.5px dotted #e6a200 ;
+                             border-radius: 2px ; padding: 0 1px ;}
+      /* #endregion Confidence / logprob styles */
+
       @keyframes LLAMA_flash {
-        0%   { filter: brightness(1) ; }
-        30%  { filter: brightness(1.35) ; }
-        100% { filter: brightness(1) ; }
-      }
-      .LLAMA_flash { animation: LLAMA_flash 0.35s ease-out ; }`;
+        0%   { filter: brightness( 1 ) ; }
+        30%  { filter: brightness( 1.35 ) ; }
+        100% { filter: brightness( 1 ) ; }}
+      .LLAMA_flash { animation: LLAMA_flash 0.35s ease-out ;}`;
     document.head.appendChild(style);
   }
   // #endregion Chat bubble styles
-
-  // #region AI-Generated hint (bubble variant)
+  // #region AI-Generated hint for bubbles.
   /**
    * Appends a small AI-Generated hint label inside a chat bubble.
    *
    * @param bubble   The bubble `<div>` to annotate.
-   * @param hintText The label to display, e.g. "✨ AI-Generated".
-   */
+   * @param hintText The label to display, e.g. "✨ AI-Generated". */
   private static attachAiHintToBubble(bubble: HTMLDivElement, hintText: string): void {
     // Remove any existing hint inside this bubble
     const existing = bubble.querySelector(".LLAMA_Chat_AiHint");
     if (existing) {
       existing.remove();
     }
+
     const hint = document.createElement("span");
+
     hint.className = "LLAMA_Chat_AiHint";
     hint.textContent = hintText;
+
     bubble.appendChild(hint);
   }
-  // #endregion AI-Generated hint (bubble variant)
-
-  // #region Image downscaling helper
-  /**
-   * Default total-pixel budget (width × height). Matches the backend's default maxPixels.
-   * ≈ 1792 × 1792.
-   */
+  // #endregion AI-Generated hint for bubbles.
+  // #region Image-Downscaling
+  /** Default total-pixel budget (width × height). Matches the backend's default maxPixels (≈ 1792 × 1792). */
   private static readonly DEFAULT_MAX_PIXELS = 3211264;
-
   /**
    * Converts a canvas to a {@link File} built from raw bytes.
    * Formcycle's multipart parser returns 0 bytes for canvas {@link Blob} objects,
    * so we go through {@link HTMLCanvasElement.toDataURL toDataURL} → base64 decode → {@link ArrayBuffer} → {@link File}.
-   */
+   *
+   * @param canvas    The canvas containing the image to convert.
+   * @param fileName  The name to assign to the resulting File.
+   *
+   * @return A {@link File } containing the image data from the canvas, with the specified file name and "image/png" MIME type.*/
   private static canvasToFile(canvas: HTMLCanvasElement, fileName: string): File {
     const dataUrl = canvas.toDataURL("image/png");
     const base64 = dataUrl.split(",")[1];
     const binary = atob(base64);
     const bytes = new Uint8Array(binary.length);
+
     for (let i = 0; i < binary.length; i++) {
       bytes[i] = binary.charCodeAt(i);
     }
+
     return new File([bytes.buffer], fileName, { type: "image/png" });
   }
-
   /**
    * Reads a {@link Blob} (or {@link File}) as a
    * {@link https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URLs data URL}
@@ -2205,34 +2474,40 @@ export class AI_LLAMA_CHAT {
    *
    * Used to send image data as a regular text parameter in FormData,
    * bypassing formcycle's multipart file parser which returns 0-byte {@code FileData}.
-   */
+   *
+   * @param blob The Blob or File to read as a data URL.
+   *
+   * @return A Promise that resolves to a data URL string containing the blob's data. */
   private static blobToDataUrl(blob: Blob): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
+
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = reject;
       reader.readAsDataURL(blob);
     });
   }
-
   /**
    * Downscales an image file if its total pixel count (width × height) exceeds
    * {@link maxPixels}, preserving the aspect ratio. Returns the original file
    * unchanged when it is already within the budget.
    *
    * @param file      The image file to check.
-   * @param maxPixels Total-pixel budget (width × height).
-   */
+   * @param maxPixels Total-pixel budget (width × height). */
   private static async downscaleImageIfNeeded(file: File, maxPixels: number): Promise<Blob> {
     return new Promise<Blob>((resolve, reject) => {
       const img = new Image();
+
       img.onload = () => {
         const totalPixels = img.width * img.height;
+
         if (totalPixels <= maxPixels) {
           URL.revokeObjectURL(img.src);
           resolve(file);
+
           return;
         }
+
         const scale = Math.sqrt(maxPixels / totalPixels);
         const newW = Math.max(28, Math.round(img.width * scale));
         const newH = Math.max(28, Math.round(img.height * scale));
@@ -2244,27 +2519,35 @@ export class AI_LLAMA_CHAT {
         );
 
         const canvas = document.createElement("canvas");
+
         canvas.width = newW;
         canvas.height = newH;
+
         const ctx = canvas.getContext("2d");
+
         if (!ctx) {
           URL.revokeObjectURL(img.src);
-          resolve(file); // fallback: send original
+          resolve(file);
+
           return;
         }
+
         ctx.drawImage(img, 0, 0, newW, newH);
         URL.revokeObjectURL(img.src);
+
         resolve(AI_LLAMA_CHAT.canvasToFile(canvas, file.name));
       };
+
       img.onerror = () => {
         URL.revokeObjectURL(img.src);
-        resolve(file); // cannot decode → send original
+        resolve(file);
       };
+
       img.src = URL.createObjectURL(file);
     });
   }
-  // #endregion Image downscaling helper
-
+  // #endregion Image-Downscaling
+  // #region PDF-Processing
   private static async processPdfFile(file: File, maxPages = 0): Promise<Blob[]> {
     const arrayBuffer = await file.arrayBuffer();
     const pdf: PDFDocumentProxy = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -2293,6 +2576,7 @@ export class AI_LLAMA_CHAT {
         );
 
         const blob = await AI_LLAMA_CHAT.renderPdfPageToImage(page);
+
         images.push(blob);
       } else {
         window.codbi.log(
@@ -2316,7 +2600,9 @@ export class AI_LLAMA_CHAT {
             `No extractable images found on page ${pageNum} \u2014 rendering page to image`,
             "AI / LLAMA / CHAT",
           );
+
           const blob = await AI_LLAMA_CHAT.renderPdfPageToImage(page);
+
           images.push(blob);
         }
       }
@@ -2324,27 +2610,36 @@ export class AI_LLAMA_CHAT {
 
     return images;
   }
-
+  /**
+   * Renders a PDF page to an image by drawing it on a canvas and converting the canvas to a PNG file.
+   *
+   * @param page The PDF page to render.
+   *
+   * @return A Promise that resolves to a File containing the rendered image of the PDF page. */
   private static async renderPdfPageToImage(page: PDFPageProxy): Promise<File> {
     const viewport = page.getViewport({ scale: 2.0 });
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d");
 
     if (!context) {
-      throw new Error("Failed to get canvas 2D context");
+      throw new CodBiError("Failed to get canvas 2D context");
     }
 
     canvas.width = viewport.width;
     canvas.height = viewport.height;
 
-    await page.render({
-      canvasContext: context,
-      viewport: viewport,
-    }).promise;
+    await page.render({ canvasContext: context, viewport: viewport }).promise;
 
     return AI_LLAMA_CHAT.canvasToFile(canvas, "page.png");
   }
-
+  /**
+   * Attempts to extract images from a PDF page by analyzing its operator list for image painting operations.
+   * For each detected image operation, it retrieves the image data from the page's resources,
+   * draws it onto a canvas, and converts the canvas to a PNG file.
+   *
+   * @param page The PDF page from which to extract images.
+   *
+   * @return A Promise that resolves to an array of {@link Blob }s, each containing an extracted image from the PDF page. */
   private static async extractImagesFromPdfPage(page: PDFPageProxy): Promise<Blob[]> {
     const images: Blob[] = [];
 
@@ -2371,6 +2666,7 @@ export class AI_LLAMA_CHAT {
 
                   const imageData = new ImageData(
                     new Uint8ClampedArray(resources.data),
+
                     resources.width,
                     resources.height,
                   );
@@ -2392,10 +2688,8 @@ export class AI_LLAMA_CHAT {
 
     return images;
   }
-
-  // #endregion PDF.js helpers
+  // #region PDF-Processing
 }
-
 // #region Register with CodBi
 window.codbi.registerFunctionality("AI.LLAMA.CHAT", AI_LLAMA_CHAT.functionality.bind(AI_LLAMA_CHAT));
 // #endregion Register with CodBi

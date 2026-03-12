@@ -1,0 +1,20 @@
+{
+  "Description": "/classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html#functionality",
+  "Parameter": {
+    "MaxPages": "",
+    "Rotation": "",
+    "MaxPixelSize": "",
+    "LLAMAbubble": "",
+    "UserBubble": "",
+    "WelcomeText": "",
+    "WaitingText": "",
+    "LowConfidenceText": "",
+    "RethinkButtonText": "",
+    "UncertainText": "",
+    "ShowUncertainTokens": "",
+    "VoiceHotkey": "",
+    "VoicePlaceholder": "",
+    "VoiceSendHotkey": "",
+    "Language": ""
+  }
+}

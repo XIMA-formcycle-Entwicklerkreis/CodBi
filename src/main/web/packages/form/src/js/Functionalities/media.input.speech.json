@@ -1,9 +1,9 @@
 {
   "Description": "/classes/Functionalities_media.input.speech.MEDIA_INPUT_SPEECH.html#functionality",
   "Parameter": {
-    "voicehotkey": "",
-    "language": "",
-    "placeholder": "",
-    "showhint": ""
+    "VoiceHotkey": "",
+    "Language": "",
+    "Placeholder": "",
+    "ShowHint": ""
   }
 }

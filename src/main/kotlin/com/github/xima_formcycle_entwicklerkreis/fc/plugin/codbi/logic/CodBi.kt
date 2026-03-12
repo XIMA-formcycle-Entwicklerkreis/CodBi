@@ -3,7 +3,7 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic
 import org.slf4j.LoggerFactory
 
 /**
- * # Root base class for all CodBi components.
+ * # Base class for all CodBi-Components.
  *
  * Provides a shared [log]ger that posts messages to the console in the format **[[ CodBi /
  * [idLogMessages] ] ...message... ]**.
@@ -12,7 +12,6 @@ import org.slf4j.LoggerFactory
  * identify log output.
  */
 abstract class CodBi {
-
   /**
    * The predicate used to [log] messages related to this CodBi component to the console (defaults
    * to an empty string).

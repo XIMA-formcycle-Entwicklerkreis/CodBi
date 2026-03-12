@@ -1,5 +1,10 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama
 
+// region Imports
+// region CodBi
+// endregion CodBi
+// region XIMA
+// endregion XIMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.BraveSearch
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.LLAMA
@@ -31,151 +36,115 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.imageio.ImageIO
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  Standard — Generic GGUF model runner via local llama-server process
-// ═══════════════════════════════════════════════════════════════════════════════
-//
-// Implements the "Swan Architecture" for any GGUF model:
-//   1. Downloads llama-server binary (platform-specific)
-//   2. Downloads a configurable GGUF model + optional vision projector
-//   3. Launches llama-server as a separate OS process
-//   4. Sends OpenAI-compatible /v1/chat/completions requests with base64 images
-//
-// All AI computation happens in the external llama-server process.
-// If it OOMs the Tomcat JVM stays alive — only the llama-server dies.
-//
-// ## Plugin Properties
-//
-// | Property                           | Type    | Default                          | Description
-//                                                |
-// |------------------------------------|---------|----------------------------------|--------------------------------------------------------------|
-// | `Active_AI`                        | String  | —                                | Must contain
-// `llama_std` to activate this model               |
-// | `AI_LLAMA_STD_ModelUrl`             | URL     | Qwen3-VL-2B Q4_K_M HuggingFace  | Download URL
-// for the GGUF model file                         |
-// | `AI_LLAMA_STD_MmprojUrl`            | URL     | Qwen3-VL-2B mmproj HuggingFace  | Download URL
-// for the vision projector (mmproj) file          |
-// | `AI_LLAMA_STD_MaxPixels`            | Int     | `3211264`                        | Max pixel
-// budget for image downscaling (min 3136)            |
-// | `AI_LLAMA_STD_MaxTokens`            | Int     | `2048`                           | Maximum
-// tokens to generate per response                      |
-// | `AI_LLAMA_STD_MaxRAMPercent`        | Double  | `101.0`                          | RAM usage
-// threshold (%) — blocks requests when exceeded      |
-// | `AI_LLAMA_STD_MaxComputePercent`     | Double  | `101.0`                          | Compute
-// usage threshold (%) — gates on GPU% (CUDA) or CPU% (fallback). Blocks requests when exceeded |
-// | `AI_LLAMA_STD_MaxCPUPercent`         | Double  | —                                | Legacy
-// alias
-// for MaxComputePercent (accepted as fallback)        |
-// | `AI_LLAMA_STD_LlamaRelease`         | String  | `b8175`                          | llama.cpp
-// release tag for server binary download             |
-// | `AI_LLAMA_STD_ServerUrl_<platform>` | URL     | (auto from release tag)          | Per-platform
-// override for the llama-server binary URL        |
-// | `AI_LLAMA_STD_UpdateCheckHours`     | Long    | `24`                             | Hours
-// between
-// GitHub release checks (0 = disabled)           |
-// | `AI_LLAMA_STD_NotifyEmail`          | String  | —                                | Email
-// address
-// for update notifications                       |
-// | `AI_LLAMA_STD_ThinkingModelUrl`    | URL     | —                                | Download URL
-// for a dedicated thinking model GGUF (optional) |
-// | `AI_LLAMA_STD_ThinkingMmprojUrl`   | URL     | —                                | Download URL
-// for the thinking model's mmproj file (optional)|
-// | `AI_LLAMA_STD_ExternalUrl`          | URL     | —                                | Base URL of
-// an external OpenAI-compatible API; overrides local model |
-// | `AI_LLAMA_STD_ExternalApiKey`       | String  | —                                | API key for
-// the external AI (sent as Bearer token)                   |
-// | `AI_LLAMA_STD_ExternalModel`        | String  | —                                | Model name
-// for the external API (e.g. gpt-4o, claude-3-opus)       |
-// | `AI_LLAMA_STD_ExternalNoPrompt`     | Boolean | `false`                          | When `true`,
-// skips all built-in system-prompt sections (§1–§6) for the external AI — sends only the user
-// message and chat history. |
-// | `AI_LLAMA_STD_PromptIdentity`       | String  | (built-in)                       | Override the
-// identity/role sentence ("You are a helpful assistant..."). Use `{date}` as placeholder for
-// today's date. |
-// | `AI_LLAMA_STD_PromptLocation`       | String  | (built-in)                       | Override the
-// location-context instruction. Use `{location}` as placeholder. |
-// | `AI_LLAMA_STD_PromptSearch`         | String  | (built-in)                       | Override the
-// CALL:search instruction block (before examples). |
-// | `AI_LLAMA_STD_PromptThinking`       | String  | (built-in)                       | Override the
-// thinking-mode instruction. Use `{language}` as placeholder. |
-// | `AI_LLAMA_STD_PromptNoInternet`     | String  | (built-in)                       | Override the
-// no-internet-access warning. |
-// | `AI_LLAMA_STD_PromptRules`          | String  | (built-in)                       | Override the
-// general rules (language, measurements, independence). |
-// | `AI_BraveSearch_ApiKey`            | String  | —                                | Brave Search
-// API key — enables web search tool for the model |
-//
-// ═══════════════════════════════════════════════════════════════════════════════
-
+// endregion Imports
+/**
+ * Standard — Generic GGUF model runner via local LLAMA-Server process. All AI computation happens
+ * in the external LLAMA-Server process. If it OOMs the Tomcat JVM stays alive — only the
+ * LLAMA-Server dies.
+ *
+ * ## Plugin Properties
+ * |Property                           |Type   |Default                       |Description                                                                                                                       |
+ * |-----------------------------------|-------|------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+ * |`Active_AI`                        |String |—                             |Must contain `llama_std` to activate this model                                                                                   |
+ * |`AI_LLAMA_STD_ModelUrl`            |URL    |Qwen3-VL-2B Q4_K_M HuggingFace|Download URL for the GGUF model file                                                                                              |
+ * |`AI_LLAMA_STD_MmprojUrl`           |URL    |Qwen3-VL-2B mmproj HuggingFace|Download URL for the vision projector (mmproj) file                                                                               |
+ * |`AI_LLAMA_STD_MaxPixels`           |Int    |`3211264`                     |Max pixel budget for image downscaling (min 3136)                                                                                 |
+ * |`AI_LLAMA_STD_MaxTokens`           |Int    |`2048`                        |Maximum tokens to generate per response                                                                                           |
+ * |`AI_LLAMA_STD_MaxRAMPercent`       |Double |`101.0`                       |RAM usage threshold (%) — blocks requests when exceeded                                                                           |
+ * |`AI_LLAMA_STD_MaxComputePercent`   |Double |`101.0`                       |Compute usage threshold (%) — gates on GPU% (CUDA) or CPU% (fallback). Blocks requests when exceeded                              |
+ * |`AI_LLAMA_STD_MaxCPUPercent`       |Double |—                             |Legacy alias for MaxComputePercent (accepted as fallback)                                                                         |
+ * |`AI_LLAMA_STD_LlamaRelease`        |String |`b8175`                       |llama.cpp release tag for server binary download                                                                                  |
+ * |`AI_LLAMA_STD_ServerUrl_<platform>`|URL    |(auto from release tag)       |Per-platform override for the LLAMA-Server binary URL                                                                             |
+ * |`AI_LLAMA_STD_UpdateCheckHours`    |Long   |`24`                          |Hours between GitHub release checks (0 = disabled)                                                                                |
+ * |`AI_LLAMA_STD_NotifyEmail`         |String |—                             |Email address for update notifications                                                                                            |
+ * |`AI_LLAMA_STD_ThinkingModelUrl`    |URL    |—                             |Download URL for a dedicated thinking model GGUF (optional)                                                                       |
+ * |`AI_LLAMA_STD_ThinkingMmprojUrl`   |URL    |—                             |Download URL for the thinking model's mmproj file (optional)                                                                      |
+ * |`AI_LLAMA_STD_ExternalUrl`         |URL    |—                             |Base URL of an external OpenAI-compatible API; overrides local model                                                              |
+ * |`AI_LLAMA_STD_ExternalApiKey`      |String |—                             |API key for the external AI (sent as Bearer token)                                                                                |
+ * |`AI_LLAMA_STD_ExternalModel`       |String |—                             |Model name for the external API (e.g. gpt-4o, claude-3-opus)                                                                      |
+ * |`AI_LLAMA_STD_ExternalNoPrompt`    |Boolean|`false`                       |When `true`, skips all built-in system-prompt sections (§1–§6) for the external AI — sends only the user message and chat history.|
+ * |`AI_LLAMA_STD_PromptIdentity`      |String |(built-in)                    |Override the identity/role sentence ("You are a helpful assistant..."). Use `{date}` as placeholder for today's date.             |
+ * |`AI_LLAMA_STD_PromptLocation`      |String |(built-in)                    |Override the location-context instruction. Use `{location}` as placeholder.                                                       |
+ * |`AI_LLAMA_STD_PromptSearch`        |String |(built-in)                    |Override the CALL:search instruction block (before examples).                                                                     |
+ * |`AI_LLAMA_STD_PromptThinking`      |String |(built-in)                    |Override the thinking-mode instruction. Use `{language}` as placeholder.                                                          |
+ * |`AI_LLAMA_STD_PromptNoInternet`    |String |(built-in)                    |Override the no-internet-access warning.                                                                                          |
+ * |`AI_LLAMA_STD_PromptRules`         |String |(built-in)                    |Override the general rules (language, measurements, independence).                                                                |
+ * |`AI_BraveSearch_ApiKey`            |String |—                             |Brave Search API key — enables web search tool for the model                                                                      |
+ *
+ * ## Domains to whitelist
+ * - **github.com** — LLAMA-Server binary releases & release-check API
+ * - **api.github.com** — latest-release version checks
+ * - **objects.githubusercontent.com** — GitHub release asset CDN
+ * - **huggingface.co** — GGUF model & mmproj downloads
+ * - **nominatim.openstreetmap.org** — reverse geocoding for location context
+ * - **api.search.brave.com** — Brave web search (only when `AI_BraveSearch_ApiKey` is configured)
+ */
 class Standard : LLAMA() {
-
+  // region Constants
+  /** Companion for static members. */
   companion object {
     /** Plugin property name prefix for this model. */
     private const val PROP_PREFIX = "AI_LLAMA_STD"
-
     /** Default GGUF model URL: Qwen3-VL-2B-Instruct Q4_K_M quantization (~1.1 GB). */
     private const val DEFAULT_MODEL_URL =
         "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf"
-
     /** Default mmproj (multimodal vision projector) URL (~819 MB). */
     private const val DEFAULT_MMPROJ_URL =
         "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-2B-Instruct-F16.gguf"
-
     /** GitHub API endpoint for the latest llama.cpp release. */
     private const val GITHUB_RELEASES_API =
         "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
-
     /** Default interval (hours) between update checks. 0 = disabled. */
     private const val DEFAULT_CHECK_INTERVAL_HOURS = 24L
   }
 
-  // ── Configurable URLs (overridable via plugin properties) ─────────────────
+  // endregion Constants
+
+  // region Fields
   private var modelUrl = DEFAULT_MODEL_URL
   private var mmprojUrl = DEFAULT_MMPROJ_URL
 
-  // ── External AI settings (overrides local model when set) ─────────────────
+  // region External-AI settings.
   /** Base URL for an external OpenAI-compatible API (e.g. "https://api.openai.com/v1"). */
   private var externalUrl: String? = null
   /** API key for the external AI service (sent as Bearer token). */
   private var externalApiKey: String? = null
   /** Model identifier for the external API (e.g. "gpt-4o", "claude-3-opus-20240229"). */
   private var externalModel: String? = null
-  /** Whether to use an external AI service instead of the local llama-server. */
+  /** Whether to use an external AI service instead of the local LLAMA-Server. */
   private val isExternalMode: Boolean
     get() = externalUrl != null
 
   /** When true, all built-in system-prompt sections (§1–§6) are skipped for external AI. */
   private var externalNoPrompt = false
-
-  // ── Thinking model URLs (optional — enables dedicated thinking server) ────
+  // endregion External-AI settings.
+  // region Thinking model settings
+  /** URL for the thinking model GGUF file. */
   private var thinkingModelUrl: String? = null
+  /** URL for the thinking model mmproj file. */
   private var thinkingMmprojUrl: String? = null
-
-  // ── Thinking model state ──────────────────────────────────────────────────
+  // endregion Thinking model settings
+  // region Manage the thinking model's state.
   /** Whether a dedicated thinking model is configured (separate from the fast model). */
   private val hasThinkingModel: Boolean
     get() = thinkingModelUrl != null
 
   /** Downloaded thinking model GGUF file. */
   private var thinkingModelFile: File? = null
-
   /** Downloaded thinking model mmproj file (may be null if no vision needed). */
   private var thinkingMmprojFile: File? = null
-
-  /** The port the thinking model's llama-server listens on. */
+  /** The port the thinking model's LLAMA-Server listens on. */
   @Volatile private var thinkingServerPort: Int = 0
-
-  /** The running thinking llama-server process. */
+  /** The running thinking LLAMA-Server process. */
   @Volatile private var thinkingServerProcess: Process? = null
-
   /** Whether the thinking server is ready for requests. */
   @Volatile private var thinkingServerReady = false
-
   /** Threads consuming thinking server stdout/stderr. */
   private var thinkingStdoutThread: Thread? = null
+  /** Thread consuming thinking server stderr. */
   private var thinkingStderrThread: Thread? = null
-
-  // ── Prompt overrides (customizable via plugin properties) ────────────────
+  // endregion Manage the thinking model's state.
+  // region Prompt-Overrides
   /** Override for the identity/role sentence. `{date}` is replaced with today's date. */
   private var promptIdentity: String? = null
   /**
@@ -194,14 +163,12 @@ class Standard : LLAMA() {
   private var promptNoInternet: String? = null
   /** Override for the general rules (language, measurements, question independence). */
   private var promptRules: String? = null
-
-  // ── Model / inference settings ────────────────────────────────────────────
+  // endregion Prompt-Overrides
+  // region Model settings.
   /** Maximum pixel budget for downscaling images before encoding as base64. */
   private var maxPixels = 3_211_264 // ≈ 1792×1792
-
   /** Maximum tokens to generate in the response. */
   private var maxTokens = 2048
-
   /** Resource monitoring thresholds. */
   private var maxRAMPercent = 101.0
   /**
@@ -210,45 +177,39 @@ class Standard : LLAMA() {
    * utilization. Default `101.0` effectively disables the gate.
    */
   private var maxComputePercent = 101.0
-
   /** Resource monitor daemon thread. */
   private var resourceMonitor: ResourceMonitor? = null
-
   /** Model file reference after download. */
   private var modelFile: File? = null
-
   /** Vision projector file reference after download. */
   private var mmprojFile: File? = null
-
   /** Error during initialization (shown to callers). */
   @Volatile private var loadError: Throwable? = null
-
   /** Whether the server is ready for requests. */
   @Volatile private var serverReady = false
-
-  // ── Version check settings ────────────────────────────────────────────
+  // endregion Model settings.
+  // region Version-Check settings
   /** Hours between GitHub release checks. 0 = disabled. */
   private var checkIntervalHours = DEFAULT_CHECK_INTERVAL_HOURS
-
   /** Optional override for the notification recipient email. */
   private var notifyEmail: String? = null
-
   /** Plugin folder root — used to locate system-mail.properties. */
   private var pluginFolder: File? = null
-
   /** Daemon thread that periodically checks for new releases. */
   private var updateChecker: Thread? = null
-
   /** Last release tag for which a notification was already sent (in-memory + persisted). */
   @Volatile private var lastNotifiedRelease: String? = null
 
-  // ── Token Streaming Infrastructure ────────────────────────────────────────
+  // endregion Version-Check settings
+  // endregion Fields
 
+  // region Token Streaming Infrastructure
   /**
    * Holds the state of an in-flight streaming request. The background thread appends generated text
-   * chunks; polling requests read them.
+   * chunks.
    */
   private class StreamingSession(
+      /** Start time of the session in milliseconds since epoch. */
       val startTime: Long = System.currentTimeMillis(),
       /** Whether this session uses thinking mode (longer TTL). */
       val enableThinking: Boolean = false
@@ -261,14 +222,9 @@ class Standard : LLAMA() {
     @Volatile var error: String? = null
     @Volatile var stopRequested = false
     @Volatile var resourceStatus: String? = null
-    /** When true the client should show a "searching the web" animation. */
     @Volatile var searching = false
-    /** The search query text shown to the user while searching. */
     @Volatile var searchQuery: String? = null
-    /** Which model produced the response: "fast" or "thinking". */
     @Volatile var modelType: String = if (enableThinking) "thinking" else "fast"
-
-    // ── Localized UI labels (set after language detection) ──
     @Volatile var uiReasoningLabel: String = "Reasoning\u2026"
     @Volatile var uiShowReasoningLabel: String = "Show reasoning"
     @Volatile var uiShowSourcesLabel: String = "Show sources"
@@ -277,9 +233,35 @@ class Standard : LLAMA() {
     @Volatile var uiThinkingLabel: String = "Thinking\u2026"
     @Volatile var uiCopyResponseLabel: String = "Response"
     @Volatile var uiCopyReasoningLabel: String = "Reasoning"
+    // region Confidence-Tracking
+    /** Per-token logprob entries: Pair(token, logprob). Only visible (non-thinking) tokens. */
+    val tokenLogprobs = java.util.concurrent.CopyOnWriteArrayList<Pair<String, Double>>()
+    @Volatile var logprobsAvailable = false
+    @Volatile var logprobRepetitionDetected = false
 
+    /** Mean logprob across all visible tokens, or null if none collected. */
+    fun meanLogprob(): Double? {
+      val lps = tokenLogprobs
+
+      if (lps.isEmpty()) return null
+
+      return lps.sumOf { it.second } / lps.size
+    }
+
+    // endregion Confidence-Tracking
+    /**
+     * Retrieves the current accumulated visible text (from the main response) and thinking text
+     * (from <think> blocks).
+     *
+     * @return All visible text chunks concatenated into a single string.
+     */
     fun currentText(): String = textChunks.joinToString("")
 
+    /**
+     * Retrieves the current accumulated thinking/reasoning text from <think> blocks.
+     *
+     * @return All thinking/reasoning chunks concatenated into a single string.
+     */
     fun currentThinking(): String = thinkingChunks.joinToString("")
   }
 
@@ -292,14 +274,22 @@ class Standard : LLAMA() {
   /** Removes streaming sessions past their TTL: 5 min for normal, 10 min for thinking mode. */
   private fun cleanupStaleSessions() {
     val now = System.currentTimeMillis()
+
     streamingSessions.entries.removeIf {
       val ttl = if (it.value.enableThinking) 10 * 60 * 1000L else 5 * 60 * 1000L
+
       it.value.startTime + ttl < now
     }
   }
 
-  // ── ResourceMonitor inner class ───────────────────────────────────────────
+  // endregion Token Streaming Infrastructure
 
+  // region Resource Monitoring
+
+  /**
+   * Starts a background thread that periodically cleans up stale streaming sessions. Should be
+   * called during initialization.
+   */
   private inner class ResourceMonitor : Thread("codbi-llama-resource-monitor") {
     @Volatile
     var cpuPercent = 0.0
@@ -319,14 +309,13 @@ class Standard : LLAMA() {
       get() = gpuPollingAvailable
 
     @Volatile var running = true
-
+    /** Operating system MXBean for CPU and memory monitoring. */
     private val osMxBean: com.sun.management.OperatingSystemMXBean? =
         try {
           ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
         } catch (_: Exception) {
           null
         }
-
     /**
      * Whether GPU polling is active. True when:
      * - The detected backend is CUDA
@@ -335,10 +324,12 @@ class Standard : LLAMA() {
      */
     @Volatile private var gpuPollingAvailable = false
 
+    /** Initializes the monitor. */
     init {
       isDaemon = true
-      // Probe once: is GPU monitoring feasible?
+
       val usesGpu = detectedGpu == GpuBackend.CUDA && gpuLayers != 0
+
       if (usesGpu) {
         try {
           val probe =
@@ -347,17 +338,19 @@ class Standard : LLAMA() {
                   .redirectErrorStream(true)
                   .start()
           val output = probe.inputStream.bufferedReader().readText().trim()
+
           probe.waitFor()
+
           if (probe.exitValue() == 0 && output.toDoubleOrNull() != null) {
             gpuPollingAvailable = true
+
             log(
                 LogLevel.INFO,
                 "Resource monitor: GPU utilization polling active (CUDA via nvidia-smi)")
           }
-        } catch (_: Exception) {
-          /* nvidia-smi not usable */
-        }
+        } catch (X: Exception) {}
       }
+
       if (!gpuPollingAvailable && usesGpu) {
         log(
             LogLevel.INFO,
@@ -365,6 +358,7 @@ class Standard : LLAMA() {
       }
     }
 
+    /** The main monitoring loop. */
     override fun run() {
       while (running) {
         try {
@@ -374,15 +368,15 @@ class Standard : LLAMA() {
             val freeMem = it.freeMemorySize.toDouble()
             ramPercent = if (totalMem > 0) (totalMem - freeMem) / totalMem * 100.0 else 0.0
           }
+
           if (gpuPollingAvailable) {
             gpuPercent = pollGpuUtilization()
           }
+
           sleep(1000)
-        } catch (_: InterruptedException) {
+        } catch (X: InterruptedException) {
           break
-        } catch (_: Exception) {
-          /* ignore */
-        }
+        } catch (X: Exception) {}
       }
     }
 
@@ -395,11 +389,12 @@ class Standard : LLAMA() {
                 .redirectErrorStream(true)
                 .start()
         val output = proc.inputStream.bufferedReader().readText().trim()
+
         proc.waitFor()
-        // Multi-GPU: take the first line (primary GPU)
+
         output.lines().firstOrNull()?.trim()?.toDoubleOrNull() ?: gpuPercent
-      } catch (_: Exception) {
-        gpuPercent // keep last known value on failure
+      } catch (X: Exception) {
+        gpuPercent
       }
     }
 
@@ -411,122 +406,151 @@ class Standard : LLAMA() {
     val computeLabel: String
       get() = if (gpuPollingAvailable) "GPU" else "CPU"
 
+    /** @return `true` when both compute and RAM utilisation are below their thresholds. */
     fun resourcesAvailable(): Boolean =
         computePercent < maxComputePercent && ramPercent < maxRAMPercent
 
+    /**
+     * Describes why resource thresholds are exceeded.
+     *
+     * @return A human-readable reason string, or `null` when resources are within limits.
+     */
     fun exceedReason(): String? {
       val parts = mutableListOf<String>()
+
       if (computePercent >= maxComputePercent)
           parts.add("$computeLabel %.1f%% >= %.0f%%".format(computePercent, maxComputePercent))
       if (ramPercent >= maxRAMPercent)
           parts.add("RAM %.1f%% >= %.0f%%".format(ramPercent, maxRAMPercent))
+
       return if (parts.isEmpty()) null else parts.joinToString(", ")
     }
 
+    /**
+     * Estimates how long a caller should wait before retrying, based on how far over the thresholds
+     * the metrics are.
+     *
+     * @return Seconds to wait, clamped to 5–120.
+     */
     fun estimateWaitSeconds(): Int {
       val computeOver = (computePercent - maxComputePercent).coerceAtLeast(0.0)
       val ramOver = (ramPercent - maxRAMPercent).coerceAtLeast(0.0)
+
       return ((computeOver + ramOver) / 5.0).toInt().coerceIn(5, 120)
     }
 
+    /** Stops the monitoring loop and interrupts the daemon thread. */
     fun shutdown() {
       running = false
+
       interrupt()
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Lifecycle
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // endregion Resource Monitoring
+  // region Lifecycle
+  /** @return The unique plugin name used for servlet registration. */
   override fun getName(): String = "CodBi_AI_LLAMA_STD"
 
+  /**
+   * Reads all plugin properties, downloads model files if needed, launches the LLAMA-Server
+   * process, and starts the resource monitor and version-check daemon.
+   *
+   * Does nothing if `Active_AI` does not contain `llama_std`.
+   *
+   * @param configData The formcycle initialisation payload containing plugin properties and file
+   *   helpers.
+   */
   override fun initialize(configData: IPluginInitializeData) {
     idLogMessages = "LlamaSrv"
-
     // Check activation: must contain "llama_std" (case-insensitive)
     val activeAiRaw = configData.properties.getProperty("Active_AI") ?: ""
     val activeAi = activeAiRaw.lowercase()
+
     if (!activeAi.contains("llama_std")) {
       log(LogLevel.INFO, "Standard initialization skipped because Active_AI='$activeAiRaw'")
+
       return
     }
 
-    // Let base class set up directories and read LLAMA properties
-    super.initialize(configData)
-
-    // Read external AI properties (if set, overrides local model entirely)
+    super.initialize(configData) // Let base class set up directories and read LLAMA properties
+    // region Read external AI properties
     configData.properties
         .getProperty("${PROP_PREFIX}_ExternalUrl")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { externalUrl = it.trimEnd('/') }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_ExternalApiKey")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { externalApiKey = it }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_ExternalModel")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { externalModel = it }
 
-    // Read external no-prompt flag
     configData.properties.getProperty("${PROP_PREFIX}_ExternalNoPrompt")?.trim()?.lowercase()?.let {
       externalNoPrompt = it == "true" || it == "1" || it == "yes"
     }
 
-    // Read model-specific plugin properties
     configData.properties
         .getProperty("${PROP_PREFIX}_ModelUrl")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { modelUrl = it }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_MmprojUrl")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { mmprojUrl = it }
 
-    // Read optional thinking model URLs (dedicated thinking server)
     configData.properties
         .getProperty("${PROP_PREFIX}_ThinkingModelUrl")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { thinkingModelUrl = it }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_ThinkingMmprojUrl")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { thinkingMmprojUrl = it }
 
-    // Read prompt override properties
     configData.properties
         .getProperty("${PROP_PREFIX}_PromptIdentity")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { promptIdentity = it }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_PromptLocation")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { promptLocation = it }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_PromptSearch")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { promptSearch = it }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_PromptThinking")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { promptThinking = it }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_PromptNoInternet")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { promptNoInternet = it }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_PromptRules")
         ?.trim()
@@ -536,22 +560,22 @@ class Standard : LLAMA() {
     configData.properties.getProperty("${PROP_PREFIX}_MaxPixels")?.trim()?.toIntOrNull()?.let {
       if (it >= 3136) maxPixels = it
     }
+
     configData.properties.getProperty("${PROP_PREFIX}_MaxTokens")?.trim()?.toIntOrNull()?.let {
       if (it > 0) maxTokens = it
     }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_MaxRAMPercent")
         ?.trim()
         ?.toDoubleOrNull()
         ?.let { if (it in 1.0..110.0) maxRAMPercent = it }
-    // MaxComputePercent: gates on GPU% (when CUDA is active) or CPU% (when CPU-only).
-    // Legacy property name MaxCPUPercent is accepted as fallback for backward compatibility.
+
     val computePropValue =
         configData.properties.getProperty("${PROP_PREFIX}_MaxComputePercent")
             ?: configData.properties.getProperty("${PROP_PREFIX}_MaxCPUPercent")
     computePropValue?.trim()?.toDoubleOrNull()?.let { if (it in 1.0..110.0) maxComputePercent = it }
 
-    // Override llama.cpp release tag if configured
     configData.properties
         .getProperty("${PROP_PREFIX}_LlamaRelease")
         ?.trim()
@@ -559,12 +583,12 @@ class Standard : LLAMA() {
         ?.let { customRelease ->
           llamaRelease = customRelease
           val rebuilt = buildServerUrls(customRelease)
+
           serverUrls.clear()
           serverUrls.putAll(rebuilt)
           log(LogLevel.INFO, "Llama release overridden to: $customRelease")
         }
 
-    // Override server URLs if configured per-platform
     serverUrls.keys.toList().forEach { platform ->
       configData.properties
           .getProperty("${PROP_PREFIX}_ServerUrl_$platform")
@@ -573,42 +597,44 @@ class Standard : LLAMA() {
           ?.let { customUrl -> serverUrls[platform] = customUrl }
     }
 
-    // Read update-check properties
     configData.properties
         .getProperty("${PROP_PREFIX}_UpdateCheckHours")
         ?.trim()
         ?.toLongOrNull()
         ?.let { if (it >= 0) checkIntervalHours = it }
+
     configData.properties
         .getProperty("${PROP_PREFIX}_NotifyEmail")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { notifyEmail = it }
 
-    // Store plugin folder for locating system-mail.properties later
     pluginFolder = configData.fileHelper.pluginFolder
 
-    // ── Brave Search API key ────────────────────────────────────────────
     configData.properties
         .getProperty("AI_BraveSearch_ApiKey")
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { BraveSearch.apiKey = it }
-
+    // endregion Read external AI properties
+    // region Log server state.
     log(LogLevel.INFO, "Llama release: $llamaRelease")
     log(LogLevel.INFO, "Model URL:   $modelUrl")
     log(LogLevel.INFO, "mmproj URL:  $mmprojUrl")
     log(LogLevel.INFO, "MaxPixels:   $maxPixels")
     log(LogLevel.INFO, "MaxTokens:   $maxTokens")
+
     if (isExternalMode) {
       log(LogLevel.INFO, "External AI: $externalUrl (model: ${externalModel ?: "default"})")
     }
+
     if (hasThinkingModel) {
       log(LogLevel.INFO, "Thinking model URL:   $thinkingModelUrl")
       log(LogLevel.INFO, "Thinking mmproj URL:  $thinkingMmprojUrl")
     } else {
       log(LogLevel.INFO, "Thinking model: hybrid mode (no separate model configured)")
     }
+
     log(
         LogLevel.INFO,
         "BraveSearch: ${if (BraveSearch.isAvailable) "enabled" else "disabled (no API key)"}")
@@ -617,7 +643,6 @@ class Standard : LLAMA() {
         "Update check: every ${checkIntervalHours}h" +
             (if (checkIntervalHours == 0L) " (disabled)" else ""))
 
-    // ── External AI mode: skip local server startup entirely ────────────────
     if (isExternalMode) {
       log(LogLevel.INFO, "External AI mode — skipping local model download and server startup")
       log(LogLevel.INFO, "  URL:   $externalUrl")
@@ -627,6 +652,7 @@ class Standard : LLAMA() {
       log(
           LogLevel.INFO,
           "  Key:   ${if (externalApiKey != null) "(set, ${externalApiKey!!.length} chars)" else "(not set)"}")
+
       isActive = true
       serverReady = true
       // Start resource monitor (still useful for resource-gate even with external AI)
@@ -634,64 +660,67 @@ class Standard : LLAMA() {
       resourceMonitor = ResourceMonitor().also { it.start() }
       startVersionChecker()
       log(LogLevel.INFO, "Standard (external) initialized and ready for requests")
+
       return
     }
-
+    // endregion Log server state.
     // Start resource monitor
     resourceMonitor?.shutdown()
     resourceMonitor = ResourceMonitor().also { it.start() }
 
-    // Launch the full pipeline in a background thread so Formcycle doesn't block on startup.
     Thread(
             {
               try {
-                // ── Phase 1: Intelligence ──
                 val platform = detectPlatform()
+
                 log(LogLevel.INFO, "Platform: ${platform.os}/${platform.arch}")
 
-                // ── Phase 2: Fetch ──
-                // Download llama-server binary (GPU auto-detection, change detection, CUDA DLLs)
                 val binary = downloadServerBinary(platform)
+
                 if (binary == null) {
-                  loadError = IllegalStateException("Failed to download llama-server binary")
+                  loadError = IllegalStateException("Failed to download LLAMA-Server binary")
+
                   return@Thread
                 }
 
-                // Download model GGUF
                 val modelFileName = modelUrl.substringAfterLast("/")
+
                 modelFile = File(modelsDir, modelFileName)
+
                 if (!downloadWithResume(modelUrl, modelFile!!, "GGUF model")) {
                   loadError = IllegalStateException("Failed to download GGUF model")
+
                   return@Thread
                 }
 
-                // Download mmproj (vision projector)
                 val mmprojFileName = mmprojUrl.substringAfterLast("/")
+
                 mmprojFile = File(modelsDir, mmprojFileName)
+
                 if (!downloadWithResume(mmprojUrl, mmprojFile!!, "mmproj (vision projector)")) {
                   loadError = IllegalStateException("Failed to download mmproj file")
+
                   return@Thread
                 }
 
-                // ── Phase 3: Ignition — Start fast/normal model server ──
-                // Start the fast model FIRST so it's available immediately,
-                // even while the thinking model is still downloading.
                 val started = startServer(binary, modelFile!!, mmprojFile)
+
                 if (!started) {
-                  loadError = IllegalStateException("llama-server failed to start")
+                  loadError = IllegalStateException("LLAMA-Server failed to start")
+
                   return@Thread
                 }
 
                 isActive = true
                 serverReady = true
+
                 log(LogLevel.INFO, "Standard (llama) fast model initialized and ready for requests")
 
-                // ── Phase 4: Download + start thinking model (if configured) ──
-                // This happens AFTER the fast server is ready, so requests
-                // can be served while the thinking model downloads.
                 if (hasThinkingModel) {
                   val thinkingModelFileName = thinkingModelUrl!!.substringAfterLast("/")
+
                   thinkingModelFile = File(modelsDir, thinkingModelFileName)
+
                   if (!downloadWithResume(
                       thinkingModelUrl!!, thinkingModelFile!!, "Thinking GGUF model")) {
                     log(
@@ -702,12 +731,15 @@ class Standard : LLAMA() {
 
                   if (thinkingModelFile != null && thinkingMmprojUrl != null) {
                     val thinkingMmprojFileName = thinkingMmprojUrl!!.substringAfterLast("/")
+
                     thinkingMmprojFile = File(modelsDir, thinkingMmprojFileName)
+
                     if (!downloadWithResume(
                         thinkingMmprojUrl!!, thinkingMmprojFile!!, "Thinking mmproj")) {
                       log(
                           LogLevel.WARNING,
                           "Failed to download thinking mmproj — using fast model only")
+
                       thinkingModelFile = null
                       thinkingMmprojFile = null
                     }
@@ -716,30 +748,39 @@ class Standard : LLAMA() {
 
                 if (thinkingModelFile != null) {
                   val thinkingStarted = startThinkingServer(binary)
+
                   if (thinkingStarted) {
                     thinkingServerReady = true
                     activeThinkingServerPort = thinkingServerPort
+
                     log(LogLevel.INFO, "Thinking model server started on port $thinkingServerPort")
                   } else {
                     log(LogLevel.WARNING, "Thinking server failed to start — using fast model only")
+
                     thinkingModelFile = null
                   }
                 }
 
                 log(LogLevel.INFO, "Standard (llama) fully initialized and ready for requests")
-              } catch (e: Exception) {
-                loadError = e
-                log(LogLevel.ERROR, "Initialization failed: ${e.message}", "", e)
+              } catch (X: Exception) {
+                loadError = X
+
+                log(LogLevel.ERROR, "Initialization failed: ${X.message}", "", X)
               }
             },
             "llama-srv-init")
         .apply { isDaemon = true }
         .start()
-
     // Start the update checker independently of server startup
     startVersionChecker()
   }
 
+  /**
+   * Tears down all background resources: update checker, resource monitor, streaming sessions,
+   * thinking server, and the base-class server process.
+   *
+   * @param shutdownData The formcycle shutdown payload (may be `null`).
+   */
   override fun shutdown(shutdownData: IPluginShutdownData?) {
     updateChecker?.interrupt()
     updateChecker = null
@@ -747,30 +788,28 @@ class Standard : LLAMA() {
     resourceMonitor = null
     serverReady = false
     thinkingServerReady = false
+
     stopThinkingServer()
+
     streamingSessions.clear()
     super.shutdown(shutdownData)
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Thinking Model Server
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // endregion Lifecycle
+  // region Thinking Model Server
   /**
-   * Starts a second llama-server instance for the dedicated thinking model. Uses the same binary
+   * Starts a second LLAMA-Server instance for the dedicated thinking model. Uses the same binary
    * but a different port and model file.
    *
-   * @param binary The llama-server executable (shared with the fast server).
+   * @param binary The LLAMA-Server executable (shared with the fast server).
    * @return `true` if the thinking server started and passed health checks.
    */
   private fun startThinkingServer(binary: File): Boolean {
     val thinkModel = thinkingModelFile ?: return false
 
-    // Pick a port offset from the main server
     thinkingServerPort = findThinkingPort(serverPort + 100)
 
     val resolvedThreads = threadCount ?: detectPhysicalCores()
-
     val resolvedGpuLayers =
         when {
           gpuLayers >= 0 -> gpuLayers
@@ -778,26 +817,23 @@ class Standard : LLAMA() {
           else -> 0
         }
 
-    log(LogLevel.INFO, "Starting thinking llama-server:")
+    log(LogLevel.INFO, "Starting thinking LLAMA-Server:")
     log(LogLevel.INFO, "  Binary:  ${binary.absolutePath}")
     log(
         LogLevel.INFO,
         "  Model:   ${thinkModel.absolutePath} (${"%.0f".format(thinkModel.length() / (1024.0 * 1024.0))} MB)")
+
     thinkingMmprojFile?.let { log(LogLevel.INFO, "  mmproj:  ${it.absolutePath}") }
+
     log(LogLevel.INFO, "  Port:    $thinkingServerPort")
 
-    // Write the Qwen3 Jinja template for thinking (same template, the model is expected to think)
     val templateFile = File(binary.parentFile, "qwen3-thinking-template.jinja")
+
     templateFile.writeText(
         """{%- if messages[0].role == 'system' %}{%- set system_message = messages[0].content %}{%- set loop_messages = messages[1:] %}{%- else %}{%- set system_message = 'You are a helpful assistant.' %}{%- set loop_messages = messages %}{%- endif %}{{- '<|im_start|>system\n' + system_message + '<|im_end|>\n' }}{%- for message in loop_messages %}{%- if message.role == 'user' %}{%- if message.content is string %}{{- '<|im_start|>user\n' + message.content + '<|im_end|>\n' }}{%- else %}{{- '<|im_start|>user\n' }}{%- for part in message.content %}{%- if part.type == 'text' %}{{- part.text }}{%- endif %}{%- endfor %}{{- '<|im_end|>\n' }}{%- endif %}{%- elif message.role == 'assistant' %}{%- if message.reasoning_content is defined and message.reasoning_content is not none %}{{- '<|im_start|>assistant\n<think>\n' + message.reasoning_content + '\n</think>\n' + message.content + '<|im_end|>\n' }}{%- else %}{{- '<|im_start|>assistant\n' + message.content + '<|im_end|>\n' }}{%- endif %}{%- endif %}{%- endfor %}{%- if add_generation_prompt %}{{- '<|im_start|>assistant\n' }}{%- if enable_thinking is defined and enable_thinking is true %}{{- '<think>\n' }}{%- endif %}{%- endif %}"""
             .trimIndent())
 
-    // Thinking needs a bigger per-slot context: max_tokens is up to maxTokens*4 and the
-    // remaining budget must still hold the system prompt, chat history, and (optionally bulky)
-    // search instructions.  Double the base ctxSize so the per-slot context is 2× the fast
-    // server's, without touching parallelSlots.
     val thinkingCtxSize = ctxSize * 2
-
     val command =
         mutableListOf(
             binary.absolutePath,
@@ -818,9 +854,6 @@ class Standard : LLAMA() {
             "--jinja",
             "--chat-template-file",
             templateFile.absolutePath)
-    // Note: --reasoning-format deepseek is intentionally NOT used here.
-    // We handle <think>/</ think> separation ourselves via filterThinkTags + pre-fill seeding,
-    // which allows us to seed the reasoning language (e.g. German) via the <think> pre-fill.
 
     if (thinkingMmprojFile != null && thinkingMmprojFile!!.exists()) {
       command.addAll(listOf("--mmproj", thinkingMmprojFile!!.absolutePath))
@@ -832,13 +865,14 @@ class Standard : LLAMA() {
 
     try {
       val pb = ProcessBuilder(command)
+
       pb.directory(binary.parentFile)
       pb.redirectErrorStream(false)
       pb.environment()["LLAMA_LOG_TIMESTAMPS"] = "1"
 
       val process = pb.start()
-      thinkingServerProcess = process
 
+      thinkingServerProcess = process
       thinkingStdoutThread =
           Thread(
                   {
@@ -848,7 +882,7 @@ class Standard : LLAMA() {
                           log(LogLevel.INFO, "[thinking-server] $line")
                         }
                       }
-                    } catch (_: Exception) {}
+                    } catch (X: Exception) {}
                   },
                   "thinking-stdout")
               .apply {
@@ -865,7 +899,7 @@ class Standard : LLAMA() {
                           log(LogLevel.INFO, "[thinking-server/err] $line")
                         }
                       }
-                    } catch (_: Exception) {}
+                    } catch (X: Exception) {}
                   },
                   "thinking-stderr")
               .apply {
@@ -873,43 +907,57 @@ class Standard : LLAMA() {
                 start()
               }
 
-      // Wait for thinking server health
       val healthy = waitForThinkingHealth()
+
       if (!healthy) {
         log(LogLevel.ERROR, "Thinking server failed to become healthy")
         stopThinkingServer()
+
         return false
       }
 
-      log(LogLevel.INFO, "Thinking llama-server is healthy on port $thinkingServerPort")
+      log(LogLevel.INFO, "Thinking LLAMA-Server is healthy on port $thinkingServerPort")
+
       return true
-    } catch (e: Exception) {
-      log(LogLevel.ERROR, "Failed to start thinking server: ${e.message}", "", e)
+    } catch (X: Exception) {
+      log(LogLevel.ERROR, "Failed to start thinking server: ${X.message}", "", X)
       stopThinkingServer()
+
       return false
     }
   }
 
-  /** Finds a free port for the thinking server, starting from [preferredPort]. */
+  /**
+   * Finds a free TCP port for the thinking server, starting from [preferredPort] and probing up to
+   * 20 consecutive candidates.
+   *
+   * @param preferredPort The first port to try.
+   * @return A free port number, or a system-assigned ephemeral port as last resort.
+   */
   private fun findThinkingPort(preferredPort: Int): Int {
     for (offset in 0 until 20) {
       val candidate = preferredPort + offset
+
       if (candidate > 65535 || candidate == serverPort) continue
       try {
         java.net.ServerSocket(candidate).use { /* port is free */ }
         return candidate
-      } catch (_: Exception) {
-        /* in use */
-      }
+      } catch (X: Exception) {}
     }
+
     return try {
       java.net.ServerSocket(0).use { it.localPort }
-    } catch (_: Exception) {
+    } catch (X: Exception) {
       preferredPort
     }
   }
 
-  /** Polls the thinking server `/health` endpoint until it reports healthy. */
+  /**
+   * Polls the thinking server `/health` endpoint until it reports healthy or the 120 s deadline
+   * elapses.
+   *
+   * @return `true` if the server became healthy within the deadline.
+   */
   private fun waitForThinkingHealth(): Boolean {
     val deadline = System.currentTimeMillis() + 120_000L
     var lastError = ""
@@ -918,6 +966,7 @@ class Standard : LLAMA() {
       thinkingServerProcess?.let { proc ->
         if (!proc.isAlive) {
           log(LogLevel.ERROR, "Thinking server process died (exit code: ${proc.exitValue()})")
+
           return false
         }
       }
@@ -926,6 +975,7 @@ class Standard : LLAMA() {
         val connection =
             URI("http://127.0.0.1:$thinkingServerPort/health").toURL().openConnection()
                 as HttpURLConnection
+
         connection.connectTimeout = 2_000
         connection.readTimeout = 2_000
         connection.requestMethod = "GET"
@@ -934,87 +984,105 @@ class Standard : LLAMA() {
         val body =
             try {
               connection.inputStream.bufferedReader().readText()
-            } catch (_: Exception) {
+            } catch (X: Exception) {
               ""
             }
+
         connection.disconnect()
 
         if (responseCode == 200 &&
             (body.contains("ok", ignoreCase = true) || body.contains("\"status\""))) {
           return true
         }
+
         lastError = "HTTP $responseCode: $body"
-      } catch (e: Exception) {
-        lastError = e.message ?: "connection refused"
+      } catch (X: Exception) {
+        lastError = X.message ?: "connection refused"
       }
 
       Thread.sleep(1_000L)
     }
 
     log(LogLevel.ERROR, "Thinking server health check timed out. Last error: $lastError")
+
     return false
   }
 
-  /** Stops the thinking llama-server process. */
+  /** Destroys the thinking LLAMA-Server process and drains its I/O threads. */
   private fun stopThinkingServer() {
     thinkingServerProcess?.let { proc ->
-      log(LogLevel.INFO, "Stopping thinking llama-server...")
+      log(LogLevel.INFO, "Stopping thinking LLAMA-Server...")
+
       try {
         proc.destroy()
+
         if (!proc.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) {
           proc.destroyForcibly()
           proc.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)
         }
+
         log(LogLevel.INFO, "Thinking server stopped (exit code: ${proc.exitValue()})")
-      } catch (e: Exception) {
-        log(LogLevel.WARNING, "Error stopping thinking server: ${e.message}")
+      } catch (X: Exception) {
+        log(LogLevel.WARNING, "Error stopping thinking server: ${X.message}")
+
         try {
           proc.destroyForcibly()
-        } catch (_: Exception) {}
+        } catch (X: Exception) {}
       }
     }
+
     thinkingServerProcess = null
     thinkingStdoutThread = null
     thinkingStderrThread = null
     thinkingServerReady = false
+
     activeThinkingServerPort = 0
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Servlet execute — the entry point for every AI request
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // endregion Thinking Model Server
+  // region Servlet-Execution
+  /**
+   * Handles three flows:
+   * 1. **Stream-poll** — returns the current state of an in-flight streaming session.
+   * 2. **Health check** — returns server readiness, model info, and resource status.
+   * 3. **New question** — collects images, detects language, builds the prompt, and either streams
+   *    the response (background thread + poll UUID) or returns it synchronously.
+   *
+   * @param params The servlet action parameters (headers, upload files, etc.).
+   * @return A JSON response wrapped in [IPluginServletActionRetVal].
+   */
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    // ── Stream-poll shortcut ──────────────────────────────────────────────────
     val pollId =
         params.headerMap.entries.find { it.key.equals("X-Stream-Poll", ignoreCase = true) }?.value
+
     if (pollId != null) {
       cleanupStaleSessions()
+
       val wantsStop =
           params.headerMap.entries.any {
             it.key.equals("X-Stream-Stop", ignoreCase = true) &&
                 it.value.equals("true", ignoreCase = true)
           }
       val session = streamingSessions[pollId]
+
       if (session != null && wantsStop) {
         session.stopRequested = true
+
         log(LogLevel.INFO, "Stop requested for stream $pollId")
       }
+
       if (session == null) {
         return jsonResponse("{\"error\":\"Unknown or expired stream session.\"}")
       }
+
       val text = session.currentText()
       val done = session.done
       val err = session.error
       val resStatus = session.resourceStatus
+
       session.resourceStatus = null
-      // Don't remove session immediately on done — the client may miss the done signal
-      // (e.g. if it returns early on CALL:search detection). TTL cleanup handles removal.
 
-      // Suppress CALL:search command text from ever reaching the client.
-      // If the accumulated text contains CALL it is a tool invocation — return empty text.
       val visibleText = if (!session.searching && text.trimStart().startsWith("CALL")) "" else text
-
       val resStatusJson =
           if (resStatus != null) ",\"resourceStatus\":\"${jsonEscape(resStatus)}\"" else ""
       val searchingJson = if (session.searching) ",\"searching\":true" else ""
@@ -1035,41 +1103,69 @@ class Standard : LLAMA() {
               "\"copyResponseLabel\":\"${jsonEscape(session.uiCopyResponseLabel)}\"," +
               "\"copyReasoningLabel\":\"${jsonEscape(session.uiCopyReasoningLabel)}\"" +
               "}"
+      // region Confidence-Data
+      val confidenceJson =
+          if (done && session.logprobsAvailable) {
+            val mean = session.meanLogprob()
+            val meanStr = if (mean != null) "%.4f".format(java.util.Locale.ROOT, mean) else "null"
+            val uncertainTokens = buildString {
+              append("[")
+
+              var charOffset = 0
+              var first = true
+
+              for ((tok, lp) in session.tokenLogprobs) {
+                if (lp < -2.0) {
+                  if (!first) append(",")
+                  append(
+                      "{\"t\":\"${jsonEscape(tok)}\",\"lp\":${"%.3f".format(java.util.Locale.ROOT, lp)},\"o\":$charOffset}")
+                  first = false
+                }
+
+                charOffset += tok.length
+              }
+
+              append("]")
+            }
+
+            val repFlag =
+                if (session.logprobRepetitionDetected) ",\"logprobRepetition\":true" else ""
+            ",\"confidence\":{\"mean\":$meanStr,\"uncertainTokens\":$uncertainTokens$repFlag}"
+          } else ""
+      // endregion Confidence-Data
       val jsonValue =
           if (err != null) {
-            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":true,\"error\":\"${jsonEscape(err)}\"$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson$i18nJson}"
+            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":true,\"error\":\"${jsonEscape(err)}\"$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson$i18nJson$confidenceJson}"
           } else {
-            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":$done$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson$i18nJson}"
+            "{\"text\":\"${jsonEscape(visibleText)}\",\"done\":$done$resStatusJson$searchingJson$searchQueryJson$thinkingJson$modelTypeJson$i18nJson$confidenceJson}"
           }
+
       return jsonResponse(jsonValue)
     }
-    // ── End stream-poll shortcut ──────────────────────────────────────────────
 
-    // ── Health-check shortcut ─────────────────────────────────────────────────
     val isHealthCheck =
         params.headerMap.entries.any {
           it.key.equals("X-Health-Check", ignoreCase = true) &&
               it.value.equals("true", ignoreCase = true)
         }
+
     if (isHealthCheck) {
       if (loadError != null) {
         return jsonResponse(
             "{\"error\":\"Failed to initialize: ${jsonEscape(loadError?.message ?: "unknown")}\"}")
       }
+
       if (!isExternalMode && !serverReady) {
         return jsonResponse(
             "{\"error\":\"Model is not ready yet. It may still be downloading or loading.\"}")
       }
-      // Model is ready (or in external mode) — include model name for the UI
+
       val displayModel =
           if (isExternalMode) {
-            // External model name, e.g. "meta-llama/llama-4-scout-17b-16e-instruct"
-            // Show only the part after the last slash for cleaner display
             (externalModel ?: "External AI").substringAfterLast("/")
           } else {
-            // Local GGUF filename → friendly name: strip extension + quantization suffix
-            // e.g. "Qwen3VL-2B-Instruct-Q4_K_M.gguf" → "Qwen3VL-2B-Instruct"
             val raw = modelUrl.substringAfterLast("/").removeSuffix(".gguf")
+
             raw.replace(Regex("-[QFqf][0-9_]+[A-Za-z_]*$"), "")
           }
       val thinkingModelJson =
@@ -1080,84 +1176,91 @@ class Standard : LLAMA() {
           } else if (hasThinkingModel && !thinkingServerReady) {
             ",\"pendingThinkingModel\":true"
           } else ""
+
       return jsonResponse(
           "{\"status\":\"ready\",\"model\":\"${jsonEscape(displayModel)}\"$thinkingModelJson}")
     }
-    // ── End health-check shortcut ─────────────────────────────────────────────
 
     log(
         LogLevel.INFO,
         "Processing VQA request" +
             if (isExternalMode) " (external: $externalUrl)"
-            else " (llama-server on port $serverPort)")
+            else " (LLAMA-Server on port $serverPort)")
 
-    // ── Resource gate ─────────────────────────────────────────────────────────
     resourceMonitor?.let { monitor ->
       val reason = monitor.exceedReason()
+
       if (reason != null) {
         val waitSec = monitor.estimateWaitSeconds()
+
         log(LogLevel.WARNING, "Resource gate BLOCKED: $reason — estimated wait ${waitSec}s")
+
         return jsonResponse(
             "{\"error\":\"Server resources exceeded ($reason). Please retry in ~${waitSec} seconds.\",\"retryAfter\":$waitSec}")
       }
     }
 
-    // ── Readiness checks ──────────────────────────────────────────────────────
     if (loadError != null) {
       return jsonResponse(
           "{\"error\":\"Failed to initialize: ${jsonEscape(loadError?.message ?: "unknown")}\"}")
     }
+
     if (!isExternalMode && (!serverReady || !isServerAlive())) {
       // Attempt restart if server died
       if (serverReady && !isServerAlive()) {
-        log(LogLevel.WARNING, "llama-server process died — attempting restart")
+        log(LogLevel.WARNING, "LLAMA-Server process died — attempting restart")
+
         serverReady = false
+
         val binary = serverBinary
         val model = modelFile
+
         if (binary != null && model != null) {
           val restarted = startServer(binary, model, mmprojFile)
+
           if (restarted) {
             serverReady = true
             isActive = true
           } else {
-            return jsonResponse("{\"error\":\"llama-server crashed and restart failed.\"}")
+            return jsonResponse("{\"error\":\"LLAMA-Server crashed and restart failed.\"}")
           }
         }
       }
+
       if (!serverReady) {
         return jsonResponse(
             "{\"error\":\"Model is not ready yet. It may still be downloading or loading.\"}")
       }
     }
 
-    // ── Parse questions from headers ──────────────────────────────────────────
     val questionsToAsk = mutableMapOf<String, String>()
+
     params.headerMap.forEach { (headerName, headerValue) ->
       if (headerName.startsWith("x-question-", ignoreCase = true)) {
         val key = headerName.lowercase().substringAfter("x-question-", "").lowercase()
+
         if (key.isNotBlank() && headerValue != null) {
-          // Header value is Base64-encoded UTF-8 from the client
           val decodedValue =
               try {
                 val bytes = java.util.Base64.getDecoder().decode(headerValue)
                 String(bytes, Charsets.UTF_8)
-              } catch (_: Exception) {
-                // Fallback: try raw ISO-8859-1 → UTF-8 re-interpretation
+              } catch (X: Exception) {
                 try {
                   String(headerValue.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8)
-                } catch (_: Exception) {
+                } catch (X: Exception) {
                   headerValue
                 }
               }
+
           questionsToAsk[key] = decodedValue
         }
       }
     }
+
     if (questionsToAsk.isEmpty()) {
       return jsonResponse("{\"error\":\"No questions asked.\"}")
     }
 
-    // ── Parse chat history ────────────────────────────────────────────────────
     val chatHistory: List<Pair<String, String>> = run {
       val raw =
           params.headerMap.entries
@@ -1166,31 +1269,29 @@ class Standard : LLAMA() {
       try {
         val decoded = String(java.util.Base64.getDecoder().decode(raw), Charsets.UTF_8)
         val array = com.google.gson.JsonParser.parseString(decoded).asJsonArray
+
         array.map {
           val obj = it.asJsonObject
           Pair(obj.get("role").asString, obj.get("content").asString)
         }
-      } catch (e: Exception) {
-        log(LogLevel.WARNING, "Failed to parse chat history: ${e.message}")
+      } catch (X: Exception) {
+        log(LogLevel.WARNING, "Failed to parse chat history: ${X.message}")
+
         emptyList()
       }
     }
+
     if (chatHistory.isNotEmpty()) {
       log(LogLevel.INFO, "Chat history: ${chatHistory.size} turns")
     }
 
-    // ── Collect image data ────────────────────────────────────────────────────
     val fileDataMap = collectImageData(params)
-
-    // ── Rotation ──────────────────────────────────────────────────────────────
     val manualRotation =
         params.headerMap.entries
             .find { it.key.equals("X-Rotate", ignoreCase = true) }
             ?.value
             ?.trim()
             ?.toIntOrNull()
-
-    // ── Session-based slot isolation ─────────────────────────────────────────
     val slotId: Int = run {
       val sid =
           params.headerMap.entries.find { it.key.equals("X-Session-Id", ignoreCase = true) }?.value
@@ -1199,11 +1300,6 @@ class Standard : LLAMA() {
         log(LogLevel.INFO, "Session ${sid.take(8)}… → slot $it (of $parallelSlots)")
       }
     }
-
-    // ── Thinking mode ─────────────────────────────────────────────────────────
-    // Only enable thinking when the dedicated thinking server is available.
-    // The fast (Instruct) model cannot handle <think> pre-fill — it produces
-    // garbage/nothing. Without a dedicated thinking model, skip thinking entirely.
     val userWantsThinking =
         params.headerMap.entries.any {
           it.key.equals("X-Thinking", ignoreCase = true) &&
@@ -1218,25 +1314,20 @@ class Standard : LLAMA() {
         }
     log(LogLevel.INFO, "Thinking mode: $thinkingMode")
 
-    // ── Thinking token budget ─────────────────────────────────────────────────
-    // Optional per-request limit on the thinking token budget (multiplier of maxTokens).
-    // Default: maxTokens*4. Useful for verify mode where only a yes/no is needed.
     val thinkingTokenBudget =
         params.headerMap.entries
             .find { it.key.equals("X-Max-Thinking-Tokens", ignoreCase = true) }
             ?.value
             ?.trim()
             ?.toIntOrNull()
-
-    // ── Search toggle ─────────────────────────────────────────────────────────
     val searchEnabled =
         params.headerMap.entries.none {
           it.key.equals("X-Search", ignoreCase = true) &&
               it.value.equals("false", ignoreCase = true)
         }
+
     log(LogLevel.INFO, "Search enabled: $searchEnabled")
 
-    // ── Location toggle ───────────────────────────────────────────────────────
     val locationEnabled =
         params.headerMap.entries.any {
           it.key.equals("X-Location", ignoreCase = true) &&
@@ -1250,6 +1341,7 @@ class Standard : LLAMA() {
         params.headerMap.entries
             .firstOrNull { it.key.equals("X-Longitude", ignoreCase = true) }
             ?.value
+
     log(
         LogLevel.INFO,
         "Location enabled: $locationEnabled" +
@@ -1257,7 +1349,6 @@ class Standard : LLAMA() {
                 " (lat=$userLatitude, lon=$userLongitude)"
             else "")
 
-    // Resolve client IP for IP-based geolocation fallback
     val clientIP =
         if (locationEnabled) {
           val headers = params.headerMap
@@ -1269,8 +1360,6 @@ class Standard : LLAMA() {
             if (!xri.isNullOrBlank()) xri.trim() else params.remoteAddr?.trim() ?: "unknown"
           }
         } else null
-
-    // ── Streaming path ────────────────────────────────────────────────────────
     val wantsStream =
         params.headerMap.entries.any {
           it.key.equals("X-Stream", ignoreCase = true) && it.value.equals("true", ignoreCase = true)
@@ -1278,8 +1367,10 @@ class Standard : LLAMA() {
 
     if (wantsStream) {
       cleanupStaleSessions()
+
       val sessionId = UUID.randomUUID().toString()
       val session = StreamingSession(enableThinking = enableThinking)
+
       streamingSessions[sessionId] = session
 
       val questions = questionsToAsk.toMap()
@@ -1290,11 +1381,9 @@ class Standard : LLAMA() {
 
       Thread(
               {
-                // Detect language via a fast model call BEFORE the main completion.
-                // Declared outside try so it's available in the finally fallback path.
                 val question = questions.values.first()
                 val detectedLang = detectLanguageViaModel(question)
-                // Set localized UI labels on the session for the poll response
+
                 if (detectedLang != null) {
                   session.uiReasoningLabel = detectedLang.uiReasoningLabel
                   session.uiShowReasoningLabel = detectedLang.uiShowReasoningLabel
@@ -1305,6 +1394,7 @@ class Standard : LLAMA() {
                   session.uiCopyResponseLabel = detectedLang.uiCopyResponseLabel
                   session.uiCopyReasoningLabel = detectedLang.uiCopyReasoningLabel
                 }
+
                 val userLocation =
                     if (locationEnabled) {
                       if (userLatitude != null && userLongitude != null)
@@ -1334,33 +1424,27 @@ class Standard : LLAMA() {
                           detectedLang,
                           locationEnabled,
                           userLocation)
+
                   if (enableThinking || locationEnabled)
                       log(LogLevel.INFO, "Messages JSON (first 500): ${messages.take(500)}")
 
-                  // Always stream directly to the user for immediate feedback
                   streamChatCompletion(messages, session, enableThinking, slot)
+
                   val fullText = session.currentText()
                   val thinkText = session.currentThinking()
+
                   log(
                       LogLevel.INFO,
                       "Stream done. Text: ${fullText.take(80)}…, Thinking: ${thinkText.take(120)}… (${thinkText.length} chars)")
 
-                  // After streaming completes, check if the model wants a web search.
-                  // Only check visible text for CALL:search — if the model placed it inside
-                  // <think> tags, it was reasoning about searching, not requesting it.
-                  // The auto-search fallback in the finally block handles the case where
-                  // thinking produced no visible answer.
                   if (searchEnabled &&
                       BraveSearch.isAvailable &&
                       BraveSearch.CALL_SEARCH_PATTERN.containsMatchIn(fullText)) {
-                    // Extract the search query for the client indicator (sanitized)
                     val rawQuery =
                         BraveSearch.CALL_SEARCH_PATTERN.find(fullText)?.groupValues?.get(1) ?: ""
                     session.searchQuery =
                         BraveSearch.sanitizeQuery(rawQuery, detectedLang?.languageName)
-                    // Signal the client to show a search animation
                     session.searching = true
-                    // Strip the CALL:search text so it's not displayed
                     session.textChunks.clear()
 
                     handleSearchToolCallStreaming(
@@ -1376,29 +1460,43 @@ class Standard : LLAMA() {
                     session.searching = false
                     session.searchQuery = null
                   }
-                } catch (ex: Exception) {
-                  session.error = ex.message ?: "Unknown error"
-                  log(LogLevel.ERROR, "Streaming error: ${ex.message}", "", ex)
+                } catch (X: Exception) {
+                  session.error = X.message ?: "Unknown error"
+
+                  log(LogLevel.ERROR, "Streaming error: ${X.message}", "", X)
                 } finally {
-                  // If the model produced only reasoning (no visible answer), keep reasoning
-                  // in the collapsible section and show a helpful visible message instead
-                  // of dumping raw reasoning into the chat bubble.
                   if (enableThinking &&
                       session.currentText().isBlank() &&
                       session.currentThinking().isNotBlank()) {
-                    // Thinking model failed to produce a visible answer — fall back to
-                    // the fast model (non-thinking) and let IT decide whether a web search
-                    // is needed via CALL:search, rather than forcing a search every time.
                     log(
                         LogLevel.INFO,
                         "Thinking model failed to produce answer — falling back to fast model")
-                    session.thinkingChunks.add(
-                        "\n⚠ The thinking model used all available tokens for reasoning without producing a final answer. The fast model was used to generate this response instead.\n")
+
+                    val fallbackWarningEnglish =
+                        "The thinking model used all available tokens for reasoning without producing a final answer. The fast model was used to generate this response instead."
+                    val translatedWarning =
+                        try {
+                          val lang = detectedLang?.languageName ?: "English"
+                          if (lang == "English") {
+                            "⚠ $fallbackWarningEnglish"
+                          } else {
+                            val prompt =
+                                """[{"role":"user","content":"Translate the following message to $lang. Output ONLY the translated sentence, nothing else: '$fallbackWarningEnglish'"}]"""
+                            "⚠ " +
+                                chatCompletion(prompt, enableThinking = false, idSlot = slot)
+                                    .trim()
+                                    .removeSurrounding("\"")
+                                    .removeSurrounding("'")
+                          }
+                        } catch (X: Exception) {
+                          log(LogLevel.WARNING, "Fallback warning translation failed: ${X.message}")
+                          "⚠ $fallbackWarningEnglish"
+                        }
+
+                    session.thinkingChunks.add("\n$translatedWarning\n")
                     session.modelType = "fast"
                     session.textChunks.clear()
 
-                    // Pass the thinking model's reasoning to the fast model so it can
-                    // build on the analysis already performed instead of starting fresh.
                     val reasoning =
                         session
                             .currentThinking()
@@ -1415,8 +1513,6 @@ class Standard : LLAMA() {
                             detectedLang = detectedLang,
                             locationEnabled = locationEnabled,
                             userLocation = userLocation)
-                    // Inject reasoning context: replace the closing ] with an additional
-                    // system message containing the reasoning, then re-close.
                     val messagesWithReasoning =
                         if (reasoning.length > 50) {
                           val reasoningSnippet =
@@ -1436,10 +1532,11 @@ class Standard : LLAMA() {
                         } else {
                           fallbackMessages
                         }
+
                     streamChatCompletion(messagesWithReasoning, session, false, slot)
+
                     val fallbackText = session.currentText()
 
-                    // If the fast model emitted CALL:search, handle it
                     if (searchEnabled &&
                         BraveSearch.isAvailable &&
                         BraveSearch.CALL_SEARCH_PATTERN.containsMatchIn(fallbackText)) {
@@ -1449,6 +1546,7 @@ class Standard : LLAMA() {
                       session.searchQuery =
                           BraveSearch.sanitizeQuery(rawQuery, detectedLang?.languageName)
                       session.searching = true
+
                       session.textChunks.clear()
                       handleSearchToolCallStreaming(
                           fallbackText,
@@ -1464,9 +1562,7 @@ class Standard : LLAMA() {
                       session.searchQuery = null
                     }
                   }
-                  // Final safety net: if after all attempts the visible text is still
-                  // empty (and no error was set), ask the model to generate a localized
-                  // fallback message so the user sees something in their language.
+
                   if (session.currentText().isBlank() && session.error == null) {
                     log(
                         LogLevel.WARNING,
@@ -1484,10 +1580,44 @@ class Standard : LLAMA() {
                         session.textChunks.clear()
                         session.textChunks.add(translated)
                       }
-                    } catch (ex: Exception) {
-                      log(LogLevel.WARNING, "Fallback translation failed: ${ex.message}")
+                    } catch (X: Exception) {
+                      log(LogLevel.WARNING, "Fallback translation failed: ${X.message}")
                     }
                   }
+
+                  val truncationMarkers =
+                      listOf(
+                          "[Reasoning truncated \u2014 repetition detected]",
+                          "[Reasoning truncated \u2014 repetitive pattern detected]")
+                  val lang = detectedLang?.languageName
+
+                  if (lang != null && lang != "English") {
+                    for (marker in truncationMarkers) {
+                      val idx = session.thinkingChunks.indexOfFirst { it.contains(marker) }
+
+                      if (idx >= 0) {
+                        try {
+                          val prompt =
+                              """[{"role":"user","content":"Translate the following message to $lang. Output ONLY the translated sentence in square brackets, nothing else: '$marker'"}]"""
+                          val translated =
+                              chatCompletion(prompt, enableThinking = false, idSlot = slot)
+                                  .trim()
+                                  .removeSurrounding("\"")
+                                  .removeSurrounding("'")
+
+                          if (translated.isNotBlank()) {
+                            session.thinkingChunks[idx] =
+                                session.thinkingChunks[idx].replace(marker, translated)
+                          }
+                        } catch (X: Exception) {
+                          log(
+                              LogLevel.WARNING,
+                              "Truncation marker translation failed: ${X.message}")
+                        }
+                      }
+                    }
+                  }
+
                   session.done = true
                 }
               },
@@ -1496,10 +1626,10 @@ class Standard : LLAMA() {
           .start()
 
       log(LogLevel.INFO, "Streaming session started: $sessionId")
+
       return jsonResponse("{\"streamId\":\"$sessionId\"}")
     }
 
-    // ── Non-streaming path ────────────────────────────────────────────────────
     val finalResults = mutableMapOf<String, Map<String, String>>()
 
     try {
@@ -1509,7 +1639,6 @@ class Standard : LLAMA() {
           } else emptyList()
 
       for ((questionKey, question) in questionsToAsk) {
-        // Detect language via a fast model call BEFORE the main completion
         val detectedLang = detectLanguageViaModel(question)
         val userLocation =
             if (locationEnabled) {
@@ -1534,15 +1663,11 @@ class Standard : LLAMA() {
                 userLocation)
         var answer = chatCompletion(messages, enableThinking, slotId, thinkingTokenBudget)
 
-        // ── Thinking fallback ──────────────────────────────────────────
-        // If thinking mode produced an empty or thinking-only answer (the model
-        // burned all tokens reasoning without producing a visible answer), fall
-        // back to the fast model without thinking — same pattern as the chat
-        // streaming path.
         if (enableThinking && answer.isBlank()) {
           log(
               LogLevel.INFO,
               "Thinking model produced no visible answer for Q[$questionKey] — falling back to fast model")
+
           val fallbackMessages =
               buildMessages(
                   question,
@@ -1553,10 +1678,10 @@ class Standard : LLAMA() {
                   detectedLang,
                   locationEnabled,
                   userLocation)
+
           answer = chatCompletion(fallbackMessages, enableThinking = false, idSlot = slotId)
         }
 
-        // ── CALL:search tool loop ──────────────────────────────────────
         if (searchEnabled) {
           answer =
               handleSearchToolCall(
@@ -1571,64 +1696,78 @@ class Standard : LLAMA() {
         }
 
         finalResults[questionKey] = mapOf("answer" to answer)
+
         log(LogLevel.INFO, "Q[$questionKey]: ${question.take(80)}… → $answer")
       }
-    } catch (e: Exception) {
-      log(LogLevel.ERROR, "Inference error: ${e.message}", "", e)
-      return jsonResponse("{\"error\":\"${jsonEscape(e.message ?: "Inference failed")}\"}")
+    } catch (X: Exception) {
+      log(LogLevel.ERROR, "Inference error: ${X.message}", "", X)
+
+      return jsonResponse("{\"error\":\"${jsonEscape(X.message ?: "Inference failed")}\"}")
     }
 
-    // Build response JSON
     val jsonBody = buildString {
       append("{")
+
       val entries = finalResults.entries.toList()
+
       for ((idx, entry) in entries.withIndex()) {
         append("\"${jsonEscape(entry.key)}\":{")
+
         val innerEntries = entry.value.entries.toList()
+
         for ((iIdx, inner) in innerEntries.withIndex()) {
           append("\"${jsonEscape(inner.key)}\":\"${jsonEscape(inner.value)}\"")
           if (iIdx < innerEntries.size - 1) append(",")
         }
+
         append("}")
+
         if (idx < entries.size - 1) append(",")
       }
       append("}")
     }
+
     return jsonResponse(jsonBody)
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Image Handling
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  /** Collects image data from both multipart upload files and base64 data-URL parameters. */
+  // endregion Servlet execute
+  // region Image Handling
+  /**
+   * Collects image data from both multipart upload files and base64 data-URL parameters.
+   *
+   * @param params The servlet action parameters containing upload files and headers.
+   * @return A map of input name → raw image bytes.
+   */
   private fun collectImageData(params: IPluginServletActionParams): Map<String, ByteArray> {
     val fileDataMap = mutableMapOf<String, ByteArray>()
 
-    // From multipart uploads
     params.uploadFiles?.forEach { (inputName, fileDataList) ->
       val combinedBytes =
           fileDataList.fold(byteArrayOf()) { acc, fd -> acc + (fd.data ?: byteArrayOf()) }
+
       if (combinedBytes.isNotEmpty()) {
         fileDataMap[inputName] = combinedBytes
+
         log(LogLevel.INFO, "Upload image '$inputName': ${combinedBytes.size} bytes")
       }
     }
 
-    // From base64 data-URL text parameters
     params.requestParameters?.forEach { (key, values) ->
       if (key.startsWith("codbi-base64:")) {
         val imageName = key.removePrefix("codbi-base64:")
         val dataUrl = values.firstOrNull() ?: return@forEach
         val base64 = dataUrl.substringAfter(",")
+
         try {
           val bytes = java.util.Base64.getDecoder().decode(base64)
+
           if (bytes.isNotEmpty()) {
             fileDataMap[imageName] = bytes
+
             log(LogLevel.INFO, "Base64 param image '$imageName': ${bytes.size} bytes")
           }
-        } catch (e: Exception) {
-          log(LogLevel.WARNING, "Failed to decode base64 for '$imageName': ${e.message}")
+        } catch (X: Exception) {
+          log(LogLevel.WARNING, "Failed to decode base64 for '$imageName': ${X.message}")
         }
       }
     }
@@ -1637,6 +1776,7 @@ class Standard : LLAMA() {
         LogLevel.INFO,
         "Image data: ${fileDataMap.size} images, " +
             "path = ${if (fileDataMap.isNotEmpty()) "IMAGE" else "TEXT-ONLY"}")
+
     return fileDataMap
   }
 
@@ -1658,20 +1798,20 @@ class Standard : LLAMA() {
 
     return entries.mapNotNull { (inputName, imageBytes) ->
       try {
-        // Apply rotation: manual header first, then Tesseract OSD auto-detection
         val rotatedBytes = run {
           val buf = ImageIO.read(ByteArrayInputStream(imageBytes)) ?: return@run imageBytes
-
           val degrees =
               if (manualRotation != null && manualRotation != 0) {
                 manualRotation
               } else if (TesseractAction.isOsdAvailable) {
                 val detected = TesseractAction.detectOrientation(buf)
+
                 if (detected != 0) {
                   log(
                       LogLevel.INFO,
                       "Tesseract OSD auto-detected rotation for '$inputName': ${detected}°")
                 }
+
                 detected
               } else 0
 
@@ -1690,25 +1830,30 @@ class Standard : LLAMA() {
           } else imageBytes
         }
 
-        // Server-side downscale gate
         val finalBytes = downscaleIfNeeded(rotatedBytes)
-
-        // Encode as base64
         val base64 = java.util.Base64.getEncoder().encodeToString(finalBytes)
+
         log(LogLevel.INFO, "Image '$inputName' prepared: ${finalBytes.size} bytes → base64")
         "data:image/png;base64,$base64"
-      } catch (e: Exception) {
-        log(LogLevel.WARNING, "Failed to prepare image '$inputName': ${e.message}")
+      } catch (X: Exception) {
+        log(LogLevel.WARNING, "Failed to prepare image '$inputName': ${X.message}")
+
         null
       }
     }
   }
 
-  /** Downscales image bytes if the total pixel count exceeds [maxPixels]. */
+  /**
+   * Downscales image bytes if the total pixel count exceeds [maxPixels].
+   *
+   * @param imageBytes Raw image bytes (PNG, JPEG, etc.).
+   * @return Downscaled PNG bytes, or the original bytes if no scaling was needed.
+   */
   private fun downscaleIfNeeded(imageBytes: ByteArray): ByteArray {
     try {
       val img = ImageIO.read(ByteArrayInputStream(imageBytes)) ?: return imageBytes
       val totalPixels = img.width.toLong() * img.height.toLong()
+
       if (totalPixels <= maxPixels) return imageBytes
 
       val scale = Math.sqrt(maxPixels.toDouble() / totalPixels)
@@ -1722,6 +1867,7 @@ class Standard : LLAMA() {
 
       val scaled = BufferedImage(newW, newH, BufferedImage.TYPE_INT_RGB)
       val g2d = scaled.createGraphics()
+
       g2d.setRenderingHint(
           java.awt.RenderingHints.KEY_INTERPOLATION,
           java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR)
@@ -1729,15 +1875,24 @@ class Standard : LLAMA() {
       g2d.dispose()
 
       val baos = ByteArrayOutputStream()
+
       ImageIO.write(scaled, "PNG", baos)
+
       return baos.toByteArray()
-    } catch (e: Exception) {
-      log(LogLevel.WARNING, "Downscale failed: ${e.message} — using original")
+    } catch (X: Exception) {
+      log(LogLevel.WARNING, "Downscale failed: ${X.message} — using original")
+
       return imageBytes
     }
   }
 
-  /** Rotates a [BufferedImage] by 90, 180, or 270 degrees. */
+  /**
+   * Rotates a [BufferedImage] by 90, 180, or 270 degrees.
+   *
+   * @param image The source image.
+   * @param degrees Rotation angle (must be a multiple of 90).
+   * @return A new [BufferedImage] with the rotation applied.
+   */
   private fun rotateImage(image: BufferedImage, degrees: Int): BufferedImage {
     val rads = Math.toRadians(degrees.toDouble())
     val sin = Math.abs(Math.sin(rads))
@@ -1746,25 +1901,24 @@ class Standard : LLAMA() {
     val h = image.height
     val newW = Math.floor(w * cos + h * sin).toInt()
     val newH = Math.floor(h * cos + w * sin).toInt()
-
     val rotated =
         BufferedImage(
             newW, newH, image.type.let { if (it == 0) BufferedImage.TYPE_INT_ARGB else it })
     val g2d = rotated.createGraphics()
     val at = AffineTransform()
+
     at.translate(newW / 2.0, newH / 2.0)
     at.rotate(rads, 0.0, 0.0)
     at.translate(-w / 2.0, -h / 2.0)
     g2d.transform = at
     g2d.drawImage(image, 0, 0, null)
     g2d.dispose()
+
     return rotated
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Web Search Tool (CALL:search) handling
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // endregion Image Handling
+  // region Web Search Tool
   /** Maximum number of search round-trips to prevent infinite loops. */
   private val maxSearchRoundTrips = 2
 
@@ -1794,38 +1948,40 @@ class Standard : LLAMA() {
     if (!BraveSearch.isAvailable) return initialAnswer
 
     var answer = initialAnswer
+
     for (round in 1..maxSearchRoundTrips) {
       val match = BraveSearch.CALL_SEARCH_PATTERN.find(answer) ?: break
       var query = match.groupValues[1]
+
       log(LogLevel.INFO, "Model requested web search (round $round): '$query'")
 
-      // Automatically append location to location-dependent queries
       if (userLocation != null) {
         val shortLocation = userLocation.substringBefore(",").trim()
+
         if (shortLocation.isNotEmpty() && !query.contains(shortLocation, ignoreCase = true)) {
           query = "$query $shortLocation"
+
           log(LogLevel.INFO, "Location-enriched search query: '$query'")
         }
       }
 
       val results =
           BraveSearch.search(query, detectedLang?.braveCountry, detectedLang?.languageName)
+
       if (results.isEmpty()) {
         log(LogLevel.WARNING, "Web search returned no results for: '$query'")
+
         break
       }
 
       val searchContext = BraveSearch.formatResultsForModel(results)
-
-      // Build extended conversation: original history + user question + assistant's CALL + search
-      // results. Only pass the CALL:search command, not any surrounding reasoning text.
       val extendedHistory = chatHistory.toMutableList()
+
       extendedHistory.add("user" to originalQuestion)
       extendedHistory.add("assistant" to match.value)
       extendedHistory.add("user" to searchContext)
 
       val followUpQuestion = searchFollowUpPrompt(originalQuestion, detectedLang)
-      // Don't pre-fill thinking for the follow-up — the answer must be visible text
       val messages =
           buildMessages(
               followUpQuestion,
@@ -1834,14 +1990,24 @@ class Standard : LLAMA() {
               enableThinking = false,
               detectedLang = detectedLang)
       answer = chatCompletion(messages, false, slotId)
+
       log(LogLevel.INFO, "Search-augmented answer (round $round): ${answer.take(120)}…")
     }
+
     return answer
   }
 
   /**
    * Handles `CALL:search` in streaming mode. When the completed stream text contains a search call,
    * performs the search and streams a follow-up completion.
+   *
+   * @param initialAnswer The model's first response (may contain CALL:search).
+   * @param originalQuestion The user's original question.
+   * @param imageParts Base64 image URIs (carried forward).
+   * @param chatHistory Previous conversation turns.
+   * @param enableThinking Whether thinking mode is on.
+   * @param slotId The slot ID for inference.
+   * @return The final answer (either the original or the search-augmented one).
    */
   private fun handleSearchToolCallStreaming(
       fullText: String,
@@ -1858,67 +2024,69 @@ class Standard : LLAMA() {
 
     val match = BraveSearch.CALL_SEARCH_PATTERN.find(fullText) ?: return
     var query = match.groupValues[1]
+
     log(LogLevel.INFO, "Streaming: Model raw output: '${fullText.take(200)}'")
     log(LogLevel.INFO, "Streaming: Model requested web search: '$query'")
 
-    // When the user has location enabled, automatically append their city to
-    // location-dependent queries so the search returns local results.
-    // The 2B model often omits the location even when instructed to include it.
     if (userLocation != null) {
       val shortLocation = userLocation.substringBefore(",").trim()
+
       if (shortLocation.isNotEmpty() && !query.contains(shortLocation, ignoreCase = true)) {
         query = "$query $shortLocation"
+
         log(LogLevel.INFO, "Streaming: Location-enriched search query: '$query'")
       }
     }
 
     val results = BraveSearch.search(query, detectedLang?.braveCountry, detectedLang?.languageName)
+
     if (results.isEmpty()) {
       session.textChunks.clear()
       session.textChunks.add("The web search returned no results. Please try a different query.")
+
       return
     }
 
     val searchContext = BraveSearch.formatResultsForModel(results)
-
-    // Preserve any actual reasoning the model produced before requesting search
     val priorReasoning = session.currentThinking().trim()
 
-    // Clear the CALL:search text from the stream and replace with new completion
     session.textChunks.clear()
     session.thinkingChunks.clear()
+    session.tokenLogprobs.clear()
 
-    // Build the collapsible section content:
-    // - If there was real reasoning before the search, show it first
-    // - Then show the search sources
     if (priorReasoning.isNotEmpty()) {
       session.thinkingChunks.add(priorReasoning)
       session.thinkingChunks.add("\n\n---\n\n")
     }
+
     val searchLabel =
         detectedLang?.searchingLabel?.format(query)
             ?: "\uD83D\uDD0D Searching the web for: \"$query\""
+
     session.thinkingChunks.add("$searchLabel\n\n")
+
     for ((index, result) in results.withIndex()) {
       session.thinkingChunks.add(
           "[${index + 1}] ${result.title}\n    ${result.url}\n    ${result.description.take(150)}\n\n")
     }
+
     val analyzeLabel =
         detectedLang?.analyzingLabel?.format(results.size)
             ?: "Analyzing ${results.size} results to formulate an answer."
+
     session.thinkingChunks.add(analyzeLabel)
 
     val extendedHistory = chatHistory.toMutableList()
+
     extendedHistory.add("user" to originalQuestion)
-    // Only pass the CALL:search command as assistant context, NOT the entire (possibly repetitive)
-    // thinking text.
-    // The full thinking text can be thousands of chars and would overflow the fast model's context.
+
     val assistantContext = match.value
+
     extendedHistory.add("assistant" to assistantContext)
     extendedHistory.add("user" to searchContext)
 
     val followUpQuestion = searchFollowUpPrompt(originalQuestion, detectedLang)
-    // Don't pre-fill thinking for the follow-up — the answer must be visible text
+
     val messages =
         buildMessages(
             followUpQuestion,
@@ -1926,13 +2094,12 @@ class Standard : LLAMA() {
             extendedHistory,
             enableThinking = false,
             detectedLang = detectedLang)
+
     streamChatCompletion(messages, session, false, slotId)
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  OpenAI-Compatible Chat Completion
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // endregion Web Search Tool
+  // region Message Building
   /**
    * Builds OpenAI-compatible messages array for /v1/chat/completions.
    *
@@ -1954,24 +2121,24 @@ class Standard : LLAMA() {
     return buildString {
       append("[")
 
-      // System prompt
       val today =
           java.time.LocalDate.now()
               .format(
                   java.time.format.DateTimeFormatter.ofPattern(
                       "d MMMM yyyy", java.util.Locale.ENGLISH))
+
       append("{\"role\":\"system\",\"content\":\"")
-      // When externalNoPrompt is set and we're in external mode, skip all prompt sections
+
       val skipPrompts = isExternalMode && externalNoPrompt
+
       if (!skipPrompts) {
-        // §1 Identity / role
         if (promptIdentity != null) {
           append(promptIdentity!!.replace("{date}", today))
           append(" ")
         } else {
           append("You are a helpful assistant. Today is $today. Answer precisely and concisely. ")
         }
-        // §2 Location context — inject early so the model sees it before search instructions
+
         if (locationEnabled && userLocation != null) {
           if (promptLocation != null) {
             append(promptLocation!!.replace("{location}", userLocation))
@@ -1988,7 +2155,7 @@ class Standard : LLAMA() {
               "The user enabled location sharing but their location could not be determined. " +
                   "If the question depends on location, ask the user to specify their city or region. ")
         }
-        // §3 Search instructions
+
         if (searchEnabled && BraveSearch.isAvailable) {
           if (promptSearch != null) {
             append(promptSearch!!)
@@ -2005,17 +2172,22 @@ class Standard : LLAMA() {
             append(
                 "SANITIZE: remove person names, serial numbers, IDs, and any code mixing letters+digits. Keep brand names and topic keywords. ")
           }
+
           if (detectedLang != null && detectedLang.languageName != "English") {
             append(
                 "IMPORTANT: Always write search queries in ${detectedLang.languageName}, NEVER in English. ")
+
             val productQ = detectedLang.exampleProductQuery
             val lawQ = detectedLang.exampleLawQuery
             val weatherQ = detectedLang.exampleWeatherQuery
             val localQ = detectedLang.exampleLocalQuery
+
             append("Example: user asks about a product error → CALL:search(query='$productQ'). ")
             append("Example: user asks about contract law → CALL:search(query='$lawQ'). ")
+
             if (locationEnabled && userLocation != null) {
               val shortLocation = userLocation.substringBefore(",").trim()
+
               append(
                   "Example: user asks about weather → CALL:search(query='$weatherQ $shortLocation'). ")
               append(
@@ -2029,8 +2201,10 @@ class Standard : LLAMA() {
                 "Example: user asks about a product error → CALL:search(query='ProductName error fix'). ")
             append(
                 "Example: user asks about contract law → CALL:search(query='contract termination rules'). ")
+
             if (locationEnabled && userLocation != null) {
               val shortLocation = userLocation.substringBefore(",").trim()
+
               append(
                   "Example: user asks about weather → CALL:search(query='weather forecast $shortLocation'). ")
               append(
@@ -2041,6 +2215,7 @@ class Standard : LLAMA() {
               append("Example: user asks where to eat → CALL:search(query='restaurants near me'). ")
             }
           }
+
           append(
               "EXCEPTION: If the user wraps a word in << >>, copy it into the query verbatim with the << >> markers. ")
           append(
@@ -2049,25 +2224,28 @@ class Standard : LLAMA() {
               "Never include person names in the query UNLESS they are wrapped in << >>. Never use '...' as the query. ")
           append(
               "IMPORTANT: The search query must match the user's actual question topic — never copy an example query. ")
-          // §4 Thinking mode instructions
+
           if (enableThinking) {
             if (promptThinking != null) {
               val langName = detectedLang?.languageName ?: "English"
+
               append(promptThinking!!.replace("{language}", langName))
               append(" ")
             } else {
               append("THINKING MODE: You MUST reason thoroughly FIRST inside <think>...</think>. ")
+
               if (detectedLang != null && detectedLang.languageName != "English") {
                 append(
                     "CRITICAL: Your reasoning inside <think> tags MUST be written in ${detectedLang.languageName}, NOT in English. ")
               }
+
               append(
                   "Only AFTER you have finished thinking and closed </think>, output CALL:search as your visible answer if needed. ")
               append("NEVER put CALL:search inside <think> tags. Think first, then decide. ")
             }
           }
         }
-        // §5 No-internet warning
+
         if (!searchEnabled || !BraveSearch.isAvailable) {
           if (promptNoInternet != null) {
             append(promptNoInternet!!)
@@ -2080,7 +2258,7 @@ class Standard : LLAMA() {
                     "Do NOT invent plausible-sounding answers — honesty about your limits is always better than a wrong answer. ")
           }
         }
-        // §6 General rules
+
         if (promptRules != null) {
           append(promptRules!!)
         } else {
@@ -2091,7 +2269,7 @@ class Standard : LLAMA() {
           append(
               "Each question is independent — answer ONLY the current question. Do NOT repeat or mix in information from previous answers unless the user explicitly refers to them.")
         }
-        // §7 Document-grounding — when images (uploaded documents) are present
+
         if (imageParts.isNotEmpty()) {
           append(
               " DOCUMENT GROUNDING: The user has uploaded a document. " +
@@ -2100,11 +2278,9 @@ class Standard : LLAMA() {
                   "If the document is unreadable or a specific detail is not visible, say so honestly instead of guessing or filling in from general knowledge. " +
                   "Internet search, if available, should only be used when the user explicitly asks for external information — never to supplement or replace what is in the document.")
         }
-      } // end if (!skipPrompts)
+      }
       append("\"}")
 
-      // Chat history — skip the last entry if it duplicates the current question
-      // (the frontend pushes the user message to history before sending the request)
       var effectiveHistory =
           if (chatHistory.isNotEmpty() &&
               chatHistory.last().first == "user" &&
@@ -2118,38 +2294,32 @@ class Standard : LLAMA() {
         append(",{\"role\":\"${jsonEscape(role)}\",\"content\":\"${jsonEscape(content)}\"}")
       }
 
-      // Language negotiation: inject a short user→assistant turn that naturally sets the
-      // conversation language.  "Let's talk in [X]" → "Sure!" is far more reliable than
-      // system-prompt instructions for small models.
       val lang = detectedLang ?: detectLanguage(question)
+
       if (lang != null) {
         append(",{\"role\":\"user\",\"content\":\"${jsonEscape(lang.userTurn)}\"}")
         append(",{\"role\":\"assistant\",\"content\":\"${jsonEscape(lang.assistantTurn)}\"}")
-        // When conversation has prior history (possibly in a different language), add a
-        // hard system-level language directive right before the user's message.  Without
-        // this the model tends to default to the dominant language in the history.
+
         if (effectiveHistory.isNotEmpty()) {
           append(
               ",{\"role\":\"system\",\"content\":\"LANGUAGE SWITCH: The user is now writing in ${lang.languageName}. You MUST respond ENTIRELY in ${lang.languageName}, regardless of what language was used earlier in the conversation.\"}")
         }
       }
 
-      // When search or location has been enabled mid-conversation, inject a fake
-      // user→assistant demonstration turn.  Small models parrot their own prior
-      // refusals ("I can't search / I don't know your location") even after the
-      // system prompt changes.  A system message alone is too weak to break the
-      // pattern, but a fake assistant turn that *demonstrates* the model using the
-      // new capability is a strong in-context signal that works for ANY language.
       if (effectiveHistory.isNotEmpty()) {
         val capabilities = mutableListOf<String>()
+
         if (searchEnabled && BraveSearch.isAvailable) {
           capabilities.add("internet search via CALL:search")
         }
+
         if (locationEnabled && userLocation != null) {
           capabilities.add("the user's location ($userLocation)")
         }
+
         if (capabilities.isNotEmpty()) {
           val capList = capabilities.joinToString(" and ")
+
           append(",{\"role\":\"user\",\"content\":\"Do you have access to $capList now?\"}")
           append(
               ",{\"role\":\"assistant\",\"content\":\"Yes! I now have access to $capList. " +
@@ -2157,29 +2327,27 @@ class Standard : LLAMA() {
         }
       }
 
-      // User message with optional images
       append(",{\"role\":\"user\",\"content\":")
+
       if (imageParts.isNotEmpty()) {
-        // Multi-part content (images + text)
         append("[")
+
         for (imageUri in imageParts) {
           append("{\"type\":\"image_url\",\"image_url\":{\"url\":\"${jsonEscape(imageUri)}\"}},")
         }
+
         append("{\"type\":\"text\",\"text\":\"${jsonEscape(question)}\"}")
         append("]")
       } else {
-        // Text-only content
         append("\"${jsonEscape(question)}\"")
       }
+
       append("}")
 
-      // Pre-fill assistant response with <think> + language seed for ALL thinking modes.
-      // This forces the model to start reasoning in the user's language.
-      // We handle the <think>/</think> separation ourselves via filterThinkTags
-      // instead of relying on reasoning_content (which doesn't support language seeding).
       if (enableThinking) {
         val thinkSeed =
             if (lang != null) lang.thinkSeed else "Think briefly. Do NOT repeat yourself."
+
         append(",{\"role\":\"assistant\",\"content\":\"<think>\\n$thinkSeed\"}")
       }
 
@@ -2187,6 +2355,8 @@ class Standard : LLAMA() {
     }
   }
 
+  // endregion Message Building
+  // region Language Detection & Geolocation
   /**
    * Holds the language-negotiation strings for a detected non-English language.
    *
@@ -2211,27 +2381,13 @@ class Standard : LLAMA() {
       val exampleLawQuery: String = "contract termination rules",
       val exampleWeatherQuery: String = "weather forecast",
       val exampleLocalQuery: String = "restaurants near me",
-      // ── Frontend UI labels (sent to client for i18n) ──
-      /** Label shown while the model is generating reasoning tokens (e.g. "Reasoning…"). */
       val uiReasoningLabel: String = "Reasoning\u2026",
-      /** Label for the collapsible reasoning section (e.g. "Show reasoning"). */
       val uiShowReasoningLabel: String = "Show reasoning",
-      /** Label for the collapsible sources section (e.g. "Show sources"). */
       val uiShowSourcesLabel: String = "Show sources",
-      /**
-       * Label shown while searching the internet with query (e.g. "Searching the internet for
-       * \"%s\"…").
-       */
       val uiSearchingLabel: String = "Searching the internet for \u201C%s\u201D\u2026",
-      /**
-       * Label shown while searching the internet without query (e.g. "Searching the internet…").
-       */
       val uiSearchingLabelNoQuery: String = "Searching the internet\u2026",
-      /** Label shown as initial "Thinking..." bubble before response starts. */
       val uiThinkingLabel: String = "Thinking\u2026",
-      /** Markdown heading for the response section when copying to clipboard. */
       val uiCopyResponseLabel: String = "Response",
-      /** Markdown heading for the reasoning section when copying to clipboard. */
       val uiCopyReasoningLabel: String = "Reasoning"
   )
 
@@ -2262,7 +2418,7 @@ class Standard : LLAMA() {
                       uiThinkingLabel = "Denkt nach\u2026",
                       uiCopyResponseLabel = "Antwort",
                       uiCopyReasoningLabel = "Denkprozess"),
-              "deutsch" to null, // alias — resolved below
+              "deutsch" to null,
               "italian" to
                   DetectedLanguage(
                       userTurn = "Parliamo in italiano.",
@@ -2515,7 +2671,6 @@ class Standard : LLAMA() {
                       uiCopyReasoningLabel = "Рассуждение"),
               "русский" to null)
           .let { raw ->
-            // Resolve aliases: "deutsch" → same as "german", etc.
             val resolved = raw.toMutableMap()
             val aliases =
                 mapOf(
@@ -2538,9 +2693,11 @@ class Standard : LLAMA() {
             for ((alias, canon) in aliases) {
               resolved[alias] = resolved[canon]
             }
+
             resolved.filterValues { it != null }.mapValues { it.value!! }
           }
 
+  // region Geolocation
   /**
    * Resolves latitude/longitude to a human-readable city and country name via the OpenStreetMap
    * Nominatim reverse geocoding API (free, no API key required).
@@ -2551,8 +2708,11 @@ class Standard : LLAMA() {
     return try {
       val url =
           "https://nominatim.openstreetmap.org/reverse?lat=$latitude&lon=$longitude&format=json&zoom=18&addressdetails=1"
+
       log(LogLevel.INFO, "Reverse geocoding: lat=$latitude, lon=$longitude")
+
       val connection = java.net.URI(url).toURL().openConnection() as HttpURLConnection
+
       connection.requestMethod = "GET"
       connection.connectTimeout = 5000
       connection.readTimeout = 5000
@@ -2560,21 +2720,26 @@ class Standard : LLAMA() {
       connection.setRequestProperty("Accept", "application/json")
 
       val responseCode = connection.responseCode
+
       if (responseCode !in 200..299) {
         log(LogLevel.WARNING, "Nominatim returned HTTP $responseCode")
+
         connection.disconnect()
+
         return null
       }
 
       val body = connection.inputStream.bufferedReader().readText()
+
       connection.disconnect()
 
-      // Parse the JSON response to extract street, city, state, country
       val mapper = com.fasterxml.jackson.databind.ObjectMapper()
       val root = mapper.readTree(body)
       val address = root.get("address")
+
       if (address == null) {
         log(LogLevel.WARNING, "Nominatim response has no address field")
+
         return null
       }
 
@@ -2588,19 +2753,23 @@ class Standard : LLAMA() {
               ?: address.get("county")?.asText()
       val state = address.get("state")?.asText()
       val country = address.get("country")?.asText()
-
-      // Build street part: "Nürnberger Straße 32" or just "Nürnberger Straße"
       val street = if (road != null && houseNumber != null) "$road $houseNumber" else road
       val parts = listOfNotNull(city, street, state, country).filter { it.isNotBlank() }
+
       if (parts.isEmpty()) {
         log(LogLevel.WARNING, "Nominatim address has no usable fields: $body")
+
         return null
       }
+
       val result = parts.joinToString(", ")
+
       log(LogLevel.INFO, "Reverse geocoded: $result")
+
       result
-    } catch (ex: Exception) {
-      log(LogLevel.WARNING, "Reverse geocoding failed: ${ex.message}")
+    } catch (X: Exception) {
+      log(LogLevel.WARNING, "Reverse geocoding failed: ${X.message}")
+
       null
     }
   }
@@ -2613,7 +2782,6 @@ class Standard : LLAMA() {
    *   localhost.
    */
   private fun geolocateByIP(clientIP: String): String? {
-    // Skip loopback / private IPs — they can't be geolocated
     if (clientIP == "127.0.0.1" ||
         clientIP == "::1" ||
         clientIP == "unknown" ||
@@ -2621,31 +2789,41 @@ class Standard : LLAMA() {
         clientIP.startsWith("10.") ||
         clientIP.startsWith("172.")) {
       log(LogLevel.INFO, "IP geolocation skipped: private/loopback IP '$clientIP'")
+
       return null
     }
+
     return try {
       val url = "http://ip-api.com/json/$clientIP?fields=status,city,regionName,country"
+
       log(LogLevel.INFO, "IP geolocation for: $clientIP")
+
       val connection = java.net.URI(url).toURL().openConnection() as HttpURLConnection
+
       connection.requestMethod = "GET"
       connection.connectTimeout = 3000
       connection.readTimeout = 3000
       connection.setRequestProperty("Accept", "application/json")
 
       val responseCode = connection.responseCode
+
       if (responseCode !in 200..299) {
         log(LogLevel.WARNING, "ip-api.com returned HTTP $responseCode")
         connection.disconnect()
+
         return null
       }
 
       val body = connection.inputStream.bufferedReader().readText()
+
       connection.disconnect()
 
       val mapper = com.fasterxml.jackson.databind.ObjectMapper()
       val root = mapper.readTree(body)
+
       if (root.get("status")?.asText() != "success") {
         log(LogLevel.WARNING, "ip-api.com lookup failed: $body")
+
         return null
       }
 
@@ -2653,16 +2831,22 @@ class Standard : LLAMA() {
       val region = root.get("regionName")?.asText()
       val country = root.get("country")?.asText()
       val parts = listOfNotNull(city, region, country).filter { it.isNotBlank() }
+
       if (parts.isEmpty()) return null
+
       val result = parts.joinToString(", ")
+
       log(LogLevel.INFO, "IP geolocation result: $result")
+
       result
-    } catch (ex: Exception) {
-      log(LogLevel.WARNING, "IP geolocation failed: ${ex.message}")
+    } catch (X: Exception) {
+      log(LogLevel.WARNING, "IP geolocation failed: ${X.message}")
+
       null
     }
   }
 
+  // endregion Geolocation
   /**
    * Asks the fast model to identify the language of the user's question. Returns a
    * [DetectedLanguage] with conversation-turn and think-seed strings, or `null` for English.
@@ -2670,7 +2854,6 @@ class Standard : LLAMA() {
    * This is a very lightweight call: a tiny prompt, max 8 output tokens, low temperature. It always
    * uses the **fast** server regardless of which model will handle the real question.
    */
-  /** Recognized language names for validation of model-detected languages. */
   private val knownLanguageNames: Set<String> =
       setOf(
           "english",
@@ -2764,6 +2947,15 @@ class Standard : LLAMA() {
           "javanese",
           "sundanese")
 
+  /**
+   * Detects the user's language by sending the question to the model with a language-detection
+   * system prompt and few-shot examples.
+   *
+   * Falls back to the heuristic [detectLanguage] if the model call fails.
+   *
+   * @param question The user's question text.
+   * @return A [DetectedLanguage] with conversation seeds and prompts, or `null` for English.
+   */
   private fun detectLanguageViaModel(question: String): DetectedLanguage? {
     try {
       val messagesJson = buildString {
@@ -2775,7 +2967,6 @@ class Standard : LLAMA() {
                 "The text may be in its native script OR romanized (Latin alphabet). " +
                 "Reply with ONLY the language name in English, nothing else. " +
                 "Examples: English, German, French, Italian, Spanish, Portuguese, Dutch, Turkish, Japanese, Chinese, Korean, Arabic, Russian, Hindi.\"}")
-        // Few-shot examples to anchor the model
         append(",{\"role\":\"user\",\"content\":\"Chi è Nelson Mandela?\"}")
         append(",{\"role\":\"assistant\",\"content\":\"Italian\"}")
         append(",{\"role\":\"user\",\"content\":\"Wie wird das Wetter in Tokyo?\"}")
@@ -2785,6 +2976,7 @@ class Standard : LLAMA() {
         append(",{\"role\":\"user\",\"content\":\"${jsonEscape(question)}\"}")
         append("]")
       }
+
       var requestBody = buildString {
         append("{\"messages\":$messagesJson")
         append(",\"max_tokens\":8")
@@ -2792,13 +2984,16 @@ class Standard : LLAMA() {
         append(",\"stream\":false")
         append("}")
       }
+
       val response =
           if (isExternalMode) {
             requestBody = injectModelField(requestBody)
+
             externalHttpPost("/v1/chat/completions", requestBody, timeoutMs = 15_000)
           } else {
             httpPost("/v1/chat/completions", requestBody, timeoutMs = 15_000, port = serverPort)
           }
+
       val json = com.google.gson.JsonParser.parseString(response).asJsonObject
       val raw =
           json
@@ -2808,34 +3003,35 @@ class Standard : LLAMA() {
               ?.getAsJsonObject("message")
               ?.get("content")
               ?.asString ?: ""
-      // The model should respond with a single word like "German" or "French"
       val langName =
           raw.trim().lowercase().removeSuffix(".").removeSuffix("!").removeSuffix(",").trim()
+
       log(LogLevel.INFO, "Model-detected language: '$langName' (raw: '${raw.trim()}')")
 
-      // Cross-validate with regex-based detection. Small models can misidentify
-      // the language (e.g. returning "Italian" for a German question). If regex
-      // detects a different language than the model, prefer the regex result.
       val regexLang = detectLanguage(question)
+
       if (regexLang != null) {
         val regexName = regexLang.languageName.lowercase()
+
         if (langName != regexName && langName != "english") {
           log(
               LogLevel.WARNING,
               "Model detected '$langName' but regex detected '${regexLang.languageName}' — preferring regex")
+
           return regexLang
         }
       }
 
       if (langName == "english") return null
-      // Look up in our language map
+
       val detected = languageMap[langName]
+
       if (detected != null) return detected
 
-      // Try partial match (e.g. model says "brazilian portuguese" → "portuguese")
       for ((key, value) in languageMap) {
         if (langName.contains(key) || key.contains(langName)) {
           log(LogLevel.INFO, "Partial language match: '$langName' → '$key'")
+
           return value
         }
       }
@@ -2844,18 +3040,14 @@ class Standard : LLAMA() {
           LogLevel.INFO,
           "Language '$langName' not in language map — checking if it is a recognized language name")
 
-      // Validate: only build a dynamic DetectedLanguage for recognized language names.
-      // If the model returned a non-language (e.g. "south african", "mandela"), fall back to regex.
       if (!knownLanguageNames.contains(langName)) {
         log(
             LogLevel.WARNING,
             "Model returned '$langName' which is not a recognized language — falling back to regex detection")
+
         return detectLanguage(question)
       }
 
-      // Dynamically build a DetectedLanguage for any language the model identifies.
-      // The "Let's talk in [X]" turn works universally even for languages we don't have
-      // pre-built templates for.
       return DetectedLanguage(
           userTurn = "Let's talk in $langName.",
           assistantTurn = "Sure, I'll respond in $langName!",
@@ -2864,24 +3056,24 @@ class Standard : LLAMA() {
           searchPrompt =
               "Give a short, direct answer in $langName in 2-4 sentences using the search results. Include relevant links from the results as Markdown links. Do not repeat yourself. Answer in ${langName.uppercase()}.",
           languageName = langName.replaceFirstChar { it.uppercase() })
-    } catch (e: Exception) {
-      log(LogLevel.WARNING, "Model-based language detection failed: ${e.message}")
+    } catch (X: Exception) {
+      log(LogLevel.WARNING, "Model-based language detection failed: ${X.message}")
     }
     // Fallback to regex-based detection
     return detectLanguage(question)
   }
 
   /**
-   * Detects the user's language from their question and returns conversation-turn strings that
-   * naturally set the model's response language. Returns `null` for English (the default).
+   * Heuristic language detection based on character and word markers.
    *
-   * The approach is deliberately simple: a fake "Let's talk in [X]" → "Sure!" exchange at the start
-   * of the conversation is far more reliable than system-prompt instructions for small models.
+   * Checks for German, French, Italian, Turkish, Spanish, Portuguese, Dutch, and various CJK
+   * scripts. Returns `null` for English or unknown languages (the default).
+   *
+   * @param question The user's question text.
+   * @return A [DetectedLanguage] with conversation seeds and prompts, or `null` for English.
    */
   private fun detectLanguage(question: String): DetectedLanguage? {
     val lower = " ${question.lowercase()} "
-
-    // --- German ---
     val germanMarkers =
         listOf(
             "ä",
@@ -2918,12 +3110,13 @@ class Standard : LLAMA() {
             " gerade",
             " heute")
     val germanHits = germanMarkers.count { lower.contains(it) }
+
     if (germanHits >= 2 ||
         (germanHits >= 1 && listOf("ä", "ö", "ü", "ß").any { lower.contains(it) })) {
+
       return languageMap["german"]
     }
 
-    // --- Italian (before French/Spanish — they share markers) ---
     val italianMarkers =
         listOf(
             " è ",
@@ -2969,15 +3162,16 @@ class Standard : LLAMA() {
             " città",
             " sindaco",
             " oggi")
-    // Strong Italian-specific words that alone suffice (not shared with other Romance languages)
+
     val strongItalianMarkers =
         listOf(" chi ", " perché", " qual ", " quale ", " della ", " delle ", " degli ")
+
     if (italianMarkers.count { lower.contains(it) } >= 2 ||
         strongItalianMarkers.any { lower.contains(it) }) {
+
       return languageMap["italian"]
     }
 
-    // --- Portuguese (before French/Spanish — ã and õ are uniquely Portuguese) ---
     val portugueseMarkers =
         listOf(
             "ã",
@@ -3006,14 +3200,12 @@ class Standard : LLAMA() {
             " quando ",
             " onde ")
     val portugueseHits = portugueseMarkers.count { lower.contains(it) }
+
     if (portugueseHits >= 2 ||
         (portugueseHits >= 1 && listOf("ã", "õ").any { lower.contains(it) })) {
       return languageMap["portuguese"]
     }
 
-    // --- French ---
-    // French uses heavy apostrophe contractions (l', d', c', j', n', qu') that break
-    // space-padded matching.  Include those as highly distinctive markers.
     val frenchMarkers =
         listOf(
             " est ",
@@ -3057,11 +3249,11 @@ class Standard : LLAMA() {
             "n'",
             "s'",
             "qu'")
+
     if (frenchMarkers.count { lower.contains(it) } >= 2) {
       return languageMap["french"]
     }
 
-    // --- Spanish ---
     val spanishMarkers =
         listOf(
             " es ",
@@ -3076,11 +3268,11 @@ class Standard : LLAMA() {
             "ñ",
             "¿",
             "¡")
+
     if (spanishMarkers.count { lower.contains(it) } >= 2) {
       return languageMap["spanish"]
     }
 
-    // --- Turkish ---
     val turkishMarkers =
         listOf(
             "ı",
@@ -3101,6 +3293,7 @@ class Standard : LLAMA() {
             " gibi ",
             " daha ",
             " en ")
+
     if (turkishMarkers.count { lower.contains(it) } >= 2) {
       return languageMap["turkish"]
     }
@@ -3108,26 +3301,34 @@ class Standard : LLAMA() {
     return null // English or unknown — no extra hint needed
   }
 
-  // detectThinkingSeed is no longer needed — the think seed is part of DetectedLanguage.
-  // Language detection for the think seed is done once in detectLanguage() and reused.
-
-  /** Returns a follow-up prompt for answering from search results in the user's language. */
+  /**
+   * Returns a follow-up prompt for answering from search results in the user's language.
+   *
+   * @param originalQuestion The user's original question (used for fallback language detection).
+   * @param lang Pre-detected language, or `null` to detect from [originalQuestion].
+   * @return A localised instruction string for the search follow-up completion.
+   */
   private fun searchFollowUpPrompt(
       originalQuestion: String,
       lang: DetectedLanguage? = null
   ): String {
     val resolved = lang ?: detectLanguage(originalQuestion)
+
     if (resolved != null) return resolved.searchPrompt
+
     return "Give a short, direct answer in 2-4 sentences using the search results. Include relevant links from the results as Markdown links. Do not repeat yourself."
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  External AI HTTP helpers
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // endregion Language Detection & Geolocation
+  // region External AI HTTP
   /**
-   * Sends a synchronous POST request to the external OpenAI-compatible API. Adds Authorization
-   * header and returns the response body.
+   * Sends a synchronous POST request to the external OpenAI-compatible API.
+   *
+   * @param endpoint The API path (e.g. `/v1/chat/completions`).
+   * @param jsonBody The JSON request body.
+   * @param timeoutMs Read timeout in milliseconds.
+   * @return The full response body as a string.
+   * @throws RuntimeException If the server returns a non-2xx status code.
    */
   private fun externalHttpPost(
       endpoint: String,
@@ -3136,12 +3337,14 @@ class Standard : LLAMA() {
   ): String {
     val url = "${externalUrl}$endpoint"
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
+
     connection.requestMethod = "POST"
     connection.doOutput = true
     connection.connectTimeout = 10_000
     connection.readTimeout = timeoutMs
     connection.setRequestProperty("Content-Type", "application/json")
     connection.setRequestProperty("Accept", "application/json")
+
     externalApiKey?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
 
     connection.outputStream.use { os -> os.write(jsonBody.toByteArray(Charsets.UTF_8)) }
@@ -3152,20 +3355,29 @@ class Standard : LLAMA() {
           (if (responseCode in 200..299) connection.inputStream else connection.errorStream)
               .bufferedReader()
               .readText()
-        } catch (_: Exception) {
+        } catch (X: Exception) {
           ""
         }
+
     connection.disconnect()
 
     if (responseCode !in 200..299) {
       throw RuntimeException("External AI returned HTTP $responseCode: $body")
     }
+
     return body
   }
 
   /**
-   * Sends a streaming POST request to the external OpenAI-compatible API. Processes Server-Sent
-   * Events (SSE) and invokes the callback for each data line.
+   * Sends a streaming POST request to the external OpenAI-compatible API and processes Server-Sent
+   * Events (SSE).
+   *
+   * @param endpoint The API path (e.g. `/v1/chat/completions`).
+   * @param jsonBody The JSON request body (should include `"stream":true`).
+   * @param onLine Callback invoked for each SSE `data:` line.
+   * @param shouldStop Predicate checked between chunks; when `true`, streaming is aborted.
+   * @param timeoutMs Read timeout in milliseconds.
+   * @throws RuntimeException If the server returns a non-2xx status code.
    */
   private fun externalHttpPostStreaming(
       endpoint: String,
@@ -3176,25 +3388,30 @@ class Standard : LLAMA() {
   ) {
     val url = "${externalUrl}$endpoint"
     val connection = URI(url).toURL().openConnection() as HttpURLConnection
+
     connection.requestMethod = "POST"
     connection.doOutput = true
     connection.connectTimeout = 10_000
     connection.readTimeout = timeoutMs
     connection.setRequestProperty("Content-Type", "application/json")
     connection.setRequestProperty("Accept", "text/event-stream")
+
     externalApiKey?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
 
     connection.outputStream.use { os -> os.write(jsonBody.toByteArray(Charsets.UTF_8)) }
 
     val responseCode = connection.responseCode
+
     if (responseCode !in 200..299) {
       val errorBody =
           try {
             connection.errorStream.bufferedReader().readText()
-          } catch (_: Exception) {
+          } catch (X: Exception) {
             ""
           }
+
       connection.disconnect()
+
       throw RuntimeException("External AI returned HTTP $responseCode: $errorBody")
     }
 
@@ -3205,8 +3422,10 @@ class Standard : LLAMA() {
             log(LogLevel.INFO, "External streaming aborted by stop request — disconnecting")
             return@use
           }
+
           if (line.startsWith("data: ")) {
             val data = line.removePrefix("data: ").trim()
+
             if (data != "[DONE]") {
               onLine(data)
             }
@@ -3219,11 +3438,14 @@ class Standard : LLAMA() {
   }
 
   /**
-   * Injects `"model":"<name>"` into an existing JSON request body when in external mode. Inserts
-   * the field right after the opening `{`.
+   * Injects `"model":"<name>"` into an existing JSON request body when in external mode.
+   *
+   * @param requestBody The original JSON body.
+   * @return The body with the model field prepended, or unchanged if no external model is set.
    */
   private fun injectModelField(requestBody: String): String {
     val model = externalModel ?: return requestBody
+
     return if (requestBody.startsWith("{")) {
       "{\"model\":\"${jsonEscape(model)}\"," + requestBody.substring(1)
     } else {
@@ -3231,11 +3453,16 @@ class Standard : LLAMA() {
     }
   }
 
+  // endregion External AI HTTP
+  // region Chat Completion
   /**
-   * Sends a synchronous chat completion request to the llama-server or external AI.
+   * Sends a synchronous chat completion request to the LLAMA-Server or external AI.
    *
    * @param messagesJson The JSON messages array string.
-   * @return The generated text response.
+   * @param enableThinking Whether to route to the thinking server (if available).
+   * @param idSlot The inference slot ID (`-1` for auto).
+   * @param maxThinkingTokens Optional budget for thinking tokens.
+   * @return The generated text response (with `<think>` tags stripped).
    */
   private fun chatCompletion(
       messagesJson: String,
@@ -3243,36 +3470,38 @@ class Standard : LLAMA() {
       idSlot: Int = -1,
       maxThinkingTokens: Int? = null
   ): String {
-    // Route to dedicated thinking server if available, otherwise use main server
     val useThinkingServer = !isExternalMode && enableThinking && thinkingServerReady
     val targetPort = if (useThinkingServer) thinkingServerPort else serverPort
-
     var requestBody = buildString {
       append("{\"messages\":$messagesJson")
-      // Thinking mode needs a larger token budget: reasoning tokens + answer
+
       val effectiveMaxTokens =
           if (enableThinking) {
             maxThinkingTokens ?: (maxTokens * 4).coerceAtLeast(4096)
           } else maxTokens
+
       append(",\"max_tokens\":$effectiveMaxTokens")
       append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
+
       if (!isExternalMode) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
+
       append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":false")
-      // Thinking is handled via <think> pre-fill + filterThinkTags, not server-side enable_thinking
+
       if (!isExternalMode && idSlot >= 0) append(",\"id_slot\":$idSlot")
+
       append("}")
     }
 
     if (isExternalMode) {
       requestBody = injectModelField(requestBody)
+
       log(LogLevel.INFO, "Routing to external AI: $externalUrl")
     } else if (useThinkingServer) {
       log(LogLevel.INFO, "Routing to thinking server on port $thinkingServerPort")
     }
 
-    // Thinking mode needs longer timeout: reasoning tokens + answer vs just answer
     val timeoutMs = if (enableThinking) 600_000 else 300_000
     val response =
         if (isExternalMode) {
@@ -3281,25 +3510,24 @@ class Standard : LLAMA() {
           httpPost("/v1/chat/completions", requestBody, timeoutMs = timeoutMs, port = targetPort)
         }
 
-    // Parse the response to extract generated text
     return try {
       val json = com.google.gson.JsonParser.parseString(response).asJsonObject
       val message = json.getAsJsonArray("choices")?.get(0)?.asJsonObject?.getAsJsonObject("message")
       var raw = message?.get("content")?.asString ?: response
 
       if (useThinkingServer) {
-        // Dedicated thinking server: reasoning_content holds the thinking text.
-        // However some models still emit <think>…</think> inside content — strip it.
         raw = "<think>$raw"
+
         var result = stripThinkTags(raw)
+
         if (result.startsWith("<think>")) result = result.removePrefix("<think>").trimStart()
+
         result
       } else if (enableThinking) {
-        // Hybrid mode / pre-fill approach: response doesn't include the opening <think> we sent,
-        // so prepend it for stripThinkTags to match correctly.
         raw = "<think>$raw"
+
         var result = stripThinkTags(raw)
-        // If model didn't close </think>, stripThinkTags leaves <think> prefix — remove it
+
         if (result.startsWith("<think>")) result = result.removePrefix("<think>").trimStart()
         result
       } else {
@@ -3307,13 +3535,20 @@ class Standard : LLAMA() {
       }
     } catch (e: Exception) {
       log(LogLevel.WARNING, "Failed to parse completion response: ${e.message}")
+
       response
     }
   }
 
   /**
-   * Sends a streaming chat completion request. Text chunks are appended to the session as they
-   * arrive via Server-Sent Events (SSE).
+   * Sends a streaming chat completion request. Text chunks are appended to the [session] as they
+   * arrive via Server-Sent Events (SSE). Handles `<think>` tag filtering, logprob tracking, and
+   * repetition detection.
+   *
+   * @param messagesJson The JSON messages array string.
+   * @param session The [StreamingSession] to populate with chunks.
+   * @param enableThinking Whether to route to the thinking server.
+   * @param idSlot The inference slot ID (`-1` for auto).
    */
   private fun streamChatCompletion(
       messagesJson: String,
@@ -3321,10 +3556,8 @@ class Standard : LLAMA() {
       enableThinking: Boolean = false,
       idSlot: Int = -1
   ) {
-    // Route to dedicated thinking server if available, otherwise use main server
     val useThinkingServer = !isExternalMode && enableThinking && thinkingServerReady
     val targetPort = if (useThinkingServer) thinkingServerPort else serverPort
-
     /**
      * Tracks whether we are inside a `<think>…</think>` block so those tokens are suppressed.
      * Starts true for ALL thinking modes because we pre-fill `<think>\n` with a language seed. We
@@ -3339,25 +3572,31 @@ class Standard : LLAMA() {
     val answerAccum = StringBuilder()
     /** Set to true once repetition is detected, to force-close the think block. */
     var repetitionDetected = false
-
+    /** The request body for the chat completion request. */
     var requestBody = buildString {
       append("{\"messages\":$messagesJson")
       // Thinking mode needs a larger token budget: reasoning tokens + answer
       val effectiveMaxTokens =
           if (enableThinking) (maxTokens * 4).coerceAtLeast(4096) else maxTokens
+
       append(",\"max_tokens\":$effectiveMaxTokens")
       append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
+
       if (!isExternalMode) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
+
       append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":true")
-      // Thinking is handled via <think> pre-fill + filterThinkTags, not server-side enable_thinking
+      append(",\"logprobs\":true")
+
       if (!isExternalMode && idSlot >= 0) append(",\"id_slot\":$idSlot")
+
       append("}")
     }
 
     if (isExternalMode) {
       requestBody = injectModelField(requestBody)
+
       log(LogLevel.INFO, "Routing stream to external AI: $externalUrl")
     } else if (useThinkingServer) {
       log(LogLevel.INFO, "Routing stream to thinking server on port $thinkingServerPort")
@@ -3389,25 +3628,32 @@ class Standard : LLAMA() {
             }
 
             val content = delta?.get("content")?.asString
+
             if (content != null) {
               // Separate <think>…</think> blocks from visible output
               val filtered = filterThinkTags(content, tagBuffer, insideThinkBlock)
+
               insideThinkBlock = filtered.second
+
               val cleanText = filtered.first
               val thinkText = filtered.third
+
               if (cleanText.isNotEmpty()) {
                 session.textChunks.add(cleanText)
-                // --- Repetition detection for visible answer text ---
                 if (!repetitionDetected) {
                   answerAccum.append(cleanText)
+
                   if (answerAccum.length > 400) {
                     val text = answerAccum.toString()
                     val tail = text.takeLast(80)
                     val searchIn = text.substring(0, text.length - 80)
+
                     if (searchIn.contains(tail)) {
                       repetitionDetected = true
+
                       val firstOccurrence = searchIn.indexOf(tail)
                       val trimPoint = firstOccurrence + tail.length
+
                       session.textChunks.clear()
                       session.textChunks.add(text.substring(0, trimPoint))
                       log(
@@ -3417,15 +3663,17 @@ class Standard : LLAMA() {
                   }
                 }
               }
+
               if (thinkText.isNotEmpty()) {
                 session.thinkingChunks.add(thinkText)
-                // --- Repetition detection for reasoning ---
                 if (insideThinkBlock && !repetitionDetected) {
                   reasoningAccum.append(thinkText)
+
                   if (reasoningAccum.length > 500) {
                     val text = reasoningAccum.toString()
                     val tail = text.takeLast(500)
                     val searchIn = text.substring(0, text.length - 500)
+
                     if (searchIn.contains(tail)) {
                       repetitionDetected = true
                       insideThinkBlock = false
@@ -3435,10 +3683,12 @@ class Standard : LLAMA() {
                           LogLevel.INFO,
                           "Repetition detected (exact n-gram) in reasoning after ${reasoningAccum.length} chars")
                     }
+
                     if (!repetitionDetected && text.length > 2000) {
                       val sentences = text.split(Regex("""[.!?\n]\s*""")).filter { it.length > 20 }
                       val starts = sentences.map { it.take(30).lowercase().trim() }
                       val mostCommon = starts.groupingBy { it }.eachCount().maxByOrNull { it.value }
+
                       if (mostCommon != null && mostCommon.value >= 1000) {
                         repetitionDetected = true
                         insideThinkBlock = false
@@ -3453,17 +3703,19 @@ class Standard : LLAMA() {
                 }
               }
             }
-            // llama.cpp with enable_thinking sends reasoning in a separate field
             val reasoning = delta?.get("reasoning_content")?.asString
+
             if (reasoning != null && reasoning.isNotEmpty()) {
               session.thinkingChunks.add(reasoning)
-              // Also check reasoning_content for repetition
+
               if (!repetitionDetected) {
                 reasoningAccum.append(reasoning)
+
                 if (reasoningAccum.length > 500) {
                   val text = reasoningAccum.toString()
                   val tail = text.takeLast(500)
                   val searchIn = text.substring(0, text.length - 500)
+
                   if (searchIn.contains(tail)) {
                     repetitionDetected = true
                     insideThinkBlock = false
@@ -3472,10 +3724,12 @@ class Standard : LLAMA() {
                         LogLevel.INFO,
                         "Repetition detected in reasoning_content after ${reasoningAccum.length} chars")
                   }
+
                   if (!repetitionDetected && text.length > 2000) {
                     val sentences = text.split(Regex("""[.!?\n]\s*""")).filter { it.length > 20 }
                     val starts = sentences.map { it.take(30).lowercase().trim() }
                     val mostCommon = starts.groupingBy { it }.eachCount().maxByOrNull { it.value }
+
                     if (mostCommon != null && mostCommon.value >= 1000) {
                       repetitionDetected = true
                       insideThinkBlock = false
@@ -3489,22 +3743,58 @@ class Standard : LLAMA() {
                 }
               }
             }
-          } catch (_: Exception) {
-            /* skip malformed SSE chunk */
-          }
+
+            val choice = json.getAsJsonArray("choices")?.get(0)?.asJsonObject
+            val lpContent = choice?.getAsJsonObject("logprobs")?.getAsJsonArray("content")
+
+            if (lpContent != null && lpContent.size() > 0) {
+              session.logprobsAvailable = true
+
+              for (lpEntry in lpContent) {
+                val obj = lpEntry.asJsonObject
+                val tok = obj.get("token")?.asString ?: ""
+                val lp = obj.get("logprob")?.asDouble ?: continue
+
+                if (!insideThinkBlock) {
+                  session.tokenLogprobs.add(Pair(tok, lp))
+
+                  if (!repetitionDetected && session.tokenLogprobs.size > 60) {
+                    val tail = session.tokenLogprobs.takeLast(20)
+
+                    if (tail.all { it.second > -0.05 }) {
+                      val tailText = tail.joinToString("") { it.first }
+                      val fullText = session.currentText()
+                      val prefixEnd = fullText.length - tailText.length
+
+                      if (prefixEnd > 0 && fullText.substring(0, prefixEnd).contains(tailText)) {
+                        session.logprobRepetitionDetected = true
+                        repetitionDetected = true
+
+                        log(
+                            LogLevel.INFO,
+                            "Logprob-based repetition detected: 20 tokens all > -0.05 logprob on repeated content")
+                      }
+                    }
+                  }
+                  // endregion Logprob-based repetition detection
+                }
+              }
+            }
+            // endregion Parse per-token logprobs from the SSE chunk
+          } catch (X: Exception) {}
         },
         { session.stopRequested || repetitionDetected },
-        // Thinking mode needs longer timeout: reasoning tokens + answer vs just answer
         if (enableThinking) 600_000 else 300_000)
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Helpers
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // endregion Chat Completion
+  // region Helpers
   /**
    * Strips `<think>…</think>` blocks from a complete response string. Used by the non-streaming
    * path.
+   *
+   * @param text The raw model output.
+   * @return The text with all think blocks removed.
    */
   private fun stripThinkTags(text: String): String {
     return text.replace(Regex("<think>[\\s\\S]*?</think>"), "").trim()
@@ -3514,6 +3804,9 @@ class Standard : LLAMA() {
    * Incrementally filters `<think>…</think>` blocks from streaming chunks. Handles partial tags
    * that span chunk boundaries via [tagBuffer].
    *
+   * @param chunk The latest raw chunk received from the SSE stream.
+   * @param tagBuffer Accumulated partial tag text from previous chunks.
+   * @param insideThinkBlock Whether the stream is currently inside a `<think>` block.
    * @return Triple of (visible text to emit, updated insideThinkBlock flag, thinking text).
    */
   private fun filterThinkTags(
@@ -3526,57 +3819,71 @@ class Standard : LLAMA() {
     val thinkOutput = StringBuilder()
     var i = 0
     val combined = tagBuffer.toString() + chunk
+
     tagBuffer.clear()
 
     while (i < combined.length) {
       if (inside) {
-        // Look for </think>
         val closeIdx = combined.indexOf("</think>", i)
+
         if (closeIdx == -1) {
-          // Accumulate thinking text
           val remaining = combined.substring(i)
-          // Might end with a partial </think> tag
           val possiblePartial = combined.length - i
+
           if (possiblePartial < 8 && remaining.let { "</think>".startsWith(it) }) {
             tagBuffer.append(remaining)
           } else {
             thinkOutput.append(remaining)
           }
+
           break
         }
+
         thinkOutput.append(combined.substring(i, closeIdx))
+
         i = closeIdx + 8 // skip past </think>
         inside = false
       } else {
-        // Look for <think>
         val openIdx = combined.indexOf("<think>", i)
+
         if (openIdx == -1) {
-          // Check for partial <think> at end of chunk
           val remaining = combined.substring(i)
           var partialLen = 0
+
           for (len in minOf(7, remaining.length) downTo 1) {
             if ("<think>".startsWith(remaining.substring(remaining.length - len))) {
               partialLen = len
+
               break
             }
           }
+
           if (partialLen > 0) {
             output.append(remaining.substring(0, remaining.length - partialLen))
             tagBuffer.append(remaining.substring(remaining.length - partialLen))
           } else {
             output.append(remaining)
           }
+
           break
         }
+
         output.append(combined.substring(i, openIdx))
+
         i = openIdx + 7 // skip past <think>
         inside = true
       }
     }
+
     return Triple(output.toString(), inside, thinkOutput.toString())
   }
 
-  /** Escapes a string for safe inclusion in a hand-built JSON value. */
+  /**
+   * Escapes a string for safe inclusion in a hand-built JSON value.
+   *
+   * @param s The raw string.
+   * @return The escaped string (backslash, quotes, control chars, non-ASCII).
+   */
   private fun jsonEscape(s: String): String = buildString {
     for (c in s) {
       when {
@@ -3592,7 +3899,12 @@ class Standard : LLAMA() {
     }
   }
 
-  /** Builds a JSON response with proper content type and encoding. */
+  /**
+   * Wraps a JSON string in a [PluginServletActionRetVal] with UTF-8 encoding.
+   *
+   * @param json The raw JSON response body.
+   * @return An [IPluginServletActionRetVal] ready to be returned from [execute].
+   */
   private fun jsonResponse(json: String): IPluginServletActionRetVal {
     val resp =
         ServletResponse(EResponseType.JSON).apply {
@@ -3602,10 +3914,8 @@ class Standard : LLAMA() {
     return PluginServletActionRetVal(resp)
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Version Check — periodic check for new llama.cpp releases
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // endregion Helpers
+  // region Version Check & Notifications
   /**
    * Launches a daemon thread that periodically queries the GitHub API for the latest llama.cpp
    * release. When a newer version is available (and downloadable for the current platform), an
@@ -3614,11 +3924,12 @@ class Standard : LLAMA() {
   private fun startVersionChecker() {
     if (checkIntervalHours <= 0L) {
       log(LogLevel.INFO, "Update check disabled (interval = 0)")
+
       return
     }
 
-    // Restore last-notified release from disk so we don't re-notify after restart
     val markerFile = llamaEngineDir?.let { File(it, "last-notified-release.txt") }
+
     if (markerFile != null && markerFile.exists()) {
       lastNotifiedRelease = markerFile.readText().trim().takeIf { it.isNotEmpty() }
     }
@@ -3626,22 +3937,22 @@ class Standard : LLAMA() {
     updateChecker =
         Thread(
                 {
-                  // Initial delay: 2 minutes after plugin startup
                   try {
                     Thread.sleep(2 * 60 * 1000L)
-                  } catch (_: InterruptedException) {
+                  } catch (X: InterruptedException) {
                     return@Thread
                   }
 
                   while (!Thread.currentThread().isInterrupted) {
                     try {
                       checkForNewRelease()
-                    } catch (e: Exception) {
-                      log(LogLevel.WARNING, "Update check failed: ${e.message}")
+                    } catch (X: Exception) {
+                      log(LogLevel.WARNING, "Update check failed: ${X.message}")
                     }
+
                     try {
                       Thread.sleep(checkIntervalHours * 3600 * 1000L)
-                    } catch (_: InterruptedException) {
+                    } catch (X: InterruptedException) {
                       break
                     }
                   }
@@ -3661,29 +3972,33 @@ class Standard : LLAMA() {
    */
   private fun checkForNewRelease() {
     val latestTag = fetchLatestReleaseTag()
+
     if (latestTag == null) {
       log(LogLevel.WARNING, "Could not determine latest llama.cpp release")
+
       return
     }
 
     if (latestTag == llamaRelease) {
       log(LogLevel.INFO, "llama.cpp is up to date ($llamaRelease)")
+
       return
     }
 
-    // Already notified for this version?
     if (latestTag == lastNotifiedRelease) {
       log(LogLevel.INFO, "Already notified about llama.cpp $latestTag (current: $llamaRelease)")
+
       return
     }
 
-    // Verify that the new release actually has a binary for our platform
     val platform = detectPlatform()
     val platformKey = "${platform.os}_${platform.arch}"
+
     if (!isReleaseAvailableForPlatform(latestTag, platformKey)) {
       log(
           LogLevel.INFO,
           "llama.cpp $latestTag has no binary for $platformKey yet — skipping notification")
+
       return
     }
 
@@ -3693,7 +4008,7 @@ class Standard : LLAMA() {
 
     if (sendUpdateNotification(latestTag, platformKey)) {
       lastNotifiedRelease = latestTag
-      // Persist to disk so we don't re-notify after restart
+
       llamaEngineDir?.let { File(it, "last-notified-release.txt").writeText(latestTag) }
     }
   }
@@ -3706,6 +4021,7 @@ class Standard : LLAMA() {
   private fun fetchLatestReleaseTag(): String? {
     try {
       val connection = URI(GITHUB_RELEASES_API).toURL().openConnection() as HttpURLConnection
+
       connection.requestMethod = "GET"
       connection.connectTimeout = 15_000
       connection.readTimeout = 15_000
@@ -3713,20 +4029,24 @@ class Standard : LLAMA() {
       connection.setRequestProperty("User-Agent", "CodBi-LLAMA/1.0")
 
       val responseCode = connection.responseCode
+
       if (responseCode != 200) {
         log(LogLevel.WARNING, "GitHub API returned HTTP $responseCode")
         connection.disconnect()
+
         return null
       }
 
       val body = connection.inputStream.bufferedReader().readText()
+
       connection.disconnect()
 
-      // Extract "tag_name" from JSON without a full parser
       val match = Regex(""""tag_name"\s*:\s*"([^"]+)"""").find(body)
+
       return match?.groupValues?.get(1)
-    } catch (e: Exception) {
-      log(LogLevel.WARNING, "GitHub API request failed: ${e.message}")
+    } catch (X: Exception) {
+      log(LogLevel.WARNING, "GitHub API request failed: ${X.message}")
+
       return null
     }
   }
@@ -3734,23 +4054,32 @@ class Standard : LLAMA() {
   /**
    * Checks whether a given release has a downloadable archive for the specified platform by sending
    * an HTTP HEAD request to the expected download URL.
+   *
+   * @param release The release tag (e.g. `"b8200"`).
+   * @param platformKey The platform identifier (e.g. `"windows_x86_64"`).
+   * @return `true` if the expected archive URL returns HTTP 200.
    */
   private fun isReleaseAvailableForPlatform(release: String, platformKey: String): Boolean {
     val urls = buildServerUrls(release)
     val url = urls[platformKey] ?: return false
+
     return try {
       val connection = URI(url).toURL().openConnection() as HttpURLConnection
+
       connection.requestMethod = "HEAD"
       connection.connectTimeout = 15_000
       connection.instanceFollowRedirects = true
+
       val code = connection.responseCode
+
       connection.disconnect()
       code in 200..399
-    } catch (_: Exception) {
+    } catch (X: Exception) {
       false
     }
   }
 
+  // region SMTP Email
   /**
    * Sends an update notification email using the SMTP configuration from Formcycle's
    * `system-mail.properties`.
@@ -3760,25 +4089,29 @@ class Standard : LLAMA() {
    * @return `true` if the email was sent successfully.
    */
   private fun sendUpdateNotification(newRelease: String, platformKey: String): Boolean {
-    // Locate system-mail.properties by navigating up from the plugin folder
     val mailPropsFile = findSystemMailProperties()
+
     if (mailPropsFile == null) {
       log(
           LogLevel.WARNING,
           "Cannot send update notification — system-mail.properties not found. " +
               "Expected 3 directories above the plugin folder.")
+
       return false
     }
 
     val mailProps = Properties()
+
     mailPropsFile.inputStream().use { mailProps.load(it) }
 
     val smtpHost = mailProps.getProperty("mail.smtp.host")?.trim()
+
     if (smtpHost.isNullOrEmpty()) {
       log(
           LogLevel.WARNING,
           "Cannot send update notification — mail.smtp.host is not configured " +
               "in ${mailPropsFile.absolutePath}")
+
       return false
     }
 
@@ -3788,18 +4121,19 @@ class Standard : LLAMA() {
             ?: "codbi-noreply@localhost"
     val recipient =
         notifyEmail ?: mailProps.getProperty("mail.smtp.from")?.trim()?.takeIf { it.isNotEmpty() }
+
     if (recipient.isNullOrEmpty()) {
       log(
           LogLevel.WARNING,
           "Cannot send update notification — no recipient email. " +
               "Set ${PROP_PREFIX}_NotifyEmail or configure mail.smtp.from in Formcycle.")
+
       return false
     }
 
     val authUser = mailProps.getProperty("mail.smtp.auth.user")?.trim()?.takeIf { it.isNotEmpty() }
     val authPass =
         mailProps.getProperty("mail.smtp.auth.password")?.trim()?.takeIf { it.isNotEmpty() }
-
     val subject = "[CodBi] New llama.cpp release available: $newRelease (current: $llamaRelease)"
     val body = buildString {
       appendLine("A new version of llama.cpp is available.")
@@ -3827,12 +4161,16 @@ class Standard : LLAMA() {
    *
    * Plugin folder layout: `xfc-server/config/plugins/system/<uuid>/` Target file:
    * `xfc-server/config/system-mail.properties` → 3 directories up from the plugin folder.
+   *
+   * @return The properties [File], or `null` if not found.
    */
   private fun findSystemMailProperties(): File? {
     var dir = pluginFolder ?: return null
-    // Navigate up 3 levels: <uuid>/ → system/ → plugins/ → config/
+
     repeat(3) { dir = dir.parentFile ?: return null }
+
     val candidate = File(dir, "system-mail.properties")
+
     return if (candidate.exists()) candidate else null
   }
 
@@ -3842,7 +4180,16 @@ class Standard : LLAMA() {
    * Supports optional AUTH LOGIN. Does **not** support STARTTLS — suitable for localhost or
    * trusted-network relay servers as typically configured in Formcycle.
    *
+   * @param host SMTP server hostname.
+   * @param port SMTP server port.
+   * @param from Sender email address.
+   * @param to Recipient email address.
+   * @param subject Email subject line.
+   * @param body Plain-text email body.
+   * @param username Optional AUTH LOGIN username.
+   * @param password Optional AUTH LOGIN password.
    * @return `true` if the server accepted the message (250 response after DATA).
+   * @throws Exception Propagates socket or I/O errors.
    */
   private fun sendSmtpEmail(
       host: String,
@@ -3857,49 +4204,48 @@ class Standard : LLAMA() {
     try {
       Socket(host, port).use { socket ->
         socket.soTimeout = 30_000
+
         val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
         val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8)
 
-        /** Reads a (possibly multi-line) SMTP response and returns the last line. */
         fun readResponse(): String {
           var line: String
+
           do {
             line = reader.readLine() ?: throw Exception("SMTP connection closed unexpectedly")
           } while (line.length >= 4 && line[3] == '-') // multi-line continues with "250-..."
+
           return line
         }
-
         /** Sends a command and reads the response. */
         fun send(cmd: String): String {
           writer.write(cmd + "\r\n")
           writer.flush()
+
           return readResponse()
         }
 
-        // Read server greeting
         readResponse()
-
-        // EHLO
         send("EHLO codbi-llama")
 
-        // AUTH LOGIN if credentials are provided
         if (!user.isNullOrEmpty() && !password.isNullOrEmpty()) {
           send("AUTH LOGIN")
           send(java.util.Base64.getEncoder().encodeToString(user.toByteArray()))
+
           val authResp = send(java.util.Base64.getEncoder().encodeToString(password.toByteArray()))
+
           if (!authResp.startsWith("235")) {
             log(LogLevel.WARNING, "SMTP AUTH failed: $authResp")
             return false
           }
         }
 
-        // Envelope
         send("MAIL FROM:<$from>")
         send("RCPT TO:<$to>")
         send("DATA")
 
-        // Message headers + body (dot-stuffed)
         val now = ZonedDateTime.now().format(DateTimeFormatter.RFC_1123_DATE_TIME)
+
         writer.write("Date: $now\r\n")
         writer.write("From: CodBi AI <$from>\r\n")
         writer.write("To: $to\r\n")
@@ -3907,37 +4253,51 @@ class Standard : LLAMA() {
         writer.write("Content-Type: text/plain; charset=UTF-8\r\n")
         writer.write("X-Mailer: CodBi-LLAMA/1.0\r\n")
         writer.write("\r\n")
-        // Dot-stuff lines that start with a period (RFC 5321 §4.5.2)
+
         for (line in body.lines()) {
           if (line.startsWith(".")) writer.write(".")
+
           writer.write(line + "\r\n")
         }
+
         writer.write(".\r\n")
         writer.flush()
 
         val dataResp = readResponse()
+
         send("QUIT")
 
         if (dataResp.startsWith("250")) {
           log(LogLevel.INFO, "Update notification email sent to $to")
+
           return true
         } else {
           log(LogLevel.WARNING, "SMTP server rejected message: $dataResp")
+
           return false
         }
       }
     } catch (e: Exception) {
       log(LogLevel.ERROR, "Failed to send notification email: ${e.message}")
+
       return false
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  Logging override
-  // ═══════════════════════════════════════════════════════════════════════════
-
+  // endregion SMTP Email
+  // endregion Version Check & Notifications
+  // region Logging
+  /**
+   * Logs a message with the `LlamaSrv` identifier prefix.
+   *
+   * @param importance The severity level.
+   * @param toLog The main log message.
+   * @param adjenct Additional context appended to the message.
+   * @param exception Optional throwable to attach.
+   */
   override fun log(importance: LogLevel, toLog: String, adjenct: String, exception: Throwable?) {
     super.idLogMessages = "LlamaSrv"
     super.log(importance, toLog, adjenct, exception)
   }
+  // endregion Logging
 }

@@ -2,6 +2,7 @@
   "Description": "/functions/Configurations_AI.PyTorch.loadConfig.html",
   "classes": {
     "AI_PT_DONUT_QA_Question": "",
-    "AI_TESSERACT_Name": ""
+    "AI_TESSERACT_Name": "",
+    "AI_OCR_Receiver": ""
   }
 }

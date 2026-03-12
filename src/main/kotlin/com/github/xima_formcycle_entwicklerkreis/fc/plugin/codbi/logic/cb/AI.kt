@@ -1,6 +1,8 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
 // region Imports
+// region XIMA
+// endregion XIMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
@@ -12,7 +14,7 @@ import java.util.concurrent.TimeUnit
 
 // endregion Imports
 /**
- * # Serves as a common base for all classes related to CodBi / AI.
+ * # Base for all classes related to [CodBi] / AI.
  *
  * In order to enable the re-usage of images that were already uploaded, this class sets up a cache
  * ([cacheIDedImages]) that is managed by a janitor ([janitorIDedImages]) with a specific expiration
@@ -23,8 +25,8 @@ import java.util.concurrent.TimeUnit
  * [idLogMessages] ] **...message...** ]**.
  *
  * ## AI on Formcylce server benefits
- * - **Lean Compliance**: Simpler DSGVO and EU AI Act handling. Most easy approval from your Data
- *   Protection Officer (DSGVO), No Data Transit Mapping, No extra TOMs, no extra VVTs.
+ * - **Lean Compliance**: Simpler DSGVO and EU AI Act handling. Most easy approval from your
+ *   DataProtection Officer (DSGVO), No Data Transit Mapping, No extra TOMs, no extra VVTs.
  * - **Infrastructure Efficiency**: No second OS to patch, monitor, or license. Dramatically lowers
  *   TCO (Total Cost of Ownership) and prevents "server sprawl."
  * - **Maximum Performance**: Zero network latency. Localhost communication bypasses the physical
@@ -43,7 +45,6 @@ import java.util.concurrent.TimeUnit
  * |`AI_CachedImageExpiration`|Long|`600000`|Time in ms before a cached image expires and is purged by the janitor|
  */
 abstract class AI : CodBi(), IPluginServletAction {
-
   /**
    * Stores [File] and timestamp so we can clean up old ones that passed the
    * [msExpirationIDedImages].
@@ -51,7 +52,7 @@ abstract class AI : CodBi(), IPluginServletAction {
   data class CachedImage(val file: File, val timestamp: Long = System.currentTimeMillis())
 
   /** The cache that hold the images for which an **X-OCR-Image-ID** was transmitted. */
-  protected val cacheIDedImages = ConcurrentHashMap<String, CachedImage>()
+  protected val cacheIDedImages: ConcurrentHashMap<String, CachedImage> = ConcurrentHashMap()
   /**
    * Specifies the time in milliseconds that an image in the [cacheIDedImages] may persist (defaults
    * to 600000). This value can be overridden by the plugin property **AI_CachedImageExpiration**.

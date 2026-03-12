@@ -10,8 +10,6 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai
 // region Tesseract
 // endregion Tesseract
 // region Java
-// endregion Java
-// region Javax
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AI
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
@@ -46,7 +44,7 @@ import javax.servlet.ServletException
 import net.sourceforge.tess4j.ITessAPI
 import net.sourceforge.tess4j.TessAPI1
 
-// endregion Javax
+// endregion Java
 // endregion Imports
 /**
  * # Performs OCR on one or multiple images using the
@@ -91,7 +89,7 @@ import net.sourceforge.tess4j.TessAPI1
  * - Lower latency and fewer network dependencies for OCR execution.
  * - Easier data minimization: fewer data copies and storage locations.
  * - Clearer accountability boundaries for processor/controller roles.
- * - Simplified breach response: no separate AI server to manage in case of incidents.
+ * - Simplified breach response: No separate AI server to manage in case of incidents.
  * - Easier implementation of data subject rights (access, deletion) without coordinating with a
  *   separate AI service.
  * - Plugin does not store image data or OCR results persistently, minimizing data retention
@@ -100,12 +98,13 @@ import net.sourceforge.tess4j.TessAPI1
  *   so no deletion necessary.
  */
 class TesseractAction : AI() {
+  // region Companion Object
+  /** Companion for static members. */
   companion object {
     /**
      * The active [TesseractAction] instance — set when Tesseract is [ready], cleared on shutdown.
      */
     @Volatile @JvmStatic private var instance: TesseractAction? = null
-
     /** Whether Tesseract OSD (Orientation and Script Detection) is currently available. */
     @JvmStatic
     val isOsdAvailable: Boolean
@@ -122,11 +121,136 @@ class TesseractAction : AI() {
     @JvmStatic
     fun detectOrientation(image: BufferedImage, dpi: Int = 300): Int {
       val inst = instance ?: return 0
+
       if (!inst.ready) return 0
+
       return inst.detectBestOrientation(image, dpi)
+    }
+
+    /** Whether Tesseract OCR is ready to process requests. */
+    @JvmStatic
+    val isReady: Boolean
+      get() = instance?.ready == true
+
+    /**
+     * Performs OCR directly on the given image bytes, returning a JSON result.
+     *
+     * Called by
+     * [AiProxy][com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AiProxy] for
+     * external OCR requests — Tesseract runs in-process (JNI) so there is no HTTP server to forward
+     * to, unlike LLAMA or Whisper.
+     *
+     * @param imageBytes The raw image bytes (PNG, JPEG, etc.).
+     * @param mode The OCR mode: `print`, `extract`, `verify`, or `extract fields`.
+     * @param options Additional options: `pattern`, `regex_flags`, `rotate`, `preprocess`,
+     *   `field_patterns`.
+     * @return A JSON string with the OCR result.
+     */
+    @JvmStatic
+    fun performOcr(
+        imageBytes: ByteArray,
+        mode: String,
+        options: Map<String, String> = emptyMap()
+    ): String {
+      val inst = instance ?: return """{"error":"Tesseract is not active"}"""
+
+      if (!inst.ready) return """{"error":"Tesseract is not ready"}"""
+
+      inst.resourceMonitor?.let { monitor ->
+        val reason = monitor.exceedReason()
+
+        if (reason != null) {
+          val waitSec = monitor.estimateWaitSeconds()
+
+          return """{"error":"Server resources exceeded ($reason). Please retry in ~${waitSec} seconds.","retryAfter":$waitSec}"""
+        }
+      }
+
+      val rotate = options["rotate"]?.toIntOrNull() ?: 0
+      val preprocess = options["preprocess"]?.lowercase() in listOf("true", "1")
+      val rawText = inst.runOcrDirect(imageBytes, rotate, preprocess)
+
+      return when (mode.lowercase()) {
+        "print" -> Gson().toJson(mapOf("text" to rawText.trim()))
+        "extract" -> {
+          val pattern =
+              options["pattern"]
+                  ?: return """{"error":"Mode 'extract' requires 'pattern' option"}"""
+          val flags = parseRegexFlagsDirect(options["regex_flags"])
+          val matches =
+              try {
+                pattern.toRegex(flags).findAll(rawText).map { it.value }.toList()
+              } catch (X: Exception) {
+                listOf("Regex Error: ${X.message}")
+              }
+
+          Gson().toJson(mapOf("matches" to matches))
+        }
+        "verify" -> {
+          val pattern =
+              options["pattern"] ?: return """{"error":"Mode 'verify' requires 'pattern' option"}"""
+          val flags = parseRegexFlagsDirect(options["regex_flags"])
+          val matched =
+              try {
+                pattern.toRegex(flags).containsMatchIn(rawText)
+              } catch (X: Exception) {
+                return """{"error":"Regex error: ${X.message}"}"""
+              }
+          Gson().toJson(mapOf("match" to matched))
+        }
+        "extract fields" -> {
+          val fieldPatternsJson =
+              options["field_patterns"]
+                  ?: return """{"error":"Mode 'extract fields' requires 'field_patterns' option"}"""
+          val fieldPatterns: Map<String, String> =
+              try {
+                Gson()
+                    .fromJson(fieldPatternsJson, object : TypeToken<Map<String, String>>() {}.type)
+              } catch (X: Exception) {
+                return """{"error":"Invalid field_patterns JSON: ${X.message}"}"""
+              }
+
+          val flags = parseRegexFlagsDirect(options["regex_flags"])
+          val results = mutableMapOf<String, String?>()
+
+          for ((field, pattern) in fieldPatterns) {
+            results[field] =
+                try {
+                  pattern.toRegex(flags).find(rawText)?.value
+                } catch (X: Exception) {
+                  "Regex Error: ${X.message}"
+                }
+          }
+          Gson().toJson(results)
+        }
+        else ->
+            """{"error":"Unsupported mode: $mode. Valid modes: print, extract, verify, extract fields"}"""
+      }
+    }
+
+    /**
+     * Parses regex flag characters into [RegexOption] values.
+     *
+     * @param flagsStr A string with flag characters: `i` (ignore case), `m` (multiline), `s` (dot
+     *   matches all).
+     * @return The corresponding set of [RegexOption].
+     */
+    private fun parseRegexFlagsDirect(flagsStr: String?): Set<RegexOption> {
+      if (flagsStr.isNullOrEmpty()) return emptySet()
+
+      val flags = mutableSetOf<RegexOption>()
+      val lower = flagsStr.lowercase()
+
+      if (lower.contains('i')) flags.add(RegexOption.IGNORE_CASE)
+      if (lower.contains('m')) flags.add(RegexOption.MULTILINE)
+      if (lower.contains('s')) flags.add(RegexOption.DOT_MATCHES_ALL)
+
+      return flags
     }
   }
 
+  // endregion Companion Object
+  // region Configuration Properties
   /**
    * States whether this [TesseractAction] is currently active or not (**Active_AI** contains
    * **OCR** or not).
@@ -152,13 +276,15 @@ class TesseractAction : AI() {
   private var tessDataDir: File? = null
   /** Tracks whether the Tesseract pool has been initialized. */
   private var isPoolInitialized = false
-
-  // ── Resource monitoring thresholds ───────────────────────────────────
+  /** RAM-Threshold */
   private var maxRAMPercent = 101.0
+  /** CPU-Threshold */
   private var maxCPUPercent = 101.0
   /** Resource monitor daemon thread. */
   private var resourceMonitor: ResourceMonitor? = null
 
+  // endregion Configuration Properties
+  // region Regex Parsing
   /**
    * Parses the X-RegexFlags header and returns a set of RegexOption flags.
    *
@@ -185,6 +311,7 @@ class TesseractAction : AI() {
     return flags
   }
 
+  // endregion Regex Parsing
   // region Image Transformation
   /**
    * Defines the possible image transformations that can be applied to correct image orientation.
@@ -282,6 +409,7 @@ class TesseractAction : AI() {
       transformImage(img, ImageTransformation.ROTATE_270)
 
   // endregion Image Transformation
+  // region DPI Utilities
   /**
    * Reads DPI metadata from an image file.
    *
@@ -310,24 +438,27 @@ class TesseractAction : AI() {
         val metadata = reader.getImageMetadata(0)
         val formatName = metadata.nativeMetadataFormatName
         val tree = metadata.getAsTree(formatName)
-        // region Parse metadata tree
+
         if (tree is IIOMetadataNode) {
           val physNode = findNode(tree, "pHYs")
+
           if (physNode != null) {
             val pixelsPerUnitX = physNode.getAttribute("pixelsPerUnitXAxis")?.toIntOrNull()
             val unitSpecifier = physNode.getAttribute("unitSpecifier")?.toIntOrNull()
 
             if (pixelsPerUnitX != null && unitSpecifier == 1) { // 1 = meters
               val dpi = (pixelsPerUnitX * 0.0254).toInt()
+
               log(LogLevel.INFO, "Read DPI from image: $dpi")
+
               reader.dispose()
               iis.close()
               return dpi
             }
           }
 
-          // For JPEG files
           val jfifNode = findNode(tree, "app0JFIF")
+
           if (jfifNode != null) {
             val resX = jfifNode.getAttribute("Xdensity")?.toIntOrNull()
             val resUnits = jfifNode.getAttribute("resUnits")?.toIntOrNull()
@@ -335,11 +466,13 @@ class TesseractAction : AI() {
             if (resX != null) {
               val dpi =
                   when (resUnits) {
-                    1 -> resX // DPI
-                    2 -> (resX * 2.54).toInt() // DPC (dots per cm) to DPI
+                    1 -> resX
+                    2 -> (resX * 2.54).toInt()
                     else -> resX
                   }
+
               log(LogLevel.INFO, "Read DPI from image: $dpi")
+
               reader.dispose()
               iis.close()
               return dpi
@@ -351,8 +484,8 @@ class TesseractAction : AI() {
         reader.dispose()
         iis.close()
       }
-    } catch (e: Exception) {
-      log(LogLevel.WARNING, "Failed to read DPI from image: ${e.message}")
+    } catch (X: Exception) {
+      log(LogLevel.WARNING, "Failed to read DPI from image: ${X.message}")
     }
 
     log(LogLevel.INFO, "No DPI metadata found, using default 300 DPI")
@@ -373,6 +506,7 @@ class TesseractAction : AI() {
 
         iis.use {
           val readers = ImageIO.getImageReaders(iis)
+
           if (!readers.hasNext()) return 300
 
           val reader = readers.next()
@@ -386,18 +520,22 @@ class TesseractAction : AI() {
 
             if (tree is IIOMetadataNode) {
               val physNode = findNode(tree, "pHYs")
+
               if (physNode != null) {
                 val pixelsPerUnitX = physNode.getAttribute("pixelsPerUnitXAxis")?.toIntOrNull()
                 val unitSpecifier = physNode.getAttribute("unitSpecifier")?.toIntOrNull()
 
                 if (pixelsPerUnitX != null && unitSpecifier == 1) {
                   val dpi = (pixelsPerUnitX * 0.0254).toInt()
+
                   log(LogLevel.INFO, "Read DPI from image bytes: $dpi")
+
                   return dpi
                 }
               }
 
               val jfifNode = findNode(tree, "app0JFIF")
+
               if (jfifNode != null) {
                 val resX = jfifNode.getAttribute("Xdensity")?.toIntOrNull()
                 val resUnits = jfifNode.getAttribute("resUnits")?.toIntOrNull()
@@ -409,7 +547,9 @@ class TesseractAction : AI() {
                         2 -> (resX * 2.54).toInt()
                         else -> resX
                       }
+
                   log(LogLevel.INFO, "Read DPI from image bytes: $dpi")
+
                   return dpi
                 }
               }
@@ -419,8 +559,8 @@ class TesseractAction : AI() {
           }
         }
       }
-    } catch (e: Exception) {
-      log(LogLevel.WARNING, "Failed to read DPI from image bytes: ${e.message}")
+    } catch (X: Exception) {
+      log(LogLevel.WARNING, "Failed to read DPI from image bytes: ${X.message}")
     }
 
     log(LogLevel.INFO, "No DPI metadata found in image bytes, using default 300 DPI")
@@ -463,6 +603,7 @@ class TesseractAction : AI() {
    */
   private fun writeImageWithDPI(image: BufferedImage, outputFile: File, dpi: Int = 300) {
     val writers = ImageIO.getImageWritersByFormatName("png")
+
     if (!writers.hasNext()) {
       ImageIO.write(image, "PNG", outputFile)
 
@@ -471,7 +612,6 @@ class TesseractAction : AI() {
 
     val writer = writers.next()
     val writeParam = writer.defaultWriteParam
-
     val ios = ImageIO.createImageOutputStream(outputFile)
 
     if (ios == null) {
@@ -484,23 +624,20 @@ class TesseractAction : AI() {
     try {
       writer.output = ios
 
-      // Create metadata with DPI information
       val metadata =
           writer.getDefaultImageMetadata(
               javax.imageio.ImageTypeSpecifier.createFromBufferedImageType(image.type), writeParam)
 
-      // Set DPI in metadata using standard format
       val dotsPerMeter = (dpi / 0.0254).toInt() // Convert DPI to dots per meter
-
       val root = metadata.getAsTree("javax_imageio_png_1.0") as IIOMetadataNode
-
-      // Find or create pHYs node
       var physNode: IIOMetadataNode?
       val nodeList = root.getElementsByTagName("pHYs")
+
       if (nodeList.length > 0) {
         physNode = nodeList.item(0) as IIOMetadataNode
       } else {
         physNode = IIOMetadataNode("pHYs")
+
         root.appendChild(physNode)
       }
 
@@ -510,12 +647,14 @@ class TesseractAction : AI() {
 
       try {
         metadata.setFromTree("javax_imageio_png_1.0", root)
+
         log(LogLevel.INFO, "Set image DPI to $dpi ($dotsPerMeter dots/meter)")
       } catch (e: Exception) {
         log(LogLevel.WARNING, "Failed to set DPI metadata: ${e.message}")
       }
 
       val iioImage = javax.imageio.IIOImage(image, null, metadata)
+
       writer.write(null, iioImage, writeParam)
     } finally {
       ios.close()
@@ -523,6 +662,8 @@ class TesseractAction : AI() {
     }
   }
 
+  // endregion DPI Utilities
+  // region Tesseract JNI-Interaction
   /**
    * Sets the given [BufferedImage] on the Tesseract handle using an in-memory buffer.
    *
@@ -563,6 +704,7 @@ class TesseractAction : AI() {
         tessDataDir
             ?: run {
               log(LogLevel.WARNING, "Tesseract data directory not initialized")
+
               return 0
             }
     try {
@@ -573,13 +715,11 @@ class TesseractAction : AI() {
           log(
               LogLevel.WARNING,
               "Failed to initialize Tesseract with OSD data - osd.traineddata may be missing")
-          TessAPI1.TessBaseAPIDelete(osdHandle)
 
           return 0
         }
 
         TessAPI1.TessBaseAPISetPageSegMode(osdHandle, 0) // 0 = PSM_OSD_ONLY
-
         setImageToTesseract(osdHandle, image, dpi)
 
         val orientDegPtr = IntBuffer.allocate(1)
@@ -594,6 +734,7 @@ class TesseractAction : AI() {
         if (result == 1) {
           val orientDeg = orientDegPtr.get(0)
           val orientConf = orientConfPtr.get(0)
+
           log(
               LogLevel.INFO,
               "Tesseract OSD detected orientation: ${orientDeg}° (confidence: ${orientConf})")
@@ -612,8 +753,8 @@ class TesseractAction : AI() {
       } finally {
         TessAPI1.TessBaseAPIDelete(osdHandle)
       }
-    } catch (e: Exception) {
-      log(LogLevel.WARNING, "Tesseract OSD failed: ${e.message}")
+    } catch (X: Exception) {
+      log(LogLevel.WARNING, "Tesseract OSD failed: ${X.message}")
     }
 
     log(LogLevel.INFO, "Could not detect orientation, assuming no rotation needed")
@@ -621,6 +762,8 @@ class TesseractAction : AI() {
     return 0
   }
 
+  // endregion Tesseract JNI Interaction
+  // region Image Preprocessing
   /**
    * Preprocesses an image to improve OCR accuracy. Applies: Grayscale conversion, adaptive
    * binarization, noise reduction, and contrast enhancement.
@@ -657,6 +800,7 @@ class TesseractAction : AI() {
       for (y in 0 until grayscaleImage.height) {
         for (x in 0 until grayscaleImage.width) {
           val gray = grayscaleImage.getRGB(x, y) and 0xFF
+
           histogram[gray]++
         }
       }
@@ -719,6 +863,7 @@ class TesseractAction : AI() {
           }
 
           neighbors.sort()
+
           val median = neighbors[4]
           val color = if (median > 127) 0xFFFFFF else 0x000000
 
@@ -769,6 +914,16 @@ class TesseractAction : AI() {
       return image
     }
 
+    return applyPreprocessing(image)
+  }
+
+  /**
+   * Core image preprocessing: grayscale conversion, Otsu binarization, and median denoising.
+   *
+   * @param image The source image.
+   * @return The preprocessed image, or the original if preprocessing fails.
+   */
+  private fun applyPreprocessing(image: BufferedImage): BufferedImage {
     try {
       val grayscaleImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_BYTE_GRAY)
       val graphics = grayscaleImage.createGraphics()
@@ -781,6 +936,7 @@ class TesseractAction : AI() {
       for (y in 0 until grayscaleImage.height) {
         for (x in 0 until grayscaleImage.width) {
           val gray = grayscaleImage.getRGB(x, y) and 0xFF
+
           histogram[gray]++
         }
       }
@@ -843,6 +999,7 @@ class TesseractAction : AI() {
           }
 
           neighbors.sort()
+
           val median = neighbors[4]
           val color = if (median > 127) 0xFFFFFF else 0x000000
 
@@ -860,6 +1017,8 @@ class TesseractAction : AI() {
     }
   }
 
+  // endregion Image Preprocessing
+  // region OCR Execution
   /**
    * Runs OCR fully in-memory without writing the image to disk.
    *
@@ -874,7 +1033,6 @@ class TesseractAction : AI() {
     val originalDPI = readImageDPI(imageBytes)
     val originalImage = ImageIO.read(ByteArrayInputStream(imageBytes)) ?: return ""
     var correctedImage = originalImage
-
     val manualRotation =
         params.headerMap.entries
             .find { it.key.equals("X-Rotate", ignoreCase = true) }
@@ -884,6 +1042,7 @@ class TesseractAction : AI() {
 
     if (manualRotation != 0) {
       log(LogLevel.INFO, "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+
       correctedImage =
           when (manualRotation) {
             90 -> rotate90(correctedImage)
@@ -898,6 +1057,7 @@ class TesseractAction : AI() {
           }
     } else {
       log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+
       val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
 
       if (detectedAngle != 0) {
@@ -908,21 +1068,23 @@ class TesseractAction : AI() {
               270 -> rotate270(correctedImage)
               else -> correctedImage
             }
+
         log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
       }
     }
 
     val preprocessedImage = preprocessImage(correctedImage, params)
 
+    log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
     val handle =
         pool.poll(10, TimeUnit.SECONDS)
-            ?: throw IllegalStateException("[[ CodBi / AI / Tesseract ] Pool exhausted ]")
+            ?: throw IllegalStateException(
+                "[[ CodBi / AI / Tesseract ] Pool exhausted (available: ${pool.size}, configured: $sizePool) ]")
 
     try {
       setImageToTesseract(handle, preprocessedImage, originalDPI)
 
       val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
-
       val result = ptr?.getString(0, "UTF-8") ?: ""
 
       if (ptr != null) TessAPI1.TessDeleteText(ptr)
@@ -935,6 +1097,68 @@ class TesseractAction : AI() {
     }
   }
 
+  /**
+   * Runs OCR in-memory without requiring servlet action parameters. Used by [performOcr] for
+   * external proxy requests.
+   *
+   * @param imageBytes The raw image bytes.
+   * @param rotate Manual rotation angle (0, 90, 180, or 270).
+   * @param preprocess Whether to apply image preprocessing (binarization, denoising).
+   * @return The extracted text.
+   */
+  private fun runOcrDirect(imageBytes: ByteArray, rotate: Int, preprocess: Boolean): String {
+    val originalDPI = readImageDPI(imageBytes)
+    val originalImage = ImageIO.read(ByteArrayInputStream(imageBytes)) ?: return ""
+    var correctedImage = originalImage
+
+    if (rotate != 0) {
+      correctedImage =
+          when (rotate) {
+            90 -> rotate90(correctedImage)
+            180 -> rotate180(correctedImage)
+            270 -> rotate270(correctedImage)
+            else -> correctedImage
+          }
+    } else {
+      val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
+
+      if (detectedAngle != 0) {
+        correctedImage =
+            when (detectedAngle) {
+              90 -> rotate90(correctedImage)
+              180 -> rotate180(correctedImage)
+              270 -> rotate270(correctedImage)
+              else -> correctedImage
+            }
+      }
+    }
+
+    val processedImage = if (preprocess) applyPreprocessing(correctedImage) else correctedImage
+
+    log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
+    val handle =
+        pool.poll(10, TimeUnit.SECONDS)
+            ?: throw IllegalStateException(
+                "[[ CodBi / AI / Tesseract ] Pool exhausted (available: ${pool.size}, configured: $sizePool) ]")
+
+    try {
+      setImageToTesseract(handle, processedImage, originalDPI)
+
+      val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
+      val result = ptr?.getString(0, "UTF-8") ?: ""
+
+      if (ptr != null) TessAPI1.TessDeleteText(ptr)
+
+      TessAPI1.TessBaseAPIClear(handle)
+
+      return result
+    } finally {
+      pool.offer(handle)
+    }
+  }
+
+  // endregion OCR Execution
+  // region Lifecycle
   /**
    * Specifies the name of this [IPluginServletAction].
    *
@@ -994,6 +1218,7 @@ class TesseractAction : AI() {
               ?.forEach { oldFolder -> oldFolder.deleteRecursively() }
 
           val tempNativeLibs = File(tmpDir, "tesseract_run_${ System.currentTimeMillis()}")
+
           tempNativeLibs.mkdirs()
           dirTempNativeLibs = tempNativeLibs
 
@@ -1003,6 +1228,7 @@ class TesseractAction : AI() {
         }
         // endregion Clone libs into a fresh run dir (avoid locked DLLs)
         val tempNativeLibs = dirTempNativeLibs ?: return false
+
         System.setProperty("jna.library.path", tempNativeLibs.absolutePath)
         System.setProperty("net.sourceforge.tess4j.extract.path", tempNativeLibs.absolutePath)
         System.setProperty("net.sourceforge.tess4j.skip.extract", "true")
@@ -1011,7 +1237,7 @@ class TesseractAction : AI() {
 
         val languages = properties.getProperty("AI_Tesseract_Languages")
         val langs =
-            if (languages.isNullOrBlank()) listOf("de")
+            if (languages.isNullOrBlank()) listOf("deu")
             else languages.split("+").map { it.trim() }.filter { it.isNotBlank() }
 
         langs.forEach { lang -> ensureTessData(tessDataDir, lang) }
@@ -1019,11 +1245,12 @@ class TesseractAction : AI() {
         // region Initialize / Manage pool
         val poolSizeProp = properties.getProperty("AI_Tesseract_PoolSize")?.toIntOrNull()
         val targetSize = if (poolSizeProp != null && poolSizeProp > 0) poolSizeProp else 2
-        val langArg = if (languages.isNullOrBlank()) "de" else languages.replace(" ", "")
+        val langArg = if (languages.isNullOrBlank()) "deu" else languages.replace(" ", "")
 
         properties.getProperty("AI_Tesseract_MaxRAMPercent")?.trim()?.toDoubleOrNull()?.let {
           if (it in 1.0..110.0) maxRAMPercent = it
         }
+
         properties.getProperty("AI_Tesseract_MaxCPUPercent")?.trim()?.toDoubleOrNull()?.let {
           if (it in 1.0..110.0) maxCPUPercent = it
         }
@@ -1032,6 +1259,20 @@ class TesseractAction : AI() {
           sizePool = targetSize
 
           repeat(sizePool) { addHandleToPool(langArg) }
+
+          if (pool.isEmpty()) {
+            log(
+                LogLevel.ERROR,
+                "Pool initialization failed \u2014 no handles were created (requested $sizePool for language '$langArg')")
+            throw IllegalStateException(
+                "Tesseract pool is empty after initialization \u2014 check language data files in ${tessDataDir?.absolutePath}")
+          }
+          if (pool.size < sizePool) {
+            log(
+                LogLevel.WARNING,
+                "Pool partially initialized: ${pool.size} of $sizePool handles created")
+          }
+          log(LogLevel.INFO, "Pool initialized: ${pool.size} handles for language '$langArg'")
 
           isPoolInitialized = true
         } else {
@@ -1056,6 +1297,7 @@ class TesseractAction : AI() {
         // endregion Initialize / Manage pool
         resourceMonitor?.shutdown()
         resourceMonitor = ResourceMonitor().also { it.start() }
+
         ready = true
         instance = this
       } catch (X: Throwable) {
@@ -1088,15 +1330,18 @@ class TesseractAction : AI() {
               }
       val tesseract = TessAPI1.TessBaseAPICreate()
 
-      if (TessAPI1.TessBaseAPIInit3(tesseract, dataDir.absolutePath, lang) != 0)
-          throw ServletException(
-              "[[ CodBi / AI /Tesseract ] Unknown initialization failure while creating a new handle ($lang) ]")
+      if (TessAPI1.TessBaseAPIInit3(tesseract, dataDir.absolutePath, lang) != 0) {
+        TessAPI1.TessBaseAPIDelete(tesseract)
+        throw ServletException(
+            "[[ CodBi / AI /Tesseract ] Unknown initialization failure while creating a new handle ($lang) ]")
+      }
 
       pool.put(tesseract)
+      log(LogLevel.INFO, "Pool handle created for language '$lang' (pool size now: ${pool.size})")
     } catch (X: Throwable) {
       log(
-          LogLevel.WARNING,
-          "Non fatal exception during Tesseract init of a new handle ($lang): ${ X.message }",
+          LogLevel.ERROR,
+          "Failed to create pool handle ($lang) \u2014 pool may be undersized: ${ X.message }",
           "",
           X)
     }
@@ -1132,11 +1377,11 @@ class TesseractAction : AI() {
     pluginRoot = configData.fileHelper.pluginFolder
 
     if (!commonInit(configData.properties, pluginRoot)) return
-    // region Begin the observation of the [cacheIDedImages].
+
     janitorIDedImages = Executors.newSingleThreadScheduledExecutor()
 
     startJanitor()
-    // endregion Begin the observation of the [cacheIDedImages].
+
     log(LogLevel.INFO, "Tesseract initialized.")
   }
 
@@ -1157,6 +1402,7 @@ class TesseractAction : AI() {
     if (!commonInit(configData.properties, pluginRoot)) return null
 
     val languages = configData.properties.getProperty("AI_Tesseract_Languages")
+
     if (languages != null && !Regex("""^[a-z]{3}(\s*\+\s*[a-z]{3})*$""").matches(languages))
         throw IllegalArgumentException(
             "[[ CodBi / AI / Tesseract ] Config property AI_Tesseract_Languages, if set, has to match to following regular expression: ^[a-z]{3}(\\s*\\+\\s*[a-z]{3})*\$.")
@@ -1164,6 +1410,8 @@ class TesseractAction : AI() {
     return null
   }
 
+  // endregion Lifecycle
+  // region Execution Modes
   /**
    * Does, if activated by the CodBi-Plugin-Property **Active_AI** containing **OCR**, use [AI]'s
    * janitor to store images that have an ID (if transmitted in the header **X-OCR-Image-ID**) and
@@ -1183,7 +1431,7 @@ class TesseractAction : AI() {
    */
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
     log(LogLevel.INFO, "Received OCR Request")
-    // region Check if the Tesseract is active.
+
     if (!active) {
       log(
           LogLevel.ERROR,
@@ -1195,17 +1443,24 @@ class TesseractAction : AI() {
               "{\"error\":\"The Tesseract is currently not active. In order to activate it the keyword OCR has to be placed into the CodBi-Plugin-Property Active_AI.\"}"))
     }
     // endregion Check if the Tesseract is active.
-    if (!ready)
-        return PluginServletActionRetVal(
-            ServletResponse(
-                EResponseType.JSON,
-                "{\"error\":\"Tesseract is not active. In order to activate it the keyword OCR has to be placed into the CodBi-Plugin-Property Active_AI.\"}"))
+    if (!ready) {
+      log(
+          LogLevel.ERROR,
+          "Tesseract is active but not ready — initialization may have failed (pool initialized: $isPoolInitialized, pool size: ${pool.size}, tessDataDir: ${tessDataDir?.absolutePath})")
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              "{\"error\":\"Tesseract is not ready — initialization failed. Check server logs for details.\"}"))
+    }
     // ── Resource gate ──────────────────────────────────────────────────
     resourceMonitor?.let { monitor ->
       val reason = monitor.exceedReason()
+
       if (reason != null) {
         val waitSec = monitor.estimateWaitSeconds()
+
         log(LogLevel.WARNING, "Resource gate BLOCKED: $reason — estimated wait ${waitSec}s")
+
         return PluginServletActionRetVal(
             ServletResponse(
                 EResponseType.JSON,
@@ -1307,17 +1562,16 @@ class TesseractAction : AI() {
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
           val tempFileLocal =
               requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+
           if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
           // region OCR Processing
           // Apply orientation correction: Manual override or auto-detection using Tesseract
           val orientationCorrectedFile =
               try {
-                // Read original DPI first
                 val originalDPI = readImageDPI(tempFileLocal)
                 var correctedImage = ImageIO.read(tempFileLocal)
-
-                // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
-                // 270)
+                // region Check for manual rotation override via X-Rotate header (in degrees: 0, 90,
+                // 180, 270).
                 val manualRotation =
                     params.headerMap.entries
                         .find { it.key.equals("X-Rotate", ignoreCase = true) }
@@ -1341,9 +1595,12 @@ class TesseractAction : AI() {
                           correctedImage
                         }
                       }
-                } else {
-                  // Always use Tesseract orientation detection for best results
+                }
+                // endregion Check for manual rotation override via X-Rotate header (in degrees: 0,
+                // 90, 180, 270).
+                else {
                   log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+
                   val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
 
                   if (detectedAngle != 0) {
@@ -1354,27 +1611,35 @@ class TesseractAction : AI() {
                           270 -> rotate270(correctedImage)
                           else -> correctedImage
                         }
+
                     log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
                   }
                 }
 
                 val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
+
                 writeImageWithDPI(correctedImage, correctedFile, originalDPI)
+
                 filesToDelete.add(correctedFile)
                 correctedFile
-              } catch (e: Exception) {
-                log(LogLevel.WARNING, "Orientation correction failed, using original: ${e.message}")
+              } catch (X: Exception) {
+                log(LogLevel.WARNING, "Orientation correction failed, using original: ${X.message}")
+
                 tempFileLocal
               }
 
           val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
+
           if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
 
+          log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
           val handle =
               pool.poll(10, TimeUnit.SECONDS)
-                  ?: throw IllegalStateException("[[ CodBi / AI / Tesseract ] Pool exhausted ]")
+                  ?: throw IllegalStateException(
+                      "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
           try {
             log(LogLevel.INFO, "Processing ${ preprocessedFile.absolutePath }")
+
             TessAPI1.TessBaseAPIProcessPages(handle, preprocessedFile.absolutePath, null, 0, null)
 
             val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
@@ -1405,10 +1670,15 @@ class TesseractAction : AI() {
             .forEach { (image, _) ->
               // region OCR Processing
               val preprocessedFile = preprocessImage(image, params)
+
               if (preprocessedFile != image) filesToDelete.add(preprocessedFile)
 
+              log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
               val handle =
-                  pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+                  pool.poll(10, TimeUnit.SECONDS)
+                      ?: throw IllegalStateException(
+                          "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
+
               try {
                 TessAPI1.TessBaseAPIProcessPages(
                     handle, preprocessedFile.absolutePath, null, 0, null)
@@ -1437,7 +1707,6 @@ class TesseractAction : AI() {
     // region Generate response
     val jsonMap = ocrResults.mapValues { (_, value) -> value }
     val jsonResponse = Gson().toJson(jsonMap)
-
     val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
     // endregion Generate response
     return PluginServletActionRetVal(servletResponse)
@@ -1499,7 +1768,6 @@ class TesseractAction : AI() {
                 fileItem.stream().use { input ->
                   input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
                 }
-
             val rawText = runOcrOnImageBytes(bytes, params)
 
             ocrResults[inputName] =
@@ -1538,23 +1806,21 @@ class TesseractAction : AI() {
 
             if (params.headerMap["X-OCR-Image-ID"] != null && distinctImageID.isNotBlank()) {
               cacheIDedImages[distinctImageID] = CachedImage(createdTempFile)
+
               shouldDeleteThisFile = false
             }
           }
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
           val tempFileLocal =
               requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+
           if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
           // region OCR Processing
           // Apply orientation correction: Manual override or auto-detection using Tesseract
           val orientationCorrectedFile =
               try {
-                // Read original DPI first
                 val originalDPI = readImageDPI(tempFileLocal)
                 var correctedImage = ImageIO.read(tempFileLocal)
-
-                // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
-                // 270)
                 val manualRotation =
                     params.headerMap.entries
                         .find { it.key.equals("X-Rotate", ignoreCase = true) }
@@ -1566,6 +1832,7 @@ class TesseractAction : AI() {
                   log(
                       LogLevel.INFO,
                       "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+
                   correctedImage =
                       when (manualRotation) {
                         90 -> rotate90(correctedImage)
@@ -1579,8 +1846,8 @@ class TesseractAction : AI() {
                         }
                       }
                 } else {
-                  // Always use Tesseract orientation detection for best results
                   log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+
                   val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
 
                   if (detectedAngle != 0) {
@@ -1591,23 +1858,32 @@ class TesseractAction : AI() {
                           270 -> rotate270(correctedImage)
                           else -> correctedImage
                         }
+
                     log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
                   }
                 }
 
                 val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
+
                 writeImageWithDPI(correctedImage, correctedFile, originalDPI)
+
                 filesToDelete.add(correctedFile)
                 correctedFile
               } catch (e: Exception) {
                 log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
+
                 tempFileLocal
               }
+
           val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
+
           if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
 
+          log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
           val handle =
-              pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+              pool.poll(10, TimeUnit.SECONDS)
+                  ?: throw IllegalStateException(
+                      "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
           try {
             TessAPI1.TessBaseAPIProcessPages(handle, preprocessedFile.absolutePath, null, 0, null)
 
@@ -1646,11 +1922,14 @@ class TesseractAction : AI() {
             .forEach { (image, key) ->
               // region OCR Processing
               val preprocessedFile = preprocessImage(image, params)
+
               if (preprocessedFile != image) filesToDelete.add(preprocessedFile)
 
+              log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
               val handle =
                   pool.poll(10, TimeUnit.SECONDS)
-                      ?: throw IllegalStateException("[[ CodBi / AI / Tesseract ] Pool exhausted ]")
+                      ?: throw IllegalStateException(
+                          "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
               try {
                 TessAPI1.TessBaseAPIProcessPages(
                     handle, preprocessedFile.absolutePath, null, 0, null)
@@ -1688,7 +1967,6 @@ class TesseractAction : AI() {
     // region Generate response
     val jsonMap = ocrResults.mapValues { (_, value) -> value }
     val jsonResponse = Gson().toJson(jsonMap)
-
     val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
     // endregion Generate response
     return PluginServletActionRetVal(servletResponse)
@@ -1728,13 +2006,13 @@ class TesseractAction : AI() {
     val patternHeader =
         try {
           URLDecoder.decode(patternHeaderEncoded, StandardCharsets.UTF_8.toString())
-        } catch (e: Exception) {
-          log(LogLevel.ERROR, "Failed to decode X-Pattern header: ${ e.message }")
+        } catch (X: Exception) {
+          log(LogLevel.ERROR, "Failed to decode X-Pattern header: ${ X.message }")
 
           return PluginServletActionRetVal(
               ServletResponse(
                   EResponseType.JSON,
-                  "{\"error\":\"Failed to decode X-Pattern header: ${ e.message }\"}"))
+                  "{\"error\":\"Failed to decode X-Pattern header: ${ X.message }\"}"))
         }
     val verifyResults = mutableMapOf<String, Boolean>()
     val filesToDelete = mutableListOf<File>()
@@ -1749,7 +2027,6 @@ class TesseractAction : AI() {
                 fileItem.stream().use { input ->
                   input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
                 }
-
             val rawText = runOcrOnImageBytes(bytes, params)
 
             verifyResults[inputName] =
@@ -1796,6 +2073,7 @@ class TesseractAction : AI() {
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
           val tempFileLocal =
               requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+
           if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
           // region OCR Processing
           // Apply orientation correction: Manual override or auto-detection using Tesseract
@@ -1805,8 +2083,8 @@ class TesseractAction : AI() {
                 val originalDPI = readImageDPI(tempFileLocal)
                 var correctedImage = ImageIO.read(tempFileLocal)
 
-                // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
-                // 270)
+                // region Check for manual rotation override via X-Rotate header (in degrees: 0, 90,
+                // 180, 270).
                 val manualRotation =
                     params.headerMap.entries
                         .find { it.key.equals("X-Rotate", ignoreCase = true) }
@@ -1830,9 +2108,12 @@ class TesseractAction : AI() {
                           correctedImage
                         }
                       }
-                } else {
-                  // Always use Tesseract orientation detection for best results
+                }
+                // endregion Check for manual rotation override via X-Rotate header (in degrees: 0,
+                // 90, 180, 270).
+                else {
                   log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+
                   val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
 
                   if (detectedAngle != 0) {
@@ -1843,23 +2124,32 @@ class TesseractAction : AI() {
                           270 -> rotate270(correctedImage)
                           else -> correctedImage
                         }
+
                     log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
                   }
                 }
 
                 val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
+
                 writeImageWithDPI(correctedImage, correctedFile, originalDPI)
+
                 filesToDelete.add(correctedFile)
                 correctedFile
-              } catch (e: Exception) {
-                log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
+              } catch (X: Exception) {
+                log(LogLevel.WARNING, "Orientation correction failed: ${X.message}")
+
                 tempFileLocal
               }
+
           val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
+
           if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
 
+          log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
           val handle =
-              pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+              pool.poll(10, TimeUnit.SECONDS)
+                  ?: throw IllegalStateException(
+                      "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
           try {
             TessAPI1.TessBaseAPIProcessPages(handle, preprocessedFile.absolutePath, null, 0, null)
 
@@ -1896,10 +2186,15 @@ class TesseractAction : AI() {
             .forEach { (image, key) ->
               // region OCR Processing
               val preprocessedFile = preprocessImage(image, params)
+
               if (preprocessedFile != image) filesToDelete.add(preprocessedFile)
 
+              log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
               val handle =
-                  pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+                  pool.poll(10, TimeUnit.SECONDS)
+                      ?: throw IllegalStateException(
+                          "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
+
               try {
                 TessAPI1.TessBaseAPIProcessPages(
                     handle, preprocessedFile.absolutePath, null, 0, null)
@@ -1941,7 +2236,6 @@ class TesseractAction : AI() {
     // region Generate response
     val jsonMap = verifyResults.mapValues { (_, value) -> value }
     val jsonResponse = Gson().toJson(jsonMap)
-
     val servletResponse =
         ServletResponse(EResponseType.HTML).apply {
           value = String(jsonResponse.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
@@ -1994,31 +2288,34 @@ class TesseractAction : AI() {
     val fieldPatternsHeader =
         try {
           URLDecoder.decode(fieldPatternsHeaderEncoded, StandardCharsets.UTF_8.toString())
-        } catch (e: Exception) {
-          log(LogLevel.ERROR, "Failed to decode X-FieldPatterns header: ${ e.message }")
+        } catch (X: Exception) {
+          log(LogLevel.ERROR, "Failed to decode X-FieldPatterns header: ${ X.message }")
 
           return PluginServletActionRetVal(
               ServletResponse(
                   EResponseType.JSON,
-                  "{\"error\":\"Failed to decode X-FieldPatterns header: ${ e.message }\"}"))
+                  "{\"error\":\"Failed to decode X-FieldPatterns header: ${ X.message }\"}"))
         }
     val fieldPatterns =
         try {
           val gson = Gson()
           val type = object : TypeToken<List<Map<String, String>>>() {}.type
           val jsonArray = gson.fromJson<List<Map<String, String>>>(fieldPatternsHeader, type)
+
           jsonArray.map { entry ->
             entry.mapValues { (_, encodedPattern) ->
               try {
                 URLDecoder.decode(encodedPattern, StandardCharsets.UTF_8.toString())
               } catch (X: Exception) {
                 log(LogLevel.ERROR, "Failed to decode pattern for field: ${ X.message }")
+
                 ""
               }
             }
           }
         } catch (X: JsonSyntaxException) {
           log(LogLevel.ERROR, "Failed to parse X-FieldPatterns JSON: ${ X.message }")
+
           return PluginServletActionRetVal(
               ServletResponse(
                   EResponseType.JSON,
@@ -2031,6 +2328,7 @@ class TesseractAction : AI() {
                   EResponseType.JSON,
                   "{\"error\":\"Error processing X-FieldPatterns: ${ X.message }\"}"))
         }
+
     val fieldResults = mutableMapOf<String, Map<String, List<String>>>()
     val filesToDelete = mutableListOf<File>()
     val regexFlags = parseRegexFlags(params)
@@ -2044,7 +2342,6 @@ class TesseractAction : AI() {
                 fileItem.stream().use { input ->
                   input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
                 }
-
             val rawText = runOcrOnImageBytes(bytes, params)
             val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
             val imageFields = allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
@@ -2068,7 +2365,7 @@ class TesseractAction : AI() {
           val distinctImageID = "${ params.headerMap["X-OCR-Image-ID"]}::${ inputName }"
           var tempFile: File? = null
           var shouldDeleteThisFile = true
-          // region Check if the image is already cached.
+
           if (params.headerMap["X-OCR-Image-ID"] != null &&
               distinctImageID.isNotBlank() &&
               cacheIDedImages.containsKey(distinctImageID)) {
@@ -2099,6 +2396,7 @@ class TesseractAction : AI() {
           // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
           val tempFileLocal =
               requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
+
           if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
           // region OCR Processing
           // Apply orientation correction: Manual override or auto-detection using Tesseract
@@ -2107,9 +2405,8 @@ class TesseractAction : AI() {
                 // Read original DPI first
                 val originalDPI = readImageDPI(tempFileLocal)
                 var correctedImage = ImageIO.read(tempFileLocal)
-
-                // Check for manual rotation override via X-Rotate header (in degrees: 0, 90, 180,
-                // 270)
+                // region Check for manual rotation override via X-Rotate header (in degrees: 0, 90,
+                // 180, 270)
                 val manualRotation =
                     params.headerMap.entries
                         .find { it.key.equals("X-Rotate", ignoreCase = true) }
@@ -2133,9 +2430,13 @@ class TesseractAction : AI() {
                           correctedImage
                         }
                       }
-                } else {
+                }
+                // endregion Check for manual rotation override via X-Rotate header (in degrees: 0,
+                // 90, 180, 270)
+                else {
                   // Always use Tesseract orientation detection for best results
                   log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+
                   val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
 
                   if (detectedAngle != 0) {
@@ -2151,18 +2452,27 @@ class TesseractAction : AI() {
                 }
 
                 val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
+
                 writeImageWithDPI(correctedImage, correctedFile, originalDPI)
+
                 filesToDelete.add(correctedFile)
+
                 correctedFile
               } catch (e: Exception) {
                 log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
+
                 tempFileLocal
               }
           val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
+
           if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
 
+          log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
           val handle =
-              pool.poll(10, TimeUnit.SECONDS) ?: throw IllegalStateException("Pool exhausted")
+              pool.poll(10, TimeUnit.SECONDS)
+                  ?: throw IllegalStateException(
+                      "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
+
           try {
             TessAPI1.TessBaseAPIProcessPages(handle, preprocessedFile.absolutePath, null, 0, null)
 
@@ -2172,11 +2482,9 @@ class TesseractAction : AI() {
 
             if (ptr != null) {
               val rawText = ptr.getString(0, "UTF-8") ?: ""
-              // region Initialize all field names with empty lists to ensure they're always present
               val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
               val imageFields = allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
-              // endregion Initialize all field names with empty lists to ensure they're always
-              // present
+
               fieldPatterns.forEach { fieldPatternMap ->
                 fieldPatternMap.forEach { (fieldName, pattern) ->
                   if (pattern.isNotBlank()) {
@@ -2223,11 +2531,14 @@ class TesseractAction : AI() {
             .forEach { (image, key) ->
               // region OCR Processing
               val preprocessedFile = preprocessImage(image, params)
+
               if (preprocessedFile != image) filesToDelete.add(preprocessedFile)
 
+              log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
               val handle =
                   pool.poll(10, TimeUnit.SECONDS)
-                      ?: throw IllegalStateException("[[ CodBi / AI / Tesseract ] Pool exhausted ]")
+                      ?: throw IllegalStateException(
+                          "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
               try {
                 TessAPI1.TessBaseAPIProcessPages(
                     handle, preprocessedFile.absolutePath, null, 0, null)
@@ -2236,11 +2547,10 @@ class TesseractAction : AI() {
 
                 if (ptr != null) {
                   val rawText = ptr.getString(0, "UTF-8") ?: ""
-                  // region Initialize all field names with empty lists to ensure they're always
                   val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
                   val imageFields =
                       allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
-                  // endregion Initialize all field names with empty lists to ensure they're always
+
                   fieldPatterns.forEach { fieldPatternMap ->
                     fieldPatternMap.forEach { (fieldName, pattern) ->
                       if (pattern.isNotBlank()) {
@@ -2285,7 +2595,6 @@ class TesseractAction : AI() {
           fields.mapValues { (_, matches) -> matches }
         }
     val jsonResponse = Gson().toJson(jsonMap)
-
     val servletResponse =
         ServletResponse(EResponseType.HTML).apply {
           value = String(jsonResponse.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
@@ -2295,7 +2604,8 @@ class TesseractAction : AI() {
     return PluginServletActionRetVal(servletResponse)
   }
 
-  // region Native library management (Tess4J / Lept4J)
+  // endregion Execution Modes
+  // region Native-Library-Management (Tess4J / Lept4J)
   /**
    * Acquires the Maven repository URL from **AI_Tesseract_MavenRepository**. If this plugin
    * property is not set the standard repository
@@ -2365,13 +2675,12 @@ class TesseractAction : AI() {
    * Make sure that the native Windows-Libraries are available.
    *
    * @param dirNativeLibs The directory where the native libraries reside.
-   * @param arch The archtype.
+   * @param arch The archetype.
    */
   private fun ensureWindowsNativeLibs(dirNativeLibs: File?, arch: String) {
     if (dirNativeLibs == null) return
 
     val platformDir = if (arch.contains("64")) "win32-x86-64" else "win32-x86"
-
     val tesseractDll = File(dirNativeLibs, "libtesseract551.dll")
     val leptDll = File(dirNativeLibs, "libleptonica1850.dll")
 
@@ -2405,6 +2714,7 @@ class TesseractAction : AI() {
   }
 
   // endregion Native library management (Tess4J / Lept4J)
+  // region Data Management
   /** Removes the native libraries and the models from the local repository. */
   private fun wipeLocalData() {
     pluginRoot?.resolve("Resources/AI/Tesseract")?.deleteRecursively()
@@ -2422,6 +2732,7 @@ class TesseractAction : AI() {
    */
   private fun ensureTessData(tessDataDir: File?, language: String) {
     val dataDir = tessDataDir ?: return
+
     if (!dataDir.exists()) dataDir.mkdirs()
 
     val languagesToDownload = listOf("$language.traineddata", "osd.traineddata")
@@ -2444,6 +2755,8 @@ class TesseractAction : AI() {
     }
   }
 
+  // endregion Data Management
+  // region Shutdown
   /**
    * Shuts down the [pool] and releases all Tesseract handles.
    *
@@ -2473,8 +2786,9 @@ class TesseractAction : AI() {
     super.log(importance, toLog, adjenct, exception)
   }
 
-  // ── ResourceMonitor inner class ───────────────────────────────────────────
+  // endregion Shutdown
 
+  // region Resource Monitor
   private inner class ResourceMonitor : Thread("codbi-tesseract-resource-monitor") {
     @Volatile
     var cpuPercent = 0.0
@@ -2502,39 +2816,62 @@ class TesseractAction : AI() {
         try {
           osMxBean?.let {
             cpuPercent = it.cpuLoad * 100.0
+
             val totalMem = it.totalMemorySize.toDouble()
             val freeMem = it.freeMemorySize.toDouble()
+
             ramPercent = if (totalMem > 0) (totalMem - freeMem) / totalMem * 100.0 else 0.0
           }
+
           sleep(1000)
         } catch (_: InterruptedException) {
           break
-        } catch (_: Exception) {
-          /* ignore */
-        }
+        } catch (_: Exception) {}
       }
     }
 
+    /**
+     * Checks if the resources are available based on the current CPU and RAM usage.
+     *
+     * @return True if resources are available, false otherwise.
+     */
     fun resourcesAvailable(): Boolean = cpuPercent < maxCPUPercent && ramPercent < maxRAMPercent
 
+    /**
+     * Provides a reason why the resources are currently exceeded, if applicable.
+     *
+     * @return A string describing the reason, or null if resources are not exceeded.
+     */
     fun exceedReason(): String? {
       val parts = mutableListOf<String>()
+
       if (cpuPercent >= maxCPUPercent)
           parts.add("CPU %.1f%% >= %.0f%%".format(cpuPercent, maxCPUPercent))
+
       if (ramPercent >= maxRAMPercent)
           parts.add("RAM %.1f%% >= %.0f%%".format(ramPercent, maxRAMPercent))
+
       return if (parts.isEmpty()) null else parts.joinToString(", ")
     }
 
+    /**
+     * Estimates the wait time in seconds based on the current CPU and RAM usage.
+     *
+     * @return An estimated wait time in seconds, coerced between 5 and 120 seconds.
+     */
     fun estimateWaitSeconds(): Int {
       val cpuOver = (cpuPercent - maxCPUPercent).coerceAtLeast(0.0)
       val ramOver = (ramPercent - maxRAMPercent).coerceAtLeast(0.0)
+
       return ((cpuOver + ramOver) / 5.0).toInt().coerceIn(5, 120)
     }
 
+    /** Shuts down the resource monitor thread. */
     fun shutdown() {
       running = false
+
       interrupt()
     }
   }
+  // endregion Resource Monitor
 }

@@ -1,9 +1,9 @@
 {
   "Description": "/classes/Functionalities_media.input.speech.whisper.MEDIA_INPUT_SPEECH_WHISPER.html#functionality",
   "Parameter": {
-    "voicehotkey": "",
-    "language": "",
-    "placeholder": "",
-    "showhint": ""
+    "VoiceHotkey": "",
+    "Language": "",
+    "Placeholder": "",
+    "ShowHint": ""
   }
 }

@@ -64,13 +64,12 @@ export class AI_OCR {
    *                              the processing is aborted and a warning is logged in the console.
    *
    * ### CSS Classes:
-   * - **AI_TESSERACT_Name**: Elements with this class within the parent container of the one holding the
-   *                          {@link HTMLInputElement } **toProcess** are used to receive the extracted fields when **Mode** is
-   *                          set to **Extract Fields**. Each such element should have **data-cb-Field** set to the name of the
-   *                          field to receive the extracted text for (see **Pattern_...** config parameter).
-   * - **AI_OCR_Receiver**:   Elements with this class are used to receive the results.
-   *                          In **Print** mode, a single <textarea> with this class is expected to receive the full OCR text
-   *                          output.
+   * - **CodBi_AI_OCR_Receiver**: Elements with this class within the parent container of the one holding the
+   *                              {@link HTMLInputElement } **toProcess** are used to receive the extracted fields when **Mode** is
+   *                              set to **Extract Fields**. Each such element should have **data-cb-Field** set to the name of the
+   *                              field to receive the extracted text for (see **Pattern_...** config parameter).
+   *                              In **Print** mode, a single <textarea> with this class is expected to receive the full OCR text
+   *                              output.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -112,6 +111,7 @@ export class AI_OCR {
         });
       }
       // Also resolve symbols in Pattern_* fields (for Extract Fields mode)
+      // biome-ignore lint/complexity/noForEach: <explanation>
       Object.keys(toLoad).forEach((key) => {
         if (key.startsWith("pattern_") && typeof toLoad[key] === "string") {
           toLoad[key] = (toLoad[key] as string).replace(/<\[([^\]]+)\]>/g, (match, identifier) => {

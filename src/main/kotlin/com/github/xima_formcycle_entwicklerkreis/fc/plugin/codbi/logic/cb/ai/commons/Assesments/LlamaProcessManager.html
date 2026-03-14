@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assessment v2: LlamaProcessManager.kt</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; max-width: 960px; margin: 36px auto; padding: 0 20px; background: #f8fafc; color: #1f2937; }
+    h1 { color: #0b5cab; border-bottom: 2px solid #0b5cab; padding-bottom: 8px; }
+    h2 { color: #114a86; margin-top: 28px; }
+    .meta { background: #eaf2ff; border-left: 4px solid #0b5cab; padding: 10px 12px; border-radius: 4px; }
+    .ok { border-left: 4px solid #1a7f37; background: #f4fbf6; padding: 10px 12px; margin: 10px 0; }
+    .risk { border-left: 4px solid #c2410c; background: #fff7f2; padding: 10px 12px; margin: 10px 0; }
+    .rec { border-left: 4px solid #d29922; background: #fff8dc; padding: 10px 12px; margin: 8px 0 14px; }
+  </style>
+</head>
+<body>
+  <h1>Assessment v2: LlamaProcessManager.kt</h1>
+  <div class="meta">
+    Date: March 14, 2026 | Branch: Designer_Interface | Repository: CodBi-Dev<br/>
+    File: src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ai/commons/LlamaProcessManager.kt
+  </div>
+
+  <h2>Overview</h2>
+  <p>Lifecycle manager for the LLAMA subprocess with startup polling, health verification, stream logging, and controlled shutdown.</p>
+
+  <h2>Strengths</h2>
+  <div class="ok">Health check logic was improved: JSON status parsing now requires explicit <code>status == "ok"</code>.</div>
+  <div class="ok">Fallback for non-JSON health bodies preserves compatibility with older plain-text responses.</div>
+  <div class="ok">TOCTOU race is now documented clearly in code, reducing hidden operational assumptions.</div>
+  <div class="ok">Process output collection and shutdown behavior remain pragmatic and production-safe.</div>
+
+  <h2>Risks</h2>
+  <div class="risk">TOCTOU remains inherently unresolved because the target server cannot bind with port 0 discovery in this flow.</div>
+  <div class="rec">Keep this limitation documented in operator docs and increase retry behavior around startup bind failures.</div>
+
+  <div class="risk">Output reader threads are not joined; rapid restarts can lose final lines.</div>
+  <div class="rec">Optionally add short joins on reader threads after process stop.</div>
+
+  <h2>Verdict</h2>
+  <p>A materially improved manager. Recent hardening around health semantics and diagnostics closes previous correctness gaps.</p>
+</body>
+</html>

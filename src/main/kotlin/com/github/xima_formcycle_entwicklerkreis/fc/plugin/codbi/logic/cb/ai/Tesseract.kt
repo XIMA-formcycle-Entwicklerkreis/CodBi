@@ -11,6 +11,9 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai
 // endregion Tesseract
 // region Java
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AI
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.commons.DpiUtil
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.commons.ImagePreprocessor
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.commons.ImageTransformer
 import com.google.gson.Gson
 import com.google.gson.JsonSyntaxException
 import com.google.gson.reflect.TypeToken
@@ -24,8 +27,6 @@ import de.xima.fc.mdl.fdv.EResponseType
 import de.xima.fc.mdl.response.ServletResponse
 import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
-import java.awt.geom.AffineTransform
-import java.awt.image.AffineTransformOp
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -39,7 +40,6 @@ import java.nio.charset.StandardCharsets
 import java.util.concurrent.*
 import java.util.jar.JarFile
 import javax.imageio.ImageIO
-import javax.imageio.metadata.IIOMetadataNode
 import javax.servlet.ServletException
 import net.sourceforge.tess4j.ITessAPI
 import net.sourceforge.tess4j.TessAPI1
@@ -312,355 +312,21 @@ class TesseractAction : AI() {
   }
 
   // endregion Regex Parsing
-  // region Image Transformation
-  /**
-   * Defines the possible image transformations that can be applied to correct image orientation.
-   * These transformations are used to prepare images for optimal OCR processing.
-   */
-  private enum class ImageTransformation {
-    /** Rotates the image 90 degrees clockwise. */
-    ROTATE_90,
-    /** Rotates the image 180 degrees. */
-    ROTATE_180,
-    /** Rotates the image 270 degrees clockwise (or 90 degrees counter-clockwise). */
-    ROTATE_270,
-    /** Flips the image horizontally (mirror effect on vertical axis). */
-    FLIP_HORIZONTAL,
-    /** Flips the image vertically (mirror effect on horizontal axis). */
-    FLIP_VERTICAL,
-    /** Rotates the image 90 degrees clockwise, then flips it horizontally. */
-    ROTATE_90_FLIP_HORIZONTAL,
-    /** Rotates the image 270 degrees clockwise, then flips it horizontally. */
-    ROTATE_270_FLIP_HORIZONTAL
-  }
+  // region Image Transformation (delegated to ImageTransformer)
+  private fun rotate90(img: BufferedImage): BufferedImage = ImageTransformer.rotate90(img)
 
-  /**
-   * Transforms an image using the specified transformation type.
-   *
-   * @param img The [BufferedImage] to transform.
-   * @param transformation The [ImageTransformation] to apply.
-   * @return The transformed image.
-   */
-  private fun transformImage(
-      img: BufferedImage,
-      transformation: ImageTransformation
-  ): BufferedImage {
-    val w = img.width
-    val h = img.height
-    val at = AffineTransform()
+  private fun rotate180(img: BufferedImage): BufferedImage = ImageTransformer.rotate180(img)
 
-    val (resultWidth, resultHeight, transforms) =
-        when (transformation) {
-          ImageTransformation.ROTATE_90 ->
-              Triple(h, w) {
-                at.translate(h.toDouble(), 0.0)
-                at.rotate(Math.PI / 2)
-              }
-          ImageTransformation.ROTATE_180 ->
-              Triple(w, h) {
-                at.translate(w.toDouble(), h.toDouble())
-                at.rotate(Math.PI)
-              }
-          ImageTransformation.ROTATE_270 ->
-              Triple(h, w) {
-                at.translate(0.0, w.toDouble())
-                at.rotate(-Math.PI / 2)
-              }
-          ImageTransformation.FLIP_HORIZONTAL ->
-              Triple(w, h) {
-                at.translate(w.toDouble(), 0.0)
-                at.scale(-1.0, 1.0)
-              }
-          ImageTransformation.FLIP_VERTICAL ->
-              Triple(w, h) {
-                at.translate(0.0, h.toDouble())
-                at.scale(1.0, -1.0)
-              }
-          ImageTransformation.ROTATE_90_FLIP_HORIZONTAL -> {
-            return transformImage(
-                transformImage(img, ImageTransformation.ROTATE_90),
-                ImageTransformation.FLIP_HORIZONTAL)
-          }
-          ImageTransformation.ROTATE_270_FLIP_HORIZONTAL -> {
-            return transformImage(
-                transformImage(img, ImageTransformation.ROTATE_270),
-                ImageTransformation.FLIP_HORIZONTAL)
-          }
-        }
-
-    transforms()
-
-    val result = BufferedImage(resultWidth, resultHeight, img.type)
-    val op = AffineTransformOp(at, AffineTransformOp.TYPE_BILINEAR)
-
-    return op.filter(img, result)
-  }
-
-  /** Rotates the image 90 degrees clockwise. */
-  private fun rotate90(img: BufferedImage): BufferedImage =
-      transformImage(img, ImageTransformation.ROTATE_90)
-
-  /** Rotates the image 180 degrees. */
-  private fun rotate180(img: BufferedImage): BufferedImage =
-      transformImage(img, ImageTransformation.ROTATE_180)
-
-  /** Rotates the image 270 degrees clockwise. */
-  private fun rotate270(img: BufferedImage): BufferedImage =
-      transformImage(img, ImageTransformation.ROTATE_270)
+  private fun rotate270(img: BufferedImage): BufferedImage = ImageTransformer.rotate270(img)
 
   // endregion Image Transformation
-  // region DPI Utilities
-  /**
-   * Reads DPI metadata from an image file.
-   *
-   * @param imageFile The image file to read DPI from.
-   * @return The DPI value, or 300 as default if not found.
-   */
-  private fun readImageDPI(imageFile: File): Int {
-    try {
-      val readers =
-          ImageIO.getImageReadersByFormatName(imageFile.extension.lowercase().ifEmpty { "png" })
+  // region DPI Utilities (delegated to DpiUtil)
+  private fun readImageDPI(imageFile: File): Int = DpiUtil.readImageDPI(imageFile)
 
-      if (!readers.hasNext()) return 300
+  private fun readImageDPI(imageBytes: ByteArray): Int = DpiUtil.readImageDPI(imageBytes)
 
-      val reader = readers.next()
-      val iis = ImageIO.createImageInputStream(imageFile)
-
-      if (iis == null) {
-        reader.dispose()
-
-        return 300
-      }
-
-      try {
-        reader.input = iis
-
-        val metadata = reader.getImageMetadata(0)
-        val formatName = metadata.nativeMetadataFormatName
-        val tree = metadata.getAsTree(formatName)
-
-        if (tree is IIOMetadataNode) {
-          val physNode = findNode(tree, "pHYs")
-
-          if (physNode != null) {
-            val pixelsPerUnitX = physNode.getAttribute("pixelsPerUnitXAxis")?.toIntOrNull()
-            val unitSpecifier = physNode.getAttribute("unitSpecifier")?.toIntOrNull()
-
-            if (pixelsPerUnitX != null && unitSpecifier == 1) { // 1 = meters
-              val dpi = (pixelsPerUnitX * 0.0254).toInt()
-
-              log(LogLevel.INFO, "Read DPI from image: $dpi")
-
-              reader.dispose()
-              iis.close()
-              return dpi
-            }
-          }
-
-          val jfifNode = findNode(tree, "app0JFIF")
-
-          if (jfifNode != null) {
-            val resX = jfifNode.getAttribute("Xdensity")?.toIntOrNull()
-            val resUnits = jfifNode.getAttribute("resUnits")?.toIntOrNull()
-
-            if (resX != null) {
-              val dpi =
-                  when (resUnits) {
-                    1 -> resX
-                    2 -> (resX * 2.54).toInt()
-                    else -> resX
-                  }
-
-              log(LogLevel.INFO, "Read DPI from image: $dpi")
-
-              reader.dispose()
-              iis.close()
-              return dpi
-            }
-          }
-        }
-        // endregion Parse metadata tree
-      } finally {
-        reader.dispose()
-        iis.close()
-      }
-    } catch (X: Exception) {
-      log(LogLevel.WARNING, "Failed to read DPI from image: ${X.message}")
-    }
-
-    log(LogLevel.INFO, "No DPI metadata found, using default 300 DPI")
-
-    return 300
-  }
-
-  /**
-   * Reads DPI metadata from image bytes.
-   *
-   * @param imageBytes The image bytes to read DPI from.
-   * @return The DPI value, or 300 as default if not found.
-   */
-  private fun readImageDPI(imageBytes: ByteArray): Int {
-    try {
-      ByteArrayInputStream(imageBytes).use { input ->
-        val iis = ImageIO.createImageInputStream(input) ?: return 300
-
-        iis.use {
-          val readers = ImageIO.getImageReaders(iis)
-
-          if (!readers.hasNext()) return 300
-
-          val reader = readers.next()
-
-          try {
-            reader.input = iis
-
-            val metadata = reader.getImageMetadata(0)
-            val formatName = metadata.nativeMetadataFormatName
-            val tree = metadata.getAsTree(formatName)
-
-            if (tree is IIOMetadataNode) {
-              val physNode = findNode(tree, "pHYs")
-
-              if (physNode != null) {
-                val pixelsPerUnitX = physNode.getAttribute("pixelsPerUnitXAxis")?.toIntOrNull()
-                val unitSpecifier = physNode.getAttribute("unitSpecifier")?.toIntOrNull()
-
-                if (pixelsPerUnitX != null && unitSpecifier == 1) {
-                  val dpi = (pixelsPerUnitX * 0.0254).toInt()
-
-                  log(LogLevel.INFO, "Read DPI from image bytes: $dpi")
-
-                  return dpi
-                }
-              }
-
-              val jfifNode = findNode(tree, "app0JFIF")
-
-              if (jfifNode != null) {
-                val resX = jfifNode.getAttribute("Xdensity")?.toIntOrNull()
-                val resUnits = jfifNode.getAttribute("resUnits")?.toIntOrNull()
-
-                if (resX != null) {
-                  val dpi =
-                      when (resUnits) {
-                        1 -> resX
-                        2 -> (resX * 2.54).toInt()
-                        else -> resX
-                      }
-
-                  log(LogLevel.INFO, "Read DPI from image bytes: $dpi")
-
-                  return dpi
-                }
-              }
-            }
-          } finally {
-            reader.dispose()
-          }
-        }
-      }
-    } catch (X: Exception) {
-      log(LogLevel.WARNING, "Failed to read DPI from image bytes: ${X.message}")
-    }
-
-    log(LogLevel.INFO, "No DPI metadata found in image bytes, using default 300 DPI")
-
-    return 300
-  }
-
-  /**
-   * Recursively finds a node by name in metadata tree.
-   *
-   * @param node The metadata node to search in.
-   * @param nodeName The name of the node to find.
-   * @return The found node, or null if not found.
-   */
-  private fun findNode(node: IIOMetadataNode, nodeName: String): IIOMetadataNode? {
-    if (node.nodeName.equals(nodeName, ignoreCase = true)) {
-      return node
-    }
-
-    for (i in 0 until node.length) {
-      val child = node.item(i)
-
-      if (child is IIOMetadataNode) {
-        val found = findNode(child, nodeName)
-
-        if (found != null) return found
-      }
-    }
-
-    return null
-  }
-
-  /**
-   * Writes a BufferedImage to a PNG file with proper DPI metadata set to 300 DPI. This ensures
-   * Tesseract gets the correct resolution information.
-   *
-   * @param image The image to write.
-   * @param outputFile The file to write to.
-   * @param dpi The DPI (dots per inch) to set in the image metadata.
-   */
-  private fun writeImageWithDPI(image: BufferedImage, outputFile: File, dpi: Int = 300) {
-    val writers = ImageIO.getImageWritersByFormatName("png")
-
-    if (!writers.hasNext()) {
-      ImageIO.write(image, "PNG", outputFile)
-
-      return
-    }
-
-    val writer = writers.next()
-    val writeParam = writer.defaultWriteParam
-    val ios = ImageIO.createImageOutputStream(outputFile)
-
-    if (ios == null) {
-      ImageIO.write(image, "PNG", outputFile)
-      writer.dispose()
-
-      return
-    }
-
-    try {
-      writer.output = ios
-
-      val metadata =
-          writer.getDefaultImageMetadata(
-              javax.imageio.ImageTypeSpecifier.createFromBufferedImageType(image.type), writeParam)
-
-      val dotsPerMeter = (dpi / 0.0254).toInt() // Convert DPI to dots per meter
-      val root = metadata.getAsTree("javax_imageio_png_1.0") as IIOMetadataNode
-      var physNode: IIOMetadataNode?
-      val nodeList = root.getElementsByTagName("pHYs")
-
-      if (nodeList.length > 0) {
-        physNode = nodeList.item(0) as IIOMetadataNode
-      } else {
-        physNode = IIOMetadataNode("pHYs")
-
-        root.appendChild(physNode)
-      }
-
-      physNode.setAttribute("pixelsPerUnitXAxis", dotsPerMeter.toString())
-      physNode.setAttribute("pixelsPerUnitYAxis", dotsPerMeter.toString())
-      physNode.setAttribute("unitSpecifier", "meter")
-
-      try {
-        metadata.setFromTree("javax_imageio_png_1.0", root)
-
-        log(LogLevel.INFO, "Set image DPI to $dpi ($dotsPerMeter dots/meter)")
-      } catch (e: Exception) {
-        log(LogLevel.WARNING, "Failed to set DPI metadata: ${e.message}")
-      }
-
-      val iioImage = javax.imageio.IIOImage(image, null, metadata)
-
-      writer.write(null, iioImage, writeParam)
-    } finally {
-      ios.close()
-      writer.dispose()
-    }
-  }
+  private fun writeImageWithDPI(image: BufferedImage, outputFile: File, dpi: Int = 300) =
+      DpiUtil.writeImageWithDPI(image, outputFile, dpi)
 
   // endregion DPI Utilities
   // region Tesseract JNI-Interaction
@@ -763,259 +429,23 @@ class TesseractAction : AI() {
   }
 
   // endregion Tesseract JNI Interaction
-  // region Image Preprocessing
-  /**
-   * Preprocesses an image to improve OCR accuracy. Applies: Grayscale conversion, adaptive
-   * binarization, noise reduction, and contrast enhancement.
-   *
-   * @param inputFile The original image file.
-   * @param params The servlet action parameters to check for X-Preprocess header.
-   * @return A new preprocessed image file, or the original if preprocessing is disabled or fails.
-   */
-  private fun preprocessImage(inputFile: File, params: IPluginServletActionParams): File {
-    val preprocessHeader =
-        params.headerMap.entries
-            .find { it.key.equals("X-Preprocess", ignoreCase = true) }
-            ?.value
-            ?.trim()
-            ?.lowercase()
+  // region Image Preprocessing (delegated to ImagePreprocessor)
+  /** Checks X-Preprocess header and delegates to [ImagePreprocessor]. */
+  private fun preprocessImage(inputFile: File, params: IPluginServletActionParams): File =
+      ImagePreprocessor.preprocessImage(inputFile, isPreprocessEnabled(params))
 
-    if (preprocessHeader != "true" && preprocessHeader != "1") {
-      log(LogLevel.INFO, "Image preprocessing disabled (use X-Preprocess: true to enable)")
-
-      return inputFile
-    }
-    try {
-      val originalDPI = readImageDPI(inputFile)
-      val originalImage = ImageIO.read(inputFile) ?: return inputFile
-      val grayscaleImage =
-          BufferedImage(originalImage.width, originalImage.height, BufferedImage.TYPE_BYTE_GRAY)
-      val graphics = grayscaleImage.createGraphics()
-
-      graphics.drawImage(originalImage, 0, 0, null)
-      graphics.dispose()
-
-      val histogram = IntArray(256)
-
-      for (y in 0 until grayscaleImage.height) {
-        for (x in 0 until grayscaleImage.width) {
-          val gray = grayscaleImage.getRGB(x, y) and 0xFF
-
-          histogram[gray]++
-        }
-      }
-
-      val total = grayscaleImage.width * grayscaleImage.height
-      var sum = 0.0
-
-      for (i in 0..255) sum += i * histogram[i]
-
-      var sumB = 0.0
-      var wB = 0
-      var wF: Int
-      var maxVariance = 0.0
-      var threshold = 0
-
-      for (t in 0..255) {
-        wB += histogram[t]
-
-        if (wB == 0) continue
-
-        wF = total - wB
-
-        if (wF == 0) break
-
-        sumB += (t * histogram[t]).toDouble()
-
-        val mB = sumB / wB
-        val mF = (sum - sumB) / wF
-        val variance = wB.toDouble() * wF.toDouble() * (mB - mF) * (mB - mF)
-
-        if (variance > maxVariance) {
-          maxVariance = variance
-          threshold = t
-        }
-      }
-
-      val binarizedImage =
-          BufferedImage(grayscaleImage.width, grayscaleImage.height, BufferedImage.TYPE_BYTE_BINARY)
-
-      for (y in 0 until grayscaleImage.height) {
-        for (x in 0 until grayscaleImage.width) {
-          val gray = grayscaleImage.getRGB(x, y) and 0xFF
-          val binary = if (gray > threshold) 0xFFFFFF else 0x000000
-
-          binarizedImage.setRGB(x, y, binary)
-        }
-      }
-
-      val denoisedImage =
-          BufferedImage(binarizedImage.width, binarizedImage.height, BufferedImage.TYPE_BYTE_BINARY)
-
-      for (y in 1 until binarizedImage.height - 1) {
-        for (x in 1 until binarizedImage.width - 1) {
-          val neighbors = mutableListOf<Int>()
-
-          for (dy in -1..1) {
-            for (dx in -1..1) {
-              neighbors.add(binarizedImage.getRGB(x + dx, y + dy) and 0xFF)
-            }
-          }
-
-          neighbors.sort()
-
-          val median = neighbors[4]
-          val color = if (median > 127) 0xFFFFFF else 0x000000
-
-          denoisedImage.setRGB(x, y, color)
-        }
-      }
-
-      val preprocessedFile = kotlin.io.path.createTempFile("ocr_preprocessed_", ".png").toFile()
-
-      writeImageWithDPI(denoisedImage, preprocessedFile, originalDPI)
-
-      log(
-          LogLevel.INFO,
-          "Image preprocessing successful: Otsu threshold=$threshold, file=${ inputFile.name }")
-
-      return preprocessedFile
-    } catch (X: Exception) {
-      log(
-          LogLevel.ERROR,
-          "Image preprocessing failed for ${ inputFile.name }, using original image: ${ X.message }")
-
-      return inputFile
-    }
-  }
-
-  /**
-   * Preprocesses an image in-memory to improve OCR accuracy.
-   *
-   * @param image The original image.
-   * @param dpi The image DPI to preserve for downstream processing.
-   * @param params The servlet action parameters to check for X-Preprocess header.
-   * @return The preprocessed image or the original if preprocessing is disabled or fails.
-   */
+  /** Checks X-Preprocess header and delegates to [ImagePreprocessor]. */
   private fun preprocessImage(
       image: BufferedImage,
       params: IPluginServletActionParams
-  ): BufferedImage {
-    val preprocessHeader =
-        params.headerMap.entries
-            .find { it.key.equals("X-Preprocess", ignoreCase = true) }
-            ?.value
-            ?.trim()
-            ?.lowercase()
+  ): BufferedImage = ImagePreprocessor.preprocessImage(image, isPreprocessEnabled(params))
 
-    if (preprocessHeader != "true" && preprocessHeader != "1") {
-      log(LogLevel.INFO, "Image preprocessing disabled (use X-Preprocess: true to enable)")
-
-      return image
-    }
-
-    return applyPreprocessing(image)
-  }
-
-  /**
-   * Core image preprocessing: grayscale conversion, Otsu binarization, and median denoising.
-   *
-   * @param image The source image.
-   * @return The preprocessed image, or the original if preprocessing fails.
-   */
-  private fun applyPreprocessing(image: BufferedImage): BufferedImage {
-    try {
-      val grayscaleImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_BYTE_GRAY)
-      val graphics = grayscaleImage.createGraphics()
-
-      graphics.drawImage(image, 0, 0, null)
-      graphics.dispose()
-
-      val histogram = IntArray(256)
-
-      for (y in 0 until grayscaleImage.height) {
-        for (x in 0 until grayscaleImage.width) {
-          val gray = grayscaleImage.getRGB(x, y) and 0xFF
-
-          histogram[gray]++
-        }
-      }
-
-      val total = grayscaleImage.width * grayscaleImage.height
-      var sum = 0.0
-
-      for (i in 0..255) sum += i * histogram[i]
-
-      var sumB = 0.0
-      var wB = 0
-      var wF: Int
-      var maxVariance = 0.0
-      var threshold = 0
-
-      for (t in 0..255) {
-        wB += histogram[t]
-
-        if (wB == 0) continue
-
-        wF = total - wB
-
-        if (wF == 0) break
-
-        sumB += (t * histogram[t]).toDouble()
-
-        val mB = sumB / wB
-        val mF = (sum - sumB) / wF
-        val variance = wB.toDouble() * wF.toDouble() * (mB - mF) * (mB - mF)
-
-        if (variance > maxVariance) {
-          maxVariance = variance
-          threshold = t
-        }
-      }
-
-      val binarizedImage =
-          BufferedImage(grayscaleImage.width, grayscaleImage.height, BufferedImage.TYPE_BYTE_BINARY)
-
-      for (y in 0 until grayscaleImage.height) {
-        for (x in 0 until grayscaleImage.width) {
-          val gray = grayscaleImage.getRGB(x, y) and 0xFF
-          val binary = if (gray > threshold) 0xFFFFFF else 0x000000
-
-          binarizedImage.setRGB(x, y, binary)
-        }
-      }
-
-      val denoisedImage =
-          BufferedImage(binarizedImage.width, binarizedImage.height, BufferedImage.TYPE_BYTE_BINARY)
-
-      for (y in 1 until binarizedImage.height - 1) {
-        for (x in 1 until binarizedImage.width - 1) {
-          val neighbors = mutableListOf<Int>()
-
-          for (dy in -1..1) {
-            for (dx in -1..1) {
-              neighbors.add(binarizedImage.getRGB(x + dx, y + dy) and 0xFF)
-            }
-          }
-
-          neighbors.sort()
-
-          val median = neighbors[4]
-          val color = if (median > 127) 0xFFFFFF else 0x000000
-
-          denoisedImage.setRGB(x, y, color)
-        }
-      }
-
-      log(LogLevel.INFO, "Image preprocessing successful: Otsu threshold=$threshold")
-
-      return denoisedImage
-    } catch (X: Exception) {
-      log(LogLevel.ERROR, "Image preprocessing failed, using original image: ${X.message}")
-
-      return image
-    }
-  }
+  private fun isPreprocessEnabled(params: IPluginServletActionParams): Boolean =
+      params.headerMap.entries
+          .find { it.key.equals("X-Preprocess", ignoreCase = true) }
+          ?.value
+          ?.trim()
+          ?.lowercase() in listOf("true", "1")
 
   // endregion Image Preprocessing
   // region OCR Execution
@@ -1133,7 +563,10 @@ class TesseractAction : AI() {
       }
     }
 
-    val processedImage = if (preprocess) applyPreprocessing(correctedImage) else correctedImage
+    val processedImage =
+        if (preprocess)
+            ImagePreprocessor.applyPreprocessing(correctedImage)?.image ?: correctedImage
+        else correctedImage
 
     log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
     val handle =
@@ -1442,7 +875,7 @@ class TesseractAction : AI() {
               EResponseType.JSON,
               "{\"error\":\"The Tesseract is currently not active. In order to activate it the keyword OCR has to be placed into the CodBi-Plugin-Property Active_AI.\"}"))
     }
-    // endregion Check if the Tesseract is active.
+
     if (!ready) {
       log(
           LogLevel.ERROR,
@@ -1490,23 +923,17 @@ class TesseractAction : AI() {
     }
   }
 
+  // ── Shared OCR Pipeline ────────────────────────────────────────────
+
   /**
-   * Mode print: Plain text extraction - extracts all text from the image(s).
+   * Shared OCR processing pipeline for all execution modes. Extracts raw OCR text from all images
+   * in the request, handling both uploaded files and cached images.
    *
-   * @param params As provided by the formcycle environment.
-   * @return A proper [IPluginServletActionRetVal].
+   * @param params The servlet action parameters.
+   * @return Map of (imageName → rawOcrText).
    */
-  private fun executeModePrint(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    val errorMessage =
-        "No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with."
-
-    if (params.uploadFiles.isNullOrEmpty() && params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()) {
-      log(LogLevel.ERROR, errorMessage)
-
-      return PluginServletActionRetVal(ServletResponse(EResponseType.JSON, errorMessage))
-    }
-
-    val ocrResults = mutableMapOf<String, String>()
+  private fun extractOcrTexts(params: IPluginServletActionParams): Map<String, String> {
+    val ocrTexts = mutableMapOf<String, String>()
     val filesToDelete = mutableListOf<File>()
     val allowDiskCache = !params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()
 
@@ -1519,11 +946,7 @@ class TesseractAction : AI() {
                   input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
                 }
 
-            val rawText = runOcrOnImageBytes(bytes, params)
-
-            if (params.headerMap["X-Pattern"].isNullOrEmpty())
-                ocrResults[inputName] = rawText.trim()
-            else ocrResults[inputName] = rawText
+            ocrTexts[inputName] = runOcrOnImageBytes(bytes, params)
 
             return@forEach
           }
@@ -1531,7 +954,7 @@ class TesseractAction : AI() {
           val distinctImageID = "${ params.headerMap["X-OCR-Image-ID"]}::${ inputName }"
           var tempFile: File? = null
           var shouldDeleteThisFile = true
-          // region Check if the image is already cached.
+
           if (params.headerMap["X-OCR-Image-ID"] != null &&
               distinctImageID.isNotBlank() &&
               cacheIDedImages.containsKey(distinctImageID)) {
@@ -1540,8 +963,7 @@ class TesseractAction : AI() {
             tempFile = cacheIDedImages[distinctImageID]?.file
             shouldDeleteThisFile = false
           }
-          // endregion Check if the image is already cached.
-          // region Create file if not in cache and cache it X-OCR-Image-ID is set in header.
+
           if (tempFile == null || !tempFile.exists()) {
             tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
 
@@ -1559,157 +981,177 @@ class TesseractAction : AI() {
               shouldDeleteThisFile = false
             }
           }
-          // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
+
           val tempFileLocal =
               requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
 
           if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
-          // region OCR Processing
-          // Apply orientation correction: Manual override or auto-detection using Tesseract
-          val orientationCorrectedFile =
-              try {
-                val originalDPI = readImageDPI(tempFileLocal)
-                var correctedImage = ImageIO.read(tempFileLocal)
-                // region Check for manual rotation override via X-Rotate header (in degrees: 0, 90,
-                // 180, 270).
-                val manualRotation =
-                    params.headerMap.entries
-                        .find { it.key.equals("X-Rotate", ignoreCase = true) }
-                        ?.value
-                        ?.trim()
-                        ?.toIntOrNull() ?: 0
 
-                if (manualRotation != 0) {
-                  log(
-                      LogLevel.INFO,
-                      "Applying manual rotation from X-Rotate header: ${manualRotation}°")
-                  correctedImage =
-                      when (manualRotation) {
-                        90 -> rotate90(correctedImage)
-                        180 -> rotate180(correctedImage)
-                        270 -> rotate270(correctedImage)
-                        else -> {
-                          log(
-                              LogLevel.WARNING,
-                              "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
-                          correctedImage
-                        }
-                      }
-                }
-                // endregion Check for manual rotation override via X-Rotate header (in degrees: 0,
-                // 90, 180, 270).
-                else {
-                  log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
-
-                  val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
-
-                  if (detectedAngle != 0) {
-                    correctedImage =
-                        when (detectedAngle) {
-                          90 -> rotate90(correctedImage)
-                          180 -> rotate180(correctedImage)
-                          270 -> rotate270(correctedImage)
-                          else -> correctedImage
-                        }
-
-                    log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
-                  }
-                }
-
-                val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
-
-                writeImageWithDPI(correctedImage, correctedFile, originalDPI)
-
-                filesToDelete.add(correctedFile)
-                correctedFile
-              } catch (X: Exception) {
-                log(LogLevel.WARNING, "Orientation correction failed, using original: ${X.message}")
-
-                tempFileLocal
-              }
-
+          val orientationCorrectedFile = correctOrientation(tempFileLocal, params, filesToDelete)
           val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
 
           if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
 
-          log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
-          val handle =
-              pool.poll(10, TimeUnit.SECONDS)
-                  ?: throw IllegalStateException(
-                      "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
-          try {
-            log(LogLevel.INFO, "Processing ${ preprocessedFile.absolutePath }")
-
-            TessAPI1.TessBaseAPIProcessPages(handle, preprocessedFile.absolutePath, null, 0, null)
-
-            val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
-
-            log(LogLevel.INFO, "Extracted: ${ ptr.getString( 0, "UTF-8").trim()}")
-
-            if (ptr != null) {
-              if (params.headerMap["X-Pattern"].isNullOrEmpty())
-                  ocrResults[inputName] = ptr.getString(0, "UTF-8").trim()
-              else ocrResults[inputName] = ptr.getString(0, "UTF-8") ?: ""
-
-              TessAPI1.TessDeleteText(ptr)
-            }
-
-            TessAPI1.TessBaseAPIClear(handle)
-          } catch (X: Throwable) {
-            throw ServletException(
-                "[[ CodBi / AI / Tesseract ] Processing ${ inputName } failed with: ${ X }.]")
-          } finally {
-            pool.offer(handle)
-          }
-          // endregion OCR Processing
+          ocrTexts[inputName] = runOcrOnDiskFile(preprocessedFile, inputName)
         }
       } else {
         cacheIDedImages.entries
             .filter { it.key.startsWith("${ params.headerMap["X-OCR-Image-ID"] }::") }
             .map { it.value }
             .forEach { (image, _) ->
-              // region OCR Processing
               val preprocessedFile = preprocessImage(image, params)
 
               if (preprocessedFile != image) filesToDelete.add(preprocessedFile)
 
-              log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
-              val handle =
-                  pool.poll(10, TimeUnit.SECONDS)
-                      ?: throw IllegalStateException(
-                          "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
-
-              try {
-                TessAPI1.TessBaseAPIProcessPages(
-                    handle, preprocessedFile.absolutePath, null, 0, null)
-
-                val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
-
-                if (ptr != null) {
-                  ocrResults[image.name] = ptr.getString(0, "UTF-8").trim()
-
-                  TessAPI1.TessDeleteText(ptr)
-                }
-
-                TessAPI1.TessBaseAPIClear(handle)
-              } catch (X: Throwable) {
-                throw ServletException(
-                    "[[ CodBi / AI / Tesseract ] Processing ${ image.name } failed with: ${ X }.]")
-              } finally {
-                pool.offer(handle)
-              }
-              // endregion OCR Processing
+              ocrTexts[image.name] = runOcrOnDiskFile(preprocessedFile, image.name)
             }
       }
     } catch (X: Exception) {
-      logger.error("[[ CodBi ]] Execution Error", X)
+      logger.error("[[ CodBi / AI / Tesseract ]] Execution Error", X)
     }
-    // region Generate response
-    val jsonMap = ocrResults.mapValues { (_, value) -> value }
-    val jsonResponse = Gson().toJson(jsonMap)
-    val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
-    // endregion Generate response
-    return PluginServletActionRetVal(servletResponse)
+
+    return ocrTexts
+  }
+
+  /**
+   * Applies orientation correction to an image file using manual rotation (X-Rotate header) or
+   * Tesseract auto-detection.
+   */
+  private fun correctOrientation(
+      tempFile: File,
+      params: IPluginServletActionParams,
+      filesToDelete: MutableList<File>
+  ): File {
+    try {
+      val originalDPI = readImageDPI(tempFile)
+      var correctedImage = ImageIO.read(tempFile)
+      val manualRotation =
+          params.headerMap.entries
+              .find { it.key.equals("X-Rotate", ignoreCase = true) }
+              ?.value
+              ?.trim()
+              ?.toIntOrNull() ?: 0
+
+      if (manualRotation != 0) {
+        log(LogLevel.INFO, "Applying manual rotation from X-Rotate header: ${manualRotation}°")
+
+        if (manualRotation !in listOf(90, 180, 270)) {
+          log(LogLevel.WARNING, "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
+        }
+
+        correctedImage = ImageTransformer.applyRotation(correctedImage, manualRotation)
+      } else {
+        log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
+
+        val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
+
+        if (detectedAngle != 0) {
+          correctedImage = ImageTransformer.applyRotation(correctedImage, detectedAngle)
+
+          log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
+        }
+      }
+
+      val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
+
+      writeImageWithDPI(correctedImage, correctedFile, originalDPI)
+
+      filesToDelete.add(correctedFile)
+
+      return correctedFile
+    } catch (X: Exception) {
+      log(LogLevel.WARNING, "Orientation correction failed, using original: ${X.message}")
+
+      return tempFile
+    }
+  }
+
+  /**
+   * Runs OCR on a disk file using TessBaseAPIProcessPages.
+   *
+   * @param file The preprocessed image file.
+   * @param imageName The name of the image for error messages.
+   * @return The extracted raw OCR text.
+   */
+  private fun runOcrOnDiskFile(file: File, imageName: String): String {
+    log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
+
+    val handle =
+        pool.poll(10, TimeUnit.SECONDS)
+            ?: throw IllegalStateException(
+                "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
+
+    try {
+      log(LogLevel.INFO, "Processing ${ file.absolutePath }")
+
+      TessAPI1.TessBaseAPIProcessPages(handle, file.absolutePath, null, 0, null)
+
+      val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
+      val result = ptr?.getString(0, "UTF-8") ?: ""
+
+      log(LogLevel.INFO, "Extracted: ${ result.trim() }")
+
+      if (ptr != null) TessAPI1.TessDeleteText(ptr)
+
+      TessAPI1.TessBaseAPIClear(handle)
+
+      return result
+    } catch (X: Throwable) {
+      throw ServletException("[[ CodBi / AI / Tesseract ] Processing $imageName failed with: $X.]")
+    } finally {
+      pool.offer(handle)
+    }
+  }
+
+  /** Validates that upload files or a cached image ID are present. */
+  private fun requireImagesPresent(
+      params: IPluginServletActionParams
+  ): IPluginServletActionRetVal? {
+    if (params.uploadFiles.isNullOrEmpty() && params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()) {
+      val msg =
+          "No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with."
+
+      log(LogLevel.ERROR, msg)
+
+      return PluginServletActionRetVal(ServletResponse(EResponseType.JSON, "{\"error\":\"$msg\"}"))
+    }
+
+    return null
+  }
+
+  /**
+   * Decodes a URL-encoded header value. Returns null-pair on failure to trigger an error response.
+   */
+  private fun decodeHeader(headerName: String, encoded: String): String? {
+    return try {
+      URLDecoder.decode(encoded, StandardCharsets.UTF_8.toString())
+    } catch (X: Exception) {
+      log(LogLevel.ERROR, "Failed to decode $headerName header: ${ X.message }")
+
+      null
+    }
+  }
+
+  // ── Mode Implementations ──────────────────────────────────────────
+
+  /**
+   * Mode print: Plain text extraction — extracts all text from the image(s).
+   *
+   * @param params As provided by the formcycle environment.
+   * @return A proper [IPluginServletActionRetVal].
+   */
+  private fun executeModePrint(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    requireImagesPresent(params)?.let {
+      return it
+    }
+
+    val ocrTexts = extractOcrTexts(params)
+    val preserveWhitespace = !params.headerMap["X-Pattern"].isNullOrEmpty()
+    val results = if (preserveWhitespace) ocrTexts else ocrTexts.mapValues { it.value.trim() }
+    val jsonResponse = Gson().toJson(results)
+
+    return PluginServletActionRetVal(
+        ServletResponse(EResponseType.JSON).apply { value = jsonResponse })
   }
 
   /**
@@ -1722,15 +1164,8 @@ class TesseractAction : AI() {
   private fun executeModeExtract(params: IPluginServletActionParams): IPluginServletActionRetVal {
     log(LogLevel.INFO, "Received Extraction Request")
 
-    if (params.uploadFiles.isNullOrEmpty() && params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()) {
-      log(
-          LogLevel.ERROR,
-          "No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.")
-
-      return PluginServletActionRetVal(
-          ServletResponse(
-              EResponseType.JSON,
-              "{\"error\":\"No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.\"}"))
+    requireImagesPresent(params)?.let {
+      return it
     }
 
     val patternHeaderEncoded = params.headerMap["X-Pattern"]?.trim()
@@ -1745,231 +1180,27 @@ class TesseractAction : AI() {
     }
 
     val patternHeader =
-        try {
-          URLDecoder.decode(patternHeaderEncoded, StandardCharsets.UTF_8.toString())
-        } catch (X: Exception) {
-          log(LogLevel.ERROR, "Failed to decode X-Pattern header: ${ X.message }")
+        decodeHeader("X-Pattern", patternHeaderEncoded)
+            ?: return PluginServletActionRetVal(
+                ServletResponse(
+                    EResponseType.JSON, "{\"error\":\"Failed to decode X-Pattern header.\"}"))
 
-          return PluginServletActionRetVal(
-              ServletResponse(
-                  EResponseType.JSON,
-                  "{\"error\":\"Failed to decode X-Pattern header: ${ X.message }\"}"))
-        }
-    val ocrResults = mutableMapOf<String, List<String>>()
-    val filesToDelete = mutableListOf<File>()
     val regexFlags = parseRegexFlags(params)
-    val allowDiskCache = !params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()
+    val ocrTexts = extractOcrTexts(params)
 
-    try {
-      if (!params.uploadFiles.isNullOrEmpty()) {
-        params.uploadFiles?.forEach { (inputName, fileItem) ->
-          if (!allowDiskCache) {
-            val bytes =
-                fileItem.stream().use { input ->
-                  input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
-                }
-            val rawText = runOcrOnImageBytes(bytes, params)
-
-            ocrResults[inputName] =
-                try {
-                  patternHeader.toRegex(regexFlags).findAll(rawText).map { it.value }.toList()
-                } catch (X: Exception) {
-                  listOf("Regex Error: ${ X.message }")
-                }
-
-            return@forEach
-          }
-
-          val distinctImageID = "${params.headerMap["X-OCR-Image-ID"]}::${inputName}"
-          var tempFile: File? = null
-          var shouldDeleteThisFile = true
-          // region Check if the image is already cached.
-          if (params.headerMap["X-OCR-Image-ID"] != null &&
-              distinctImageID.isNotBlank() &&
-              cacheIDedImages.containsKey(distinctImageID)) {
-            tempFile = cacheIDedImages[distinctImageID]?.file
-            shouldDeleteThisFile = false
-          }
-          // endregion Check if the image is already cached.
-          // region Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          if (tempFile == null || !tempFile.exists()) {
-            tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
-
-            val createdTempFile =
-                requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
-
-            fileItem.stream().use { input ->
-              val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
-
-              createdTempFile.writeBytes(bytes)
-            }
-
-            if (params.headerMap["X-OCR-Image-ID"] != null && distinctImageID.isNotBlank()) {
-              cacheIDedImages[distinctImageID] = CachedImage(createdTempFile)
-
-              shouldDeleteThisFile = false
-            }
-          }
-          // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          val tempFileLocal =
-              requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
-
-          if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
-          // region OCR Processing
-          // Apply orientation correction: Manual override or auto-detection using Tesseract
-          val orientationCorrectedFile =
-              try {
-                val originalDPI = readImageDPI(tempFileLocal)
-                var correctedImage = ImageIO.read(tempFileLocal)
-                val manualRotation =
-                    params.headerMap.entries
-                        .find { it.key.equals("X-Rotate", ignoreCase = true) }
-                        ?.value
-                        ?.trim()
-                        ?.toIntOrNull() ?: 0
-
-                if (manualRotation != 0) {
-                  log(
-                      LogLevel.INFO,
-                      "Applying manual rotation from X-Rotate header: ${manualRotation}°")
-
-                  correctedImage =
-                      when (manualRotation) {
-                        90 -> rotate90(correctedImage)
-                        180 -> rotate180(correctedImage)
-                        270 -> rotate270(correctedImage)
-                        else -> {
-                          log(
-                              LogLevel.WARNING,
-                              "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
-                          correctedImage
-                        }
-                      }
-                } else {
-                  log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
-
-                  val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
-
-                  if (detectedAngle != 0) {
-                    correctedImage =
-                        when (detectedAngle) {
-                          90 -> rotate90(correctedImage)
-                          180 -> rotate180(correctedImage)
-                          270 -> rotate270(correctedImage)
-                          else -> correctedImage
-                        }
-
-                    log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
-                  }
-                }
-
-                val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
-
-                writeImageWithDPI(correctedImage, correctedFile, originalDPI)
-
-                filesToDelete.add(correctedFile)
-                correctedFile
-              } catch (e: Exception) {
-                log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
-
-                tempFileLocal
-              }
-
-          val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
-
-          if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
-
-          log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
-          val handle =
-              pool.poll(10, TimeUnit.SECONDS)
-                  ?: throw IllegalStateException(
-                      "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
+    val results =
+        ocrTexts.mapValues { (_, rawText) ->
           try {
-            TessAPI1.TessBaseAPIProcessPages(handle, preprocessedFile.absolutePath, null, 0, null)
-
-            val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
-
-            log(LogLevel.INFO, "Extracted: ${ ptr.getString( 0, "UTF-8").trim() }")
-
-            if (ptr != null) {
-              val rawText = ptr.getString(0, "UTF-8") ?: ""
-
-              ocrResults[inputName] =
-                  try {
-                    patternHeader.toRegex(regexFlags).findAll(rawText).map { it.value }.toList()
-                  } catch (X: Exception) {
-                    listOf("Regex Error: ${ X.message }")
-                  }
-
-              TessAPI1.TessDeleteText(ptr)
-            } else {
-              ocrResults[inputName] = emptyList()
-            }
-
-            TessAPI1.TessBaseAPIClear(handle)
-          } catch (X: Throwable) {
-            throw ServletException(
-                "[[ CodBi / AI / Tesseract ] Processing ${ inputName } failed with: ${ X }.]")
-          } finally {
-            pool.offer(handle)
+            patternHeader.toRegex(regexFlags).findAll(rawText).map { it.value }.toList()
+          } catch (X: Exception) {
+            listOf("Regex Error: ${ X.message }")
           }
-          // endregion OCR Processing
         }
-      } else {
-        cacheIDedImages.entries
-            .filter { it.key.startsWith("${ params.headerMap["X-OCR-Image-ID"] }::") }
-            .map { it.value }
-            .forEach { (image, key) ->
-              // region OCR Processing
-              val preprocessedFile = preprocessImage(image, params)
 
-              if (preprocessedFile != image) filesToDelete.add(preprocessedFile)
+    val jsonResponse = Gson().toJson(results)
 
-              log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
-              val handle =
-                  pool.poll(10, TimeUnit.SECONDS)
-                      ?: throw IllegalStateException(
-                          "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
-              try {
-                TessAPI1.TessBaseAPIProcessPages(
-                    handle, preprocessedFile.absolutePath, null, 0, null)
-
-                val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
-
-                if (ptr != null) {
-                  val rawText = ptr.getString(0, "UTF-8") ?: ""
-
-                  ocrResults[image.name] =
-                      try {
-                        patternHeader.toRegex(regexFlags).findAll(rawText).map { it.value }.toList()
-                      } catch (X: Exception) {
-                        listOf("Regex Error: ${ X.message }")
-                      }
-
-                  TessAPI1.TessDeleteText(ptr)
-                } else {
-                  ocrResults[image.name] = emptyList()
-                }
-
-                TessAPI1.TessBaseAPIClear(handle)
-              } catch (X: Throwable) {
-                throw ServletException(
-                    "[[ CodBi / AI / Tesseract ] Processing ${ image.name } failed with: $X ]")
-              } finally {
-                pool.offer(handle)
-              }
-              // endregion OCR Processing
-            }
-      }
-    } catch (X: Exception) {
-      logger.error("[[ CodBi / AI / Tesseract ] Execution Error: $X ]", X)
-    }
-    // region Generate response
-    val jsonMap = ocrResults.mapValues { (_, value) -> value }
-    val jsonResponse = Gson().toJson(jsonMap)
-    val servletResponse = ServletResponse(EResponseType.JSON).apply { value = jsonResponse }
-    // endregion Generate response
-    return PluginServletActionRetVal(servletResponse)
+    return PluginServletActionRetVal(
+        ServletResponse(EResponseType.JSON).apply { value = jsonResponse })
   }
 
   /**
@@ -1981,15 +1212,8 @@ class TesseractAction : AI() {
    *   text matches the pattern.
    */
   private fun executeModeVerify(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    if (params.uploadFiles.isNullOrEmpty() && params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()) {
-      log(
-          LogLevel.ERROR,
-          "No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.")
-
-      return PluginServletActionRetVal(
-          ServletResponse(
-              EResponseType.JSON,
-              "{\"error\":\"No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.\"}"))
+    requireImagesPresent(params)?.let {
+      return it
     }
 
     val patternHeaderEncoded = params.headerMap["X-Pattern"]?.trim()
@@ -2004,245 +1228,32 @@ class TesseractAction : AI() {
     }
 
     val patternHeader =
-        try {
-          URLDecoder.decode(patternHeaderEncoded, StandardCharsets.UTF_8.toString())
-        } catch (X: Exception) {
-          log(LogLevel.ERROR, "Failed to decode X-Pattern header: ${ X.message }")
+        decodeHeader("X-Pattern", patternHeaderEncoded)
+            ?: return PluginServletActionRetVal(
+                ServletResponse(
+                    EResponseType.JSON, "{\"error\":\"Failed to decode X-Pattern header.\"}"))
 
-          return PluginServletActionRetVal(
-              ServletResponse(
-                  EResponseType.JSON,
-                  "{\"error\":\"Failed to decode X-Pattern header: ${ X.message }\"}"))
-        }
-    val verifyResults = mutableMapOf<String, Boolean>()
-    val filesToDelete = mutableListOf<File>()
     val regexFlags = parseRegexFlags(params)
-    val allowDiskCache = !params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()
+    val ocrTexts = extractOcrTexts(params)
 
-    try {
-      if (!params.uploadFiles.isNullOrEmpty()) {
-        params.uploadFiles?.forEach { (inputName, fileItem) ->
-          if (!allowDiskCache) {
-            val bytes =
-                fileItem.stream().use { input ->
-                  input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
-                }
-            val rawText = runOcrOnImageBytes(bytes, params)
-
-            verifyResults[inputName] =
-                try {
-                  patternHeader.toRegex(regexFlags).containsMatchIn(rawText)
-                } catch (X: Exception) {
-                  log(LogLevel.ERROR, "Regex Error in verify mode: ${ X.message }")
-
-                  false
-                }
-
-            return@forEach
-          }
-
-          val distinctImageID = "${ params.headerMap["X-OCR-Image-ID"]}::${ inputName }"
-          var tempFile: File? = null
-          var shouldDeleteThisFile = true
-          // region Check if the image is already cached.
-          if (params.headerMap["X-OCR-Image-ID"] != null &&
-              distinctImageID.isNotBlank() &&
-              cacheIDedImages.containsKey(distinctImageID)) {
-            tempFile = cacheIDedImages[distinctImageID]?.file
-            shouldDeleteThisFile = false
-          }
-          // endregion Check if the image is already cached.
-          // region Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          if (tempFile == null || !tempFile.exists()) {
-            tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
-
-            val createdTempFile =
-                requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
-
-            fileItem.stream().use { input ->
-              val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
-
-              createdTempFile.writeBytes(bytes)
-            }
-
-            if (params.headerMap["X-OCR-Image-ID"] != null && distinctImageID.isNotBlank()) {
-              cacheIDedImages[distinctImageID] = CachedImage(createdTempFile)
-              shouldDeleteThisFile = false
-            }
-          }
-          // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          val tempFileLocal =
-              requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
-
-          if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
-          // region OCR Processing
-          // Apply orientation correction: Manual override or auto-detection using Tesseract
-          val orientationCorrectedFile =
-              try {
-                // Read original DPI first
-                val originalDPI = readImageDPI(tempFileLocal)
-                var correctedImage = ImageIO.read(tempFileLocal)
-
-                // region Check for manual rotation override via X-Rotate header (in degrees: 0, 90,
-                // 180, 270).
-                val manualRotation =
-                    params.headerMap.entries
-                        .find { it.key.equals("X-Rotate", ignoreCase = true) }
-                        ?.value
-                        ?.trim()
-                        ?.toIntOrNull() ?: 0
-
-                if (manualRotation != 0) {
-                  log(
-                      LogLevel.INFO,
-                      "Applying manual rotation from X-Rotate header: ${manualRotation}°")
-                  correctedImage =
-                      when (manualRotation) {
-                        90 -> rotate90(correctedImage)
-                        180 -> rotate180(correctedImage)
-                        270 -> rotate270(correctedImage)
-                        else -> {
-                          log(
-                              LogLevel.WARNING,
-                              "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
-                          correctedImage
-                        }
-                      }
-                }
-                // endregion Check for manual rotation override via X-Rotate header (in degrees: 0,
-                // 90, 180, 270).
-                else {
-                  log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
-
-                  val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
-
-                  if (detectedAngle != 0) {
-                    correctedImage =
-                        when (detectedAngle) {
-                          90 -> rotate90(correctedImage)
-                          180 -> rotate180(correctedImage)
-                          270 -> rotate270(correctedImage)
-                          else -> correctedImage
-                        }
-
-                    log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
-                  }
-                }
-
-                val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
-
-                writeImageWithDPI(correctedImage, correctedFile, originalDPI)
-
-                filesToDelete.add(correctedFile)
-                correctedFile
-              } catch (X: Exception) {
-                log(LogLevel.WARNING, "Orientation correction failed: ${X.message}")
-
-                tempFileLocal
-              }
-
-          val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
-
-          if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
-
-          log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
-          val handle =
-              pool.poll(10, TimeUnit.SECONDS)
-                  ?: throw IllegalStateException(
-                      "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
+    val results =
+        ocrTexts.mapValues { (_, rawText) ->
           try {
-            TessAPI1.TessBaseAPIProcessPages(handle, preprocessedFile.absolutePath, null, 0, null)
+            patternHeader.toRegex(regexFlags).containsMatchIn(rawText)
+          } catch (X: Exception) {
+            log(LogLevel.ERROR, "Regex Error in verify mode: ${ X.message }")
 
-            val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
-
-            if (ptr != null) {
-              val rawText = ptr.getString(0, "UTF-8") ?: ""
-
-              verifyResults[inputName] =
-                  try {
-                    patternHeader.toRegex(regexFlags).containsMatchIn(rawText)
-                  } catch (X: Exception) {
-                    log(LogLevel.ERROR, "Regex Error in verify mode: ${ X.message }")
-
-                    false
-                  }
-
-              TessAPI1.TessDeleteText(ptr)
-            } else verifyResults[inputName] = false
-
-            TessAPI1.TessBaseAPIClear(handle)
-          } catch (X: Throwable) {
-            throw ServletException(
-                "[[ CodBi / AI / Tesseract ] Processing ${ inputName } failed with: ${ X }.]")
-          } finally {
-            pool.offer(handle)
+            false
           }
-          // endregion OCR Processing
         }
-      } else {
-        cacheIDedImages.entries
-            .filter { it.key.startsWith("${ params.headerMap["X-OCR-Image-ID"] }::") }
-            .map { it.value }
-            .forEach { (image, key) ->
-              // region OCR Processing
-              val preprocessedFile = preprocessImage(image, params)
 
-              if (preprocessedFile != image) filesToDelete.add(preprocessedFile)
+    val jsonResponse = Gson().toJson(results)
 
-              log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
-              val handle =
-                  pool.poll(10, TimeUnit.SECONDS)
-                      ?: throw IllegalStateException(
-                          "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
-
-              try {
-                TessAPI1.TessBaseAPIProcessPages(
-                    handle, preprocessedFile.absolutePath, null, 0, null)
-
-                val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
-
-                if (ptr != null) {
-                  val rawText = ptr.getString(0, "UTF-8") ?: ""
-
-                  verifyResults[image.name] =
-                      try {
-                        patternHeader.toRegex().containsMatchIn(rawText)
-                      } catch (X: Exception) {
-                        log(
-                            LogLevel.ERROR,
-                            "Following regex Error occured while verifying: ${ X.message }")
-
-                        false
-                      }
-
-                  TessAPI1.TessDeleteText(ptr)
-                } else {
-                  verifyResults[image.name] = false
-                }
-
-                TessAPI1.TessBaseAPIClear(handle)
-              } catch (X: Throwable) {
-                throw ServletException(
-                    "[[ CodBi / AI / Tesseract ] Processing ${ image.name } failed with: ${ X }.]")
-              } finally {
-                pool.offer(handle)
-              }
-              // endregion OCR Processing
-            }
-      }
-    } catch (X: Exception) {
-      logger.error("[[ CodBi ]] Execution Error", X)
-    }
-    // region Generate response
-    val jsonMap = verifyResults.mapValues { (_, value) -> value }
-    val jsonResponse = Gson().toJson(jsonMap)
-    val servletResponse =
+    return PluginServletActionRetVal(
         ServletResponse(EResponseType.HTML).apply {
           value = String(jsonResponse.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
           encoding = StandardCharsets.UTF_8.name()
-        }
-    // endregion Generate response
-    return PluginServletActionRetVal(servletResponse)
+        })
   }
 
   /**
@@ -2257,23 +1268,16 @@ class TesseractAction : AI() {
   ): IPluginServletActionRetVal {
     log(LogLevel.INFO, "Received Field Extraction Request")
 
-    if (params.uploadFiles.isNullOrEmpty() && params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()) {
-      log(
-          LogLevel.ERROR,
-          "No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.")
-
-      return PluginServletActionRetVal(
-          ServletResponse(
-              EResponseType.JSON,
-              "{\"error\":\"No files and no **X-OCR-Image-ID** was transmitted thus having nothing to work with.\"}"))
+    requireImagesPresent(params)?.let {
+      return it
     }
-    // region Get X-FieldPatterns header (case-insensitive)
+
     val fieldPatternsHeaderEncoded =
         params.headerMap.entries
             .find { it.key.equals("X-FieldPatterns", ignoreCase = true) }
             ?.value
             ?.trim()
-    // endregion Get X-FieldPatterns header (case-insensitive)
+
     if (fieldPatternsHeaderEncoded.isNullOrEmpty()) {
       log(
           LogLevel.ERROR,
@@ -2286,16 +1290,11 @@ class TesseractAction : AI() {
     }
 
     val fieldPatternsHeader =
-        try {
-          URLDecoder.decode(fieldPatternsHeaderEncoded, StandardCharsets.UTF_8.toString())
-        } catch (X: Exception) {
-          log(LogLevel.ERROR, "Failed to decode X-FieldPatterns header: ${ X.message }")
+        decodeHeader("X-FieldPatterns", fieldPatternsHeaderEncoded)
+            ?: return PluginServletActionRetVal(
+                ServletResponse(
+                    EResponseType.JSON, "{\"error\":\"Failed to decode X-FieldPatterns header.\"}"))
 
-          return PluginServletActionRetVal(
-              ServletResponse(
-                  EResponseType.JSON,
-                  "{\"error\":\"Failed to decode X-FieldPatterns header: ${ X.message }\"}"))
-        }
     val fieldPatterns =
         try {
           val gson = Gson()
@@ -2329,279 +1328,47 @@ class TesseractAction : AI() {
                   "{\"error\":\"Error processing X-FieldPatterns: ${ X.message }\"}"))
         }
 
-    val fieldResults = mutableMapOf<String, Map<String, List<String>>>()
-    val filesToDelete = mutableListOf<File>()
     val regexFlags = parseRegexFlags(params)
-    val allowDiskCache = !params.headerMap["X-OCR-Image-ID"].isNullOrEmpty()
+    val ocrTexts = extractOcrTexts(params)
+    val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
 
-    try {
-      if (!params.uploadFiles.isNullOrEmpty()) {
-        params.uploadFiles?.forEach { (inputName, fileItem) ->
-          if (!allowDiskCache) {
-            val bytes =
-                fileItem.stream().use { input ->
-                  input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
-                }
-            val rawText = runOcrOnImageBytes(bytes, params)
-            val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
-            val imageFields = allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
+    val results =
+        ocrTexts.mapValues { (_, rawText) ->
+          val imageFields = allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
 
-            fieldPatterns.forEach { fieldPatternMap ->
-              fieldPatternMap.forEach { (fieldName, pattern) ->
-                imageFields[fieldName] =
-                    try {
+          fieldPatterns.forEach { fieldPatternMap ->
+            fieldPatternMap.forEach { (fieldName, pattern) ->
+              if (pattern.isNotBlank()) {
+                try {
+                  val matches =
                       pattern.toRegex(regexFlags).findAll(rawText).map { it.value }.toList()
-                    } catch (X: Exception) {
-                      listOf("Regex Error: ${ X.message }")
-                    }
-              }
-            }
 
-            fieldResults[inputName] = imageFields
-
-            return@forEach
-          }
-
-          val distinctImageID = "${ params.headerMap["X-OCR-Image-ID"]}::${ inputName }"
-          var tempFile: File? = null
-          var shouldDeleteThisFile = true
-
-          if (params.headerMap["X-OCR-Image-ID"] != null &&
-              distinctImageID.isNotBlank() &&
-              cacheIDedImages.containsKey(distinctImageID)) {
-            tempFile = cacheIDedImages[distinctImageID]?.file
-            shouldDeleteThisFile = false
-          }
-          // endregion Check if the image is already cached.
-          // region Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          if (tempFile == null || !tempFile.exists()) {
-            tempFile = kotlin.io.path.createTempFile("ocr_${inputName}_", ".png").toFile()
-
-            val createdTempFile =
-                requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
-
-            log(LogLevel.INFO, "Processing ${ createdTempFile.absolutePath }")
-
-            fileItem.stream().use { input ->
-              val bytes = input.map { it.data }.reduce { acc, b -> acc + b }.orElse(byteArrayOf())
-
-              createdTempFile.writeBytes(bytes)
-            }
-
-            if (params.headerMap["X-OCR-Image-ID"] != null && distinctImageID.isNotBlank()) {
-              cacheIDedImages[distinctImageID] = CachedImage(createdTempFile)
-              shouldDeleteThisFile = false
-            }
-          }
-          // endregion Create file if not in cache and cache it X-OCR-Image-ID is set in header.
-          val tempFileLocal =
-              requireNotNull(tempFile) { "Temp file for OCR processing is missing." }
-
-          if (shouldDeleteThisFile) filesToDelete.add(tempFileLocal)
-          // region OCR Processing
-          // Apply orientation correction: Manual override or auto-detection using Tesseract
-          val orientationCorrectedFile =
-              try {
-                // Read original DPI first
-                val originalDPI = readImageDPI(tempFileLocal)
-                var correctedImage = ImageIO.read(tempFileLocal)
-                // region Check for manual rotation override via X-Rotate header (in degrees: 0, 90,
-                // 180, 270)
-                val manualRotation =
-                    params.headerMap.entries
-                        .find { it.key.equals("X-Rotate", ignoreCase = true) }
-                        ?.value
-                        ?.trim()
-                        ?.toIntOrNull() ?: 0
-
-                if (manualRotation != 0) {
                   log(
                       LogLevel.INFO,
-                      "Applying manual rotation from X-Rotate header: ${manualRotation}°")
-                  correctedImage =
-                      when (manualRotation) {
-                        90 -> rotate90(correctedImage)
-                        180 -> rotate180(correctedImage)
-                        270 -> rotate270(correctedImage)
-                        else -> {
-                          log(
-                              LogLevel.WARNING,
-                              "Invalid X-Rotate value: $manualRotation (use 0, 90, 180, or 270)")
-                          correctedImage
-                        }
-                      }
+                      "Field '$fieldName' / Expression: '$pattern' / Matches: $matches")
+
+                  imageFields[fieldName] = matches
+                } catch (X: Exception) {
+                  log(LogLevel.ERROR, "Regex Error for field '$fieldName': ${ X.message }")
+
+                  imageFields[fieldName] = emptyList()
                 }
-                // endregion Check for manual rotation override via X-Rotate header (in degrees: 0,
-                // 90, 180, 270)
-                else {
-                  // Always use Tesseract orientation detection for best results
-                  log(LogLevel.INFO, "Using Tesseract auto-detection to find best orientation...")
-
-                  val detectedAngle = detectBestOrientation(correctedImage, originalDPI)
-
-                  if (detectedAngle != 0) {
-                    correctedImage =
-                        when (detectedAngle) {
-                          90 -> rotate90(correctedImage)
-                          180 -> rotate180(correctedImage)
-                          270 -> rotate270(correctedImage)
-                          else -> correctedImage
-                        }
-                    log(LogLevel.INFO, "Applied auto-detected rotation: ${detectedAngle}°")
-                  }
-                }
-
-                val correctedFile = kotlin.io.path.createTempFile("ocr_oriented_", ".png").toFile()
-
-                writeImageWithDPI(correctedImage, correctedFile, originalDPI)
-
-                filesToDelete.add(correctedFile)
-
-                correctedFile
-              } catch (e: Exception) {
-                log(LogLevel.WARNING, "Orientation correction failed: ${e.message}")
-
-                tempFileLocal
+              } else {
+                imageFields[fieldName] = emptyList()
               }
-          val preprocessedFile = preprocessImage(orientationCorrectedFile, params)
-
-          if (preprocessedFile != orientationCorrectedFile) filesToDelete.add(preprocessedFile)
-
-          log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
-          val handle =
-              pool.poll(10, TimeUnit.SECONDS)
-                  ?: throw IllegalStateException(
-                      "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
-
-          try {
-            TessAPI1.TessBaseAPIProcessPages(handle, preprocessedFile.absolutePath, null, 0, null)
-
-            val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
-
-            log(LogLevel.INFO, "Extracted: ${ ptr.getString( 0, "UTF-8").trim() }")
-
-            if (ptr != null) {
-              val rawText = ptr.getString(0, "UTF-8") ?: ""
-              val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
-              val imageFields = allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
-
-              fieldPatterns.forEach { fieldPatternMap ->
-                fieldPatternMap.forEach { (fieldName, pattern) ->
-                  if (pattern.isNotBlank()) {
-                    try {
-                      val matches =
-                          pattern.toRegex(regexFlags).findAll(rawText).map { it.value }.toList()
-
-                      log(
-                          LogLevel.INFO,
-                          "Field '$fieldName' / Expression: '$pattern' / Matches: $matches")
-
-                      imageFields[fieldName] = matches
-                    } catch (X: Exception) {
-                      log(LogLevel.ERROR, "Regex Error for field '$fieldName': ${ X.message }")
-
-                      imageFields[fieldName] = emptyList()
-                    }
-                  } else {
-                    imageFields[fieldName] = emptyList()
-                  }
-                }
-              }
-
-              fieldResults[inputName] = imageFields
-
-              TessAPI1.TessDeleteText(ptr)
-            } else
-                fieldResults[inputName] =
-                    fieldPatterns.flatMap { it.keys }.associateWith { emptyList<String>() }
-
-            TessAPI1.TessBaseAPIClear(handle)
-          } catch (X: Throwable) {
-            throw ServletException(
-                "[[ CodBi / AI / Tesseract ] Processing ${ inputName } failed with: ${ X }.]")
-          } finally {
-            pool.offer(handle)
-          }
-          // endregion OCR Processing
-        }
-      } else {
-        cacheIDedImages.entries
-            .filter { it.key.startsWith("${ params.headerMap["X-OCR-Image-ID"] }::") }
-            .map { it.value }
-            .forEach { (image, key) ->
-              // region OCR Processing
-              val preprocessedFile = preprocessImage(image, params)
-
-              if (preprocessedFile != image) filesToDelete.add(preprocessedFile)
-
-              log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")
-              val handle =
-                  pool.poll(10, TimeUnit.SECONDS)
-                      ?: throw IllegalStateException(
-                          "Pool exhausted (available: ${pool.size}, configured: $sizePool)")
-              try {
-                TessAPI1.TessBaseAPIProcessPages(
-                    handle, preprocessedFile.absolutePath, null, 0, null)
-
-                val ptr = TessAPI1.TessBaseAPIGetUTF8Text(handle)
-
-                if (ptr != null) {
-                  val rawText = ptr.getString(0, "UTF-8") ?: ""
-                  val allFieldNames = fieldPatterns.flatMap { it.keys }.distinct()
-                  val imageFields =
-                      allFieldNames.associateWith { emptyList<String>() }.toMutableMap()
-
-                  fieldPatterns.forEach { fieldPatternMap ->
-                    fieldPatternMap.forEach { (fieldName, pattern) ->
-                      if (pattern.isNotBlank()) {
-                        try {
-                          val matches = pattern.toRegex().findAll(rawText).map { it.value }.toList()
-
-                          imageFields[fieldName] = matches
-                        } catch (X: Exception) {
-                          log(LogLevel.ERROR, "Regex Error for field '$fieldName': ${ X.message }")
-
-                          imageFields[fieldName] = emptyList()
-                        }
-                      } else {
-                        imageFields[fieldName] = emptyList()
-                      }
-                    }
-                  }
-
-                  fieldResults[image.name] = imageFields
-
-                  TessAPI1.TessDeleteText(ptr)
-                } else
-                    fieldResults[image.name] =
-                        fieldPatterns.flatMap { it.keys }.associateWith { emptyList<String>() }
-
-                TessAPI1.TessBaseAPIClear(handle)
-              } catch (X: Throwable) {
-                throw ServletException(
-                    "[[ CodBi / AI / Tesseract ] Processing ${ image.name } failed with: ${ X }.]")
-              } finally {
-                pool.offer(handle)
-              }
-              // endregion OCR Processing
             }
-      }
-    } catch (X: Exception) {
-      logger.error("[[ CodBi / AI / Tesseract ]] Execution Error", X)
-    }
-    // region Generate response
-    val jsonMap =
-        fieldResults.mapValues { (imageName, fields) ->
-          fields.mapValues { (_, matches) -> matches }
+          }
+
+          imageFields.toMap()
         }
-    val jsonResponse = Gson().toJson(jsonMap)
-    val servletResponse =
+
+    val jsonResponse = Gson().toJson(results)
+
+    return PluginServletActionRetVal(
         ServletResponse(EResponseType.HTML).apply {
           value = String(jsonResponse.toByteArray(StandardCharsets.UTF_8), StandardCharsets.UTF_8)
           encoding = StandardCharsets.UTF_8.name()
-        }
-    // endregion Generate response
-    return PluginServletActionRetVal(servletResponse)
+        })
   }
 
   // endregion Execution Modes

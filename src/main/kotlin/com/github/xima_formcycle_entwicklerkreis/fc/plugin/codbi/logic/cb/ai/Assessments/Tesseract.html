@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assessment: Tesseract.kt</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; max-width: 980px; margin: 36px auto; padding: 0 20px; background: #f8fafc; color: #1f2937; }
+    h1 { color: #0b5cab; border-bottom: 2px solid #0b5cab; padding-bottom: 8px; }
+    h2 { color: #114a86; margin-top: 28px; }
+    .meta { background: #eaf2ff; border-left: 4px solid #0b5cab; padding: 10px 12px; border-radius: 4px; }
+    .ok { border-left: 4px solid #1a7f37; background: #f4fbf6; padding: 10px 12px; margin: 10px 0; }
+    .risk { border-left: 4px solid #c2410c; background: #fff7f2; padding: 10px 12px; margin: 10px 0; }
+    .rec { border-left: 4px solid #d29922; background: #fff8dc; padding: 10px 12px; margin: 8px 0 14px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #d4d8de; padding: 8px 10px; text-align: left; vertical-align: top; }
+    th { background: #0b5cab; color: #fff; }
+    code { background: #ecf0f4; padding: 2px 5px; border-radius: 3px; font-family: Consolas, monospace; }
+  </style>
+</head>
+<body>
+  <h1>Assessment: Tesseract.kt</h1>
+  <div class="meta">
+    Date: March 14, 2026 | Branch: Designer_Interface | Repository: CodBi-Dev<br/>
+    File: src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ai/Tesseract.kt
+  </div>
+
+  <h2>Overview</h2>
+  <p>
+    <strong>TesseractAction</strong> is a feature-rich in-process OCR service with support for single and multi-file OCR,
+    regex extraction/verification modes, field-level extraction, orientation detection (OSD), image preprocessing,
+    and resource-threshold gating. It integrates tightly with Formcycle servlet entry points and uses JNI-based tess4j.
+  </p>
+
+  <h2>Strengths</h2>
+  <div class="ok">Broad OCR capability surface: print, extract, verify, and extract-fields modes are all supported through one endpoint.</div>
+  <div class="ok">Operational safeguards exist via resource monitoring (CPU/RAM thresholds) to protect server stability under load.</div>
+  <div class="ok">Image quality pipeline is robust: DPI awareness, orientation detection, rotation transforms, binarization, and denoising.</div>
+  <div class="ok">Pool-based Tesseract handle strategy is appropriate for throughput and avoids repeated cold-start init cost.</div>
+  <div class="ok">Good practical logging throughout preprocessing, DPI handling, and OCR flow, which helps support and incident analysis.</div>
+
+  <h2>Weaknesses &amp; Risks</h2>
+  <div class="risk"><strong>Class scope is very large and multi-responsibility.</strong> Transport concerns, OCR orchestration, image processing, metadata parsing, regex extraction, and lifecycle state are all in one class.</div>
+  <div class="rec">Recommendation: extract internal collaborators (for example <code>OcrModeHandler</code>, <code>ImagePreprocessor</code>, <code>DpiUtil</code>, <code>OrientationService</code>) to reduce regression risk and improve test isolation.</div>
+
+  <div class="risk"><strong>Potential resource-pressure hotspots.</strong> In-memory image transforms and temporary file generation can spike memory/IO under heavy concurrent uploads.</div>
+  <div class="rec">Recommendation: add explicit image dimension/size caps before expensive transforms and add bounded temp-file cleanup guarantees.</div>
+
+  <div class="risk"><strong>Regex execution is user-driven.</strong> Complex or pathological regex patterns can be expensive and may degrade response times.</div>
+  <div class="rec">Recommendation: add regex complexity safeguards (timeout strategy or pattern restrictions) for request-supplied expressions.</div>
+
+  <div class="risk"><strong>Shared static instance model limits flexibility.</strong> Companion <code>instance</code> state may complicate multi-instance scenarios and testing.</div>
+  <div class="rec">Recommendation: prefer instance-bound routing in callers where feasible, using static access only as compatibility bridge.</div>
+
+  <h2>Summary Table</h2>
+  <table>
+    <tr><th>Category</th><th>Rating</th><th>Notes</th></tr>
+    <tr><td>Feature Completeness</td><td>5/5</td><td>Very strong OCR and extraction feature set.</td></tr>
+    <tr><td>Maintainability</td><td>3/5</td><td>Powerful but monolithic; decomposition would help long-term evolution.</td></tr>
+    <tr><td>Reliability</td><td>4/5</td><td>Good guards and fallbacks, with some high-load risk areas.</td></tr>
+    <tr><td>Performance</td><td>3.5/5</td><td>Pool and preprocessing are effective; memory/IO costs need active controls.</td></tr>
+    <tr><td>Testability</td><td>3/5</td><td>Many concerns in one class increase test setup complexity.</td></tr>
+  </table>
+
+  <h2>Priority Recommendations</h2>
+  <ol>
+    <li>Split class responsibilities into dedicated internal services for OCR modes, preprocessing, and orientation handling.</li>
+    <li>Add hard limits for image dimensions and bytes before expensive processing.</li>
+    <li>Introduce safeguards for user-provided regex patterns (complexity controls/timeouts).</li>
+    <li>Gradually reduce static singleton coupling for easier testability and future multi-instance use.</li>
+  </ol>
+</body>
+</html>

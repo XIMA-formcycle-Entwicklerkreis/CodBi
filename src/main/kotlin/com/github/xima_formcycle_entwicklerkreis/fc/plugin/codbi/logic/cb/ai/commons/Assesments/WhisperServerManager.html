@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assessment: WhisperServerManager.kt</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; max-width: 960px; margin: 36px auto; padding: 0 20px; background: #f8fafc; color: #1f2937; }
+    h1 { color: #0b5cab; border-bottom: 2px solid #0b5cab; padding-bottom: 8px; }
+    h2 { color: #114a86; margin-top: 28px; }
+    .meta { background: #eaf2ff; border-left: 4px solid #0b5cab; padding: 10px 12px; border-radius: 4px; }
+    .ok { border-left: 4px solid #1a7f37; background: #f4fbf6; padding: 10px 12px; margin: 10px 0; }
+    .risk { border-left: 4px solid #c2410c; background: #fff7f2; padding: 10px 12px; margin: 10px 0; }
+    .rec { border-left: 4px solid #d29922; background: #fff8dc; padding: 10px 12px; margin: 8px 0 14px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #d4d8de; padding: 8px 10px; text-align: left; }
+    th { background: #0b5cab; color: white; }
+  </style>
+</head>
+<body>
+  <h1>Assessment: WhisperServerManager.kt</h1>
+  <div class="meta">
+    Date: March 14, 2026 | Branch: Designer_Interface | Repository: CodBi-Dev<br/>
+    File: src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ai/commons/WhisperServerManager.kt
+  </div>
+
+  <h2>Overview</h2>
+  <p>
+    WhisperServerManager is the lifecycle and bootstrap layer for the local whisper-server runtime. It handles
+    binary provisioning, ffmpeg setup, process start and stop, readiness checks, and resource-aware enablement.
+  </p>
+
+  <h2>Strengths</h2>
+  <div class="ok">The class meaningfully isolates platform/runtime orchestration away from request handling and public AI entrypoints.</div>
+  <div class="ok">Download, platform detection, and monitoring concerns are delegated to dedicated shared helpers instead of being reimplemented.</div>
+  <div class="ok">Operational safeguards are present: readiness probes, shutdown paths, and resource monitoring all reduce failure opacity.</div>
+  <div class="ok">The code reflects practical deployment realities such as bundled ffmpeg and Windows-specific launch concerns.</div>
+
+  <h2>Weaknesses &amp; Risks</h2>
+  <div class="risk">Free-port discovery can still suffer from a time-of-check/time-of-use race if another process claims the port before whisper-server starts.</div>
+  <div class="rec">Recommendation: prefer binding strategies where the child process selects the port, or retry startup when the port becomes invalid.</div>
+
+  <div class="risk">This manager still carries broad operational scope: filesystem setup, dependency download, process launch, health checking, and shutdown policy.</div>
+  <div class="rec">Recommendation: keep this layer as an orchestrator and continue extracting startup policy or probe policy if new behaviors accumulate.</div>
+
+  <div class="risk">Process lifecycle code is inherently hard to test and can regress under platform-specific edge cases.</div>
+  <div class="rec">Recommendation: add more focused integration coverage around startup failure, restart failure, and missing-binary scenarios.</div>
+
+  <h2>Summary Table</h2>
+  <table>
+    <tr><th>Category</th><th>Rating</th><th>Notes</th></tr>
+    <tr><td>Architecture</td><td>4.5/5</td><td>A solid extraction that clarifies Whisper runtime ownership.</td></tr>
+    <tr><td>Maintainability</td><td>4/5</td><td>Much better than a monolithic Whisper class, though still operationally broad.</td></tr>
+    <tr><td>Reliability</td><td>4/5</td><td>Good readiness and shutdown behavior; startup race conditions remain possible.</td></tr>
+    <tr><td>Testability</td><td>3.5/5</td><td>External process management is difficult to verify without integration tests.</td></tr>
+  </table>
+
+  <h2>Priority Recommendations</h2>
+  <ol>
+    <li>Reduce free-port race exposure with retry or child-selected port strategies.</li>
+    <li>Expand integration testing around process startup and failure handling.</li>
+    <li>Keep extracting policy-heavy logic if this manager grows further.</li>
+  </ol>
+</body>
+</html>

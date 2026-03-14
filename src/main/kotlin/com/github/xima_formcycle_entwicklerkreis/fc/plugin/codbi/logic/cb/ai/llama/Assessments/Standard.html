@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assessment: Standard.kt</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; max-width: 980px; margin: 36px auto; padding: 0 20px; background: #f8fafc; color: #1f2937; }
+    h1 { color: #0b5cab; border-bottom: 2px solid #0b5cab; padding-bottom: 8px; }
+    h2 { color: #114a86; margin-top: 28px; }
+    .meta { background: #eaf2ff; border-left: 4px solid #0b5cab; padding: 10px 12px; border-radius: 4px; }
+    .strength { border-left: 4px solid #1a7f37; background: #f4fbf6; padding: 10px 12px; margin: 10px 0; }
+    .risk { border-left: 4px solid #c2410c; background: #fff7f2; padding: 10px 12px; margin: 10px 0; }
+    .rec { border-left: 4px solid #d29922; background: #fff8dc; padding: 10px 12px; margin: 8px 0 14px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #d4d8de; padding: 8px 10px; text-align: left; }
+    th { background: #0b5cab; color: #fff; }
+  </style>
+</head>
+<body>
+  <h1>Assessment: Standard.kt</h1>
+  <div class="meta">
+    Date: March 14, 2026 | Branch: Designer_Interface | Repository: XIMA-formcycle-Entwicklerkreis/CodBi-Dev<br/>
+    File: src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ai/llama/Standard.kt
+  </div>
+
+  <h2>Overview</h2>
+  <p>
+    <strong>Standard.kt</strong> is the central orchestrator for the local LLAMA server mode (and optional external API mode).
+    It reads plugin properties, builds immutable configuration, initializes all commons services, manages model downloads,
+    starts/stops server processes, handles thinking-server mode, and owns session/executor lifecycle concerns.
+  </p>
+
+  <h2>Strengths</h2>
+  <div class="strength">
+    Strong modular composition: most heavy responsibilities are delegated to focused collaborators
+    (<em>MessageBuilder</em>, <em>ChatCompletionService</em>, <em>WebSearchHandler</em>, <em>ThinkingServerManager</em>, etc.).
+  </div>
+  <div class="strength">
+    Robust configuration parsing with sensible defaults and range checks in <code>readPluginProperties</code>
+    (for example max tokens, compute/RAM limits, upload limits, search round-trip cap).
+  </div>
+  <div class="strength">
+    Good operational flexibility: supports local inference and external OpenAI-compatible endpoints,
+    with consistent initialization path and logging for both modes.
+  </div>
+  <div class="strength">
+    Defensive runtime model: asynchronous startup, stale streaming-session cleanup, and clear separation of
+    fast model and optional thinking model lifecycle.
+  </div>
+
+  <h2>Weaknesses &amp; Risks</h2>
+  <div class="risk">
+    The class has very broad scope (configuration, lifecycle, threading, orchestration, download/startup flow),
+    making it close to a god-class. This increases regression risk when touching unrelated features.
+  </div>
+  <div class="rec">
+    Split lifecycle bootstrapping into dedicated internal components: config bootstrap, service graph builder,
+    and model runtime launcher.
+  </div>
+
+  <div class="risk">
+    Initialization path is complex and side-effect heavy (property parsing mutates base LLAMA state,
+    multiple services are conditionally wired). This complexity is hard to fully cover with unit tests.
+  </div>
+  <div class="rec">
+    Add integration tests for key startup modes: local-only, external-only, thinking-model enabled,
+    and failure-paths (download failure, server start failure, invalid properties).
+  </div>
+
+  <div class="risk">
+    Error propagation relies on mutable state flags (<code>loadError</code>, <code>serverReady</code>, <code>isActive</code>)
+    updated from async tasks, which can make failure diagnostics timing-sensitive.
+  </div>
+  <div class="rec">
+    Introduce a dedicated startup state model (sealed states) to make readiness/failure transitions explicit and auditable.
+  </div>
+
+  <div class="risk">
+    Property key surface is large and partly stringly-typed, which is prone to typo-based misconfiguration.
+  </div>
+  <div class="rec">
+    Centralize property keys in a typed schema and generate validation/error reports at startup.
+  </div>
+
+  <h2>Summary Table</h2>
+  <table>
+    <tr><th>Category</th><th>Rating</th><th>Notes</th></tr>
+    <tr><td>Architecture</td><td>4/5</td><td>Strong delegation to commons services, but top-level class remains very broad.</td></tr>
+    <tr><td>Maintainability</td><td>3/5</td><td>Good structure yet high orchestration complexity and many modes.</td></tr>
+    <tr><td>Reliability</td><td>4/5</td><td>Defensive checks and defaults are present; async startup complexity remains a risk.</td></tr>
+    <tr><td>Readability</td><td>3/5</td><td>Well-documented but long and responsibility-dense.</td></tr>
+    <tr><td>Testability</td><td>3/5</td><td>Needs integration-heavy test strategy for confidence.</td></tr>
+  </table>
+
+  <h2>Priority Recommendations</h2>
+  <ol>
+    <li>Extract startup/lifecycle orchestration into smaller internal components.</li>
+    <li>Add mode-focused integration tests for success and failure startup paths.</li>
+    <li>Introduce explicit startup state transitions instead of distributed readiness flags.</li>
+    <li>Consolidate and validate plugin property schema with clearer startup diagnostics.</li>
+  </ol>
+</body>
+</html>

@@ -42,6 +42,7 @@ class WhisperRequestHandler(private val log: (LogLevel, String) -> Unit) {
    * @param modelUrl The URL of the loaded model (used in health-check response).
    * @param ffmpegAvailable Whether ffmpeg is available for audio conversion.
    * @param autoDetectLanguage When `true`, skip browser language and let whisper auto-detect.
+   * @param pluginProperties Plugin properties for customization.
    * @return JSON response with transcribed text or an error message.
    */
   fun handle(
@@ -53,7 +54,8 @@ class WhisperRequestHandler(private val log: (LogLevel, String) -> Unit) {
       externalModel: String?,
       modelUrl: String,
       ffmpegAvailable: Boolean,
-      autoDetectLanguage: Boolean = false
+      autoDetectLanguage: Boolean = false,
+      pluginProperties: java.util.Properties
   ): IPluginServletActionRetVal {
     // region Health Check
     if (params.headerMap.entries.any {
@@ -111,11 +113,9 @@ class WhisperRequestHandler(private val log: (LogLevel, String) -> Unit) {
     }
     // endregion Debug Logging
     // region Audio Extraction & Transcription
-    val audioBytes = collectAudioBytes(params)
-
-    if (audioBytes == null) {
-      return jsonResponse("{\"error\":\"No audio file uploaded.\"}")
-    }
+    val audioBytes =
+        collectAudioBytes(params, pluginProperties)
+            ?: return jsonResponse("{\"error\":\"No audio file uploaded.\"}")
 
     return try {
       val transcription =
@@ -144,17 +144,36 @@ class WhisperRequestHandler(private val log: (LogLevel, String) -> Unit) {
    * @param params Servlet parameters to extract audio from.
    * @return Raw audio bytes, or `null` if no audio data was found.
    */
-  private fun collectAudioBytes(params: IPluginServletActionParams): ByteArray? {
+  private fun collectAudioBytes(
+      params: IPluginServletActionParams,
+      pluginProperties: java.util.Properties
+  ): ByteArray? {
+    // Allow customization via plugin property or header
+    val defaultLimitMb = 50
+    val maxAudioSizeMb =
+        params.headerMap.entries
+            .find { it.key.equals("X-Audio-Size-Limit", ignoreCase = true) }
+            ?.value
+            ?.toIntOrNull()
+            ?: pluginProperties.getProperty("codbi-audio-size-limit-mb")?.toIntOrNull()
+            ?: defaultLimitMb
+    val MAX_AUDIO_SIZE = maxAudioSizeMb * 1024 * 1024
     params.requestParameters?.forEach { (key, values) ->
       if (key.startsWith("codbi-base64:")) {
         try {
           val bytes =
               java.util.Base64.getDecoder()
                   .decode((values.firstOrNull() ?: return@forEach).substringAfter(","))
-
+          if (bytes.size > MAX_AUDIO_SIZE) {
+            log(
+                LogLevel.WARNING,
+                "Audio via base64 param '$key' exceeds max size (${bytes.size} bytes > $MAX_AUDIO_SIZE bytes)")
+            return null
+          }
           if (bytes.isNotEmpty()) {
-            log(LogLevel.INFO, "Received audio via base64 param '$key': ${bytes.size} bytes")
-
+            log(
+                LogLevel.INFO,
+                "Received audio via base64 param '$key': ${bytes.size} bytes (limit: $MAX_AUDIO_SIZE bytes)")
             return bytes
           }
         } catch (X: Exception) {
@@ -166,20 +185,29 @@ class WhisperRequestHandler(private val log: (LogLevel, String) -> Unit) {
     if (!params.uploadFiles.isNullOrEmpty()) {
       val (_, fileDataList) = params.uploadFiles.entries.firstOrNull() ?: return null
       val buffer = ByteArrayOutputStream()
-
-      fileDataList.forEach { fd -> fd.data?.let { buffer.write(it) } }
-
+      var totalSize = 0
+      fileDataList.forEach { fd ->
+        fd.data?.let {
+          totalSize += it.size
+          if (totalSize > MAX_AUDIO_SIZE) {
+            log(
+                LogLevel.WARNING,
+                "Audio upload exceeds max size ($totalSize bytes > $MAX_AUDIO_SIZE bytes, limit: $MAX_AUDIO_SIZE bytes)")
+            return null
+          }
+          buffer.write(it)
+        }
+      }
       val combined = buffer.toByteArray()
-
       if (combined.isNotEmpty()) {
-        log(LogLevel.INFO, "Received audio via multipart upload: ${combined.size} bytes")
-
+        log(
+            LogLevel.INFO,
+            "Received audio via multipart upload: ${combined.size} bytes (limit: $MAX_AUDIO_SIZE bytes)")
         return combined
       }
     }
 
     log(LogLevel.WARNING, "No audio data found in request (checked base64 params and uploadFiles)")
-
     return null
   }
 
@@ -192,6 +220,10 @@ class WhisperRequestHandler(private val log: (LogLevel, String) -> Unit) {
    * Priority: explicit `X-Language` header > browser `Accept-Language` > `null` (auto-detect). When
    * [autoDetect] is `true`, browser language is skipped and `null` is returned unless `X-Language`
    * is explicitly set.
+   *
+   * @param params Servlet parameters containing request headers.
+   * @param autoDetect Whether to let the model auto-detect the language.
+   * @return A two-letter language code, or `null` for auto-detection.
    */
   private fun resolveLanguage(params: IPluginServletActionParams, autoDetect: Boolean): String? {
     val explicit =

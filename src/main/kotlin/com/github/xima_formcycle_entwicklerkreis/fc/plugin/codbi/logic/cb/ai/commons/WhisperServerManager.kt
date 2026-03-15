@@ -56,6 +56,9 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
   var ffmpegAvailable = false
     private set
 
+  /** Base URL prefix used to resolve whisper.cpp release asset downloads. */
+  private var whisperReleaseBaseUrl = "https://github.com/ggml-org/whisper.cpp/releases/download"
+
   /** Handle to the running whisper-server OS process. */
   @Volatile private var serverProcess: Process? = null
   /** Daemon thread forwarding whisper-server stdout to the CodBi log. */
@@ -75,29 +78,73 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
   // endregion State
   // region Download Delegates
 
+  /** Lazy helper for resumable downloads and archive extraction. */
   private val downloadManager by lazy { DownloadManager { level, msg -> log(level, msg) } }
 
+  /**
+   * Delegates resumable downloads to [DownloadManager].
+   *
+   * @param url Source URL to download.
+   * @param targetFile Destination file path.
+   * @param label Human-readable artifact label used in logs.
+   * @return `true` when the file is fully downloaded or already complete.
+   */
   private fun downloadWithResume(url: String, targetFile: File, label: String): Boolean =
       downloadManager.downloadWithResume(url, targetFile, label)
 
+  /**
+   * Extracts a ZIP archive via [DownloadManager].
+   *
+   * @param zipFile ZIP file to extract.
+   * @param targetDir Destination directory for extracted contents.
+   * @throws RuntimeException If extraction fails inside the underlying extractor.
+   */
   private fun extractZip(zipFile: File, targetDir: File) =
       downloadManager.extractZip(zipFile, targetDir)
 
+  /**
+   * Extracts a TAR.GZ archive via [DownloadManager].
+   *
+   * @param tarGzFile TAR.GZ file to extract.
+   * @param targetDir Destination directory for extracted contents.
+   * @throws RuntimeException If extraction fails inside the underlying extractor.
+   */
   private fun extractTarGz(tarGzFile: File, targetDir: File) =
       downloadManager.extractTarGz(tarGzFile, targetDir)
 
+  /**
+   * Searches recursively for an executable file name.
+   *
+   * @param dir Root directory to search.
+   * @param exeName Target executable name.
+   * @return Matching executable file or `null` when not found.
+   */
   private fun findExecutable(dir: File, exeName: String): File? =
       downloadManager.findExecutable(dir, exeName)
 
   // endregion Download Delegates
   // region Platform Detection Delegates
 
+  /**
+   * Detects host operating system and CPU architecture for binary selection.
+   *
+   * @return Detected [Platform] descriptor.
+   */
   private fun detectPlatform(): Platform =
-      PlatformDetector.detectPlatform(
-          { level, msg -> log(level, msg) }, "whisper-server.exe", "whisper-server")
+      PlatformDetector.detectPlatform({ level, msg -> log(level, msg) }, "whisper-server.exe", "")
 
+  /**
+   * Detects the best available GPU backend.
+   *
+   * @return Detected [GpuBackend].
+   */
   private fun detectGpu(): GpuBackend = PlatformDetector.detectGpu { level, msg -> log(level, msg) }
 
+  /**
+   * Detects the number of physical CPU cores for default thread sizing.
+   *
+   * @return Number of detected physical cores.
+   */
   private fun detectPhysicalCores(): Int =
       PlatformDetector.detectPhysicalCores { level, msg -> log(level, msg) }
 
@@ -110,6 +157,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
    *
    * @param preferredPort The TCP port to try first.
    * @param whisperRelease whisper.cpp release tag (e.g. `"v1.7.6"`).
+   * @param whisperReleaseBaseUrl Base URL prefix for whisper.cpp release downloads.
    * @param modelUrl URL of the GGML model to download.
    * @param modelsDir Directory to store downloaded models.
    * @param binDir Directory to store extracted binaries.
@@ -123,6 +171,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
   fun startAsync(
       preferredPort: Int,
       whisperRelease: String,
+      whisperReleaseBaseUrl: String,
       modelUrl: String,
       modelsDir: File,
       binDir: File,
@@ -137,6 +186,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
             {
               try {
                 val platform = detectPlatform()
+                this.whisperReleaseBaseUrl = whisperReleaseBaseUrl.trimEnd('/')
 
                 log(LogLevel.INFO, "Platform: ${platform.os}/${platform.arch}")
 
@@ -294,10 +344,19 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
    * @return A map of `"os_arch"` keys to archive download URLs.
    */
   private fun buildWhisperServerUrls(release: String): Map<String, String> {
-    val base = "https://github.com/ggml-org/whisper.cpp/releases/download/$release"
+    val base = buildWhisperReleaseDownloadBase(release)
 
     return mapOf("windows_x86_64" to "$base/whisper-bin-x64.zip")
   }
+
+  /**
+   * Builds the full download base URL for a release from [whisperReleaseBaseUrl].
+   *
+   * @param release whisper.cpp release tag.
+   * @return Full release download base URL.
+   */
+  private fun buildWhisperReleaseDownloadBase(release: String): String =
+      "${whisperReleaseBaseUrl.trimEnd('/')}/$release"
 
   /**
    * Resolves the best server binary URL based on the detected GPU backend.
@@ -312,7 +371,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
       platformKey: String,
       gpuBackend: GpuBackend
   ): Pair<String, String?> {
-    val base = "https://github.com/ggml-org/whisper.cpp/releases/download/$release"
+    val base = buildWhisperReleaseDownloadBase(release)
     val cpuUrls = buildWhisperServerUrls(release)
 
     if (platformKey != "windows_x86_64") {
@@ -469,9 +528,10 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
         "  Model:   ${model.absolutePath} (${"%.0f".format(model.length() / (1024.0 * 1024.0))} MB)")
     log(LogLevel.INFO, "  Port:    $serverPort")
     log(LogLevel.INFO, "  Threads: $resolvedThreads")
+    val useWhisperGpu = !noGpu && detectedGpu == GpuBackend.CUDA
     log(
         LogLevel.INFO,
-        "  GPU:     ${if (noGpu) "disabled" else "enabled"} (detected: $detectedGpu)")
+        "  GPU:     ${if (useWhisperGpu) "enabled (CUDA)" else "disabled"} (detected: $detectedGpu)")
 
     val command =
         mutableListOf(
@@ -485,7 +545,12 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
             "--threads",
             resolvedThreads.toString())
 
-    if (noGpu || detectedGpu == GpuBackend.NONE) {
+    if (!useWhisperGpu) {
+      if (!noGpu && detectedGpu == GpuBackend.VULKAN) {
+        log(
+            LogLevel.INFO,
+            "Vulkan detected, but whisper-server on this platform does not provide a Vulkan backend — forcing CPU mode (--no-gpu).")
+      }
       command.add("--no-gpu")
     }
     if (ffmpegAvailable) {
@@ -523,13 +588,11 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
                   {
                     try {
                       BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
-                        reader.lineSequence().forEach { line ->
-                          log(LogLevel.INFO, "[whisper-server] $line")
-                        }
+                        reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
                       }
                     } catch (_: Exception) {}
                   },
-                  "whisper-stdout")
+                  "Whisper/ STD-OUT")
               .apply {
                 isDaemon = true
                 start()
@@ -540,13 +603,11 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
                   {
                     try {
                       BufferedReader(InputStreamReader(process.errorStream)).use { reader ->
-                        reader.lineSequence().forEach { line ->
-                          log(LogLevel.INFO, "[whisper-server/err] $line")
-                        }
+                        reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
                       }
                     } catch (X: Exception) {}
                   },
-                  "whisper-stderr")
+                  "Whisper/ STD-ERR")
               .apply {
                 isDaemon = true
                 start()
@@ -669,6 +730,12 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
   /**
    * Daemon thread that periodically samples CPU, RAM, and (optionally) GPU utilization. Used to
    * gate incoming requests when system resources are under heavy load.
+   *
+   * @param detectedGpu GPU backend detected during server startup.
+   * @param noGpu `true` when GPU usage is explicitly disabled.
+   * @param maxComputePercent Maximum allowed compute utilization percentage before throttling.
+   * @param maxRAMPercent Maximum allowed RAM utilization percentage before throttling.
+   * @param log Logging callback for monitor events.
    */
   private class ResourceMonitor(
       private val detectedGpu: GpuBackend,
@@ -690,8 +757,10 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
     var gpuPercent = 0.0
       private set
 
+    /** `true` while the monitoring loop should continue sampling system usage. */
     @Volatile var running = true
 
+    /** Optional OS MXBean used for CPU and memory metrics sampling. */
     private val osMxBean: com.sun.management.OperatingSystemMXBean? =
         try {
           ManagementFactory.getOperatingSystemMXBean() as? com.sun.management.OperatingSystemMXBean
@@ -699,88 +768,108 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
           null
         }
 
+    /** Indicates whether GPU utilization polling via `nvidia-smi` is available. */
     @Volatile private var gpuPollingAvailable = false
 
     init {
       isDaemon = true
-
       val usesGpu = detectedGpu == GpuBackend.CUDA && !noGpu
-
       if (usesGpu) {
         try {
-          val probe =
-              ProcessBuilder(
-                      "nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
+          // Start nvidia-smi dmon in background for continuous polling
+          val dmonProc =
+              ProcessBuilder("nvidia-smi", "dmon", "-s", "u", "-o", "TD")
                   .redirectErrorStream(true)
                   .start()
-          val output = probe.inputStream.bufferedReader().readText().trim()
-
-          probe.waitFor()
-
-          if (probe.exitValue() == 0 && output.toDoubleOrNull() != null) {
-            gpuPollingAvailable = true
-
-            log(
-                LogLevel.INFO,
-                "Resource monitor: GPU utilization polling active (CUDA via nvidia-smi)")
-          }
-        } catch (X: Exception) {}
-      }
-
-      if (!gpuPollingAvailable && usesGpu) {
-        log(
-            LogLevel.INFO,
-            "Resource monitor: GPU detected but nvidia-smi unavailable — falling back to CPU monitoring")
+          val reader = dmonProc.inputStream.bufferedReader()
+          Thread {
+                try {
+                  var headerSkipped = false
+                  while (running && dmonProc.isAlive) {
+                    val line = reader.readLine() ?: break
+                    // Skip header lines
+                    if (!headerSkipped && line.contains("gpu")) {
+                      headerSkipped = true
+                      continue
+                    }
+                    if (headerSkipped && line.isNotBlank()) {
+                      // Example dmon output: "0   10   5   0   0   0   0   0   0   0   0   0   0
+                      // 0   0   0"
+                      val fields = line.trim().split(Regex("\\s+"))
+                      val utilIdx = 1 // GPU utilization is second column
+                      val util = fields.getOrNull(utilIdx)?.toDoubleOrNull()
+                      if (util != null) {
+                        gpuPercent = util
+                      }
+                    }
+                    Thread.sleep(1000)
+                  }
+                } catch (X: Exception) {
+                  log(LogLevel.WARNING, "nvidia-smi dmon polling failed: ${X.message}")
+                } finally {
+                  dmonProc.destroy()
+                }
+              }
+              .apply { isDaemon = true }
+              .start()
+          gpuPollingAvailable = true
+          log(
+              LogLevel.INFO,
+              "Resource monitor: GPU utilization polling active (CUDA via nvidia-smi dmon)")
+        } catch (X: Exception) {
+          log(
+              LogLevel.INFO,
+              "Resource monitor: GPU detected but nvidia-smi dmon unavailable — falling back to CPU monitoring")
+        }
       }
     }
 
+    /**
+     * Monitoring loop executed once per second until [shutdown] is called.
+     *
+     * @throws InterruptedException Internally used to stop sleep when shutting down.
+     */
     override fun run() {
       while (running) {
         try {
           osMxBean?.let {
             cpuPercent = it.cpuLoad * 100.0
-
             val totalMem = it.totalMemorySize.toDouble()
-
             ramPercent =
                 if (totalMem > 0) (totalMem - it.freeMemorySize.toDouble()) / totalMem * 100.0
                 else 0.0
           }
-
-          if (gpuPollingAvailable) {
-            gpuPercent = pollGpuUtilization()
-          }
-
-          sleep(1000)
+          // GPU percent is updated by dmon thread
+          Thread.sleep(1000)
         } catch (X: InterruptedException) {
           break
         } catch (X: Exception) {}
       }
     }
 
+    /**
+     * Polls current GPU utilization through `nvidia-smi`.
+     *
+     * @return Latest GPU utilization percentage, or the previous sample on failure.
+     */
     private fun pollGpuUtilization(): Double {
-      return try {
-        val proc =
-            ProcessBuilder(
-                    "nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
-                .redirectErrorStream(true)
-                .start()
-
-        val output = proc.inputStream.bufferedReader().readText().trim()
-
-        proc.waitFor()
-        output.lines().firstOrNull()?.trim()?.toDoubleOrNull() ?: gpuPercent
-      } catch (X: Exception) {
-        gpuPercent
-      }
+      // Deprecated: GPU utilization is now updated by dmon thread
+      return gpuPercent
     }
 
+    /** Effective compute utilization used for throttling (GPU when available, otherwise CPU). */
     private val computePercent: Double
       get() = if (gpuPollingAvailable) gpuPercent else cpuPercent
 
+    /** Label matching [computePercent] to produce user-facing threshold messages. */
     private val computeLabel: String
       get() = if (gpuPollingAvailable) "GPU" else "CPU"
 
+    /**
+     * Returns a human-readable overload reason when compute or memory thresholds are exceeded.
+     *
+     * @return Overload reason string, or `null` if resources are within limits.
+     */
     fun exceedReason(): String? {
       val parts = mutableListOf<String>()
 
@@ -792,6 +881,11 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
       return if (parts.isEmpty()) null else parts.joinToString(", ")
     }
 
+    /**
+     * Estimates a retry delay based on how far current resource usage exceeds thresholds.
+     *
+     * @return Suggested wait time in seconds, clamped to 5..120.
+     */
     fun estimateWaitSeconds(): Int {
       return (((computePercent - maxComputePercent).coerceAtLeast(0.0) +
               (ramPercent - maxRAMPercent).coerceAtLeast(0.0)) / 5.0)
@@ -799,6 +893,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
           .coerceIn(5, 120)
     }
 
+    /** Stops monitoring and interrupts sleep so the thread can terminate quickly. */
     fun shutdown() {
       running = false
 

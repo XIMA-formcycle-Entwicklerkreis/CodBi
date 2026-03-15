@@ -14,17 +14,23 @@ import org.slf4j.LoggerFactory
  * default of 300 DPI when metadata is missing or unreadable.
  */
 object DpiUtil {
+  /** Logger for DPI utility operations. */
   private val log = LoggerFactory.getLogger(DpiUtil::class.java)
 
+  /** Default log signature used when no caller-specific signature is provided. */
+  private const val DEFAULT_LOG_SIGNATURE = "[ CodBi / AI / Commons ]"
+
+  /** The default DPI value to use when metadata is missing or unreadable. */
   private const val DEFAULT_DPI = 300
 
   /**
    * Reads DPI metadata from an image file.
    *
    * @param imageFile The image file to read DPI from.
+   * @param logSignature Signature prefix shown in logs to identify the caller context.
    * @return The DPI value, or 300 as default if not found.
    */
-  fun readImageDPI(imageFile: File): Int {
+  fun readImageDPI(imageFile: File, logSignature: String = DEFAULT_LOG_SIGNATURE): Int {
     try {
       val readers =
           ImageIO.getImageReadersByFormatName(imageFile.extension.lowercase().ifEmpty { "png" })
@@ -51,7 +57,7 @@ object DpiUtil {
           val dpi = extractDpiFromMetadata(tree)
 
           if (dpi != null) {
-            log.info("[[ CodBi / AI / Tesseract ]] Read DPI from image: $dpi")
+            log.info("$logSignature Read DPI from image: $dpi")
 
             return dpi
           }
@@ -60,11 +66,11 @@ object DpiUtil {
         reader.dispose()
         iis.close()
       }
-    } catch (X: Exception) {
-      log.warn("[[ CodBi / AI / Tesseract ]] Failed to read DPI from image: ${X.message}")
+    } catch (e: Exception) {
+      log.warn("$logSignature Failed to read DPI from image: ${e.message}")
     }
 
-    log.info("[[ CodBi / AI / Tesseract ]] No DPI metadata found, using default $DEFAULT_DPI DPI")
+    log.info("$logSignature No DPI metadata found, using default $DEFAULT_DPI DPI")
 
     return DEFAULT_DPI
   }
@@ -73,9 +79,10 @@ object DpiUtil {
    * Reads DPI metadata from image bytes.
    *
    * @param imageBytes The image bytes to read DPI from.
+   * @param logSignature Signature prefix shown in logs to identify the caller context.
    * @return The DPI value, or 300 as default if not found.
    */
-  fun readImageDPI(imageBytes: ByteArray): Int {
+  fun readImageDPI(imageBytes: ByteArray, logSignature: String = DEFAULT_LOG_SIGNATURE): Int {
     try {
       ByteArrayInputStream(imageBytes).use { input ->
         val iis = ImageIO.createImageInputStream(input) ?: return DEFAULT_DPI
@@ -98,7 +105,7 @@ object DpiUtil {
               val dpi = extractDpiFromMetadata(tree)
 
               if (dpi != null) {
-                log.info("[[ CodBi / AI / Tesseract ]] Read DPI from image bytes: $dpi")
+                log.info("$logSignature Read DPI from image bytes: $dpi")
 
                 return dpi
               }
@@ -108,12 +115,11 @@ object DpiUtil {
           }
         }
       }
-    } catch (X: Exception) {
-      log.warn("[[ CodBi / AI / Tesseract ]] Failed to read DPI from image bytes: ${X.message}")
+    } catch (e: Exception) {
+      log.warn("$logSignature Failed to read DPI from image bytes: ${e.message}")
     }
 
-    log.info(
-        "[[ CodBi / AI / Tesseract ]] No DPI metadata found in image bytes, using default $DEFAULT_DPI DPI")
+    log.info("$logSignature No DPI metadata found in image bytes, using default $DEFAULT_DPI DPI")
 
     return DEFAULT_DPI
   }
@@ -125,8 +131,14 @@ object DpiUtil {
    * @param image The image to write.
    * @param outputFile The file to write to.
    * @param dpi The DPI (dots per inch) to set in the image metadata.
+   * @param logSignature Signature prefix shown in logs to identify the caller context.
    */
-  fun writeImageWithDPI(image: BufferedImage, outputFile: File, dpi: Int = DEFAULT_DPI) {
+  fun writeImageWithDPI(
+      image: BufferedImage,
+      outputFile: File,
+      dpi: Int = DEFAULT_DPI,
+      logSignature: String = DEFAULT_LOG_SIGNATURE
+  ) {
     val writers = ImageIO.getImageWritersByFormatName("png")
 
     if (!writers.hasNext()) {
@@ -173,9 +185,9 @@ object DpiUtil {
       try {
         metadata.setFromTree("javax_imageio_png_1.0", root)
 
-        log.info("[[ CodBi / AI / Tesseract ]] Set image DPI to $dpi ($dotsPerMeter dots/meter)")
+        log.info("$logSignature Set image DPI to $dpi ($dotsPerMeter dots/meter)")
       } catch (e: Exception) {
-        log.warn("[[ CodBi / AI / Tesseract ]] Failed to set DPI metadata: ${e.message}")
+        log.warn("$logSignature Failed to set DPI metadata: ${e.message}")
       }
 
       val iioImage = javax.imageio.IIOImage(image, null, metadata)
@@ -190,6 +202,7 @@ object DpiUtil {
   /**
    * Extracts DPI from a metadata tree, checking PNG pHYs and JPEG app0JFIF nodes.
    *
+   * @param tree The image metadata tree to search.
    * @return The DPI if found, or null.
    */
   private fun extractDpiFromMetadata(tree: IIOMetadataNode): Int? {

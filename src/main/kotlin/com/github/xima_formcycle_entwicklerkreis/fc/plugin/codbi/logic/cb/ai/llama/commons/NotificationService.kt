@@ -2,18 +2,17 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.ll
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
 import com.google.gson.JsonParser
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
-import java.net.Socket
 import java.net.URI
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
 import java.util.Properties
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.atomic.AtomicReference
+import javax.mail.Message
+import javax.mail.Session
+import javax.mail.Transport
+import javax.mail.internet.InternetAddress
+import javax.mail.internet.MimeMessage
 
 /**
  * Periodically checks GitHub for a newer llama.cpp release and sends email notifications via SMTP
@@ -108,6 +107,9 @@ internal class NotificationService(
   /**
    * Computes the sleep interval with exponential backoff on consecutive failures. Normal interval
    * is [checkIntervalHours]. Each failure doubles the wait, capped at 24 hours.
+   *
+   * @param checkIntervalHours The base check interval in hours.
+   * @return The computed sleep interval in milliseconds.
    */
   private fun computeBackoffMs(checkIntervalHours: Long): Long {
     val baseMs = checkIntervalHours * 3600 * 1000L
@@ -339,20 +341,19 @@ internal class NotificationService(
   }
 
   /**
-   * Sends a plain-text email via raw SMTP (no external mail library required).
+   * Sends a plain-text email via Jakarta Mail.
    *
-   * Supports optional AUTH LOGIN. Does **not** support STARTTLS — suitable for localhost or
-   * trusted-network relay servers as typically configured in Formcycle.
+   * Supports AUTH LOGIN and STARTTLS when the server advertises it.
    *
    * @param host SMTP server hostname.
    * @param port SMTP server port.
    * @param from Sender email address.
    * @param to Recipient email address.
-   * @param subject Email subject line.
-   * @param body Plain-text email body.
    * @param user Optional AUTH LOGIN username.
    * @param password Optional AUTH LOGIN password.
-   * @return `true` if the server accepted the message (250 response after DATA).
+   * @param subject Email subject line.
+   * @param body Plain-text email body.
+   * @return `true` if the message was sent successfully.
    */
   private fun sendSmtpEmail(
       host: String,
@@ -365,81 +366,39 @@ internal class NotificationService(
       body: String
   ): Boolean {
     try {
-      Socket(host, port).use { socket ->
-        socket.soTimeout = 30_000
+      val props = Properties()
+      props["mail.smtp.host"] = host
+      props["mail.smtp.port"] = port.toString()
+      props["mail.smtp.connectiontimeout"] = "15000"
+      props["mail.smtp.timeout"] = "30000"
+      props["mail.smtp.starttls.enable"] = "true"
 
-        val reader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
-        val writer = OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8)
-
-        fun readResponse(): String {
-          var line: String
-
-          do {
-            line = reader.readLine() ?: throw Exception("SMTP connection closed unexpectedly")
-          } while (line.length >= 4 && line[3] == '-') // multi-line continues with "250-..."
-
-          return line
-        }
-        /** Sends a command and reads the response. */
-        fun send(cmd: String): String {
-          writer.write(cmd + "\r\n")
-          writer.flush()
-
-          return readResponse()
-        }
-
-        readResponse()
-        send("EHLO codbi-llama")
-
-        if (!user.isNullOrEmpty() && !password.isNullOrEmpty()) {
-          send("AUTH LOGIN")
-          send(java.util.Base64.getEncoder().encodeToString(user.toByteArray()))
-
-          val authResp = send(java.util.Base64.getEncoder().encodeToString(password.toByteArray()))
-
-          if (!authResp.startsWith("235")) {
-            log(LogLevel.WARNING, "SMTP AUTH failed: $authResp")
-            return false
-          }
-        }
-
-        send("MAIL FROM:<$from>")
-        send("RCPT TO:<$to>")
-        send("DATA")
-
-        val now = ZonedDateTime.now().format(DateTimeFormatter.RFC_1123_DATE_TIME)
-
-        writer.write("Date: $now\r\n")
-        writer.write("From: CodBi AI <$from>\r\n")
-        writer.write("To: $to\r\n")
-        writer.write("Subject: $subject\r\n")
-        writer.write("Content-Type: text/plain; charset=UTF-8\r\n")
-        writer.write("X-Mailer: CodBi-LLAMA/1.0\r\n")
-        writer.write("\r\n")
-
-        for (line in body.lines()) {
-          if (line.startsWith(".")) writer.write(".")
-
-          writer.write(line + "\r\n")
-        }
-
-        writer.write(".\r\n")
-        writer.flush()
-
-        val dataResp = readResponse()
-
-        send("QUIT")
-
-        if (dataResp.startsWith("250")) {
-          log(LogLevel.INFO, "Update notification email sent to $to")
-
-          return true
-        } else {
-          log(LogLevel.WARNING, "SMTP server rejected message: $dataResp")
-
-          return false
-        }
+      if (!user.isNullOrEmpty() && !password.isNullOrEmpty()) {
+        props["mail.smtp.auth"] = "true"
       }
+
+      val session =
+          Session.getInstance(
+              props,
+              if (!user.isNullOrEmpty() && !password.isNullOrEmpty()) {
+                object : javax.mail.Authenticator() {
+                  override fun getPasswordAuthentication() =
+                      javax.mail.PasswordAuthentication(user, password)
+                }
+              } else null)
+
+      val message = MimeMessage(session)
+      message.setFrom(InternetAddress(from, "CodBi AI"))
+      message.setRecipient(Message.RecipientType.TO, InternetAddress(to))
+      message.subject = subject
+      message.setText(body, "UTF-8")
+      message.setHeader("X-Mailer", "CodBi-LLAMA/1.0")
+
+      Transport.send(message)
+
+      log(LogLevel.INFO, "Update notification email sent to $to")
+
+      return true
     } catch (e: Exception) {
       log(LogLevel.ERROR, "Failed to send notification email: ${e.message}")
 

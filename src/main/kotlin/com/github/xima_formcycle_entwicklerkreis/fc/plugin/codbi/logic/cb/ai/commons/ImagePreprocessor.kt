@@ -10,41 +10,47 @@ import org.slf4j.LoggerFactory
  * median denoising.
  */
 object ImagePreprocessor {
+  /** The logger instance for this class. */
   private val log = LoggerFactory.getLogger(ImagePreprocessor::class.java)
+
+  /** Default signature used when no caller-specific signature is provided. */
+  private const val DEFAULT_LOG_SIGNATURE = "[ CodBi / AI / ImagePreprocessor ]"
 
   /**
    * Preprocesses an image file to improve OCR accuracy. Applies: Grayscale conversion, adaptive
-   * binarization, noise reduction.
+   * binarization, noise reduction. All processing is in-memory; no temp files are written.
    *
    * @param inputFile The original image file.
    * @param enabled Whether preprocessing is enabled.
-   * @return A new preprocessed image file, or the original if preprocessing is disabled or fails.
+   * @param useAdaptive Whether to use adaptive thresholding.
+   * @param logSignature Signature prefix shown in logs to identify the caller context.
+   * @return The preprocessed image as a BufferedImage, or the original if preprocessing is disabled
+   *   or fails.
    */
-  fun preprocessImage(inputFile: File, enabled: Boolean, useAdaptive: Boolean = false): File {
+  fun preprocessImage(
+      inputFile: File,
+      enabled: Boolean,
+      useAdaptive: Boolean = false,
+      logSignature: String = DEFAULT_LOG_SIGNATURE
+  ): BufferedImage {
     if (!enabled) {
       log.info(
-          "[[ CodBi / AI / Tesseract ]] Image preprocessing disabled (use X-Preprocess: true to enable)")
-
-      return inputFile
+          "[36m$logSignature Image preprocessing disabled (use X-Preprocess: true to enable)[0m")
+      return ImageIO.read(inputFile)
     }
-
     try {
-      val originalDPI = DpiUtil.readImageDPI(inputFile)
-      val originalImage = ImageIO.read(inputFile) ?: return inputFile
-      val result = applyPreprocessing(originalImage, useAdaptive) ?: return inputFile
-      val preprocessedFile = kotlin.io.path.createTempFile("ocr_preprocessed_", ".png").toFile()
-
-      DpiUtil.writeImageWithDPI(result.image, preprocessedFile, originalDPI)
-
+      val originalDPI = DpiUtil.readImageDPI(inputFile, logSignature)
+      val originalImage = ImageIO.read(inputFile) ?: return ImageIO.read(inputFile)
+      val result =
+          applyPreprocessing(originalImage, useAdaptive, logSignature) ?: return originalImage
       log.info(
-          "[[ CodBi / AI / Tesseract ]] Image preprocessing successful: Otsu threshold=${result.threshold}, file=${inputFile.name}")
-
-      return preprocessedFile
-    } catch (X: Exception) {
+          "[32m$logSignature Image preprocessing successful: Otsu threshold=${result.threshold}, file=${inputFile.name}[0m")
+      // DPI is preserved in memory; caller must handle DPI metadata if writing to disk.
+      return result.image
+    } catch (e: Exception) {
       log.error(
-          "[[ CodBi / AI / Tesseract ]] Image preprocessing failed for ${inputFile.name}, using original image: ${X.message}")
-
-      return inputFile
+          "[31m$logSignature Image preprocessing failed for ${inputFile.name}, using original image: ${e.message}[0m")
+      return ImageIO.read(inputFile)
     }
   }
 
@@ -53,21 +59,22 @@ object ImagePreprocessor {
    *
    * @param image The original image.
    * @param enabled Whether preprocessing is enabled.
+   * @param logSignature Signature prefix shown in logs to identify the caller context.
    * @return The preprocessed image or the original if preprocessing is disabled or fails.
    */
   fun preprocessImage(
       image: BufferedImage,
       enabled: Boolean,
-      useAdaptive: Boolean = false
+      useAdaptive: Boolean = false,
+      logSignature: String = DEFAULT_LOG_SIGNATURE
   ): BufferedImage {
     if (!enabled) {
-      log.info(
-          "[[ CodBi / AI / Tesseract ]] Image preprocessing disabled (use X-Preprocess: true to enable)")
+      log.info("$logSignature Image preprocessing disabled (use X-Preprocess: true to enable)")
 
       return image
     }
 
-    return applyPreprocessing(image, useAdaptive)?.image ?: image
+    return applyPreprocessing(image, useAdaptive, logSignature)?.image ?: image
   }
 
   /**
@@ -77,9 +84,14 @@ object ImagePreprocessor {
    * @param useAdaptive When true, uses adaptive (local mean) thresholding instead of global Otsu.
    *   Adaptive thresholding handles uneven lighting and shadows better, making it suitable for
    *   difficult camera captures.
+   * @param logSignature Signature prefix shown in logs to identify the caller context.
    * @return The preprocessing result, or null if preprocessing fails.
    */
-  fun applyPreprocessing(image: BufferedImage, useAdaptive: Boolean = false): PreprocessResult? {
+  fun applyPreprocessing(
+      image: BufferedImage,
+      useAdaptive: Boolean = false,
+      logSignature: String = DEFAULT_LOG_SIGNATURE
+  ): PreprocessResult? {
     try {
       val grayscaleImage = BufferedImage(image.width, image.height, BufferedImage.TYPE_BYTE_GRAY)
       val graphics = grayscaleImage.createGraphics()
@@ -102,13 +114,11 @@ object ImagePreprocessor {
 
       val mode = if (useAdaptive) "adaptive" else "Otsu"
 
-      log.info(
-          "[[ CodBi / AI / Tesseract ]] Image preprocessing successful: mode=$mode, threshold=$threshold")
+      log.info("$logSignature Image preprocessing successful: mode=$mode, threshold=$threshold")
 
       return PreprocessResult(denoisedImage, threshold)
-    } catch (X: Exception) {
-      log.error(
-          "[[ CodBi / AI / Tesseract ]] Image preprocessing failed, using original image: ${X.message}")
+    } catch (e: Exception) {
+      log.error("$logSignature Image preprocessing failed, using original image: ${e.message}")
 
       return null
     }
@@ -117,6 +127,10 @@ object ImagePreprocessor {
   /**
    * Otsu global thresholding: computes an optimal global threshold by maximizing inter-class
    * variance.
+   *
+   * @param grayscale The grayscale source image.
+   * @param output The output binary image to write pixels into.
+   * @return The computed optimal threshold value (0–255).
    */
   private fun applyOtsuThreshold(grayscale: BufferedImage, output: BufferedImage): Int {
     val w = grayscale.width
@@ -177,8 +191,11 @@ object ImagePreprocessor {
    * pixel is compared against the mean of its surrounding block; this handles uneven lighting and
    * shadows that degrade global Otsu thresholding.
    *
+   * @param grayscale The grayscale source image.
+   * @param output The output binary image to write pixels into.
    * @param blockSize Side length of the local neighborhood (must be odd). Defaults to 15.
    * @param C Constant subtracted from the local mean; positive values bias toward white.
+   * @return The average threshold value across all pixels.
    */
   private fun applyAdaptiveThreshold(
       grayscale: BufferedImage,
@@ -189,8 +206,6 @@ object ImagePreprocessor {
     val w = grayscale.width
     val h = grayscale.height
     val halfBlock = blockSize / 2
-
-    // Build integral image (use Long to avoid overflow on large images)
     val integral = LongArray((w + 1) * (h + 1))
     val stride = w + 1
 
@@ -234,6 +249,9 @@ object ImagePreprocessor {
   /**
    * 3×3 median filter for binary image denoising. Uses a fixed-size primitive buffer instead of
    * per-pixel list allocation to minimize GC pressure on large images.
+   *
+   * @param binarized The binary image to denoise.
+   * @return A new denoised binary image.
    */
   private fun applyMedianDenoise(binarized: BufferedImage): BufferedImage {
     val w = binarized.width

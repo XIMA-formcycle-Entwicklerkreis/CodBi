@@ -19,16 +19,6 @@ import java.io.File
 /**
  * # Base class for AI models served via a local LLAMA server process.
  *
- * ## Phases
- * 1. **Intelligence** — Detect OS (`os.name`) and architecture (`os.arch`)
- * 2. **Fetch** — Download the correct LLAMA-Server binary + GGUF model (with resume support)
- * 3. **Ignition** — Launch the server via [ProcessBuilder] on a local port
- * 4. **Request** — All inference goes through `http://127.0.0.1:{port}/v1/chat/completions`.
- *
- * ## Crash isolation
- * Because the AI runs in a **separate OS process**, if the model runs out of RAM, the OS kills the
- * LLAMA-Server process but the Formcycle Tomcat JVM does not even feel a bump.
- *
  * ## Plugin properties
  * |Property                    |Default       |Description                                       |
  * |----------------------------|--------------|--------------------------------------------------|

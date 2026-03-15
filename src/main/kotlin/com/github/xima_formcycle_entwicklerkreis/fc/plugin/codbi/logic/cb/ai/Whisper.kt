@@ -34,6 +34,7 @@ import java.io.File
  * |`AI_Whisper_ModelUrl`         |URL   |ggml-small    |GGML model URL. Alternatives: ggml-base, ggml-medium, ggml-large-v3-turbo-q5_0                                                         |
  * |`AI_Whisper_Port`             |Int   |`8393`        |Local port for whisper-server                                                                                                          |
  * |`AI_Whisper_Release`          |String|`v1.7.6`      |whisper.cpp release tag for binary downloads                                                                                           |
+ * |`AI_Whisper_ReleaseBaseUrl`   |URL   |GitHub release|Base URL prefix used to download whisper.cpp release assets (release tag is appended automatically).                                   |
  * |`AI_Whisper_NoGpu`            |Bool  |`false`       |Set `true` to disable GPU and force CPU-only                                                                                           |
  * |`AI_Whisper_Threads`          |Int   |physical cores|CPU threads for whisper-server                                                                                                         |
  * |`AI_Whisper_MaxRAMPercent`    |Double|`101.0`       |RAM usage threshold (%) — blocks requests when exceeded                                                                                |
@@ -66,6 +67,9 @@ class Whisper : AI() {
         "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin"
     /** Default whisper.cpp release tag. Pre-built binaries started from v1.7.6. */
     private const val DEFAULT_WHISPER_RELEASE = "v1.7.6"
+    /** Default base URL prefix for whisper.cpp release downloads. */
+    private const val DEFAULT_WHISPER_RELEASE_BASE_URL =
+        "https://github.com/ggml-org/whisper.cpp/releases/download"
   }
 
   // endregion Companion Object
@@ -76,6 +80,8 @@ class Whisper : AI() {
   private var serverPort = 8393
   /** whisper.cpp GitHub release tag used to resolve binary download URLs. */
   private var whisperRelease = DEFAULT_WHISPER_RELEASE
+  /** Base URL prefix used to resolve whisper.cpp release asset downloads. */
+  private var whisperReleaseBaseUrl = DEFAULT_WHISPER_RELEASE_BASE_URL
   /** When `true`, GPU acceleration is disabled and whisper-server runs in CPU-only mode. */
   private var noGpu = false
   /**
@@ -84,7 +90,6 @@ class Whisper : AI() {
    */
   private var threadCount: Int? = null
 
-  // ── External mode (OpenAI-compatible API) ─────────────────────────────
   /** Base URL of an external OpenAI-compatible speech-to-text API, or `null` for local mode. */
   private var externalUrl: String? = null
   /** Bearer token / API key for the external API. */
@@ -95,7 +100,6 @@ class Whisper : AI() {
   private val isExternalMode: Boolean
     get() = externalUrl != null
 
-  // ── Resource monitoring thresholds ───────────────────────────────────
   /** RAM usage threshold (%). Requests are blocked when system RAM exceeds this value. */
   private var maxRAMPercent = 101.0
   /**
@@ -147,6 +151,8 @@ class Whisper : AI() {
    *
    * @param configData Plugin configuration providing properties and file-system helpers.
    */
+  private lateinit var pluginProperties: java.util.Properties
+
   override fun initialize(configData: IPluginInitializeData) {
     super.initialize(configData)
 
@@ -175,6 +181,7 @@ class Whisper : AI() {
     // endregion Set up directories
     // region Read plugin properties
     readPluginProperties(configData)
+    pluginProperties = configData.properties
     // endregion Read plugin properties
     // region External mode — skip all local infrastructure.
     if (isExternalMode) {
@@ -191,12 +198,14 @@ class Whisper : AI() {
     log(LogLevel.INFO, "  Dir:     ${whisperDir!!.absolutePath}")
     log(LogLevel.INFO, "  Port:    $serverPort")
     log(LogLevel.INFO, "  Release: $whisperRelease")
+    log(LogLevel.INFO, "  Release base URL: $whisperReleaseBaseUrl")
     log(LogLevel.INFO, "  Model:   $modelUrl")
     log(LogLevel.INFO, "  GPU:     ${if (noGpu) "disabled (CPU-only)" else "enabled (auto)"}")
     // endregion Log server stats.
     serverManager.startAsync(
         preferredPort = serverPort,
         whisperRelease = whisperRelease,
+        whisperReleaseBaseUrl = whisperReleaseBaseUrl,
         modelUrl = modelUrl,
         modelsDir = modelsDir!!,
         binDir = binDir!!,
@@ -235,7 +244,8 @@ class Whisper : AI() {
         externalModel = externalModel,
         modelUrl = modelUrl,
         ffmpegAvailable = serverManager.ffmpegAvailable,
-        autoDetectLanguage = autoDetectLanguage)
+        autoDetectLanguage = autoDetectLanguage,
+        pluginProperties = pluginProperties)
   }
 
   // endregion Servlet
@@ -262,6 +272,13 @@ class Whisper : AI() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { whisperRelease = it }
+
+    configData.properties
+        .getProperty("${PROP_PREFIX}_ReleaseBaseUrl")
+        ?.trim()
+        ?.trimEnd('/')
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { whisperReleaseBaseUrl = it }
 
     configData.properties.getProperty("${PROP_PREFIX}_NoGpu")?.trim()?.lowercase()?.let {
       noGpu = it == "true" || it == "1"

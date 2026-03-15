@@ -2,7 +2,41 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.ll
 
 import java.io.File
 
-/** Immutable configuration parsed from plugin properties (all `AI_LLAMA_STD_*` keys). */
+/**
+ * Immutable configuration parsed from plugin properties (all `AI_LLAMA_STD_*` keys).
+ *
+ * @param modelUrl Download URL for the main GGUF model.
+ * @param mmprojUrl Download URL for the multimodal projection model (vision).
+ * @param externalUrl Base URL of an external OpenAI-compatible API, or `null` for local mode.
+ * @param externalApiKey API key for the external service, or `null`.
+ * @param externalModel Model name to request from the external API, or `null`.
+ * @param externalNoPrompt When `true`, skip injecting the system prompt in external mode.
+ * @param thinkingModelUrl Download URL for a separate thinking/reasoning model, or `null`.
+ * @param thinkingMmprojUrl Download URL for the thinking model's multimodal projection, or `null`.
+ * @param promptIdentity Custom identity/system prompt override, or `null` for the built-in default.
+ * @param promptLocation Custom location prompt template, or `null`.
+ * @param promptSearch Custom search-tool instruction prompt, or `null`.
+ * @param promptThinking Custom thinking-mode instruction prompt, or `null`.
+ * @param promptNoInternet Custom prompt appended when web search is disabled, or `null`.
+ * @param promptRules Custom rules/constraints appended to the system prompt, or `null`.
+ * @param maxPixels Maximum total pixels allowed in uploaded images before down-scaling.
+ * @param maxUploadBytes Maximum upload size in bytes for image/audio payloads.
+ * @param maxTokens Maximum tokens the model may generate per response.
+ * @param maxRAMPercent RAM utilization threshold (0–100) above which requests are rejected.
+ * @param maxComputePercent Compute utilization threshold (0–100) above which requests are rejected.
+ * @param checkIntervalHours Interval (in hours) between llama.cpp release update checks.
+ * @param notifyEmail Email address to notify when a new llama.cpp release is available, or `null`.
+ * @param pluginFolder Plugin root folder on disk. `null` when the plugin framework does not provide
+ *   a folder (e.g. during unit tests or when the plugin is loaded from a non-file source). When
+ *   `null`, features that depend on local file access are silently skipped (SMTP mail config
+ *   lookup, file-based caching).
+ * @param fallbackLocation Default location string used when IP geolocation fails, or `null`.
+ * @param nominatimDomain Domain used for OpenStreetMap Nominatim reverse geocoding requests.
+ * @param ipGeolocationDomain Domain used for IP geolocation requests.
+ * @param maxSearchRoundTrips Maximum number of search round-trips the model may perform before the
+ *   answer is returned. On intermediate rounds the model is told it may issue another search if
+ *   results are insufficient; on the final round it is instructed to give a direct answer.
+ */
 internal data class StandardConfig(
     val modelUrl: String,
     val mmprojUrl: String,
@@ -25,24 +59,10 @@ internal data class StandardConfig(
     val maxComputePercent: Double,
     val checkIntervalHours: Long,
     val notifyEmail: String?,
-    /**
-     * Plugin root folder on disk. `null` when the plugin framework does not provide a folder (e.g.
-     * during unit tests or when the plugin is loaded from a non-file source). When `null`, features
-     * that depend on local file access are silently skipped:
-     * - SMTP mail config lookup ([NotificationService])
-     * - Any future file-based caching
-     */
     val pluginFolder: File?,
     val fallbackLocation: String?,
-    /** Domain used for OpenStreetMap Nominatim reverse geocoding requests. */
     val nominatimDomain: String,
-    /** Domain used for IP geolocation requests. */
     val ipGeolocationDomain: String,
-    /**
-     * Maximum number of search round-trips the model may perform before the answer is returned. On
-     * intermediate rounds the model is told it may issue another search if results are
-     * insufficient; on the final round it is instructed to give a direct answer. Default: 2.
-     */
     val maxSearchRoundTrips: Int = 2
 ) {
   init {
@@ -58,12 +78,15 @@ internal data class StandardConfig(
     }
   }
 
+  /** `true` when an external OpenAI-compatible API is configured instead of the local server. */
   val isExternalMode: Boolean
     get() = externalUrl != null
 
+  /** `true` when a separate thinking/reasoning model URL is configured. */
   val hasThinkingModel: Boolean
     get() = thinkingModelUrl != null
 
+  /** Returns a summary string with the API key redacted. */
   override fun toString(): String =
       "StandardConfig(modelUrl=$modelUrl, externalUrl=$externalUrl, " +
           "externalApiKey=${if (externalApiKey != null) "****" else "null"}, " +

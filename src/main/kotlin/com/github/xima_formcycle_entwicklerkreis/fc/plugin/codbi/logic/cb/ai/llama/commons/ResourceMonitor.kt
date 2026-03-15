@@ -8,6 +8,13 @@ import java.util.concurrent.ExecutorService
 /**
  * Periodically polls CPU, RAM, and (when CUDA is active) GPU utilization. Used by the servlet to
  * gate incoming requests when resources are exhausted.
+ *
+ * @param detectedGpu The GPU backend detected on the current platform.
+ * @param gpuLayers Number of model layers offloaded to GPU (0 = CPU only).
+ * @param maxComputePercent Threshold (0–100) above which compute (CPU or GPU) is considered
+ *   exhausted.
+ * @param maxRAMPercent Threshold (0–100) above which RAM is considered exhausted.
+ * @param log Logger callback for diagnostic messages.
  */
 internal class ResourceMonitor(
     private val detectedGpu: GpuBackend,
@@ -18,7 +25,11 @@ internal class ResourceMonitor(
 ) : Runnable {
   private var future: java.util.concurrent.Future<*>? = null
 
-  /** Submits this monitor to the given executor and stores the resulting [Future]. */
+  /**
+   * Submits this monitor to the given executor and stores the resulting [Future].
+   *
+   * @param exec The executor service that will run the monitoring loop.
+   */
   fun start(exec: ExecutorService) {
     future = exec.submit(this)
   }
@@ -108,8 +119,10 @@ internal class ResourceMonitor(
         osMxBean?.let {
           cpuPercent = it.cpuLoad * 100.0
           val totalMem = it.totalMemorySize.toDouble()
-          val freeMem = it.freeMemorySize.toDouble()
-          ramPercent = if (totalMem > 0) (totalMem - freeMem) / totalMem * 100.0 else 0.0
+
+          ramPercent =
+              if (totalMem > 0) (totalMem - it.freeMemorySize.toDouble()) / totalMem * 100.0
+              else 0.0
         }
 
         if (gpuPollingAvailable) {
@@ -126,15 +139,25 @@ internal class ResourceMonitor(
     }
   }
 
-  /** Queries `nvidia-smi` for the current GPU utilization percentage. */
+  /**
+   * Queries `nvidia-smi` for the current GPU utilization percentage.
+   *
+   * @return GPU utilization (0–100), or the last known value on error.
+   */
   private fun pollGpuUtilization(): Double {
     return try {
       val proc = gpuProcessBuilder.start()
-      val output = proc.inputStream.bufferedReader().readText().trim()
 
       proc.waitFor()
 
-      output.lines().firstOrNull()?.trim()?.toDoubleOrNull() ?: gpuPercent
+      proc.inputStream
+          .bufferedReader()
+          .readText()
+          .trim()
+          .lines()
+          .firstOrNull()
+          ?.trim()
+          ?.toDoubleOrNull() ?: gpuPercent
     } catch (X: Exception) {
       gpuPercent
     }
@@ -175,14 +198,14 @@ internal class ResourceMonitor(
    * @return Seconds to wait, clamped to 5–120.
    */
   fun estimateWaitSeconds(): Int {
-    val computeOver = (computePercent - maxComputePercent).coerceAtLeast(0.0)
-    val ramOver = (ramPercent - maxRAMPercent).coerceAtLeast(0.0)
-
-    // Every 5 percentage points of total overage ≈ 1 extra second of wait.
-    // E.g. CPU 20% over + RAM 10% over = 30% total → 6s wait (clamped to 5–120).
+    // Every 5 percentage points of total overage ≈ 1 extra second of wait e.g. CPU 20% over + RAM
+    // 10% over = 30% total → 6s wait (clamped to 5–120).
     val overageToSecondsDivisor = 5.0
 
-    return ((computeOver + ramOver) / overageToSecondsDivisor).toInt().coerceIn(5, 120)
+    return (((computePercent - maxComputePercent).coerceAtLeast(0.0) +
+            (ramPercent - maxRAMPercent).coerceAtLeast(0.0)) / overageToSecondsDivisor)
+        .toInt()
+        .coerceIn(5, 120)
   }
 
   /** Stops the monitoring loop and cancels the background task. */

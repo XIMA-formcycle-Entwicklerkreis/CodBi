@@ -333,7 +333,8 @@
         "ij"
       ],
       "strongMarkers": [" het ", " zijn ", " heeft ", " dat ", " dit ", " maar "],
-      "markerThreshold": 3
+      "markerThreshold": 3,
+      "strongMarkerThreshold": 2
     },
     "turkish": {
       "userTurn": "Türkçe konuşalım.",
@@ -472,12 +473,7 @@
       "uiCopyReasoningLabel": "Рассуждение"
     }
   },
-  "scriptDetection": {
-    "japanese": { "hiraganaKatakanaMin": 2, "cjkWithKanaMin": 2 },
-    "korean": { "hangulMin": 2 },
-    "chinese": { "cjkMin": 2 },
-    "russian": { "cyrillicMin": 3 }
-  },
+  "markerDetectionOrder": ["german", "dutch", "italian", "portuguese", "french", "spanish", "turkish"],
   "aliases": {
     "deutsch": "german",
     "italiano": "italian",

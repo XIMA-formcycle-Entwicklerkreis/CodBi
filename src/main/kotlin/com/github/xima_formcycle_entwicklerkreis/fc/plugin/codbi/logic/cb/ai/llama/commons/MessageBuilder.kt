@@ -44,17 +44,8 @@ internal class MessageBuilder(
   ): String {
     val messages = JsonArray()
 
-    val now = java.time.LocalDateTime.now()
-    val today =
-        now.format(
-            java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.ENGLISH))
-    val currentTime =
-        now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.ENGLISH))
-
     val systemPrompt =
         buildSystemPrompt(
-            today,
-            currentTime,
             searchEnabled,
             enableThinking,
             detectedLang,
@@ -98,16 +89,16 @@ internal class MessageBuilder(
     messages.add(buildUserTurn(question, imageParts))
 
     if (enableThinking) {
-      val thinkSeed = if (lang != null) lang.thinkSeed else "Think briefly. Do NOT repeat yourself."
-      messages.add(message("assistant", "<think>\n$thinkSeed"))
+      messages.add(
+          message(
+              "assistant",
+              "<think>\n${lang?.thinkSeed ?: "Think briefly. Do NOT repeat yourself."}"))
     }
 
     return gsonCompact.toJson(messages)
   }
 
   private fun buildSystemPrompt(
-      today: String,
-      currentTime: String,
       searchEnabled: Boolean,
       enableThinking: Boolean,
       detectedLang: DetectedLanguage?,
@@ -118,7 +109,7 @@ internal class MessageBuilder(
     if (isExternalMode && externalNoPrompt) return ""
 
     return buildString {
-      appendIdentityPrompt(today, currentTime)
+      appendIdentityPrompt()
       appendLocationPrompt(locationEnabled, userLocation)
 
       if (searchEnabled && BraveSearch.isAvailable) {
@@ -137,7 +128,13 @@ internal class MessageBuilder(
     }
   }
 
-  private fun StringBuilder.appendIdentityPrompt(today: String, currentTime: String) {
+  private fun StringBuilder.appendIdentityPrompt() {
+    val now = java.time.LocalDateTime.now()
+    val today =
+        now.format(
+            java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.ENGLISH))
+    val currentTime =
+        now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.ENGLISH))
     if (promptIdentity != null) {
       append(promptIdentity.replace("{date}", today).replace("{time}", currentTime))
       append(" ")
@@ -235,17 +232,15 @@ internal class MessageBuilder(
       append("Example: user asks about weather → CALL:search(query='$weatherQ $shortLocation'). ")
       append("Example: user asks where to eat → CALL:search(query='$localQ $shortLocation'). ")
     } else {
-      val weatherSuffix =
-          if (detectedLang == null || detectedLang.languageName == "English") " tomorrow" else ""
-      append("Example: user asks about weather → CALL:search(query='$weatherQ$weatherSuffix'). ")
+      append(
+          "Example: user asks about weather → CALL:search(query='$weatherQ${if (detectedLang == null || detectedLang.languageName == "English") " tomorrow" else ""}'). ")
       append("Example: user asks where to eat → CALL:search(query='$localQ'). ")
     }
   }
 
   private fun StringBuilder.appendThinkingInstructions(detectedLang: DetectedLanguage?) {
     if (promptThinking != null) {
-      val langName = detectedLang?.languageName ?: "English"
-      append(promptThinking.replace("{language}", langName))
+      append(promptThinking.replace("{language}", detectedLang?.languageName ?: "English"))
       append(" ")
     } else {
       append("THINKING MODE: You MUST reason thoroughly FIRST inside <think>...</think>. ")

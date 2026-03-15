@@ -1,5 +1,5 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons
-
+/** The regular expression matching `<think>…</think>` blocks. */
 private val THINK_BLOCK_REGEX = Regex("<think>[\\s\\S]*?</think>")
 
 /**

@@ -1,10 +1,66 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Assessment: ThinkingServerManager.kt</title><style>body{font-family:Segoe UI,Arial,sans-serif;max-width:960px;margin:36px auto;padding:0 20px;background:#f8fafc;color:#1f1f1f}h1{color:#0b5cab;border-bottom:2px solid #0b5cab;padding-bottom:8px}h2{color:#114a86;margin-top:28px}.meta{background:#eaf2ff;border-left:4px solid #0b5cab;padding:10px 12px}.ok{border-left:4px solid #1a7f37;background:#f4fbf6;padding:10px 12px;margin:10px 0}.risk{border-left:4px solid #c2410c;background:#fff7f2;padding:10px 12px;margin:10px 0}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{border:1px solid #d4d8de;padding:8px 10px}th{background:#0b5cab;color:#fff}</style></head><body>
-<h1>Assessment: ThinkingServerManager.kt</h1>
-<div class="meta">Date: March 14, 2026 | Branch: Designer_Interface | Repository: CodBi-Dev<br/>File: src/main/kotlin/.../commons/ThinkingServerManager.kt</div>
-<h2>Overview</h2><p>Manages lifecycle of the dedicated thinking model server process, including startup, health checks, port selection, and shutdown.</p>
-<h2>Strengths</h2><div class="ok">Explicit lifecycle methods keep process ownership clear.</div><div class="ok">Health polling before ready-state reduces startup race issues.</div><div class="ok">Separate stream readers for process output reduce deadlock risk.</div>
-<h2>Weaknesses</h2><div class="risk">Embedded single-line Jinja template is difficult to maintain and review.</div><div class="risk">Port probe pattern can introduce a small time-of-check/time-of-use race.</div><div class="risk">Hardcoded startup timeout and shutdown sequencing reduce configurability and resilience.</div>
-<h2>Summary</h2><table><tr><th>Category</th><th>Rating</th><th>Notes</th></tr><tr><td>Readability</td><td>3/5</td><td>Lifecycle is clear; template embedding hurts clarity.</td></tr><tr><td>Maintainability</td><td>3/5</td><td>Resource/template handling and magic values should be externalized.</td></tr><tr><td>Robustness</td><td>4/5</td><td>Solid process management baseline with some edge-case risks.</td></tr><tr><td>Testability</td><td>2/5</td><td>Process-heavy behavior is harder to unit test directly.</td></tr></table>
-<h2>Priority Recommendations</h2><ol><li>Move the Jinja template into a resource file for readability and versioning.</li><li>Make health-check timeout configurable.</li><li>Refine shutdown to ensure stream-reader tasks terminate cleanly.</li></ol>
-</body></html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Assessment: ThinkingServerManager.kt</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; max-width: 980px; margin: 36px auto; padding: 0 20px; background: #f8fafc; color: #1f2937; }
+    h1 { color: #0b5cab; border-bottom: 2px solid #0b5cab; padding-bottom: 8px; }
+    h2 { color: #114a86; margin-top: 24px; }
+    .meta { background: #eaf2ff; border-left: 4px solid #0b5cab; padding: 10px 12px; border-radius: 4px; }
+    .box { background: #ffffff; border: 1px solid #d8dee8; border-radius: 6px; padding: 12px 14px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { border: 1px solid #d4d8de; padding: 8px 10px; text-align: left; }
+    th { background: #0b5cab; color: #ffffff; }
+  </style>
+</head>
+<body>
+  <h1>Initial Assessment: ThinkingServerManager.kt</h1>
+  <div class="meta">
+    Date: March 15, 2026<br/>
+    Scope: First-pass code assessment<br/>
+    File: src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ai/llama/commons/ThinkingServerManager.kt
+  </div>
+
+  <h2>Overview</h2>
+  <div class="box">
+    <p>Manages lifecycle and health of the dedicated thinking-model server, including startup, readiness, and shutdown.</p>
+  </div>
+
+  <h2>Strengths</h2>
+  <div class="box">
+    <ul>
+      <li>Strong separation between main and thinking server concerns.</li>
+      <li>Lifecycle orchestration is centralized.</li>
+      <li>Improves maintainability versus embedding server logic in callers.</li>
+    </ul>
+  </div>
+
+  <h2>Risks</h2>
+  <div class="box">
+    <ul>
+      <li>Process management is platform-sensitive and failure-prone.</li>
+      <li>Port/readiness races can occur at startup.</li>
+      <li>Operational complexity increases with multiple model servers.</li>
+    </ul>
+  </div>
+
+  <h2>Recommendations</h2>
+  <div class="box">
+    <ol>
+      <li>Harden startup retry/readiness checks.</li>
+      <li>Improve diagnostics for process launch failures.</li>
+      <li>Add integration tests for lifecycle edge cases.</li>
+    </ol>
+  </div>
+
+  <h2>Summary</h2>
+  <table>
+    <tr><th>Category</th><th>Rating</th><th>Notes</th></tr>
+    <tr><td>Architecture</td><td>4/5</td><td>Initial design assessment based on current structure.</td></tr>
+    <tr><td>Maintainability</td><td>4/5</td><td>First-pass estimate of readability and change safety.</td></tr>
+    <tr><td>Reliability</td><td>3.5/5</td><td>Operational robustness estimate for current implementation.</td></tr>
+  </table>
+</body>
+</html>

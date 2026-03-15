@@ -6,11 +6,26 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.BraveS
 /**
  * Handles `CALL:search(query='...')` tool calls emitted by the model. Performs Brave web searches
  * and re-queries the model with injected search results — both synchronous and streaming variants.
+ *
+ * @param maxSearchRoundTrips Maximum number of search-then-answer iterations before forcing a
+ *   direct answer.
+ * @param searchFollowUpPrompt Builds the follow-up prompt given the original question, detected
+ *   language, and whether this is the last round.
+ * @param buildMessages Builds the OpenAI-compatible messages JSON for a chat completion request.
+ * @param chatCompletion Sends a synchronous chat completion and returns the response text.
+ * @param streamChatCompletion Sends a streaming chat completion, populating the given session.
+ * @param log Logger callback for diagnostic messages.
  */
 internal class WebSearchHandler(
+    /** Maximum number of search-then-answer iterations before forcing a direct answer. */
     private val maxSearchRoundTrips: Int,
+    /**
+     * Builds the follow-up prompt given the original question, detected language, and whether this
+     * is the last round.
+     */
     private val searchFollowUpPrompt:
         (originalQuestion: String, detectedLang: DetectedLanguage?, isLastRound: Boolean) -> String,
+    /** Builds the OpenAI-compatible messages JSON for a chat completion request. */
     private val buildMessages:
         (
             question: String,
@@ -21,20 +36,39 @@ internal class WebSearchHandler(
             detectedLang: DetectedLanguage?,
             locationEnabled: Boolean,
             userLocation: String?) -> String,
+    /** Sends a synchronous chat completion and returns the response text. */
     private val chatCompletion:
         (
             messagesJson: String,
             enableThinking: Boolean,
             idSlot: Int,
             maxThinkingTokens: Int?) -> String,
+    /** Sends a streaming chat completion, populating the given session. */
     private val streamChatCompletion:
         (
             messagesJson: String,
             session: StreamingSession,
             enableThinking: Boolean,
             idSlot: Int) -> Unit,
+    /** Logger callback for diagnostic messages. */
     private val log: (LogLevel, String) -> Unit
 ) {
+
+  /**
+   * Appends the user's short location to the search query when it is not already present.
+   *
+   * @param rawQuery The original search query from the model.
+   * @param userLocation The user's location string, or `null` if unavailable.
+   * @return The enriched query, or the original if location is absent or already included.
+   */
+  private fun enrichQuery(rawQuery: String, userLocation: String?): String {
+    if (userLocation == null) return rawQuery
+    val shortLocation = userLocation.substringBefore(",").trim()
+    if (shortLocation.isEmpty() || rawQuery.contains(shortLocation, ignoreCase = true))
+        return rawQuery
+    return "$rawQuery $shortLocation"
+        .also { log(LogLevel.INFO, "Location-enriched search query: '$it'") }
+  }
 
   /**
    * Checks if the model's response contains a `CALL:search(query='...')` marker. If so, performs a
@@ -51,16 +85,6 @@ internal class WebSearchHandler(
    * @param userLocation Resolved user location string.
    * @return The final answer (either the original or the search-augmented one).
    */
-  /** Appends the user's short location to the search query when it is not already present. */
-  private fun enrichQuery(rawQuery: String, userLocation: String?): String {
-    if (userLocation == null) return rawQuery
-    val shortLocation = userLocation.substringBefore(",").trim()
-    if (shortLocation.isEmpty() || rawQuery.contains(shortLocation, ignoreCase = true))
-        return rawQuery
-    return "$rawQuery $shortLocation"
-        .also { log(LogLevel.INFO, "Location-enriched search query: '$it'") }
-  }
-
   fun handleSearchToolCall(
       initialAnswer: String,
       originalQuestion: String,

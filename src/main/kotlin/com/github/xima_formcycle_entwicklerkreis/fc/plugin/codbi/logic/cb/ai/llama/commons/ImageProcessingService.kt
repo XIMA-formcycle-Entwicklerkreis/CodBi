@@ -58,10 +58,8 @@ internal class ImageProcessingService(
           return@forEach
         }
 
-        val base64 = dataUrl.substringAfter(",")
-
         try {
-          val bytes = java.util.Base64.getDecoder().decode(base64)
+          val bytes = java.util.Base64.getDecoder().decode(dataUrl.substringAfter(","))
 
           if (bytes.isNotEmpty()) {
             fileDataMap[imageName] = bytes
@@ -89,66 +87,63 @@ internal class ImageProcessingService(
    * @return List of base64-encoded PNG strings (data URI format: `data:image/png;base64,...`)
    */
   fun prepareImageParts(fileDataMap: Map<String, ByteArray>, manualRotation: Int?): List<String> {
-    val entries =
-        fileDataMap.entries.sortedWith(
+    return fileDataMap.entries
+        .sortedWith(
             compareBy {
               Regex("_(\\d+)\\.[^.]+$").find(it.key)?.groupValues?.get(1)?.toIntOrNull() ?: 0
             })
+        .mapNotNull { (inputName, imageBytes) ->
+          try {
+            if (imageBytes.size > maxUploadBytes) {
+              log(
+                  LogLevel.WARNING,
+                  "Image '$inputName' exceeds ${maxUploadBytes / (1024 * 1024)} MB limit " +
+                      "(${imageBytes.size} bytes) — skipping")
 
-    return entries.mapNotNull { (inputName, imageBytes) ->
-      try {
-        if (imageBytes.size > maxUploadBytes) {
-          log(
-              LogLevel.WARNING,
-              "Image '$inputName' exceeds ${maxUploadBytes / (1024 * 1024)} MB limit " +
-                  "(${imageBytes.size} bytes) — skipping")
-
-          return@mapNotNull null
-        }
-
-        val rotatedBytes = run {
-          val buf = ImageIO.read(ByteArrayInputStream(imageBytes)) ?: return@run imageBytes
-          val degrees =
-              if (manualRotation != null && manualRotation != 0) {
-                manualRotation
-              } else if (TesseractAction.isOsdAvailable) {
-                val detected = TesseractAction.detectOrientation(buf)
-
-                if (detected != 0) {
-                  log(
-                      LogLevel.INFO,
-                      "Tesseract OSD auto-detected rotation for '$inputName': ${detected}°")
-                }
-
-                detected
-              } else 0
-
-          if (degrees != 0) {
-            when (degrees) {
-              90,
-              180,
-              270 -> {
-                val rotated = rotateImage(buf, degrees)
-                val baos = ByteArrayOutputStream()
-                ImageIO.write(rotated, "PNG", baos)
-                baos.toByteArray()
-              }
-              else -> imageBytes
+              return@mapNotNull null
             }
-          } else imageBytes
+
+            val rotatedBytes = run {
+              val buf = ImageIO.read(ByteArrayInputStream(imageBytes)) ?: return@run imageBytes
+              val degrees =
+                  if (manualRotation != null && manualRotation != 0) {
+                    manualRotation
+                  } else if (TesseractAction.isOsdAvailable) {
+                    val detected = TesseractAction.detectOrientation(buf)
+
+                    if (detected != 0) {
+                      log(
+                          LogLevel.INFO,
+                          "Tesseract OSD auto-detected rotation for '$inputName': ${detected}°")
+                    }
+
+                    detected
+                  } else 0
+
+              if (degrees != 0) {
+                when (degrees) {
+                  90,
+                  180,
+                  270 -> {
+                    val baos = ByteArrayOutputStream()
+                    ImageIO.write(rotateImage(buf, degrees), "PNG", baos)
+                    baos.toByteArray()
+                  }
+                  else -> imageBytes
+                }
+              } else imageBytes
+            }
+
+            val finalBytes = downscaleIfNeeded(rotatedBytes)
+
+            log(LogLevel.INFO, "Image '$inputName' prepared: ${finalBytes.size} bytes → base64")
+            "data:image/png;base64,${java.util.Base64.getEncoder().encodeToString(finalBytes)}"
+          } catch (e: Exception) {
+            log(LogLevel.WARNING, "Failed to prepare image '$inputName': ${e.message}")
+
+            null
+          }
         }
-
-        val finalBytes = downscaleIfNeeded(rotatedBytes)
-        val base64 = java.util.Base64.getEncoder().encodeToString(finalBytes)
-
-        log(LogLevel.INFO, "Image '$inputName' prepared: ${finalBytes.size} bytes → base64")
-        "data:image/png;base64,$base64"
-      } catch (e: Exception) {
-        log(LogLevel.WARNING, "Failed to prepare image '$inputName': ${e.message}")
-
-        null
-      }
-    }
   }
 
   /**

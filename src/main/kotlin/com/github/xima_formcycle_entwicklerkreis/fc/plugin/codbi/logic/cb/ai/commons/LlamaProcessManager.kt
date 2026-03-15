@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  * @param log Logging callback `(LogLevel, message)`.
  */
 class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
-
+  /** The Companion for static members. */
   companion object {
     /** How long to wait for the server to become healthy after launch. */
     const val SERVER_START_TIMEOUT_MS = 120_000L
@@ -77,9 +77,7 @@ class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
                 {
                   try {
                     BufferedReader(InputStreamReader(proc.inputStream)).use { reader ->
-                      reader.lineSequence().forEach { line ->
-                        log(LogLevel.INFO, "[LLAMA-Server] $line")
-                      }
+                      reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
                     }
                   } catch (_: Exception) {}
                 },
@@ -94,9 +92,7 @@ class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
                 {
                   try {
                     BufferedReader(InputStreamReader(proc.errorStream)).use { reader ->
-                      reader.lineSequence().forEach { line ->
-                        log(LogLevel.INFO, "[LLAMA-Server/err] $line")
-                      }
+                      reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
                     }
                   } catch (_: Exception) {}
                 },
@@ -189,7 +185,7 @@ class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
         }
 
         return candidate
-      } catch (_: Exception) {}
+      } catch (X: Exception) {}
     }
 
     return try {
@@ -276,12 +272,15 @@ class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
    * a plain-text "OK" from an older server build).
    *
    * Expected response: `{"status":"ok"}` (llama.cpp ≥ b2899).
+   *
+   * @param body The raw HTTP response body from `/health`.
+   * @return `true` if the status is `"ok"`.
    */
   private fun isHealthResponseOk(body: String): Boolean {
     return try {
       val obj = JsonParser.parseString(body).asJsonObject
       obj.get("status")?.asString?.equals("ok", ignoreCase = true) == true
-    } catch (_: Exception) {
+    } catch (X: Exception) {
       // Lenient fallback for non-JSON responses (e.g. plain "OK")
       body.trim().equals("ok", ignoreCase = true)
     }

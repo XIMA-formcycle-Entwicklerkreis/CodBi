@@ -19,7 +19,7 @@ object PlatformDetector {
    * @property exeName The expected executable name on this platform.
    */
   data class Platform(val os: String, val arch: String, val exeName: String) {
-    val needsChmod: Boolean // True if the server binary needs `chmod +x` before it can be executed.
+    val needsChmod: Boolean
       get() = os != "windows"
   }
 
@@ -59,7 +59,7 @@ object PlatformDetector {
         when {
           osArch.contains("aarch") || osArch == "arm64" -> "aarch64"
           osArch.contains("64") -> "x86_64"
-          else -> "x86_64" // fallback
+          else -> "x86_64"
         }
     val exeName = if (os == "windows") windowsExeName else unixExeName
 

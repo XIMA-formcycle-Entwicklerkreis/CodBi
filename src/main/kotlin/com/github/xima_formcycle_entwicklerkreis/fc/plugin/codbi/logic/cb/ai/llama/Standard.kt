@@ -90,40 +90,58 @@ class Standard : LLAMA() {
   }
 
   // endregion Constants
-
   // region Fields
   /** Immutable configuration parsed from plugin properties. */
   private lateinit var config: StandardConfig
   // region Thinking model state
   private var thinkingModelFile: File? = null
+  /** The multimodal vision projector file for the thinking model. */
   private var thinkingMmprojFile: File? = null
+  /** The server manager for the thinking model. */
   private var thinkingServer: ThinkingServerManager? = null
+  /** Whether the thinking server is ready to accept requests. */
   private val thinkingServerReady: Boolean
     get() = thinkingServer?.isReady == true
 
+  /** The port on which the thinking server is listening. */
   private val thinkingServerPort: Int
     get() = thinkingServer?.port ?: 0
 
   // endregion Thinking model state
   // region Model state
+  /** The resource monitor for the standard model. */
   private var resourceMonitor: ResourceMonitor? = null
+  /** The file for the standard model. */
   private var modelFile: File? = null
+  /** The multimodal vision projector file for the standard model. */
   private var mmprojFile: File? = null
+  /** The error encountered during model loading, if any. */
   @Volatile private var loadError: Throwable? = null
+  /** Whether the standard model server is ready to accept requests. */
   @Volatile private var serverReady = false
   // endregion Model state
   // region Thread pool
+  /** Counter for active threads in the executor service. */
   private val threadCounter = AtomicInteger(0)
+  /** The executor service for managing background tasks. */
   private var executor: ExecutorService? = null
   // endregion Thread pool
   // region Service instances
+  /** The image processing service instance. */
   private var imageService: ImageProcessingService? = null
+  /** The geolocation service instance. */
   private var geoService: GeoLocationService? = null
+  /** The language detection service instance. */
   private var langService: LanguageDetectionService? = null
+  /** The notification service instance. */
   private var notificationService: NotificationService? = null
+  /** The external AI client instance. */
   private var externalClient: ExternalAiClient? = null
+  /** The message builder instance. */
   private var messageBuilder: MessageBuilder? = null
+  /** The chat completion service instance. */
   private var chatCompletionService: ChatCompletionService? = null
+  /** The web search handler instance. */
   private var webSearchHandler: WebSearchHandler? = null
   // endregion Service instances
   // endregion Fields
@@ -142,12 +160,10 @@ class Standard : LLAMA() {
 
   /** Removes streaming sessions past their TTL: 5 min for normal, 10 min for thinking mode. */
   private fun cleanupStaleSessions() {
-    val now = System.currentTimeMillis()
-
     streamingSessions.entries.removeIf {
       val ttl = if (it.value.enableThinking) 10 * 60 * 1000L else 5 * 60 * 1000L
 
-      it.value.startTime + ttl < now
+      it.value.startTime + ttl < System.currentTimeMillis()
     }
   }
 
@@ -162,6 +178,9 @@ class Standard : LLAMA() {
 
   /**
    * Reads all `$PROP_PREFIX`-prefixed plugin properties and returns an immutable [StandardConfig].
+   *
+   * @param configData The plugin initialization payload containing all configured properties.
+   * @return The parsed and validated immutable runtime configuration.
    */
   private fun readPluginProperties(configData: IPluginInitializeData): StandardConfig {
     val props = configData.properties
@@ -175,9 +194,8 @@ class Standard : LLAMA() {
     // Side effects on LLAMA base class
     str("LlamaRelease")?.let { customRelease ->
       llamaRelease = customRelease
-      val rebuilt = buildServerUrls(customRelease)
       serverUrls.clear()
-      serverUrls.putAll(rebuilt)
+      serverUrls.putAll(buildServerUrls(customRelease))
       log(LogLevel.INFO, "Llama release overridden to: $customRelease")
     }
     serverUrls.keys.toList().forEach { platform ->
@@ -496,7 +514,11 @@ class Standard : LLAMA() {
     notificationService?.start(config.checkIntervalHours)
   }
 
-  /** Shuts down any existing resource monitor and starts a fresh one. */
+  /**
+   * Shuts down any existing resource monitor and starts a fresh one.
+   *
+   * @param logFn Logger callback used by the monitor for diagnostics.
+   */
   private fun startResourceMonitor(logFn: (LogLevel, String) -> Unit) {
     resourceMonitor?.shutdown()
     resourceMonitor =
@@ -550,6 +572,10 @@ class Standard : LLAMA() {
    * 1. [handleStreamPoll] -- returns the current state of an in-flight streaming session.
    * 2. [handleHealthCheck] -- returns server readiness, model info, and resource status.
    * 3. [handleNewQuestion] -- processes a new question (streaming or synchronous).
+   *
+   * @param params Servlet execution context with request headers and payload data.
+   * @return A JSON servlet response containing polling data, health state, or inference output.
+   * @throws FCPluginException If request handling fails unexpectedly.
    */
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
     try {
@@ -577,6 +603,10 @@ class Standard : LLAMA() {
   /**
    * Returns the current state of an in-flight streaming session identified by [pollId]. Handles
    * stop requests via X-Stream-Stop header.
+   *
+   * @param pollId The stream session identifier from `X-Stream-Poll`.
+   * @param params The current servlet action parameters and headers.
+   * @return A JSON response with stream text, completion flag, optional error, and metadata.
    */
   private fun handleStreamPoll(
       pollId: String,
@@ -650,7 +680,11 @@ class Standard : LLAMA() {
     return gsonResponse(response)
   }
 
-  /** Returns server readiness status, model info, and optional thinking-model state. */
+  /**
+   * Returns server readiness status, model info, and optional thinking-model state.
+   *
+   * @return A health-check response describing readiness or initialization errors.
+   */
   private fun handleHealthCheck(): IPluginServletActionRetVal {
     if (loadError != null) {
       return gsonResponse(ErrorResponse("Failed to initialize: ${loadError?.message ?: "unknown"}"))
@@ -658,6 +692,14 @@ class Standard : LLAMA() {
 
     if (!::config.isInitialized) {
       return gsonResponse(ErrorResponse("Plugin is still initializing. Please wait."))
+    }
+
+    if (config.isExternalMode) {
+      val probeError = externalClient?.probeAvailability()
+
+      if (probeError != null) {
+        return gsonResponse(ErrorResponse(probeError))
+      }
     }
 
     if (!config.isExternalMode && !serverReady) {
@@ -705,7 +747,12 @@ class Standard : LLAMA() {
       val wantsStream: Boolean
   )
 
-  /** Parses all request headers into a [RequestContext], or null if no questions were asked. */
+  /**
+   * Parses all request headers into a [RequestContext], or `null` if no questions were asked.
+   *
+   * @param params The servlet request context containing incoming headers and uploads.
+   * @return A parsed [RequestContext], or `null` when no question headers are present.
+   */
   private fun parseRequestHeaders(params: IPluginServletActionParams): RequestContext? {
     val questions = mutableMapOf<String, String>()
     params.headerMap.forEach { (headerName, headerValue) ->
@@ -829,7 +876,12 @@ class Standard : LLAMA() {
             })
   }
 
-  /** Resolves the user's location from coordinates or IP, or null if location is disabled. */
+  /**
+   * Resolves the user's location from coordinates or IP, or `null` if location is disabled.
+   *
+   * @param ctx Parsed request context containing location-related flags and values.
+   * @return A resolved location string, fallback location, or `null` when unavailable.
+   */
   private fun resolveLocation(ctx: RequestContext): String? {
     if (!ctx.locationEnabled) return null
     if (ctx.userLatitude != null && ctx.userLongitude != null)
@@ -837,7 +889,12 @@ class Standard : LLAMA() {
     return ctx.clientIP?.let { geoService!!.geolocateByIP(it) } ?: config.fallbackLocation
   }
 
-  /** Detects the language of the question using the model. */
+  /**
+   * Detects the language of the question using the configured inference backend.
+   *
+   * @param question The user question to classify.
+   * @return Detected language metadata, or `null` if detection fails.
+   */
   private fun detectLanguage(question: String): DetectedLanguage? =
       langService!!.detectLanguageViaModel(question) { body ->
         if (config.isExternalMode)
@@ -849,6 +906,9 @@ class Standard : LLAMA() {
   /**
    * Validates server state, parses request headers, and dispatches to [executeStreaming] or
    * [executeSynchronous].
+   *
+   * @param params Servlet execution context with headers and uploaded payloads.
+   * @return A servlet response containing either an error payload or inference result.
    */
   private fun handleNewQuestion(params: IPluginServletActionParams): IPluginServletActionRetVal {
     log(
@@ -896,7 +956,12 @@ class Standard : LLAMA() {
     return if (ctx.wantsStream) executeStreaming(ctx) else executeSynchronous(ctx)
   }
 
-  /** Starts a background streaming session and returns the session UUID immediately. */
+  /**
+   * Starts a background streaming session and returns the session UUID immediately.
+   *
+   * @param ctx Parsed request context for the incoming question and options.
+   * @return A response containing the newly created stream session ID.
+   */
   private fun executeStreaming(ctx: RequestContext): IPluginServletActionRetVal {
     cleanupStaleSessions()
     val sessionId = UUID.randomUUID().toString()
@@ -1115,7 +1180,12 @@ class Standard : LLAMA() {
     return gsonResponse(StreamIdResponse(sessionId))
   }
 
-  /** Processes questions synchronously and returns all answers. */
+  /**
+   * Processes questions synchronously and returns all answers.
+   *
+   * @param ctx Parsed request context for synchronous execution.
+   * @return A servlet JSON response containing per-question answers or an error.
+   */
   private fun executeSynchronous(ctx: RequestContext): IPluginServletActionRetVal {
     // If the hashed slot is occupied by an active stream, let llama-server auto-assign a free slot
     val effectiveSlot =

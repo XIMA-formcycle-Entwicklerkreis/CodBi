@@ -14,6 +14,17 @@ import java.util.concurrent.TimeUnit
 /**
  * Manages the lifecycle of a dedicated thinking LLAMA-Server process. Handles process startup, port
  * selection, health-check polling, and graceful shutdown.
+ *
+ * @param mainServerPort Port of the primary (fast) LLAMA-Server, used to avoid collisions.
+ * @param threadCount Fixed thread count for inference, or `null` to auto-detect physical cores.
+ * @param gpuLayers Number of model layers to offload to GPU (0 = CPU only, -1 = auto).
+ * @param detectedGpu The GPU backend detected on the current platform.
+ * @param ctxSize Context window size (in tokens) for the fast server; thinking server uses 2×.
+ * @param parallelSlots Number of parallel inference slots.
+ * @param extraServerArgs Additional CLI arguments forwarded to the llama-server process.
+ * @param detectPhysicalCores Callback that returns the number of physical CPU cores.
+ * @param log Logger callback for diagnostic messages.
+ * @param healthCheckTimeoutMs Maximum time (ms) to wait for the server to become healthy.
  */
 internal class ThinkingServerManager(
     private val mainServerPort: Int,
@@ -42,8 +53,11 @@ internal class ThinkingServerManager(
   var isReady: Boolean = false
     private set
 
+  /** The thinking server OS process, or `null` when not running. */
   @Volatile private var process: Process? = null
+  /** Future for the stdout reader thread. */
   private var stdoutFuture: java.util.concurrent.Future<*>? = null
+  /** Future for the stderr reader thread. */
   private var stderrFuture: java.util.concurrent.Future<*>? = null
 
   /**
@@ -62,14 +76,6 @@ internal class ThinkingServerManager(
       executor: ExecutorService
   ): Boolean {
     port = findThinkingPort(mainServerPort + 100)
-
-    val resolvedThreads = threadCount ?: detectPhysicalCores()
-    val resolvedGpuLayers =
-        when {
-          gpuLayers >= 0 -> gpuLayers
-          detectedGpu != GpuBackend.NONE -> 999
-          else -> 0
-        }
 
     log(LogLevel.INFO, "Starting thinking LLAMA-Server:")
     log(LogLevel.INFO, "  Binary:  ${binary.absolutePath}")
@@ -90,7 +96,6 @@ internal class ThinkingServerManager(
 
     templateFile.writeText(templateContent.trimIndent())
 
-    val thinkingCtxSize = ctxSize * 2
     val command =
         mutableListOf(
             binary.absolutePath,
@@ -101,13 +106,18 @@ internal class ThinkingServerManager(
             "--port",
             port.toString(),
             "--threads",
-            resolvedThreads.toString(),
+            (threadCount ?: detectPhysicalCores()).toString(),
             "--ctx-size",
-            thinkingCtxSize.toString(),
+            (ctxSize * 2).toString(),
             "--parallel",
             parallelSlots.toString(),
             "--n-gpu-layers",
-            resolvedGpuLayers.toString(),
+            (when {
+                  gpuLayers >= 0 -> gpuLayers
+                  detectedGpu != GpuBackend.NONE -> 999
+                  else -> 0
+                })
+                .toString(),
             "--jinja",
             "--chat-template-file",
             templateFile.absolutePath)
@@ -134,9 +144,7 @@ internal class ThinkingServerManager(
           executor.submit {
             try {
               BufferedReader(InputStreamReader(proc.inputStream)).use { reader ->
-                reader.lineSequence().forEach { line ->
-                  log(LogLevel.INFO, "[thinking-server] $line")
-                }
+                reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
               }
             } catch (X: Exception) {
               log(LogLevel.WARNING, "Thinking server stdout reader failed: ${X.message}")
@@ -147,9 +155,7 @@ internal class ThinkingServerManager(
           executor.submit {
             try {
               BufferedReader(InputStreamReader(proc.errorStream)).use { reader ->
-                reader.lineSequence().forEach { line ->
-                  log(LogLevel.INFO, "[thinking-server/err] $line")
-                }
+                reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
               }
             } catch (X: Exception) {
               log(LogLevel.WARNING, "Thinking server stderr reader failed: ${X.message}")
@@ -187,6 +193,9 @@ internal class ThinkingServerManager(
    * actually assigned, so we must discover a free port ourselves and pass it explicitly. In
    * practice the race is unlikely on a single-purpose server, but port conflicts will surface as a
    * health-check failure and be logged.
+   *
+   * @param preferredPort The first port to try.
+   * @return An available TCP port.
    */
   private fun findThinkingPort(preferredPort: Int): Int {
     for (offset in 0 until 20) {
@@ -211,6 +220,8 @@ internal class ThinkingServerManager(
   /**
    * Polls the thinking server `/health` endpoint until it reports healthy or the
    * [healthCheckTimeoutMs] deadline elapses.
+   *
+   * @return `true` if the server became healthy within the timeout.
    */
   private fun waitForHealth(): Boolean {
     val deadline = System.currentTimeMillis() + healthCheckTimeoutMs
@@ -313,6 +324,9 @@ internal class ThinkingServerManager(
    * Parses the `/health` response JSON and returns `true` only when the `status` field is
    * explicitly `"ok"`. Falls back to a lenient substring check if the body is not valid JSON (e.g.
    * a plain-text "OK" from an older server build).
+   *
+   * @param body The raw HTTP response body from `/health`.
+   * @return `true` if the status is `"ok"`.
    */
   private fun isHealthResponseOk(body: String): Boolean {
     return try {

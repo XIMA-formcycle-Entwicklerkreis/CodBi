@@ -209,9 +209,7 @@ internal class LanguageDetectionService(private val log: (LogLevel, String) -> U
       val regexLang = detectLanguage(question)
 
       if (regexLang != null) {
-        val regexName = regexLang.languageName.lowercase()
-
-        if (langName != regexName && langName != "english") {
+        if (langName != regexLang.languageName.lowercase() && langName != "english") {
           log(
               LogLevel.WARNING,
               "Model detected '$langName' but regex detected '${regexLang.languageName}' — preferring regex")

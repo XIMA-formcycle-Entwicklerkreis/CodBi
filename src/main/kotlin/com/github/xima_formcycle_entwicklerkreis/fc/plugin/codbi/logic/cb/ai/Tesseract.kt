@@ -321,12 +321,14 @@ class TesseractAction : AI() {
 
   // endregion Image Transformation
   // region DPI Utilities (delegated to DpiUtil)
-  private fun readImageDPI(imageFile: File): Int = DpiUtil.readImageDPI(imageFile)
+  private fun readImageDPI(imageFile: File): Int =
+      DpiUtil.readImageDPI(imageFile, "[ CodBi / AI / Tesseract ]")
 
-  private fun readImageDPI(imageBytes: ByteArray): Int = DpiUtil.readImageDPI(imageBytes)
+  private fun readImageDPI(imageBytes: ByteArray): Int =
+      DpiUtil.readImageDPI(imageBytes, "[ CodBi / AI / Tesseract ]")
 
   private fun writeImageWithDPI(image: BufferedImage, outputFile: File, dpi: Int = 300) =
-      DpiUtil.writeImageWithDPI(image, outputFile, dpi)
+      DpiUtil.writeImageWithDPI(image, outputFile, dpi, "[ CodBi / AI / Tesseract ]")
 
   // endregion DPI Utilities
   // region Tesseract JNI-Interaction
@@ -430,15 +432,18 @@ class TesseractAction : AI() {
 
   // endregion Tesseract JNI Interaction
   // region Image Preprocessing (delegated to ImagePreprocessor)
-  /** Checks X-Preprocess header and delegates to [ImagePreprocessor]. */
+  /** Disk-based preprocessImage is deprecated for DSGVO compliance. */
   private fun preprocessImage(inputFile: File, params: IPluginServletActionParams): File =
-      ImagePreprocessor.preprocessImage(inputFile, isPreprocessEnabled(params))
+      throw UnsupportedOperationException(
+          "Disk-based preprocessImage is not supported. Use BufferedImage variant.")
 
   /** Checks X-Preprocess header and delegates to [ImagePreprocessor]. */
   private fun preprocessImage(
       image: BufferedImage,
       params: IPluginServletActionParams
-  ): BufferedImage = ImagePreprocessor.preprocessImage(image, isPreprocessEnabled(params))
+  ): BufferedImage =
+      ImagePreprocessor.preprocessImage(
+          image, isPreprocessEnabled(params), logSignature = "[ CodBi / AI / Tesseract ]")
 
   private fun isPreprocessEnabled(params: IPluginServletActionParams): Boolean =
       params.headerMap.entries
@@ -565,7 +570,9 @@ class TesseractAction : AI() {
 
     val processedImage =
         if (preprocess)
-            ImagePreprocessor.applyPreprocessing(correctedImage)?.image ?: correctedImage
+            ImagePreprocessor.applyPreprocessing(
+                    correctedImage, logSignature = "[ CodBi / AI / Tesseract ]")
+                ?.image ?: correctedImage
         else correctedImage
 
     log(LogLevel.INFO, "Pool status before borrow: ${pool.size} available of $sizePool")

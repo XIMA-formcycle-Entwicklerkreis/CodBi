@@ -22,7 +22,7 @@ import java.util.zip.ZipInputStream
  * @param log Log function for progress and diagnostic output.
  */
 class DownloadManager(private val log: (LogLevel, String) -> Unit) {
-
+  /* Companion for static members. */
   companion object {
     /** Buffer size for resumable downloads (64 KB). */
     private const val DOWNLOAD_BUFFER_SIZE = 65_536

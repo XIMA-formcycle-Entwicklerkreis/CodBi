@@ -151,7 +151,7 @@ class Whisper : AI() {
    *
    * @param configData Plugin configuration providing properties and file-system helpers.
    */
-  private lateinit var pluginProperties: java.util.Properties
+  private var pluginProperties: java.util.Properties = java.util.Properties()
 
   override fun initialize(configData: IPluginInitializeData) {
     super.initialize(configData)

@@ -4,7 +4,6 @@ import { promisify } from "node:util";
 import * as fs from "node:fs/promises";
 import * as esbuild from "esbuild";
 import { newEsBuildPostCssPlugin } from "@de-xima/esbuild-plugin-postcss";
-import fsExtra from "fs-extra";
 
 const execPromise = promisify(exec);
 const mode = (process.argv.find((x) => x.startsWith("--mode=")) ?? "--mode=production").substring(7);
@@ -63,8 +62,9 @@ async function copyTinyMCEAssets() {
 
   try {
     await fs.mkdir(outputDir, { recursive: true });
-    await fsExtra.emptyDir(tinymceOutputDir);
-    await fsExtra.copy(tinymceSourceDir, tinymceOutputDir, { recursive: true, overwrite: true });
+    await fs.rm(tinymceOutputDir, { recursive: true, force: true });
+    await fs.mkdir(tinymceOutputDir, { recursive: true });
+    await fs.cp(tinymceSourceDir, tinymceOutputDir, { recursive: true, force: true });
 
     console.log("TinyMCE assets copied successfully.");
   } catch (X) {
@@ -79,8 +79,9 @@ async function copyI18nAssets() {
 
   try {
     await fs.mkdir(i18nOutputDir, { recursive: true });
-    await fsExtra.emptyDir(i18nOutputDir);
-    await fsExtra.copy(i18nSourceDir, i18nOutputDir, { recursive: true, overwrite: true });
+    await fs.rm(i18nOutputDir, { recursive: true, force: true });
+    await fs.mkdir(i18nOutputDir, { recursive: true });
+    await fs.cp(i18nSourceDir, i18nOutputDir, { recursive: true, force: true });
     console.log("i18n assets copied successfully.");
   } catch (X) {
     console.error("Error copying i18n assets:", X.message);
@@ -98,11 +99,11 @@ async function copyAngularWebComponentSvgAssets() {
     // Ensure the output directory for SVGs exists
     await fs.mkdir(angularWebComponentSvgOutputDir, { recursive: true });
     // Clear the destination directory before copying to ensure a clean copy
-    await fsExtra.emptyDir(angularWebComponentSvgOutputDir);
-    // Copy all contents from source to destination
-    await fsExtra.copy(angularWebComponentSvgSourceDir, angularWebComponentSvgOutputDir, {
+    await fs.rm(angularWebComponentSvgOutputDir, { recursive: true, force: true });
+    await fs.mkdir(angularWebComponentSvgOutputDir, { recursive: true });
+    await fs.cp(angularWebComponentSvgSourceDir, angularWebComponentSvgOutputDir, {
       recursive: true,
-      overwrite: true,
+      force: true,
     });
     console.log("Angular web component SVG assets copied successfully.");
   } catch (X) {
@@ -125,7 +126,8 @@ async function copyAngularWebComponentSvgAssets() {
     let lastErr;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        await fsExtra.emptyDir(dir);
+        await fs.rm(dir, { recursive: true, force: true });
+        await fs.mkdir(dir, { recursive: true });
         return;
       } catch (err) {
         if (err && (err.code === "ENOTEMPTY" || err.code === "EBUSY" || err.code === "EPERM")) {

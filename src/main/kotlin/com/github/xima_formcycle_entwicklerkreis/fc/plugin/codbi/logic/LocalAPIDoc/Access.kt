@@ -1,4 +1,4 @@
-package com.github.your_organization.fc.plugin.LocalAPIDoc
+package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.LocalAPIDoc
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiFormResourcesPlugin
 import com.google.gson.Gson
@@ -7,27 +7,23 @@ import com.google.gson.JsonSyntaxException
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeValidationResult
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginValidationData
-import de.xima.fc.interfaces.plugin.lifecycle.helper.IPluginFileHelper
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
 import de.xima.fc.mdl.fdv.EResponseType
 import de.xima.fc.mdl.response.ServletResponse
 import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
-import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.nio.charset.StandardCharsets
-import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
-import kotlin.io.path.moveTo
 import org.slf4j.LoggerFactory
 
 /**
  * A servlet action plugin that provides an endpoint for storing and retrieving structured JSON
- * data. Data is persisted to a file on the server using Formcycle's IPluginFileHelper.
+ * data. Data is persisted to the database via [LocalAPIDocEntities].
  */
 class StructuredDataStoreAction : IPluginServletAction {
   /** Stores a CSV of all usernames that're allowed to sync the API-Documentation. */
@@ -36,22 +32,19 @@ class StructuredDataStoreAction : IPluginServletAction {
   private var documentation: String = ""
   /** Stores the retrieved functionality code. */
   private var code: String = ""
-  /** Accessor to the plugin's file storage. */
-  private var fileHelper: IPluginFileHelper? = null
-  /** States the documentation storage's file name. */
-  private val dataFileName = "LocalAPIDocumentation.json"
+  /** The database key for the main documentation JSON. */
+  private val documentationKey = "documentation"
   /** Serializer / Deserializer. */
   private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
   /** Read / Write locker. */
   private val lock = ReentrantReadWriteLock()
 
   /**
-   * Initializes the plugin by retrieving the [fileHelper].
+   * Initializes the plugin by loading configuration.
    *
    * @param configData The initialization data provided by Formcycle.
    */
   override fun initialize(configData: IPluginInitializeData) {
-    this.fileHelper = configData.fileHelper
     setSyncUsers(configData.properties.getProperty("APIDoc_UsersAllowedToSYNC"))
   }
 
@@ -172,12 +165,9 @@ class StructuredDataStoreAction : IPluginServletAction {
                   "{\"status\": \"success\", \"message\": \"Code stored successfully.\"}"
             } else {
               servletResponse.value =
-                  "{\"status\": \"success\", \"message\": \"Failed storing Code.\"}"
+                  "{\"status\": \"error\", \"message\": \"Failed storing Code — database may not be ready.\"}"
+              servletResponse.httpStatusCode = HttpURLConnection.HTTP_INTERNAL_ERROR
             }
-
-            LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-                .info(
-                    "StructuredDataStoreAction: UPDATE request handled. New code stored successfully.")
           }
         }
       }
@@ -212,6 +202,10 @@ class StructuredDataStoreAction : IPluginServletAction {
 
       "RETRIEVE" -> {
         loadDataFromFile()
+
+        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+            .info(
+                "[[ CodBi / LocalAPIDoc ] RETRIEVE — documentation length=${documentation.length}, isEmpty=${documentation.isEmpty()} ]")
 
         lock.read {
           servletResponse.value =
@@ -257,13 +251,18 @@ class StructuredDataStoreAction : IPluginServletAction {
           lock.write {
             documentation = toWrite
 
-            saveDataToFile()
-            servletResponse.value =
-                "{\"status\": \"success\", \"message\": \"Data stored successfully.\"}"
+            if (saveDataToFile()) {
+              servletResponse.value =
+                  "{\"status\": \"success\", \"message\": \"Data stored successfully.\"}"
 
-            LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-                .info(
-                    "StructuredDataStoreAction: UPDATE request handled. New documentation stored successfully.")
+              LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+                  .info(
+                      "StructuredDataStoreAction: UPDATE request handled. New documentation stored successfully.")
+            } else {
+              servletResponse.value =
+                  "{\"status\": \"error\", \"message\": \"Database write failed — EntityManagerFactory may not be available yet.\"}"
+              servletResponse.httpStatusCode = HttpURLConnection.HTTP_INTERNAL_ERROR
+            }
           }
         } catch (X: IOException) {
           servletResponse.value =
@@ -305,252 +304,297 @@ class StructuredDataStoreAction : IPluginServletAction {
   }
 
   /**
-   * Determine API-Doc-File's path by creating it, if necessary.
+   * Builds the database key for a code entry.
    *
-   * @return The [java.io.File] pointing to the API-Doc-Storage.
+   * @param element The CodBi element name.
+   * @param detail The CodBi element type.
+   * @return The composite key string.
    */
-  private fun getPluginDataFile(): File? {
-    val pluginDir: File? = fileHelper?.pluginFolder
+  private fun codeKey(element: String, detail: String): String = "${detail}_${element}"
 
-    if (pluginDir == null) {
-      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error("The plugin's directory for storage is not available.")
+  /** Loads the documentation JSON from the database into [documentation]. */
+  private fun loadDataFromFile() {
+    val content = dbLoad(documentationKey)
 
-      return null
-    }
-
-    if (!pluginDir.exists()) {
-      pluginDir.mkdirs()
-    }
-
-    return File(pluginDir, dataFileName)
+    lock.write { documentation = content ?: "" }
   }
 
   /**
-   * Determine lokal Code-File's path by creating it, if necessary.
+   * Renames a code entry's key in the database.
    *
-   * @param functionality The path an name of the local functionality to retrieved the code for.
-   * @return The [java.io.File] pointing to the specified functionality's code.
+   * @param element The current element name.
+   * @param detail The CodBi element type.
+   * @param newElementname The new element name.
    */
-  private fun getPluginCodeFile(element: String?, detail: String?): File? {
-    val pluginDir: File? = fileHelper?.pluginFolder
-
-    if (pluginDir == null) {
+  private fun renameCodeFile(element: String?, detail: String?, newElementname: String?) {
+    if (element == null || detail == null || newElementname == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error("The plugin's directory for storage is not available.")
-
-      return null
-    }
-
-    if (!pluginDir.exists()) {
-      pluginDir.mkdirs()
-    }
-
-    return File(pluginDir, "${detail}_${element}.js")
-  }
-
-  /** Attempts to load the local API-Documentation into [documentation]. */
-  private fun loadDataFromFile() {
-    val dataFile: File? = getPluginDataFile()
-
-    if (dataFile == null) {
-      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error("The local API-Documentation storage file could not be found.")
+          .error("[[ CodBi ] Cannot rename code entry — missing element, detail, or new name.]")
 
       return
     }
 
-    lock.write {
-      if (dataFile.exists() && dataFile.length() > 0) {
-        try {
-          documentation = dataFile.readText(StandardCharsets.UTF_8)
-        } catch (X: JsonSyntaxException) {
-          LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-              .error(
-                  "Corrupted JSON data in file '${dataFile.absolutePath}'. Deleting and starting fresh. Exception: ${ X.message }")
-          dataFile.delete()
+    val oldKey = codeKey(detail, element)
+    val newKey = codeKey(element, newElementname)
 
-          documentation = ""
-        } catch (X: IOException) {
-          LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-              .error(
-                  "Following error loading data from file '${ dataFile.absolutePath }': ${ X.message }")
-
-          documentation = ""
-        } catch (X: Exception) {
-          LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-              .error(
-                  "Following unexpected error loading data from file '${dataFile.absolutePath}': ${ X.message}")
-
-          documentation = ""
-        }
-      } else {
-        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-            .error(
-                "Either there is no existing data file at '${ dataFile.absolutePath }' or the file is empty. Starting with empty data.")
-
-        documentation = ""
-      }
-    }
+    dbRename(oldKey, newKey)
   }
 
   /**
-   * Renames the specified CodBi-Element-Code at file level.
+   * Loads code content from the database.
    *
-   * @param element The name of the CodBi-Element (e.g. demo.apidoc.ep).
-   * @param detail The type of CodBi-Element (e.g. Functionality, Elementplaceholder, Standard.
+   * @param element The CodBi element name.
+   * @param detail The CodBi element type.
+   * @return The code content, or "NONE" if not found.
    */
-  private fun renameCodeFile(element: String?, detail: String?, newElementname: String?) {
-    try {
-      val oldPath: Path? = getPluginCodeFile(detail, element)?.toPath()
-      val newPath: Path? = oldPath?.resolveSibling(element + "_" + newElementname + ".js")
-
-      if (newPath !== null) oldPath.moveTo(newPath)
-      else {
-        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-            .error(
-                "[[ CodBi ] Trying to rename Code-File but new path \"" +
-                    oldPath?.resolveSibling(element + "_" + newElementname + ".js") +
-                    "\" could not be create from old path \"" +
-                    oldPath +
-                    "\".]")
-      }
-    } catch (X: Exception) {
-      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error(
-              "[[ CodBi ] Trying to rename Code-File but following exception occurred: \"${ X.toString() }\".]")
-    }
-  }
-
-  /** Attempts to load the local API-Documentation into [documentation]. */
   private fun loadCodeFromFile(element: String, detail: String): String {
-    val dataFile: File? = getPluginCodeFile(element, detail)
+    val content = dbLoad(codeKey(element, detail))
 
-    if (dataFile == null) {
-      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error("Code file for ${ element } could not be found.")
-
+    if (content == null) {
       code = "NONE"
 
       return "NONE"
     }
 
-    lock.write {
-      if (dataFile.exists() && dataFile.length() > 0) {
-        try {
-          return dataFile.readText(StandardCharsets.UTF_8)
-        } catch (X: IOException) {
-          LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-              .error(
-                  "Following error loading data from file '${ dataFile.absolutePath }': ${ X.message }")
-
-          code = "NONE"
-
-          return "NONE"
-        } catch (X: Exception) {
-          LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-              .error(
-                  "Following unexpected error loading data from file '${dataFile.absolutePath}': ${ X.message}")
-
-          code = "NONE"
-
-          return "NONE"
-        }
-      } else {
-        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-            .error(
-                "Either there is no existing data file at '${ dataFile.absolutePath } (lenght is ${ dataFile.length()})' or the file is empty.")
-
-        code = "NONE"
-
-        return "NONE"
-      }
-    }
+    return content
   }
 
-  /** Saves the [documentation] to the plugin's dedicated file. */
-  private fun saveDataToFile() {
-    val dataFile: File? = getPluginDataFile()
+  /** Saves the [documentation] to the database. */
+  private fun saveDataToFile(): Boolean {
+    return dbSave(documentationKey, documentation)
+  }
 
-    if (dataFile == null) {
+  /**
+   * Saves code for the specified CodBi element to the database.
+   *
+   * @param element The CodBi element name.
+   * @param detail The CodBi element type.
+   * @param code The code content to save.
+   * @return true if the save succeeded.
+   */
+  private fun saveCodeToFile(element: String, detail: String, code: String): Boolean {
+    return dbSave(codeKey(element, detail), code)
+  }
+
+  /**
+   * Deletes the code entry for the specified CodBi element from the database.
+   *
+   * @param element The CodBi element name.
+   * @param detail The CodBi element type.
+   */
+  private fun deleteCodeFile(element: String, detail: String) {
+    dbDelete(codeKey(element, detail))
+  }
+
+  // region Database Operations
+
+  /**
+   * Loads a value from the `codbi_local_apidoc` table by key.
+   *
+   * @param key The data_key to look up.
+   * @return The content string, or null if not found or DB is unavailable.
+   */
+  private fun dbLoad(key: String): String? {
+    val emf = LocalAPIDocEntities.entityManagerFactory
+
+    if (emf == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error("Data file could not be determined for saving.")
+          .error("[[ CodBi / LocalAPIDoc ] Database not ready — cannot load key '$key' ]")
 
-      return
+      return null
     }
 
+    val em = emf.createEntityManager()
+
     try {
-      dataFile.writeText(documentation, StandardCharsets.UTF_8)
+      val results =
+          em.createNativeQuery("SELECT content FROM codbi_local_apidoc WHERE data_key = ?1")
+              .apply { setParameter(1, key) }
+              .resultList
+
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .info("[[ CodBi / LocalAPIDoc ] dbLoad('$key') — resultCount=${results.size} ]")
+
+      if (results.isEmpty()) return null
+
+      val raw = results[0]
+      val value =
+          when (raw) {
+            is String -> raw
+            is java.sql.Clob -> raw.characterStream.readText()
+            else -> raw?.toString()
+          }
+
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .info("[[ CodBi / LocalAPIDoc ] dbLoad('$key') — valueLength=${value?.length ?: -1} ]")
+
+      return value
     } catch (X: Exception) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error(
-              "Following error occured saving local API-Documentation to file '${ dataFile.absolutePath }': ${ X.message }")
+          .error("[[ CodBi / LocalAPIDoc ] Error loading key '$key': ${X.message} ]")
+
+      return null
+    } finally {
+      try {
+        em.close()
+      } catch (_: Exception) {}
     }
   }
 
   /**
-   * Saves the given [code] for the specified CodBi-[element].
+   * Saves a value to the `codbi_local_apidoc` table (upsert).
    *
-   * @param element The CodBi-[element] which's code shall be saved.
-   * @param detail The type of CodBi-[element].
-   * @param code The [code] to be saved.
+   * @param key The data_key to store under.
+   * @param content The content to store.
+   * @return true if the operation succeeded.
    */
-  private fun saveCodeToFile(element: String, detail: String, code: String): Boolean {
-    val dataFile: File? = getPluginCodeFile(element, detail)
+  private fun dbSave(key: String, content: String): Boolean {
+    val emf = LocalAPIDocEntities.entityManagerFactory
 
-    if (dataFile == null) {
+    if (emf == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error("Data file could not be determined for saving.")
+          .error("[[ CodBi / LocalAPIDoc ] Database not ready — cannot save key '$key' ]")
 
       return false
     }
 
-    try {
-      dataFile.writeText(code, StandardCharsets.UTF_8)
-    } catch (X: Exception) {
-      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error(
-              "Following error occured saving local API-Documentation to file '${ dataFile.absolutePath }': ${ X.message }")
-    }
+    val em = emf.createEntityManager()
 
-    return true
+    try {
+      em.transaction.begin()
+
+      val existing =
+          em.createNativeQuery("SELECT id FROM codbi_local_apidoc WHERE data_key = ?1")
+              .apply { setParameter(1, key) }
+              .resultList
+
+      if (existing.isEmpty()) {
+        em.createNativeQuery(
+                "INSERT INTO codbi_local_apidoc (data_key, content, updated_at) VALUES (?1, ?2, CURRENT_TIMESTAMP)")
+            .apply {
+              setParameter(1, key)
+              setParameter(2, content)
+              executeUpdate()
+            }
+      } else {
+        em.createNativeQuery(
+                "UPDATE codbi_local_apidoc SET content = ?1, updated_at = CURRENT_TIMESTAMP WHERE data_key = ?2")
+            .apply {
+              setParameter(1, content)
+              setParameter(2, key)
+              executeUpdate()
+            }
+      }
+
+      em.transaction.commit()
+
+      return true
+    } catch (X: Exception) {
+      if (em.transaction.isActive) {
+        try {
+          em.transaction.rollback()
+        } catch (_: Exception) {}
+      }
+
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error("[[ CodBi / LocalAPIDoc ] Error saving key '$key': ${X.message} ]")
+
+      return false
+    } finally {
+      try {
+        em.close()
+      } catch (_: Exception) {}
+    }
   }
 
   /**
-   * Deletes the file containing the code for the specified [element].
+   * Deletes a row from the `codbi_local_apidoc` table by key.
    *
-   * @param element The path and name of the CodBi-Element which's code shall be removed.
-   * @param detail The type of CodBi-Element.
+   * @param key The data_key to delete.
    */
-  private fun deleteCodeFile(element: String, detail: String) {
-    // Determine the file path based on the functionality string.
-    val dataFile: File? = getPluginCodeFile(element, detail)
+  private fun dbDelete(key: String) {
+    val emf = LocalAPIDocEntities.entityManagerFactory
 
-    // Check if the file object was successfully determined.
-    if (dataFile == null) {
+    if (emf == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error("Data file could not be determined for deletion.")
+          .error("[[ CodBi / LocalAPIDoc ] Database not ready — cannot delete key '$key' ]")
+
       return
     }
 
-    try {
-      // Attempt to delete the file.
-      val isDeleted = dataFile.delete()
+    val em = emf.createEntityManager()
 
-      if (isDeleted) {
-        // Log a success message if the deletion was successful.
-        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-            .info("Successfully deleted file: '${dataFile.absolutePath}'")
-      } else {
-        // Log an error if the file could not be deleted,
-        // which can happen if it doesn't exist or permissions are an issue.
-        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-            .warn("File could not be deleted: '${dataFile.absolutePath}'. It may not exist.")
+    try {
+      em.transaction.begin()
+      em.createNativeQuery("DELETE FROM codbi_local_apidoc WHERE data_key = ?1").apply {
+        setParameter(1, key)
+        executeUpdate()
       }
-    } catch (X: Exception) {
-      // Catch and log any exceptions that occur during the deletion process.
+      em.transaction.commit()
+
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .error("Following error occurred deleting file '${dataFile.absolutePath}': ${X.message}")
+          .info("[[ CodBi / LocalAPIDoc ] Deleted entry with key '$key' ]")
+    } catch (X: Exception) {
+      if (em.transaction.isActive) {
+        try {
+          em.transaction.rollback()
+        } catch (_: Exception) {}
+      }
+
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error("[[ CodBi / LocalAPIDoc ] Error deleting key '$key': ${X.message} ]")
+    } finally {
+      try {
+        em.close()
+      } catch (_: Exception) {}
     }
   }
+
+  /**
+   * Renames a key in the `codbi_local_apidoc` table.
+   *
+   * @param oldKey The current data_key.
+   * @param newKey The new data_key.
+   */
+  private fun dbRename(oldKey: String, newKey: String) {
+    val emf = LocalAPIDocEntities.entityManagerFactory
+
+    if (emf == null) {
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error(
+              "[[ CodBi / LocalAPIDoc ] Database not ready — cannot rename key '$oldKey' to '$newKey' ]")
+
+      return
+    }
+
+    val em = emf.createEntityManager()
+
+    try {
+      em.transaction.begin()
+      em.createNativeQuery(
+              "UPDATE codbi_local_apidoc SET data_key = ?1, updated_at = CURRENT_TIMESTAMP WHERE data_key = ?2")
+          .apply {
+            setParameter(1, newKey)
+            setParameter(2, oldKey)
+            executeUpdate()
+          }
+      em.transaction.commit()
+    } catch (X: Exception) {
+      if (em.transaction.isActive) {
+        try {
+          em.transaction.rollback()
+        } catch (_: Exception) {}
+      }
+
+      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
+          .error(
+              "[[ CodBi / LocalAPIDoc ] Error renaming key '$oldKey' to '$newKey': ${X.message} ]")
+    } finally {
+      try {
+        em.close()
+      } catch (_: Exception) {}
+    }
+  }
+
+  // endregion Database Operations
 }

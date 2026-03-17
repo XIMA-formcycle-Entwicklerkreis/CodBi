@@ -562,6 +562,73 @@ internal class LanguageDetectionService(private val log: (LogLevel, String) -> U
   }
 
   /** Loads the language map from the bundled `languages.json` resource file. */
+  /** ISO 639-1 two-letter code to canonical language-map key. */
+  private val isoCodeMap: Map<String, String> =
+      mapOf(
+          "de" to "german",
+          "it" to "italian",
+          "fr" to "french",
+          "es" to "spanish",
+          "pt" to "portuguese",
+          "nl" to "dutch",
+          "tr" to "turkish",
+          "ja" to "japanese",
+          "zh" to "chinese",
+          "ko" to "korean",
+          "ru" to "russian",
+          "ar" to "arabic",
+          "hi" to "hindi",
+          "pl" to "polish",
+          "cs" to "czech",
+          "sk" to "slovak",
+          "hu" to "hungarian",
+          "ro" to "romanian",
+          "bg" to "bulgarian",
+          "hr" to "croatian",
+          "sr" to "serbian",
+          "sl" to "slovenian",
+          "el" to "greek",
+          "sv" to "swedish",
+          "no" to "norwegian",
+          "da" to "danish",
+          "fi" to "finnish",
+          "et" to "estonian",
+          "lv" to "latvian",
+          "lt" to "lithuanian",
+          "uk" to "ukrainian",
+          "th" to "thai",
+          "vi" to "vietnamese",
+          "id" to "indonesian",
+          "ms" to "malay",
+          "fa" to "persian",
+          "he" to "hebrew",
+          "en" to "english")
+
+  /**
+   * Looks up a [DetectedLanguage] by ISO 639-1 two-letter code.
+   *
+   * @param code Two-letter language code (e.g. "de", "fr").
+   * @return The matching [DetectedLanguage], or `null` for "en" or unknown codes.
+   */
+  fun lookupByCode(code: String): DetectedLanguage? {
+    val lower = code.lowercase().trim()
+    if (lower == "en") return null
+    val langName = isoCodeMap[lower] ?: return null
+    return languageMap[langName]
+  }
+
+  /**
+   * Returns the English language name for an ISO 639-1 code, or the code itself if not mapped.
+   *
+   * @param code Two-letter language code.
+   * @return The canonical English language name (e.g. "German") or the original code.
+   */
+  fun languageNameForCode(code: String): String {
+    val lower = code.lowercase().trim()
+    val langName = isoCodeMap[lower] ?: return code
+    return languageMap[langName]?.languageName ?: langName.replaceFirstChar { it.uppercase() }
+  }
+
   private fun loadLanguageMap(): Map<String, DetectedLanguage> {
     val stream =
         javaClass.getResourceAsStream("/AI/llama/languages.json")

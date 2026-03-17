@@ -1,6 +1,7 @@
 // #region Imports
 // #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+import { generateUUID } from "../global-scope";
 // #endregion XIMA
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
@@ -28,7 +29,7 @@ export class AI_LLAMA_STANDARD_QA {
   /**
    * The Unique session ID generated on page load — ensures each session gets its own llama-server slot and thus
    * no info from one conversation leaks into another one. */
-  private static readonly PAGE_SESSION_ID: string = crypto.randomUUID();
+  private static readonly PAGE_SESSION_ID: string = generateUUID();
   /**
    * This functionality processes uploaded images using a local llama-server process to
    * answer questions about documents. As soon as the file(s) selected changes the AI
@@ -94,6 +95,12 @@ export class AI_LLAMA_STANDARD_QA {
    *                            In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
    *                            to be accepted. If not, an error and a manual verification checkbox are shown,
    *                            just like in ai.ocr.ts. The question can reference symbols as usual.
+   * - **responselanguage**:    Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI to
+   *                            respond in this language, skipping auto-detection. Overrides the
+   *                            `AI_LLAMA_STD_Language` plugin property for this instance.
+   * - **specialist**:          Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
+   *                            plugin property. Routes requests to that specialist's dedicated server
+   *                            instance (case-insensitive match).
    *
    * Questions are acquired from DOM elements within the nearest ancestor **XContainer** of the
    * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_LLAMA_STANDARD_QA_Question**.
@@ -113,7 +120,10 @@ export class AI_LLAMA_STANDARD_QA {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE("string", "aihint, positiveresponse, verifyerrortext, verifycheckboxlabel, mode")
+    @TYPE.PRE(
+      "string",
+      "aihint, positiveresponse, verifyerrortext, verifycheckboxlabel, mode, responselanguage, specialist",
+    )
     @GREATER.PRE(
       3,
       true,
@@ -125,6 +135,7 @@ export class AI_LLAMA_STANDARD_QA {
     @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotation")
     @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotation")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxPixelSize")
+    @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{2}$/i), "responselanguage")
     @OR.PRE([new TYPE("string"), new TYPE("boolean")], "internetaccess, thinking, caseinsensitive")
     @OR.PRE([new TYPE("number"), new TYPE("string")], "maxthinkingtokens")
     toLoad: { [key: string]: unknown },
@@ -264,6 +275,17 @@ export class AI_LLAMA_STANDARD_QA {
       const vqaHeaders: { [key: string]: string } = {};
 
       vqaHeaders["X-Session-Id"] = AI_LLAMA_STANDARD_QA.PAGE_SESSION_ID;
+      // #region Forced response language
+      const responseLang = toLoad.responselanguage != null ? String(toLoad.responselanguage).trim() : "";
+      const specialist = toLoad.specialist != null ? String(toLoad.specialist).trim() : "";
+
+      if (responseLang) {
+        vqaHeaders["X-Forced-Language"] = responseLang;
+      }
+      if (specialist) {
+        vqaHeaders["X-Specialist"] = specialist;
+      }
+      // #endregion Forced response language
       // #region Brave Search and geolocation toggles
       const internetAccess = toLoad.InternetAccess != null && String(toLoad.InternetAccess).toLowerCase() === "true";
 

@@ -1,6 +1,7 @@
 // #region Imports
 // #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
+import { generateUUID } from "../global-scope";
 // #endregion XIMA
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
@@ -21,7 +22,7 @@ import { OR } from "xdbc/src/DBC/OR";
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class AI_LLAMA_STANDARD_TXTQA {
   /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
-  private static readonly PAGE_SESSION_ID: string = crypto.randomUUID();
+  private static readonly PAGE_SESSION_ID: string = generateUUID();
   /**
    * This functionality answers questions based on the text content of one or more * {@link HTMLInputElement } of type "text" or
    * {@link HTMLTextAreaElement } elements. It is triggered whenever any of the source text fields change.
@@ -48,12 +49,18 @@ export class AI_LLAMA_STANDARD_TXTQA {
    *                        location-aware answers. Default: `false`.
    * - **language**:        Language for the AI response (e.g. "German", "English"). If set, appends "Answer in {language}."
    *                        to each question.
+   * - **responselanguage**: Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI to
+   *                        respond in this language, skipping auto-detection. Overrides the
+   *                        `AI_LLAMA_STD_Language` plugin property for this instance.
+   * - **specialist**:      Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
+   *                        plugin property. Routes requests to that specialist's dedicated server
+   *                        instance (case-insensitive match).
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE("string", "aihint, language")
+    @TYPE.PRE("string", "aihint, language, responselanguage, specialist")
     @TYPE.PRE("string | boolean", "useinternet, location")
     @GREATER.PRE(
       3,
@@ -66,6 +73,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "location")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "debounce")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "inferencedelay")
+    @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{2}$/i), "responselanguage")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(
@@ -101,6 +109,8 @@ export class AI_LLAMA_STANDARD_TXTQA {
     const internetAccess = toLoad.useinternet != null && String(toLoad.useinternet).toLowerCase() === "true";
     const locationAccess = toLoad.location != null && String(toLoad.location).toLowerCase() === "true";
     const responseLanguage = toLoad.language != null ? String(toLoad.language).trim() : "";
+    const responseLang = toLoad.responselanguage != null ? String(toLoad.responselanguage).trim() : "";
+    const specialist = toLoad.specialist != null ? String(toLoad.specialist).trim() : "";
     const $ = getJQuery();
     // #endregion Initialize config from toLoad
     const handleChange = async (force = false) => {
@@ -174,6 +184,12 @@ export class AI_LLAMA_STANDARD_TXTQA {
 
       headers["X-Session-Id"] = AI_LLAMA_STANDARD_TXTQA.PAGE_SESSION_ID;
       headers["X-Search"] = internetAccess ? "true" : "false";
+      if (responseLang) {
+        headers["X-Forced-Language"] = responseLang;
+      }
+      if (specialist) {
+        headers["X-Specialist"] = specialist;
+      }
       // #region Geolocation
       if (locationAccess) {
         headers["X-Location"] = "true";

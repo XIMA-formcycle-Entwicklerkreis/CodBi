@@ -1563,6 +1563,20 @@ export class EPCodBiError extends CodBiError {
 /**
  * KI Code.
  *
+ * Generates a UUID v4. Uses `crypto.randomUUID()` when available (HTTPS / secure contexts),
+ * and falls back to `crypto.getRandomValues()` otherwise (works on HTTP as well). */
+export function generateUUID(): string {
+  if (typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => {
+    const n = +c;
+    return (n ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (n / 4)))).toString(16);
+  });
+}
+
+/**
+ *
  * Turns the given {@link Date }-{@link String } of the specified format (e.g. DD/MM/YYYY) into the corresponding
  * {@link Date }.
  *

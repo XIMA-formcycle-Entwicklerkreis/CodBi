@@ -52,17 +52,20 @@ internal class ChatCompletionService(
    * @param enableThinking Whether to route to the thinking server (if available).
    * @param idSlot The inference slot ID (`-1` for auto).
    * @param maxThinkingTokens Optional budget for thinking tokens.
+   * @param overridePort When non-null, routes to this port (specialist server) instead of the
+   *   default main/thinking server.
    * @return The generated text response (with `<think>` tags stripped).
    */
   fun chatCompletion(
       messagesJson: String,
       enableThinking: Boolean = false,
       idSlot: Int = -1,
-      maxThinkingTokens: Int? = null
+      maxThinkingTokens: Int? = null,
+      overridePort: Int? = null
   ): String {
     val external = isExternalMode()
     val useThinkingServer = !external && enableThinking && thinkingServerReady()
-    val targetPort = if (useThinkingServer) thinkingServerPort() else serverPort()
+    val targetPort = overridePort ?: if (useThinkingServer) thinkingServerPort() else serverPort()
     val currentMaxTokens = maxTokens()
     var requestBody = buildString {
       append("{\"messages\":$messagesJson")
@@ -134,16 +137,19 @@ internal class ChatCompletionService(
    * @param session The [StreamingSession] to populate with chunks.
    * @param enableThinking Whether to route to the thinking server.
    * @param idSlot The inference slot ID (`-1` for auto).
+   * @param overridePort When non-null, routes to this port (specialist server) instead of the
+   *   default main/thinking server.
    */
   fun streamChatCompletion(
       messagesJson: String,
       session: StreamingSession,
       enableThinking: Boolean = false,
-      idSlot: Int = -1
+      idSlot: Int = -1,
+      overridePort: Int? = null
   ) {
     val external = isExternalMode()
     val useThinkingServer = !external && enableThinking && thinkingServerReady()
-    val targetPort = if (useThinkingServer) thinkingServerPort() else serverPort()
+    val targetPort = overridePort ?: if (useThinkingServer) thinkingServerPort() else serverPort()
     val currentMaxTokens = maxTokens()
     var insideThinkBlock = enableThinking
     var tagBuffer = ""

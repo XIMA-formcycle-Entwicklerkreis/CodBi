@@ -6,6 +6,8 @@
     "debounce": "",
     "inferencedelay": "",
     "language": "",
-    "Location": ""
+    "Location": "",
+    "ResponseLanguage": "",
+    "Specialist": ""
   }
 }

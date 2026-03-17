@@ -15,6 +15,8 @@
     "VoiceHotkey": "",
     "VoicePlaceholder": "",
     "VoiceSendHotkey": "",
-    "Language": ""
+    "Language": "",
+    "ResponseLanguage": "",
+    "Specialist": ""
   }
 }

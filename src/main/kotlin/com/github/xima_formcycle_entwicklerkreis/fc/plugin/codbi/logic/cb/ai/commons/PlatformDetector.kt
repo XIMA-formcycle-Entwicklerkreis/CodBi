@@ -155,24 +155,22 @@ object PlatformDetector {
   fun detectPhysicalCores(log: (LogLevel, String) -> Unit): Int {
     return try {
       val os = System.getProperty("os.name").lowercase()
-      val (command, regex) =
-          if (os.contains("win")) {
-            listOf("wmic", "cpu", "get", "NumberOfCores", "/value") to
-                Regex("""NumberOfCores=(\d+)""")
-          } else {
-            listOf("nproc", "--all") to Regex("""(\d+)""")
-          }
-      val process = ProcessBuilder(command).redirectErrorStream(true).start()
-      val output = process.inputStream.bufferedReader().readText()
-      val exited = process.waitFor(5, TimeUnit.SECONDS)
 
-      if (!exited) {
-        process.destroyForcibly()
-        log(LogLevel.WARNING, "Core detection: ${command.first()} timed out after 5 s")
-        Runtime.getRuntime().availableProcessors()
+      if (os.contains("win")) {
+        detectPhysicalCoresWindows(log)
       } else {
-        regex.find(output)?.groupValues?.get(1)?.toIntOrNull()
-            ?: Runtime.getRuntime().availableProcessors()
+        val process = ProcessBuilder("nproc", "--all").redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().readText()
+        val exited = process.waitFor(5, TimeUnit.SECONDS)
+
+        if (!exited) {
+          process.destroyForcibly()
+          log(LogLevel.WARNING, "Core detection: nproc timed out after 5 s")
+          Runtime.getRuntime().availableProcessors()
+        } else {
+          Regex("""(\d+)""").find(output)?.groupValues?.get(1)?.toIntOrNull()
+              ?: Runtime.getRuntime().availableProcessors()
+        }
       }
     } catch (e: Exception) {
       log(
@@ -180,5 +178,63 @@ object PlatformDetector {
           "Core detection failed (${e.javaClass.simpleName}: ${e.message}), using availableProcessors()")
       Runtime.getRuntime().availableProcessors()
     }
+  }
+
+  /**
+   * Detects physical cores on Windows, trying `wmic` first, then PowerShell `Get-CimInstance` as
+   * fallback (since `wmic` is deprecated/removed on newer Windows).
+   */
+  private fun detectPhysicalCoresWindows(log: (LogLevel, String) -> Unit): Int {
+    // Try wmic first (fast, available on older Windows)
+    try {
+      val wmicProcess =
+          ProcessBuilder("wmic", "cpu", "get", "NumberOfCores", "/value")
+              .redirectErrorStream(true)
+              .start()
+      val wmicOutput = wmicProcess.inputStream.bufferedReader().readText()
+      val wmicExited = wmicProcess.waitFor(5, TimeUnit.SECONDS)
+
+      if (!wmicExited) wmicProcess.destroyForcibly()
+
+      if (wmicExited) {
+        val cores =
+            Regex("""NumberOfCores=(\d+)""")
+                .findAll(wmicOutput)
+                .mapNotNull { it.groupValues[1].toIntOrNull() }
+                .sum()
+        if (cores > 0) return cores
+      }
+    } catch (_: Exception) {
+      // wmic not available — fall through to PowerShell
+    }
+
+    // Fallback: PowerShell Get-CimInstance
+    try {
+      val psProcess =
+          ProcessBuilder(
+                  "powershell",
+                  "-NoProfile",
+                  "-Command",
+                  "(Get-CimInstance Win32_Processor | Measure-Object -Property NumberOfCores -Sum).Sum")
+              .redirectErrorStream(true)
+              .start()
+      val psOutput = psProcess.inputStream.bufferedReader().readText().trim()
+      val psExited = psProcess.waitFor(10, TimeUnit.SECONDS)
+
+      if (!psExited) {
+        psProcess.destroyForcibly()
+        log(LogLevel.WARNING, "Core detection: PowerShell timed out after 10 s")
+      } else {
+        val cores = Regex("""(\d+)""").find(psOutput)?.groupValues?.get(1)?.toIntOrNull()
+        if (cores != null && cores > 0) {
+          log(LogLevel.INFO, "Core detection: $cores physical cores (via PowerShell)")
+          return cores
+        }
+      }
+    } catch (e: Exception) {
+      log(LogLevel.INFO, "Core detection: PowerShell fallback failed (${e.message})")
+    }
+
+    return Runtime.getRuntime().availableProcessors()
   }
 }

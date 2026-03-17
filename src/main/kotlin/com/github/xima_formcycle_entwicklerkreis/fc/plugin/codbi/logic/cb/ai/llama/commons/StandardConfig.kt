@@ -63,8 +63,19 @@ internal data class StandardConfig(
     val fallbackLocation: String?,
     val nominatimDomain: String,
     val ipGeolocationDomain: String,
-    val maxSearchRoundTrips: Int = 2
+    val maxSearchRoundTrips: Int = 2,
+    val forcedLanguage: String? = null,
+    val specialists: Map<String, SpecialistEntry> = emptyMap()
 ) {
+  /**
+   * A specialist model entry parsed from `AI_LLAMA_STD_SPECIALIST_XXX` plugin properties.
+   *
+   * @param modelUrl Download URL for the specialist GGUF model.
+   * @param mmprojUrl Download URL for the specialist's mmproj file, or `null` if not
+   *   vision-capable.
+   */
+  data class SpecialistEntry(val modelUrl: String, val mmprojUrl: String?)
+
   init {
     require(maxPixels > 0) { "maxPixels must be > 0, was $maxPixels" }
     require(maxUploadBytes > 0) { "maxUploadBytes must be > 0, was $maxUploadBytes" }
@@ -85,6 +96,10 @@ internal data class StandardConfig(
   /** `true` when a separate thinking/reasoning model URL is configured. */
   val hasThinkingModel: Boolean
     get() = thinkingModelUrl != null
+
+  /** `true` when at least one specialist model is configured. */
+  val hasSpecialists: Boolean
+    get() = specialists.isNotEmpty()
 
   /** Returns a summary string with the API key redacted. */
   override fun toString(): String =

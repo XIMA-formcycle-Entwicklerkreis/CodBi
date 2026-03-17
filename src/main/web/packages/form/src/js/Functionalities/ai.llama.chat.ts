@@ -15,7 +15,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 //region PDF.js
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
-import { CodBiError } from "../global-scope";
+import { CodBiError, generateUUID } from "../global-scope";
 //endregion PDF.js
 //endregion Imports
 /**
@@ -102,6 +102,13 @@ export class AI_LLAMA_CHAT {
    *                          (**default**: `"Low confidence"`).
    * - **showuncertaintokens**: Whether to visually highlight uncertain tokens in AI responses.
    *                          Set to `"false"` to disable highlighting (**default**: `"true"`).
+   * - **responselanguage**:  Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). When set, the AI is
+   *                          forced to respond in this language — no auto-detection is performed.
+   *                          Overrides the `AI_LLAMA_STD_Language` plugin property for this instance.
+   *                          The chat interface reflects this language for labels where available.
+   * - **specialist**:        Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
+   *                          plugin property. When set, requests are routed to that specialist's
+   *                          dedicated server instance (case-insensitive match).
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -109,7 +116,7 @@ export class AI_LLAMA_CHAT {
   public static functionality(
     @TYPE.PRE(
       "string",
-      "llamabubble, userbubble, welcometext, waitingtext, lowconfidencetext, rethinkbuttontext, uncertaintext, showuncertaintokens, voicehotkey, voiceplaceholder, voicesendhotkey, language",
+      "llamabubble, userbubble, welcometext, waitingtext, lowconfidencetext, rethinkbuttontext, uncertaintext, showuncertaintokens, voicehotkey, voiceplaceholder, voicesendhotkey, language, responselanguage, specialist",
     )
     @TYPE.PRE("string | number", "maxpages, rotation, maxpixelsize")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages, maxpixelsize")
@@ -117,6 +124,7 @@ export class AI_LLAMA_CHAT {
     @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotation")
     @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotation")
     @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{3}$/i), "language")
+    @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{2}$/i), "responselanguage")
     // #endregion Rotation constraint.
     @REGEX.PRE(REGEX.stdExp.colorCodeHEX, "llamabubble, userbubble")
     @REGEX.PRE(REGEX.stdExp.simpleHotkey, "voicehotkey, voicesendhotkey")
@@ -133,6 +141,8 @@ export class AI_LLAMA_CHAT {
     const $ = getJQuery();
     const chatDisplay = toProcess as HTMLTextAreaElement;
     const aiHintText = toLoad.aihint != null ? String(toLoad.aihint) : "\u2728 AI-Generated";
+    const responseLang = toLoad.responselanguage != null ? String(toLoad.responselanguage).trim() : "";
+    const specialist = toLoad.specialist != null ? String(toLoad.specialist).trim() : "";
 
     chatDisplay.readOnly = true;
     chatDisplay.style.display = "none";
@@ -771,7 +781,7 @@ export class AI_LLAMA_CHAT {
     let lastUserQuestion = "";
     let activeStreamId: string | null = null;
 
-    const pageSessionId: string = crypto.randomUUID();
+    const pageSessionId: string = generateUUID();
     const conversationHistory: { role: string; content: string }[] = [];
     /** Tracks assistant entries whose mean logprob fell below {@link LOW_CONFIDENCE_THRESHOLD}. */
     const lowConfidenceEntries = new Set<object>();
@@ -1317,6 +1327,12 @@ export class AI_LLAMA_CHAT {
         headers["X-Session-Id"] = pageSessionId;
         headers["X-Chat-History"] = utf8ToBase64(JSON.stringify(compactHistory()));
         // #endregion HTTP headers are ASCII-only — Base64-encode to preserve Unicode (e.g. ü, ö, ä)
+        if (responseLang) {
+          headers["X-Forced-Language"] = responseLang;
+        }
+        if (specialist) {
+          headers["X-Specialist"] = specialist;
+        }
         if (thinkingCheckbox) {
           headers["X-Thinking"] = thinkingCheckbox.checked ? "true" : "false";
         }
@@ -1769,6 +1785,13 @@ export class AI_LLAMA_CHAT {
                             "X-Chat-History": utf8ToBase64(JSON.stringify(compactHistory())),
                             "X-Thinking": "true",
                           };
+
+                          if (responseLang) {
+                            rethinkHeaders["X-Forced-Language"] = responseLang;
+                          }
+                          if (specialist) {
+                            rethinkHeaders["X-Specialist"] = specialist;
+                          }
 
                           if (searchCheckbox) {
                             rethinkHeaders["X-Search"] = searchCheckbox.checked ? "true" : "false";

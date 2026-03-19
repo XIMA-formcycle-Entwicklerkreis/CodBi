@@ -152,87 +152,8 @@ internal class ExternalAiClient(
   }
 
   /**
-   * Probes whether the configured external AI endpoint is reachable and usable for inference.
-   *
-   * The probe first tries `GET /v1/models`, which is commonly available on OpenAI-compatible
-   * servers. If that endpoint is unsupported (`404` or `405`), it falls back to probing the base
-   * URL directly. Network failures and non-success responses are reported as a human-readable error
-   * string.
-   *
-   * @param timeoutMs Connect/read timeout in milliseconds for the probe.
-   * @return `null` when the external endpoint appears reachable, otherwise an error message.
-   */
-  fun probeAvailability(timeoutMs: Int = 5_000): String? {
-    val modelProbeError = probeEndpoint("/v1/models", timeoutMs)
-
-    if (modelProbeError == null) {
-      return null
-    }
-
-    if (modelProbeError.startsWith("HTTP 404") || modelProbeError.startsWith("HTTP 405")) {
-      val baseProbeError = probeEndpoint("", timeoutMs)
-
-      if (baseProbeError == null) {
-        return null
-      }
-
-      return "External AI unavailable: $baseProbeError"
-    }
-
-    return "External AI unavailable: $modelProbeError"
-  }
-
-  /**
-   * Sends a lightweight GET probe to one endpoint and returns `null` on success.
-   *
-   * @param endpoint API path to probe.
-   * @param timeoutMs Connect/read timeout in milliseconds.
-   * @return `null` when the endpoint is reachable, otherwise a short error description.
-   */
-  private fun probeEndpoint(endpoint: String, timeoutMs: Int): String? {
-    return try {
-      val url = "$baseUrl$endpoint"
-      val connection = URI(url).toURL().openConnection() as HttpURLConnection
-
-      connection.requestMethod = "GET"
-      connection.connectTimeout = timeoutMs
-      connection.readTimeout = timeoutMs
-      connection.setRequestProperty("Accept", "application/json")
-
-      apiKey?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
-
-      val responseCode = connection.responseCode
-      val body =
-          try {
-            (if (responseCode in 200..299) connection.inputStream else connection.errorStream)
-                ?.bufferedReader()
-                ?.readText() ?: ""
-          } catch (_: Exception) {
-            ""
-          }
-
-      connection.disconnect()
-
-      when {
-        responseCode in 200..299 -> null
-        responseCode == 401 -> "HTTP 401: unauthorized"
-        responseCode == 403 -> "HTTP 403: forbidden"
-        body.isNotBlank() -> "HTTP $responseCode: ${body.take(200)}"
-        else -> "HTTP $responseCode"
-      }
-    } catch (e: Exception) {
-      e.message ?: e.javaClass.simpleName
-    }
-  }
-
-  /**
-   * Executes [action] and retries it once after a short delay when a transient network failure
-   * occurs.
-   *
-   * @param action The operation to execute.
-   * @return The result produced by [action].
-   * @throws ConnectException If both attempts fail with connection errors.
-   * @throws SocketTimeoutException If both attempts fail with read/connect timeouts.
+   * Retries [action] once after a 1-second delay when it fails with a transient network exception
+   * ([ConnectException] or [SocketTimeoutException]).
    */
   private fun <T> retryOnTransientFailure(action: () -> T): T {
     return try {

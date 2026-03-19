@@ -77,7 +77,7 @@ export class AI_OCR {
   public static functionality(
     @TYPE.PRE(
       "string",
-      "mode :: pattern :: invalidimagetext :: wrongfilemessage :: processingimagetext :: separator :: regexflags",
+      "mode :: pattern :: invalidimagetext :: wrongfilemessage :: processingimagetext :: separator :: regexflags :: queuebadge :: queuetext",
     )
     @REGEX.PRE(/^(Print|Verify|Extract Fields)$/i, "mode")
     @REGEX.PRE(/^\S+$/, "separator")
@@ -282,27 +282,69 @@ export class AI_OCR {
         }
       }
       // #endregion Set Preprocessing-Header, if defined in passed parameter.
-      $.ajax({
-        url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Tesseract`,
-        type: "POST",
-        data: formData,
-        processData: false,
-        contentType: false,
-        cache: false,
-        headers: ajaxHeaders,
-        success: (response) => {
-          const parsedResponse = typeof response === "string" ? JSON.parse(response) : response;
-          const mergedResponse = { ...clientSideResponse, ...parsedResponse };
+      // #region Queue badge configuration.
+      const ocrQueueOverride: boolean | null = toLoad.queuebadge != null ? String(toLoad.queuebadge) !== "false" : null;
+      const ocrQueueText: string = toLoad.queuetext != null ? String(toLoad.queuetext) : "";
+      let ocrQueueBadgeEl: HTMLSpanElement | null = null;
 
-          AI_OCR.handleResponse(mergedResponse, toLoad, toProcess, toLoad.invalidimagetext as string, $);
-          unanimate();
-        },
-        error: (xhr, status, error) => {
-          unanimate();
+      const showOcrQueueBadge = (position: number) => {
+        if (!ocrQueueBadgeEl) {
+          ocrQueueBadgeEl = document.createElement("span");
+          ocrQueueBadgeEl.className = "OCR_QueueBadge";
+          ocrQueueBadgeEl.style.cssText =
+            "display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 8px;border-radius:10px;background:#d0e0ff;color:#1a5aab;font-size:12px;font-weight:600;white-space:nowrap;";
+          label?.appendChild(ocrQueueBadgeEl);
+        }
+        ocrQueueBadgeEl.textContent = `${position}${ocrQueueText ? " " + ocrQueueText : ""}`;
+      };
 
-          throw new CodBiError(`❌ Tesseract AI OCR request failed with status (${status}) due to: ${error}`);
-        },
-      });
+      const hideOcrQueueBadge = () => {
+        ocrQueueBadgeEl?.remove();
+        ocrQueueBadgeEl = null;
+      };
+      // #endregion Queue badge configuration.
+      let ocrQueueTicket: string | null = null;
+
+      const sendOcrRequest = () => {
+        $.ajax({
+          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_Tesseract`,
+          type: "POST",
+          data: formData,
+          processData: false,
+          contentType: false,
+          cache: false,
+          headers: ajaxHeaders,
+          beforeSend: (xhr) => {
+            if (ocrQueueTicket) xhr.setRequestHeader("X-Queue-Ticket", ocrQueueTicket);
+          },
+          success: (response) => {
+            const parsedResponse = typeof response === "string" ? JSON.parse(response) : response;
+
+            if (parsedResponse.queued) {
+              ocrQueueTicket = parsedResponse.queueTicket ?? ocrQueueTicket;
+              const badgeEnabled = ocrQueueOverride != null ? ocrQueueOverride : !!parsedResponse.queueBadge;
+              if (badgeEnabled) {
+                showOcrQueueBadge(parsedResponse.position ?? 0);
+              }
+              setTimeout(sendOcrRequest, 1000);
+              return;
+            }
+            hideOcrQueueBadge();
+            ocrQueueTicket = null;
+            const mergedResponse = { ...clientSideResponse, ...parsedResponse };
+
+            AI_OCR.handleResponse(mergedResponse, toLoad, toProcess, toLoad.invalidimagetext as string, $);
+            unanimate();
+          },
+          error: (xhr, status, error) => {
+            hideOcrQueueBadge();
+            unanimate();
+
+            throw new CodBiError(`❌ Tesseract AI OCR request failed with status (${status}) due to: ${error}`);
+          },
+        });
+      };
+      sendOcrRequest();
       // #endregion Send the request to the Tesseract AI OCR API
     });
   }

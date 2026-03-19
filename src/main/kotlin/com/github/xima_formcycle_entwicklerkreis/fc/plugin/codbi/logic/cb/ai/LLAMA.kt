@@ -19,18 +19,29 @@ import java.io.File
 /**
  * # Base class for AI models served via a local LLAMA server process.
  *
+ * ## Phases
+ * 1. **Intelligence** — Detect OS (`os.name`) and architecture (`os.arch`)
+ * 2. **Fetch** — Download the correct LLAMA-Server binary + GGUF model (with resume support)
+ * 3. **Ignition** — Launch the server via [ProcessBuilder] on a local port
+ * 4. **Request** — All inference goes through `http://127.0.0.1:{port}/v1/chat/completions`.
+ *
+ * ## Crash isolation
+ * Because the AI runs in a **separate OS process**, if the model runs out of RAM, the OS kills the
+ * LLAMA-Server process but the Formcycle Tomcat JVM does not even feel a bump.
+ *
  * ## Plugin properties
- * |Property                    |Default       |Description                                       |
- * |----------------------------|--------------|--------------------------------------------------|
- * |`Active_AI`                 |—             |Must contain `llama_engine`                       |
- * |`AI_Remove`                 |—             |If contains `llama_engine`, clean up all          |
- * |`AI_LLAMA_ENGINE_Port`      |`8392`        |Local port for LLAMA-Server                       |
- * |`AI_LLAMA_ENGINE_Threads`   |physical cores|Number of CPU threads                             |
- * |`AI_LLAMA_ENGINE_CtxSize`   |`32768`       |Context window size (shared across parallel slots)|
- * |`AI_LLAMA_ENGINE_GpuLayers` |auto-detect   |Layers offloaded to GPU (-1 = auto)               |
- * |`AI_LLAMA_ENGINE_Release`   |`b8175`       |llama.cpp release tag for downloads               |
- * |`AI_LLAMA_ENGINE_ServerArgs`|—             |Extra CLI args for LLAMA-Server                   |
- * |`AI_LLAMA_ENGINE_Parallel`  |`4`           |Number of parallel inference slots                |
+ * |Property                       |Default       |Description                                                                           |
+ * |-------------------------------|--------------|--------------------------------------------------------------------------------------|
+ * |`Active_AI`                    |—             |Must contain `llama_engine`                                                           |
+ * |`AI_Remove`                    |—             |If contains `llama_engine`, clean up all                                              |
+ * |`AI_LLAMA_ENGINE_Port`         |`8392`        |Local port for LLAMA-Server                                                           |
+ * |`AI_LLAMA_ENGINE_Threads`      |physical cores|Number of CPU threads                                                                 |
+ * |`AI_LLAMA_ENGINE_CtxSize`      |`32768`       |Context window size (shared across parallel slots)                                    |
+ * |`AI_LLAMA_ENGINE_GpuLayers`    |auto-detect   |Layers offloaded to GPU (-1 = auto)                                                   |
+ * |`AI_LLAMA_ENGINE_Release`      |`b8175`       |llama.cpp release tag for downloads                                                   |
+ * |`AI_LLAMA_ENGINE_ServerArgs`   |—             |Extra CLI args for LLAMA-Server                                                       |
+ * |`AI_LLAMA_ENGINE_MaxConcurrent`|`2`           |Maximum concurrent inferences allowed across all local servers                        |
+ * |`AI_LLAMA_ENGINE_Parallel`     |`4`           |[DEPRECATED] Number of parallel inference slots per server (use MaxConcurrent instead)|
  *
  * ## Domains to whitelist
  * - **github.com** — llama-server binary releases
@@ -42,6 +53,9 @@ import java.io.File
  * - Same compliance advantages as all other CodBi AI implementations.
  */
 abstract class LLAMA : AI() {
+  /** CPU affinity limit (1–99 %). `null` = no restriction. */
+  protected var cpuLimitPercent: Int? = null
+
   // region Companion Object
   /** The companion for static members. */
   companion object {
@@ -87,7 +101,12 @@ abstract class LLAMA : AI() {
   protected var detectedGpu: GpuBackend = GpuBackend.NONE
   /** Additional CLI arguments appended to the LLAMA-Server command. */
   protected var extraServerArgs: List<String> = emptyList()
-  /** Maximum concurrent requests (slots) the server serves. */
+  /**
+   * [DEPRECATED] Maximum concurrent requests (slots) the server serves. Use global MaxConcurrent
+   * instead.
+   */
+  @Deprecated(
+      "Use AI_LLAMA_ENGINE_MaxConcurrent for global concurrency limiting across all local servers.")
   protected var parallelSlots: Int = 4
   // endregion Configuration Properties
   // region Server Binary Download URLs
@@ -565,6 +584,10 @@ abstract class LLAMA : AI() {
 
     configData.properties.getProperty("AI_LLAMA_ENGINE_Parallel")?.trim()?.toIntOrNull()?.let {
       if (it > 0) parallelSlots = it
+    }
+
+    configData.properties.getProperty("AI_LLAMA_ENGINE_MaxConcurrent")?.trim()?.toIntOrNull()?.let {
+      if (it > 0) AI.updateMaxConcurrent(it)
     }
 
     configData.properties

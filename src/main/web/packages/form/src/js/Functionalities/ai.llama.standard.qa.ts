@@ -122,7 +122,7 @@ export class AI_LLAMA_STANDARD_QA {
   public static functionality(
     @TYPE.PRE(
       "string",
-      "aihint, positiveresponse, verifyerrortext, verifycheckboxlabel, mode, responselanguage, specialist",
+      "aihint, positiveresponse, verifyerrortext, verifycheckboxlabel, mode, responselanguage, specialist, queuebadge, queuetext",
     )
     @GREATER.PRE(
       3,
@@ -490,143 +490,186 @@ export class AI_LLAMA_STANDARD_QA {
         };
         // #endregion Define how to remove the loading animation and restore labels
         // #region Contact LLAMA-Server via AJAX
-        $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
-          type: "POST",
-          data: formData,
-          dataType: "json",
-          processData: false,
-          contentType: false,
-          cache: false,
-          beforeSend: (xhr) => {
-            for (const headerName of Object.keys(vqaHeaders)) {
-              xhr.setRequestHeader(headerName, vqaHeaders[headerName]);
-            }
-          },
-          success: (response) => {
-            unanimate();
-            // #region Display error if request failed.
-            if (response.error) {
-              window.codbi.log("ERROR", `REST failed with: ${response.error}`, "AI / LLAMA / QA");
+        // #region Queue badge configuration.
+        const qaQueueOverride: boolean | null =
+          toLoad.queuebadge != null ? String(toLoad.queuebadge) !== "false" : null;
+        const qaQueueText: string = toLoad.queuetext != null ? String(toLoad.queuetext) : "";
+        let qaQueueBadgeEl: HTMLSpanElement | null = null;
 
-              return;
-            }
-            // #endregion Display error if request failed.
-            if (mode === "verify" && verifyFieldId && verifyFieldQuestion) {
-              // #region Verify mode — check AI answer and show error or accept
-              // #region Contract checking.
-              const answer = TYPE.tsCheck<string>(response[verifyFieldId].answer, "string");
-              const field = INSTANCE.tsCheck<HTMLInputElement>(
-                DEFINED.tsCheck(document.querySelector(`#${verifyFieldId}`)),
-                HTMLInputElement,
-                "Is it not an <input> that is tagged with this functionality?",
-              );
+        const showQaQueueBadge = (position: number) => {
+          if (!qaQueueBadgeEl) {
+            qaQueueBadgeEl = document.createElement("span");
+            qaQueueBadgeEl.className = "LLAMA_QueueBadge";
+            qaQueueBadgeEl.style.cssText =
+              "display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 8px;border-radius:10px;background:#d0e0ff;color:#1a5aab;font-size:12px;font-weight:600;white-space:nowrap;";
+            uploadLabel?.appendChild(qaQueueBadgeEl);
+          }
+          qaQueueBadgeEl.textContent = `${position}${qaQueueText ? " " + qaQueueText : ""}`;
+        };
 
-              if (field.getAttribute("type") !== "file") {
-                window.codbi.log(
-                  "ERROR",
-                  `Verification field #${verifyFieldId} is not an <input type="file">`,
-                  "AI / LLAMA / STD / QA",
-                );
+        const hideQaQueueBadge = () => {
+          qaQueueBadgeEl?.remove();
+          qaQueueBadgeEl = null;
+        };
+        // #endregion Queue badge configuration.
+        let qaQueueTicket: string | null = null;
+
+        const sendQaRequest = () => {
+          $.ajax({
+            url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
+            type: "POST",
+            data: formData,
+            dataType: "json",
+            processData: false,
+            contentType: false,
+            cache: false,
+            beforeSend: (xhr) => {
+              for (const headerName of Object.keys(vqaHeaders)) {
+                xhr.setRequestHeader(headerName, vqaHeaders[headerName]);
+              }
+              if (qaQueueTicket) xhr.setRequestHeader("X-Queue-Ticket", qaQueueTicket);
+            },
+            success: (response) => {
+              if (response.queued) {
+                qaQueueTicket = response.queueTicket ?? qaQueueTicket;
+                const badgeEnabled = qaQueueOverride != null ? qaQueueOverride : !!response.queueBadge;
+                if (badgeEnabled) {
+                  showQaQueueBadge(response.position ?? 0);
+                }
+                setTimeout(sendQaRequest, 1000);
+                return;
+              }
+              hideQaQueueBadge();
+              unanimate();
+              // #region Display error if request failed.
+              if (response.error) {
+                window.codbi.log("ERROR", `REST failed with: ${response.error}`, "AI / LLAMA / QA");
 
                 return;
               }
-              // #endregion Contract checking.
-              if ((caseInsensitive ? answer.trim().toLowerCase() : answer.trim()) === positiveResponse) {
-                // #region Remove any error/checkbox if present.
-                $(toProcess).error("");
+              // #endregion Display error if request failed.
+              if (mode === "verify" && verifyFieldId && verifyFieldQuestion) {
+                // #region Verify mode — check AI answer and show error or accept
+                // #region Contract checking.
+                const answer = TYPE.tsCheck<string>(response[verifyFieldId].answer, "string");
+                const field = INSTANCE.tsCheck<HTMLInputElement>(
+                  DEFINED.tsCheck(document.querySelector(`#${verifyFieldId}`)),
+                  HTMLInputElement,
+                  "Is it not an <input> that is tagged with this functionality?",
+                );
 
-                const existingManualVerify =
-                  toProcess.parentElement?.parentElement?.querySelectorAll(".LLAMA_AI_ManualVerify");
+                if (field.getAttribute("type") !== "file") {
+                  window.codbi.log(
+                    "ERROR",
+                    `Verification field #${verifyFieldId} is not an <input type="file">`,
+                    "AI / LLAMA / STD / QA",
+                  );
 
-                if (existingManualVerify) {
-                  for (let i = 0; i < existingManualVerify.length; i++) {
-                    existingManualVerify[i].remove();
-                  }
+                  return;
                 }
-                // #endregion Remove any error/checkbox if present.
-              } else {
-                $(toProcess).error(verifyErrorText);
-                // #region Add styles for manual verification checkbox
-                if (!document.querySelector("#LLAMA_AI_ManualVerify_Styles")) {
-                  const style = document.createElement("style");
+                // #endregion Contract checking.
+                if ((caseInsensitive ? answer.trim().toLowerCase() : answer.trim()) === positiveResponse) {
+                  // #region Remove any error/checkbox if present.
+                  $(toProcess).error("");
 
-                  style.id = "LLAMA_AI_ManualVerify_Styles";
-                  style.textContent = `
+                  const existingManualVerify =
+                    toProcess.parentElement?.parentElement?.querySelectorAll(".LLAMA_AI_ManualVerify");
+
+                  if (existingManualVerify) {
+                    for (let i = 0; i < existingManualVerify.length; i++) {
+                      existingManualVerify[i].remove();
+                    }
+                  }
+                  // #endregion Remove any error/checkbox if present.
+                } else {
+                  $(toProcess).error(verifyErrorText);
+                  // #region Add styles for manual verification checkbox
+                  if (!document.querySelector("#LLAMA_AI_ManualVerify_Styles")) {
+                    const style = document.createElement("style");
+
+                    style.id = "LLAMA_AI_ManualVerify_Styles";
+                    style.textContent = `
                     .LLAMA_AI_ManualVerify { display: flex ; align-items: center ; margin-top: 8px ; gap: 8px ;
                       flex-wrap: nowrap ;}
                     .LLAMA_AI_ManualVerify_Checkbox { cursor: pointer ; opacity: 1 !important ; position: relative !important ;
                       flex-shrink: 0 ;}
                     .LLAMA_AI_ManualVerify label { margin-bottom: 0 ; position: relative !important ;}`;
 
-                  document.head.appendChild(style);
-                }
-                // #endregion Add styles for manual verification checkbox
-                // Remove existing
-                const existingManualVerify =
-                  toProcess.parentElement?.parentElement?.querySelectorAll(".LLAMA_AI_ManualVerify");
-
-                if (existingManualVerify) {
-                  for (let i = 0; i < existingManualVerify.length; i++) {
-                    existingManualVerify[i].remove();
+                    document.head.appendChild(style);
                   }
-                }
-                // Add checkbox
-                const checkboxContainer = document.createElement("div");
-                const checkbox = document.createElement("input");
-                const label = document.createElement("label");
+                  // #endregion Add styles for manual verification checkbox
+                  // Remove existing
+                  const existingManualVerify =
+                    toProcess.parentElement?.parentElement?.querySelectorAll(".LLAMA_AI_ManualVerify");
 
-                checkboxContainer.className = "LLAMA_AI_ManualVerify";
-                checkbox.type = "checkbox";
-                checkbox.id = `manual-verify-${toProcess.id}`;
-                checkbox.className = "LLAMA_AI_ManualVerify_Checkbox";
-                label.htmlFor = checkbox.id;
-                label.textContent = verifyCheckboxLabel;
-
-                checkboxContainer.appendChild(checkbox);
-                checkboxContainer.appendChild(label);
-                toProcess.parentElement?.insertAdjacentElement("afterend", checkboxContainer);
-                checkbox.addEventListener("change", () => {
-                  if (checkbox.checked) {
-                    $(toProcess).error("");
-                  } else {
-                    $(toProcess).error(verifyErrorText);
+                  if (existingManualVerify) {
+                    for (let i = 0; i < existingManualVerify.length; i++) {
+                      existingManualVerify[i].remove();
+                    }
                   }
-                });
-              }
-              // #endregion Verify mode — check AI answer and show error or accept
-            } else {
-              // #region Normal mode — populate answer fields
-              for (const questionId in response) {
-                const answerText = response[questionId]?.answer;
+                  // Add checkbox
+                  const checkboxContainer = document.createElement("div");
+                  const checkbox = document.createElement("input");
+                  const label = document.createElement("label");
 
-                if (answerText == null) {
-                  continue;
+                  checkboxContainer.className = "LLAMA_AI_ManualVerify";
+                  checkbox.type = "checkbox";
+                  checkbox.id = `manual-verify-${toProcess.id}`;
+                  checkbox.className = "LLAMA_AI_ManualVerify_Checkbox";
+                  label.htmlFor = checkbox.id;
+                  label.textContent = verifyCheckboxLabel;
+
+                  checkboxContainer.appendChild(checkbox);
+                  checkboxContainer.appendChild(label);
+                  toProcess.parentElement?.insertAdjacentElement("afterend", checkboxContainer);
+                  checkbox.addEventListener("change", () => {
+                    if (checkbox.checked) {
+                      $(toProcess).error("");
+                    } else {
+                      $(toProcess).error(verifyErrorText);
+                    }
+                  });
                 }
+                // #endregion Verify mode — check AI answer and show error or accept
+              } else {
+                // #region Normal mode — populate answer fields
+                for (const questionId in response) {
+                  const answerText = response[questionId]?.answer;
 
-                const field = INSTANCE.tsCheck<HTMLInputElement>(
-                  document.querySelector(`#${questionId}`),
-                  HTMLInputElement,
-                );
+                  if (answerText == null) {
+                    continue;
+                  }
 
-                field.value = answerText;
+                  const field = INSTANCE.tsCheck<HTMLInputElement>(
+                    document.querySelector(`#${questionId}`),
+                    HTMLInputElement,
+                  );
 
-                if (aiHintText) {
-                  AI_LLAMA_STANDARD_QA.attachAiHint(field, aiHintText);
+                  field.value = answerText;
+
+                  if (aiHintText) {
+                    AI_LLAMA_STANDARD_QA.attachAiHint(field, aiHintText);
+                  }
+                  // Dispatch change event after setting value
+                  const event = new Event("change", { bubbles: true });
+
+                  field.dispatchEvent(event);
                 }
-                // Dispatch change event after setting value
-                const event = new Event("change", { bubbles: true });
-
-                field.dispatchEvent(event);
+                // #endregion Normal mode — populate answer fields
               }
-              // #endregion Normal mode — populate answer fields
-            }
-          },
-          error: (xhr, status, error) => {
-            unanimate();
-            window.codbi.log("ERROR", `REST failed with status "${status}" cause: "${error}"`, "AI / LLAMA / STD / QA");
-          },
-        });
+            },
+            error: (xhr, status, error) => {
+              hideQaQueueBadge();
+              unanimate();
+              window.codbi.log(
+                "ERROR",
+                `REST failed with status "${status}" cause: "${error}"`,
+                "AI / LLAMA / STD / QA",
+              );
+            },
+          });
+        };
+        sendQaRequest();
         // #endregion Contact LLAMA-Server via AJAX
       }
       // #endregion If any VQA questions, call VQA action as before

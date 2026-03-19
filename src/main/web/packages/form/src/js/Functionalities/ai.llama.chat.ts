@@ -116,7 +116,7 @@ export class AI_LLAMA_CHAT {
   public static functionality(
     @TYPE.PRE(
       "string",
-      "llamabubble, userbubble, welcometext, waitingtext, lowconfidencetext, rethinkbuttontext, uncertaintext, showuncertaintokens, voicehotkey, voiceplaceholder, voicesendhotkey, language, responselanguage, specialist",
+      "llamabubble, userbubble, welcometext, waitingtext, lowconfidencetext, rethinkbuttontext, uncertaintext, showuncertaintokens, voicehotkey, voiceplaceholder, voicesendhotkey, language, responselanguage, specialist, queuebadge, queuetext",
     )
     @TYPE.PRE("string | number", "maxpages, rotation, maxpixelsize")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages, maxpixelsize")
@@ -1415,6 +1415,20 @@ export class AI_LLAMA_CHAT {
               },
               success: (pollResponse) => {
                 handleResourceStatus(pollResponse.resourceStatus);
+                // #region Queue-position badge.
+                const showBadge = queueBadgeOverride != null ? queueBadgeOverride : queueBadgeEnabled;
+                if (showBadge && pollResponse.queuePosition > 0 && thinkingBubble) {
+                  let badge = thinkingBubble.querySelector(".LLAMA_QueueBadge") as HTMLSpanElement | null;
+                  if (!badge) {
+                    badge = document.createElement("span");
+                    badge.className = "LLAMA_QueueBadge";
+                    thinkingBubble.appendChild(badge);
+                  }
+                  badge.textContent = `${pollResponse.queuePosition}${queueText ? ` ${queueText}` : ""}`;
+                } else if (thinkingBubble) {
+                  thinkingBubble.querySelector(".LLAMA_QueueBadge")?.remove();
+                }
+                // #endregion Queue-position badge.
                 // #region Get translated labels.
                 if (pollResponse.i18n) {
                   if (pollResponse.i18n.reasoningLabel) {
@@ -2133,6 +2147,11 @@ export class AI_LLAMA_CHAT {
 
     const showUncertainTokens = toLoad.showuncertaintokens == null || String(toLoad.showuncertaintokens) !== "false";
 
+    /** Whether the queue-position badge is enabled. Starts from plugin property; toLoad overrides. */
+    let queueBadgeEnabled = false;
+    const queueBadgeOverride: boolean | null = toLoad.queuebadge != null ? String(toLoad.queuebadge) !== "false" : null;
+    const queueText: string = toLoad.queuetext != null ? String(toLoad.queuetext) : "";
+
     /** Mean logprob threshold below which a response is considered low-confidence. */
     const LOW_CONFIDENCE_THRESHOLD = -2.5;
 
@@ -2195,6 +2214,10 @@ export class AI_LLAMA_CHAT {
           } else {
             clearInterval(healthCheck);
             showReady(response.model, response.thinkingModel);
+          }
+          // Pick up queue-badge setting from plugin property (toLoad override takes precedence).
+          if (response.queueBadge != null && queueBadgeOverride == null) {
+            queueBadgeEnabled = !!response.queueBadge;
           }
         },
         error: () => {
@@ -2300,6 +2323,10 @@ export class AI_LLAMA_CHAT {
       .LLAMA_ThinkingSpinner::before  { display: none ;}
 
       .LLAMA_ThinkingLabel { line-height: 20px ;}
+
+      .LLAMA_QueueBadge { display: inline-flex ; align-items: center ; gap: 4px ; margin-left: 6px ; padding: 2px 8px ;
+                          border-radius: 10px ; background: #d0e0ff ; color: #1a5aab ; font-size: 12px ; font-weight: 600 ;
+                          font-style: normal ; white-space: nowrap ; line-height: 18px ;}
 
       .LLAMA_Chat_Bubble--error { background: #ffe0e0 ; color: #c00 ;}
 

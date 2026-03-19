@@ -52,8 +52,10 @@ internal class ChatCompletionService(
    * @param enableThinking Whether to route to the thinking server (if available).
    * @param idSlot The inference slot ID (`-1` for auto).
    * @param maxThinkingTokens Optional budget for thinking tokens.
-   * @param overridePort When non-null, routes to this port (specialist server) instead of the
+   * @param overridePort When non-null, routes to this port (local specialist server) instead of the
    *   default main/thinking server.
+   * @param overrideExternalClient When non-null, routes through this external AI client (external
+   *   specialist) instead of the default routing.
    * @return The generated text response (with `<think>` tags stripped).
    */
   fun chatCompletion(
@@ -61,9 +63,11 @@ internal class ChatCompletionService(
       enableThinking: Boolean = false,
       idSlot: Int = -1,
       maxThinkingTokens: Int? = null,
-      overridePort: Int? = null
+      overridePort: Int? = null,
+      overrideExternalClient: ExternalAiClient? = null
   ): String {
-    val external = isExternalMode()
+    val useExtSpecialist = overrideExternalClient != null
+    val external = useExtSpecialist || isExternalMode()
     val useThinkingServer = !external && enableThinking && thinkingServerReady()
     val targetPort = overridePort ?: if (useThinkingServer) thinkingServerPort() else serverPort()
     val currentMaxTokens = maxTokens()
@@ -89,7 +93,9 @@ internal class ChatCompletionService(
       append("}")
     }
 
-    if (external) {
+    if (useExtSpecialist) {
+      requestBody = overrideExternalClient!!.injectModelField(requestBody)
+    } else if (external) {
       requestBody = injectModelField?.invoke(requestBody) ?: requestBody
 
       log(LogLevel.INFO, "Routing to external AI: ${externalUrl()}")
@@ -99,7 +105,9 @@ internal class ChatCompletionService(
 
     val timeoutMs = if (enableThinking) 600_000 else 300_000
     val response =
-        if (external) {
+        if (useExtSpecialist) {
+          overrideExternalClient!!.post("/v1/chat/completions", requestBody, timeoutMs)
+        } else if (external) {
           externalPost!!("/v1/chat/completions", requestBody, timeoutMs)
         } else {
           localPost("/v1/chat/completions", requestBody, timeoutMs, targetPort)
@@ -137,17 +145,21 @@ internal class ChatCompletionService(
    * @param session The [StreamingSession] to populate with chunks.
    * @param enableThinking Whether to route to the thinking server.
    * @param idSlot The inference slot ID (`-1` for auto).
-   * @param overridePort When non-null, routes to this port (specialist server) instead of the
-   *   default main/thinking server.
+   * @param overridePort When non-null, routes to this port (local specialist server) instead of\n *
+   *   the default main/thinking server.
+   * @param overrideExternalClient When non-null, routes through this external AI client (external
+   *   specialist) instead of the default routing.
    */
   fun streamChatCompletion(
       messagesJson: String,
       session: StreamingSession,
       enableThinking: Boolean = false,
       idSlot: Int = -1,
-      overridePort: Int? = null
+      overridePort: Int? = null,
+      overrideExternalClient: ExternalAiClient? = null
   ) {
-    val external = isExternalMode()
+    val useExtSpecialist = overrideExternalClient != null
+    val external = useExtSpecialist || isExternalMode()
     val useThinkingServer = !external && enableThinking && thinkingServerReady()
     val targetPort = overridePort ?: if (useThinkingServer) thinkingServerPort() else serverPort()
     val currentMaxTokens = maxTokens()
@@ -176,7 +188,9 @@ internal class ChatCompletionService(
       append("}")
     }
 
-    if (external) {
+    if (useExtSpecialist) {
+      requestBody = overrideExternalClient!!.injectModelField(requestBody)
+    } else if (external) {
       requestBody = injectModelField?.invoke(requestBody) ?: requestBody
 
       log(LogLevel.INFO, "Routing stream to external AI: ${externalUrl()}")
@@ -185,7 +199,12 @@ internal class ChatCompletionService(
     }
 
     val streamFn: ((String) -> Unit, () -> Boolean, Int) -> Unit =
-        if (external) {
+        if (useExtSpecialist) {
+          { onLine, shouldStopFn, timeout ->
+            overrideExternalClient!!.postStreaming(
+                "/v1/chat/completions", requestBody, onLine, shouldStopFn, timeout)
+          }
+        } else if (external) {
           { onLine, shouldStopFn, timeout ->
             externalPostStreaming!!(
                 "/v1/chat/completions", requestBody, onLine, shouldStopFn, timeout)

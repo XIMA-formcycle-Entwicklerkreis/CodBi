@@ -36,8 +36,11 @@ internal class ThinkingServerManager(
     private val extraServerArgs: List<String>,
     private val detectPhysicalCores: () -> Int,
     private val log: (LogLevel, String) -> Unit,
+    private val cpuLimitPercent: Int? = null,
     private val healthCheckTimeoutMs: Long = DEFAULT_HEALTH_CHECK_TIMEOUT_MS
 ) {
+  // Store cpuLimitPercent for affinity enforcement
+  // ...existing code...
   companion object {
     /** Default timeout for health-check polling (120 seconds). */
     const val DEFAULT_HEALTH_CHECK_TIMEOUT_MS = 120_000L
@@ -77,6 +80,14 @@ internal class ThinkingServerManager(
   ): Boolean {
     port = findThinkingPort(mainServerPort + 100)
 
+    val resolvedThreads = threadCount ?: detectPhysicalCores()
+    val resolvedGpuLayers =
+        when {
+          gpuLayers >= 0 -> gpuLayers
+          detectedGpu != GpuBackend.NONE -> 999
+          else -> 0
+        }
+
     log(LogLevel.INFO, "Starting thinking LLAMA-Server:")
     log(LogLevel.INFO, "  Binary:  ${binary.absolutePath}")
     log(
@@ -96,6 +107,7 @@ internal class ThinkingServerManager(
 
     templateFile.writeText(templateContent.trimIndent())
 
+    val thinkingCtxSize = ctxSize * 2
     val command =
         mutableListOf(
             binary.absolutePath,
@@ -106,18 +118,13 @@ internal class ThinkingServerManager(
             "--port",
             port.toString(),
             "--threads",
-            (threadCount ?: detectPhysicalCores()).toString(),
+            resolvedThreads.toString(),
             "--ctx-size",
-            (ctxSize * 2).toString(),
+            thinkingCtxSize.toString(),
             "--parallel",
             parallelSlots.toString(),
             "--n-gpu-layers",
-            (when {
-                  gpuLayers >= 0 -> gpuLayers
-                  detectedGpu != GpuBackend.NONE -> 999
-                  else -> 0
-                })
-                .toString(),
+            resolvedGpuLayers.toString(),
             "--jinja",
             "--chat-template-file",
             templateFile.absolutePath)
@@ -144,7 +151,9 @@ internal class ThinkingServerManager(
           executor.submit {
             try {
               BufferedReader(InputStreamReader(proc.inputStream)).use { reader ->
-                reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
+                reader.lineSequence().forEach { line ->
+                  log(LogLevel.INFO, "[thinking-server] $line")
+                }
               }
             } catch (X: Exception) {
               log(LogLevel.WARNING, "Thinking server stdout reader failed: ${X.message}")
@@ -155,7 +164,9 @@ internal class ThinkingServerManager(
           executor.submit {
             try {
               BufferedReader(InputStreamReader(proc.errorStream)).use { reader ->
-                reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
+                reader.lineSequence().forEach { line ->
+                  log(LogLevel.INFO, "[thinking-server/err] $line")
+                }
               }
             } catch (X: Exception) {
               log(LogLevel.WARNING, "Thinking server stderr reader failed: ${X.message}")

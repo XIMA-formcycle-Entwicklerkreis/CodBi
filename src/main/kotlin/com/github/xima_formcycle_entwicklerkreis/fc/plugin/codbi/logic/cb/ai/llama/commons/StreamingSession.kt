@@ -65,6 +65,8 @@ internal class StreamingSession(
   @Volatile var modelType: String = if (enableThinking) "thinking" else "fast"
   /** Localized UI labels. Set once after language detection; defaults to English. */
   @Volatile var labels: SessionLabels = SessionLabels()
+  /** Queue position while waiting for the inference semaphore. 0 = not queued / running. */
+  @Volatile var queuePosition: Int = 0
   // region Confidence-Tracking
   /** Per-token logprob entries: Pair(token, logprob). Only visible (non-thinking) tokens. */
   private val tokenLogprobs = ArrayList<Pair<String, Double>>()
@@ -148,7 +150,6 @@ internal class StreamingSession(
    *
    * @param token The generated token text.
    * @param logprob The log-probability of the token.
-   * @returns `Unit` to allow chaining; the actual logprob data is stored internally.
    */
   fun addLogprob(token: String, logprob: Double): Unit =
       synchronized(lock) {
@@ -159,11 +160,7 @@ internal class StreamingSession(
   /** Discards all recorded log-probability entries. */
   fun clearLogprobs(): Unit = synchronized(lock) { tokenLogprobs.clear() }
 
-  /**
-   * Checks whether any recorded token log-probability is below the given threshold, indicating
-   *
-   * @return The number of log-probability entries recorded so far.
-   */
+  /** @return The number of log-probability entries recorded so far. */
   fun logprobsSize(): Int = synchronized(lock) { tokenLogprobs.size }
 
   /**
@@ -200,20 +197,10 @@ internal class StreamingSession(
 
   // endregion Synchronized list accessors
 
-  /**
-   * Returns the current accumulated visible text. Callers that need to check both [done] and the
-   * current text should use this method to avoid race conditions.
-   *
-   * @return All visible text chunks concatenated into a single string.
-   */
+  /** @return All visible text chunks concatenated into a single string. */
   fun currentText(): String = synchronized(lock) { textChunks.joinToString("") }
 
-  /**
-   * Returns the current accumulated thinking/reasoning text. Callers that need to check both [done]
-   * and the current thinking text should use this method to avoid race conditions.
-   *
-   * @return All thinking/reasoning chunks concatenated into a single string.
-   */
+  /** @return All thinking/reasoning chunks concatenated into a single string. */
   fun currentThinking(): String = synchronized(lock) { thinkingChunks.joinToString("") }
 
   /**

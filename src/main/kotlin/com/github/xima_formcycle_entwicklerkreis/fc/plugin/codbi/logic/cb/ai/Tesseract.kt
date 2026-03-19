@@ -168,63 +168,74 @@ class TesseractAction : AI() {
 
       val rotate = options["rotate"]?.toIntOrNull() ?: 0
       val preprocess = options["preprocess"]?.lowercase() in listOf("true", "1")
-      val rawText = inst.runOcrDirect(imageBytes, rotate, preprocess)
+      if (!AI.inferenceSemaphore.tryAcquire()) {
+        val pos = AI.queueTickets.size + 1
+        val badge = AI.queueBadgeEnabled
+        return """{"queued":true,"position":$pos,"queueBadge":$badge}"""
+      }
+      try {
+        val rawText = inst.runOcrDirect(imageBytes, rotate, preprocess)
 
-      return when (mode.lowercase()) {
-        "print" -> Gson().toJson(mapOf("text" to rawText.trim()))
-        "extract" -> {
-          val pattern =
-              options["pattern"]
-                  ?: return """{"error":"Mode 'extract' requires 'pattern' option"}"""
-          val flags = parseRegexFlagsDirect(options["regex_flags"])
-          val matches =
-              try {
-                pattern.toRegex(flags).findAll(rawText).map { it.value }.toList()
-              } catch (X: Exception) {
-                listOf("Regex Error: ${X.message}")
-              }
-
-          Gson().toJson(mapOf("matches" to matches))
-        }
-        "verify" -> {
-          val pattern =
-              options["pattern"] ?: return """{"error":"Mode 'verify' requires 'pattern' option"}"""
-          val flags = parseRegexFlagsDirect(options["regex_flags"])
-          val matched =
-              try {
-                pattern.toRegex(flags).containsMatchIn(rawText)
-              } catch (X: Exception) {
-                return """{"error":"Regex error: ${X.message}"}"""
-              }
-          Gson().toJson(mapOf("match" to matched))
-        }
-        "extract fields" -> {
-          val fieldPatternsJson =
-              options["field_patterns"]
-                  ?: return """{"error":"Mode 'extract fields' requires 'field_patterns' option"}"""
-          val fieldPatterns: Map<String, String> =
-              try {
-                Gson()
-                    .fromJson(fieldPatternsJson, object : TypeToken<Map<String, String>>() {}.type)
-              } catch (X: Exception) {
-                return """{"error":"Invalid field_patterns JSON: ${X.message}"}"""
-              }
-
-          val flags = parseRegexFlagsDirect(options["regex_flags"])
-          val results = mutableMapOf<String, String?>()
-
-          for ((field, pattern) in fieldPatterns) {
-            results[field] =
+        return when (mode.lowercase()) {
+          "print" -> Gson().toJson(mapOf("text" to rawText.trim()))
+          "extract" -> {
+            val pattern =
+                options["pattern"]
+                    ?: return """{"error":"Mode 'extract' requires 'pattern' option"}"""
+            val flags = parseRegexFlagsDirect(options["regex_flags"])
+            val matches =
                 try {
-                  pattern.toRegex(flags).find(rawText)?.value
+                  pattern.toRegex(flags).findAll(rawText).map { it.value }.toList()
                 } catch (X: Exception) {
-                  "Regex Error: ${X.message}"
+                  listOf("Regex Error: ${X.message}")
                 }
+
+            Gson().toJson(mapOf("matches" to matches))
           }
-          Gson().toJson(results)
+          "verify" -> {
+            val pattern =
+                options["pattern"]
+                    ?: return """{"error":"Mode 'verify' requires 'pattern' option"}"""
+            val flags = parseRegexFlagsDirect(options["regex_flags"])
+            val matched =
+                try {
+                  pattern.toRegex(flags).containsMatchIn(rawText)
+                } catch (X: Exception) {
+                  return """{"error":"Regex error: ${X.message}"}"""
+                }
+            Gson().toJson(mapOf("match" to matched))
+          }
+          "extract fields" -> {
+            val fieldPatternsJson =
+                options["field_patterns"]
+                    ?: return """{"error":"Mode 'extract fields' requires 'field_patterns' option"}"""
+            val fieldPatterns: Map<String, String> =
+                try {
+                  Gson()
+                      .fromJson(
+                          fieldPatternsJson, object : TypeToken<Map<String, String>>() {}.type)
+                } catch (X: Exception) {
+                  return """{"error":"Invalid field_patterns JSON: ${X.message}"}"""
+                }
+
+            val flags = parseRegexFlagsDirect(options["regex_flags"])
+            val results = mutableMapOf<String, String?>()
+
+            for ((field, pattern) in fieldPatterns) {
+              results[field] =
+                  try {
+                    pattern.toRegex(flags).find(rawText)?.value
+                  } catch (X: Exception) {
+                    "Regex Error: ${X.message}"
+                  }
+            }
+            Gson().toJson(results)
+          }
+          else ->
+              """{"error":"Unsupported mode: $mode. Valid modes: print, extract, verify, extract fields"}"""
         }
-        else ->
-            """{"error":"Unsupported mode: $mode. Valid modes: print, extract, verify, extract fields"}"""
+      } finally {
+        AI.inferenceSemaphore.release()
       }
     }
 
@@ -912,21 +923,42 @@ class TesseractAction : AI() {
         params.headerMap.entries.find { it.key.equals("X-Mode", ignoreCase = true) }?.value?.trim()
     val mode = modeHeader?.lowercase()
     // endregion Get mode from X-Mode header (case-insensitive)
-    when (mode) {
-      "print" -> return executeModePrint(params)
-      "extract" -> return executeModeExtract(params)
-      "verify" -> return executeModeVerify(params)
-      "extract fields" -> return executeModeExtractFields(params)
-      null ->
-          return PluginServletActionRetVal(
-              ServletResponse(
-                  EResponseType.JSON,
-                  "{\"error\":\"No X-Mode specified. Specify a modus operandi (print, verify, extract, or extract fields).\"}"))
-      else ->
-          return PluginServletActionRetVal(
-              ServletResponse(
-                  EResponseType.JSON,
-                  "{\"error\":\"Unsupported X-Mode in request-header (valid modes are print, verify, extract, or extract fields):${ modeHeader }\"}"))
+    val existingTicket =
+        params.headerMap.entries
+            .find { it.key.equals("X-Queue-Ticket", ignoreCase = true) }
+            ?.value
+            ?.trim()
+    if (!AI.inferenceSemaphore.tryAcquire()) {
+      AI.cleanupStaleTickets()
+      val ticket = existingTicket ?: java.util.UUID.randomUUID().toString()
+      if (existingTicket == null) AI.queueTickets[ticket] = System.currentTimeMillis()
+      val pos = AI.queueTickets.size
+      val badge = AI.queueBadgeEnabled
+      return PluginServletActionRetVal(
+          ServletResponse(
+              EResponseType.JSON,
+              """{"queued":true,"position":$pos,"queueBadge":$badge,"queueTicket":"$ticket"}"""))
+    }
+    try {
+      return when (mode) {
+        "print" -> executeModePrint(params)
+        "extract" -> executeModeExtract(params)
+        "verify" -> executeModeVerify(params)
+        "extract fields" -> executeModeExtractFields(params)
+        null ->
+            PluginServletActionRetVal(
+                ServletResponse(
+                    EResponseType.JSON,
+                    "{\"error\":\"No X-Mode specified. Specify a modus operandi (print, verify, extract, or extract fields).\"}"))
+        else ->
+            PluginServletActionRetVal(
+                ServletResponse(
+                    EResponseType.JSON,
+                    "{\"error\":\"Unsupported X-Mode in request-header (valid modes are print, verify, extract, or extract fields):${ modeHeader }\"}"))
+      }
+    } finally {
+      AI.inferenceSemaphore.release()
+      existingTicket?.let { AI.queueTickets.remove(it) }
     }
   }
 

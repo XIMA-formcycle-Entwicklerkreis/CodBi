@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
  * @param log Logging callback `(LogLevel, message)`.
  */
 class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
-  /** The Companion for static members. */
+
   companion object {
     /** How long to wait for the server to become healthy after launch. */
     const val SERVER_START_TIMEOUT_MS = 120_000L
@@ -77,7 +77,9 @@ class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
                 {
                   try {
                     BufferedReader(InputStreamReader(proc.inputStream)).use { reader ->
-                      reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
+                      reader.lineSequence().forEach { line ->
+                        log(LogLevel.INFO, "[LLAMA-Server] $line")
+                      }
                     }
                   } catch (_: Exception) {}
                 },
@@ -92,7 +94,9 @@ class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
                 {
                   try {
                     BufferedReader(InputStreamReader(proc.errorStream)).use { reader ->
-                      reader.lineSequence().forEach { line -> log(LogLevel.INFO, "$line") }
+                      reader.lineSequence().forEach { line ->
+                        log(LogLevel.INFO, "[LLAMA-Server/err] $line")
+                      }
                     }
                   } catch (_: Exception) {}
                 },
@@ -185,7 +189,7 @@ class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
         }
 
         return candidate
-      } catch (X: Exception) {}
+      } catch (_: Exception) {}
     }
 
     return try {
@@ -280,7 +284,7 @@ class LlamaProcessManager(private val log: (LogLevel, String) -> Unit) {
     return try {
       val obj = JsonParser.parseString(body).asJsonObject
       obj.get("status")?.asString?.equals("ok", ignoreCase = true) == true
-    } catch (X: Exception) {
+    } catch (_: Exception) {
       // Lenient fallback for non-JSON responses (e.g. plain "OK")
       body.trim().equals("ok", ignoreCase = true)
     }

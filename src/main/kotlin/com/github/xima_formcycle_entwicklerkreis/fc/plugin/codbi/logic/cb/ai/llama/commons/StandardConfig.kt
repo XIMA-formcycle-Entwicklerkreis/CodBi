@@ -65,16 +65,27 @@ internal data class StandardConfig(
     val ipGeolocationDomain: String,
     val maxSearchRoundTrips: Int = 2,
     val forcedLanguage: String? = null,
-    val specialists: Map<String, SpecialistEntry> = emptyMap()
+    val specialists: Map<String, SpecialistEntry> = emptyMap(),
+    val externalSpecialists: Map<String, ExternalSpecialistEntry> = emptyMap(),
+    val maxConcurrent: Int = 3
 ) {
   /**
-   * A specialist model entry parsed from `AI_LLAMA_STD_SPECIALIST_XXX` plugin properties.
+   * A local specialist model entry parsed from `AI_LLAMA_STD_SPECIALIST_XXX` plugin properties.
    *
    * @param modelUrl Download URL for the specialist GGUF model.
    * @param mmprojUrl Download URL for the specialist's mmproj file, or `null` if not
    *   vision-capable.
    */
   data class SpecialistEntry(val modelUrl: String, val mmprojUrl: String?)
+
+  /**
+   * An external specialist entry parsed from `AI_LLAMA_STD_EXT_SPECIALIST_XXX` plugin properties.
+   *
+   * @param url Base URL of the external OpenAI-compatible API.
+   * @param apiKey API key sent as Bearer token, or `null` if not required.
+   * @param model Model name to inject into requests, or `null` for the API default.
+   */
+  data class ExternalSpecialistEntry(val url: String, val apiKey: String?, val model: String?)
 
   init {
     require(maxPixels > 0) { "maxPixels must be > 0, was $maxPixels" }
@@ -97,9 +108,9 @@ internal data class StandardConfig(
   val hasThinkingModel: Boolean
     get() = thinkingModelUrl != null
 
-  /** `true` when at least one specialist model is configured. */
+  /** `true` when at least one specialist (local or external) is configured. */
   val hasSpecialists: Boolean
-    get() = specialists.isNotEmpty()
+    get() = specialists.isNotEmpty() || externalSpecialists.isNotEmpty()
 
   /** Returns a summary string with the API key redacted. */
   override fun toString(): String =

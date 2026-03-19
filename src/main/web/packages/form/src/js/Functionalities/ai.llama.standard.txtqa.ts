@@ -60,7 +60,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE("string", "aihint, language, responselanguage, specialist")
+    @TYPE.PRE("string", "aihint, language, responselanguage, specialist, queuebadge, queuetext")
     @TYPE.PRE("string | boolean", "useinternet, location")
     @GREATER.PRE(
       3,
@@ -360,6 +360,11 @@ export class AI_LLAMA_STANDARD_TXTQA {
       }
       // #endregion Build shared headers (everything except X-Question-* entries)
       // #region Per-question AJAX requests
+      // #region Queue badge configuration.
+      const txtQaQueueOverride: boolean | null =
+        toLoad.queuebadge != null ? String(toLoad.queuebadge) !== "false" : null;
+      const txtQaQueueText: string = toLoad.queuetext != null ? String(toLoad.queuetext) : "";
+      // #endregion Queue badge configuration.
       for (const element of questionElements) {
         const id = element.id;
         const questionHeader = headers[`X-Question-${id}`];
@@ -379,107 +384,146 @@ export class AI_LLAMA_STANDARD_TXTQA {
           [`X-Question-${id}`]: questionHeader,
         };
 
-        $.ajax({
-          url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
-          type: "POST",
-          data: new FormData(),
-          dataType: "json",
-          processData: false,
-          contentType: false,
-          cache: false,
-          beforeSend: (xhr) => {
-            for (const headerName of Object.keys(perQuestionHeaders)) {
-              xhr.setRequestHeader(headerName, perQuestionHeaders[headerName]);
-            }
-          },
-          // #region Success callback — populate answer field
-          success: (response) => {
-            const field = document.querySelector(`#${id}`) as HTMLInputElement | HTMLTextAreaElement | null;
+        let fieldQueueBadge: HTMLSpanElement | null = null;
 
-            if (field) {
-              field.disabled = false;
-              field.style.opacity = "1";
+        const showFieldQueueBadge = (position: number) => {
+          const field = document.querySelector(`#${id}`) as HTMLElement | null;
+          if (!fieldQueueBadge && field) {
+            fieldQueueBadge = document.createElement("span");
+            fieldQueueBadge.className = "LLAMA_QueueBadge";
+            fieldQueueBadge.style.cssText =
+              "display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 8px;border-radius:10px;background:#d0e0ff;color:#1a5aab;font-size:12px;font-weight:600;white-space:nowrap;";
+            field.parentElement?.appendChild(fieldQueueBadge);
+          }
+          if (fieldQueueBadge) {
+            fieldQueueBadge.textContent = `${position}${txtQaQueueText ? " " + txtQaQueueText : ""}`;
+          }
+        };
 
-              window.codbi.removeLoaderAnim(field);
+        const hideFieldQueueBadge = () => {
+          fieldQueueBadge?.remove();
+          fieldQueueBadge = null;
+        };
 
-              const answerText = response[id]?.answer;
+        let txtQaQueueTicket: string | null = null;
 
-              if (answerText != null) {
-                field.value = answerText;
-
-                if (field.tagName.toUpperCase() === "TEXTAREA") {
-                  field.style.height = "auto";
-                  field.style.height = `${field.scrollHeight}px`;
-                }
-
-                if (aiHintText) {
-                  AI_LLAMA_STANDARD_TXTQA.attachAiHint(field, aiHintText);
-                }
-                // Show rich-text overlay with clickable links/phones/emails
-                AI_LLAMA_STANDARD_TXTQA.showRichAnswer(field, answerText);
-                // Flash green to signal response is ready
-                const richDiv = INSTANCE.tsCheck<HTMLElement>(
-                  field.nextElementSibling?.classList.contains("LLAMA_TXTQA_RichAnswer")
-                    ? field.nextElementSibling
-                    : field,
-                  HTMLElement,
-                );
-
-                richDiv.classList.remove("LLAMA_ResponseReady");
-
-                void richDiv.offsetWidth;
-
-                richDiv.classList.add("LLAMA_ResponseReady");
-                richDiv.addEventListener("animationend", () => richDiv.classList.remove("LLAMA_ResponseReady"), {
-                  once: true,
-                });
-                field.dispatchEvent(new Event("change", { bubbles: true }));
+        const sendTxtQaRequest = () => {
+          $.ajax({
+            url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
+            type: "POST",
+            data: new FormData(),
+            dataType: "json",
+            processData: false,
+            contentType: false,
+            cache: false,
+            beforeSend: (xhr) => {
+              for (const headerName of Object.keys(perQuestionHeaders)) {
+                xhr.setRequestHeader(headerName, perQuestionHeaders[headerName]);
               }
-            }
-            // Re-enable this question's field
-            if (field) {
-              field.disabled = false;
-              field.style.opacity = "1";
+              if (txtQaQueueTicket) xhr.setRequestHeader("X-Queue-Ticket", txtQaQueueTicket);
+            },
+            // #region Success callback — populate answer field
+            success: (response) => {
+              if (response.queued) {
+                txtQaQueueTicket = response.queueTicket ?? txtQaQueueTicket;
+                const badgeEnabled = txtQaQueueOverride != null ? txtQaQueueOverride : !!response.queueBadge;
+                if (badgeEnabled) {
+                  showFieldQueueBadge(response.position ?? 0);
+                }
+                setTimeout(sendTxtQaRequest, 1000);
+                return;
+              }
+              hideFieldQueueBadge();
+              txtQaQueueTicket = null;
+              const field = document.querySelector(`#${id}`) as HTMLInputElement | HTMLTextAreaElement | null;
 
-              window.codbi.removeLoaderAnim(field);
-            }
+              if (field) {
+                field.disabled = false;
+                field.style.opacity = "1";
 
-            if (response.error) {
-              window.codbi.log("ERROR", `REST failed for "${id}": ${response.error}`, "AI / LLAMA / TXTQA");
-            }
+                window.codbi.removeLoaderAnim(field);
 
-            completedCount++;
+                const answerText = response[id]?.answer;
 
-            if (completedCount >= totalQuestions) {
-              finalizeAll();
-            }
-          },
-          // #endregion Success callback — populate answer field
-          // #region Error callback
-          error: (_xhr, status, error) => {
-            const field = document.querySelector(`#${id}`) as HTMLInputElement | HTMLTextAreaElement | null;
+                if (answerText != null) {
+                  field.value = answerText;
 
-            if (field) {
-              field.disabled = false;
-              field.style.opacity = "1";
+                  if (field.tagName.toUpperCase() === "TEXTAREA") {
+                    field.style.height = "auto";
+                    field.style.height = `${field.scrollHeight}px`;
+                  }
 
-              window.codbi.removeLoaderAnim(field);
-            }
+                  if (aiHintText) {
+                    AI_LLAMA_STANDARD_TXTQA.attachAiHint(field, aiHintText);
+                  }
+                  // Show rich-text overlay with clickable links/phones/emails
+                  AI_LLAMA_STANDARD_TXTQA.showRichAnswer(field, answerText);
+                  // Flash green to signal response is ready
+                  const richDiv = INSTANCE.tsCheck<HTMLElement>(
+                    field.nextElementSibling?.classList.contains("LLAMA_TXTQA_RichAnswer")
+                      ? field.nextElementSibling
+                      : field,
+                    HTMLElement,
+                  );
 
-            window.codbi.log(
-              "ERROR",
-              `REST failed for "${id}" with status "${status}" cause: "${error}"`,
-              "AI / LLAMA / TXTQA",
-            );
+                  richDiv.classList.remove("LLAMA_ResponseReady");
 
-            completedCount++;
+                  void richDiv.offsetWidth;
 
-            if (completedCount >= totalQuestions) {
-              finalizeAll();
-            }
-          },
-          // #endregion Error callback
-        });
+                  richDiv.classList.add("LLAMA_ResponseReady");
+                  richDiv.addEventListener("animationend", () => richDiv.classList.remove("LLAMA_ResponseReady"), {
+                    once: true,
+                  });
+                  field.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+              }
+              // Re-enable this question's field
+              if (field) {
+                field.disabled = false;
+                field.style.opacity = "1";
+
+                window.codbi.removeLoaderAnim(field);
+              }
+
+              if (response.error) {
+                window.codbi.log("ERROR", `REST failed for "${id}": ${response.error}`, "AI / LLAMA / TXTQA");
+              }
+
+              completedCount++;
+
+              if (completedCount >= totalQuestions) {
+                finalizeAll();
+              }
+            },
+            // #endregion Success callback — populate answer field
+            // #region Error callback
+            error: (_xhr, status, error) => {
+              hideFieldQueueBadge();
+              const field = document.querySelector(`#${id}`) as HTMLInputElement | HTMLTextAreaElement | null;
+
+              if (field) {
+                field.disabled = false;
+                field.style.opacity = "1";
+
+                window.codbi.removeLoaderAnim(field);
+              }
+
+              window.codbi.log(
+                "ERROR",
+                `REST failed for "${id}" with status "${status}" cause: "${error}"`,
+                "AI / LLAMA / TXTQA",
+              );
+
+              completedCount++;
+
+              if (completedCount >= totalQuestions) {
+                finalizeAll();
+              }
+            },
+            // #endregion Error callback
+          });
+        };
+        sendTxtQaRequest();
       }
       // #endregion Per-question AJAX requests
       // #endregion Send one request per question (progressive display)

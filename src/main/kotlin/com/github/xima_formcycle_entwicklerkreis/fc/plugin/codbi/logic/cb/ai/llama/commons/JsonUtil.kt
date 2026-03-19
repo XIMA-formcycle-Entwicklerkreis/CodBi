@@ -28,7 +28,8 @@ internal data class HealthCheckResponse(
     val model: String? = null,
     val thinkingModel: String? = null,
     val pendingThinkingModel: Boolean? = null,
-    val error: String? = null
+    val error: String? = null,
+    val queueBadge: Boolean? = null
 )
 
 /** I18n labels for the streaming UI. */
@@ -65,7 +66,8 @@ internal data class StreamPollResponse(
     val thinking: String? = null,
     val modelType: String? = null,
     val i18n: I18nLabels? = null,
-    val confidence: ConfidenceData? = null
+    val confidence: ConfidenceData? = null,
+    val queuePosition: Int? = null
 )
 
 // endregion Response Data Classes

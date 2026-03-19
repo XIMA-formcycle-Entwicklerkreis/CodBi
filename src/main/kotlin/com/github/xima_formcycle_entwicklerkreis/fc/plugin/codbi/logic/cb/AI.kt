@@ -1,8 +1,7 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
 // region Imports
-// region XIMA
-// endregion XIMA
+// #region XIMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
@@ -12,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
+// #endregion XIMA
 // endregion Imports
 /**
  * # Base for all classes related to [CodBi] / AI.
@@ -25,8 +25,8 @@ import java.util.concurrent.TimeUnit
  * [idLogMessages] ] **...message...** ]**.
  *
  * ## AI on Formcylce server benefits
- * - **Lean Compliance**: Simpler DSGVO and EU AI Act handling. Most easy approval from your
- *   DataProtection Officer (DSGVO), No Data Transit Mapping, No extra TOMs, no extra VVTs.
+ * - **Lean Compliance**: Simpler DSGVO and EU AI Act handling. Most easy approval from your Data
+ *   Protection Officer (DSGVO), No Data Transit Mapping, No extra TOMs, no extra VVTs.
  * - **Infrastructure Efficiency**: No second OS to patch, monitor, or license. Dramatically lowers
  *   TCO (Total Cost of Ownership) and prevents "server sprawl."
  * - **Maximum Performance**: Zero network latency. Localhost communication bypasses the physical
@@ -45,6 +45,43 @@ import java.util.concurrent.TimeUnit
  * |`AI_CachedImageExpiration`|Long|`600000`|Time in ms before a cached image expires and is purged by the janitor|
  */
 abstract class AI : CodBi(), IPluginServletAction {
+  // region Shared Concurrency Control
+  companion object {
+    /**
+     * Shared semaphore that limits concurrent **local** AI inferences across all modules (LLAMA,
+     * Tesseract, Whisper). Configured via `AI_LLAMA_ENGINE_MaxConcurrent` (default 2).
+     */
+    @Volatile
+    @JvmStatic
+    var inferenceSemaphore = java.util.concurrent.Semaphore(2, true)
+      private set
+
+    /** Whether the queue-position badge is enabled globally. Configured via `AI_QueueBadge`. */
+    @Volatile @JvmStatic var queueBadgeEnabled: Boolean = false
+
+    /**
+     * Tracks every request that wants the inference semaphore but does not yet hold it. Streaming
+     * threads register while blocked on [acquire]; retry-based clients (sync LLAMA, Tesseract)
+     * register on the first failed [tryAcquire] and are removed when they eventually acquire or
+     * abandon. The map value is the creation timestamp (for stale-ticket cleanup).
+     */
+    @JvmStatic val queueTickets = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** Removes queue tickets older than 30 s (abandoned clients). */
+    @JvmStatic
+    fun cleanupStaleTickets() {
+      val cutoff = System.currentTimeMillis() - 30_000
+      queueTickets.entries.removeIf { it.value < cutoff }
+    }
+
+    /** Replaces the shared inference semaphore with a new limit. */
+    @JvmStatic
+    fun updateMaxConcurrent(maxConcurrent: Int) {
+      inferenceSemaphore = java.util.concurrent.Semaphore(maxConcurrent.coerceAtLeast(1), true)
+    }
+  }
+
+  // endregion Shared Concurrency Control
   /**
    * Stores [File] and timestamp so we can clean up old ones that passed the
    * [msExpirationIDedImages].
@@ -72,6 +109,10 @@ abstract class AI : CodBi(), IPluginServletAction {
     idLogMessages = "AI"
 
     val expirationValue = configData.properties.getProperty("AI_CachedImageExpiration")
+
+    configData.properties.getProperty("AI_QueueBadge")?.trim()?.lowercase()?.let {
+      queueBadgeEnabled = it == "true" || it == "1" || it == "yes"
+    }
 
     if (!expirationValue.isNullOrBlank()) {
       expirationValue.toLongOrNull()?.let {

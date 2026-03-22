@@ -12,6 +12,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { OR } from "xdbc/src/DBC/OR";
 // #endregion XDBC
+import { formatWaitTime } from "../commons/format-wait-time";
 // #endregion Imports
 
 /**
@@ -49,12 +50,17 @@ export class AI_LLAMA_STANDARD_TXTQA {
    *                        location-aware answers. Default: `false`.
    * - **language**:        Language for the AI response (e.g. "German", "English"). If set, appends "Answer in {language}."
    *                        to each question.
-   * - **responselanguage**: Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI to
+   * - **ResponseLanguage**: Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI to
    *                        respond in this language, skipping auto-detection. Overrides the
    *                        `AI_LLAMA_STD_Language` plugin property for this instance.
-   * - **specialist**:      Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
+   * - **Specialist**:      Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
    *                        plugin property. Routes requests to that specialist's dedicated server
    *                        instance (case-insensitive match).
+   * - **QueueBadge**:      If set to `"true"`, shows a badge with the current queue position while
+   *                        waiting for inference. Overrides the `AI_QueueBadge` plugin property
+   *                        for this instance. Default: determined by plugin property.
+   * - **QueueText**:       Text appended after the queue position number in the badge
+   *                        (e.g. `"in queue"` → badge shows `"3 in queue"`). Default: empty.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -386,7 +392,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
 
         let fieldQueueBadge: HTMLSpanElement | null = null;
 
-        const showFieldQueueBadge = (position: number) => {
+        const showFieldQueueBadge = (position: number, estimatedWaitMs?: number | null) => {
           const field = document.querySelector(`#${id}`) as HTMLElement | null;
           if (!fieldQueueBadge && field) {
             fieldQueueBadge = document.createElement("span");
@@ -396,7 +402,8 @@ export class AI_LLAMA_STANDARD_TXTQA {
             field.parentElement?.appendChild(fieldQueueBadge);
           }
           if (fieldQueueBadge) {
-            fieldQueueBadge.textContent = `${position}${txtQaQueueText ? " " + txtQaQueueText : ""}`;
+            const waitLabel = formatWaitTime(estimatedWaitMs);
+            fieldQueueBadge.textContent = `${position}${waitLabel ? ` ${waitLabel}` : ""}${txtQaQueueText ? ` ${txtQaQueueText}` : ""}`;
           }
         };
 
@@ -420,7 +427,9 @@ export class AI_LLAMA_STANDARD_TXTQA {
               for (const headerName of Object.keys(perQuestionHeaders)) {
                 xhr.setRequestHeader(headerName, perQuestionHeaders[headerName]);
               }
-              if (txtQaQueueTicket) xhr.setRequestHeader("X-Queue-Ticket", txtQaQueueTicket);
+              if (txtQaQueueTicket) {
+                xhr.setRequestHeader("X-Queue-Ticket", txtQaQueueTicket);
+              }
             },
             // #region Success callback — populate answer field
             success: (response) => {
@@ -428,7 +437,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
                 txtQaQueueTicket = response.queueTicket ?? txtQaQueueTicket;
                 const badgeEnabled = txtQaQueueOverride != null ? txtQaQueueOverride : !!response.queueBadge;
                 if (badgeEnabled) {
-                  showFieldQueueBadge(response.position ?? 0);
+                  showFieldQueueBadge(response.position ?? 0, response.estimatedWaitMs);
                 }
                 setTimeout(sendTxtQaRequest, 1000);
                 return;
@@ -731,10 +740,10 @@ export class AI_LLAMA_STANDARD_TXTQA {
 
     style.id = "LLAMA_AI_Hint_Styles";
     style.textContent = `
-      .LLAMA_AI_Hint_Wrapper { position: relative ; display: inline-block ; width: 100% ;}
+      .LLAMA_AI_Hint_Wrapper { position: relative ; display: block ; width: 100% ;}
       .LLAMA_AI_Hint { position: absolute ; pointer-events: none ; color: rgba(0,0,0,0.38) ;
         font-size: 11px ; line-height: 1 ; white-space: nowrap ; user-select: none ;
-        right: 8px ; bottom: 6px ;}`;
+        right: 8px ; bottom: 6px ; z-index: 1 ;}`;
 
     document.head.appendChild(style);
   }

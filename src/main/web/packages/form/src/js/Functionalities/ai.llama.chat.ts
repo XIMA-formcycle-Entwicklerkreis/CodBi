@@ -17,6 +17,10 @@ import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { CodBiError, generateUUID } from "../global-scope";
 //endregion PDF.js
+//region Commons
+import { convertToWav, preferredMimeType } from "../commons/whisper-utils";
+import { formatWaitTime } from "../commons/format-wait-time";
+//endregion Commons
 //endregion Imports
 /**
  * Provides the {@link AI_LLAMA_CHAT.functionality }.
@@ -72,43 +76,48 @@ export class AI_LLAMA_CHAT {
    * - The send button and input are disabled during inference to prevent duplicate requests.
    *
    * ### Config Parameters:
-   * - **maxPages**:          Maximum PDF pages to process (**default**: 5).
+   * - **MaxPages**:          Maximum PDF pages to process (**default**: 5).
    * - **Rotation**:          Image rotation in degrees (90, 180, or 270). If it is known that the image to process is rotated,
    *                          this can be set to avoid Tesseract OSD (if available) or the AI having to deal with it, speeding up
    *                          the inference. Not setting or setting to 0 means that rotation is unknown.
    * - **MaxPixelSize**:      Maximum total pixel budget (width×height). Images exceeding this are downscaled client-side while
    *                          preserving the aspect ratio.
    *                          **Default**: 3211264 (≈ 1792×1792). Set to 0 to disable client-side downscaling.
-   * - **llamabubble**:       Background color for Llama (AI) bubbles (**default**: `#e5e5ea`).
-   * - **userbubble**:        Background color for user bubbles (**default**: `#0b93f6`).
-   * - **welcometext**:       Text shown after the model name(s) in the ready message
+   * - **LLAMABubble**:       Background color for Llama (AI) bubbles (**default**: `#e5e5ea`).
+   * - **UserBubble**:        Background color for user bubbles (**default**: `#0b93f6`).
+   * - **WelcomeText**:       Text shown after the model name(s) in the ready message
    *                          (**default**: `"Chat ready. Attach file(s) and type your question."`).
-   * - **voicehotkey**:       Keyboard shortcut to toggle voice input, e.g. `"Alt+A"` (**default**: `"Alt+A"`).
+   * - **VoiceHotkey**:       Keyboard shortcut to toggle voice input, e.g. `"Alt+A"` (**default**: `"Alt+A"`).
    *                          Format: modifier(s) + key separated by `+`. Recognized modifiers:
    *                          `Alt`, `Ctrl`, `Shift`, `Meta`. The key part is case-insensitive.
-   * - **voiceplaceholder**:  Placeholder text shown in the chat input when voice input is available.
+   * - **VoicePlaceholder**:  Placeholder text shown in the chat input when voice input is available.
    *                          **Default**: `"Alt+A = 🎙 on/off | Alt+Q = 🎙 off + send"` (reflects the configured hotkeys).
-   * - **voicesendhotkey**:   Keyboard shortcut to stop recording and send, e.g. `"Alt+Q"` (**default**: `"Alt+Q"`).
-   *                          Same modifier format as `voicehotkey`.
-   * - **language**:           Language code for Whisper speech-to-text (e.g. `"de"`, `"en"`).
+   * - **VoiceSendHotkey**:   Keyboard shortcut to stop recording and send, e.g. `"Alt+Q"` (**default**: `"Alt+Q"`).
+   *                          Same modifier format as `VoiceHotkey`.
+   * - **Language**:           Language code for Whisper speech-to-text (e.g. `"de"`, `"en"`).
    *                          Empty or unset means auto-detect.
-   * - **waitingtext**:        Text shown while waiting for the AI server to become available
+   * - **WaitingText**:        Text shown while waiting for the AI server to become available
    *                          (**default**: `"Waiting for AI server\u2026"`).
-   * - **lowconfidencetext**:  Warning text shown when the AI response has low confidence
+   * - **LowConfidenceText**:  Warning text shown when the AI response has low confidence
    *                          (**default**: `"Low Confidence"`).
-   * - **rethinkbuttontext**:  Button label offering to re-answer with the thinking model
+   * - **RethinkButtonText**:  Button label offering to re-answer with the thinking model
    *                          (**default**: `"Rethink"`).
-   * - **uncertaintext**:      Tooltip text shown when hovering over uncertain (low-confidence) tokens
+   * - **UncertainText**:      Tooltip text shown when hovering over uncertain (low-confidence) tokens
    *                          (**default**: `"Low confidence"`).
-   * - **showuncertaintokens**: Whether to visually highlight uncertain tokens in AI responses.
+   * - **ShowUncertainTokens**: Whether to visually highlight uncertain tokens in AI responses.
    *                          Set to `"false"` to disable highlighting (**default**: `"true"`).
-   * - **responselanguage**:  Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). When set, the AI is
+   * - **ResponseLanguage**:  Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). When set, the AI is
    *                          forced to respond in this language — no auto-detection is performed.
    *                          Overrides the `AI_LLAMA_STD_Language` plugin property for this instance.
    *                          The chat interface reflects this language for labels where available.
-   * - **specialist**:        Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
+   * - **Specialist**:        Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
    *                          plugin property. When set, requests are routed to that specialist's
    *                          dedicated server instance (case-insensitive match).
+   * - **QueueBadge**:        If set to `"true"`, shows a badge with the current queue position while
+   *                          waiting for inference. Overrides the `AI_QueueBadge` plugin property
+   *                          for this instance. Default: determined by plugin property.
+   * - **QueueText**:         Text appended after the queue position number in the badge
+   *                          (e.g. `"in queue"` → badge shows `"3 in queue"`). Default: empty.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -306,90 +315,6 @@ export class AI_LLAMA_CHAT {
       }
 
       const lang = toLoad.language != null ? String(toLoad.language).trim() : ""; // Language for Whisper (auto-detect when empty)
-      // #region MIME-Type detection.
-      const preferredMimeType = (): string => {
-        const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-
-        for (const type of types) {
-          if (MediaRecorder.isTypeSupported(type)) {
-            return type;
-          }
-        }
-
-        return "";
-      };
-      // #endregion MIME-Type detection.
-      // #region WAV conversion (fallback for unsupported MIME-Types).
-      const writeWavString = (view: DataView, offset: number, str: string): void => {
-        for (let i = 0; i < str.length; i++) {
-          view.setUint8(offset + i, str.charCodeAt(i));
-        }
-      };
-      /**
-       * Converts an audio Blob to WAV format by decoding and re-encoding the audio data. This is used as a fallback for
-       * browsers that don't support the preferred MIME types for MediaRecorder.
-       *
-       * @param audioBlob The input audio Blob to convert.
-       *
-       * @returns A Promise that resolves to a new Blob in WAV format. */
-      const convertToWav = async (audioBlob: Blob): Promise<Blob> => {
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const audioContext = new AudioContext();
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-        const numFrames = audioBuffer.length;
-        const sampleRate = audioBuffer.sampleRate;
-        const mono = new Float32Array(numFrames);
-
-        for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
-          const channelData = audioBuffer.getChannelData(ch);
-
-          for (let i = 0; i < numFrames; i++) {
-            mono[i] += channelData[i];
-          }
-        }
-
-        if (audioBuffer.numberOfChannels > 1) {
-          const scale = 1 / audioBuffer.numberOfChannels;
-
-          for (let i = 0; i < numFrames; i++) {
-            mono[i] *= scale;
-          }
-        }
-
-        const bytesPerSample = 2;
-        const dataLength = numFrames * bytesPerSample;
-        const buffer = new ArrayBuffer(44 + dataLength);
-        const view = new DataView(buffer);
-
-        writeWavString(view, 0, "RIFF");
-        view.setUint32(4, 36 + dataLength, true);
-        writeWavString(view, 8, "WAVE");
-        writeWavString(view, 12, "fmt ");
-        view.setUint32(16, 16, true);
-        view.setUint16(20, 1, true);
-        view.setUint16(22, 1, true);
-        view.setUint32(24, sampleRate, true);
-        view.setUint32(28, sampleRate * bytesPerSample, true);
-        view.setUint16(32, bytesPerSample, true);
-        view.setUint16(34, 16, true);
-        writeWavString(view, 36, "data");
-        view.setUint32(40, dataLength, true);
-
-        let offset = 44;
-
-        for (let i = 0; i < numFrames; i++) {
-          const sample = Math.max(-1, Math.min(1, mono[i]));
-
-          view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-
-          offset += 2;
-        }
-
-        await audioContext.close();
-
-        return new Blob([buffer], { type: "audio/wav" });
-      };
-      // #region WAV conversion (fallback for unsupported MIME-Types).
       // #region Send audio to Whisper for transcription.
       let interimInterval: number | null = null;
       let interimInFlight = false;
@@ -1398,9 +1323,13 @@ export class AI_LLAMA_CHAT {
           let i18nShowSourcesLabel = "Show sources";
           let i18nSearchingLabel = "Searching the internet for \u201C%s\u201D\u2026";
           let i18nSearchingLabelNoQuery = "Searching the internet\u2026";
+          let i18nReadingLabel = "Reading page: \u201C%s\u201D\u2026";
+          let i18nReadingLabelNoUrl = "Reading page content\u2026";
           let i18nThinkingLabel = "Thinking\u2026";
           let i18nCopyResponseLabel = "Response";
           let i18nCopyReasoningLabel = "Reasoning";
+          let i18nSendingMailLabel = "Sending email to \u201C%s\u201D\u2026";
+          let i18nSendingMailLabelNoRecipient = "Sending email\u2026";
           // #endregion i18n labels (updated with poll response)
           const interval = setInterval(() => {
             $.ajax({
@@ -1416,6 +1345,9 @@ export class AI_LLAMA_CHAT {
               success: (pollResponse) => {
                 handleResourceStatus(pollResponse.resourceStatus);
                 // #region Queue-position badge.
+                if (pollResponse.queueBadge != null && queueBadgeOverride == null) {
+                  queueBadgeEnabled = !!pollResponse.queueBadge;
+                }
                 const showBadge = queueBadgeOverride != null ? queueBadgeOverride : queueBadgeEnabled;
                 if (showBadge && pollResponse.queuePosition > 0 && thinkingBubble) {
                   let badge = thinkingBubble.querySelector(".LLAMA_QueueBadge") as HTMLSpanElement | null;
@@ -1424,7 +1356,8 @@ export class AI_LLAMA_CHAT {
                     badge.className = "LLAMA_QueueBadge";
                     thinkingBubble.appendChild(badge);
                   }
-                  badge.textContent = `${pollResponse.queuePosition}${queueText ? ` ${queueText}` : ""}`;
+                  const waitLabel = formatWaitTime(pollResponse.estimatedWaitMs);
+                  badge.textContent = `${pollResponse.queuePosition}${waitLabel ? ` ${waitLabel}` : ""}${queueText ? ` ${queueText}` : ""}`;
                 } else if (thinkingBubble) {
                   thinkingBubble.querySelector(".LLAMA_QueueBadge")?.remove();
                 }
@@ -1451,6 +1384,14 @@ export class AI_LLAMA_CHAT {
                     i18nSearchingLabelNoQuery = pollResponse.i18n.searchingLabelNoQuery;
                   }
 
+                  if (pollResponse.i18n.readingLabel) {
+                    i18nReadingLabel = pollResponse.i18n.readingLabel;
+                  }
+
+                  if (pollResponse.i18n.readingLabelNoUrl) {
+                    i18nReadingLabelNoUrl = pollResponse.i18n.readingLabelNoUrl;
+                  }
+
                   if (pollResponse.i18n.thinkingLabel) {
                     i18nThinkingLabel = pollResponse.i18n.thinkingLabel;
 
@@ -1467,6 +1408,14 @@ export class AI_LLAMA_CHAT {
                   if (pollResponse.i18n.copyReasoningLabel) {
                     i18nCopyReasoningLabel = pollResponse.i18n.copyReasoningLabel;
                   }
+
+                  if (pollResponse.i18n.sendingMailLabel) {
+                    i18nSendingMailLabel = pollResponse.i18n.sendingMailLabel;
+                  }
+
+                  if (pollResponse.i18n.sendingMailLabelNoRecipient) {
+                    i18nSendingMailLabelNoRecipient = pollResponse.i18n.sendingMailLabelNoRecipient;
+                  }
                   // #endregion Get translated labels.
                 }
 
@@ -1482,6 +1431,8 @@ export class AI_LLAMA_CHAT {
                 // #region Suppress the "CALL:search" if not outputting final answer.
                 if (/CALL:/.test(text) && !pollResponse.done) {
                   const callMatch = text.match(/CALL:search\((?:\s*)query(?:\s*)=(?:\s*)['"]([^'"]*)['"]\s*\)/);
+                  const fetchMatch = text.match(/CALL:fetch\((?:\s*)url(?:\s*)=(?:\s*)['"]([^'"]*)['"]\s*\)/);
+                  const mailMatch = text.match(/CALL:mail\((?:\s*)to(?:\s*)=(?:\s*)['"]([^'"]*)['"]/);
                   if (streamBubble) {
                     streamBubble.parentElement?.remove();
 
@@ -1503,6 +1454,24 @@ export class AI_LLAMA_CHAT {
 
                     chatContainer.appendChild(indicator);
                     chatContainer.scrollTop = chatContainer.scrollHeight;
+                  } else if (fetchMatch && !chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                    const fetchUrl = fetchMatch[1];
+                    const indicator = document.createElement("div");
+
+                    indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
+                    indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">${i18nReadingLabel.replace("%s", fetchUrl)}</span></div>`;
+
+                    chatContainer.appendChild(indicator);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                  } else if (mailMatch && !chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                    const mailTo = mailMatch[1];
+                    const indicator = document.createElement("div");
+
+                    indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
+                    indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">${mailTo ? i18nSendingMailLabel.replace("%s", mailTo) : i18nSendingMailLabelNoRecipient}</span></div>`;
+
+                    chatContainer.appendChild(indicator);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
                   }
 
                   lastText = "";
@@ -1510,6 +1479,66 @@ export class AI_LLAMA_CHAT {
                   return;
                 }
                 // #endregion Suppress the "CALL:search" if not outputting final answer.
+                // #region The "Fetching..."-Bubble.
+                if (pollResponse.fetching && text.length === 0) {
+                  if (!chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                    if (streamBubble) {
+                      streamBubble.parentElement?.remove();
+
+                      streamBubble = null;
+                    }
+
+                    if (thinkingBubble) {
+                      thinkingBubble.parentElement?.remove();
+
+                      thinkingBubble = null;
+                    }
+
+                    const fetchUrl: string = pollResponse.fetchUrl ?? "";
+                    const indicator = document.createElement("div");
+
+                    indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
+                    indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">${fetchUrl ? i18nReadingLabel.replace("%s", fetchUrl) : i18nReadingLabelNoUrl}</span></div>`;
+
+                    chatContainer.appendChild(indicator);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                  }
+
+                  lastText = "";
+
+                  return;
+                }
+                // #endregion The "Fetching..."-Bubble.
+                // #region The "Sending email..."-Bubble.
+                if (pollResponse.sendingMail && text.length === 0) {
+                  if (!chatContainer.querySelector(".LLAMA_SearchIndicator")) {
+                    if (streamBubble) {
+                      streamBubble.parentElement?.remove();
+
+                      streamBubble = null;
+                    }
+
+                    if (thinkingBubble) {
+                      thinkingBubble.parentElement?.remove();
+
+                      thinkingBubble = null;
+                    }
+
+                    const mailRecipient: string = pollResponse.mailRecipient ?? "";
+                    const indicator = document.createElement("div");
+
+                    indicator.className = "LLAMA_Chat_Row LLAMA_Chat_Row--llama";
+                    indicator.innerHTML = `<div class="LLAMA_Chat_Bubble LLAMA_Chat_Bubble--llama LLAMA_SearchIndicator"><div class="CodBiLoader_Spinner LLAMA_SearchSpinner"></div><span class="LLAMA_SearchLabel">${mailRecipient ? i18nSendingMailLabel.replace("%s", mailRecipient) : i18nSendingMailLabelNoRecipient}</span></div>`;
+
+                    chatContainer.appendChild(indicator);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                  }
+
+                  lastText = "";
+
+                  return;
+                }
+                // #endregion The "Sending email..."-Bubble.
                 // #region The "Thinking..."-Bubble.
                 if (pollResponse.searching && text.length === 0) {
                   if (!chatContainer.querySelector(".LLAMA_SearchIndicator")) {

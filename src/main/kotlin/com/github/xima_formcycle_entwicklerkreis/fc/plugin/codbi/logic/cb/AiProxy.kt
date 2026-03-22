@@ -132,11 +132,30 @@ class AiProxy : AI() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { BraveSearch.apiKey = it }
+    // Mail Bridge (enabled by default unless explicitly disabled)
+    configData.properties.getProperty("AI_Mail_Enabled")?.trim()?.lowercase()?.let { value ->
+      MailBridge.enabled = value in listOf("true", "1", "yes")
+    }
+    configData.properties
+        .getProperty("AI_Mail_AllowedRecipients")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { MailBridge.allowedRecipientPattern = Regex(it, RegexOption.IGNORE_CASE) }
+    configData.properties.getProperty("AI_Mail_MaxPerHour")?.trim()?.toIntOrNull()?.let {
+      MailBridge.maxMailsPerHour = it
+    }
+    configData.properties
+        .getProperty("AI_Mail_Disclaimer")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { MailBridge.aiDisclaimer = it }
+    // MailBridge reads AiProxyEntities.entityManagerFactory lazily at send time
 
     log(
         LogLevel.INFO,
         "Initialised — ${exactIPs.size + cidrEntries.size} IP rules, ${credentials.size} users, " +
-            "BraveSearch: ${if (BraveSearch.isAvailable) "enabled" else "disabled"}")
+            "BraveSearch: ${if (BraveSearch.isAvailable) "enabled" else "disabled"}, " +
+            "Mail: ${if (MailBridge.isAvailable) "enabled" else "disabled"}")
   }
 
   /**
@@ -326,6 +345,16 @@ class AiProxy : AI() {
         response = handleSearchInProxyResponse(response, requestBody, serverUrl)
       }
       // endregion Brave Search.
+      // region URL Fetch.
+      if (BraveSearch.isAvailable && endpoint == "/v1/chat/completions") {
+        response = handleFetchInProxyResponse(response, requestBody, serverUrl)
+      }
+      // endregion URL Fetch.
+      // region Mail.
+      if (MailBridge.isAvailable && endpoint == "/v1/chat/completions") {
+        response = handleMailInProxyResponse(response, requestBody, serverUrl)
+      }
+      // endregion Mail.
       val elapsedMs = System.currentTimeMillis() - startMs
 
       auditLog(clientIP, username, endpoint, 200, "OK", elapsedMs)
@@ -635,6 +664,74 @@ class AiProxy : AI() {
   }
 
   // endregion CALL:search handling
+  // region CALL:fetch handling
+  /**
+   * Inspects the LLAMA-Server response for `CALL:fetch(url='...')` markers. If found, fetches the
+   * URL content, injects it into the conversation, and re-queries the model.
+   *
+   * @param responseJson The raw JSON response from llama-server.
+   * @param originalRequestBody The original request body sent by the client.
+   * @param serverUrl The llama-server URL.
+   * @return The final response JSON (original or fetch-augmented).
+   */
+  private fun handleFetchInProxyResponse(
+      responseJson: String,
+      originalRequestBody: String,
+      serverUrl: String
+  ): String {
+    val assistantContent = extractAssistantContent(responseJson) ?: return responseJson
+    val match = UrlFetcher.CALL_FETCH_PATTERN.find(assistantContent) ?: return responseJson
+    val url = match.groupValues[1]
+
+    log(LogLevel.INFO, "Proxy: Model requested URL fetch: '$url'")
+
+    val result = UrlFetcher.fetch(url)
+    val fetchContext = UrlFetcher.formatResultForModel(result)
+    val augmentedBody =
+        injectSearchResultsIntoRequest(originalRequestBody, assistantContent, fetchContext)
+            ?: return responseJson
+
+    val finalResponse = forwardPost(serverUrl, augmentedBody)
+
+    log(LogLevel.INFO, "Proxy: Fetch-augmented response received")
+
+    return finalResponse
+  }
+
+  // endregion CALL:fetch handling
+  // region CALL:mail handling
+  /**
+   * Inspects the LLAMA-Server response for `CALL:mail(to='...', subject='...', body='...')`
+   * markers. If found, sends the email via [MailBridge], injects the result into the conversation,
+   * and re-queries the model.
+   */
+  private fun handleMailInProxyResponse(
+      responseJson: String,
+      originalRequestBody: String,
+      serverUrl: String
+  ): String {
+    val assistantContent = extractAssistantContent(responseJson) ?: return responseJson
+    val match = MailBridge.CALL_MAIL_PATTERN.find(assistantContent) ?: return responseJson
+    val to = match.groupValues[1]
+    val subject = match.groupValues[2]
+    val body = match.groupValues[3]
+
+    log(LogLevel.INFO, "Proxy: Model requested mail send to: '$to'")
+
+    val result = MailBridge.sendMail(to, subject, body, "proxy")
+    val mailContext = MailBridge.formatResultForModel(result)
+    val augmentedBody =
+        injectSearchResultsIntoRequest(originalRequestBody, assistantContent, mailContext)
+            ?: return responseJson
+
+    val finalResponse = forwardPost(serverUrl, augmentedBody)
+
+    log(LogLevel.INFO, "Proxy: Mail-augmented response received (success=${result.success})")
+
+    return finalResponse
+  }
+
+  // endregion CALL:mail handling
   // region HTTP-Forwarding
   /**
    * Forwards a JSON POST request to the llama-server and returns the response body.

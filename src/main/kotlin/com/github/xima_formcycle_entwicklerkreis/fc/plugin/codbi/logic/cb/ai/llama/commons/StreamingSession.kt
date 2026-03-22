@@ -19,6 +19,10 @@ internal data class SessionLabels(
     val showSourcesLabel: String = "Show sources",
     val searchingLabel: String = "Searching the internet for \u201C%s\u201D\u2026",
     val searchingLabelNoQuery: String = "Searching the internet\u2026",
+    val readingLabel: String = "Reading page: \u201C%s\u201D\u2026",
+    val readingLabelNoUrl: String = "Reading page content\u2026",
+    val sendingMailLabel: String = "Sending email to \u201C%s\u201D\u2026",
+    val sendingMailLabelNoRecipient: String = "Sending email\u2026",
     val thinkingLabel: String = "Thinking\u2026",
     val copyResponseLabel: String = "Response",
     val copyReasoningLabel: String = "Reasoning"
@@ -38,6 +42,8 @@ internal class StreamingSession(
     /** Whether this session uses thinking mode (longer TTL). */
     val enableThinking: Boolean = false
 ) {
+  /** Updated on every poll so the session stays alive while the client is connected. */
+  @Volatile var lastActivityTime: Long = startTime
   /** Lock object for synchronizing access to mutable state. */
   private val lock = Any()
 
@@ -61,12 +67,22 @@ internal class StreamingSession(
   @Volatile var searching = false
   /** The current web search query, or `null` if no search is active. */
   @Volatile var searchQuery: String? = null
+  /** `true` while a URL fetch is in flight. */
+  @Volatile var fetching = false
+  /** The URL currently being fetched, or `null` if no fetch is active. */
+  @Volatile var fetchUrl: String? = null
+  /** `true` while an email is being sent. */
+  @Volatile var sendingMail = false
+  /** The recipient of the email being sent, or `null` if none. */
+  @Volatile var mailRecipient: String? = null
   /** The model type label for this session (`"thinking"` or `"fast"`). */
   @Volatile var modelType: String = if (enableThinking) "thinking" else "fast"
   /** Localized UI labels. Set once after language detection; defaults to English. */
   @Volatile var labels: SessionLabels = SessionLabels()
   /** Queue position while waiting for the inference semaphore. 0 = not queued / running. */
   @Volatile var queuePosition: Int = 0
+  /** The ticket UUID assigned to this session in [AI.queueTickets], or `null` if external. */
+  @Volatile var queueTicket: String? = null
   // region Confidence-Tracking
   /** Per-token logprob entries: Pair(token, logprob). Only visible (non-thinking) tokens. */
   private val tokenLogprobs = ArrayList<Pair<String, Double>>()

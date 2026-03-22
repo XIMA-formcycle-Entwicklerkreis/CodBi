@@ -118,7 +118,7 @@
      * @returns The {@link PropertyDescriptor } that was passed by the runtime. */
     static ParamvalueProvider(target, propertyKey, descriptor) {
       const originalMethod = descriptor.value;
-      descriptor.value = function(...args) {
+      descriptor.value = function (...args) {
         if (_DBC.paramValueRequests.has(target) && _DBC.paramValueRequests.get(target).has(propertyKey)) {
           for (const index of _DBC.paramValueRequests.get(target).get(propertyKey).keys()) {
             if (index < args.length) {
@@ -3188,10 +3188,14 @@
                             return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
                           }).join(",")
                         );
-                        DEFINED.tsCheck(cDetails.querySelector("object")).setAttribute(
-                          "data",
-                          `${window.CodbiPluginData.docsAPI[currentLanguage] === void 0 ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`
-                        );
+                        {
+                          const epDesc = window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description ?? "";
+                          if (epDesc.startsWith("/")) {
+                            cDetails.innerHTML = `<object data = '${baseDocURL}${epDesc}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
+                          } else {
+                            cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${epDesc}</div>`;
+                          }
+                        }
                         epManager.enabled = true;
                         epManager.enteringEP = true;
                         cDetails.style.display = "block";
@@ -3271,10 +3275,14 @@
                 return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
               }).join(",")
             );
-            DEFINED.tsCheck(cDetails.querySelector("object")).setAttribute(
-              "data",
-              `${window.CodbiPluginData.docsAPI[currentLanguage] === void 0 ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`
-            );
+            {
+              const epDesc = window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description ?? "";
+              if (epDesc.startsWith("/")) {
+                cDetails.innerHTML = `<object data = '${baseDocURL}${epDesc}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
+              } else {
+                cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${epDesc}</div>`;
+              }
+            }
             epManager.enabled = true;
             epManager.enteringEP = true;
             cDetails.style.display = "block";
@@ -3406,7 +3414,10 @@
               });
             }
             if (response.fslFunctionalities) {
-              window.CodbiPluginData.fslFunctionalities = `${window.CodbiPluginData.fslFunctionalities.substring(0, window.CodbiPluginData.fslFunctionalities.length - 1)},"${response.fslFunctionalities.split(",").join('","')}"]`;
+              const existingFsl = JSON.parse(window.CodbiPluginData.fslFunctionalities);
+              const newFsl = response.fslFunctionalities.split(",");
+              const merged = [...new Set([...existingFsl, ...newFsl])];
+              window.CodbiPluginData.fslFunctionalities = JSON.stringify(merged);
             }
             for (const placeholder in response.detElementplaceholder) {
               window.CodbiPluginData.detElementplaceholder[placeholder] = response.detElementplaceholder[placeholder];
@@ -3428,7 +3439,10 @@
               });
             }
             if (response.fslElementplaceholder) {
-              window.CodbiPluginData.fslElementplaceholder = `${window.CodbiPluginData.fslElementplaceholder.substring(0, window.CodbiPluginData.fslElementplaceholder.length - 1)},"${response.fslElementplaceholder.split(",").join('","')}"]`;
+              const existingEp = JSON.parse(window.CodbiPluginData.fslElementplaceholder);
+              const newEp = response.fslElementplaceholder.split(",");
+              const merged = [...new Set([...existingEp, ...newEp])];
+              window.CodbiPluginData.fslElementplaceholder = JSON.stringify(merged);
             }
             if (response.detStandards) {
               for (const key in response.detStandards) {
@@ -3452,7 +3466,10 @@
               }
             }
             if (response.fileListing) {
-              window.CodbiPluginData.fileListing = `${window.CodbiPluginData.fileListing.substring(0, window.CodbiPluginData.fileListing.length - 1)},"${response.fileListing.split(",").join('","')}"]`;
+              const existingFl = JSON.parse(window.CodbiPluginData.fileListing);
+              const newFl = response.fileListing.split(",");
+              const merged = [...new Set([...existingFl, ...newFl])];
+              window.CodbiPluginData.fileListing = JSON.stringify(merged);
             }
             setTimeout(() => {
               window.CodbiPluginData.populateStandards();
@@ -4022,13 +4039,14 @@
                                 return file.lastIndexOf(".") !== -1 ? file.substring(0, file.lastIndexOf(".")) : file;
                               }).join(",")
                             );
-                            if (cDetails.querySelector("object") === null) {
-                              cDetails.innerHTML = "<object style = 'width : 100% ; height: 100% ;'></object>";
+                            {
+                              const epDesc = window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description ?? "";
+                              if (epDesc.startsWith("/")) {
+                                cDetails.innerHTML = `<object data = '${baseDocURL}${epDesc}' style = 'width : 100% ; height : 100% ; opacity : .8 ;'></object>`;
+                              } else {
+                                cDetails.innerHTML = `<div style = "width: 100% ; height: 100% ; overflow : auto ;">${epDesc}</div>`;
+                              }
                             }
-                            DEFINED.tsCheck(cDetails.querySelector("object")).setAttribute(
-                              "data",
-                              `${window.CodbiPluginData.docsAPI[currentLanguage] === void 0 ? window.CodbiPluginData.docsAPI.en : window.CodbiPluginData.docsAPI[currentLanguage]}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`
-                            );
                             epManager.enabled = true;
                             epManager.enteringEP = true;
                             cDetails.style.display = "block";

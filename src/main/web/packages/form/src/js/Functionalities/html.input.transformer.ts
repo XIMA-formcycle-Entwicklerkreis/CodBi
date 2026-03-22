@@ -31,7 +31,6 @@ export class HTML_Input_Transformer {
    * @param toLoad      As provided by the **CodBi**.
    * @param toProcess   As provided by the **CodBi**.
    * @param transformer The **(toTransform: string) => string** performing the actual change. */
-  @DBC.ParamvalueProvider
   public static functionality(
     toLoad: { [key: string]: unknown },
     toProcess: Element,

@@ -96,6 +96,12 @@ import net.sourceforge.tess4j.TessAPI1
  *   concerns.
  * - Most unproblematic deletion request response: Data is never stored not even in server-backups
  *   so no deletion necessary.
+ *
+ * # Note On Removal
+ * If OCR was activated once the DLL used is locked into memory, making it impossible to delete the
+ * plugin's files from the server. That is a technical limitation of the Tesseract library and not a
+ * CodBi-specific issue. If you want to remove the plugin after activation, you need to first
+ * disable the plugin and then reboot the server. After that you can delete the plugin.
  */
 class TesseractAction : AI() {
   // region Companion Object
@@ -169,10 +175,13 @@ class TesseractAction : AI() {
       val rotate = options["rotate"]?.toIntOrNull() ?: 0
       val preprocess = options["preprocess"]?.lowercase() in listOf("true", "1")
       if (!AI.inferenceSemaphore.tryAcquire()) {
-        val pos = AI.queueTickets.size + 1
+        val pos = AI.queueTickets.size
         val badge = AI.queueBadgeEnabled
-        return """{"queued":true,"position":$pos,"queueBadge":$badge}"""
+        val waitMs = AI.estimateWaitMs(null)
+        val waitField = if (waitMs != null) ",\"estimatedWaitMs\":$waitMs" else ""
+        return """{"queued":true,"position":$pos,"queueBadge":$badge$waitField}"""
       }
+      val directInferenceStartMs = System.currentTimeMillis()
       try {
         val rawText = inst.runOcrDirect(imageBytes, rotate, preprocess)
 
@@ -235,6 +244,8 @@ class TesseractAction : AI() {
               """{"error":"Unsupported mode: $mode. Valid modes: print, extract, verify, extract fields"}"""
         }
       } finally {
+        val durationMs = System.currentTimeMillis() - directInferenceStartMs
+        AI.recordInferenceDuration("tesseract", durationMs)
         AI.inferenceSemaphore.release()
       }
     }
@@ -931,14 +942,22 @@ class TesseractAction : AI() {
     if (!AI.inferenceSemaphore.tryAcquire()) {
       AI.cleanupStaleTickets()
       val ticket = existingTicket ?: java.util.UUID.randomUUID().toString()
-      if (existingTicket == null) AI.queueTickets[ticket] = System.currentTimeMillis()
-      val pos = AI.queueTickets.size
+      AI.queueTickets[ticket] = System.currentTimeMillis()
+      AI.ticketModelTypes[ticket] = "tesseract"
+      val pos = (AI.queueTickets.size - 1).coerceAtLeast(1)
       val badge = AI.queueBadgeEnabled
+      val waitMs = AI.estimateWaitMs(ticket)
+      val waitField = if (waitMs != null) ",\"estimatedWaitMs\":$waitMs" else ""
       return PluginServletActionRetVal(
           ServletResponse(
               EResponseType.JSON,
-              """{"queued":true,"position":$pos,"queueBadge":$badge,"queueTicket":"$ticket"}"""))
+              """{"queued":true,"position":$pos,"queueBadge":$badge,"queueTicket":"$ticket"$waitField}"""))
     }
+    existingTicket?.let {
+      AI.queueTickets[it] = Long.MAX_VALUE
+      AI.ticketModelTypes[it] = "tesseract"
+    }
+    val tesseractInferenceStartMs = System.currentTimeMillis()
     try {
       return when (mode) {
         "print" -> executeModePrint(params)
@@ -957,8 +976,13 @@ class TesseractAction : AI() {
                     "{\"error\":\"Unsupported X-Mode in request-header (valid modes are print, verify, extract, or extract fields):${ modeHeader }\"}"))
       }
     } finally {
+      val durationMs = System.currentTimeMillis() - tesseractInferenceStartMs
+      if (durationMs > 0) AI.recordInferenceDuration("tesseract", durationMs)
       AI.inferenceSemaphore.release()
-      existingTicket?.let { AI.queueTickets.remove(it) }
+      existingTicket?.let {
+        AI.queueTickets.remove(it)
+        AI.ticketModelTypes.remove(it)
+      }
     }
   }
 

@@ -55,6 +55,7 @@
   "TreeView.Label.Status.Globals": "Beschreibung globaler Parameter vorhanden",
   "TreeView.Label.Status.Classes": "Beschreibung der von dieser CodBi Standard-Konfiguration definierten CSS-Klassen vorhanden",
   "TreeView.Label.Status.Code": "Code verfügbar",
+  "TreeView.Label.DeleteCode": "Code löschen",
   "CodeTemplate_OnLoaded": "Wenn Dokument Geladen",
   "CodeTemplate_Functionality": "Neue Funktionalität",
   "CodeTemplate_Functionality_Placeholder": "Meine.Neue.Funktionalitaet",
@@ -67,5 +68,6 @@
   "CodeTemplate_Functionality_Extend_Placeholder": "Zu.Erweiternde.Funktionalitaet",
   "CodeTemplate_EP_Extend": "Erweitern einer Elementplatzhalters",
   "CodeTemplate_EP_Extend_Placeholder": "Zu.Erweiternder.Platzhalter",
-  "CodeTemplate_Start": "CodBi starten"
+  "CodeTemplate_Start": "CodBi starten",
+  "RP.Tabs.Header.Functions.Sync.NotAllowed": "Sie sind nicht als synchronisierungsberechtigter Benutzer eingetragen. Bitte wenden Sie sich an den Administrator, um zur APIDoc_UsersAllowedToSYNC-Liste hinzugefügt zu werden."
 }

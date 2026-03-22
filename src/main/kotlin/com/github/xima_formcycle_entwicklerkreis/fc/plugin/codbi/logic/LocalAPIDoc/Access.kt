@@ -89,8 +89,7 @@ class StructuredDataStoreAction : IPluginServletAction {
     when (mode?.uppercase()) {
       "SYNC ALLOWED" ->
           if (!isSyncAllowed(currentUser)) {
-            servletResponse.value =
-                "{\"status\": \"error for ${params.user.userName}. Not in $syncUsers\", \"message\": \"NOT ALLOWED TO SYNC.\"}"
+            servletResponse.value = "{\"status\": \"error\", \"message\": \"FALSE\"}"
             servletResponse.httpStatusCode = HttpURLConnection.HTTP_OK
 
             return PluginServletActionRetVal(servletResponse)

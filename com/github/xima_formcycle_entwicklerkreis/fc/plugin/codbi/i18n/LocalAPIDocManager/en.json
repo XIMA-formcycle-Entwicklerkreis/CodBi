@@ -55,6 +55,7 @@
   "TreeView.Label.Status.Globals": "Description of global parameters available",
   "TreeView.Label.Status.Classes": "Description of this CodBi Standard-Configuration's CSS-Classes available",
   "TreeView.Label.Status.Code": "Code available",
+  "TreeView.Label.DeleteCode": "Delete code",
   "CodeTemplate_OnLoaded": "On Document Loaded",
   "CodeTemplate_Functionality": "New Functionality",
   "CodeTemplate_Functionality_Placeholder": "My.New.Functionality",
@@ -67,5 +68,6 @@
   "CodeTemplate_Functionality_Extend_Placeholder": "Functionality.To.Extend",
   "CodeTemplate_EP_Extend": "Extend Elementplaceholder",
   "CodeTemplate_EP_Extend_Placeholder": "Elementplaceholder.To.Extend",
-  "CodeTemplate_Start": "Start CodBi"
+  "CodeTemplate_Start": "Start CodBi",
+  "RP.Tabs.Header.Functions.Sync.NotAllowed": "You are not listed as a user allowed to synchronize. Please contact the administrator to be added to the APIDoc_UsersAllowedToSYNC list."
 }

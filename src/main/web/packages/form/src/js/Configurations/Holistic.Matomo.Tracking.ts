@@ -11,8 +11,6 @@ export function loadConfig(): void {
   window.codbi.loadConfig({
     targets: "body",
     FUNC: "Matomo.Tracking",
-    SiteID: "{ V > Matomo_SiteID }",
-    URL: "{ V > Matomo_URL }",
   });
 }
 

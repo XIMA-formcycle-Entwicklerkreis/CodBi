@@ -39,6 +39,10 @@ internal data class I18nLabels(
     val showSourcesLabel: String,
     val searchingLabel: String,
     val searchingLabelNoQuery: String,
+    val readingLabel: String,
+    val readingLabelNoUrl: String,
+    val sendingMailLabel: String,
+    val sendingMailLabelNoRecipient: String,
     val thinkingLabel: String,
     val copyResponseLabel: String,
     val copyReasoningLabel: String
@@ -63,11 +67,17 @@ internal data class StreamPollResponse(
     val resourceStatus: String? = null,
     val searching: Boolean? = null,
     val searchQuery: String? = null,
+    val fetching: Boolean? = null,
+    val fetchUrl: String? = null,
+    val sendingMail: Boolean? = null,
+    val mailRecipient: String? = null,
     val thinking: String? = null,
     val modelType: String? = null,
     val i18n: I18nLabels? = null,
     val confidence: ConfidenceData? = null,
-    val queuePosition: Int? = null
+    val queuePosition: Int? = null,
+    val queueBadge: Boolean? = null,
+    val estimatedWaitMs: Long? = null
 )
 
 // endregion Response Data Classes

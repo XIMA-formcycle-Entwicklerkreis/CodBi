@@ -1396,6 +1396,8 @@ var CodBi = class {
           }
         }
       }
+      await this.checkAttributes();
+      resolve();
     });
   }
   /**

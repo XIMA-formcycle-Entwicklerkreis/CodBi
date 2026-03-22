@@ -9,6 +9,9 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 // #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
+// #region Commons
+import { convertToWav, preferredMimeType } from "../commons/whisper-utils";
+// #endregion Commons
 // #endregion Imports
 /**
  * Provides the {@link Media_Input_Speech_Whisper.functionality }.
@@ -61,7 +64,7 @@ export class Media_Input_Speech_Whisper {
    * | Processing            | Browser cloud API (real-time) | Local server (batch)            |
    * | Data leaves device?   | Yes (cloud)                  | No (localhost only)             |
    * | DSGVO consent needed? | Yes (Art. 13)                | No                              |
-   * | Real-time interim?    | Yes                          | No (transcription after stop)   |
+   * | Real-time interim?    | Yes                          | Yes   |
    * | Browser support       | Chrome, Edge (limited)       | All modern browsers             |
    *
    * @param toLoad    Provided by the CodBi.
@@ -162,7 +165,7 @@ export class Media_Input_Speech_Whisper {
 
         if (!Media_Input_Speech_Whisper.convertSupported) {
           try {
-            blob = await Media_Input_Speech_Whisper.convertToWav(blob);
+            blob = await convertToWav(blob);
           } catch (X) {
             interimInFlight = false;
 
@@ -234,7 +237,7 @@ export class Media_Input_Speech_Whisper {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
         audioChunks = [];
-        mediaRecorder = new MediaRecorder(stream, { mimeType: Media_Input_Speech_Whisper.preferredMimeType() });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: preferredMimeType() });
 
         mediaRecorder.ondataavailable = (event: BlobEvent) => {
           if (event.data.size > 0) {
@@ -261,7 +264,7 @@ export class Media_Input_Speech_Whisper {
           // #region Send WAV if no FFMPEG support.
           if (!Media_Input_Speech_Whisper.convertSupported) {
             try {
-              audioBlob = await Media_Input_Speech_Whisper.convertToWav(audioBlob);
+              audioBlob = await convertToWav(audioBlob);
             } catch (X) {
               window.codbi.log(
                 "ERROR",
@@ -516,20 +519,7 @@ export class Media_Input_Speech_Whisper {
     }
   }
   // #endregion Plugin URL-Resolution.
-  // #region MIME-Type-Detection.
-  /** Returns the best supported audio MIME type for MediaRecorder. */
-  private static preferredMimeType(): string {
-    const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
-
-    for (const type of types) {
-      if (MediaRecorder.isTypeSupported(type)) {
-        return type;
-      }
-    }
-
-    return "";
-  }
-  // #region MIME-Type-Detection.
+  // #region MIME-Type-Detection — see ../commons/whisper-utils.ts
   // #region Health-Check.
   private static queryHealthCheck(pluginUrl: string): void {
     Media_Input_Speech_Whisper.retryPluginUrl = pluginUrl;
@@ -607,86 +597,7 @@ export class Media_Input_Speech_Whisper {
     }
   }
   // #endregion Health-Check.
-  // #region WAV conversion.
-  /**
-   * Converts an audio blob (WebM/Opus, etc.) to 16-bit PCM WAV using the Web Audio API.
-   * This is used when the server doesn't have ffmpeg and can only accept WAV.
-   *
-   * @param audioBlob The input audio blob to convert.
-   *
-   * @return A Promise that resolves to a new Blob containing the WAV audio data. */
-  private static async convertToWav(audioBlob: Blob): Promise<Blob> {
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const audioContext = new AudioContext();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-    // #region Downmix to mono.
-    const numFrames = audioBuffer.length;
-    const sampleRate = audioBuffer.sampleRate;
-    const mono = new Float32Array(numFrames);
-
-    for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
-      const channelData = audioBuffer.getChannelData(ch);
-
-      for (let i = 0; i < numFrames; i++) {
-        mono[i] += channelData[i];
-      }
-    }
-
-    if (audioBuffer.numberOfChannels > 1) {
-      const scale = 1 / audioBuffer.numberOfChannels;
-
-      for (let i = 0; i < numFrames; i++) {
-        mono[i] *= scale;
-      }
-    }
-    // #endregion Downmix to mono.
-    // #region Encode 16-bit PCM WAV.
-    const bytesPerSample = 2;
-    const dataLength = numFrames * bytesPerSample;
-    const buffer = new ArrayBuffer(44 + dataLength);
-    const view = new DataView(buffer);
-
-    Media_Input_Speech_Whisper.writeString(view, 0, "RIFF");
-    view.setUint32(4, 36 + dataLength, true);
-    Media_Input_Speech_Whisper.writeString(view, 8, "WAVE");
-    Media_Input_Speech_Whisper.writeString(view, 12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM
-    view.setUint16(22, 1, true); // Mono
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * bytesPerSample, true);
-    view.setUint16(32, bytesPerSample, true);
-    view.setUint16(34, 16, true); // Bits per sample.
-    Media_Input_Speech_Whisper.writeString(view, 36, "data");
-    view.setUint32(40, dataLength, true);
-
-    let offset = 44;
-
-    for (let i = 0; i < numFrames; i++) {
-      const sample = Math.max(-1, Math.min(1, mono[i]));
-
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-
-      offset += 2;
-    }
-    // #endregion Encode 16-bit PCM WAV.
-    await audioContext.close();
-
-    return new Blob([buffer], { type: "audio/wav" });
-  }
-  /**
-   * Writes a UTF-8 string into a DataView at the specified offset.
-   *
-   * @param view    The DataView to write into.
-   * @param offset  The byte offset to start writing at.
-   * @param str     The string to write. Only ASCII characters are supported in this implementation. */
-  private static writeString(view: DataView, offset: number, str: string): void {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i));
-    }
-  }
-  // #endregion WAV conversion.
+  // #region WAV conversion — see ../commons/whisper-utils.ts
   // #region Styles
   private static ensureStyles(): void {
     if (document.querySelector("#MEDIA_Whisper_Styles")) {

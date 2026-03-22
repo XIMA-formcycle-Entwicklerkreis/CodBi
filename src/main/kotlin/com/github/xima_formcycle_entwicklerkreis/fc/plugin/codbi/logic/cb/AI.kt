@@ -60,18 +60,103 @@ abstract class AI : CodBi(), IPluginServletAction {
     @Volatile @JvmStatic var queueBadgeEnabled: Boolean = false
 
     /**
-     * Tracks every request that wants the inference semaphore but does not yet hold it. Streaming
-     * threads register while blocked on [acquire]; retry-based clients (sync LLAMA, Tesseract)
-     * register on the first failed [tryAcquire] and are removed when they eventually acquire or
-     * abandon. The map value is the creation timestamp (for stale-ticket cleanup).
+     * Tracks every request that is waiting for or currently holding the inference semaphore.
+     * Streaming threads register before [acquire]; retry-based clients (sync LLAMA, Tesseract)
+     * register on the first failed [tryAcquire]. Tickets are removed when inference completes (in
+     * the finally block after [release]). The map value is the creation timestamp for waiting
+     * tickets, or [Long.MAX_VALUE] for running inferences (immune to stale cleanup).
      */
     @JvmStatic val queueTickets = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
-    /** Removes queue tickets older than 30 s (abandoned clients). */
+    /**
+     * Maps ticket UUID → model-type key (e.g. `"llama-thinking"`, `"llama-fast"`, `"tesseract"`).
+     * Registered alongside [queueTickets] so [estimateWaitMs] can look up which model types are
+     * ahead in the queue and calculate an approximate wait time.
+     */
+    @JvmStatic val ticketModelTypes = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** Maximum number of past durations kept per model type for averaging. */
+    private const val MAX_HISTORY_SIZE = 20
+
+    /**
+     * Stores the last [MAX_HISTORY_SIZE] inference durations (in ms) per model-type key. Used by
+     * [estimateWaitMs] to compute average inference time per model type.
+     */
+    @JvmStatic
+    val inferenceHistory = java.util.concurrent.ConcurrentHashMap<String, MutableList<Long>>()
+
+    /**
+     * Records the duration of a completed inference for a given model type.
+     *
+     * @param modelType The model-type key (e.g. `"llama-thinking"`, `"tesseract"`).
+     * @param durationMs The wall-clock duration in milliseconds.
+     */
+    @JvmStatic
+    fun recordInferenceDuration(modelType: String, durationMs: Long) {
+      inferenceHistory.compute(modelType) { _, list ->
+        val l = list ?: java.util.Collections.synchronizedList(mutableListOf())
+        l.add(durationMs)
+        while (l.size > MAX_HISTORY_SIZE) l.removeAt(0)
+        l
+      }
+    }
+
+    /**
+     * Estimates the total wait time (in ms) for a ticket by summing the average inference duration
+     * of every ticket ahead of it in the queue. Only tickets whose model type has recorded history
+     * contribute to the estimate. Returns `null` if no estimate is possible (no history for any of
+     * the queued model types).
+     *
+     * @param excludeTicket The ticket UUID to exclude (the requester's own ticket).
+     */
+    @JvmStatic
+    fun estimateWaitMs(excludeTicket: String?): Long? {
+      val permits = inferenceSemaphore.availablePermits()
+      val otherTickets = queueTickets.keys.filter { it != excludeTicket }
+      if (otherTickets.isEmpty()) return null
+      // Only tickets that are waiting (not currently running) contribute to wait.
+      // Running tickets (MAX_VALUE) will finish soon — include their avg as well since
+      // they are occupying a permit that we need.
+      var totalMs = 0L
+      var hasEstimate = false
+      // Count how many are running vs waiting ahead
+      val running = otherTickets.filter { queueTickets[it] == Long.MAX_VALUE }
+      val waiting =
+          otherTickets.filter { queueTickets[it] != Long.MAX_VALUE && queueTickets[it] != null }
+      // For each running inference, add its avg duration (it's occupying a slot we might need)
+      for (ticket in running) {
+        val mt = ticketModelTypes[ticket] ?: continue
+        val hist = inferenceHistory[mt] ?: continue
+        if (hist.isEmpty()) continue
+        totalMs += hist.average().toLong()
+        hasEstimate = true
+      }
+      // For each waiting inference ahead, add its avg duration
+      for (ticket in waiting) {
+        val mt = ticketModelTypes[ticket] ?: continue
+        val hist = inferenceHistory[mt] ?: continue
+        if (hist.isEmpty()) continue
+        totalMs += hist.average().toLong()
+        hasEstimate = true
+      }
+      // Divide by concurrency (multiple slots can run in parallel)
+      val effectivePermits = (permits + running.size).coerceAtLeast(1)
+      return if (hasEstimate) (totalMs / effectivePermits) else null
+    }
+
+    /**
+     * Removes waiting tickets older than 30 s (abandoned clients). Active tickets
+     * ([Long.MAX_VALUE]) are not affected.
+     */
     @JvmStatic
     fun cleanupStaleTickets() {
       val cutoff = System.currentTimeMillis() - 30_000
-      queueTickets.entries.removeIf { it.value < cutoff }
+      queueTickets.entries.removeIf { entry ->
+        if (entry.value < cutoff) {
+          ticketModelTypes.remove(entry.key)
+          true
+        } else false
+      }
     }
 
     /** Replaces the shared inference semaphore with a new limit. */

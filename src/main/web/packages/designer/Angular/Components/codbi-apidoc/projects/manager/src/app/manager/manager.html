@@ -114,7 +114,16 @@
                                     <div id = "CodBi_LocalAPIDoc_Tree_Label_UploadCode">
                                         <button class = "--CB-LocalAPIDoc-UploadCodeTreeItem"
 
-                                                (click) = "onUploadCode( $event )"></button></div></div></ng-template></p-tree>
+                                                (click) = "onUploadCode( $event )"></button></div>
+
+                                    <div    *ngIf = 'activeTabDocRef[ getFullNodePath(node)] && activeTabDocRef[ getFullNodePath(node)].Code !== undefined && activeTabDocRef[ getFullNodePath(node)].Code !== ""'
+
+                                            id = "CodBi_LocalAPIDoc_Tree_Label_DeleteCode">
+                                        <button class   = "--CB-LocalAPIDoc-DeleteCodeTreeItem"
+
+                                                [attr.title] = "'TreeView.Label.DeleteCode' | transloco"
+
+                                                (click) = "onDeleteCode( $event )"></button></div></div></ng-template></p-tree>
 
                 <button class = "-add" #CodBi_LocalAPIDoc_Add
 

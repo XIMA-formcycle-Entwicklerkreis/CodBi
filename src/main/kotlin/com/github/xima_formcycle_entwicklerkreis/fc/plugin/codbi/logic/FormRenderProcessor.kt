@@ -3,6 +3,7 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.PLUGIN_FORM_RESOURCES_ID
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.PLUGIN_KEY
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiFormResourcesPlugin
+import com.hp.gagawa.java.FertileNode
 import com.hp.gagawa.java.Node
 import com.hp.gagawa.java.elements.Link
 import com.hp.gagawa.java.elements.Script
@@ -55,14 +56,29 @@ internal class FormRenderProcessor {
    * @param filePath The path to the resource, must be one of the keys as returned by the
    *   [CodbiFormResourcesPlugin.getResources].
    */
-  fun insertFormResourcePluginScript(id: String, filePath: String) {
-    if (renderConfig.isForceInline) {
-      val content = readFormResourcePluginContent(filePath)
-      appendChild(form, createScriptInline(id, content))
+  fun insertFormResourcePluginScript(
+      id: String,
+      filePath: String,
+      isModule: Boolean = true,
+      prepend: Boolean = false
+  ) {
+    val node =
+        if (renderConfig.isForceInline) {
+          createScriptInline(id, readFormResourcePluginContent(filePath))
+        } else {
+          createScriptExternal(id, createFormResourcesPluginUrl(filePath), isModule)
+        }
+    if (prepend) {
+      prependChild(form, node)
     } else {
-      val url = createFormResourcesPluginUrl(filePath)
-      appendChild(form, createScriptExternal(id, url))
+      appendChild(form, node)
     }
+  }
+
+  /** Inserts a child node before all existing children of the given parent. */
+  private fun prependChild(parent: Node, child: Node) {
+    (parent as FertileNode).children.add(0, child)
+    child.setParent(parent)
   }
 
   /**
@@ -136,12 +152,14 @@ internal class FormRenderProcessor {
    * @param url The URL pointing to the JavaScript file.
    * @return The newly created script element.
    */
-  private fun createScriptExternal(id: String, url: String): Node {
+  private fun createScriptExternal(id: String, url: String, isModule: Boolean = true): Node {
     val script = Script(null)
     attr(script, "id", id)
     attr(script, "name", id)
     attr(script, "src", url)
-    attr(script, "type", "module")
+    if (isModule) {
+      attr(script, "type", "module")
+    }
     attr(
         script,
         "onerror",

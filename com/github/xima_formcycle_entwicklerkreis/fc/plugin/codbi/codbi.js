@@ -688,7 +688,7 @@
      * @returns The {@link PropertyDescriptor } that was passed by the runtime. */
     static ParamvalueProvider(target, propertyKey, descriptor) {
       const originalMethod = descriptor.value;
-      descriptor.value = function(...args) {
+      descriptor.value = function (...args) {
         if (_DBC.paramValueRequests.has(target) && _DBC.paramValueRequests.get(target).has(propertyKey)) {
           for (const index of _DBC.paramValueRequests.get(target).get(propertyKey).keys()) {
             if (index < args.length) {
@@ -1913,6 +1913,8 @@
             }
           }
         }
+        await this.checkAttributes();
+        resolve();
       });
     }
     /**
@@ -2167,6 +2169,10 @@
                     return;
                   }
                   eval(response.result.replaceAll("<|>", '"'));
+                  const checkedAttr = toProcess.getAttribute("data-cb-checked") ?? "";
+                  if (checkedAttr.indexOf(functionality.toLowerCase()) === -1) {
+                    toProcess.setAttribute("data-cb-checked", `${checkedAttr} ${functionality.toLowerCase()}`.trim());
+                  }
                   toProcess.classList.add("Processing", "CodBi");
                   cntPromises++;
                   this.resolveEP(codbiAttributes).then((real) => {

@@ -809,8 +809,16 @@ export class Manager implements AfterViewInit {
           const reader = new FileReader();
 
           reader.onload = (e) => {
-            const fileContent = e.target?.result as string;
+            let fileContent = e.target?.result as string;
             const activeTab = this.activeTab; // Closure.
+            // #region Replace window.codbi identifiers with the actual node path.
+            const nodePath = fullNodePath.toLowerCase();
+
+            fileContent = fileContent.replace(
+              /(window\.codbi\.(?:registerFunctionality|registerEP|extendFunctionality|extendEP))\(\s*(["'`])(?:(?!\2).)*\2/g,
+              `$1($2${nodePath}$2`,
+            );
+            // #endregion Replace window.codbi identifiers with the actual node path.
 
             this.importedCodeToUpload.set({ type: this.activeTab, key: fullNodePath }, () => {
               return new Promise<void>((resolve, reject) => {
@@ -823,7 +831,7 @@ export class Manager implements AfterViewInit {
                     "X-Element": fullNodePath,
                   },
                   data: {
-                    ToWrite: e.target?.result as string,
+                    ToWrite: fileContent,
                   },
                   success: (response) => {
                     window.CodbiPluginData.localCode = `${window.CodbiPluginData.localCode}${window.CodbiPluginData.localCode.length !== 0 ? "," : ""}${activeTab}_${fullNodePath}`;
@@ -840,7 +848,7 @@ export class Manager implements AfterViewInit {
                 Active: true,
                 Description: this.translocoService.translate("Add.NewNode.ViaCodeUpload"),
                 // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
-                Code: (this.currentlySelectedTreeNode.data.Code = e.target?.result as string),
+                Code: (this.currentlySelectedTreeNode.data.Code = fileContent),
                 local: true,
               };
             }
@@ -849,26 +857,32 @@ export class Manager implements AfterViewInit {
               this.translocoService.translate("Add.NewNode.ViaCodeUpload");
 
             switch (activeTab) {
-              case "Elementplaceholder":
-                window.CodbiPluginData.fslElementplaceholder = JSON.stringify([
-                  ...(JSON.parse(window.CodbiPluginData.fslElementplaceholder) as []),
-                  `${fullNodePath}.js`,
-                ]);
+              case "Elementplaceholder": {
+                const epArr = JSON.parse(window.CodbiPluginData.fslElementplaceholder) as string[];
+                const epEntry = `${fullNodePath}.js`;
+                if (!epArr.includes(epEntry)) {
+                  epArr.push(epEntry);
+                  window.CodbiPluginData.fslElementplaceholder = JSON.stringify(epArr);
+                }
 
                 window.CodbiPluginData.updateEPManager(window.CodbiPluginData.fslElementplaceholder);
 
                 break;
-              case "Functionality":
+              }
+              case "Functionality": {
                 window.CodbiPluginData.detFunctionalities[fullNodePath].Parameter = {};
 
-                window.CodbiPluginData.fslFunctionalities = JSON.stringify([
-                  ...(JSON.parse(window.CodbiPluginData.fslFunctionalities) as []),
-                  `${fullNodePath}.js`,
-                ]);
+                const fnArr = JSON.parse(window.CodbiPluginData.fslFunctionalities) as string[];
+                const fnEntry = `${fullNodePath}.js`;
+                if (!fnArr.includes(fnEntry)) {
+                  fnArr.push(fnEntry);
+                  window.CodbiPluginData.fslFunctionalities = JSON.stringify(fnArr);
+                }
 
                 window.CodbiPluginData.updateSVManager(window.CodbiPluginData.fslFunctionalities);
 
                 break;
+              }
               case "Standard":
                 window.CodbiPluginData.detStandards[fullNodePath].classes = {};
                 window.CodbiPluginData.detStandards[fullNodePath].globals = {};
@@ -879,8 +893,7 @@ export class Manager implements AfterViewInit {
             this.updateNodeToAPIDoc();
 
             if (this.currentCodBiElements[fullNodePath] !== undefined) {
-              this.currentCodBiElements[fullNodePath].Code = this.currentlySelectedTreeNode.data.Code = e.target
-                ?.result as string;
+              this.currentCodBiElements[fullNodePath].Code = this.currentlySelectedTreeNode.data.Code = fileContent;
             }
 
             this.synchronizing = false;
@@ -898,6 +911,54 @@ export class Manager implements AfterViewInit {
     // #endregion Code Upload
     this.CodBi_LocalAPIDoc_Tree_Label_UploadCode_Dialogue.nativeElement.click();
   }
+  // #endregion Code Upload
+  // #region Code Deletion (per node, keeping the node itself)
+  /**
+   * Deletes the code associated with the currently selected tree node without removing the node.
+   *
+   * @param event The {@link Event } received. */
+  protected onDeleteCode(event: Event) {
+    INSTANCE.tsCheck<HTMLElement>(
+      event.target,
+      HTMLElement,
+    ).parentElement.parentElement.parentElement.parentElement.parentElement.click();
+
+    const fullNodePath = this.getFullNodePath(this.currentlySelectedTreeNode);
+
+    // Clear code from the node data.
+    if (this.currentlySelectedTreeNode.data) {
+      this.currentlySelectedTreeNode.data.Code = undefined;
+      this.currentlySelectedTreeNode.data.code = undefined;
+    }
+
+    // Clear code from the plugin data reference.
+    if (this.currentCodBiElements[fullNodePath]) {
+      this.currentCodBiElements[fullNodePath].Code = undefined;
+    }
+
+    // Remove any pending upload for this element.
+    for (const key of this.importedCodeToUpload.keys()) {
+      if (key.type === this.activeTab && key.key === fullNodePath) {
+        this.importedCodeToUpload.delete(key);
+      }
+    }
+
+    // Mark for server-side deletion on next sync.
+    this.removedElements.push({ type: this.activeTab, path: fullNodePath });
+
+    // Remove from localCode tracking.
+    const localCodeSuffix = `${this.activeTab}_${fullNodePath}`;
+    if (window.CodbiPluginData.localCode) {
+      window.CodbiPluginData.localCode = window.CodbiPluginData.localCode
+        .split(",")
+        .filter((entry) => entry !== localCodeSuffix)
+        .join(",");
+    }
+
+    this.synchronized = false;
+    this.cdr.markForCheck();
+  }
+  // #endregion Code Deletion (per node, keeping the node itself)
   // #endregion Code Upload
   // #region Renaming
   /** Removes all intermediate renaming steps within the specified {@link Array<{ type: string ; oldPath: string; newPath: string }>} **toConsolidate**.
@@ -1766,6 +1827,13 @@ export class Manager implements AfterViewInit {
 
         this.cdr.markForCheck();
       },
+      error: () => {
+        this.synchronizing = false;
+
+        this.cdr.markForCheck();
+
+        alert(this.translocoService.translate("RP.Tabs.Header.Functions.Sync.NotAllowed"));
+      },
     });
     // #endregion Sync
     // #region Imported Code Upload.
@@ -1882,7 +1950,6 @@ export class Manager implements AfterViewInit {
         Parameter: node.data?.Parameter ? this.arrayToObject(node.data.Parameter) : [],
         globals: node.data?.globals ? this.arrayToObject(node.data.globals) : [],
         notes: node.data.Notes ? node.data.Notes : "",
-        code: node.data.code ? node.data.code : undefined,
       };
 
       if (node.children) {
@@ -2534,17 +2601,23 @@ export class Manager implements AfterViewInit {
             this.itemsElementplaceholder = convertedData.detElementplaceholder;
             // #region Merge filelistings
             window.CodbiPluginData.fileListing = JSON.stringify([
-              ...(JSON.parse(window.CodbiPluginData.fileListing) as []),
-              ...convertedData.fileListing,
+              ...new Set([
+                ...(JSON.parse(window.CodbiPluginData.fileListing) as string[]),
+                ...convertedData.fileListing,
+              ]),
             ]);
 
             window.CodbiPluginData.fslElementplaceholder = JSON.stringify([
-              ...(JSON.parse(window.CodbiPluginData.fslElementplaceholder) as []),
-              ...convertedData.fslElementplaceholder,
+              ...new Set([
+                ...(JSON.parse(window.CodbiPluginData.fslElementplaceholder) as string[]),
+                ...convertedData.fslElementplaceholder,
+              ]),
             ]);
             window.CodbiPluginData.fslFunctionalities = JSON.stringify([
-              ...(JSON.parse(window.CodbiPluginData.fslFunctionalities) as []),
-              ...convertedData.fslFunctionalities,
+              ...new Set([
+                ...(JSON.parse(window.CodbiPluginData.fslFunctionalities) as string[]),
+                ...convertedData.fslFunctionalities,
+              ]),
             ]);
             // #endregion Merge filelistings
             // #region Merge API-Doc entries.

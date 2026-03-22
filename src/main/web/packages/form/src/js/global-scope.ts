@@ -999,6 +999,8 @@ export class CodBi implements CodbiGlobal {
         }
       }
       // #endregion Apply attributes
+      await this.checkAttributes();
+      resolve();
     });
   }
   /**
@@ -1345,6 +1347,12 @@ export class CodBi implements CodbiGlobal {
 
                 await this.importRemoteModule(response.result);
                 // #endregion Evaluate the response and replace all placeholders.
+                // Re-mark as checked so a subsequent checkAttributes() call won't re-invoke.
+                const checkedAttr = toProcess.getAttribute("data-cb-checked") ?? "";
+                if (checkedAttr.indexOf(functionality.toLowerCase()) === -1) {
+                  toProcess.setAttribute("data-cb-checked", `${checkedAttr} ${functionality.toLowerCase()}`.trim());
+                }
+
                 toProcess.classList.add("Processing", "CodBi");
 
                 cntPromises++;

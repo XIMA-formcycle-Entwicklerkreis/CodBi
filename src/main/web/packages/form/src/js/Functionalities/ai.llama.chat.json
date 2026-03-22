@@ -17,6 +17,8 @@
     "VoiceSendHotkey": "",
     "Language": "",
     "ResponseLanguage": "",
-    "Specialist": ""
+    "Specialist": "",
+    "QueueBadge": "",
+    "QueueText": ""
   }
 }

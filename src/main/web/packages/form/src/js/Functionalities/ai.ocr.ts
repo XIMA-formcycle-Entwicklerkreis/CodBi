@@ -16,6 +16,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 //endregion PDF
 import { CodBiError } from "../global-scope";
+import { formatWaitTime } from "../commons/format-wait-time";
 //endregion Imports
 /**
  * Provides the {@link AI.functionality }.
@@ -62,6 +63,11 @@ export class AI_OCR {
    *                              are processed.
    *  - **Maximum**               The number of files that may be uploaded. If the number of selected files exceeds this number,
    *                              the processing is aborted and a warning is logged in the console.
+   *  - **QueueBadge**:           If set to `"true"`, shows a badge with the current queue position while
+   *                              waiting for inference. Overrides the `AI_QueueBadge` plugin property
+   *                              for this instance. Default: determined by plugin property.
+   *  - **QueueText**:            Text appended after the queue position number in the badge
+   *                              (e.g. `"in queue"` → badge shows `"3 in queue"`). Default: empty.
    *
    * ### CSS Classes:
    * - **CodBi_AI_OCR_Receiver**: Elements with this class within the parent container of the one holding the
@@ -287,7 +293,7 @@ export class AI_OCR {
       const ocrQueueText: string = toLoad.queuetext != null ? String(toLoad.queuetext) : "";
       let ocrQueueBadgeEl: HTMLSpanElement | null = null;
 
-      const showOcrQueueBadge = (position: number) => {
+      const showOcrQueueBadge = (position: number, estimatedWaitMs?: number | null) => {
         if (!ocrQueueBadgeEl) {
           ocrQueueBadgeEl = document.createElement("span");
           ocrQueueBadgeEl.className = "OCR_QueueBadge";
@@ -295,7 +301,8 @@ export class AI_OCR {
             "display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 8px;border-radius:10px;background:#d0e0ff;color:#1a5aab;font-size:12px;font-weight:600;white-space:nowrap;";
           label?.appendChild(ocrQueueBadgeEl);
         }
-        ocrQueueBadgeEl.textContent = `${position}${ocrQueueText ? " " + ocrQueueText : ""}`;
+        const waitLabel = formatWaitTime(estimatedWaitMs);
+        ocrQueueBadgeEl.textContent = `${position}${waitLabel ? ` ${waitLabel}` : ""}${ocrQueueText ? ` ${ocrQueueText}` : ""}`;
       };
 
       const hideOcrQueueBadge = () => {
@@ -315,7 +322,9 @@ export class AI_OCR {
           cache: false,
           headers: ajaxHeaders,
           beforeSend: (xhr) => {
-            if (ocrQueueTicket) xhr.setRequestHeader("X-Queue-Ticket", ocrQueueTicket);
+            if (ocrQueueTicket) {
+              xhr.setRequestHeader("X-Queue-Ticket", ocrQueueTicket);
+            }
           },
           success: (response) => {
             const parsedResponse = typeof response === "string" ? JSON.parse(response) : response;
@@ -324,7 +333,7 @@ export class AI_OCR {
               ocrQueueTicket = parsedResponse.queueTicket ?? ocrQueueTicket;
               const badgeEnabled = ocrQueueOverride != null ? ocrQueueOverride : !!parsedResponse.queueBadge;
               if (badgeEnabled) {
-                showOcrQueueBadge(parsedResponse.position ?? 0);
+                showOcrQueueBadge(parsedResponse.position ?? 0, parsedResponse.estimatedWaitMs);
               }
               setTimeout(sendOcrRequest, 1000);
               return;

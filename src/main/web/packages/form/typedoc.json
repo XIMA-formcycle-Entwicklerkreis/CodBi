@@ -1,8 +1,7 @@
 {
   "entryPoints": ["./src/js/**/*.ts"],
-  "out": "./docs2",
+  "out": "./docs",
   "name": "CodBi",
-
   "exclude": ["./src/tests/**/*", "./node_modules"],
   "theme": "default",
   "hideGenerator": true,

@@ -2,6 +2,8 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.ll
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.BraveSearch
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.MailBridge
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.UrlFetcher
 
 /**
  * Handles `CALL:search(query='...')` tool calls emitted by the model. Performs Brave web searches
@@ -240,4 +242,260 @@ internal class WebSearchHandler(
       currentText = session.currentText()
     }
   }
+
+  /**
+   * Checks if the model's response contains a `CALL:fetch(url='...')` marker. If so, fetches the
+   * URL content and re-queries the model with the page text injected into the conversation history.
+   *
+   * @param initialAnswer The model's response (may contain CALL:fetch).
+   * @param originalQuestion The user's original question.
+   * @param imageParts Base64 image URIs (carried forward).
+   * @param chatHistory Previous conversation turns.
+   * @param enableThinking Whether thinking mode is on.
+   * @param slotId The slot ID for inference.
+   * @param detectedLang Pre-detected language result.
+   * @return The final answer (either the original or the fetch-augmented one).
+   */
+  fun handleFetchToolCall(
+      initialAnswer: String,
+      originalQuestion: String,
+      imageParts: List<String>,
+      chatHistory: List<Pair<String, String>>,
+      enableThinking: Boolean,
+      slotId: Int,
+      detectedLang: DetectedLanguage? = null
+  ): String {
+    if (!BraveSearch.isAvailable) return initialAnswer
+
+    val match = UrlFetcher.CALL_FETCH_PATTERN.find(initialAnswer) ?: return initialAnswer
+    val url = match.groupValues[1]
+
+    log(LogLevel.INFO, "Model requested URL fetch: '$url'")
+
+    val result = UrlFetcher.fetch(url)
+    val fetchContext = UrlFetcher.formatResultForModel(result)
+    val extendedHistory = chatHistory.toMutableList()
+
+    extendedHistory.add("user" to originalQuestion)
+    extendedHistory.add("assistant" to match.value)
+    extendedHistory.add("user" to fetchContext)
+
+    val followUpQuestion = searchFollowUpPrompt(originalQuestion, detectedLang, true)
+    val messages =
+        buildMessages(
+            followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
+    val answer = chatCompletion(messages, false, slotId, null)
+
+    log(LogLevel.INFO, "Fetch-augmented answer: ${answer.take(120)}…")
+
+    return answer
+  }
+
+  /**
+   * Handles `CALL:fetch` in streaming mode. When the completed stream text contains a fetch call,
+   * fetches the URL and streams a follow-up completion.
+   *
+   * @param fullText The completed stream text (may contain CALL:fetch).
+   * @param originalQuestion The user's original question.
+   * @param imageParts Base64 image URIs (carried forward).
+   * @param chatHistory Previous conversation turns.
+   * @param session The streaming session to populate.
+   * @param enableThinking Whether thinking mode is on.
+   * @param slotId The slot ID for inference.
+   * @param detectedLang Pre-detected language result.
+   */
+  fun handleFetchToolCallStreaming(
+      fullText: String,
+      originalQuestion: String,
+      imageParts: List<String>,
+      chatHistory: List<Pair<String, String>>,
+      session: StreamingSession,
+      enableThinking: Boolean,
+      slotId: Int,
+      detectedLang: DetectedLanguage? = null
+  ) {
+    if (!BraveSearch.isAvailable) return
+
+    val match = UrlFetcher.CALL_FETCH_PATTERN.find(fullText) ?: return
+    val url = match.groupValues[1]
+
+    log(LogLevel.INFO, "Streaming: Model requested URL fetch: '$url'")
+
+    val result = UrlFetcher.fetch(url)
+
+    if (result.error != null) {
+      session.replaceText("Could not read the page: ${result.error}")
+      return
+    }
+
+    val fetchContext = UrlFetcher.formatResultForModel(result)
+    val priorReasoning = session.currentThinking().trim()
+    val priorText = session.currentText()
+
+    session.clearAll()
+
+    if (priorReasoning.isNotEmpty()) {
+      session.addThinking(priorReasoning)
+      session.addThinking("\n\n---\n\n")
+    }
+
+    val readingLabel = detectedLang?.readingLabel?.format(url) ?: "\uD83D\uDCC4Reading: \"$url\""
+
+    session.addThinking("$readingLabel\n\n")
+
+    if (!result.title.isNullOrBlank()) {
+      session.addThinking("Title: ${result.title}\n")
+    }
+
+    session.addThinking("Extracted ${result.text?.length ?: 0} characters of content.\n\n")
+
+    val extendedHistory = chatHistory.toMutableList()
+
+    extendedHistory.add("user" to originalQuestion)
+    extendedHistory.add("assistant" to match.value)
+    extendedHistory.add("user" to fetchContext)
+
+    val followUpQuestion = searchFollowUpPrompt(originalQuestion, detectedLang, true)
+    val messages =
+        buildMessages(
+            followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
+
+    try {
+      streamChatCompletion(messages, session, false, slotId)
+    } catch (e: Exception) {
+      session.clearAll()
+      if (priorReasoning.isNotEmpty()) session.addThinking(priorReasoning)
+      if (priorText.isNotEmpty()) session.addText(priorText)
+      log(LogLevel.WARNING, "Streaming: Fetch follow-up request failed: ${e.message}")
+    }
+  }
+
+  // region CALL:mail handling
+
+  /**
+   * Checks if the model's response contains a `CALL:mail(...)` marker. If so, sends the email and
+   * re-queries the model with the result injected into the conversation history.
+   *
+   * @param initialAnswer The model's response (may contain CALL:mail).
+   * @param originalQuestion The user's original question.
+   * @param imageParts Base64 image URIs (carried forward).
+   * @param chatHistory Previous conversation turns.
+   * @param enableThinking Whether thinking mode is on.
+   * @param slotId The slot ID for inference.
+   * @param sessionId The streaming session ID (for rate limiting).
+   * @param detectedLang Pre-detected language result.
+   * @return The final answer (either the original or the mail-augmented one).
+   */
+  fun handleMailToolCall(
+      initialAnswer: String,
+      originalQuestion: String,
+      imageParts: List<String>,
+      chatHistory: List<Pair<String, String>>,
+      enableThinking: Boolean,
+      slotId: Int,
+      sessionId: String,
+      detectedLang: DetectedLanguage? = null
+  ): String {
+    if (!MailBridge.isAvailable) return initialAnswer
+
+    val match =
+        MailBridge.CALL_MAIL_PATTERN.find(initialAnswer)
+            ?: MailBridge.CALL_MAIL_PATTERN_TRUNCATED.find(initialAnswer)
+            ?: return initialAnswer
+    val to = MailBridge.cleanEmail(match.groupValues[1])
+    val subject = match.groupValues[2]
+    val body = match.groupValues[3]
+
+    log(LogLevel.INFO, "Model requested mail send: to='$to', subject='${subject.take(50)}'")
+
+    val result = MailBridge.sendMail(to, subject, body, sessionId)
+
+    // The body IS the answer — return it with a status note appended
+    val statusNote =
+        if (result.success) {
+          "\n\n\u2709\uFE0F \u2192 $to \u2705"
+        } else {
+          "\n\n\u26A0 \u2709\uFE0F \u2192 $to \u274C ${result.error}"
+        }
+
+    log(LogLevel.INFO, "Mail result: success=${result.success}, returning body as answer")
+
+    return body.trim() + statusNote
+  }
+
+  /**
+   * Handles `CALL:mail` in streaming mode. When the completed stream text contains a mail call,
+   * sends the email and streams a follow-up completion.
+   *
+   * @param fullText The completed stream text (may contain CALL:mail).
+   * @param originalQuestion The user's original question.
+   * @param imageParts Base64 image URIs (carried forward).
+   * @param chatHistory Previous conversation turns.
+   * @param session The streaming session to populate.
+   * @param enableThinking Whether thinking mode is on.
+   * @param slotId The slot ID for inference.
+   * @param sessionId The streaming session ID (for rate limiting).
+   * @param detectedLang Pre-detected language result.
+   */
+  fun handleMailToolCallStreaming(
+      fullText: String,
+      originalQuestion: String,
+      imageParts: List<String>,
+      chatHistory: List<Pair<String, String>>,
+      session: StreamingSession,
+      enableThinking: Boolean,
+      slotId: Int,
+      sessionId: String,
+      detectedLang: DetectedLanguage? = null
+  ) {
+    if (!MailBridge.isAvailable) return
+
+    val match =
+        MailBridge.CALL_MAIL_PATTERN.find(fullText)
+            ?: MailBridge.CALL_MAIL_PATTERN_TRUNCATED.find(fullText)
+            ?: return
+    val to = MailBridge.cleanEmail(match.groupValues[1])
+    val subject = match.groupValues[2]
+    val body = match.groupValues[3]
+
+    log(
+        LogLevel.INFO,
+        "Streaming: Model requested mail send: to='$to', subject='${subject.take(50)}'")
+
+    val result = MailBridge.sendMail(to, subject, body, sessionId)
+    val priorReasoning = session.currentThinking().trim()
+
+    session.clearAll()
+
+    if (priorReasoning.isNotEmpty()) {
+      session.addThinking(priorReasoning)
+      session.addThinking("\n\n---\n\n")
+    }
+
+    val sendingLabel =
+        detectedLang?.sendingMailLabel?.format(to) ?: "\u2709\uFE0F Sending email to: \"$to\""
+
+    session.addThinking("$sendingLabel\n\n")
+    session.addThinking("Subject: ${subject.take(100)}\n")
+
+    if (result.success) {
+      session.addThinking("\u2705\n\n")
+    } else {
+      session.addThinking("\u274C ${result.error}\n\n")
+    }
+
+    // The body IS the answer — show it as the visible response with a status note
+    val statusNote =
+        if (result.success) {
+          "\n\n\u2709\uFE0F \u2192 $to \u2705"
+        } else {
+          "\n\n\u26A0 \u2709\uFE0F \u2192 $to \u274C ${result.error}"
+        }
+
+    session.addText(body.trim() + statusNote)
+
+    log(LogLevel.INFO, "Streaming: Mail result: success=${result.success}, body shown as answer")
+  }
+
+  // endregion CALL:mail handling
 }

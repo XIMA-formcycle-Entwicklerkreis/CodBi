@@ -15,6 +15,8 @@
     "VerifyCheckboxLabel": "",
     "Location": "",
     "ResponseLanguage": "",
-    "Specialist": ""
+    "Specialist": "",
+    "QueueBadge": "",
+    "QueueText": ""
   }
 }

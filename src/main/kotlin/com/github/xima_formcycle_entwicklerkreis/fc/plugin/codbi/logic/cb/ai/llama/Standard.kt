@@ -3,7 +3,10 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.ll
 // region Imports
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AI
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AiProxyEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.BraveSearch
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.MailBridge
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.UrlFetcher
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.LLAMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.*
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
@@ -173,12 +176,11 @@ class Standard : LLAMA() {
   /** Slots currently occupied by an active streaming request (slot → count). */
   private val activeStreamingSlots = ConcurrentHashMap<Int, Int>()
 
-  /** Removes streaming sessions past their TTL: 5 min for normal, 10 min for thinking mode. */
+  /** Removes streaming sessions past their TTL (measured from last poll, not creation). */
   private fun cleanupStaleSessions() {
     streamingSessions.entries.removeIf {
       val ttl = if (it.value.enableThinking) 10 * 60 * 1000L else 5 * 60 * 1000L
-
-      it.value.startTime + ttl < System.currentTimeMillis()
+      it.value.lastActivityTime + ttl < System.currentTimeMillis()
     }
   }
 
@@ -221,6 +223,38 @@ class Standard : LLAMA() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { BraveSearch.apiKey = it }
+
+    // Set BraveSearch.filterResults from plugin property (default: false)
+    BraveSearch.filterResults =
+        props.getProperty("AI_BraveSearch_FilterResults")?.trim()?.lowercase() in
+            listOf("true", "1", "yes")
+
+    // Configure MailBridge from plugin properties (enabled by default unless explicitly disabled)
+    props.getProperty("AI_Mail_Enabled")?.trim()?.lowercase()?.let { value ->
+      MailBridge.enabled = value in listOf("true", "1", "yes")
+    }
+    props
+        .getProperty("AI_Mail_AllowedRecipients")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { MailBridge.allowedRecipientPattern = Regex(it, RegexOption.IGNORE_CASE) }
+    props
+        .getProperty("AI_Mail_MaxPerHour")
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it > 0 }
+        ?.let { MailBridge.maxMailsPerHour = it }
+    props
+        .getProperty("AI_Mail_Disclaimer")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { MailBridge.aiDisclaimer = it }
+    // MailBridge reads AiProxyEntities.entityManagerFactory lazily at send time
+    log(
+        LogLevel.INFO,
+        "MailBridge configured: enabled=${MailBridge.enabled}, " +
+            "allowedRecipients=${MailBridge.allowedRecipientPattern?.pattern ?: "(any)"}, " +
+            "maxPerHour=${MailBridge.maxMailsPerHour}")
 
     val noPromptRaw = props.getProperty("${PROP_PREFIX}_ExternalNoPrompt")?.trim()?.lowercase()
     return StandardConfig(
@@ -348,11 +382,11 @@ class Standard : LLAMA() {
       return
     }
 
-    // Reset stale state from any previous initialization attempt
+    // region Reset stale state from any previous initialization attempt.
     loadError = null
     serverReady = false
     specialistsReady = false
-
+    // endregion Reset stale state from any previous initialization attempt.
     super.initialize(configData) // Let base class set up directories and read LLAMA properties
     config = readPluginProperties(configData)
     AI.updateMaxConcurrent(config.maxConcurrent)
@@ -412,7 +446,8 @@ class Standard : LLAMA() {
             promptRules = config.promptRules,
             isExternalMode = config.isExternalMode,
             externalNoPrompt = config.externalNoPrompt,
-            langService = langService!!)
+            langService = langService!!,
+            filterResults = BraveSearch.filterResults)
 
     chatCompletionService =
         ChatCompletionService(
@@ -439,7 +474,12 @@ class Standard : LLAMA() {
         WebSearchHandler(
             maxSearchRoundTrips = config.maxSearchRoundTrips,
             searchFollowUpPrompt = { q, dl, last ->
-              langService!!.searchFollowUpPrompt(q, dl, last)
+              val base = langService!!.searchFollowUpPrompt(q, dl, last)
+              if (MailBridge.isAvailable) {
+                "$base If the user asked you to send the answer via email, respond ONLY with CALL:mail(to='address', subject='...', body='your full answer here'). " +
+                    "Put the ENTIRE answer inside the body field. Do NOT write the answer before CALL:mail. " +
+                    "The to field must contain ONLY the raw email address — no emojis, no icons."
+              } else base
             },
             buildMessages = { q, ip, ch, se, et, dl, le, ul ->
               messageBuilder!!.buildMessages(q, ip, ch, se, et, dl, le, ul)
@@ -801,6 +841,7 @@ class Standard : LLAMA() {
               it.value.equals("true", ignoreCase = true)
         }
     val session = streamingSessions[pollId]
+    session?.let { it.lastActivityTime = System.currentTimeMillis() }
 
     if (session != null && wantsStop) {
       session.stopRequested = true
@@ -819,7 +860,13 @@ class Standard : LLAMA() {
 
     session.resourceStatus = null
 
-    val visibleText = if (!session.searching && text.trimStart().startsWith("CALL")) "" else text
+    val visibleText =
+        if (!session.searching &&
+            !session.fetching &&
+            !session.sendingMail &&
+            text.trimStart().startsWith("CALL"))
+            ""
+        else text
     val thinkingText = session.currentThinking()
 
     val confidence =
@@ -836,8 +883,11 @@ class Standard : LLAMA() {
               logprobRepetition = if (session.logprobRepetitionDetected) true else null)
         } else null
 
-    // Read live queue size so the badge actualizes on every poll.
-    val qPos = if (session.queuePosition > 0) AI.queueTickets.size.takeIf { it > 0 } else null
+    // Read live queue size so the badge actualizes on every poll (subtract 1 to exclude own
+    // ticket).
+    val qPos = if (session.queuePosition > 0) (AI.queueTickets.size - 1).takeIf { it > 0 } else null
+    val qBadge = if (qPos != null) true else AI.queueBadgeEnabled.takeIf { it }
+    val qWait = if (qPos != null) AI.estimateWaitMs(session.queueTicket) else null
 
     val response =
         StreamPollResponse(
@@ -847,6 +897,10 @@ class Standard : LLAMA() {
             resourceStatus = resStatus,
             searching = if (session.searching) true else null,
             searchQuery = session.searchQuery,
+            fetching = if (session.fetching) true else null,
+            fetchUrl = session.fetchUrl,
+            sendingMail = if (session.sendingMail) true else null,
+            mailRecipient = session.mailRecipient,
             thinking = thinkingText.ifEmpty { null },
             modelType = session.modelType,
             i18n =
@@ -856,11 +910,17 @@ class Standard : LLAMA() {
                     showSourcesLabel = session.labels.showSourcesLabel,
                     searchingLabel = session.labels.searchingLabel,
                     searchingLabelNoQuery = session.labels.searchingLabelNoQuery,
+                    readingLabel = session.labels.readingLabel,
+                    readingLabelNoUrl = session.labels.readingLabelNoUrl,
+                    sendingMailLabel = session.labels.sendingMailLabel,
+                    sendingMailLabelNoRecipient = session.labels.sendingMailLabelNoRecipient,
                     thinkingLabel = session.labels.thinkingLabel,
                     copyResponseLabel = session.labels.copyResponseLabel,
                     copyReasoningLabel = session.labels.copyReasoningLabel),
             confidence = confidence,
-            queuePosition = qPos)
+            queuePosition = qPos,
+            queueBadge = qBadge,
+            estimatedWaitMs = qWait)
 
     return gsonResponse(response)
   }
@@ -1260,11 +1320,16 @@ class Standard : LLAMA() {
       val specialistRoute = resolveSpecialist(ctx.specialistName)
       val isLocal = !config.isExternalMode && specialistRoute !is SpecialistRoute.External
       var inferenceTicket: String? = null
+      val inferenceModelType = if (ctx.enableThinking) "llama-thinking" else "llama-fast"
+      var inferenceStartMs = 0L
       if (isLocal) {
         inferenceTicket = java.util.UUID.randomUUID().toString()
-        AI.queueTickets[inferenceTicket] = System.currentTimeMillis()
-        session.queuePosition = AI.queueTickets.size
+        AI.queueTickets[inferenceTicket] = Long.MAX_VALUE
+        AI.ticketModelTypes[inferenceTicket] = inferenceModelType
+        session.queueTicket = inferenceTicket
+        session.queuePosition = (AI.queueTickets.size - 1).coerceAtLeast(0)
         AI.inferenceSemaphore.acquire()
+        inferenceStartMs = System.currentTimeMillis()
       }
       try {
         val question = ctx.questions.values.first()
@@ -1277,6 +1342,10 @@ class Standard : LLAMA() {
                   showSourcesLabel = detectedLang.uiShowSourcesLabel,
                   searchingLabel = detectedLang.uiSearchingLabel,
                   searchingLabelNoQuery = detectedLang.uiSearchingLabelNoQuery,
+                  readingLabel = detectedLang.uiReadingLabel,
+                  readingLabelNoUrl = detectedLang.uiReadingLabelNoUrl,
+                  sendingMailLabel = detectedLang.uiSendingMailLabel,
+                  sendingMailLabelNoRecipient = detectedLang.uiSendingMailLabelNoRecipient,
                   thinkingLabel = detectedLang.uiThinkingLabel,
                   copyResponseLabel = detectedLang.uiCopyResponseLabel,
                   copyReasoningLabel = detectedLang.uiCopyReasoningLabel)
@@ -1329,13 +1398,74 @@ class Standard : LLAMA() {
             session.searching = false
             session.searchQuery = null
           }
+          // region CALL:fetch handling (streaming, main path)
+          val postSearchText = session.currentText()
+          if (ctx.searchEnabled &&
+              BraveSearch.isAvailable &&
+              UrlFetcher.CALL_FETCH_PATTERN.containsMatchIn(postSearchText)) {
+            val fetchUrl =
+                UrlFetcher.CALL_FETCH_PATTERN.find(postSearchText)?.groupValues?.get(1) ?: ""
+            session.fetchUrl = fetchUrl
+            session.fetching = true
+            session.clearText()
+            webSearchHandler!!.handleFetchToolCallStreaming(
+                postSearchText,
+                question,
+                imageParts,
+                ctx.chatHistory,
+                session,
+                ctx.enableThinking,
+                ctx.slotId,
+                detectedLang)
+            session.fetching = false
+            session.fetchUrl = null
+          }
+          // endregion CALL:fetch handling (streaming, main path)
+          // region CALL:mail handling (streaming, main path)
+          val postFetchText = session.currentText()
+          val mailMatch =
+              MailBridge.CALL_MAIL_PATTERN.containsMatchIn(postFetchText) ||
+                  MailBridge.CALL_MAIL_PATTERN_TRUNCATED.containsMatchIn(postFetchText)
+          log(
+              LogLevel.INFO,
+              "CALL:mail check — isAvailable=${MailBridge.isAvailable} " +
+                  "(enabled=${MailBridge.enabled}, emf=${AiProxyEntities.entityManagerFactory != null}), " +
+                  "patternMatch=$mailMatch, " +
+                  "textLen=${postFetchText.length}")
+          if (MailBridge.isAvailable && mailMatch) {
+            val match =
+                MailBridge.CALL_MAIL_PATTERN.find(postFetchText)
+                    ?: MailBridge.CALL_MAIL_PATTERN_TRUNCATED.find(postFetchText)
+            val mailTo = MailBridge.cleanEmail(match?.groupValues?.get(1) ?: "")
+            session.mailRecipient = mailTo
+            session.sendingMail = true
+            session.clearText()
+            webSearchHandler!!.handleMailToolCallStreaming(
+                postFetchText,
+                question,
+                imageParts,
+                ctx.chatHistory,
+                session,
+                ctx.enableThinking,
+                ctx.slotId,
+                sessionId,
+                detectedLang)
+            session.sendingMail = false
+            session.mailRecipient = null
+          }
+          // endregion CALL:mail handling (streaming, main path)
         } catch (e: Exception) {
           session.error = e.message ?: "Unknown error"
           log(LogLevel.ERROR, "Streaming error: ${e.message}", "", e)
         } finally {
           if (isLocal) {
+            val durationMs = System.currentTimeMillis() - inferenceStartMs
+            if (durationMs > 0) AI.recordInferenceDuration(inferenceModelType, durationMs)
             AI.inferenceSemaphore.release()
-            inferenceTicket?.let { AI.queueTickets.remove(it) }
+            inferenceTicket?.let {
+              AI.queueTickets.remove(it)
+              AI.ticketModelTypes.remove(it)
+            }
             session.queuePosition = 0
           }
           if (ctx.enableThinking &&
@@ -1423,6 +1553,62 @@ class Standard : LLAMA() {
               session.searching = false
               session.searchQuery = null
             }
+            // region CALL:fetch handling (streaming, thinking fallback)
+            val postSearchFallback = session.currentText()
+            if (ctx.searchEnabled &&
+                BraveSearch.isAvailable &&
+                UrlFetcher.CALL_FETCH_PATTERN.containsMatchIn(postSearchFallback)) {
+              val fetchUrlFb =
+                  UrlFetcher.CALL_FETCH_PATTERN.find(postSearchFallback)?.groupValues?.get(1) ?: ""
+              session.fetchUrl = fetchUrlFb
+              session.fetching = true
+              session.clearText()
+              webSearchHandler!!.handleFetchToolCallStreaming(
+                  postSearchFallback,
+                  question,
+                  emptyList(),
+                  ctx.chatHistory,
+                  session,
+                  false,
+                  ctx.slotId,
+                  detectedLang)
+              session.fetching = false
+              session.fetchUrl = null
+            }
+            // endregion CALL:fetch handling (streaming, thinking fallback)
+            // region CALL:mail handling (streaming, thinking fallback)
+            val postFetchFallback = session.currentText()
+            val mailMatchFb =
+                MailBridge.CALL_MAIL_PATTERN.containsMatchIn(postFetchFallback) ||
+                    MailBridge.CALL_MAIL_PATTERN_TRUNCATED.containsMatchIn(postFetchFallback)
+            log(
+                LogLevel.INFO,
+                "CALL:mail check (fallback) — isAvailable=${MailBridge.isAvailable} " +
+                    "(enabled=${MailBridge.enabled}, emf=${AiProxyEntities.entityManagerFactory != null}), " +
+                    "patternMatch=$mailMatchFb, " +
+                    "textLen=${postFetchFallback.length}")
+            if (MailBridge.isAvailable && mailMatchFb) {
+              val matchFb =
+                  MailBridge.CALL_MAIL_PATTERN.find(postFetchFallback)
+                      ?: MailBridge.CALL_MAIL_PATTERN_TRUNCATED.find(postFetchFallback)
+              val mailToFb = MailBridge.cleanEmail(matchFb?.groupValues?.get(1) ?: "")
+              session.mailRecipient = mailToFb
+              session.sendingMail = true
+              session.clearText()
+              webSearchHandler!!.handleMailToolCallStreaming(
+                  postFetchFallback,
+                  question,
+                  emptyList(),
+                  ctx.chatHistory,
+                  session,
+                  false,
+                  ctx.slotId,
+                  sessionId,
+                  detectedLang)
+              session.sendingMail = false
+              session.mailRecipient = null
+            }
+            // endregion CALL:mail handling (streaming, thinking fallback)
           }
           if (session.currentText().isBlank() && session.error == null) {
             log(
@@ -1504,20 +1690,31 @@ class Standard : LLAMA() {
     val specialistPort = (specialistRoute as? SpecialistRoute.Local)?.port
     val specialistClient = (specialistRoute as? SpecialistRoute.External)?.client
     val isLocal = !config.isExternalMode && specialistRoute !is SpecialistRoute.External
+    val syncModelType = if (syncCtx.enableThinking) "llama-thinking" else "llama-fast"
+    var syncInferenceStartMs = 0L
     if (isLocal) {
       val existingTicket = syncCtx.queueTicket
       if (!AI.inferenceSemaphore.tryAcquire()) {
         AI.cleanupStaleTickets()
         val ticket = existingTicket ?: java.util.UUID.randomUUID().toString()
-        if (existingTicket == null) AI.queueTickets[ticket] = System.currentTimeMillis()
-        val pos = AI.queueTickets.size
-        return gsonResponse(
-            mapOf(
+        AI.queueTickets[ticket] = System.currentTimeMillis()
+        AI.ticketModelTypes[ticket] = syncModelType
+        val pos = (AI.queueTickets.size - 1).coerceAtLeast(1)
+        val waitMs = AI.estimateWaitMs(ticket)
+        val response =
+            mutableMapOf<String, Any?>(
                 "queued" to true,
                 "position" to pos,
                 "queueBadge" to AI.queueBadgeEnabled,
-                "queueTicket" to ticket))
+                "queueTicket" to ticket)
+        if (waitMs != null) response["estimatedWaitMs"] = waitMs
+        return gsonResponse(response)
       }
+      existingTicket?.let {
+        AI.queueTickets[it] = Long.MAX_VALUE
+        AI.ticketModelTypes[it] = syncModelType
+      }
+      syncInferenceStartMs = System.currentTimeMillis()
     }
     try {
       val imageParts =
@@ -1575,6 +1772,33 @@ class Standard : LLAMA() {
                   detectedLang,
                   userLocation)
         }
+        // region CALL:fetch handling (sync path)
+        if (syncCtx.searchEnabled) {
+          answer =
+              webSearchHandler!!.handleFetchToolCall(
+                  answer,
+                  question,
+                  imageParts,
+                  syncCtx.chatHistory,
+                  syncCtx.enableThinking,
+                  syncCtx.slotId,
+                  detectedLang)
+        }
+        // endregion CALL:fetch handling (sync path)
+        // region CALL:mail handling (sync path)
+        if (MailBridge.isAvailable) {
+          answer =
+              webSearchHandler!!.handleMailToolCall(
+                  answer,
+                  question,
+                  imageParts,
+                  syncCtx.chatHistory,
+                  syncCtx.enableThinking,
+                  syncCtx.slotId,
+                  "sync-$questionKey",
+                  detectedLang)
+        }
+        // endregion CALL:mail handling (sync path)
         finalResults[questionKey] = mapOf("answer" to answer)
         log(LogLevel.INFO, "Q[$questionKey]: ${question.take(80)}… → $answer")
       }
@@ -1583,8 +1807,13 @@ class Standard : LLAMA() {
       return gsonResponse(ErrorResponse(e.message ?: "Inference failed"))
     } finally {
       if (isLocal) {
+        val durationMs = System.currentTimeMillis() - syncInferenceStartMs
+        if (durationMs > 0) AI.recordInferenceDuration(syncModelType, durationMs)
         AI.inferenceSemaphore.release()
-        syncCtx.queueTicket?.let { AI.queueTickets.remove(it) }
+        syncCtx.queueTicket?.let {
+          AI.queueTickets.remove(it)
+          AI.ticketModelTypes.remove(it)
+        }
       }
     }
     return gsonResponse(finalResults)

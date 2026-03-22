@@ -12,6 +12,8 @@
     "InvalidImageText": "",
     "WrongFileMessage": "",
     "Maximum": "",
-    "Field": ""
+    "Field": "",
+    "QueueBadge": "",
+    "QueueText": ""
   }
 }

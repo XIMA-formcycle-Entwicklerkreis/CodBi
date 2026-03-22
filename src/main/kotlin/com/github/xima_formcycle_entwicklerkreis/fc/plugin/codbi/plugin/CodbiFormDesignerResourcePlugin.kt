@@ -74,6 +74,19 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
     val detStandards = getDetails("$resourceRoot/Configurations")
     val localCode = "ddd:" + fileHelper?.pluginFolder?.name
 
+    // Collect Docs_Frontend_XX plugin properties → docsAPI language map.
+    val docsApiUrls = mutableMapOf<String, String>()
+    docsApiUrls["en"] = "https://codbi.pages.dev"
+    initData?.properties?.stringPropertyNames()?.forEach { key ->
+      if (key.startsWith("Docs_Frontend_", ignoreCase = true) && key.length > 14) {
+        val lang = key.substring(14).lowercase()
+        val url = initData.properties.getProperty(key)?.trim()
+        if (!url.isNullOrBlank() && lang.matches(Regex("[a-z]{2}"))) {
+          docsApiUrls[lang] = url
+        }
+      }
+    }
+
     jsResource =
         createDynamicJsResource(
             "designer.js",
@@ -85,7 +98,8 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             fslElementplaceholder,
             detElementplaceholder,
             detStandards,
-            localCode)
+            localCode,
+            docsApiUrls)
     // endregion Inject available standard configuration via JS defining a global variable for them.
   }
 
@@ -118,6 +132,7 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
       detElementplaceholder: String,
       detStandards: String,
       detLocalCode: String?,
+      docsApiUrls: Map<String, String> = mapOf("en" to "https://codbi.pages.dev"),
   ): IResourceDescriptor {
     val uri = URI("plugin:${PLUGIN_FORM_DESIGNER_RESOURCE_ID}/${name}?v=${version}")
     val clazz = CodbiFormDesignerResourcePlugin::class.java
@@ -180,7 +195,10 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
             window.CodbiPluginData.detElementplaceholder    = JSON.parse("$escapedDetElementplaceholder");
             window.CodbiPluginData.detStandards             = JSON.parse("$escapedDetStandards");
             window.CodbiPluginData.docsAPI                  = window.CodbiPluginData.docsAPI || {};
-            window.CodbiPluginData.docsAPI.en               = "https://waxcode.net/x/CodBi";
+${docsApiUrls.entries.joinToString("\n") { (lang, url) ->
+    val safeUrl = url.replace("\\", "\\\\").replace("\"", "\\\"")
+    "            window.CodbiPluginData.docsAPI.${lang}               = \"${safeUrl}\";"
+}}
             window.CodbiPluginData.localCode                = "$detLocalCode";
 
             $originalJsContent

@@ -1,6 +1,7 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.BraveSearch
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.MailBridge
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 
@@ -17,7 +18,8 @@ internal class MessageBuilder(
     private val promptRules: String?,
     private val isExternalMode: Boolean,
     private val externalNoPrompt: Boolean,
-    private val langService: LanguageDetectionService
+    private val langService: LanguageDetectionService,
+    private val filterResults: Boolean
 ) {
   /**
    * Builds the messages JSON array for a chat completion request.
@@ -114,6 +116,11 @@ internal class MessageBuilder(
 
       if (searchEnabled && BraveSearch.isAvailable) {
         appendSearchInstructions(detectedLang, locationEnabled, userLocation, enableThinking)
+        appendFetchInstructions()
+      }
+
+      if (MailBridge.isAvailable) {
+        appendMailInstructions()
       }
 
       if (!searchEnabled || !BraveSearch.isAvailable) {
@@ -181,7 +188,10 @@ internal class MessageBuilder(
       append(
           "The search query MUST be about the user's ACTUAL topic. Extract the core subject from the user's question. ")
       append(
-          "SANITIZE: remove person names, serial numbers, IDs, and any code mixing letters+digits. Keep brand names and topic keywords. ")
+          "SANITIZE: The search query is sent to an external search engine — NEVER include sensitive or personal data. " +
+              "Remove: person names, email addresses, phone numbers, street addresses, serial numbers, " +
+              "IDs (case numbers, SSN, IBAN, passport), dates of birth, and any code mixing letters+digits. " +
+              "Keep only brand names, product names, and generic topic keywords. ")
     }
 
     appendSearchExamples(detectedLang, locationEnabled, userLocation)
@@ -236,6 +246,39 @@ internal class MessageBuilder(
           "Example: user asks about weather → CALL:search(query='$weatherQ${if (detectedLang == null || detectedLang.languageName == "English") " tomorrow" else ""}'). ")
       append("Example: user asks where to eat → CALL:search(query='$localQ'). ")
     }
+  }
+
+  private fun StringBuilder.appendFetchInstructions() {
+    append(
+        "URL READING: After performing a web search, if the search result snippets are not detailed enough to answer the question, " +
+            "you can read the full content of a specific URL by replying ONLY with CALL:fetch(url='https://example.com/page'). ")
+    append(
+        "Use CALL:fetch only with URLs that appeared in previous search results — NEVER guess or fabricate URLs. ")
+    append(
+        "Use CALL:fetch when the user explicitly asks you to read or check a specific link, or when search snippets lack the detail needed for a thorough answer. ")
+    append(
+        "Do NOT use CALL:fetch for every search result — only when deeper investigation is clearly needed. ")
+    append(
+        "Example: search results mention a product page but lack pricing details the user asked about → CALL:fetch(url='https://example.com/product'). ")
+  }
+
+  private fun StringBuilder.appendMailInstructions() {
+    append(
+        "EMAIL: When the user asks you to send an email, or says 'send me a summary by mail', " +
+            "you can send an email by responding ONLY with CALL:mail(to='recipient@example.com', subject='Your subject', body='Your full answer text here'). ")
+    append(
+        "IMPORTANT: When sending an email, your ENTIRE response must be ONLY the CALL:mail(...) call — do NOT write the answer before it. " +
+            "Put the full answer inside the body parameter. The to parameter must contain ONLY the raw email address — no emojis, no icons, no whitespace around it. ")
+    append(
+        "RULES: You may ONLY send an email when the user EXPLICITLY asks for it. " +
+            "NEVER send emails on your own initiative. " +
+            "NEVER send more than one email per user request. ")
+    append(
+        "If the user does not provide a recipient address, ask them for it before sending. " +
+            "The email body should be clean plain text — no Markdown, no HTML. ")
+    append(
+        "Example: user says 'search for the weather and send it to me at user@example.com' " +
+            "\u2192 CALL:mail(to='user@example.com', subject='Weather forecast', body='Tomorrow it will be sunny with temperatures up to 20C...'). ")
   }
 
   private fun StringBuilder.appendThinkingInstructions(detectedLang: DetectedLanguage?) {
@@ -300,7 +343,11 @@ internal class MessageBuilder(
     val capabilities = mutableListOf<String>()
 
     if (searchEnabled && BraveSearch.isAvailable) {
-      capabilities.add("internet search via CALL:search")
+      capabilities.add("internet search via CALL:search and URL reading via CALL:fetch")
+    }
+
+    if (MailBridge.isAvailable) {
+      capabilities.add("email sending via CALL:mail")
     }
 
     if (locationEnabled && userLocation != null) {

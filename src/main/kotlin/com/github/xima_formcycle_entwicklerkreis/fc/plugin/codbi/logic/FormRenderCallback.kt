@@ -160,7 +160,8 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
   ) {
     // Insert the main CSS and JavaScript for the code library
     renderProcessor.insertFormResourcePluginStyle("codbi-style", "codbi.css")
-    renderProcessor.insertFormResourcePluginScript("codbi-script", "codbi.js")
+    renderProcessor.insertFormResourcePluginScript(
+        "codbi-script", "codbi.js", isModule = false, prepend = true)
     // region Inject used functionalities
     for (functionality in this.usedFunctionalities) {
       renderProcessor.insertFormResourcePluginScript(

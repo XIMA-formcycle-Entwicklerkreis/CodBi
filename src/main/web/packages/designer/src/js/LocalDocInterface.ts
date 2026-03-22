@@ -215,7 +215,7 @@ function renderDetails(container: HTMLElement, baseDocURL: string, description: 
   const wrapper = document.createElement("div");
 
   wrapper.style.cssText = "width: 100%; height: 100%; overflow: auto;";
-  wrapper.textContent = description;
+  wrapper.innerHTML = description;
   container.appendChild(wrapper);
 }
 /** Ensures the details container has a placeholder object element.
@@ -362,7 +362,10 @@ export function enableLocalDocInterface(): void {
               break;
 
             case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend"):
-              insertText(optioninput.target as unknown as HTMLTextAreaElement, "window.codbi.checkAttributes();");
+              insertText(
+                optioninput.target as unknown as HTMLTextAreaElement,
+                `window.codbi.extendEP("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend_Placeholder")}",( params, formerResult ) => {});`,
+              );
 
               break;
 
@@ -589,14 +592,11 @@ export function enableLocalDocInterface(): void {
           epManager.setAttribute("epoptions", buildFileList(window.CodbiPluginData.fslElementplaceholder));
           // #endregion Rebuild listing.
           // First time load of APIDoc
-          const detailsObject = getDetailsObject(cDetails);
-
-          if (detailsObject) {
-            detailsObject.setAttribute(
-              "data",
-              `${window.CodbiPluginData.docsAPI?.[currentLanguage] ?? window.CodbiPluginData.docsAPI?.en ?? ""}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
-            );
-          }
+          renderDetails(
+            cDetails,
+            baseDocURL,
+            window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description ?? "",
+          );
           // #region Show interface.
           epManager.enabled = true;
           epManager.enteringEP = true;
@@ -796,7 +796,10 @@ export function enableLocalDocInterface(): void {
           }
 
           if (response.fslFunctionalities) {
-            window.CodbiPluginData.fslFunctionalities = `${window.CodbiPluginData.fslFunctionalities.substring(0, window.CodbiPluginData.fslFunctionalities.length - 1)},\"${response.fslFunctionalities.split(",").join('","')}\"]`;
+            const existingFsl: string[] = JSON.parse(window.CodbiPluginData.fslFunctionalities);
+            const newFsl = response.fslFunctionalities.split(",");
+            const merged = [...new Set([...existingFsl, ...newFsl])];
+            window.CodbiPluginData.fslFunctionalities = JSON.stringify(merged);
           }
 
           for (const placeholder in response.detElementplaceholder) {
@@ -822,7 +825,10 @@ export function enableLocalDocInterface(): void {
           }
 
           if (response.fslElementplaceholder) {
-            window.CodbiPluginData.fslElementplaceholder = `${window.CodbiPluginData.fslElementplaceholder.substring(0, window.CodbiPluginData.fslElementplaceholder.length - 1)},\"${response.fslElementplaceholder.split(",").join('","')}\"]`;
+            const existingEp: string[] = JSON.parse(window.CodbiPluginData.fslElementplaceholder);
+            const newEp = response.fslElementplaceholder.split(",");
+            const merged = [...new Set([...existingEp, ...newEp])];
+            window.CodbiPluginData.fslElementplaceholder = JSON.stringify(merged);
           }
 
           if (response.detStandards) {
@@ -850,7 +856,10 @@ export function enableLocalDocInterface(): void {
           }
 
           if (response.fileListing) {
-            window.CodbiPluginData.fileListing = `${window.CodbiPluginData.fileListing.substring(0, window.CodbiPluginData.fileListing.length - 1)},\"${response.fileListing.split(",").join('","')}\"]`;
+            const existingFl: string[] = JSON.parse(window.CodbiPluginData.fileListing);
+            const newFl = response.fileListing.split(",");
+            const merged = [...new Set([...existingFl, ...newFl])];
+            window.CodbiPluginData.fileListing = JSON.stringify(merged);
           }
 
           setTimeout(() => {
@@ -984,7 +993,6 @@ export function enableLocalDocInterface(): void {
           });
 
           window.CodbiPluginData.managerClosed = () => {
-            console.log("L:", document.activeElement);
             manager.classList.toggle("--opened");
           };
           // #endregion Register Hotkey ALT+C for displaying the manager and handle the manager's close button.
@@ -1020,7 +1028,7 @@ export function enableLocalDocInterface(): void {
       // #region Setup Attributes-Editor Monitoring
       const availableClasses = new Array<{ standard: string; name: string; description: string }>();
 
-      let attributesEditorProcessed = false; // Set up processing just once.
+      let attributesEditorProcessed = false; // Set up dprocessing just once.
       let inTag = false;
       // #region Extend the variables tab.
       for (const globalVarsEditor of document.querySelectorAll(
@@ -1656,18 +1664,11 @@ export function enableLocalDocInterface(): void {
                             ).setAttribute("epoptions", buildFileList(window.CodbiPluginData.fslElementplaceholder));
                             // #endregion Rebuild listing.
                             // First time load of APIDoc
-                            if (cDetails.querySelector("object") === null) {
-                              ensureDetailsObject(cDetails);
-                            }
-
-                            const detailsObject = getDetailsObject(cDetails);
-
-                            if (detailsObject) {
-                              detailsObject.setAttribute(
-                                "data",
-                                `${window.CodbiPluginData.docsAPI?.[currentLanguage] ?? window.CodbiPluginData.docsAPI?.en ?? ""}${window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description}`,
-                              );
-                            }
+                            renderDetails(
+                              cDetails,
+                              baseDocURL,
+                              window.CodbiPluginData.detElementplaceholder[epManager.currentOption]?.Description ?? "",
+                            );
 
                             // #region Show interface.
                             epManager.enabled = true;

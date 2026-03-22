@@ -56,7 +56,6 @@ export class LDAP_Autocomplete {
     @DEFINED.PRE("property")
     @TYPE.PRE("string", "property :: cssproposals :: url :: msgnotinldap")
     @REGEX.PRE(REGEX.stdExp.property, "property")
-    @REGEX.PRE(REGEX.stdExp.url, "url")
     toLoad: { [key: string]: string },
 
     @INSTANCE.PRE(HTMLInputElement, undefined, "Is it not an <input> that is tagged with this functionality?")

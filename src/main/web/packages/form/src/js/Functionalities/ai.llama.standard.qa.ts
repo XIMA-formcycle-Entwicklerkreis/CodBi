@@ -18,6 +18,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 // #endregion PDF.js
+import { formatWaitTime } from "../commons/format-wait-time";
 // #endregion Imports
 /**
  * Provides the {@link AI_LLAMA_STANDARD_QA.functionality }.
@@ -95,12 +96,17 @@ export class AI_LLAMA_STANDARD_QA {
    *                            In this case, the question is sent to the AI and the answer must be "yes" (case-insensitive) for the file
    *                            to be accepted. If not, an error and a manual verification checkbox are shown,
    *                            just like in ai.ocr.ts. The question can reference symbols as usual.
-   * - **responselanguage**:    Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI to
+   * - **ResponseLanguage**:    Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI to
    *                            respond in this language, skipping auto-detection. Overrides the
    *                            `AI_LLAMA_STD_Language` plugin property for this instance.
-   * - **specialist**:          Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
+   * - **Specialist**:          Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
    *                            plugin property. Routes requests to that specialist's dedicated server
    *                            instance (case-insensitive match).
+   * - **QueueBadge**:          If set to `"true"`, shows a badge with the current queue position while
+   *                            waiting for inference. Overrides the `AI_QueueBadge` plugin property
+   *                            for this instance. Default: determined by plugin property.
+   * - **QueueText**:           Text appended after the queue position number in the badge
+   *                            (e.g. `"in queue"` → badge shows `"3 in queue"`). Default: empty.
    *
    * Questions are acquired from DOM elements within the nearest ancestor **XContainer** of the
    * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_LLAMA_STANDARD_QA_Question**.
@@ -496,7 +502,7 @@ export class AI_LLAMA_STANDARD_QA {
         const qaQueueText: string = toLoad.queuetext != null ? String(toLoad.queuetext) : "";
         let qaQueueBadgeEl: HTMLSpanElement | null = null;
 
-        const showQaQueueBadge = (position: number) => {
+        const showQaQueueBadge = (position: number, estimatedWaitMs?: number | null) => {
           if (!qaQueueBadgeEl) {
             qaQueueBadgeEl = document.createElement("span");
             qaQueueBadgeEl.className = "LLAMA_QueueBadge";
@@ -504,7 +510,8 @@ export class AI_LLAMA_STANDARD_QA {
               "display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:2px 8px;border-radius:10px;background:#d0e0ff;color:#1a5aab;font-size:12px;font-weight:600;white-space:nowrap;";
             uploadLabel?.appendChild(qaQueueBadgeEl);
           }
-          qaQueueBadgeEl.textContent = `${position}${qaQueueText ? " " + qaQueueText : ""}`;
+          const waitLabel = formatWaitTime(estimatedWaitMs);
+          qaQueueBadgeEl.textContent = `${position}${waitLabel ? ` ${waitLabel}` : ""}${qaQueueText ? ` ${qaQueueText}` : ""}`;
         };
 
         const hideQaQueueBadge = () => {
@@ -527,14 +534,16 @@ export class AI_LLAMA_STANDARD_QA {
               for (const headerName of Object.keys(vqaHeaders)) {
                 xhr.setRequestHeader(headerName, vqaHeaders[headerName]);
               }
-              if (qaQueueTicket) xhr.setRequestHeader("X-Queue-Ticket", qaQueueTicket);
+              if (qaQueueTicket) {
+                xhr.setRequestHeader("X-Queue-Ticket", qaQueueTicket);
+              }
             },
             success: (response) => {
               if (response.queued) {
                 qaQueueTicket = response.queueTicket ?? qaQueueTicket;
                 const badgeEnabled = qaQueueOverride != null ? qaQueueOverride : !!response.queueBadge;
                 if (badgeEnabled) {
-                  showQaQueueBadge(response.position ?? 0);
+                  showQaQueueBadge(response.position ?? 0, response.estimatedWaitMs);
                 }
                 setTimeout(sendQaRequest, 1000);
                 return;

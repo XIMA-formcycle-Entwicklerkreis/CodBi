@@ -48,7 +48,9 @@ class CodbiFormPropertiesExtensionPlugin : IPluginFormPropertiesExtension, IFCRe
           XItemPropertyDesc(DESIGNER_PROPERTY_ENABLE_CODBI, DESIGNER_PROPERTY_ENABLE_CODBI_DEFAULT),
           XItemPropertyDesc(DESIGNER_PROPERTY_STANDARDS, DESIGNER_PROPERTY_STANDARDS_DEFAULT),
           XItemPropertyDesc(
-              DESIGNER_PROPERTY_CONFIG_TEMPLATE, DESIGNER_PROPERTY_CONFIG_TEMPLATE_DEFAULT))
+              DESIGNER_PROPERTY_CONFIG_TEMPLATE, DESIGNER_PROPERTY_CONFIG_TEMPLATE_DEFAULT),
+          XItemPropertyDesc("LDAP_URL", ""),
+          XItemPropertyDesc("LDAP_URL_BACKEND", ""))
     }
   }
 }

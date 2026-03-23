@@ -75,6 +75,18 @@ internal class FormRenderProcessor {
     }
   }
 
+  /**
+   * Inserts an inline script that directly calls [window.codbi.nncHandler] to load code from the
+   * database, bypassing the file-based resource path (avoiding 404 errors for DB-stored code).
+   *
+   * @param id The ID of the script element.
+   * @param elementName The name of the standard/functionality/EP to load.
+   */
+  fun insertNncHandlerScript(id: String, elementName: String) {
+    val script = createScriptInline(id, "window.codbi.nncHandler('$elementName');")
+    appendChild(form, script)
+  }
+
   /** Inserts a child node before all existing children of the given parent. */
   private fun prependChild(parent: Node, child: Node) {
     (parent as FertileNode).children.add(0, child)

@@ -63,11 +63,12 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
         mapOf(
                 "LDAPSettings.js" to
                     createLDAPJsDescriptor(
-                        initData?.properties?.getProperty("LDAP_URL").toString()),
+                        initData?.properties?.getProperty("LDAP_URL") ?: "",
+                        initData?.properties?.getProperty("LDAP_URL_BACKEND") ?: ""),
                 "MatomoSettings.js" to
                     createMatomoJsDescriptor(
-                        initData?.properties?.getProperty("Matomo_SiteID").toString(),
-                        initData?.properties?.getProperty("Matomo_URL").toString()),
+                        initData?.properties?.getProperty("Matomo_SiteID") ?: "",
+                        initData?.properties?.getProperty("Matomo_URL") ?: ""),
                 formResourceDescriptor("codbi.js", RESOURCE_PATH_CODBI_SCRIPT, version),
                 formResourceDescriptor("codbi.css", RESOURCE_PATH_CODBI_CSS, version),
                 formResourceDescriptor(
@@ -221,15 +222,30 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
 
   /**
    * Creates a dynamic JS-Resource that writes the LDAP-Settings within the Plugin-Config
-   * (**LDAP_URL**) into **window.codbi.LDAP.URL**.
+   * (**LDAP_URL** & **LDAP_URL_BACKEND**) into **window.codbiSettings.LDAP.URL** &
+   * **window.codbiSettings.LDAP.URL_BACKEND**.
    *
-   * @param url The URL of the Formcycle LDAP Request to use if no other has been specified.
+   * @param url The frontend URL of the Formcycle LDAP Request to use if no other has been
+   *   specified.
+   * @param urlBackend The backend URL of the Formcycle LDAP Request for backend-domain access.
    * @return The appropriate [IPluginFormResourceDescriptor].
    */
-  private fun createLDAPJsDescriptor(url: String): IPluginFormResourceDescriptor {
+  private fun createLDAPJsDescriptor(
+      url: String,
+      urlBackend: String
+  ): IPluginFormResourceDescriptor {
     val safeURLValue = url.replace("\"", "\\\"")
-    val jsContent =
-        "window.codbiSettings = window.codbiSettings || {}; window.codbiSettings.LDAP = window.codbiSettings.LDAP || {}; window.codbiSettings.LDAP.URL = \"${safeURLValue}\";"
+    val safeURLBackendValue = urlBackend.replace("\"", "\\\"")
+    val jsBuilder =
+        StringBuilder(
+            "window.codbiSettings = window.codbiSettings || {}; window.codbiSettings.LDAP = window.codbiSettings.LDAP || {};")
+    if (safeURLValue.isNotBlank()) {
+      jsBuilder.append(" window.codbiSettings.LDAP.URL = \"${safeURLValue}\";")
+    }
+    if (safeURLBackendValue.isNotBlank()) {
+      jsBuilder.append(" window.codbiSettings.LDAP.URL_BACKEND = \"${safeURLBackendValue}\";")
+    }
+    val jsContent = jsBuilder.toString()
     val resource =
         ByteArrayResourceDescriptor(
             URI("plugin:${PLUGIN_FORM_RESOURCES_ID}/LDAPSettings.js?v=dynamic"),

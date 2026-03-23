@@ -394,7 +394,8 @@ internal class WebSearchHandler(
       enableThinking: Boolean,
       slotId: Int,
       sessionId: String,
-      detectedLang: DetectedLanguage? = null
+      detectedLang: DetectedLanguage? = null,
+      clientIP: String = "unknown"
   ): String {
     if (!MailBridge.isAvailable) return initialAnswer
 
@@ -408,7 +409,7 @@ internal class WebSearchHandler(
 
     log(LogLevel.INFO, "Model requested mail send: to='$to', subject='${subject.take(50)}'")
 
-    val result = MailBridge.sendMail(to, subject, body, sessionId)
+    val result = MailBridge.sendMail(to, subject, body, sessionId, clientIP)
 
     // The body IS the answer — return it with a status note appended
     val statusNote =
@@ -446,7 +447,8 @@ internal class WebSearchHandler(
       enableThinking: Boolean,
       slotId: Int,
       sessionId: String,
-      detectedLang: DetectedLanguage? = null
+      detectedLang: DetectedLanguage? = null,
+      clientIP: String = "unknown"
   ) {
     if (!MailBridge.isAvailable) return
 
@@ -462,7 +464,7 @@ internal class WebSearchHandler(
         LogLevel.INFO,
         "Streaming: Model requested mail send: to='$to', subject='${subject.take(50)}'")
 
-    val result = MailBridge.sendMail(to, subject, body, sessionId)
+    val result = MailBridge.sendMail(to, subject, body, sessionId, clientIP)
     val priorReasoning = session.currentThinking().trim()
 
     session.clearAll()

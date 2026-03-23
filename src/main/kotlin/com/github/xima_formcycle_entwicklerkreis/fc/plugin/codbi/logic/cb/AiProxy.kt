@@ -352,7 +352,7 @@ class AiProxy : AI() {
       // endregion URL Fetch.
       // region Mail.
       if (MailBridge.isAvailable && endpoint == "/v1/chat/completions") {
-        response = handleMailInProxyResponse(response, requestBody, serverUrl)
+        response = handleMailInProxyResponse(response, requestBody, serverUrl, clientIP)
       }
       // endregion Mail.
       val elapsedMs = System.currentTimeMillis() - startMs
@@ -708,7 +708,8 @@ class AiProxy : AI() {
   private fun handleMailInProxyResponse(
       responseJson: String,
       originalRequestBody: String,
-      serverUrl: String
+      serverUrl: String,
+      clientIP: String = "unknown"
   ): String {
     val assistantContent = extractAssistantContent(responseJson) ?: return responseJson
     val match = MailBridge.CALL_MAIL_PATTERN.find(assistantContent) ?: return responseJson
@@ -718,7 +719,7 @@ class AiProxy : AI() {
 
     log(LogLevel.INFO, "Proxy: Model requested mail send to: '$to'")
 
-    val result = MailBridge.sendMail(to, subject, body, "proxy")
+    val result = MailBridge.sendMail(to, subject, body, "proxy", clientIP)
     val mailContext = MailBridge.formatResultForModel(result)
     val augmentedBody =
         injectSearchResultsIntoRequest(originalRequestBody, assistantContent, mailContext)

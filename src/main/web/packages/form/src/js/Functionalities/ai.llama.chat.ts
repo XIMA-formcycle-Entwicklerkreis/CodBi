@@ -48,6 +48,9 @@ export class AI_LLAMA_CHAT {
    * | `AI_LLAMA_CHAT_Thinking` (Optional)  | `<input type="checkbox">`              | Toggles thinking mode (chain-of-thought) on/off  |
    * | `AI_LLAMA_CHAT_Internet` (Optional)    | `<input type="checkbox">`              | Toggles internet search availability on/off      |
    * | `AI_LLAMA_CHAT_Location` (Optional)    | `<input type="checkbox">`              | Toggles geolocation (get_current_location) on/off |
+   * | `AI_LLAMA_CHAT_MailForward` (Optional) | `<input type="checkbox">`              | Toggles auto-forward of every AI response via email |
+   * | `AI_LLAMA_CHAT_MailAddress` (Optional) | `<input type="text">` or `<input type="email">` | Email address for auto-forwarding (shown when checkbox is checked) |
+   * | `AI_LLAMA_CHAT_AlertOnFinish` (Optional) | `<input type="checkbox">`              | Toggles alert on finish of inference              |
    *
    * **Generated CSS Classes (injected at runtime):**
    *
@@ -273,6 +276,62 @@ export class AI_LLAMA_CHAT {
       );
     }
     // #endregion Check the location access checkbox if it exists, but it's optional so it may be null.
+    // #region Check the mail-forward checkbox if it exists, but it's optional so it may be null.
+    const mailForwardCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
+      container.querySelector(".AI_LLAMA_CHAT_MailForward"),
+      HTMLInputElement,
+    );
+
+    if (mailForwardCheckbox) {
+      EQ.tsCheck(
+        mailForwardCheckbox.type,
+        "checkbox",
+        `Isn't the element tagged with ".AI_LLAMA_CHAT_MailForward" an <input> of type "checkbox"?`,
+      );
+    }
+    // #endregion Check the mail-forward checkbox if it exists, but it's optional so it may be null.
+    // #region Check the mail-address input if it exists, but it's optional so it may be null.
+    const mailAddressInput = OR.tsCheck<HTMLInputElement>(
+      container.querySelector(".AI_LLAMA_CHAT_MailAddress"),
+      [new INSTANCE(HTMLInputElement)],
+      'Is there a mail address input element tagged with CSS-Class "AI_LLAMA_CHAT_MailAddress" in the same container?',
+    );
+
+    if (mailAddressInput) {
+      mailAddressInput.style.display = mailForwardCheckbox?.checked ? "" : "none";
+    }
+
+    if (mailForwardCheckbox && mailAddressInput) {
+      mailForwardCheckbox.addEventListener("change", () => {
+        mailAddressInput.style.display = mailForwardCheckbox.checked ? "" : "none";
+      });
+    }
+    // #region Check the alert-on-finish checkbox if it exists, but it's optional so it may be null.
+    const alertOnFinishCheckbox = INSTANCE.tsCheck<HTMLInputElement>(
+      container.querySelector(".AI_LLAMA_CHAT_AlertOnFinish"),
+      HTMLInputElement,
+    );
+    // #endregion Check the alert-on-finish checkbox if it exists, but it's optional so it may be null.
+
+    // #region Alert-on-finish customizable text
+    const alertOnFinishText =
+      typeof toLoad.alertonfinishtext === "string" && toLoad.alertonfinishtext.trim()
+        ? toLoad.alertonfinishtext.trim()
+        : "Inference has finished.";
+    // #endregion Alert-on-finish customizable text
+
+    // #region Alert-on-finish: request notification permission when checkbox is clicked
+    if (alertOnFinishCheckbox) {
+      alertOnFinishCheckbox.addEventListener("change", () => {
+        if (alertOnFinishCheckbox.checked && "Notification" in window) {
+          if (Notification.permission === "default") {
+            Notification.requestPermission();
+          }
+        }
+      });
+    }
+    // #endregion Alert-on-finish: request notification permission when checkbox is clicked
+    // #endregion Check the mail-address input if it exists, but it's optional so it may be null.
     // #endregion Discover sibling elements
     let micButton: HTMLButtonElement | null = null; // Microphone button (speech-to-text via Whisper on CodBi server).
     let isRecording = false;
@@ -1293,6 +1352,7 @@ export class AI_LLAMA_CHAT {
           }
         }
         // #endregion Pre-fetch browser geolocation
+        // #endregion Build request headers
         // #region Finish streaming and re-enable UI.
         const finishStreaming = (): void => {
           activeStreamId = null;
@@ -1311,6 +1371,27 @@ export class AI_LLAMA_CHAT {
 
           hideResourceOverlay();
           chatInput.focus();
+
+          // Alert-on-finish: show notification if checkbox is checked and permission granted.
+          // If permission is still "default" (e.g. user checked the box mid-inference and
+          // hasn't responded to the browser prompt yet), request it now and notify on grant.
+          if (alertOnFinishCheckbox?.checked && "Notification" in window) {
+            if (Notification.permission === "granted") {
+              new Notification(alertOnFinishText, {
+                body: "You should check back on the site.",
+                icon: "/favicon.ico",
+              });
+            } else if (Notification.permission === "default") {
+              Notification.requestPermission().then((perm) => {
+                if (perm === "granted") {
+                  new Notification(alertOnFinishText, {
+                    body: "You should check back on the site.",
+                    icon: "/favicon.ico",
+                  });
+                }
+              });
+            }
+          }
         };
         // #endregion Finish streaming and re-enable UI.
         // #region Poll a streaming session until done.
@@ -1642,6 +1723,13 @@ export class AI_LLAMA_CHAT {
                 }
 
                 if (pollResponse.done) {
+                  // If the model's output is a CALL: tool invocation, the backend will handle
+                  // the tool call and start a new inference round. Don't finish streaming —
+                  // keep polling for the real final answer.
+                  if (/CALL:/.test(text)) {
+                    lastText = "";
+                    return;
+                  }
                   clearInterval(interval);
                   const searchInd = chatContainer.querySelector(".LLAMA_SearchIndicator");
 
@@ -1959,6 +2047,52 @@ export class AI_LLAMA_CHAT {
                     replaceThinking("\u26A0 No response was generated. Please try again.");
                     conversationHistory.pop();
                   }
+                  // #region Auto-mail forward (client-driven)
+                  if (mailForwardCheckbox?.checked && mailAddressInput?.value.trim() && lastText) {
+                    const mailTo = mailAddressInput.value.trim();
+                    const mailSubject = message
+                      .replace(/[\r\n]+/g, " ")
+                      .trim()
+                      .substring(0, 120);
+                    const thinkingContent: string | undefined = pollResponse.thinking;
+                    let mailBody = lastText;
+
+                    if (thinkingContent) {
+                      mailBody += `\n\n---\nReasoning:\n${thinkingContent}`;
+                    }
+                    const mailHeaders: Record<string, string> = {
+                      "X-Mail-Forward": utf8ToBase64(mailTo),
+                      "X-Mail-Subject": utf8ToBase64(mailSubject),
+                      "X-Mail-Body": utf8ToBase64(mailBody),
+                      "X-Session-Id": pageSessionId,
+                    };
+
+                    $.ajax({
+                      url: `${window.codbi.baseURL}plugin?name=CodBi_AI_LLAMA_STD`,
+                      type: "POST",
+                      data: new FormData(),
+                      dataType: "json",
+                      processData: false,
+                      contentType: false,
+                      cache: false,
+                      beforeSend: (xhr) => {
+                        for (const h of Object.keys(mailHeaders)) {
+                          xhr.setRequestHeader(h, mailHeaders[h]);
+                        }
+                      },
+                      success: (mailResp) => {
+                        if (mailResp.success) {
+                          appendBubble(`\u2709\uFE0F \u2192 ${mailTo} \u2705`, "system");
+                        } else {
+                          appendBubble(`\u26A0 \u2709\uFE0F \u2192 ${mailTo} \u274C ${mailResp.error ?? ""}`, "system");
+                        }
+                      },
+                      error: () => {
+                        appendBubble(`\u26A0 \u2709\uFE0F \u2192 ${mailTo} \u274C Request failed`, "system");
+                      },
+                    });
+                  }
+                  // #endregion Auto-mail forward (client-driven)
 
                   finishStreaming();
                 }
@@ -2767,7 +2901,7 @@ export class AI_LLAMA_CHAT {
 
     return images;
   }
-  // #region PDF-Processing
+  // #endregion PDF-Processing
 }
 // #region Register with CodBi
 window.codbi.registerFunctionality("AI.LLAMA.CHAT", AI_LLAMA_CHAT.functionality.bind(AI_LLAMA_CHAT));

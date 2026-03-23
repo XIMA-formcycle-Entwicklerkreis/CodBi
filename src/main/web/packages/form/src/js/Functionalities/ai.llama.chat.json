@@ -19,6 +19,7 @@
     "ResponseLanguage": "",
     "Specialist": "",
     "QueueBadge": "",
-    "QueueText": ""
+    "QueueText": "",
+    "AlertOnFinishText": ""
   }
 }

@@ -8,6 +8,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
 // #region Elementplaceholder
 import { LDAP_Find } from "../EPs/ldap.find.js";
+import { resolveLdapUrl } from "../global-scope.js";
 import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
 import { TYPE } from "xdbc/src/DBC/TYPE.js";
 import { REGEX } from "xdbc/src/DBC/REGEX.js";
@@ -62,14 +63,22 @@ export class LDAP_Autocomplete {
     @EQ.PRE("text", false, "type", 'Isn\'t the tagged <input type = "text"/> ?')
     toProcess: Element,
   ): void {
+    const getLdapUrl = (): string | undefined => {
+      if (toLoad.url) {
+        return toLoad.url;
+      }
+      return resolveLdapUrl();
+    };
+
     // #region Remove entries that're not in LDAP.
     toProcess.addEventListener("blur", async (event) => {
       const findParameter = ["AND", `${toLoad.property}=${(toProcess as HTMLInputElement).value}`];
 
-      if (toLoad.url) {
-        findParameter.push(toLoad.url);
+      const ldapUrl = getLdapUrl();
+      if (ldapUrl) {
+        findParameter.push(ldapUrl);
       }
-
+      console.log("LDAP Find with parameters:", findParameter);
       const ldapResult = await LDAP_Find.retrieve(findParameter);
 
       if (ldapResult.length === 0) {
@@ -108,8 +117,9 @@ export class LDAP_Autocomplete {
         // #region Acquire LDAP-Data for passing it to the match-listeners.
         const findParameter = ["AND", `${toLoad.property}=${(proposals as HTMLSelectElement).value}`];
 
-        if (toLoad.url) {
-          findParameter.push(toLoad.url);
+        const ldapUrl = getLdapUrl();
+        if (ldapUrl) {
+          findParameter.push(ldapUrl);
         }
 
         const ldapResult = await LDAP_Find.retrieve(findParameter);
@@ -149,8 +159,9 @@ export class LDAP_Autocomplete {
         `${toLoad.property}=${(toProcess as HTMLInputElement).value}${key.length === 1 ? key : ""}`,
       ];
 
-      if (toLoad.url) {
-        findParameter.push(toLoad.url);
+      const ldapUrl = getLdapUrl();
+      if (ldapUrl) {
+        findParameter.push(ldapUrl);
       }
 
       const ldapResult = removeDuplicates(await LDAP_Find.retrieve(findParameter), toLoad.property);

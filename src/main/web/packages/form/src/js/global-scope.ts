@@ -73,8 +73,10 @@ export interface CodbiSettings {
   };
   /** The configuration regarding **LDAP**. */
   LDAP: {
-    /** The URL to the Formcycle-LDAP-Query to use by default. */
-    URL: string;
+    /** The URL to the Formcycle-LDAP-Query to use by default (frontend server). */
+    URL?: string;
+    /** The URL to the Formcycle-LDAP-Query to use when accessed via the backend server. */
+    URL_BACKEND?: string;
   };
   /** The configuration regarding **OpenPLZ**. */
   OpenPLZ: {
@@ -82,6 +84,58 @@ export interface CodbiSettings {
     URL: string;
   };
 }
+
+/**
+ * Resolves the correct LDAP URL from plugin settings based on the browser's current domain.
+ *
+ * Compares `window.location.hostname` against the hostnames of `LDAP.URL` and `LDAP.URL_BACKEND`.
+ * Returns whichever URL shares the same domain as the browser, or falls back to whichever is available.
+ *
+ * @returns The resolved LDAP URL, or `undefined` if neither is configured.
+ */
+export function resolveLdapUrl(): string | undefined {
+  const ldap = window.codbiSettings?.LDAP;
+  if (!ldap) {
+    return undefined;
+  }
+
+  const frontendUrl = ldap.URL && ldap.URL !== "null" ? ldap.URL : undefined;
+  const backendUrl = ldap.URL_BACKEND && ldap.URL_BACKEND !== "null" ? ldap.URL_BACKEND : undefined;
+
+  if (!frontendUrl && !backendUrl) {
+    return undefined;
+  }
+  if (!frontendUrl) {
+    return backendUrl;
+  }
+  if (!backendUrl) {
+    return frontendUrl;
+  }
+
+  const browserHostname = window.location.hostname;
+
+  try {
+    const frontendHostname = new URL(frontendUrl).hostname;
+    if (frontendHostname === browserHostname) {
+      return frontendUrl;
+    }
+  } catch {
+    /* invalid URL, skip */
+  }
+
+  try {
+    const backendHostname = new URL(backendUrl).hostname;
+    if (backendHostname === browserHostname) {
+      return backendUrl;
+    }
+  } catch {
+    /* invalid URL, skip */
+  }
+
+  // Neither matched exactly — default to frontend URL.
+  return frontendUrl;
+}
+
 /**
  * The configuration template for the form, as configured by the user in the
  * form designer. */
@@ -875,35 +929,33 @@ export class CodBi implements CodbiGlobal {
         if (key === "FUNC") {
           for (const functionality of toLoad[key].split(",")) {
             if (!this.functionalities.has(functionality.toLowerCase().trim())) {
-              // If functionality is missing...
-              await new Promise((resolve) => {
-                const toLoad = document.createElement("script");
+              // If functionality is missing, try loading from file resource first, fall back to DB.
+              await new Promise<void>((resolve) => {
+                getJQuery().ajax({
+                  url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                  type: "GET",
+                  headers: {
+                    "X-Action": "Code",
+                    "X-ActionDetail": "Functionality",
+                    "X-Element": functionality.trim().toLowerCase(),
+                  },
+                  success: async (response) => {
+                    if (response.result !== "NONE") {
+                      await this.importRemoteModule(response.result);
+                      resolve();
+                    } else {
+                      // Not in DB — try file resource.
+                      const toLoad = document.createElement("script");
 
-                toLoad.src = `${this.resourceBase}${functionality.trim().toLowerCase()}.js`;
-                toLoad.type = "module";
-                toLoad.onload = (event) => {
-                  resolve(event);
-                };
-                toLoad.onerror = (event) => {
-                  getJQuery().ajax({
-                    url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
-                    type: "GET",
-                    headers: {
-                      "X-Action": "Code",
-                      "X-ActionDetail": "Functionality",
-                      "X-Element": functionality.trim().toLowerCase(),
-                    },
-                    success: async (response) => {
-                      if (response.result !== "NONE") {
-                        await this.importRemoteModule(response.result);
-                      }
-
-                      resolve(event);
-                    },
-                  });
-                };
-
-                document.head.appendChild(toLoad);
+                      toLoad.src = `${this.resourceBase}${functionality.trim().toLowerCase()}.js`;
+                      toLoad.type = "module";
+                      toLoad.onload = () => resolve();
+                      toLoad.onerror = () => resolve();
+                      document.head.appendChild(toLoad);
+                    }
+                  },
+                  error: () => resolve(),
+                });
               });
             }
           }
@@ -914,30 +966,32 @@ export class CodBi implements CodbiGlobal {
 
           for (const ep of this.extractEPs(toLoad[key])) {
             if (!(ep.trim() in this.availableEPs)) {
-              await new Promise((resolve) => {
-                const toLoad = document.createElement("script");
-                toLoad.src = `${this.resourceBase}${ep.trim().toLowerCase()}.js`;
-                toLoad.type = "module";
-                toLoad.async = true;
-                toLoad.onload = (event) => {
-                  resolve(event);
-                };
-                toLoad.onerror = (event) => {
-                  getJQuery().ajax({
-                    url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
-                    type: "GET",
-                    headers: {
-                      "X-Action": "Code",
-                      "X-ActionDetail": "Elementplaceholder",
-                      "X-Element": ep.trim().toLowerCase(),
-                    },
-                    success: (response) => {
-                      resolve(event);
-                    },
-                  });
-                };
-
-                document.head.appendChild(toLoad);
+              await new Promise<void>((resolve) => {
+                getJQuery().ajax({
+                  url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                  type: "GET",
+                  headers: {
+                    "X-Action": "Code",
+                    "X-ActionDetail": "Elementplaceholder",
+                    "X-Element": ep.trim().toLowerCase(),
+                  },
+                  success: async (response) => {
+                    if (response.result !== "NONE") {
+                      await this.importRemoteModule(response.result);
+                      resolve();
+                    } else {
+                      // Not in DB — try file resource.
+                      const toLoad = document.createElement("script");
+                      toLoad.src = `${this.resourceBase}${ep.trim().toLowerCase()}.js`;
+                      toLoad.type = "module";
+                      toLoad.async = true;
+                      toLoad.onload = () => resolve();
+                      toLoad.onerror = () => resolve();
+                      document.head.appendChild(toLoad);
+                    }
+                  },
+                  error: () => resolve(),
+                });
               });
             }
           }

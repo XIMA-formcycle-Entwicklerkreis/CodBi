@@ -164,20 +164,37 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
         "codbi-script", "codbi.js", isModule = false, prepend = true)
     // region Inject used functionalities
     for (functionality in this.usedFunctionalities) {
-      renderProcessor.insertFormResourcePluginScript(
-          "codbi-functionality-" + functionality.replace(".", "-"), "$functionality.js")
+      if (CodbiFormResourcesPlugin.formResources["$functionality.js"]?.resource != null) {
+        renderProcessor.insertFormResourcePluginScript(
+            "codbi-functionality-" + functionality.replace(".", "-"), "$functionality.js")
+      } else {
+        renderProcessor.insertNncHandlerScript(
+            "codbi-functionality-" + functionality.replace(".", "-"), functionality)
+      }
     }
     // endregion Inject used functionalities
     // region Inject used element placeholders
     for (ep in this.usedEPs) {
-      renderProcessor.insertFormResourcePluginScript(
-          "codbi-elementplaceholder-" + ep.replace(".", "-"), "$ep.js")
+      if (CodbiFormResourcesPlugin.formResources["$ep.js"]?.resource != null) {
+        renderProcessor.insertFormResourcePluginScript(
+            "codbi-elementplaceholder-" + ep.replace(".", "-"), "$ep.js")
+      } else {
+        renderProcessor.insertNncHandlerScript(
+            "codbi-elementplaceholder-" + ep.replace(".", "-"), ep)
+      }
     }
     // endregion Inject used element placeholders
     // region Inject selected standard configurations
     for (standard in properties.standards.split(",")) {
-      renderProcessor.insertFormResourcePluginScript(
-          "codbi-standard-" + standard.trim().replace(".", "-"), standard.trim() + ".js")
+      val trimmed = standard.trim()
+      if (trimmed.isEmpty()) continue
+      if (CodbiFormResourcesPlugin.formResources["$trimmed.js"]?.resource != null) {
+        renderProcessor.insertFormResourcePluginScript(
+            "codbi-standard-" + trimmed.replace(".", "-"), "$trimmed.js")
+      } else {
+        renderProcessor.insertNncHandlerScript(
+            "codbi-standard-" + trimmed.replace(".", "-"), trimmed)
+      }
     }
     // endregion Inject selected standard configurations
     // Insert the JavaScript for the selected configuration template

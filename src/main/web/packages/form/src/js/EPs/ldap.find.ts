@@ -11,7 +11,7 @@ import { REGEX } from "xdbc/src/DBC/REGEX.js";
 import { IF } from "xdbc/src/DBC/IF.js";
 import { DEFINED } from "xdbc/src/DBC/DEFINED.js";
 // #endregion XDBC
-import { CodBiError } from "../global-scope.js";
+import { CodBiError, resolveLdapUrl } from "../global-scope.js";
 // #endregion Imports
 /**
  * This Elementplaceholder connects via a default (**LDAP_URL** in CodBi Settings) or an optionally specified
@@ -47,11 +47,11 @@ export class LDAP_Find {
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(2, true, false, "length", "Haven't at least the mode and the LDAP-Conditions been specified?")
+    @GREATER.PRE(1, true, false, "length", "Haven't at least the mode and the LDAP-Conditions been specified?")
     @AE.PRE(new TYPE("string"))
     @AE.PRE(new REGEX(/(AND|OR)/i), 0)
-    @AE.PRE(new REGEX(/^\w+\s*=\s*\w+(?:\s*\|\s*\w+\s*=\s*\w+)*$/), 1)
-    @AE.PRE(new IF(new DEFINED(), new REGEX(REGEX.stdExp.url)), 3)
+    @AE.PRE(new REGEX(/^\w+\s*=\s*[\w.@+-]+(?:\s*\|\s*\w+\s*=\s*[\w.@+-]+)*$/), 1)
+    @AE.PRE(new IF(new DEFINED(), new REGEX(REGEX.stdExp.url)), 2)
     params: Array<unknown>,
   ): Promise<Array<unknown>> {
     let runningQuery = undefined;
@@ -68,9 +68,9 @@ export class LDAP_Find {
               ? "|"
               : "%26";
       let conditions = (params[1] as string).split("|");
-      const url = params.length > 3 ? params[3] : window.codbiSettings.LDAP.URL;
+      const url = params.length > 2 ? params[2] : (resolveLdapUrl() ?? "");
 
-      if (url === "") {
+      if (!url) {
         reject(new CodBiError("[[ LDAP.Find ] No LDAP-URL specified neither via parameter nor via CodBi Settings. ]"));
       }
       // #region Fill conditions up to 10 elements.

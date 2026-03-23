@@ -43,12 +43,16 @@ class CodbiFormPropertiesExtensionPlugin : IPluginFormPropertiesExtension, IFCRe
   override fun extendFormProperties(
       params: IPluginFormPropertiesExtensionParams?
   ): IPluginFormPropertiesExtensionRetVal {
+    // Hardcoded property key for LDAP URL
+    val DESIGNER_PROPERTY_LDAP_URL = "LDAP_URL"
+    val DESIGNER_PROPERTY_LDAP_URL_DEFAULT = ""
     return IPluginFormPropertiesExtensionRetVal {
       listOf(
           XItemPropertyDesc(DESIGNER_PROPERTY_ENABLE_CODBI, DESIGNER_PROPERTY_ENABLE_CODBI_DEFAULT),
           XItemPropertyDesc(DESIGNER_PROPERTY_STANDARDS, DESIGNER_PROPERTY_STANDARDS_DEFAULT),
-          XItemPropertyDesc(
-              DESIGNER_PROPERTY_CONFIG_TEMPLATE, DESIGNER_PROPERTY_CONFIG_TEMPLATE_DEFAULT))
+          XItemPropertyDesc(DESIGNER_PROPERTY_CONFIG_TEMPLATE, DESIGNER_PROPERTY_CONFIG_TEMPLATE_DEFAULT),
+          XItemPropertyDesc(DESIGNER_PROPERTY_LDAP_URL, DESIGNER_PROPERTY_LDAP_URL_DEFAULT)
+      )
     }
   }
 }

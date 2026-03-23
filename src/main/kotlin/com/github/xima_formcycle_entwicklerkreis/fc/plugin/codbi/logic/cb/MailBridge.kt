@@ -103,9 +103,16 @@ object MailBridge : CodBi() {
    * @param subject Email subject.
    * @param body Email body (plain text).
    * @param sessionId The streaming session ID for per-session rate limiting.
+   * @param clientIP The IP address of the requesting client (for audit logging).
    * @return A [MailResult] indicating success or failure with a reason.
    */
-  fun sendMail(to: String, subject: String, body: String, sessionId: String): MailResult {
+  fun sendMail(
+      to: String,
+      subject: String,
+      body: String,
+      sessionId: String,
+      clientIP: String = "unknown"
+  ): MailResult {
     if (!enabled) {
       return MailResult(success = false, error = "Mail sending is disabled.")
     }
@@ -161,7 +168,7 @@ object MailBridge : CodBi() {
 
       log(
           LogLevel.INFO,
-          "Mail sent to '$to' (subject: '${safeSubject.take(50)}') — session $sessionId")
+          "MAIL_AUDIT | ${java.time.Instant.ofEpochMilli(now)} | ip=$clientIP | to=$to")
       MailResult(success = true, recipient = to, subject = safeSubject)
     } catch (e: Exception) {
       log(LogLevel.ERROR, "Failed to send mail to '$to': ${e.message}")

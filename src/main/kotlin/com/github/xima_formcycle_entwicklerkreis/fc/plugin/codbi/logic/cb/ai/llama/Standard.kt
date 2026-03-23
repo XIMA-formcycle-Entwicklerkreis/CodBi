@@ -476,9 +476,10 @@ class Standard : LLAMA() {
             searchFollowUpPrompt = { q, dl, last ->
               val base = langService!!.searchFollowUpPrompt(q, dl, last)
               if (MailBridge.isAvailable) {
-                "$base If the user asked you to send the answer via email, respond ONLY with CALL:mail(to='address', subject='...', body='your full answer here'). " +
+                "$base If the user EXPLICITLY asked IN THEIR CURRENT MESSAGE to send the answer via email, respond ONLY with CALL:mail(to='address', subject='...', body='your full answer here'). " +
                     "Put the ENTIRE answer inside the body field. Do NOT write the answer before CALL:mail. " +
-                    "The to field must contain ONLY the raw email address — no emojis, no icons."
+                    "The to field must contain ONLY the raw email address — no emojis, no icons. " +
+                    "Do NOT send email if the user did not ask for it in this message — even if a previous message mentioned an email address."
               } else base
             },
             buildMessages = { q, ip, ch, se, et, dl, le, ul ->
@@ -813,6 +814,12 @@ class Standard : LLAMA() {
 
       if (isHealthCheck) return handleHealthCheck()
 
+      val mailForwardTo =
+          params.headerMap.entries
+              .find { it.key.equals("X-Mail-Forward", ignoreCase = true) }
+              ?.value
+      if (mailForwardTo != null) return handleMailForward(params, mailForwardTo)
+
       return handleNewQuestion(params)
     } catch (e: FCPluginException) {
       throw e
@@ -920,7 +927,9 @@ class Standard : LLAMA() {
             confidence = confidence,
             queuePosition = qPos,
             queueBadge = qBadge,
-            estimatedWaitMs = qWait)
+            estimatedWaitMs = qWait,
+            autoMailSent = session.autoMailSent,
+            autoMailError = session.autoMailError)
 
     return gsonResponse(response)
   }
@@ -976,6 +985,65 @@ class Standard : LLAMA() {
     return gsonResponse(healthResponse)
   }
 
+  /**
+   * Handles a client-driven mail-forward request. The client sends the AI response text and
+   * recipient address after inference completes (so the checkbox can be toggled at any time).
+   *
+   * @param params The servlet request containing mail headers.
+   * @param mailForwardRaw The raw (base64-encoded) value of the `X-Mail-Forward` header.
+   * @return A JSON response with `success` and optional `error`.
+   */
+  private fun handleMailForward(
+      params: IPluginServletActionParams,
+      mailForwardRaw: String
+  ): IPluginServletActionRetVal {
+    val headers = params.headerMap
+
+    fun decodeHeader(name: String): String? =
+        headers.entries
+            .find { it.key.equals(name, ignoreCase = true) }
+            ?.value
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let {
+              try {
+                String(java.util.Base64.getDecoder().decode(it), Charsets.UTF_8).trim()
+              } catch (_: Exception) {
+                it
+              }
+            }
+
+    val to =
+        decodeHeader("X-Mail-Forward")?.takeIf { it.contains("@") }
+            ?: return gsonResponse(mapOf("success" to false, "error" to "Invalid recipient"))
+    val subject = decodeHeader("X-Mail-Subject") ?: "AI Response"
+    val body =
+        decodeHeader("X-Mail-Body")
+            ?: return gsonResponse(mapOf("success" to false, "error" to "Empty body"))
+
+    if (!MailBridge.isAvailable) {
+      return gsonResponse(mapOf("success" to false, "error" to "Mail not available"))
+    }
+
+    val clientIP = run {
+      val xff = headers.entries.find { it.key.equals("X-Forwarded-For", ignoreCase = true) }?.value
+      if (!xff.isNullOrBlank()) xff.split(",").first().trim()
+      else {
+        val xri = headers.entries.find { it.key.equals("X-Real-IP", ignoreCase = true) }?.value
+        if (!xri.isNullOrBlank()) xri.trim() else params.remoteAddr?.trim() ?: "unknown"
+      }
+    }
+
+    val sessionId =
+        headers.entries.find { it.key.equals("X-Session-Id", ignoreCase = true) }?.value
+            ?: "forward"
+
+    val result = MailBridge.sendMail(to, subject, body, "fwd-$sessionId", clientIP)
+    log(LogLevel.INFO, "Mail-forward to '$to': success=${result.success}")
+
+    return gsonResponse(mapOf("success" to result.success, "error" to result.error))
+  }
+
   /** All values parsed from request headers for a new question. */
   private data class RequestContext(
       val questions: Map<String, String>,
@@ -993,7 +1061,8 @@ class Standard : LLAMA() {
       val wantsStream: Boolean,
       val forcedLanguageCode: String?,
       val specialistName: String?,
-      val queueTicket: String?
+      val queueTicket: String?,
+      val autoMailTo: String?
   )
 
   /**
@@ -1140,7 +1209,21 @@ class Standard : LLAMA() {
                 .find { it.key.equals("X-Queue-Ticket", ignoreCase = true) }
                 ?.value
                 ?.trim()
-                ?.takeIf { it.isNotEmpty() })
+                ?.takeIf { it.isNotEmpty() },
+        autoMailTo =
+            headers.entries
+                .find { it.key.equals("X-Auto-Mail", ignoreCase = true) }
+                ?.value
+                ?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let {
+                  try {
+                    String(java.util.Base64.getDecoder().decode(it), Charsets.UTF_8).trim()
+                  } catch (_: Exception) {
+                    it
+                  }
+                }
+                ?.takeIf { it.contains("@") })
   }
 
   /**
@@ -1314,6 +1397,7 @@ class Standard : LLAMA() {
     cleanupStaleSessions()
     val sessionId = UUID.randomUUID().toString()
     val session = StreamingSession(enableThinking = ctx.enableThinking)
+    session.autoMailTo = ctx.autoMailTo
     streamingSessions[sessionId] = session
     if (ctx.slotId >= 0) activeStreamingSlots.merge(ctx.slotId, 1, Int::plus)
     executor!!.submit {
@@ -1449,7 +1533,8 @@ class Standard : LLAMA() {
                 ctx.enableThinking,
                 ctx.slotId,
                 sessionId,
-                detectedLang)
+                detectedLang,
+                ctx.clientIP ?: "unknown")
             session.sendingMail = false
             session.mailRecipient = null
           }
@@ -1604,7 +1689,8 @@ class Standard : LLAMA() {
                   false,
                   ctx.slotId,
                   sessionId,
-                  detectedLang)
+                  detectedLang,
+                  ctx.clientIP ?: "unknown")
               session.sendingMail = false
               session.mailRecipient = null
             }
@@ -1657,6 +1743,7 @@ class Standard : LLAMA() {
               }
             }
           }
+          // endregion Auto-mail forward
           session.done = true
         }
       } finally {
@@ -1796,7 +1883,8 @@ class Standard : LLAMA() {
                   syncCtx.enableThinking,
                   syncCtx.slotId,
                   "sync-$questionKey",
-                  detectedLang)
+                  detectedLang,
+                  syncCtx.clientIP ?: "unknown")
         }
         // endregion CALL:mail handling (sync path)
         finalResults[questionKey] = mapOf("answer" to answer)

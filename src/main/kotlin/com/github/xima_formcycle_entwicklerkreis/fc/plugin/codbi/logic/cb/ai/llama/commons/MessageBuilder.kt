@@ -270,8 +270,9 @@ internal class MessageBuilder(
         "IMPORTANT: When sending an email, your ENTIRE response must be ONLY the CALL:mail(...) call — do NOT write the answer before it. " +
             "Put the full answer inside the body parameter. The to parameter must contain ONLY the raw email address — no emojis, no icons, no whitespace around it. ")
     append(
-        "RULES: You may ONLY send an email when the user EXPLICITLY asks for it. " +
+        "RULES: You may ONLY send an email when the user EXPLICITLY asks for it IN THEIR CURRENT MESSAGE. " +
             "NEVER send emails on your own initiative. " +
+            "NEVER re-use a recipient address from a previous message unless the user repeats the request. " +
             "NEVER send more than one email per user request. ")
     append(
         "If the user does not provide a recipient address, ask them for it before sending. " +

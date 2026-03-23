@@ -83,6 +83,14 @@ internal class StreamingSession(
   @Volatile var queuePosition: Int = 0
   /** The ticket UUID assigned to this session in [AI.queueTickets], or `null` if external. */
   @Volatile var queueTicket: String? = null
+  // region Auto-Mail Forward
+  /** Email address for auto-forwarding the response, or `null` if disabled. */
+  @Volatile var autoMailTo: String? = null
+  /** Status of the auto-mail forward: `true` = sent, `false` = failed, `null` = not attempted. */
+  @Volatile var autoMailSent: Boolean? = null
+  /** Error message if auto-mail forward failed. */
+  @Volatile var autoMailError: String? = null
+  // endregion Auto-Mail Forward
   // region Confidence-Tracking
   /** Per-token logprob entries: Pair(token, logprob). Only visible (non-thinking) tokens. */
   private val tokenLogprobs = ArrayList<Pair<String, Double>>()

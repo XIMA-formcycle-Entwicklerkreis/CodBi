@@ -1808,30 +1808,29 @@
             for (const functionality of toLoad[key].split(",")) {
               if (!this.functionalities.has(functionality.toLowerCase().trim())) {
                 await new Promise((resolve) => {
-                  const toLoad = document.createElement("script");
-                  toLoad.src = `${this.resourceBase}${functionality.trim().toLowerCase()}.js`;
-                  toLoad.type = "module";
-                  toLoad.onload = (event2) => {
-                    resolve(event2);
-                  };
-                  toLoad.onerror = (event) => {
-                    (0, import_fc_form_renderer.getJQuery)().ajax({
-                      url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
-                      type: "GET",
-                      headers: {
-                        "X-Action": "Code",
-                        "X-ActionDetail": "Functionality",
-                        "X-Element": functionality.trim().toLowerCase()
-                      },
-                      success: (response) => {
-                        if (response.result !== "NONE") {
-                          eval(response.result.replaceAll("<|>", '"'));
-                        }
-                        resolve(event);
+                  (0, import_fc_form_renderer.getJQuery)().ajax({
+                    url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                    type: "GET",
+                    headers: {
+                      "X-Action": "Code",
+                      "X-ActionDetail": "Functionality",
+                      "X-Element": functionality.trim().toLowerCase()
+                    },
+                    success: async (response) => {
+                      if (response.result !== "NONE") {
+                        await this.importRemoteModule(response.result);
+                        resolve();
+                      } else {
+                        const toLoad = document.createElement("script");
+                        toLoad.src = `${this.resourceBase}${functionality.trim().toLowerCase()}.js`;
+                        toLoad.type = "module";
+                        toLoad.onload = () => resolve();
+                        toLoad.onerror = () => resolve();
+                        document.head.appendChild(toLoad);
                       }
-                    });
-                  };
-                  document.head.appendChild(toLoad);
+                    },
+                    error: () => resolve()
+                  });
                 });
               }
             }
@@ -1842,28 +1841,30 @@
             for (const ep of this.extractEPs(toLoad[key])) {
               if (!(ep.trim() in this.availableEPs)) {
                 await new Promise((resolve2) => {
-                  const toLoad2 = document.createElement("script");
-                  toLoad2.src = `${this.resourceBase}${ep.trim().toLowerCase()}.js`;
-                  toLoad2.type = "module";
-                  toLoad2.async = true;
-                  toLoad2.onload = (event2) => {
-                    resolve2(event2);
-                  };
-                  toLoad2.onerror = (event2) => {
-                    (0, import_fc_form_renderer.getJQuery)().ajax({
-                      url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
-                      type: "GET",
-                      headers: {
-                        "X-Action": "Code",
-                        "X-ActionDetail": "Elementplaceholder",
-                        "X-Element": ep.trim().toLowerCase()
-                      },
-                      success: (response2) => {
-                        resolve2(event2);
+                  (0, import_fc_form_renderer.getJQuery)().ajax({
+                    url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                    type: "GET",
+                    headers: {
+                      "X-Action": "Code",
+                      "X-ActionDetail": "Elementplaceholder",
+                      "X-Element": ep.trim().toLowerCase()
+                    },
+                    success: async (response2) => {
+                      if (response2.result !== "NONE") {
+                        await this.importRemoteModule(response2.result);
+                        resolve2();
+                      } else {
+                        const toLoad2 = document.createElement("script");
+                        toLoad2.src = `${this.resourceBase}${ep.trim().toLowerCase()}.js`;
+                        toLoad2.type = "module";
+                        toLoad2.async = true;
+                        toLoad2.onload = () => resolve2();
+                        toLoad2.onerror = () => resolve2();
+                        document.head.appendChild(toLoad2);
                       }
-                    });
-                  };
-                  document.head.appendChild(toLoad2);
+                    },
+                    error: () => resolve2()
+                  });
                 });
               }
             }

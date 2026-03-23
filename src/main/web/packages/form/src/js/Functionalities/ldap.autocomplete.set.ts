@@ -3,6 +3,7 @@
 import { DBC } from "xdbc/src/DBC";
 import { LDAP_Autocomplete } from "./ldap.autocomplete.js";
 // #endregion XDBC
+import { resolveLdapUrl } from "../global-scope.js";
 // #endregion Imports
 /**
  * Provides the {@link LDAP_Autocomplete.functionality }.
@@ -148,8 +149,13 @@ export class LDAP_Autocomplete_Set {
     }
 
     for (const inputField of toProcess.querySelectorAll(".CodBi_LDAP_Set_Member")) {
+      const ldapUrl = toLoad.url || resolveLdapUrl();
+
       if (inputField.hasAttribute("data-cb-ldapProperty")) {
-        LDAP_Autocomplete.functionality({ Property: inputField.getAttribute("data-cb-ldapProperty") }, inputField);
+        LDAP_Autocomplete.functionality(
+          { Property: inputField.getAttribute("data-cb-ldapProperty"), url: ldapUrl },
+          inputField,
+        );
         // biome-ignore lint/complexity/useLiteralKeys: <explanation>
         inputField["codbiLDAPSetMatchListeners"] = [matchListener];
       }

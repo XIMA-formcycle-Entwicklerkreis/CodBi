@@ -77,7 +77,9 @@ internal data class StreamPollResponse(
     val confidence: ConfidenceData? = null,
     val queuePosition: Int? = null,
     val queueBadge: Boolean? = null,
-    val estimatedWaitMs: Long? = null
+    val estimatedWaitMs: Long? = null,
+    val autoMailSent: Boolean? = null,
+    val autoMailError: String? = null
 )
 
 // endregion Response Data Classes

@@ -57,6 +57,8 @@ export class SVManager extends HTMLDivElement {
     this.cssEnabled = `background-color : #FFFFFFDD ; background-size : contain ; background-position : center ; background-repeat : no-repeat ; background-blend-mode : overlay ; display : block ; background-image : url("${toSet}"), linear-gradient( 130deg,rgba( 42, 123, 155, 1 ) 0%, rgba( 216, 216, 235, 1 ) 50%, rgba( 42, 123, 155, 1 ) 100% )`;
   }
   // #endregion Options
+  /** Holds the {@link string}s that're the currently active options. */
+  public activeOptions: Array<string> = [];
   /**
    * Gets the name of the currently set option.
    *
@@ -147,9 +149,13 @@ export class SVManager extends HTMLDivElement {
 
     const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
     // Check all options that're mentioned in the new {@link SVManager.target }.
-    for (const checkbox of shadow.querySelectorAll("input")) {
-      checkbox.checked =
-        this._target.value.toLowerCase().indexOf(checkbox.parentElement?.dataset.cbOption?.toLowerCase() ?? "") !== -1;
+    const activeValues = this._target.value
+      .toLowerCase()
+      .split(this.separator)
+      .map((v) => v.trim());
+    for (const checkbox of allByCssAs("input", HTMLInputElement, shadow)) {
+      const optionName = checkbox.parentElement?.dataset.cbOption?.toLowerCase() ?? "";
+      checkbox.checked = activeValues.includes(optionName);
     }
     // Reenable all disabled options.
     for (const option of allByCssHtml(".---WaXCode.--SVManager.--Option", shadow)) {
@@ -531,7 +537,7 @@ export class SVManager extends HTMLDivElement {
    * Selects the next option.
    *
    * @param event The {@link KeyboardEvent }. */
-  protected onKeydownTarget(event: KeyboardEvent): void {
+  public onKeydownTarget(event: KeyboardEvent): void {
     this.lastKey = event.key;
 
     if (event.key === "Delete") {
@@ -608,7 +614,7 @@ export class SVManager extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   protected onInputTarget(event: Event): void {
-    const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+    const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
     // #region If the [target] just received focus, show all available functionalities
     if (this.newFocusTarget) {
       this.newFocusTarget = false;

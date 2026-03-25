@@ -1,46 +1,56 @@
-import { a as d } from "./chunk-7ZUEWSHL.js";
-import { a as m } from "./chunk-4JLAI42Q.js";
-import { a } from "./chunk-SEUS6MHP.js";
-import { a as p } from "./chunk-CDLTIEKC.js";
-import { f as o, g as r, h as e, p as l } from "./chunk-UTJJRBTX.js";
-var k = o(m(), 1);
-var n = class {
-  static functionality(t, y) {
-    let c = document.createElement("script");
-    (c.onload = () => {
-      let s = (0, k.getJQuery)()(".g-recaptcha")[0];
-      if (
-        s &&
-        t.sitekey &&
-        typeof t.sitekey == "string" &&
-        (s.setAttribute("data-sitekey", t.sitekey),
-        t.datacallback &&
-          typeof t.datacallback == "string" &&
-          typeof window[t.datacallback] == "function" &&
-          window[t.datacallback].length === 0 &&
-          s.setAttribute("data-callback", t.datacallback),
-        t.datacallbackcode && typeof t.datacallbackcode == "string")
-      ) {
-        let i = document.createElement("script");
-        (i.type = "text/javascript"), (i.text = t.datacallbackcode), document.head.appendChild(i), i.remove();
+import { DEFINED } from "./chunk-JP4GUAZX.js";
+import { REGEX } from "./chunk-F3IDEOQS.js";
+import { TYPE } from "./chunk-O5T7YW22.js";
+import { DBC } from "./chunk-LFRFVRJV.js";
+import { require_dist } from "./chunk-ZTMSSRTV.js";
+import { __decorateClass, __decorateParam, __toESM } from "./chunk-AOJQKO6T.js";
+
+// src/js/Functionalities/security.captcha.google.ts
+var import_fc_form_renderer = __toESM(require_dist(), 1);
+var Security_Captcha_Google = class {
+  static functionality(toLoad, toProcess) {
+    const script = document.createElement("script");
+    script.onload = () => {
+      const captchaContainer = (0, import_fc_form_renderer.getJQuery)()(".g-recaptcha")[0];
+      if (captchaContainer && toLoad.sitekey && typeof toLoad.sitekey === "string") {
+        captchaContainer.setAttribute("data-sitekey", toLoad.sitekey);
+        if (
+          toLoad.datacallback &&
+          typeof toLoad.datacallback === "string" &&
+          typeof window[toLoad.datacallback] === "function" &&
+          window[toLoad.datacallback].length === 0
+        ) {
+          captchaContainer.setAttribute("data-callback", toLoad.datacallback);
+        }
+        if (toLoad.datacallbackcode && typeof toLoad.datacallbackcode === "string") {
+          const inlineScript = document.createElement("script");
+          inlineScript.type = "text/javascript";
+          inlineScript.text = toLoad.datacallbackcode;
+          document.head.appendChild(inlineScript);
+          inlineScript.remove();
+        }
       }
-    }),
-      (c.src = t.script),
-      document.head.appendChild(c);
+    };
+    script.src = toLoad.script;
+    document.head.appendChild(script);
   }
 };
-r(
+__decorateClass(
   [
-    l.ParamvalueProvider,
-    e(0, d.PRE("sitekey :: script")),
-    e(0, p.PRE("string", "sitekey :: datacallback :: datacallbackcode :: script")),
-    e(0, a.PRE(/^[0-9A-Za-z_-]{40}$/, "sitekey")),
-    e(0, a.PRE(a.stdExp.url, "script")),
-    e(0, a.PRE(a.stdExp.property, "datacallback")),
+    DBC.ParamvalueProvider,
+    __decorateParam(0, DEFINED.PRE("sitekey :: script")),
+    __decorateParam(0, TYPE.PRE("string", "sitekey :: datacallback :: datacallbackcode :: script")),
+    __decorateParam(0, REGEX.PRE(/^[0-9A-Za-z_-]{40}$/, "sitekey")),
+    __decorateParam(0, REGEX.PRE(REGEX.stdExp.url, "script")),
+    __decorateParam(0, REGEX.PRE(REGEX.stdExp.property, "datacallback")),
   ],
-  n,
+  Security_Captcha_Google,
   "functionality",
   1,
 );
-window.codbi.registerFunctionality("Security.Captcha.Google", n.functionality.bind(n));
-export { n as Security_Captcha_Google };
+window.codbi.registerFunctionality(
+  "Security.Captcha.Google",
+  Security_Captcha_Google.functionality.bind(Security_Captcha_Google),
+);
+export { Security_Captcha_Google };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0Z1bmN0aW9uYWxpdGllcy9zZWN1cml0eS5jYXB0Y2hhLmdvb2dsZS50cyJdLAogICJzb3VyY2VzQ29udGVudCI6IFsiLy8gI3JlZ2lvbiBJbXBvcnRzXG4vLyAjcmVnaW9uIFhJTUFcbmltcG9ydCB7IGdldEpRdWVyeSB9IGZyb20gXCJAZGUteGltYS9mYy1mb3JtLXJlbmRlcmVyXCI7XG4vLyAjZW5kcmVnaW9uIFhJTUFcbi8vICNyZWdpb24gWERCQ1xuaW1wb3J0IHsgREJDIH0gZnJvbSBcInhkYmMvc3JjL0RCQ1wiO1xuaW1wb3J0IHsgREVGSU5FRCB9IGZyb20gXCJ4ZGJjL3NyYy9EQkMvREVGSU5FRFwiO1xuaW1wb3J0IHsgUkVHRVggfSBmcm9tIFwieGRiYy9zcmMvREJDL1JFR0VYXCI7XG5pbXBvcnQgeyBUWVBFIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9UWVBFXCI7XG4vLyAjZW5kcmVnaW9uIFhEQkNcbi8vICNlbmRyZWdpb24gSW1wb3J0c1xuLyoqXG4gKiBQcm92aWRlcyB0aGUge0BsaW5rIFNlY3VyaXR5X0NhcHRjaGFfR29vZ2xlLmZ1bmN0aW9uYWxpdHkgfS5cbiAqXG4gKiBAcmVtYXJrc1xuICogTWFpbnRhaW5lcjogQ2FsbGFyaSwgU2FsdmF0b3JlIChTYWx2YXRvcmUuQ2FsbGFyaUBBbnNiYWNoLmRlKSAqL1xuLy8gYmlvbWUtaWdub3JlIGxpbnQvY29tcGxleGl0eS9ub1N0YXRpY09ubHlDbGFzczogUHJvYWN0aXZlIERlc2lnbi5cbmV4cG9ydCBjbGFzcyBTZWN1cml0eV9DYXB0Y2hhX0dvb2dsZSB7XG4gIC8qKlxuICAgKiBUaGlzIGZ1bmN0aW9uYWxpdHkgbmVlZHMgYSBzaXRlIGtleSB0aGF0IGNhbiBiZSBvYnRhaW5lZCBhdCBodHRwczovL2RldmVsb3BlcnMuZ29vZ2xlLmNvbS9yZWNhcHRjaGEgYW5kXG4gICAqIHRoZSBVUkwgd2hlcmUgdG8gbG9hZCB0aGUgY2FwdGNoYSBzY3JpcHQgZnJvbSAoZS5nLiBodHRwczovL3d3dy5nb29nbGUuY29tL3JlY2FwdGNoYS9hcGkuanMpLlxuICAgKlxuICAgKiBJdCBpbmplY3RzIEdvb2dsZSdzIFJlQ2FwdGNoYSBpbiBhIGRpdiB0aGF0IGhhcyB0byBoYXZlIHRoZSBjbGFzcyBcImctcmVjYXB0Y2hhXCIgKG9ubHkgdGhlIGZpcnN0IGZvdW5kXG4gICAqIGRpdiB0YWdnZWQgd2l0aCB0aGlzIENTUyBjbGFzcyB3aWxsIGJlIHVzZWQgYXMgdGhlIGNvbnRhaW5lciBmb3IgdGhlIGNhcHRjaGEpLlxuICAgKlxuICAgKiBDb25maWcgUGFyYW1ldGVyOlxuICAgKiAgLSBTaXRlS2V5OiAgICAgICAgICBUaGUgc2l0ZWtleSByZWNlaXZlZCBmcm9tIGh0dHBzOi8vZGV2ZWxvcGVycy5nb29nbGUuY29tL3JlY2FwdGNoYS5cbiAgICogIC0gRGF0YUNhbGxiYWNrOiAgICAgVGhlIG9wdGlvbmFsIGdsb2JhbCBjYWxsYmFjayBtZXRob2QgZm9yIHdoZW4gdGhlIGNhcHRjaGEgcHJvdmlkZXMgYSByZXN1bHQuXG4gICAqICAtIERhdGFDYWxsYmFja0NvZGU6IE9wdGlvbmFsIGNvZGUgdG8gYmUgZXhlY3V0ZWQgd2hlbiB0aGUgY2FwdGNoYSBwcm92aWRlcyBhIHJlc3VsdC5cbiAgICogIC0gU2NyaXB0OiAgICAgICAgICAgVGhlIEdvb2dsZSBSZUNhcHRjaGEgc2NyaXB0J3MgYWRkcmVzcy5cbiAgICpcbiAgICogQHBhcmFtIHRvTG9hZCAgICBQcm92aWRlZCBieSB0aGUgQ29kQmkuXG4gICAqIEBwYXJhbSB0b1Byb2Nlc3MgUHJvdmlkZWQgYnkgdGhlIENvZEJpLiAqL1xuICBAREJDLlBhcmFtdmFsdWVQcm92aWRlclxuICBwdWJsaWMgc3RhdGljIGZ1bmN0aW9uYWxpdHkoXG4gICAgQERFRklORUQuUFJFKFwic2l0ZWtleSA6OiBzY3JpcHRcIilcbiAgICBAVFlQRS5QUkUoXCJzdHJpbmdcIiwgXCJzaXRla2V5IDo6IGRhdGFjYWxsYmFjayA6OiBkYXRhY2FsbGJhY2tjb2RlIDo6IHNjcmlwdFwiKVxuICAgIEBSRUdFWC5QUkUoL15bMC05QS1aYS16Xy1dezQwfSQvLCBcInNpdGVrZXlcIilcbiAgICBAUkVHRVguUFJFKFJFR0VYLnN0ZEV4cC51cmwsIFwic2NyaXB0XCIpXG4gICAgQFJFR0VYLlBSRShSRUdFWC5zdGRFeHAucHJvcGVydHksIFwiZGF0YWNhbGxiYWNrXCIpXG4gICAgdG9Mb2FkOiB7IFtrZXk6IHN0cmluZ106IHVua25vd24gfSxcblxuICAgIHRvUHJvY2VzczogRWxlbWVudCxcbiAgKTogdm9pZCB7XG4gICAgY29uc3Qgc2NyaXB0OiBIVE1MU2NyaXB0RWxlbWVudCA9IGRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoXCJzY3JpcHRcIik7XG5cbiAgICBzY3JpcHQub25sb2FkID0gKCk6IHVuZGVmaW5lZCA9PiB7XG4gICAgICBjb25zdCBjYXB0Y2hhQ29udGFpbmVyOiBIVE1MRWxlbWVudCB8IHVuZGVmaW5lZCA9IGdldEpRdWVyeSgpKFwiLmctcmVjYXB0Y2hhXCIpWzBdO1xuXG4gICAgICBpZiAoY2FwdGNoYUNvbnRhaW5lciAmJiB0b0xvYWQuc2l0ZWtleSAmJiB0eXBlb2YgdG9Mb2FkLnNpdGVrZXkgPT09IFwic3RyaW5nXCIpIHtcbiAgICAgICAgY2FwdGNoYUNvbnRhaW5lci5zZXRBdHRyaWJ1dGUoXCJkYXRhLXNpdGVrZXlcIiwgdG9Mb2FkLnNpdGVrZXkgYXMgc3RyaW5nKTtcbiAgICAgICAgLy8gSWYgYSBjYWxsYmFjayBnbG9iYWwgbWV0aG9kIHdhcyBzcGVjaWZpZWQgYW5kIGlzIG9mIHZhbGlkIHR5cGUgYW5kIHNpZ25hdHVyZS4uLlxuICAgICAgICBpZiAoXG4gICAgICAgICAgdG9Mb2FkLmRhdGFjYWxsYmFjayAmJlxuICAgICAgICAgIHR5cGVvZiB0b0xvYWQuZGF0YWNhbGxiYWNrID09PSBcInN0cmluZ1wiICYmXG4gICAgICAgICAgdHlwZW9mICh3aW5kb3cgYXMgdW5rbm93biBhcyB7IFtrZXk6IHN0cmluZ106IHVua25vd24gfSlbdG9Mb2FkLmRhdGFjYWxsYmFjayBhcyBzdHJpbmddID09PSBcImZ1bmN0aW9uXCIgJiZcbiAgICAgICAgICAoKHdpbmRvdyBhcyB1bmtub3duIGFzIHsgW2tleTogc3RyaW5nXTogdW5rbm93biB9KVt0b0xvYWQuZGF0YWNhbGxiYWNrIGFzIHN0cmluZ10gYXMgKCkgPT4gdW5rbm93bikubGVuZ3RoID09PVxuICAgICAgICAgICAgMFxuICAgICAgICApIHtcbiAgICAgICAgICBjYXB0Y2hhQ29udGFpbmVyLnNldEF0dHJpYnV0ZShcImRhdGEtY2FsbGJhY2tcIiwgdG9Mb2FkLmRhdGFjYWxsYmFjayk7XG4gICAgICAgIH1cbiAgICAgICAgLy8gSWYsIGZvciBjb252ZW5pZW5jZSwgY29kZSB0byBldmFsdWF0ZSB3YXMgc3BlY2lmaWVkLi4uXG4gICAgICAgIGlmICh0b0xvYWQuZGF0YWNhbGxiYWNrY29kZSAmJiB0eXBlb2YgdG9Mb2FkLmRhdGFjYWxsYmFja2NvZGUgPT09IFwic3RyaW5nXCIpIHtcbiAgICAgICAgICBjb25zdCBpbmxpbmVTY3JpcHQgPSBkb2N1bWVudC5jcmVhdGVFbGVtZW50KFwic2NyaXB0XCIpO1xuICAgICAgICAgIGlubGluZVNjcmlwdC50eXBlID0gXCJ0ZXh0L2phdmFzY3JpcHRcIjtcbiAgICAgICAgICBpbmxpbmVTY3JpcHQudGV4dCA9IHRvTG9hZC5kYXRhY2FsbGJhY2tjb2RlIGFzIHN0cmluZztcblxuICAgICAgICAgIGRvY3VtZW50LmhlYWQuYXBwZW5kQ2hpbGQoaW5saW5lU2NyaXB0KTtcbiAgICAgICAgICBpbmxpbmVTY3JpcHQucmVtb3ZlKCk7XG4gICAgICAgIH1cbiAgICAgIH1cbiAgICB9O1xuXG4gICAgc2NyaXB0LnNyYyA9IHRvTG9hZC5zY3JpcHQgYXMgc3RyaW5nO1xuXG4gICAgZG9jdW1lbnQuaGVhZC5hcHBlbmRDaGlsZChzY3JpcHQpO1xuICB9XG59XG5cbndpbmRvdy5jb2RiaS5yZWdpc3RlckZ1bmN0aW9uYWxpdHkoXG4gIFwiU2VjdXJpdHkuQ2FwdGNoYS5Hb29nbGVcIixcbiAgU2VjdXJpdHlfQ2FwdGNoYV9Hb29nbGUuZnVuY3Rpb25hbGl0eS5iaW5kKFNlY3VyaXR5X0NhcHRjaGFfR29vZ2xlKSxcbik7IC8vIEluaXRpYWxpemF0aW9uXG4iXSwKICAibWFwcGluZ3MiOiAiOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0FBRUEsOEJBQTBCO0FBZW5CLElBQU0sMEJBQU4sTUFBOEI7QUFBQSxFQWlCbkMsT0FBYyxjQU1aLFFBRUEsV0FDTTtBQUNOLFVBQU0sU0FBNEIsU0FBUyxjQUFjLFFBQVE7QUFFakUsV0FBTyxTQUFTLE1BQWlCO0FBQy9CLFlBQU0sdUJBQTRDLG1DQUFVLEVBQUUsY0FBYyxFQUFFLENBQUM7QUFFL0UsVUFBSSxvQkFBb0IsT0FBTyxXQUFXLE9BQU8sT0FBTyxZQUFZLFVBQVU7QUFDNUUseUJBQWlCLGFBQWEsZ0JBQWdCLE9BQU8sT0FBaUI7QUFFdEUsWUFDRSxPQUFPLGdCQUNQLE9BQU8sT0FBTyxpQkFBaUIsWUFDL0IsT0FBUSxPQUFpRCxPQUFPLFlBQXNCLE1BQU0sY0FDMUYsT0FBaUQsT0FBTyxZQUFzQixFQUFvQixXQUNsRyxHQUNGO0FBQ0EsMkJBQWlCLGFBQWEsaUJBQWlCLE9BQU8sWUFBWTtBQUFBLFFBQ3BFO0FBRUEsWUFBSSxPQUFPLG9CQUFvQixPQUFPLE9BQU8scUJBQXFCLFVBQVU7QUFDMUUsZ0JBQU0sZUFBZSxTQUFTLGNBQWMsUUFBUTtBQUNwRCx1QkFBYSxPQUFPO0FBQ3BCLHVCQUFhLE9BQU8sT0FBTztBQUUzQixtQkFBUyxLQUFLLFlBQVksWUFBWTtBQUN0Qyx1QkFBYSxPQUFPO0FBQUEsUUFDdEI7QUFBQSxNQUNGO0FBQUEsSUFDRjtBQUVBLFdBQU8sTUFBTSxPQUFPO0FBRXBCLGFBQVMsS0FBSyxZQUFZLE1BQU07QUFBQSxFQUNsQztBQUNGO0FBM0NnQjtBQUFBLEVBRGIsSUFBSTtBQUFBLEVBRUYsMkJBQVEsSUFBSSxtQkFBbUI7QUFBQSxFQUMvQix3QkFBSyxJQUFJLFVBQVUsdURBQXVEO0FBQUEsRUFDMUUseUJBQU0sSUFBSSx1QkFBdUIsU0FBUztBQUFBLEVBQzFDLHlCQUFNLElBQUksTUFBTSxPQUFPLEtBQUssUUFBUTtBQUFBLEVBQ3BDLHlCQUFNLElBQUksTUFBTSxPQUFPLFVBQVUsY0FBYztBQUFBLEdBdEJ2Qyx5QkFpQkc7QUE2Q2hCLE9BQU8sTUFBTTtBQUFBLEVBQ1g7QUFBQSxFQUNBLHdCQUF3QixjQUFjLEtBQUssdUJBQXVCO0FBQ3BFOyIsCiAgIm5hbWVzIjogW10KfQo=

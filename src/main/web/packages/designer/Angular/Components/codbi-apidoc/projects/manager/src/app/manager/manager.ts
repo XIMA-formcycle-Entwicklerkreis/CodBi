@@ -1425,6 +1425,18 @@ export class Manager implements AfterViewInit {
       }
     }
     // #endregion Create new entries and remove former ones.
+    // #region Update Code property identifiers to reflect new paths.
+    for (const element in currentCodBiData) {
+      const entry = currentCodBiData[element];
+
+      if (entry.Code && entry.local) {
+        entry.Code = entry.Code.replace(
+          /(window\.codbi\.(?:registerFunctionality|registerEP|extendFunctionality|extendEP))\(\s*(["'`])(?:(?!\2).)*\2/g,
+          `$1($2${element}$2`,
+        );
+      }
+    }
+    // #endregion Update Code property identifiers to reflect new paths.
     // #region Recreate corresponding FSL properly.
     const jsonCurrentTabDocFSL = JSON.parse(this.activeTabDocFSL);
 
@@ -1805,7 +1817,7 @@ export class Manager implements AfterViewInit {
 
     this.synchronizing = true;
     // #region Sync
-    $.ajax({
+    await $.ajax({
       url: `${this.baseurl}plugin?name=CodBi_LocalAPIDoc`,
       type: "POST",
       headers: {

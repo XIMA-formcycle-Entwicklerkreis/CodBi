@@ -1,23 +1,27 @@
-import { a as e } from "./chunk-7ZUEWSHL.js";
-import { a as n } from "./chunk-SEUS6MHP.js";
-import { a as s } from "./chunk-CDLTIEKC.js";
-import { g as o, h as t, p as m } from "./chunk-UTJJRBTX.js";
-var i = class {
-  static functionality(r, a) {
-    a.setAttribute(r.name, r.toset);
+import { DEFINED } from "./chunk-JP4GUAZX.js";
+import { REGEX } from "./chunk-F3IDEOQS.js";
+import { TYPE } from "./chunk-O5T7YW22.js";
+import { DBC } from "./chunk-LFRFVRJV.js";
+import { __decorateClass, __decorateParam } from "./chunk-AOJQKO6T.js";
+
+// src/js/Functionalities/html.setattribute.ts
+var HTML_SETAttribute = class {
+  static functionality(toLoad, toProcess) {
+    toProcess.setAttribute(toLoad.name, toLoad.toset);
   }
 };
-o(
+__decorateClass(
   [
-    m.ParamvalueProvider,
-    t(0, n.PRE(n.stdExp.htmlAttributeName, "name")),
-    t(0, s.PRE("string", "toset")),
-    t(0, e.PRE("name")),
-    t(0, e.PRE("toset")),
+    DBC.ParamvalueProvider,
+    __decorateParam(0, REGEX.PRE(REGEX.stdExp.htmlAttributeName, "name")),
+    __decorateParam(0, TYPE.PRE("string", "toset")),
+    __decorateParam(0, DEFINED.PRE("name")),
+    __decorateParam(0, DEFINED.PRE("toset")),
   ],
-  i,
+  HTML_SETAttribute,
   "functionality",
   1,
 );
-window.codbi.registerFunctionality("HTML.SETAttribute", i.functionality.bind(i));
-export { i as HTML_SETAttribute };
+window.codbi.registerFunctionality("HTML.SETAttribute", HTML_SETAttribute.functionality.bind(HTML_SETAttribute));
+export { HTML_SETAttribute };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0Z1bmN0aW9uYWxpdGllcy9odG1sLnNldGF0dHJpYnV0ZS50cyJdLAogICJzb3VyY2VzQ29udGVudCI6IFsiLy8gI3JlZ2lvbiBJbXBvcnRzXG4vLyAjcmVnaW9uIFhEQkNcbmltcG9ydCB7IERCQyB9IGZyb20gXCJ4ZGJjL3NyYy9EQkNcIjtcbmltcG9ydCB7IFRZUEUgfSBmcm9tIFwieGRiYy9zcmMvREJDL1RZUEVcIjtcbmltcG9ydCB7IFJFR0VYIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9SRUdFWFwiO1xuaW1wb3J0IHsgREVGSU5FRCB9IGZyb20gXCJ4ZGJjL3NyYy9EQkMvREVGSU5FRFwiO1xuLy8gI2VuZHJlZ2lvbiBYREJDXG4vLyAjZW5kcmVnaW9uIEltcG9ydHNcbi8qKlxuICogUHJvdmlkZXMgdGhlIHtAbGluayBIVE1MX1NFVEF0dHJpYnV0ZS5mdW5jdGlvbmFsaXR5IH0uXG4gKlxuICogQHJlbWFya3NcbiAqIE1haW50YWluZXI6IFNhbHZhdG9yZSBDYWxsYXJpIChTYWx2YXRvcmUuQ2FsbGFyaUBBbnNiYWNoLmRlKSAqL1xuLy8gYmlvbWUtaWdub3JlIGxpbnQvY29tcGxleGl0eS9ub1N0YXRpY09ubHlDbGFzczogUHJvYWN0aXZlIERlc2lnbi5cbmV4cG9ydCBjbGFzcyBIVE1MX1NFVEF0dHJpYnV0ZSB7XG4gIC8qKlxuICAgKiBUaGlzIGZ1bmN0aW9uYWxpdHkgc2V0cyBhbiBhdHRyaWJ1dGUgb2Ygc3BlY2lmaWVkIFwiTmFtZVwiIG9udG8gdGhlIHtAbGluayBFbGVtZW50IH0gXCJ0b1Byb2Nlc3NcIlxuICAgKiB3aGljaCBpcyBzcGVjaWZpZWQgYnkgXCJQYXRoXCIuXG4gICAqXG4gICAqIENvbmZpZyBQYXJhbWV0ZXI6XG4gICAqICAtIE5hbWU6ICAgVGhlIG5hbWUgb2YgdGhlIGF0dHJpYnV0ZSB0byBzZXQuXG4gICAqICAtIFRvU2V0OiAgVGhlIHtAbGluayBzdHJpbmcgfSB0byBzZXQgdGhlIGF0dHJpYnV0ZSB0by5cbiAgICpcbiAgICogQHBhcmFtIHRvTG9hZCAgICBQcm92aWRlZCBieSB7QGxpbmsgQ29kQmkuY2hlY2tBdHRyaWJ1dGVzIH0gLyB7QGxpbmsgQ29kQmkubG9hZENvbmZpZyB9LlxuICAgKiBAcGFyYW0gdG9Qcm9jZXNzIFByb3ZpZGVkIGJ5IHtAbGluayBDb2RCaS5jaGVja0F0dHJpYnV0ZXMgfSAvIHtAbGluayBDb2RCaS5sb2FkQ29uZmlnIH0uICovXG4gIEBEQkMuUGFyYW12YWx1ZVByb3ZpZGVyXG4gIHB1YmxpYyBzdGF0aWMgZnVuY3Rpb25hbGl0eShcbiAgICBAUkVHRVguUFJFKFJFR0VYLnN0ZEV4cC5odG1sQXR0cmlidXRlTmFtZSwgXCJuYW1lXCIpXG4gICAgQFRZUEUuUFJFKFwic3RyaW5nXCIsIFwidG9zZXRcIilcbiAgICBAREVGSU5FRC5QUkUoXCJuYW1lXCIpXG4gICAgQERFRklORUQuUFJFKFwidG9zZXRcIilcbiAgICB0b0xvYWQ6IHsgW2tleTogc3RyaW5nXTogdW5rbm93biB9LFxuICAgIHRvUHJvY2VzczogRWxlbWVudCxcbiAgKTogdW5kZWZpbmVkIHtcbiAgICB0b1Byb2Nlc3Muc2V0QXR0cmlidXRlKHRvTG9hZC5uYW1lIGFzIHN0cmluZywgdG9Mb2FkLnRvc2V0IGFzIHN0cmluZyk7XG4gIH1cbn1cblxud2luZG93LmNvZGJpLnJlZ2lzdGVyRnVuY3Rpb25hbGl0eShcIkhUTUwuU0VUQXR0cmlidXRlXCIsIEhUTUxfU0VUQXR0cmlidXRlLmZ1bmN0aW9uYWxpdHkuYmluZChIVE1MX1NFVEF0dHJpYnV0ZSkpOyAvLyBJbml0aWFsaXphdGlvblxuIl0sCiAgIm1hcHBpbmdzIjogIjs7Ozs7Ozs7Ozs7Ozs7Ozs7O0FBY08sSUFBTSxvQkFBTixNQUF3QjtBQUFBLEVBWTdCLE9BQWMsY0FLWixRQUNBLFdBQ1c7QUFDWCxjQUFVLGFBQWEsT0FBTyxNQUFnQixPQUFPLEtBQWU7QUFBQSxFQUN0RTtBQUNGO0FBVmdCO0FBQUEsRUFEYixJQUFJO0FBQUEsRUFFRix5QkFBTSxJQUFJLE1BQU0sT0FBTyxtQkFBbUIsTUFBTTtBQUFBLEVBQ2hELHdCQUFLLElBQUksVUFBVSxPQUFPO0FBQUEsRUFDMUIsMkJBQVEsSUFBSSxNQUFNO0FBQUEsRUFDbEIsMkJBQVEsSUFBSSxPQUFPO0FBQUEsR0FoQlgsbUJBWUc7QUFZaEIsT0FBTyxNQUFNLHNCQUFzQixxQkFBcUIsa0JBQWtCLGNBQWMsS0FBSyxpQkFBaUIsQ0FBQzsiLAogICJuYW1lcyI6IFtdCn0K

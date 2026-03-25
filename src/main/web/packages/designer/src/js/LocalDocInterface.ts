@@ -713,6 +713,25 @@ export function enableLocalDocInterface(): void {
       cDetails.style.opacity = ".9";
       cDetails.style.display = "none";
       cDetails.style.padding = "0";
+
+      // #region Keyboard Navigation List Forwarding
+      document.addEventListener("keydown", (event) => {
+        if (
+          (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+          flagMouseOverCDetails &&
+          cDetails.style.display !== "none"
+        ) {
+          event.preventDefault();
+
+          if (epManager.enabled && epManager.target) {
+            epManager.onKeydownTarget(event);
+          } else if (optioninput.enabled && optioninput.target) {
+            optioninput.onKeydownTarget(event);
+          }
+        }
+      });
+      // #endregion Keyboard Navigation List Forwarding
+
       // #endregion Styling
       cDetails.classList.add("---CodBi", "--Panel", "--APIDoc");
       // #region Injection
@@ -761,6 +780,7 @@ export function enableLocalDocInterface(): void {
       };
 
       getDetailsObject(cDetails)?.addEventListener("load", onFirstDocLoad);
+
       // #endregion Remove loader when having loaded for the first time in session
       // #region Retrieve Local API Doc
       const $ = getJQuery();
@@ -1418,6 +1438,7 @@ export function enableLocalDocInterface(): void {
                         // #endregion Refresh listing.
                         epManager.mode = "SV";
                         epManager.target = INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement);
+                        epManager.activeOptions = added.value.split(",").map((o) => o.trim());
                         epManager.enabled = true;
 
                         updateLayoutEPManager(added);

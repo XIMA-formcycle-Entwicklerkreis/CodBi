@@ -1,40 +1,46 @@
-import { a as f } from "./chunk-HK3DXGDG.js";
-import { a as m } from "./chunk-RQ2OISH5.js";
-import { a as l } from "./chunk-44HOFY3R.js";
-import { a } from "./chunk-CTQLZ4AL.js";
-import { a as o } from "./chunk-JDZ7GIHA.js";
-import "./chunk-HV3SPSHE.js";
-import { a as E } from "./chunk-BQCZFAYZ.js";
-import { a as i } from "./chunk-PN2FQ2K5.js";
-import { a as e } from "./chunk-2NFNCZZA.js";
-import { c as s, d as r, g as w } from "./chunk-WWJ6UWS7.js";
-var t = class extends m {
-  static retrieve(n) {
-    return m.retrieve([
-      n[0],
+import { OpenPLZ } from "./chunk-T33OL2Z5.js";
+import { EQ } from "./chunk-TAVUGW35.js";
+import { IF } from "./chunk-WV5MGQV4.js";
+import { OR } from "./chunk-D2G6YD5Q.js";
+import { REGEX } from "./chunk-ANBT4V26.js";
+import { AE } from "./chunk-P4ZK5MPU.js";
+import "./chunk-R7QUH33K.js";
+import { GREATER } from "./chunk-HUHG5RHG.js";
+import { TYPE } from "./chunk-3WCL6BYZ.js";
+import { DBC, __decorateClass, __decorateParam } from "./chunk-YNACB2OL.js";
+
+// src/js/EPs/openplz.textsearch.ts
+var OpenPLZ_TextSearch = class extends OpenPLZ {
+  static retrieve(params) {
+    return OpenPLZ.retrieve([
+      params[0],
       "FullTextSearch",
       "",
       "",
-      `searchTerm-${n[1].replace(/ /, "+")}`,
+      `searchTerm-${params[1].replace(/ /, "+")}`,
       "",
       "",
       "",
-      n[2] ? n[2] : "",
+      params[2] ? params[2] : "",
     ]);
   }
 };
-s(
+__decorateClass(
   [
-    w.ParamvalueProvider,
-    r(0, E.PRE(1, !0, !1, "length", "Hasn't at least the RegEx to search with been specified?")),
-    r(0, e.PRE(new i("string"), 0, 1)),
-    r(0, e.PRE(new a([new l(""), new o(/(de|en|at|li|ch)/i)]), 0)),
-    r(0, e.PRE(new i("string | number"), 2)),
-    r(0, e.PRE(new f(new i("string"), new o(/^\d+$/)), 2)),
+    DBC.ParamvalueProvider,
+    __decorateParam(
+      0,
+      GREATER.PRE(1, true, false, "length", "Hasn't at least the RegEx to search with been specified?"),
+    ),
+    __decorateParam(0, AE.PRE(new TYPE("string"), 0, 1)),
+    __decorateParam(0, AE.PRE(new OR([new EQ(""), new REGEX(/(de|en|at|li|ch)/i)]), 0)),
+    __decorateParam(0, AE.PRE(new TYPE("string | number"), 2)),
+    __decorateParam(0, AE.PRE(new IF(new TYPE("string"), new REGEX(/^\d+$/)), 2)),
   ],
-  t,
+  OpenPLZ_TextSearch,
   "retrieve",
   1,
 );
-window.codbi.registerEP("OpenPLZ.TextSearch", t.retrieve.bind(t));
-export { t as OpenPLZ_TextSearch };
+window.codbi.registerEP("OpenPLZ.TextSearch", OpenPLZ_TextSearch.retrieve.bind(OpenPLZ_TextSearch));
+export { OpenPLZ_TextSearch };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0VQcy9vcGVucGx6LnRleHRzZWFyY2gudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbIi8vICNyZWdpb24gSW1wb3J0c1xuLy8gI3JlZ2lvbiBYREJDXG5pbXBvcnQgeyBHUkVBVEVSIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9DT01QQVJJU09OL0dSRUFURVJcIjtcbmltcG9ydCB7IEFFIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9BRVwiO1xuaW1wb3J0IHsgVFlQRSB9IGZyb20gXCJ4ZGJjL3NyYy9EQkMvVFlQRVwiO1xuaW1wb3J0IHsgUkVHRVggfSBmcm9tIFwieGRiYy9zcmMvREJDL1JFR0VYXCI7XG5pbXBvcnQgeyBJRiB9IGZyb20gXCJ4ZGJjL3NyYy9EQkMvSUZcIjtcbmltcG9ydCB7IE9SIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9PUi5qc1wiO1xuaW1wb3J0IHsgRVEgfSBmcm9tIFwieGRiYy9zcmMvREJDL0VRLmpzXCI7XG5pbXBvcnQgeyBEQkMgfSBmcm9tIFwieGRiYy9zcmMvREJDXCI7XG4vLyAjZW5kcmVnaW9uIFhEQkNcbmltcG9ydCB7IE9wZW5QTFogfSBmcm9tIFwiLi9vcGVucGx6LmpzXCI7XG4vLyAjZW5kcmVnaW9uIEltcG9ydHNcbi8qKlxuICogQW4ge0BsaW5rIE9wZW5QTFogfS1SZXF1ZXN0IHBlcmZvcm1pbmcgYSBmdWxsIHRleHQtc2VhcmNoLlxuICpcbiAqIENvbmZpZyBQYXJhbWV0ZXI6XG4gKiAtIDFzdDogVGhlIG9wdGlvbmFsICoqY291bnRyeSoqIHRvIHJldHJpZXZlIHRoZSBkYXRhIG9mIChpZiBub3QgcHJvdmlkZWQgZWl0aGVyIHRoZSBjb3VudHJ5IHNwZWNpZmllZCBpblxuICogICAgICAgIHRoZSBDb2RCaSdzIENvbmZpZ3VyYXRpb24gKipPcGVuUExaX0NvdW50cnkqKiB3aWxsIGJlIHVzZWQgb3IsIGlmIG5vdCBzcGVjaWZpZWQsIFwiZGVcIikuXG4gKiAtIDJuZDogVGhlIFsgUE9TSVggUmVnRXggXShodHRwczovL3d3dy5vcGVucGx6YXBpLm9yZy9kZS9yZWdleC8pIHRlcm0gdG8gc2VhcmNoIGZvciAoZS5nLiA5MTUyMiBOXHUwMEZDcm5iZXJnZXJzdHJhc3NlICkuXG4gKiAtIDNyZDogQW4gT3B0aW9uYWwgbnVtYmVyIG9mIHBhZ2VzIHRvIGxvYWQuXG4gKlxuICogQHJlbWFya3NcbiAqIE1haW50YWluZXI6IENhbGxhcmksIFNhbHZhdG9yZSAoU2FsdmF0b3JlLkNhbGxhcmlAQW5zYmFjaC5kZSkgKi9cbmV4cG9ydCBjbGFzcyBPcGVuUExaX1RleHRTZWFyY2ggZXh0ZW5kcyBPcGVuUExaIHtcbiAgLyoqXG4gICAqIEpvaW5zIGFsbCB7QGxpbmsgb2JqZWN0IH1zIGluIFwicGFyYW1zXCIgaW50byBvbmUuXG4gICAqXG4gICAqIEBwYXJhbSBwYXJhbXMgVGhlIHBhcmFtZXRlcnMgZm9yIHRoYXQgRWxlbWVudC1QbGFjZWhvbGRlciAocHJvdmlkZWQgYnkgQ29kQmkpLiAqL1xuICBAREJDLlBhcmFtdmFsdWVQcm92aWRlclxuICBwdWJsaWMgc3RhdGljIG92ZXJyaWRlIHJldHJpZXZlKFxuICAgIEBHUkVBVEVSLlBSRSgxLCB0cnVlLCBmYWxzZSwgXCJsZW5ndGhcIiwgXCJIYXNuJ3QgYXQgbGVhc3QgdGhlIFJlZ0V4IHRvIHNlYXJjaCB3aXRoIGJlZW4gc3BlY2lmaWVkP1wiKVxuICAgIEBBRS5QUkUobmV3IFRZUEUoXCJzdHJpbmdcIiksIDAsIDEpXG4gICAgQEFFLlBSRShuZXcgT1IoW25ldyBFUShcIlwiKSwgbmV3IFJFR0VYKC8oZGV8ZW58YXR8bGl8Y2gpL2kpXSksIDApXG4gICAgQEFFLlBSRShuZXcgVFlQRShcInN0cmluZyB8IG51bWJlclwiKSwgMilcbiAgICBAQUUuUFJFKG5ldyBJRihuZXcgVFlQRShcInN0cmluZ1wiKSwgbmV3IFJFR0VYKC9eXFxkKyQvKSksIDIpXG4gICAgcGFyYW1zOiBBcnJheTx1bmtub3duPixcbiAgKTogQXJyYXk8dW5rbm93bj4gfCB1bmtub3duIHtcbiAgICByZXR1cm4gT3BlblBMWi5yZXRyaWV2ZShbXG4gICAgICBwYXJhbXNbMF0sXG4gICAgICBcIkZ1bGxUZXh0U2VhcmNoXCIsXG4gICAgICBcIlwiLFxuICAgICAgXCJcIixcbiAgICAgIGBzZWFyY2hUZXJtLSR7KHBhcmFtc1sxXSBhcyBzdHJpbmcpLnJlcGxhY2UoLyAvLCBcIitcIil9YCxcbiAgICAgIFwiXCIsXG4gICAgICBcIlwiLFxuICAgICAgXCJcIixcbiAgICAgIHBhcmFtc1syXSA/IChwYXJhbXNbMl0gYXMgc3RyaW5nKSA6IFwiXCIsXG4gICAgXSk7XG4gIH1cbn1cblxud2luZG93LmNvZGJpLnJlZ2lzdGVyRVAoXCJPcGVuUExaLlRleHRTZWFyY2hcIiwgT3BlblBMWl9UZXh0U2VhcmNoLnJldHJpZXZlLmJpbmQoT3BlblBMWl9UZXh0U2VhcmNoKSk7IC8vIEluaXRpYWxpemF0aW9uXG4iXSwKICAibWFwcGluZ3MiOiAiOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7OztBQXdCTyxJQUFNLHFCQUFOLGNBQWlDLFFBQVE7QUFBQSxFQU05QyxPQUF1QixTQU1yQixRQUMwQjtBQUMxQixXQUFPLFFBQVEsU0FBUztBQUFBLE1BQ3RCLE9BQU8sQ0FBQztBQUFBLE1BQ1I7QUFBQSxNQUNBO0FBQUEsTUFDQTtBQUFBLE1BQ0EsY0FBZSxPQUFPLENBQUMsRUFBYSxRQUFRLEtBQUssR0FBRyxDQUFDO0FBQUEsTUFDckQ7QUFBQSxNQUNBO0FBQUEsTUFDQTtBQUFBLE1BQ0EsT0FBTyxDQUFDLElBQUssT0FBTyxDQUFDLElBQWU7QUFBQSxJQUN0QyxDQUFDO0FBQUEsRUFDSDtBQUNGO0FBcEJ5QjtBQUFBLEVBRHRCLElBQUk7QUFBQSxFQUVGLDJCQUFRLElBQUksR0FBRyxNQUFNLE9BQU8sVUFBVSwwREFBMEQ7QUFBQSxFQUNoRyxzQkFBRyxJQUFJLElBQUksS0FBSyxRQUFRLEdBQUcsR0FBRyxDQUFDO0FBQUEsRUFDL0Isc0JBQUcsSUFBSSxJQUFJLEdBQUcsQ0FBQyxJQUFJLEdBQUcsRUFBRSxHQUFHLElBQUksTUFBTSxtQkFBbUIsQ0FBQyxDQUFDLEdBQUcsQ0FBQztBQUFBLEVBQzlELHNCQUFHLElBQUksSUFBSSxLQUFLLGlCQUFpQixHQUFHLENBQUM7QUFBQSxFQUNyQyxzQkFBRyxJQUFJLElBQUksR0FBRyxJQUFJLEtBQUssUUFBUSxHQUFHLElBQUksTUFBTSxPQUFPLENBQUMsR0FBRyxDQUFDO0FBQUEsR0FYaEQsb0JBTVk7QUFzQnpCLE9BQU8sTUFBTSxXQUFXLHNCQUFzQixtQkFBbUIsU0FBUyxLQUFLLGtCQUFrQixDQUFDOyIsCiAgIm5hbWVzIjogW10KfQo=

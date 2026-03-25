@@ -107,6 +107,9 @@ export class AI_LLAMA_STANDARD_QA {
    *                            for this instance. Default: determined by plugin property.
    * - **QueueText**:           Text appended after the queue position number in the badge
    *                            (e.g. `"in queue"` → badge shows `"3 in queue"`). Default: empty.
+   * - **FilterResults**:       If set to `"true"`, enables PII filtering on Brave Search queries
+   *                            for this instance, overriding the global `AI_BraveSearch_FilterResults`
+   *                            plugin property. Default: determined by plugin property.
    *
    * Questions are acquired from DOM elements within the nearest ancestor **XContainer** of the
    * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_LLAMA_STANDARD_QA_Question**.
@@ -144,6 +147,8 @@ export class AI_LLAMA_STANDARD_QA {
     @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{2}$/i), "responselanguage")
     @OR.PRE([new TYPE("string"), new TYPE("boolean")], "internetaccess, thinking, caseinsensitive")
     @OR.PRE([new TYPE("number"), new TYPE("string")], "maxthinkingtokens")
+    @OR.PRE([new TYPE("string"), new TYPE("boolean")], "filterresults")
+    @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "filterresults")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(
@@ -296,6 +301,10 @@ export class AI_LLAMA_STANDARD_QA {
       const internetAccess = toLoad.InternetAccess != null && String(toLoad.InternetAccess).toLowerCase() === "true";
 
       vqaHeaders["X-Search"] = internetAccess ? "true" : "false";
+
+      if (toLoad.filterresults != null) {
+        vqaHeaders["X-Filter-Results"] = String(toLoad.filterresults).toLowerCase() === "true" ? "true" : "false";
+      }
       // #endregion Brave Search and geolocation toggles
       // #region Thinking mode toggle
       const thinking = toLoad.thinking != null && String(toLoad.thinking).toLowerCase() === "true";

@@ -1,10 +1,10 @@
-function o() {
+// src/js/Configurations/Holistic.Matomo.Tracking.ts
+function loadConfig() {
   window.codbi.loadConfig({
     targets: "body",
     FUNC: "Matomo.Tracking",
-    SiteID: "{ V > Matomo_SiteID }",
-    URL: "{ V > Matomo_URL }",
   });
 }
-o();
-export { o as loadConfig };
+loadConfig();
+export { loadConfig };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0NvbmZpZ3VyYXRpb25zL0hvbGlzdGljLk1hdG9tby5UcmFja2luZy50cyJdLAogICJzb3VyY2VzQ29udGVudCI6IFsiLyoqXG4gKiBSZWdpc3RlcnMgYSBzdGFuZGFyZCBjb25maWd1cmF0aW9ucyB1c2luZyB0aGUgZnVuY3Rpb25hbGl0eVxuICogKipNYXRvbW8uVHJhY2tpbmcqKiB0aGF0IGF1dG9tYXRpY2FsbHkgaW5pdGlhdGVzIHRyYWNraW5nIGFjY29yZGluZyB0byBlaXRoZXJcbiAqIHRoZSBQbHVnaW4tTWF0b21vLUNvbmZpZyBvciB0aGUgb25lIHByb3ZpZGVkIHZpYSBnbG9iYWwgdmFyaWFibGVzIHdoZXJlYXNcbiAqIHRoZSBnbG9iYWwgb25lIHRha2VzIHByZWNlZGVuY2UuXG4gKlxuICogR2xvYmFsIFZhcmlhYmxlczpcbiAqIC0gKipNYXRvbW9fU2l0ZUlEKiogVGhlIGZ1bmN0aW9uYWxpdGllJ3MgKipTaXRlSUQqKi1QYXJhbWV0ZXIuXG4gKiAtICoqVVJMKiogVGhlIGZ1bmN0aW9uYWxpdGllJ3MgKipVUkwqKi1QYXJhbWV0ZXIuICovXG5leHBvcnQgZnVuY3Rpb24gbG9hZENvbmZpZygpOiB2b2lkIHtcbiAgd2luZG93LmNvZGJpLmxvYWRDb25maWcoe1xuICAgIHRhcmdldHM6IFwiYm9keVwiLFxuICAgIEZVTkM6IFwiTWF0b21vLlRyYWNraW5nXCIsXG4gIH0pO1xufVxuXG5sb2FkQ29uZmlnKCk7XG4iXSwKICAibWFwcGluZ3MiOiAiO0FBU08sU0FBUyxhQUFtQjtBQUNqQyxTQUFPLE1BQU0sV0FBVztBQUFBLElBQ3RCLFNBQVM7QUFBQSxJQUNULE1BQU07QUFBQSxFQUNSLENBQUM7QUFDSDtBQUVBLFdBQVc7IiwKICAibmFtZXMiOiBbXQp9Cg==

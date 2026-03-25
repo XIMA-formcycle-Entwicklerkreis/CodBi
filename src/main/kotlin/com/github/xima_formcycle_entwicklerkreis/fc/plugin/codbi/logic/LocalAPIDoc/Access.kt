@@ -110,8 +110,8 @@ class StructuredDataStoreAction : IPluginServletAction {
 
         LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).error("Renaming start.")
         renameCodeFile(
-            params.headerMap["X-ActionDetail"],
             params.headerMap["X-Element"]?.lowercase(),
+            params.headerMap["X-ActionDetail"],
             params.headerMap["X-NewElement"]?.lowercase())
         LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).error("Renaming end.")
       }
@@ -333,10 +333,25 @@ class StructuredDataStoreAction : IPluginServletAction {
       return
     }
 
-    val oldKey = codeKey(detail, element)
-    val newKey = codeKey(element, newElementname)
+    val oldKey = codeKey(element, detail)
+    val newKey = codeKey(newElementname, detail)
 
     dbRename(oldKey, newKey)
+
+    // Update code content to reflect the new element path.
+    val code = dbLoad(newKey)
+
+    if (code != null) {
+      val updated =
+          code.replace(
+              Regex(
+                  """(window\.codbi\.(?:registerFunctionality|registerEP|extendFunctionality|extendEP))\(\s*(["'`])(?:(?!\2).)*\2"""),
+              "$1($2${newElementname}$2")
+
+      if (updated != code) {
+        dbSave(newKey, updated)
+      }
+    }
   }
 
   /**

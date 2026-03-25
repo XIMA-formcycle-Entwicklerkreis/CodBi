@@ -5,6 +5,8 @@
   "exclude": ["./src/tests/**/*", "./node_modules"],
   "theme": "default",
   "hideGenerator": true,
+  "hostedBaseUrl": "https://codbi.pages.dev/",
+  "useHostedBaseUrlForAbsoluteLinks": true,
   "disableSources": false,
   "tsconfig": "./tsconfig.json",
   "options": {

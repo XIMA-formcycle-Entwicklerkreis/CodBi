@@ -1,147 +1,194 @@
-function e() {
+// src/js/Configurations/Appointments.ts
+function loadConfig() {
   window.codbi.loadConfig({
     targets: ".CodBi_NoFutureDate",
     FUNC: "Date.Min",
     Minimum: 0,
     MsgHigher: "Das Datum darf nicht in der Zukunft liegen.",
-  }),
-    window.codbi.loadConfigs([
-      {
-        targets: ".CodBi_DateFrame_1_Begin",
-        FUNC: "HTML.Input.Cleave, Date.Frame",
-        MaxField: ".CodBi_DateFrame_1_End",
-        MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
-        MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
-      },
-      { targets: ".CodBi_DateFrame_1_End", FUNC: "HTML.Input.Cleave" },
-      {
-        targets: ".CodBi_DateFrame_2_Begin",
-        FUNC: "Date.Frame, HTML.Input.Cleave",
-        MaxField: ".CodBi_DateFrame_2_End",
-        MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
-        MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
-      },
-      { targets: ".CodBi_DateFrame_2_End", FUNC: "HTML.Input.Cleave" },
-      {
-        targets: ".CodBi_DateFrame_3_Begin",
-        FUNC: "Date.Frame, HTML.Input.Cleave",
-        MaxField: ".CodBi_DateFrame_3_End",
-        MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
-        MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
-      },
-      { targets: ".CodBi_DateFrame_3_End", FUNC: "HTML.Input.Cleave" },
-      {
-        targets: ".CodBi_DateFrame_4_Begin",
-        FUNC: "Date.Frame, HTML.Input.Cleave",
-        MaxField: ".CodBi_DateFrame_4_End",
-        MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
-        MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
-      },
-      { targets: ".CodBi_DateFrame_4_End", FUNC: "HTML.Input.Cleave" },
-      {
-        targets: ".CodBi_DateFrame_5_Begin",
-        FUNC: "Date.Frame, HTML.Input.Cleave",
-        MaxField: ".CodBi_DateFrame_5_End",
-        MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
-        MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
-      },
-      { targets: ".CodBi_DateFrame_5_End", FUNC: "HTML.Input.Cleave" },
-    ]),
-    window.codbi.loadConfigs([
-      {
-        targets: ".CodBi_TimeFrame_1_Begin",
-        FUNC: "HTML.Input.Cleave, Time.Frame",
-        MaxField: ".CodBi_TimeFrame_1_End",
-        MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
-        MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-      {
-        targets: ".CodBi_TimeFrame_1_End",
-        FUNC: "HTML.Input.Cleave",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-      {
-        targets: ".CodBi_TimeFrame_2_Begin",
-        FUNC: "Time.Frame, HTML.Input.Cleave",
-        MaxField: ".CodBi_TimeFrame_2_End",
-        MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
-        MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-      {
-        targets: ".CodBi_TimeFrame_2_End",
-        FUNC: "HTML.Input.Cleave",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-      {
-        targets: ".CodBi_TimeFrame_3_Begin",
-        FUNC: "Time.Frame, HTML.Input.Cleave",
-        MaxField: ".CodBi_TimeFrame_3_End",
-        MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
-        MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-      {
-        targets: ".CodBi_TimeFrame_3_End",
-        FUNC: "HTML.Input.Cleave",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-      {
-        targets: ".CodBi_TimeFrame_4_Begin",
-        FUNC: "Time.Frame, HTML.Input.Cleave",
-        MaxField: ".CodBi_TimeFrame_4_End",
-        EqualityPermitted: !1,
-        MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
-        MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-      {
-        targets: ".CodBi_TimeFrame_4_End",
-        FUNC: "HTML.Input.Cleave",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-      {
-        targets: ".CodBi_TimeFrame_5_Begin",
-        FUNC: "Time.Frame,HTML.Input.Cleave",
-        MaxField: ".CodBi_TimeFrame_5_End",
-        EqualityPermitted: !1,
-        MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
-        MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-      {
-        targets: ".CodBi_TimeFrame_5_End",
-        FUNC: "HTML.Input.Cleave",
-        config: `^${JSON.stringify({ time: !0, timePattern: ["h", "m"] })
-          .replace("{", "<")
-          .replace("}", ">")}`,
-      },
-    ]),
-    window.codbi.loadConfig({
-      targets: ".CodBi_Holidays_Listing",
-      FUNC: "HTML.Select.Injection",
-      Values: "{ Date.Holidays > { V > CodBi_Holidays_States }; this_year ; this_year + 1 }",
-      ReClean: "TRUE",
-    });
+  });
+  window.codbi.loadConfigs([
+    {
+      targets: ".CodBi_DateFrame_1_Begin",
+      FUNC: "HTML.Input.Cleave, Date.Frame",
+      MaxField: ".CodBi_DateFrame_1_End",
+      MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
+      MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
+    },
+    {
+      targets: ".CodBi_DateFrame_1_End",
+      FUNC: "HTML.Input.Cleave",
+    },
+    {
+      targets: ".CodBi_DateFrame_2_Begin",
+      FUNC: "Date.Frame, HTML.Input.Cleave",
+      MaxField: ".CodBi_DateFrame_2_End",
+      MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
+      MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
+    },
+    {
+      targets: ".CodBi_DateFrame_2_End",
+      FUNC: "HTML.Input.Cleave",
+    },
+    {
+      targets: ".CodBi_DateFrame_3_Begin",
+      FUNC: "Date.Frame, HTML.Input.Cleave",
+      MaxField: ".CodBi_DateFrame_3_End",
+      MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
+      MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
+    },
+    {
+      targets: ".CodBi_DateFrame_3_End",
+      FUNC: "HTML.Input.Cleave",
+    },
+    {
+      targets: ".CodBi_DateFrame_4_Begin",
+      FUNC: "Date.Frame, HTML.Input.Cleave",
+      MaxField: ".CodBi_DateFrame_4_End",
+      MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
+      MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
+    },
+    {
+      targets: ".CodBi_DateFrame_4_End",
+      FUNC: "HTML.Input.Cleave",
+    },
+    {
+      targets: ".CodBi_DateFrame_5_Begin",
+      FUNC: "Date.Frame, HTML.Input.Cleave",
+      MaxField: ".CodBi_DateFrame_5_End",
+      MsgMinInvalid: "Das Startdatum darf nicht nach dem Enddatum liegen.",
+      MsgMaxInvalid: "Das Enddatum darf nicht vor dem Startdatum liegen.",
+    },
+    {
+      targets: ".CodBi_DateFrame_5_End",
+      FUNC: "HTML.Input.Cleave",
+    },
+  ]);
+  window.codbi.loadConfigs([
+    {
+      targets: ".CodBi_TimeFrame_1_Begin",
+      FUNC: "HTML.Input.Cleave, Time.Frame",
+      MaxField: ".CodBi_TimeFrame_1_End",
+      MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+      MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+    {
+      targets: ".CodBi_TimeFrame_1_End",
+      FUNC: "HTML.Input.Cleave",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+    {
+      targets: ".CodBi_TimeFrame_2_Begin",
+      FUNC: "Time.Frame, HTML.Input.Cleave",
+      MaxField: ".CodBi_TimeFrame_2_End",
+      MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+      MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+    {
+      targets: ".CodBi_TimeFrame_2_End",
+      FUNC: "HTML.Input.Cleave",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+    {
+      targets: ".CodBi_TimeFrame_3_Begin",
+      FUNC: "Time.Frame, HTML.Input.Cleave",
+      MaxField: ".CodBi_TimeFrame_3_End",
+      MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+      MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+    {
+      targets: ".CodBi_TimeFrame_3_End",
+      FUNC: "HTML.Input.Cleave",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+    {
+      targets: ".CodBi_TimeFrame_4_Begin",
+      FUNC: "Time.Frame, HTML.Input.Cleave",
+      MaxField: ".CodBi_TimeFrame_4_End",
+      EqualityPermitted: false,
+      MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+      MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+    {
+      targets: ".CodBi_TimeFrame_4_End",
+      FUNC: "HTML.Input.Cleave",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+    {
+      targets: ".CodBi_TimeFrame_5_Begin",
+      FUNC: "Time.Frame,HTML.Input.Cleave",
+      MaxField: ".CodBi_TimeFrame_5_End",
+      EqualityPermitted: false,
+      MsgMinInvalid: "Die Startzeit darf nicht nach oder gleich der Endzeit sein.",
+      MsgMaxInvalid: "Die Endzeit darf nicht vor oder gleich der Anfangszeit sein.",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+    {
+      targets: ".CodBi_TimeFrame_5_End",
+      FUNC: "HTML.Input.Cleave",
+      config: `^${JSON.stringify({
+        time: true,
+        timePattern: ["h", "m"],
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
+    },
+  ]);
+  window.codbi.loadConfig({
+    targets: ".CodBi_Holidays_Listing",
+    FUNC: "HTML.Select.Injection",
+    Values: "{ Date.Holidays > { V > CodBi_Holidays_States }; this_year ; this_year + 1 }",
+    ReClean: "TRUE",
+  });
 }
-e();
-export { e as loadConfig };
+loadConfig();
+export { loadConfig };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0NvbmZpZ3VyYXRpb25zL0FwcG9pbnRtZW50cy50cyJdLAogICJzb3VyY2VzQ29udGVudCI6IFsiLyoqXG4gKiBSZWdpc3RlcnMgc3RhbmRhcmQgY29uZmlndXJhdGlvbnMgc3BlY2lmaWMgdG8gYXBwb2ludG1lbnQgYXJyYW5nZW1lbnRzLlxuICpcbiAqIENTUy1DbGFzc2VzOlxuICogLSAqKkNvZEJpX05vRnV0dXJlRGF0ZSoqXG4gKiAgVGhlIHtAbGluayBIVE1MSW5wdXRFbGVtZW50IH0gdGFnZ2VkIHdpdGggdGhpcyBjbGFzcyBtYXkgbm90IGJlIHNldCB0byBhIGZ1dHVyZSBkYXRlLlxuICogLSAqKkNvZEJpX0RhdGVGcmFtZV8xX0JlZ2luICYgQ29kQmlfRGF0ZUZyYW1lXzFfRW5kICggMSB0byA1ICkqKlxuICogIFRoZSB7QGxpbmsgSFRNTElucHV0RWxlbWVudCB9cyB0YWdnZWQgd2l0aCB0aGVzZSBjbGFzc2VzIHdpbGwgYmUgY29uZmlndXJlZCB0byBub3QgYWxsb3cgZW50ZXJpbmcgYSBkYXRlXG4gKiAgaW4gdGhlIHRhZ2dlZCB7QGxpbmsgSFRNTElucHV0RWxlbWVudCB9IHRoYXQgaXMgaGlnaGVyIHRoYW4gdGhlIG9uZSBpbiB0aGUge0BsaW5rIEhUTUxJbnB1dEVsZW1lbnQgfSB0aGVcbiAqICBDU1MtU2VsZWN0b3IgXCJNYXhGaWVsZFwiIHBvaW50cyB0by5cbiAqXG4gKiAtICoqQ29kQmlfVGltZUZyYW1lXzFfQmVnaW4gJiBDb2RCaV9UaW1lRnJhbWVfMV9FbmQgKCAxIHRvIDUgKSoqXG4gKiAgVGhlIHtAbGluayBIVE1MSW5wdXRFbGVtZW50IH1zIHRhZ2dlZCB3aXRoIHRoZXNlIGNsYXNzZXMgd2lsbCBiZSBjb25maWd1cmVkIHRvIG5vdCBhbGxvdyBlbnRlcmluZyBhIHRpbWVcbiAqICBpbiB0aGUgdGFnZ2VkIHtAbGluayBIVE1MSW5wdXRFbGVtZW50IH0gdGhhdCBpcyBoaWdoZXIgdGhhbiB0aGUgb25lIGluIHRoZSB7QGxpbmsgSFRNTElucHV0RWxlbWVudCB9IHRoZVxuICogIENTUy1TZWxlY3RvciBcIk1heEZpZWxkXCIgcG9pbnRzIHRvLlxuICogIEJvdGgge0BsaW5rIEhUTUxJbnB1dEVsZW1lbnQgfXMgYXJlIHJlc3RyaWN0ZWQgdG8gSEg6TU0gdXNpbmcgZm9sbG93aW5nIHtAbGluayBSZWdFeHAgfTpcbiAqICBeKDBbMC05XXwxWzAtOV18MlswLTNdKTooMFswLTldfFsxLTVdWzAtOV0pJC5cbiAqICBCb3RoIGFyZSBmb3JtYXR0ZWQgd2l0aCBDbGVhdmUgdG8gcGVybWl0IEhIOk1NIG9ubHkuXG4gKlxuICogLSAqKkNvZEJpX0hvbGlkYXlzX0xpc3RpbmcqKlxuICogICBUaGUge0BsaW5rIEhUTUxTZWxlY3RFbGVtZW50IH0gdGFnZ2VkIHdpdGggdGhpcyBjbGFzcywgd2lsbCBiZSBmaWxsZWQgd2l0aCBhbGwgaG9saWRheXMgZm9yIHRoZSBjdXJyZW50XG4gKiAgIGFuZCBuZXh0IHllYXJzIGZvciB0aGUgc3RhdGUgc3BlY2lmaWVkIGluIHRoZSBnbG9iYWwgdmFyaWFibGUgKipDb2RCaV9Ib2xpZGF5c19TdGF0ZXMqKi4gKi9cbmV4cG9ydCBmdW5jdGlvbiBsb2FkQ29uZmlnKCk6IHZvaWQge1xuICAvLyAjcmVnaW9uIC5Db2RCaV9Ob0Z1dHVyZURhdGVcbiAgd2luZG93LmNvZGJpLmxvYWRDb25maWcoe1xuICAgIHRhcmdldHM6IFwiLkNvZEJpX05vRnV0dXJlRGF0ZVwiLFxuICAgIEZVTkM6IFwiRGF0ZS5NaW5cIixcbiAgICBNaW5pbXVtOiAwLFxuICAgIE1zZ0hpZ2hlcjogXCJEYXMgRGF0dW0gZGFyZiBuaWNodCBpbiBkZXIgWnVrdW5mdCBsaWVnZW4uXCIsXG4gIH0pO1xuICAvLyAjZW5kcmVnaW9uIC5Db2RCaV9Ob0Z1dHVyZURhdGVcbiAgLy8gI3JlZ2lvbiBDb2RCaV9EYXRlRnJhbWVfMVstNV1fLi4uXG4gIHdpbmRvdy5jb2RiaS5sb2FkQ29uZmlncyhbXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfRGF0ZUZyYW1lXzFfQmVnaW5cIixcbiAgICAgIEZVTkM6IFwiSFRNTC5JbnB1dC5DbGVhdmUsIERhdGUuRnJhbWVcIixcbiAgICAgIE1heEZpZWxkOiBcIi5Db2RCaV9EYXRlRnJhbWVfMV9FbmRcIixcbiAgICAgIE1zZ01pbkludmFsaWQ6IFwiRGFzIFN0YXJ0ZGF0dW0gZGFyZiBuaWNodCBuYWNoIGRlbSBFbmRkYXR1bSBsaWVnZW4uXCIsXG4gICAgICBNc2dNYXhJbnZhbGlkOiBcIkRhcyBFbmRkYXR1bSBkYXJmIG5pY2h0IHZvciBkZW0gU3RhcnRkYXR1bSBsaWVnZW4uXCIsXG4gICAgfSxcbiAgICB7XG4gICAgICB0YXJnZXRzOiBcIi5Db2RCaV9EYXRlRnJhbWVfMV9FbmRcIixcbiAgICAgIEZVTkM6IFwiSFRNTC5JbnB1dC5DbGVhdmVcIixcbiAgICB9LFxuICAgIHtcbiAgICAgIHRhcmdldHM6IFwiLkNvZEJpX0RhdGVGcmFtZV8yX0JlZ2luXCIsXG4gICAgICBGVU5DOiBcIkRhdGUuRnJhbWUsIEhUTUwuSW5wdXQuQ2xlYXZlXCIsXG4gICAgICBNYXhGaWVsZDogXCIuQ29kQmlfRGF0ZUZyYW1lXzJfRW5kXCIsXG4gICAgICBNc2dNaW5JbnZhbGlkOiBcIkRhcyBTdGFydGRhdHVtIGRhcmYgbmljaHQgbmFjaCBkZW0gRW5kZGF0dW0gbGllZ2VuLlwiLFxuICAgICAgTXNnTWF4SW52YWxpZDogXCJEYXMgRW5kZGF0dW0gZGFyZiBuaWNodCB2b3IgZGVtIFN0YXJ0ZGF0dW0gbGllZ2VuLlwiLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfRGF0ZUZyYW1lXzJfRW5kXCIsXG4gICAgICBGVU5DOiBcIkhUTUwuSW5wdXQuQ2xlYXZlXCIsXG4gICAgfSxcbiAgICB7XG4gICAgICB0YXJnZXRzOiBcIi5Db2RCaV9EYXRlRnJhbWVfM19CZWdpblwiLFxuICAgICAgRlVOQzogXCJEYXRlLkZyYW1lLCBIVE1MLklucHV0LkNsZWF2ZVwiLFxuICAgICAgTWF4RmllbGQ6IFwiLkNvZEJpX0RhdGVGcmFtZV8zX0VuZFwiLFxuICAgICAgTXNnTWluSW52YWxpZDogXCJEYXMgU3RhcnRkYXR1bSBkYXJmIG5pY2h0IG5hY2ggZGVtIEVuZGRhdHVtIGxpZWdlbi5cIixcbiAgICAgIE1zZ01heEludmFsaWQ6IFwiRGFzIEVuZGRhdHVtIGRhcmYgbmljaHQgdm9yIGRlbSBTdGFydGRhdHVtIGxpZWdlbi5cIixcbiAgICB9LFxuICAgIHtcbiAgICAgIHRhcmdldHM6IFwiLkNvZEJpX0RhdGVGcmFtZV8zX0VuZFwiLFxuICAgICAgRlVOQzogXCJIVE1MLklucHV0LkNsZWF2ZVwiLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfRGF0ZUZyYW1lXzRfQmVnaW5cIixcbiAgICAgIEZVTkM6IFwiRGF0ZS5GcmFtZSwgSFRNTC5JbnB1dC5DbGVhdmVcIixcbiAgICAgIE1heEZpZWxkOiBcIi5Db2RCaV9EYXRlRnJhbWVfNF9FbmRcIixcbiAgICAgIE1zZ01pbkludmFsaWQ6IFwiRGFzIFN0YXJ0ZGF0dW0gZGFyZiBuaWNodCBuYWNoIGRlbSBFbmRkYXR1bSBsaWVnZW4uXCIsXG4gICAgICBNc2dNYXhJbnZhbGlkOiBcIkRhcyBFbmRkYXR1bSBkYXJmIG5pY2h0IHZvciBkZW0gU3RhcnRkYXR1bSBsaWVnZW4uXCIsXG4gICAgfSxcbiAgICB7XG4gICAgICB0YXJnZXRzOiBcIi5Db2RCaV9EYXRlRnJhbWVfNF9FbmRcIixcbiAgICAgIEZVTkM6IFwiSFRNTC5JbnB1dC5DbGVhdmVcIixcbiAgICB9LFxuICAgIHtcbiAgICAgIHRhcmdldHM6IFwiLkNvZEJpX0RhdGVGcmFtZV81X0JlZ2luXCIsXG4gICAgICBGVU5DOiBcIkRhdGUuRnJhbWUsIEhUTUwuSW5wdXQuQ2xlYXZlXCIsXG4gICAgICBNYXhGaWVsZDogXCIuQ29kQmlfRGF0ZUZyYW1lXzVfRW5kXCIsXG4gICAgICBNc2dNaW5JbnZhbGlkOiBcIkRhcyBTdGFydGRhdHVtIGRhcmYgbmljaHQgbmFjaCBkZW0gRW5kZGF0dW0gbGllZ2VuLlwiLFxuICAgICAgTXNnTWF4SW52YWxpZDogXCJEYXMgRW5kZGF0dW0gZGFyZiBuaWNodCB2b3IgZGVtIFN0YXJ0ZGF0dW0gbGllZ2VuLlwiLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfRGF0ZUZyYW1lXzVfRW5kXCIsXG4gICAgICBGVU5DOiBcIkhUTUwuSW5wdXQuQ2xlYXZlXCIsXG4gICAgfSxcbiAgXSk7XG4gIC8vICNlbmRyZWdpb24gQ29kQmlfRGF0ZUZyYW1lXzFfLi4uXG4gIC8vICNyZWdpb24gQ29kQmlfVGltZUZyYW1lXzFfLi4uXG4gIHdpbmRvdy5jb2RiaS5sb2FkQ29uZmlncyhbXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfVGltZUZyYW1lXzFfQmVnaW5cIixcbiAgICAgIEZVTkM6IFwiSFRNTC5JbnB1dC5DbGVhdmUsIFRpbWUuRnJhbWVcIixcbiAgICAgIE1heEZpZWxkOiBcIi5Db2RCaV9UaW1lRnJhbWVfMV9FbmRcIixcbiAgICAgIE1zZ01pbkludmFsaWQ6IFwiRGllIFN0YXJ0emVpdCBkYXJmIG5pY2h0IG5hY2ggb2RlciBnbGVpY2ggZGVyIEVuZHplaXQgc2Vpbi5cIixcbiAgICAgIE1zZ01heEludmFsaWQ6IFwiRGllIEVuZHplaXQgZGFyZiBuaWNodCB2b3Igb2RlciBnbGVpY2ggZGVyIEFuZmFuZ3N6ZWl0IHNlaW4uXCIsXG4gICAgICBjb25maWc6IGBeJHtKU09OLnN0cmluZ2lmeSh7XG4gICAgICAgIHRpbWU6IHRydWUsXG4gICAgICAgIHRpbWVQYXR0ZXJuOiBbXCJoXCIsIFwibVwiXSxcbiAgICAgIH0pXG4gICAgICAgIC5yZXBsYWNlKFwie1wiLCBcIjxcIilcbiAgICAgICAgLnJlcGxhY2UoXCJ9XCIsIFwiPlwiKX1gLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfVGltZUZyYW1lXzFfRW5kXCIsXG4gICAgICBGVU5DOiBcIkhUTUwuSW5wdXQuQ2xlYXZlXCIsXG4gICAgICBjb25maWc6IGBeJHtKU09OLnN0cmluZ2lmeSh7XG4gICAgICAgIHRpbWU6IHRydWUsXG4gICAgICAgIHRpbWVQYXR0ZXJuOiBbXCJoXCIsIFwibVwiXSxcbiAgICAgIH0pXG4gICAgICAgIC5yZXBsYWNlKFwie1wiLCBcIjxcIilcbiAgICAgICAgLnJlcGxhY2UoXCJ9XCIsIFwiPlwiKX1gLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfVGltZUZyYW1lXzJfQmVnaW5cIixcbiAgICAgIEZVTkM6IFwiVGltZS5GcmFtZSwgSFRNTC5JbnB1dC5DbGVhdmVcIixcbiAgICAgIE1heEZpZWxkOiBcIi5Db2RCaV9UaW1lRnJhbWVfMl9FbmRcIixcbiAgICAgIE1zZ01pbkludmFsaWQ6IFwiRGllIFN0YXJ0emVpdCBkYXJmIG5pY2h0IG5hY2ggb2RlciBnbGVpY2ggZGVyIEVuZHplaXQgc2Vpbi5cIixcbiAgICAgIE1zZ01heEludmFsaWQ6IFwiRGllIEVuZHplaXQgZGFyZiBuaWNodCB2b3Igb2RlciBnbGVpY2ggZGVyIEFuZmFuZ3N6ZWl0IHNlaW4uXCIsXG4gICAgICBjb25maWc6IGBeJHtKU09OLnN0cmluZ2lmeSh7XG4gICAgICAgIHRpbWU6IHRydWUsXG4gICAgICAgIHRpbWVQYXR0ZXJuOiBbXCJoXCIsIFwibVwiXSxcbiAgICAgIH0pXG4gICAgICAgIC5yZXBsYWNlKFwie1wiLCBcIjxcIilcbiAgICAgICAgLnJlcGxhY2UoXCJ9XCIsIFwiPlwiKX1gLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfVGltZUZyYW1lXzJfRW5kXCIsXG4gICAgICBGVU5DOiBcIkhUTUwuSW5wdXQuQ2xlYXZlXCIsXG4gICAgICBjb25maWc6IGBeJHtKU09OLnN0cmluZ2lmeSh7XG4gICAgICAgIHRpbWU6IHRydWUsXG4gICAgICAgIHRpbWVQYXR0ZXJuOiBbXCJoXCIsIFwibVwiXSxcbiAgICAgIH0pXG4gICAgICAgIC5yZXBsYWNlKFwie1wiLCBcIjxcIilcbiAgICAgICAgLnJlcGxhY2UoXCJ9XCIsIFwiPlwiKX1gLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfVGltZUZyYW1lXzNfQmVnaW5cIixcbiAgICAgIEZVTkM6IFwiVGltZS5GcmFtZSwgSFRNTC5JbnB1dC5DbGVhdmVcIixcbiAgICAgIE1heEZpZWxkOiBcIi5Db2RCaV9UaW1lRnJhbWVfM19FbmRcIixcbiAgICAgIE1zZ01pbkludmFsaWQ6IFwiRGllIFN0YXJ0emVpdCBkYXJmIG5pY2h0IG5hY2ggb2RlciBnbGVpY2ggZGVyIEVuZHplaXQgc2Vpbi5cIixcbiAgICAgIE1zZ01heEludmFsaWQ6IFwiRGllIEVuZHplaXQgZGFyZiBuaWNodCB2b3Igb2RlciBnbGVpY2ggZGVyIEFuZmFuZ3N6ZWl0IHNlaW4uXCIsXG4gICAgICBjb25maWc6IGBeJHtKU09OLnN0cmluZ2lmeSh7XG4gICAgICAgIHRpbWU6IHRydWUsXG4gICAgICAgIHRpbWVQYXR0ZXJuOiBbXCJoXCIsIFwibVwiXSxcbiAgICAgIH0pXG4gICAgICAgIC5yZXBsYWNlKFwie1wiLCBcIjxcIilcbiAgICAgICAgLnJlcGxhY2UoXCJ9XCIsIFwiPlwiKX1gLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfVGltZUZyYW1lXzNfRW5kXCIsXG4gICAgICBGVU5DOiBcIkhUTUwuSW5wdXQuQ2xlYXZlXCIsXG4gICAgICBjb25maWc6IGBeJHtKU09OLnN0cmluZ2lmeSh7XG4gICAgICAgIHRpbWU6IHRydWUsXG4gICAgICAgIHRpbWVQYXR0ZXJuOiBbXCJoXCIsIFwibVwiXSxcbiAgICAgIH0pXG4gICAgICAgIC5yZXBsYWNlKFwie1wiLCBcIjxcIilcbiAgICAgICAgLnJlcGxhY2UoXCJ9XCIsIFwiPlwiKX1gLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfVGltZUZyYW1lXzRfQmVnaW5cIixcbiAgICAgIEZVTkM6IFwiVGltZS5GcmFtZSwgSFRNTC5JbnB1dC5DbGVhdmVcIixcbiAgICAgIE1heEZpZWxkOiBcIi5Db2RCaV9UaW1lRnJhbWVfNF9FbmRcIixcbiAgICAgIEVxdWFsaXR5UGVybWl0dGVkOiBmYWxzZSxcbiAgICAgIE1zZ01pbkludmFsaWQ6IFwiRGllIFN0YXJ0emVpdCBkYXJmIG5pY2h0IG5hY2ggb2RlciBnbGVpY2ggZGVyIEVuZHplaXQgc2Vpbi5cIixcbiAgICAgIE1zZ01heEludmFsaWQ6IFwiRGllIEVuZHplaXQgZGFyZiBuaWNodCB2b3Igb2RlciBnbGVpY2ggZGVyIEFuZmFuZ3N6ZWl0IHNlaW4uXCIsXG4gICAgICBjb25maWc6IGBeJHtKU09OLnN0cmluZ2lmeSh7XG4gICAgICAgIHRpbWU6IHRydWUsXG4gICAgICAgIHRpbWVQYXR0ZXJuOiBbXCJoXCIsIFwibVwiXSxcbiAgICAgIH0pXG4gICAgICAgIC5yZXBsYWNlKFwie1wiLCBcIjxcIilcbiAgICAgICAgLnJlcGxhY2UoXCJ9XCIsIFwiPlwiKX1gLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfVGltZUZyYW1lXzRfRW5kXCIsXG4gICAgICBGVU5DOiBcIkhUTUwuSW5wdXQuQ2xlYXZlXCIsXG4gICAgICBjb25maWc6IGBeJHtKU09OLnN0cmluZ2lmeSh7XG4gICAgICAgIHRpbWU6IHRydWUsXG4gICAgICAgIHRpbWVQYXR0ZXJuOiBbXCJoXCIsIFwibVwiXSxcbiAgICAgIH0pXG4gICAgICAgIC5yZXBsYWNlKFwie1wiLCBcIjxcIilcbiAgICAgICAgLnJlcGxhY2UoXCJ9XCIsIFwiPlwiKX1gLFxuICAgIH0sXG4gICAge1xuICAgICAgdGFyZ2V0czogXCIuQ29kQmlfVGltZUZyYW1lXzVfQmVnaW5cIixcbiAgICAgIEZVTkM6IFwiVGltZS5GcmFtZSxIVE1MLklucHV0LkNsZWF2ZVwiLFxuICAgICAgTWF4RmllbGQ6IFwiLkNvZEJpX1RpbWVGcmFtZV81X0VuZFwiLFxuICAgICAgRXF1YWxpdHlQZXJtaXR0ZWQ6IGZhbHNlLFxuICAgICAgTXNnTWluSW52YWxpZDogXCJEaWUgU3RhcnR6ZWl0IGRhcmYgbmljaHQgbmFjaCBvZGVyIGdsZWljaCBkZXIgRW5kemVpdCBzZWluLlwiLFxuICAgICAgTXNnTWF4SW52YWxpZDogXCJEaWUgRW5kemVpdCBkYXJmIG5pY2h0IHZvciBvZGVyIGdsZWljaCBkZXIgQW5mYW5nc3plaXQgc2Vpbi5cIixcbiAgICAgIGNvbmZpZzogYF4ke0pTT04uc3RyaW5naWZ5KHtcbiAgICAgICAgdGltZTogdHJ1ZSxcbiAgICAgICAgdGltZVBhdHRlcm46IFtcImhcIiwgXCJtXCJdLFxuICAgICAgfSlcbiAgICAgICAgLnJlcGxhY2UoXCJ7XCIsIFwiPFwiKVxuICAgICAgICAucmVwbGFjZShcIn1cIiwgXCI+XCIpfWAsXG4gICAgfSxcbiAgICB7XG4gICAgICB0YXJnZXRzOiBcIi5Db2RCaV9UaW1lRnJhbWVfNV9FbmRcIixcbiAgICAgIEZVTkM6IFwiSFRNTC5JbnB1dC5DbGVhdmVcIixcbiAgICAgIGNvbmZpZzogYF4ke0pTT04uc3RyaW5naWZ5KHtcbiAgICAgICAgdGltZTogdHJ1ZSxcbiAgICAgICAgdGltZVBhdHRlcm46IFtcImhcIiwgXCJtXCJdLFxuICAgICAgfSlcbiAgICAgICAgLnJlcGxhY2UoXCJ7XCIsIFwiPFwiKVxuICAgICAgICAucmVwbGFjZShcIn1cIiwgXCI+XCIpfWAsXG4gICAgfSxcbiAgXSk7XG4gIC8vICNlbmRyZWdpb24gQ29kQmlfVGltZUZyYW1lXzFbLTVdXy4uLlxuICAvLyAjcmVnaW9uIEhcbiAgLy8gI3JlZ2lvbiBDb2RCaV9CYXlWSVNfQmVob2VyZGVcbiAgd2luZG93LmNvZGJpLmxvYWRDb25maWcoe1xuICAgIHRhcmdldHM6IFwiLkNvZEJpX0hvbGlkYXlzX0xpc3RpbmdcIixcbiAgICBGVU5DOiBcIkhUTUwuU2VsZWN0LkluamVjdGlvblwiLFxuICAgIFZhbHVlczogXCJ7IERhdGUuSG9saWRheXMgPiB7IFYgPiBDb2RCaV9Ib2xpZGF5c19TdGF0ZXMgfTsgdGhpc195ZWFyIDsgdGhpc195ZWFyICsgMSB9XCIsXG4gICAgUmVDbGVhbjogXCJUUlVFXCIsXG4gIH0pO1xufVxuXG5sb2FkQ29uZmlnKCk7XG4iXSwKICAibWFwcGluZ3MiOiAiO0FBc0JPLFNBQVMsYUFBbUI7QUFFakMsU0FBTyxNQUFNLFdBQVc7QUFBQSxJQUN0QixTQUFTO0FBQUEsSUFDVCxNQUFNO0FBQUEsSUFDTixTQUFTO0FBQUEsSUFDVCxXQUFXO0FBQUEsRUFDYixDQUFDO0FBR0QsU0FBTyxNQUFNLFlBQVk7QUFBQSxJQUN2QjtBQUFBLE1BQ0UsU0FBUztBQUFBLE1BQ1QsTUFBTTtBQUFBLE1BQ04sVUFBVTtBQUFBLE1BQ1YsZUFBZTtBQUFBLE1BQ2YsZUFBZTtBQUFBLElBQ2pCO0FBQUEsSUFDQTtBQUFBLE1BQ0UsU0FBUztBQUFBLE1BQ1QsTUFBTTtBQUFBLElBQ1I7QUFBQSxJQUNBO0FBQUEsTUFDRSxTQUFTO0FBQUEsTUFDVCxNQUFNO0FBQUEsTUFDTixVQUFVO0FBQUEsTUFDVixlQUFlO0FBQUEsTUFDZixlQUFlO0FBQUEsSUFDakI7QUFBQSxJQUNBO0FBQUEsTUFDRSxTQUFTO0FBQUEsTUFDVCxNQUFNO0FBQUEsSUFDUjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFVBQVU7QUFBQSxNQUNWLGVBQWU7QUFBQSxNQUNmLGVBQWU7QUFBQSxJQUNqQjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxJQUNSO0FBQUEsSUFDQTtBQUFBLE1BQ0UsU0FBUztBQUFBLE1BQ1QsTUFBTTtBQUFBLE1BQ04sVUFBVTtBQUFBLE1BQ1YsZUFBZTtBQUFBLE1BQ2YsZUFBZTtBQUFBLElBQ2pCO0FBQUEsSUFDQTtBQUFBLE1BQ0UsU0FBUztBQUFBLE1BQ1QsTUFBTTtBQUFBLElBQ1I7QUFBQSxJQUNBO0FBQUEsTUFDRSxTQUFTO0FBQUEsTUFDVCxNQUFNO0FBQUEsTUFDTixVQUFVO0FBQUEsTUFDVixlQUFlO0FBQUEsTUFDZixlQUFlO0FBQUEsSUFDakI7QUFBQSxJQUNBO0FBQUEsTUFDRSxTQUFTO0FBQUEsTUFDVCxNQUFNO0FBQUEsSUFDUjtBQUFBLEVBQ0YsQ0FBQztBQUdELFNBQU8sTUFBTSxZQUFZO0FBQUEsSUFDdkI7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFVBQVU7QUFBQSxNQUNWLGVBQWU7QUFBQSxNQUNmLGVBQWU7QUFBQSxNQUNmLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFVBQVU7QUFBQSxNQUNWLGVBQWU7QUFBQSxNQUNmLGVBQWU7QUFBQSxNQUNmLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFVBQVU7QUFBQSxNQUNWLGVBQWU7QUFBQSxNQUNmLGVBQWU7QUFBQSxNQUNmLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFVBQVU7QUFBQSxNQUNWLG1CQUFtQjtBQUFBLE1BQ25CLGVBQWU7QUFBQSxNQUNmLGVBQWU7QUFBQSxNQUNmLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFVBQVU7QUFBQSxNQUNWLG1CQUFtQjtBQUFBLE1BQ25CLGVBQWU7QUFBQSxNQUNmLGVBQWU7QUFBQSxNQUNmLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLElBQ0E7QUFBQSxNQUNFLFNBQVM7QUFBQSxNQUNULE1BQU07QUFBQSxNQUNOLFFBQVEsSUFBSSxLQUFLLFVBQVU7QUFBQSxRQUN6QixNQUFNO0FBQUEsUUFDTixhQUFhLENBQUMsS0FBSyxHQUFHO0FBQUEsTUFDeEIsQ0FBQyxFQUNFLFFBQVEsS0FBSyxHQUFHLEVBQ2hCLFFBQVEsS0FBSyxHQUFHLENBQUM7QUFBQSxJQUN0QjtBQUFBLEVBQ0YsQ0FBQztBQUlELFNBQU8sTUFBTSxXQUFXO0FBQUEsSUFDdEIsU0FBUztBQUFBLElBQ1QsTUFBTTtBQUFBLElBQ04sUUFBUTtBQUFBLElBQ1IsU0FBUztBQUFBLEVBQ1gsQ0FBQztBQUNIO0FBRUEsV0FBVzsiLAogICJuYW1lcyI6IFtdCn0K

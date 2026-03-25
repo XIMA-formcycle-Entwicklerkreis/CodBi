@@ -1,13 +1,35 @@
-import { a as r } from "./chunk-VGUXA7EO.js";
-import "./chunk-4JLAI42Q.js";
-import "./chunk-UTJJRBTX.js";
-var t = class i extends r {
+import { HTML_Input_Transformer } from "./chunk-2KATTLXM.js";
+import "./chunk-ZTMSSRTV.js";
+import "./chunk-AOJQKO6T.js";
+
+// src/js/Functionalities/html.input.trans.capital.ts
+var HTML_Input_Trans_Capital = class _HTML_Input_Trans_Capital extends HTML_Input_Transformer {
+  /**
+   * Gets the transformer that converts the input to capitalized words.
+   *
+   * @returns A transformer that lowercases the input and uppercases the first
+   *          letter after a word boundary (start, whitespace, or hyphen).
+   */
   static get transformer() {
-    return (n, e) => n.toLowerCase().replace(/(^|\s|-)(\S)/g, (a, o, s) => o + s.toUpperCase());
+    return (toTransform, toLoad) => {
+      return toTransform.toLowerCase().replace(/(^|\s|-)(\S)/g, (fullMatch, separator, letter) => {
+        return separator + letter.toUpperCase();
+      });
+    };
   }
-  static functionality(n, e) {
-    r.functionality(n, e, i.transformer);
+  /**
+   * Invokes {@link HTML_Input_Transformer.functionality } with this {@link HTML_Input_Trans_Capital }'s
+   * {@link HTML_Input_Trans_Capital.transformer }.
+   *
+   * @param toLoad    As provided bny the **CodBi**.
+   * @param toProcess As provided bny the **CodBi**. */
+  static functionality(toLoad, toProcess) {
+    HTML_Input_Transformer.functionality(toLoad, toProcess, _HTML_Input_Trans_Capital.transformer);
   }
 };
-window.codbi.registerFunctionality("HTML.Input.Trans.Capital", t.functionality.bind(t));
-export { t as HTML_Input_Trans_Capital };
+window.codbi.registerFunctionality(
+  "HTML.Input.Trans.Capital",
+  HTML_Input_Trans_Capital.functionality.bind(HTML_Input_Trans_Capital),
+);
+export { HTML_Input_Trans_Capital };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0Z1bmN0aW9uYWxpdGllcy9odG1sLmlucHV0LnRyYW5zLmNhcGl0YWwudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbIi8vICNyZWdpb24gSW1wb3J0c1xuaW1wb3J0IHsgSFRNTF9JbnB1dF9UcmFuc2Zvcm1lciB9IGZyb20gXCIuL2h0bWwuaW5wdXQudHJhbnNmb3JtZXJcIjtcbi8vICNlbmRyZWdpb24gSW1wb3J0c1xuLyoqXG4gKiBQcm92aWRlcyB0aGUge0BsaW5rIEhUTUxfSW5wdXRfVHJhbnNmb3JtZXIuZnVuY3Rpb25hbGl0eSB9IGFsb25nIHdpdGggdGhlIHtAbGluayBIVE1MX0lucHV0X1RyYW5zX0NhcGl0YWwudHJhbnNmb3JtZXIgfS5cbiAqXG4gKiBAcmVtYXJrc1xuICogTWFpbnRhaW5lcjogQ2FsbGFyaSwgU2FsdmF0b3JlIChTYWx2YXRvcmUuQ2FsbGFyaUBBbnNiYWNoLmRlKSAqL1xuZXhwb3J0IGNsYXNzIEhUTUxfSW5wdXRfVHJhbnNfQ2FwaXRhbCBleHRlbmRzIEhUTUxfSW5wdXRfVHJhbnNmb3JtZXIge1xuICAvKipcbiAgICogR2V0cyB0aGUgdHJhbnNmb3JtZXIgdGhhdCBjb252ZXJ0cyB0aGUgaW5wdXQgdG8gY2FwaXRhbGl6ZWQgd29yZHMuXG4gICAqXG4gICAqIEByZXR1cm5zIEEgdHJhbnNmb3JtZXIgdGhhdCBsb3dlcmNhc2VzIHRoZSBpbnB1dCBhbmQgdXBwZXJjYXNlcyB0aGUgZmlyc3RcbiAgICogICAgICAgICAgbGV0dGVyIGFmdGVyIGEgd29yZCBib3VuZGFyeSAoc3RhcnQsIHdoaXRlc3BhY2UsIG9yIGh5cGhlbikuXG4gICAqL1xuICBwdWJsaWMgc3RhdGljIG92ZXJyaWRlIGdldCB0cmFuc2Zvcm1lcigpOiAodG9UcmFuc2Zvcm06IHN0cmluZywgdG9Mb2FkOiB7IFtrZXk6IHN0cmluZ106IHVua25vd24gfSkgPT4gc3RyaW5nIHtcbiAgICByZXR1cm4gKHRvVHJhbnNmb3JtOiBzdHJpbmcsIHRvTG9hZDogeyBba2V5OiBzdHJpbmddOiB1bmtub3duIH0pOiBzdHJpbmcgPT4ge1xuICAgICAgcmV0dXJuIHRvVHJhbnNmb3JtLnRvTG93ZXJDYXNlKCkucmVwbGFjZSgvKF58XFxzfC0pKFxcUykvZywgKGZ1bGxNYXRjaCwgc2VwYXJhdG9yLCBsZXR0ZXIpID0+IHtcbiAgICAgICAgcmV0dXJuIHNlcGFyYXRvciArIGxldHRlci50b1VwcGVyQ2FzZSgpO1xuICAgICAgfSk7XG4gICAgfTtcbiAgfVxuICAvKipcbiAgICogSW52b2tlcyB7QGxpbmsgSFRNTF9JbnB1dF9UcmFuc2Zvcm1lci5mdW5jdGlvbmFsaXR5IH0gd2l0aCB0aGlzIHtAbGluayBIVE1MX0lucHV0X1RyYW5zX0NhcGl0YWwgfSdzXG4gICAqIHtAbGluayBIVE1MX0lucHV0X1RyYW5zX0NhcGl0YWwudHJhbnNmb3JtZXIgfS5cbiAgICpcbiAgICogQHBhcmFtIHRvTG9hZCAgICBBcyBwcm92aWRlZCBibnkgdGhlICoqQ29kQmkqKi5cbiAgICogQHBhcmFtIHRvUHJvY2VzcyBBcyBwcm92aWRlZCBibnkgdGhlICoqQ29kQmkqKi4gKi9cbiAgcHVibGljIHN0YXRpYyBvdmVycmlkZSBmdW5jdGlvbmFsaXR5KHRvTG9hZDogeyBba2V5OiBzdHJpbmddOiB1bmtub3duIH0sIHRvUHJvY2VzczogRWxlbWVudCk6IHZvaWQge1xuICAgIEhUTUxfSW5wdXRfVHJhbnNmb3JtZXIuZnVuY3Rpb25hbGl0eSh0b0xvYWQsIHRvUHJvY2VzcywgSFRNTF9JbnB1dF9UcmFuc19DYXBpdGFsLnRyYW5zZm9ybWVyKTtcbiAgfVxufVxuXG53aW5kb3cuY29kYmkucmVnaXN0ZXJGdW5jdGlvbmFsaXR5KFxuICBcIkhUTUwuSW5wdXQuVHJhbnMuQ2FwaXRhbFwiLFxuICBIVE1MX0lucHV0X1RyYW5zX0NhcGl0YWwuZnVuY3Rpb25hbGl0eS5iaW5kKEhUTUxfSW5wdXRfVHJhbnNfQ2FwaXRhbCksXG4pOyAvLyBJbml0aWFsaXphdGlvblxuIl0sCiAgIm1hcHBpbmdzIjogIjs7Ozs7OztBQVFPLElBQU0sMkJBQU4sTUFBTSxrQ0FBaUMsdUJBQXVCO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEsRUFPbkUsV0FBMkIsY0FBbUY7QUFDNUcsV0FBTyxDQUFDLGFBQXFCLFdBQStDO0FBQzFFLGFBQU8sWUFBWSxZQUFZLEVBQUUsUUFBUSxpQkFBaUIsQ0FBQyxXQUFXLFdBQVcsV0FBVztBQUMxRixlQUFPLFlBQVksT0FBTyxZQUFZO0FBQUEsTUFDeEMsQ0FBQztBQUFBLElBQ0g7QUFBQSxFQUNGO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEsRUFPQSxPQUF1QixjQUFjLFFBQW9DLFdBQTBCO0FBQ2pHLDJCQUF1QixjQUFjLFFBQVEsV0FBVywwQkFBeUIsV0FBVztBQUFBLEVBQzlGO0FBQ0Y7QUFFQSxPQUFPLE1BQU07QUFBQSxFQUNYO0FBQUEsRUFDQSx5QkFBeUIsY0FBYyxLQUFLLHdCQUF3QjtBQUN0RTsiLAogICJuYW1lcyI6IFtdCn0K

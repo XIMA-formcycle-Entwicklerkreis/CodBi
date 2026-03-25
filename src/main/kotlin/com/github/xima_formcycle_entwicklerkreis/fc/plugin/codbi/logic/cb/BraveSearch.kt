@@ -291,10 +291,16 @@ object BraveSearch : CodBi() {
    * @param raw The raw query string to sanitize.
    * @param language Optional language code (e.g. "en", "de") to help with language-specific
    *   patterns (e.g. name detection). If null, only generic patterns are applied
+   * @param filterOverride Per-request override for [filterResults]. When non-null, takes precedence
+   *   over the global [filterResults] flag.
    * @return The santiazed [raw]-[String].
    */
-  fun sanitizeQuery(raw: String, language: String? = null): String {
-    if (!filterResults) {
+  fun sanitizeQuery(
+      raw: String,
+      language: String? = null,
+      filterOverride: Boolean? = null
+  ): String {
+    if (!(filterOverride ?: filterResults)) {
       // Only restore protected tokens, do not strip anything else
       val protectedPattern = Regex("""<<\s*(.+?)\s*>>""")
       val protectedTokens = mutableListOf<String>()
@@ -378,9 +384,16 @@ object BraveSearch : CodBi() {
    * @param query The search query string (will be sanitized before sending).
    * @param country Optional 2-letter country code to localize results (e.g. "US", "DE").
    * @param language Optional language code to help with query sanitization (e.g. "en", "de").
+   * @param filterOverride Per-request override for [filterResults]. When non-null, takes precedence
+   *   over the global [filterResults] flag during sanitization.
    * @return A list of [SearchResult] objects, or an empty list on failure.
    */
-  fun search(query: String, country: String? = null, language: String? = null): List<SearchResult> {
+  fun search(
+      query: String,
+      country: String? = null,
+      language: String? = null,
+      filterOverride: Boolean? = null
+  ): List<SearchResult> {
     val key = apiKey
 
     if (key.isNullOrBlank()) {
@@ -389,7 +402,7 @@ object BraveSearch : CodBi() {
       return emptyList()
     }
 
-    val cleanQuery = sanitizeQuery(query, language)
+    val cleanQuery = sanitizeQuery(query, language, filterOverride)
 
     if (cleanQuery.isBlank()) {
       log(LogLevel.WARNING, "Query empty after sanitization — skipping search (original: '$query')")

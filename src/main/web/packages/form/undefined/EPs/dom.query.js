@@ -1,25 +1,29 @@
-import { a as s } from "./chunk-X7STRZ54.js";
-import { a as o } from "./chunk-JDZ7GIHA.js";
-import { a as m } from "./chunk-BQCZFAYZ.js";
-import { a as l } from "./chunk-PN2FQ2K5.js";
-import { a as t } from "./chunk-2NFNCZZA.js";
-import { c as i, d as r, g as n } from "./chunk-WWJ6UWS7.js";
-var e = class {
-  static retrieve(E) {
-    return document.querySelector(E[0]);
+import { INSTANCE } from "./chunk-QVZVA3GH.js";
+import { REGEX } from "./chunk-ANBT4V26.js";
+import { AE } from "./chunk-P4ZK5MPU.js";
+import { GREATER } from "./chunk-HUHG5RHG.js";
+import { TYPE } from "./chunk-3WCL6BYZ.js";
+import { DBC, __decorateClass, __decorateParam } from "./chunk-YNACB2OL.js";
+
+// src/js/EPs/dom.query.ts
+var DOM_Query = class {
+  static retrieve(params) {
+    const result = document.querySelector(params[0]);
+    return result;
   }
 };
-i(
+__decorateClass(
   [
-    n.ParamvalueProvider,
-    s.POST(Element),
-    r(0, m.PRE(1, !0, !1, "length", "Hasn't the CSS-Selector been specified?")),
-    r(0, t.PRE([new l("string")])),
-    r(0, t.PRE(new o(o.stdExp.cssSelector), 0)),
+    DBC.ParamvalueProvider,
+    INSTANCE.POST(Element),
+    __decorateParam(0, GREATER.PRE(1, true, false, "length", "Hasn't the CSS-Selector been specified?")),
+    __decorateParam(0, AE.PRE([new TYPE("string")])),
+    __decorateParam(0, AE.PRE(new REGEX(REGEX.stdExp.cssSelector), 0)),
   ],
-  e,
+  DOM_Query,
   "retrieve",
   1,
 );
-window.codbi.registerEP("DOM.Query", e.retrieve.bind(e));
-export { e as DOM_Query };
+window.codbi.registerEP("DOM.Query", DOM_Query.retrieve.bind(DOM_Query));
+export { DOM_Query };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0VQcy9kb20ucXVlcnkudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbIi8vICNyZWdpb24gSW1wb3J0c1xuLy8gI3JlZ2lvbiBYREJDXG5pbXBvcnQgeyBEQkMgfSBmcm9tIFwieGRiYy9zcmMvREJDXCI7XG5pbXBvcnQgeyBBRSB9IGZyb20gXCJ4ZGJjL3NyYy9EQkMvQUVcIjtcbmltcG9ydCB7IEdSRUFURVIgfSBmcm9tIFwieGRiYy9zcmMvREJDL0NPTVBBUklTT04vR1JFQVRFUlwiO1xuaW1wb3J0IHsgSU5TVEFOQ0UgfSBmcm9tIFwieGRiYy9zcmMvREJDL0lOU1RBTkNFXCI7XG5pbXBvcnQgeyBSRUdFWCB9IGZyb20gXCJ4ZGJjL3NyYy9EQkMvUkVHRVhcIjtcbmltcG9ydCB7IFRZUEUgfSBmcm9tIFwieGRiYy9zcmMvREJDL1RZUEVcIjtcbi8vICNlbmRyZWdpb24gWERCQ1xuLy8gI2VuZHJlZ2lvbiBJbXBvcnRzXG4vKipcbiAqIFRoaXMgKipFKipsZW1lbnQtKipQKipsYWNlaG9sZGVyIHF1ZXJpZXMgYW4ge0BsaW5rIEVsZW1lbnQgfS5cbiAqXG4gKiBQbGFjZWhvbGRlciBQYXJhbWV0ZXI6XG4gKiAgVGhlIENTUy1TZWxlY3RvciB0YXJnZXRpbmcgdGhlIGRlc2lyZWQge0BsaW5rIEVsZW1lbnQgfS5cbiAqXG4gKiBAcmVtYXJrc1xuICogTWFpbnRhaW5lcjogQ2FsbGFyaSwgU2FsdmF0b3JlIChTYWx2YXRvcmUuQ2FsbGFyaUBBbnNiYWNoLmRlKSAqL1xuLy8gYmlvbWUtaWdub3JlIGxpbnQvY29tcGxleGl0eS9ub1N0YXRpY09ubHlDbGFzczogUHJvYWN0aXZlIGRlc2lnbi5cbmV4cG9ydCBjbGFzcyBET01fUXVlcnkge1xuICAvKipcbiAgICogU2VlIHtAbGluayBET01fUXVlcnkgfS5cbiAgICpcbiAgICogQHBhcmFtIHBhcmFtcyBUaGUgcGFyYW1ldGVycyBmb3IgdGhhdCBFbGVtZW50LVBsYWNlaG9sZGVyIChwcm92aWRlZCBieSBDb2RCaSkuICovXG4gIEBEQkMuUGFyYW12YWx1ZVByb3ZpZGVyXG4gIEBJTlNUQU5DRS5QT1NUKEVsZW1lbnQpXG4gIHB1YmxpYyBzdGF0aWMgcmV0cmlldmUoXG4gICAgQEdSRUFURVIuUFJFKDEsIHRydWUsIGZhbHNlLCBcImxlbmd0aFwiLCBcIkhhc24ndCB0aGUgQ1NTLVNlbGVjdG9yIGJlZW4gc3BlY2lmaWVkP1wiKVxuICAgIEBBRS5QUkUoW25ldyBUWVBFKFwic3RyaW5nXCIpXSlcbiAgICBAQUUuUFJFKG5ldyBSRUdFWChSRUdFWC5zdGRFeHAuY3NzU2VsZWN0b3IpLCAwKVxuICAgIHBhcmFtczogQXJyYXk8c3RyaW5nPixcbiAgKTogRWxlbWVudCB8IG51bGwge1xuICAgIGNvbnN0IHJlc3VsdDogRWxlbWVudCB8IG51bGwgPSBkb2N1bWVudC5xdWVyeVNlbGVjdG9yKHBhcmFtc1swXSBhcyBzdHJpbmcpO1xuXG4gICAgcmV0dXJuIHJlc3VsdDtcbiAgfVxufVxuXG53aW5kb3cuY29kYmkucmVnaXN0ZXJFUChcIkRPTS5RdWVyeVwiLCBET01fUXVlcnkucmV0cmlldmUuYmluZChET01fUXVlcnkpKTsgLy8gSW5pdGlhbGl6YXRpb25cbiJdLAogICJtYXBwaW5ncyI6ICI7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7QUFtQk8sSUFBTSxZQUFOLE1BQWdCO0FBQUEsRUFPckIsT0FBYyxTQUlaLFFBQ2dCO0FBQ2hCLFVBQU0sU0FBeUIsU0FBUyxjQUFjLE9BQU8sQ0FBQyxDQUFXO0FBRXpFLFdBQU87QUFBQSxFQUNUO0FBQ0Y7QUFWZ0I7QUFBQSxFQUZiLElBQUk7QUFBQSxFQUNKLFNBQVMsS0FBSyxPQUFPO0FBQUEsRUFFbkIsMkJBQVEsSUFBSSxHQUFHLE1BQU0sT0FBTyxVQUFVLHlDQUF5QztBQUFBLEVBQy9FLHNCQUFHLElBQUksQ0FBQyxJQUFJLEtBQUssUUFBUSxDQUFDLENBQUM7QUFBQSxFQUMzQixzQkFBRyxJQUFJLElBQUksTUFBTSxNQUFNLE9BQU8sV0FBVyxHQUFHLENBQUM7QUFBQSxHQVZyQyxXQU9HO0FBWWhCLE9BQU8sTUFBTSxXQUFXLGFBQWEsVUFBVSxTQUFTLEtBQUssU0FBUyxDQUFDOyIsCiAgIm5hbWVzIjogW10KfQo=

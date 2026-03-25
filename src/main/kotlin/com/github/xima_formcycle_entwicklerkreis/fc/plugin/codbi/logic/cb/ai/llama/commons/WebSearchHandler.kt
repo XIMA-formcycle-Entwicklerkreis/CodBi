@@ -95,7 +95,8 @@ internal class WebSearchHandler(
       enableThinking: Boolean,
       slotId: Int,
       detectedLang: DetectedLanguage? = null,
-      userLocation: String? = null
+      userLocation: String? = null,
+      filterOverride: Boolean? = null
   ): String {
     if (!BraveSearch.isAvailable) return initialAnswer
 
@@ -108,10 +109,29 @@ internal class WebSearchHandler(
       log(LogLevel.INFO, "Model requested web search (round $round): '$query'")
 
       val results =
-          BraveSearch.search(query, detectedLang?.braveCountry, detectedLang?.languageName)
+          BraveSearch.search(
+              query, detectedLang?.braveCountry, detectedLang?.languageName, filterOverride)
 
       if (results.isEmpty()) {
         log(LogLevel.WARNING, "Web search returned no results for: '$query'")
+        answer = answer.replace(match.value, "").trim()
+
+        if (answer.isBlank()) {
+          log(
+              LogLevel.INFO,
+              "Answer empty after stripping CALL:search — re-prompting without internet")
+          val noSearchMessages =
+              buildMessages(
+                  originalQuestion,
+                  imageParts,
+                  chatHistory,
+                  false,
+                  enableThinking,
+                  detectedLang,
+                  false,
+                  null)
+          answer = chatCompletion(noSearchMessages, enableThinking, slotId, null)
+        }
 
         break
       }
@@ -159,7 +179,8 @@ internal class WebSearchHandler(
       enableThinking: Boolean,
       slotId: Int,
       detectedLang: DetectedLanguage? = null,
-      userLocation: String? = null
+      userLocation: String? = null,
+      filterOverride: Boolean? = null
   ) {
     if (!BraveSearch.isAvailable) return
 
@@ -172,11 +193,26 @@ internal class WebSearchHandler(
       log(LogLevel.INFO, "Streaming: Model requested web search (round $round): '$query'")
 
       val results =
-          BraveSearch.search(query, detectedLang?.braveCountry, detectedLang?.languageName)
+          BraveSearch.search(
+              query, detectedLang?.braveCountry, detectedLang?.languageName, filterOverride)
 
       if (results.isEmpty()) {
         if (round == 1) {
-          session.replaceText("The web search returned no results. Please try a different query.")
+          log(
+              LogLevel.INFO,
+              "Streaming: Search returned no results — re-prompting without internet")
+          session.clearText()
+          val noSearchMessages =
+              buildMessages(
+                  originalQuestion,
+                  imageParts,
+                  chatHistory,
+                  false,
+                  enableThinking,
+                  detectedLang,
+                  false,
+                  null)
+          streamChatCompletion(noSearchMessages, session, enableThinking, slotId)
         } else {
           log(
               LogLevel.WARNING,

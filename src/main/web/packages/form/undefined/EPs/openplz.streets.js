@@ -1,37 +1,45 @@
-import { a as n } from "./chunk-RQ2OISH5.js";
-import { a as c } from "./chunk-44HOFY3R.js";
-import { a as f } from "./chunk-CTQLZ4AL.js";
-import { a as E } from "./chunk-JDZ7GIHA.js";
-import "./chunk-HV3SPSHE.js";
-import { a as s } from "./chunk-BQCZFAYZ.js";
-import { a as m } from "./chunk-PN2FQ2K5.js";
-import { a as i } from "./chunk-2NFNCZZA.js";
-import { c as o, d as t, g as l } from "./chunk-WWJ6UWS7.js";
-var r = class extends n {
-  static retrieve(e) {
-    return n.retrieve([
-      e[0] ? e[0] : "",
+import { OpenPLZ } from "./chunk-T33OL2Z5.js";
+import { EQ } from "./chunk-TAVUGW35.js";
+import { OR } from "./chunk-D2G6YD5Q.js";
+import { REGEX } from "./chunk-ANBT4V26.js";
+import { AE } from "./chunk-P4ZK5MPU.js";
+import "./chunk-R7QUH33K.js";
+import { GREATER } from "./chunk-HUHG5RHG.js";
+import { TYPE } from "./chunk-3WCL6BYZ.js";
+import { DBC, __decorateClass, __decorateParam } from "./chunk-YNACB2OL.js";
+
+// src/js/EPs/openplz.streets.ts
+var OpenPLZ_Streets = class extends OpenPLZ {
+  static retrieve(params) {
+    return OpenPLZ.retrieve([
+      params[0] ? params[0] : "",
       "Streets",
       "",
       "",
-      `name-${e[1].replace(/^/, "\xB0")}`,
-      e.length >= 4 ? `locality-${e[3].replace(/^/, "\xB0")}` : `postalCode-${e[2].replace(/^/, "\xB0")}`,
+      `name-${params[1].replace(/^/, "\xB0")}`,
+      params.length >= 4
+        ? `locality-${params[3].replace(/^/, "\xB0")}`
+        : `postalCode-${params[2].replace(/^/, "\xB0")}`,
       "",
       "",
-      e[4] ? e[4] : "",
+      params[4] ? params[4] : "",
     ]);
   }
 };
-o(
+__decorateClass(
   [
-    l.ParamvalueProvider,
-    t(0, s.PRE(2, !0, !1, "length", "Hasn't at least the Street and City RegEx been specified?")),
-    t(0, i.PRE(new m("string"), 0, 4)),
-    t(0, i.PRE(new f([new c(""), new E(/(de|en|at|li|ch)/i)]), 0)),
+    DBC.ParamvalueProvider,
+    __decorateParam(
+      0,
+      GREATER.PRE(2, true, false, "length", "Hasn't at least the Street and City RegEx been specified?"),
+    ),
+    __decorateParam(0, AE.PRE(new TYPE("string"), 0, 4)),
+    __decorateParam(0, AE.PRE(new OR([new EQ(""), new REGEX(/(de|en|at|li|ch)/i)]), 0)),
   ],
-  r,
+  OpenPLZ_Streets,
   "retrieve",
   1,
 );
-window.codbi.registerEP("OpenPLZ.Streets", r.retrieve.bind(r));
-export { r as OpenPLZ_Streets };
+window.codbi.registerEP("OpenPLZ.Streets", OpenPLZ_Streets.retrieve.bind(OpenPLZ_Streets));
+export { OpenPLZ_Streets };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0VQcy9vcGVucGx6LnN0cmVldHMudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbIi8vICNyZWdpb24gSW1wb3J0c1xuLy8gI3JlZ2lvbiBYSU1BXG5pbXBvcnQgeyBnZXRKUXVlcnkgfSBmcm9tIFwiQGRlLXhpbWEvZmMtZm9ybS1yZW5kZXJlclwiO1xuLy8gI2VuZHJlZ2lvbiBYSU1BXG4vLyAjcmVnaW9uIFhEQkNcbmltcG9ydCB7IERCQyB9IGZyb20gXCJ4ZGJjL3NyYy9EQkNcIjtcbmltcG9ydCB7IEFFIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9BRVwiO1xuaW1wb3J0IHsgVFlQRSB9IGZyb20gXCJ4ZGJjL3NyYy9EQkMvVFlQRVwiO1xuaW1wb3J0IHsgUkVHRVggfSBmcm9tIFwieGRiYy9zcmMvREJDL1JFR0VYXCI7XG5pbXBvcnQgeyBHUkVBVEVSIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9DT01QQVJJU09OL0dSRUFURVJcIjtcbmltcG9ydCB7IE9SIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9PUlwiO1xuaW1wb3J0IHsgRVEgfSBmcm9tIFwieGRiYy9zcmMvREJDL0VRXCI7XG4vLyAjZW5kcmVnaW9uIFhEQkNcbmltcG9ydCB7IE9wZW5QTFogfSBmcm9tIFwiLi9vcGVucGx6XCI7XG4vLyAjZW5kcmVnaW9uIEltcG9ydHNcbi8qKlxuICogQW4ge0BsaW5rIE9wZW5QTFogfS1SZXF1ZXN0IHNwZWNpYWxpemVkIGludG8gc2VhcmNoaW5nIGZvciBzdHJlZXRzLlxuICpcbiAqICMjIyBDb25maWcgUGFyYW1ldGVyOlxuICogLSAxc3Q6IFRoZSBvcHRpb25hbCAqKmNvdW50cnkqKiB0byByZXRyaWV2ZSB0aGUgZGF0YSBvZiAoaWYgbm90IHByb3ZpZGVkIGVpdGhlciB0aGUgY291bnRyeSBzcGVjaWZpZWQgaW5cbiAqICAgICAgICB0aGUgQ29kQmkncyBDb25maWd1cmF0aW9uICoqT3BlblBMWl9Db3VudHJ5Kiogd2lsbCBiZSB1c2VkIG9yLCBpZiBub3Qgc3BlY2lmaWVkLCBcImRlXCIpLlxuICogLSAybmQ6IFRoZSBbIFBPU0lYIFJlZ0V4IF0oaHR0cHM6Ly93d3cub3BlbnBsemFwaS5vcmcvZGUvcmVnZXgvKSBmb3IgdGhlIHN0cmVldCdzIG5hbWUuXG4gKiAtIDNyZDogVGhlIFsgUE9TSVggUmVnRXggXShodHRwczovL3d3dy5vcGVucGx6YXBpLm9yZy9kZS9yZWdleC8pIGZvciB0aGUgc3RyZWV0J3MgcG9zdGFsIGNvZGUuIElmIHRoaXMgaXMgZW1wdHkgdGhlXG4gKiAgICAgICAgKio0dGgqKiBwYXJhbWV0ZXIgd2lsbCBiZSB1c2VkIGZvciB0aGUgc2VhcmNoIGFzIHRoZSBzdHJlZXQncyBjaXR5LW5hbWUuXG4gKiAtIDR0aDogVGhlIFsgUE9TSVggUmVnRXggXShodHRwczovL3d3dy5vcGVucGx6YXBpLm9yZy9kZS9yZWdleC8pIGZvciB0aGUgY2l0eSdzIG5hbWUgdXNlZCBpZiB0aGUgKiozcmQqKlxuICogICAgICAgIHBhcmFtZXRlciBpcyBlbXB0eS5cbiAqIC0gNXRoOiBBbiBPcHRpb25hbCBudW1iZXIgb2YgcGFnZXMgdG8gbG9hZC5cbiAqIEByZW1hcmtzXG4gKiBNYWludGFpbmVyOiBDYWxsYXJpLCBTYWx2YXRvcmUgKFNhbHZhdG9yZS5DYWxsYXJpQEFuc2JhY2guZGUpICovXG5leHBvcnQgY2xhc3MgT3BlblBMWl9TdHJlZXRzIGV4dGVuZHMgT3BlblBMWiB7XG4gIC8qKlxuICAgKiBKb2lucyBhbGwge0BsaW5rIG9iamVjdCB9cyBpbiBcInBhcmFtc1wiIGludG8gb25lLlxuICAgKlxuICAgKiBAcGFyYW0gcGFyYW1zIFRoZSBwYXJhbWV0ZXJzIGZvciB0aGF0IEVsZW1lbnQtUGxhY2Vob2xkZXIgKHByb3ZpZGVkIGJ5IENvZEJpKS4gKi9cbiAgQERCQy5QYXJhbXZhbHVlUHJvdmlkZXJcbiAgcHVibGljIHN0YXRpYyBvdmVycmlkZSByZXRyaWV2ZShcbiAgICBAR1JFQVRFUi5QUkUoMiwgdHJ1ZSwgZmFsc2UsIFwibGVuZ3RoXCIsIFwiSGFzbid0IGF0IGxlYXN0IHRoZSBTdHJlZXQgYW5kIENpdHkgUmVnRXggYmVlbiBzcGVjaWZpZWQ/XCIpXG4gICAgQEFFLlBSRShuZXcgVFlQRShcInN0cmluZ1wiKSwgMCwgNClcbiAgICBAQUUuUFJFKG5ldyBPUihbbmV3IEVRKFwiXCIpLCBuZXcgUkVHRVgoLyhkZXxlbnxhdHxsaXxjaCkvaSldKSwgMClcbiAgICBwYXJhbXM6IEFycmF5PHVua25vd24+LFxuICApOiBBcnJheTx1bmtub3duPiB8IHVua25vd24ge1xuICAgIHJldHVybiBPcGVuUExaLnJldHJpZXZlKFtcbiAgICAgIHBhcmFtc1swXSA/IChwYXJhbXNbMF0gYXMgc3RyaW5nKSA6IFwiXCIsXG4gICAgICBcIlN0cmVldHNcIixcbiAgICAgIFwiXCIsXG4gICAgICBcIlwiLFxuICAgICAgYG5hbWUtJHsocGFyYW1zWzFdIGFzIHN0cmluZykucmVwbGFjZSgvXi8sIFwiXHUwMEIwXCIpfWAsXG4gICAgICBwYXJhbXMubGVuZ3RoID49IDRcbiAgICAgICAgPyBgbG9jYWxpdHktJHsocGFyYW1zWzNdIGFzIHN0cmluZykucmVwbGFjZSgvXi8sIFwiXHUwMEIwXCIpfWBcbiAgICAgICAgOiBgcG9zdGFsQ29kZS0keyhwYXJhbXNbMl0gYXMgc3RyaW5nKS5yZXBsYWNlKC9eLywgXCJcdTAwQjBcIil9YCxcbiAgICAgIFwiXCIsXG4gICAgICBcIlwiLFxuICAgICAgcGFyYW1zWzRdID8gcGFyYW1zWzRdIDogXCJcIixcbiAgICBdKTtcbiAgfVxufVxuXG53aW5kb3cuY29kYmkucmVnaXN0ZXJFUChcIk9wZW5QTFouU3RyZWV0c1wiLCBPcGVuUExaX1N0cmVldHMucmV0cmlldmUuYmluZChPcGVuUExaX1N0cmVldHMpKTsgLy8gSW5pdGlhbGl6YXRpb25cbiJdLAogICJtYXBwaW5ncyI6ICI7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7O0FBNkJPLElBQU0sa0JBQU4sY0FBOEIsUUFBUTtBQUFBLEVBTTNDLE9BQXVCLFNBSXJCLFFBQzBCO0FBQzFCLFdBQU8sUUFBUSxTQUFTO0FBQUEsTUFDdEIsT0FBTyxDQUFDLElBQUssT0FBTyxDQUFDLElBQWU7QUFBQSxNQUNwQztBQUFBLE1BQ0E7QUFBQSxNQUNBO0FBQUEsTUFDQSxRQUFTLE9BQU8sQ0FBQyxFQUFhLFFBQVEsS0FBSyxNQUFHLENBQUM7QUFBQSxNQUMvQyxPQUFPLFVBQVUsSUFDYixZQUFhLE9BQU8sQ0FBQyxFQUFhLFFBQVEsS0FBSyxNQUFHLENBQUMsS0FDbkQsY0FBZSxPQUFPLENBQUMsRUFBYSxRQUFRLEtBQUssTUFBRyxDQUFDO0FBQUEsTUFDekQ7QUFBQSxNQUNBO0FBQUEsTUFDQSxPQUFPLENBQUMsSUFBSSxPQUFPLENBQUMsSUFBSTtBQUFBLElBQzFCLENBQUM7QUFBQSxFQUNIO0FBQ0Y7QUFwQnlCO0FBQUEsRUFEdEIsSUFBSTtBQUFBLEVBRUYsMkJBQVEsSUFBSSxHQUFHLE1BQU0sT0FBTyxVQUFVLDJEQUEyRDtBQUFBLEVBQ2pHLHNCQUFHLElBQUksSUFBSSxLQUFLLFFBQVEsR0FBRyxHQUFHLENBQUM7QUFBQSxFQUMvQixzQkFBRyxJQUFJLElBQUksR0FBRyxDQUFDLElBQUksR0FBRyxFQUFFLEdBQUcsSUFBSSxNQUFNLG1CQUFtQixDQUFDLENBQUMsR0FBRyxDQUFDO0FBQUEsR0FUdEQsaUJBTVk7QUFzQnpCLE9BQU8sTUFBTSxXQUFXLG1CQUFtQixnQkFBZ0IsU0FBUyxLQUFLLGVBQWUsQ0FBQzsiLAogICJuYW1lcyI6IFtdCn0K

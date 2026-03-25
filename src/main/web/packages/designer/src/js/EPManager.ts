@@ -67,7 +67,17 @@ export class EPManager extends SVManager {
 
       this.render();
 
+      const activeValues =
+        this._target?.value
+          .toLowerCase()
+          .split(this.separator)
+          .map((v) => v.trim()) ?? [];
       for (const checkbox of shadow.querySelectorAll(EPManager.SELECTOR_OPTION_INPUT)) {
+        const parent = checkbox.parentElement;
+        if (parent) {
+          const optionName = parent.dataset.cbOption?.toLowerCase() ?? "";
+          (checkbox as HTMLInputElement).checked = activeValues.includes(optionName);
+        }
         INSTANCE.tsCheck<HTMLElement>(checkbox, HTMLElement).style.display = "inline-block";
       }
     } else {
@@ -191,7 +201,9 @@ export class EPManager extends SVManager {
       shadow.querySelector(EPManager.SELECTOR_OPTION_CURRENT),
       HTMLElement,
     );
-    const selectedOption = DEFINED.tsCheck<string>(currentOptionElement.dataset.cbOption);
+    const selectedOption = DEFINED.tsCheck<string>(currentOptionElement.dataset.cbOption)
+      .replace(/\.js$/, "")
+      .replace(/\.ts$/, "");
 
     const insertionStart = adjustedSelectionStart - 1;
     const insertionText = format(selectedOption);
@@ -228,9 +240,7 @@ export class EPManager extends SVManager {
    * @param event The {@link Event } received. */
   protected override onInputTarget(event: Event): void {
     if (this.mode === "EP") {
-      const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
-      const selectionStart = eventTarget.selectionStart ?? 0;
-
+      const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
       if (this.enteringEP && this.currentStartCaret !== undefined && this.currentStartCaret !== null) {
         this.currentFilter = eventTarget.value.substring(this.currentStartCaret, selectionStart);
         this.countStrokes = this.currentFilter.length;
@@ -254,10 +264,11 @@ export class EPManager extends SVManager {
       ).classList.add("-Current");
 
       if (this.lastKey !== "Backspace" && this.lastKey !== "Delete" && remainingOptions.length === 1) {
+        const optionName = remainingOptions[0].replace(/\.js$/, "").replace(/\.ts$/, "");
         this.insertSelectedOption(eventTarget, selectionStart, shadow, (selectedOption) => `{ ${selectedOption} >  } `);
 
         for (const handler of this.onAutocomplete) {
-          handler(remainingOptions[0]);
+          handler(optionName);
         }
       }
     } else {
@@ -270,11 +281,10 @@ export class EPManager extends SVManager {
    * not in **EP**-{@link EPManager.mode }.
    *
    * @param event The {@link KeyboardEvent }. */
-  protected override onKeydownTarget(event: KeyboardEvent): void {
+  public override onKeydownTarget(event: KeyboardEvent): void {
     if (this.mode === "EP") {
-      const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(event.target, HTMLInputElement);
+      const eventTarget = INSTANCE.tsCheck<HTMLInputElement>(this.target, HTMLInputElement);
       const shadow = DEFINED.tsCheck<ShadowRoot>(this.shadowRoot);
-
       const selectionStart = eventTarget.selectionStart ?? 0;
 
       if (event.key !== " " && event.key !== "Enter") {

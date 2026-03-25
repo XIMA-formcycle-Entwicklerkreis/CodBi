@@ -1,13 +1,39 @@
-import { a as i } from "./chunk-VGUXA7EO.js";
-import "./chunk-4JLAI42Q.js";
-import "./chunk-UTJJRBTX.js";
-var r = class e extends i {
+import { HTML_Input_Transformer } from "./chunk-2KATTLXM.js";
+import "./chunk-ZTMSSRTV.js";
+import "./chunk-AOJQKO6T.js";
+
+// src/js/Functionalities/html.input.trans.regex.ts
+var HTML_Input_Trans_RegEx = class _HTML_Input_Trans_RegEx extends HTML_Input_Transformer {
+  /**
+   * Get the actual transformer that does a {@link String.replace} with the {@link toLoad.extractor } and
+   * the {@link toLoad.replacements }.
+   *
+   * ### Config Parameter:
+   * - Extractor:    The {@link string } representing the regular expression to extract the values to be replaced.
+   * - Replacements: The {@link string } representing the replacement value.
+   *
+   * @param toTransform The {@link string } to transform.
+   * @param toLoad      As provided by the **CodBi**.
+   *
+   * @return The {@link string } with the {@link toLoad.extractor } and the {@link toLoad.replacements } replaced. */
   static get transformer() {
-    return (t, n) => t.replace(n.extractor, n.replacements);
+    return (toTransform, toLoad) => {
+      return toTransform.replace(toLoad.extractor, toLoad.replacements);
+    };
   }
-  static functionality(t, n) {
-    i.functionality(t, n, e.transformer);
+  /**
+   * Invokes {@link HTML_Input_Transformer.functionality } with this {@link HTML_Input_Trans_RegEx }'s
+   * {@link HTML_Input_Trans_Capital.transformer }.
+   *
+   * @param toLoad    As provided bny the **CodBi**.
+   * @param toProcess As provided bny the **CodBi**. */
+  static functionality(toLoad, toProcess) {
+    HTML_Input_Transformer.functionality(toLoad, toProcess, _HTML_Input_Trans_RegEx.transformer);
   }
 };
-window.codbi.registerFunctionality("HTML.Input.Trans.RegEx", r.functionality.bind(r));
-export { r as HTML_Input_Trans_RegEx };
+window.codbi.registerFunctionality(
+  "HTML.Input.Trans.RegEx",
+  HTML_Input_Trans_RegEx.functionality.bind(HTML_Input_Trans_RegEx),
+);
+export { HTML_Input_Trans_RegEx };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0Z1bmN0aW9uYWxpdGllcy9odG1sLmlucHV0LnRyYW5zLnJlZ2V4LnRzIl0sCiAgInNvdXJjZXNDb250ZW50IjogWyIvLyAjcmVnaW9uIEltcG9ydHNcbmltcG9ydCB7IEhUTUxfSW5wdXRfVHJhbnNmb3JtZXIgfSBmcm9tIFwiLi9odG1sLmlucHV0LnRyYW5zZm9ybWVyXCI7XG4vLyAjZW5kcmVnaW9uIEltcG9ydHNcbi8qKlxuICogUHJvdmlkZXMgdGhlIHtAbGluayBIVE1MX0lucHV0X1RyYW5zZm9ybWVyLmZ1bmN0aW9uYWxpdHkgfSBhbG9uZyB3aXRoIHRoZSB7QGxpbmsgSFRNTF9JbnB1dF9UcmFuc19DYXBpdGFsLnRyYW5zZm9ybWVyIH0uXG4gKlxuICogQHJlbWFya3NcbiAqIE1haW50YWluZXI6IENhbGxhcmksIFNhbHZhdG9yZSAoU2FsdmF0b3JlLkNhbGxhcmlAQW5zYmFjaC5kZSkgKi9cbmV4cG9ydCBjbGFzcyBIVE1MX0lucHV0X1RyYW5zX1JlZ0V4IGV4dGVuZHMgSFRNTF9JbnB1dF9UcmFuc2Zvcm1lciB7XG4gIC8qKlxuICAgKiBHZXQgdGhlIGFjdHVhbCB0cmFuc2Zvcm1lciB0aGF0IGRvZXMgYSB7QGxpbmsgU3RyaW5nLnJlcGxhY2V9IHdpdGggdGhlIHtAbGluayB0b0xvYWQuZXh0cmFjdG9yIH0gYW5kXG4gICAqIHRoZSB7QGxpbmsgdG9Mb2FkLnJlcGxhY2VtZW50cyB9LlxuICAgKlxuICAgKiAjIyMgQ29uZmlnIFBhcmFtZXRlcjpcbiAgICogLSBFeHRyYWN0b3I6ICAgIFRoZSB7QGxpbmsgc3RyaW5nIH0gcmVwcmVzZW50aW5nIHRoZSByZWd1bGFyIGV4cHJlc3Npb24gdG8gZXh0cmFjdCB0aGUgdmFsdWVzIHRvIGJlIHJlcGxhY2VkLlxuICAgKiAtIFJlcGxhY2VtZW50czogVGhlIHtAbGluayBzdHJpbmcgfSByZXByZXNlbnRpbmcgdGhlIHJlcGxhY2VtZW50IHZhbHVlLlxuICAgKlxuICAgKiBAcGFyYW0gdG9UcmFuc2Zvcm0gVGhlIHtAbGluayBzdHJpbmcgfSB0byB0cmFuc2Zvcm0uXG4gICAqIEBwYXJhbSB0b0xvYWQgICAgICBBcyBwcm92aWRlZCBieSB0aGUgKipDb2RCaSoqLlxuICAgKlxuICAgKiBAcmV0dXJuIFRoZSB7QGxpbmsgc3RyaW5nIH0gd2l0aCB0aGUge0BsaW5rIHRvTG9hZC5leHRyYWN0b3IgfSBhbmQgdGhlIHtAbGluayB0b0xvYWQucmVwbGFjZW1lbnRzIH0gcmVwbGFjZWQuICovXG4gIHB1YmxpYyBzdGF0aWMgb3ZlcnJpZGUgZ2V0IHRyYW5zZm9ybWVyKCk6ICh0b1RyYW5zZm9ybTogc3RyaW5nLCB0b0xvYWQ6IHsgW2tleTogc3RyaW5nXTogdW5rbm93biB9KSA9PiBzdHJpbmcge1xuICAgIHJldHVybiAodG9UcmFuc2Zvcm06IHN0cmluZywgdG9Mb2FkOiB7IFtrZXk6IHN0cmluZ106IHVua25vd24gfSk6IHN0cmluZyA9PiB7XG4gICAgICByZXR1cm4gdG9UcmFuc2Zvcm0ucmVwbGFjZSh0b0xvYWQuZXh0cmFjdG9yIGFzIHN0cmluZywgdG9Mb2FkLnJlcGxhY2VtZW50cyBhcyBzdHJpbmcpO1xuICAgIH07XG4gIH1cbiAgLyoqXG4gICAqIEludm9rZXMge0BsaW5rIEhUTUxfSW5wdXRfVHJhbnNmb3JtZXIuZnVuY3Rpb25hbGl0eSB9IHdpdGggdGhpcyB7QGxpbmsgSFRNTF9JbnB1dF9UcmFuc19SZWdFeCB9J3NcbiAgICoge0BsaW5rIEhUTUxfSW5wdXRfVHJhbnNfQ2FwaXRhbC50cmFuc2Zvcm1lciB9LlxuICAgKlxuICAgKiBAcGFyYW0gdG9Mb2FkICAgIEFzIHByb3ZpZGVkIGJueSB0aGUgKipDb2RCaSoqLlxuICAgKiBAcGFyYW0gdG9Qcm9jZXNzIEFzIHByb3ZpZGVkIGJueSB0aGUgKipDb2RCaSoqLiAqL1xuICBwdWJsaWMgc3RhdGljIG92ZXJyaWRlIGZ1bmN0aW9uYWxpdHkodG9Mb2FkOiB7IFtrZXk6IHN0cmluZ106IHVua25vd24gfSwgdG9Qcm9jZXNzOiBFbGVtZW50KTogdm9pZCB7XG4gICAgSFRNTF9JbnB1dF9UcmFuc2Zvcm1lci5mdW5jdGlvbmFsaXR5KHRvTG9hZCwgdG9Qcm9jZXNzLCBIVE1MX0lucHV0X1RyYW5zX1JlZ0V4LnRyYW5zZm9ybWVyKTtcbiAgfVxufVxuXG53aW5kb3cuY29kYmkucmVnaXN0ZXJGdW5jdGlvbmFsaXR5KFxuICBcIkhUTUwuSW5wdXQuVHJhbnMuUmVnRXhcIixcbiAgSFRNTF9JbnB1dF9UcmFuc19SZWdFeC5mdW5jdGlvbmFsaXR5LmJpbmQoSFRNTF9JbnB1dF9UcmFuc19SZWdFeCksXG4pO1xuIl0sCiAgIm1hcHBpbmdzIjogIjs7Ozs7OztBQVFPLElBQU0seUJBQU4sTUFBTSxnQ0FBK0IsdUJBQXVCO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEsRUFhakUsV0FBMkIsY0FBbUY7QUFDNUcsV0FBTyxDQUFDLGFBQXFCLFdBQStDO0FBQzFFLGFBQU8sWUFBWSxRQUFRLE9BQU8sV0FBcUIsT0FBTyxZQUFzQjtBQUFBLElBQ3RGO0FBQUEsRUFDRjtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBLEVBT0EsT0FBdUIsY0FBYyxRQUFvQyxXQUEwQjtBQUNqRywyQkFBdUIsY0FBYyxRQUFRLFdBQVcsd0JBQXVCLFdBQVc7QUFBQSxFQUM1RjtBQUNGO0FBRUEsT0FBTyxNQUFNO0FBQUEsRUFDWDtBQUFBLEVBQ0EsdUJBQXVCLGNBQWMsS0FBSyxzQkFBc0I7QUFDbEU7IiwKICAibmFtZXMiOiBbXQp9Cg==

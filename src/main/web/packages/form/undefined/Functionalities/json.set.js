@@ -1,28 +1,37 @@
-import { a as e } from "./chunk-7ZUEWSHL.js";
-import { a as E } from "./chunk-KEJSWGMR.js";
-import { a as n } from "./chunk-SEUS6MHP.js";
-import { a as s } from "./chunk-CDLTIEKC.js";
-import { g as o, h as t, p as a } from "./chunk-UTJJRBTX.js";
-var i = class {
-  static functionality(r, p) {
-    let m = r.path ? r.path.split(".").reduce((u, l) => u[l], p) : p;
-    m[r.property] = r.toset;
+import { DEFINED } from "./chunk-JP4GUAZX.js";
+import { REGEX } from "./chunk-F3IDEOQS.js";
+import { TYPE } from "./chunk-O5T7YW22.js";
+import { INSTANCE } from "./chunk-53TEMTGA.js";
+import { DBC } from "./chunk-LFRFVRJV.js";
+import { __decorateClass, __decorateParam } from "./chunk-AOJQKO6T.js";
+
+// src/js/Functionalities/json.set.ts
+var JSON_SET = class {
+  static functionality(toLoad, toProcess) {
+    const target = toLoad.path
+      ? toLoad.path.split(".").reduce((accumulator, current) => accumulator[current], toProcess)
+      : toProcess;
+    target[toLoad.property] = toLoad.toset;
   }
 };
-o(
+__decorateClass(
   [
-    a.ParamvalueProvider,
-    t(0, e.PRE("path")),
-    t(0, e.PRE("property")),
-    t(0, e.PRE("toset")),
-    t(0, n.PRE(n.stdExp.keyPath, "path")),
-    t(0, s.PRE("string", "property")),
-    t(0, n.PRE(n.stdExp.property, "property")),
-    t(1, E.PRE(HTMLElement, void 0, "Is it not an HTML-Element that is tagged with this functionality?")),
+    DBC.ParamvalueProvider,
+    __decorateParam(0, DEFINED.PRE("path")),
+    __decorateParam(0, DEFINED.PRE("property")),
+    __decorateParam(0, DEFINED.PRE("toset")),
+    __decorateParam(0, REGEX.PRE(REGEX.stdExp.keyPath, "path")),
+    __decorateParam(0, TYPE.PRE("string", "property")),
+    __decorateParam(0, REGEX.PRE(REGEX.stdExp.property, "property")),
+    __decorateParam(
+      1,
+      INSTANCE.PRE(HTMLElement, void 0, "Is it not an HTML-Element that is tagged with this functionality?"),
+    ),
   ],
-  i,
+  JSON_SET,
   "functionality",
   1,
 );
-window.codbi.registerFunctionality("JSON.SET", i.functionality.bind(i));
-export { i as JSON_SET };
+window.codbi.registerFunctionality("JSON.SET", JSON_SET.functionality.bind(JSON_SET));
+export { JSON_SET };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0Z1bmN0aW9uYWxpdGllcy9qc29uLnNldC50cyJdLAogICJzb3VyY2VzQ29udGVudCI6IFsiLy8gI3JlZ2lvbiBJbXBvcnRzXG4vLyAjcmVnaW9uIFhEQkNcbmltcG9ydCB7IERCQyB9IGZyb20gXCJ4ZGJjL3NyYy9EQkNcIjtcbmltcG9ydCB7IFRZUEUgfSBmcm9tIFwieGRiYy9zcmMvREJDL1RZUEVcIjtcbmltcG9ydCB7IFJFR0VYIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9SRUdFWFwiO1xuaW1wb3J0IHsgREVGSU5FRCB9IGZyb20gXCJ4ZGJjL3NyYy9EQkMvREVGSU5FRFwiO1xuaW1wb3J0IHsgSU5TVEFOQ0UgfSBmcm9tIFwieGRiYy9zcmMvREJDL0lOU1RBTkNFXCI7XG4vLyAjZW5kcmVnaW9uIFhEQkNcbi8vICNlbmRyZWdpb24gSW1wb3J0c1xuLyoqXG4gKiBQcm92aWRlcyB0aGUge0BsaW5rIEpTT05fU0VULmZ1bmN0aW9uYWxpdHkgfS5cbiAqXG4gKiBAcmVtYXJrc1xuICogTWFpbnRhaW5lcjogU2FsdmF0b3JlIENhbGxhcmkgKFNhbHZhdG9yZS5DYWxsYXJpQEFuc2JhY2guZGUpICovXG4vLyBiaW9tZS1pZ25vcmUgbGludC9jb21wbGV4aXR5L25vU3RhdGljT25seUNsYXNzOiBQcm9hY3RpdmUgRGVzaWduLlxuZXhwb3J0IGNsYXNzIEpTT05fU0VUIHtcbiAgLyoqXG4gICAqIFRoaXMgZnVuY3Rpb25hbGl0eSBhc3NpZ25zIHRoZSBzcGVjaWZpZWQgXCJQcm9wZXJ0eVwiIG9mIGEgbWVtYmVyIG9mIHtAbGluayBFbGVtZW50IH0gXCJ0b1Byb2Nlc3NcIlxuICAgKiB3aGljaCBpcyBzcGVjaWZpZWQgYnkgXCJQYXRoXCIuXG4gICAqXG4gICAqIENvbmZpZyBQYXJhbWV0ZXI6XG4gICAqICAtIFBhdGg6ICAgICBUaGUgZG90dGVkIHBhdGgge0BsaW5rIHN0cmluZyB9IGxlYWRpbmcgdG8gdGhlIHtAbGluayBvYmplY3R9LCBzdGFydGluZyBmcm9tIHRoZVxuICAgKiAgICAgICAgICAgICAge0BsaW5rIEVsZW1lbnQgfSBcInRvUHJvY2Vzc1wiLCB3aGljaCdzIFwiUHJvcGVydHlcIiBnb3R0YSBiZSBzZXQuICAgKlxuICAgKiAgLSBQcm9wZXJ0eTogVGhlIG5hbWUgb2YgdGhlIHByb3BlcnR5IHRvIHNldC5cbiAgICogIC0gVG9TZXQ6ICAgIFRoZSB7QGxpbmsgb2JqZWN0IH0gdG8gc2V0IHRoZSBcIlByb3BlcnR5XCIgdG8uXG4gICAqXG4gICAqIEBwYXJhbSB0b0xvYWQgICAgUHJvdmlkZWQgYnkge0BsaW5rIENvZEJpLmNoZWNrQXR0cmlidXRlcyB9IC8ge0BsaW5rIENvZEJpLmxvYWRDb25maWcgfS5cbiAgICogQHBhcmFtIHRvUHJvY2VzcyBQcm92aWRlZCBieSB7QGxpbmsgQ29kQmkuY2hlY2tBdHRyaWJ1dGVzIH0gLyB7QGxpbmsgQ29kQmkubG9hZENvbmZpZyB9LiAqL1xuICBAREJDLlBhcmFtdmFsdWVQcm92aWRlclxuICBwdWJsaWMgc3RhdGljIGZ1bmN0aW9uYWxpdHkoXG4gICAgQERFRklORUQuUFJFKFwicGF0aFwiKVxuICAgIEBERUZJTkVELlBSRShcInByb3BlcnR5XCIpXG4gICAgQERFRklORUQuUFJFKFwidG9zZXRcIilcbiAgICBAUkVHRVguUFJFKFJFR0VYLnN0ZEV4cC5rZXlQYXRoLCBcInBhdGhcIilcbiAgICBAVFlQRS5QUkUoXCJzdHJpbmdcIiwgXCJwcm9wZXJ0eVwiKVxuICAgIEBSRUdFWC5QUkUoUkVHRVguc3RkRXhwLnByb3BlcnR5LCBcInByb3BlcnR5XCIpXG4gICAgdG9Mb2FkOiB7IFtrZXk6IHN0cmluZ106IHVua25vd24gfSxcblxuICAgIEBJTlNUQU5DRS5QUkUoSFRNTEVsZW1lbnQsIHVuZGVmaW5lZCwgXCJJcyBpdCBub3QgYW4gSFRNTC1FbGVtZW50IHRoYXQgaXMgdGFnZ2VkIHdpdGggdGhpcyBmdW5jdGlvbmFsaXR5P1wiKVxuICAgIHRvUHJvY2VzczogRWxlbWVudCxcbiAgKTogdW5kZWZpbmVkIHtcbiAgICBjb25zdCB0YXJnZXQ6IHVua25vd24gPSB0b0xvYWQucGF0aFxuICAgICAgPyAodG9Mb2FkLnBhdGggYXMgc3RyaW5nKVxuICAgICAgICAgIC5zcGxpdChcIi5cIilcbiAgICAgICAgICAucmVkdWNlKChhY2N1bXVsYXRvciwgY3VycmVudCkgPT4gKGFjY3VtdWxhdG9yIGFzIHVua25vd24pW2N1cnJlbnRdLCB0b1Byb2Nlc3MpXG4gICAgICA6IHRvUHJvY2VzcztcblxuICAgIHRhcmdldFt0b0xvYWQucHJvcGVydHkgYXMgc3RyaW5nXSA9IHRvTG9hZC50b3NldDtcbiAgfVxufVxuXG53aW5kb3cuY29kYmkucmVnaXN0ZXJGdW5jdGlvbmFsaXR5KFwiSlNPTi5TRVRcIiwgSlNPTl9TRVQuZnVuY3Rpb25hbGl0eS5iaW5kKEpTT05fU0VUKSk7IC8vIEluaXRpYWxpemF0aW9uXG4iXSwKICAibWFwcGluZ3MiOiAiOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7QUFlTyxJQUFNLFdBQU4sTUFBZTtBQUFBLEVBY3BCLE9BQWMsY0FPWixRQUdBLFdBQ1c7QUFDWCxVQUFNLFNBQWtCLE9BQU8sT0FDMUIsT0FBTyxLQUNMLE1BQU0sR0FBRyxFQUNULE9BQU8sQ0FBQyxhQUFhLFlBQWEsWUFBd0IsT0FBTyxHQUFHLFNBQVMsSUFDaEY7QUFFSixXQUFPLE9BQU8sUUFBa0IsSUFBSSxPQUFPO0FBQUEsRUFDN0M7QUFDRjtBQXBCZ0I7QUFBQSxFQURiLElBQUk7QUFBQSxFQUVGLDJCQUFRLElBQUksTUFBTTtBQUFBLEVBQ2xCLDJCQUFRLElBQUksVUFBVTtBQUFBLEVBQ3RCLDJCQUFRLElBQUksT0FBTztBQUFBLEVBQ25CLHlCQUFNLElBQUksTUFBTSxPQUFPLFNBQVMsTUFBTTtBQUFBLEVBQ3RDLHdCQUFLLElBQUksVUFBVSxVQUFVO0FBQUEsRUFDN0IseUJBQU0sSUFBSSxNQUFNLE9BQU8sVUFBVSxVQUFVO0FBQUEsRUFHM0MsNEJBQVMsSUFBSSxhQUFhLFFBQVcsbUVBQW1FO0FBQUEsR0F2QmhHLFVBY0c7QUFzQmhCLE9BQU8sTUFBTSxzQkFBc0IsWUFBWSxTQUFTLGNBQWMsS0FBSyxRQUFRLENBQUM7IiwKICAibmFtZXMiOiBbXQp9Cg==

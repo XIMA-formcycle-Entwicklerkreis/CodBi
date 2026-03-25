@@ -829,14 +829,13 @@ export class Optioninput extends HTMLDivElement {
       return;
     }
     // #endregion If the [target] just received focus, show all available functionalities
-    if (!(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement)) {
+    if (!(this.target instanceof HTMLInputElement) && !(this.target instanceof HTMLTextAreaElement)) {
       throw new INSTANCE.Infringement(
-        `The event.target has to be either of type HTMLInputElement or HTMLTextAreaElement but isn't. It is of type ${typeof event.target}.`,
+        `The this.target has to be either of type HTMLInputElement or HTMLTextAreaElement but isn't. It is of type ${typeof this.target}.`,
       );
     }
 
-    const eventTarget = event.target;
-    const remainingOptions = this.filter(eventTarget.value.substring(1));
+    const eventTarget = this.target;
 
     if (remainingOptions.length === 0) {
       this.enabled = false;

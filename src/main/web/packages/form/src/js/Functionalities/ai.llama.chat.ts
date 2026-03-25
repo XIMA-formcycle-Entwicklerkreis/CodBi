@@ -121,6 +121,9 @@ export class AI_LLAMA_CHAT {
    *                          for this instance. Default: determined by plugin property.
    * - **QueueText**:         Text appended after the queue position number in the badge
    *                          (e.g. `"in queue"` → badge shows `"3 in queue"`). Default: empty.
+   * - **FilterResults**:     If set to `"true"`, enables PII filtering on Brave Search queries
+   *                          for this instance, overriding the global `AI_BraveSearch_FilterResults`
+   *                          plugin property. Default: determined by plugin property.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -138,6 +141,8 @@ export class AI_LLAMA_CHAT {
     @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{3}$/i), "language")
     @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{2}$/i), "responselanguage")
     // #endregion Rotation constraint.
+    @OR.PRE([new TYPE("string"), new TYPE("boolean")], "filterresults")
+    @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "filterresults")
     @REGEX.PRE(REGEX.stdExp.colorCodeHEX, "llamabubble, userbubble")
     @REGEX.PRE(REGEX.stdExp.simpleHotkey, "voicehotkey, voicesendhotkey")
     toLoad: { [key: string]: unknown },
@@ -155,6 +160,7 @@ export class AI_LLAMA_CHAT {
     const aiHintText = toLoad.aihint != null ? String(toLoad.aihint) : "\u2728 AI-Generated";
     const responseLang = toLoad.responselanguage != null ? String(toLoad.responselanguage).trim() : "";
     const specialist = toLoad.specialist != null ? String(toLoad.specialist).trim() : "";
+    const filterResults = toLoad.filterresults != null ? String(toLoad.filterresults).toLowerCase() === "true" : null;
 
     chatDisplay.readOnly = true;
     chatDisplay.style.display = "none";
@@ -1323,6 +1329,9 @@ export class AI_LLAMA_CHAT {
         if (searchCheckbox) {
           headers["X-Search"] = searchCheckbox.checked ? "true" : "false";
         }
+        if (filterResults != null) {
+          headers["X-Filter-Results"] = filterResults ? "true" : "false";
+        }
         if (locationCheckbox?.checked) {
           headers["X-Location"] = "true";
           // #region Pre-fetch browser geolocation
@@ -1372,25 +1381,103 @@ export class AI_LLAMA_CHAT {
           hideResourceOverlay();
           chatInput.focus();
 
-          // Alert-on-finish: show notification if checkbox is checked and permission granted.
-          // If permission is still "default" (e.g. user checked the box mid-inference and
-          // hasn't responded to the browser prompt yet), request it now and notify on grant.
-          if (alertOnFinishCheckbox?.checked && "Notification" in window) {
-            if (Notification.permission === "granted") {
-              new Notification(alertOnFinishText, {
-                body: "You should check back on the site.",
-                icon: "/favicon.ico",
-              });
-            } else if (Notification.permission === "default") {
-              Notification.requestPermission().then((perm) => {
-                if (perm === "granted") {
+          // Alert-on-finish: multi-pronged notification (browser API + audio beep + title flash + in-page toast).
+          if (alertOnFinishCheckbox?.checked) {
+            // 1. Try browser Notification API (may silently fail in iframes / cross-origin contexts).
+            try {
+              if ("Notification" in window) {
+                window.codbi.log(
+                  "INFO",
+                  `AlertOnFinish: Notification API available. permission="${Notification.permission}"`,
+                  "AI / LLAMA / CHAT",
+                );
+                if (Notification.permission === "granted") {
                   new Notification(alertOnFinishText, {
                     body: "You should check back on the site.",
                     icon: "/favicon.ico",
                   });
+                  window.codbi.log("INFO", "AlertOnFinish: Notification created (granted).", "AI / LLAMA / CHAT");
+                } else if (Notification.permission === "default") {
+                  window.codbi.log(
+                    "INFO",
+                    "AlertOnFinish: Permission is default — requesting now.",
+                    "AI / LLAMA / CHAT",
+                  );
+                  Notification.requestPermission().then((perm) => {
+                    window.codbi.log(
+                      "INFO",
+                      `AlertOnFinish: requestPermission resolved: "${perm}"`,
+                      "AI / LLAMA / CHAT",
+                    );
+                    if (perm === "granted") {
+                      new Notification(alertOnFinishText, {
+                        body: "You should check back on the site.",
+                        icon: "/favicon.ico",
+                      });
+                    }
+                  });
+                } else {
+                  window.codbi.log(
+                    "WARN",
+                    `AlertOnFinish: Permission is "${Notification.permission}" — notification blocked by user.`,
+                    "AI / LLAMA / CHAT",
+                  );
                 }
-              });
+              } else {
+                window.codbi.log(
+                  "WARN",
+                  "AlertOnFinish: Notification API not available in this window.",
+                  "AI / LLAMA / CHAT",
+                );
+              }
+            } catch (notifErr) {
+              window.codbi.log(
+                "ERROR",
+                `AlertOnFinish: Notification API threw: ${String(notifErr)}`,
+                "AI / LLAMA / CHAT",
+              );
             }
+            // 2. Audio beep (works without permissions once user has interacted with page).
+            try {
+              const actx = new AudioContext();
+              const osc = actx.createOscillator();
+
+              osc.type = "sine";
+              osc.frequency.setValueAtTime(880, actx.currentTime);
+              osc.connect(actx.destination);
+              osc.start();
+              osc.stop(actx.currentTime + 0.3);
+            } catch {
+              // AudioContext unavailable — ignore.
+            }
+            // 3. Flash page title so the user notices even if browser notification is blocked.
+            const origTitle = document.title;
+            let flashes = 0;
+            const titleFlash = setInterval(() => {
+              document.title = flashes % 2 === 0 ? `\u2705 ${alertOnFinishText}` : origTitle;
+
+              if (++flashes >= 6) {
+                clearInterval(titleFlash);
+                document.title = origTitle;
+              }
+            }, 1000);
+            // 4. In-page toast banner (always works, regardless of iframe or permission state).
+            const toast = document.createElement("div");
+
+            toast.textContent = `\u2705 ${alertOnFinishText}`;
+            toast.style.cssText =
+              "position:fixed;top:16px;right:16px;z-index:999999;padding:12px 20px;" +
+              "background:#1a7f37;color:#fff;border-radius:8px;font-size:14px;font-weight:600;" +
+              "box-shadow:0 4px 12px rgba(0,0,0,.25);opacity:0;transition:opacity .3s;cursor:pointer";
+            document.body.appendChild(toast);
+            requestAnimationFrame(() => {
+              toast.style.opacity = "1";
+            });
+            toast.addEventListener("click", () => toast.remove());
+            setTimeout(() => {
+              toast.style.opacity = "0";
+              setTimeout(() => toast.remove(), 400);
+            }, 6000);
           }
         };
         // #endregion Finish streaming and re-enable UI.
@@ -1726,7 +1813,9 @@ export class AI_LLAMA_CHAT {
                   // If the model's output is a CALL: tool invocation, the backend will handle
                   // the tool call and start a new inference round. Don't finish streaming —
                   // keep polling for the real final answer.
-                  if (/CALL:/.test(text)) {
+                  // Use ^CALL: (starts-with) so a final answer that merely mentions "CALL:" in
+                  // its body doesn't suppress finishStreaming forever.
+                  if (/^CALL:/.test(text)) {
                     lastText = "";
                     return;
                   }
@@ -1926,6 +2015,9 @@ export class AI_LLAMA_CHAT {
 
                           if (searchCheckbox) {
                             rethinkHeaders["X-Search"] = searchCheckbox.checked ? "true" : "false";
+                          }
+                          if (filterResults != null) {
+                            rethinkHeaders["X-Filter-Results"] = filterResults ? "true" : "false";
                           }
 
                           $.ajax({

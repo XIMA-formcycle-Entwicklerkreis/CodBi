@@ -1054,6 +1054,7 @@ class Standard : LLAMA() {
       val enableThinking: Boolean,
       val thinkingTokenBudget: Int?,
       val searchEnabled: Boolean,
+      val filterResults: Boolean?,
       val locationEnabled: Boolean,
       val userLatitude: String?,
       val userLongitude: String?,
@@ -1183,6 +1184,13 @@ class Standard : LLAMA() {
                 ?.trim()
                 ?.toIntOrNull(),
         searchEnabled = searchEnabled,
+        filterResults =
+            headers.entries
+                .find { it.key.equals("X-Filter-Results", ignoreCase = true) }
+                ?.value
+                ?.trim()
+                ?.lowercase()
+                ?.let { it == "true" || it == "1" || it == "yes" },
         locationEnabled = locationEnabled,
         userLatitude = userLatitude,
         userLongitude = userLongitude,
@@ -1466,7 +1474,8 @@ class Standard : LLAMA() {
               BraveSearch.isAvailable &&
               BraveSearch.CALL_SEARCH_PATTERN.containsMatchIn(fullText)) {
             val rawQuery = BraveSearch.CALL_SEARCH_PATTERN.find(fullText)?.groupValues?.get(1) ?: ""
-            session.searchQuery = BraveSearch.sanitizeQuery(rawQuery, detectedLang?.languageName)
+            session.searchQuery =
+                BraveSearch.sanitizeQuery(rawQuery, detectedLang?.languageName, ctx.filterResults)
             session.searching = true
             session.clearText()
             webSearchHandler!!.handleSearchToolCallStreaming(
@@ -1478,7 +1487,8 @@ class Standard : LLAMA() {
                 ctx.enableThinking,
                 ctx.slotId,
                 detectedLang,
-                userLocation)
+                userLocation,
+                ctx.filterResults)
             session.searching = false
             session.searchQuery = null
           }
@@ -1622,7 +1632,8 @@ class Standard : LLAMA() {
                 BraveSearch.CALL_SEARCH_PATTERN.containsMatchIn(fallbackText)) {
               val rawQuery =
                   BraveSearch.CALL_SEARCH_PATTERN.find(fallbackText)?.groupValues?.get(1) ?: ""
-              session.searchQuery = BraveSearch.sanitizeQuery(rawQuery, detectedLang?.languageName)
+              session.searchQuery =
+                  BraveSearch.sanitizeQuery(rawQuery, detectedLang?.languageName, ctx.filterResults)
               session.searching = true
               session.clearText()
               webSearchHandler!!.handleSearchToolCallStreaming(
@@ -1634,7 +1645,8 @@ class Standard : LLAMA() {
                   false,
                   ctx.slotId,
                   detectedLang,
-                  userLocation)
+                  userLocation,
+                  ctx.filterResults)
               session.searching = false
               session.searchQuery = null
             }
@@ -1857,7 +1869,8 @@ class Standard : LLAMA() {
                   syncCtx.enableThinking,
                   syncCtx.slotId,
                   detectedLang,
-                  userLocation)
+                  userLocation,
+                  syncCtx.filterResults)
         }
         // region CALL:fetch handling (sync path)
         if (syncCtx.searchEnabled) {

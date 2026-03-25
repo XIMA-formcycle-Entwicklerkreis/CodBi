@@ -1,51 +1,76 @@
-import { a as x } from "./chunk-PSEWTT4Z.js";
-import { a as l } from "./chunk-4JLAI42Q.js";
-import { a as f } from "./chunk-KEJSWGMR.js";
-import { a as t } from "./chunk-CDLTIEKC.js";
-import { f as y, g as a, h as i, p as o } from "./chunk-UTJJRBTX.js";
-var g = y(l(), 1);
-var n = class {
-  static functionality(e, s) {
-    (e.expression = e.expression.replace(/°/, "^")),
-      (e.exposeexpression = e.exposeexpression
-        ? typeof e.exposeexpression == "string"
-          ? e.exposeexpression.toLowerCase() === "true"
-          : e.exposeexpression
-        : !1);
-    let p = (0, g.getJQuery)();
-    s.addEventListener("keyup", (r) => {
-      r.key !== void 0 && r.key.length === 1 && (r.preventDefault(), r.stopImmediatePropagation(), r.stopPropagation());
-    }),
-      s.addEventListener("keydown", (r) => {
-        r.key !== void 0 &&
-          e.keyexpression &&
-          r.key.length === 1 &&
-          (new RegExp(e.keyexpression, e.keyflags ? e.keyflags : "i").test(r.key) ||
-            (r.preventDefault(), r.stopImmediatePropagation(), r.stopPropagation()));
-      }),
-      s.addEventListener("change", (r) => {
-        new RegExp(e.expression, e.flags ? e.flags : "g").test(s.value)
-          ? p(s).error("")
-          : p(s).error(
-              `${e.errorprefix ? e.errorprefix : "Text does not comply to "}${e.exposeexpression ? e.expression : "a certain restriction"}${e.errorpostfix ? ` ${e.errorpostfix}` : "."}`,
-            );
-      });
+import { EQ } from "./chunk-RI3LWO6O.js";
+import { TYPE } from "./chunk-O5T7YW22.js";
+import { INSTANCE } from "./chunk-53TEMTGA.js";
+import { DBC } from "./chunk-LFRFVRJV.js";
+import { require_dist } from "./chunk-ZTMSSRTV.js";
+import { __decorateClass, __decorateParam, __toESM } from "./chunk-AOJQKO6T.js";
+
+// src/js/Functionalities/html.input.regex.ts
+var import_fc_form_renderer = __toESM(require_dist(), 1);
+var HTML_Input_REGEX = class {
+  static functionality(toLoad, toProcess) {
+    toLoad.expression = toLoad.expression.replace(/°/, "^");
+    toLoad.exposeexpression = toLoad.exposeexpression
+      ? typeof toLoad.exposeexpression === "string"
+        ? toLoad.exposeexpression.toLowerCase() === "true"
+        : toLoad.exposeexpression
+      : false;
+    const $ = (0, import_fc_form_renderer.getJQuery)();
+    toProcess.addEventListener("keyup", (event) => {
+      if (event.key === void 0) {
+        return;
+      }
+      if (event.key.length === 1) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        event.stopPropagation();
+      }
+    });
+    toProcess.addEventListener("keydown", (event) => {
+      if (event.key === void 0) {
+        return;
+      }
+      if (toLoad.keyexpression && event.key.length === 1) {
+        if (!new RegExp(toLoad.keyexpression, toLoad.keyflags ? toLoad.keyflags : "i").test(event.key)) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          event.stopPropagation();
+        }
+      }
+    });
+    toProcess.addEventListener("change", (event) => {
+      if (!new RegExp(toLoad.expression, toLoad.flags ? toLoad.flags : "g").test(toProcess.value)) {
+        $(toProcess).error(
+          `${toLoad.errorprefix ? toLoad.errorprefix : "Text does not comply to "}${toLoad.exposeexpression ? toLoad.expression : "a certain restriction"}${toLoad.errorpostfix ? ` ${toLoad.errorpostfix}` : "."}`,
+        );
+      } else {
+        $(toProcess).error("");
+      }
+    });
   }
 };
-a(
+__decorateClass(
   [
-    o.ParamvalueProvider,
-    i(0, t.PRE("string", "expression :: flags :: keyexpression :: keyflags :: errorprefix :: errorpostfix")),
-    i(0, t.PRE("string | boolean", "exposeexpression")),
-    i(
-      1,
-      f.PRE(HTMLInputElement, void 0, 'Is it not an <input type = "text"/> that is tagged with this functionality?'),
+    DBC.ParamvalueProvider,
+    __decorateParam(
+      0,
+      TYPE.PRE("string", "expression :: flags :: keyexpression :: keyflags :: errorprefix :: errorpostfix"),
     ),
-    i(1, x.PRE("text", !1, "type")),
+    __decorateParam(0, TYPE.PRE("string | boolean", "exposeexpression")),
+    __decorateParam(
+      1,
+      INSTANCE.PRE(
+        HTMLInputElement,
+        void 0,
+        'Is it not an <input type = "text"/> that is tagged with this functionality?',
+      ),
+    ),
+    __decorateParam(1, EQ.PRE("text", false, "type")),
   ],
-  n,
+  HTML_Input_REGEX,
   "functionality",
   1,
 );
-window.codbi.registerFunctionality("HTML.Input.REGEX", n.functionality.bind(n));
-export { n as HTML_Input_REGEX };
+window.codbi.registerFunctionality("HTML.Input.REGEX", HTML_Input_REGEX.functionality.bind(HTML_Input_REGEX));
+export { HTML_Input_REGEX };
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vc3JjL2pzL0Z1bmN0aW9uYWxpdGllcy9odG1sLmlucHV0LnJlZ2V4LnRzIl0sCiAgInNvdXJjZXNDb250ZW50IjogWyIvLyAjcmVnaW9uIEltcG9ydHNcbi8vICNyZWdpb24gWElNQVxuaW1wb3J0IHsgZ2V0SlF1ZXJ5IH0gZnJvbSBcIkBkZS14aW1hL2ZjLWZvcm0tcmVuZGVyZXJcIjtcbi8vICNlbmRyZWdpb24gWElNQVxuLy8gI3JlZ2lvbiBYREJDXG5pbXBvcnQgeyBEQkMgfSBmcm9tIFwieGRiYy9zcmMvREJDXCI7XG5pbXBvcnQgeyBUWVBFIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9UWVBFXCI7XG5pbXBvcnQgeyBFUSB9IGZyb20gXCJ4ZGJjL3NyYy9EQkMvRVFcIjtcbmltcG9ydCB7IElOU1RBTkNFIH0gZnJvbSBcInhkYmMvc3JjL0RCQy9JTlNUQU5DRVwiO1xuLy8gI2VuZHJlZ2lvbiBYREJDXG4vLyAjZW5kcmVnaW9uIEltcG9ydHNcbi8qKlxuICogUHJvdmlkZXMgdGhlIHtAbGluayBIVE1MX0lucHV0X1JFR0VYLmZ1bmN0aW9uYWxpdHkgfS5cbiAqXG4gKiBAcmVtYXJrc1xuICogTWFpbnRhaW5lcjogQ2FsbGFyaSwgU2FsdmF0b3JlIChTYWx2YXRvcmUuQ2FsbGFyaUBBbnNiYWNoLmRlKSAqL1xuLy8gYmlvbWUtaWdub3JlIGxpbnQvY29tcGxleGl0eS9ub1N0YXRpY09ubHlDbGFzczogUHJvYWN0aXZlIERlc2lnbi5cbmV4cG9ydCBjbGFzcyBIVE1MX0lucHV0X1JFR0VYIHtcbiAgLyoqXG4gICAqIFJlZ2lzdGVycyB0aGUgXCJIVE1MLklucHV0LlJFR0VYXCItRnVuY3Rpb25hbGl0eSB3aGljaCByZXF1aXJlIHRoZSB2YWx1ZSBvZiB7QGxpbmsgSFRNTElucHV0RWxlbWVudCB9IHRvIGNvbXBseVxuICAgKiB0byB0aGUgcHJvdmlkZWQge0BsaW5rIFJlZ0V4cCB9IC0gXCJleHByZXNzaW9uXCIuXG4gICAqXG4gICAqIENvbmZpZyBQYXJhbWV0ZXI6XG4gICAqICAtIEV4cHJlc3Npb246ICAgICAgIFRoZSB7QGxpbmsgUmVnRXhwIH0gLSB7QGxpbmsgc3RyaW5nIH0gdGhlIHZhbHVlIG9mIFwidG9Qcm9jZXNzXCIgaGFzIHRvIGNvbXBseSB0by5cbiAgICogICAgICAgICAgICAgICAgICAgICAgVXNlICoqXHUwMEIwKiogaW5zdGVhZCBvZiAqKl4qKiB0byBtYXJrIHRoZSBiZWdpbm5pbmcgb2YgdGhlIGlucHV0IHN0cmluZyBvciBhIG5lZ2F0aW9uLlxuICAgKiAgLSBLZXlFeHByZXNzaW9uOiAgICBUaGUge0BsaW5rIFJlZ0V4cCB9IC0ge0BsaW5rIHN0cmluZyB9IHRoZSBpbmRpdmlkdWFsIGtleXN0cm9rZXMgaGF2ZSB0byBjb21wbHkgdG8uXG4gICAqICAtIEZsYWdzOiAgICAgICAgICAgIFRoZSB7QGxpbmsgUmVnRXhwIH0gLSBmbGFncyB7QGxpbmsgc3RyaW5nIH0gdXNlZCB0byBjcmVhdGUgdGhlIFwiZXhwcmVzc2lvblwiIChkZWZhdWx0cyB0byBcImdcIikuXG4gICAqICAtIEtleUZsYWdzOiAgICAgICAgIFRoZSB7QGxpbmsgUmVnRXhwIH0gLSBmbGFncyB7QGxpbmsgc3RyaW5nIH0gdXNlZCB0byBjcmVhdGUgdGhlIFwia2V5ZXhwcmVzc2lvblwiIChkZWZhdWx0cyB0byBcImdcIikuXG4gICAqICAtIEVycm9yUHJlZml4OiAgICAgIFRoZSBmaXJzdCBwYXJ0IG9mIHRoZSBlcnJvciBtZXNzYWdlIHtAbGluayBzdHJpbmcgfSBkaXNwbGF5ZWQgcHJpb3IgdG8gdGhlIFwiZXhwcmVzc2lvblwiLlxuICAgKiAgLSBFcnJvclBvc3RmaXg6ICAgICBUaGUgZmluYWwgcGFydCBvZiB0aGUgZXJyb3IgbWVzc2FnZSB7QGxpbmsgc3RyaW5nIH0gZGlzcGxheWVkIGFmdGVyICB0byB0aGUgXCJleHByZXNzaW9uXCIuXG4gICAqICAtIEV4cG9zZUV4cHJlc3Npb246IFdpbGwgZXhwb3NlIHRoZSBcImV4cHJlc3Npb25cIiB3aXRoaW4gdGhlIGVycm9ybWVzc2FnZSBpZiBzZXQgdG8gKipUUlVFKiogKGNhc2UgaW5zZW5zaXRpdmUpLiAqL1xuXG4gIEBEQkMuUGFyYW12YWx1ZVByb3ZpZGVyXG4gIHB1YmxpYyBzdGF0aWMgZnVuY3Rpb25hbGl0eShcbiAgICBAVFlQRS5QUkUoXCJzdHJpbmdcIiwgXCJleHByZXNzaW9uIDo6IGZsYWdzIDo6IGtleWV4cHJlc3Npb24gOjoga2V5ZmxhZ3MgOjogZXJyb3JwcmVmaXggOjogZXJyb3Jwb3N0Zml4XCIpXG4gICAgQFRZUEUuUFJFKFwic3RyaW5nIHwgYm9vbGVhblwiLCBcImV4cG9zZWV4cHJlc3Npb25cIilcbiAgICB0b0xvYWQ6IHsgW2tleTogc3RyaW5nXTogdW5rbm93biB9LFxuXG4gICAgQElOU1RBTkNFLlBSRShcbiAgICAgIEhUTUxJbnB1dEVsZW1lbnQsXG4gICAgICB1bmRlZmluZWQsXG4gICAgICAnSXMgaXQgbm90IGFuIDxpbnB1dCB0eXBlID0gXCJ0ZXh0XCIvPiB0aGF0IGlzIHRhZ2dlZCB3aXRoIHRoaXMgZnVuY3Rpb25hbGl0eT8nLFxuICAgIClcbiAgICBARVEuUFJFKFwidGV4dFwiLCBmYWxzZSwgXCJ0eXBlXCIpXG4gICAgdG9Qcm9jZXNzOiBFbGVtZW50LFxuICApOiB2b2lkIHtcbiAgICAvLyAjcmVnaW9uIE5vcm1hbGl6ZSBQYXJhbWV0ZXIuXG4gICAgdG9Mb2FkLmV4cHJlc3Npb24gPSAodG9Mb2FkLmV4cHJlc3Npb24gYXMgc3RyaW5nKS5yZXBsYWNlKC9cdTAwQjAvLCBcIl5cIik7XG4gICAgdG9Mb2FkLmV4cG9zZWV4cHJlc3Npb24gPSB0b0xvYWQuZXhwb3NlZXhwcmVzc2lvblxuICAgICAgPyB0eXBlb2YgdG9Mb2FkLmV4cG9zZWV4cHJlc3Npb24gPT09IFwic3RyaW5nXCJcbiAgICAgICAgPyB0b0xvYWQuZXhwb3NlZXhwcmVzc2lvbi50b0xvd2VyQ2FzZSgpID09PSBcInRydWVcIlxuICAgICAgICA6IHRvTG9hZC5leHBvc2VleHByZXNzaW9uXG4gICAgICA6IGZhbHNlO1xuICAgIC8vICNlbmRyZWdpb24gTm9ybWFsaXplIFBhcmFtZXRlci5cbiAgICBjb25zdCAkID0gZ2V0SlF1ZXJ5KCk7XG4gICAgLy8gI3JlZ2lvbiBMaXZlIHZhbGlkYXRpb25cbiAgICB0b1Byb2Nlc3MuYWRkRXZlbnRMaXN0ZW5lcihcImtleXVwXCIsIChldmVudCkgPT4ge1xuICAgICAgaWYgKChldmVudCBhcyBLZXlib2FyZEV2ZW50KS5rZXkgPT09IHVuZGVmaW5lZCkge1xuICAgICAgICByZXR1cm47XG4gICAgICB9XG5cbiAgICAgIGlmICgoZXZlbnQgYXMgS2V5Ym9hcmRFdmVudCkua2V5Lmxlbmd0aCA9PT0gMSkge1xuICAgICAgICBldmVudC5wcmV2ZW50RGVmYXVsdCgpO1xuICAgICAgICBldmVudC5zdG9wSW1tZWRpYXRlUHJvcGFnYXRpb24oKTtcbiAgICAgICAgZXZlbnQuc3RvcFByb3BhZ2F0aW9uKCk7XG4gICAgICB9XG4gICAgfSk7XG5cbiAgICB0b1Byb2Nlc3MuYWRkRXZlbnRMaXN0ZW5lcihcImtleWRvd25cIiwgKGV2ZW50KSA9PiB7XG4gICAgICBpZiAoKGV2ZW50IGFzIEtleWJvYXJkRXZlbnQpLmtleSA9PT0gdW5kZWZpbmVkKSB7XG4gICAgICAgIHJldHVybjtcbiAgICAgIH1cblxuICAgICAgaWYgKHRvTG9hZC5rZXlleHByZXNzaW9uICYmIChldmVudCBhcyBLZXlib2FyZEV2ZW50KS5rZXkubGVuZ3RoID09PSAxKSB7XG4gICAgICAgIGlmIChcbiAgICAgICAgICAhbmV3IFJlZ0V4cCh0b0xvYWQua2V5ZXhwcmVzc2lvbiBhcyBzdHJpbmcsIHRvTG9hZC5rZXlmbGFncyA/ICh0b0xvYWQua2V5ZmxhZ3MgYXMgc3RyaW5nKSA6IFwiaVwiKS50ZXN0KFxuICAgICAgICAgICAgKGV2ZW50IGFzIEtleWJvYXJkRXZlbnQpLmtleSxcbiAgICAgICAgICApXG4gICAgICAgICkge1xuICAgICAgICAgIGV2ZW50LnByZXZlbnREZWZhdWx0KCk7XG4gICAgICAgICAgZXZlbnQuc3RvcEltbWVkaWF0ZVByb3BhZ2F0aW9uKCk7XG4gICAgICAgICAgZXZlbnQuc3RvcFByb3BhZ2F0aW9uKCk7XG4gICAgICAgIH1cbiAgICAgIH1cbiAgICB9KTtcbiAgICAvLyAjcmVnaW9uIExpdmUgdmFsaWRhdGlvblxuICAgIC8vICNyZWdpb24gSW52YWxpZGF0ZSBGaWVsZFxuICAgIHRvUHJvY2Vzcy5hZGRFdmVudExpc3RlbmVyKFwiY2hhbmdlXCIsIChldmVudCkgPT4ge1xuICAgICAgaWYgKFxuICAgICAgICAhbmV3IFJlZ0V4cCh0b0xvYWQuZXhwcmVzc2lvbiBhcyBzdHJpbmcsIHRvTG9hZC5mbGFncyA/ICh0b0xvYWQuZmxhZ3MgYXMgc3RyaW5nKSA6IFwiZ1wiKS50ZXN0KFxuICAgICAgICAgICh0b1Byb2Nlc3MgYXMgSFRNTElucHV0RWxlbWVudCkudmFsdWUsXG4gICAgICAgIClcbiAgICAgICkge1xuICAgICAgICAkKHRvUHJvY2VzcykuZXJyb3IoXG4gICAgICAgICAgYCR7dG9Mb2FkLmVycm9ycHJlZml4ID8gdG9Mb2FkLmVycm9ycHJlZml4IDogXCJUZXh0IGRvZXMgbm90IGNvbXBseSB0byBcIn0ke3RvTG9hZC5leHBvc2VleHByZXNzaW9uID8gdG9Mb2FkLmV4cHJlc3Npb24gOiBcImEgY2VydGFpbiByZXN0cmljdGlvblwifSR7dG9Mb2FkLmVycm9ycG9zdGZpeCA/IGAgJHt0b0xvYWQuZXJyb3Jwb3N0Zml4fWAgOiBcIi5cIn1gLFxuICAgICAgICApO1xuICAgICAgfSBlbHNlIHtcbiAgICAgICAgJCh0b1Byb2Nlc3MpLmVycm9yKFwiXCIpO1xuICAgICAgfVxuICAgIH0pO1xuICAgIC8vICNlbmRyZWdpb24gSW52YWxpZGF0ZSBGaWVsZFxuICB9XG59XG5cbndpbmRvdy5jb2RiaS5yZWdpc3RlckZ1bmN0aW9uYWxpdHkoXCJIVE1MLklucHV0LlJFR0VYXCIsIEhUTUxfSW5wdXRfUkVHRVguZnVuY3Rpb25hbGl0eS5iaW5kKEhUTUxfSW5wdXRfUkVHRVgpKTsgLy8gSW5pdGlhbGl6YXRpb25cbiJdLAogICJtYXBwaW5ncyI6ICI7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7QUFFQSw4QkFBMEI7QUFlbkIsSUFBTSxtQkFBTixNQUF1QjtBQUFBLEVBZ0I1QixPQUFjLGNBR1osUUFRQSxXQUNNO0FBRU4sV0FBTyxhQUFjLE9BQU8sV0FBc0IsUUFBUSxLQUFLLEdBQUc7QUFDbEUsV0FBTyxtQkFBbUIsT0FBTyxtQkFDN0IsT0FBTyxPQUFPLHFCQUFxQixXQUNqQyxPQUFPLGlCQUFpQixZQUFZLE1BQU0sU0FDMUMsT0FBTyxtQkFDVDtBQUVKLFVBQU0sUUFBSSxtQ0FBVTtBQUVwQixjQUFVLGlCQUFpQixTQUFTLENBQUMsVUFBVTtBQUM3QyxVQUFLLE1BQXdCLFFBQVEsUUFBVztBQUM5QztBQUFBLE1BQ0Y7QUFFQSxVQUFLLE1BQXdCLElBQUksV0FBVyxHQUFHO0FBQzdDLGNBQU0sZUFBZTtBQUNyQixjQUFNLHlCQUF5QjtBQUMvQixjQUFNLGdCQUFnQjtBQUFBLE1BQ3hCO0FBQUEsSUFDRixDQUFDO0FBRUQsY0FBVSxpQkFBaUIsV0FBVyxDQUFDLFVBQVU7QUFDL0MsVUFBSyxNQUF3QixRQUFRLFFBQVc7QUFDOUM7QUFBQSxNQUNGO0FBRUEsVUFBSSxPQUFPLGlCQUFrQixNQUF3QixJQUFJLFdBQVcsR0FBRztBQUNyRSxZQUNFLENBQUMsSUFBSSxPQUFPLE9BQU8sZUFBeUIsT0FBTyxXQUFZLE9BQU8sV0FBc0IsR0FBRyxFQUFFO0FBQUEsVUFDOUYsTUFBd0I7QUFBQSxRQUMzQixHQUNBO0FBQ0EsZ0JBQU0sZUFBZTtBQUNyQixnQkFBTSx5QkFBeUI7QUFDL0IsZ0JBQU0sZ0JBQWdCO0FBQUEsUUFDeEI7QUFBQSxNQUNGO0FBQUEsSUFDRixDQUFDO0FBR0QsY0FBVSxpQkFBaUIsVUFBVSxDQUFDLFVBQVU7QUFDOUMsVUFDRSxDQUFDLElBQUksT0FBTyxPQUFPLFlBQXNCLE9BQU8sUUFBUyxPQUFPLFFBQW1CLEdBQUcsRUFBRTtBQUFBLFFBQ3JGLFVBQStCO0FBQUEsTUFDbEMsR0FDQTtBQUNBLFVBQUUsU0FBUyxFQUFFO0FBQUEsVUFDWCxHQUFHLE9BQU8sY0FBYyxPQUFPLGNBQWMsMEJBQTBCLEdBQUcsT0FBTyxtQkFBbUIsT0FBTyxhQUFhLHVCQUF1QixHQUFHLE9BQU8sZUFBZSxJQUFJLE9BQU8sWUFBWSxLQUFLLEdBQUc7QUFBQSxRQUN6TTtBQUFBLE1BQ0YsT0FBTztBQUNMLFVBQUUsU0FBUyxFQUFFLE1BQU0sRUFBRTtBQUFBLE1BQ3ZCO0FBQUEsSUFDRixDQUFDO0FBQUEsRUFFSDtBQUNGO0FBckVnQjtBQUFBLEVBRGIsSUFBSTtBQUFBLEVBRUYsd0JBQUssSUFBSSxVQUFVLGlGQUFpRjtBQUFBLEVBQ3BHLHdCQUFLLElBQUksb0JBQW9CLGtCQUFrQjtBQUFBLEVBRy9DLDRCQUFTO0FBQUEsSUFDUjtBQUFBLElBQ0E7QUFBQSxJQUNBO0FBQUEsRUFDRjtBQUFBLEVBQ0Msc0JBQUcsSUFBSSxRQUFRLE9BQU8sTUFBTTtBQUFBLEdBMUJwQixrQkFnQkc7QUF1RWhCLE9BQU8sTUFBTSxzQkFBc0Isb0JBQW9CLGlCQUFpQixjQUFjLEtBQUssZ0JBQWdCLENBQUM7IiwKICAibmFtZXMiOiBbXQp9Cg==

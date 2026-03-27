@@ -194,6 +194,24 @@
     animation: kfFadeIN_CodBi_LocalAPIDoc_Tree_Label .25s ease-in forwards;
   }
 
+  .CodBi_LocalAPIDoc_Tree_ImportedIcon {
+    position: absolute;
+    top: -.6em;
+    left: -.6em;
+    font-size: .7em;
+    line-height: 1;
+    width: 1.4em;
+    height: 1.4em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: white;
+    border-radius: 50%;
+    box-shadow: 0 0 .3em green;
+    z-index: 1;
+    cursor: default;
+  }
+
   #CodBi_LocalAPIDoc_Tree_Label {
     .CodBi_LocalAPIDoc_Tree_Label_Status {
       height: .2em;
@@ -228,6 +246,10 @@
 
       div.Code {
         background-color: lime;
+      }
+
+      div.Imported {
+        background-color: magenta;
       }
     }
   }

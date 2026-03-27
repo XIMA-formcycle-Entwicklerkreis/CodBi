@@ -107,6 +107,8 @@ interface TreeNodeData {
   Parameter: ApiParameter[];
   /** The optional internal Notes. */
   Notes: string;
+  /** Whether this node was imported during the current session. */
+  Imported?: boolean;
 }
 /** Defines a contract for elements of the {@link APIDocJSON }s. */
 interface InputDataItem {
@@ -1794,9 +1796,9 @@ export class Manager implements AfterViewInit {
     }
     // #endregion Elementplaceholder
     return {
-      fslFunctionalities: result.fslFunctionalities.join(","),
-      fslElementplaceholder: result.fslElementplaceholder.join(","),
-      fileListing: result.fileListing.join(","),
+      fslFunctionalities: JSON.stringify(result.fslFunctionalities),
+      fslElementplaceholder: JSON.stringify(result.fslElementplaceholder),
+      fileListing: JSON.stringify(result.fileListing),
     };
   }
   /**
@@ -2057,13 +2059,14 @@ export class Manager implements AfterViewInit {
     };
 
     const toConvert = ZOD.tsCheck<TreeNode>(this.currentlySelectedTreeNode, Manager.zshTeeNode);
+    const parentBase = this.getTreeNodeBase(toConvert) || undefined;
 
     switch (this.activeTab) {
       case "Functionality":
-        toExport.detFunctionalities = this.convertNodes([this.isolateNode(toConvert)]);
+        toExport.detFunctionalities = this.convertNodes([toConvert], parentBase);
 
         for (const key in toExport.detFunctionalities) {
-          toExport.detFunctionalities[key].Code = window.CodbiPluginData.detFunctionalities[key].Code;
+          toExport.detFunctionalities[key].Code = window.CodbiPluginData.detFunctionalities[key]?.Code;
         }
         // #region Build file-listing
         {
@@ -2081,10 +2084,10 @@ export class Manager implements AfterViewInit {
         break;
 
       case "Elementplaceholder":
-        toExport.detElementplaceholder = this.convertNodes([this.isolateNode(toConvert)]);
+        toExport.detElementplaceholder = this.convertNodes([toConvert], parentBase);
 
         for (const key in toExport.detElementplaceholder) {
-          toExport.detElementplaceholder[key].Code = window.CodbiPluginData.detElementplaceholder[key].Code;
+          toExport.detElementplaceholder[key].Code = window.CodbiPluginData.detElementplaceholder[key]?.Code;
         }
         // #region Build file-listing
         {
@@ -2102,10 +2105,10 @@ export class Manager implements AfterViewInit {
         break;
 
       case "Standard":
-        toExport.detStandards = this.convertNodes([this.isolateNode(toConvert)]);
+        toExport.detStandards = this.convertNodes([toConvert], parentBase);
 
         for (const key in toExport.detStandards) {
-          toExport.detStandards[key].Code = window.CodbiPluginData.detStandards[key].Code;
+          toExport.detStandards[key].Code = window.CodbiPluginData.detStandards[key]?.Code;
         }
         // #region Build file-listing
         {
@@ -2577,6 +2580,29 @@ export class Manager implements AfterViewInit {
               }
             }
             // #endregion Upload Code
+            // #region Snapshot pre-existing node paths.
+            const collectNodePaths = (nodes: TreeNode[], prefix: string = ""): Set<string> => {
+              const paths = new Set<string>();
+
+              for (const node of nodes) {
+                const fullPath = prefix ? `${prefix}.${node.label}` : node.label;
+
+                paths.add(fullPath);
+
+                if (node.children) {
+                  for (const childPath of collectNodePaths(node.children, fullPath)) {
+                    paths.add(childPath);
+                  }
+                }
+              }
+
+              return paths;
+            };
+
+            const preExistingFunctionalities = collectNodePaths(this.items);
+            const preExistingEPs = collectNodePaths(this.itemsElementplaceholder);
+            const preExistingStandards = collectNodePaths(this.itemsStandard);
+            // #endregion Snapshot pre-existing node paths.
             const convertedData = this.mergeDataIntoStructuredTree(parsedData, {
               detElementplaceholder: this.itemsElementplaceholder,
               detFunctionalities: this.items,
@@ -2589,6 +2615,58 @@ export class Manager implements AfterViewInit {
             this.generateTreeKeysOfNodes(convertedData.detElementplaceholder);
             this.generateTreeKeysOfNodes(convertedData.detFunctionalities);
             this.generateTreeKeysOfNodes(convertedData.detStandards);
+            // #region Mark imported nodes and auto-expand their parents.
+            const markAndExpandImported = (
+              dataSection: { [key: string]: InputDataItem } | undefined,
+              treeArray: TreeNode[] | undefined,
+              preExisting: Set<string>,
+            ) => {
+              if (!dataSection || !treeArray) {
+                return;
+              }
+
+              for (const key of Object.keys(dataSection)) {
+                if (preExisting.has(key)) {
+                  continue;
+                }
+
+                const node = this.findNodeInTree(treeArray, key.split("."));
+
+                if (node) {
+                  if (!node.data) {
+                    node.data = { Description: "" } as TreeNodeData;
+                  }
+
+                  node.data.Imported = true;
+
+                  if (node.parent) {
+                    this.setStateToTopmost(true, node.parent);
+                  }
+                }
+              }
+            };
+
+            markAndExpandImported(
+              parsedData.detFunctionalities,
+              convertedData.detFunctionalities,
+              preExistingFunctionalities,
+            );
+            markAndExpandImported(
+              parsedData.detElementplaceholder,
+              convertedData.detElementplaceholder,
+              preExistingEPs,
+            );
+            markAndExpandImported(parsedData.detStandards, convertedData.detStandards, preExistingStandards);
+            // #endregion Mark imported nodes and auto-expand their parents.
+            // #region Auto-switch to the tab containing the first imported node.
+            if (parsedData.detFunctionalities && Object.keys(parsedData.detFunctionalities).length > 0) {
+              this._activeTab = "Functionality";
+            } else if (parsedData.detElementplaceholder && Object.keys(parsedData.detElementplaceholder).length > 0) {
+              this._activeTab = "Elementplaceholder";
+            } else if (parsedData.detStandards && Object.keys(parsedData.detStandards).length > 0) {
+              this._activeTab = "Standard";
+            }
+            // #endregion Auto-switch to the tab containing the first imported node.
             // #region Remove not imported elements from filelistings.
             for (const toRemove of functionalityKeysAlreadyExistent) {
               convertedData.fslFunctionalities = convertedData.fslFunctionalities.filter(
@@ -2669,9 +2747,7 @@ export class Manager implements AfterViewInit {
             // #region Merge API-Doc entries.
             // #region Update interface.
             window.CodbiPluginData.updateSVManager(window.CodbiPluginData.fslFunctionalities);
-            window.CodbiPluginData.updateEPManager(
-              window.CodbiPluginData.fslElementplaceholder.replaceAll('.js",', '",'),
-            );
+            window.CodbiPluginData.updateEPManager(window.CodbiPluginData.fslElementplaceholder);
             window.CodbiPluginData.populateStandards();
             // #endregion Update interface.
             const activeItems = this.activeTabItems;
@@ -2903,11 +2979,12 @@ export class Manager implements AfterViewInit {
    * Removes the current row from the {@link Manager._currentNode }'s {@link TreeNodeData.Parameter }.
    *
    * @param parameter The current row's value, that won't be used anyway. */
-  onRowDelete(parameter: ApiParameter) {
-    this._currentNodeData.Parameter = this._currentNodeData.Parameter.filter(
-      (candidate) => candidate.Name !== parameter.Name,
-    );
+  onRowDelete(parameter: ApiParameter, toAdd?: string) {
+    const prop = toAdd === undefined || toAdd === "Parameter" ? "Parameter" : toAdd.toLowerCase();
 
+    this._currentNodeData[prop] = this._currentNodeData[prop].filter((candidate) => candidate.Name !== parameter.Name);
+
+    this.updateNodeToAPIDoc();
     this._currentNodeData = this._currentNodeData;
     this.synchronized = false;
   }
@@ -3360,17 +3437,40 @@ export class Manager implements AfterViewInit {
       processComplexSection("detElementplaceholder", incomingData.detElementplaceholder);
     }
 
+    // #region Parse file listing fields (handles both JSON arrays and legacy CSV strings).
+    const parseFileList = (raw: string): string[] => {
+      try {
+        const parsed = JSON.parse(raw);
+
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+
+        if (typeof parsed === "string") {
+          raw = parsed;
+        }
+      } catch {
+        // Not valid JSON — fall back to CSV split.
+      }
+
+      return raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    };
+
     if (incomingData.fileListing) {
-      mergedTree.fileListing = incomingData.fileListing.split(",");
+      mergedTree.fileListing = parseFileList(incomingData.fileListing);
     }
 
     if (incomingData.fslElementplaceholder) {
-      mergedTree.fslElementplaceholder = incomingData.fslElementplaceholder.split(",");
+      mergedTree.fslElementplaceholder = parseFileList(incomingData.fslElementplaceholder);
     }
 
     if (incomingData.fslFunctionalities) {
-      mergedTree.fslFunctionalities = incomingData.fslFunctionalities.split(",");
+      mergedTree.fslFunctionalities = parseFileList(incomingData.fslFunctionalities);
     }
+    // #endregion Parse file listing fields (handles both JSON arrays and legacy CSV strings).
 
     return mergedTree;
   }

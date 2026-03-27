@@ -11,31 +11,28 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
-
 /**
  * This **E**lement-**P**laceholder acquires the AI response to a question.
  *
  * ### Indexed Parameters:
- *  1. The question to ask the AI.
- *  2. **useinternet** — `"true"` to enable Brave Search internet access. Default: `"false"`.
- *  3. **location** — `"true"` to enable geolocation access. Default: `"false"`.
- *  4. **language** — Language for the AI response (e.g. `"German"`, `"English"`). Appends
- *     `"Answer in {language}."` to the question.
- *  5. **responseLanguage** — Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI
- *     to respond in this language, skipping auto-detection.
- *  6. **specialist** — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
- *     plugin property.
- *  7. **filterresults** — `"true"` to enable PII filtering on Brave Search queries.
- *
- * Usage: `{AI.Ask > What is the capital of France?;true;;German;;;true}`
+ *  - 1st                         — The question to ask the AI.
+ *  - 2nd **UseInternet**         — `"true"` to enable Brave Search internet access. Default: `"false"`.
+ *  - 3rd **Location**            — `"true"` to enable geolocation access. Default: `"false"`.
+ *  - 4th **Language**            — Language for the AI response (e.g. `"German"`, `"English"`). Appends
+ *                                `"Answer in {language}."` to the question.
+ *  - 5th **ResponseLanguage**    — Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI
+ *                                  to respond in this language, skipping auto-detection.
+ *  - 6th **Specialist**          — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
+ *                                  plugin property.
+ *  - 7th **FilterResults**       — `"true"` to enable PII filtering on Brave Search queries.
+ *  - 8th **JsonParse**           — `"true"` to parse the AI response as JSON. Default: `"false"`.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
-export class AI_ASK {
+export class AI_LLAMA_STD_QA {
   /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */
   private static readonly PAGE_SESSION_ID: string = generateUUID();
-
   /**
    * Sends the question to the AI backend and resolves with the answer.
    *
@@ -46,8 +43,9 @@ export class AI_ASK {
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "1")
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "2")
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "6")
+    @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "7")
     params: Array<string>,
-  ): Promise<Array<unknown>> {
+  ): Promise<string | object> {
     const $ = getJQuery();
     // #region Extract indexed parameters
     let question = params[0] as string;
@@ -57,17 +55,23 @@ export class AI_ASK {
     const responseLanguage = (params[4] ?? "").trim();
     const specialist = (params[5] ?? "").trim();
     const filterResults = (params[6] ?? "").trim();
+    const jsonParse = (params[7] ?? "").toLowerCase() === "true";
     // #endregion Extract indexed parameters
     // #region Append language instruction if configured
     if (language) {
       question = `${question} Answer in ${language}.`;
     }
     // #endregion Append language instruction if configured
+    // #region Append JSON instruction if jsonparse is enabled
+    if (jsonParse) {
+      question = `${question} Respond with valid JSON only. No markdown, no explanation, no code fences — just the raw JSON object or array.`;
+    }
+    // #endregion Append JSON instruction if jsonparse is enabled
     // #region Build request headers
     const questionId = generateUUID();
     const headers: { [key: string]: string } = {};
 
-    headers["X-Session-Id"] = AI_ASK.PAGE_SESSION_ID;
+    headers["X-Session-Id"] = AI_LLAMA_STD_QA.PAGE_SESSION_ID;
     headers["X-Search"] = useInternet ? "true" : "false";
 
     if (filterResults) {
@@ -103,7 +107,6 @@ export class AI_ASK {
           }
         }
         // #endregion Geolocation
-
         headers[`X-Question-${questionId}`] = btoa(unescape(encodeURIComponent(question)));
 
         let queueTicket: string | null = null;
@@ -135,7 +138,16 @@ export class AI_ASK {
 
               const answerText = response[questionId]?.answer;
 
-              resolve([answerText ?? ""]);
+              if (jsonParse && answerText) {
+                try {
+                  resolve(JSON.parse(answerText));
+                } catch (parseErr) {
+                  window.codbi.log("WARNING", `JSON parse failed, returning raw string: ${parseErr}`, "AI / QA EP");
+                  resolve(answerText);
+                }
+              } else {
+                resolve(answerText ?? "");
+              }
 
               if (response.error) {
                 window.codbi.log("ERROR", `AI request failed: ${response.error}`, "AI / Ask EP");
@@ -143,7 +155,7 @@ export class AI_ASK {
             },
             error: (_xhr, status, error) => {
               window.codbi.log("ERROR", `AI request failed with status "${status}" cause: "${error}"`, "AI / Ask EP");
-              resolve([""]);
+              resolve("");
             },
           });
         };
@@ -157,4 +169,4 @@ export class AI_ASK {
   }
 }
 
-window.codbi.registerEP("AI.Ask", AI_ASK.retrieve.bind(AI_ASK)); // Initialization
+window.codbi.registerEP("AI.LLAMA.STD.QA", AI_LLAMA_STD_QA.retrieve.bind(AI_LLAMA_STD_QA)); // Initialization

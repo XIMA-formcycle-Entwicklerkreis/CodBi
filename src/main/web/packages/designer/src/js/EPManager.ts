@@ -114,8 +114,15 @@ export class EPManager extends SVManager {
 
     this._bufferOptions = this.options;
     // #region Provide Update via PluginData
+    window.CodbiPluginData.updateSVManager = (options: string) => {
+      this._bufferOptions = JSON.parse(options).map((e: string) => e.replace(".js", ""));
+      this.options = this._bufferOptions;
+
+      this.render();
+    };
+
     window.CodbiPluginData.updateEPManager = (options: string) => {
-      this.epOptions = JSON.parse(options).map((e: string) => e.replace(".ts", ""));
+      this.epOptions = JSON.parse(options).map((e: string) => e.replace(".js", ""));
       // #region Invalidate mode so that on setting to EP it will rerender.
       this.mode = "SV";
       this.mode = "EP";
@@ -258,7 +265,9 @@ export class EPManager extends SVManager {
       shadow.querySelector(EPManager.SELECTOR_OPTION_CURRENT)?.classList.remove("-Current");
       DEFINED.tsCheck<HTMLElement>(
         INSTANCE.tsCheck<HTMLDivElement>(
-          shadow.querySelector(`.---WaXCode.--SVManager.--Option[ data-cb-option = "${remainingOptions[0]}"]`),
+          shadow.querySelector(
+            `.---WaXCode.--SVManager.--Option[ data-cb-option = "${CSS.escape(remainingOptions[0])}"]`,
+          ),
           HTMLDivElement,
         ),
       ).classList.add("-Current");

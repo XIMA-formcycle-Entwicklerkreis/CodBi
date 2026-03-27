@@ -25,7 +25,13 @@
 
                                         pTemplate = "default">
                             <div    id      = "CodBi_LocalAPIDoc_Tree_Item"
-                                    style   = "display : flex ;">
+                                    style   = "display : flex ; position : relative ;">
+                                <div    *ngIf   = 'node.data.Imported'
+
+                                        class   = "CodBi_LocalAPIDoc_Tree_ImportedIcon"
+
+                                        [attr.title] = "'TreeView.Label.Status.Imported' | transloco">&#x2B07;</div>
+
                                 <div id = "CodBi_LocalAPIDoc_Tree_Label">
                                     <p *ngIf = "currentlySelectedTreeNode !== node || !currentlySelectedTreeNodeEditing">{{ node.label }}</p>
 
@@ -69,7 +75,13 @@
 
                                                 class   = "Code"
 
-                                                [attr.title] = "'TreeView.Label.Status.Code' | transloco"></div></div></div><div>
+                                                [attr.title] = "'TreeView.Label.Status.Code' | transloco"></div>
+
+                                        <div    *ngIf = 'node.data.Imported'
+
+                                                class = "Imported"
+
+                                                [attr.title] = "'TreeView.Label.Status.Imported' | transloco"></div></div></div><div>
 
                                 <div id = "CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent" #CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent >
                                     <p>{{"Input.Hint.AlreadyExistent_Node" | transloco }}</p></div>
@@ -509,7 +521,7 @@
                                                     icon        = "pi pi-trash"
                                                     severity    = "secondary"
 
-                                                    (click) = "onRowDelete( parameter )"></button>
+                                                    (click) = "onRowDelete( parameter, toAdd )"></button>
 
                                             <button *ngIf = "editing"
 

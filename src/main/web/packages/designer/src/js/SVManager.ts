@@ -664,7 +664,9 @@ export class SVManager extends HTMLDivElement {
     shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current")?.classList.remove("-Current");
     DEFINED.tsCheck<HTMLElement>(
       INSTANCE.tsCheck<HTMLDivElement>(
-        shadow.querySelector(`.---WaXCode.--SVManager.--Option[ data-cb-option = "${remainingOptions[0]}"]`),
+        shadow.querySelector(
+          `.---WaXCode.--SVManager.--Option[ data-cb-option = "${CSS.escape(remainingOptions[0])}"]`,
+        ),
         HTMLDivElement,
       ),
     ).classList.add("-Current");

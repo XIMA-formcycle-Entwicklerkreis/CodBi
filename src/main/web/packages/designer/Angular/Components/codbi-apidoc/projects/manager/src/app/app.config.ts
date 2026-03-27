@@ -47,9 +47,6 @@ class MyCustomTranslocoMissingHandler implements TranslocoMissingHandler {
    * For now, we'll just return the key itself.
    */
   handle(key: string, config: Translation | null | undefined): string {
-    console.log("handle", key);
-    // You can add logging here to see which keys are missing
-    // console.warn(`Missing Transloco key: ${key}`, config);
     return key; // Default behavior: return the missing key
   }
 }

@@ -55,6 +55,7 @@
   "TreeView.Label.Status.Globals": "Beschreibung globaler Parameter vorhanden",
   "TreeView.Label.Status.Classes": "Beschreibung der von dieser CodBi Standard-Konfiguration definierten CSS-Klassen vorhanden",
   "TreeView.Label.Status.Code": "Code verfügbar",
+  "TreeView.Label.Status.Imported": "Importiert",
   "CodeTemplate_OnLoaded": "Wenn Dokument Geladen",
   "CodeTemplate_Functionality": "Neue Funktionalität",
   "CodeTemplate_Functionality_Placeholder": "Meine.Neue.Funktionalitaet",

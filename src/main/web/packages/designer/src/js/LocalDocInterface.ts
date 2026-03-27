@@ -50,6 +50,35 @@ function buildFileList(serializedFiles: string): string {
     })
     .join(",");
 }
+/** Parses a file-list value from a server response, handling both JSON array strings and legacy CSV.
+ *
+ * @param raw The raw value from the response (may be a JSON array string or a CSV string).
+ *
+ * @returns The parsed file names as an array. */
+function parseFileListResponse(raw: string): string[] {
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Not valid JSON — fall through to CSV split.
+    }
+
+    return raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+  }
+
+  if (Array.isArray(raw)) {
+    return raw;
+  }
+
+  return [];
+}
 /** Blocks keystrokes for a short duration to avoid accidental input.
  *
  * @param durationMs The blocking duration in milliseconds. */
@@ -484,6 +513,7 @@ export function enableLocalDocInterface(): void {
                       }
                       // #region Show interface.
                       epManager.enabled = true;
+                      lastPanelShownAt = Date.now();
                       epManager.enteringEP = true;
                       cDetails.style.display = "block";
 
@@ -599,6 +629,7 @@ export function enableLocalDocInterface(): void {
           );
           // #region Show interface.
           epManager.enabled = true;
+          lastPanelShownAt = Date.now();
           epManager.enteringEP = true;
           cDetails.style.display = "block";
 
@@ -682,16 +713,76 @@ export function enableLocalDocInterface(): void {
       const cDetails = document.createElement("div");
       // #region Set up Focus & Mouseover-Flag
       let flagMouseOverCDetails = false;
+      let flagMouseOverList = false;
+      let dismissTimeoutId: ReturnType<typeof setTimeout> | undefined;
       let currentCDetailBlurAction: (() => void) | undefined;
+      // #region Grace period to prevent animation-triggered mouseleave from dismissing panels.
+      let lastPanelShownAt = 0;
+      const PANEL_GRACE_MS = 350;
+      // #endregion Grace period to prevent animation-triggered mouseleave from dismissing panels.
 
+      const cancelDismiss = () => {
+        if (dismissTimeoutId !== undefined) {
+          clearTimeout(dismissTimeoutId);
+          dismissTimeoutId = undefined;
+        }
+      };
+
+      const scheduleDismiss = () => {
+        // #region Skip dismiss during animation grace period.
+        if (Date.now() - lastPanelShownAt < PANEL_GRACE_MS) {
+          return;
+        }
+        // #endregion Skip dismiss during animation grace period.
+        cancelDismiss();
+        dismissTimeoutId = setTimeout(() => {
+          dismissTimeoutId = undefined;
+
+          if (!flagMouseOverCDetails && !flagMouseOverList && currentCDetailBlurAction) {
+            currentCDetailBlurAction();
+            currentCDetailBlurAction = undefined;
+          }
+        }, 250);
+      };
+
+      // #region Prevent cDetails clicks from blurring the active input (same pattern as SVManager).
+      cDetails.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+      });
+      // #endregion Prevent cDetails clicks from blurring the active input (same pattern as SVManager).
       cDetails.addEventListener("mouseenter", (event) => {
         flagMouseOverCDetails = true;
+        cancelDismiss();
       });
       cDetails.addEventListener("mouseleave", (event) => {
         flagMouseOverCDetails = false;
 
         if (currentCDetailBlurAction) {
-          currentCDetailBlurAction();
+          scheduleDismiss();
+        }
+      });
+
+      epManager.addEventListener("mouseenter", () => {
+        flagMouseOverList = true;
+        cancelDismiss();
+      });
+      epManager.addEventListener("mouseleave", () => {
+        flagMouseOverList = false;
+
+        if (currentCDetailBlurAction) {
+          scheduleDismiss();
+        }
+      });
+
+      optioninput.addEventListener("mouseenter", () => {
+        flagMouseOverList = true;
+        cancelDismiss();
+      });
+      optioninput.addEventListener("mouseleave", () => {
+        flagMouseOverList = false;
+
+        if (currentCDetailBlurAction) {
+          scheduleDismiss();
         }
       });
       // #endregion Set up Focus & Mouseover-Flag
@@ -731,6 +822,60 @@ export function enableLocalDocInterface(): void {
         }
       });
       // #endregion Keyboard Navigation List Forwarding
+      // #region Global dismiss: hide cDetails when focus moves to an iframe or clicking outside.
+      const dismissAll = () => {
+        cDetails.style.display = "none";
+        epManager.enabled = false;
+        optioninput.enabled = false;
+        cancelDismiss();
+        currentCDetailBlurAction = undefined;
+      };
+
+      // #region Dismiss on focus leaving to iframe (designer canvas).
+      document.addEventListener("focusout", () => {
+        if (cDetails.style.display === "none") {
+          return;
+        }
+
+        requestAnimationFrame(() => {
+          const active = document.activeElement;
+          // #region Determine whether focus has left the CodBi controls.
+          const focusInCodbi =
+            (active !== null && cDetails.contains(active)) ||
+            (active !== null && epManager.contains(active)) ||
+            (active !== null && optioninput.contains(active)) ||
+            active === epManager.target ||
+            active === optioninput.target;
+          // #endregion Determine whether focus has left the CodBi controls.
+          if (!focusInCodbi && !flagMouseOverCDetails) {
+            dismissAll();
+          }
+        });
+      });
+      // #endregion Dismiss on focus leaving to iframe (designer canvas).
+
+      // #region Dismiss on clicking outside CodBi controls.
+      document.addEventListener("pointerdown", (event) => {
+        if (cDetails.style.display === "none") {
+          return;
+        }
+
+        const target = event.target as Node;
+
+        if (
+          cDetails.contains(target) ||
+          epManager.contains(target) ||
+          optioninput.contains(target) ||
+          epManager.target?.contains(target) ||
+          optioninput.target?.contains(target)
+        ) {
+          return;
+        }
+
+        dismissAll();
+      });
+      // #endregion Dismiss on clicking outside CodBi controls.
+      // #endregion Global dismiss: hide cDetails when focus moves to an iframe or clicking outside.
 
       // #endregion Styling
       cDetails.classList.add("---CodBi", "--Panel", "--APIDoc");
@@ -817,7 +962,7 @@ export function enableLocalDocInterface(): void {
 
           if (response.fslFunctionalities) {
             const existingFsl: string[] = JSON.parse(window.CodbiPluginData.fslFunctionalities);
-            const newFsl = response.fslFunctionalities.split(",");
+            const newFsl = parseFileListResponse(response.fslFunctionalities);
             const merged = [...new Set([...existingFsl, ...newFsl])];
             window.CodbiPluginData.fslFunctionalities = JSON.stringify(merged);
           }
@@ -846,7 +991,7 @@ export function enableLocalDocInterface(): void {
 
           if (response.fslElementplaceholder) {
             const existingEp: string[] = JSON.parse(window.CodbiPluginData.fslElementplaceholder);
-            const newEp = response.fslElementplaceholder.split(",");
+            const newEp = parseFileListResponse(response.fslElementplaceholder);
             const merged = [...new Set([...existingEp, ...newEp])];
             window.CodbiPluginData.fslElementplaceholder = JSON.stringify(merged);
           }
@@ -877,7 +1022,7 @@ export function enableLocalDocInterface(): void {
 
           if (response.fileListing) {
             const existingFl: string[] = JSON.parse(window.CodbiPluginData.fileListing);
-            const newFl = response.fileListing.split(",");
+            const newFl = parseFileListResponse(response.fileListing);
             const merged = [...new Set([...existingFl, ...newFl])];
             window.CodbiPluginData.fileListing = JSON.stringify(merged);
           }
@@ -984,6 +1129,7 @@ export function enableLocalDocInterface(): void {
                   ];
                   // #endregion Define Code Template Options
                   optioninput.enabled = true;
+                  lastPanelShownAt = Date.now();
                   const target =
                     activeElement instanceof HTMLInputElement
                       ? activeElement
@@ -1100,6 +1246,7 @@ export function enableLocalDocInterface(): void {
                         optioninput.mode = "Global Variable";
                         optioninput.options = globalVariables;
                         optioninput.enabled = true;
+                        lastPanelShownAt = Date.now();
                         optioninput.target = added;
                         optioninput.targetOptionTransformer = (toTransform: string): string => {
                           if (toTransform.indexOf("[") !== -1) {
@@ -1314,6 +1461,7 @@ export function enableLocalDocInterface(): void {
                           renderDetails(cDetails, baseDocURL, description);
                           // #endregion First load of documentation.
                           optioninput.enabled = true;
+                          lastPanelShownAt = Date.now();
                           optioninput.optionTransformer = undefined;
 
                           if (added.parentElement !== null && added.parentElement !== undefined) {
@@ -1440,6 +1588,7 @@ export function enableLocalDocInterface(): void {
                         epManager.target = INSTANCE.tsCheck<HTMLInputElement>(added, HTMLInputElement);
                         epManager.activeOptions = added.value.split(",").map((o) => o.trim());
                         epManager.enabled = true;
+                        lastPanelShownAt = Date.now();
 
                         updateLayoutEPManager(added);
                         // #region Hide CodBi-Interface
@@ -1540,6 +1689,7 @@ export function enableLocalDocInterface(): void {
                                 optioninput.mode = "Functionality Parameter";
                                 optioninput.target = added;
                                 optioninput.enabled = true;
+                                lastPanelShownAt = Date.now();
                                 optioninput.options = functionalityParameter;
                                 cDetails.style.display = "block";
                                 optioninput.targetOptionTransformer = (toTransform: string): string => {
@@ -1693,6 +1843,7 @@ export function enableLocalDocInterface(): void {
 
                             // #region Show interface.
                             epManager.enabled = true;
+                            lastPanelShownAt = Date.now();
                             epManager.enteringEP = true;
                             cDetails.style.display = "block";
 
@@ -1834,6 +1985,7 @@ export function enableLocalDocInterface(): void {
                                 if (input.classList.contains("editor-text")) {
                                   if (!epManager.enabled) {
                                     epManager.enabled = true;
+                                    lastPanelShownAt = Date.now();
                                   }
                                   if (cDetails.style.display !== "block") {
                                     cDetails.style.display = "block";
@@ -1912,6 +2064,7 @@ export function enableLocalDocInterface(): void {
                         epManager.mode = "SV";
                         epManager.target = currentFunctionalityInput;
                         epManager.enabled = true;
+                        lastPanelShownAt = Date.now();
 
                         cDetails.style.display = "block";
 

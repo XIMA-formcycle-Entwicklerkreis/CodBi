@@ -51,6 +51,7 @@ export class Optioninput extends HTMLDivElement {
    * @param toSet The {@link optioninput.options }. */
   public set options(toSet: Array<string>) {
     this._options = toSet.map((option) => this.normalizeOptionToken(option));
+    this._renderCacheKey = null;
 
     if (this._options.length !== 0) {
       this.render();
@@ -307,6 +308,7 @@ export class Optioninput extends HTMLDivElement {
       }
 
       container.dataset.cbOption = option;
+      container.style.display = "flex";
       container.classList.remove("-Current");
 
       if (currentValue && currentValue === option) {
@@ -836,6 +838,7 @@ export class Optioninput extends HTMLDivElement {
     }
 
     const eventTarget = this.target;
+    const remainingOptions = this.filter(eventTarget.value);
 
     if (remainingOptions.length === 0) {
       this.enabled = false;
@@ -902,7 +905,7 @@ export class Optioninput extends HTMLDivElement {
       shadow.querySelector(".---WaXCode.--Optioninput.--Option.-Current")?.classList.remove("-Current");
       DEFINED.tsCheck<HTMLElement>(
         INSTANCE.tsCheck<HTMLDivElement>(
-          shadow.querySelector(`.---WaXCode.--Optioninput.--Option[ data-cb-option = "${hits[0]}"]`),
+          shadow.querySelector(`.---WaXCode.--Optioninput.--Option[ data-cb-option = "${CSS.escape(hits[0])}"]`),
           HTMLDivElement,
         ),
       ).classList.add("-Current");

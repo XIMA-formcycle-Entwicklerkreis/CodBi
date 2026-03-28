@@ -1062,7 +1062,7 @@ export function enableLocalDocInterface(): void {
             #cCodBi_LocalAPIDoc.--opened { left : 0vw ; opacity : .9 ; pointer-events : all !important ;}}
             #cCodBi_LocalAPIDoc cb-manager { display : block ; height : 100% ;}</style>
           <div id = "cCodBi_LocalAPIDoc">
-            <cb-manager apidoc      = '${JSON.stringify(response)}'
+            <cb-manager apidoc      = '${JSON.stringify(response).replace(/&/g, "&amp;").replace(/'/g, "&#39;")}'
                         baseURL     = "${baseURL}"
                         language    = "${currentLanguage}"
                         resourceURL = "${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/tinymce"

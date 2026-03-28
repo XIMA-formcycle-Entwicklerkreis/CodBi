@@ -43,6 +43,8 @@ interface Window {
       [key: string]: {
         /** Stores the either the URL to or the actual HTML of the documentation. */
         Description: string;
+        /** Stores the parameter that this **Element-Placeholder** provides. */
+        Parameter?: { [key: string]: string };
         /** Stores a {@link boolean } stating whether this entry is a local or a native one. */
         local: boolean;
         /** Stores the JS-Code for that CodBi-Element. */

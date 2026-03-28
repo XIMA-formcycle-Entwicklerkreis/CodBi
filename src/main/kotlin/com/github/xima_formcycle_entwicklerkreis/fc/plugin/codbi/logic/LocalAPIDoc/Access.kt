@@ -195,7 +195,7 @@ class StructuredDataStoreAction : IPluginServletAction {
 
         lock.read {
           servletResponse.value =
-              "{\"result\": \"${ result.replace("\"","<|>").replace("\r","").replace("\n","").replace("\t","")}\"}"
+              "{\"result\": \"${ result.replace("\\","\\\\").replace("\"","<|>").replace("\r","").replace("\n","").replace("\t","")}\"}"
         }
       }
 

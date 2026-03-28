@@ -855,8 +855,10 @@ export class Manager implements AfterViewInit {
               };
             }
 
-            this.currentlySelectedTreeNode.data.Description =
-              this.translocoService.translate("Add.NewNode.ViaCodeUpload");
+            if (!this.currentlySelectedTreeNode.data.Description) {
+              this.currentlySelectedTreeNode.data.Description =
+                this.translocoService.translate("Add.NewNode.ViaCodeUpload");
+            }
 
             switch (activeTab) {
               case "Elementplaceholder": {
@@ -2580,6 +2582,20 @@ export class Manager implements AfterViewInit {
               }
             }
             // #endregion Upload Code
+            // #region Cancel pending deletions for re-imported elements.
+            this.removedElements = this.removedElements.filter((removed) => {
+              if (removed.type === "Functionality" && parsedData.detFunctionalities[removed.path]) {
+                return false;
+              }
+              if (removed.type === "Elementplaceholder" && parsedData.detElementplaceholder?.[removed.path]) {
+                return false;
+              }
+              if (removed.type === "Standard" && parsedData.detStandards?.[removed.path]) {
+                return false;
+              }
+              return true;
+            });
+            // #endregion Cancel pending deletions for re-imported elements.
             // #region Snapshot pre-existing node paths.
             const collectNodePaths = (nodes: TreeNode[], prefix: string = ""): Set<string> => {
               const paths = new Set<string>();
@@ -2726,6 +2742,7 @@ export class Manager implements AfterViewInit {
               if (window.CodbiPluginData.detElementplaceholder[key] === undefined) {
                 window.CodbiPluginData.detElementplaceholder[key] = {
                   Description: parsedData.detElementplaceholder[key].Description,
+                  Parameter: parsedData.detElementplaceholder[key].Parameter as { [name: string]: string },
                   Code: parsedData.detElementplaceholder[key].Code,
                   local: true,
                 };
@@ -2768,6 +2785,9 @@ export class Manager implements AfterViewInit {
 
         reader.readAsText(file);
       }
+
+      // Reset so re-selecting the same file triggers "change" again.
+      (event.target as HTMLInputElement).value = "";
     });
     // #endregion Register file to import selected handler.
     // #region Restore main panel sizes.

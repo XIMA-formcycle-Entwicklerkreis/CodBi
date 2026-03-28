@@ -35,6 +35,8 @@ interface Window {
       [key: string]: {
         /** Stores the either the URL to or the actual HTML of the documentation. */
         Description: string;
+        /** Stores the parameter that this **Element-Placeholder** provides. */
+        Parameter?: { [key: string]: string };
       };
     };
     /** Stores the URLs pointing to the root of localized API-Documentations. */

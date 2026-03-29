@@ -82,3 +82,9 @@ node_modules/
 
 ## Visual Studio Code ##
 .vscode
+
+## Generated build output (esbuild chunks) ##
+src/main/web/packages/form/undefined/
+
+## Generated assessment reports ##
+**/Assessments/*.html

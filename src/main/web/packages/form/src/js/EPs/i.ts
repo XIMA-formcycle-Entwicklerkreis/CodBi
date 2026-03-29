@@ -19,7 +19,8 @@ import { IF } from "xdbc/src/DBC/IF";
  *  - The {@link Array } from which to retrieve the value from.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class I {
   /**

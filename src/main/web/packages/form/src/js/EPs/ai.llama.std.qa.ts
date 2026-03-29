@@ -28,7 +28,8 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  *  - 8th **JsonParse**           — `"true"` to parse the AI response as JSON. Default: `"false"`.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class AI_LLAMA_STD_QA {
   /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */

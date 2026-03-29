@@ -91,6 +91,7 @@ class StructuredDataStoreAction : IPluginServletAction {
     val servletResponse = ServletResponse(EResponseType.JSON)
 
     servletResponse.encoding = StandardCharsets.UTF_8.name()
+    val currentUser = params.user.userName?.trim()?.lowercase()
 
     syncUsers = syncUsers?.map { rawString -> rawString.trim().lowercase() }
 
@@ -117,12 +118,12 @@ class StructuredDataStoreAction : IPluginServletAction {
           return PluginServletActionRetVal(servletResponse)
         }
 
-        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).error("Renaming start.")
+        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).info("[[ CodBi / LocalAPIDoc ] RENAME CODE by user '$currentUser': ${params.headerMap["X-Element"]} → ${params.headerMap["X-NewElement"]} (${params.headerMap["X-ActionDetail"]}) ]")
         renameCodeFile(
             params.headerMap["X-ActionDetail"],
             params.headerMap["X-Element"]?.lowercase(),
             params.headerMap["X-NewElement"]?.lowercase())
-        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).error("Renaming end.")
+        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).info("[[ CodBi / LocalAPIDoc ] RENAME CODE by user '$currentUser': completed ]")
       }
 
       "UPDATE CODE" -> {
@@ -163,6 +164,7 @@ class StructuredDataStoreAction : IPluginServletAction {
         }
 
         if (toWrite === "") {
+          LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java).info("[[ CodBi / LocalAPIDoc ] DELETE CODE by user '$currentUser': $element ($detail) ]")
           deleteCodeFile(element, detail)
         } else {
           lock.write {
@@ -178,7 +180,7 @@ class StructuredDataStoreAction : IPluginServletAction {
 
             LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
                 .info(
-                    "StructuredDataStoreAction: UPDATE request handled. New code stored successfully.")
+                    "[[ CodBi / LocalAPIDoc ] UPDATE CODE by user '$currentUser': $element ($detail) stored successfully ]")
           }
         }
       }
@@ -250,7 +252,7 @@ class StructuredDataStoreAction : IPluginServletAction {
 
             LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
                 .error(
-                    "StructuredDataStoreAction: Invalid JSON received in X-ToWrite caused: ${ X.message }")
+                    "[[ CodBi / LocalAPIDoc ] UPDATE (sync) by user '$currentUser': Invalid JSON — ${ X.message }")
 
             return PluginServletActionRetVal(servletResponse)
           }
@@ -264,7 +266,7 @@ class StructuredDataStoreAction : IPluginServletAction {
 
             LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
                 .info(
-                    "StructuredDataStoreAction: UPDATE request handled. New documentation stored successfully.")
+                    "[[ CodBi / LocalAPIDoc ] UPDATE (sync) by user '$currentUser': documentation stored successfully ]")
           }
         } catch (X: IOException) {
           servletResponse.value =
@@ -272,14 +274,14 @@ class StructuredDataStoreAction : IPluginServletAction {
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_INTERNAL_ERROR
 
           LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-              .error("StructuredDataStoreAction: IO error during update: ${ X.message }")
+              .error("[[ CodBi / LocalAPIDoc ] UPDATE (sync) by user '$currentUser': IO error — ${ X.message }")
         } catch (X: Exception) {
           servletResponse.value =
               "{\"status\": \"error\", \"message\": \"Following unexpected error occurred during UPDATE: ${ X.message }\"}"
           servletResponse.httpStatusCode = HttpURLConnection.HTTP_INTERNAL_ERROR
 
           LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-              .error("StructuredDataStoreAction: Unexpected error during UPDATE: ${ X.message }")
+              .error("[[ CodBi / LocalAPIDoc ] UPDATE (sync) by user '$currentUser': Unexpected error — ${ X.message }")
         }
       }
       else -> {
@@ -288,7 +290,7 @@ class StructuredDataStoreAction : IPluginServletAction {
         servletResponse.httpStatusCode = HttpURLConnection.HTTP_BAD_METHOD
 
         LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-            .error("StructuredDataStoreAction: Unsupported or missing X-Action header: $mode")
+            .error("[[ CodBi / LocalAPIDoc ] UNKNOWN ACTION by user '$currentUser': $mode")
       }
     }
     return PluginServletActionRetVal(servletResponse)

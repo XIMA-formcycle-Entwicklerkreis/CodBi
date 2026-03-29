@@ -22,7 +22,8 @@ import { formatWaitTime } from "../commons/format-wait-time";
  * Provides the {@link AI.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de)
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net)
  */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class AI_OCR {

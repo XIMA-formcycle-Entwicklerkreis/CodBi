@@ -20,7 +20,8 @@ import { OR } from "xdbc/src/DBC/OR";
  * Provides the {@link HTML_Select_Injection.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Matomo_Tracking {
   /**

@@ -5,7 +5,8 @@ import { HTML_Input_Transformer } from "./html.input.transformer";
  * Provides the {@link HTML_Input_Transformer.functionality } along with the {@link HTML_Input_Trans_Capital.transformer }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 export class HTML_Input_Trans_Capital extends HTML_Input_Transformer {
   /**
    * Gets the transformer that converts the input to capitalized words.

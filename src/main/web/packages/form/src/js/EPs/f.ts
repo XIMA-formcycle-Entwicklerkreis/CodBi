@@ -18,7 +18,8 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  * - 3rd: The {@link Array } of objects to scan.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class F {
   /**

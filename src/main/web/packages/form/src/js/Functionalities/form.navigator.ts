@@ -13,7 +13,8 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  * Registers the {@link Form_Navigator.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Form_Navigator {
   /**

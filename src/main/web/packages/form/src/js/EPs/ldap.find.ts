@@ -38,7 +38,8 @@ import { CodBiError, resolveLdapUrl } from "../global-scope.js";
  *  - 3rd:  The optional **URL** to a Formcycle-LDAP-Query (which's content is **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**) to use.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class LDAP_Find {
   /**

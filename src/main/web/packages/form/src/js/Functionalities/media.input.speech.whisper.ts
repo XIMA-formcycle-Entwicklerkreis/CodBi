@@ -17,7 +17,8 @@ import { convertToWav, preferredMimeType } from "../commons/whisper-utils";
  * Provides the {@link Media_Input_Speech_Whisper.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Media_Input_Speech_Whisper {
   /** Registry of all Whisper-enabled fields and their toggle functions. */

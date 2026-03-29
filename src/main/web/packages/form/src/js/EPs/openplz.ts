@@ -35,7 +35,8 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  * - 9th: An Optional number of pages to load.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class OpenPLZ {
   /**

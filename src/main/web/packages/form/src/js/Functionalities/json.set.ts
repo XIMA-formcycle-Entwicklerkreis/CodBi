@@ -11,7 +11,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
  * Provides the {@link JSON_SET.functionality }.
  *
  * @remarks
- * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.de) */
+ * Maintainer: Salvatore Callari (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class JSON_SET {
   /**

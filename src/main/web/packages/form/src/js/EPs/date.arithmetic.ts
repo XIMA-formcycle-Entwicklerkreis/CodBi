@@ -23,7 +23,8 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
  * @param params The parameters for that Element-Placeholder (provided by CodBi).
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class DATE_Arithmetic {
   /**

@@ -642,6 +642,10 @@ export class SVManager extends HTMLDivElement {
       return;
     }
 
+    if (!this.enabled) {
+      this.enabled = true;
+    }
+
     if (
       event.type !== "selectionchange" &&
       this.lastKey !== "Backspace" &&

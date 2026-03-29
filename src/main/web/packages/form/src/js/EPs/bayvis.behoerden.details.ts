@@ -26,7 +26,8 @@ import { CodBiError } from "../global-scope";
  *            or an {@link Array < string >}, if the 3rd parameter is specified.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Behoerden_Details {
   /** Stores often used {@link RegExp }s. */

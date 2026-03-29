@@ -39,3 +39,11 @@ extracted/** linguist-generated=true
 # Auto-generated docs and server runtime
 docs/** linguist-generated=true
 xfc-server/** linguist-generated=true
+
+# Generated docs, assessments, and build output inside src/
+**/docs/** linguist-generated=true
+**/Assessments/** linguist-generated=true
+src/main/web/packages/form/undefined/** linguist-generated=true
+
+# Yarn PnP SDK stubs
+src/main/web/.yarn/** linguist-generated=true

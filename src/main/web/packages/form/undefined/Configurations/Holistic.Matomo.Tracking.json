@@ -1,8 +1,0 @@
-{
-  "Description": "/functions/Configurations_Holistic.Matomo.Tracking.loadConfig.html",
-  "classes": {},
-  "globals": {
-    "Matomo_SiteID": "",
-    "Matomo_URL": ""
-  }
-}

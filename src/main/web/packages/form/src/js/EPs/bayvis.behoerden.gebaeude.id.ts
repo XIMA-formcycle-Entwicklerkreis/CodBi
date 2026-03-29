@@ -20,7 +20,8 @@ import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
  *  - resolves to an {@link Array < string >} with the building IDs that're references to the specified authority..
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Behoerden_Gebaeude_ID {
   /**

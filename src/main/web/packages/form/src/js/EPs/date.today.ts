@@ -15,6 +15,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
  *  The parameters are case insensitive.
  *
  * @remarks
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive design.
 export class DATE_Today {

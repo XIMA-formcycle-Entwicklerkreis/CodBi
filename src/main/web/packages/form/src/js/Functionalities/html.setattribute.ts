@@ -10,7 +10,7 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
  * Provides the {@link HTML_SETAttribute.functionality }.
  *
  * @remarks
- * Maintainer: Salvatore Callari (Salvatore.Callari@Ansbach.de) */
+ * Maintainer: Salvatore Callari (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_SETAttribute {
   /**

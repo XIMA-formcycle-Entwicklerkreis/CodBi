@@ -31,7 +31,8 @@ document.head.appendChild(style);
  *  2.  The end of the range.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive design.
 export class Date_Weekends {
   /**

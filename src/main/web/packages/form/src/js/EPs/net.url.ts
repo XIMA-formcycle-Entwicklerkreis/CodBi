@@ -16,7 +16,8 @@ import { REGEX } from "xdbc/src/DBC/REGEX";
  *  1. The URL to retrieve from.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class NET_URL {
   /**

@@ -1673,16 +1673,7 @@ export class Manager implements AfterViewInit {
       }
     }
     // #endregion Conversion
-    // #region Remove entries without a description.
-    const finalResult = {};
-
-    for (const key in result) {
-      if (result[key].Description !== "") {
-        finalResult[key] = result[key];
-      }
-    }
-    // #endregion Remove entries without a description.
-    return finalResult;
+    return result;
   }
   /**
    * Joins the source API-Doc with the destination one.
@@ -1829,12 +1820,12 @@ export class Manager implements AfterViewInit {
       },
       data: {
         ToWrite: JSON.stringify({
-          fslFunctionalities: fileListings.fslFunctionalities,
+          fslFunctionalities: window.CodbiPluginData.fslFunctionalities,
           detFunctionalities: localNodeData.detFunctionalities,
-          fslElementplaceholder: fileListings.fslElementplaceholder,
+          fslElementplaceholder: window.CodbiPluginData.fslElementplaceholder,
           detElementplaceholder: localNodeData.detElementplaceholder,
           detStandards: localNodeData.detStandards,
-          fileListing: fileListings.fileListing,
+          fileListing: window.CodbiPluginData.fileListing,
         }),
       },
       success: (response) => {
@@ -2169,6 +2160,8 @@ export class Manager implements AfterViewInit {
         ? this.itemsElementplaceholder
         : this.itemsStandard;
   }
+  /** Stores the last selected {@link TreeNode } per tab so it can be restored on tab switch. */
+  protected lastSelectedNodePerTab: Record<string, TreeNode | undefined> = {};
   /** Stores the currently selected {@link TreeNode }. */
   protected _currentlySelectedTreeNode: TreeNode;
   /**
@@ -2188,6 +2181,7 @@ export class Manager implements AfterViewInit {
     }
 
     this._currentlySelectedTreeNode = toSet;
+    this.lastSelectedNodePerTab[this._activeTab] = toSet;
   }
   /**
    * Sets the local API-Documentation as a JSON-{@link String } which will be parsed, stored in
@@ -2418,20 +2412,33 @@ export class Manager implements AfterViewInit {
             const parsedData: APIDocJSON = JSON.parse(fileContent);
             // #region Rename items that're already existent.
             const functionalityKeysAlreadyExistent = new Array<string>();
+            const importSuffix = this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix");
 
-            for (const candidate in parsedData.detFunctionalities) {
+            for (const candidate of Object.keys(parsedData.detFunctionalities)) {
               if (
                 parsedData.detFunctionalities[candidate].Description === "" ||
                 window.CodbiPluginData.detFunctionalities[candidate]
               ) {
                 if (parsedData.detFunctionalities[candidate].Description !== "") {
-                  parsedData.detFunctionalities[
-                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}`
-                  ] = parsedData.detFunctionalities[candidate];
+                  let renamedFuncKey = `${candidate}${importSuffix}`;
+                  let importCounter = 1;
+                  while (window.CodbiPluginData.detFunctionalities[renamedFuncKey]) {
+                    renamedFuncKey = `${candidate}${importSuffix}_${importCounter++}`;
+                  }
+                  parsedData.detFunctionalities[renamedFuncKey] = parsedData.detFunctionalities[candidate];
                   parsedData.fslFunctionalities = parsedData.fslFunctionalities.replace(
                     `${candidate}.js`,
-                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}.js`,
+                    `${renamedFuncKey}.js`,
                   );
+                  if (parsedData.detFunctionalities[renamedFuncKey]?.Code) {
+                    const escapedCandidate = candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    parsedData.detFunctionalities[renamedFuncKey].Code = parsedData.detFunctionalities[
+                      renamedFuncKey
+                    ].Code.replace(new RegExp(`"${escapedCandidate}"`, "gi"), `"${renamedFuncKey}"`).replace(
+                      new RegExp(`'${escapedCandidate}'`, "gi"),
+                      `'${renamedFuncKey}'`,
+                    );
+                  }
                 }
 
                 delete parsedData.detFunctionalities[candidate];
@@ -2442,44 +2449,63 @@ export class Manager implements AfterViewInit {
 
             const standardsKeysAlreadyExistent = new Array<string>();
 
-            for (const candidate in parsedData.detStandards) {
+            for (const candidate of Object.keys(parsedData.detStandards)) {
               if (
                 parsedData.detStandards[candidate].Description === "" ||
                 window.CodbiPluginData.detStandards[candidate]
               ) {
                 if (parsedData.detStandards[candidate].Description !== "") {
-                  parsedData.detStandards[
-                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}`
-                  ] = parsedData.detStandards[candidate];
+                  let renamedStdKey = `${candidate}${importSuffix}`;
+                  let importCounter = 1;
+                  while (window.CodbiPluginData.detStandards[renamedStdKey]) {
+                    renamedStdKey = `${candidate}${importSuffix}_${importCounter++}`;
+                  }
+                  parsedData.detStandards[renamedStdKey] = parsedData.detStandards[candidate];
 
-                  parsedData.fileListing = parsedData.fileListing.replace(
-                    `${candidate}.js`,
-                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}.js`,
-                  );
+                  parsedData.fileListing = parsedData.fileListing.replace(`${candidate}.js`, `${renamedStdKey}.js`);
+                  if (parsedData.detStandards[renamedStdKey]?.Code) {
+                    const escapedCandidate = candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    parsedData.detStandards[renamedStdKey].Code = parsedData.detStandards[renamedStdKey].Code.replace(
+                      new RegExp(`"${escapedCandidate}"`, "gi"),
+                      `"${renamedStdKey}"`,
+                    ).replace(new RegExp(`'${escapedCandidate}'`, "gi"), `'${renamedStdKey}'`);
+                  }
                 }
 
                 delete parsedData.detStandards[candidate];
 
-                const standardsKeysAlreadyExistent = new Array<string>();
+                standardsKeysAlreadyExistent.push(candidate);
               }
             }
 
             const epKeysAlreadyExistent = new Array<string>();
 
-            for (const candidate in parsedData.detElementplaceholder) {
+            for (const candidate of Object.keys(parsedData.detElementplaceholder)) {
               if (
                 parsedData.detElementplaceholder[candidate].Description === "" ||
                 window.CodbiPluginData.detElementplaceholder[candidate]
               ) {
                 if (parsedData.detElementplaceholder[candidate].Description !== "") {
-                  parsedData.detElementplaceholder[
-                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}`
-                  ] = parsedData.detElementplaceholder[candidate];
+                  let renamedEpKey = `${candidate}${importSuffix}`;
+                  let importCounter = 1;
+                  while (window.CodbiPluginData.detElementplaceholder[renamedEpKey]) {
+                    renamedEpKey = `${candidate}${importSuffix}_${importCounter++}`;
+                  }
+                  parsedData.detElementplaceholder[renamedEpKey] = parsedData.detElementplaceholder[candidate];
 
                   parsedData.fslElementplaceholder = parsedData.fslElementplaceholder.replace(
                     `${candidate}.js`,
-                    `${candidate}${this.translocoService.translate("RP.Tabs.Header.Functions.Import.Elementsuffix")}.js`,
+                    `${renamedEpKey}.js`,
                   );
+                  if (parsedData.detElementplaceholder[renamedEpKey]?.Code) {
+                    const escapedCandidate = candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                    parsedData.detElementplaceholder[renamedEpKey].Code = parsedData.detElementplaceholder[
+                      renamedEpKey
+                    ].Code.replace(new RegExp(`"${escapedCandidate}"`, "gi"), `"${renamedEpKey}"`).replace(
+                      new RegExp(`'${escapedCandidate}'`, "gi"),
+                      `'${renamedEpKey}'`,
+                    );
+                  }
                 }
 
                 delete parsedData.detElementplaceholder[candidate];
@@ -2835,13 +2861,15 @@ export class Manager implements AfterViewInit {
     if (this._activeTab !== toSet) {
       this._activeTab = toSet;
 
+      const remembered = this.lastSelectedNodePerTab[toSet];
+
       switch (this.activeTab) {
         case "Functionality":
           if (this.items.length === 0) {
             return;
           }
 
-          this.currentlySelectedTreeNode = this.items[0];
+          this.currentlySelectedTreeNode = remembered ?? this.items[0];
 
           break;
         case "Elementplaceholder":
@@ -2849,14 +2877,14 @@ export class Manager implements AfterViewInit {
             return;
           }
 
-          this.currentlySelectedTreeNode = this.itemsElementplaceholder[0];
+          this.currentlySelectedTreeNode = remembered ?? this.itemsElementplaceholder[0];
           break;
         case "Standard":
           if (this.itemsStandard.length === 0) {
             return;
           }
 
-          this.currentlySelectedTreeNode = this.itemsStandard[0];
+          this.currentlySelectedTreeNode = remembered ?? this.itemsStandard[0];
 
           break;
       }

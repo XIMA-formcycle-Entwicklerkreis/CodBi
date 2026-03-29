@@ -18,7 +18,8 @@ import { stringToDate } from "../global-scope";
  *          If omitted DD.MM.YYYY is assumed.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class DATE_FromString {
   /**

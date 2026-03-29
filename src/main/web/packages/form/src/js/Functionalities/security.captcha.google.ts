@@ -13,7 +13,8 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  * Provides the {@link Security_Captcha_Google.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class Security_Captcha_Google {
   /**

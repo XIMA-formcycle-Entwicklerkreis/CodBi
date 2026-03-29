@@ -17,7 +17,8 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  * - 2nd: The optional name of a property to use to sort elements of the given {@link Array }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
 export class Sorted {
   /**

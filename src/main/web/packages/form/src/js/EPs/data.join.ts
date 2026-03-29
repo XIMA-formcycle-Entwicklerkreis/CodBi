@@ -14,7 +14,8 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  *  The {@link object }s to join.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class Data_Join {
   /**

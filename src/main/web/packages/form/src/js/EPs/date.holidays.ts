@@ -32,7 +32,8 @@ type ApiRequest = {
  *  - "KATHOLISCH":   Katholic holidays
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design
 export class Date_Holidays {
   /** Stores the requests already made. */

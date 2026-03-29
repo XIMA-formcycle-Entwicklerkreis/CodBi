@@ -34,7 +34,8 @@ import { BayVIS_Ansprechpartner_ID } from "./bayvis.ansprechpartner.id";
  *              or an {@link Array < string >}, if the 3rd parameter is specified.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Ansprechpartner_Details {
   /** Stores often used {@link RegExp }s. */

@@ -13,7 +13,8 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
  * Provides the {@link HTML_Input_REGEX.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_Input_REGEX {
   /**

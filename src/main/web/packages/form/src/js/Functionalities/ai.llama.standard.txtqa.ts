@@ -19,7 +19,8 @@ import { formatWaitTime } from "../commons/format-wait-time";
  * Provides the {@link AI_LLAMA_STANDARD_TXTQA.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class AI_LLAMA_STANDARD_TXTQA {
   /** Unique session ID generated on page load — ensures each session gets its own llama-server slot. */

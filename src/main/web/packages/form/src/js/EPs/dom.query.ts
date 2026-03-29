@@ -15,7 +15,8 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  *  The CSS-Selector targeting the desired {@link Element }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive design.
 export class DOM_Query {
   /**

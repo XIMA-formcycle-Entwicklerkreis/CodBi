@@ -24,7 +24,8 @@ import { BayVIS_Behoerden_Details } from "./bayvis.behoerden.details";
  *  - resolves to a {@link Array < string >} of authorities IDs with matching "bezeichnung".
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Behoerden_ID {
   /** Buffers the requested directory of authorities. */

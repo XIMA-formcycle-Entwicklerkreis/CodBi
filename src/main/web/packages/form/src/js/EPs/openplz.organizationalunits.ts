@@ -29,7 +29,8 @@ import { OpenPLZ } from "./openplz";
  * - 5th: An Optional number of pages to load.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 export class OpenPLZ_OrganizationalUnits extends OpenPLZ {
   /**
    * Joins all {@link object }s in "params" into one.

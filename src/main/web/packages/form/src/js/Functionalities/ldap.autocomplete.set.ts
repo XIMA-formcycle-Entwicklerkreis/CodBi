@@ -9,7 +9,8 @@ import { resolveLdapUrl } from "../global-scope.js";
  * Provides the {@link LDAP_Autocomplete.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class LDAP_Autocomplete_Set {
   /**

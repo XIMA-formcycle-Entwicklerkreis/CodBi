@@ -18,7 +18,8 @@ import { CodBiError } from "../global-scope.js";
  *  - 2nd:  The dotted path leading to the requested one.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive design.
 export class JSON_Path {
   /**

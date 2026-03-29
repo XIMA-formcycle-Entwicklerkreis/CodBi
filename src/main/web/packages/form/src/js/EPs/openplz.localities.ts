@@ -22,7 +22,8 @@ import { OpenPLZ } from "./openplz";
  * - 4th: An Optional number of pages to load.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 export class OpenPLZ_Localities extends OpenPLZ {
   /**
    * Retrieves the localities found according to the provided **params**.

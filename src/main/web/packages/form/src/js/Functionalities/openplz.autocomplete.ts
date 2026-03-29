@@ -22,7 +22,8 @@ import { EQ } from "xdbc/src/DBC/EQ";
  * Provides the {@link OpenPLZ_Autocomplete.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class OpenPLZ_Autocomplete {
   /** Store the {@link PropertyIndexedKeyframes } to use to animate the {@link HTMLElement }

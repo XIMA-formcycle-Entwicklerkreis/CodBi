@@ -121,7 +121,8 @@ declare global {
  * Provides the {@link MEDIA_INPUT_SPEECH.functionality }.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class MEDIA_INPUT_SPEECH {
   /** Registry of all speech-enabled fields and their toggle functions. */

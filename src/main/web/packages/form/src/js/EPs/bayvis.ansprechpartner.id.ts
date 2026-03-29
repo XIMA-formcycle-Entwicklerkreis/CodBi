@@ -33,7 +33,8 @@ import { CodBiError } from "../global-scope";
  * @throws A {@link CodBiError } if no contact with the specified full name wasn't found or if the specified endpoint couldn't be reached.
  *
  * @remarks
- * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
+ * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
+ * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Future inheritance probable.
 export class BayVIS_Ansprechpartner_ID {
   /** Buffers the requested directory of authorities. */

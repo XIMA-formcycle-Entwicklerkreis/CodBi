@@ -5,3 +5,38 @@
 # Isolate binary files in case the auto-detection algorithm fails and
 # marks them as text files (which could brick them).
 *.{png,jpg,jpeg,gif,webp,woff,woff2} binary
+
+# Maven and build outputs
+target/** linguist-generated=true
+kapt/** linguist-generated=true
+kaptKotlin/** linguist-generated=true
+META-INF/** linguist-generated=true
+maven-temp/** linguist-generated=true
+java.io.tmpdir/** linguist-generated=true
+.mvn/** linguist-generated=true
+
+# Node / npm
+node_modules/** linguist-generated=true
+src/main/web/node_modules/** linguist-generated=true
+
+# Extracted / vendored dependencies
+com/** linguist-generated=true
+net/** linguist-generated=true
+org/** linguist-generated=true
+kotlin/** linguist-generated=true
+lib/** linguist-generated=true
+jnilib/** linguist-generated=true
+
+# ML / model data
+djl_cache/** linguist-generated=true
+cv/** linguist-generated=true
+nlp/** linguist-generated=true
+
+# Native binaries
+win32-x86/** linguist-generated=true
+win32-x86-64/** linguist-generated=true
+extracted/** linguist-generated=true
+
+# Auto-generated docs and server runtime
+docs/** linguist-generated=true
+xfc-server/** linguist-generated=true

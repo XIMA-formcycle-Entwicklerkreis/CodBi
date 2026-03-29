@@ -15,9 +15,8 @@ maven-temp/** linguist-generated=true
 java.io.tmpdir/** linguist-generated=true
 .mvn/** linguist-generated=true
 
-# Node / npm
-node_modules/** linguist-generated=true
-src/main/web/node_modules/** linguist-generated=true
+# Node / npm (catch all node_modules everywhere)
+**/node_modules/** linguist-generated=true
 
 # Extracted / vendored dependencies
 com/** linguist-generated=true

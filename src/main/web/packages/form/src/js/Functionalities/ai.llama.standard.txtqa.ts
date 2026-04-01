@@ -65,6 +65,10 @@ export class AI_LLAMA_STANDARD_TXTQA {
    * - **FilterResults**:   If set to `"true"`, enables PII filtering on Brave Search queries
    *                        for this instance, overriding the global `AI_BraveSearch_FilterResults`
    *                        plugin property. Default: determined by plugin property.
+   * - **Thinking**:        If set to `true`, enables thinking mode. The AI will use a dedicated
+   *                        thinking model (if configured) for deeper reasoning. Default: `false`.
+   * - **MaxThinkingTokens**: Maximum token budget for thinking inference. Set higher if the
+   *                        model needs more room to reason. Has no effect when Thinking is `false`.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -84,8 +88,10 @@ export class AI_LLAMA_STANDARD_TXTQA {
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "debounce")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "inferencedelay")
     @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{2}$/i), "responselanguage")
-    @OR.PRE([new TYPE("string"), new TYPE("boolean")], "filterresults")
+    @OR.PRE([new TYPE("string"), new TYPE("boolean")], "filterresults, thinking")
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "filterresults")
+    @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "thinking")
+    @OR.PRE([new TYPE("number"), new TYPE("string")], "maxthinkingtokens")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(
@@ -199,6 +205,19 @@ export class AI_LLAMA_STANDARD_TXTQA {
       if (toLoad.filterresults != null) {
         headers["X-Filter-Results"] = String(toLoad.filterresults).toLowerCase() === "true" ? "true" : "false";
       }
+      // #region Thinking mode toggle
+      const thinking = toLoad.thinking != null && String(toLoad.thinking).toLowerCase() === "true";
+
+      headers["X-Thinking"] = thinking ? "true" : "false";
+
+      if (thinking) {
+        const customBudget = toLoad.maxthinkingtokens != null ? Number(toLoad.maxthinkingtokens) : 0;
+
+        if (customBudget > 0) {
+          headers["X-Max-Thinking-Tokens"] = String(customBudget);
+        }
+      }
+      // #endregion Thinking mode toggle
       if (responseLang) {
         headers["X-Forced-Language"] = responseLang;
       }
@@ -236,10 +255,14 @@ export class AI_LLAMA_STANDARD_TXTQA {
         if (id && question) {
           question = question.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
             const trimmed = identifier.trim();
-            const field = document.querySelector(`.${trimmed}`) as HTMLInputElement | null;
+            let el: HTMLElement | null = document.querySelector(`.${trimmed}`);
 
-            if (field && "value" in field) {
-              return field.value;
+            if (el && !("value" in el)) {
+              el = el.querySelector("input, textarea, select");
+            }
+
+            if (el && "value" in el) {
+              return (el as HTMLInputElement).value;
             }
 
             return match;
@@ -476,6 +499,13 @@ export class AI_LLAMA_STANDARD_TXTQA {
                   }
                   // Show rich-text overlay with clickable links/phones/emails
                   AI_LLAMA_STANDARD_TXTQA.showRichAnswer(field, answerText);
+                  // #region Folded sources section (when internet is enabled)
+                  if (internetAccess) {
+                    const sources: { title: string; url: string; description: string }[] = response[id]?.sources ?? [];
+
+                    AI_LLAMA_STANDARD_TXTQA.appendSourcesSection(field, sources);
+                  }
+                  // #endregion Folded sources section (when internet is enabled)
                   // Flash green to signal response is ready
                   const richDiv = INSTANCE.tsCheck<HTMLElement>(
                     field.nextElementSibling?.classList.contains("LLAMA_TXTQA_RichAnswer")
@@ -795,6 +825,88 @@ export class AI_LLAMA_STANDARD_TXTQA {
     field.addEventListener("input", removeHint);
   }
   // #endregion AI-Generated hint
+  // #region Folded sources section
+  /**
+   * Appends a collapsible `<details>` section listing the search result sources
+   * below the rich-answer overlay. The numbered badges correspond to the `[N]`
+   * references in the AI answer.
+   *
+   * @param field   The answer field (the rich-answer div is its next sibling).
+   * @param sources Search results returned by the server alongside the answer. */
+  private static appendSourcesSection(
+    field: HTMLInputElement | HTMLTextAreaElement,
+    sources: { title: string; url: string; description: string }[],
+  ): void {
+    if (sources.length === 0) {
+      return;
+    }
+
+    AI_LLAMA_STANDARD_TXTQA.ensureSourcesStyles();
+
+    const richDiv = field.nextElementSibling?.classList.contains("LLAMA_TXTQA_RichAnswer")
+      ? field.nextElementSibling
+      : null;
+    const anchor = richDiv ?? field;
+
+    // Remove a previous sources section for this field, if any
+    anchor.parentElement?.querySelector(`.LLAMA_TXTQA_Sources[data-for="${field.id}"]`)?.remove();
+
+    const details = document.createElement("details");
+
+    details.className = "LLAMA_TXTQA_Sources";
+    details.setAttribute("data-for", field.id);
+
+    const summary = document.createElement("summary");
+
+    summary.textContent = `Show sources (${sources.length})`;
+    details.appendChild(summary);
+
+    const list = document.createElement("div");
+
+    list.className = "LLAMA_TXTQA_SourcesList";
+
+    for (let i = 0; i < sources.length; i++) {
+      const src = sources[i];
+      const badge = document.createElement("span");
+
+      badge.className = "LLAMA_Chat_SourceBadge";
+      badge.title = src.description;
+      badge.innerHTML = `[${i + 1}] <a href="${src.url}" target="_blank" rel="noopener noreferrer">${src.title}</a>`;
+      list.appendChild(badge);
+    }
+
+    details.appendChild(list);
+
+    if (anchor.nextSibling) {
+      anchor.parentElement?.insertBefore(details, anchor.nextSibling);
+    } else {
+      anchor.parentElement?.appendChild(details);
+    }
+  }
+
+  private static ensureSourcesStyles(): void {
+    if (document.querySelector("#LLAMA_TXTQA_Sources_Styles")) {
+      return;
+    }
+
+    const style = document.createElement("style");
+
+    style.id = "LLAMA_TXTQA_Sources_Styles";
+    style.textContent = `
+      .LLAMA_TXTQA_Sources {
+        margin-top: 6px ; border: 1px solid #e0e0e0 ; border-radius: 4px ;
+        background: #f8f9fa ; font-size: 13px ;}
+      .LLAMA_TXTQA_Sources summary {
+        cursor: pointer ; padding: 6px 10px ; font-weight: 600 ;
+        color: #555 ; user-select: none ;}
+      .LLAMA_TXTQA_Sources summary:hover { color: #333 ;}
+      .LLAMA_TXTQA_SourcesList {
+        display: flex ; flex-wrap: wrap ; gap: 6px ;
+        padding: 6px 10px 10px ;}`;
+
+    document.head.appendChild(style);
+  }
+  // #endregion Folded sources section
 }
 // #region Register functionality with CodBi
 window.codbi.registerFunctionality(

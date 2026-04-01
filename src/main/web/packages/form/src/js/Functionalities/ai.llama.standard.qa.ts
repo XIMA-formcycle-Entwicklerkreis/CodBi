@@ -364,14 +364,19 @@ export class AI_LLAMA_STANDARD_QA {
           // #region Resolve symbols in the verify question
           verifyFieldQuestion = verifyFieldQuestion.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
             const trimmed = identifier.trim();
-            const field = document.querySelector(`.${trimmed}`) as HTMLInputElement | null;
-            if (field && "value" in field) {
-              return field.value;
+            let el: HTMLElement | null = document.querySelector(`.${trimmed}`);
+            if (el && !("value" in el)) {
+              el = el.querySelector("input, textarea, select");
+            }
+            if (el && "value" in el) {
+              return (el as HTMLInputElement).value;
             }
             return match;
           });
           // #endregion Resolve symbols in the verify question
-          vqaHeaders[`X-Question-${verifyFieldId}`] = verifyFieldQuestion;
+          vqaHeaders[`X-Question-${verifyFieldId}`] = btoa(
+            String.fromCharCode(...new TextEncoder().encode(verifyFieldQuestion)),
+          );
         }
       }
       // #endregion Verification-Mode. If mode is verify and the upload field has a data-cb-Question, use only that question.
@@ -385,16 +390,20 @@ export class AI_LLAMA_STANDARD_QA {
             // #region Resolve symbols in the verify question
             question = question.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
               const trimmed = identifier.trim();
-              const field = document.querySelector(`.${trimmed}`) as HTMLInputElement | null;
+              let el: HTMLElement | null = document.querySelector(`.${trimmed}`);
 
-              if (field && "value" in field) {
-                return field.value;
+              if (el && !("value" in el)) {
+                el = el.querySelector("input, textarea, select");
+              }
+
+              if (el && "value" in el) {
+                return (el as HTMLInputElement).value;
               }
 
               return match;
             });
             // #endregion Resolve symbols in the verify question
-            vqaHeaders[`X-Question-${id}`] = question;
+            vqaHeaders[`X-Question-${id}`] = btoa(String.fromCharCode(...new TextEncoder().encode(question)));
           } else {
             if (!id) {
               window.codbi.log(

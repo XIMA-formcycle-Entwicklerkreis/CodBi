@@ -2,5 +2,8 @@
   "dependencies": {
     "@jonkoops/matomo-tracker": "^0.7.0",
     "xdbc": "^1.0.126"
+  },
+  "devDependencies": {
+    "google-translate-api-x": "^10.7.2"
   }
 }

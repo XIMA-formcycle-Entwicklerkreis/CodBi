@@ -130,7 +130,7 @@ export class MEDIA_INPUT_SPEECH {
   /** Whether the global hotkey listener has been registered. */
   private static hotkeyRegistered = false;
   /**
-   * Adds a microphone button to an `<input type="text">` or `<textarea>` for
+   * Adds a microphone button to an `input type="text"` or `textarea` for
    * speech-to-text input via the Web Speech API.
    *
    * ### Config Parameters:

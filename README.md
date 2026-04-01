@@ -13,7 +13,7 @@ A [XIMA Formcycle](https://www.xima.de/formcycle/) plugin that provides a compre
 
 CodBi seamlessly integrates AI-powered features (document validation, data extraction, OCR, Speech-To-Text, and AI-Chat). All AI engines are automatically downloaded and configured on first use, with the LLM chat engine supporting any GGUF-compatible model. Additionally, the built-in Local API-Documentation Manager allows users to define, manage, and share custom CodBi elements across all forms on a server, treating them exactly like built-in features.
 
-> **Architectural Vision:** CodBi is a framework that empowers form designers and developers to create, share, and reuse code blocks across the community — growing the library with every contribution. At the same time, it eliminates the trade-off between AI capability and DSGVO/GDPR compliance by running high-class models like Qwen, Mistral, LLaMA 3, Phi-3, and Gemma locally on the server via llama.cpp, alongside Whisper for speech-to-text and Tesseract for OCR — so sensitive citizen data never leaves your infrastructure.
+> **Architectural Vision:** CodBi is a framework that empowers form designers to define complex logic without coding — by composing ready-made CodBi elements — and enables developers to create, share, and reuse those building blocks across the community, growing the library with every contribution. At the same time, it eliminates the trade-off between AI capability and DSGVO/GDPR compliance by running high-class models like Qwen, Mistral, LLaMA 3, Phi-3, and Gemma locally on the server via llama.cpp, alongside Whisper for speech-to-text and Tesseract for OCR — so sensitive citizen data never leaves your infrastructure.
 
 
 ### 🚀 Key Highlights
@@ -21,9 +21,10 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 - **Modular by Design** — Functionalities and EPs are composable building blocks: mix and combine them freely to build a wide range of applications — from simple input masks to AI-powered document processing pipelines — without writing custom code.
 - **Empowering Collaboration** — Export and import complete CodBi elements as JSON — including executable code, description, parameter definitions, global variables, and targeted CSS classes. This fosters knowledge sharing across departments and Formcycle instances, allowing teams to benefit from pre-validated solutions.
 - **Intelligent Designer Integration** — The built-in Manager provides a seamless UI where users select elements — both built-in and custom — via point-and-click or autocomplete instead of manual typing, drastically reducing errors and lowering the entry barrier for creating smart forms.
-- **Local API-Documentation Manager** — Define, document, and manage custom CodBi elements directly in the form designer — complete with code, parameters, global variables, and CSS classes. Elements can be authored in JavaScript or TypeScript; for TypeScript, the `codbi-elements-template` project automatically generates the importable JSON. Custom elements behave identically to built-in ones and are available across all forms and in the intelligent designer interface.
+- **Local API-Documentation Manager** — Define, document, and manage custom CodBi elements directly in the form designer — complete with code, parameters, global variables, and CSS classes. Elements can be authored in JavaScript or TypeScript; for TypeScript, the `codbi-elements-template` project automatically generates the importable JSON. Custom elements behave identically to built-in ones and are available across all forms and in the intelligent designer interface. **Note:** Even though custom elements are available in all forms, while the code for an element is only downloaded and loaded into a form when that element is actually used by the form, keeping page weight minimal.
 - **Flexible AI Integration** — CodBi can expose its AI engines via ChatML (AIproxy) for external access, attach to external AI endpoints, and—using the specialist parameter—mix and orchestrate both local and external AI models within the same workflow.
 - **On-Premises AI Stack** — Through llama.cpp's GGUF support, high-class models like Qwen, Mistral, LLaMA 3, Phi-3, and Gemma become available for local inference. Combined with local speech-to-text via whisper.cpp (GGML) and local OCR via Tesseract (JNI), the entire AI stack runs on-premises — no unwanted external cloud dependencies.
+- **Accurate Date Reasoning** — CodBi's system prompt injects real-time calendar context (current date, weekday, days in month) and guides even small local models to calculate dates correctly through structured chain-of-thought reasoning — no cloud API required.
 - **Hardware Optimized** — Native support for Vulkan and CUDA 12, with automatic CPU fallback.
 - **Zero-Config Deployment** — Automatic downloading and configuration of binaries and models on first use.
 - **Efficient Loading** — CodBi-Elements are only loaded into a form when actually used, keeping page weight minimal.
@@ -215,7 +216,7 @@ All AI engines run as **separate OS processes** (LLaMA, Whisper) or **in-process
 - **Crash isolation** — if a model runs out of RAM, the OS kills the child process while the Tomcat JVM stays unaffected.
 - **Zero-config deployment** — on first use, CodBi downloads the required binaries and model files automatically (with resume support). No manual installation required beyond enabling the plugin. <br>**Note:** The necessary domains must be whitelisted for the setup process to succeed. The ktdoc documentation in the Kotlin source files lists all required domains to whitelist. <br>**Caution:** Virus scanners that monitor the plugin directory or download locations may interfere with the setup, as executable files (such as .dll and other binaries) are downloaded and extracted automatically.
 - **Hardware acceleration** — native support for **Vulkan** (cross-platform, default on Windows) and **CUDA 12** (NVIDIA GPUs), with automatic CPU fallback.
-- **Resource gating** — a semaphore limits concurrent inferences (default: 2). Excess requests enter a queue; the UI displays the caller's queue position and estimated wait time.
+- **Resource gating** — a semaphore limits concurrent inferences (default: 2). Excess requests enter a queue; setting a certain parameter, the UI displays the caller's queue position and estimated wait time. 
 - **Health monitoring** — periodic health-checks detect when an engine goes offline; the UI reacts immediately and retries automatically on recovery.
 
 #### ⚙️ Automatic Setup
@@ -227,7 +228,7 @@ All AI engines run as **separate OS processes** (LLaMA, Whisper) or **in-process
 | **QWEN3-VL 2B** (LLM) | Bundled / HuggingFace | `Qwen3VL-2B-Instruct-Q4_K_M.gguf` + multimodal projection |
 | **Tesseract** | Maven (tess4j) | In-process JNI, thread-pooled handles |
 
-The default LLM ships as a convenience, but **any GGUF-compatible model can be used** for the chat / Q&A engine — simply place the `.gguf` file in the plugin's data directory and point the configuration to it. Through llama.cpp's GGUF ecosystem, high-class models like Qwen, Mistral, LLaMA 3, Phi-3, and Gemma become available for local use, letting you choose larger, domain-specific, or multilingual models depending on your hardware and use case. Whisper uses GGML-format models, and Tesseract uses its own traineddata files — both are downloaded automatically.
+The default LLM is configured as a convenience, but **any GGUF-compatible model can be used** for the chat / Q&A engine configuring the proper URLs. Through llama.cpp's GGUF ecosystem, high-class models like Qwen, Mistral, LLaMA 3, Phi-3, and Gemma become available for local use, letting you choose larger, domain-specific, or multilingual models depending on your hardware and use case. Whisper uses GGML-format models, and Tesseract uses its own traineddata files — both are downloaded automatically.
 
 #### 📄 Extraction
 
@@ -236,7 +237,7 @@ The default LLM ships as a convenience, but **any GGUF-compatible model can be u
   - **Extract Fields**: Use named regex groups (`Pattern_FieldName`) to extract structured data (e.g., name, date, amount) into separate form fields.
   - **Verify**: Check if the extracted text matches a regex pattern; show an error if it doesn't.
   - Automatic orientation detection (Tesseract OSD), optional image preprocessing (grayscale, binarization, denoising), and DPI-aware recognition.
-- **Image / PDF Q&A (LLaMA)** — upload an image or PDF and ask free-form questions. The vision-language model (QWEN3-VL) reads the document and returns answers. Scanned PDFs are rendered to images; text-based PDFs have their text extracted client-side.
+- **Image / PDF Q&A (LLaMA)** — upload an image or PDF and ask free-form questions. The vision-language model (QWEN3-VL) reads the document and returns answers. Scanned PDFs are rendered to images; text-based PDFs have their text extracted client-side (for Tesseract) or are turned into an image for LLMs.
 - **Speech-to-Text (Whisper)** — record audio in the browser and receive a transcription. Supports interim (partial) results while speaking, auto-language detection, and a configurable hotkey (`Alt+A`).
 
 #### ✅ Validation
@@ -258,7 +259,7 @@ The default LLM ships as a convenience, but **any GGUF-compatible model can be u
 
 Key compliance properties:
 
-- **No data leaves the server** for LLaMA, Whisper, and Tesseract — all inference is `localhost`-only.
+- **No data leaves the server** for LLaMA, Whisper, and Tesseract — all inference is `localhost`-only (unless an external AI to use is specified or BraveAPI-Search is enabled).
 - **AI Proxy** with IP whitelist and HTTP Basic Auth gates external access to the AI endpoints. All requests are logged to a database table with anonymised credentials (SHA-256) and truncated IPs.
 - **No separate server infrastructure** — the entire AI stack runs on the same machine as Formcycle.
 - **Image caching** uses server-side temporary storage with automatic expiration (default: 600 s) and a janitor thread. Caching is only used on images that're upload along with a cache-id. Otherwise the images are kept in RAM only.
@@ -508,9 +509,40 @@ For simplicity, we use plain CSS (no preprocessor such as SASS), but allow recen
 
 Unit tests use [Jest](https://jestjs.io/).
 
+## 📄 [API Documentation](https://codbi.pages.dev)
+
+### 🌐 Automated Documentation Translation / BYOK
+
+The `generate-docs.ps1` pipeline automatically translates TSDoc/KDoc comments into other languages (German, Italian, etc.) using `scripts/translate-docs.mjs`. By default, the script uses Google Translate's free (unofficial) GTX endpoint for demonstration purposes, which requires no API key but has no uptime or availability guarantee.
+
+To use the **official Google Cloud Translation API v2** instead, provide an API key via one of these methods (checked in order):
+
+1. **Environment variable:**
+   ```shell
+   export GOOGLE_TRANSLATE_API_KEY=AIzaSy...
+   ```
+2. **`.env` file** in the repository root (already gitignored):
+   ```
+   GOOGLE_TRANSLATE_API_KEY=AIzaSy...
+   ```
+
+To obtain an API key, enable the [Cloud Translation API](https://console.cloud.google.com/apis/library/translate.googleapis.com) in a Google Cloud project and create an API key in the [Credentials](https://console.cloud.google.com/apis/credentials) page. The free tier includes as for now 500,000 characters/month.
+
+If no API key is found, the script silently falls back to the free GTX endpoint — no configuration needed.
+
 ## 📜 License & Authorship
 
 - **Initial Author & Lead Architect:** Salvatore Callari ([@CallariS](https://github.com/CallariS))
 - **Joint Cooperation:** Bavarian Formcycle developer community
 
+Special thanks to **[Andre Wachsmuth](https://github.com/awa-xima)**, **[Jennifer Schindler](https://github.com/er-js)** and **[Benedikt Plangger](https://github.com/N64Freak1986)** for their valuable contributions and support.
+
 Licensed under the [MIT License](LICENSE).
+
+⚠️ Disclaimer
+
+**Legal & Compliance**: While CodBi is designed with a "Privacy-First" approach to aid in GDPR-compliant AI integration, the use of this software does not automatically guaranteed legal compliance. The end-user is solely responsible for ensuring that the local deployment, the models used (GGUF/GGML), and the data processing workflows meet all local and international data protection regulations.
+
+**AI Accuracy**: This software utilizes Artificial Intelligence and Optical Character Recognition (OCR). AI models are probabilistic and may produce inaccurate, biased, or hallucinated results. Decisions based on AI-generated content should always be verified by a human, especially in administrative or legal contexts.
+
+**No Liability**: As per the MIT License, this software is provided "as is". The authors are not liable for any data loss, system instability, or legal repercussions arising from the use of the plugin or the automatically downloaded third-party binaries (llama.cpp, whisper.cpp, etc.).

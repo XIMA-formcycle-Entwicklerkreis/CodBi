@@ -23,7 +23,7 @@ export class HTML_Input_REGEX {
    *
    * Config Parameter:
    *  - Expression:       The {@link RegExp } - {@link string } the value of "toProcess" has to comply to.
-   *                      Use **°** instead of **^** to mark the beginning of the input string or a negation.
+   *                      Use **°** instead of **^** to mark the beginning of the input string or a negation (*mandatory*).
    *  - KeyExpression:    The {@link RegExp } - {@link string } the individual keystrokes have to comply to.
    *  - Flags:            The {@link RegExp } - flags {@link string } used to create the "expression" (defaults to "g").
    *  - KeyFlags:         The {@link RegExp } - flags {@link string } used to create the "keyexpression" (defaults to "g").

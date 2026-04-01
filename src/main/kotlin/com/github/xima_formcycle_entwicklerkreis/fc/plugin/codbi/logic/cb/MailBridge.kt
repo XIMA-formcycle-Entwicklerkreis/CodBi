@@ -114,20 +114,19 @@ object MailBridge : CodBi() {
       clientIP: String = "unknown"
   ): MailResult {
     if (!enabled) {
-      return MailResult(success = false, error = "Mail sending is disabled.")
+      return MailResult(success = false, error = "\u2709\uFE0F\uD83D\uDEAB")
     }
 
     // Validate recipient against whitelist
     val pattern = allowedRecipientPattern
     if (pattern != null && !pattern.matches(to)) {
       log(LogLevel.WARNING, "Blocked mail to '$to' — does not match allowed recipient pattern")
-      return MailResult(
-          success = false, error = "Recipient '$to' is not in the allowed recipients list.")
+      return MailResult(success = false, error = "\uD83D\uDEAB $to \u2192 ${pattern.pattern}")
     }
 
     // Basic email format validation
     if (!to.contains("@") || !to.contains(".")) {
-      return MailResult(success = false, error = "Invalid email address: '$to'.")
+      return MailResult(success = false, error = "\u2709\uFE0F\u26A0 $to")
     }
 
     // Per-session rate limit
@@ -137,8 +136,7 @@ object MailBridge : CodBi() {
           LogLevel.WARNING,
           "Session $sessionId exceeded per-session mail limit ($SESSION_MAX_MAILS)")
       return MailResult(
-          success = false,
-          error = "Mail limit reached for this conversation (max $SESSION_MAX_MAILS per session).")
+          success = false, error = "\uD83D\uDEAB $SESSION_MAX_MAILS/$SESSION_MAX_MAILS")
     }
 
     // Global hourly rate limit
@@ -151,8 +149,7 @@ object MailBridge : CodBi() {
     }
     if (globalMailTimestamps.size >= maxMailsPerHour) {
       log(LogLevel.WARNING, "Global hourly mail limit reached ($maxMailsPerHour/hour)")
-      return MailResult(
-          success = false, error = "Global mail limit reached. Please try again later.")
+      return MailResult(success = false, error = "\uD83D\uDEAB\u23F3")
     }
 
     // Sanitize subject (prevent header injection)
@@ -172,7 +169,7 @@ object MailBridge : CodBi() {
       MailResult(success = true, recipient = to, subject = safeSubject)
     } catch (e: Exception) {
       log(LogLevel.ERROR, "Failed to send mail to '$to': ${e.message}")
-      MailResult(success = false, error = "Failed to send email: ${e.message}")
+      MailResult(success = false, error = "\u274C ${e.message}")
     }
   }
 

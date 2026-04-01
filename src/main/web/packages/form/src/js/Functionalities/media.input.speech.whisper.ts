@@ -69,7 +69,7 @@ export class Media_Input_Speech_Whisper {
    * | Browser support       | Chrome, Edge (limited)       | All modern browsers             |
    *
    * @param toLoad    Provided by the CodBi.
-   * @param toProcess Provided by the CodBi. Must be an `<input type="text">` or `<textarea>`. */
+   * @param toProcess Provided by the CodBi. Must be an `input type="text"` or `textarea`. */
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "voicehotkey, language, placeholder")

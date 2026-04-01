@@ -75,7 +75,7 @@ export class AI_OCR {
    *                              {@link HTMLInputElement } **toProcess** are used to receive the extracted fields when **Mode** is
    *                              set to **Extract Fields**. Each such element should have **data-cb-Field** set to the name of the
    *                              field to receive the extracted text for (see **Pattern_...** config parameter).
-   *                              In **Print** mode, a single <textarea> with this class is expected to receive the full OCR text
+   *                              In **Print** mode, a single textarea with this class is expected to receive the full OCR text
    *                              output.
    *
    * @param toLoad    Provided by the CodBi.

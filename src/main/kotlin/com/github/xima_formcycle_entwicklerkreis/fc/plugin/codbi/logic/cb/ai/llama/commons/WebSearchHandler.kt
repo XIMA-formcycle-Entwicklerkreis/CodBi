@@ -63,6 +63,10 @@ internal class WebSearchHandler(
    * @param userLocation The user's location string, or `null` if unavailable.
    * @return The enriched query, or the original if location is absent or already included.
    */
+  /** Search results from the most recent [handleSearchToolCall] invocation. */
+  var lastSearchResults: List<BraveSearch.SearchResult> = emptyList()
+    private set
+
   private fun enrichQuery(rawQuery: String, userLocation: String?): String {
     if (userLocation == null) return rawQuery
     val shortLocation = userLocation.substringBefore(",").trim()
@@ -101,6 +105,7 @@ internal class WebSearchHandler(
     if (!BraveSearch.isAvailable) return initialAnswer
 
     var answer = initialAnswer
+    val allResults = mutableListOf<BraveSearch.SearchResult>()
 
     for (round in 1..maxSearchRoundTrips) {
       val match = BraveSearch.CALL_SEARCH_PATTERN.find(answer) ?: break
@@ -136,6 +141,7 @@ internal class WebSearchHandler(
         break
       }
 
+      allResults.addAll(results)
       val searchContext = BraveSearch.formatResultsForModel(results)
       val extendedHistory = chatHistory.toMutableList()
 
@@ -153,6 +159,7 @@ internal class WebSearchHandler(
       log(LogLevel.INFO, "Search-augmented answer (round $round): ${answer.take(120)}…")
     }
 
+    lastSearchResults = allResults
     return answer
   }
 

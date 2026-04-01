@@ -1,6 +1,7 @@
 {
   "Description": "/functions/Configurations_Financial.loadConfig.html",
   "classes": {
-    "CodBi_Currency": ""
+    "CodBi_Currency": "",
+    "CodBi_TRANS_NTW": ""
   }
 }

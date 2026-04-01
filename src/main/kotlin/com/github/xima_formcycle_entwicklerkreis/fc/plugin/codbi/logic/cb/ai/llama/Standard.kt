@@ -1784,7 +1784,7 @@ class Standard : LLAMA() {
         } else ctx.slotId
     val syncCtx = if (effectiveSlot != ctx.slotId) ctx.copy(slotId = effectiveSlot) else ctx
 
-    val finalResults = mutableMapOf<String, Map<String, String>>()
+    val finalResults = mutableMapOf<String, Map<String, Any>>()
     val specialistRoute = resolveSpecialist(syncCtx.specialistName)
     val specialistPort = (specialistRoute as? SpecialistRoute.Local)?.port
     val specialistClient = (specialistRoute as? SpecialistRoute.External)?.client
@@ -1900,7 +1900,16 @@ class Standard : LLAMA() {
                   syncCtx.clientIP ?: "unknown")
         }
         // endregion CALL:mail handling (sync path)
-        finalResults[questionKey] = mapOf("answer" to answer)
+        val sources =
+            webSearchHandler!!.lastSearchResults.map {
+              mapOf("title" to it.title, "url" to it.url, "description" to it.description)
+            }
+        finalResults[questionKey] =
+            if (sources.isNotEmpty()) {
+              mapOf("answer" to answer, "sources" to sources)
+            } else {
+              mapOf("answer" to answer)
+            }
         log(LogLevel.INFO, "Q[$questionKey]: ${question.take(80)}… → $answer")
       }
     } catch (e: Exception) {

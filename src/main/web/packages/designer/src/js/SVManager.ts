@@ -400,9 +400,9 @@ export class SVManager extends HTMLDivElement {
 
     if (eventTarget.checked) {
       // #region Add functionality
-      // If caret is at the end of the <input>...
+      // If caret is at the beginning of the <input>...
       if (target.selectionStart === 0) {
-        target.value = `${option.toLowerCase()}${target.value.length === 0 ? "" : ","}`;
+        target.value = target.value.length === 0 ? option.toLowerCase() : `${option.toLowerCase()},${target.value}`;
       } else {
         if (target.selectionStart !== null) {
           // #region Determine indices for replacement
@@ -427,16 +427,10 @@ export class SVManager extends HTMLDivElement {
       // #endregion Add functionality
     } else {
       // #region Remove functionality
-      const targetValue = target.value;
+      const values = target.value.split(this.separator).map((v) => v.trim());
+      const filtered = values.filter((v) => v.toLowerCase() !== option.toLowerCase());
 
-      target.value = targetValue
-        .toLowerCase()
-        .replace(
-          (targetValue.indexOf(`,${option.toLowerCase()}`) === -1 ? "" : ",") +
-            option.toLowerCase() +
-            (targetValue.indexOf(`,${option.toLowerCase()}`) === -1 ? "," : ""),
-          "",
-        );
+      target.value = filtered.join(this.separator);
       // #endregion Remove functionality
     }
   }
@@ -641,10 +635,15 @@ export class SVManager extends HTMLDivElement {
 
       return;
     }
-
+    // #region Only re-enable if the target still has focus (prevents selectionchange after blur from re-showing the panel).
     if (!this.enabled) {
+      if (document.activeElement !== this._target) {
+        return;
+      }
+
       this.enabled = true;
     }
+    // #endregion Only re-enable if the target still has focus (prevents selectionchange after blur from re-showing the panel).
 
     if (
       event.type !== "selectionchange" &&

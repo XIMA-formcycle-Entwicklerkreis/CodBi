@@ -23,11 +23,12 @@
  *  - Lines starting with a number+dot   → <li> items wrapped in <ol>
  */
 import { readdirSync, statSync, readFileSync, writeFileSync, mkdirSync } from "fs";
-import { join, relative, sep, extname } from "path";
+import { join, relative, sep, extname, resolve } from "path";
 
 const SRC_ROOT = new URL(".", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 const DIST_DIR = join(SRC_ROOT, "dist");
 const APIDOC_DIR = join(DIST_DIR, "APIDoc");
+const SINGLE_FILE = process.argv.find((a) => a.startsWith("--file="))?.slice(7);
 
 // ─── Collect source entries ────────────────────────────────────────────────────
 function collectEntries(dir) {
@@ -254,7 +255,7 @@ function inlineFormat(text) {
 }
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
-const entries = collectEntries(SRC_ROOT);
+const entries = SINGLE_FILE ? [resolve(SRC_ROOT, SINGLE_FILE)] : collectEntries(SRC_ROOT);
 mkdirSync(APIDOC_DIR, { recursive: true });
 
 for (const entry of entries) {

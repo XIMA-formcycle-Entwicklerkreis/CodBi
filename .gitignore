@@ -86,5 +86,11 @@ node_modules/
 ## Generated build output (esbuild chunks) ##
 src/main/web/packages/form/undefined/
 
+## Translation cache ##
+.translate-cache/
+src_*_temp/
+typedoc.??.json
+tsconfig.??.json
+
 ## Generated assessment reports ##
 **/Assessments/*.html

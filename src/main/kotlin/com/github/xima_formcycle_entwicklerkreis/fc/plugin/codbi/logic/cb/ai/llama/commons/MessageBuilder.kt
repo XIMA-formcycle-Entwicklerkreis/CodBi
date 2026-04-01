@@ -139,15 +139,25 @@ internal class MessageBuilder(
     val now = java.time.LocalDateTime.now()
     val today =
         now.format(
-            java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.ENGLISH))
+            java.time.format.DateTimeFormatter.ofPattern(
+                "EEEE, d MMMM yyyy", java.util.Locale.ENGLISH))
     val currentTime =
         now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.ENGLISH))
+    val daysInMonth = now.toLocalDate().lengthOfMonth()
     if (promptIdentity != null) {
-      append(promptIdentity.replace("{date}", today).replace("{time}", currentTime))
+      append(
+          promptIdentity
+              .replace("{date}", today)
+              .replace("{time}", currentTime)
+              .replace("{daysInMonth}", daysInMonth.toString()))
       append(" ")
     } else {
       append(
-          "You are a helpful assistant. Today is $today, current time is $currentTime. Answer precisely and concisely. ")
+          "You are a helpful assistant with knowledge about calendars and precise calendar logic. " +
+              "Today is $today, current time is $currentTime. This month has $daysInMonth days. " +
+              "When calculating dates, silently count day by day in your head to ensure correctness — " +
+              "for example, Monday +1=Tue, +2=Wed, +3=Thu, +4=Fri — but only show the final result to the user, not the counting steps. " +
+              "Account for month boundaries. Never skip ahead or guess. Answer precisely and concisely. ")
     }
   }
 

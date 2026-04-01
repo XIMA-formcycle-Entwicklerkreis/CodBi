@@ -41,34 +41,34 @@ export class AI_LLAMA_CHAT {
    *
    * | CSS Class                      | Element                                | Purpose                                          |
    * |-------------------------------|----------------------------------------|--------------------------------------------------|
-   * | *The class tagged with this functionality*        | `<textarea>`                           | Chat display (read-only conversation history)    |
-   * | `AI_LLAMA_CHAT_Input`    | `<input type="text">` or `<textarea>` | Text input where the user types messages         |
-   * | `AI_LLAMA_CHAT_Send`     | `<button>`                             | Send button (triggers inference)                 |
-   * | `AI_LLAMA_CHAT_Stop`     | `<button>`                             | Stop button (aborts running inference)           |
-   * | `AI_LLAMA_CHAT_Upload` (Optional)   | `<input type="file">`                  | File upload for images/PDFs to chat about        |
-   * | `AI_LLAMA_CHAT_Thinking` (Optional)  | `<input type="checkbox">`              | Toggles thinking mode (chain-of-thought) on/off  |
-   * | `AI_LLAMA_CHAT_Internet` (Optional)    | `<input type="checkbox">`              | Toggles internet search availability on/off      |
-   * | `AI_LLAMA_CHAT_Location` (Optional)    | `<input type="checkbox">`              | Toggles geolocation (get_current_location) on/off |
-   * | `AI_LLAMA_CHAT_MailForward` (Optional) | `<input type="checkbox">`              | Toggles auto-forward of every AI response via email |
-   * | `AI_LLAMA_CHAT_MailAddress` (Optional) | `<input type="text">` or `<input type="email">` | Email address for auto-forwarding (shown when checkbox is checked) |
-   * | `AI_LLAMA_CHAT_AlertOnFinish` (Optional) | `<input type="checkbox">`              | Toggles alert on finish of inference              |
+   * | *The class tagged with this functionality*        | `textarea`                           | Chat display (read-only conversation history)    |
+   * | `AI_LLAMA_CHAT_Input`    | `input type="text"` or `textarea` | Text input where the user types messages         |
+   * | `AI_LLAMA_CHAT_Send`     | `button`                             | Send button (triggers inference)                 |
+   * | `AI_LLAMA_CHAT_Stop`     | `button`                             | Stop button (aborts running inference)           |
+   * | `AI_LLAMA_CHAT_Upload` (Optional)   | `input type="file"`                  | File upload for images/PDFs to chat about        |
+   * | `AI_LLAMA_CHAT_Thinking` (Optional)  | `input type="checkbox"`              | Toggles thinking mode (chain-of-thought) on/off  |
+   * | `AI_LLAMA_CHAT_Internet` (Optional)    | `input type="checkbox"`              | Toggles internet search availability on/off      |
+   * | `AI_LLAMA_CHAT_Location` (Optional)    | `input type="checkbox"`              | Toggles geolocation (get_current_location) on/off |
+   * | `AI_LLAMA_CHAT_MailForward` (Optional) | `input type="checkbox"`              | Toggles auto-forward of every AI response via email |
+   * | `AI_LLAMA_CHAT_MailAddress` (Optional) | `input type="text"` or `input type="email"` | Email address for auto-forwarding (shown when checkbox is checked) |
+   * | `AI_LLAMA_CHAT_AlertOnFinish` (Optional) | `input type="checkbox"`              | Toggles alert on finish of inference              |
    *
    * **Generated CSS Classes (injected at runtime):**
    *
    * | CSS Class                       | Element     | Purpose                                                        |
    * |--------------------------------|-------------|----------------------------------------------------------------|
-   * | `LLAMA_Chat_Container`         | `<div>`     | Scrollable chat wrapper replacing the hidden `<textarea>`      |
-   * | `LLAMA_Chat_Row`               | `<div>`     | Flex row holding a single bubble                               |
-   * | `LLAMA_Chat_Row--user`         | `<div>`     | Row modifier: right-aligned (user message)                     |
-   * | `LLAMA_Chat_Row--llama`        | `<div>`     | Row modifier: left-aligned (Llama response)                    |
-   * | `LLAMA_Chat_Row--system`       | `<div>`     | Row modifier: centered (system/info messages)                  |
-   * | `LLAMA_Chat_Bubble`            | `<div>`     | Base speech-bubble styling (padding, border-radius, shadow)    |
-   * | `LLAMA_Chat_Bubble--user`      | `<div>`     | User bubble colors (background via `--user-bubble-bg`)         |
-   * | `LLAMA_Chat_Bubble--llama`     | `<div>`     | Llama bubble colors (background via `--llama-bubble-bg`)       |
-   * | `LLAMA_Chat_Bubble--system`    | `<div>`     | System bubble: transparent, italic, muted                      |
-   * | `LLAMA_Chat_Bubble--thinking`  | `<div>`     | Temporary "thinking" indicator (dimmed, italic)                |
-   * | `LLAMA_Chat_Bubble--error`     | `<div>`     | Error bubble: red-tinted background                            |
-   * | `LLAMA_Chat_AiHint`           | `<span>`    | Small "AI-Generated" label inside an AI bubble                 |
+   * | `LLAMA_Chat_Container`         | `div`     | Scrollable chat wrapper replacing the hidden `textarea`      |
+   * | `LLAMA_Chat_Row`               | `div`     | Flex row holding a single bubble                               |
+   * | `LLAMA_Chat_Row--user`         | `div`     | Row modifier: right-aligned (user message)                     |
+   * | `LLAMA_Chat_Row--llama`        | `div`     | Row modifier: left-aligned (Llama response)                    |
+   * | `LLAMA_Chat_Row--system`       | `div`     | Row modifier: centered (system/info messages)                  |
+   * | `LLAMA_Chat_Bubble`            | `div`     | Base speech-bubble styling (padding, border-radius, shadow)    |
+   * | `LLAMA_Chat_Bubble--user`      | `div`     | User bubble colors (background via `--user-bubble-bg`)         |
+   * | `LLAMA_Chat_Bubble--llama`     | `div`     | Llama bubble colors (background via `--llama-bubble-bg`)       |
+   * | `LLAMA_Chat_Bubble--system`    | `div`     | System bubble: transparent, italic, muted                      |
+   * | `LLAMA_Chat_Bubble--thinking`  | `div`     | Temporary "thinking" indicator (dimmed, italic)                |
+   * | `LLAMA_Chat_Bubble--error`     | `div`     | Error bubble: red-tinted background                            |
+   * | `LLAMA_Chat_AiHint`           | `span`    | Small "AI-Generated" label inside an AI bubble                 |
    *
    * **Behavior:**
    * - The display textarea is made read-only and shows the full conversation history.
@@ -1070,6 +1070,24 @@ export class AI_LLAMA_CHAT {
 
       return withCode;
     };
+    // #region Clipboard helper (works on HTTP too)
+    const copyToClipboard = (text: string): void => {
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+      } else {
+        fallbackCopy(text);
+      }
+    };
+    const fallbackCopy = (text: string): void => {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;left:-9999px;top:-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    };
+    // #endregion Clipboard helper
     // #region Turn URLs, Mail-Addresses and Phone-Numbers in plain text into linked badges.
     // #region Create Chat-Bubble Elements
     /**
@@ -1107,7 +1125,7 @@ export class AI_LLAMA_CHAT {
         copyBtn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M16 1H4a2 2 0 0 0-2 2v14h2V3h12V1zm3 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h11v14z"/></svg>`;
 
         copyBtn.addEventListener("click", () => {
-          navigator.clipboard.writeText(question);
+          copyToClipboard(question);
           bubble.classList.remove("LLAMA_flash");
           void bubble.offsetWidth;
           bubble.classList.add("LLAMA_flash");
@@ -1195,7 +1213,7 @@ export class AI_LLAMA_CHAT {
       const codeEl = btn.closest(".LLAMA_Chat_CodeBlock")?.querySelector("code");
 
       if (codeEl) {
-        navigator.clipboard.writeText(codeEl.textContent || "");
+        copyToClipboard(codeEl.textContent || "");
 
         const block = btn.closest(".LLAMA_Chat_CodeBlock") as HTMLElement;
 
@@ -1944,7 +1962,7 @@ export class AI_LLAMA_CHAT {
                           md += `\n\n---\n\n## ${i18nCopyReasoningLabel}\n\n${reasoningText}`;
                         }
 
-                        navigator.clipboard.writeText(md);
+                        copyToClipboard(md);
                         streamBubble.classList.remove("LLAMA_flash");
 
                         void streamBubble.offsetWidth;

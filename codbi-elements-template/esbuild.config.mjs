@@ -1,14 +1,17 @@
 // @ts-check
 import { build, context } from "esbuild";
 import { readdirSync, statSync, rmSync } from "fs";
-import { join, relative, sep } from "path";
+import { join, relative, sep, resolve } from "path";
 
 const SRC_ROOT = new URL(".", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 const OUT_DIR = join(SRC_ROOT, "dist");
 const WATCH = process.argv.includes("--watch");
+const SINGLE_FILE = process.argv.find((a) => a.startsWith("--file="))?.slice(7);
 
-// Clean dist directory so stale artifacts from renamed files are removed.
-try { rmSync(OUT_DIR, { recursive: true, force: true }); } catch { /* locked by another process — files will be overwritten */ }
+// Clean dist directory so stale artifacts from renamed files are removed (skip for single-file builds).
+if (!SINGLE_FILE) {
+    try { rmSync(OUT_DIR, { recursive: true, force: true }); } catch { /* locked by another process — files will be overwritten */ }
+}
 
 // #region Collect entry points
 /** Recursively finds all .ts / .tsx files, ignoring node_modules, dist, and config files. */
@@ -32,7 +35,7 @@ function collectEntries(dir) {
     return entries;
 }
 
-const entryPoints = collectEntries(SRC_ROOT);
+const entryPoints = SINGLE_FILE ? [resolve(SRC_ROOT, SINGLE_FILE)] : collectEntries(SRC_ROOT);
 // #endregion Collect entry points
 // #region Build each entry as a standalone IIFE with CodBi dot-notation output name.
 /** Converts a file path relative to SRC_ROOT into CodBi dot-notation.

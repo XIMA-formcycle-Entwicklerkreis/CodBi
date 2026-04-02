@@ -26,8 +26,8 @@ export class DOM_Query {
   @DBC.ParamvalueProvider
   @INSTANCE.POST(Element)
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length", "Hasn't the CSS-Selector been specified?")
-    @AE.PRE([new TYPE("string")])
+    @GREATER.PRE(0, true, false, "length", "Hasn't the CSS-Selector been specified?")
+    @AE.PRE([new TYPE("string")], 0)
     @AE.PRE(new REGEX(REGEX.stdExp.cssSelector), 0)
     params: Array<string>,
   ): Element | null {

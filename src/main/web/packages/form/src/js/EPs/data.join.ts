@@ -24,7 +24,7 @@ export class Data_Join {
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length", "Weren't the objects to join specified?")
+    @GREATER.PRE(0, true, false, "length", "Weren't the objects to join specified?")
     @AE.PRE([new TYPE("object")])
     params: Array<unknown>,
   ): Array<unknown> {

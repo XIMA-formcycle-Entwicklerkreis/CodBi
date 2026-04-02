@@ -23,8 +23,8 @@ export class Data_CSV {
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length", "Has the CSV-String to convert been specified?")
-    @AE.PRE([new TYPE("string | object")])
+    @GREATER.PRE(0, true, false, "length", "Has the CSV-String to convert been specified?")
+    @AE.PRE(new TYPE("string | object"), 0)
     params: Array<string>,
   ): Array<string> {
     const result: Array<string> = new Array<string>();

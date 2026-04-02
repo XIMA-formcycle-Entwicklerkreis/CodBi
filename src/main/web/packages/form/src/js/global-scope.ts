@@ -796,6 +796,43 @@ export class CodBi implements CodbiGlobal {
     }
   }
   /**
+   * Re-queries a DOM element if it has been detached (e.g. due to FORMCYCLE re-rendering
+   * during async EP resolution). Handles repeatable containers where IDs may be suffixed.
+   *
+   * @param original The originally captured element reference.
+   * @returns The connected element if found, otherwise the original reference. */
+  protected reQueryIfDetached(original: Element): Element {
+    if ((original as HTMLElement).isConnected) {
+      return original;
+    }
+
+    const id = (original as HTMLElement).id;
+    const dataName = original.getAttribute("data-name");
+
+    // Try exact ID match first (non-repeatable case).
+    if (id) {
+      const byId = document.getElementById(id);
+      if (byId) {
+        return byId;
+      }
+      // Try ID-prefix match for repeatable containers (e.g. xi-txt-29 → xi-txt-29__1).
+      const byPrefix = document.querySelector(`[id^="${id}__"]`);
+      if (byPrefix) {
+        return byPrefix;
+      }
+    }
+
+    // Try data-name match.
+    if (dataName) {
+      const byName = document.querySelector(`[data-name="${dataName}"]`);
+      if (byName) {
+        return byName;
+      }
+    }
+
+    return original;
+  }
+  /**
    * Registered a new functionality with the specified {@params id}.
    *
    * @param id    The {@link string } identifying the new functionality
@@ -1290,20 +1327,20 @@ export class CodBi implements CodbiGlobal {
             this.resolveEP(codbiAttributes)
               .then((real) => {
                 codbiAttributes = real;
-
-                toInvoke(codbiAttributes, toProcess);
+                const currentElement = this.reQueryIfDetached(toProcess);
+                toInvoke(codbiAttributes, currentElement);
                 // #region Disable loading animation and remove logo when CodBi finished processing that element.
                 if (
-                  toProcess
-                    .getAttribute(toProcess.hasAttribute("cbLOADER") ? "cbLOADER" : "data-cb-LOADER")
+                  currentElement
+                    .getAttribute(currentElement.hasAttribute("cbLOADER") ? "cbLOADER" : "data-cb-LOADER")
                     ?.toLocaleLowerCase()
                     .trim() !== "none" &&
-                  toProcess.tagName !== "HEAD"
+                  currentElement.tagName !== "HEAD"
                 ) {
-                  this.removeLoaderAnim(toProcess);
+                  this.removeLoaderAnim(currentElement);
                 }
                 // #endregion Disable loading animation and remove logo when CodBi finished processing that element.
-                toProcess.classList?.remove("Processing");
+                currentElement.classList?.remove("Processing");
 
                 if (--cntPromises === 0) {
                   this.checkingAttributes = false;
@@ -1414,20 +1451,20 @@ export class CodBi implements CodbiGlobal {
                 this.resolveEP(codbiAttributes)
                   .then((real) => {
                     codbiAttributes = real;
-
-                    this.functionalities.get(functionality.toLowerCase().trim())(codbiAttributes, toProcess);
+                    const currentElement = this.reQueryIfDetached(toProcess);
+                    this.functionalities.get(functionality.toLowerCase().trim())(codbiAttributes, currentElement);
                     // #region Disable loading animation and remove logo when CodBi finished processing that element.
                     if (
-                      toProcess
-                        .getAttribute(toProcess.hasAttribute("cbLOADER") ? "cbLOADER" : "data-cb-LOADER")
+                      currentElement
+                        .getAttribute(currentElement.hasAttribute("cbLOADER") ? "cbLOADER" : "data-cb-LOADER")
                         ?.toLocaleLowerCase()
                         .trim() !== "none" &&
-                      toProcess.tagName !== "HEAD"
+                      currentElement.tagName !== "HEAD"
                     ) {
-                      this.removeLoaderAnim(toProcess);
+                      this.removeLoaderAnim(currentElement);
                     }
                     // #endregion Disable loading animation and remove logo when CodBi finished processing that element.
-                    toProcess.classList?.remove("Processing");
+                    currentElement.classList?.remove("Processing");
 
                     if (--cntPromises === 0) {
                       this.checkingAttributes = false;
@@ -1569,10 +1606,12 @@ export class CodBi implements CodbiGlobal {
         if (codbiElements.length !== 0) {
           // #region Transfer CodBi-Attributes to cloned object.
           for (const toClone of codbiElements) {
-            this.copyCBAttributes(
-              toClone as HTMLElement,
-              params.container["0"].querySelector(`[ data-org-id = "${toClone.getAttribute("data-org-id")}"]`),
+            const clonedTarget = params.container["0"].querySelector(
+              `[ data-org-id = "${toClone.getAttribute("data-org-id")}"]`,
             );
+            this.copyCBAttributes(toClone as HTMLElement, clonedTarget);
+            // Clear data-cb-checked so functionalities are re-invoked on the new clone.
+            clonedTarget?.removeAttribute("data-cb-checked");
           }
           // #endregion Transfer CodBi-Attributes to cloned object.
         }

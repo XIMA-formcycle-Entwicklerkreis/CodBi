@@ -68,8 +68,8 @@ export class BayVIS_Ansprechpartner {
    * @throws A {@link CodBiError } if no data could be retrieved from the BayVIS-Endpoint. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, false, false, "length", "Has directory property been specified?")
-    @AE.PRE(new TYPE("string"))
+    @GREATER.PRE(0, false, false, "length", "Has directory property been specified?")
+    @AE.PRE(new TYPE("string"), 0)
     @AE.PRE(new REGEX(BayVIS_Ansprechpartner.stdExp.directoryMember), 0)
     params: Array<unknown>,
   ): Promise<Array<string> | Array<unknown>> {

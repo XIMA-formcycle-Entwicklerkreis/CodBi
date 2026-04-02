@@ -29,7 +29,7 @@ export class DATE_FromString {
   @DBC.ParamvalueProvider
   @AE.POST(new INSTANCE(Date))
   public static retrieve(
-    @GREATER.PRE(2, true, false, "length", "Was the date string to convert and the operation to perform not specified?")
+    @GREATER.PRE(0, true, false, "length", "Was the date string to convert and the operation to perform not specified?")
     @AE.PRE([new TYPE("string"), new REGEX(REGEX.stdExp.date)], 0)
     @AE.PRE([new TYPE("string"), new REGEX(REGEX.stdExp.dateFormat)], 1)
     params: Array<string>,

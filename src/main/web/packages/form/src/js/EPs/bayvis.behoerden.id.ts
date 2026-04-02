@@ -45,8 +45,8 @@ export class BayVIS_Behoerden_ID {
    * @throws A {@link CodBiError } if no data could be retrieved from the BayVIS-endpoint. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length", "Has the name of the authority been specified?")
-    @AE.PRE(new TYPE("string"))
+    @GREATER.PRE(0, true, false, "length", "Has the name of the authority been specified?")
+    @AE.PRE(new TYPE("string"), 0)
     params: Array<unknown>,
   ): Promise<
     | Array<string>

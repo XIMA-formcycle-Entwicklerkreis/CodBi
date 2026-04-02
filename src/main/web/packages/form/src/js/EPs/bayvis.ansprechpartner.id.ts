@@ -68,7 +68,7 @@ export class BayVIS_Ansprechpartner_ID {
    * @throws  A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, false, false, "length", "Has the contact's first- and last name been specified?")
+    @GREATER.PRE(0, false, false, "length", "Has the contact's first- and last name been specified?")
     @AE.PRE(new TYPE("string"), 0)
     @AE.PRE(new REGEX(/^[A-Z][a-z]+\s[A-Z][a-z]+$/), 0)
     params: Array<unknown>,

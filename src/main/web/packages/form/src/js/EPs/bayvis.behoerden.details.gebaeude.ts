@@ -61,7 +61,7 @@ export class BayVIS_Behoerden_Details_Gebaeude {
    * @throws A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint or the . */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(2, false, false, "length", "Has the authority and building ID been specified?")
+    @GREATER.PRE(1, false, false, "length", "Hasn't the authority and building ID been specified?")
     @AE.PRE(new TYPE("string | object"))
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details_Gebaeude.stdExp.authorityID), 0, 1)
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details_Gebaeude.stdExp.directoryMember), 2)

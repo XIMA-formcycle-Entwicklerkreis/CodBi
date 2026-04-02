@@ -22,7 +22,7 @@ import { BayVIS_Ansprechpartner_ID } from "./bayvis.ansprechpartner.id";
  * Placeholder Parameter:
  *  - 1st:      The ID of the contact who's details are to be retrieved.
  *              Multiple IDs may be provided by using "/" as a divider (e.g. 12345 / 678901 ).
- *  - 2nd:      A property of the contact, like e.g. "nachname".
+ *  - 2nd:      An optional property of the contact, like e.g. "nachname".
  *
  *  - resolves  To either an
  *              {@link Array <{ anrede: string; vorname: string; nachname: string; funktion: string;
@@ -56,29 +56,29 @@ export class BayVIS_Ansprechpartner_Details {
    *          3rd parameter was specified, a non existent contact property was specified. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(
-      1,
-      false,
-      false,
-      "length",
-      "Has the contact's ID (1st parameter) and the property (2nd parameter) to retrieve been specified?",
-    )
-    @AE.PRE(new OR([new TYPE("string"), new TYPE("number"), new TYPE("object")]), 0)
-    @AE.PRE(new TYPE("string"), 1)
-    @AE.PRE(
-      new OR([
-        new REGEX(/^([A-Za-z\s]+|\d{1,6})(?:\/([A-Za-z\s]+|\d{1,6}))*|$/),
-        new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember),
-      ]),
-      1,
-    )
-    @AE.PRE(
-      new OR([
-        new REGEX(/^([A-Za-z\s]+|\d{1,6})(?:\/([A-Za-z\s]+|\d{1,6}))*|$/),
-        new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember),
-      ]),
-      1,
-    )
+    /*  @GREATER.PRE(
+        0,
+        false,
+        false,
+        "length",
+        "Hasn't the contact's ID been specified?",
+      )
+      @AE.PRE(new OR([new TYPE("string"), new TYPE("number"), new TYPE("object")]), 0)
+      @AE.PRE(new TYPE("string"), 1)
+      @AE.PRE(
+        new OR([
+          new REGEX(/^([A-Za-z\s]+|\d{1,6})(?:\/([A-Za-z\s]+|\d{1,6}))*|$/),
+          new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember),
+        ]),
+        1,
+      )
+      @AE.PRE(
+        new OR([
+          new REGEX(/^([A-Za-z\s]+|\d{1,6})(?:\/([A-Za-z\s]+|\d{1,6}))*|$/),
+          new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember),
+        ]),
+        1,
+      )*/
     params: Array<unknown>,
   ): Promise<
     | string

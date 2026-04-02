@@ -36,28 +36,31 @@ export class HTML_Text_Mapper {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @DEFINED.PRE("replacements")
-    @TYPE.PRE("object | object[]", "replacements")
+    /*@DEFINED.PRE("replacements")
+    @TYPE.PRE("object", "replacements")
     @DEFINED.PRE("property")
     @REGEX.PRE(REGEX.stdExp.property, "property")
-    @TYPE.PRE("string", "css")
+    @TYPE.PRE("string")*/
     toLoad: { [key: string]: unknown },
 
-    @INSTANCE.PRE(HTMLElement, undefined, "Is it not an HTML-Element that is tagged with this functionality?")
+    //@INSTANCE.PRE(HTMLElement, undefined, "Is it not an HTML-Element that is tagged with this functionality?")
     toProcess: Element,
   ): void {
+    console.log("N", toProcess.getAttribute("class"), toLoad);
+    /*
     // #region Further Precondition Checks
     new EQ(undefined, true).check(
       (toProcess as unknown as { [key: string]: string | undefined })[toLoad.property as string],
     );
     // #endregion Further Precondition Checks
+    */
     // #region Process each context
     const originalContent = (toProcess as unknown as { [key: string]: string })[toLoad.property as string];
 
     if (originalContent === undefined) {
       return;
     }
-
+    console.log("S", originalContent, toLoad.replacements);
     (toProcess as unknown as { [key: string]: string })[toLoad.property as string] = "";
     // #region Normalize replacements to array
     if (!Array.isArray(toLoad.replacements)) {
@@ -87,8 +90,14 @@ export class HTML_Text_Mapper {
         (toProcess as unknown as { [key: string]: string | undefined })[toLoad.property as string] += replacedContent;
       }
       // #endregion Set mapped text
+      console.log("R", replacedContent);
+      console.log("R1", (toProcess as unknown as { [key: string]: string | undefined })[toLoad.property as string]);
     }
     // #endregion Process each context
+    console.log("S2", toLoad.css);
+    console.log("FINAL innerHTML BEFORE style", (toProcess as HTMLElement).innerHTML);
+    console.log("ELEMENT", toProcess, "ID", (toProcess as HTMLElement).id, "TAG", toProcess.tagName);
+    console.log("IS CONNECTED", (toProcess as HTMLElement).isConnected, "PARENT", toProcess.parentElement?.id);
     toProcess.setAttribute("style", `${toProcess.getAttribute("style")};${toLoad.css}`);
   }
 }

@@ -20,7 +20,7 @@ import { CodBiError } from "../global-scope";
  *
  * Placeholder Parameter:
  *  - 1st:  The ID of the authority to retrieve.
- *  - 2nd:  A property of the directory, like e.g. "bezeichnung".
+ *  - 2nd:  An optional property of the directory, like e.g. "bezeichnung".
  *
  *  - returns Either an {@link Array <{ bezeichnungBehoerde: string; behoerdeZuordnungen : object, behoerdenGebaeudeZuordnungen : object, behoerdenart : string, behoerdengruppe : string, bezeichnung : string, email : string, id : string, sortierreihenfolge : string}>}
  *            or an {@link Array < string >}, if the 3rd parameter is specified.
@@ -49,8 +49,8 @@ export class BayVIS_Behoerden_Details {
    * @throws A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint or the . */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(2, false, false, "length", "Has the authority and building ID been specified?")
-    @AE.PRE(new TYPE("string | object"))
+    @GREATER.PRE(0, false, false, "length", "Hasn't the authority ID been specified?")
+    @AE.PRE(new TYPE("string | object"), 0)
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.authorityID), 0, 1)
     @AE.PRE(new REGEX(BayVIS_Behoerden_Details.stdExp.directoryMember), 2)
     params: Array<unknown>,

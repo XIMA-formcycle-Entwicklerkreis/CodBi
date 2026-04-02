@@ -3,6 +3,7 @@
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+import { AE } from "xdbc/src/DBC/AE";
 // #endregion XDBC
 import { CodBiError } from "../global-scope";
 // #endregion Imports
@@ -28,8 +29,8 @@ export class V {
    *          of **params** is set to **REPORT**. Otherwise a empty {@link string } will be returned. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length", "Hasn't at least the the variable's CSS-Selector been specified?")
-    @REGEX.PRE(/\w+/)
+    @GREATER.PRE(0, true, false, "length", "Hasn't at least the the variable's CSS-Selector been specified?")
+    @AE.PRE(new REGEX(/\w+/), 0)
     params: Array<string>,
   ): string {
     const result: string | undefined | null = document

@@ -29,7 +29,7 @@ export class F {
   @DBC.ParamvalueProvider
   @INSTANCE.POST(Array)
   public static retrieve(
-    @GREATER.PRE(3, true, false, "length", "Haven't the name, the value and the pool to search been specified?")
+    @GREATER.PRE(2, true, false, "length", "Haven't the name, the value and the pool to search been specified?")
     @AE.PRE(new TYPE("string"), 0)
     @AE.PRE(new DEFINED(), 1)
     @AE.PRE(new INSTANCE(Array), 2)

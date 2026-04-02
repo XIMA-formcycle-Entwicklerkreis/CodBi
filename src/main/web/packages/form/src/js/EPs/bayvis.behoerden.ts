@@ -46,9 +46,9 @@ export class BayVIS_Behoerden {
    * @throws A {@link CodBiError } if either no data could be retrieved from the BayVIS-Endpoint or the . */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length", "Has a property of the authority been specified?")
-    @AE.PRE(new TYPE("string"))
-    @AE.PRE(new REGEX(BayVIS_Behoerden.stdExp.directoryMember), 1)
+    @GREATER.PRE(0, true, false, "length", "Has a property of the authority been specified?")
+    @AE.PRE(new TYPE("string"), 0)
+    @AE.PRE(new REGEX(BayVIS_Behoerden.stdExp.directoryMember), 0)
     params: Array<unknown>,
   ): Promise<Array<string> | Array<unknown>> {
     return new Promise((resolve, reject) => {

@@ -1,12 +1,13 @@
+import { getJQuery } from "@de-xima/fc-form-renderer";
 /**
- * Invokes {@link codbi.checkAttributes()} right away and once again
- * when the document is fully loaded.   */
+ * Invokes {@link codbi.checkAttributes()} once document has fully loaded and Formcycle
+ * has finished initializing it's repeatable containers. */
 export function onDocumentReady(): void {
   if (window.codbi.autoCheckAttributes) {
-    window.codbi.checkAttributes();
+    getJQuery()("form.xm-form").on("ready", (event) => {
+      if (!window.codbi.formReady) {
+        window.codbi.formReady = true;
 
-    window.addEventListener("load", (event) => {
-      if (window.codbi.autoCheckAttributes) {
         window.codbi.checkAttributes();
       }
     });

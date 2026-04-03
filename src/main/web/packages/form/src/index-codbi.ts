@@ -9,9 +9,9 @@ console.log(
     "| |   / _ \\ / _` |  _ \\| |\n" +
     "| |__| (_) | (_| | |_) | |\n" +
     " \\____\\___/ \\__,_|____/|_|\n" +
-    "%c Code Library for FORMCYCLE\n" +
-    " v1.0.0",
-  "color:#4A90D9;font-weight:bold;font-size:12px;font-family:monospace",
+    "%c        Code Library v1\n" +
+    "       for XIMA FORMCYCLE\n",
+  "color:#4A90D9;font-weight:bold;font-size:12px;font-family:monospace;line-height:1;",
   "color:#8896A7;font-size:11px",
 );
 

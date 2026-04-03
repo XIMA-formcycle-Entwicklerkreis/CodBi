@@ -56,29 +56,23 @@ export class BayVIS_Ansprechpartner_Details {
    *          3rd parameter was specified, a non existent contact property was specified. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    /*  @GREATER.PRE(
-        0,
-        false,
-        false,
-        "length",
-        "Hasn't the contact's ID been specified?",
-      )
-      @AE.PRE(new OR([new TYPE("string"), new TYPE("number"), new TYPE("object")]), 0)
-      @AE.PRE(new TYPE("string"), 1)
-      @AE.PRE(
-        new OR([
-          new REGEX(/^([A-Za-z\s]+|\d{1,6})(?:\/([A-Za-z\s]+|\d{1,6}))*|$/),
-          new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember),
-        ]),
-        1,
-      )
-      @AE.PRE(
-        new OR([
-          new REGEX(/^([A-Za-z\s]+|\d{1,6})(?:\/([A-Za-z\s]+|\d{1,6}))*|$/),
-          new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember),
-        ]),
-        1,
-      )*/
+    @GREATER.PRE(0, false, false, "length", "Hasn't the contact's ID been specified?")
+    @AE.PRE(new OR([new TYPE("string"), new TYPE("number"), new TYPE("object")]), 0)
+    @AE.PRE(new TYPE("string"), 1)
+    @AE.PRE(
+      new OR([
+        new REGEX(/^([A-Za-z\s]+|\d{1,6})(?:\/([A-Za-z\s]+|\d{1,6}))*|$/),
+        new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember),
+      ]),
+      1,
+    )
+    @AE.PRE(
+      new OR([
+        new REGEX(/^([A-Za-z\s]+|\d{1,6})(?:\/([A-Za-z\s]+|\d{1,6}))*|$/),
+        new REGEX(BayVIS_Ansprechpartner_Details.stdExp.directoryMember),
+      ]),
+      1,
+    )
     params: Array<unknown>,
   ): Promise<
     | string

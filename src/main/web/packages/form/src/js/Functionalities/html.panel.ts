@@ -127,7 +127,7 @@ export class HTML_Panel {
     @OR.PRE(
       [new INSTANCE(HTMLDivElement), new INSTANCE(HTMLFieldSetElement)],
       undefined,
-      "Is it not a <div> that is tagged with this functionality?",
+      "Is it not a <div> or a <fieldset> that is tagged with this functionality?",
     )
     toProcess: Element,
   ): undefined {

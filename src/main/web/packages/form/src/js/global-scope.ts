@@ -39,6 +39,8 @@ export interface CodbiGlobal {
   nncHandler(toHandle: string): void;
   /** States whether {@link CodbiGlobal.checkAttributes } shall be invoked automatically or not. */
   autoCheckAttributes: boolean;
+  /** States whether the initial form-ready event has already fired. */
+  formReady: boolean;
   /**
    * Injects the **CodBi-Loading-Animation** after the given {@link destination }, only
    * if there is no animation present yet.
@@ -199,6 +201,8 @@ export class CodBi implements CodbiGlobal {
   // #endregion Attributes
   /** See {@link CodbiGlobal.autoCheckAttributes }. */
   public autoCheckAttributes: boolean = false;
+  /** See {@link CodbiGlobal.formReady }. */
+  public formReady: boolean = false;
   /**
    * See {@link CodbiGlobal.nncHandler }.
    *
@@ -1090,7 +1094,9 @@ export class CodBi implements CodbiGlobal {
         }
       }
       // #endregion Apply attributes
-      await this.checkAttributes();
+      if (this.formReady) {
+        await this.checkAttributes();
+      }
       resolve();
     });
   }
@@ -1180,8 +1186,13 @@ export class CodBi implements CodbiGlobal {
    *
    * @param destination The {@link Element } that shall precede the {@link CodBiLogo }. */
   public injectLoadingAnim(destination: Element): void {
-    if (XFC_METADATA.requestType === "print" || destination.parentElement?.querySelector(".CodBi_Logo") !== null) {
-      return; // Don't inject the CodBi-Logo if there is already one present.
+    if (
+      XFC_METADATA.requestType === "print" ||
+      destination.parentElement?.querySelector(
+        `.cCodBiLoader[cbFOR="${(destination as HTMLElement).getAttribute("data-name")}"]`,
+      ) !== null
+    ) {
+      return; // Don't inject a loader if there is already one present for this element.
     }
 
     const container = document.createElement("div");
@@ -1229,15 +1240,36 @@ export class CodBi implements CodbiGlobal {
    *
    * @param toRemoveFrom The {@link Element } all CSS-Class-**cCodBiLoader** shall be remove from. */
   public removeLoaderAnim(toRemoveFrom: Element): void {
-    const loaderAnimation = toRemoveFrom.parentElement?.querySelector(
-      `.cCodBiLoader[cbFOR="${toRemoveFrom.getAttribute("data-name")}"]`,
+    const selector = `.cCodBiLoader[cbFOR="${toRemoveFrom.getAttribute("data-name")}"]`;
+
+    // Remove all matching loaders (handles duplicates from multi-functionality elements or DOM cloning).
+    const loaders = toRemoveFrom.parentElement?.querySelectorAll(selector);
+
+    if (loaders && loaders.length > 0) {
+      for (const loader of loaders) {
+        loader.remove();
+      }
+    }
+  }
+  /**
+   * Marks the loader animation of the given {@link Element } as erroneous by switching
+   * the spinner to a red pulsating state. The loader remains visible to indicate which
+   * element caused the error.
+   *
+   * @param toMarkError The {@link Element } whose loader shall be marked as erroneous. */
+  public markLoaderError(toMarkError: Element): void {
+    const loaderAnimation = toMarkError.parentElement?.querySelector(
+      `.cCodBiLoader[cbFOR="${toMarkError.getAttribute("data-name")}"]`,
     );
 
     if (loaderAnimation === null || loaderAnimation === undefined) {
       return;
     }
 
-    loaderAnimation.remove();
+    const spinner = loaderAnimation.querySelector(".CodBiLoader_Spinner");
+    if (spinner) {
+      spinner.classList.add("CodBi_Error");
+    }
   }
   /**
    * Processes all {@link Element }s that're tagged with a certain
@@ -1349,7 +1381,10 @@ export class CodBi implements CodbiGlobal {
                 }
               })
               .catch((X: unknown) => {
-                this.reportFunctionalityError(toProcess, functionality, codbiAttributes, X, "");
+                const failedElement = this.reQueryIfDetached(toProcess);
+                this.reportFunctionalityError(failedElement, functionality, codbiAttributes, X, "");
+                this.markLoaderError(failedElement);
+                failedElement.classList?.remove("Processing");
 
                 if (--cntPromises === 0) {
                   this.checkingAttributes = false;
@@ -1403,6 +1438,8 @@ export class CodBi implements CodbiGlobal {
                       })
                       .catch((X: unknown) => {
                         this.reportFunctionalityError(toApplyOn, functionality, codbiAttributes, X, "");
+                        this.markLoaderError(toApplyOn);
+                        toApplyOn.classList?.remove("Processing");
 
                         if (--cntPromises === 0) {
                           this.checkingAttributes = false;
@@ -1473,7 +1510,10 @@ export class CodBi implements CodbiGlobal {
                     }
                   })
                   .catch((X: unknown) => {
-                    this.reportFunctionalityError(toProcess, functionality, codbiAttributes, X, "");
+                    const failedElement = this.reQueryIfDetached(toProcess);
+                    this.reportFunctionalityError(failedElement, functionality, codbiAttributes, X, "");
+                    this.markLoaderError(failedElement);
+                    failedElement.classList?.remove("Processing");
 
                     if (--cntPromises === 0) {
                       this.checkingAttributes = false;
@@ -1576,7 +1616,12 @@ export class CodBi implements CodbiGlobal {
         0%    { filter : blur( 1em ); opacity : 0 ;}
         90%   { scale : 1.1 ;}
         100%  { filter : blur( 0 ); opacity : 1 ; scale : 1 ;}}
-      .CodBiLoader { animation : kfFadeIN_CodBi_Loader 1s ease-in forwards ; position : relative ; filter : blur( 1em ); opacity : 0 ; scale : .9 ;}`,
+      .CodBiLoader { animation : kfFadeIN_CodBi_Loader 1s ease-in forwards ; position : relative ; filter : blur( 1em ); opacity : 0 ; scale : .9 ;}
+
+      @keyframes kfErrorPulse { 0%, 100% { transform : scale(1) ; opacity : 1 ;} 50% { transform : scale(.75) ; opacity : .6 ;}}
+      .CodBiLoader_Spinner.CodBi_Error          { border-right-color : #e53935 ; animation : kfErrorPulse 1.5s ease-in-out infinite ;}
+      .CodBiLoader_Spinner.CodBi_Error::before,
+      .CodBiLoader_Spinner.CodBi_Error::after   { border-right-color : #e53935 ; animation : kfErrorPulse 1.5s ease-in-out infinite ;}`,
   ) {
     this.nestingBraces = nestingBraces;
     // #region Inject style for elements that're currently being processed.
@@ -1609,14 +1654,23 @@ export class CodBi implements CodbiGlobal {
             const clonedTarget = params.container["0"].querySelector(
               `[ data-org-id = "${toClone.getAttribute("data-org-id")}"]`,
             );
-            this.copyCBAttributes(toClone as HTMLElement, clonedTarget);
+            this.copyCBAttributes(toClone as HTMLElement, clonedTarget as HTMLElement);
             // Clear data-cb-checked so functionalities are re-invoked on the new clone.
             clonedTarget?.removeAttribute("data-cb-checked");
           }
           // #endregion Transfer CodBi-Attributes to cloned object.
         }
 
+        // Clean up any loaders or Processing state that FORMCYCLE's DOM cloning may have carried over.
+        for (const orphan of params.container["0"].querySelectorAll(".cCodBiLoader")) {
+          orphan.remove();
+        }
+        for (const proc of params.container["0"].querySelectorAll(".Processing")) {
+          proc.classList.remove("Processing");
+        }
+
         this.checkAttributes();
+      } else {
       }
     });
   }

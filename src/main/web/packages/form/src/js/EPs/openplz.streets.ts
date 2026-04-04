@@ -36,7 +36,7 @@ export class OpenPLZ_Streets extends OpenPLZ {
   @DBC.ParamvalueProvider
   public static override retrieve(
     @GREATER.PRE(2, true, false, "length", "Hasn't at least the Street and City RegEx been specified?")
-    @AE.PRE(new TYPE("string"), 0, 4)
+    @AE.PRE(new TYPE("string"), 0, 3)
     @AE.PRE(new OR([new EQ(""), new REGEX(/(de|en|at|li|ch)/i)]), 0)
     params: Array<unknown>,
   ): Array<unknown> | unknown {

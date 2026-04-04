@@ -53,6 +53,7 @@ export class Media_MultipleUpload {
         );
       } else {
         getJQuery()(toProcess).error("");
+        toProcess.parentElement.querySelector("label span").innerHTML = labelText;
 
         if ((toProcess as HTMLInputElement).files.length !== 1) {
           toProcess.parentElement.querySelector("label span").innerHTML = `${labelText} (`;

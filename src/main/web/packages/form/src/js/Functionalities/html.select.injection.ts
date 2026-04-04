@@ -83,7 +83,7 @@ export class HTML_Select_Injection {
         title = (title as any)[toLoad.titleproperty as string];
       }
 
-      toProcess.innerHTML += `<option title = "${title} value = "${value}">${text}</option>`;
+      toProcess.innerHTML += `<option title = "${title}" value = "${value}">${text}</option>`;
     }
     // #endregion Populate the "HTMLSelectElement".
   }

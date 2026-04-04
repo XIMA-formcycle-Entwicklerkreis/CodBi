@@ -103,7 +103,9 @@ export class AI_OCR {
     toProcess: Element,
   ): void {
     (toProcess as HTMLInputElement).addEventListener("change", async (event) => {
-      const container = document.querySelector(`div .CXUpload:has( #${toProcess.getAttribute("id")})`).parentElement;
+      const container =
+        (toProcess as HTMLElement).closest(".XContainer") ??
+        document.querySelector(`div .CXUpload:has( #${toProcess.getAttribute("id")})`).parentElement;
 
       // #region Symbol resolution for pattern/question
       // If the pattern contains symbols like <[FieldName]>, replace them with the value of the field with that CSS class in the same container

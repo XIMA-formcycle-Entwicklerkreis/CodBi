@@ -56,17 +56,17 @@ export class Print_Remove {
 
     if (invert ? XFC_METADATA.requestType !== "print" : XFC_METADATA.requestType === "print") {
       if (toLoad.documentselector) {
-        const toRemove = document.querySelector(toLoad.documentselector);
+        const toRemove = document.querySelector(toLoad.documentselector) as HTMLElement;
 
         if (toRemove) {
-          toRemove.remove();
+          toRemove.style.display = "none";
         }
 
         return;
       }
 
       if (toLoad.parentallevel) {
-        let toRemove = toProcess;
+        let toRemove = toProcess as HTMLElement;
 
         const parentalLevel = Number.parseInt(toLoad.parentallevel);
 
@@ -74,12 +74,12 @@ export class Print_Remove {
           toRemove = toRemove.parentElement;
         }
 
-        toRemove.remove();
+        toRemove.style.display = "none";
 
         return;
       }
 
-      toProcess.remove();
+      (toProcess as HTMLElement).style.display = "none";
     }
   }
 }

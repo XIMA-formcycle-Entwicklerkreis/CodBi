@@ -55,7 +55,7 @@ export class OpenPLZ_Autocomplete {
   /**
    * Registers the "OpenPLZ.Autocomplete"-Functionality.
    *
-   * This functionalities takes advantage of the {@link OpenPLZ_Streets} and {@link OpenPLZ_Localities } Elementplaceholder to
+   * This functionality takes advantage of the {@link OpenPLZ_Streets} and {@link OpenPLZ_Localities } Elementplaceholder to
    * complete what is typed into the tagged {@link HTMLInputElement } with data the public [OpenPLZ API ](https://www.openplzapi.org/)
    * provides.
    * It suggests completions as soon as there are multiple matches and only allows entries that match exactly one OpenPLZ-Entry.

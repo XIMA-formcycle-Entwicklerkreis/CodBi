@@ -35,7 +35,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
    *    - A **data-cb-Question** attribute containing the question text, which may include placeholder symbols like
    *      `<[FieldName]>` that resolve to the value of the field with CSS class **"FieldName"** in the same container.
    *      Use these placeholders to incorporate the trigger element's value and any other field values into the question.
-   *    - Nested `.CXContainer` elements tagged with **AI_LLAMA_QA_Exclude** are excluded from question searches.
+   *    - Nested `.XContainer` elements tagged with **AI_LLAMA_QA_Exclude** are excluded from question searches.
    *
    * ### Config Parameters:
    * - **AIHint**:          Text shown inside AI-populated fields until the user edits the value. Default: "✨ AI-Generated".
@@ -133,20 +133,12 @@ export class AI_LLAMA_STANDARD_TXTQA {
     // #endregion Initialize config from toLoad
     const handleChange = async (force = false) => {
       // #region Determine the search container
-      const immediateCX = (toProcess as HTMLElement).closest(".CXContainer");
-
-      let container: Element | null;
-
-      if (immediateCX?.classList.contains("AI_LLAMA_QA_Exclude")) {
-        container = immediateCX;
-      } else {
-        container = immediateCX?.parentElement?.closest(".CXContainer") ?? immediateCX;
-      }
+      const container = (toProcess as HTMLElement).closest(".XContainer");
 
       if (!container) {
         window.codbi.log(
           "ERROR",
-          `Could not find ancestor .CXContainer for element #${toProcess.getAttribute("id")}`,
+          `Could not find ancestor .XContainer for element #${toProcess.getAttribute("id")}`,
           "AI / LLAMA / TXTQA",
         );
 
@@ -184,7 +176,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
       const questionElements: Element[] = [];
 
       for (const qEl of allQuestionElements) {
-        const innerContainer = qEl.closest(".CXContainer");
+        const innerContainer = qEl.closest(".XContainer");
 
         if (
           innerContainer &&
@@ -255,7 +247,9 @@ export class AI_LLAMA_STANDARD_TXTQA {
         if (id && question) {
           question = question.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
             const trimmed = identifier.trim();
-            let el: HTMLElement | null = document.querySelector(`.${trimmed}`);
+            // Scope to container first (handles repeatable rows), fall back to document.
+            let el: HTMLElement | null =
+              container.querySelector(`.${trimmed}`) ?? document.querySelector(`.${trimmed}`);
 
             if (el && !("value" in el)) {
               el = el.querySelector("input, textarea, select");
@@ -601,8 +595,8 @@ export class AI_LLAMA_STANDARD_TXTQA {
     // #region Listen for focusout on AI_LLAMA_TXTQA_Source elements — focusout (not input/change)
     // so inference waits until the user leaves the field, and the debounce timer
     // resets if they tab between source fields quickly.
-    const immediateCX = (toProcess as HTMLElement).closest(".CXContainer");
-    const sourceContainer = immediateCX?.parentElement?.closest(".CXContainer") ?? immediateCX;
+    const immediateCX = (toProcess as HTMLElement).closest(".XContainer");
+    const sourceContainer = immediateCX;
 
     if (sourceContainer) {
       for (const srcEl of sourceContainer.querySelectorAll(".AI_LLAMA_TXTQA_Source")) {

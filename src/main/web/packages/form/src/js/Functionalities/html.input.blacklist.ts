@@ -61,7 +61,7 @@ export class HTML_Input_Blacklist {
     // #region Check and react properly
     const check = (toCheck: string, blacklist: Array<string>, target: HTMLInputElement) => {
       if (blacklist.includes(toCheck)) {
-        const errorMessage = `${toLoad.prefix ? toLoad.prefix : ""}${toLoad.showblacklist && TYPE.tsCheck<string>(toLoad.showblacklist, "string").toLowerCase() === "true" ? blacklist.join(toLoad.separator ? TYPE.tsCheck<string>(toLoad.separator, "string") : "") : ""}${toLoad.postfix ? toLoad.postfix : ""}`;
+        const errorMessage = `${toLoad.prefix ? toLoad.prefix : ""}${toLoad.showblacklist && typeof TYPE.tsCheck<string | boolean>(toLoad.showblacklist, "string | boolean") === "string" ? (toLoad.showblacklist as string).toLowerCase() === "true" : toLoad.showblacklist ? blacklist.join(toLoad.separator ? TYPE.tsCheck<string>(toLoad.separator, "string") : "") : ""}${toLoad.postfix ? toLoad.postfix : ""}`;
 
         $(target).error(errorMessage.length > 0 ? errorMessage : "The entered value is not allowed.");
       } else {
@@ -87,6 +87,10 @@ export class HTML_Input_Blacklist {
     });
 
     toProcess.addEventListener("input", (event: Event) => {
+      check((event.target as HTMLInputElement).value, blacklist, event.target as HTMLInputElement);
+    });
+
+    toProcess.addEventListener("blur", (event: Event) => {
       check((event.target as HTMLInputElement).value, blacklist, event.target as HTMLInputElement);
     });
     // #endregion Prevent input of blacklisted items via <input> and picker.

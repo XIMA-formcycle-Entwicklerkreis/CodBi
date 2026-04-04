@@ -187,7 +187,7 @@ class CodBiOpenPLZQueryAction : IPluginServletAction {
       if (!value.isNullOrBlank()) {
         val encodedValue =
             URLEncoder.encode(
-                    value.replaceFirst("-", "=").replace(" ", "").replace("°", "^"),
+                    value.replaceFirst("-", "=").replace("°", "^"),
                     StandardCharsets.UTF_8.toString())
                 .replace("%3D", "=")
                 .replace("%2B", "%20")

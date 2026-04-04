@@ -257,21 +257,15 @@ export class AI_LLAMA_STANDARD_QA {
       }
       // #endregion Determine user-set rotation
       // #region Determine the search container
-      const immediateCX = (toProcess as HTMLElement).closest(".CXContainer");
-      let container: Element | null;
+      const container = (toProcess as HTMLElement).closest(".XContainer");
 
-      if (immediateCX?.classList.contains("AI_LLAMA_QA_Exclude")) {
-        container = immediateCX;
-      } else {
-        container = immediateCX?.parentElement?.closest(".CXContainer") ?? immediateCX;
-      }
       // #endregion Determine the search container
       // #region Acquire Questions
       const allQuestionElements = container.querySelectorAll(".AI_LLAMA_STANDARD_QA_Question");
       const questionElements: Element[] = [];
 
       for (const candidate of allQuestionElements) {
-        const innerContainer = candidate.closest(".CXContainer");
+        const innerContainer = candidate.closest(".XContainer");
         // #region Omit questions that're in an excluded sub-container.
         if (
           innerContainer &&
@@ -364,7 +358,8 @@ export class AI_LLAMA_STANDARD_QA {
           // #region Resolve symbols in the verify question
           verifyFieldQuestion = verifyFieldQuestion.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
             const trimmed = identifier.trim();
-            let el: HTMLElement | null = document.querySelector(`.${trimmed}`);
+            let el: HTMLElement | null =
+              container.querySelector(`.${trimmed}`) ?? document.querySelector(`.${trimmed}`);
             if (el && !("value" in el)) {
               el = el.querySelector("input, textarea, select");
             }
@@ -390,7 +385,8 @@ export class AI_LLAMA_STANDARD_QA {
             // #region Resolve symbols in the verify question
             question = question.replace(/<\[([^\]]+)\]>/g, (match, identifier) => {
               const trimmed = identifier.trim();
-              let el: HTMLElement | null = document.querySelector(`.${trimmed}`);
+              let el: HTMLElement | null =
+                container.querySelector(`.${trimmed}`) ?? document.querySelector(`.${trimmed}`);
 
               if (el && !("value" in el)) {
                 el = el.querySelector("input, textarea, select");

@@ -23,7 +23,7 @@ export class HTML_Input_REGEX {
    *
    * Config Parameter:
    *  - Expression:       The {@link RegExp } - {@link string } the value of "toProcess" has to comply to.
-   *                      Use **°** instead of **^** to mark the beginning of the input string or a negation (*mandatory*).
+   *                      Use **°** instead of **^** to mark the beginning of the input string or a negation (*optional*).
    *  - KeyExpression:    The {@link RegExp } - {@link string } the individual keystrokes have to comply to.
    *  - Flags:            The {@link RegExp } - flags {@link string } used to create the "expression" (defaults to "g").
    *  - KeyFlags:         The {@link RegExp } - flags {@link string } used to create the "keyexpression" (defaults to "g").
@@ -46,7 +46,9 @@ export class HTML_Input_REGEX {
     toProcess: Element,
   ): void {
     // #region Normalize Parameter.
-    toLoad.expression = (toLoad.expression as string).replace(/°/, "^");
+    if (toLoad.expression) {
+      toLoad.expression = (toLoad.expression as string).replace(/°/, "^");
+    }
     toLoad.exposeexpression = toLoad.exposeexpression
       ? typeof toLoad.exposeexpression === "string"
         ? toLoad.exposeexpression.toLowerCase() === "true"
@@ -72,8 +74,12 @@ export class HTML_Input_REGEX {
         return;
       }
 
-      if (toLoad.keyexpression && (event as KeyboardEvent).key.length === 1) {
+      if (
+        toLoad.keyexpression &&
+        ((event as KeyboardEvent).key.length === 1 || (event as KeyboardEvent).key === "Dead")
+      ) {
         if (
+          (event as KeyboardEvent).key === "Dead" ||
           !new RegExp(toLoad.keyexpression as string, toLoad.keyflags ? (toLoad.keyflags as string) : "i").test(
             (event as KeyboardEvent).key,
           )
@@ -84,21 +90,38 @@ export class HTML_Input_REGEX {
         }
       }
     });
+
+    if (toLoad.keyexpression) {
+      const keyRegex = new RegExp(toLoad.keyexpression as string, toLoad.keyflags ? (toLoad.keyflags as string) : "i");
+      toProcess.addEventListener("input", () => {
+        const input = toProcess as HTMLInputElement;
+        const cleaned = Array.from(input.value)
+          .filter((ch) => keyRegex.test(ch))
+          .join("");
+        if (cleaned !== input.value) {
+          const pos = input.selectionStart - (input.value.length - cleaned.length);
+          input.value = cleaned;
+          input.setSelectionRange(pos, pos);
+        }
+      });
+    }
     // #region Live validation
     // #region Invalidate Field
-    toProcess.addEventListener("change", (event) => {
-      if (
-        !new RegExp(toLoad.expression as string, toLoad.flags ? (toLoad.flags as string) : "g").test(
-          (toProcess as HTMLInputElement).value,
-        )
-      ) {
-        $(toProcess).error(
-          `${toLoad.errorprefix ? toLoad.errorprefix : "Text does not comply to "}${toLoad.exposeexpression ? toLoad.expression : "a certain restriction"}${toLoad.errorpostfix ? ` ${toLoad.errorpostfix}` : "."}`,
-        );
-      } else {
-        $(toProcess).error("");
-      }
-    });
+    if (toLoad.expression) {
+      toProcess.addEventListener("change", (event) => {
+        if (
+          !new RegExp(toLoad.expression as string, toLoad.flags ? (toLoad.flags as string) : "g").test(
+            (toProcess as HTMLInputElement).value,
+          )
+        ) {
+          $(toProcess).error(
+            `${toLoad.errorprefix ? toLoad.errorprefix : "Text does not comply to "}${toLoad.exposeexpression ? toLoad.expression : "a certain restriction"}${toLoad.errorpostfix ? ` ${toLoad.errorpostfix}` : "."}`,
+          );
+        } else {
+          $(toProcess).error("");
+        }
+      });
+    }
     // #endregion Invalidate Field
   }
 }

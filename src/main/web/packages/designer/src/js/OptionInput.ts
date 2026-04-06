@@ -820,6 +820,11 @@ export class Optioninput extends HTMLDivElement {
    *
    * @param event The {@link Event }. */
   public onInputTarget(event: Event): void {
+    // #region Ignore selectionchange events caused by ArrowUp/ArrowDown (keyboard navigation handles those).
+    if (event.type === "selectionchange" && (this.lastKey === "ArrowDown" || this.lastKey === "ArrowUp")) {
+      return;
+    }
+    // #endregion Ignore selectionchange events caused by ArrowUp/ArrowDown (keyboard navigation handles those).
     // #region If the [target] just received focus, show all available functionalities
     if (this.newFocusTarget) {
       this.newFocusTarget = false;

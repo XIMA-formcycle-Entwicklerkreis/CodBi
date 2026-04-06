@@ -76,7 +76,8 @@ export function loadConfig(): void {
   });
 
   window.codbi.loadConfig({
-    targets: ".CodBi_People_BuildingNumber ~ .CodBi_People_OpenPLZ_AC_SET_BuildingNumber",
+    targets:
+      ".CodBi_People_BuildingNumber ~ .CodBi_People_OpenPLZ_AC_SET_BuildingNumber ~ .CodBi_OpenPLZ_AC_SET_BuildingNumber",
     FUNC: "HTML.Input.Regex",
     Expression: "°[0-9]([0-9A-Za-z/-]*[0-9A-Za-z])?$",
     KeyExpression: "[-A-Za-z0-9/ ]",

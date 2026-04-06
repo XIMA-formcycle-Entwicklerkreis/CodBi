@@ -43,17 +43,13 @@ export class HTML_Panel_Accordion {
       return;
     }
 
-    const bind = () => {
-      for (const panel of toProcess.querySelectorAll(".CodBi.--HTML_Panel:not(.CodBi_HTML_Panel_NoCordion)")) {
-        panel.setAttribute("data-cb-accordion", toLoad.accordion as string);
-      }
-    };
+    // Mark the container so that panels initialized later can self-assign.
+    toProcess.setAttribute("data-cb-accordion-group", toLoad.accordion as string);
 
-    window.addEventListener("load", (event) => {
-      bind();
-    });
-
-    bind();
+    // Stamp any panels that have already been processed.
+    for (const panel of toProcess.querySelectorAll(".CodBi.--HTML_Panel:not(.CodBi_HTML_Panel_NoCordion)")) {
+      panel.setAttribute("data-cb-accordion", toLoad.accordion as string);
+    }
   }
 }
 

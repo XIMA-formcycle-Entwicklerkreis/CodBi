@@ -1321,16 +1321,16 @@ export class CodBi implements CodbiGlobal {
         for (const functionality of toProcess.getAttribute("data-cb-func").split(",")) {
           // #region Process [data-cb-checked] in order to prevent double appliance of functionalities.
           if (toProcess.hasAttribute("data-cb-checked")) {
-            if (toProcess.getAttribute("data-cb-checked").indexOf(functionality.toLowerCase()) !== -1) {
+            if (toProcess.getAttribute("data-cb-checked").indexOf(functionality.toLowerCase().trim()) !== -1) {
               continue;
             }
 
             toProcess.setAttribute(
               "data-cb-checked",
-              `${toProcess.getAttribute("data-cb-checked")} ${functionality.toLowerCase()}`,
+              `${toProcess.getAttribute("data-cb-checked")} ${functionality.toLowerCase().trim()}`,
             );
           } else {
-            toProcess.setAttribute("data-cb-checked", `${functionality.toLowerCase()}`);
+            toProcess.setAttribute("data-cb-checked", `${functionality.toLowerCase().trim()}`);
           }
           // #region Process [data-cb-checked] in order to prevent double appliance of functionalities.
           // Assign taking global-variables into consideration.

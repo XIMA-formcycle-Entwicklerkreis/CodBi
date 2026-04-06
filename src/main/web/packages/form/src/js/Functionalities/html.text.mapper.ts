@@ -90,7 +90,15 @@ export class HTML_Text_Mapper {
     }
     // #endregion Process each context
     toProcess.setAttribute("style", `${toProcess.getAttribute("style")};${toLoad.css}`);
+    (toProcess as HTMLElement).classList.add("CodBi--TextReady");
   }
 }
 
 window.codbi.registerFunctionality("HTML.Text.Mapper", HTML_Text_Mapper.functionality.bind(HTML_Text_Mapper)); // Initialization
+
+// Prevent raw placeholder text from being displayed before replacement.
+{
+  const style = document.createElement("style");
+  style.textContent = '[data-cb-func*="HTML.Text.Mapper"]:not(.CodBi--TextReady) { visibility: hidden; }';
+  document.head.appendChild(style);
+}

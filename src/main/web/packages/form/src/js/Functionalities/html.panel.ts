@@ -228,6 +228,15 @@ export class HTML_Panel {
 
       toProcess.classList.add("--HTML_Panel");
 
+      // Self-assign accordion group from ancestor container if not already set.
+      if (!toProcess.hasAttribute("data-cb-accordion") && !toProcess.classList.contains("CodBi_HTML_Panel_NoCordion")) {
+        const accordionContainer = toProcess.parentElement?.closest("[data-cb-accordion-group]");
+
+        if (accordionContainer) {
+          toProcess.setAttribute("data-cb-accordion", accordionContainer.getAttribute("data-cb-accordion-group"));
+        }
+      }
+
       const styHeader: string | null = header.getAttribute("style");
       // #region Determine where to re-insert the header when panel gets unfolded.
       const childArray = Array.from(toProcess.children);
@@ -346,6 +355,7 @@ export class HTML_Panel {
       // #endregion Inject necessary styles.
       // #region Handle clicks on the header.
       header.addEventListener("click", (event) => {
+        event.stopPropagation();
         if ((toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded) {
           (toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded = !(
             toProcess as unknown as { [key: string]: unknown }
@@ -379,13 +389,27 @@ export class HTML_Panel {
           // #region Handle accordions enabling live changes.
           if (toProcess.hasAttribute("data-cb-accordion")) {
             toLoad.accordion = toProcess.getAttribute("data-cb-accordion");
+            // Only fold panels at the same nesting level (same parent panel).
+            const myParentPanel = toProcess.parentElement?.closest(".CodBi.--HTML_Panel") ?? null;
 
             for (const toFold of document.querySelectorAll(
               `.CodBi.--HTML_Panel[ data-cb-accordion = "${toLoad.accordion as string}"]:not(.--folded)`,
             )) {
-              toFold
-                .querySelector(".CodBi_HTML_Panel_Header")
-                ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+              if (toFold === toProcess) {
+                continue;
+              }
+
+              const itsParentPanel = toFold.parentElement?.closest(".CodBi.--HTML_Panel") ?? null;
+
+              if (itsParentPanel !== myParentPanel) {
+                continue;
+              }
+
+              const ownHeader = (toFold as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Header as
+                | HTMLElement
+                | undefined;
+
+              ownHeader?.dispatchEvent(new MouseEvent("click", { bubbles: false }));
             }
           }
           // #endregion Handle accordions enabling live changes.

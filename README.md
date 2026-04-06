@@ -238,7 +238,7 @@ The default LLM is configured as a convenience, but **any GGUF-compatible model 
   - **Verify**: Check if the extracted text matches a regex pattern; show an error if it doesn't.
   - Automatic orientation detection (Tesseract OSD), optional image preprocessing (grayscale, binarization, denoising), and DPI-aware recognition.
 - **Image / PDF Q&A (LLaMA)** — upload an image or PDF and ask free-form questions. The vision-language model (QWEN3-VL) reads the document and returns answers. Scanned PDFs are rendered to images; text-based PDFs have their text extracted client-side (for Tesseract) or are turned into an image for LLMs.
-- **Speech-to-Text (Whisper)** — record audio in the browser and receive a transcription. Supports interim (partial) results while speaking, auto-language detection, and a configurable hotkey (`Alt+A`).
+- **Speech-to-Text (Whisper)** — rather than relying on the experimental and privacy-questionable Web Speech API built into browsers, the CodBi library offers its own robust inference pipeline via Whisper. Record audio in the browser and receive a transcription. Supports interim (partial) results while speaking, auto-language detection, and a configurable hotkey (Default:`Alt+A`).
 
 #### ✅ Validation
 

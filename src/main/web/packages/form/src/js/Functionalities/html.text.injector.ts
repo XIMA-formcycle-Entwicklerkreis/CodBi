@@ -73,7 +73,15 @@ export class HTML_Text_Injector {
         (toLoad.replacement as string);
     }
     // Do nothing if the specified "toLoad.Property" of "toProcess" doesn't contain a string.
+    (toProcess as HTMLElement).classList.add("CodBi--TextReady");
   }
 }
 
 window.codbi.registerFunctionality("HTML.Text.Injector", HTML_Text_Injector.functionality.bind(HTML_Text_Injector)); // Initialization
+
+// Prevent raw placeholder text from being displayed before replacement.
+{
+  const style = document.createElement("style");
+  style.textContent = '[data-cb-func*="HTML.Text.Injector"]:not(.CodBi--TextReady) { visibility: hidden; }';
+  document.head.appendChild(style);
+}

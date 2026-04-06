@@ -489,7 +489,7 @@ export class SVManager extends HTMLDivElement {
     let current = previousElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
 
     while (current != null && current.style.display === "none") {
-      current = previousElementSibling(current.previousElementSibling);
+      current = previousElementSibling(current);
     }
 
     if (current === null || !current.hasAttribute("part")) {
@@ -514,14 +514,14 @@ export class SVManager extends HTMLDivElement {
     let current = nextElementSibling(shadow.querySelector(".---WaXCode.--SVManager.--Option.-Current"));
 
     while (current != null && current.style.display === "none") {
-      current = nextElementSibling(current.nextElementSibling);
+      current = nextElementSibling(current);
     }
 
     if (current === null) {
       current = shadow.querySelector(".---WaXCode.--SVManager.--Option");
 
       while (current != null && current.style.display === "none") {
-        current = nextElementSibling(current.nextElementSibling);
+        current = nextElementSibling(current);
       }
     }
 

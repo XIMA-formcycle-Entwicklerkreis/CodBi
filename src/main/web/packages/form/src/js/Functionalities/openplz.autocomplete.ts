@@ -103,7 +103,7 @@ export class OpenPLZ_Autocomplete {
         case "localities":
           result = (await OpenPLZ_Localities.retrieve([
             toLoad.country ? toLoad.country : "",
-            `°${(toProcess as HTMLInputElement).value}`,
+            `°${(toProcess as HTMLInputElement).value}$`,
             "",
             1,
           ])) as Array<unknown>;
@@ -113,7 +113,7 @@ export class OpenPLZ_Autocomplete {
           result = (await OpenPLZ_Localities.retrieve([
             toLoad.country ? toLoad.country : "",
             ".*",
-            `°${(toProcess as HTMLInputElement).value}`,
+            `°${(toProcess as HTMLInputElement).value}$`,
             1,
           ])) as Array<unknown>;
 
@@ -123,7 +123,7 @@ export class OpenPLZ_Autocomplete {
           result = removeDuplicates(
             (await OpenPLZ_Streets.retrieve([
               toLoad.country ? toLoad.country : "",
-              `°${(toProcess as HTMLInputElement).value}`,
+              `°${(toProcess as HTMLInputElement).value}$`,
               toLoad.dependentplz === undefined ||
               (toLoad.dependentlocality &&
                 INSTANCE.tsCheck<HTMLInputElement>(
@@ -456,7 +456,7 @@ export class OpenPLZ_Autocomplete {
         setTimeout(() => {
           blocked = false;
 
-          if (toLoad.focusonautocomplete) {
+          if (toLoad.focusonautocomplete && toFocus) {
             // biome-ignore lint/suspicious/noExplicitAny: <explanation>
             (toFocus as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent = false;
           }
@@ -468,10 +468,14 @@ export class OpenPLZ_Autocomplete {
           (toFocus as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent = true;
 
           proposals.remove();
+          (toFocus as HTMLInputElement).readOnly = true;
           toFocus.focus();
           toFocus
             .animate(OpenPLZ_Autocomplete.kfFocusOnAutocomplete, OpenPLZ_Autocomplete.tmgFocusOnAutocomplete)
             .play();
+          setTimeout(() => {
+            (toFocus as HTMLInputElement).readOnly = false;
+          }, 300);
         }
         // #endregion Focus the field after autocomplete, if specified.
       }

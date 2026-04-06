@@ -18,12 +18,19 @@ export function loadConfig(): void {
   window.codbi.loadConfigs([
     {
       targets: ".CodBi_OpenPLZ_AC_SET_PLZ",
-      FUNC: "OpenPLZ.Autocomplete",
+      FUNC: "HTML.Input.Cleave, OpenPLZ.Autocomplete",
       Country: "{ V > CodBi_OpenPLZ_Country }",
       TargetData: "PostalCodes",
       Dependent: ".CodBi_OpenPLZ_AC_SET_Locality",
       FocusOnAutocomplete: ".CodBi_OpenPLZ_AC_SET_Street",
       MsgNotKnown: "Nur bekannte Postleitzahlen sind erlaubt.",
+      config: `^${JSON.stringify({
+        numeral: true,
+        numeralIntegerScale: 5,
+        delimiter: "",
+      })
+        .replace("{", "<")
+        .replace("}", ">")}`,
     },
     {
       targets: ".CodBi_OpenPLZ_AC_SET_Locality",

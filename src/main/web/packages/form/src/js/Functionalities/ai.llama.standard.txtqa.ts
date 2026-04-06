@@ -11,6 +11,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
 import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
 import { OR } from "xdbc/src/DBC/OR";
+import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 import { formatWaitTime } from "../commons/format-wait-time";
 // #endregion Imports
@@ -249,7 +250,8 @@ export class AI_LLAMA_STANDARD_TXTQA {
             const trimmed = identifier.trim();
             // Scope to container first (handles repeatable rows), fall back to document.
             let el: HTMLElement | null =
-              container.querySelector(`.${trimmed}`) ?? document.querySelector(`.${trimmed}`);
+              container.querySelector(`${trimmed}`) ??
+              DEFINED.tsCheck<HTMLElement>(document.querySelector(`${trimmed}`));
 
             if (el && !("value" in el)) {
               el = el.querySelector("input, textarea, select");

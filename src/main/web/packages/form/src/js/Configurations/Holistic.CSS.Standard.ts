@@ -43,6 +43,7 @@ export function loadConfig(): void {
           animation       : kfFadeIN_Logo 1.5s forwards ease-in-out ;
           position        : relative ;
           width           : 30% ;
+          opacity:        : 0 ;
           margin-top      : auto ;
           margin-bottom   : auto ;}
 
@@ -243,7 +244,7 @@ export function loadConfig(): void {
         select:focus { background-color : transparent !important ;}
 
         .xm-form.modern input.XItem.XTextField,
-        .xm-form.modern textarea.XItem.XTextArea  { border-radius : .5em ; box-shadow : 0 0 .25em #ACCENT_DM !important ; background-color : transparent !important ;}
+        .xm-form.modern textarea.XItem.XTextArea  { border-radius : .5em ; box-shadow : 0 0 .25em #ACCENT_DM !important ; background: none !important ; background-color : transparent !important ; }
         /* #endregion Inputs */
         /* #region Document */
         body.modern.xm-body { background-color : black ;}

@@ -74,12 +74,8 @@ export class HTML_Input_REGEX {
         return;
       }
 
-      if (
-        toLoad.keyexpression &&
-        ((event as KeyboardEvent).key.length === 1 || (event as KeyboardEvent).key === "Dead")
-      ) {
+      if (toLoad.keyexpression && (event as KeyboardEvent).key.length === 1) {
         if (
-          (event as KeyboardEvent).key === "Dead" ||
           !new RegExp(toLoad.keyexpression as string, toLoad.keyflags ? (toLoad.keyflags as string) : "i").test(
             (event as KeyboardEvent).key,
           )
@@ -93,7 +89,8 @@ export class HTML_Input_REGEX {
 
     if (toLoad.keyexpression) {
       const keyRegex = new RegExp(toLoad.keyexpression as string, toLoad.keyflags ? (toLoad.keyflags as string) : "i");
-      toProcess.addEventListener("input", () => {
+      toProcess.addEventListener("input", (event) => {
+        if ((event as InputEvent).isComposing) return;
         const input = toProcess as HTMLInputElement;
         const cleaned = Array.from(input.value)
           .filter((ch) => keyRegex.test(ch))

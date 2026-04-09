@@ -1,4 +1,4 @@
-import { getJQuery, type IXUtilOnAddRowData } from "@de-xima/fc-form-renderer";
+import { getJQuery, type IXUtilOnAddRowData, type IXUtilOnBeforeDeleteRowData } from "@de-xima/fc-form-renderer";
 import { CodBiLogo } from "./Logo";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
@@ -1673,6 +1673,16 @@ export class CodBi implements CodbiGlobal {
       } else {
       }
     });
+    // #region Clear validation errors before a repeatable row is removed.
+    getJQuery().xutil.on("beforeDeleteRow", (params: IXUtilOnBeforeDeleteRowData) => {
+      const $ = getJQuery();
+      const container = params.container["0"] as HTMLElement;
+
+      for (const field of container.querySelectorAll("[data-name]")) {
+        $(field).error("");
+      }
+    });
+    // #endregion Clear validation errors before a repeatable row is removed.
   }
   /** See {@link CodbiGlobal.log }. */
   log(level: "INFO" | "WARNING" | "ERROR", message: string, adjunct?: string): void {

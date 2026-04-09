@@ -113,6 +113,9 @@ export class LDAP_Autocomplete {
       (toProcess as HTMLInputElement).value = (proposals as HTMLSelectElement).value;
 
       proposals.remove();
+      // Restore focus to the input field within the user-gesture context (before any await)
+      // so that mobile on-screen keyboards stay visible.
+      (toProcess as HTMLInputElement).focus();
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       if ((toProcess as any).codbiLDAPSetMatchListeners) {
         // #region Acquire LDAP-Data for passing it to the match-listeners.
@@ -142,23 +145,25 @@ export class LDAP_Autocomplete {
     });
     // #endregion Handle Selection.
     // #endregion Create Selection.
-    toProcess.addEventListener("keydown", async (event) => {
+    let matchedValue = "";
+    // #region Block further input on match (desktop keyboards).
+    toProcess.addEventListener("keydown", (event) => {
       if (blocked) {
         event.stopPropagation();
         event.preventDefault();
         event.stopImmediatePropagation();
       }
+    });
+    // #endregion Block further input on match (desktop keyboards).
+    // #region LDAP query on input (cross-platform: fires on desktop and Android soft-keyboards).
+    toProcess.addEventListener("input", async () => {
+      if (blocked) {
+        (toProcess as HTMLInputElement).value = matchedValue;
 
-      const key = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent).key;
-
-      if (key.length !== 1 && key !== "Backspace" && key !== "Delete") {
         return;
       }
 
-      const findParameter = [
-        "AND",
-        `${toLoad.property}=${(toProcess as HTMLInputElement).value}${key.length === 1 ? key : ""}`,
-      ];
+      const findParameter = ["AND", `${toLoad.property}=${(toProcess as HTMLInputElement).value}`];
 
       const ldapUrl = getLdapUrl();
       if (ldapUrl) {
@@ -168,7 +173,8 @@ export class LDAP_Autocomplete {
       const ldapResult = removeDuplicates(await LDAP_Find.retrieve(findParameter), toLoad.property);
 
       if (ldapResult.length === 1) {
-        (toProcess as HTMLInputElement).value = ldapResult[0][toLoad.property];
+        matchedValue = ldapResult[0][toLoad.property] as string;
+        (toProcess as HTMLInputElement).value = matchedValue;
         // #region Block input on match.
         blocked = true;
         // #region Remove proposals.
@@ -200,6 +206,7 @@ export class LDAP_Autocomplete {
       }
       // #endregion Show proposals.
     });
+    // #endregion LDAP query on input.
   }
 }
 

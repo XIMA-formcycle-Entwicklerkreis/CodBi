@@ -46,32 +46,32 @@ export class Matomo_Tracking {
     @INSTANCE.PRE(HTMLElement)
     toProcess: Element,
   ): void {
-    let siteID: number | undefined;
-    let url: string | undefined;
-
-    if (toLoad.siteID === undefined || toLoad.siteID === "") {
-      siteID = Number.parseInt(
-        OR.tsCheck<string>(
-          window.codbiSettings.Matomo.SiteID,
-          [new DEFINED(), new REGEX(/^\d+$/)],
-          "SiteID was not specified in the functionality parameter and is also not specified in the Plugin-Config.",
-        ),
-      );
-    } else {
-      siteID = Number.parseInt(toLoad.siteid);
-    }
-
-    if (toLoad.url === undefined || toLoad.url === "") {
-      url = OR.tsCheck<string>(
-        window.codbiSettings.Matomo.URL,
-        [new DEFINED(), new REGEX(REGEX.stdExp.url)],
-        "URL was not specified in the functionality parameter and is also not specified in the Plugin-Config.",
-      );
-    } else {
-      url = toLoad.url;
-    }
-
     try {
+      let siteID: number | undefined;
+      let url: string | undefined;
+
+      if (toLoad.siteID === undefined || toLoad.siteID === "") {
+        siteID = Number.parseInt(
+          OR.tsCheck<string>(
+            window.codbiSettings?.Matomo?.SiteID,
+            [new DEFINED(), new REGEX(/^\d+$/)],
+            "SiteID was not specified in the functionality parameter and is also not specified in the Plugin-Config.",
+          ),
+        );
+      } else {
+        siteID = Number.parseInt(toLoad.siteid);
+      }
+
+      if (toLoad.url === undefined || toLoad.url === "") {
+        url = OR.tsCheck<string>(
+          window.codbiSettings?.Matomo?.URL,
+          [new DEFINED(), new REGEX(REGEX.stdExp.url)],
+          "URL was not specified in the functionality parameter and is also not specified in the Plugin-Config.",
+        );
+      } else {
+        url = toLoad.url;
+      }
+
       new MatomoTracker({ siteId: siteID, urlBase: url }).trackPageView();
     } catch (X) {
       window.codbi.log("WARNING", `Matomo Tracking failed due to: ${(X as Error).message}`);

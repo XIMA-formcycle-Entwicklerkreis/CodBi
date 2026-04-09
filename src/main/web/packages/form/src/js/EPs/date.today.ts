@@ -33,7 +33,7 @@ export class DATE_Today {
   @DBC.ParamvalueProvider
   @INSTANCE.POST(Date)
   public static retrieve(
-    @AE.PRE([new TYPE("string"), new REGEX(/^(?i:(NOW)|([+-]\d+[dmy]))$/i)]) params: Array<string>,
+    @AE.PRE([new TYPE("string"), new REGEX(/^(NOW|[+-]\d+[dmy])$/i)]) params: Array<string>,
   ): Date {
     const result: Date = new Date();
 

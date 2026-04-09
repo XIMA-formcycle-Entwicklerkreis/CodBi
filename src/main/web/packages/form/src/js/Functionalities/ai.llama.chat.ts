@@ -2,6 +2,9 @@
 //region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
 //endregion XIMA
+//region Commons
+import { acquireWakeLock, releaseWakeLock } from "../commons/wake-lock";
+//endregion Commons
 //region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
@@ -1244,6 +1247,7 @@ export class AI_LLAMA_CHAT {
 
       isBusy = true;
       sendButton.disabled = true;
+      acquireWakeLock();
 
       if (micButton) {
         if (isRecording && stopRecordingFn) {
@@ -1386,6 +1390,7 @@ export class AI_LLAMA_CHAT {
           activeStreamId = null;
           isBusy = false;
           sendButton.disabled = false;
+          releaseWakeLock();
 
           if (micButton) {
             micButton.disabled = false;

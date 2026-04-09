@@ -9,6 +9,15 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE.js";
 // #endregion XDBC
 // #endregion Imports
 import { CodBiError } from "../global-scope.js";
+
+// Prevent raw placeholder text from being displayed before replacement.
+// Injected before class definition so the rule is active before registerFunctionality triggers processing.
+{
+  const style = document.createElement("style");
+  style.textContent = '[data-cb-func*="HTML.Text.Injector" i]:not(.CodBi--TextReady) { visibility: hidden; }';
+  document.head.appendChild(style);
+}
+
 /**
  * Provides the {@link HTML_Text_Injector.functionality }.
  *
@@ -78,10 +87,3 @@ export class HTML_Text_Injector {
 }
 
 window.codbi.registerFunctionality("HTML.Text.Injector", HTML_Text_Injector.functionality.bind(HTML_Text_Injector)); // Initialization
-
-// Prevent raw placeholder text from being displayed before replacement.
-{
-  const style = document.createElement("style");
-  style.textContent = '[data-cb-func*="HTML.Text.Injector"]:not(.CodBi--TextReady) { visibility: hidden; }';
-  document.head.appendChild(style);
-}

@@ -74,7 +74,39 @@ node_modules/
 ## Visual Studio Code ##
 .vscode
 
+## Generated build output (esbuild chunks) ##
+src/main/web/packages/form/undefined/
+
+## Translation cache ##
+.translate-cache/
+src_*_temp/
+typedoc.??.json
+tsconfig.??.json
+
+## Generated assessment reports ##
+**/Assessments/*.html
+
 ## Generated documentation (deployed via gh-pages branch) ##
 docs/
 .gh-pages-worktree/
 .main-worktree/
+
+## Extracted JAR / build artifacts ##
+kotlin/
+com/
+org/
+net/
+META-INF/
+jnilib/
+djl_cache/
+nlp/
+cv/
+extracted/
+lib/
+java.io.tmpdir/
+win32-x86/
+win32-x86-64/
+annotations/
+kapt/
+kaptKotlin/
+*.complete

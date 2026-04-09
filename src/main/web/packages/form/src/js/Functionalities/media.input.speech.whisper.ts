@@ -11,6 +11,7 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
 // #region Commons
 import { convertToWav, preferredMimeType } from "../commons/whisper-utils";
+import { acquireWakeLock, releaseWakeLock } from "../commons/wake-lock";
 // #endregion Commons
 // #endregion Imports
 /**
@@ -105,6 +106,15 @@ export class Media_Input_Speech_Whisper {
     micButton.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm-1-9a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V5zm6 6a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11h-2z"/></svg>`;
 
     inputWrapper.appendChild(micButton);
+
+    const meterSize = 48;
+    const meterCanvas = document.createElement("canvas");
+
+    meterCanvas.className = "MEDIA_Whisper_VolumeMeter";
+    meterCanvas.width = meterSize;
+    meterCanvas.height = meterSize;
+
+    micButton.appendChild(meterCanvas);
     // #endregion Wrap field and create mic button.
     // #region Hide mic if server is known offline, or queue for health-check result.
     Media_Input_Speech_Whisper.allMicButtons.push(micButton);
@@ -233,8 +243,114 @@ export class Media_Input_Speech_Whisper {
       }
     };
 
+    // #region Volume meter setup.
+    let meterAudioCtx: AudioContext | null = null;
+    let meterAnalyser: AnalyserNode | null = null;
+    let meterAnimFrame = 0;
+
+    const meterColor = (level: number): string => {
+      if (level < 0.5) {
+        const t = level / 0.5;
+        const r = Math.round(76 + (255 - 76) * t);
+        const g = Math.round(175 + (235 - 175) * t);
+        const b = Math.round(80 + (59 - 80) * t);
+
+        return `rgb(${r},${g},${b})`;
+      }
+
+      const t = (level - 0.5) / 0.5;
+      const r = Math.round(255 - (255 - 229) * t);
+      const g = Math.round(235 - (235 - 57) * t);
+      const b = Math.round(59 - (59 - 53) * t);
+
+      return `rgb(${r},${g},${b})`;
+    };
+
+    const startMeter = (stream: MediaStream) => {
+      meterAudioCtx = new AudioContext();
+      meterAnalyser = meterAudioCtx.createAnalyser();
+      meterAnalyser.fftSize = 256;
+      meterAnalyser.smoothingTimeConstant = 0.6;
+
+      const source = meterAudioCtx.createMediaStreamSource(stream);
+
+      source.connect(meterAnalyser);
+
+      const dataArray = new Uint8Array(meterAnalyser.frequencyBinCount);
+      const ctx = meterCanvas.getContext("2d");
+
+      if (!ctx) {
+        return;
+      }
+
+      meterCanvas.style.display = "block";
+
+      const center = meterSize / 2;
+      const radius = meterSize / 2 - 3;
+      const startAngle = -Math.PI / 2;
+
+      const draw = () => {
+        meterAnimFrame = requestAnimationFrame(draw);
+
+        if (!meterAnalyser) {
+          return;
+        }
+
+        meterAnalyser.getByteFrequencyData(dataArray);
+
+        let sum = 0;
+
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+
+        const avg = sum / dataArray.length;
+        const level = Math.min(avg / 128, 1);
+
+        ctx.clearRect(0, 0, meterSize, meterSize);
+
+        if (level > 0.01) {
+          const endAngle = startAngle + level * 2 * Math.PI;
+
+          ctx.beginPath();
+          ctx.arc(center, center, radius, startAngle, endAngle);
+          ctx.strokeStyle = meterColor(level);
+          ctx.lineWidth = 3;
+          ctx.lineCap = "round";
+          ctx.stroke();
+        }
+      };
+
+      draw();
+    };
+
+    const stopMeter = () => {
+      if (meterAnimFrame) {
+        cancelAnimationFrame(meterAnimFrame);
+
+        meterAnimFrame = 0;
+      }
+
+      meterCanvas.style.display = "none";
+
+      const ctx = meterCanvas.getContext("2d");
+
+      if (ctx) {
+        ctx.clearRect(0, 0, meterCanvas.width, meterCanvas.height);
+      }
+
+      if (meterAudioCtx) {
+        meterAudioCtx.close();
+
+        meterAudioCtx = null;
+        meterAnalyser = null;
+      }
+    };
+    // #endregion Volume meter setup.
     const startRecording = async () => {
       try {
+        await acquireWakeLock();
+
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
         audioChunks = [];
@@ -247,6 +363,8 @@ export class Media_Input_Speech_Whisper {
         };
 
         mediaRecorder.onstop = async () => {
+          stopMeter();
+
           for (const track of stream.getTracks()) {
             track.stop();
           }
@@ -289,6 +407,8 @@ export class Media_Input_Speech_Whisper {
 
         micButton.classList.add("MEDIA_Whisper_MicButton--recording");
 
+        startMeter(stream);
+
         // #region Periodic interim transcription.
         const rec = mediaRecorder;
 
@@ -309,6 +429,8 @@ export class Media_Input_Speech_Whisper {
         }, 2500);
         // #endregion Periodic interim transcription.
       } catch (X) {
+        releaseWakeLock();
+
         micButton.classList.add("MEDIA_Whisper_MicButton--unavailable");
 
         micButton.title = "Microphone access denied";
@@ -317,6 +439,8 @@ export class Media_Input_Speech_Whisper {
     };
     /** Stops the recording, sends the final audio for transcription, and resets the UI state. */
     const stopRecording = () => {
+      stopMeter();
+
       if (interimInterval) {
         clearInterval(interimInterval);
 
@@ -409,6 +533,7 @@ export class Media_Input_Speech_Whisper {
 
             micButton.classList.remove("MEDIA_Whisper_MicButton--transcribing");
             micButton.disabled = false;
+            releaseWakeLock();
           },
         });
         // #endregion AJAX request to transcribe audio.
@@ -424,6 +549,7 @@ export class Media_Input_Speech_Whisper {
         micButton.classList.remove("MEDIA_Whisper_MicButton--transcribing");
 
         micButton.disabled = false;
+        releaseWakeLock();
       }
     };
     // #endregion MediaRecorder-Setup.
@@ -617,7 +743,8 @@ export class Media_Input_Speech_Whisper {
       .MEDIA_Whisper_MicButton        { position: absolute ; right: 4px ; top: 50% ; transform: translateY(-50%) ;
                                         width: 28px ; height: 28px ; border: none ; border-radius: 50% ; background: transparent ;
                                         color: #888 ; cursor: pointer ; display: flex ; align-items: center ;
-                                        justify-content: center ; padding: 0 ; transition: color 0.2s, background 0.2s ;}
+                                        justify-content: center ; padding: 0 ; transition: color 0.2s, background 0.2s ;
+                                        overflow: visible ;}
       .MEDIA_Whisper_MicButton:hover  { color: #333 ; background: rgba( 0, 0, 0, 0.06 ) ;}
 
       .MEDIA_Whisper_MicButton--recording         { color: #fff ; background: #e53935 ; overflow: visible ;}
@@ -639,6 +766,9 @@ export class Media_Input_Speech_Whisper {
       .MEDIA_Whisper_MicButton--transcribing::after   { animation-delay: 0.6s ;}
 
       .MEDIA_Whisper_MicButton--unavailable { color: #ccc ; cursor: not-allowed ;}
+
+      .MEDIA_Whisper_VolumeMeter { display: none ; position: absolute ; top: 50% ; left: 50% ;
+                                   transform: translate(-50%, -50%) ; pointer-events: none ; }
 
       .MEDIA_Whisper_InputWrapper:has(.MEDIA_Whisper_MicButton:not([style*="display: none"])) .LLAMA_AI_Hint { right: 40px !important ; }
       @keyframes MEDIA_Whisper_mic_flare {

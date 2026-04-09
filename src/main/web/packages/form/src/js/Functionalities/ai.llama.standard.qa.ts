@@ -3,6 +3,9 @@
 import { getJQuery } from "@de-xima/fc-form-renderer";
 import { generateUUID } from "../global-scope";
 // #endregion XIMA
+// #region Commons
+import { acquireWakeLock, releaseWakeLock } from "../commons/wake-lock";
+// #endregion Commons
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { REGEX } from "xdbc/src/DBC/REGEX";
@@ -495,6 +498,7 @@ export class AI_LLAMA_STANDARD_QA {
 
           tsToProcess.style.pointerEvents = "all";
           tsToProcess.style.opacity = "1";
+          releaseWakeLock();
 
           if (uploadLabel) {
             uploadLabel.innerHTML = uploadFormerText;
@@ -694,6 +698,7 @@ export class AI_LLAMA_STANDARD_QA {
           });
         };
         sendQaRequest();
+        acquireWakeLock();
         // #endregion Contact LLAMA-Server via AJAX
       }
       // #endregion If any VQA questions, call VQA action as before

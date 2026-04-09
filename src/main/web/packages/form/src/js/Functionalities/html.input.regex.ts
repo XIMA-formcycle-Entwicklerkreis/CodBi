@@ -106,6 +106,9 @@ export class HTML_Input_REGEX {
     // #region Invalidate Field
     if (toLoad.expression) {
       toProcess.addEventListener("change", (event) => {
+        // Skip validation if element was removed from the DOM (e.g. repeatable row deleted).
+        if (!toProcess.isConnected) return;
+
         if (
           !new RegExp(toLoad.expression as string, toLoad.flags ? (toLoad.flags as string) : "g").test(
             (toProcess as HTMLInputElement).value,

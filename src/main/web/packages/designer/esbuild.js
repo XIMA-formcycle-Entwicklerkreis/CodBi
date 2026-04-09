@@ -119,32 +119,24 @@ async function copyAngularWebComponentSvgAssets() {
 }
 
 (async () => {
-  console.log(`Cleaning output directory: ${outputDir}...`);
+  console.log(`Cleaning designer output files in: ${outputDir}...`);
 
-  // Retry logic for cleaning output directory (handles ENOTEMPTY/EBUSY on Windows)
-  async function retryEmptyDir(dir, maxRetries = 5, delayMs = 500) {
-    let lastErr;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        await fs.rm(dir, { recursive: true, force: true });
-        await fs.mkdir(dir, { recursive: true });
-        return;
-      } catch (err) {
-        if (err && (err.code === "ENOTEMPTY" || err.code === "EBUSY" || err.code === "EPERM")) {
-          lastErr = err;
-          console.warn(
-            `Attempt ${attempt} to clean directory '${dir}' failed with ${err.code}. Retrying in ${delayMs}ms...`,
-          );
-          await new Promise((res) => setTimeout(res, delayMs));
-        } else {
-          throw err;
-        }
-      }
-    }
-    throw lastErr || new Error(`Failed to clean directory '${dir}' after retries`);
-  }
+  // Only remove designer-owned files/dirs — do NOT wipe the shared outputDir
+  // (the form package writes to the same directory in parallel).
+  const designerOutputs = [
+    path.join(outputDir, "designer.js"),
+    path.join(outputDir, "designer-frame.css"),
+    path.join(outputDir, "cb-manager.js"),
+    path.join(outputDir, "cb-manager.css"),
+    tinymceOutputDir,
+    i18nOutputDir,
+    angularWebComponentSvgOutputDir,
+  ];
 
-  await retryEmptyDir(outputDir);
+  await fs.mkdir(outputDir, { recursive: true });
+
+  await Promise.all(designerOutputs.map((p) => fs.rm(p, { recursive: true, force: true })));
+
   await buildAngularWebComponent();
   await copyTinyMCEAssets();
   await copyI18nAssets();

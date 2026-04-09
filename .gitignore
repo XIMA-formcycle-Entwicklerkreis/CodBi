@@ -1,12 +1,3 @@
-*.exe
-*.zip
-*.jinja
-*.dll
-*.gguf
-*.onnx
-*.onnx_data
-qwen-vl/
-
 xfc-server
 
 localization.ts

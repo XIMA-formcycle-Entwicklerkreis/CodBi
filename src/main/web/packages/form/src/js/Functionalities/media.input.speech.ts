@@ -263,9 +263,136 @@ export class MEDIA_INPUT_SPEECH {
 
       isRecording = false;
 
+      stopMeter();
       micButton.classList.remove("MEDIA_Speech_MicButton--recording");
     };
+    // #region Volume meter setup.
+    const meterSize = 48;
+    const meterCanvas = document.createElement("canvas");
 
+    meterCanvas.className = "MEDIA_Speech_VolumeMeter";
+    meterCanvas.width = meterSize;
+    meterCanvas.height = meterSize;
+
+    micButton.appendChild(meterCanvas);
+
+    let meterAudioCtx: AudioContext | null = null;
+    let meterAnalyser: AnalyserNode | null = null;
+    let meterAnimFrame = 0;
+    let meterStream: MediaStream | null = null;
+
+    const meterColor = (level: number): string => {
+      if (level < 0.5) {
+        const t = level / 0.5;
+        const r = Math.round(76 + (255 - 76) * t);
+        const g = Math.round(175 + (235 - 175) * t);
+        const b = Math.round(80 + (59 - 80) * t);
+
+        return `rgb(${r},${g},${b})`;
+      }
+
+      const t = (level - 0.5) / 0.5;
+      const r = Math.round(255 - (255 - 229) * t);
+      const g = Math.round(235 - (235 - 57) * t);
+      const b = Math.round(59 - (59 - 53) * t);
+
+      return `rgb(${r},${g},${b})`;
+    };
+
+    const startMeter = async () => {
+      try {
+        meterStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        meterAudioCtx = new AudioContext();
+        meterAnalyser = meterAudioCtx.createAnalyser();
+        meterAnalyser.fftSize = 256;
+        meterAnalyser.smoothingTimeConstant = 0.6;
+
+        const source = meterAudioCtx.createMediaStreamSource(meterStream);
+
+        source.connect(meterAnalyser);
+
+        const dataArray = new Uint8Array(meterAnalyser.frequencyBinCount);
+        const ctx = meterCanvas.getContext("2d");
+
+        if (!ctx) {
+          return;
+        }
+
+        meterCanvas.style.display = "block";
+
+        const center = meterSize / 2;
+        const radius = meterSize / 2 - 3;
+        const startAngle = -Math.PI / 2;
+
+        const draw = () => {
+          meterAnimFrame = requestAnimationFrame(draw);
+
+          if (!meterAnalyser) {
+            return;
+          }
+
+          meterAnalyser.getByteFrequencyData(dataArray);
+
+          let sum = 0;
+
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+
+          const avg = sum / dataArray.length;
+          const level = Math.min(avg / 128, 1);
+
+          ctx.clearRect(0, 0, meterSize, meterSize);
+
+          if (level > 0.01) {
+            const endAngle = startAngle + level * 2 * Math.PI;
+
+            ctx.beginPath();
+            ctx.arc(center, center, radius, startAngle, endAngle);
+            ctx.strokeStyle = meterColor(level);
+            ctx.lineWidth = 3;
+            ctx.lineCap = "round";
+            ctx.stroke();
+          }
+        };
+
+        draw();
+      } catch (X) {
+        // Meter is non-critical — if mic access fails, just skip it.
+      }
+    };
+
+    const stopMeter = () => {
+      if (meterAnimFrame) {
+        cancelAnimationFrame(meterAnimFrame);
+
+        meterAnimFrame = 0;
+      }
+
+      meterCanvas.style.display = "none";
+
+      const ctx = meterCanvas.getContext("2d");
+
+      if (ctx) {
+        ctx.clearRect(0, 0, meterCanvas.width, meterCanvas.height);
+      }
+
+      if (meterStream) {
+        for (const track of meterStream.getTracks()) {
+          track.stop();
+        }
+
+        meterStream = null;
+      }
+
+      if (meterAudioCtx) {
+        meterAudioCtx.close();
+
+        meterAudioCtx = null;
+        meterAnalyser = null;
+      }
+    };
+    // #endregion Volume meter setup.
     const toggleRecording = () => {
       if (micButton.disabled) {
         return;
@@ -275,6 +402,7 @@ export class MEDIA_INPUT_SPEECH {
         isRecording = false;
 
         recognition.stop();
+        stopMeter();
         micButton.classList.remove("MEDIA_Speech_MicButton--recording");
         field.dispatchEvent(new Event("change", { bubbles: true }));
       } else {
@@ -288,6 +416,7 @@ export class MEDIA_INPUT_SPEECH {
         try {
           recognition.start();
           micButton.classList.add("MEDIA_Speech_MicButton--recording");
+          startMeter();
         } catch (X) {
           isRecording = false;
         }
@@ -378,7 +507,7 @@ export class MEDIA_INPUT_SPEECH {
       .MEDIA_Speech_MicButton       { position: absolute ; right: 4px ; bottom: 4px ; width: 28px ; height: 28px ; border: none ;
                                       border-radius: 50% ; background: transparent ; color: #888 ; cursor: pointer ;
                                       display: flex ; align-items: center ; justify-content: center ; padding: 0 ;
-                                      transition: color 0.2s, background 0.2s ;}
+                                      transition: color 0.2s, background 0.2s ; overflow: visible ;}
       .MEDIA_Speech_MicButton:hover { color: #333 ; background: rgba( 0, 0, 0, 0.06 );}
 
       .MEDIA_Speech_MicButton--recording { color: #fff ; background: #e53935 ;
@@ -387,6 +516,10 @@ export class MEDIA_INPUT_SPEECH {
       .MEDIA_Speech_MicButton--recording:hover { background: #c62828 ; color: #fff ;}
 
       .MEDIA_Speech_MicButton--unavailable { color: #ccc ; cursor: not-allowed ;}
+
+      .MEDIA_Speech_VolumeMeter { display: none ; position: absolute ; top: 50% ; left: 50% ;
+                                  transform: translate(-50%, -50%) ; pointer-events: none ; }
+
       @keyframes MEDIA_Speech_mic_pulse {
         0%, 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0.5) ; }
         50% { box-shadow: 0 0 0 8px rgba(229,57,53,0) ; }

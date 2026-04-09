@@ -14,6 +14,7 @@ import { OR } from "xdbc/src/DBC/OR";
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
 // #endregion XDBC
 import { formatWaitTime } from "../commons/format-wait-time";
+import { acquireWakeLock, releaseWakeLock } from "../commons/wake-lock";
 // #endregion Imports
 
 /**
@@ -170,6 +171,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
       }
 
       inferenceStarted = true;
+      acquireWakeLock();
       // #endregion Wait until all source fields are filled (unless forced)
       // #region Acquire questions
       // #region Collect question elements (excluding AI_LLAMA_QA_Exclude sub-containers)
@@ -374,6 +376,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
       const finalizeAll = () => {
         tsToProcess.style.pointerEvents = "all";
         tsToProcess.style.opacity = "1";
+        releaseWakeLock();
         // Re-enable source elements
         for (const el of disabledSources) {
           (el as HTMLInputElement).disabled = false;

@@ -257,6 +257,8 @@ The default LLM is configured as a convenience, but **any GGUF-compatible model 
 | `Media.Input.Speech.Whisper` | Local server | ✅ Yes | None |
 | `Media.Input.Speech` | Cloud (Google/MS) | ⚠️ Needs consent | Google / Microsoft |
 
+> **Note on virtualized environments (Media.Input.Speech only):** When using in-browser audio APIs under virtualization layers such as WSLg, browsers do not behave identically. Google Chrome supports hardware passthrough natively and reliably. Microsoft Edge (due to differing sandbox policies) and Firefox (due to package containers and strict privacy restrictions on the Web Speech API) may require manual configuration or fallbacks. This does not affect `Media.Input.Speech.Whisper`, which uses the standard `getUserMedia()` API for raw audio capture and processes speech on the local server.
+
 Key compliance properties:
 
 - **No data leaves the server** for LLaMA, Whisper, and Tesseract — all inference is `localhost`-only (unless an external AI to use is specified or BraveAPI-Search is enabled).

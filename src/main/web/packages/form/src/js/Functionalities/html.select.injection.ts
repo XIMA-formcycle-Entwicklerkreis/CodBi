@@ -74,13 +74,30 @@ export class HTML_Select_Injection {
       title = toLoad.titles ? (toLoad.titles as [])[i] : value;
 
       if (typeof value !== "string") {
-        value = (title as unknown)[toLoad.valueproperty as string];
-        text = (title as unknown)[toLoad.textproperty as string];
+        if (toLoad.valueproperty) {
+          value = (title as unknown)[toLoad.valueproperty as string];
+        } else {
+          const firstStr = Object.values(value as object).find((v) => typeof v === "string");
+
+          value = firstStr !== undefined ? firstStr : String(value);
+        }
+
+        if (toLoad.textproperty) {
+          text = (title as unknown)[toLoad.textproperty as string];
+        } else if (toLoad.valueproperty) {
+          text = (title as unknown)[toLoad.valueproperty as string];
+        } else {
+          text = value;
+        }
       }
 
       if (typeof title !== "string") {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        title = (title as any)[toLoad.titleproperty as string];
+        if (toLoad.titleproperty) {
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          title = (title as any)[toLoad.titleproperty as string];
+        } else {
+          title = text;
+        }
       }
 
       toProcess.innerHTML += `<option title = "${title}" value = "${value}">${text}</option>`;

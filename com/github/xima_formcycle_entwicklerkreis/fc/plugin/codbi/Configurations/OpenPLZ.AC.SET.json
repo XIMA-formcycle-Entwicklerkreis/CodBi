@@ -1,9 +1,0 @@
-{
-  "Description": "/functions/Configurations_OpenPLZ.AC.SET.loadConfig.html",
-  "classes": {
-    "CodBi_OpenPLZ_AC_SET_PLZ": "",
-    "CodBi_OpenPLZ_AC_SET_Locality": "",
-    "CodBi_OpenPLZ_AC_SET_Street": "",
-    "CodBi_OpenPLZ_AC_SET_BuildingNumber": ""
-  }
-}

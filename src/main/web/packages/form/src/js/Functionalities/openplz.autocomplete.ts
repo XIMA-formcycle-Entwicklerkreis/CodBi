@@ -204,6 +204,22 @@ export class OpenPLZ_Autocomplete {
     // #region Handle Selection.
     const onSelected = async () => {
       (toProcess as HTMLInputElement).value = (proposals as HTMLSelectElement).value;
+      // #region Focus the field after autocomplete, if specified.
+      // IMPORTANT: Focus BEFORE any await so it happens within the user-gesture context.
+      // Mobile browsers only open the on-screen keyboard for focus calls inside a user gesture.
+      const toFocus = toProcess.parentElement.parentElement.parentElement.querySelector(
+        toLoad.focusonautocomplete,
+      ) as HTMLElement;
+
+      if (toFocus && toLoad.focusonautocomplete) {
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        (toFocus as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent = true;
+
+        proposals.remove();
+        toFocus.focus();
+        toFocus.animate(OpenPLZ_Autocomplete.kfFocusOnAutocomplete, OpenPLZ_Autocomplete.tmgFocusOnAutocomplete).play();
+      }
+      // #endregion Focus the field after autocomplete, if specified.
 
       let result: Array<unknown>;
 
@@ -299,20 +315,6 @@ export class OpenPLZ_Autocomplete {
         }
       }
       // #endregion Set dependent, if available.
-      // #region Focus the field after autocomplete, if specified.
-      const toFocus = toProcess.parentElement.parentElement.parentElement.querySelector(
-        toLoad.focusonautocomplete,
-      ) as HTMLElement;
-
-      if (toFocus && toLoad.focusonautocomplete) {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        (toFocus as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent = true;
-
-        proposals.remove();
-        toFocus.focus();
-        toFocus.animate(OpenPLZ_Autocomplete.kfFocusOnAutocomplete, OpenPLZ_Autocomplete.tmgFocusOnAutocomplete).play();
-      }
-      // #endregion Focus the field after autocomplete, if specified.
     };
 
     proposals.addEventListener("change", async (event) => {
@@ -329,26 +331,27 @@ export class OpenPLZ_Autocomplete {
     });
     // #endregion Handle Selection.
     // #endregion Create Selection.
-    toProcess.addEventListener("keyup", async (event) => {
+    // #region Block on keyup (desktop keyboards).
+    toProcess.addEventListener("keyup", (event) => {
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       if (blocked || (toProcess as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent) {
         event.stopPropagation();
         event.preventDefault();
         event.stopImmediatePropagation();
+      }
+    });
+    // #endregion Block on keyup (desktop keyboards).
+    // #region OpenPLZ query on input (cross-platform: fires on desktop and Android soft-keyboards).
+    let matchedValue = "";
+    toProcess.addEventListener("input", async () => {
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      if (blocked || (toProcess as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent) {
+        (toProcess as HTMLInputElement).value = matchedValue;
 
         return;
       }
 
-      const key = INSTANCE.tsCheck<KeyboardEvent>(event, KeyboardEvent).key;
       const dependent = toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependent);
-
-      if (key.length !== 1 && key !== "Backspace" && key !== "Delete") {
-        return;
-      }
-
-      if (key === "Enter" || key === "Space") {
-        onSelected();
-      }
 
       let result: Array<unknown>;
 
@@ -432,6 +435,7 @@ export class OpenPLZ_Autocomplete {
         }
         // #endregion If the request returned an error.
         (toProcess as HTMLInputElement).value = result[0][targetResultProperty];
+        matchedValue = result[0][targetResultProperty] as string;
         // #region Set dependent, if available.
         const tcTargetData = toLoad.targetdata.toLowerCase();
 
@@ -470,12 +474,15 @@ export class OpenPLZ_Autocomplete {
           proposals.remove();
           (toFocus as HTMLInputElement).readOnly = true;
           toFocus.focus();
+          // Best-effort keyboard show for mobile (post-await, user activation expired).
+          // biome-ignore lint/suspicious/noExplicitAny: VirtualKeyboard API not in all TS libs.
+          (navigator as any).virtualKeyboard?.show();
           toFocus
             .animate(OpenPLZ_Autocomplete.kfFocusOnAutocomplete, OpenPLZ_Autocomplete.tmgFocusOnAutocomplete)
             .play();
           setTimeout(() => {
             (toFocus as HTMLInputElement).readOnly = false;
-          }, 300);
+          }, 150);
         }
         // #endregion Focus the field after autocomplete, if specified.
       }
@@ -491,6 +498,7 @@ export class OpenPLZ_Autocomplete {
       }
       // #endregion Show proposals.
     });
+    // #endregion OpenPLZ query on input.
   }
   // #region Initialization
   /**

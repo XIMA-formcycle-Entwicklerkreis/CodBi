@@ -506,6 +506,11 @@ export class HTML_Panel {
           }
         }
 
+        // Purge elements that have been corrected since the last validation pass.
+        HTML_Panel.invalidElements = HTML_Panel.invalidElements.filter(
+          (el) => el.isConnected && el.getAttribute("aria-invalid") === "true",
+        );
+
         if (HTML_Panel.invalidElements.length === 0) {
           return { preventSubmission: false };
         } else {

@@ -284,3 +284,81 @@ Get-ChildItem $docsRoot -Directory | ForEach-Object {
     $count = (Get-ChildItem $_.FullName -Filter *.html -Recurse -ErrorAction SilentlyContinue).Count
     Write-Host "  $($_.Name)/  $count files"
 }
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Phase 4: Deploy to gh-pages branch
+# ──────────────────────────────────────────────────────────────────────────────
+Write-Host "`n══════════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "[Docs] Deploying to gh-pages branch" -ForegroundColor Cyan
+Write-Host "══════════════════════════════════════════════════════════" -ForegroundColor Cyan
+
+$worktreeDir = "$rootDir\.gh-pages-worktree"
+$deployed = $false
+
+try {
+    # Ensure core.longpaths is enabled (Dokka generates deep paths)
+    git -C $rootDir config core.longpaths true
+
+    # Set up a temporary worktree for the gh-pages branch
+    if (Test-Path $worktreeDir) {
+        git -C $rootDir worktree remove --force $worktreeDir 2>$null
+        cmd /c "rd /s /q `"$worktreeDir`"" 2>$null
+    }
+    git -C $rootDir worktree add $worktreeDir gh-pages 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[Docs]   ✗ Failed to create worktree for gh-pages. Does the branch exist?" -ForegroundColor Red
+        Write-Host "[Docs]   Create it with: git checkout --orphan gh-pages" -ForegroundColor Yellow
+        throw "worktree failed"
+    }
+
+    # Clear existing content in worktree (preserve .git, .nojekyll)
+    Get-ChildItem $worktreeDir -Force | Where-Object { $_.Name -notin @('.git', '.nojekyll') } | ForEach-Object {
+        if ($_.PSIsContainer) { cmd /c "rd /s /q `"$($_.FullName)`"" 2>$null }
+        else { Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue }
+    }
+
+    # Copy fresh docs into worktree root (not into a docs/ subfolder)
+    robocopy $docsRoot $worktreeDir /E /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+
+    # Ensure .nojekyll exists
+    if (-not (Test-Path "$worktreeDir\.nojekyll")) {
+        New-Item -ItemType File -Path "$worktreeDir\.nojekyll" -Force | Out-Null
+    }
+
+    # Commit and push
+    Push-Location $worktreeDir
+    try {
+        git add -A
+        $hasChanges = git diff --cached --quiet 2>$null; $hasChanges = ($LASTEXITCODE -ne 0)
+        if ($hasChanges) {
+            git commit -m "docs: regenerate $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+            git push origin gh-pages
+            if ($LASTEXITCODE -eq 0) {
+                $deployed = $true
+                Write-Host "[Docs]   ✓ Deployed to gh-pages and pushed to origin" -ForegroundColor Green
+            } else {
+                Write-Host "[Docs]   ✗ Push to origin failed" -ForegroundColor Red
+            }
+        } else {
+            $deployed = $true
+            Write-Host "[Docs]   ✓ No changes to deploy (gh-pages is up to date)" -ForegroundColor Green
+        }
+    } finally {
+        Pop-Location
+    }
+} catch {
+    Write-Host "[Docs]   ✗ gh-pages deployment failed: $_" -ForegroundColor Red
+} finally {
+    # Clean up worktree
+    if (Test-Path $worktreeDir) {
+        git -C $rootDir worktree remove --force $worktreeDir 2>$null
+        if (Test-Path $worktreeDir) { cmd /c "rd /s /q `"$worktreeDir`"" 2>$null }
+    }
+}
+
+if ($deployed) {
+    Write-Host "`n[Docs] ✓ Documentation is live on gh-pages branch" -ForegroundColor Green
+} else {
+    Write-Host "`n[Docs] ⚠ Documentation generated locally but gh-pages deployment failed" -ForegroundColor Yellow
+    Write-Host "[Docs]   You can manually push with: git subtree push --prefix docs origin gh-pages" -ForegroundColor Yellow
+}

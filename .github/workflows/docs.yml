@@ -1,0 +1,176 @@
+# Generates TypeDoc + Dokka documentation and deploys to gh-pages branch.
+# Runs on push to main or manually via workflow_dispatch.
+
+name: Generate & Deploy Docs
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'src/main/web/packages/*/src/**'
+      - 'src/main/kotlin/**'
+      - 'generate-docs.ps1'
+      - 'scripts/translate-docs.mjs'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 11
+      uses: actions/setup-java@v4
+      with:
+        java-version: '11'
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Make Maven wrapper executable
+      run: chmod +x mvnw
+
+    - name: Build project (compile Kotlin + frontend)
+      run: ./mvnw -B clean package -DskipTests -Denforcer.skip --file pom.xml
+
+    - name: Install root npm dependencies (for translate-docs)
+      run: npm ci
+
+    - name: Restore translation cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          src/main/web/packages/form/.translate-cache
+          src/main/web/packages/common/.translate-cache
+          src/main/web/packages/designer/.translate-cache
+          src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/.translate-cache
+        key: translate-cache-${{ hashFiles('src/main/web/packages/*/src/**/*.ts', 'src/main/kotlin/**/*.kt') }}
+        restore-keys: |
+          translate-cache-
+
+    - name: Generate TypeDoc for form (EN)
+      working-directory: src/main/web
+      run: yarn workspace codbi-form typedoc
+
+    - name: Generate TypeDoc for common (EN)
+      working-directory: src/main/web
+      run: yarn workspace codbi-common typedoc
+
+    - name: Generate TypeDoc for designer (EN)
+      working-directory: src/main/web
+      run: yarn workspace codbi-designer typedoc
+
+    - name: Generate Dokka for logic (EN)
+      run: ./mvnw -B dokka:dokka -Ddokka.outputDir=${{ github.workspace }}/target/dokka -q || true
+
+    - name: Translate docs (DE)
+      env:
+        GOOGLE_TRANSLATE_API_KEY: ${{ secrets.GOOGLE_TRANSLATE_API_KEY }}
+      run: |
+        for pkg in "src/main/web/packages/form" "src/main/web/packages/common" "src/main/web/packages/designer"; do
+          srcSub="src/js"
+          node scripts/translate-docs.mjs de "$pkg" "$srcSub" || true
+          # Run TypeDoc with translated config if it exists
+          config="$pkg/typedoc.de.json"
+          if [ -f "$config" ]; then
+            (cd "$pkg" && yarn typedoc --options typedoc.de.json) || true
+          fi
+          # Cleanup temp files
+          rm -rf "$pkg/src_de_temp" "$pkg/typedoc.de.json" "$pkg/tsconfig.de.json"
+        done
+        # Kotlin logic
+        node scripts/translate-docs.mjs de "src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic" "." ".kt" || true
+
+    - name: Translate docs (IT)
+      env:
+        GOOGLE_TRANSLATE_API_KEY: ${{ secrets.GOOGLE_TRANSLATE_API_KEY }}
+      run: |
+        for pkg in "src/main/web/packages/form" "src/main/web/packages/common" "src/main/web/packages/designer"; do
+          srcSub="src/js"
+          node scripts/translate-docs.mjs it "$pkg" "$srcSub" || true
+          config="$pkg/typedoc.it.json"
+          if [ -f "$config" ]; then
+            (cd "$pkg" && yarn typedoc --options typedoc.it.json) || true
+          fi
+          rm -rf "$pkg/src_it_temp" "$pkg/typedoc.it.json" "$pkg/tsconfig.it.json"
+        done
+        node scripts/translate-docs.mjs it "src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic" "." ".kt" || true
+
+    - name: Assemble docs into docs/
+      run: |
+        rm -rf docs
+        mkdir -p docs
+
+        # TypeScript packages
+        for pkg in form common designer; do
+          pkgDir="src/main/web/packages/$pkg"
+          if [ -d "$pkgDir/docs" ]; then
+            cp -r "$pkgDir/docs" "docs/$pkg"
+          fi
+          for lang in de it; do
+            if [ -d "$pkgDir/docs/$lang" ]; then
+              mkdir -p "docs/$pkg/$lang"
+              cp -r "$pkgDir/docs/$lang/." "docs/$pkg/$lang/"
+            fi
+          done
+        done
+
+        # Kotlin logic (Dokka)
+        if [ -d "target/dokka" ]; then
+          cp -r target/dokka docs/logic
+        fi
+        for lang in de it; do
+          if [ -d "target/dokka-$lang" ]; then
+            mkdir -p "docs/logic/$lang"
+            cp -r "target/dokka-$lang/." "docs/logic/$lang/"
+          fi
+        done
+
+        # Landing page
+        touch docs/.nojekyll
+        cat > docs/index.html << 'LANDING'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8"/>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+          <title>CodBi API Documentation</title>
+          <style>
+            :root { --accent: #2a7b9b; --bg: #f5f7fa; --card: #fff; --shadow: 0 2px 8px rgba(0,0,0,.08); }
+            @media (prefers-color-scheme: dark) { :root { --bg: #1a1a2e; --card: #16213e; --accent: #4ecdc4; } body { color: #e0e0e0; } }
+            * { box-sizing: border-box; margin: 0; padding: 0; }
+            body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); padding: 2rem; }
+            .header { text-align: center; margin-bottom: 2rem; }
+            .header h1 { color: var(--accent); font-size: 2rem; }
+            .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; max-width: 1000px; margin: 0 auto; }
+            .card { background: var(--card); border-radius: .75rem; padding: 1.5rem; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: .75rem; }
+            .card h2 { color: var(--accent); font-size: 1.25rem; text-transform: capitalize; }
+            .card a.lang { display: inline-block; padding: .4rem .8rem; border-radius: .4rem; text-decoration: none; color: inherit; border: 1px solid #ddd; font-size: .9rem; }
+            .card a.lang:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+          </style>
+        </head>
+        <body>
+          <div class="header"><h1>CodBi API Documentation</h1><p>Select a module and language.</p></div>
+          <div class="grid">
+            <div class="card"><h2>form</h2><a href="form/index.html" class="lang">🇬🇧 English</a><a href="form/de/index.html" class="lang">🇩🇪 German</a><a href="form/it/index.html" class="lang">🇮🇹 Italian</a></div>
+            <div class="card"><h2>common</h2><a href="common/index.html" class="lang">🇬🇧 English</a><a href="common/de/index.html" class="lang">🇩🇪 German</a><a href="common/it/index.html" class="lang">🇮🇹 Italian</a></div>
+            <div class="card"><h2>designer</h2><a href="designer/index.html" class="lang">🇬🇧 English</a><a href="designer/de/index.html" class="lang">🇩🇪 German</a><a href="designer/it/index.html" class="lang">🇮🇹 Italian</a></div>
+            <div class="card"><h2>logic</h2><a href="logic/index.html" class="lang">🇬🇧 English</a><a href="logic/de/index.html" class="lang">🇩🇪 German</a><a href="logic/it/index.html" class="lang">🇮🇹 Italian</a></div>
+          </div>
+        </body>
+        </html>
+        LANDING
+
+    - name: Deploy to gh-pages
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
+        publish_branch: gh-pages
+        force_orphan: true
+        commit_message: 'docs: auto-generate from ${{ github.sha }}'

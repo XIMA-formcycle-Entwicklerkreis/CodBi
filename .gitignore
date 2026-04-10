@@ -122,14 +122,14 @@ package-lock.json
 
 ## Extracted JAR / build artifacts ##
 /kotlin/
-com/
-org/
-net/
-META-INF/
-jnilib/
-djl_cache/
-nlp/
-cv/
+/com/
+/org/
+/net/
+/META-INF/
+/jnilib/
+/djl_cache/
+/nlp/
+/cv/
 extracted/
 lib/
 java.io.tmpdir/

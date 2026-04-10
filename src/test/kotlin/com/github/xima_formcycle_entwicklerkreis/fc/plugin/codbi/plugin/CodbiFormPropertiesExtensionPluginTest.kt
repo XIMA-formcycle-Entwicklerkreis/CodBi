@@ -30,7 +30,7 @@ class CodbiFormPropertiesExtensionPluginTest {
   @Test
   fun extendFormProperties() {
     val result = plugin.extendFormProperties(null)
-    assertEquals(3, result.additionalProperties.size)
+    assertEquals(5, result.additionalProperties.size)
 
     assertEquals("codbi-prop-enable", result.additionalProperties.get(0).name)
     assertEquals("0", result.additionalProperties.get(0).defaultValue)
@@ -40,6 +40,12 @@ class CodbiFormPropertiesExtensionPluginTest {
 
     assertEquals("codbi-prop-config-template", result.additionalProperties.get(2).name)
     assertEquals("default", result.additionalProperties.get(2).defaultValue)
+
+    assertEquals("LDAP_URL", result.additionalProperties.get(3).name)
+    assertEquals("", result.additionalProperties.get(3).defaultValue)
+
+    assertEquals("LDAP_URL_BACKEND", result.additionalProperties.get(4).name)
+    assertEquals("", result.additionalProperties.get(4).defaultValue)
   }
 
   @BeforeEach

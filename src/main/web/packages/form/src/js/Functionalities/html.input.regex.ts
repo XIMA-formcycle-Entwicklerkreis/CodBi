@@ -90,7 +90,9 @@ export class HTML_Input_REGEX {
     if (toLoad.keyexpression) {
       const keyRegex = new RegExp(toLoad.keyexpression as string, toLoad.keyflags ? (toLoad.keyflags as string) : "i");
       toProcess.addEventListener("input", (event) => {
-        if ((event as InputEvent).isComposing) return;
+        if ((event as InputEvent).isComposing) {
+          return;
+        }
         const input = toProcess as HTMLInputElement;
         const cleaned = Array.from(input.value)
           .filter((ch) => keyRegex.test(ch))
@@ -107,7 +109,9 @@ export class HTML_Input_REGEX {
     if (toLoad.expression) {
       toProcess.addEventListener("change", (event) => {
         // Skip validation if element was removed from the DOM (e.g. repeatable row deleted).
-        if (!toProcess.isConnected) return;
+        if (!toProcess.isConnected) {
+          return;
+        }
 
         if (
           !new RegExp(toLoad.expression as string, toLoad.flags ? (toLoad.flags as string) : "g").test(

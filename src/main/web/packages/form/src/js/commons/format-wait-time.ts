@@ -7,9 +7,13 @@
  *            when the value is absent or zero.
  */
 export function formatWaitTime(ms: number | null | undefined): string {
-  if (ms == null || ms <= 0) return "";
+  if (ms == null || ms <= 0) {
+    return "";
+  }
   const totalSeconds = Math.round(ms / 1000);
-  if (totalSeconds < 60) return `(~${totalSeconds}s)`;
+  if (totalSeconds < 60) {
+    return `(~${totalSeconds}s)`;
+  }
   const minutes = Math.round(totalSeconds / 60);
   return `(~${minutes}m)`;
 }

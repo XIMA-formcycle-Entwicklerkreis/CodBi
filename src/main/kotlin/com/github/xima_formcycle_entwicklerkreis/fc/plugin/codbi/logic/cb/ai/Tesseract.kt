@@ -1645,10 +1645,10 @@ class TesseractAction : AI() {
       while (running) {
         try {
           osMxBean?.let {
-            cpuPercent = it.cpuLoad * 100.0
+            cpuPercent = it.systemCpuLoad * 100.0
 
-            val totalMem = it.totalMemorySize.toDouble()
-            val freeMem = it.freeMemorySize.toDouble()
+            val totalMem = it.totalPhysicalMemorySize.toDouble()
+            val freeMem = it.freePhysicalMemorySize.toDouble()
 
             ramPercent = if (totalMem > 0) (totalMem - freeMem) / totalMem * 100.0 else 0.0
           }

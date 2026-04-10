@@ -64,6 +64,7 @@
 		<node.version>v22.14.0</node.version>
 		<xfc.version>8.3.3</xfc.version>
 		<yarn.version>v1.22.22</yarn.version>
+		<java.version>11</java.version>
 
 		<!-- Dependency versions -->
 		<jakarta-servlet-api.version>4.0.4</jakarta-servlet-api.version>
@@ -81,7 +82,7 @@
 		<maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
 		<maven-deploy-plugin.version>3.1.3</maven-deploy-plugin.version>
 		<maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
-		<maven-enforcer-rule-ban-provided-dependencies.version>1.0.4</maven-enforcer-rule-ban-provided-dependencies.version>
+		<maven-enforcer-rule-ban-provided-dependencies.version>1.0.5</maven-enforcer-rule-ban-provided-dependencies.version>
 		<maven-install-plugin.version>3.1.3</maven-install-plugin.version>
 		<maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
 		<maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
@@ -412,7 +413,7 @@
 					<configuration>
 						<apiVersion>1.9</apiVersion>
 						<languageVersion>1.9</languageVersion>
-						<jvmTarget>11</jvmTarget>
+						<jvmTarget>${java.version}</jvmTarget>
 					</configuration>
 				</plugin>
 				<plugin>
@@ -1172,8 +1173,7 @@
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
-					<source>9</source>
-					<target>9</target>
+					<release>${java.version}</release>
 				</configuration>
 			</plugin>
 

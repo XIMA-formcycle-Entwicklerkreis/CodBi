@@ -91,7 +91,6 @@
 		<dokka-maven-plugin.version>1.9.20</dokka-maven-plugin.version>
 		<dokka.sourceDir>${project.basedir}/src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic</dokka.sourceDir>
 		<dokka.outputDir>${project.build.directory}/dokka</dokka.outputDir>
-		<maven-exec-plugin.version>3.1.0</maven-exec-plugin.version>
 		<properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
 		<spotless-maven-plugin.version>2.44.2</spotless-maven-plugin.version>
 	</properties>
@@ -1169,26 +1168,6 @@
 					<source>9</source>
 					<target>9</target>
 				</configuration>
-			</plugin>
-
-			<!-- Play sound notification when build completes -->
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>exec-maven-plugin</artifactId>
-				<version>${maven-exec-plugin.version}</version>
-				<executions>
-					<execution>
-						<id>play-build-complete-sound</id>
-						<goals>
-							<goal>exec</goal>
-						</goals>
-						<phase>package</phase>
-						<configuration>
-							<executable>powershell</executable>
-							<commandlineArgs>-Command "[console]::beep(800, 500)"</commandlineArgs>
-						</configuration>
-					</execution>
-				</executions>
 			</plugin>
 
 		</plugins>

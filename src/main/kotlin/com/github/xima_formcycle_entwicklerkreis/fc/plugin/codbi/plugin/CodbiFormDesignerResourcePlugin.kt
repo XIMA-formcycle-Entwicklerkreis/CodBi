@@ -15,13 +15,9 @@ import de.xima.fc.interfaces.workflow.IResourceDescriptor
 import de.xima.fc.plugin.interfaces.form.IPluginFormDesignerResource
 import de.xima.fc.workflow.ByteArrayResourceDescriptor
 import de.xima.fc.workflow.UrlResourceDescriptor
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.URI
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.*
-import java.util.stream.Collectors
-import org.json.JSONArray
 import org.slf4j.LoggerFactory
 
 /**
@@ -212,71 +208,50 @@ ${docsApiUrls.entries.joinToString("\n") { (lang, url) ->
 
   private fun getFileListingAsString(toGetFrom: String): String {
     val classLoader = CodbiFormDesignerResourcePlugin::class.java.classLoader
-    val files =
-        try {
-          val isr = InputStreamReader(classLoader.getResourceAsStream(toGetFrom) ?: return "[]")
-          BufferedReader(isr).use { it.lines().collect(Collectors.toList()) }
-        } catch (e: Exception) {
-          LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
-              .warn("Directory '$toGetFrom' not found in classpath. Error: ${e.message}")
-          return "[]"
-        }
-
-    val fileNames =
-        files
-            .filter {
-              it.endsWith(".js") &&
-                  !it.endsWith(".json") &&
-                  !it.endsWith(".json.js") &&
-                  !it.startsWith("chunk")
-            }
-            .map { it }
-    return JSONArray(fileNames).toString()
+    val indexStream = classLoader.getResourceAsStream("$toGetFrom/index.json")
+    if (indexStream != null) {
+      return indexStream.bufferedReader(UTF_8).use { it.readText() }
+    }
+    LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
+        .warn("index.json not found in classpath at '$toGetFrom/index.json'")
+    return "[]"
   }
 
   private fun getDetails(toExtractFrom: String): String {
+    val log = LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
     val objectMapper = ObjectMapper().registerKotlinModule()
     val combinedJsonContent = mutableMapOf<String, Any>()
     val classLoader = CodbiFormDesignerResourcePlugin::class.java.classLoader
-    if (classLoader.getResource(toExtractFrom) == null) {
-      return "{\"problem\":\"directory not found\"}"
-    }
 
-    val filesInJar =
+    // Read file listing from build-generated index.json
+    val indexStream = classLoader.getResourceAsStream("$toExtractFrom/index.json")
+    if (indexStream == null) {
+      log.warn("index.json not found at '$toExtractFrom/index.json'")
+      return "{}"
+    }
+    val jsFileNames: List<String> =
         try {
-          InputStreamReader(
-                  classLoader.getResourceAsStream(toExtractFrom)
-                      ?: return "{\"problem\":\"directory not found\"}")
-              .useLines { it.toList() }
+          val indexContent = indexStream.bufferedReader(UTF_8).use { it.readText() }
+          objectMapper.readValue(
+              indexContent,
+              objectMapper.typeFactory.constructCollectionType(
+                  List::class.java, String::class.java))
         } catch (e: Exception) {
-          LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
-              .warn("Error reading resource directory: $toExtractFrom, Error: ${e.message}")
-          return "{\"problem\":\"directory not found\"}"
+          log.warn("Error parsing index.json at '$toExtractFrom/index.json': ${e.message}")
+          return "{}"
         }
-    LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
-        .error("Files in JAR(" + toExtractFrom + ")" + filesInJar)
-    val tsFileNames = filesInJar.filter { !it.startsWith("CHUNK") && it.endsWith(".js") }
-    LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
-        .error("Files in JAR TS(" + tsFileNames + ")" + filesInJar)
-    for (tsFileName in tsFileNames) {
-      val jsonFileName = "${tsFileName.substringBeforeLast('.')}.json"
+
+    for (jsFileName in jsFileNames) {
+      val jsonFileName = "${jsFileName.substringBeforeLast('.')}.json"
       val jsonResourcePath = "$toExtractFrom/$jsonFileName"
-      val jsonStream = classLoader.getResourceAsStream(jsonResourcePath)
-      LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
-          .error("JSON Stream for ${jsonFileName}" + jsonStream)
-      if (jsonStream != null) {
-        try {
-          combinedJsonContent[tsFileName.substringBeforeLast('.')] =
-              objectMapper.readValue(jsonStream, Any::class.java)
-        } catch (x: Exception) {
-          LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
-              .error(
-                  "Error reading or parsing JSON from classpath resource '$jsonResourcePath': ${x.message}")
-        }
+      val jsonStream = classLoader.getResourceAsStream(jsonResourcePath) ?: continue
+      try {
+        combinedJsonContent[jsFileName.substringBeforeLast('.')] =
+            objectMapper.readValue(jsonStream, Any::class.java)
+      } catch (x: Exception) {
+        log.warn("Error parsing JSON from '$jsonResourcePath': ${x.message}")
       }
     }
-    LoggerFactory.getLogger(CodbiFormDesignerResourcePlugin::class.java)
-        .error("X:" + combinedJsonContent)
     return objectMapper.writeValueAsString(combinedJsonContent)
   }
 }

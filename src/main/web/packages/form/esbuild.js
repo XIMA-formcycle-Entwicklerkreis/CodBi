@@ -276,3 +276,19 @@ await Promise.all([
     process.env.web_output_dir + "/Configurations" ?? "dist/Configurations",
   ),
 ]);
+
+// Generate index.json for each resource subdirectory so the Kotlin plugin
+// can reliably discover available JS files without classloader directory listing.
+async function generateIndexJson(tsFiles, subdir) {
+  const dir = `${process.env.web_output_dir ?? "dist"}/${subdir}`;
+  const jsFiles = tsFiles.map((f) => f.replace(/\.ts$/, ".js")).filter((f) => !f.startsWith("chunk"));
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, "index.json"), JSON.stringify(jsFiles, null, 2));
+  console.log(`Generated ${subdir}/index.json with ${jsFiles.length} entries`);
+}
+
+await Promise.all([
+  generateIndexJson(functionalityTsFiles, "Functionalities"),
+  generateIndexJson(epsTsFiles, "EPs"),
+  generateIndexJson(configurationsTsFiles, "Configurations"),
+]);

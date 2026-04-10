@@ -91,8 +91,37 @@ docs/
 .gh-pages-worktree/
 .main-worktree/
 
+## Temp / debug files ##
+temp-*.txt
+debug_input_image.png
+jar-structure.txt
+
+## Build-generated artifacts ##
+dependency-reduced-pom.xml
+gpu-backend.txt
+release-tag.txt
+pytorch_version
+pytorch-engine.properties
+xpytorch.properties
+
+## Dependency leftovers (Tess4J / Lept4J) ##
+readme.html
+readme.txt
+versionchanges.txt
+
+## Maven settings overrides ##
+settings-bypass-artifactory.xml
+
+## AI editor configs ##
+.cursorrules
+.cursorignore
+.geminiignore
+
+## npm lockfile (project uses Yarn) ##
+package-lock.json
+
 ## Extracted JAR / build artifacts ##
-kotlin/
+/kotlin/
 com/
 org/
 net/

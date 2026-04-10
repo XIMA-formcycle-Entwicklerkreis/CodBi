@@ -117,11 +117,11 @@ internal class ResourceMonitor(
     while (running) {
       try {
         osMxBean?.let {
-          cpuPercent = it.cpuLoad * 100.0
-          val totalMem = it.totalMemorySize.toDouble()
+          cpuPercent = it.systemCpuLoad * 100.0
+          val totalMem = it.totalPhysicalMemorySize.toDouble()
 
           ramPercent =
-              if (totalMem > 0) (totalMem - it.freeMemorySize.toDouble()) / totalMem * 100.0
+              if (totalMem > 0) (totalMem - it.freePhysicalMemorySize.toDouble()) / totalMem * 100.0
               else 0.0
         }
 

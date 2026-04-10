@@ -24,8 +24,8 @@
 		"lint-apply": "yarn workspaces foreach -Avp run lint-apply",
 		"lint-apply-unsafe": "yarn workspaces foreach -Avp run lint-apply-unsafe",
 		"test": "yarn workspaces foreach -Avp run test",
-		"build": "yarn workspaces foreach -Avp run build",
-		"build-dev": "yarn workspaces foreach -Avp run build-dev"
+		"build": "yarn workspaces foreach -Avt run build",
+		"build-dev": "yarn workspaces foreach -Avt run build-dev"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "1.9.4",

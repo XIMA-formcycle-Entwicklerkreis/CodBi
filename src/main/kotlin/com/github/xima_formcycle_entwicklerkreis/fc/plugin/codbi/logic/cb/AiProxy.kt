@@ -132,6 +132,12 @@ class AiProxy : AI() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { BraveSearch.apiKey = it }
+    configData.properties
+        .getProperty("AI_BraveSearch_MaxResults")
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it in 1..20 }
+        ?.let { BraveSearch.maxResults = it }
     // Mail Bridge (enabled by default unless explicitly disabled)
     configData.properties.getProperty("AI_Mail_Enabled")?.trim()?.lowercase()?.let { value ->
       MailBridge.enabled = value in listOf("true", "1", "yes")
@@ -144,6 +150,12 @@ class AiProxy : AI() {
     configData.properties.getProperty("AI_Mail_MaxPerHour")?.trim()?.toIntOrNull()?.let {
       MailBridge.maxMailsPerHour = it
     }
+    configData.properties
+        .getProperty("AI_Mail_MaxPerSession")
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it > 0 }
+        ?.let { MailBridge.maxMailsPerSession = it }
     configData.properties
         .getProperty("AI_Mail_Disclaimer")
         ?.trim()

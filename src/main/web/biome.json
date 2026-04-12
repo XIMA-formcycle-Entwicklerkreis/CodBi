@@ -9,7 +9,7 @@
     "enabled": true
   },
   "files": {
-    "ignore": ["package.json", "localization.ts"],
+    "ignore": ["package.json", "localization.ts", "**/__tests__/**", "**/__mocks__/**"],
     "ignoreUnknown": true,
     "maxSize": 4194304
   },

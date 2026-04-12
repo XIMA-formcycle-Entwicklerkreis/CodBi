@@ -58,6 +58,7 @@
 		<!-- Tools -->
 		<biome.version>1.9.4</biome.version>
 		<junit-jupiter.version>5.11.4</junit-jupiter.version>
+		<mockk.version>1.13.13</mockk.version>
 		<kotlin.version>1.9.22</kotlin.version>
 		<ktfmt.version>0.54</ktfmt.version>
 		<maven.version>3.9.9</maven.version>
@@ -94,6 +95,7 @@
 		<dokka.outputDir>${project.build.directory}/dokka</dokka.outputDir>
 		<properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
 		<spotless-maven-plugin.version>2.44.2</spotless-maven-plugin.version>
+		<jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
 	</properties>
 
 	<dependencyManagement>
@@ -169,6 +171,12 @@
 				<groupId>org.junit.jupiter</groupId>
 				<artifactId>junit-jupiter-engine</artifactId>
 				<version>${junit-jupiter.version}</version>
+			</dependency>
+
+			<dependency>
+				<groupId>io.mockk</groupId>
+				<artifactId>mockk-jvm</artifactId>
+				<version>${mockk.version}</version>
 			</dependency>
 
 			<dependency>
@@ -269,6 +277,13 @@
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>
 			<artifactId>junit-jupiter-engine</artifactId>
+			<scope>test</scope>
+		</dependency>
+
+		<!-- MockK for Kotlin mocking -->
+		<dependency>
+			<groupId>io.mockk</groupId>
+			<artifactId>mockk-jvm</artifactId>
 			<scope>test</scope>
 		</dependency>
 
@@ -1075,6 +1090,28 @@
 					<jdkVersion>11</jdkVersion>
 					<skipEmptyPackages>true</skipEmptyPackages>
 				</configuration>
+			</plugin>
+
+			<!-- Code coverage via JaCoCo -->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco-maven-plugin.version}</version>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>report</id>
+						<goals>
+							<goal>report</goal>
+						</goals>
+						<phase>test</phase>
+					</execution>
+				</executions>
 			</plugin>
 
 			<!-- Run unit tests via surefire -->

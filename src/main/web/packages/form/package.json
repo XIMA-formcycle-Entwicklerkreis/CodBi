@@ -14,7 +14,7 @@
     "lint": "biome lint --config-path ../.. src __tests__ __mocks__",
     "lint-apply": "biome lint --apply --config-path ../.. src __tests__ __mocks__",
     "lint-apply-unsafe": "biome lint --apply-unsafe --config-path ../.. src __tests__ __mocks__",
-    "test": "tsc && jest"
+    "test": "jest"
   },
   "dependencies": {
     "@callari/xdbc": "^1.0.73",

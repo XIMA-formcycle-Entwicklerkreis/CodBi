@@ -13,7 +13,7 @@ Only the latest release is actively supported with security updates.
 
 If you discover a security vulnerability in CodBi, **please do not open a public issue**. Instead, report it responsibly via one of the following channels:
 
-- **Email**: [Callari@WaXCode.net](mailto:Callari@WaXCode.net)
+- **Email**: [Salvatore.Callari@Ansbach.de](mailto:Salvatore.Callari@Ansbach.de)
 - **GitHub Private Vulnerability Reporting**: Use the [Security Advisories](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/security/advisories/new) feature to report privately.
 
 ### What to Include
@@ -30,6 +30,8 @@ If you discover a security vulnerability in CodBi, **please do not open a public
 - **Resolution**: We aim to publish a fix or mitigation as quickly as possible, depending on complexity.
 
 You will be kept informed of progress throughout the process.
+
+**Please note**: *These timeframes apply to standard business days. During holidays or out-of-office periods, an automated response will inform you of any expected delays.*
 
 ## Scope
 

@@ -290,26 +290,26 @@ process(a, x)
 ```kotlin
 /**
  * Performs the actual request to the model by first identifying the questions to ask from the received header,
- * retrieving the uploaded file and do a [PyTorch.predict]ion with this data.
+ * retrieving the uploaded file and do a prediction with this data.
  * Once all questions have been asked and the responses received everything is sent back to the client.
  * 
  * @param params
  *
- * @return  A proper message if this model is not [PyTorch.initialized] cause **DONUT** is missing in the
+ * @return  A proper message if this model is not initialized cause **LLAMA** is missing in the
  *          Plugin-Property */
 ```
 
 **Property/Field Comments:**
 - Single line format: `/** Description. */`
-- Can reference other classes: `/** See [PyTorch.resModelFiles]. */`
-- Sometimes incomplete: `/** See [PyTorch.modelName]*/` (acceptable pattern)
+- Can reference other classes: `/** See [LLAMA.resModelFiles]. */`
+- Sometimes incomplete: `/** See [LLAMA.modelName]*/` (acceptable pattern)
 
 ```kotlin
-/** See [PyTorch.resModelFiles]. */
+/** See [LLAMA.resModelFiles]. */
 override val resModelBaseURL = "https://huggingface.co/..."
 
-/** See [PyTorch.modelName]*/
-override val modelName = "donut-docvqa"
+/** See [LLAMA.modelName]*/
+override val modelName = "qwen3-1.7b"
 ```
 
 #### Inline Comments
@@ -350,7 +350,7 @@ val questionsToAsk = mutableMapOf<String, String>()
 
 ```typescript
 /**
- * Provides the {@link AI.functionality } for Donut Document Visual Question Answering.
+ * Provides the {@link AI.functionality } for LLM-based document analysis.
  *
  * @remarks
  * Maintainer: Callari, Salvatore (Salvatore.Callari@Ansbach.de) */
@@ -366,12 +366,12 @@ val questionsToAsk = mutableMapOf<String, String>()
 
 ```typescript
 /**
- * This functionality processes uploaded images using the Donut model to answer questions about documents.
+ * This functionality processes uploaded documents using the LLAMA model.
  *
  * Questions are acquired from DOM elements within the parent.parent container of the toProcess element
- * that have the class `AI_PT_DONUT_QA_Question`. Each such element should have:
+ * that have the class `AI_LLAMA_Question`. Each such element should have:
  *  - An `id` attribute (used as the question key)
- *  - A `data-cb-DonutQuestion` attribute (contains the question text)
+ *  - A `data-cb-LlamaQuestion` attribute (contains the question text)
  *
  * @param toLoad    Provided by the CodBi.
  * @param toProcess Provided by the CodBi. */
@@ -385,7 +385,7 @@ val questionsToAsk = mutableMapOf<String, String>()
 
 ## Style Comparison
 
-### Your Style (DonutDocVQA.kt)
+### Your Style (LLAMA.kt)
 - Compact, concise
 - Single-line if statements without braces
 - Compact finally blocks
@@ -439,7 +439,7 @@ var array = image.toNDArray(manager)
 
 ## Notes
 
-- This style guide is based on analysis of `DonutDocVQA.kt` and other files in the codebase
+- This style guide is based on analysis of `LLAMA.kt` and other files in the codebase
 - Patterns may evolve over time - this document should be updated accordingly
 - **Always apply the compact pattern** when generating or modifying code
 - This is the standard style for this codebase

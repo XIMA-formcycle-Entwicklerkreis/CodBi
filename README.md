@@ -21,7 +21,7 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 - **Modular by Design** — Functionalities and EPs are composable building blocks: mix and combine them freely to build a wide range of applications — from simple input masks to AI-powered document processing pipelines — without writing custom code.
 - **Empowering Collaboration** — Export and import complete CodBi elements as JSON — including executable code, description, parameter definitions, global variables, and targeted CSS classes. This fosters knowledge sharing across departments and Formcycle instances, allowing teams to benefit from pre-validated solutions.
 - **Intelligent Designer Integration** — The built-in Manager provides a seamless UI where users select elements — both built-in and custom — via point-and-click or autocomplete instead of manual typing, drastically reducing errors and lowering the entry barrier for creating smart forms.
-- **Local API-Documentation Manager** — Define, document, and manage custom CodBi elements directly in the form designer — complete with code, parameters, global variables, and CSS classes. Elements can be authored in JavaScript or TypeScript; for TypeScript, the `codbi-elements-template` project automatically generates the importable JSON. Custom elements behave identically to built-in ones and are available across all forms and in the intelligent designer interface. **Note:** Even though custom elements are available in all forms, while the code for an element is only downloaded and loaded into a form when that element is actually used by the form, keeping page weight minimal.
+- **Local API-Documentation Manager** — Define, document and manage custom CodBi elements directly in the form designer — complete with code, parameters, global variables and CSS classes. Elements can be authored in JavaScript or TypeScript; for TypeScript, the [`codbi-elements-template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/tree/main/codbi-elements-template) project automatically generates the importable JSON. Custom elements behave identically to built-in ones and are available across all forms and in the intelligent designer interface.
 - **Flexible AI Integration** — CodBi can expose its AI engines via ChatML (AIproxy) for external access, attach to external AI endpoints, and—using the specialist parameter—mix and orchestrate both local and external AI models within the same workflow.
 - **On-Premises AI Stack** — Through llama.cpp's GGUF support, high-class models like Qwen, Mistral, LLaMA 3, Phi-3, and Gemma become available for local inference. Combined with local speech-to-text via whisper.cpp (GGML) and local OCR via Tesseract (JNI), the entire AI stack runs on-premises — no unwanted external cloud dependencies.
 - **Accurate Date Reasoning** — CodBi's system prompt injects real-time calendar context (current date, weekday, days in month) and guides even small local models to calculate dates correctly through structured chain-of-thought reasoning — no cloud API required.
@@ -33,7 +33,11 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 
 Install the plugin via the plugin menu in the Formcycle backend as either a client-scoped or system-scoped plugin.
 
-This adds several settings to the form designer within the `form` tab (the properties panel on the right-hand side), including the ability to enable CodBi, select a configuration template (`default` or `xtensible`), and manage Standard Configurations.
+This adds several settings to the form designer within the `form` tab (the properties panel on the right-hand side), including the ability to enable CodBi, select the configuration template `default` (`xtensible` is for future use), and manage Standard Configurations.
+
+### 📖 Interactive Onboarding Guide
+
+An interactive onboarding form is available at **[CodBi OnBoarding](https://forms.ansbach.de/frontend-server/form/alias/1/CodBi_OnBoarding/)** — it walks you through configuration, AI setup, and DSGVO/GDPR compliance step by step.
 
 ## 🛠 Features
 
@@ -120,7 +124,7 @@ EPs (Element Placeholders) can be used in any functionality parameter to dynamic
 
 ### 📋 Standard Configurations
 
-Pre-built configurations that wire together Functionalities and EPs for common use cases. These can also be defined and managed locally via the **Local API-Documentation Manager** in the form designer.
+Pre-built configurations that wire together Functionalities and EPs for common use cases. These can also be defined and managed locally via the **Local API-Documentation Manager** in the form designer. Holistic standard configurations apply to the entire form thus just requiring the single activation click.
 
 | Category         | Configuration Name         | Description |
 |------------------|---------------------------|-------------|
@@ -150,7 +154,7 @@ The heart of CodBi's code sharing mechanism. An integrated Angular component in 
 
 ### 📐 CodBi Elements Template
 
-A ready-to-use TypeScript project template (`codbi-elements-template/`) for building custom CodBi elements in TypeScript. Includes esbuild bundling, TSDoc-to-JSON generation, and example elements. See the [template README](codbi-elements-template/README.md) for details.
+A ready-to-use TypeScript project template ([`codbi-elements-template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/tree/main/codbi-elements-template)) for building custom CodBi elements in TypeScript. Includes esbuild bundling, TSDoc-to-JSON generation, and example elements.
 
 ### 🧠 AI
 
@@ -242,7 +246,7 @@ The default LLM is configured as a convenience, but **any GGUF-compatible model 
 
 #### ✅ Validation
 
-- **OCR Verify mode** — validates that an uploaded file matches expected content (e.g., "Is this a passport photo?", "Does this contain an IBAN?" by applying proper regular expressions). Displays a configurable error message on mismatch and optionally shows a manual-verification checkbox.
+- **OCR Verify mode** — validates that an uploaded file matches expected content (e.g., "Does this contain an IBAN?" by applying proper regular expressions). Displays a configurable error message on mismatch and optionally shows a manual-verification checkbox.
 - **LLaMA Standard QA Verify mode** — sends the uploaded image to the AI with a verification question. If the answer does not pass, the upload is rejected with a configurable error text.
 - **AI attribution label** — `AI.Llama.Standard.QA` and `AI.Llama.Standard.TxtQA` display an `✨ AI-Generated` hint (configurable via `AIHint`) on AI-produced answers, satisfying EU AI Act transparency requirements.
 
@@ -537,7 +541,11 @@ If no API key is found, the script silently falls back to the free GTX endpoint 
 - **Initial Author & Lead Architect:** Salvatore Callari ([@CallariS](https://github.com/CallariS))
 - **Joint Cooperation:** Bavarian Formcycle developer community
 
-Special thanks to **[Andre Wachsmuth](https://github.com/awa-xima)**, **[Jennifer Schindler](https://github.com/er-js)** and **[Benedikt Plangger](https://github.com/N64Freak1986)** for their valuable contributions and support.
+Special thanks to:
+* **[Andre Wachsmuth](https://github.com/awa-xima)** for providing the initial build and architecture foundation, as well as his invaluable guidance throughout the project.
+* **[Jennifer Schindler](https://github.com/er-js)** for her valuable code contributions, overall management, and for advocating and promoting CodBi within the developer community.
+* **[Benedikt Plangger](https://github.com/N64Freak1986)** for his valuable code contributions.
+* **[Matthias Wagner](https://github.com/ER-WagnerMatth)** for his administrative work.
 
 Licensed under the [MIT License](LICENSE).
 

@@ -60,6 +60,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * |`AI_LLAMA_STD_NominatimDomain`         |String |`nominatim.openstreetmap.org` |Domain for reverse geocoding requests (without path).                                                                                                                       |
  * |`AI_LLAMA_STD_IpGeolocationDomain`     |String |`ipwho.is`                    |Domain for IP geolocation requests (without path).                                                                                                                          |
  * |`AI_BraveSearch_ApiKey`                |String |—                             |Brave Search API key — enables web search tool for the model                                                                                                                |
+ * |`AI_BraveSearch_MaxResults`            |Int    |`5`                           |Maximum number of Brave Search results per query (1–20).                                                                                                                    |
  * |`AI_LLAMA_STD_Language`                |String |—                             |Two-letter ISO 639-1 code (e.g. `de`, `fr`) — forces the AI to respond in this language, skipping auto-detection. Overridden by per-functionality `responselanguage` toLoad.|
  * |`AI_LLAMA_STD_SPECIALIST_XXX`          |URL    |—                             |Download URL for a specialist GGUF model named `XXX`. The name is chosen by the administrator and matched case-insensitively by the `specialist` toLoad property.           |
  * |`AI_LLAMA_STD_SPECIALIST_MMProj_XXX`   |URL    |—                             |Download URL for the specialist `XXX`'s multimodal projector (mmproj). Optional — omit if the specialist model has no vision capability.                                    |
@@ -224,6 +225,14 @@ class Standard : LLAMA() {
         ?.takeIf { it.isNotEmpty() }
         ?.let { BraveSearch.apiKey = it }
 
+    // Set BraveSearch.maxResults from plugin property (default: 5, range 1–20)
+    props
+        .getProperty("AI_BraveSearch_MaxResults")
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it in 1..20 }
+        ?.let { BraveSearch.maxResults = it }
+
     // Set BraveSearch.filterResults from plugin property (default: false)
     BraveSearch.filterResults =
         props.getProperty("AI_BraveSearch_FilterResults")?.trim()?.lowercase() in
@@ -244,6 +253,12 @@ class Standard : LLAMA() {
         ?.toIntOrNull()
         ?.takeIf { it > 0 }
         ?.let { MailBridge.maxMailsPerHour = it }
+    props
+        .getProperty("AI_Mail_MaxPerSession")
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it > 0 }
+        ?.let { MailBridge.maxMailsPerSession = it }
     props
         .getProperty("AI_Mail_Disclaimer")
         ?.trim()

@@ -203,7 +203,7 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
       }
     }
 
-    return result.join();
+    return result.join(",");
   }
   /**
    * Clears all selections prior to setting the selected configurations according to the received **data**.

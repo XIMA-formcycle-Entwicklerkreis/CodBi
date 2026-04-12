@@ -4,6 +4,7 @@ Thank you for your interest in contributing to CodBi-Dev! This document provides
 
 ## Table of Contents
 
+- [QA Testing — Contribute Without Coding](#qa-testing--contribute-without-coding)
 - [Code of Conduct](#code-of-conduct)
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
@@ -12,6 +13,39 @@ Thank you for your interest in contributing to CodBi-Dev! This document provides
 - [Pull Requests](#pull-requests)
 - [Code Style](#code-style)
 - [Reporting Issues](#reporting-issues)
+
+## QA Testing — Contribute Without Coding
+
+We are always looking for people who want to help by **testing CodBi elements** across different operating systems and browsers. You do **not** need to be a developer to participate!
+
+### How It Works
+
+We maintain a **QA portal** with dedicated test containers for each CodBi element. Each container includes instructions on what to test. After testing:
+
+1. **Your OS and browser are detected automatically** in the result area.
+2. You select whether the test was **successful** or an **error** occurred.
+3. You submit the form — the maintainer of the CodBi element receives an e-mail notification.
+4. When the maintainer fixes the reported error, they use the same container to submit an **error resolved** result.
+5. You’ll receive an automated email once the fix is deployed. Please re-test the system to ensure everything is working as expected. If the problem remains, feel free to report it again.
+
+All results are instantly reflected on the **system overview page**, which shows the current status (working / not working) per OS, browser, and CodBi element:
+
+> **[CodBi Testing — System Overview](https://forms.ansbach.de/frontend-server/form/alias/1/CodBi_Testing_Systemuebersicht)**
+
+### Tested Platforms
+
+| OS | Browsers |
+| --- | --- |
+| Windows | Firefox, Chrome, Edge |
+| macOS | Firefox, Chrome, Edge, Safari |
+| Linux | Firefox, Chrome, Chromium, Edge |
+| iOS | Firefox, Chrome, Edge, Safari |
+
+### How to Participate
+
+To start testing you will need a **Tester ID** and the **form password**. Send an e-mail to **Salvatore.Callari@Ansbach.de** to request them.
+
+---
 
 ## Code of Conduct
 

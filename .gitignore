@@ -84,10 +84,11 @@ typedoc.??.json
 tsconfig.??.json
 
 ## Generated assessment reports ##
-**/Assessments/*.html
+**/Assessments/
 
 ## Generated documentation (deployed via gh-pages branch) ##
 docs/
+**/packages/*/docs/
 .gh-pages-worktree/
 .main-worktree/
 

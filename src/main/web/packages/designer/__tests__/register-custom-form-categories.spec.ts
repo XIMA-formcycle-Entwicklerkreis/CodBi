@@ -9,12 +9,12 @@ import { resetTestState, TestState } from "./test-state.js";
 afterEach(() => resetTestState());
 
 describe("registerCustomFormProperties", () => {
-  /*it("registers all form properties for the code library", () => {
+  it("registers all form properties for the code library", () => {
     TestState.customFormCategories = [];
     TestState.language = "en";
     registerCustomFormCategories();
     expect(TestState.customFormCategories).toHaveLength(1);
     expect(TestState.customFormCategories[0]?.[0].id).toBe("codbi-cat-main");
     expect(TestState.customFormCategories[0]?.[0].label).toBe("CodBi");
-  });*/
+  });
 });

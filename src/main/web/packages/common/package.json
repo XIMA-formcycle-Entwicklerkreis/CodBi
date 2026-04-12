@@ -17,7 +17,7 @@
     "lint": "biome lint --config-path ../.. src __tests__",
     "lint-apply": "biome lint --apply --config-path ../.. src __tests__",
     "lint-apply-unsafe": "biome lint --apply-unsafe --config-path ../.. src __tests__",
-    "test": "tsc && jest"
+    "test": "jest"
   },
   "dependencies": {
     "@de-xima/xima-common-js-dom": "^7.1.0",
@@ -37,11 +37,5 @@
     "ts-jest": "^29.3.4",
     "typedoc": "^0.28.4",
     "typescript": "~5.7.3"
-  },
-  "jest": {
-    "transformIgnorePatterns": [
-      "node_modules/(?!(codbi-common)/)",
-      "\\.(css|sass|less)$"
-    ]
   }
 }

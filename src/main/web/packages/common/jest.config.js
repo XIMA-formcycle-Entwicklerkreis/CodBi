@@ -23,6 +23,7 @@ export default async () => {
     transform: {
       "^.+\\.tsx?$": ["ts-jest", {}],
     },
+    transformIgnorePatterns: ["node_modules/(?!(codbi-common)/)", "\\.(css|sass|less)$"],
     verbose: true,
   };
 };

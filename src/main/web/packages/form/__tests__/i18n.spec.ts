@@ -9,7 +9,7 @@ import { DefaultXfcMetaData, resetTestState, TestState } from "./test-state.js";
 afterEach(() => resetTestState());
 
 describe("i18n", () => {
-  /*  it("returns the localized message when the current language is English", () => {
+  it("returns the localized message when the current language is English", () => {
     TestState.xfcMetaData = { ...DefaultXfcMetaData, currentLanguage: "en" };
     TestState.xmFormI18n = { testString: "msg-en" };
     expect(i18n("form.test_string")).toBe("msg-en");
@@ -18,5 +18,5 @@ describe("i18n", () => {
     TestState.xfcMetaData = { ...DefaultXfcMetaData, currentLanguage: "de" };
     TestState.xmFormI18n = { testString: "msg-de" };
     expect(i18n("form.test_string")).toBe("msg-de");
-  });*/
+  });
 });

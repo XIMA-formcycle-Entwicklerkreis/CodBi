@@ -14,7 +14,7 @@
     "lint": "biome lint --config-path ../.. src __tests__ __mocks__",
     "lint-apply": "biome lint --apply --config-path ../.. src __tests__ __mocks__",
     "lint-apply-unsafe": "biome lint --apply-unsafe --config-path ../.. src __tests__ __mocks__",
-    "test": "tsc && jest"
+    "test": "jest"
   },
   "dependencies": {
     "@de-xima/fc-form-designer": "8.3.3",

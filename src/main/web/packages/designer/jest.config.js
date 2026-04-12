@@ -14,6 +14,7 @@ export default async () => {
     moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
     moduleNameMapper: {
       "(.+)\\.js": "$1",
+      "^codbi-common$": "<rootDir>/../common/src/index",
     },
     restoreMocks: true,
     roots: ["src", "__tests__", "__mocks__"],
@@ -24,6 +25,7 @@ export default async () => {
     transform: {
       "^(.+\\.tsx?|.+/dist/src/.+\\.jsx?|.+/__mocks__/.+\\.tsx?)$": ["ts-jest", {}],
     },
+    transformIgnorePatterns: ["node_modules/(?!(codbi-common|xdbc)/)"],
     verbose: true,
   };
 };

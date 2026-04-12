@@ -5392,7 +5392,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"canvas@npm:^2.11.2":
+"canvas@npm:2.11.2":
   version: 2.11.2
   resolution: "canvas@npm:2.11.2"
   dependencies:
@@ -5401,6 +5401,18 @@ __metadata:
     node-gyp: "npm:latest"
     simple-get: "npm:^3.0.3"
   checksum: 10c0/943368798ad1b66b18633aa34b6181e1038dac5433fc9727cd07be35f0a633f572b60d9edb95f5ff90b6a9128e86d5312035f91a2934101c73185b15d906230a
+  languageName: node
+  linkType: hard
+
+"canvas@patch:canvas@npm%3A2.11.2#~/.yarn/patches/canvas-npm-2.11.2-824d893a31.patch":
+  version: 2.11.2
+  resolution: "canvas@patch:canvas@npm%3A2.11.2#~/.yarn/patches/canvas-npm-2.11.2-824d893a31.patch::version=2.11.2&hash=c43635"
+  dependencies:
+    "@mapbox/node-pre-gyp": "npm:^1.0.0"
+    nan: "npm:^2.17.0"
+    node-gyp: "npm:latest"
+    simple-get: "npm:^3.0.3"
+  checksum: 10c0/e5c2b6498f789af2ed3fd20f39e61bbf7081e9993b9b239f42ad0022fb443c545912d5a7068f2eb31a1c7a17621b788ca443056825541d7401d278b1159ef379
   languageName: node
   linkType: hard
 

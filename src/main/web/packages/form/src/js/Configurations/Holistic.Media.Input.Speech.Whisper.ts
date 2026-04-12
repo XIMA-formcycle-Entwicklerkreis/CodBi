@@ -7,7 +7,7 @@
 export function loadConfig(): void {
   window.codbi.loadConfig({
     targets:
-      'input[type="text"]:not(.CodBi_XCL):not(.CodBi_XCL_Speech_Whisper):not(.AI_ONNX_LLAMA_Chat_Input):not([data-cb-func]), textarea:not(.CodBi_XCL):not(.CodBi_XCL_Speech_Whisper):not(.AI_ONNX_LLAMA_Chat_Input):not([data-cb-func])',
+      'input[type="text"]:not(.CodBi_XCL):not(.CodBi_XCL_Speech_Whisper):not(.AI_LLAMA_CHAT_Input):not([data-cb-func]), textarea:not(.CodBi_XCL):not(.CodBi_XCL_Speech_Whisper):not(.AI_LLAMA_CHAT_Input):not([data-cb-func])',
     FUNC: "MEDIA.INPUT.SPEECH.WHISPER",
     config: "",
   });

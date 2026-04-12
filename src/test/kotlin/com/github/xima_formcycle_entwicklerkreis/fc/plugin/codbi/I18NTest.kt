@@ -1,44 +1,66 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi
 
+import java.util.Locale
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
 
-/** Tests for I18N */
+/** Tests for I18N — EmptyResourceBundle and localize fallback behaviour. */
 class I18NTest {
-  /*@Test
-  fun localize_EMessageKey_Locale() {
-    assertEquals("test-de", localize(FORM_TEST_STRING, GERMAN))
-    assertEquals("test-en", localize(FORM_TEST_STRING, ENGLISH))
-    assertEquals("test-en", localize(FORM_TEST_STRING, Locale.forLanguageTag("klg")))
+
+  @Nested
+  inner class EmptyResourceBundleTest {
+
+    @Test
+    fun toStringReturnsEmptyBundle() {
+      assertEquals("EMPTY_BUNDLE", EmptyResourceBundle.toString())
+    }
+
+    @Test
+    fun keysEnumerationIsEmpty() {
+      assertEquals(emptyList<Any>(), EmptyResourceBundle.keys.toList())
+    }
+
+    @Test
+    fun containsKeyReturnsFalse() {
+      assertFalse(EmptyResourceBundle.containsKey("foo"))
+      assertFalse(EmptyResourceBundle.containsKey(""))
+      assertFalse(EmptyResourceBundle.containsKey("any.key"))
+    }
+
+    @Test
+    fun getStringThrows() {
+      assertTrue(EmptyResourceBundle.runCatching { this.getString("foo") }.isFailure)
+    }
   }
 
-  @Test
-  fun localize_EMessageKey_Locale_String() {
-    assertEquals("test-de", localize(FORM_TEST_STRING, GERMAN, "default"))
-    assertEquals("test-en", localize(FORM_TEST_STRING, ENGLISH, "default"))
-    assertEquals("test-en", localize(FORM_TEST_STRING, Locale.forLanguageTag("klg"), "default"))
-  }
+  @Nested
+  inner class LocalizeFallbackTest {
 
-  @Test
-  fun localize_String_Locale() {
-    assertEquals("test-de", localize("form.test_string", GERMAN))
-    assertEquals("test-en", localize("form.test_string", ENGLISH))
-    assertEquals("?missing?", localize("missing", ENGLISH))
-    assertEquals("test-en", localize("form.test_string", Locale.forLanguageTag("klg")))
-  }
+    @Test
+    fun missingKeyReturnsDefault() {
+      // When the resource bundle doesn't contain the key, the default "?key?" is returned
+      val result = localize("nonexistent.key.xyz", Locale.ENGLISH)
+      assertEquals("?nonexistent.key.xyz?", result)
+    }
 
-  @Test
-  fun localize_String_Locale_String() {
-    assertEquals("test-de", localize("form.test_string", GERMAN, "default"))
-    assertEquals("test-en", localize("form.test_string", ENGLISH, "default"))
-    assertEquals("default", localize("missing", ENGLISH, "default"))
-    assertEquals("test-en", localize("form.test_string", Locale.forLanguageTag("klg"), "default"))
-  }
+    @Test
+    fun missingKeyReturnsCustomDefault() {
+      val result = localize("nonexistent.key.xyz", Locale.ENGLISH, "custom-default")
+      assertEquals("custom-default", result)
+    }
 
-  @Test
-  fun emptyResourceBundle() {
-    assertEquals("EMPTY_BUNDLE", EmptyResourceBundle.toString())
-    assertEquals(emptyList<Any>(), EmptyResourceBundle.keys.toList())
-    assertFalse(EmptyResourceBundle.containsKey("foo"))
-    assertTrue(EmptyResourceBundle.runCatching { this.getString("foo") }.isFailure)
-  }*/
+    @Test
+    fun nullLocaleUsesEnglishFallback() {
+      // With null locale, it should not crash and should return something
+      val result = localize("nonexistent.key", null)
+      assertEquals("?nonexistent.key?", result)
+    }
+
+    @Test
+    fun unknownLocaleReturnsDefault() {
+      val result = localize("nonexistent.key", Locale.forLanguageTag("xx"))
+      assertEquals("?nonexistent.key?", result)
+    }
+  }
 }

@@ -233,9 +233,10 @@ object UrlFetcher : CodBi() {
  * grounded answer.
  *
  * ## Configuration
- * | Property                | Format         | Example     |
- * |-------------------------|----------------|-------------|
- * | `AI_BraveSearch_ApiKey` | API key string | `BSA...xyz` |
+ * | Property                    | Format         | Example     |
+ * |-----------------------------|----------------|-------------|
+ * | `AI_BraveSearch_ApiKey`     | API key string | `BSA...xyz` |
+ * | `AI_BraveSearch_MaxResults` | Integer (1–20) | `5`         |
  *
  * API docs:
  * [https://api.search.brave.com/app/documentation/web-search](https://api.search.brave.com/app/documentation/web-search)
@@ -251,8 +252,10 @@ object BraveSearch : CodBi() {
 
   /** Brave Search API endpoint. */
   private const val API_URL = "https://api.search.brave.com/res/v1/web/search"
-  /** Maximum number of results to return. */
-  private const val MAX_RESULTS = 5
+  /** Default maximum number of results to return. */
+  private const val DEFAULT_MAX_RESULTS = 5
+  /** Maximum number of results to return (configurable via `AI_BraveSearch_MaxResults`). */
+  @Volatile var maxResults: Int = DEFAULT_MAX_RESULTS
   /** Read timeout for the API call (ms). */
   private const val READ_TIMEOUT_MS = 15_000
   /** Connect timeout for the API call (ms). */
@@ -417,7 +420,7 @@ object BraveSearch : CodBi() {
     return try {
       val encodedQuery = URLEncoder.encode(cleanQuery, "UTF-8")
       val urlBuilder =
-          StringBuilder("$API_URL?q=$encodedQuery&count=$MAX_RESULTS&text_decorations=false")
+          StringBuilder("$API_URL?q=$encodedQuery&count=$maxResults&text_decorations=false")
 
       if (!country.isNullOrBlank()) {
         urlBuilder.append("&country=$country")
@@ -514,7 +517,7 @@ object BraveSearch : CodBi() {
       val json = com.google.gson.JsonParser.parseString(jsonBody).asJsonObject
       val webResults = json.getAsJsonObject("web")?.getAsJsonArray("results") ?: return emptyList()
 
-      for (i in 0 until minOf(webResults.size(), MAX_RESULTS)) {
+      for (i in 0 until minOf(webResults.size(), maxResults)) {
         val item = webResults[i].asJsonObject
         val title = item.get("title")?.asString ?: ""
         val url = item.get("url")?.asString ?: ""

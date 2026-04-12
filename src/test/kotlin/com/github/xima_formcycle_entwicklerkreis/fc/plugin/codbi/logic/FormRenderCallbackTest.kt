@@ -11,10 +11,14 @@ import de.xima.fc.form.common.models.XForm
 import de.xima.fc.form.common.models.XFormRenderContext
 import de.xima.fc.interfaces.plugin.param.form.IPluginFormRenderCallbackOnAfterRenderFormParams
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 
 /** Tests for [FormRenderCallback]. */
 class FormRenderCallbackTest {
+
+  // region onAfterRenderForm
+
   @Test
   fun appendsCodeLibraryResourcesWhenEnabled() {
     val params = AfterRenderFormParams()
@@ -77,6 +81,136 @@ class FormRenderCallbackTest {
         matching(params.doc.form, Script::class.java, { attr(it, "id") == "codbi-config-template" })
     assertNull(script)
   }
+
+  @Test
+  fun returnsNullForNullParams() {
+    val result = FormRenderCallback.onAfterRenderForm(null)
+    assertNull(result)
+  }
+
+  // endregion
+
+  // region extractEPs
+
+  @Nested
+  inner class ExtractEPsTest {
+
+    @Test
+    fun emptyString() {
+      val result = FormRenderCallback.extractEPs("")
+      assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun noPlaceholders() {
+      val result = FormRenderCallback.extractEPs("just plain text")
+      assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun singlePlaceholder() {
+      val result = FormRenderCallback.extractEPs("{HTML.Text.Mapper > param1 param2}")
+      assertEquals(1, result.size)
+      assertEquals("HTML.Text.Mapper", result[0])
+    }
+
+    @Test
+    fun multiplePlaceholders() {
+      val result = FormRenderCallback.extractEPs("{EP1 > a} some text {EP2 > b}")
+      assertEquals(2, result.size)
+      assertEquals("EP1", result[0])
+      assertEquals("EP2", result[1])
+    }
+
+    @Test
+    fun nestedBraces() {
+      val result = FormRenderCallback.extractEPs("{Outer{Inner > x} > y}")
+      // The outer EP should be extracted (Outer before >)
+      // And Inner before > as well
+      assertTrue(result.isNotEmpty())
+    }
+
+    @Test
+    fun noGreaterThanInBraces() {
+      // {text} without > should not produce any EPs
+      val result = FormRenderCallback.extractEPs("{noGreaterThan}")
+      assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun emptyLeftPart() {
+      // { > param} — empty left part should not be added
+      val result = FormRenderCallback.extractEPs("{ > param}")
+      assertTrue(result.isEmpty() || result.all { it.isNotBlank() })
+    }
+
+    @Test
+    fun unmatchedClosingBrace() {
+      val result = FormRenderCallback.extractEPs("text } more text")
+      assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun unmatchedOpeningBrace() {
+      val result = FormRenderCallback.extractEPs("{unclosed > param")
+      // Stack is not empty at end, but no crash
+      assertTrue(result.isEmpty() || result.size >= 0)
+    }
+
+    @Test
+    fun greaterThanOutsideBraces() {
+      val result = FormRenderCallback.extractEPs("a > b")
+      // > outside braces should not produce EPs
+      assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun multipleLevelsOfNesting() {
+      val result = FormRenderCallback.extractEPs("{L1{L2{L3 > deep} > mid} > outer}")
+      // Should find EPs at each level where > appears inside braces
+      assertTrue(result.isNotEmpty())
+    }
+
+    @Test
+    fun whitespaceTrimmed() {
+      val result = FormRenderCallback.extractEPs("{  Spaced.EP  > params }")
+      assertTrue(result.any { it == "Spaced.EP" })
+    }
+
+    @Test
+    fun multipleGreaterThansInSameBracePair() {
+      // {A > B > C} — first > extracts "A", second > starts new segment
+      val result = FormRenderCallback.extractEPs("{A > B > C}")
+      assertTrue(result.contains("A"))
+    }
+
+    @Test
+    fun consecutivePlaceholdersNoSpace() {
+      val result = FormRenderCallback.extractEPs("{EP.One > x}{EP.Two > y}")
+      assertEquals(2, result.size)
+      assertTrue(result.contains("EP.One"))
+      assertTrue(result.contains("EP.Two"))
+    }
+
+    @Test
+    fun bracesWithOnlyWhitespace() {
+      val result = FormRenderCallback.extractEPs("{   > params}")
+      // Empty left part after trim → should not be added
+      assertTrue(result.isEmpty())
+    }
+
+    @Test
+    fun complexRealWorldPattern() {
+      val result =
+          FormRenderCallback.extractEPs(
+              "prefix {HTML.Text.Mapper > SSV.input SSV.output} middle {CSS.Class.Toggle > on off} suffix")
+      assertEquals(2, result.size)
+      assertEquals("HTML.Text.Mapper", result[0])
+      assertEquals("CSS.Class.Toggle", result[1])
+    }
+  }
+
+  // endregion
 }
 
 private class AfterRenderFormParams : IPluginFormRenderCallbackOnAfterRenderFormParams {

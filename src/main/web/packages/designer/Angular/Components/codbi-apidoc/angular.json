@@ -17,7 +17,6 @@
         "build": {
           "builder": "@angular/build:application",
           "options": {
-            "outputHashing": "none",
             "browser": "projects/manager/src/main.ts",
             "tsConfig": "projects/manager/tsconfig.app.json",
             "inlineStyleLanguage": "scss",
@@ -46,8 +45,7 @@
                   "maximumWarning": "20kB",
                   "maximumError": "200kB"
                 }
-              ],
-              "outputHashing": "none"
+              ]
             },
             "development": {
               "optimization": false,
@@ -75,7 +73,6 @@
         "test": {
           "builder": "@angular/build:karma",
           "options": {
-            "outputHashing": "none",
             "tsConfig": "projects/manager/tsconfig.spec.json",
             "inlineStyleLanguage": "scss",
             "assets": [

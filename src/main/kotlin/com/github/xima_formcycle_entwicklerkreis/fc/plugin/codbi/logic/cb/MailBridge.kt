@@ -23,12 +23,23 @@ import java.util.concurrent.atomic.AtomicInteger
  * | `AI_Mail_Enabled`           | `true`/`false` | `true`              |
  * | `AI_Mail_AllowedRecipients` | Regex pattern  | `.*@mycompany\.com` |
  * | `AI_Mail_MaxPerHour`        | Integer        | `10`                |
+ * | `AI_Mail_MaxPerSession`     | Integer        | `3`                 |
  * | `AI_Mail_Disclaimer`        | Free text      | `AI-Generated`      |
  */
 object MailBridge : CodBi() {
   init {
     idLogMessages = "AI / MailBridge"
   }
+
+  // region Constants
+
+  /** Default per-session maximum to prevent a single conversation from spamming. */
+  private const val DEFAULT_SESSION_MAX_MAILS = 3
+
+  /** Default global hourly cap. */
+  private const val GLOBAL_MAX_MAILS_PER_HOUR = 10
+
+  // endregion Constants
 
   // region Configuration (set during plugin initialisation)
 
@@ -41,18 +52,13 @@ object MailBridge : CodBi() {
   /** Maximum mails per hour (global across all sessions). */
   @Volatile var maxMailsPerHour: Int = 10
 
+  /** Maximum mails per streaming session. Customise via `AI_Mail_MaxPerSession`. */
+  @Volatile var maxMailsPerSession: Int = DEFAULT_SESSION_MAX_MAILS
+
   /** Disclaimer text appended to every AI-sent email. Customise via `AI_Mail_Disclaimer`. */
   @Volatile var aiDisclaimer: String = "AI-Generated"
 
   // endregion Configuration
-
-  // region Constants
-
-  /** Per-session maximum to prevent a single conversation from spamming. */
-  private const val SESSION_MAX_MAILS = 3
-
-  /** Default global hourly cap. */
-  private const val GLOBAL_MAX_MAILS_PER_HOUR = 10
 
   /**
    * Matches `CALL:mail(to='...', subject='...', body='...')` in model output (complete pattern).
@@ -131,12 +137,12 @@ object MailBridge : CodBi() {
 
     // Per-session rate limit
     val sessionCount = sessionMailCounts.computeIfAbsent(sessionId) { AtomicInteger(0) }
-    if (sessionCount.get() >= SESSION_MAX_MAILS) {
+    if (sessionCount.get() >= maxMailsPerSession) {
       log(
           LogLevel.WARNING,
-          "Session $sessionId exceeded per-session mail limit ($SESSION_MAX_MAILS)")
+          "Session $sessionId exceeded per-session mail limit ($maxMailsPerSession)")
       return MailResult(
-          success = false, error = "\uD83D\uDEAB $SESSION_MAX_MAILS/$SESSION_MAX_MAILS")
+          success = false, error = "\uD83D\uDEAB $maxMailsPerSession/$maxMailsPerSession")
     }
 
     // Global hourly rate limit

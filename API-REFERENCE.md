@@ -6,7 +6,7 @@
 
 ## Overview
 
-The CodBi AI Proxy exposes local AI inference capabilities (LLaMA, Whisper, Tesseract) to external applications through a secure HTTP gateway. All requests route through the Formcycle plugin servlet.
+The CodBi AI Proxy exposes local AI inference capabilities (LLaMA, Whisper, Tesseract) to external applications through a secure HTTP gateway. All requests route through the formcycle plugin servlet.
 
 **Base URL:**
 

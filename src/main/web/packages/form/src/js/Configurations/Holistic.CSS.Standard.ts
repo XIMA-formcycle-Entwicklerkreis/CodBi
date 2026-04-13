@@ -169,6 +169,9 @@ export function loadConfig(): void {
       /* #endregion Print */
       /* #region Dark Mode */
       @media( prefers-color-scheme : dark ) {
+        .LLAMA_AI_Hint,
+        .LLAMA_Chat_AiHint { color: white !important ;}
+        
         .modern input.XTextField.XItem { border-color : #ACCENT50 !important ;}
 
         legend,

@@ -42,8 +42,6 @@ export class HTML_Text_Injector {
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "placeholder")
-    @IF.PRE(new TYPE("object"), new INSTANCE(Array<string>), "replacement")
-    @IF.PRE(new TYPE("object"), new TYPE("string"), "replacement", true)
     @DEFINED.PRE("replacement")
     @REGEX.PRE(REGEX.stdExp.property, "property")
     toLoad: { [key: string]: unknown },

@@ -1,6 +1,6 @@
 # CodBi — Release Notes & Update History
 
-> **Low-Code Logic Engine for XIMA Formcycle & Privacy-First Local AI**
+> **Low-Code Logic Engine for XIMA formcycle & Privacy-First Local AI**
 >
 > This document tracks all significant changes, new features, enhancements, and fixes across CodBi releases. For contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md). For security policies, see [SECURITY.md](SECURITY.md).
 
@@ -15,7 +15,7 @@
 
 ## Version 1.0.0 — Pre-Release (In Development)
 
-**Target Platform:** XIMA Formcycle 8.3.x &nbsp;|&nbsp; **Runtime:** Java 11+ / Kotlin 1.9 &nbsp;|&nbsp; **Frontend:** TypeScript 5.7 / Yarn 4.6
+**Target Platform:** XIMA formcycle 8.3.x &nbsp;|&nbsp; **Runtime:** Java 11+ / Kotlin 1.9 &nbsp;|&nbsp; **Frontend:** TypeScript 5.7 / Yarn 4.6
 
 ---
 
@@ -39,16 +39,16 @@
 
 ### Phase 6 — Whisper Visual Indicator & Repeatable Container Support
 
-**Focus:** Whisper UX improvements and Formcycle repeatable container compatibility.
+**Focus:** Whisper UX improvements and formcycle repeatable container compatibility.
 
 **New Features**
 * **Whisper Microphone Indicator:** Added a real-time visual volume gauge.
-* **Repeatable Container Support:** Made all AI functionalities (`AI.Llama.Chat`, `AI.Llama.Standard.QA`, `AI.Llama.Standard.TxtQA`, `AI.OCR`) fully compatible with Formcycle repeatable containers, handling dynamic DOM attachment/detachment gracefully.
+* **Repeatable Container Support:** Made all AI functionalities (`AI.Llama.Chat`, `AI.Llama.Standard.QA`, `AI.Llama.Standard.TxtQA`, `AI.OCR`) fully compatible with formcycle repeatable containers, handling dynamic DOM attachment/detachment gracefully.
 
 **Fixes**
 * **HTML.Input.Trans.RegEx:** Fixed inability to enter accented characters (e.g., `é`) in `<input>` elements tagged with the regex transformer.
 * **checkAttributes() Optimization:** Optimized the core `checkAttributes()` invocation path for faster CodBi element initialization.
-* **High-Latency DOM Detachment:** Resolved an issue where Formcycle detached DOM elements inside repeatable containers on slow network connections, causing CodBi elements to lose their bindings.
+* **High-Latency DOM Detachment:** Resolved an issue where formcycle detached DOM elements inside repeatable containers on slow network connections, causing CodBi elements to lose their bindings.
 
 ---
 
@@ -86,9 +86,9 @@
 * **Local API-Documentation Manager:** An integrated Angular component in the form designer for creating, documenting, and managing custom CodBi elements (Functionalities, EPs, Standard Configurations) directly in the browser.
   * Visual point-and-click/autocomplete selection of elements instead of manual typing.
   * Full CRUD operations with parameter definitions, global variables, CSS classes, and executable code.
-  * JSON import/export for sharing validated form logic across Formcycle instances.
+  * JSON import/export for sharing validated form logic across formcycle instances.
   * Automatic duplicate renaming on import with clean postfixing.
-  * Synchronization with the Formcycle backend (controlled via `APIDoc_UsersAllowedToSYNC`).
+  * Synchronization with the formcycle backend (controlled via `APIDoc_UsersAllowedToSYNC`).
   * Local code deletion capability.
 * **CodBi Elements Template:** Published a TypeScript project template (`codbi-elements-template/`) with esbuild bundling and TSDoc-to-JSON generation. Custom elements authored in TypeScript are automatically compiled into `.json` files directly importable via the Manager including docs, parameter and css class definitions.
 
@@ -158,10 +158,10 @@
 
 **_Initial architectural foundation and core platform scaffolding developed by @awa-xima._**
 
-**Focus:** Core architecture, build system, and initial Formcycle integration.
+**Focus:** Core architecture, build system, and initial formcycle integration.
 
 **Architecture**
-* **Plugin Skeleton:** Maven-based Kotlin/TypeScript plugin for Formcycle 8.3.x with frontend-maven-plugin for zero-install Node.js/Yarn builds.
+* **Plugin Skeleton:** Maven-based Kotlin/TypeScript plugin for formcycle 8.3.x with frontend-maven-plugin for zero-install Node.js/Yarn builds.
 * **Yarn Berry Monorepo:** Frontend organized as a Yarn 4.x workspace with packages: `common`, `designer`, `form`.
 * **Form Render Pipeline:** `FormRenderCallback` → `FormRenderProcessor` → injected `<script type="module">` tags → `window.codbi.loadConfigs()` → `checkAttributes()` execution chain.
 
@@ -172,8 +172,8 @@
 * Maven Wrapper (`mvnw` / `mvnw.cmd`) for reproducible builds.
 * IDE configurations for VS Code, IntelliJ, and Eclipse in `ide/` directory.
 * Profiles: `dev` (fast builds, no minification, no tests) and default (full build with tests).
-* `fc-deploy:deploy` for hot-deploying to a running Formcycle instance.
-* `fc-server:run-ms-war` for launching a local Formcycle server.
+* `fc-deploy:deploy` for hot-deploying to a running formcycle instance.
+* `fc-server:run-ms-war` for launching a local formcycle server.
 
 ---
 
@@ -188,7 +188,7 @@
 | **Testing** | Jest + ts-jest (Frontend), JUnit 5 (Backend) | 29.7 / 5.11 |
 | **Formatting** | Spotless (ktfmt + Biome) | — |
 | **AI Inference** | llama.cpp (GGUF), whisper.cpp (GGML), Tesseract (JNI) | — |
-| **Platform** | XIMA Formcycle | 8.3.3 |
+| **Platform** | XIMA formcycle | 8.3.3 |
 | **Runtime** | Java | 11+ |
 | **Node.js** | (build-time only) | 22.14.0 |
 

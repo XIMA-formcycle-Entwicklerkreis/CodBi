@@ -52,7 +52,6 @@ import { DEFINED } from "xdbc/src/DBC/DEFINED";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
-import { ZOD } from "xdbc/src/DBC/ZOD";
 // #endregion XDBC
 // #endregion Imports
 // #region Interfaces
@@ -2051,7 +2050,7 @@ export class Manager implements AfterViewInit {
       fslElementplaceholder: "[]",
     };
 
-    const toConvert = ZOD.tsCheck<TreeNode>(this.currentlySelectedTreeNode, Manager.zshTeeNode);
+    const toConvert = this.currentlySelectedTreeNode;
     const parentBase = this.getTreeNodeBase(toConvert) || undefined;
 
     switch (this.activeTab) {
@@ -3407,15 +3406,7 @@ export class Manager implements AfterViewInit {
         for (const newItem of itemsToAdd) {
           // #region Check if an item with the same name already exists in currentArray...
           const exists = currentArray.some(
-            (existingItem: object) =>
-              ZOD.tsCheck<{ Name: string }>(
-                existingItem,
-                z.lazy(() =>
-                  z.object({
-                    Name: z.string(),
-                  }),
-                ),
-              ).Name === newItem.Name,
+            (existingItem: object) => (existingItem as { Name?: string }).Name === newItem.Name,
           );
           // #endregion Check if an item with the same name already exists in currentArray...
           if (!exists) {

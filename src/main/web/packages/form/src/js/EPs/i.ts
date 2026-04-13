@@ -31,9 +31,7 @@ export class I {
    * @throws A {@link CodBiError } if the specified global variable couldn't be found. */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length", "Hasn't the index to receive has been specified?")
     @AE.PRE(new OR([new TYPE("string"), new TYPE("number")]), 0)
-    @AE.PRE(new IF(new TYPE("string"), new REGEX(REGEX.stdExp.cssSelector)), 0)
     params: Array<string>,
   ): string {
     if (!Array.isArray(params[1])) {

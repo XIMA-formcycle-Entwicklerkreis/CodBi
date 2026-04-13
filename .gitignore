@@ -97,6 +97,9 @@ temp-*.txt
 debug_input_image.png
 jar-structure.txt
 
+## Runtime-generated AI templates ##
+qwen3-thinking-template.jinja
+
 ## Build-generated artifacts ##
 dependency-reduced-pom.xml
 gpu-backend.txt

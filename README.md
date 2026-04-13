@@ -1,5 +1,5 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Formcycle](https://img.shields.io/badge/platform-Formcycle-blue.svg)](https://www.xima.de/formcycle/)
+[![formcycle](https://img.shields.io/badge/platform-formcycle-blue.svg)](https://www.xima.de/formcycle/)
 [![Java 11+](https://img.shields.io/badge/java-11%2B-orange.svg)](https://adoptopenjdk.net/)
 [![Kotlin](https://img.shields.io/badge/kotlin-%3E%3D1.8.0-7f52ff.svg)](https://kotlinlang.org/)
 [![TypeScript](https://img.shields.io/badge/typescript-%3E%3D4.9.0-3178c6.svg)](https://www.typescriptlang.org/)
@@ -7,9 +7,9 @@
 
 # Code Library (CodBi)
 
-**Low-Code Logic Engine for Formcycle & Privacy-First Local AI**
+**Low-Code Logic Engine for formcycle & Privacy-First Local AI**
 
-A [XIMA Formcycle](https://www.xima.de/formcycle/) plugin that provides a comprehensive JavaScript library of Functionalities, Element Placeholders (EPs), and Standard Configurations for web forms.
+A [XIMA formcycle](https://www.xima.de/formcycle/) plugin that provides a comprehensive JavaScript library of Functionalities, Element Placeholders (EPs), and Standard Configurations for web forms.
 
 CodBi seamlessly integrates AI-powered features (document validation, data extraction, OCR, Speech-To-Text, and AI-Chat). All AI engines are automatically downloaded and configured on first use, with the LLM chat engine supporting any GGUF-compatible model. Additionally, the built-in Local API-Documentation Manager allows users to define, manage, and share custom CodBi elements across all forms on a server, treating them exactly like built-in features.
 
@@ -19,7 +19,7 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 ### 🚀 Key Highlights
 
 - **Modular by Design** — Functionalities and EPs are composable building blocks: mix and combine them freely to build a wide range of applications — from simple input masks to AI-powered document processing pipelines — without writing custom code.
-- **Empowering Collaboration** — Export and import complete CodBi elements as JSON — including executable code, description, parameter definitions, global variables, and targeted CSS classes. This fosters knowledge sharing across departments and Formcycle instances, allowing teams to benefit from pre-validated solutions.
+- **Empowering Collaboration** — Export and import complete CodBi elements as JSON — including executable code, description, parameter definitions, global variables, and targeted CSS classes. This fosters knowledge sharing across departments and formcycle instances, allowing teams to benefit from pre-validated solutions.
 - **Intelligent Designer Integration** — The built-in Manager provides a seamless UI where users select elements — both built-in and custom — via point-and-click or autocomplete instead of manual typing, drastically reducing errors and lowering the entry barrier for creating smart forms.
 - **Local API-Documentation Manager** — Define, document and manage custom CodBi elements directly in the form designer — complete with code, parameters, global variables and CSS classes. Elements can be authored in JavaScript or TypeScript; for TypeScript, the [`codbi-elements-template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/tree/main/codbi-elements-template) project automatically generates the importable JSON. Custom elements behave identically to built-in ones and are available across all forms and in the intelligent designer interface.
 - **Flexible AI Integration** — CodBi can expose its AI engines via ChatML (AIproxy) for external access, attach to external AI endpoints, and—using the specialist parameter—mix and orchestrate both local and external AI models within the same workflow.
@@ -31,7 +31,7 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 
 ## 📥 Installation
 
-Install the plugin via the plugin menu in the Formcycle backend as either a client-scoped or system-scoped plugin.
+Install the plugin via the plugin menu in the formcycle backend as system-scoped plugin.
 
 This adds several settings to the form designer within the `form` tab (the properties panel on the right-hand side), including the ability to enable CodBi, select the configuration template `default` (`xtensible` is for future use), and manage Standard Configurations.
 
@@ -149,8 +149,8 @@ The heart of CodBi's code sharing mechanism. An integrated Angular component in 
 
 - **Visual Selection** — Browse and search all available elements; select them via point-and-click instead of typing technical names, eliminating typo-related errors
 - **Define Custom Logic** — Create and document your own elements with parameters and executable code directly in the browser
-- **Logic Portability** — Export validated form logic as JSON and import it on other Formcycle instances or share it with the community, avoiding redundant development
-- **Synchronization** — Keep local definitions in sync with the Formcycle backend (use `APIDoc_UsersAllowedToSYNC` to define who may sync)
+- **Logic Portability** — Export validated form logic as JSON and import it on other formcycle instances or share it with the community, avoiding redundant development
+- **Synchronization** — Keep local definitions in sync with the formcycle backend (use `APIDoc_UsersAllowedToSYNC` to define who may sync)
 
 ### 📐 CodBi Elements Template
 
@@ -158,7 +158,7 @@ A ready-to-use TypeScript project template ([`codbi-elements-template`](https://
 
 ### 🧠 AI
 
-CodBi ships a full local AI inference stack that runs entirely on the Formcycle server — no cloud services, no data transfer, simplified DSGVO/GDPR scope.
+CodBi ships a full local AI inference stack that runs entirely on the formcycle server — no cloud services, no data transfer, simplified DSGVO/GDPR scope.
 
 #### 🏗 System Architecture
 
@@ -173,9 +173,9 @@ flowchart LR
     UI --> Click --> Export
   end
 
-  subgraph JVM["☕ Formcycle Server · JVM"]
+  subgraph JVM["☕ formcycle Server · JVM"]
     direction TB
-    FC["⚙️ Formcycle Core"]:::roundRect
+    FC["⚙️ formcycle Core"]:::roundRect
     CodBi["🔌 CodBi Plugin<br/>Kotlin"]:::roundRect
     Manager["📚 API-Doc<br/>Manager"]:::roundRect
     Proxy["🔒 AI Proxy<br/>Auth + Whitelist"]:::roundRect
@@ -267,16 +267,16 @@ Key compliance properties:
 
 - **No data leaves the server** for LLaMA, Whisper, and Tesseract — all inference is `localhost`-only (unless an external AI to use is specified or BraveAPI-Search is enabled).
 - **AI Proxy** with IP whitelist and HTTP Basic Auth gates external access to the AI endpoints. All requests are logged to a database table with anonymised credentials (SHA-256) and truncated IPs.
-- **No separate server infrastructure** — the entire AI stack runs on the same machine as Formcycle.
-- **Image caching** uses server-side temporary storage with automatic expiration (default: 600 s) and a janitor thread. Caching is only used on images that're upload along with a cache-id. Otherwise the images are kept in RAM only.
+- **No separate server infrastructure** — the entire AI stack runs on the same machine as formcycle.
+- **Image caching** uses server-side temporary storage with automatic expiration (default: 600 s) and a janitor thread. Caching is only used on images that're uploaded along with a cache-id. Otherwise the images are kept in RAM only.
 
 #### ⚙️ Configuration
 
-AI features are activated via Formcycle plugin properties:
+AI features are activated via formcycle plugin properties:
 
 | Property | Default | Description |
 |---|---|---|
-| `Active_AI` | — | Comma-separated list of engines to enable (e.g., `llama_engine`) |
+| `Active_AI` | — | Space-separated list of engines to enable (e.g., `llama_engine`) |
 | `AI_LLAMA_ENGINE_Port` | `8392` | Local port for the LLaMA server |
 | `AI_LLAMA_ENGINE_Threads` | Physical cores | CPU threads for inference |
 | `AI_LLAMA_ENGINE_CtxSize` | `32768` | Context window size (tokens) |
@@ -505,7 +505,7 @@ and 3 sub packages in the `packages` folder. Each package is also a separate Yar
 * `packages/designer` - Code for the form designer, e.g. to add new properties to the form designer.
 * `packages/form` - Code for the web form, i.e. the actual code library, such as additional validator functions etc.
 
-We use TypeScript to ensure the code is consistent and conforms to the formcycle API. formcycle provides packages that
+We use TypeScript to ensure the code is consistent and conforms to the formcycle API. Formcycle provides packages that
 contain the types for the form designer API (`@de-xima/fc-form-designer`) and the web form API
 (`@de-xima/fc-form-renderer`).
 
@@ -539,7 +539,7 @@ If no API key is found, the script silently falls back to the free GTX endpoint 
 ## 📜 License & Authorship
 
 - **Initial Author & Lead Architect:** Salvatore Callari ([@CallariS](https://github.com/CallariS))
-- **Joint Cooperation:** Bavarian Formcycle developer community
+- **Joint Cooperation:** Bavarian formcycle developer community
 
 Special thanks to:
 * **[Andre Wachsmuth](https://github.com/awa-xima)** for providing the initial build and architecture foundation, as well as his invaluable guidance throughout the project.

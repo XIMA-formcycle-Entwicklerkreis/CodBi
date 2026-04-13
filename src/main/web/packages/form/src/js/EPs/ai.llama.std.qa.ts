@@ -44,7 +44,6 @@ export class AI_LLAMA_STD_QA {
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "1")
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "2")
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "6")
-    @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "7")
     params: Array<string>,
   ): Promise<string | object> {
     const $ = getJQuery();

@@ -6,7 +6,9 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.RESOURCE_PATH_CODBI_SCRIPT
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.EMessageKey.*
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeValidationResult
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginValidationData
 import de.xima.fc.interfaces.plugin.param.form.IPluginFormResourcesParams
 import de.xima.fc.interfaces.plugin.retval.form.IPluginFormResourceDescriptor
 import de.xima.fc.plugin.interfaces.IFCRemoteSyncPlugin
@@ -48,6 +50,27 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
   override fun getDescription(locale: Locale?): String {
     return localize(PLUGIN_FORM_RESOURCES_DESC, locale ?: Locale.ENGLISH)
   }
+
+  // region Tenant scope validation
+  /**
+   * Rejects tenant-level installation. CodBi must be installed as a **system plugin** because its
+   * AI services bind local server ports that would conflict across tenants.
+   */
+  override fun validateConfigurationData(
+      configData: IPluginValidationData
+  ): IPluginInitializeValidationResult? {
+    if (configData.client != null) {
+      return object : IPluginInitializeValidationResult {
+        override fun isValid() = false
+
+        override fun getErrorMessages() =
+            listOf("CodBi must be installed as a system plugin, not as a tenant plugin.")
+      }
+    }
+    return null
+  }
+
+  // endregion Tenant scope validation
 
   /**
    * Registers all JS & CSS files from the **BASE_RESOURCE_PACKAGE** properly.

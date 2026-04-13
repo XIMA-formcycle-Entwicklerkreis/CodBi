@@ -6,13 +6,13 @@
 
 **TypeScript Scaffold for Custom CodBi Elements**
 
-A ready-to-use project template for building **CodBi elements** in **TypeScript** — including Functionalities, Element Placeholders (EPs), and Standard Configurations — with full documentation support. Build outputs are directly importable via the **CodBi Local API-Documentation Manager** in Formcycle.
+A ready-to-use project template for building **CodBi elements** in **TypeScript** — including Functionalities, Element Placeholders (EPs), and Standard Configurations — with full documentation support. Build outputs are directly importable via the **CodBi Local API-Documentation Manager** in formcycle.
 
 ---
 
 ## 🚀 Key Highlights
 
-- 🛠️ **Seamless Integration** — Build, document, and export custom CodBi elements as JSON for direct import into CodBi's Local API-Documentation Manager in Formcycle Designer.
+- 🛠️ **Seamless Integration** — Build, document, and export custom CodBi elements as JSON for direct import into CodBi's Local API-Documentation Manager in formcycle Designer.
 - 📝 **TypeScript-First** — Author elements in modern TypeScript (strict mode, ESNext, JSX supported).
 - 📄 **Automated Documentation** — TSDoc comments are automatically extracted and included in the generated JSON for rich in-designer documentation.
 - 🗂 **Modular Structure** — Organize your code by Functionalities, EPs, and Configurations for clarity and maintainability.
@@ -35,7 +35,7 @@ npm run build
 npm run watch
 ```
 
-After building, find importable `.json` files in `dist/APIDoc/`. Import them into Formcycle via the APIDoc Manager's **Import** button.
+After building, find importable `.json` files in `dist/APIDoc/`. Import them into formcycle via the APIDoc Manager's **Import** button.
 
 ### ⚡ Build a Single Element
 
@@ -321,7 +321,7 @@ Supported TSDoc → HTML conversions:
 
 ---
 
-## 📥 Importing into Formcycle
+## 📥 Importing into formcycle
 
 1. Build the project (`npm run build`)
 2. Open the **CodBi Local APIDoc Manager** in FORMCYCLE Designer

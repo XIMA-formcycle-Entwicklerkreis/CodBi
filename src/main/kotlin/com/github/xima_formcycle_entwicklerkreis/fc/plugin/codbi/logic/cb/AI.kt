@@ -4,7 +4,9 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 // #region XIMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeValidationResult
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginValidationData
 import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -182,6 +184,30 @@ abstract class AI : CodBi(), IPluginServletAction {
   protected var msExpirationIDedImages: Long = 10 * 60 * 1000L
   /** The service that is responsible for keeping the [cacheIDedImages] clean. */
   protected var janitorIDedImages: ScheduledExecutorService? = null
+
+  // region Tenant scope validation
+  /**
+   * Rejects tenant-level installation. CodBi must be installed as a **system plugin** because its
+   * AI services (Whisper, LLAMA) bind local server ports and manage heavyweight processes that
+   * would conflict when instantiated once per tenant.
+   */
+  override fun validateConfigurationData(
+      configData: IPluginValidationData
+  ): IPluginInitializeValidationResult? {
+    if (configData.client != null) {
+      return object : IPluginInitializeValidationResult {
+        override fun isValid() = false
+
+        override fun getErrorMessages() =
+            listOf(
+                "CodBi must be installed as a system plugin, not as a tenant plugin. " +
+                    "Its AI services bind local server ports that would conflict across tenants.")
+      }
+    }
+    return null
+  }
+
+  // endregion Tenant scope validation
 
   /**
    * Initializes the AI components by reading configuration properties. Specifically, it acquires

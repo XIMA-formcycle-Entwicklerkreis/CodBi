@@ -141,7 +141,6 @@ export class AI_LLAMA_CHAT {
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages, maxpixelsize")
     // #region Rotation constraint.
     @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotation")
-    @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotation")
     @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{3}$/i), "language")
     @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{2}$/i), "responselanguage")
     // #endregion Rotation constraint.

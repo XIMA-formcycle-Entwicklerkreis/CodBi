@@ -145,8 +145,6 @@ export class AI_LLAMA_STANDARD_QA {
       "According to the EU AI Act, AI-generated content must be clearly labeled. Changing or disabling the AIHint may lead to non-compliance in certain jurisdictions.",
     )
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages")
-    @IF.PRE(new TYPE("string"), new REGEX(/^(90|180|270)$/), "rotation")
-    @IF.PRE(new TYPE("number"), new OR([new EQ(90), new EQ(180), new EQ(270)]), "rotation")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxPixelSize")
     @IF.PRE(new TYPE("string"), new REGEX(/^[a-z]{2}$/i), "responselanguage")
     @OR.PRE([new TYPE("string"), new TYPE("boolean")], "internetaccess, thinking, caseinsensitive")

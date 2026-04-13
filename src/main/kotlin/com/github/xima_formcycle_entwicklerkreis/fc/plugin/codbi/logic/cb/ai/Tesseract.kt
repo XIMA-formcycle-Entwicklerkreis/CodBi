@@ -861,6 +861,10 @@ class TesseractAction : AI() {
   override fun validateConfigurationData(
       configData: IPluginValidationData
   ): IPluginInitializeValidationResult? {
+    super.validateConfigurationData(configData)?.let {
+      return it
+    }
+
     if (!commonInit(configData.properties, pluginRoot)) return null
 
     val languages = configData.properties.getProperty("AI_Tesseract_Languages")

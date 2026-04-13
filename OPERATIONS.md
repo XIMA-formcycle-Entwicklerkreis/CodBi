@@ -10,7 +10,7 @@
 
 | Requirement | Minimum | Notes |
 |-------------|---------|-------|
-| **XIMA Formcycle** | 8.3.x | Server must be accessible |
+| **XIMA formcycle** | 8.3.x | Server must be accessible |
 | **Java** | 11+ | JDK 11 or newer on the server |
 | **OS** | Windows x64, Linux x64 | macOS ARM64 supported for LLaMA only |
 | **RAM** | 4 GB (no AI) / 8 GB (AI) | 16 GB+ recommended for concurrent AI inference |
@@ -26,13 +26,13 @@
 # Quick dev build (non-minified, skip tests)
 ./mvnw package -Pdev
 
-# Build + hot-deploy to running Formcycle
+# Build + hot-deploy to running formcycle
 ./mvnw -Pdev -DskipTests=true \
   -DfcDeployUrl=http://localhost:8080/xima-formcycle \
   -DfcDeployToken=admin \
   fc-deploy:deploy
 
-# Launch a local Formcycle development server
+# Launch a local formcycle development server
 ./mvnw fc-server:run-ms-war
 ```
 
@@ -41,16 +41,16 @@
 ### 1.3 Plugin Installation
 
 1. Build the JAR: `./mvnw clean package`
-2. Open Formcycle Admin → **System** → **Plugins**
+2. Open formcycle Admin → **System** → **Plugins**
 3. Upload `target/fc-plugin-codbi-1.0.0-SNAPSHOT.jar`
 4. Choose scope: **Client** (single mandant) or **System** (all mandants)
-5. Restart Formcycle if prompted
+5. Restart formcycle if prompted
 
 ### 1.4 Plugin Removal
 
 1. Disable all AI modules first (set `Active_AI` to empty)
-2. Restart Formcycle to release JNI locks (Tesseract)
-3. Uninstall plugin via Formcycle Admin
+2. Restart formcycle to release JNI locks (Tesseract)
+3. Uninstall plugin via formcycle Admin
 4. (Optional) Delete `<pluginFolder>/ai/` directory to remove downloaded models and binaries
 
 ---
@@ -201,7 +201,7 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 
 ### 3.1 Startup Sequence
 
-When Formcycle starts and CodBi initializes:
+When formcycle starts and CodBi initializes:
 
 1. Plugin `initialize()` reads `Active_AI` property
 2. For each enabled module:
@@ -247,7 +247,7 @@ On plugin `shutdown()`:
 - Hash verification for integrity on supported downloads
 - Progress tracked by `DownloadManager`
 
-> **Tesseract note:** Once activated, JNI native libraries are locked in memory. To fully remove Tesseract files, disable → restart Formcycle → then delete.
+> **Tesseract note:** Once activated, JNI native libraries are locked in memory. To fully remove Tesseract files, disable → restart formcycle → then delete.
 
 ---
 
@@ -334,7 +334,7 @@ This provides GDPR-compliant audit logging without storing personally identifiab
 
 | Symptom | Cause | Solution |
 |---------|-------|----------|
-| "JNI library locked" | Tesseract DLL in use | Disable Tesseract → restart Formcycle → then delete files |
+| "JNI library locked" | Tesseract DLL in use | Disable Tesseract → restart formcycle → then delete files |
 | Low OCR accuracy | Wrong language | Set `AI_Tesseract_Languages` to match document language(s) |
 | "Maven download failed" | Firewall blocking Maven Central | Set `AI_Tesseract_MavenRepository` to internal mirror |
 

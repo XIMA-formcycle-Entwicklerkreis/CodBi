@@ -102,7 +102,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Phase 1 — Platform Foundation
 
 #### Added
-- Maven-based Kotlin/TypeScript plugin skeleton for Formcycle 8.3.x
+- Maven-based Kotlin/TypeScript plugin skeleton for formcycle 8.3.x
 - Yarn Berry monorepo with `common`, `designer`, `form` workspace packages
 - Form render pipeline: `FormRenderCallback` → `FormRenderProcessor` → `loadConfigs()` → `checkAttributes()`
 - Git hooks: automatic code formatting via spotless (ktfmt + Biome)

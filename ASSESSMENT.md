@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-CodBi is a **~58,700 LOC full-stack enterprise plugin** for the XIMA Formcycle platform, written in **Kotlin** (backend, ~26K LOC) and **TypeScript** (frontend, ~33K LOC). It transforms a standard form builder into an intelligent business process automation platform — delivering **82 composable form elements**, a **privacy-first on-premises AI stack** (LLM, OCR, Speech-to-Text), **enterprise integrations** (LDAP, BayVIS, OpenPLZ), and a **visual API-Documentation Manager** — all without requiring form designers to write code.
+CodBi is a **~58,700 LOC full-stack enterprise plugin** for the XIMA formcycle platform, written in **Kotlin** (backend, ~26K LOC) and **TypeScript** (frontend, ~33K LOC). It transforms a standard form builder into an intelligent business process automation platform — delivering **82 composable form elements**, a **privacy-first on-premises AI stack** (LLM, OCR, Speech-to-Text), **enterprise integrations** (LDAP, BayVIS, OpenPLZ), and a **visual API-Documentation Manager** — all without requiring form designers to write code.
 
 The codebase is built on a **Design by Contract** (XDBC) foundation with **258 runtime contract checks** across 72 files, supported by **1,670 automated tests** (976 Kotlin + 694 TypeScript) and a professional CI/CD pipeline. Architecture is clean, security is multi-layered, and documentation is comprehensive. This is a production-ready, enterprise-grade system with clear evidence of sustained, disciplined engineering.
 
@@ -25,7 +25,7 @@ The codebase is built on a **Design by Contract** (XDBC) foundation with **258 r
 | Testing | Jest + JUnit 5 + MockK | 29.7 / 5.11.4 / 1.13.13 |
 | Linting | Biome + Spotless (ktfmt) | 1.9.4 / 0.54 |
 | AI Engines | llama.cpp, whisper.cpp, Tesseract | GGUF / GGML / JNI |
-| Platform | XIMA Formcycle | 8.3.3 |
+| Platform | XIMA formcycle | 8.3.3 |
 | Designer UI | Angular 20 (Web Component) | 20.x |
 
 ### Monorepo Structure
@@ -200,11 +200,11 @@ The `sanitizeQuery()` method strips 10+ PII pattern categories before any data r
 
 ### Threat Model Note
 
-All HTML/CSS injected into the DOM originates from authenticated Formcycle admins or form designers who already have server access. There is no user-generated content from the public internet flowing into the DOM. This means traditional XSS via unsanitized HTML is not a meaningful attack vector — the only people who could inject malicious content already have more access than XSS would grant. Client-side sanitization (DOMPurify) is therefore unnecessary in this trust model.
+All HTML/CSS injected into the DOM originates from authenticated formcycle admins or form designers who already have server access. There is no user-generated content from the public internet flowing into the DOM. This means traditional XSS via unsanitized HTML is not a meaningful attack vector — the only people who could inject malicious content already have more access than XSS would grant. Client-side sanitization (DOMPurify) is therefore unnecessary in this trust model.
 
 ### Trusted-Input Model
 
-CSP headers and formal penetration testing are not prioritized: all content originates from authenticated admins/designers with server access who could bypass CSP regardless. The trust boundary is at the Formcycle server, not the browser.
+CSP headers and formal penetration testing are not prioritized: all content originates from authenticated admins/designers with server access who could bypass CSP regardless. The trust boundary is at the formcycle server, not the browser.
 
 ---
 
@@ -248,7 +248,7 @@ CSP headers and formal penetration testing are not prioritized: all content orig
 | Line | 3,348 | 8,654 | **38.7%** |
 | Branch | 1,279 | 5,204 | **24.6%** |
 
-> **Context:** The 38.7% headline number includes auto-generated code, Formcycle SDK glue, and AI binary management code that is impractical to unit test without live processes. Testable business logic achieves **~75% line coverage**. Key services: `ChatCompletionService` 97.5%, `BraveSearch` 92.3%, `DpiUtil` 86.2%, `ThinkingServerManager` 74%, `SpecialistServerManager` 71.8%.
+> **Context:** The 38.7% headline number includes auto-generated code, formcycle SDK glue, and AI binary management code that is impractical to unit test without live processes. Testable business logic achieves **~75% line coverage**. Key services: `ChatCompletionService` 97.5%, `BraveSearch` 92.3%, `DpiUtil` 86.2%, `ThinkingServerManager` 74%, `SpecialistServerManager` 71.8%.
 
 ---
 
@@ -269,8 +269,8 @@ CSP headers and formal penetration testing are not prioritized: all content orig
 | Feature | Implementation |
 |---------|---------------|
 | **Pre-commit hooks** | `hooks/pre-commit` runs `mvn spotless:apply` on staged files |
-| **Hot deployment** | `fc-deploy:deploy` uploads JAR to running Formcycle |
-| **Local server** | `fc-server:run-ms-war` launches development Formcycle instance |
+| **Hot deployment** | `fc-deploy:deploy` uploads JAR to running formcycle |
+| **Local server** | `fc-server:run-ms-war` launches development formcycle instance |
 | **CI/CD** | GitHub Actions: build + test on PR, auto-deploy docs to `gh-pages` |
 | **Doc generation** | TypeDoc (TS) + Dokka (Kotlin) + automated DE/IT translation |
 | **Coverage reporting** | JaCoCo XML/HTML reports generated on every build |
@@ -339,7 +339,7 @@ Pre-configured for **VS Code**, **IntelliJ IDEA**, and **Eclipse** — with laun
 
 - **Visual element selection:** Point-and-click / autocomplete instead of manual typing
 - **API-Documentation Manager:** Angular 20 Web Component for CRUD operations on custom elements
-- **JSON import/export:** Share validated form logic across Formcycle instances
+- **JSON import/export:** Share validated form logic across formcycle instances
 - **Parameter documentation:** Each element has a `.json` definition with parameter types, descriptions, CSS classes
 
 ---
@@ -384,7 +384,7 @@ Pre-configured for **VS Code**, **IntelliJ IDEA**, and **Eclipse** — with laun
 | JUnit Jupiter | 5.11.4 | Current |
 | MockK | 1.13.13 | Current |
 | Jackson | 2.17.3 | Current |
-| Formcycle SDK | 8.3.3 | Platform SDK |
+| formcycle SDK | 8.3.3 | Platform SDK |
 
 No known critical CVEs. Dependencies are well-maintained.
 

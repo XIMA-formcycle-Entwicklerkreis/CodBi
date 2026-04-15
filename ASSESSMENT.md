@@ -90,7 +90,7 @@ XDBC (eXplicit Design by Contract) is the **architectural backbone** of CodBi's 
 |--------|-------|
 | Files with XDBC imports | **72** |
 | Total contract invocations | **258** |
-| Packages using XDBC | `codbi-form`, `codbi-designer`, `codbi-elements-template` |
+| Packages using XDBC | `codbi-form`, `codbi-designer` |
 | XDBC version | `^1.0.208` (form/designer) |
 
 ### Contract Types
@@ -302,7 +302,7 @@ Pre-configured for **VS Code**, **IntelliJ IDEA**, and **Eclipse** — with laun
 
 - **Onboarding form:** Live interactive guide at `forms.ansbach.de`
 - **QA testing portal:** Community testing system with per-OS/browser status tracking
-- **Elements Template:** `codbi-elements-template/` with comprehensive README for extension development
+- **Elements Template:** [`CodBi-Elements-Template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Elements-Template) (separate repo) with comprehensive README for extension development
 
 ---
 

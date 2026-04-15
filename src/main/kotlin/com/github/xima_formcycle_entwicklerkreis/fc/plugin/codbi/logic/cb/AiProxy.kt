@@ -1001,18 +1001,14 @@ class AiProxy : AI() {
 
     try {
       em.transaction.begin()
-      em.createNativeQuery(
-              "INSERT INTO codbi_ai_proxy (user_hash, ip_masked, endpoint, status, detail, elapsed_ms) " +
-                  "VALUES (?1, ?2, ?3, ?4, ?5, ?6)")
-          .apply {
-            setParameter(1, username?.let { anonymiseUser(it) })
-            setParameter(2, anonymiseIP(clientIP))
-            setParameter(3, endpoint)
-            setParameter(4, status)
-            setParameter(5, detail.take(500))
-            setParameter(6, elapsedMs)
-            executeUpdate()
-          }
+      em.persist(
+          CodbiAiProxyLog(
+              userHash = username?.let { anonymiseUser(it) },
+              ipMasked = anonymiseIP(clientIP),
+              endpoint = endpoint,
+              status = status,
+              detail = detail.take(500),
+              elapsedMs = elapsedMs))
       em.transaction.commit()
     } catch (X: Exception) {
       if (em.transaction.isActive) {

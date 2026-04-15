@@ -13,6 +13,7 @@ codbi-config-template.ts
 *.bat
 *.war
 *.log*
+!sys.log.console.ts
 *.jar
 *.jsfdia
 *target/
@@ -143,3 +144,8 @@ annotations/
 kapt/
 kaptKotlin/
 *.complete
+
+# Test artifacts
+cov-tmp/
+cov-tmp2/
+branch-test-output.txt

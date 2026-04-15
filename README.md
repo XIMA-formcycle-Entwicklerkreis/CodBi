@@ -4,6 +4,7 @@
 [![Kotlin](https://img.shields.io/badge/kotlin-%3E%3D1.8.0-7f52ff.svg)](https://kotlinlang.org/)
 [![TypeScript](https://img.shields.io/badge/typescript-%3E%3D4.9.0-3178c6.svg)](https://www.typescriptlang.org/)
 [![VS Code](https://img.shields.io/badge/optimized%20for-VS%20Code-007acc.svg)](https://code.visualstudio.com/)
+[![IntelliJ](https://img.shields.io/badge/optimized%20for-IntelliJ-fe315d.svg)](https://www.jetbrains.com/idea/)
 
 # Code Library (CodBi)
 
@@ -21,7 +22,7 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 - **Modular by Design** — Functionalities and EPs are composable building blocks: mix and combine them freely to build a wide range of applications — from simple input masks to AI-powered document processing pipelines — without writing custom code.
 - **Empowering Collaboration** — Export and import complete CodBi elements as JSON — including executable code, description, parameter definitions, global variables, and targeted CSS classes. This fosters knowledge sharing across departments and formcycle instances, allowing teams to benefit from pre-validated solutions.
 - **Intelligent Designer Integration** — The built-in Manager provides a seamless UI where users select elements — both built-in and custom — via point-and-click or autocomplete instead of manual typing, drastically reducing errors and lowering the entry barrier for creating smart forms.
-- **Local API-Documentation Manager** — Define, document and manage custom CodBi elements directly in the form designer — complete with code, parameters, global variables and CSS classes. Elements can be authored in JavaScript or TypeScript; for TypeScript, the [`codbi-elements-template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/tree/main/codbi-elements-template) project automatically generates the importable JSON. Custom elements behave identically to built-in ones and are available across all forms and in the intelligent designer interface.
+- **Local API-Documentation Manager** — Define, document and manage custom CodBi elements directly in the form designer — complete with code, parameters, global variables and CSS classes. Elements can be authored in JavaScript or TypeScript; for TypeScript, the [`codbi-elements-template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Elements-Template) project automatically generates the importable JSON. Custom elements behave identically to built-in ones and are available across all forms and in the intelligent designer interface.
 - **Flexible AI Integration** — CodBi can expose its AI engines via ChatML (AIproxy) for external access, attach to external AI endpoints, and—using the specialist parameter—mix and orchestrate both local and external AI models within the same workflow.
 - **On-Premises AI Stack** — Through llama.cpp's GGUF support, high-class models like Qwen, Mistral, LLaMA 3, Phi-3, and Gemma become available for local inference. Combined with local speech-to-text via whisper.cpp (GGML) and local OCR via Tesseract (JNI), the entire AI stack runs on-premises — no unwanted external cloud dependencies.
 - **Accurate Date Reasoning** — CodBi's system prompt injects real-time calendar context (current date, weekday, days in month) and guides even small local models to calculate dates correctly through structured chain-of-thought reasoning — no cloud API required.
@@ -154,7 +155,7 @@ The heart of CodBi's code sharing mechanism. An integrated Angular component in 
 
 ### 📐 CodBi Elements Template
 
-A ready-to-use TypeScript project template ([`codbi-elements-template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/tree/main/codbi-elements-template)) for building custom CodBi elements in TypeScript. Includes esbuild bundling, TSDoc-to-JSON generation, and example elements.
+A ready-to-use TypeScript project template ([`codbi-elements-template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Elements-Template)) for building custom CodBi elements in TypeScript. Includes esbuild bundling, TSDoc-to-JSON generation, and example elements.
 
 ### 🧠 AI
 
@@ -519,7 +520,7 @@ Unit tests use [Jest](https://jestjs.io/).
 
 ### 🌐 Automated Documentation Translation / BYOK
 
-The `generate-docs.ps1` pipeline automatically translates TSDoc/KDoc comments into other languages (German, Italian, etc.) using `scripts/translate-docs.mjs`. By default, the script uses Google Translate's free (unofficial) GTX endpoint for demonstration purposes, which requires no API key but has no uptime or availability guarantee.
+The `scripts/generate-docs.ps1` pipeline automatically translates TSDoc/KDoc comments into other languages (German, Italian, etc.) using `scripts/translate-docs.mjs`. By default, the script uses Google Translate's free (unofficial) GTX endpoint for demonstration purposes, which requires no API key but has no uptime or availability guarantee.
 
 To use the **official Google Cloud Translation API v2** instead, provide an API key via one of these methods (checked in order):
 
@@ -544,7 +545,7 @@ If no API key is found, the script silently falls back to the free GTX endpoint 
 Special thanks to:
 * **[Andre Wachsmuth](https://github.com/awa-xima)** for providing the initial build and architecture foundation, as well as his invaluable guidance throughout the project.
 * **[Jennifer Schindler](https://github.com/er-js)** for her valuable code contributions, overall management, and for advocating and promoting CodBi within the developer community.
-* **[Benedikt Plangger](https://github.com/N64Freak1986)** for his valuable code contributions.
+* **[Benedikt Plangger](https://github.com/N64Freak1986)** & **[Florian, Christ](https://github.com/FlorianChristCo)** for their valuable code contributions.
 * **[Matthias Wagner](https://github.com/ER-WagnerMatth)** for his administrative work.
 
 Licensed under the [MIT License](LICENSE).

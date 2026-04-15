@@ -39,7 +39,6 @@ This policy covers the CodBi-Dev plugin codebase, including:
 
 - Backend Kotlin code (`src/main/kotlin/`)
 - Frontend TypeScript/CSS code (`src/main/web/packages/`)
-- CodBi Elements Template (`codbi-elements-template/`)
 - Build and deployment configuration
 
 ## Security Best Practices for Contributors

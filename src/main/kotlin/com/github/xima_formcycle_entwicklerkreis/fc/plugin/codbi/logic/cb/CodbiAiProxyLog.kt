@@ -12,7 +12,7 @@ import javax.persistence.Table
  * JPA entity for the `codbi_ai_proxy` audit log table.
  *
  * @see AiProxy
- * @see AiProxyEntities
+ * @see com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
  */
 @Entity
 @Table(name = "codbi_ai_proxy")

@@ -1,5 +1,6 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.LocalAPIDoc
 
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin.CodbiFormResourcesPlugin
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -23,7 +24,7 @@ import org.slf4j.LoggerFactory
 
 /**
  * A servlet action plugin that provides an endpoint for storing and retrieving structured JSON
- * data. Data is persisted to the database via [LocalAPIDocEntities].
+ * data. Data is persisted to the database via [CodbiEntities].
  */
 class StructuredDataStoreAction : IPluginServletAction {
   /** Stores a CSV of all usernames that're allowed to sync the API-Documentation. */
@@ -420,7 +421,7 @@ class StructuredDataStoreAction : IPluginServletAction {
    * @return The content string, or null if not found or DB is unavailable.
    */
   private fun dbLoad(key: String): String? {
-    val emf = LocalAPIDocEntities.entityManagerFactory
+    val emf = CodbiEntities.entityManagerFactory
 
     if (emf == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
@@ -470,7 +471,7 @@ class StructuredDataStoreAction : IPluginServletAction {
    * @return true if the operation succeeded.
    */
   private fun dbSave(key: String, content: String): Boolean {
-    val emf = LocalAPIDocEntities.entityManagerFactory
+    val emf = CodbiEntities.entityManagerFactory
 
     if (emf == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
@@ -525,7 +526,7 @@ class StructuredDataStoreAction : IPluginServletAction {
    * @param key The data_key to delete.
    */
   private fun dbDelete(key: String) {
-    val emf = LocalAPIDocEntities.entityManagerFactory
+    val emf = CodbiEntities.entityManagerFactory
 
     if (emf == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
@@ -568,7 +569,7 @@ class StructuredDataStoreAction : IPluginServletAction {
    * @param newKey The new data_key.
    */
   private fun dbRename(oldKey: String, newKey: String) {
-    val emf = LocalAPIDocEntities.entityManagerFactory
+    val emf = CodbiEntities.entityManagerFactory
 
     if (emf == null) {
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)

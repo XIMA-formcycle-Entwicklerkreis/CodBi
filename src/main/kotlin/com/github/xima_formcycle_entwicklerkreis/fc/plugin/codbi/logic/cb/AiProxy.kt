@@ -3,6 +3,7 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 // region Imports
 // region XIMA
 // endregion XIMA
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.LLAMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.TesseractAction
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.Whisper
@@ -55,7 +56,7 @@ import java.util.Base64
  * | `AI_Proxy_Users`      | Comma-separated user:pass   | `alice:secret1,bob:secret2` |
  *
  * ## Database
- * The audit table `codbi_ai_proxy` is managed by [AiProxyEntities] using Formcycle's
+ * The audit table `codbi_ai_proxy` is managed by [CodbiEntities] using Formcycle's
  * [IPluginEntities][de.xima.fc.plugin.entities.IPluginEntities] API — the audit table schema is
  * managed by Liquibase and data access uses JPA.
  */
@@ -83,7 +84,7 @@ class AiProxy : AI() {
   // endregion Configuration-Properties
   /**
    * Reads plugin properties for IP whitelist and user credentials. Database setup is handled
-   * separately by [AiProxyEntities].
+   * separately by [CodbiEntities].
    *
    * @param configData Provided by the Formcycle environment.
    */
@@ -161,7 +162,7 @@ class AiProxy : AI() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { MailBridge.aiDisclaimer = it }
-    // MailBridge reads AiProxyEntities.entityManagerFactory lazily at send time
+    // MailBridge reads CodbiEntities.entityManagerFactory lazily at send time
 
     log(
         LogLevel.INFO,
@@ -968,7 +969,7 @@ class AiProxy : AI() {
   // region Audit-Logging
   /**
    * Inserts an anonymised audit log entry into `codbi_ai_proxy` using the JPA
-   * [EntityManagerFactory][javax.persistence.EntityManagerFactory] provided by [AiProxyEntities].
+   * [EntityManagerFactory][javax.persistence.EntityManagerFactory] provided by [CodbiEntities].
    *
    * Each call creates its own [EntityManager][javax.persistence.EntityManager] for thread safety.
    * Failures are logged but do not affect the proxy response.
@@ -989,7 +990,7 @@ class AiProxy : AI() {
       detail: String,
       elapsedMs: Long
   ) {
-    val emf = AiProxyEntities.entityManagerFactory
+    val emf = CodbiEntities.entityManagerFactory
 
     if (emf == null) {
       log(LogLevel.WARNING, "Audit log skipped — database not ready yet")

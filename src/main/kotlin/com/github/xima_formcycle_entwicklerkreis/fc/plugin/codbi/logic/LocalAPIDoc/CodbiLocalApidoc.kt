@@ -13,7 +13,7 @@ import javax.persistence.Table
  * JPA entity for the `codbi_local_apidoc` key-value storage table.
  *
  * @see Access
- * @see LocalAPIDocEntities
+ * @see com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
  */
 @Entity
 @Table(name = "codbi_local_apidoc")

@@ -2,8 +2,8 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.ll
 
 // region Imports
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AI
-import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AiProxyEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.BraveSearch
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.MailBridge
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.UrlFetcher
@@ -264,7 +264,7 @@ class Standard : LLAMA() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { MailBridge.aiDisclaimer = it }
-    // MailBridge reads AiProxyEntities.entityManagerFactory lazily at send time
+    // MailBridge reads CodbiEntities.entityManagerFactory lazily at send time
     log(
         LogLevel.INFO,
         "MailBridge configured: enabled=${MailBridge.enabled}, " +
@@ -1538,7 +1538,7 @@ class Standard : LLAMA() {
           log(
               LogLevel.INFO,
               "CALL:mail check — isAvailable=${MailBridge.isAvailable} " +
-                  "(enabled=${MailBridge.enabled}, emf=${AiProxyEntities.entityManagerFactory != null}), " +
+                  "(enabled=${MailBridge.enabled}, emf=${CodbiEntities.entityManagerFactory != null}), " +
                   "patternMatch=$mailMatch, " +
                   "textLen=${postFetchText.length}")
           if (MailBridge.isAvailable && mailMatch) {
@@ -1696,7 +1696,7 @@ class Standard : LLAMA() {
             log(
                 LogLevel.INFO,
                 "CALL:mail check (fallback) — isAvailable=${MailBridge.isAvailable} " +
-                    "(enabled=${MailBridge.enabled}, emf=${AiProxyEntities.entityManagerFactory != null}), " +
+                    "(enabled=${MailBridge.enabled}, emf=${CodbiEntities.entityManagerFactory != null}), " +
                     "patternMatch=$mailMatchFb, " +
                     "textLen=${postFetchFallback.length}")
             if (MailBridge.isAvailable && mailMatchFb) {

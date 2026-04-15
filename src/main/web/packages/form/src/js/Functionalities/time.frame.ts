@@ -69,26 +69,33 @@ export class Time_Frame {
         ? (toLoad.equalitypermitted as boolean)
         : false;
     // #region Define behavior on changed field values.
+    const parseMinutes = (value: string): number => {
+      const parts = value.split(":");
+      if (parts.length !== 2) {
+        return Number.NaN;
+      }
+      const h = Number.parseInt(parts[0]);
+      const m = Number.parseInt(parts[1]);
+      if (Number.isNaN(h) || Number.isNaN(m) || parts[1].length !== 2) {
+        return Number.NaN;
+      }
+      return h * 60 + m;
+    };
     const onNewMinimum: (event: Event) => undefined = (event: Event): undefined => {
+      const minMinutes = parseMinutes((toProcess as HTMLInputElement).value);
+      const maxMinutes = parseMinutes(maximumField.value);
+      if (Number.isNaN(minMinutes) || Number.isNaN(maxMinutes)) {
+        return;
+      }
       if (!equalityPermitted) {
-        if (
-          Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
-            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >=
-          Number.parseInt((maximumField as HTMLInputElement).value.split(":")[0]) * 60 +
-            Number.parseInt((maximumField as HTMLInputElement).value.split(":")[1])
-        ) {
+        if (minMinutes >= maxMinutes) {
           $(toProcess).error(msgMinInvalid);
         } else {
           $(toProcess).error("");
           $(maximumField).error("");
         }
       } else {
-        if (
-          Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
-            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >
-          Number.parseInt((maximumField as HTMLInputElement).value.split(":")[0]) * 60 +
-            Number.parseInt((maximumField as HTMLInputElement).value.split(":")[1])
-        ) {
+        if (minMinutes > maxMinutes) {
           $(toProcess).error(msgMinInvalid);
         } else {
           $(toProcess).error("");
@@ -98,25 +105,20 @@ export class Time_Frame {
     };
 
     const onNewMaximum: (event: Event) => undefined = (event: Event): undefined => {
+      const minMinutes = parseMinutes((toProcess as HTMLInputElement).value);
+      const maxMinutes = parseMinutes(maximumField.value);
+      if (Number.isNaN(minMinutes) || Number.isNaN(maxMinutes)) {
+        return;
+      }
       if (!equalityPermitted) {
-        if (
-          Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
-            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >=
-          Number.parseInt((maximumField as HTMLInputElement).value.split(":")[0]) * 60 +
-            Number.parseInt((maximumField as HTMLInputElement).value.split(":")[1])
-        ) {
+        if (minMinutes >= maxMinutes) {
           $(maximumField).error(msgMaxInvalid);
         } else {
           $(maximumField).error("");
           $(toProcess).error("");
         }
       } else {
-        if (
-          Number.parseInt((toProcess as HTMLInputElement).value.split(":")[0]) * 60 +
-            Number.parseInt((toProcess as HTMLInputElement).value.split(":")[1]) >
-          Number.parseInt((maximumField as HTMLInputElement).value.split(":")[0]) * 60 +
-            Number.parseInt((maximumField as HTMLInputElement).value.split(":")[1])
-        ) {
+        if (minMinutes > maxMinutes) {
           $(maximumField).error(msgMaxInvalid);
         } else {
           $(maximumField).error("");

@@ -9,7 +9,7 @@ on:
     paths:
       - 'src/main/web/packages/*/src/**'
       - 'src/main/kotlin/**'
-      - 'generate-docs.ps1'
+      - 'scripts/generate-docs.ps1'
       - 'scripts/translate-docs.mjs'
   workflow_dispatch:
 

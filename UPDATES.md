@@ -90,7 +90,7 @@
   * Automatic duplicate renaming on import with clean postfixing.
   * Synchronization with the formcycle backend (controlled via `APIDoc_UsersAllowedToSYNC`).
   * Local code deletion capability.
-* **CodBi Elements Template:** Published a TypeScript project template (`codbi-elements-template/`) with esbuild bundling and TSDoc-to-JSON generation. Custom elements authored in TypeScript are automatically compiled into `.json` files directly importable via the Manager including docs, parameter and css class definitions.
+* **CodBi Elements Template:** Published a TypeScript project template ([`CodBi-Elements-Template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Elements-Template)) with esbuild bundling and TSDoc-to-JSON generation. Custom elements authored in TypeScript are automatically compiled into `.json` files directly importable via the Manager including docs, parameter and css class definitions.
 
 ---
 

@@ -433,8 +433,10 @@ class StructuredDataStoreAction : IPluginServletAction {
 
     try {
       val results =
-          em.createNativeQuery("SELECT content FROM codbi_local_apidoc WHERE data_key = ?1")
-              .apply { setParameter(1, key) }
+          em.createQuery(
+                  "SELECT e.content FROM CodbiLocalApidoc e WHERE e.dataKey = :key",
+                  String::class.java)
+              .setParameter("key", key)
               .resultList
 
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
@@ -442,13 +444,7 @@ class StructuredDataStoreAction : IPluginServletAction {
 
       if (results.isEmpty()) return null
 
-      val raw = results[0]
-      val value =
-          when (raw) {
-            is String -> raw
-            is java.sql.Clob -> raw.characterStream.readText()
-            else -> raw?.toString()
-          }
+      val value = results[0]
 
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
           .info("[[ CodBi / LocalAPIDoc ] dbLoad('$key') — valueLength=${value?.length ?: -1} ]")
@@ -489,26 +485,17 @@ class StructuredDataStoreAction : IPluginServletAction {
       em.transaction.begin()
 
       val existing =
-          em.createNativeQuery("SELECT id FROM codbi_local_apidoc WHERE data_key = ?1")
-              .apply { setParameter(1, key) }
+          em.createQuery(
+                  "SELECT e FROM CodbiLocalApidoc e WHERE e.dataKey = :key",
+                  CodbiLocalApidoc::class.java)
+              .setParameter("key", key)
               .resultList
 
       if (existing.isEmpty()) {
-        em.createNativeQuery(
-                "INSERT INTO codbi_local_apidoc (data_key, content, updated_at) VALUES (?1, ?2, CURRENT_TIMESTAMP)")
-            .apply {
-              setParameter(1, key)
-              setParameter(2, content)
-              executeUpdate()
-            }
+        em.persist(CodbiLocalApidoc(dataKey = key, content = content))
       } else {
-        em.createNativeQuery(
-                "UPDATE codbi_local_apidoc SET content = ?1, updated_at = CURRENT_TIMESTAMP WHERE data_key = ?2")
-            .apply {
-              setParameter(1, content)
-              setParameter(2, key)
-              executeUpdate()
-            }
+        existing[0].content = content
+        existing[0].updatedAt = java.sql.Timestamp(System.currentTimeMillis())
       }
 
       em.transaction.commit()
@@ -551,10 +538,9 @@ class StructuredDataStoreAction : IPluginServletAction {
 
     try {
       em.transaction.begin()
-      em.createNativeQuery("DELETE FROM codbi_local_apidoc WHERE data_key = ?1").apply {
-        setParameter(1, key)
-        executeUpdate()
-      }
+      em.createQuery("DELETE FROM CodbiLocalApidoc e WHERE e.dataKey = :key")
+          .setParameter("key", key)
+          .executeUpdate()
       em.transaction.commit()
 
       LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
@@ -596,13 +582,11 @@ class StructuredDataStoreAction : IPluginServletAction {
 
     try {
       em.transaction.begin()
-      em.createNativeQuery(
-              "UPDATE codbi_local_apidoc SET data_key = ?1, updated_at = CURRENT_TIMESTAMP WHERE data_key = ?2")
-          .apply {
-            setParameter(1, newKey)
-            setParameter(2, oldKey)
-            executeUpdate()
-          }
+      em.createQuery(
+              "UPDATE CodbiLocalApidoc e SET e.dataKey = :newKey, e.updatedAt = CURRENT_TIMESTAMP WHERE e.dataKey = :oldKey")
+          .setParameter("newKey", newKey)
+          .setParameter("oldKey", oldKey)
+          .executeUpdate()
       em.transaction.commit()
     } catch (X: Exception) {
       if (em.transaction.isActive) {

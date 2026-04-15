@@ -72,30 +72,41 @@ class Resource : IPluginServletAction {
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
     try {
-      val svgInputStream =
-          javaClass.getResourceAsStream(p0.requestParameters["Path"]?.first() ?: SVG_RESOURCE_PATH)
+      val requestedPath = p0.requestParameters["Path"]?.first() ?: SVG_RESOURCE_PATH
+
+      if (requestedPath != SVG_RESOURCE_PATH &&
+          (requestedPath.startsWith("/") || requestedPath.contains(".."))) {
+        val errorResponse =
+            ServletResponse(EResponseType.HTML).apply {
+              httpStatusCode = HttpURLConnection.HTTP_FORBIDDEN
+              contentType = CONTENT_TYPE_PLAIN
+              value = "Forbidden: invalid resource path"
+              encoding = StandardCharsets.UTF_8.name()
+            }
+
+        return PluginServletActionRetVal(errorResponse)
+      }
+
+      val svgInputStream = javaClass.getResourceAsStream(requestedPath)
 
       if (svgInputStream == null) {
         val errorResponse =
             ServletResponse(EResponseType.HTML).apply {
               httpStatusCode = HttpURLConnection.HTTP_NOT_FOUND
-              contentType =
-                  getContentType(p0.requestParameters["Path"]?.first() ?: SVG_RESOURCE_PATH)
-              value = "Nothing at path: $SVG_RESOURCE_PATH"
+              contentType = getContentType(requestedPath)
+              value = "Nothing at path: $requestedPath"
               encoding = StandardCharsets.UTF_8.name()
             }
 
         return PluginServletActionRetVal(errorResponse)
       }
       // #region Serve found resource
-      val svgBytes = svgInputStream.readBytes()
-
-      svgInputStream.close()
+      val svgBytes = svgInputStream.use { it.readBytes() }
 
       val successResponse =
           ServletResponse(EResponseType.SHOW_FILE).apply {
             httpStatusCode = HttpURLConnection.HTTP_OK
-            contentType = getContentType(p0.requestParameters["Path"]?.first() ?: SVG_RESOURCE_PATH)
+            contentType = getContentType(requestedPath)
             binValue = svgBytes
             httpHeader = Collections.singletonMap("Cache-Control", CACHE_CONTROL_HEADER)
           }

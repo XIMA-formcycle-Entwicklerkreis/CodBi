@@ -72,38 +72,59 @@ export class Date_Frame {
       : false;
     // #endregion Normalize parameters.
     // #region Define behavior on changed field values.
+    const parseDate = (value: string): number => {
+      const parts = value.split(/[.\-/]/);
+      if (parts.length !== 3 || parts.some((p) => p.length === 0 || Number.isNaN(Number(p)))) {
+        return Number.NaN;
+      }
+      const yearIndex = parts.findIndex((p) => p.length === 4);
+      let year: number;
+      let month: number;
+      let day: number;
+      if (yearIndex !== -1) {
+        // 4-digit year: must be the only part >2 digits.
+        if (parts.filter((p) => p.length > 2).length !== 1) {
+          return Number.NaN;
+        }
+        year = Number.parseInt(parts[yearIndex]);
+        if (yearIndex === 0) {
+          month = Number.parseInt(parts[1]);
+          day = Number.parseInt(parts[2]);
+        } else if (yearIndex === 2) {
+          day = Number.parseInt(parts[0]);
+          month = Number.parseInt(parts[1]);
+        } else {
+          day = Number.parseInt(parts[0]);
+          month = Number.parseInt(parts[2]);
+        }
+      } else {
+        // 2-digit year: all parts must be ≤2 digits.
+        if (parts.some((p) => p.length > 2)) {
+          return Number.NaN;
+        }
+        day = Number.parseInt(parts[0]);
+        month = Number.parseInt(parts[1]);
+        year = 2000 + Number.parseInt(parts[2]);
+      }
+      const dateStr = `${year}/${String(month).padStart(2, "0")}/${String(day).padStart(2, "0")}`;
+      const time = new Date(dateStr).getTime();
+      return time;
+    };
     const onNewMinimum: (event: Event) => undefined = (event: Event): undefined => {
+      const minTime = parseDate((toProcess as HTMLInputElement).value);
+      const maxTime = parseDate(maximumField.value);
+      if (Number.isNaN(minTime) || Number.isNaN(maxTime)) {
+        return;
+      }
       if (toLoad.equalitypermitted) {
-        if (
-          new Date(
-            (toProcess as HTMLInputElement).value.split(".").reduce((accumulator, current, index): string => {
-              return current + (index === 0 ? "" : "/") + accumulator;
-            }),
-          ) >=
-          new Date(
-            (maximumField as HTMLInputElement).value.split(".").reduce((accumulator, current, index): string => {
-              return current + (index === 0 ? "" : "/") + accumulator;
-            }),
-          )
-        ) {
+        if (minTime >= maxTime) {
           $(toProcess).error(toLoad.msgmininvalid as string);
         } else {
           $(toProcess).error("");
           $(maximumField).error("");
         }
       } else {
-        if (
-          new Date(
-            (toProcess as HTMLInputElement).value.split(".").reduce((accumulator, current, index): string => {
-              return current + (index === 0 ? "" : "/") + accumulator;
-            }),
-          ) >
-          new Date(
-            (maximumField as HTMLInputElement).value.split(".").reduce((accumulator, current, index): string => {
-              return current + (index === 0 ? "" : "/") + accumulator;
-            }),
-          )
-        ) {
+        if (minTime > maxTime) {
           $(toProcess).error(toLoad.msgmininvalid as string);
         } else {
           $(toProcess).error("");
@@ -113,45 +134,20 @@ export class Date_Frame {
     };
 
     const onNewMaximum: (event: Event) => undefined = (event: Event): undefined => {
+      const minTime = parseDate((toProcess as HTMLInputElement).value);
+      const maxTime = parseDate(maximumField.value);
+      if (Number.isNaN(minTime) || Number.isNaN(maxTime)) {
+        return;
+      }
       if (toLoad.equalitypermitted) {
-        if (
-          new Date(
-            (toProcess as HTMLInputElement).value
-              .split(".")
-              .reduce((accumulator: string, current: string, index: number): string => {
-                return current + (index === 0 ? "" : "/") + accumulator;
-              }),
-          ) >=
-          new Date(
-            (maximumField as HTMLInputElement).value
-              .split(".")
-              .reduce((accumulator: string, current: string, index: number): string => {
-                return current + (index === 0 ? "" : "/") + accumulator;
-              }),
-          )
-        ) {
+        if (minTime >= maxTime) {
           $(maximumField).error(toLoad.msgmaxinvalid as string);
         } else {
           $(maximumField).error("");
           $(toProcess).error("");
         }
       } else {
-        if (
-          new Date(
-            (toProcess as HTMLInputElement).value
-              .split(".")
-              .reduce((accumulator: string, current: string, index: number): string => {
-                return current + (index === 0 ? "" : "/") + accumulator;
-              }),
-          ) >
-          new Date(
-            (maximumField as HTMLInputElement).value
-              .split(".")
-              .reduce((accumulator: string, current: string, index: number): string => {
-                return current + (index === 0 ? "" : "/") + accumulator;
-              }),
-          )
-        ) {
+        if (minTime > maxTime) {
           $(maximumField).error(toLoad.msgmaxinvalid as string);
         } else {
           $(maximumField).error("");

@@ -232,7 +232,8 @@ export function loadConfig(): void {
         fieldset.XFieldSet:has(input.XTextField:focus) legend { transition : .5s all !important ; color : #SHADOW_DM !important ; text-shadow : 0em 0 .05em #HIGHLIGHT_DM !important ;}
         /* #endregion Animation - Input Underscore */
         /* #region Buttons */
-        .xm-form.modern button { color : #ACCENT_DM ; border-color : #HIGHLIGHT_DM ; background: linear-gradient(93deg,rgba(5, 5, 5, 1) 0%, rgba(56, 47, 47, 1) 23%, rgba(107, 83, 65, 1) 55%, rgba(56, 52, 52, 1) 90%, rgba(0, 0, 0, 1) 100%) !important ;}
+        .CodBi_HTML_Panel_Header,
+        .xm-form.modern button    { color : #ACCENT_DM ; border-color : #HIGHLIGHT_DM ; background: linear-gradient(93deg,rgba(5, 5, 5, 1) 0%, rgba(56, 47, 47, 1) 23%, rgba(107, 83, 65, 1) 55%, rgba(56, 52, 52, 1) 90%, rgba(0, 0, 0, 1) 100%) !important ;}
 
         .xm-form.modern .XButtonList:hover,
         .xm-form.modern .XButton:hover {

@@ -66,7 +66,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 #### Added
 - Local API-Documentation Manager: Angular component for CRUD operations on CodBi elements, with point-and-click selection, parameter definitions, import/export, duplicate renaming, and backend sync
-- CodBi Elements Template (`codbi-elements-template/`): TypeScript project template with esbuild and auto-generated `.json` doc files
+- CodBi Elements Template ([`CodBi-Elements-Template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Elements-Template)): TypeScript project template with esbuild and auto-generated `.json` doc files
 
 ---
 

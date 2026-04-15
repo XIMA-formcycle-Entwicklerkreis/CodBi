@@ -25,6 +25,7 @@ class Resource : IPluginServletAction {
   companion object {
     private const val SVG_RESOURCE_PATH =
         "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg"
+    private const val ALLOWED_PREFIX = "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
     private const val CONTENT_TYPE_SVG = "image/svg+xml"
     private const val CONTENT_TYPE_PLAIN = "text/plain"
     private const val CACHE_CONTROL_HEADER = "public, max-age=31536000"
@@ -74,8 +75,7 @@ class Resource : IPluginServletAction {
     try {
       val requestedPath = p0.requestParameters["Path"]?.first() ?: SVG_RESOURCE_PATH
 
-      if (requestedPath != SVG_RESOURCE_PATH &&
-          (requestedPath.startsWith("/") || requestedPath.contains(".."))) {
+      if (!requestedPath.startsWith(ALLOWED_PREFIX) || requestedPath.contains("..")) {
         val errorResponse =
             ServletResponse(EResponseType.HTML).apply {
               httpStatusCode = HttpURLConnection.HTTP_FORBIDDEN

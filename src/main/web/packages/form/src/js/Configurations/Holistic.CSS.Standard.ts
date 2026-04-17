@@ -20,7 +20,7 @@ export function loadConfig(): void {
       : "ACCENT | 65B22E, SHADOW | 000000, HIGHLIGHT | FF8C00, INPUT_BORDER | 66C430",
     DarkMode: schemeDarkmode
       ? schemeDarkmode.getAttribute("value")
-      : "ACCENT | 65B22E, SHADOW | FF8C00, HIGHLIGHT | FF8C00, INPUT_BORDER | 073507",
+      : "ACCENT | FF8C00, SHADOW | FF8C00, HIGHLIGHT | FF8C00, INPUT_BORDER | 073507",
     CSS: `
       input { min-width : 8em !important ;}
 
@@ -169,14 +169,17 @@ export function loadConfig(): void {
       /* #endregion Print */
       /* #region Dark Mode */
       @media( prefers-color-scheme : dark ) {
+        input[type=file]::file-selector-button { background-color : #ACCENT_DM !important ; color : white !important ; border : none !important ; border-radius : .2em !important ; color : white !important ; border-color : #HIGHLIGHT_DM !important ;}
+
         .LLAMA_AI_Hint,
-        .LLAMA_Chat_AiHint { color: white !important ;}
+        .LLAMA_Chat_AiHint { color: #ACCENT_DMFF !important ;}
+        .LLAMA_Chat_Container { background-color : #ACCENT_DM10 !important ;}
         
         .modern input.XTextField.XItem { border-color : #ACCENT50 !important ;}
 
         legend,
         label,
-        input   { color : #ACCENT !important ;}
+        input   { color : #ACCENTFF !important ;}
 
         [ role = "presentation"] { background-color : transparent !important ;}
         /* #region Header, Footer & Logo */
@@ -248,7 +251,8 @@ export function loadConfig(): void {
         select:focus { background-color : transparent !important ;}
 
         .xm-form.modern input.XItem.XTextField,
-        .xm-form.modern textarea.XItem.XTextArea  { border-radius : .5em ; box-shadow : 0 0 .25em #ACCENT_DM !important ; background: none !important ; background-color : transparent !important ; }
+        .xm-form.modern textarea.XItem.XTextArea,
+        .xm-form.modern select.XItem.XSelect      { border-radius : .5em ; box-shadow : 0 0 .25em #ACCENT_DM !important ; background: none !important ; background-color : transparent !important ; border-color : #INPUT_BORDER_DM00 !important ;}
         /* #endregion Inputs */
         /* #region Document */
         body.modern.xm-body { background-color : black ;}

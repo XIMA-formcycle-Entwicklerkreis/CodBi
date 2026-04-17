@@ -148,15 +148,31 @@ export class AI_LLAMA_STANDARD_TXTQA {
       }
       // #endregion Determine the search container
       // #region Wait until all source fields are filled (unless forced)
-      if (!force) {
-        const sourceElements = container.querySelectorAll(".AI_LLAMA_TXTQA_Source");
+      const sourceElements = container.querySelectorAll(".AI_LLAMA_TXTQA_Source");
 
+      if (!force) {
         for (const srcEl of sourceElements) {
           const val = (srcEl as HTMLInputElement | HTMLTextAreaElement).value?.trim();
 
           if (!val) {
             return;
           }
+        }
+      } else {
+        // Even when forced, abort if ALL source fields AND the trigger field are empty.
+        let hasAnyContent = !!(toProcess as HTMLInputElement | HTMLTextAreaElement).value?.trim();
+
+        if (!hasAnyContent) {
+          for (const srcEl of sourceElements) {
+            if ((srcEl as HTMLInputElement | HTMLTextAreaElement).value?.trim()) {
+              hasAnyContent = true;
+              break;
+            }
+          }
+        }
+
+        if (!hasAnyContent) {
+          return;
         }
       }
 
@@ -612,6 +628,10 @@ export class AI_LLAMA_STANDARD_TXTQA {
           if (debounceTimer) {
             clearTimeout(debounceTimer);
             debounceTimer = null;
+          }
+          if (inferenceDelayTimer) {
+            clearTimeout(inferenceDelayTimer);
+            inferenceDelayTimer = null;
           }
         });
       }

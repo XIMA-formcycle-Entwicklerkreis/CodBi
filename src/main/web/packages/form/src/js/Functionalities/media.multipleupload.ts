@@ -44,6 +44,13 @@ export class Media_MultipleUpload {
       'Isn\'t there a <label> with a <span> for the tagged <input type="file">?',
     ).innerHTML;
 
+    // Prevent formcycle's combined filename length check from triggering false positives
+    // when multiple files are selected. The individual check below replaces it.
+    const maxLength = (toProcess as HTMLInputElement).getAttribute("maxlength");
+    if (maxLength) {
+      (toProcess as HTMLInputElement).removeAttribute("maxlength");
+    }
+
     toProcess.addEventListener("change", (event) => {
       if ((toProcess as HTMLInputElement).files.length > maximum) {
         getJQuery()(toProcess).error(
@@ -51,6 +58,29 @@ export class Media_MultipleUpload {
             ? toLoad.prefixtoomany + toLoad.maximum + toLoad.postfixtoomany
             : `Too many files selected. The maximum number of files is ${toLoad.maximum ? toLoad.maximum : 2}.`,
         );
+      } else if (maxLength) {
+        const limit = Number.parseInt(maxLength);
+        const tooLong = Array.from((toProcess as HTMLInputElement).files).find((f) => f.name.length > limit);
+        if (tooLong) {
+          getJQuery()(toProcess).error(`Filename "${tooLong.name}" exceeds the maximum length of ${limit} characters.`);
+        } else {
+          getJQuery()(toProcess).error("");
+          toProcess.parentElement.querySelector("label span").innerHTML = labelText;
+
+          if ((toProcess as HTMLInputElement).files.length !== 1) {
+            toProcess.parentElement.querySelector("label span").innerHTML = `${labelText} (`;
+
+            for (const file of (toProcess as HTMLInputElement).files) {
+              toProcess.parentElement.querySelector("label span").innerHTML += `${file.name}, `;
+            }
+
+            toProcess.parentElement.querySelector("label span").innerHTML = toProcess.parentElement
+              .querySelector("label span")
+              .innerHTML.substring(0, toProcess.parentElement.querySelector("label span").innerHTML.length - 2);
+
+            toProcess.parentElement.querySelector("label span").innerHTML += ")";
+          }
+        }
       } else {
         getJQuery()(toProcess).error("");
         toProcess.parentElement.querySelector("label span").innerHTML = labelText;

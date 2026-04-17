@@ -21,14 +21,23 @@ export interface CodbiGlobal {
   registerFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
   /** See {@link CodBi.extendFunctionality }. */
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
-  extendFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
+  extendFunctionality(
+    id: string,
+    init: (toLoad: any, toProcess: Element, original: (toLoad: any, toProcess: Element) => any) => any,
+  ): boolean;
   /** See {@link CodBi.registerEP }. */
   registerEP(
     id: string,
     generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
   ): boolean;
   /** See {@link CodBi.extendEP }. */
-  extendEP(id: string, generator: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>>): boolean;
+  extendEP(
+    id: string,
+    generator: (
+      params: Array<string>,
+      original: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
+    ) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
+  ): boolean;
   /** See {@link CodBi.reportError }. */
   reportError(message: string): undefined;
   /** See {@link CodBi.loadConfig }. */
@@ -244,6 +253,10 @@ export class CodBi implements CodbiGlobal {
     // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
     (toLoad: any, toProcess: Element | undefined) => any
   >();
+  /** Tracks which functionalities have already been checked for DB overrides. */
+  protected dbOverrideChecked: Set<string> = new Set<string>();
+  /** Tracks which EPs have already been checked for DB overrides. */
+  protected dbEPOverrideChecked: Set<string> = new Set<string>();
   /** Stores the CodBi's control characters. */
   protected nestingBraces: { opening: string; closing: string; epSeparator: string; paramSeparator: string } = {
     opening: "{",
@@ -279,20 +292,22 @@ export class CodBi implements CodbiGlobal {
     return true;
   }
   /**
-   * Extends an given **E**lement **P**laceholder so that both the former one and the new one are invoked whereas the
-   * form one itself may also be an extension already.
-   * The value retrieved from the former **E**lement **P**laceholder will be passed to the new one which may further
-   * transform the resulting values.
+   * Extends (replaces) a given **E**lement **P**laceholder so that the new one is invoked instead of the former one.
+   * The original EP is passed as a third parameter to the **generator** callback so it can be
+   * called optionally from within the new implementation.
    * If an **E**lement **P**laceholder with the given **id** hasn't been registered yet the new one will be registered
    * using {@link CodBi.registerEP }.
    *
    * @param id        See {@link CodBi.registerEP }.
-   * @param generator See {@link CodBi.registerEP }.
+   * @param generator The new EP. Receives **params** and the **original** generator function.
    *
    * @returns **TRUE** if an extension took place or **FALSE** if a regular registration was performed. */
   public extendEP(
     id: string,
-    generator: (params: Array<string>, formerResult: Array<unknown>) => Array<unknown> | Promise<Array<unknown>>,
+    generator: (
+      params: Array<string>,
+      original: (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
+    ) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>,
   ): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
@@ -305,29 +320,45 @@ export class CodBi implements CodbiGlobal {
 
     const formerEP = this.availableEPs[id];
 
-    this.availableEPs[id] = (params: Array<string>): Array<unknown> | Promise<Array<unknown>> => {
-      const resultFormerEP = formerEP(params);
-
-      if (Array.isArray(resultFormerEP)) {
-        return generator(params, resultFormerEP as Array<string>);
-      }
-
-      return new Promise<Array<unknown>>((resolve) => {
-        (resultFormerEP as Promise<Array<unknown>>).then((fromFormer: Array<unknown>) => {
-          const newResult = generator(params, fromFormer as Array<string>);
-
-          if (Array.isArray(newResult)) {
-            resolve(newResult);
-          } else {
-            (newResult as Promise<Array<unknown>>).then((fromNew: Array<unknown>) => {
-              resolve(fromNew);
-            });
-          }
-        });
-      });
+    this.availableEPs[id] = (
+      params: Array<string>,
+    ): Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown> => {
+      return generator(params, formerEP);
     };
 
     return true;
+  }
+  /**
+   * Checks the DB for an override of the given EP (once per EP id).
+   * Resolves immediately if the EP was already checked.
+   *
+   * @param epId The lowercase EP identifier. */
+  protected checkEPOverride(epId: string): Promise<void> {
+    if (this.dbEPOverrideChecked.has(epId)) {
+      return Promise.resolve();
+    }
+
+    this.dbEPOverrideChecked.add(epId);
+
+    return new Promise<void>((resolve) => {
+      getJQuery().ajax({
+        url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+        type: "GET",
+        headers: {
+          "X-Action": "Code",
+          "X-ActionDetail": "Elementplaceholder",
+          "X-Element": epId,
+        },
+        success: async (response) => {
+          if (response.result !== "NONE") {
+            await this.importRemoteModule(response.result);
+          }
+
+          resolve();
+        },
+        error: () => resolve(),
+      });
+    });
   }
   /**
    * Retrieves the inner {@link string } from the outermost braces pair specified out of the given {@link string }.
@@ -428,45 +459,48 @@ export class CodBi implements CodbiGlobal {
 
           if (this.availableEPs[outermostEP.keyPlaceholder]) {
             cntPromises++;
-            // The "candidate" is an EP, parameter are provided.
-            this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string))
-              .then((real) => {
-                const epResult = DEFINED.tsCheck<
-                  (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>
-                >(this.availableEPs[outermostEP.keyPlaceholder])(real);
-                // If the element placeholder is asynchronous...
-                if (epResult instanceof Promise) {
-                  epResult
-                    .then((real) => {
-                      /*if (real[0] !== undefined && typeof real[0] === "string") {
-                        real[0] = (real[0] as string).trim();
-                      }*/
 
-                      result.splice(i, 0, real as string);
+            this.checkEPOverride(outermostEP.keyPlaceholder).then(() => {
+              // The "candidate" is an EP, parameter are provided.
+              this.resolveEPParams(this.splitUnbracedParams(outermostEP.params as string))
+                .then((real) => {
+                  const epResult = DEFINED.tsCheck<
+                    (params: Array<string>) => Array<unknown> | Promise<Array<unknown>> | unknown | Promise<unknown>
+                  >(this.availableEPs[outermostEP.keyPlaceholder])(real);
+                  // If the element placeholder is asynchronous...
+                  if (epResult instanceof Promise) {
+                    epResult
+                      .then((real) => {
+                        /*if (real[0] !== undefined && typeof real[0] === "string") {
+                          real[0] = (real[0] as string).trim();
+                        }*/
 
-                      if (--cntPromises === 0) {
-                        resolve(result);
-                      }
-                    })
-                    .catch((X: unknown) => {
-                      reject(X);
-                    });
-                } else {
-                  // In case of a synchronous element placeholder...
-                  /*if (epResult[0] !== undefined && typeof epResult[0] === "string") {
-                    epResult[0] = (epResult[0] as string).trim();
-                  }*/
+                        result.splice(i, 0, real as string);
 
-                  result.splice(i, 0, epResult as string);
+                        if (--cntPromises === 0) {
+                          resolve(result);
+                        }
+                      })
+                      .catch((X: unknown) => {
+                        reject(X);
+                      });
+                  } else {
+                    // In case of a synchronous element placeholder...
+                    /*if (epResult[0] !== undefined && typeof epResult[0] === "string") {
+                      epResult[0] = (epResult[0] as string).trim();
+                    }*/
 
-                  if (--cntPromises === 0) {
-                    resolve(result);
+                    result.splice(i, 0, epResult as string);
+
+                    if (--cntPromises === 0) {
+                      resolve(result);
+                    }
                   }
-                }
-              })
-              .catch((X: unknown) => {
-                reject(X);
-              });
+                })
+                .catch((X: unknown) => {
+                  reject(X);
+                });
+            });
           } else {
             // #region Fix CSS recognized as an element placeholder bug.
             if (outermostEP.keyPlaceholder.indexOf("{") !== -1 || outermostEP.keyPlaceholder.indexOf("}") !== -1) {
@@ -568,39 +602,41 @@ export class CodBi implements CodbiGlobal {
                       if (this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()]) {
                         cntPromises++;
 
-                        this.resolveEPParams(this.splitUnbracedParams(outermostEP.params))
-                          .then((real) => {
-                            const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
-                              outermostEP.params === "" ? new Array<string>() : real,
-                            );
+                        this.checkEPOverride(outermostEP.keyPlaceholder.toLowerCase()).then(() => {
+                          this.resolveEPParams(this.splitUnbracedParams(outermostEP.params))
+                            .then((real) => {
+                              const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
+                                outermostEP.params === "" ? new Array<string>() : real,
+                              );
 
-                            if (epResult instanceof Promise) {
-                              epResult
-                                .then((real) => {
-                                  (config[key] as []).splice(i, 1, ...(real as []));
+                              if (epResult instanceof Promise) {
+                                epResult
+                                  .then((real) => {
+                                    (config[key] as []).splice(i, 1, ...(real as []));
 
-                                  config[key] = (config[key] as []).filter((item) => item !== candidate);
+                                    config[key] = (config[key] as []).filter((item) => item !== candidate);
 
-                                  if (--cntPromises === 0) {
-                                    resolve(config);
-                                  }
-                                })
-                                .catch((X: unknown) => {
-                                  reject(X);
-                                });
-                            } else {
-                              (config[key] as []).splice(i, 1, ...(epResult as []));
+                                    if (--cntPromises === 0) {
+                                      resolve(config);
+                                    }
+                                  })
+                                  .catch((X: unknown) => {
+                                    reject(X);
+                                  });
+                              } else {
+                                (config[key] as []).splice(i, 1, ...(epResult as []));
 
-                              config[key] = (config[key] as []).filter((item) => item !== candidate);
+                                config[key] = (config[key] as []).filter((item) => item !== candidate);
 
-                              if (--cntPromises === 0) {
-                                resolve(config);
+                                if (--cntPromises === 0) {
+                                  resolve(config);
+                                }
                               }
-                            }
-                          })
-                          .catch((X: unknown) => {
-                            reject(X);
-                          });
+                            })
+                            .catch((X: unknown) => {
+                              reject(X);
+                            });
+                        });
                       } else {
                         // Set counter for asynchronous download of EP code.
                         cntPromises++;
@@ -670,31 +706,33 @@ export class CodBi implements CodbiGlobal {
                 if (this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()]) {
                   cntPromises++;
 
-                  this.resolveEPParams(this.splitUnbracedParams(outermostEP.params)).then((real) => {
-                    const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
-                      outermostEP.params === "" ? new Array<string>() : real,
-                    );
-                    // If parameter is a single element placeholder...
-                    if (epResult instanceof Promise) {
-                      epResult
-                        .then((real) => {
-                          config[key] = real;
+                  this.checkEPOverride(outermostEP.keyPlaceholder.toLowerCase()).then(() => {
+                    this.resolveEPParams(this.splitUnbracedParams(outermostEP.params)).then((real) => {
+                      const epResult = this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()](
+                        outermostEP.params === "" ? new Array<string>() : real,
+                      );
+                      // If parameter is a single element placeholder...
+                      if (epResult instanceof Promise) {
+                        epResult
+                          .then((real) => {
+                            config[key] = real;
 
-                          if (--cntPromises === 0) {
-                            resolve(config);
-                          }
-                        })
-                        .catch((X: unknown) => {
-                          reject(X);
-                        });
-                    } else {
-                      // If parameter is not an array and contains no element placeholder...
-                      config[key] = epResult;
+                            if (--cntPromises === 0) {
+                              resolve(config);
+                            }
+                          })
+                          .catch((X: unknown) => {
+                            reject(X);
+                          });
+                      } else {
+                        // If parameter is not an array and contains no element placeholder...
+                        config[key] = epResult;
 
-                      if (--cntPromises === 0) {
-                        resolve(config);
+                        if (--cntPromises === 0) {
+                          resolve(config);
+                        }
                       }
-                    }
+                    });
                   });
                 } else {
                   // #region Fix CSS recognized as an element placeholder bug.
@@ -863,16 +901,20 @@ export class CodBi implements CodbiGlobal {
     return true;
   }
   /**
-   * Extends a given functionality so that both the former one and the new one are invoked whereas the form one
-   * itself may also be an extension already.
+   * Extends (replaces) a given functionality so that the new one is invoked instead of the former one.
+   * The original functionality is passed as a third parameter to the **init** callback so it can be
+   * called optionally from within the new implementation.
    * If a functionality with the given **id** hasn't been registered yet the new one will be registered using
    * {@link CodBi.registerFunctionality }.
    *
    * @param id    See {@link CodBi.registerFunctionality }.
-   * @param init  See {@link CodBi.registerFunctionality }.
+   * @param init  The new functionality. Receives **toLoad**, **toProcess**, and the **original** function.
    *
    * @returns **TRUE** if an extension took place or **FALSE** if a regular registration was performed. */
-  public extendFunctionality(id: string, init: (toLoad: unknown, toProcess: Element) => unknown): boolean {
+  public extendFunctionality(
+    id: string,
+    init: (toLoad: unknown, toProcess: Element, original: (toLoad: unknown, toProcess: Element) => unknown) => unknown,
+  ): boolean {
     // biome-ignore lint/style/noParameterAssign: Reassignment resolves the necessity to define a new constant.
     id = id.toLowerCase();
 
@@ -883,11 +925,11 @@ export class CodBi implements CodbiGlobal {
 
       return false;
     }
+
     const formerFunctionality = this.functionalities.get(id);
 
     this.functionalities.set(id, (toLoad: unknown, toProcess: Element) => {
-      formerFunctionality(toLoad, toProcess);
-      init(toLoad, toProcess);
+      return init(toLoad, toProcess, formerFunctionality);
     });
 
     return true;
@@ -1006,7 +1048,7 @@ export class CodBi implements CodbiGlobal {
           }
 
           for (const ep of this.extractEPs(toLoad[key])) {
-            if (!(ep.trim() in this.availableEPs)) {
+            if (!(ep.trim().toLowerCase() in this.availableEPs)) {
               await new Promise<void>((resolve) => {
                 getJQuery().ajax({
                   url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
@@ -1310,7 +1352,8 @@ export class CodBi implements CodbiGlobal {
    *          triggered. */
   public checkAttributes(): Promise<boolean> {
     // biome-ignore lint/suspicious/noAssignInExpressions: No confusion.
-    return (this.currentAttributeCheck = new Promise((resolve) => {
+    // biome-ignore lint/suspicious/noAsyncPromiseExecutor: Necessary to await DB override checks before invoking functionalities.
+    return (this.currentAttributeCheck = new Promise(async (resolve) => {
       this.checkingAttributes = true;
 
       let cntPromises = 0;
@@ -1339,9 +1382,39 @@ export class CodBi implements CodbiGlobal {
             this.extractCBAttributes(toProcess),
           );
 
-          const toInvoke = this.functionalities.get(functionality.toLowerCase().trim());
+          let toInvoke = this.functionalities.get(functionality.toLowerCase().trim());
           // If the functionality is a registered one...
           if (toInvoke) {
+            cntPromises++;
+            // #region Check DB for override (once per functionality).
+            const funcKey = functionality.toLowerCase().trim();
+
+            if (!this.dbOverrideChecked.has(funcKey)) {
+              this.dbOverrideChecked.add(funcKey);
+
+              await new Promise<void>((resolve) => {
+                getJQuery().ajax({
+                  url: `${this.baseURL}plugin?name=CodBi_LocalAPIDoc`,
+                  type: "GET",
+                  headers: {
+                    "X-Action": "Code",
+                    "X-ActionDetail": "Functionality",
+                    "X-Element": funcKey,
+                  },
+                  success: async (response) => {
+                    if (response.result !== "NONE") {
+                      await this.importRemoteModule(response.result);
+                    }
+
+                    resolve();
+                  },
+                  error: () => resolve(),
+                });
+              });
+
+              toInvoke = this.functionalities.get(funcKey);
+            }
+            // #endregion Check DB for override (once per functionality).
             // #region  Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded,
             //          if not deactivated.
             if (
@@ -1353,8 +1426,6 @@ export class CodBi implements CodbiGlobal {
             // #endregion Show loading animations and disable input as long as CodBi-Code for that element hasn't loaded,
             //            if not deactivated.
             toProcess.classList.add("Processing", "CodBi");
-
-            cntPromises++;
 
             this.resolveEP(codbiAttributes)
               .then((real) => {

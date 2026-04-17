@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "@jest/globals";
+import $ from "jquery";
 
 import { createCodbiGlobal, CodBiError, EPCodBiError, generateUUID, resolveLdapUrl } from "../src/js/global-scope.js";
 
@@ -684,6 +685,7 @@ describe("CodBi error reporting", () => {
 // ────────────────────────────────────────────────────────────────
 describe("CodBi.checkAttributes", () => {
   let codbi: ReturnType<typeof createCodbiGlobal>;
+  const origAjax = $.ajax;
 
   beforeEach(() => {
     (globalThis as any).XFC_METADATA = { requestType: "provide" };
@@ -693,11 +695,18 @@ describe("CodBi.checkAttributes", () => {
     codbi = createCodbiGlobal();
     (window as unknown as { codbi: unknown }).codbi = codbi;
     document.body.innerHTML = "";
+    ($ as any).ajax = (options: any) => {
+      if (options.success) {
+        options.success({ result: "NONE" });
+      }
+      return {} as any;
+    };
   });
 
   afterEach(() => {
     document.body.innerHTML = "";
     delete (globalThis as any).XFC_METADATA;
+    ($ as any).ajax = origAjax;
   });
 
   it("invokes registered functionality on tagged elements", async () => {

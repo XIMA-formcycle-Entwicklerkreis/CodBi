@@ -17,7 +17,7 @@
   "Input.Label.Outro.Knowledge": "Wissensaustausch",
   "Input.Label.Outro.Knowledge.Details": "Wir alle lernen voneinander.",
   "Input.Label.Outro.ImportantWhenNaming": "Wichtig für die Bennenung:",
-  "Input.Label.Outro.NamingConvention": "Bitte verwenden Sie <b>existierende Kategorien</b>, die Sie <a href = \"https://waxcode.net/x/CodBi/\" target = \"_blank\">hier</a> nachschlagen können und ordnen Sie Ihre Elemente nach Möglichkeit in bereits bestehende Katogerien mit ein.",
+  "Input.Label.Outro.NamingConvention": "Bitte verwenden Sie <b>existierende Kategorien</b>, die Sie <a href = \"https://codbi.pages.dev/form/de\" target = \"_blank\">hier</a> nachschlagen können und ordnen Sie Ihre Elemente nach Möglichkeit in bereits bestehende Kategorien mit ein.",
   "Input.Label.JoinUsOnGitHub": "Treten Sie unserer Community auf GitHub bei, um Ihre lokalen Entwicklungen zu teilen und damit die Gemeinde zu unterstützen!",
   "Input.Hint.SureToDelete": "Sicher?",
   "Input.Hint.AlreadyExistent": "Dieser Pfad ist bereits vergeben (eventuell auch für ein natives CodBi-Element). INFO: Das Überschreiben der Dokumentation nativer CodBi-Elemente ist durch Umbenennung in der Baumansicht möglich. Bitte wählen Sie einen anderen Namen für das CodBi-Element.",
@@ -66,7 +66,7 @@
   "CodeTemplate_Standard_Placeholder_FUNC": "CSV der auszuführenden Funktionalität(en)",
   "CodeTemplate_Functionality_Extend": "Erweitern einer Funktionalität",
   "CodeTemplate_Functionality_Extend_Placeholder": "Zu.Erweiternde.Funktionalitaet",
-  "CodeTemplate_EP_Extend": "Erweitern einer Elementplatzhalters",
+  "CodeTemplate_EP_Extend": "Erweitern eines Elementplatzhalters",
   "CodeTemplate_EP_Extend_Placeholder": "Zu.Erweiternder.Platzhalter",
   "CodeTemplate_Start": "CodBi starten"
 }

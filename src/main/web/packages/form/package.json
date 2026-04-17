@@ -2,7 +2,7 @@
   "private": true,
   "type": "module",
   "name": "codbi-form",
-  "version": "1.0.0-SNAPSHOT",
+  "version": "1.0.0",
   "stableVersion": "1.0.0",
   "sideEffects": [
     "./src/index.ts"

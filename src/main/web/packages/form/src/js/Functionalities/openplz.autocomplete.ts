@@ -70,13 +70,14 @@ export class OpenPLZ_Autocomplete {
    *                        locality (overwrites **DependentPLZ**).
    *  - FocusOnAutocomplete The CSS-Selector of the field to focus when an autocomplete has occurred.
    *  - MsgNotKnown:        The message to show when trying to set a value that can't be found in OpenPLZ.
-   *  - CSSProposals:       The CSS-Style for the proposals-Select-Element appearing when there are multiple matches. */
+   *  - CSSProposals:       The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.
+   *  - AllowEmpty:         If set to **"true"** an empty input value won't trigger an error message. */
   @DBC.ParamvalueProvider
   public static functionality(
     @DEFINED.PRE("targetdata :: focusonautocomplete")
     @TYPE.PRE(
       "string",
-      "targetdata :: country :: cssproposals :: msgnotknown :: dependent :: dependentplz :: dependentlocality :: focusonautocomplete",
+      "targetdata :: country :: cssproposals :: msgnotknown :: dependent :: dependentplz :: dependentlocality :: focusonautocomplete :: allowempty",
     )
     @REGEX.PRE(/(de|en|at|li|ch)/i, "country")
     @REGEX.PRE(/^(localities|postalcode|streets)$/i, "targetdata")
@@ -94,8 +95,30 @@ export class OpenPLZ_Autocomplete {
         ? "name"
         : "postalCode";
     // #region Remove entries that're not in LDAP.
+    let userHasTyped = false;
+    toProcess.addEventListener(
+      "input",
+      () => {
+        userHasTyped = true;
+      },
+      { capture: true },
+    );
     toProcess.addEventListener("blur", async (event) => {
       const $ = getJQuery();
+
+      if ((toProcess as HTMLInputElement).value.trim() === "") {
+        if (userHasTyped) {
+          userHasTyped = false;
+        }
+        $(toProcess).error("");
+
+        return;
+      }
+
+      if (!userHasTyped || proposals.parentElement) {
+        return;
+      }
+      userHasTyped = false;
 
       let result: Array<unknown>;
 
@@ -177,7 +200,7 @@ export class OpenPLZ_Autocomplete {
         $(toProcess).error(toLoad.msgnotknown ? toLoad.msgnotknown : `Only known ${toLoad.targetdata} are permitted.`);
       } else {
         if (document.activeElement !== proposals) {
-          proposals.remove();
+          removeProposals();
         }
 
         $(toProcess).error("");
@@ -187,10 +210,17 @@ export class OpenPLZ_Autocomplete {
     let blocked = false;
     // #region Create Selection.
     const proposals = document.createElement("select");
+    const removeProposals = () => {
+      try {
+        proposals.parentElement?.removeChild(proposals);
+      } catch {
+        /* blur/change race */
+      }
+    };
 
     proposals.addEventListener("blur", (event) => {
       if (document.activeElement !== toProcess) {
-        proposals.remove();
+        removeProposals();
       }
     });
 
@@ -202,123 +232,65 @@ export class OpenPLZ_Autocomplete {
         : "margin-top: .5em ; max-width: 100% ; border-color: darkorange ; border-radius: .5em ; box-shadow: 0 0 .5em darkorange ; color: green ; font-weight: bolder ; cursor: pointer;",
     );
     // #region Handle Selection.
-    const onSelected = async () => {
-      (toProcess as HTMLInputElement).value = (proposals as HTMLSelectElement).value;
-      // #region Focus the field after autocomplete, if specified.
-      // IMPORTANT: Focus BEFORE any await so it happens within the user-gesture context.
-      // Mobile browsers only open the on-screen keyboard for focus calls inside a user gesture.
-      const toFocus = toProcess.parentElement.parentElement.parentElement.querySelector(
-        toLoad.focusonautocomplete,
-      ) as HTMLElement;
-
-      if (toFocus && toLoad.focusonautocomplete) {
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-        (toFocus as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent = true;
-
-        proposals.remove();
-        toFocus.focus();
-        toFocus.animate(OpenPLZ_Autocomplete.kfFocusOnAutocomplete, OpenPLZ_Autocomplete.tmgFocusOnAutocomplete).play();
-      }
-      // #endregion Focus the field after autocomplete, if specified.
-
-      let result: Array<unknown>;
-
-      switch (toLoad.targetdata.toLowerCase()) {
-        case "localities":
-          result = removeDuplicates(
-            (await OpenPLZ_Localities.retrieve([
-              toLoad.country ? toLoad.country : "",
-              `°${(toProcess as HTMLInputElement).value}`,
-              "",
-              1,
-            ])) as Array<unknown>,
-            "name",
-          );
-
-          break;
-        case "postalcodes":
-          result = (await OpenPLZ_Localities.retrieve([
-            toLoad.country ? toLoad.country : "",
-            ".*",
-            `°${(toProcess as HTMLInputElement).value}`,
-            1,
-          ])) as Array<unknown>;
-
-          break;
-
-        case "streets":
-          result = removeDuplicates(
-            (await OpenPLZ_Streets.retrieve([
-              toLoad.country ? toLoad.country : "",
-              `°${(toProcess as HTMLInputElement).value}`,
-              toLoad.dependentplz === undefined ||
-              (toLoad.dependentlocality &&
-                toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependentlocality) &&
-                (
-                  toProcess.parentElement.parentElement.parentElement.querySelector(
-                    toLoad.dependentlocality,
-                  ) as HTMLInputElement
-                ).value !== "") ||
-              (toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependentplz) &&
-                (
-                  toProcess.parentElement.parentElement.parentElement.querySelector(
-                    toLoad.dependentplz,
-                  ) as HTMLInputElement
-                ).value === "")
-                ? ""
-                : toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependentplz)
-                  ? `°${(toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependentplz) as HTMLInputElement).value}`
-                  : "",
-              toLoad.dependentlocality &&
-              toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependentlocality) &&
-              (
-                toProcess.parentElement.parentElement.parentElement.querySelector(
-                  toLoad.dependentlocality,
-                ) as HTMLInputElement
-              ).value !== ""
-                ? `°${
-                    (
-                      toProcess.parentElement.parentElement.parentElement.querySelector(
-                        toLoad.dependentlocality,
-                      ) as HTMLInputElement
-                    ).value
-                  }`
-                : "",
-              1,
-            ])) as Array<unknown>,
-            "name",
-          );
-
-          break;
-      }
-
-      if (result.length === 0) {
+    const proposalResults = new Map<string, unknown>();
+    proposals.addEventListener("change", () => {
+      const val = (proposals as HTMLSelectElement).value;
+      if (!val) {
         return;
       }
+      const match = proposalResults.get(val);
+      (toProcess as HTMLInputElement).value = val;
+      removeProposals();
+      userHasTyped = false;
+      getJQuery()(toProcess).error("");
+
+      if (!match) {
+        return;
+      }
+      matchedValue = val;
+
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       if ((toProcess as any).codbiOpenPLZSetMatchListeners) {
         // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         for (const listener of (toProcess as any).codbiOpenPLZSetMatchListeners) {
-          listener(result, toProcess);
+          listener([match], toProcess);
         }
       }
-      // #region Set dependent, if available.
+
       const tcTargetData = toLoad.targetdata.toLowerCase();
       const dependent = toProcess.parentElement.parentElement.parentElement.querySelector(toLoad.dependent);
 
-      if (tcTargetData !== "streets") {
-        if (dependent) {
-          (dependent as HTMLInputElement).value =
-            tcTargetData === "localities"
-              ? (result[0] as { postalCode: string }).postalCode
-              : (result[0] as { name: string }).name;
-        }
+      if (tcTargetData !== "streets" && dependent) {
+        (dependent as HTMLInputElement).value =
+          tcTargetData === "localities"
+            ? (match as { postalCode: string }).postalCode
+            : (match as { name: string }).name;
+        getJQuery()(dependent).error("");
       }
-      // #endregion Set dependent, if available.
-    };
 
-    proposals.addEventListener("change", async (event) => {
-      onSelected();
+      blocked = true;
+      const toFocus = toProcess.parentElement.parentElement.parentElement.querySelector(
+        toLoad.focusonautocomplete,
+      ) as HTMLElement;
+
+      setTimeout(() => {
+        blocked = false;
+        if (toLoad.focusonautocomplete && toFocus) {
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          (toFocus as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent = false;
+        }
+      }, 1000);
+
+      if (toFocus && toLoad.focusonautocomplete) {
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        (toFocus as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent = true;
+        (toFocus as HTMLInputElement).readOnly = true;
+        toFocus.focus();
+        toFocus.animate(OpenPLZ_Autocomplete.kfFocusOnAutocomplete, OpenPLZ_Autocomplete.tmgFocusOnAutocomplete).play();
+        setTimeout(() => {
+          (toFocus as HTMLInputElement).readOnly = false;
+        }, 150);
+      }
     });
 
     toProcess.addEventListener("keydown", (event) => {
@@ -445,13 +417,14 @@ export class OpenPLZ_Autocomplete {
               tcTargetData === "localities"
                 ? (result[0] as { postalCode: string }).postalCode
                 : (result[0] as { name: string }).name;
+            getJQuery()(dependent).error("");
           }
         }
         // #endregion Set dependent, if available.
         // #region Block input on match.
         blocked = true;
         // #region Remove proposals.
-        proposals.remove();
+        removeProposals();
         // #endregion Remove proposals.
         const toFocus = toProcess.parentElement.parentElement.parentElement.querySelector(
           toLoad.focusonautocomplete,
@@ -471,7 +444,7 @@ export class OpenPLZ_Autocomplete {
           // biome-ignore lint/suspicious/noExplicitAny: <explanation>
           (toFocus as any).CodBi_OpenPLZ_Autocomplete_BlockedByDependent = true;
 
-          proposals.remove();
+          removeProposals();
           (toFocus as HTMLInputElement).readOnly = true;
           toFocus.focus();
           // Best-effort keyboard show for mobile (post-await, user activation expired).
@@ -489,9 +462,16 @@ export class OpenPLZ_Autocomplete {
       // #region Show proposals.
       if (result.length > 1) {
         proposals.innerHTML = "";
+        proposalResults.clear();
+        const prompt = new Option("▼", "");
+        prompt.disabled = true;
+        prompt.selected = true;
+        prompt.hidden = true;
+        proposals.options.add(prompt);
 
         for (const element of result) {
           proposals.options.add(new Option(element[targetResultProperty], element[targetResultProperty]));
+          proposalResults.set(element[targetResultProperty] as string, element);
         }
 
         toProcess.parentElement.appendChild(proposals);

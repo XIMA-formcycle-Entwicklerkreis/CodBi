@@ -20,9 +20,9 @@ export interface CodbiGlobal {
   // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
   registerFunctionality(id: string, init: (toLoad: any, toProcess: Element) => any): boolean;
   /** See {@link CodBi.extendFunctionality }. */
-  // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
   extendFunctionality(
     id: string,
+    // biome-ignore lint/suspicious/noExplicitAny: Needed 'cause there is no way to restrict what future **E**lement **P**laceholder may acquire.
     init: (toLoad: any, toProcess: Element, original: (toLoad: any, toProcess: Element) => any) => any,
   ): boolean;
   /** See {@link CodBi.registerEP }. */

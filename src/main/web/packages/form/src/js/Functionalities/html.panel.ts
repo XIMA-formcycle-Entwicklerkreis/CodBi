@@ -504,11 +504,15 @@ export class HTML_Panel {
           if (visible) {
             // Don't show if another scroll-to-top button is already visible.
             for (const btn of document.querySelectorAll(".CodBi_HTML_Panel_ScrollToTop")) {
-              if (btn !== btnScrollToTop && (btn as HTMLElement).style.opacity !== "0") return;
+              if (btn !== btnScrollToTop && (btn as HTMLElement).style.opacity !== "0") {
+                return;
+              }
             }
           }
-          btnScrollToTop!.style.opacity = visible ? "1" : "0";
-          btnScrollToTop!.style.pointerEvents = visible ? "auto" : "none";
+          if (btnScrollToTop) {
+            btnScrollToTop.style.opacity = visible ? "1" : "0";
+            btnScrollToTop.style.pointerEvents = visible ? "auto" : "none";
+          }
         };
 
         btnScrollToTop.addEventListener("mouseenter", () => {
@@ -540,9 +544,13 @@ export class HTML_Panel {
         if (scrollToTopAuto) {
           let lastScrollHeight = 0;
           const reevaluate = () => {
-            if ((toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded) return;
+            if ((toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded) {
+              return;
+            }
             const h = (toProcess as HTMLElement).scrollHeight;
-            if (h === lastScrollHeight) return;
+            if (h === lastScrollHeight) {
+              return;
+            }
             lastScrollHeight = h;
             showBtn(h > window.innerHeight * 1.5);
           };

@@ -124,15 +124,28 @@ describe("CodBi AJAX and constructor paths", () => {
       spy.mockRestore();
     });
 
-    it("extends existing, invoking both old and new", () => {
+    it("replaces existing, passing original as 3rd parameter", () => {
       const fn1 = jest.fn();
-      const fn2 = jest.fn();
+      const fn2 = jest.fn((_toLoad: unknown, _toProcess: Element, original: Function) => {
+        original(_toLoad, _toProcess);
+      });
       codbi.registerFunctionality("ext.func", fn1);
       codbi.extendFunctionality("ext.func", fn2);
       const el = document.createElement("div");
       codbi.functionalities.get("ext.func")({}, el);
-      expect(fn1).toHaveBeenCalled();
       expect(fn2).toHaveBeenCalled();
+      expect(fn1).toHaveBeenCalled();
+    });
+
+    it("does not invoke original when not explicitly called", () => {
+      const fn1 = jest.fn();
+      const fn2 = jest.fn();
+      codbi.registerFunctionality("ext.func2", fn1);
+      codbi.extendFunctionality("ext.func2", fn2);
+      const el = document.createElement("div");
+      codbi.functionalities.get("ext.func2")({}, el);
+      expect(fn2).toHaveBeenCalled();
+      expect(fn1).not.toHaveBeenCalled();
     });
   });
 
@@ -144,17 +157,29 @@ describe("CodBi AJAX and constructor paths", () => {
       spy.mockRestore();
     });
 
-    it("extends a sync EP", () => {
+    it("replaces a sync EP, passing original as 2nd parameter", () => {
       codbi.registerEP("base.ep", () => ["orig"]);
-      codbi.extendEP("base.ep", (_p: string[], former: string[]) => [...former, "ext"]);
+      codbi.extendEP("base.ep", (params: string[], original: Function) => [...(original(params) as string[]), "ext"]);
       const result = codbi.availableEPs["base.ep"]([]);
       expect(result).toContain("orig");
       expect(result).toContain("ext");
     });
 
-    it("extends an async EP", async () => {
+    it("does not invoke original EP when not explicitly called", () => {
+      const origFn = jest.fn(() => ["orig"]);
+      codbi.registerEP("noorig.ep", origFn);
+      codbi.extendEP("noorig.ep", () => ["replaced"]);
+      const result = codbi.availableEPs["noorig.ep"]([]);
+      expect(result).toContain("replaced");
+      expect(origFn).not.toHaveBeenCalled();
+    });
+
+    it("replaces an async EP, passing original as 2nd parameter", async () => {
       codbi.registerEP("async.base", () => Promise.resolve(["orig"]));
-      codbi.extendEP("async.base", (_p: string[], former: string[]) => [...former, "ext"]);
+      codbi.extendEP("async.base", async (params: string[], original: Function) => {
+        const prev = await (original(params) as Promise<string[]>);
+        return [...prev, "ext"];
+      });
       const result = await codbi.availableEPs["async.base"]([]);
       expect(result).toContain("orig");
       expect(result).toContain("ext");
@@ -162,7 +187,10 @@ describe("CodBi AJAX and constructor paths", () => {
 
     it("handles async generator on async EP", async () => {
       codbi.registerEP("aa.ep", () => Promise.resolve(["a"]));
-      codbi.extendEP("aa.ep", (_p: string[], former: string[]) => Promise.resolve([...former, "b"]));
+      codbi.extendEP("aa.ep", async (params: string[], original: Function) => {
+        const prev = await (original(params) as Promise<string[]>);
+        return [...prev, "b"];
+      });
       const result = await codbi.availableEPs["aa.ep"]([]);
       expect(result).toContain("a");
       expect(result).toContain("b");

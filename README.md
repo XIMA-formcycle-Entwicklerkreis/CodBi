@@ -20,7 +20,7 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 ### 🚀 Key Highlights
 
 - **Modular by Design** — Functionalities and EPs are composable building blocks: mix and combine them freely to build a wide range of applications — from simple input masks to AI-powered document processing pipelines — without writing custom code.
-- **Empowering Collaboration** — Export and import complete CodBi elements as JSON — including executable code, description, parameter definitions, global variables, and targeted CSS classes. This fosters knowledge sharing across departments and formcycle instances, allowing teams to benefit from pre-validated solutions.
+- **Empowering Collaboration** — Export and import complete CodBi elements as JSON — including executable code, description, parameter definitions, global variables and targeted CSS classes. This fosters knowledge sharing across departments and formcycle instances, allowing teams to benefit from pre-validated solutions.
 - **Intelligent Designer Integration** — The built-in Manager provides a seamless UI where users select elements — both built-in and custom — via point-and-click or autocomplete instead of manual typing, drastically reducing errors and lowering the entry barrier for creating smart forms.
 - **Local API-Documentation Manager** — Define, document and manage custom CodBi elements directly in the form designer — complete with code, parameters, global variables and CSS classes. Elements can be authored in JavaScript or TypeScript; for TypeScript, the [`codbi-elements-template`](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Elements-Template) project automatically generates the importable JSON. Custom elements behave identically to built-in ones and are available across all forms and in the intelligent designer interface.
 - **Flexible AI Integration** — CodBi can expose its AI engines via ChatML (AIproxy) for external access, attach to external AI endpoints, and—using the specialist parameter—mix and orchestrate both local and external AI models within the same workflow.
@@ -28,7 +28,7 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 - **Accurate Date Reasoning** — CodBi's system prompt injects real-time calendar context (current date, weekday, days in month) and guides even small local models to calculate dates correctly through structured chain-of-thought reasoning — no cloud API required.
 - **Hardware Optimized** — Native support for Vulkan and CUDA 12, with automatic CPU fallback.
 - **Zero-Config Deployment** — Automatic downloading and configuration of binaries and models on first use.
-- **Efficient Loading** — CodBi-Elements are only loaded into a form when actually used, keeping page weight minimal.
+- **Efficient Loading** — The code that constitutes a CodBi-Element is only loaded into a form when actually used, keeping page weight minimal.
 
 ## 📥 Installation
 
@@ -520,7 +520,7 @@ Unit tests use [Jest](https://jestjs.io/).
 
 ### 🌐 Automated Documentation Translation / BYOK
 
-The `scripts/generate-docs.ps1` pipeline automatically translates TSDoc/KDoc comments into other languages (German, Italian, etc.) using `scripts/translate-docs.mjs`. By default, the script uses Google Translate's free (unofficial) GTX endpoint for demonstration purposes, which requires no API key but has no uptime or availability guarantee.
+The `scripts/generate-docs.ps1` pipeline automatically translates TSDoc/KDoc comments into other languages (German, Italian, etc.) using `scripts/translate-docs.mjs`. Translation also runs automatically on GitHub CI (via `.github/workflows/docs.yml`) on every push to `main` that touches source files, using the `GOOGLE_TRANSLATE_API_KEY` repository secret. By default, the local script uses Google Translate's free (unofficial) GTX endpoint for demonstration purposes, which requires no API key but has no uptime or availability guarantee.
 
 To use the **official Google Cloud Translation API v2** instead, provide an API key via one of these methods (checked in order):
 
@@ -543,6 +543,7 @@ If no API key is found, the script silently falls back to the free GTX endpoint 
 - **Joint Cooperation:** Bavarian formcycle developer community
 
 Special thanks to:
+* Special thanks to **Bernd, Zipser** and **Ingmar, Ott** for their support in allowing this project to be developed alongside my regular responsibilities.
 * **[Andre Wachsmuth](https://github.com/awa-xima)** for providing the initial build and architecture foundation, as well as his invaluable guidance throughout the project.
 * **[Jennifer Schindler](https://github.com/er-js)** for her valuable code contributions, overall management, and for advocating and promoting CodBi within the developer community.
 * **[Benedikt Plangger](https://github.com/N64Freak1986)** & **[Florian, Christ](https://github.com/FlorianChristCo)** for their valuable code contributions.

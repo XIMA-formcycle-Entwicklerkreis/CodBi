@@ -2,7 +2,7 @@
   "private": true,
   "type": "module",
   "name": "codbi-common",
-  "version": "1.0.0-SNAPSHOT",
+  "version": "1.0.0",
   "stableVersion": "1.0.0",
   "main": "./src/index",
   "exports": {

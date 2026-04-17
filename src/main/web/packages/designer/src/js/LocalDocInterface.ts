@@ -9,6 +9,7 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 import { Optioninput } from "./OptionInput.js";
 import { SVManager } from "./SVManager.js";
 import { EPManager } from "./EPManager.js";
+import { i18n } from "./i18n.js";
 // #endregion Imports
 // #region Helper
 /**
@@ -278,6 +279,20 @@ export function enableLocalDocInterface(): void {
     return;
   }
 
+  // Snapshot the built-in functionalities and EPs so they can be restored when DB overrides are removed.
+  const builtinFunctionalities: { [key: string]: (typeof window.CodbiPluginData.detFunctionalities)[string] } = {};
+
+  for (const key in window.CodbiPluginData.detFunctionalities) {
+    builtinFunctionalities[key] = JSON.parse(JSON.stringify(window.CodbiPluginData.detFunctionalities[key]));
+  }
+
+  const builtinElementplaceholder: { [key: string]: (typeof window.CodbiPluginData.detElementplaceholder)[string] } =
+    {};
+
+  for (const key in window.CodbiPluginData.detElementplaceholder) {
+    builtinElementplaceholder[key] = JSON.parse(JSON.stringify(window.CodbiPluginData.detElementplaceholder[key]));
+  }
+
   window.addEventListener("load", () => {
     const baseURL: string = `${window.location.href.split("/").slice(0, 4).join("/")}/`; // URL we're coming from.
     const parentWindows: Window[] = window.parent as unknown as Window[];
@@ -385,7 +400,7 @@ export function enableLocalDocInterface(): void {
             case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality_Extend"):
               insertText(
                 optioninput.target as unknown as HTMLTextAreaElement,
-                `window.codbi.extendFunctionality("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality_Extend_Placeholder")}",( toLoad, toProcess ) =>  {});`,
+                `window.codbi.extendFunctionality("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_Functionality_Extend_Placeholder")}",( toLoad, toProcess, original ) =>  {});`,
               );
 
               break;
@@ -393,7 +408,7 @@ export function enableLocalDocInterface(): void {
             case window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend"):
               insertText(
                 optioninput.target as unknown as HTMLTextAreaElement,
-                `window.codbi.extendEP("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend_Placeholder")}",( params, formerResult ) => {});`,
+                `window.codbi.extendEP("${window.CodbiPluginData.retrieveManagerTranslatedResource("CodeTemplate_EP_Extend_Placeholder")}",( params, original ) => {});`,
               );
 
               break;
@@ -938,6 +953,17 @@ export function enableLocalDocInterface(): void {
         },
         success: (response) => {
           // #region Load into global structures and components
+          // Restore built-in entries that may have been overridden by a previous sync.
+          for (const key in builtinFunctionalities) {
+            window.CodbiPluginData.detFunctionalities[key] = JSON.parse(JSON.stringify(builtinFunctionalities[key]));
+          }
+
+          for (const key in builtinElementplaceholder) {
+            window.CodbiPluginData.detElementplaceholder[key] = JSON.parse(
+              JSON.stringify(builtinElementplaceholder[key]),
+            );
+          }
+
           for (const functionality in response.detFunctionalities) {
             window.CodbiPluginData.detFunctionalities[functionality] = response.detFunctionalities[functionality];
 
@@ -1451,6 +1477,30 @@ export function enableLocalDocInterface(): void {
                             (cssClass) => `${cssClass.standard} / ${cssClass.name}`,
                           );
                           // #endregion Build available classes list
+                          // #region No classes available — show tooltip and abort
+                          if (availableClasses.length === 0) {
+                            input = undefined;
+                            inTag = false;
+
+                            const tooltip = document.createElement("div");
+
+                            tooltip.textContent = i18n("designer.no_css_classes");
+                            tooltip.style.cssText =
+                              "position:fixed;padding:8px 14px;background:#333;color:#fff;border-radius:4px;font-size:13px;z-index:999999;pointer-events:none;white-space:normal;max-width:320px;box-shadow:0 2px 8px rgba(0,0,0,.3)";
+
+                            if (added.parentElement) {
+                              const rect = added.parentElement.getBoundingClientRect();
+
+                              tooltip.style.top = `${Math.ceil(rect.bottom + 4)}px`;
+                              tooltip.style.left = `${Math.min(Math.ceil(rect.left), window.innerWidth - 336)}px`;
+                            }
+
+                            document.body.appendChild(tooltip);
+                            setTimeout(() => tooltip.remove(), 3000);
+
+                            return;
+                          }
+                          // #endregion No classes available — show tooltip and abort
                           // #region First load of documentation.
                           const realName = DEFINED.tsCheck<string>(
                             optioninput.currentOption.substring(0, optioninput.currentOption.indexOf("/") - 1).trim(),

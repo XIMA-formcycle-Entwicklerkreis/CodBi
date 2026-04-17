@@ -106,6 +106,10 @@ export class HTML_Panel {
    *                                      Default is FALSE.
    *  - Accordion                         If set, this panel becomes part of an accordion. All panels sharing the same
    *                                      accordion name will be folded when one of them is unfolded.
+   *  - ScrollToTop                        States whether a round scroll-to-top button shall be displayed at the
+   *                                      bottom-right of the unfolded panel. Possible values: **"true"** (always
+   *                                      visible), **"auto"** (visible only when the panel's content is taller
+   *                                      than 1.5× the viewport height), or **"false"** (hidden). Defaults to AUTO.
    *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
@@ -115,7 +119,7 @@ export class HTML_Panel {
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "autoheadertitle :: autoheadertitlesupplementsspacer :: scrollblock")
-    @TYPE.PRE("string | boolean", "folded :: generateheader :: scroll")
+    @TYPE.PRE("string | boolean", "folded :: generateheader :: scroll :: scrolltotop")
     @TYPE.PRE("string | number", "autoheaderlevel")
     @OR.PRE(
       [new EQ("start"), new EQ("center"), new EQ("end"), new EQ("nearest"), new UNDEFINED()],
@@ -414,6 +418,16 @@ export class HTML_Panel {
           }
           // #endregion Handle accordions enabling live changes.
           (toProcess as HTMLElement).classList.remove("--folded");
+
+          if (btnScrollToTop) {
+            if (scrollToTopAuto) {
+              requestAnimationFrame(() => {
+                showBtn((toProcess as HTMLElement).scrollHeight > window.innerHeight * 1.5);
+              });
+            } else {
+              showBtn(true);
+            }
+          }
         } else {
           (toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded = !(
             toProcess as unknown as { [key: string]: unknown }
@@ -433,9 +447,109 @@ export class HTML_Panel {
           }
 
           (toProcess as HTMLElement).classList.add("--folded");
+
+          if (btnScrollToTop) {
+            showBtn(false);
+          }
         }
       });
       // #endregion Handle clicks on the header.
+      // #region ScrollToTop button.
+      const scrollToTopRaw =
+        typeof toLoad.scrolltotop === "string"
+          ? (toLoad.scrolltotop as string).toLowerCase().trim()
+          : toLoad.scrolltotop === true
+            ? "true"
+            : toLoad.scrolltotop === false
+              ? "false"
+              : "";
+      const scrollToTopValue = scrollToTopRaw === "" ? "auto" : scrollToTopRaw;
+      const showScrollToTop = scrollToTopValue === "true" || scrollToTopValue === "auto";
+      const scrollToTopAuto = scrollToTopValue === "auto";
+
+      let btnScrollToTop: HTMLButtonElement | null = null;
+      let showBtn = (_visible: boolean) => {};
+
+      if (showScrollToTop) {
+        btnScrollToTop = document.createElement("button");
+        btnScrollToTop.type = "button";
+        btnScrollToTop.className = "CodBi_HTML_Panel_ScrollToTop";
+        btnScrollToTop.innerHTML = "&#x25B2;";
+        btnScrollToTop.title = "Scroll to top";
+        Object.assign(btnScrollToTop.style, {
+          position: "sticky",
+          bottom: ".5em",
+          float: "right",
+          marginRight: ".5em",
+          width: "2.25em",
+          height: "2.25em",
+          borderRadius: "50%",
+          border: "2px solid currentColor",
+          background: "rgba(255,255,255,.85)",
+          color: "inherit",
+          fontSize: "1em",
+          lineHeight: "1",
+          cursor: "pointer",
+          zIndex: "10",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          boxShadow: "0 2px .4em rgba(0,0,0,.25)",
+          transition: "opacity .3s, scale .15s",
+          opacity: "0",
+          pointerEvents: "none",
+        });
+
+        showBtn = (visible: boolean) => {
+          if (visible) {
+            // Don't show if another scroll-to-top button is already visible.
+            for (const btn of document.querySelectorAll(".CodBi_HTML_Panel_ScrollToTop")) {
+              if (btn !== btnScrollToTop && (btn as HTMLElement).style.opacity !== "0") return;
+            }
+          }
+          btnScrollToTop!.style.opacity = visible ? "1" : "0";
+          btnScrollToTop!.style.pointerEvents = visible ? "auto" : "none";
+        };
+
+        btnScrollToTop.addEventListener("mouseenter", () => {
+          btnScrollToTop.style.scale = "1.15";
+        });
+        btnScrollToTop.addEventListener("mouseleave", () => {
+          btnScrollToTop.style.scale = "1";
+        });
+
+        btnScrollToTop.addEventListener("click", (e) => {
+          e.stopPropagation();
+          header.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+
+        toProcess.appendChild(btnScrollToTop);
+
+        // Show the button immediately if the panel starts unfolded.
+        if (!(toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded) {
+          if (scrollToTopAuto) {
+            requestAnimationFrame(() => {
+              showBtn((toProcess as HTMLElement).scrollHeight > window.innerHeight * 1.5);
+            });
+          } else {
+            showBtn(true);
+          }
+        }
+
+        // Re-evaluate auto visibility when panel content size changes.
+        if (scrollToTopAuto) {
+          let lastScrollHeight = 0;
+          const reevaluate = () => {
+            if ((toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded) return;
+            const h = (toProcess as HTMLElement).scrollHeight;
+            if (h === lastScrollHeight) return;
+            lastScrollHeight = h;
+            showBtn(h > window.innerHeight * 1.5);
+          };
+          setInterval(reevaluate, 500);
+        }
+      }
+      // #endregion ScrollToTop button.
       // #region Required fields handling (validation handling).
       let requiredFieldsContained = false;
 

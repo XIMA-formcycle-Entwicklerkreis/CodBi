@@ -2,7 +2,7 @@
 	"private": true,
 	"packageManager": "yarn@4.6.0",
 	"name": "codbi",
-	"version": "1.0.0-SNAPSHOT",
+	"version": "1.0.0",
 	"stableVersion": "1.0.0",
 	"author": "XIMA-formcycle-Entwicklerkreis",
 	"license": "MIT",

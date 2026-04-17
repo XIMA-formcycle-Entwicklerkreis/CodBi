@@ -7,6 +7,7 @@
     "MsgNotKnown": "",
     "DependentPLZ": "",
     "DependentLocality": "",
-    "FocusOnAutocomplete": ""
+    "FocusOnAutocomplete": "",
+    "AllowEmpty": ""
   }
 }

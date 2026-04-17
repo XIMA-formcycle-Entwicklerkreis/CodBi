@@ -36,7 +36,7 @@
     }
   }
 
-  .p-tabpanels.p-component {
+  .p-tabpanels {
     overflow-y: auto;
     padding-bottom: 10%;
   }
@@ -321,16 +321,16 @@
   }
 
   p-tab,
-  .p-ripple.p-tab.p-component {
+  .p-tab {
     border-color: darkorange;
     color: darkorange;
   }
 
-  .p-ripple.p-tab.p-component:hover {
+  .p-tab:hover {
     color: #10b981;
   }
 
-  .p-ripple.p-tab.p-component.p-tab-active {
+  .p-tab.p-tab-active {
     color: #10b981;
   }
 

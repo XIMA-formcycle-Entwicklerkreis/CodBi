@@ -9,7 +9,7 @@
 	"description": "formcycle plugin developed as a joint cooperation of the Bavarian formcycle developer community. Adds additional features to forms and the form designer. (client side script)",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev"
+		"url": "https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi"
 	},
 	"workspaces": [
 		"packages/common",

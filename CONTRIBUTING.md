@@ -1,6 +1,6 @@
-# Contributing to CodBi-Dev
+# Contributing to CodBi
 
-Thank you for your interest in contributing to CodBi-Dev! This document provides guidelines and instructions for contributing.
+Thank you for your interest in contributing to CodBi! This document provides guidelines and instructions for contributing.
 
 ## Table of Contents
 
@@ -56,11 +56,11 @@ Please be respectful and constructive in all interactions. We are committed to p
 1. Fork the repository on GitHub.
 2. Clone your fork locally:
    ```shell
-   git clone https://github.com/<your-username>/CodBi-Dev.git
+   git clone https://github.com/<your-username>/CodBi.git
    ```
 3. Add the upstream remote:
    ```shell
-   git remote add upstream https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev.git
+   git remote add upstream https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi.git
    ```
 4. Create a new branch for your work:
    ```shell
@@ -159,7 +159,7 @@ To format manually:
 
 ## Reporting Issues
 
-- Use the [GitHub Issues](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/issues) page.
+- Use the [GitHub Issues](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi/issues) page.
 - Include steps to reproduce, expected behaviour, and actual behaviour.
 - Include the formcycle version and browser version if relevant.
 - Attach screenshots or log output where helpful.

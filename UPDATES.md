@@ -198,8 +198,8 @@
 
 | Resource | URL |
 |---|---|
-| **Repository** | [github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev) |
+| **Repository** | [github.com/XIMA-formcycle-Entwicklerkreis/CodBi](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi) |
 | **Interactive Onboarding** | [CodBi OnBoarding](https://forms.ansbach.de/frontend-server/form/alias/1/CodBi_OnBoarding/) |
 | **QA Testing Live Overview** | [CodBi Testing — System Overview](https://forms.ansbach.de/frontend-server/form/alias/1/CodBi_Testing_Systemuebersicht) |
-| **Issue Tracker** | [GitHub Issues](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/issues) |
+| **Issue Tracker** | [GitHub Issues](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi/issues) |
 | **License** | [MIT](LICENSE) |

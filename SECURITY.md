@@ -14,7 +14,7 @@ Only the latest release is actively supported with security updates.
 If you discover a security vulnerability in CodBi, **please do not open a public issue**. Instead, report it responsibly via one of the following channels:
 
 - **Email**: [Salvatore.Callari@Ansbach.de](mailto:Salvatore.Callari@Ansbach.de)
-- **GitHub Private Vulnerability Reporting**: Use the [Security Advisories](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi-Dev/security/advisories/new) feature to report privately.
+- **GitHub Private Vulnerability Reporting**: Use the [Security Advisories](https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi/security/advisories/new) feature to report privately.
 
 ### What to Include
 
@@ -35,7 +35,7 @@ You will be kept informed of progress throughout the process.
 
 ## Scope
 
-This policy covers the CodBi-Dev plugin codebase, including:
+This policy covers the CodBi plugin codebase, including:
 
 - Backend Kotlin code (`src/main/kotlin/`)
 - Frontend TypeScript/CSS code (`src/main/web/packages/`)

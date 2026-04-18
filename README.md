@@ -36,6 +36,8 @@ Install the plugin via the plugin menu in the formcycle backend as system-scoped
 
 This adds several settings to the form designer within the `form` tab (the properties panel on the right-hand side), including the ability to enable CodBi, select the configuration template `default` (`xtensible` is for future use), and manage Standard Configurations.
 
+📄 **[Operations & Deployment Guide](OPERATIONS.md)**
+
 ### 📖 Interactive Onboarding Guide
 
 An interactive onboarding form is available at **[CodBi OnBoarding](https://forms.ansbach.de/frontend-server/form/alias/1/CodBi_OnBoarding/)** — it walks you through configuration, AI setup, and DSGVO/GDPR compliance step by step.
@@ -160,6 +162,8 @@ A ready-to-use TypeScript project template ([`codbi-elements-template`](https://
 ### 🧠 AI
 
 CodBi ships a full local AI inference stack that runs entirely on the formcycle server — no cloud services, no data transfer, simplified DSGVO/GDPR scope.
+
+📄 **[AI Proxy API Reference](AI-PROXY-API-REFERENCE.md)**
 
 #### 🏗 System Architecture
 

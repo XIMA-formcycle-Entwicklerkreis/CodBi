@@ -10,7 +10,7 @@
 
 **Low-Code Logic Engine for formcycle & Privacy-First Local AI**
 
-A [XIMA formcycle](https://www.xima.de/formcycle/) plugin that provides a comprehensive JavaScript library of Functionalities, Element Placeholders (EPs), and Standard Configurations for web forms.
+A [XIMA formcycle](https://www.xima.de/formcycle/) plugin that provides a comprehensive TypeScript library of Functionalities, Element Placeholders (EPs), and Standard Configurations for web forms.
 
 CodBi seamlessly integrates AI-powered features (document validation, data extraction, OCR, Speech-To-Text, and AI-Chat). All AI engines are automatically downloaded and configured on first use, with the LLM chat engine supporting any GGUF-compatible model. Additionally, the built-in Local API-Documentation Manager allows users to define, manage, and share custom CodBi elements across all forms on a server, treating them exactly like built-in features.
 

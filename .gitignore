@@ -149,3 +149,6 @@ kaptKotlin/
 cov-tmp/
 cov-tmp2/
 branch-test-output.txt
+
+# Agent
+AGENT.md

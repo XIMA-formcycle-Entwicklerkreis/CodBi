@@ -361,7 +361,7 @@
 	</pluginRepositories>
 
 	<build>
-		<finalName>${project.artifactId}</finalName>
+		<finalName>${project.artifactId}-${project.version}</finalName>
 
 		<!-- Include generated (bundled, minified) JavaScript and CSS resources -->
 		<resources>

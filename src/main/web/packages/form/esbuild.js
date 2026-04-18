@@ -165,6 +165,7 @@ function createIndividualTsBuildsWithSplitting(toProcess, basePath, outputDir) {
       bundle: true,
       drop: mode === "production" ? ["debugger"] : [],
       entryPoints: entryPoints,
+      keepNames: true,
       logLevel: "info",
       minify: mode === "production",
       outdir: outputDir,

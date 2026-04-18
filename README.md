@@ -526,7 +526,7 @@ For simplicity, we use plain CSS (no preprocessor such as SASS), but allow recen
 
 Unit tests use [Jest](https://jestjs.io/).
 
-## 📄 [API Documentation](https://codbi.pages.dev)
+## 📄 [API Documentation](https://xima-formcycle-entwicklerkreis.github.io/CodBi/)
 
 ### 🌐 Automated Documentation Translation / BYOK
 

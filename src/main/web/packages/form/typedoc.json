@@ -5,7 +5,7 @@
   "exclude": ["./src/tests/**/*", "./node_modules"],
   "theme": "default",
   "hideGenerator": true,
-  "hostedBaseUrl": "https://codbi.pages.dev/",
+  "hostedBaseUrl": "https://xima-formcycle-entwicklerkreis.github.io/CodBi/form/",
   "useHostedBaseUrlForAbsoluteLinks": true,
   "disableSources": false,
   "tsconfig": "./tsconfig.json",

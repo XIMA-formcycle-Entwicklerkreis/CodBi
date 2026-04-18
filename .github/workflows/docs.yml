@@ -94,6 +94,12 @@ jobs:
         done
         # Kotlin logic
         node scripts/translate-docs.mjs de "src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic" "." ".kt" || true
+        # Re-run Dokka on translated Kotlin sources for DE
+        LOGIC_DE_TEMP="src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/src_de_temp"
+        if [ -d "$LOGIC_DE_TEMP" ]; then
+          ./mvnw -B dokka:dokka -Ddokka.sourceDir="${{ github.workspace }}/$LOGIC_DE_TEMP" -Ddokka.outputDir="${{ github.workspace }}/target/dokka-de" -q || true
+          rm -rf "$LOGIC_DE_TEMP"
+        fi
 
     - name: Translate docs (IT)
       env:
@@ -109,6 +115,12 @@ jobs:
           rm -rf "$pkg/src_it_temp" "$pkg/typedoc.it.json" "$pkg/tsconfig.it.json"
         done
         node scripts/translate-docs.mjs it "src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic" "." ".kt" || true
+        # Re-run Dokka on translated Kotlin sources for IT
+        LOGIC_IT_TEMP="src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/src_it_temp"
+        if [ -d "$LOGIC_IT_TEMP" ]; then
+          ./mvnw -B dokka:dokka -Ddokka.sourceDir="${{ github.workspace }}/$LOGIC_IT_TEMP" -Ddokka.outputDir="${{ github.workspace }}/target/dokka-it" -q || true
+          rm -rf "$LOGIC_IT_TEMP"
+        fi
 
     - name: Assemble docs into docs/
       run: |

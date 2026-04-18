@@ -72,9 +72,9 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
 
     // Collect Docs_Frontend_XX plugin properties → docsAPI language map.
     val docsApiUrls = mutableMapOf<String, String>()
-    docsApiUrls["en"] = "https://codbi.pages.dev/form"
-    docsApiUrls["de"] = "https://codbi.pages.dev/form/de"
-    docsApiUrls["it"] = "https://codbi.pages.dev/form/it"
+    docsApiUrls["en"] = "https://xima-formcycle-entwicklerkreis.github.io/CodBi/form/"
+    docsApiUrls["de"] = "https://xima-formcycle-entwicklerkreis.github.io/CodBi/form/de/"
+    docsApiUrls["it"] = "https://xima-formcycle-entwicklerkreis.github.io/CodBi/form/it/"
     initData?.properties?.stringPropertyNames()?.forEach { key ->
       if (key.startsWith("Docs_Frontend_", ignoreCase = true) && key.length > 14) {
         val lang = key.substring(14).lowercase()
@@ -130,7 +130,8 @@ class CodbiFormDesignerResourcePlugin : IPluginFormDesignerResource {
       detElementplaceholder: String,
       detStandards: String,
       detLocalCode: String?,
-      docsApiUrls: Map<String, String> = mapOf("en" to "https://codbi.pages.dev"),
+      docsApiUrls: Map<String, String> =
+          mapOf("en" to "https://xima-formcycle-entwicklerkreis.github.io/CodBi/form/"),
   ): IResourceDescriptor {
     val uri = URI("plugin:${PLUGIN_FORM_DESIGNER_RESOURCE_ID}/${name}?v=${version}")
     val clazz = CodbiFormDesignerResourcePlugin::class.java

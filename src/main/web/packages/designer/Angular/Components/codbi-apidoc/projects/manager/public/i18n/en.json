@@ -17,7 +17,7 @@
   "Input.Label.Outro.Knowledge": "Share your Knowledge",
   "Input.Label.Outro.Knowledge.Details": "We all learn from each other.",
   "Input.Label.Outro.ImportantWhenNaming": "Important when it comes to naming:",
-  "Input.Label.Outro.NamingConvention": "Please use <b>existing categories</b>, which you can look up <a href = \"https://codbi.pages.dev/form\" target = \"_blank\">here</a>. If possible, please classify your elements into existing categories.",
+  "Input.Label.Outro.NamingConvention": "Please use <b>existing categories</b>, which you can look up <a href = \"https://xima-formcycle-entwicklerkreis.github.io/CodBi/form/\" target = \"_blank\">here</a>. If possible, please classify your elements into existing categories.",
   "Input.Label.JoinUsOnGitHub": "Join our user base on GitHub to share your local developments and support the community!",
   "Input.Hint.SureToDelete": "Sure?",
   "Input.Hint.AlreadyExistent": "That path is already assigned (possibly to a native CodBi-Element). INFO: Overwriting documentation of a native CodBi element is only possible by renaming from within the TreeView. Please choose a different name for the CodBi element than",

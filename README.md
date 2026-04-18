@@ -30,6 +30,12 @@ CodBi seamlessly integrates AI-powered features (document validation, data extra
 - **Zero-Config Deployment** — Automatic downloading and configuration of binaries and models on first use.
 - **Efficient Loading** — The code that constitutes a CodBi-Element is only loaded into a form when actually used, keeping page weight minimal.
 
+### 🔍 Implementation Highlights
+
+- **Local LLM orchestration** with crash isolation, queue management, and multi-model specialist routing — [`Standard.kt`](src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/ai/llama/Standard.kt)
+- **Runtime config engine** with dynamic attribute binding, lazy element loading, and dependency resolution — [`global-scope.ts`](src/main/web/packages/form/src/js/global-scope.ts)
+- **962 unit tests** across Kotlin (JUnit) and TypeScript (Jest)
+
 ## 📥 Installation
 
 Install the plugin via the plugin menu in the formcycle backend as system-scoped plugin.

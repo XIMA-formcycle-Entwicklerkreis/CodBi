@@ -541,6 +541,10 @@ To obtain an API key, enable the [Cloud Translation API](https://console.cloud.g
 
 If no API key is found, the script silently falls back to the free GTX endpoint — no configuration needed.
 
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started, code style, and pull request workflow.
+
 ## 📜 License & Authorship
 
 - **Initial Author & Lead Architect:** Salvatore Callari ([@CallariS](https://github.com/CallariS))

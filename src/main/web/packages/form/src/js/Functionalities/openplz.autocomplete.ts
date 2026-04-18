@@ -489,8 +489,3 @@ export class OpenPLZ_Autocomplete {
   })();
   // #endregion Initialization
 }
-
-window.codbi.registerFunctionality(
-  "OpenPLZ.Autocomplete",
-  OpenPLZ_Autocomplete.functionality.bind(OpenPLZ_Autocomplete),
-); // Initialization

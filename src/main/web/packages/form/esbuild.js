@@ -235,17 +235,39 @@ await Promise.all([
     target: mode === "production" ? "es6" : "esnext",
   }),
 
-  ...createIndividualTsBuildsWithSplitting(
-    functionalityTsFiles,
-    "src/js/Functionalities",
-    process.env.web_output_dir ?? "dist",
-  ),
-  ...createIndividualTsBuildsWithSplitting(epsTsFiles, "src/js/EPs", process.env.web_output_dir ?? "dist"),
-  ...createIndividualTsBuildsWithSplitting(
-    configurationsTsFiles,
-    "src/js/Configurations",
-    process.env.web_output_dir ?? "dist",
-  ),
+  // Single merged build for all Functionalities, EPs, and Configurations so that
+  // cross-category imports (e.g. a Functionality importing an EP) share chunks
+  // and side-effect registrations execute only once.
+  ...(() => {
+    const mergedEntryPoints = {};
+    for (const f of functionalityTsFiles)
+      mergedEntryPoints[path.basename(f, ".ts")] = path.join("src/js/Functionalities", f);
+    for (const f of epsTsFiles) mergedEntryPoints[path.basename(f, ".ts")] = path.join("src/js/EPs", f);
+    for (const f of configurationsTsFiles)
+      mergedEntryPoints[path.basename(f, ".ts")] = path.join("src/js/Configurations", f);
+    if (Object.keys(mergedEntryPoints).length === 0) return [];
+    return [
+      esbuild.build({
+        bundle: true,
+        drop: mode === "production" ? ["debugger"] : [],
+        entryPoints: mergedEntryPoints,
+        keepNames: true,
+        logLevel: "info",
+        minify: mode === "production",
+        outdir: process.env.web_output_dir ?? "dist",
+        sourcemap: mode === "production" ? false : "inline",
+        target: mode === "production" ? "es6" : "esnext",
+        loader: {
+          ".png": "dataurl",
+          ".template": "text",
+          ".svg": "dataurl",
+          ".html": "text",
+        },
+        splitting: true,
+        format: "esm",
+      }),
+    ];
+  })(),
 
   ...createIndividualTsBuildsWithSplitting(
     functionalityTsFiles,

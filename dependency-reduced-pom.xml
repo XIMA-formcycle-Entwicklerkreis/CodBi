@@ -43,7 +43,7 @@
         <directory>${project.build.directory}/generated-resources</directory>
       </resource>
     </resources>
-    <finalName>${project.artifactId}</finalName>
+    <finalName>${project.artifactId}-${project.version}</finalName>
     <pluginManagement>
       <plugins>
         <plugin>

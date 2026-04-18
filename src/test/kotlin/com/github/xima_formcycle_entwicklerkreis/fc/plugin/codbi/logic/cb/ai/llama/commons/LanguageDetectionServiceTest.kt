@@ -348,7 +348,7 @@ class LanguageDetectionServiceTest {
           }
       // May return null or a language object depending on language map
       // The test just verifies no crash
-      assertDoesNotThrow { result }
+      @Suppress("UNUSED_EXPRESSION") assertDoesNotThrow { result }
     }
 
     @Test

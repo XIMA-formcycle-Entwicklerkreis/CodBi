@@ -108,7 +108,7 @@ class GeoLocationServiceTest {
     @Test
     fun invalidCoordinatesDoNotCrash() {
       // With invalid coordinates, the HTTP call will fail but should not throw
-      val result = service.reverseGeocode("not-a-number", "also-not")
+      @Suppress("UNUSED_VARIABLE") val _result = service.reverseGeocode("not-a-number", "also-not")
       // May be null from HTTP failure or parse failure
       // The important thing is no exception is thrown
       assertTrue(true)
@@ -125,7 +125,7 @@ class GeoLocationServiceTest {
     fun cacheHitAfterSuccessfulLookup() {
       // First call
       service.reverseGeocode("48.137", "11.576")
-      val firstLogCount = logs.size
+      @Suppress("UNUSED_VARIABLE") val _firstLogCount = logs.size
       // Second call with same coords should either hit cache or retry
       service.reverseGeocode("48.137", "11.576")
       assertTrue(true)
@@ -248,7 +248,7 @@ class GeoLocationServiceTest {
 
     @Test
     fun publicIpAttemptsLookup() {
-      val result = service.geolocateByIP("8.8.8.8")
+      @Suppress("UNUSED_VARIABLE") val _result = service.geolocateByIP("8.8.8.8")
       assertTrue(logs.any { it.contains("IP geolocation for") })
     }
   }
@@ -486,7 +486,7 @@ class GeoLocationServiceTest {
       field.isAccessible = true
       field.set(svc, "http://127.0.0.1:$port/geo-success")
 
-      val result = svc.geolocateByIP("203.0.113.1")
+      @Suppress("UNUSED_VARIABLE") val _result = svc.geolocateByIP("203.0.113.1")
       // May return null due to disconnect-before-read
       assertTrue(
           localLogs.any { it.contains("IP geolocation") },

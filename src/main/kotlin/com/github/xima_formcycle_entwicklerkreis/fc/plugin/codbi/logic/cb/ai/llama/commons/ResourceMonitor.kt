@@ -113,6 +113,7 @@ internal class ResourceMonitor(
   }
 
   /** The main monitoring loop. Polls every 3 seconds. */
+  @Suppress("DEPRECATION")
   override fun run() {
     while (running) {
       try {

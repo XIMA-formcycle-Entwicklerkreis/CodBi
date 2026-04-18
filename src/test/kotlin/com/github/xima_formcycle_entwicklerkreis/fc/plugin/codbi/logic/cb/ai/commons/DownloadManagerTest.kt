@@ -101,6 +101,7 @@ class DownloadManagerTest {
   fun setUp() {
     logMessages.clear()
     dm = DownloadManager { level, msg -> logMessages.add(level to msg) }
+    @Suppress("DEPRECATION")
     tempDir = createTempDir("download-manager-test")
   }
 
@@ -589,7 +590,7 @@ class DownloadManagerTest {
       // First download
       val target = File(tempDir, "sized.bin")
       dm.downloadWithResume("http://127.0.0.1:$serverPort/full-file", target, "First")
-      val firstSize = target.length()
+      @Suppress("UNUSED_VARIABLE") val _firstSize = target.length()
 
       // Remove marker file, but file is complete
       File(tempDir, "sized.bin.complete").delete()

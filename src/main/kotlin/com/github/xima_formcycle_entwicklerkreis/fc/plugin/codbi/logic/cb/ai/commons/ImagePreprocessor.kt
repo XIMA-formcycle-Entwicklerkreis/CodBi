@@ -39,7 +39,7 @@ object ImagePreprocessor {
       return ImageIO.read(inputFile)
     }
     try {
-      val originalDPI = DpiUtil.readImageDPI(inputFile, logSignature)
+      DpiUtil.readImageDPI(inputFile, logSignature)
       val originalImage = ImageIO.read(inputFile) ?: return ImageIO.read(inputFile)
       val result =
           applyPreprocessing(originalImage, useAdaptive, logSignature) ?: return originalImage

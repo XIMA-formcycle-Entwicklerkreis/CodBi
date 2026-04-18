@@ -404,11 +404,12 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
    * @param noGpu Whether GPU is disabled.
    * @return The whisper-server binary [File], or `null` on failure.
    */
+  @Suppress("UNUSED_PARAMETER")
   private fun downloadBinary(
       platform: Platform,
       binDir: File,
       whisperRelease: String,
-      noGpu: Boolean
+      _noGpu: Boolean
   ): File? {
     detectedGpu = detectGpu()
 
@@ -829,6 +830,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
      *
      * @throws InterruptedException Internally used to stop sleep when shutting down.
      */
+    @Suppress("DEPRECATION")
     override fun run() {
       while (running) {
         try {

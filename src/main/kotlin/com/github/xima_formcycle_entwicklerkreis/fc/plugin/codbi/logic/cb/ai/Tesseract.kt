@@ -455,7 +455,8 @@ class TesseractAction : AI() {
   // endregion Tesseract JNI Interaction
   // region Image Preprocessing (delegated to ImagePreprocessor)
   /** Disk-based preprocessImage is deprecated for DSGVO compliance. */
-  private fun preprocessImage(inputFile: File, params: IPluginServletActionParams): File =
+  @Suppress("UNUSED_PARAMETER")
+  private fun preprocessImage(_inputFile: File, _params: IPluginServletActionParams): File =
       throw UnsupportedOperationException(
           "Disk-based preprocessImage is not supported. Use BufferedImage variant.")
 
@@ -1645,6 +1646,7 @@ class TesseractAction : AI() {
       isDaemon = true
     }
 
+    @Suppress("DEPRECATION")
     override fun run() {
       while (running) {
         try {

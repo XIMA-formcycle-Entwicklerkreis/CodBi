@@ -813,7 +813,7 @@ class WebSearchHandlerTest {
       val searchHandler =
           WebSearchHandler(
               maxSearchRoundTrips = 3,
-              searchFollowUpPrompt = { q, _, isLast -> "Answer: $q" },
+              searchFollowUpPrompt = { q, _, _ -> "Answer: $q" },
               buildMessages = { q, _, _, _, _, _, _, _ -> """[{"role":"user","content":"$q"}]""" },
               chatCompletion = { _, _, _, _ ->
                 callCount++
@@ -962,7 +962,7 @@ class WebSearchHandlerTest {
           WebSearchHandler(
               maxSearchRoundTrips = 3,
               searchFollowUpPrompt = { q, _, _ -> q },
-              buildMessages = { q, _, _, _, _, _, _, _ -> "[]" },
+              buildMessages = { _, _, _, _, _, _, _, _ -> "[]" },
               chatCompletion = { _, _, _, _ -> "ok" },
               streamChatCompletion = { _, _, _, _ -> throw RuntimeException("Stream failed") },
               log = { _, msg -> logs.add(msg) })
@@ -1096,7 +1096,7 @@ class WebSearchHandlerTest {
           WebSearchHandler(
               maxSearchRoundTrips = 3,
               searchFollowUpPrompt = { q, _, _ -> q },
-              buildMessages = { q, _, _, _, _, _, _, _ -> "[]" },
+              buildMessages = { _, _, _, _, _, _, _, _ -> "[]" },
               chatCompletion = { _, _, _, _ -> "ok" },
               streamChatCompletion = { _, _, _, _ -> throw RuntimeException("Fail") },
               log = { _, msg -> logs.add(msg) })

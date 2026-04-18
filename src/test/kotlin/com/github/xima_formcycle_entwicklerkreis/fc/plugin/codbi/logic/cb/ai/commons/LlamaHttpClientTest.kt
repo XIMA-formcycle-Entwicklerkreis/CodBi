@@ -26,7 +26,8 @@ class LlamaHttpClientTest {
 
     // --- /v1/chat/completions: returns a valid JSON response
     server.createContext("/v1/chat/completions") { exchange ->
-      val requestBody = exchange.requestBody.bufferedReader().readText()
+      @Suppress("UNUSED_VARIABLE")
+      val _requestBody = exchange.requestBody.bufferedReader().readText()
       val response = """{"choices":[{"message":{"content":"Hello from test server"}}]}"""
       val bytes = response.toByteArray(Charsets.UTF_8)
       exchange.sendResponseHeaders(200, bytes.size.toLong())

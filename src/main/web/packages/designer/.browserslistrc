@@ -1,8 +1,7 @@
 # Browsers that we support
 
-> 0.1%
-last 20 versions
+last 2 Chrome versions
+last 2 Firefox versions
+last 2 Safari versions
+last 2 Edge versions
 Firefox ESR
-not dead
-not IE 11
-not IE_Mob 11

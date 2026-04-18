@@ -299,12 +299,13 @@ internal class WebSearchHandler(
    * @param detectedLang Pre-detected language result.
    * @return The final answer (either the original or the fetch-augmented one).
    */
+  @Suppress("UNUSED_PARAMETER")
   fun handleFetchToolCall(
       initialAnswer: String,
       originalQuestion: String,
       imageParts: List<String>,
       chatHistory: List<Pair<String, String>>,
-      enableThinking: Boolean,
+      _enableThinking: Boolean,
       slotId: Int,
       detectedLang: DetectedLanguage? = null
   ): String {
@@ -347,13 +348,14 @@ internal class WebSearchHandler(
    * @param slotId The slot ID for inference.
    * @param detectedLang Pre-detected language result.
    */
+  @Suppress("UNUSED_PARAMETER")
   fun handleFetchToolCallStreaming(
       fullText: String,
       originalQuestion: String,
       imageParts: List<String>,
       chatHistory: List<Pair<String, String>>,
       session: StreamingSession,
-      enableThinking: Boolean,
+      _enableThinking: Boolean,
       slotId: Int,
       detectedLang: DetectedLanguage? = null
   ) {
@@ -429,15 +431,16 @@ internal class WebSearchHandler(
    * @param detectedLang Pre-detected language result.
    * @return The final answer (either the original or the mail-augmented one).
    */
+  @Suppress("UNUSED_PARAMETER")
   fun handleMailToolCall(
       initialAnswer: String,
-      originalQuestion: String,
-      imageParts: List<String>,
-      chatHistory: List<Pair<String, String>>,
-      enableThinking: Boolean,
-      slotId: Int,
+      _originalQuestion: String,
+      _imageParts: List<String>,
+      _chatHistory: List<Pair<String, String>>,
+      _enableThinking: Boolean,
+      _slotId: Int,
       sessionId: String,
-      detectedLang: DetectedLanguage? = null,
+      _detectedLang: DetectedLanguage? = null,
       clientIP: String = "unknown"
   ): String {
     if (!MailBridge.isAvailable) return initialAnswer
@@ -481,14 +484,15 @@ internal class WebSearchHandler(
    * @param sessionId The streaming session ID (for rate limiting).
    * @param detectedLang Pre-detected language result.
    */
+  @Suppress("UNUSED_PARAMETER")
   fun handleMailToolCallStreaming(
       fullText: String,
-      originalQuestion: String,
-      imageParts: List<String>,
-      chatHistory: List<Pair<String, String>>,
+      _originalQuestion: String,
+      _imageParts: List<String>,
+      _chatHistory: List<Pair<String, String>>,
       session: StreamingSession,
-      enableThinking: Boolean,
-      slotId: Int,
+      _enableThinking: Boolean,
+      _slotId: Int,
       sessionId: String,
       detectedLang: DetectedLanguage? = null,
       clientIP: String = "unknown"

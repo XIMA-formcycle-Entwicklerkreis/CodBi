@@ -124,7 +124,7 @@ class ChatCompletionServiceTest {
       var externalCalled = false
       val service =
           createExternalService(
-              externalPost = { _, body, _ ->
+              externalPost = { _, _, _ ->
                 externalCalled = true
                 """{"choices":[{"message":{"content":"External hello"}}]}"""
               })
@@ -755,7 +755,7 @@ class ChatCompletionServiceTest {
     fun detectsLogprobRepetition() {
       // Build 70+ chunks where the same short text appears twice in the output
       // and the last 20 logprobs are all > -0.05 (near certainty = repetition)
-      val prefix = "The answer is forty two. "
+      @Suppress("UNUSED_VARIABLE") val _prefix = "The answer is forty two. "
       val repeated = "REPEAT "
       // First: emit the repeated text once
       val chunks = mutableListOf<String>()

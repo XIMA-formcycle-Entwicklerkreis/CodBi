@@ -438,6 +438,7 @@ class Standard : LLAMA() {
           ExternalAiClient(config.externalUrl!!, config.externalApiKey, config.externalModel, logFn)
     }
 
+    @Suppress("DEPRECATION")
     thinkingServer =
         ThinkingServerManager(
             mainServerPort = serverPort,
@@ -586,11 +587,11 @@ class Standard : LLAMA() {
 
     executor!!.submit {
       try {
-        val platform = detectPlatform()
+        val localPlatform = detectPlatform()
 
-        log(LogLevel.INFO, "Platform: ${platform.os}/${platform.arch}")
+        log(LogLevel.INFO, "Platform: ${localPlatform.os}/${localPlatform.arch}")
 
-        val binary = downloadServerBinary(platform)
+        val binary = downloadServerBinary(localPlatform)
 
         if (binary == null) {
           loadError = IllegalStateException("Failed to download LLAMA-Server binary")
@@ -700,6 +701,7 @@ class Standard : LLAMA() {
               }
             }
 
+            @Suppress("DEPRECATION")
             val manager =
                 SpecialistServerManager(
                     name = name,
@@ -1008,9 +1010,10 @@ class Standard : LLAMA() {
    * @param mailForwardRaw The raw (base64-encoded) value of the `X-Mail-Forward` header.
    * @return A JSON response with `success` and optional `error`.
    */
+  @Suppress("UNUSED_PARAMETER")
   private fun handleMailForward(
       params: IPluginServletActionParams,
-      mailForwardRaw: String
+      _mailForwardRaw: String
   ): IPluginServletActionRetVal {
     val headers = params.headerMap
 
@@ -1128,6 +1131,7 @@ class Standard : LLAMA() {
       log(LogLevel.INFO, "Chat history: ${chatHistory.size} turns")
     }
     val headers = params.headerMap
+    @Suppress("DEPRECATION")
     val slotId: Int = run {
       val sid =
           headers.entries.find { it.key.equals("X-Session-Id", ignoreCase = true) }?.value

@@ -298,6 +298,7 @@ object BraveSearch : CodBi() {
    *   over the global [filterResults] flag.
    * @return The santiazed [raw]-[String].
    */
+  @Suppress("UNUSED_PARAMETER")
   fun sanitizeQuery(
       raw: String,
       language: String? = null,

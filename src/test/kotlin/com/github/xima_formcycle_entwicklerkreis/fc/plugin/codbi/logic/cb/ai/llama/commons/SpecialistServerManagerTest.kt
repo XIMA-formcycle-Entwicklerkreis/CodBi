@@ -408,7 +408,7 @@ class SpecialistServerManagerTest {
       val manager = createManager(healthCheckTimeoutMs = 5000)
 
       // Create a real executable (cmd /c exit 0) that stays alive briefly
-      val binDir = createTempDir("specialist-test")
+      @Suppress("DEPRECATION") val binDir = createTempDir("specialist-test")
       val script: File
       val isWindows = System.getProperty("os.name").lowercase().contains("win")
       if (isWindows) {

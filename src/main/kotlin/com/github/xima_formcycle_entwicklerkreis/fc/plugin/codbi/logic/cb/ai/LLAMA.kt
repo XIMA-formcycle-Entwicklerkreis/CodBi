@@ -391,6 +391,7 @@ abstract class LLAMA : AI() {
    * @param mmProjFile Optional: the multimodal projector file (for VLMs).
    * @return `true` if the server started and passed health checks.
    */
+  @Suppress("DEPRECATION")
   protected fun startServer(binary: File, modelFile: File, mmProjFile: File? = null): Boolean {
     serverPort = processManager.findFreePort(serverPort)
 
@@ -582,6 +583,7 @@ abstract class LLAMA : AI() {
       if (it >= -1) gpuLayers = it
     }
 
+    @Suppress("DEPRECATION")
     configData.properties.getProperty("AI_LLAMA_ENGINE_Parallel")?.trim()?.toIntOrNull()?.let {
       if (it > 0) parallelSlots = it
     }

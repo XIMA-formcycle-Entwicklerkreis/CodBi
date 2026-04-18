@@ -258,7 +258,7 @@ internal class LanguageDetectionService(private val log: (LogLevel, String) -> U
     val katakana = lower.count { it in '\u30A0'..'\u30FF' }
     val hangul = lower.count { it in '\uAC00'..'\uD7AF' || it in '\u1100'..'\u11FF' }
     val cyrillic = lower.count { it in '\u0400'..'\u04FF' }
-    val arabic = lower.count { it in '\u0600'..'\u06FF' }
+    @Suppress("UNUSED_VARIABLE") val _arabic = lower.count { it in '\u0600'..'\u06FF' }
 
     if (hiragana + katakana >= 2 || (cjkCount >= 2 && (hiragana + katakana) >= 1)) {
       return languageMap["japanese"]

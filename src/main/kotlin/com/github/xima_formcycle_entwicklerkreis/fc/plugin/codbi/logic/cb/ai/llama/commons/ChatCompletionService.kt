@@ -65,7 +65,8 @@ internal class ChatCompletionService(
       idSlot: Int = -1,
       maxThinkingTokens: Int? = null,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null
+      overrideExternalClient: ExternalAiClient? = null,
+      disableFrequencyPenalty: Boolean = this.disableFrequencyPenalty
   ): String {
     val useExtSpecialist = overrideExternalClient != null
     val external = useExtSpecialist || isExternalMode()
@@ -157,7 +158,8 @@ internal class ChatCompletionService(
       enableThinking: Boolean = false,
       idSlot: Int = -1,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null
+      overrideExternalClient: ExternalAiClient? = null,
+      disableFrequencyPenalty: Boolean = this.disableFrequencyPenalty
   ) {
     val useExtSpecialist = overrideExternalClient != null
     val external = useExtSpecialist || isExternalMode()

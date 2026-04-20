@@ -26,6 +26,8 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  *                                  plugin property.
  *  - 7th **FilterResults**       — `"true"` to enable PII filtering on Brave Search queries.
  *  - 8th **JsonParse**           — `"true"` to parse the AI response as JSON. Default: `"false"`.
+ *  - 9th **DisableFrequencyPenalty** — `"true"` to omit `frequency_penalty` from API requests. Required
+ *                                      for providers like Gemini that reject this parameter.
  *
  * @remarks
  * Initial Author: Callari, Salvatore (Callari@WaXCode.net)
@@ -56,6 +58,7 @@ export class AI_LLAMA_STD_QA {
     const specialist = (params[5] ?? "").trim();
     const filterResults = (params[6] ?? "").trim();
     const jsonParse = (params[7] ?? "").toLowerCase() === "true";
+    const disableFrequencyPenalty = (params[8] ?? "").toLowerCase() === "true";
     // #endregion Extract indexed parameters
     // #region Append language instruction if configured
     if (language) {
@@ -83,7 +86,9 @@ export class AI_LLAMA_STD_QA {
     if (specialist) {
       headers["X-Specialist"] = specialist;
     }
-    // #endregion Build request headers
+    if (disableFrequencyPenalty) {
+      headers["X-Disable-Frequency-Penalty"] = "true";
+    }
     // #region Send AJAX request with queue polling (geolocation resolved inline)
     return new Promise((resolve) => {
       const prepareAndSend = async () => {

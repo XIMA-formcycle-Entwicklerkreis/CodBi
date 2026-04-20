@@ -511,11 +511,11 @@ class Standard : LLAMA() {
             buildMessages = { q, ip, ch, se, et, dl, le, ul ->
               messageBuilder!!.buildMessages(q, ip, ch, se, et, dl, le, ul)
             },
-            chatCompletion = { mj, et, ids, mt, op, oec ->
-              chatCompletionService!!.chatCompletion(mj, et, ids, mt, op, oec)
+            chatCompletion = { mj, et, ids, mt, op, oec, dfp ->
+              chatCompletionService!!.chatCompletion(mj, et, ids, mt, op, oec, dfp)
             },
-            streamChatCompletion = { mj, s, et, ids, op, oec ->
-              chatCompletionService!!.streamChatCompletion(mj, s, et, ids, op, oec)
+            streamChatCompletion = { mj, s, et, ids, op, oec, dfp ->
+              chatCompletionService!!.streamChatCompletion(mj, s, et, ids, op, oec, dfp)
             },
             log = logFn)
 
@@ -844,7 +844,7 @@ class Standard : LLAMA() {
                 it.value.equals("true", ignoreCase = true)
           }
 
-      if (isHealthCheck) return handleHealthCheck()
+      if (isHealthCheck) return handleHealthCheck(params)
 
       val mailForwardTo =
           params.headerMap.entries
@@ -971,7 +971,9 @@ class Standard : LLAMA() {
    *
    * @return A health-check response describing readiness or initialization errors.
    */
-  private fun handleHealthCheck(): IPluginServletActionRetVal {
+  private fun handleHealthCheck(
+      params: IPluginServletActionParams? = null
+  ): IPluginServletActionRetVal {
     if (loadError != null) {
       return gsonResponse(ErrorResponse("Failed to initialize: ${loadError?.message ?: "unknown"}"))
     }
@@ -987,14 +989,39 @@ class Standard : LLAMA() {
           ErrorResponse("Model is not ready yet. It may still be downloading or loading."))
     }
 
-    val displayModel =
-        if (config.isExternalMode) {
-          (config.externalModel ?: "External AI").substringAfterLast("/")
-        } else {
-          val raw = config.modelUrl.substringAfterLast("/").removeSuffix(".gguf")
+    // Optional specialist name from X-Specialist header. When a specialist is selected via
+    // the `specialist` toLoad property, the chat page sends this header so the status bubble
+    // can reflect the specialist's actual model name rather than the default.
+    val specialistName =
+        params
+            ?.headerMap
+            ?.entries
+            ?.find { it.key.equals("X-Specialist", ignoreCase = true) }
+            ?.value
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
 
-          raw.replace(Regex("-[QFqf][0-9_]+[A-Za-z_]*$"), "")
+    fun stripModelSuffix(raw: String): String =
+        raw.removeSuffix(".gguf").replace(Regex("-[QFqf][0-9_]+[A-Za-z_]*$"), "")
+
+    val resolvedDisplayModel: String? =
+        specialistName?.let { name ->
+          val key = name.lowercase()
+          config.externalSpecialists[key]?.let { ext ->
+            (ext.model ?: name).substringAfterLast("/")
+          }
+              ?: config.specialists[key]?.let { spec ->
+                stripModelSuffix(spec.modelUrl.substringAfterLast("/"))
+              }
         }
+
+    val displayModel =
+        resolvedDisplayModel
+            ?: if (config.isExternalMode) {
+              (config.externalModel ?: "External AI").substringAfterLast("/")
+            } else {
+              stripModelSuffix(config.modelUrl.substringAfterLast("/"))
+            }
 
     val badgeFlag = AI.queueBadgeEnabled.takeIf { it }
 
@@ -1096,7 +1123,8 @@ class Standard : LLAMA() {
       val forcedLanguageCode: String?,
       val specialistName: String?,
       val queueTicket: String?,
-      val autoMailTo: String?
+      val autoMailTo: String?,
+      val disableFrequencyPenalty: Boolean
   )
 
   /**
@@ -1265,7 +1293,12 @@ class Standard : LLAMA() {
                     it
                   }
                 }
-                ?.takeIf { it.contains("@") })
+                ?.takeIf { it.contains("@") },
+        disableFrequencyPenalty =
+            headers.entries
+                .find { it.key.equals("X-Disable-Frequency-Penalty", ignoreCase = true) }
+                ?.value
+                ?.equals("true", ignoreCase = true) ?: config.disableFrequencyPenalty)
   }
 
   /**
@@ -1498,7 +1531,13 @@ class Standard : LLAMA() {
             log(LogLevel.INFO, "Messages JSON (first 500): ${messages.take(500)}")
           }
           chatCompletionService!!.streamChatCompletion(
-              messages, session, ctx.enableThinking, ctx.slotId, specialistPort, specialistClient)
+              messages,
+              session,
+              ctx.enableThinking,
+              ctx.slotId,
+              specialistPort,
+              specialistClient,
+              ctx.disableFrequencyPenalty)
           val fullText = session.currentText()
           val thinkText = session.currentThinking()
           log(
@@ -1524,7 +1563,8 @@ class Standard : LLAMA() {
                 userLocation,
                 ctx.filterResults,
                 specialistPort,
-                specialistClient)
+                specialistClient,
+                ctx.disableFrequencyPenalty)
             session.searching = false
             session.searchQuery = null
           }
@@ -1548,7 +1588,8 @@ class Standard : LLAMA() {
                 ctx.slotId,
                 detectedLang,
                 specialistPort,
-                specialistClient)
+                specialistClient,
+                ctx.disableFrequencyPenalty)
             session.fetching = false
             session.fetchUrl = null
           }
@@ -1663,7 +1704,13 @@ class Standard : LLAMA() {
                   fallbackMessages
                 }
             chatCompletionService!!.streamChatCompletion(
-                messagesWithReasoning, session, false, ctx.slotId, specialistPort, specialistClient)
+                messagesWithReasoning,
+                session,
+                false,
+                ctx.slotId,
+                specialistPort,
+                specialistClient,
+                ctx.disableFrequencyPenalty)
             val fallbackText = session.currentText()
             if (ctx.searchEnabled &&
                 BraveSearch.isAvailable &&
@@ -1686,7 +1733,8 @@ class Standard : LLAMA() {
                   userLocation,
                   ctx.filterResults,
                   specialistPort,
-                  specialistClient)
+                  specialistClient,
+                  ctx.disableFrequencyPenalty)
               session.searching = false
               session.searchQuery = null
             }
@@ -1710,7 +1758,8 @@ class Standard : LLAMA() {
                   ctx.slotId,
                   detectedLang,
                   specialistPort,
-                  specialistClient)
+                  specialistClient,
+                  ctx.disableFrequencyPenalty)
               session.fetching = false
               session.fetchUrl = null
             }
@@ -1882,7 +1931,8 @@ class Standard : LLAMA() {
                 syncCtx.slotId,
                 syncCtx.thinkingTokenBudget,
                 specialistPort,
-                specialistClient)
+                specialistClient,
+                syncCtx.disableFrequencyPenalty)
         if (syncCtx.enableThinking && answer.isBlank()) {
           log(
               LogLevel.INFO,
@@ -1903,7 +1953,8 @@ class Standard : LLAMA() {
                   enableThinking = false,
                   idSlot = syncCtx.slotId,
                   overridePort = specialistPort,
-                  overrideExternalClient = specialistClient)
+                  overrideExternalClient = specialistClient,
+                  disableFrequencyPenalty = syncCtx.disableFrequencyPenalty)
         }
         if (syncCtx.searchEnabled) {
           answer =
@@ -1918,7 +1969,8 @@ class Standard : LLAMA() {
                   userLocation,
                   syncCtx.filterResults,
                   specialistPort,
-                  specialistClient)
+                  specialistClient,
+                  syncCtx.disableFrequencyPenalty)
         }
         // region CALL:fetch handling (sync path)
         if (syncCtx.searchEnabled) {
@@ -1932,7 +1984,8 @@ class Standard : LLAMA() {
                   syncCtx.slotId,
                   detectedLang,
                   specialistPort,
-                  specialistClient)
+                  specialistClient,
+                  syncCtx.disableFrequencyPenalty)
         }
         // endregion CALL:fetch handling (sync path)
         // region CALL:mail handling (sync path)

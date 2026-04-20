@@ -135,7 +135,7 @@ export class AI_LLAMA_STANDARD_QA {
   public static functionality(
     @TYPE.PRE(
       "string",
-      "aihint, positiveresponse, verifyerrortext, verifycheckboxlabel, mode, responselanguage, specialist, queuebadge, queuetext",
+      "aihint, positiveresponse, verifyerrortext, verifycheckboxlabel, mode, responselanguage, specialist, queuebadge, queuetext, disablefrequencypenalty",
     )
     @GREATER.PRE(
       3,
@@ -292,7 +292,9 @@ export class AI_LLAMA_STANDARD_QA {
       if (specialist) {
         vqaHeaders["X-Specialist"] = specialist;
       }
-      // #endregion Forced response language
+      if (toLoad.disablefrequencypenalty != null && String(toLoad.disablefrequencypenalty).toLowerCase() === "true") {
+        vqaHeaders["X-Disable-Frequency-Penalty"] = "true";
+      }
       // #region Brave Search and geolocation toggles
       const internetAccess = toLoad.InternetAccess != null && String(toLoad.InternetAccess).toLowerCase() === "true";
 

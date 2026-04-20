@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.0.1] — 2026-04-20
+
+### Fixed
+- External AI providers (Google Gemini, Groq) returned HTTP 400 due to unsupported `logprobs` parameter — now only sent to local llama-server
+
+### Changed
+- `AI_LLAMA_STD_MmprojUrl` is now optional — omit it when using a text-only model (no vision encoder)
+- When no custom model URL is set, the default VL model still auto-provides its matching mmproj
+- Warning logged when running without mmproj: vision/image features unavailable
+
+---
+
 ## [1.0.0] — 2026-04-18
 
 ### Phase 7 — Build Hardening & CI/CD

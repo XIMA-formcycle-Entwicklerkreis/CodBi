@@ -557,7 +557,7 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 - **Joint Cooperation:** Bavarian formcycle developer community
 
 Special thanks to:
-* Special thanks to **Bernd, Zipser** and **Ingmar, Ott** for their support in allowing this project to be developed alongside my regular responsibilities.
+* **Bernd, Zipser** and **Ingmar, Ott** for their support in allowing this project to be developed alongside my regular responsibilities.
 * **[Andre Wachsmuth](https://github.com/awa-xima)** for providing the initial build and architecture foundation, as well as his invaluable guidance throughout the project.
 * **[Jennifer Schindler](https://github.com/er-js)** for her valuable code contributions, overall management, and for advocating and promoting CodBi within the developer community.
 * **[Benedikt Plangger](https://github.com/N64Freak1986)** & **[Florian, Christ](https://github.com/FlorianChristCo)** for their valuable code contributions.

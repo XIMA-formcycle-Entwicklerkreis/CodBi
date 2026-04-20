@@ -37,11 +37,11 @@ class WebSearchHandlerTest {
               if (isLast) "Final answer for: $q" else "Answer: $q"
             },
             buildMessages = { q, _, _, _, _, _, _, _ -> """[{"role":"user","content":"$q"}]""" },
-            chatCompletion = { _, _, _, _ ->
+            chatCompletion = { _, _, _, _, _, _ ->
               chatCompletionCalls++
               "Mock answer"
             },
-            streamChatCompletion = { _, _, _, _ -> streamCompletionCalls++ },
+            streamChatCompletion = { _, _, _, _, _, _ -> streamCompletionCalls++ },
             log = { _, msg -> logs.add(msg) })
   }
 
@@ -707,8 +707,8 @@ class WebSearchHandlerTest {
               maxSearchRoundTrips = 1,
               searchFollowUpPrompt = { _, _, _ -> "q" },
               buildMessages = { _, _, _, _, _, _, _, _ -> "[]" },
-              chatCompletion = { _, _, _, _ -> "ok" },
-              streamChatCompletion = { _, _, _, _ -> },
+              chatCompletion = { _, _, _, _, _, _ -> "ok" },
+              streamChatCompletion = { _, _, _, _, _, _ -> },
               log = { _, _ -> })
       assertTrue(h.lastSearchResults.isEmpty())
     }
@@ -815,11 +815,11 @@ class WebSearchHandlerTest {
               maxSearchRoundTrips = 3,
               searchFollowUpPrompt = { q, _, _ -> "Answer: $q" },
               buildMessages = { q, _, _, _, _, _, _, _ -> """[{"role":"user","content":"$q"}]""" },
-              chatCompletion = { _, _, _, _ ->
+              chatCompletion = { _, _, _, _, _, _ ->
                 callCount++
                 if (callCount == 1) "CALL:search(query='deeper query')" else "Final answer"
               },
-              streamChatCompletion = { _, _, _, _ -> },
+              streamChatCompletion = { _, _, _, _, _, _ -> },
               log = { _, msg -> logs.add(msg) })
       val fakeResults = listOf(BraveSearch.SearchResult("R", "https://r.com", "D"))
       every { BraveSearch.search(any(), any(), any(), any()) } returns fakeResults
@@ -963,8 +963,10 @@ class WebSearchHandlerTest {
               maxSearchRoundTrips = 3,
               searchFollowUpPrompt = { q, _, _ -> q },
               buildMessages = { _, _, _, _, _, _, _, _ -> "[]" },
-              chatCompletion = { _, _, _, _ -> "ok" },
-              streamChatCompletion = { _, _, _, _ -> throw RuntimeException("Stream failed") },
+              chatCompletion = { _, _, _, _, _, _ -> "ok" },
+              streamChatCompletion = { _, _, _, _, _, _ ->
+                throw RuntimeException("Stream failed")
+              },
               log = { _, msg -> logs.add(msg) })
 
       val session = StreamingSession()
@@ -1097,8 +1099,8 @@ class WebSearchHandlerTest {
               maxSearchRoundTrips = 3,
               searchFollowUpPrompt = { q, _, _ -> q },
               buildMessages = { _, _, _, _, _, _, _, _ -> "[]" },
-              chatCompletion = { _, _, _, _ -> "ok" },
-              streamChatCompletion = { _, _, _, _ -> throw RuntimeException("Fail") },
+              chatCompletion = { _, _, _, _, _, _ -> "ok" },
+              streamChatCompletion = { _, _, _, _, _, _ -> throw RuntimeException("Fail") },
               log = { _, msg -> logs.add(msg) })
 
       val session = StreamingSession()

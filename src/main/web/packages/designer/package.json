@@ -2,8 +2,8 @@
   "private": true,
   "type": "module",
   "name": "codbi-designer",
-  "version": "1.0.0",
-  "stableVersion": "1.0.0",
+  "version": "1.0.1",
+  "stableVersion": "1.0.1",
   "sideEffects": [
     "./src/index-designer.ts"
   ],

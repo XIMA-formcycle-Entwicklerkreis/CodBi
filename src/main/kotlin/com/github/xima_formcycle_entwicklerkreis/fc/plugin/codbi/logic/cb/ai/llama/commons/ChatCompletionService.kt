@@ -34,7 +34,8 @@ internal class ChatCompletionService(
             shouldStop: () -> Boolean,
             timeoutMs: Int) -> Unit)?,
     private val injectModelField: ((String) -> String)?,
-    private val log: (LogLevel, String) -> Unit
+    private val log: (LogLevel, String) -> Unit,
+    private val disableFrequencyPenalty: Boolean = false
 ) {
   init {
     if (isExternalMode()) {
@@ -83,7 +84,8 @@ internal class ChatCompletionService(
       append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
 
       if (!external) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
-      append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
+      if (!disableFrequencyPenalty)
+          append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":false")
 
@@ -176,7 +178,8 @@ internal class ChatCompletionService(
       append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
 
       if (!external) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
-      append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
+      if (!disableFrequencyPenalty)
+          append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":true")
       if (!external) append(",\"logprobs\":true")

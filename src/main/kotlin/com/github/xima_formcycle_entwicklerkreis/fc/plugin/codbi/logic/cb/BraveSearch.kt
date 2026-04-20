@@ -366,10 +366,12 @@ object BraveSearch : CodBi() {
             Regex(
                 """(?i)\b\d{1,5}\s+(?:[NSEW]\.\?\s+)?(?:[A-Za-z\u00C0-\u00FF]+\s){1,3}(?:Street|St\.?|Avenue|Ave\.?|Road|Rd\.?|Boulevard|Blvd\.?|Drive|Dr\.?|Lane|Ln\.?|Straße|Str\.?|Weg|Gasse|Platz|Allee)\b"""),
             "")
-    // Person names — 2+ consecutive Title-Case words (Uppercase + 2 lowercase min).
+    // Person names — 3+ consecutive Title-Case words (Uppercase + 2 lowercase min).
+    // Requires 3+ words to avoid false positives with German capitalized nouns
+    // (e.g., "Wettervorhersage Ansbach" should NOT be stripped).
     // Protected tokens (<< >>) are already extracted before this runs, so intentional
     // names/brands wrapped in << >> won't be touched by this pattern.
-    q = q.replace(Regex("""\b[A-ZÄÖÜ][a-zäöüß]{2,}(?:\s+[A-ZÄÖÜ][a-zäöüß]{2,})+\b"""), "")
+    q = q.replace(Regex("""\b[A-ZÄÖÜ][a-zäöüß]{2,}(?:\s+[A-ZÄÖÜ][a-zäöüß]{2,}){2,}\b"""), "")
     q =
         q.replace(Regex("""\s{2,}"""), " ")
             .trim()

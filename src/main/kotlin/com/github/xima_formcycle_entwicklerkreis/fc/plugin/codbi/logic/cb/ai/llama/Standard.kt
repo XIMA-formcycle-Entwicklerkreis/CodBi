@@ -50,6 +50,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * |`AI_LLAMA_STD_ExternalApiKey`          |String |—                                            |API key for the external AI (sent as Bearer token)                                                                                                                          |
  * |`AI_LLAMA_STD_ExternalModel`           |String |—                                            |Model name for the external API (e.g. gpt-4o, claude-3-opus)                                                                                                                |
  * |`AI_LLAMA_STD_ExternalNoPrompt`        |Boolean|`false`                                      |When `true`, skips all built-in system-prompt sections (§1–§6) for the external AI — sends only the user message and chat history.                                          |
+ * |`AI_LLAMA_STD_DisableFrequencyPenalty` |Boolean|`false`                                      |When `true`, omits `frequency_penalty` from API requests. Required for Gemini and some other providers that reject this parameter.                                          |
  * |`AI_LLAMA_STD_PromptIdentity`          |String |(built-in)                                   |Override the identity/role sentence ("You are a helpful assistant..."). Use `{date}` for today's date, `{time}` for current time.                                           |
  * |`AI_LLAMA_STD_PromptLocation`          |String |(built-in)                                   |Override the location-context instruction. Use `{location}` as placeholder.                                                                                                 |
  * |`AI_LLAMA_STD_PromptSearch`            |String |(built-in)                                   |Override the CALL:search instruction block (before examples).                                                                                                               |
@@ -272,6 +273,8 @@ class Standard : LLAMA() {
             "maxPerHour=${MailBridge.maxMailsPerHour}")
 
     val noPromptRaw = props.getProperty("${PROP_PREFIX}_ExternalNoPrompt")?.trim()?.lowercase()
+    val disableFreqPenaltyRaw =
+        props.getProperty("${PROP_PREFIX}_DisableFrequencyPenalty")?.trim()?.lowercase()
     val customModelUrl = str("ModelUrl")
     val modelUrl = customModelUrl ?: DEFAULT_MODEL_URL
     return StandardConfig(
@@ -281,6 +284,10 @@ class Standard : LLAMA() {
         externalApiKey = str("ExternalApiKey"),
         externalModel = str("ExternalModel"),
         externalNoPrompt = noPromptRaw == "true" || noPromptRaw == "1" || noPromptRaw == "yes",
+        disableFrequencyPenalty =
+            disableFreqPenaltyRaw == "true" ||
+                disableFreqPenaltyRaw == "1" ||
+                disableFreqPenaltyRaw == "yes",
         thinkingModelUrl = str("ThinkingModelUrl"),
         thinkingMmprojUrl = str("ThinkingMmprojUrl"),
         promptIdentity = str("PromptIdentity"),
@@ -486,7 +493,8 @@ class Standard : LLAMA() {
                   }
                 },
             injectModelField = externalClient?.let { c -> { b: String -> c.injectModelField(b) } },
-            log = logFn)
+            log = logFn,
+            disableFrequencyPenalty = config.disableFrequencyPenalty)
 
     webSearchHandler =
         WebSearchHandler(
@@ -503,11 +511,11 @@ class Standard : LLAMA() {
             buildMessages = { q, ip, ch, se, et, dl, le, ul ->
               messageBuilder!!.buildMessages(q, ip, ch, se, et, dl, le, ul)
             },
-            chatCompletion = { mj, et, ids, mt ->
-              chatCompletionService!!.chatCompletion(mj, et, ids, mt)
+            chatCompletion = { mj, et, ids, mt, op, oec ->
+              chatCompletionService!!.chatCompletion(mj, et, ids, mt, op, oec)
             },
-            streamChatCompletion = { mj, s, et, ids ->
-              chatCompletionService!!.streamChatCompletion(mj, s, et, ids)
+            streamChatCompletion = { mj, s, et, ids, op, oec ->
+              chatCompletionService!!.streamChatCompletion(mj, s, et, ids, op, oec)
             },
             log = logFn)
 
@@ -1514,7 +1522,9 @@ class Standard : LLAMA() {
                 ctx.slotId,
                 detectedLang,
                 userLocation,
-                ctx.filterResults)
+                ctx.filterResults,
+                specialistPort,
+                specialistClient)
             session.searching = false
             session.searchQuery = null
           }
@@ -1536,7 +1546,9 @@ class Standard : LLAMA() {
                 session,
                 ctx.enableThinking,
                 ctx.slotId,
-                detectedLang)
+                detectedLang,
+                specialistPort,
+                specialistClient)
             session.fetching = false
             session.fetchUrl = null
           }
@@ -1651,7 +1663,7 @@ class Standard : LLAMA() {
                   fallbackMessages
                 }
             chatCompletionService!!.streamChatCompletion(
-                messagesWithReasoning, session, false, ctx.slotId)
+                messagesWithReasoning, session, false, ctx.slotId, specialistPort, specialistClient)
             val fallbackText = session.currentText()
             if (ctx.searchEnabled &&
                 BraveSearch.isAvailable &&
@@ -1672,7 +1684,9 @@ class Standard : LLAMA() {
                   ctx.slotId,
                   detectedLang,
                   userLocation,
-                  ctx.filterResults)
+                  ctx.filterResults,
+                  specialistPort,
+                  specialistClient)
               session.searching = false
               session.searchQuery = null
             }
@@ -1694,7 +1708,9 @@ class Standard : LLAMA() {
                   session,
                   false,
                   ctx.slotId,
-                  detectedLang)
+                  detectedLang,
+                  specialistPort,
+                  specialistClient)
               session.fetching = false
               session.fetchUrl = null
             }
@@ -1883,7 +1899,11 @@ class Standard : LLAMA() {
                   userLocation)
           answer =
               chatCompletionService!!.chatCompletion(
-                  fallbackMessages, enableThinking = false, idSlot = syncCtx.slotId)
+                  fallbackMessages,
+                  enableThinking = false,
+                  idSlot = syncCtx.slotId,
+                  overridePort = specialistPort,
+                  overrideExternalClient = specialistClient)
         }
         if (syncCtx.searchEnabled) {
           answer =
@@ -1896,7 +1916,9 @@ class Standard : LLAMA() {
                   syncCtx.slotId,
                   detectedLang,
                   userLocation,
-                  syncCtx.filterResults)
+                  syncCtx.filterResults,
+                  specialistPort,
+                  specialistClient)
         }
         // region CALL:fetch handling (sync path)
         if (syncCtx.searchEnabled) {
@@ -1908,7 +1930,9 @@ class Standard : LLAMA() {
                   syncCtx.chatHistory,
                   syncCtx.enableThinking,
                   syncCtx.slotId,
-                  detectedLang)
+                  detectedLang,
+                  specialistPort,
+                  specialistClient)
         }
         // endregion CALL:fetch handling (sync path)
         // region CALL:mail handling (sync path)

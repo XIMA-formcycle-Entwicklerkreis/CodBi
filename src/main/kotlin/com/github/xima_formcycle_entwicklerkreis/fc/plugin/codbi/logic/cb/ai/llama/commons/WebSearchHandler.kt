@@ -44,14 +44,18 @@ internal class WebSearchHandler(
             messagesJson: String,
             enableThinking: Boolean,
             idSlot: Int,
-            maxThinkingTokens: Int?) -> String,
+            maxThinkingTokens: Int?,
+            overridePort: Int?,
+            overrideExternalClient: ExternalAiClient?) -> String,
     /** Sends a streaming chat completion, populating the given session. */
     private val streamChatCompletion:
         (
             messagesJson: String,
             session: StreamingSession,
             enableThinking: Boolean,
-            idSlot: Int) -> Unit,
+            idSlot: Int,
+            overridePort: Int?,
+            overrideExternalClient: ExternalAiClient?) -> Unit,
     /** Logger callback for diagnostic messages. */
     private val log: (LogLevel, String) -> Unit
 ) {
@@ -100,7 +104,9 @@ internal class WebSearchHandler(
       slotId: Int,
       detectedLang: DetectedLanguage? = null,
       userLocation: String? = null,
-      filterOverride: Boolean? = null
+      filterOverride: Boolean? = null,
+      overridePort: Int? = null,
+      overrideExternalClient: ExternalAiClient? = null
   ): String {
     if (!BraveSearch.isAvailable) return initialAnswer
 
@@ -135,7 +141,14 @@ internal class WebSearchHandler(
                   detectedLang,
                   false,
                   null)
-          answer = chatCompletion(noSearchMessages, enableThinking, slotId, null)
+          answer =
+              chatCompletion(
+                  noSearchMessages,
+                  enableThinking,
+                  slotId,
+                  null,
+                  overridePort,
+                  overrideExternalClient)
         }
 
         break
@@ -154,12 +167,19 @@ internal class WebSearchHandler(
       val messages =
           buildMessages(
               followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
-      answer = chatCompletion(messages, false, slotId, null)
+      answer = chatCompletion(messages, false, slotId, null, overridePort, overrideExternalClient)
 
       log(LogLevel.INFO, "Search-augmented answer (round $round): ${answer.take(120)}…")
     }
 
     lastSearchResults = allResults
+
+    // Strip any remaining CALL:search markers from final answer (e.g. if maxSearchRoundTrips hit)
+    val cleanedAnswer = BraveSearch.CALL_SEARCH_PATTERN.replace(answer, "").trim()
+    if (cleanedAnswer != answer) {
+      log(LogLevel.INFO, "Stripped residual CALL:search marker from final answer")
+      return cleanedAnswer
+    }
     return answer
   }
 
@@ -187,7 +207,9 @@ internal class WebSearchHandler(
       slotId: Int,
       detectedLang: DetectedLanguage? = null,
       userLocation: String? = null,
-      filterOverride: Boolean? = null
+      filterOverride: Boolean? = null,
+      overridePort: Int? = null,
+      overrideExternalClient: ExternalAiClient? = null
   ) {
     if (!BraveSearch.isAvailable) return
 
@@ -219,7 +241,13 @@ internal class WebSearchHandler(
                   detectedLang,
                   false,
                   null)
-          streamChatCompletion(noSearchMessages, session, enableThinking, slotId)
+          streamChatCompletion(
+              noSearchMessages,
+              session,
+              enableThinking,
+              slotId,
+              overridePort,
+              overrideExternalClient)
         } else {
           log(
               LogLevel.WARNING,
@@ -271,7 +299,7 @@ internal class WebSearchHandler(
               followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
 
       try {
-        streamChatCompletion(messages, session, false, slotId)
+        streamChatCompletion(messages, session, false, slotId, overridePort, overrideExternalClient)
       } catch (e: Exception) {
         // Restore prior text so the user sees the partial answer instead of an empty response
         session.clearAll()
@@ -283,6 +311,15 @@ internal class WebSearchHandler(
       }
 
       currentText = session.currentText()
+    }
+
+    // Strip any remaining CALL:search markers from final text (e.g. if maxSearchRoundTrips hit)
+    val finalText = session.currentText()
+    val cleanedText = BraveSearch.CALL_SEARCH_PATTERN.replace(finalText, "").trim()
+    if (cleanedText != finalText) {
+      session.clearText()
+      session.addText(cleanedText)
+      log(LogLevel.INFO, "Streaming: Stripped residual CALL:search marker from final response")
     }
   }
 
@@ -307,7 +344,9 @@ internal class WebSearchHandler(
       chatHistory: List<Pair<String, String>>,
       _enableThinking: Boolean,
       slotId: Int,
-      detectedLang: DetectedLanguage? = null
+      detectedLang: DetectedLanguage? = null,
+      overridePort: Int? = null,
+      overrideExternalClient: ExternalAiClient? = null
   ): String {
     if (!BraveSearch.isAvailable) return initialAnswer
 
@@ -328,10 +367,16 @@ internal class WebSearchHandler(
     val messages =
         buildMessages(
             followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
-    val answer = chatCompletion(messages, false, slotId, null)
+    val answer = chatCompletion(messages, false, slotId, null, overridePort, overrideExternalClient)
 
     log(LogLevel.INFO, "Fetch-augmented answer: ${answer.take(120)}…")
 
+    // Strip any residual CALL:fetch markers from final answer
+    val cleanedAnswer = UrlFetcher.CALL_FETCH_PATTERN.replace(answer, "").trim()
+    if (cleanedAnswer != answer) {
+      log(LogLevel.INFO, "Stripped residual CALL:fetch marker from final answer")
+      return cleanedAnswer
+    }
     return answer
   }
 
@@ -357,7 +402,9 @@ internal class WebSearchHandler(
       session: StreamingSession,
       _enableThinking: Boolean,
       slotId: Int,
-      detectedLang: DetectedLanguage? = null
+      detectedLang: DetectedLanguage? = null,
+      overridePort: Int? = null,
+      overrideExternalClient: ExternalAiClient? = null
   ) {
     if (!BraveSearch.isAvailable) return
 
@@ -406,12 +453,21 @@ internal class WebSearchHandler(
             followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
 
     try {
-      streamChatCompletion(messages, session, false, slotId)
+      streamChatCompletion(messages, session, false, slotId, overridePort, overrideExternalClient)
     } catch (e: Exception) {
       session.clearAll()
       if (priorReasoning.isNotEmpty()) session.addThinking(priorReasoning)
       if (priorText.isNotEmpty()) session.addText(priorText)
       log(LogLevel.WARNING, "Streaming: Fetch follow-up request failed: ${e.message}")
+    }
+
+    // Strip any residual CALL:fetch markers from final text
+    val finalText = session.currentText()
+    val cleanedText = UrlFetcher.CALL_FETCH_PATTERN.replace(finalText, "").trim()
+    if (cleanedText != finalText) {
+      session.clearText()
+      session.addText(cleanedText)
+      log(LogLevel.INFO, "Streaming: Stripped residual CALL:fetch marker from final response")
     }
   }
 

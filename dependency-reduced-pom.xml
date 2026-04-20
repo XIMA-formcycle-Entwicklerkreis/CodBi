@@ -4,7 +4,7 @@
   <groupId>com.github.xima_formcycle_entwicklerkreis.fc.plugin</groupId>
   <artifactId>fc-plugin-codbi</artifactId>
   <name>fc-plugin-codbi</name>
-  <version>1.0.0</version>
+  <version>1.0.1</version>
   <description>formcycle plugin developed as a joint cooperation of the Bavarian formcycle developer community. Adds
         additional features to forms and the form designer.</description>
   <url>https://github.com/XIMA-formcycle-Entwicklerkreis/CodBi</url>

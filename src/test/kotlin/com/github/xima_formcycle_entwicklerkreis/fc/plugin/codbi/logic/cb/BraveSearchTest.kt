@@ -310,16 +310,38 @@ class BraveSearchTest {
 
     @Test
     fun stripsPersonNames() {
-      val result = BraveSearch.sanitizeQuery("information about John Smith please")
+      // 3+ consecutive title-case words are stripped (to avoid German noun false positives)
+      val result = BraveSearch.sanitizeQuery("information about John Michael Smith please")
       assertFalse(
+          result.contains("John Michael Smith"),
+          "Person name (3+ TitleCase words) should be stripped: $result")
+    }
+
+    @Test
+    fun preservesTwoWordTitleCase() {
+      // 2-word title-case phrases preserved (German nouns like "Wettervorhersage Ansbach")
+      val result = BraveSearch.sanitizeQuery("information about John Smith please")
+      assertTrue(
           result.contains("John Smith"),
-          "Person name (2+ TitleCase words) should be stripped: $result")
+          "Two-word title-case should NOT be stripped (German noun safety): $result")
     }
 
     @Test
     fun stripsGermanPersonNames() {
-      val result = BraveSearch.sanitizeQuery("Informationen über Hans Müller bitte")
-      assertFalse(result.contains("Hans Müller"), "German person name should be stripped: $result")
+      // 3+ consecutive title-case words are stripped
+      val result = BraveSearch.sanitizeQuery("Informationen über Hans Peter Müller bitte")
+      assertFalse(
+          result.contains("Hans Peter Müller"),
+          "German person name (3+ words) should be stripped: $result")
+    }
+
+    @Test
+    fun preservesGermanTwoWordNouns() {
+      // 2-word German noun phrases must NOT be stripped
+      val result = BraveSearch.sanitizeQuery("Wettervorhersage Ansbach morgen")
+      assertTrue(
+          result.contains("Wettervorhersage Ansbach"),
+          "German 2-word noun phrase should NOT be stripped: $result")
     }
 
     @Test

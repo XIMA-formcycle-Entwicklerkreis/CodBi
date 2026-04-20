@@ -45,6 +45,7 @@ internal data class StandardConfig(
     val externalApiKey: String?,
     val externalModel: String?,
     val externalNoPrompt: Boolean,
+    val disableFrequencyPenalty: Boolean = false,
     val thinkingModelUrl: String?,
     val thinkingMmprojUrl: String?,
     val promptIdentity: String?,

@@ -87,7 +87,7 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 | Property | Type | Default | Description |
 |----------|------|---------|-------------|
 | `AI_LLAMA_STD_ModelUrl` | URL | Qwen3-VL-2B Q4_K_M | GGUF model download URL |
-| `AI_LLAMA_STD_MmprojUrl` | URL | Qwen3-VL-2B mmproj F16 | Vision projector URL |
+| `AI_LLAMA_STD_MmprojUrl` | URL | Qwen3-VL-2B mmproj F16 (when using default model) | Vision projector URL. Omit for text-only models. Auto-set when using default VL model |
 | `AI_LLAMA_STD_MaxPixels` | Long | `3211264` | Max pixel budget for image downscaling |
 | `AI_LLAMA_STD_MaxUploadBytes` | Long | `52428800` | Max upload size (50 MB) |
 | `AI_LLAMA_STD_MaxTokens` | Int | `2048` | Max tokens per response |

@@ -83,7 +83,6 @@ internal class ChatCompletionService(
       append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
 
       if (!external) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
-
       append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":false")
@@ -177,11 +176,10 @@ internal class ChatCompletionService(
       append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
 
       if (!external) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
-
       append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
       append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":true")
-      append(",\"logprobs\":true")
+      if (!external) append(",\"logprobs\":true")
 
       if (!external && idSlot >= 0) append(",\"id_slot\":$idSlot")
 

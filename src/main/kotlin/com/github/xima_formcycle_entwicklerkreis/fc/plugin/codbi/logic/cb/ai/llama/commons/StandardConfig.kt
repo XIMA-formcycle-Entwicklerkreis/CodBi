@@ -6,7 +6,8 @@ import java.io.File
  * Immutable configuration parsed from plugin properties (all `AI_LLAMA_STD_*` keys).
  *
  * @param modelUrl Download URL for the main GGUF model.
- * @param mmprojUrl Download URL for the multimodal projection model (vision).
+ * @param mmprojUrl Download URL for the multimodal projection model (vision), or `null` to run
+ *   without vision support (text-only mode).
  * @param externalUrl Base URL of an external OpenAI-compatible API, or `null` for local mode.
  * @param externalApiKey API key for the external service, or `null`.
  * @param externalModel Model name to request from the external API, or `null`.
@@ -39,7 +40,7 @@ import java.io.File
  */
 internal data class StandardConfig(
     val modelUrl: String,
-    val mmprojUrl: String,
+    val mmprojUrl: String?,
     val externalUrl: String?,
     val externalApiKey: String?,
     val externalModel: String?,

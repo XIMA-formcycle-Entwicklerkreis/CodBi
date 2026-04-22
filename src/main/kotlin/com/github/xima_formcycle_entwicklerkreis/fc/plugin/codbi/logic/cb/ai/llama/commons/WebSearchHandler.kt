@@ -46,8 +46,7 @@ internal class WebSearchHandler(
             idSlot: Int,
             maxThinkingTokens: Int?,
             overridePort: Int?,
-            overrideExternalClient: ExternalAiClient?,
-            disableFrequencyPenalty: Boolean) -> String,
+            overrideExternalClient: ExternalAiClient?) -> String,
     /** Sends a streaming chat completion, populating the given session. */
     private val streamChatCompletion:
         (
@@ -56,8 +55,7 @@ internal class WebSearchHandler(
             enableThinking: Boolean,
             idSlot: Int,
             overridePort: Int?,
-            overrideExternalClient: ExternalAiClient?,
-            disableFrequencyPenalty: Boolean) -> Unit,
+            overrideExternalClient: ExternalAiClient?) -> Unit,
     /** Logger callback for diagnostic messages. */
     private val log: (LogLevel, String) -> Unit
 ) {
@@ -108,8 +106,7 @@ internal class WebSearchHandler(
       userLocation: String? = null,
       filterOverride: Boolean? = null,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null,
-      disableFrequencyPenalty: Boolean = false
+      overrideExternalClient: ExternalAiClient? = null
   ): String {
     if (!BraveSearch.isAvailable) return initialAnswer
 
@@ -151,8 +148,7 @@ internal class WebSearchHandler(
                   slotId,
                   null,
                   overridePort,
-                  overrideExternalClient,
-                  disableFrequencyPenalty)
+                  overrideExternalClient)
         }
 
         break
@@ -171,15 +167,7 @@ internal class WebSearchHandler(
       val messages =
           buildMessages(
               followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
-      answer =
-          chatCompletion(
-              messages,
-              false,
-              slotId,
-              null,
-              overridePort,
-              overrideExternalClient,
-              disableFrequencyPenalty)
+      answer = chatCompletion(messages, false, slotId, null, overridePort, overrideExternalClient)
 
       log(LogLevel.INFO, "Search-augmented answer (round $round): ${answer.take(120)}…")
     }
@@ -221,8 +209,7 @@ internal class WebSearchHandler(
       userLocation: String? = null,
       filterOverride: Boolean? = null,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null,
-      disableFrequencyPenalty: Boolean = false
+      overrideExternalClient: ExternalAiClient? = null
   ) {
     if (!BraveSearch.isAvailable) return
 
@@ -260,8 +247,7 @@ internal class WebSearchHandler(
               enableThinking,
               slotId,
               overridePort,
-              overrideExternalClient,
-              disableFrequencyPenalty)
+              overrideExternalClient)
         } else {
           log(
               LogLevel.WARNING,
@@ -313,14 +299,7 @@ internal class WebSearchHandler(
               followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
 
       try {
-        streamChatCompletion(
-            messages,
-            session,
-            false,
-            slotId,
-            overridePort,
-            overrideExternalClient,
-            disableFrequencyPenalty)
+        streamChatCompletion(messages, session, false, slotId, overridePort, overrideExternalClient)
       } catch (e: Exception) {
         // Restore prior text so the user sees the partial answer instead of an empty response
         session.clearAll()
@@ -367,8 +346,7 @@ internal class WebSearchHandler(
       slotId: Int,
       detectedLang: DetectedLanguage? = null,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null,
-      disableFrequencyPenalty: Boolean = false
+      overrideExternalClient: ExternalAiClient? = null
   ): String {
     if (!BraveSearch.isAvailable) return initialAnswer
 
@@ -389,15 +367,7 @@ internal class WebSearchHandler(
     val messages =
         buildMessages(
             followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
-    val answer =
-        chatCompletion(
-            messages,
-            false,
-            slotId,
-            null,
-            overridePort,
-            overrideExternalClient,
-            disableFrequencyPenalty)
+    val answer = chatCompletion(messages, false, slotId, null, overridePort, overrideExternalClient)
 
     log(LogLevel.INFO, "Fetch-augmented answer: ${answer.take(120)}…")
 
@@ -434,8 +404,7 @@ internal class WebSearchHandler(
       slotId: Int,
       detectedLang: DetectedLanguage? = null,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null,
-      disableFrequencyPenalty: Boolean = false
+      overrideExternalClient: ExternalAiClient? = null
   ) {
     if (!BraveSearch.isAvailable) return
 
@@ -484,14 +453,7 @@ internal class WebSearchHandler(
             followUpQuestion, imageParts, extendedHistory, true, false, detectedLang, false, null)
 
     try {
-      streamChatCompletion(
-          messages,
-          session,
-          false,
-          slotId,
-          overridePort,
-          overrideExternalClient,
-          disableFrequencyPenalty)
+      streamChatCompletion(messages, session, false, slotId, overridePort, overrideExternalClient)
     } catch (e: Exception) {
       session.clearAll()
       if (priorReasoning.isNotEmpty()) session.addThinking(priorReasoning)

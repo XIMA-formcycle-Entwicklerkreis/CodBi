@@ -76,10 +76,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
    * @param toProcess Provided by the CodBi. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE(
-      "string",
-      "aihint, language, responselanguage, specialist, queuebadge, queuetext, disablefrequencypenalty",
-    )
+    @TYPE.PRE("string", "aihint, language, responselanguage, specialist, queuebadge, queuetext")
     @TYPE.PRE("string | boolean", "useinternet, location")
     @GREATER.PRE(
       3,
@@ -237,9 +234,6 @@ export class AI_LLAMA_STANDARD_TXTQA {
       }
       if (specialist) {
         headers["X-Specialist"] = specialist;
-      }
-      if (toLoad.disablefrequencypenalty != null && String(toLoad.disablefrequencypenalty).toLowerCase() === "true") {
-        headers["X-Disable-Frequency-Penalty"] = "true";
       }
       if (locationAccess) {
         headers["X-Location"] = "true";

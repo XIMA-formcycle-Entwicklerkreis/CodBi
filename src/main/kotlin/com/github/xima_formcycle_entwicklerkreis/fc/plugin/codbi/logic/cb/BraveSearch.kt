@@ -268,8 +268,11 @@ object BraveSearch : CodBi() {
   val isAvailable: Boolean
     get() = !apiKey.isNullOrBlank()
 
-  /** Matches `CALL:search(query='...')` or `CALL:search(query="...")` in model output. */
-  val CALL_SEARCH_PATTERN: Regex = Regex("""CALL:search\(\s*query\s*=\s*['"](.+?)['"]\s*\)""")
+  /**
+   * Matches `CALL:search(query='...')`, `CALL:search(query="...")`, or positional
+   * `CALL:search('...')` / `CALL:search("...")` in model output.
+   */
+  val CALL_SEARCH_PATTERN: Regex = Regex("""CALL:search\(\s*(?:query\s*=\s*)?['"](.+?)['"]\s*\)""")
 
   /**
    * Sanitizes a search query by removing personally identifiable information (PII) and identifiers

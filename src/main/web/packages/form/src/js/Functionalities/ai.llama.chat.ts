@@ -135,7 +135,7 @@ export class AI_LLAMA_CHAT {
   public static functionality(
     @TYPE.PRE(
       "string",
-      "llamabubble, userbubble, welcometext, waitingtext, lowconfidencetext, rethinkbuttontext, uncertaintext, showuncertaintokens, voicehotkey, voiceplaceholder, voicesendhotkey, language, responselanguage, specialist, queuebadge, queuetext, disablefrequencypenalty",
+      "llamabubble, userbubble, welcometext, waitingtext, lowconfidencetext, rethinkbuttontext, uncertaintext, showuncertaintokens, voicehotkey, voiceplaceholder, voicesendhotkey, language, responselanguage, specialist, queuebadge, queuetext",
     )
     @TYPE.PRE("string | number", "maxpages, rotation, maxpixelsize")
     @IF.PRE(new TYPE("string"), new REGEX(/^\d+$/), "maxpages, maxpixelsize")
@@ -1028,6 +1028,11 @@ export class AI_LLAMA_CHAT {
             return match;
           }
 
+          // Plain unformatted digit runs (e.g. Kassenzeichen, reference numbers) — not phone numbers
+          if (/^\d{8,}$/.test(match.trim())) {
+            return match;
+          }
+
           const idx = links.length;
           const telHref = `tel:${match.replace(/[^\d+]/g, "")}`;
 
@@ -1344,9 +1349,6 @@ export class AI_LLAMA_CHAT {
         }
         if (specialist) {
           headers["X-Specialist"] = specialist;
-        }
-        if (toLoad.disablefrequencypenalty != null && String(toLoad.disablefrequencypenalty).toLowerCase() === "true") {
-          headers["X-Disable-Frequency-Penalty"] = "true";
         }
         if (thinkingCheckbox) {
           headers["X-Thinking"] = thinkingCheckbox.checked ? "true" : "false";

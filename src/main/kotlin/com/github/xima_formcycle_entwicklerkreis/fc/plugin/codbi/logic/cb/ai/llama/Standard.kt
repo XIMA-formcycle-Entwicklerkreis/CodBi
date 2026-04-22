@@ -9,6 +9,8 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.MailBr
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.UrlFetcher
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.LLAMA
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.*
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
@@ -50,7 +52,6 @@ import java.util.concurrent.atomic.AtomicInteger
  * |`AI_LLAMA_STD_ExternalApiKey`          |String |—                                            |API key for the external AI (sent as Bearer token)                                                                                                                          |
  * |`AI_LLAMA_STD_ExternalModel`           |String |—                                            |Model name for the external API (e.g. gpt-4o, claude-3-opus)                                                                                                                |
  * |`AI_LLAMA_STD_ExternalNoPrompt`        |Boolean|`false`                                      |When `true`, skips all built-in system-prompt sections (§1–§6) for the external AI — sends only the user message and chat history.                                          |
- * |`AI_LLAMA_STD_DisableFrequencyPenalty` |Boolean|`false`                                      |When `true`, omits `frequency_penalty` from API requests. Required for Gemini and some other providers that reject this parameter.                                          |
  * |`AI_LLAMA_STD_PromptIdentity`          |String |(built-in)                                   |Override the identity/role sentence ("You are a helpful assistant..."). Use `{date}` for today's date, `{time}` for current time.                                           |
  * |`AI_LLAMA_STD_PromptLocation`          |String |(built-in)                                   |Override the location-context instruction. Use `{location}` as placeholder.                                                                                                 |
  * |`AI_LLAMA_STD_PromptSearch`            |String |(built-in)                                   |Override the CALL:search instruction block (before examples).                                                                                                               |
@@ -68,6 +69,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * |`AI_LLAMA_STD_EXT_SPECIALIST_XXX`      |URL    |—                                            |Base URL of an external OpenAI-compatible API for a specialist named `XXX`. Matched case-insensitively by the `specialist` toLoad property.                                 |
  * |`AI_LLAMA_STD_EXT_SPECIALIST_Key_XXX`  |String |—                                            |API key for the external specialist `XXX` (sent as Bearer token). Optional.                                                                                                 |
  * |`AI_LLAMA_STD_EXT_SPECIALIST_Model_XXX`|String |—                                            |Model name for the external specialist `XXX` (e.g. `gpt-4o`). Optional — omit to use the API default.                                                                       |
+ * |`AI_LLAMA_STD_ExtraParams`             |JSON   |—                                            |Extra parameters appended to every completion request body (e.g. `{"top_p":0.9,"seed":42}`). Keys `messages`, `stream`, `model`, `id_slot`, `logprobs` are silently ignored.|
  *
  * ## Domains to whitelist
  * - **github.com** — LLAMA-Server binary releases & release-check API
@@ -273,8 +275,6 @@ class Standard : LLAMA() {
             "maxPerHour=${MailBridge.maxMailsPerHour}")
 
     val noPromptRaw = props.getProperty("${PROP_PREFIX}_ExternalNoPrompt")?.trim()?.lowercase()
-    val disableFreqPenaltyRaw =
-        props.getProperty("${PROP_PREFIX}_DisableFrequencyPenalty")?.trim()?.lowercase()
     val customModelUrl = str("ModelUrl")
     val modelUrl = customModelUrl ?: DEFAULT_MODEL_URL
     return StandardConfig(
@@ -284,10 +284,6 @@ class Standard : LLAMA() {
         externalApiKey = str("ExternalApiKey"),
         externalModel = str("ExternalModel"),
         externalNoPrompt = noPromptRaw == "true" || noPromptRaw == "1" || noPromptRaw == "yes",
-        disableFrequencyPenalty =
-            disableFreqPenaltyRaw == "true" ||
-                disableFreqPenaltyRaw == "1" ||
-                disableFreqPenaltyRaw == "yes",
         thinkingModelUrl = str("ThinkingModelUrl"),
         thinkingMmprojUrl = str("ThinkingMmprojUrl"),
         promptIdentity = str("PromptIdentity"),
@@ -314,7 +310,28 @@ class Standard : LLAMA() {
         forcedLanguage = str("Language")?.trim()?.takeIf { it.length == 2 },
         specialists = parseSpecialists(props),
         externalSpecialists = parseExternalSpecialists(props),
-        maxConcurrent = int("ENGINE_MaxConcurrent")?.takeIf { it > 0 } ?: 2)
+        maxConcurrent = int("ENGINE_MaxConcurrent")?.takeIf { it > 0 } ?: 2,
+        extraParamsJson = parseExtraParams(str("ExtraParams")))
+  }
+
+  /**
+   * Parses the raw ExtraParams JSON string, removes blacklisted keys, and returns the filtered JSON
+   * object as a string, or `null` if the input is blank or unparseable.
+   */
+  private fun parseExtraParams(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+    return try {
+      val blacklist = setOf("messages", "stream", "model", "id_slot", "logprobs")
+      val src = JsonParser.parseString(raw).asJsonObject
+      val filtered = JsonObject()
+      for ((key, value) in src.entrySet()) {
+        if (key.lowercase() !in blacklist) filtered.add(key, value)
+      }
+      if (filtered.size() > 0) filtered.toString() else null
+    } catch (e: Exception) {
+      log(LogLevel.WARNING, "[ExtraParams] Invalid JSON — ignored: ${e.message}")
+      null
+    }
   }
 
   /**
@@ -494,7 +511,7 @@ class Standard : LLAMA() {
                 },
             injectModelField = externalClient?.let { c -> { b: String -> c.injectModelField(b) } },
             log = logFn,
-            disableFrequencyPenalty = config.disableFrequencyPenalty)
+            extraParamsJson = config.extraParamsJson)
 
     webSearchHandler =
         WebSearchHandler(
@@ -511,11 +528,11 @@ class Standard : LLAMA() {
             buildMessages = { q, ip, ch, se, et, dl, le, ul ->
               messageBuilder!!.buildMessages(q, ip, ch, se, et, dl, le, ul)
             },
-            chatCompletion = { mj, et, ids, mt, op, oec, dfp ->
-              chatCompletionService!!.chatCompletion(mj, et, ids, mt, op, oec, dfp)
+            chatCompletion = { mj, et, ids, mt, op, oec ->
+              chatCompletionService!!.chatCompletion(mj, et, ids, mt, op, oec)
             },
-            streamChatCompletion = { mj, s, et, ids, op, oec, dfp ->
-              chatCompletionService!!.streamChatCompletion(mj, s, et, ids, op, oec, dfp)
+            streamChatCompletion = { mj, s, et, ids, op, oec ->
+              chatCompletionService!!.streamChatCompletion(mj, s, et, ids, op, oec)
             },
             log = logFn)
 
@@ -1006,13 +1023,14 @@ class Standard : LLAMA() {
 
     val resolvedDisplayModel: String? =
         specialistName?.let { name ->
-          val key = name.lowercase()
-          config.externalSpecialists[key]?.let { ext ->
-            (ext.model ?: name).substringAfterLast("/")
-          }
-              ?: config.specialists[key]?.let { spec ->
-                stripModelSuffix(spec.modelUrl.substringAfterLast("/"))
-              }
+          val extEntry =
+              config.externalSpecialists.entries
+                  .find { it.key.equals(name, ignoreCase = true) }
+                  ?.value
+          val localEntry =
+              config.specialists.entries.find { it.key.equals(name, ignoreCase = true) }?.value
+          extEntry?.let { ext -> (ext.model ?: name).substringAfterLast("/") }
+              ?: localEntry?.let { spec -> stripModelSuffix(spec.modelUrl.substringAfterLast("/")) }
         }
 
     val displayModel =
@@ -1025,13 +1043,20 @@ class Standard : LLAMA() {
 
     val badgeFlag = AI.queueBadgeEnabled.takeIf { it }
 
+    // In external mode (default or specialist), thinking is handled by the external model itself —
+    // there is no separate local thinking server to announce.
+    val isResolvedExternal =
+        specialistName != null &&
+            config.externalSpecialists.keys.any { it.equals(specialistName, ignoreCase = true) }
+    val effectivelyExternal = config.isExternalMode || isResolvedExternal
+
     val healthResponse =
-        if (thinkingServerReady && config.thinkingModelUrl != null) {
+        if (!effectivelyExternal && thinkingServerReady && config.thinkingModelUrl != null) {
           val raw = config.thinkingModelUrl!!.substringAfterLast("/").removeSuffix(".gguf")
           val name = raw.replace(Regex("-[QFqf][0-9_]+[A-Za-z_]*$"), "")
           HealthCheckResponse(
               status = "ready", model = displayModel, thinkingModel = name, queueBadge = badgeFlag)
-        } else if (config.hasThinkingModel && !thinkingServerReady) {
+        } else if (!effectivelyExternal && config.hasThinkingModel && !thinkingServerReady) {
           HealthCheckResponse(
               status = "ready",
               model = displayModel,
@@ -1123,8 +1148,7 @@ class Standard : LLAMA() {
       val forcedLanguageCode: String?,
       val specialistName: String?,
       val queueTicket: String?,
-      val autoMailTo: String?,
-      val disableFrequencyPenalty: Boolean
+      val autoMailTo: String?
   )
 
   /**
@@ -1293,12 +1317,7 @@ class Standard : LLAMA() {
                     it
                   }
                 }
-                ?.takeIf { it.contains("@") },
-        disableFrequencyPenalty =
-            headers.entries
-                .find { it.key.equals("X-Disable-Frequency-Penalty", ignoreCase = true) }
-                ?.value
-                ?.equals("true", ignoreCase = true) ?: config.disableFrequencyPenalty)
+                ?.takeIf { it.contains("@") })
   }
 
   /**
@@ -1531,13 +1550,7 @@ class Standard : LLAMA() {
             log(LogLevel.INFO, "Messages JSON (first 500): ${messages.take(500)}")
           }
           chatCompletionService!!.streamChatCompletion(
-              messages,
-              session,
-              ctx.enableThinking,
-              ctx.slotId,
-              specialistPort,
-              specialistClient,
-              ctx.disableFrequencyPenalty)
+              messages, session, ctx.enableThinking, ctx.slotId, specialistPort, specialistClient)
           val fullText = session.currentText()
           val thinkText = session.currentThinking()
           log(
@@ -1563,8 +1576,7 @@ class Standard : LLAMA() {
                 userLocation,
                 ctx.filterResults,
                 specialistPort,
-                specialistClient,
-                ctx.disableFrequencyPenalty)
+                specialistClient)
             session.searching = false
             session.searchQuery = null
           }
@@ -1588,8 +1600,7 @@ class Standard : LLAMA() {
                 ctx.slotId,
                 detectedLang,
                 specialistPort,
-                specialistClient,
-                ctx.disableFrequencyPenalty)
+                specialistClient)
             session.fetching = false
             session.fetchUrl = null
           }
@@ -1704,13 +1715,7 @@ class Standard : LLAMA() {
                   fallbackMessages
                 }
             chatCompletionService!!.streamChatCompletion(
-                messagesWithReasoning,
-                session,
-                false,
-                ctx.slotId,
-                specialistPort,
-                specialistClient,
-                ctx.disableFrequencyPenalty)
+                messagesWithReasoning, session, false, ctx.slotId, specialistPort, specialistClient)
             val fallbackText = session.currentText()
             if (ctx.searchEnabled &&
                 BraveSearch.isAvailable &&
@@ -1733,8 +1738,7 @@ class Standard : LLAMA() {
                   userLocation,
                   ctx.filterResults,
                   specialistPort,
-                  specialistClient,
-                  ctx.disableFrequencyPenalty)
+                  specialistClient)
               session.searching = false
               session.searchQuery = null
             }
@@ -1758,8 +1762,7 @@ class Standard : LLAMA() {
                   ctx.slotId,
                   detectedLang,
                   specialistPort,
-                  specialistClient,
-                  ctx.disableFrequencyPenalty)
+                  specialistClient)
               session.fetching = false
               session.fetchUrl = null
             }
@@ -1931,8 +1934,7 @@ class Standard : LLAMA() {
                 syncCtx.slotId,
                 syncCtx.thinkingTokenBudget,
                 specialistPort,
-                specialistClient,
-                syncCtx.disableFrequencyPenalty)
+                specialistClient)
         if (syncCtx.enableThinking && answer.isBlank()) {
           log(
               LogLevel.INFO,
@@ -1953,8 +1955,7 @@ class Standard : LLAMA() {
                   enableThinking = false,
                   idSlot = syncCtx.slotId,
                   overridePort = specialistPort,
-                  overrideExternalClient = specialistClient,
-                  disableFrequencyPenalty = syncCtx.disableFrequencyPenalty)
+                  overrideExternalClient = specialistClient)
         }
         if (syncCtx.searchEnabled) {
           answer =
@@ -1969,8 +1970,7 @@ class Standard : LLAMA() {
                   userLocation,
                   syncCtx.filterResults,
                   specialistPort,
-                  specialistClient,
-                  syncCtx.disableFrequencyPenalty)
+                  specialistClient)
         }
         // region CALL:fetch handling (sync path)
         if (syncCtx.searchEnabled) {
@@ -1984,8 +1984,7 @@ class Standard : LLAMA() {
                   syncCtx.slotId,
                   detectedLang,
                   specialistPort,
-                  specialistClient,
-                  syncCtx.disableFrequencyPenalty)
+                  specialistClient)
         }
         // endregion CALL:fetch handling (sync path)
         // region CALL:mail handling (sync path)

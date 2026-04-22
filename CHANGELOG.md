@@ -5,15 +5,25 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [1.0.1] — 2026-04-20
+## [1.0.1] — 2026-04-22
+
+### Added
+- `AI_LLAMA_STD_ExtraParams` plugin property: optional JSON object of additional parameters appended to every completion request body (e.g. `{"top_p":0.9,"seed":42}`). Keys `messages`, `stream`, `model`, `id_slot`, `logprobs` are silently ignored. Applies to both local and external AI requests.
+- `CALL:search(...)` now accepts positional arguments without the `query=` keyword
+- Location is now only appended to search queries where geography is relevant (weather, local services, events); general knowledge queries are no longer location-tagged
+- `CALL:search`/`CALL:fetch` calls are stripped from assistant history before re-sending to the model to avoid prompt leakage
 
 ### Fixed
 - External AI providers (Google Gemini, Groq) returned HTTP 400 due to unsupported `logprobs` parameter — now only sent to local llama-server
+- `DisableFrequencyPenalty` plugin property removed — frequency, presence, and repetition penalties are now hardcoded per model type and no longer configurable
+- Plain unformatted digit sequences (e.g. Kassenzeichen, reference numbers) no longer detected as phone numbers in chat output
+- Well-known public figures (politicians, celebrities, scientists) are no longer stripped from web search queries as PII
 
 ### Changed
 - `AI_LLAMA_STD_MmprojUrl` is now optional — omit it when using a text-only model (no vision encoder)
 - When no custom model URL is set, the default VL model still auto-provides its matching mmproj
 - Warning logged when running without mmproj: vision/image features unavailable
+- Search capability confirmation message now explicitly instructs the model to always use `CALL:search` for factual queries rather than answering from memory
 
 ---
 

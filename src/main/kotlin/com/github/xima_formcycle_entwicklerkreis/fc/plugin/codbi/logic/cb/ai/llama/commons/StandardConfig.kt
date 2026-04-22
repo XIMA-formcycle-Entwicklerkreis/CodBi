@@ -37,6 +37,9 @@ import java.io.File
  * @param maxSearchRoundTrips Maximum number of search round-trips the model may perform before the
  *   answer is returned. On intermediate rounds the model is told it may issue another search if
  *   results are insufficient; on the final round it is instructed to give a direct answer.
+ * @param extraParamsJson Optional JSON object string of additional parameters to append to every
+ *   API request body (e.g. `{"top_p":0.9,"seed":42}`). Blacklisted keys are silently removed during
+ *   parsing. `null` means no extra params.
  */
 internal data class StandardConfig(
     val modelUrl: String,
@@ -45,7 +48,6 @@ internal data class StandardConfig(
     val externalApiKey: String?,
     val externalModel: String?,
     val externalNoPrompt: Boolean,
-    val disableFrequencyPenalty: Boolean = false,
     val thinkingModelUrl: String?,
     val thinkingMmprojUrl: String?,
     val promptIdentity: String?,
@@ -69,7 +71,8 @@ internal data class StandardConfig(
     val forcedLanguage: String? = null,
     val specialists: Map<String, SpecialistEntry> = emptyMap(),
     val externalSpecialists: Map<String, ExternalSpecialistEntry> = emptyMap(),
-    val maxConcurrent: Int = 3
+    val maxConcurrent: Int = 3,
+    val extraParamsJson: String? = null
 ) {
   /**
    * A local specialist model entry parsed from `AI_LLAMA_STD_SPECIALIST_XXX` plugin properties.

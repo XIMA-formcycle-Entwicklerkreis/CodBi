@@ -65,8 +65,10 @@ internal class MessageBuilder(
           chatHistory
         }
 
+    val callPattern = Regex("""CALL:(?:search|fetch)\([^)]*\)""", RegexOption.IGNORE_CASE)
     for ((role, content) in effectiveHistory) {
-      messages.add(message(role, content))
+      val sanitized = if (role == "assistant") callPattern.replace(content, "").trim() else content
+      if (sanitized.isNotEmpty()) messages.add(message(role, sanitized))
     }
 
     val lang = detectedLang ?: langService.detectLanguage(question)
@@ -199,9 +201,10 @@ internal class MessageBuilder(
           "The search query MUST be about the user's ACTUAL topic. Extract the core subject from the user's question. ")
       append(
           "SANITIZE: The search query is sent to an external search engine — NEVER include sensitive or personal data. " +
-              "Remove: person names, email addresses, phone numbers, street addresses, serial numbers, " +
+              "Remove: private person names (non-public individuals), email addresses, phone numbers, street addresses, serial numbers, " +
               "IDs (case numbers, SSN, IBAN, passport), dates of birth, and any code mixing letters+digits. " +
-              "Keep only brand names, product names, and generic topic keywords. ")
+              "Well-known public figures (politicians, historical figures, celebrities, scientists) MAY be included by name. " +
+              "Keep only brand names, product names, public person names, and generic topic keywords. ")
     }
 
     appendSearchExamples(detectedLang, locationEnabled, userLocation)
@@ -251,6 +254,9 @@ internal class MessageBuilder(
       val shortLocation = userLocation.substringBefore(",").trim()
       append("Example: user asks about weather → CALL:search(query='$weatherQ $shortLocation'). ")
       append("Example: user asks where to eat → CALL:search(query='$localQ $shortLocation'). ")
+      append(
+          "LOCATION RULE: Only append the user's location to queries where geography is relevant (weather, local services, events, businesses, city-specific info). " +
+              "NEVER append location to general knowledge questions (history, biographies, science, definitions, worldwide topics, etc.).")
     } else {
       append(
           "Example: user asks about weather → CALL:search(query='$weatherQ${if (detectedLang == null || detectedLang.languageName == "English") " tomorrow" else ""}'). ")
@@ -371,8 +377,9 @@ internal class MessageBuilder(
       messages.add(
           message(
               "assistant",
-              "Yes! I now have access to $capList. " +
-                  "Disregard anything I said earlier about not being able to help — I can now answer fully."))
+              "Yes! I have access to $capList. " +
+                  "I MUST use CALL:search for: current events, weather, prices, phone numbers, addresses, opening hours, contact information, news, official data, or ANY specific factual detail that could be wrong or outdated. " +
+                  "Answering from memory alone is NEVER acceptable for such questions — I must always search first."))
     }
   }
 

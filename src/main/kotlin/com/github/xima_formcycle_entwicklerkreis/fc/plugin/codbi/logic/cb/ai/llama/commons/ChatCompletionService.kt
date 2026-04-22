@@ -35,7 +35,7 @@ internal class ChatCompletionService(
             timeoutMs: Int) -> Unit)?,
     private val injectModelField: ((String) -> String)?,
     private val log: (LogLevel, String) -> Unit,
-    private val disableFrequencyPenalty: Boolean = false
+    private val extraParamsJson: String? = null
 ) {
   init {
     if (isExternalMode()) {
@@ -65,8 +65,7 @@ internal class ChatCompletionService(
       idSlot: Int = -1,
       maxThinkingTokens: Int? = null,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null,
-      disableFrequencyPenalty: Boolean = this.disableFrequencyPenalty
+      overrideExternalClient: ExternalAiClient? = null
   ): String {
     val useExtSpecialist = overrideExternalClient != null
     val external = useExtSpecialist || isExternalMode()
@@ -76,21 +75,28 @@ internal class ChatCompletionService(
     var requestBody = buildString {
       append("{\"messages\":$messagesJson")
 
-      val effectiveMaxTokens =
-          if (enableThinking) {
-            maxThinkingTokens ?: (currentMaxTokens * 4).coerceAtLeast(4096)
-          } else currentMaxTokens
+      // max_tokens is a local-model budget — external APIs manage their own token limits
+      if (!external) {
+        val effectiveMaxTokens =
+            if (enableThinking) {
+              maxThinkingTokens ?: (currentMaxTokens * 4).coerceAtLeast(4096)
+            } else currentMaxTokens
+        append(",\"max_tokens\":$effectiveMaxTokens")
+      }
 
-      append(",\"max_tokens\":$effectiveMaxTokens")
       append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
 
       if (!external) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
-      if (!disableFrequencyPenalty)
-          append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
-      append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
+      if (!external) append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
+      if (!external) append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":false")
 
       if (!external && idSlot >= 0) append(",\"id_slot\":$idSlot")
+
+      extraParamsJson?.let { json ->
+        val inner = json.drop(1).dropLast(1)
+        if (inner.isNotBlank()) append(",$inner")
+      }
 
       append("}")
     }
@@ -158,8 +164,7 @@ internal class ChatCompletionService(
       enableThinking: Boolean = false,
       idSlot: Int = -1,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null,
-      disableFrequencyPenalty: Boolean = this.disableFrequencyPenalty
+      overrideExternalClient: ExternalAiClient? = null
   ) {
     val useExtSpecialist = overrideExternalClient != null
     val external = useExtSpecialist || isExternalMode()
@@ -173,20 +178,27 @@ internal class ChatCompletionService(
     var repetitionDetected = false
     var requestBody = buildString {
       append("{\"messages\":$messagesJson")
-      val effectiveMaxTokens =
-          if (enableThinking) (currentMaxTokens * 4).coerceAtLeast(4096) else currentMaxTokens
+      // max_tokens is a local-model budget — external APIs manage their own token limits
+      if (!external) {
+        val effectiveMaxTokens =
+            if (enableThinking) (currentMaxTokens * 4).coerceAtLeast(4096) else currentMaxTokens
+        append(",\"max_tokens\":$effectiveMaxTokens")
+      }
 
-      append(",\"max_tokens\":$effectiveMaxTokens")
       append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
 
       if (!external) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
-      if (!disableFrequencyPenalty)
-          append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
-      append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
+      if (!external) append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
+      if (!external) append(",\"presence_penalty\":${if (enableThinking) "0.6" else "0.0"}")
       append(",\"stream\":true")
       if (!external) append(",\"logprobs\":true")
 
       if (!external && idSlot >= 0) append(",\"id_slot\":$idSlot")
+
+      extraParamsJson?.let { json ->
+        val inner = json.drop(1).dropLast(1)
+        if (inner.isNotBlank()) append(",$inner")
+      }
 
       append("}")
     }

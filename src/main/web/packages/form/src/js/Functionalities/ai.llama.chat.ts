@@ -1005,7 +1005,7 @@ export class AI_LLAMA_CHAT {
       // #endregion Convert links to placeholders.
       // #region Convert Phone-Numbers and eMail-Addresses.
       const withPhonePlaceholders = withAllPlaceholders.replace(
-        /(?:\+\d{1,3}[\s.-]?)?(?:\(?\d{2,5}\)?[\s.\/-]?){1,3}\d{1,8}/g,
+        /(?:\+\d{1,3}[ \t.-]?)?(?:\(?\d{2,5}\)?[ \t.\/-]?){1,3}\d{1,8}/g,
         (match) => {
           const digitsOnly = match.replace(/\D/g, "");
           if (digitsOnly.length < 7 || digitsOnly.length > 15) {
@@ -1030,6 +1030,11 @@ export class AI_LLAMA_CHAT {
 
           // Plain unformatted digit runs (e.g. Kassenzeichen, reference numbers) — not phone numbers
           if (/^\d{8,}$/.test(match.trim())) {
+            return match;
+          }
+
+          // 5-digit German postal codes (PLZ) — not phone numbers
+          if (/^\d{5}$/.test(match.trim())) {
             return match;
           }
 

@@ -124,7 +124,7 @@ internal class ChatCompletionService(
     return try {
       val json = com.google.gson.JsonParser.parseString(response).asJsonObject
       val message = json.getAsJsonArray("choices")?.get(0)?.asJsonObject?.getAsJsonObject("message")
-      var raw = message?.get("content")?.asString ?: response
+      var raw = message?.get("content")?.takeIf { it.isJsonPrimitive }?.asString ?: response
 
       if (useThinkingServer || enableThinking) {
         raw = "<think>$raw"
@@ -234,7 +234,9 @@ internal class ChatCompletionService(
     streamFn(
         { data ->
           try {
-            val json = com.google.gson.JsonParser.parseString(data).asJsonObject
+            val parsed = com.google.gson.JsonParser.parseString(data)
+            if (!parsed.isJsonObject) return@streamFn
+            val json = parsed.asJsonObject
             val delta =
                 json.getAsJsonArray("choices")?.get(0)?.asJsonObject?.getAsJsonObject("delta")
 
@@ -242,7 +244,7 @@ internal class ChatCompletionService(
               log(LogLevel.INFO, "SSE delta keys: ${delta.keySet()}")
             }
 
-            val content = delta?.get("content")?.asString
+            val content = delta?.get("content")?.takeIf { it.isJsonPrimitive }?.asString
 
             if (content != null) {
               val filtered = filterThinkTags(content, tagBuffer, insideThinkBlock)
@@ -316,7 +318,7 @@ internal class ChatCompletionService(
                 }
               }
             }
-            val reasoning = delta?.get("reasoning_content")?.asString
+            val reasoning = delta?.get("reasoning_content")?.takeIf { it.isJsonPrimitive }?.asString
 
             if (reasoning != null && reasoning.isNotEmpty()) {
               session.addThinking(reasoning)
@@ -365,8 +367,8 @@ internal class ChatCompletionService(
 
               for (lpEntry in lpContent) {
                 val obj = lpEntry.asJsonObject
-                val tok = obj.get("token")?.asString ?: ""
-                val lp = obj.get("logprob")?.asDouble ?: continue
+                val tok = obj.get("token")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+                val lp = obj.get("logprob")?.takeIf { it.isJsonPrimitive }?.asDouble ?: continue
 
                 if (!insideThinkBlock) {
                   session.addLogprob(tok, lp)

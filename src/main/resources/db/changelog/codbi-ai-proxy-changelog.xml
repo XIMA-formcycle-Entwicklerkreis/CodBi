@@ -28,4 +28,17 @@
         <modifyDataType tableName="codbi_ai_proxy" columnName="ip_masked" newDataType="VARCHAR(45)"/>
     </changeSet>
 
+    <changeSet id="codbi-ai-proxy-3" author="codbi">
+        <comment>
+            Replace personal-data columns (user_hash, ip_masked) with a random request_id UUID.
+            The request_id is also returned as X-CodBi-Request-Id response header, allowing
+            exact correlation with the Tomcat access log without storing any personal data.
+        </comment>
+        <dropColumn tableName="codbi_ai_proxy" columnName="user_hash"/>
+        <dropColumn tableName="codbi_ai_proxy" columnName="ip_masked"/>
+        <addColumn tableName="codbi_ai_proxy">
+            <column name="request_id" type="VARCHAR(36)"/>
+        </addColumn>
+    </changeSet>
+
 </databaseChangeLog>

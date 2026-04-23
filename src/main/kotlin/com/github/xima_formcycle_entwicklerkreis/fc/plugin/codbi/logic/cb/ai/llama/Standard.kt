@@ -23,6 +23,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import org.slf4j.MDC
 
 // endregion Imports
 /**
@@ -1221,9 +1222,8 @@ class Standard : LLAMA() {
           else -> "off"
         }}")
     val searchEnabled =
-        headers.entries.none {
-          it.key.equals("X-Search", ignoreCase = true) &&
-              it.value.equals("false", ignoreCase = true)
+        headers.entries.any {
+          it.key.equals("X-Search", ignoreCase = true) && it.value.equals("true", ignoreCase = true)
         }
     log(LogLevel.INFO, "Search enabled: $searchEnabled")
     val locationEnabled =
@@ -1494,7 +1494,10 @@ class Standard : LLAMA() {
     session.autoMailTo = ctx.autoMailTo
     streamingSessions[sessionId] = session
     if (ctx.slotId >= 0) activeStreamingSlots.merge(ctx.slotId, 1, Int::plus)
+    MDC.put("X-CodBi-Request-Id", sessionId)
+    val mdcContext = MDC.getCopyOfContextMap()
     executor!!.submit {
+      if (mdcContext != null) MDC.setContextMap(mdcContext) else MDC.clear()
       val specialistRoute = resolveSpecialist(ctx.specialistName)
       val isLocal = !config.isExternalMode && specialistRoute !is SpecialistRoute.External
       var inferenceTicket: String? = null
@@ -1857,8 +1860,10 @@ class Standard : LLAMA() {
             activeStreamingSlots.merge(ctx.slotId, -1) { a, b ->
               (a + b).let { if (it <= 0) null else it }
             }
+        MDC.remove("X-CodBi-Request-Id")
       }
     }
+    MDC.remove("X-CodBi-Request-Id")
     log(LogLevel.INFO, "Streaming session started: $sessionId")
     return gsonResponse(StreamIdResponse(sessionId))
   }
@@ -1870,165 +1875,172 @@ class Standard : LLAMA() {
    * @return A servlet JSON response containing per-question answers or an error.
    */
   private fun executeSynchronous(ctx: RequestContext): IPluginServletActionRetVal {
-    // If the hashed slot is occupied by an active stream, let llama-server auto-assign a free slot
-    val effectiveSlot =
-        if (ctx.slotId >= 0 && activeStreamingSlots.containsKey(ctx.slotId)) {
-          log(LogLevel.INFO, "Slot ${ctx.slotId} occupied by stream — using auto-assign")
-          -1
-        } else ctx.slotId
-    val syncCtx = if (effectiveSlot != ctx.slotId) ctx.copy(slotId = effectiveSlot) else ctx
-
-    val finalResults = mutableMapOf<String, Map<String, Any>>()
-    val specialistRoute = resolveSpecialist(syncCtx.specialistName)
-    val specialistPort = (specialistRoute as? SpecialistRoute.Local)?.port
-    val specialistClient = (specialistRoute as? SpecialistRoute.External)?.client
-    val isLocal = !config.isExternalMode && specialistRoute !is SpecialistRoute.External
-    val syncModelType = if (syncCtx.enableThinking) "llama-thinking" else "llama-fast"
-    var syncInferenceStartMs = 0L
-    if (isLocal) {
-      val existingTicket = syncCtx.queueTicket
-      if (!AI.inferenceSemaphore.tryAcquire()) {
-        AI.cleanupStaleTickets()
-        val ticket = existingTicket ?: java.util.UUID.randomUUID().toString()
-        AI.queueTickets[ticket] = System.currentTimeMillis()
-        AI.ticketModelTypes[ticket] = syncModelType
-        val pos = (AI.queueTickets.size - 1).coerceAtLeast(1)
-        val waitMs = AI.estimateWaitMs(ticket)
-        val response =
-            mutableMapOf<String, Any?>(
-                "queued" to true,
-                "position" to pos,
-                "queueBadge" to AI.queueBadgeEnabled,
-                "queueTicket" to ticket)
-        if (waitMs != null) response["estimatedWaitMs"] = waitMs
-        return gsonResponse(response)
-      }
-      existingTicket?.let {
-        AI.queueTickets[it] = Long.MAX_VALUE
-        AI.ticketModelTypes[it] = syncModelType
-      }
-      syncInferenceStartMs = System.currentTimeMillis()
-    }
+    val syncRequestId = UUID.randomUUID().toString()
+    MDC.put("X-CodBi-Request-Id", syncRequestId)
     try {
-      val imageParts =
-          if (syncCtx.imageData.isNotEmpty()) {
-            imageService!!.prepareImageParts(syncCtx.imageData, syncCtx.manualRotation)
-          } else emptyList()
-      for ((questionKey, question) in syncCtx.questions) {
-        val detectedLang = resolveLanguage(question, syncCtx.forcedLanguageCode)
-        val userLocation = resolveLocation(syncCtx)
-        val messages =
-            messageBuilder!!.buildMessages(
-                question,
-                imageParts,
-                syncCtx.chatHistory,
-                syncCtx.searchEnabled,
-                syncCtx.enableThinking,
-                detectedLang,
-                syncCtx.locationEnabled,
-                userLocation)
-        var answer =
-            chatCompletionService!!.chatCompletion(
-                messages,
-                syncCtx.enableThinking,
-                syncCtx.slotId,
-                syncCtx.thinkingTokenBudget,
-                specialistPort,
-                specialistClient)
-        if (syncCtx.enableThinking && answer.isBlank()) {
-          log(
-              LogLevel.INFO,
-              "Thinking model produced no visible answer for Q[$questionKey] — falling back to fast model")
-          val fallbackMessages =
+      // If the hashed slot is occupied by an active stream, let llama-server auto-assign a free
+      // slot
+      val effectiveSlot =
+          if (ctx.slotId >= 0 && activeStreamingSlots.containsKey(ctx.slotId)) {
+            log(LogLevel.INFO, "Slot ${ctx.slotId} occupied by stream — using auto-assign")
+            -1
+          } else ctx.slotId
+      val syncCtx = if (effectiveSlot != ctx.slotId) ctx.copy(slotId = effectiveSlot) else ctx
+
+      val finalResults = mutableMapOf<String, Map<String, Any>>()
+      val specialistRoute = resolveSpecialist(syncCtx.specialistName)
+      val specialistPort = (specialistRoute as? SpecialistRoute.Local)?.port
+      val specialistClient = (specialistRoute as? SpecialistRoute.External)?.client
+      val isLocal = !config.isExternalMode && specialistRoute !is SpecialistRoute.External
+      val syncModelType = if (syncCtx.enableThinking) "llama-thinking" else "llama-fast"
+      var syncInferenceStartMs = 0L
+      if (isLocal) {
+        val existingTicket = syncCtx.queueTicket
+        if (!AI.inferenceSemaphore.tryAcquire()) {
+          AI.cleanupStaleTickets()
+          val ticket = existingTicket ?: java.util.UUID.randomUUID().toString()
+          AI.queueTickets[ticket] = System.currentTimeMillis()
+          AI.ticketModelTypes[ticket] = syncModelType
+          val pos = (AI.queueTickets.size - 1).coerceAtLeast(1)
+          val waitMs = AI.estimateWaitMs(ticket)
+          val response =
+              mutableMapOf<String, Any?>(
+                  "queued" to true,
+                  "position" to pos,
+                  "queueBadge" to AI.queueBadgeEnabled,
+                  "queueTicket" to ticket)
+          if (waitMs != null) response["estimatedWaitMs"] = waitMs
+          return gsonResponse(response)
+        }
+        existingTicket?.let {
+          AI.queueTickets[it] = Long.MAX_VALUE
+          AI.ticketModelTypes[it] = syncModelType
+        }
+        syncInferenceStartMs = System.currentTimeMillis()
+      }
+      try {
+        val imageParts =
+            if (syncCtx.imageData.isNotEmpty()) {
+              imageService!!.prepareImageParts(syncCtx.imageData, syncCtx.manualRotation)
+            } else emptyList()
+        for ((questionKey, question) in syncCtx.questions) {
+          val detectedLang = resolveLanguage(question, syncCtx.forcedLanguageCode)
+          val userLocation = resolveLocation(syncCtx)
+          val messages =
               messageBuilder!!.buildMessages(
                   question,
                   imageParts,
                   syncCtx.chatHistory,
                   syncCtx.searchEnabled,
-                  enableThinking = false,
+                  syncCtx.enableThinking,
                   detectedLang,
                   syncCtx.locationEnabled,
                   userLocation)
-          answer =
+          var answer =
               chatCompletionService!!.chatCompletion(
-                  fallbackMessages,
-                  enableThinking = false,
-                  idSlot = syncCtx.slotId,
-                  overridePort = specialistPort,
-                  overrideExternalClient = specialistClient)
-        }
-        if (syncCtx.searchEnabled) {
-          answer =
-              webSearchHandler!!.handleSearchToolCall(
-                  answer,
-                  question,
-                  imageParts,
-                  syncCtx.chatHistory,
+                  messages,
                   syncCtx.enableThinking,
                   syncCtx.slotId,
-                  detectedLang,
-                  userLocation,
-                  syncCtx.filterResults,
+                  syncCtx.thinkingTokenBudget,
                   specialistPort,
                   specialistClient)
+          if (syncCtx.enableThinking && answer.isBlank()) {
+            log(
+                LogLevel.INFO,
+                "Thinking model produced no visible answer for Q[$questionKey] — falling back to fast model")
+            val fallbackMessages =
+                messageBuilder!!.buildMessages(
+                    question,
+                    imageParts,
+                    syncCtx.chatHistory,
+                    syncCtx.searchEnabled,
+                    enableThinking = false,
+                    detectedLang,
+                    syncCtx.locationEnabled,
+                    userLocation)
+            answer =
+                chatCompletionService!!.chatCompletion(
+                    fallbackMessages,
+                    enableThinking = false,
+                    idSlot = syncCtx.slotId,
+                    overridePort = specialistPort,
+                    overrideExternalClient = specialistClient)
+          }
+          if (syncCtx.searchEnabled) {
+            answer =
+                webSearchHandler!!.handleSearchToolCall(
+                    answer,
+                    question,
+                    imageParts,
+                    syncCtx.chatHistory,
+                    syncCtx.enableThinking,
+                    syncCtx.slotId,
+                    detectedLang,
+                    userLocation,
+                    syncCtx.filterResults,
+                    specialistPort,
+                    specialistClient)
+          }
+          // region CALL:fetch handling (sync path)
+          if (syncCtx.searchEnabled) {
+            answer =
+                webSearchHandler!!.handleFetchToolCall(
+                    answer,
+                    question,
+                    imageParts,
+                    syncCtx.chatHistory,
+                    syncCtx.enableThinking,
+                    syncCtx.slotId,
+                    detectedLang,
+                    specialistPort,
+                    specialistClient)
+          }
+          // endregion CALL:fetch handling (sync path)
+          // region CALL:mail handling (sync path)
+          if (MailBridge.isAvailable) {
+            answer =
+                webSearchHandler!!.handleMailToolCall(
+                    answer,
+                    question,
+                    imageParts,
+                    syncCtx.chatHistory,
+                    syncCtx.enableThinking,
+                    syncCtx.slotId,
+                    "sync-$questionKey",
+                    detectedLang,
+                    syncCtx.clientIP ?: "unknown")
+          }
+          // endregion CALL:mail handling (sync path)
+          val sources =
+              webSearchHandler!!.lastSearchResults.map {
+                mapOf("title" to it.title, "url" to it.url, "description" to it.description)
+              }
+          finalResults[questionKey] =
+              if (sources.isNotEmpty()) {
+                mapOf("answer" to answer, "sources" to sources)
+              } else {
+                mapOf("answer" to answer)
+              }
+          log(LogLevel.INFO, "Q[$questionKey]: ${question.take(80)}… → $answer")
         }
-        // region CALL:fetch handling (sync path)
-        if (syncCtx.searchEnabled) {
-          answer =
-              webSearchHandler!!.handleFetchToolCall(
-                  answer,
-                  question,
-                  imageParts,
-                  syncCtx.chatHistory,
-                  syncCtx.enableThinking,
-                  syncCtx.slotId,
-                  detectedLang,
-                  specialistPort,
-                  specialistClient)
+      } catch (e: Exception) {
+        log(LogLevel.ERROR, "Inference error: ${e.message}", "", e)
+        return gsonResponse(ErrorResponse(e.message ?: "Inference failed"))
+      } finally {
+        if (isLocal) {
+          val durationMs = System.currentTimeMillis() - syncInferenceStartMs
+          if (durationMs > 0) AI.recordInferenceDuration(syncModelType, durationMs)
+          AI.inferenceSemaphore.release()
+          syncCtx.queueTicket?.let {
+            AI.queueTickets.remove(it)
+            AI.ticketModelTypes.remove(it)
+          }
         }
-        // endregion CALL:fetch handling (sync path)
-        // region CALL:mail handling (sync path)
-        if (MailBridge.isAvailable) {
-          answer =
-              webSearchHandler!!.handleMailToolCall(
-                  answer,
-                  question,
-                  imageParts,
-                  syncCtx.chatHistory,
-                  syncCtx.enableThinking,
-                  syncCtx.slotId,
-                  "sync-$questionKey",
-                  detectedLang,
-                  syncCtx.clientIP ?: "unknown")
-        }
-        // endregion CALL:mail handling (sync path)
-        val sources =
-            webSearchHandler!!.lastSearchResults.map {
-              mapOf("title" to it.title, "url" to it.url, "description" to it.description)
-            }
-        finalResults[questionKey] =
-            if (sources.isNotEmpty()) {
-              mapOf("answer" to answer, "sources" to sources)
-            } else {
-              mapOf("answer" to answer)
-            }
-        log(LogLevel.INFO, "Q[$questionKey]: ${question.take(80)}… → $answer")
       }
-    } catch (e: Exception) {
-      log(LogLevel.ERROR, "Inference error: ${e.message}", "", e)
-      return gsonResponse(ErrorResponse(e.message ?: "Inference failed"))
+      return gsonResponse(finalResults)
     } finally {
-      if (isLocal) {
-        val durationMs = System.currentTimeMillis() - syncInferenceStartMs
-        if (durationMs > 0) AI.recordInferenceDuration(syncModelType, durationMs)
-        AI.inferenceSemaphore.release()
-        syncCtx.queueTicket?.let {
-          AI.queueTickets.remove(it)
-          AI.ticketModelTypes.remove(it)
-        }
-      }
+      MDC.remove("X-CodBi-Request-Id")
     }
-    return gsonResponse(finalResults)
   }
 
   // endregion Servlet-Execution

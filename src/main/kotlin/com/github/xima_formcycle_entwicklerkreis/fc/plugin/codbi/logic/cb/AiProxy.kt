@@ -19,6 +19,8 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.UUID
+import org.slf4j.MDC
 
 // endregion Imports
 
@@ -196,195 +198,187 @@ class AiProxy : AI() {
    */
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
     val startMs = System.currentTimeMillis()
-    val clientIP = resolveClientIP(params)
+    val requestId = UUID.randomUUID().toString()
+    MDC.put("X-CodBi-Request-Id", requestId)
+    try {
+      val clientIP = resolveClientIP(params)
 
-    if (!isIPAllowed(clientIP)) {
-      log(LogLevel.WARNING, "Blocked request from $clientIP — not in whitelist")
-      auditLog(clientIP, null, null, 403, "IP_DENIED", System.currentTimeMillis() - startMs)
+      if (!isIPAllowed(clientIP)) {
+        log(LogLevel.WARNING, "Blocked request from $clientIP — not in whitelist")
+        auditLog(requestId, null, 403, "IP_DENIED", System.currentTimeMillis() - startMs)
 
-      return errorResponse(403, """{"error":"Forbidden","message":"IP not allowed"}""")
-    }
-
-    // region Authentication.
-    val authHeader =
-        params.headerMap.entries.find { it.key.equals("Authorization", ignoreCase = true) }?.value
-
-    val username = authenticateBasicAuth(authHeader)
-    if (username == null) {
-      log(LogLevel.WARNING, "Authentication failed from $clientIP")
-      auditLog(clientIP, null, null, 401, "AUTH_FAILED", System.currentTimeMillis() - startMs)
-
-      return errorResponse(
-          401,
-          """{"error":"Unauthorized","message":"Invalid credentials"}""",
-          mapOf("WWW-Authenticate" to "Basic realm=\"CodBi AI Proxy\""))
-    }
-    // endregion Authentication.
-    // region Resolve endpoint.
-    val endpoint =
-        params.requestParameters["endpoint"]?.firstOrNull()
-            ?: params.headerMap.entries
-                .find { it.key.equals("X-Endpoint", ignoreCase = true) }
-                ?.value
-
-    if (endpoint == null || endpoint !in allowedEndpoints) {
-      log(LogLevel.WARNING, "Invalid endpoint '$endpoint' from $clientIP / $username")
-      auditLog(
-          clientIP, username, endpoint, 400, "BAD_ENDPOINT", System.currentTimeMillis() - startMs)
-      return errorResponse(
-          400,
-          """{"error":"Bad Request","message":"Missing or invalid 'endpoint' parameter. Allowed: $allowedEndpoints"}""")
-    }
-    // endregion Resolve endpoint.
-    // region Resolve Request-Body.
-    val requestBody = resolveRequestBody(params)
-
-    if (requestBody == null) {
-      auditLog(clientIP, username, endpoint, 400, "NO_BODY", System.currentTimeMillis() - startMs)
-
-      return errorResponse(
-          400,
-          """{"error":"Bad Request","message":"No request body provided. Use 'body' parameter or 'X-Request-Body' header (Base64)."}""")
-    }
-    // endregion Resolve Request-Body.
-    // region Route to appropriate backend.
-    val isWhisperRequest = endpoint == "/v1/audio/transcriptions"
-
-    if (isWhisperRequest) {
-      val whisperPort = Whisper.activeWhisperPort
-      if (whisperPort == 0) {
-        log(LogLevel.WARNING, "whisper-server port not set — is Whisper activated?")
-        auditLog(
-            clientIP,
-            username,
-            endpoint,
-            503,
-            "WHISPER_UNAVAILABLE",
-            System.currentTimeMillis() - startMs)
-        return errorResponse(
-            503, """{ "error":"Service Unavailable","message":"Whisper server is not running"}""")
+        return errorResponse(403, """{"error":"Forbidden","message":"IP not allowed"}""")
       }
 
+      // region Authentication.
+      val authHeader =
+          params.headerMap.entries.find { it.key.equals("Authorization", ignoreCase = true) }?.value
+
+      val username = authenticateBasicAuth(authHeader)
+      if (username == null) {
+        log(LogLevel.WARNING, "Authentication failed from $clientIP")
+        auditLog(requestId, null, 401, "AUTH_FAILED", System.currentTimeMillis() - startMs)
+
+        return errorResponse(
+            401,
+            """{"error":"Unauthorized","message":"Invalid credentials"}""",
+            mapOf("WWW-Authenticate" to "Basic realm=\"CodBi AI Proxy\""))
+      }
+      // endregion Authentication.
+      // region Resolve endpoint.
+      val endpoint =
+          params.requestParameters["endpoint"]?.firstOrNull()
+              ?: params.headerMap.entries
+                  .find { it.key.equals("X-Endpoint", ignoreCase = true) }
+                  ?.value
+
+      if (endpoint == null || endpoint !in allowedEndpoints) {
+        log(LogLevel.WARNING, "Invalid endpoint '$endpoint' from $clientIP / $username")
+        auditLog(requestId, endpoint, 400, "BAD_ENDPOINT", System.currentTimeMillis() - startMs)
+        return errorResponse(
+            400,
+            """{"error":"Bad Request","message":"Missing or invalid 'endpoint' parameter. Allowed: $allowedEndpoints"}""")
+      }
+      // endregion Resolve endpoint.
+      // region Resolve Request-Body.
+      val requestBody = resolveRequestBody(params)
+
+      if (requestBody == null) {
+        auditLog(requestId, endpoint, 400, "NO_BODY", System.currentTimeMillis() - startMs)
+
+        return errorResponse(
+            400,
+            """{"error":"Bad Request","message":"No request body provided. Use 'body' parameter or 'X-Request-Body' header (Base64)."}""")
+      }
+      // endregion Resolve Request-Body.
+      // region Route to appropriate backend.
+      val isWhisperRequest = endpoint == "/v1/audio/transcriptions"
+
+      if (isWhisperRequest) {
+        val whisperPort = Whisper.activeWhisperPort
+        if (whisperPort == 0) {
+          log(LogLevel.WARNING, "whisper-server port not set — is Whisper activated?")
+          auditLog(
+              requestId, endpoint, 503, "WHISPER_UNAVAILABLE", System.currentTimeMillis() - startMs)
+          return errorResponse(
+              503, """{ "error":"Service Unavailable","message":"Whisper server is not running"}""")
+        }
+
+        return try {
+          val response = forwardMultipartToWhisper(whisperPort, requestBody)
+          val elapsedMs = System.currentTimeMillis() - startMs
+          auditLog(requestId, endpoint, 200, "OK", elapsedMs)
+          log(
+              LogLevel.INFO,
+              "Proxied $endpoint for ${anonymiseUser(username)} from ${anonymiseIP(clientIP)} (${elapsedMs}ms)")
+          jsonResponse(response, mapOf("X-CodBi-Request-Id" to requestId))
+        } catch (X: Exception) {
+          val elapsedMs = System.currentTimeMillis() - startMs
+          log(LogLevel.ERROR, "Whisper proxy error: ${X.message}")
+          auditLog(requestId, endpoint, 502, "PROXY_ERROR: ${X.message?.take(200)}", elapsedMs)
+          errorResponse(
+              502,
+              """{ "error":"Bad Gateway","message":"Failed to reach Whisper server: ${escapeJson(X.message ?: "unknown error")}"}""")
+        }
+      }
+
+      if (endpoint == "/v1/ocr") {
+        if (!TesseractAction.isReady) {
+          log(LogLevel.WARNING, "Tesseract not ready — is OCR activated?")
+          auditLog(
+              requestId,
+              endpoint,
+              503,
+              "TESSERACT_UNAVAILABLE",
+              System.currentTimeMillis() - startMs)
+          return errorResponse(
+              503, """{"error":"Service Unavailable","message":"Tesseract OCR is not running"}""")
+        }
+
+        return try {
+          val response = handleOcrRequest(requestBody)
+          val elapsedMs = System.currentTimeMillis() - startMs
+          auditLog(requestId, endpoint, 200, "OK", elapsedMs)
+          log(
+              LogLevel.INFO,
+              "Proxied $endpoint for ${anonymiseUser(username)} from ${anonymiseIP(clientIP)} (${elapsedMs}ms)")
+          jsonResponse(response, mapOf("X-CodBi-Request-Id" to requestId))
+        } catch (X: Exception) {
+          val elapsedMs = System.currentTimeMillis() - startMs
+          log(LogLevel.ERROR, "Tesseract proxy error: ${X.message}")
+          auditLog(requestId, endpoint, 502, "PROXY_ERROR: ${X.message?.take(200)}", elapsedMs)
+          errorResponse(
+              502,
+              """{"error":"Bad Gateway","message":"Tesseract OCR failed: ${escapeJson(X.message ?: "unknown error")}"}""")
+        }
+      }
+      // endregion Route to appropriate backend.
+      // region Determine LLAMA-Server availability.
+      val basePort = LLAMA.activeServerPort
+
+      if (basePort == 0) {
+        log(LogLevel.WARNING, "llama-server port not set — is the AI activated?")
+
+        auditLog(
+            requestId, endpoint, 503, "SERVER_UNAVAILABLE", System.currentTimeMillis() - startMs)
+
+        return errorResponse(
+            503, """{"error":"Service Unavailable","message":"AI server is not running"}""")
+      }
+      // endregion Determine LLAMA-Server availability.
+      // region Determine Target-Server (thinking vs normal).
+      val thinkingPort = LLAMA.activeThinkingServerPort
+      val wantsThinking = isThinkingRequest(params, requestBody)
+      val port = if (wantsThinking && thinkingPort > 0) thinkingPort else basePort
+
+      if (wantsThinking) {
+        log(
+            LogLevel.INFO,
+            "Thinking mode requested — routing to port $port" +
+                if (thinkingPort > 0) " (dedicated)" else " (hybrid, no dedicated thinking server)")
+      }
+      // endregion Determine Target-Server (thinking vs normal).
+      // region Forwarding.
+      val readTimeoutMs = if (wantsThinking) 600_000 else 300_000
+
       return try {
-        val response = forwardMultipartToWhisper(whisperPort, requestBody)
+        val serverUrl = "http://127.0.0.1:$port$endpoint"
+        var response = forwardPost(serverUrl, requestBody, readTimeoutMs)
+        // region Brave Search.
+        if (BraveSearch.isAvailable && endpoint == "/v1/chat/completions") {
+          response = handleSearchInProxyResponse(response, requestBody, serverUrl)
+        }
+        // endregion Brave Search.
+        // region URL Fetch.
+        if (BraveSearch.isAvailable && endpoint == "/v1/chat/completions") {
+          response = handleFetchInProxyResponse(response, requestBody, serverUrl)
+        }
+        // endregion URL Fetch.
+        // region Mail.
+        if (MailBridge.isAvailable && endpoint == "/v1/chat/completions") {
+          response = handleMailInProxyResponse(response, requestBody, serverUrl, clientIP)
+        }
+        // endregion Mail.
         val elapsedMs = System.currentTimeMillis() - startMs
-        auditLog(clientIP, username, endpoint, 200, "OK", elapsedMs)
+
+        auditLog(requestId, endpoint, 200, "OK", elapsedMs)
         log(
             LogLevel.INFO,
             "Proxied $endpoint for ${anonymiseUser(username)} from ${anonymiseIP(clientIP)} (${elapsedMs}ms)")
-        jsonResponse(response)
+
+        jsonResponse(response, mapOf("X-CodBi-Request-Id" to requestId))
       } catch (X: Exception) {
         val elapsedMs = System.currentTimeMillis() - startMs
-        log(LogLevel.ERROR, "Whisper proxy error: ${X.message}")
-        auditLog(
-            clientIP, username, endpoint, 502, "PROXY_ERROR: ${X.message?.take(200)}", elapsedMs)
+
+        log(LogLevel.ERROR, "Proxy error for $endpoint: ${X.message}")
+
+        auditLog(requestId, endpoint, 502, "PROXY_ERROR: ${X.message?.take(200)}", elapsedMs)
         errorResponse(
             502,
-            """{ "error":"Bad Gateway","message":"Failed to reach Whisper server: ${escapeJson(X.message ?: "unknown error")}"}""")
+            """{"error":"Bad Gateway","message":"Failed to reach AI server: ${escapeJson(X.message ?: "unknown error")}"}""")
       }
-    }
-
-    if (endpoint == "/v1/ocr") {
-      if (!TesseractAction.isReady) {
-        log(LogLevel.WARNING, "Tesseract not ready — is OCR activated?")
-        auditLog(
-            clientIP,
-            username,
-            endpoint,
-            503,
-            "TESSERACT_UNAVAILABLE",
-            System.currentTimeMillis() - startMs)
-        return errorResponse(
-            503, """{"error":"Service Unavailable","message":"Tesseract OCR is not running"}""")
-      }
-
-      return try {
-        val response = handleOcrRequest(requestBody)
-        val elapsedMs = System.currentTimeMillis() - startMs
-        auditLog(clientIP, username, endpoint, 200, "OK", elapsedMs)
-        log(
-            LogLevel.INFO,
-            "Proxied $endpoint for ${anonymiseUser(username)} from ${anonymiseIP(clientIP)} (${elapsedMs}ms)")
-        jsonResponse(response)
-      } catch (X: Exception) {
-        val elapsedMs = System.currentTimeMillis() - startMs
-        log(LogLevel.ERROR, "Tesseract proxy error: ${X.message}")
-        auditLog(
-            clientIP, username, endpoint, 502, "PROXY_ERROR: ${X.message?.take(200)}", elapsedMs)
-        errorResponse(
-            502,
-            """{"error":"Bad Gateway","message":"Tesseract OCR failed: ${escapeJson(X.message ?: "unknown error")}"}""")
-      }
-    }
-    // endregion Route to appropriate backend.
-    // region Determine LLAMA-Server availability.
-    val basePort = LLAMA.activeServerPort
-
-    if (basePort == 0) {
-      log(LogLevel.WARNING, "llama-server port not set — is the AI activated?")
-
-      auditLog(
-          clientIP,
-          username,
-          endpoint,
-          503,
-          "SERVER_UNAVAILABLE",
-          System.currentTimeMillis() - startMs)
-
-      return errorResponse(
-          503, """{"error":"Service Unavailable","message":"AI server is not running"}""")
-    }
-    // endregion Determine LLAMA-Server availability.
-    // region Determine Target-Server (thinking vs normal).
-    val thinkingPort = LLAMA.activeThinkingServerPort
-    val wantsThinking = isThinkingRequest(params, requestBody)
-    val port = if (wantsThinking && thinkingPort > 0) thinkingPort else basePort
-
-    if (wantsThinking) {
-      log(
-          LogLevel.INFO,
-          "Thinking mode requested — routing to port $port" +
-              if (thinkingPort > 0) " (dedicated)" else " (hybrid, no dedicated thinking server)")
-    }
-    // endregion Determine Target-Server (thinking vs normal).
-    // region Forwarding.
-    val readTimeoutMs = if (wantsThinking) 600_000 else 300_000
-
-    return try {
-      val serverUrl = "http://127.0.0.1:$port$endpoint"
-      var response = forwardPost(serverUrl, requestBody, readTimeoutMs)
-      // region Brave Search.
-      if (BraveSearch.isAvailable && endpoint == "/v1/chat/completions") {
-        response = handleSearchInProxyResponse(response, requestBody, serverUrl)
-      }
-      // endregion Brave Search.
-      // region URL Fetch.
-      if (BraveSearch.isAvailable && endpoint == "/v1/chat/completions") {
-        response = handleFetchInProxyResponse(response, requestBody, serverUrl)
-      }
-      // endregion URL Fetch.
-      // region Mail.
-      if (MailBridge.isAvailable && endpoint == "/v1/chat/completions") {
-        response = handleMailInProxyResponse(response, requestBody, serverUrl, clientIP)
-      }
-      // endregion Mail.
-      val elapsedMs = System.currentTimeMillis() - startMs
-
-      auditLog(clientIP, username, endpoint, 200, "OK", elapsedMs)
-      log(
-          LogLevel.INFO,
-          "Proxied $endpoint for ${anonymiseUser(username)} from ${anonymiseIP(clientIP)} (${elapsedMs}ms)")
-
-      jsonResponse(response)
-    } catch (X: Exception) {
-      val elapsedMs = System.currentTimeMillis() - startMs
-
-      log(LogLevel.ERROR, "Proxy error for $endpoint: ${X.message}")
-
-      auditLog(clientIP, username, endpoint, 502, "PROXY_ERROR: ${X.message?.take(200)}", elapsedMs)
-      errorResponse(
-          502,
-          """{"error":"Bad Gateway","message":"Failed to reach AI server: ${escapeJson(X.message ?: "unknown error")}"}""")
+    } finally {
+      MDC.remove("X-CodBi-Request-Id")
     }
   }
 
@@ -968,23 +962,24 @@ class AiProxy : AI() {
   // endregion Anonymisation
   // region Audit-Logging
   /**
-   * Inserts an anonymised audit log entry into `codbi_ai_proxy` using the JPA
+   * Inserts an audit log entry into `codbi_ai_proxy` using the JPA
    * [EntityManagerFactory][javax.persistence.EntityManagerFactory] provided by [CodbiEntities].
    *
    * Each call creates its own [EntityManager][javax.persistence.EntityManager] for thread safety.
    * Failures are logged but do not affect the proxy response.
    *
-   * @param clientIP The client's IP address (anonymised within this method).
-   * @param username The authenticated username (anonymised within this method), or `null if
-   *   authentication failed.
+   * The log contains no personal data: [requestId] is a random UUID generated per request, also
+   * returned as the `X-CodBi-Request-Id` response header for correlation with the Tomcat access
+   * log.
+   *
+   * @param requestId A random UUID identifying this request (no personal data).
    * @param endpoint The API endpoint being accessed.
    * @param status The HTTP status code of the response.
    * @param detail Additional details about the request or response.
    * @param elapsedMs The time taken to process the request, in milliseconds.
    */
   private fun auditLog(
-      clientIP: String,
-      username: String?,
+      requestId: String,
       endpoint: String?,
       status: Int,
       detail: String,
@@ -1004,8 +999,7 @@ class AiProxy : AI() {
       em.transaction.begin()
       em.persist(
           CodbiAiProxyLog(
-              userHash = username?.let { anonymiseUser(it) },
-              ipMasked = anonymiseIP(clientIP),
+              requestId = requestId,
               endpoint = endpoint,
               status = status,
               detail = detail.take(500),
@@ -1028,11 +1022,15 @@ class AiProxy : AI() {
 
   // region Responses
   /** Returns a JSON response with HTTP 200. */
-  private fun jsonResponse(json: String): IPluginServletActionRetVal {
+  private fun jsonResponse(
+      json: String,
+      extraHeaders: Map<String, String>? = null
+  ): IPluginServletActionRetVal {
     val resp =
         ServletResponse(EResponseType.JSON).apply {
           value = json
           encoding = StandardCharsets.UTF_8.name()
+          if (extraHeaders != null) httpHeader = extraHeaders
         }
     return PluginServletActionRetVal(resp)
   }

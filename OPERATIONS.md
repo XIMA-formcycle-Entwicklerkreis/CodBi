@@ -309,12 +309,48 @@ AI Proxy requests are logged to the database table `codbi_ai_proxy`:
 
 | Column | Content |
 |--------|---------|
-| Username | SHA-256 hash (anonymized) |
-| IP | First two octets only (e.g. `192.168.x.x`) |
-| Timestamp | Request timestamp |
-| Endpoint | Requested AI endpoint path |
+| `request_id` | Random UUID generated per request — no personal data |
+| `timestamp` | Request timestamp |
+| `endpoint` | Requested AI endpoint path |
+| `duration_ms` | Processing time in milliseconds |
+| `status` | HTTP status code |
 
-This provides GDPR-compliant audit logging without storing personally identifiable information.
+No IP addresses, usernames, or any other personally identifiable information are stored.
+The audit log is GDPR-compliant by design and requires no deletion schedule.
+
+The `request_id` is also returned to the caller as the response header `X-CodBi-Request-Id`.
+To make it visible in the Tomcat access log for cross-referencing, add `%{X-CodBi-Request-Id}o`
+to the Tomcat `AccessLogValve` pattern in `server.xml` (one-time operator configuration):
+
+```xml
+<Valve className="org.apache.catalina.valves.AccessLogValve"
+       pattern="%h %l %u %t &quot;%r&quot; %s %b %{X-CodBi-Request-Id}o" ... />
+```
+
+Without this, cross-referencing Tomcat access logs with the audit table is only possible
+approximately via timestamp — not reliably under concurrent load.
+
+The `request_id` is also propagated to the **application log** via SLF4J MDC under the key
+`X-CodBi-Request-Id` for the duration of each request. Administrators can include it in any
+Log4j2 pattern configured in the FormCycle admin UI (no `server.xml` change required):
+
+> **Important:** use the **Log4j2 MDC syntax** `%X{key}` — do **not** use the Tomcat
+> AccessLogValve syntax `%{key}o`, which is only valid in `server.xml` and is printed
+> literally in Log4j2 patterns.
+
+```
+%X{X-CodBi-Request-Id}
+```
+
+Example pattern:
+```
+[%p] [%d{dd-MM-yy HH:mm:ss,SSS}] [%t] [CRQID: %X{X-CodBi-Request-Id:--}] (%F:%L) - %m%n
+```
+
+> The `:-` syntax is the Log4j2 default value separator. `%X{X-CodBi-Request-Id:--}` renders
+> as `-` on threads without an active AI request (e.g. Log4j2 background threads, other
+> servlets) and as the UUID on threads handling an AI proxy request. Without a default, the
+> value is empty, which leaves `[CRQID: ]` in those lines.
 
 ---
 

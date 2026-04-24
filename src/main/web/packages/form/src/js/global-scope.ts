@@ -94,6 +94,8 @@ export interface CodbiSettings {
     /** The URL to the Formcycle-OpenPLZ-Query to use by default. */
     URL: string;
   };
+  /** Global variables reflected from plugin properties prefixed with `GV_` (key is the part after the prefix). */
+  gv: Record<string, string>;
 }
 
 /**

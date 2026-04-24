@@ -82,6 +82,15 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
     val version =
         if (stable) initData?.manifest?.version ?: "1.0.0"
         else System.currentTimeMillis().toString()
+    val gvProperties =
+        buildMap<String, String> {
+          initData?.properties?.stringPropertyNames()?.forEach { key ->
+            if (key.startsWith("GV_") && key.length > 3) {
+              val value = initData.properties.getProperty(key)?.trim() ?: ""
+              put(key.substring(3), value)
+            }
+          }
+        }
     val dynamicResources =
         mapOf(
                 "LDAPSettings.js" to
@@ -92,6 +101,7 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
                     createMatomoJsDescriptor(
                         initData?.properties?.getProperty("Matomo_SiteID") ?: "",
                         initData?.properties?.getProperty("Matomo_URL") ?: ""),
+                "GVSettings.js" to createGVJsDescriptor(gvProperties),
                 formResourceDescriptor("codbi.js", RESOURCE_PATH_CODBI_SCRIPT, version),
                 formResourceDescriptor("codbi.css", RESOURCE_PATH_CODBI_CSS, version),
                 formResourceDescriptor(
@@ -277,6 +287,38 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
 
     return DefaultPluginFormResourceDescriptor.builder()
         .fileName("LDAPSettings.js")
+        .mimeType("text/javascript")
+        .resource(resource)
+        .includeInForm(true)
+        .build()
+  }
+
+  /**
+   * Creates a dynamic JS-Resource that writes all Plugin-Config properties prefixed with **GV_**
+   * into **window.codbiSettings.gv** (keyed by the part after the prefix).
+   *
+   * @param gvProperties Map of property names (without the `GV_` prefix) to their values.
+   * @return The appropriate [IPluginFormResourceDescriptor].
+   */
+  private fun createGVJsDescriptor(
+      gvProperties: Map<String, String>
+  ): IPluginFormResourceDescriptor {
+    val jsBuilder =
+        StringBuilder(
+            "window.codbiSettings = window.codbiSettings || {}; window.codbiSettings.gv = window.codbiSettings.gv || {};")
+    for ((name, value) in gvProperties) {
+      val safeName = name.replace("\\", "\\\\").replace("\"", "\\\"")
+      val safeValue = value.replace("\\", "\\\\").replace("\"", "\\\"")
+      jsBuilder.append(" window.codbiSettings.gv[\"${safeName}\"] = \"${safeValue}\";")
+    }
+    val resource =
+        ByteArrayResourceDescriptor(
+            URI("plugin:${PLUGIN_FORM_RESOURCES_ID}/GVSettings.js?v=dynamic"),
+            jsBuilder.toString().toByteArray(UTF_8),
+            UTF_8)
+
+    return DefaultPluginFormResourceDescriptor.builder()
+        .fileName("GVSettings.js")
         .mimeType("text/javascript")
         .resource(resource)
         .includeInForm(true)

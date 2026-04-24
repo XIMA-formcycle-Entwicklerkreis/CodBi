@@ -235,7 +235,12 @@ internal class ChatCompletionService(
         { data ->
           try {
             val parsed = com.google.gson.JsonParser.parseString(data)
-            if (!parsed.isJsonObject) return@streamFn
+            if (!parsed.isJsonObject) {
+              log(
+                  LogLevel.WARNING,
+                  "SSE chunk processing error: not a JSON object (${data.take(80)})")
+              return@streamFn
+            }
             val json = parsed.asJsonObject
             val delta =
                 json.getAsJsonArray("choices")?.get(0)?.asJsonObject?.getAsJsonObject("delta")

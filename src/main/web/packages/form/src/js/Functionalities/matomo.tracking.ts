@@ -50,7 +50,7 @@ export class Matomo_Tracking {
       let siteID: number | undefined;
       let url: string | undefined;
 
-      if (toLoad.siteID === undefined || toLoad.siteID === "") {
+      if (toLoad.siteid === undefined || toLoad.siteid === "") {
         siteID = Number.parseInt(
           OR.tsCheck<string>(
             window.codbiSettings?.Matomo?.SiteID,

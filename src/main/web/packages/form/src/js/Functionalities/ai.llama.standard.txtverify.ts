@@ -216,7 +216,7 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
       const embedsValue = rawQuestion.includes("<[this]>");
       const questionWithValue = embedsValue ? resolved : `${resolved}\n\nText: "${currentValue}"`;
 
-      return `${questionWithValue} If the text is valid, reply with "${positiveResponse}" only. If it is invalid, reply with a single concise sentence explaining why.${language ? ` Answer in ${language}.` : ""}`;
+      return `${questionWithValue} If the text is valid, reply with "${positiveResponse}" only. If it is invalid, reply with at most 3 concise sentences explaining why — do not include any other text.${language ? ` Answer in ${language}.` : ""}`;
     };
     // #endregion Resolve the verification question
     // #region Remove loading indicator from label
@@ -486,18 +486,9 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
               $(toProcess).error("");
               clearManualVerify();
             } else {
-              // Truncate the AI answer to at most 3 sentences so that any leaked thinking
-              // content (reasoning, system-prompt echoes, etc.) never reaches the user.
-              const truncateToSentences = (text: string, max: number): string => {
-                const parts = text.match(/[^.!?\n]+(?:[.!?]+|$)/g) ?? [];
-                const kept = parts.slice(0, max).join("").trim();
-
-                return kept || text.slice(0, 300).trim();
-              };
-
               // Use the AI's own answer as the error message so the user gets a specific
               // explanation. Fall back to the static VerifyErrorText only when empty.
-              $(toProcess).error(truncateToSentences(trimmedAnswer, 3) || verifyErrorText);
+              $(toProcess).error(trimmedAnswer || verifyErrorText);
               addManualVerify(fieldId);
             }
             // #endregion Evaluate AI answer and show result

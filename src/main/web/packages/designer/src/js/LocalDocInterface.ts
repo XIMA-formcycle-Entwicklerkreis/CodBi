@@ -1298,8 +1298,8 @@ export function enableLocalDocInterface(): void {
         // getPersist() returns a wrapper {charsetName, persist: "<json string>", source, versionsNummer}.
         // The server expects the inner form JSON string (not the whole wrapper).
         const innerPersistJson =
-          typeof persistWrapper?.["persist"] === "string"
-            ? (persistWrapper["persist"] as string)
+          typeof persistWrapper?.persist === "string"
+            ? (persistWrapper.persist as string)
             : JSON.stringify(persistWrapper);
 
         if (aiAssistErrorDiv) {
@@ -1345,7 +1345,7 @@ export function enableLocalDocInterface(): void {
 
               // `loadPersist(jsonString, fileName, loadDefaultOnUndo)` fully replaces the current
               // form — it calls JSON.parse internally, so we must pass a string.
-              const loadPrivate = d["loadPersist"] as ((...args: unknown[]) => void) | undefined;
+              const loadPrivate = d.loadPersist as ((...args: unknown[]) => void) | undefined;
               if (typeof loadPrivate === "function") {
                 loadPrivate.call(designer, JSON.stringify(response), "ai-form.json", false);
                 aiAssistOverlay.style.display = "none";
@@ -1354,7 +1354,7 @@ export function enableLocalDocInterface(): void {
               }
 
               // Fallback: public loadPersistJson (updates in-memory state only)
-              const loadPublic = d["loadPersistJson"] as ((...args: unknown[]) => void) | undefined;
+              const loadPublic = d.loadPersistJson as ((...args: unknown[]) => void) | undefined;
               if (typeof loadPublic === "function") {
                 loadPublic.call(designer, response);
                 aiAssistOverlay.style.display = "none";

@@ -9,6 +9,17 @@ import java.net.SocketTimeoutException
 import java.net.URI
 
 /**
+ * Thrown when an external OpenAI-compatible API returns a non-2xx HTTP status. Using a dedicated
+ * exception type allows callers to distinguish expected API-level errors (wrong model name, token
+ * limit, auth failure, …) from unexpected infrastructure failures and log them accordingly.
+ *
+ * @param httpStatus The HTTP status code returned by the external API.
+ * @param body The response body returned by the external API.
+ */
+class ExternalAiHttpException(val httpStatus: Int, val body: String) :
+    RuntimeException("External AI returned HTTP $httpStatus: $body")
+
+/**
  * HTTP client for an external OpenAI-compatible API. Handles both synchronous and Server-Sent Event
  * (SSE) streaming requests. Adds Bearer-token authentication and model-field injection.
  */
@@ -41,7 +52,7 @@ internal class ExternalAiClient(
    */
   fun post(endpoint: String, jsonBody: String, timeoutMs: Int = DEFAULT_READ_TIMEOUT_MS): String {
     return retryOnTransientFailure {
-      val url = "$baseUrl$endpoint"
+      val url = resolveUrl(endpoint)
       val connection = URI(url).toURL().openConnection() as HttpURLConnection
 
       connection.requestMethod = "POST"
@@ -69,7 +80,7 @@ internal class ExternalAiClient(
       connection.disconnect()
 
       if (responseCode !in 200..299) {
-        throw RuntimeException("External AI returned HTTP $responseCode: $body")
+        throw ExternalAiHttpException(responseCode, body)
       }
 
       body
@@ -94,7 +105,7 @@ internal class ExternalAiClient(
       timeoutMs: Int = DEFAULT_READ_TIMEOUT_MS
   ) {
     retryOnTransientFailure {
-      val url = "$baseUrl$endpoint"
+      val url = resolveUrl(endpoint)
       val connection = URI(url).toURL().openConnection() as HttpURLConnection
 
       connection.requestMethod = "POST"
@@ -121,7 +132,7 @@ internal class ExternalAiClient(
 
         connection.disconnect()
 
-        throw RuntimeException("External AI returned HTTP $responseCode: $errorBody")
+        throw ExternalAiHttpException(responseCode, errorBody)
       }
 
       try {
@@ -150,6 +161,8 @@ internal class ExternalAiClient(
       }
     }
   }
+
+  private fun resolveUrl(endpoint: String): String = "$baseUrl$endpoint"
 
   /**
    * Retries [action] once after a 1-second delay when it fails with a transient network exception

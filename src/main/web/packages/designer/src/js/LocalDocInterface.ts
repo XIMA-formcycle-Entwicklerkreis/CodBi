@@ -1,6 +1,6 @@
 // #region Imports
 // #region XIMA
-import { getJQuery } from "@de-xima/fc-form-designer";
+import { getJQuery, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
 // #endregion XIMA
 // #region XDBC
 import { DEFINED } from "xdbc/src/DBC/DEFINED";
@@ -1217,6 +1217,218 @@ export function enableLocalDocInterface(): void {
       // #endregion Define API-Doc layout update
       // #endregion API-Documentation-Viewer
       // #endregion Style the functionality manager
+      // #region Register Hotkey ALT+A for AI Form Assistant
+      let aiAssistModels: Array<{ id: string; label: string }> | null = null;
+      const aiAssistOverlay = document.createElement("div");
+
+      aiAssistOverlay.id = "cCodBi_AIFormAssistant";
+      aiAssistOverlay.style.cssText =
+        "display:none;position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;";
+      aiAssistOverlay.innerHTML = [
+        '<div style="background:#fff;border-radius:.5em;padding:1.5em;width:min(92vw,620px);display:flex;flex-direction:column;gap:.75em;box-shadow:0 4px 24px rgba(0,0,0,.4)">',
+        '  <div style="display:flex;align-items:center;justify-content:space-between">',
+        '    <strong style="font-size:1.05em">CodBi — AI Form Assistant</strong>',
+        '    <button id="aiAssist_close" type="button" style="border:none;background:none;font-size:1.4em;cursor:pointer;line-height:1;padding:0 .25em">&times;</button>',
+        "  </div>",
+        '  <select id="aiAssist_model" style="padding:.4em .6em;border:1px solid #ccc;border-radius:.3em;font-size:.95em"></select>',
+        '  <textarea id="aiAssist_prompt" rows="5" placeholder="Describe what to change in the form\u2026" style="padding:.5em;border:1px solid #ccc;border-radius:.3em;font-size:.95em;resize:vertical;font-family:inherit"></textarea>',
+        '  <div style="display:flex;gap:.5em;justify-content:flex-end;align-items:center">',
+        '    <span id="aiAssist_spinner" style="display:none;font-size:.88em;color:#666">Thinking\u2026</span>',
+        '    <button id="aiAssist_run" type="button" style="padding:.45em 1.4em;background:#005fcc;color:#fff;border:none;border-radius:.3em;cursor:pointer;font-size:.95em">Run</button>',
+        "  </div>",
+        '  <div id="aiAssist_error" style="display:none;padding:.4em .7em;background:#fdd;border:1px solid #f99;border-radius:.3em;font-size:.88em;color:#900"></div>',
+        "</div>",
+      ].join("");
+      document.body.appendChild(aiAssistOverlay);
+
+      const aiAssistModelSel = document.getElementById("aiAssist_model") as HTMLSelectElement | null;
+      const aiAssistPromptTA = document.getElementById("aiAssist_prompt") as HTMLTextAreaElement | null;
+      const aiAssistSpinner = document.getElementById("aiAssist_spinner") as HTMLElement | null;
+      const aiAssistRunBtn = document.getElementById("aiAssist_run") as HTMLButtonElement | null;
+      const aiAssistErrorDiv = document.getElementById("aiAssist_error") as HTMLElement | null;
+
+      const showAiAssistDialog = () => {
+        if (!aiAssistModels || !aiAssistModelSel) {
+          return;
+        }
+        aiAssistModelSel.innerHTML = "";
+        for (const m of aiAssistModels) {
+          const opt = document.createElement("option");
+
+          opt.value = m.id;
+          opt.textContent = m.label;
+          aiAssistModelSel.appendChild(opt);
+        }
+        if (aiAssistErrorDiv) {
+          aiAssistErrorDiv.style.display = "none";
+        }
+        aiAssistOverlay.style.display = "flex";
+        aiAssistPromptTA?.focus();
+      };
+
+      document.getElementById("aiAssist_close")?.addEventListener("click", () => {
+        aiAssistOverlay.style.display = "none";
+      });
+
+      aiAssistRunBtn?.addEventListener("click", () => {
+        const selectedModelId = aiAssistModelSel?.value ?? "";
+        const promptText = aiAssistPromptTA?.value.trim() ?? "";
+
+        if (!promptText) {
+          if (aiAssistErrorDiv) {
+            aiAssistErrorDiv.textContent = "Please enter a prompt.";
+            aiAssistErrorDiv.style.display = "block";
+          }
+
+          return;
+        }
+
+        const designer = getDesignerInstance();
+
+        if (!designer?.getPersist) {
+          if (aiAssistErrorDiv) {
+            aiAssistErrorDiv.textContent = "Designer is not available.";
+            aiAssistErrorDiv.style.display = "block";
+          }
+
+          return;
+        }
+
+        const persistWrapper = designer.getPersist() as unknown as Record<string, unknown>;
+        // getPersist() returns a wrapper {charsetName, persist: "<json string>", source, versionsNummer}.
+        // The server expects the inner form JSON string (not the whole wrapper).
+        const innerPersistJson =
+          typeof persistWrapper?.["persist"] === "string"
+            ? (persistWrapper["persist"] as string)
+            : JSON.stringify(persistWrapper);
+
+        if (aiAssistErrorDiv) {
+          aiAssistErrorDiv.style.display = "none";
+        }
+        if (aiAssistSpinner) {
+          aiAssistSpinner.style.display = "inline";
+        }
+        if (aiAssistRunBtn) {
+          aiAssistRunBtn.disabled = true;
+        }
+
+        getJQuery().ajax({
+          url: `${baseURL}plugin?name=CodBi_AIFormAssistant`,
+          type: "POST",
+          headers: { "X-Action": "Run", "X-Model": selectedModelId },
+          data: { prompt: promptText, persist: innerPersistJson },
+          dataType: "json",
+          success: (response: unknown) => {
+            if (aiAssistSpinner) {
+              aiAssistSpinner.style.display = "none";
+            }
+            if (aiAssistRunBtn) {
+              aiAssistRunBtn.disabled = false;
+            }
+            const errorMessage =
+              response !== null && typeof response === "object" && "error" in response
+                ? String((response as { error: unknown }).error)
+                : null;
+
+            if (errorMessage) {
+              if (aiAssistErrorDiv) {
+                aiAssistErrorDiv.textContent = errorMessage;
+                aiAssistErrorDiv.style.display = "block";
+              }
+
+              return;
+            }
+
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const d = designer as unknown as Record<string, unknown>;
+
+              // `loadPersist(jsonString, fileName, loadDefaultOnUndo)` fully replaces the current
+              // form — it calls JSON.parse internally, so we must pass a string.
+              const loadPrivate = d["loadPersist"] as ((...args: unknown[]) => void) | undefined;
+              if (typeof loadPrivate === "function") {
+                loadPrivate.call(designer, JSON.stringify(response), "ai-form.json", false);
+                aiAssistOverlay.style.display = "none";
+
+                return;
+              }
+
+              // Fallback: public loadPersistJson (updates in-memory state only)
+              const loadPublic = d["loadPersistJson"] as ((...args: unknown[]) => void) | undefined;
+              if (typeof loadPublic === "function") {
+                loadPublic.call(designer, response);
+                aiAssistOverlay.style.display = "none";
+
+                return;
+              }
+
+              throw new Error("Neither loadPersist nor loadPersistJson is available on the designer instance.");
+            } catch (err) {
+              console.error("[CodBi AI] Failed to apply AI response:", err);
+              if (aiAssistErrorDiv) {
+                aiAssistErrorDiv.textContent =
+                  err instanceof Error ? err.message : "Failed to apply the AI response to the form.";
+                aiAssistErrorDiv.style.display = "block";
+              }
+            }
+          },
+          error: (xhr: unknown) => {
+            if (aiAssistSpinner) {
+              aiAssistSpinner.style.display = "none";
+            }
+            if (aiAssistRunBtn) {
+              aiAssistRunBtn.disabled = false;
+            }
+            if (aiAssistErrorDiv) {
+              const jqxhr = xhr as { responseJSON?: { error?: string }; statusText?: string };
+
+              aiAssistErrorDiv.textContent = jqxhr.responseJSON?.error ?? jqxhr.statusText ?? "Request failed.";
+              aiAssistErrorDiv.style.display = "block";
+            }
+          },
+        });
+      });
+
+      document.addEventListener("keyup", (event) => {
+        if (event.altKey && event.key.toLowerCase() === "a") {
+          if (aiAssistModels) {
+            showAiAssistDialog();
+
+            return;
+          }
+          getJQuery().ajax({
+            url: `${baseURL}plugin?name=CodBi_AIFormAssistant`,
+            type: "GET",
+            headers: { "X-Action": "Models" },
+            success: (response: unknown) => {
+              if (!Array.isArray(response)) {
+                const msg = (response as { error?: string } | null)?.error ?? "AI service not available.";
+
+                if (aiAssistErrorDiv) {
+                  aiAssistErrorDiv.textContent = msg;
+                  aiAssistErrorDiv.style.display = "block";
+                }
+                aiAssistOverlay.style.display = "flex";
+
+                return;
+              }
+              aiAssistModels = response as Array<{ id: string; label: string }>;
+              showAiAssistDialog();
+            },
+            error: (xhr: unknown) => {
+              const jqxhr = xhr as { responseJSON?: { error?: string }; statusText?: string };
+              const msg = jqxhr.responseJSON?.error ?? jqxhr.statusText ?? "AI service not available.";
+
+              if (aiAssistErrorDiv) {
+                aiAssistErrorDiv.textContent = msg;
+                aiAssistErrorDiv.style.display = "block";
+              }
+              aiAssistOverlay.style.display = "flex";
+            },
+          });
+        }
+      });
+      // #endregion Register Hotkey ALT+A for AI Form Assistant
       // #region Setup Attributes-Editor Monitoring
       const availableClasses = new Array<{ standard: string; name: string; description: string }>();
 

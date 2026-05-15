@@ -89,8 +89,15 @@ internal data class StandardConfig(
    * @param url Base URL of the external OpenAI-compatible API.
    * @param apiKey API key sent as Bearer token, or `null` if not required.
    * @param model Model name to inject into requests, or `null` for the API default.
+   * @param maxTokens Maximum tokens this specialist may generate per response, or `null` to fall
+   *   back to the global [StandardConfig.maxTokens].
    */
-  data class ExternalSpecialistEntry(val url: String, val apiKey: String?, val model: String?)
+  data class ExternalSpecialistEntry(
+      val url: String,
+      val apiKey: String?,
+      val model: String?,
+      val maxTokens: Int? = null
+  )
 
   init {
     require(maxPixels > 0) { "maxPixels must be > 0, was $maxPixels" }

@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodBi – KI-Komponenten: ReadMe &amp; Compliance-Guide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      color: #1a1a2e;
+      background: #f5f6fa;
+    }
+
+    /* ── Layout ── */
+    .page-wrapper {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar / TOC ── */
+    nav#toc {
+      width: 280px;
+      flex-shrink: 0;
+      background: #16213e;
+      color: #c8d6e5;
+      padding: 32px 0 32px 0;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    nav#toc .toc-logo {
+      padding: 0 24px 24px;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    nav#toc .toc-logo h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #e94560;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    nav#toc .toc-logo p {
+      font-size: 0.75rem;
+      color: #7f8c9a;
+      margin-top: 4px;
+    }
+
+    nav#toc ul {
+      list-style: none;
+      padding: 16px 0;
+    }
+
+    nav#toc ul li a {
+      display: block;
+      padding: 6px 24px;
+      color: #c8d6e5;
+      text-decoration: none;
+      font-size: 0.82rem;
+      transition: background 0.15s, color 0.15s;
+      border-left: 3px solid transparent;
+    }
+
+    nav#toc ul li a:hover {
+      background: #0f3460;
+      color: #fff;
+      border-left-color: #e94560;
+    }
+
+    nav#toc ul li.toc-top > a {
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #dce9f5;
+    }
+
+    nav#toc ul li.toc-sub > a {
+      padding-left: 40px;
+      color: #a0b4c8;
+    }
+
+    /* ── Main content ── */
+    main {
+      flex: 1;
+      min-width: 0;
+      padding: 48px 56px;
+      max-width: 960px;
+    }
+
+    /* ── Header ── */
+    .doc-header {
+      background: linear-gradient(135deg, #16213e 0%, #0f3460 100%);
+      color: #fff;
+      padding: 40px 48px;
+      border-radius: 12px;
+      margin-bottom: 40px;
+    }
+
+    .doc-header h1 {
+      font-size: 1.9rem;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      line-height: 1.25;
+    }
+
+    .doc-header .subtitle {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: #a0b8d0;
+      line-height: 1.6;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .badge-blue   { background: #1e6abf22; color: #5dade2; border: 1px solid #5dade250; }
+    .badge-green  { background: #1e8a4422; color: #58d68d; border: 1px solid #58d68d50; }
+    .badge-red    { background: #e9456022; color: #e94560; border: 1px solid #e9456050; }
+    .badge-orange { background: #f39c1222; color: #f39c12; border: 1px solid #f39c1250; }
+
+    /* ── Sections ── */
+    section {
+      margin-bottom: 48px;
+    }
+
+    h2 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: #0f3460;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e0e6ef;
+      margin-bottom: 20px;
+      margin-top: 40px;
+    }
+
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #16213e;
+      margin: 28px 0 12px;
+    }
+
+    h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #334;
+      margin: 20px 0 8px;
+    }
+
+    p {
+      margin: 10px 0;
+      color: #2c3e50;
+    }
+
+    /* ── Tables ── */
+    .table-wrap {
+      overflow-x: auto;
+      margin: 16px 0;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      background: #fff;
+    }
+
+    thead tr {
+      background: #0f3460;
+      color: #fff;
+    }
+
+    thead th {
+      padding: 11px 16px;
+      text-align: left;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    tbody tr:nth-child(even) { background: #f7f9fc; }
+    tbody tr:hover            { background: #eef2f9; }
+
+    tbody td {
+      padding: 9px 16px;
+      border-bottom: 1px solid #e8ecf2;
+      vertical-align: top;
+    }
+
+    /* ── Code ── */
+    code {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.83em;
+      background: #eef2f9;
+      color: #c0392b;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #dce3ee;
+    }
+
+    pre {
+      background: #1a1a2e;
+      color: #c8d6e5;
+      padding: 20px 24px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: 0.83rem;
+      line-height: 1.6;
+      margin: 16px 0;
+    }
+
+    pre code {
+      background: none;
+      color: inherit;
+      padding: 0;
+      border: none;
+      font-size: inherit;
+    }
+
+    /* ── Callouts ── */
+    .callout {
+      border-left: 4px solid;
+      border-radius: 0 8px 8px 0;
+      padding: 14px 18px;
+      margin: 16px 0;
+      font-size: 0.88rem;
+    }
+
+    .callout-info    { border-color: #3498db; background: #eaf4fd; color: #1a5276; }
+    .callout-warn    { border-color: #e67e22; background: #fef5e7; color: #784212; }
+    .callout-danger  { border-color: #e74c3c; background: #fdedec; color: #78281f; }
+    .callout-success { border-color: #27ae60; background: #eafaf1; color: #1d6a39; }
+
+    .callout strong { display: block; margin-bottom: 4px; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* ── Checklists ── */
+    .checklist {
+      list-style: none;
+      margin: 12px 0;
+    }
+
+    .checklist li {
+      padding: 6px 0 6px 32px;
+      position: relative;
+      font-size: 0.88rem;
+      color: #2c3e50;
+      border-bottom: 1px solid #f0f3f7;
+    }
+
+    .checklist li::before {
+      content: "☐";
+      position: absolute;
+      left: 8px;
+      color: #7f8c8d;
+      font-size: 1rem;
+    }
+
+    .checklist-group {
+      background: #fff;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin: 12px 0;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+    }
+
+    .checklist-group h4 {
+      margin-top: 0;
+      color: #0f3460;
+      font-size: 0.88rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* ── Component cards ── */
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 24px;
+      margin: 20px 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      border-top: 3px solid #0f3460;
+    }
+
+    .card h3 {
+      margin-top: 0;
+      color: #0f3460;
+    }
+
+    /* ── Lists ── */
+    ul, ol {
+      padding-left: 22px;
+      margin: 10px 0;
+    }
+
+    li { margin: 4px 0; color: #2c3e50; font-size: 0.9rem; }
+
+    /* ── Severity badges in tables ── */
+    .sev-ok       { color: #27ae60; font-weight: 600; }
+    .sev-low      { color: #f39c12; font-weight: 600; }
+    .sev-check    { color: #e67e22; font-weight: 600; }
+    .sev-critical { color: #e74c3c; font-weight: 700; }
+
+    /* ── Footer ── */
+    footer {
+      margin-top: 60px;
+      padding: 24px 0;
+      border-top: 1px solid #dde3ee;
+      font-size: 0.8rem;
+      color: #7f8c9a;
+      text-align: center;
+    }
+
+    footer a { color: #0f3460; }
+
+    /* ── Print ── */
+    @media print {
+      nav#toc { display: none; }
+      main { padding: 20px; max-width: 100%; }
+      .doc-header { border-radius: 0; }
+      pre { white-space: pre-wrap; }
+    }
+  </style>
+</head>
+<body>
+<div class="page-wrapper">
+
+<!-- ════════════════ SIDEBAR ════════════════ -->
+<nav id="toc">
+  <div class="toc-logo">
+    <h2>CodBi</h2>
+    <p>KI-Komponenten &amp; Compliance-Guide</p>
+  </div>
+  <ul>
+    <li class="toc-top"><a href="#s1">1. Überblick</a></li>
+    <li class="toc-top"><a href="#s2">2. KI-Architektur</a></li>
+    <li class="toc-top"><a href="#s3">3. Komponenten</a></li>
+    <li class="toc-sub"><a href="#s31">3.1 LLaMA</a></li>
+    <li class="toc-sub"><a href="#s32">3.2 Whisper</a></li>
+    <li class="toc-sub"><a href="#s33">3.3 Tesseract</a></li>
+    <li class="toc-sub"><a href="#s34">3.4 AI-Proxy</a></li>
+    <li class="toc-sub"><a href="#s35">3.5 Brave Search</a></li>
+    <li class="toc-sub"><a href="#s36">3.6 MailBridge</a></li>
+    <li class="toc-sub"><a href="#s37">3.7 Geolokalisierung</a></li>
+    <li class="toc-top"><a href="#s4">4. Modelle &amp; Downloads</a></li>
+    <li class="toc-top"><a href="#s5">5. Konfigurationsreferenz</a></li>
+    <li class="toc-sub"><a href="#s51">5.1 Aktivierung</a></li>
+    <li class="toc-sub"><a href="#s52">5.2 LLaMA Engine</a></li>
+    <li class="toc-sub"><a href="#s53">5.3 LLaMA Standard</a></li>
+    <li class="toc-sub"><a href="#s54">5.4 Externe KI</a></li>
+    <li class="toc-sub"><a href="#s55">5.5 Thinking &amp; Specialist</a></li>
+    <li class="toc-sub"><a href="#s56">5.6 Whisper</a></li>
+    <li class="toc-sub"><a href="#s57">5.7 Tesseract</a></li>
+    <li class="toc-sub"><a href="#s58">5.8 AI-Proxy</a></li>
+    <li class="toc-sub"><a href="#s59">5.9 Allgemein</a></li>
+    <li class="toc-top"><a href="#s6">6. Netzwerkfreigaben</a></li>
+    <li class="toc-top"><a href="#s7">7. Datenschutz (DSGVO)</a></li>
+    <li class="toc-top"><a href="#s8">8. EU AI Act</a></li>
+    <li class="toc-top"><a href="#s9">9. Sicherheitsarchitektur</a></li>
+    <li class="toc-top"><a href="#s10">10. Risikobewertung</a></li>
+    <li class="toc-top"><a href="#s11">11. Betrieb &amp; Monitoring</a></li>
+    <li class="toc-top"><a href="#s12">12. Checkliste</a></li>
+  </ul>
+</nav>
+
+<!-- ════════════════ MAIN ════════════════ -->
+<main>
+
+  <!-- Header -->
+  <div class="doc-header">
+    <h1>CodBi – KI-Komponenten<br>ReadMe &amp; Compliance-Guide</h1>
+    <p class="subtitle">
+      <strong>Zielgruppe:</strong> Administratoren, Datenschutzbeauftragte, Sicherheitsverantwortliche und Entwickler,
+      die CodBi in XIMA formcycle betreiben oder evaluieren.
+    </p>
+    <div class="badge-row">
+      <span class="badge badge-blue">Version 1.0.1</span>
+      <span class="badge badge-green">Lokaler KI-Stack</span>
+      <span class="badge badge-orange">DSGVO-konform</span>
+      <span class="badge badge-red">EU AI Act</span>
+    </div>
+  </div>
+
+  <!-- ── 1 ── -->
+  <section id="s1">
+    <h2>1. Überblick</h2>
+    <p>
+      <strong>CodBi</strong> ist ein XIMA-formcycle-Plugin (Kotlin + TypeScript), das einen vollständig
+      <strong>lokal betriebenen KI-Stack</strong> direkt auf dem formcycle-Applikationsserver bereitstellt.
+      Es gibt keine obligatorischen Cloud-Abhängigkeiten — alle KI-Inferenz-Prozesse kommunizieren ausschließlich über <code>127.0.0.1</code>.
+    </p>
+    <p>Das Plugin bündelt vier KI-Funktionsbereiche:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Bereich</th><th>Technologie</th><th>Zweck</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Textgenerierung / Chat</strong></td><td>llama.cpp (LLaMA-Server)</td><td>Formular-Assistent, Frage-Antwort, Dokumentenanalyse</td></tr>
+          <tr><td><strong>Spracherkennung</strong></td><td>whisper.cpp (Whisper-Server)</td><td>Audioeingabe / Diktat in Formularen</td></tr>
+          <tr><td><strong>Texterkennung (OCR)</strong></td><td>Tesseract JNI (tess4j)</td><td>Scan- und Bilddaten aus Formular-Uploads</td></tr>
+          <tr><td><strong>KI-Proxy-API</strong></td><td>AiProxy (Reverse-Proxy)</td><td>Authentifizierter Zugang zu allen KI-Diensten für externe Clients</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Alle vier Komponenten sind unabhängig aktivierbar (Property <code>Active_AI</code>).</p>
+  </section>
+
+  <!-- ── 2 ── -->
+  <section id="s2">
+    <h2>2. KI-Architektur</h2>
+<pre><code>formcycle-Server (JVM / Apache Tomcat)
+  └── CodBi-Plugin (Kotlin)
+        ├── AI.kt                    — Semaphore (FIFO), Queue, Bild-Cache
+        ├── AiProxy.kt               — Authentifizierter HTTP-Reverse-Proxy
+        ├── BraveSearch.kt           — Optionale Websuche (Opt-In)
+        ├── MailBridge.kt            — KI-gesteuerter E-Mail-Versand (Opt-In)
+        ├── UrlFetcher.kt            — SSRF-gesicherter HTML-Fetcher
+        └── ai/
+              ├── LLAMA.kt           — Abstrakte LLaMA-Basisklasse
+              ├── llama/Standard.kt  — Qwen3-VL + Thinking + Specialists
+              ├── Whisper.kt         — whisper.cpp Wrapper
+              ├── Tesseract.kt       — OCR via tess4j JNI
+              └── commons/           — Gemeinsame Infrastruktur</code></pre>
+
+    <h3>Externe KI-Prozesse</h3>
+    <p>Laufen als Kind-Prozesse der JVM:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Prozess</th><th>Standardport</th><th>Funktion</th></tr></thead>
+        <tbody>
+          <tr><td><code>llama-server</code> (Haupt)</td><td><code>localhost:8392</code></td><td>Texte, Bilder, Chat</td></tr>
+          <tr><td><code>llama-server</code> (Thinking)</td><td><code>localhost:8492</code></td><td>Erweitertes Reasoning (+100 zum Hauptport)</td></tr>
+          <tr><td><code>llama-server</code> (Specialist N)</td><td><code>localhost:8592+</code></td><td>Optionale Fachmodelle</td></tr>
+          <tr><td><code>whisper-server</code></td><td><code>localhost:8393</code></td><td>Spracherkennung</td></tr>
+          <tr><td>Tesseract JNI</td><td><em>kein HTTP-Port</em></td><td>In-Process OCR</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-success">
+      <strong>Crashisolation</strong>
+      LLaMA- und Whisper-Server laufen als separate OS-Prozesse. Ein Speicherüberlauf (OOM) im Modell beendet nur den Kind-Prozess — die formcycle-JVM und das Plugin bleiben stabil. CodBi erkennt den Ausfall und startet den Prozess automatisch neu.
+    </div>
+  </section>
+
+  <!-- ── 3 ── -->
+  <section id="s3">
+    <h2>3. Komponenten im Detail</h2>
+
+    <div class="card" id="s31">
+      <h3>3.1 LLaMA (Sprachmodell)</h3>
+      <p><strong>Technologie:</strong> llama.cpp — open-source C++-Inferenz-Engine für GGUF-Modelle</p>
+      <p><strong>Standardmodell:</strong> Qwen3-VL 2B Instruct (Q4_K_M) — multimodales Modell (Text + Bild)</p>
+      <h4>Modi</h4>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Modus</th><th>Beschreibung</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Standard-Chat</strong></td><td>Konversation, Dokumentenanalyse, Formularunterstützung</td></tr>
+            <tr><td><strong>Thinking-Modus</strong></td><td>Erweitertes Reasoning auf separatem Server (Timeout: 600 s)</td></tr>
+            <tr><td><strong>Specialist-Modus</strong></td><td>Aufruf eines benannten Fachmodells via <code>specialist=&lt;Name&gt;</code></td></tr>
+            <tr><td><strong>Externer Modus</strong></td><td>Weiterleitung an eine OpenAI-kompatible API (z. B. GPT-4o, Groq, Gemini)</td></tr>
+            <tr><td><strong>Vision</strong></td><td>Bild-/PDF-Analyse über eingebettete Base64-Bilder</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4>Hardware-Beschleunigung (automatische Erkennung, absteigend)</h4>
+      <ol>
+        <li>NVIDIA CUDA 12</li>
+        <li>Vulkan (AMD, Intel, alle Vulkan-fähigen GPUs)</li>
+        <li>CPU (universelle Fallback-Option)</li>
+      </ol>
+      <p style="margin-top:12px"><strong>Kontextfenster:</strong> 32 768 Tokens (konfigurierbar)</p>
+    </div>
+
+    <div class="card" id="s32">
+      <h3>3.2 Whisper (Spracherkennung)</h3>
+      <p><strong>Technologie:</strong> whisper.cpp — C++-Port des OpenAI Whisper-Modells</p>
+      <p><strong>Standardmodell:</strong> <code>ggml-small.bin</code> (~466 MB)</p>
+      <h4>Features</h4>
+      <ul>
+        <li>Kompatibel mit der OpenAI <code>/v1/audio/transcriptions</code>-API</li>
+        <li>Automatische Sprachendetektion (opt-in via <code>AI_Whisper_AutoDetectLanguage</code>)</li>
+        <li>GPU-Unterstützung (abschaltbar mit <code>AI_Whisper_NoGpu</code>)</li>
+        <li>Optionale Nutzung einer externen STT-API</li>
+      </ul>
+      <div class="callout callout-warn" style="margin-top:16px">
+        <strong>Hinweis — Browser Web Speech API</strong>
+        Die formcycle-Formulareingabe über <code>Media.Input.Speech</code> nutzt ggf. die <strong>Browser-eigene Web Speech API</strong> (Google/Microsoft Cloud). Dies ist <strong>unabhängig</strong> von CodBi Whisper und erfordert eine separate DSGVO-Einwilligung der Nutzenden.
+      </div>
+    </div>
+
+    <div class="card" id="s33">
+      <h3>3.3 Tesseract (OCR)</h3>
+      <p><strong>Technologie:</strong> tess4j 5.16.0 — Java-Binding für Tesseract OCR</p>
+      <p><strong>Besonderheit:</strong> Tesseract läuft vollständig <strong>in-process</strong> (kein separater OS-Prozess, kein HTTP-Port). Die nativen JNI-Bibliotheken werden plattformspezifisch geladen.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Modus</th><th>Beschreibung</th></tr></thead>
+          <tbody>
+            <tr><td><code>print</code></td><td>Gedruckten Text aus Bildern/PDFs extrahieren</td></tr>
+            <tr><td><code>extract</code></td><td>Strukturierte Felderkennung per Regex</td></tr>
+            <tr><td><code>verify</code></td><td>Prüfung auf erkannte Zeichenfolgen</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>Sprachen:</strong> Konfigurierbar via <code>AI_Tesseract_Languages</code> (Standard: <code>deu</code>); Multiple Sprachen mit <code>+</code> verbinden (z. B. <code>deu+eng</code>).</p>
+      <p><strong>PDF-Verarbeitung:</strong> PDFs werden via Apache PDFBox in Bilder gerastert, bevor Tesseract OCR angewendet wird.</p>
+    </div>
+
+    <div class="card" id="s34">
+      <h3>3.4 AI-Proxy</h3>
+      <p>Der <strong>AiProxy</strong> ist ein authentifizierter HTTP-Reverse-Proxy, der externen Clients einen gesicherten Zugang zu den lokalen KI-Diensten ermöglicht.</p>
+      <h4>Base-URL</h4>
+      <pre><code>POST &lt;formcycle-base&gt;/plugin?name=CodBi_AI_Proxy&amp;endpoint=&lt;path&gt;</code></pre>
+      <h4>Endpunkte</h4>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Endpunkt</th><th>Engine</th><th>Beschreibung</th></tr></thead>
+          <tbody>
+            <tr><td><code>/v1/chat/completions</code></td><td>LLaMA</td><td>OpenAI-kompatibles Chat (inkl. Vision, Streaming)</td></tr>
+            <tr><td><code>/completion</code></td><td>LLaMA</td><td>Raw Completion (llama.cpp Low-Level-API)</td></tr>
+            <tr><td><code>/v1/audio/transcriptions</code></td><td>Whisper</td><td>Speech-to-Text (OpenAI-kompatibel)</td></tr>
+            <tr><td><code>/v1/ocr</code></td><td>Tesseract</td><td>Texterkennung aus Bildern</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4>Authentifizierung (zweistufig)</h4>
+      <ol>
+        <li><strong>IP-Whitelist</strong> (<code>AI_Proxy_AllowedIPs</code>): CIDR-Bereiche und Einzel-IPs — leere Liste blockiert alle Anfragen</li>
+        <li><strong>HTTP Basic Auth</strong> (<code>AI_Proxy_Users</code>): Format <code>benutzer:passwort,benutzer2:passwort2</code></li>
+      </ol>
+      <h4>Sonderfunktionen</h4>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>HTTP-Header</th><th>Beschreibung</th></tr></thead>
+          <tbody>
+            <tr><td><code>X-Thinking: true</code></td><td>Aktiviert den Thinking-Modus (Timeout: 600 s, Port +100)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>Audit-Logging:</strong> Jede Proxy-Anfrage wird in der Tabelle <code>codbi_ai_proxy</code> erfasst (siehe Abschnitt 7).</p>
+    </div>
+
+    <div class="card" id="s35">
+      <h3>3.5 Brave Search (Websuche)</h3>
+      <p><strong>Aktivierung:</strong> Opt-In durch Setzen von <code>AI_BraveSearch_ApiKey</code></p>
+      <p>Das Sprachmodell kann eigenständig Websuchen auslösen, indem es das Muster <code>CALL:search(&lt;Suchanfrage&gt;)</code> in seiner Antwort produziert. Der <code>WebSearchHandler</code> fängt dieses Muster ab, ruft die Brave Search API auf und integriert die Ergebnisse in den Kontext.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Property</th><th>Standard</th><th>Beschreibung</th></tr></thead>
+          <tbody>
+            <tr><td><code>AI_BraveSearch_ApiKey</code></td><td><em>leer</em></td><td>API-Schlüssel — aktiviert die Websuche</td></tr>
+            <tr><td><code>AI_BraveSearch_MaxResults</code></td><td><code>5</code></td><td>Ergebnisse pro Suche (1–20)</td></tr>
+            <tr><td><code>AI_BraveSearch_FilterResults</code></td><td><code>false</code></td><td>Sichere Suche / Ergebnisfilterung</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout callout-info">
+        <strong>Datenschutz</strong>
+        Bei aktivierter Websuche werden Suchanfragen an die Brave Search API übermittelt. Kein Nutzername und keine IP-Adresse werden weitergegeben. Eine Auftragsverarbeitungsvereinbarung (AVV) mit Brave ist zu prüfen.
+      </div>
+    </div>
+
+    <div class="card" id="s36">
+      <h3>3.6 MailBridge (KI-E-Mail)</h3>
+      <p><strong>Aktivierung:</strong> Opt-In durch <code>AI_Mail_Enabled = true</code></p>
+      <p>Ermöglicht dem Sprachmodell, E-Mails im Namen des Systems zu versenden. Enthält mehrere Sicherheitsstufen:</p>
+      <ul>
+        <li><strong>Empfänger-Whitelist</strong> per Regex (<code>AI_Mail_AllowedRecipients</code>)</li>
+        <li><strong>Globales Stundenlimit</strong> (<code>AI_Mail_MaxPerHour</code>, Standard: <code>10</code>)</li>
+        <li><strong>Sitzungslimit</strong> (<code>AI_Mail_MaxPerSession</code>, Standard: <code>3</code>)</li>
+        <li><strong>Pflicht-Disclaimer</strong> im E-Mail-Footer (Standard: <code>AI-Generated</code>, konfigurierbar)</li>
+      </ul>
+      <div class="callout callout-warn" style="margin-top:16px">
+        <strong>Rechtliche Hinweise</strong>
+        KI-generierte E-Mails können Impressumspflichten und Kennzeichnungspflichten nach dem EU AI Act Art. 50 auslösen. Der Standard-Disclaimer ist zu prüfen und ggf. anzupassen.
+      </div>
+    </div>
+
+    <div class="card" id="s37">
+      <h3>3.7 Geolokalisierung</h3>
+      <p>Das Sprachmodell kann den Standort des Servers für geografisch relevante Anfragen nutzen. Es werden zwei externe Dienste angesprochen (beide optional konfigurierbar):</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Dienst</th><th>Property</th><th>Zweck</th></tr></thead>
+          <tbody>
+            <tr><td><code>ipwho.is</code></td><td><code>AI_LLAMA_STD_IpGeolocationDomain</code></td><td>IP-basierte Grobstandortbestimmung</td></tr>
+            <tr><td><code>nominatim.openstreetmap.org</code></td><td><code>AI_LLAMA_STD_NominatimDomain</code></td><td>Reverse-Geocoding (Koordinaten → Ortsname)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Ein Fallback-Standort kann ohne externe Dienste konfiguriert werden (<code>AI_LLAMA_STD_FallbackLocation</code>).</p>
+    </div>
+  </section>
+
+  <!-- ── 4 ── -->
+  <section id="s4">
+    <h2>4. Modelle und Download-Quellen</h2>
+    <p>Alle Modelle werden beim <strong>ersten Start</strong> automatisch heruntergeladen. Der Download unterstützt <strong>Resume</strong> (Fortsetzung unterbrochener Downloads). Für Air-Gapped-Umgebungen können eigene URLs oder lokale Spiegel konfiguriert werden.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Komponente</th><th>Standardmodell</th><th>Quelle</th><th>Größe</th></tr></thead>
+        <tbody>
+          <tr><td>LLaMA (Haupt)</td><td><code>Qwen3VL-2B-Instruct-Q4_K_M.gguf</code></td><td>huggingface.co/Qwen</td><td>~1,1 GB</td></tr>
+          <tr><td>LLaMA (Vision-Projektor)</td><td><code>mmproj-Qwen3VL-2B-Instruct-F16.gguf</code></td><td>huggingface.co/Qwen</td><td>~819 MB</td></tr>
+          <tr><td>LLaMA-Server-Binary</td><td>Release <code>b8175</code> (Win/Linux/macOS)</td><td>github.com/ggml-org/llama.cpp</td><td>variiert</td></tr>
+          <tr><td>Whisper</td><td><code>ggml-small.bin</code></td><td>huggingface.co/ggerganov</td><td>~466 MB</td></tr>
+          <tr><td>Tesseract traineddata</td><td>z. B. <code>deu.traineddata</code></td><td>github.com/tesseract-ocr/tessdata_best</td><td>~30 MB/Sprache</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>Unterstützte GGUF-Modelle (Auswahl):</strong> Qwen3, Mistral, LLaMA 3, Phi-3, Gemma — jedes im GGUF-Format verwendbare Modell ist via <code>AI_LLAMA_STD_ModelUrl</code> einbindbar.</p>
+  </section>
+
+  <!-- ── 5 ── -->
+  <section id="s5">
+    <h2>5. Konfigurationsreferenz</h2>
+    <p>Die Konfiguration erfolgt ausschließlich über XIMA-formcycle-Plugin-Properties.</p>
+
+    <h3 id="s51">5.1 Aktivierung</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Property</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>Active_AI</code></td><td>Leerzeichen-getrennte Liste der aktiven Komponenten: <code>llama_engine</code>, <code>llama_std</code>, <code>whisper</code>, <code>tesseract</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s52">5.2 LLaMA Engine</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Property</th><th>Standard</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_LLAMA_ENGINE_Port</code></td><td><code>8392</code></td><td>Lokaler Port des LLaMA-Servers</td></tr>
+          <tr><td><code>AI_LLAMA_ENGINE_Threads</code></td><td>Physische Kerne</td><td>CPU-Threads für Inferenz</td></tr>
+          <tr><td><code>AI_LLAMA_ENGINE_CtxSize</code></td><td><code>32768</code></td><td>Kontextfenstergröße in Tokens</td></tr>
+          <tr><td><code>AI_LLAMA_ENGINE_GpuLayers</code></td><td><code>-1</code> (auto)</td><td>GPU-Offload: <code>-1</code>=auto, <code>0</code>=CPU, <code>N</code>=N Layer</td></tr>
+          <tr><td><code>AI_LLAMA_ENGINE_Release</code></td><td><code>b8175</code></td><td>llama.cpp Release-Tag für Download</td></tr>
+          <tr><td><code>AI_LLAMA_ENGINE_MaxConcurrent</code></td><td><code>2</code></td><td>Maximale parallele Inferenzen (Semaphore)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s53">5.3 LLaMA Standard-Modell</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Property</th><th>Standard</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_LLAMA_STD_ModelUrl</code></td><td>Qwen3-VL-2B Q4_K_M (HuggingFace)</td><td>URL des GGUF-Hauptmodells</td></tr>
+          <tr><td><code>AI_LLAMA_STD_MmprojUrl</code></td><td>Qwen3-VL-2B mmproj F16</td><td>URL des Vision-Projektors (optional)</td></tr>
+          <tr><td><code>AI_LLAMA_STD_MaxPixels</code></td><td><code>3211264</code></td><td>Pixelbudget für Bildskalierung</td></tr>
+          <tr><td><code>AI_LLAMA_STD_MaxUploadBytes</code></td><td><code>52428800</code> (50 MB)</td><td>Maximale Upload-Größe</td></tr>
+          <tr><td><code>AI_LLAMA_STD_MaxTokens</code></td><td><code>2048</code></td><td>Maximale generierte Tokens pro Anfrage</td></tr>
+          <tr><td><code>AI_LLAMA_STD_MaxRAMPercent</code></td><td><code>101.0</code></td><td>RAM-Auslastungsschwelle (Anfragen ablehnen)</td></tr>
+          <tr><td><code>AI_LLAMA_STD_MaxComputePercent</code></td><td><code>101.0</code></td><td>CPU/GPU-Auslastungsschwelle</td></tr>
+          <tr><td><code>AI_LLAMA_STD_Language</code></td><td><em>auto</em></td><td>Erzwungene Antwortsprache (ISO 639-1, z. B. <code>de</code>)</td></tr>
+          <tr><td><code>AI_LLAMA_STD_PromptIdentity</code></td><td>built-in</td><td>Eigener Identitätsprompt (<code>{date}</code>, <code>{time}</code> verfügbar)</td></tr>
+          <tr><td><code>AI_LLAMA_STD_ExtraParams</code></td><td><em>leer</em></td><td>Zusätzliche JSON-Parameter für Completion-Anfragen</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s54">5.4 Externe KI (OpenAI-kompatibel)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Property</th><th>Standard</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_LLAMA_STD_ExternalUrl</code></td><td><em>leer</em></td><td>API-URL (z. B. <code>https://api.openai.com/v1</code>)</td></tr>
+          <tr><td><code>AI_LLAMA_STD_ExternalApiKey</code></td><td><em>leer</em></td><td>Bearer-API-Schlüssel</td></tr>
+          <tr><td><code>AI_LLAMA_STD_ExternalModel</code></td><td><em>leer</em></td><td>Modellname (z. B. <code>gpt-4o</code>)</td></tr>
+          <tr><td><code>AI_LLAMA_STD_ExternalNoPrompt</code></td><td><code>false</code></td><td>System-Prompt überspringen</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s55">5.5 Thinking- und Specialist-Modelle</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Property</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_LLAMA_STD_ThinkingModelUrl</code></td><td>GGUF-URL für dediziertes Thinking-Modell</td></tr>
+          <tr><td><code>AI_LLAMA_STD_SPECIALIST_&lt;Name&gt;</code></td><td>URL eines lokalen Specialist-Modells</td></tr>
+          <tr><td><code>AI_LLAMA_STD_EXT_SPECIALIST_&lt;Name&gt;</code></td><td>URL einer externen Specialist-API</td></tr>
+          <tr><td><code>AI_LLAMA_STD_EXT_SPECIALIST_Key_&lt;Name&gt;</code></td><td>API-Schlüssel für externen Specialist</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s56">5.6 Whisper</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Property</th><th>Standard</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_Whisper_Port</code></td><td><code>8393</code></td><td>Lokaler Port des Whisper-Servers</td></tr>
+          <tr><td><code>AI_Whisper_ModelUrl</code></td><td>ggml-small (~466 MB)</td><td>GGML-Modell-URL</td></tr>
+          <tr><td><code>AI_Whisper_Release</code></td><td><code>v1.7.6</code></td><td>whisper.cpp Release-Tag</td></tr>
+          <tr><td><code>AI_Whisper_NoGpu</code></td><td><code>false</code></td><td>GPU deaktivieren (CPU-only)</td></tr>
+          <tr><td><code>AI_Whisper_AutoDetectLanguage</code></td><td><code>false</code></td><td>Automatische Sprachendetektion</td></tr>
+          <tr><td><code>AI_Whisper_ExternalUrl</code></td><td><em>leer</em></td><td>Externe STT-API-URL</td></tr>
+          <tr><td><code>AI_Whisper_ExternalApiKey</code></td><td><em>leer</em></td><td>API-Schlüssel für externe STT</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s57">5.7 Tesseract</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Property</th><th>Standard</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_Tesseract_Languages</code></td><td><code>deu</code></td><td>Sprachen für OCR (<code>+</code>-getrennt)</td></tr>
+          <tr><td><code>AI_Tesseract_PoolSize</code></td><td>auto</td><td>Anzahl paralleler Tesseract-Instanzen</td></tr>
+          <tr><td><code>AI_Tesseract_MavenRepository</code></td><td>Maven Central</td><td>Alternativer Repository-Mirror für JNI-Bibliotheken</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s58">5.8 AI-Proxy</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Property</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_Proxy_AllowedIPs</code></td><td>Komma-getrennte IPs/CIDRs (leer = alle blockiert)</td></tr>
+          <tr><td><code>AI_Proxy_Users</code></td><td>Komma-getrennte <code>benutzer:passwort</code>-Paare</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 id="s59">5.9 Allgemein</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Property</th><th>Standard</th><th>Beschreibung</th></tr></thead>
+        <tbody>
+          <tr><td><code>AI_CachedImageExpiration</code></td><td><code>600000</code> ms</td><td>TTL des Bild-Caches (Standard: 10 Minuten)</td></tr>
+          <tr><td><code>AI_QueueBadge</code></td><td><code>false</code></td><td>Warteschlangen-Position in der UI anzeigen</td></tr>
+          <tr><td><code>AI_LLAMA_STD_FallbackLocation</code></td><td><em>leer</em></td><td>Fallback-Standort bei Geolokalisierungsfehlern</td></tr>
+          <tr><td><code>AI_LLAMA_STD_NominatimDomain</code></td><td><code>nominatim.openstreetmap.org</code></td><td>Domain für Reverse-Geocoding</td></tr>
+          <tr><td><code>AI_LLAMA_STD_IpGeolocationDomain</code></td><td><code>ipwho.is</code></td><td>Domain für IP-Geolokalisierung</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 6 ── -->
+  <section id="s6">
+    <h2>6. Netzwerkfreigaben</h2>
+    <p>Die folgenden Domains sind für den <strong>Erststart</strong> (einmaliger Download) erforderlich. Nach dem Download laufen alle KI-Dienste vollständig lokal.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Domain</th><th>Zweck</th><th>Optional</th></tr></thead>
+        <tbody>
+          <tr><td><code>github.com</code></td><td>llama.cpp- und whisper.cpp-Releases</td><td>Nein*</td></tr>
+          <tr><td><code>objects.githubusercontent.com</code></td><td>GitHub Release-Asset-CDN</td><td>Nein*</td></tr>
+          <tr><td><code>api.github.com</code></td><td>Update-Check (Release-Check)</td><td>Ja</td></tr>
+          <tr><td><code>huggingface.co</code></td><td>GGUF-Modell-Downloads</td><td>Nein*</td></tr>
+          <tr><td><code>repo1.maven.org</code></td><td>Tesseract JNI-Bibliotheken (tess4j)</td><td>Ja (Spiegel möglich)</td></tr>
+          <tr><td><code>raw.githubusercontent.com</code></td><td>Tesseract traineddata</td><td>Ja</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><em>* Entfällt bei vollständig konfiguriertem Offline-Deployment mit eigenen Modell-URLs.</em></p>
+
+    <h3>Laufzeit (nur bei aktivierten Opt-In-Diensten)</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Domain</th><th>Dienst</th><th>Opt-In-Property</th></tr></thead>
+        <tbody>
+          <tr><td><code>api.search.brave.com</code></td><td>Brave Websuche</td><td><code>AI_BraveSearch_ApiKey</code></td></tr>
+          <tr><td><code>nominatim.openstreetmap.org</code></td><td>Reverse-Geocoding</td><td>aktiver Standortdienst</td></tr>
+          <tr><td><code>ipwho.is</code></td><td>IP-Geolokalisierung</td><td>aktiver Standortdienst</td></tr>
+          <tr><td><em>konfigurierbar</em></td><td>Externe KI-API</td><td><code>AI_LLAMA_STD_ExternalUrl</code></td></tr>
+          <tr><td><em>konfigurierbar</em></td><td>Externe Whisper-API</td><td><code>AI_Whisper_ExternalUrl</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 7 ── -->
+  <section id="s7">
+    <h2>7. Datenschutz (DSGVO)</h2>
+
+    <h3>7.1 Datenverarbeitung im Standardbetrieb (lokal)</h3>
+    <p>Im Standardbetrieb mit lokalen Modellen verlassen <strong>keine Nutzerdaten</strong> den formcycle-Server.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Verarbeitungsschritt</th><th>Speicherort</th><th>Persistenz</th></tr></thead>
+        <tbody>
+          <tr><td>Chat-Nachrichten / Dokumenteninhalte</td><td>RAM (Prozesskontext)</td><td>Nicht persistent</td></tr>
+          <tr><td>Bilder / PDFs</td><td>RAM + temporärer Dateicache</td><td>TTL: 600 s (konfigurierbar), danach automatisch gelöscht</td></tr>
+          <tr><td>Audio (Whisper)</td><td>RAM (Prozesskontext)</td><td>Nicht persistent</td></tr>
+          <tr><td>OCR-Ergebnisse (Tesseract)</td><td>RAM</td><td>Nicht persistent</td></tr>
+          <tr><td>Proxy-Audit-Log (<code>codbi_ai_proxy</code>)</td><td>Datenbank (JPA)</td><td>Persistent (nur Metadaten, s. u.)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>7.2 Audit-Tabelle <code>codbi_ai_proxy</code></h3>
+    <p>Die Audit-Tabelle protokolliert <strong>ausschließlich technische Metadaten</strong> — kein personenbezogener Inhalt wird gespeichert:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Spalte</th><th>Inhalt</th><th>Datenschutzrelevanz</th></tr></thead>
+        <tbody>
+          <tr><td><code>request_id</code></td><td>UUID (zufällig generiert)</td><td>Keine Rückverfolgung auf Person</td></tr>
+          <tr><td><code>timestamp</code></td><td>Zeitstempel der Anfrage</td><td>Gering (keine Nutzerzuordnung)</td></tr>
+          <tr><td><code>endpoint</code></td><td>Aufgerufener API-Endpunkt</td><td>Keine personenbezogenen Daten</td></tr>
+          <tr><td><code>status</code></td><td>HTTP-Statuscode</td><td>Keine personenbezogenen Daten</td></tr>
+          <tr><td><code>elapsed_ms</code></td><td>Antwortzeit in Millisekunden</td><td>Keine personenbezogenen Daten</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-success">
+      Klarnamen, IP-Adressen und Anfrageinhalte werden bewusst <strong>nicht</strong> protokolliert. Benutzernamen werden im internen Logging nur als SHA-256-Hash geführt.
+    </div>
+
+    <h3>7.3 Verantwortlichkeit und Rechtsgrundlagen</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Szenario</th><th>Empfehlung</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Lokaler Betrieb</strong> (Standard)</td><td>Verarbeitung auf dem eigenen Server; DSFA prüfen, ob Nutzendendaten (z. B. Formulareingaben) sensibel sind</td></tr>
+          <tr><td><strong>Externe KI-API</strong></td><td>Daten verlassen den Server → <strong>AVV mit Anbieter</strong> zwingend erforderlich; Drittlandtransfer prüfen (Art. 44 ff. DSGVO)</td></tr>
+          <tr><td><strong>Brave Search</strong></td><td>Suchanfragen verlassen den Server → AVV mit Brave prüfen; Datenschutzhinweis an Nutzende</td></tr>
+          <tr><td><strong>Externe Whisper-API</strong></td><td>Audiodaten verlassen den Server → <strong>AVV</strong> erforderlich</td></tr>
+          <tr><td><strong>Browser Web Speech API</strong></td><td>Cloud-Dienst des Browsers (Google/Microsoft) → <strong>Einwilligung der Nutzenden</strong> erforderlich</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>7.4 Betroffenenrechte</h3>
+    <p>Im Standardbetrieb (lokale Modelle, kein persistenter Inhalt) sind typische Betroffenenrechte (Auskunft, Löschung, Berichtigung) technisch im Wesentlichen gegenstandslos, da keine inhaltlichen personenbezogenen Daten dauerhaft gespeichert werden. Bei aktivierten Opt-In-Diensten oder externer Verarbeitung gelten die üblichen DSGVO-Anforderungen.</p>
+  </section>
+
+  <!-- ── 8 ── -->
+  <section id="s8">
+    <h2>8. EU-KI-Verordnung (AI Act)</h2>
+    <p>CodBi enthält Maßnahmen zur Erfüllung der <strong>Transparenzpflichten nach Art. 50 EU AI Act</strong>.</p>
+
+    <h3>8.1 Kennzeichnungspflicht (Art. 50 Abs. 1)</h3>
+    <p>KI-generierte Inhalte werden in der formcycle-Benutzeroberfläche automatisch mit dem Label <strong>✨ KI-generiert</strong> gekennzeichnet. Dies gilt für alle Ausgaben der Komponenten <code>AI.Llama.Standard.QA</code> und <code>AI.Llama.Standard.TxtQA</code>.</p>
+
+    <h3>8.2 Transparenz im System-Prompt</h3>
+    <p>Der Standard-System-Prompt injiziert automatisch:</p>
+    <ul>
+      <li>Aktuelles Datum, Uhrzeit und Wochentag (Präzision ohne Cloud)</li>
+      <li>Einen <strong>EU-AI-Act-Transparenzhinweis</strong> als Kontextinformation für das Modell</li>
+    </ul>
+
+    <h3>8.3 Risikoklassifizierung</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Aspekt</th><th>Einschätzung</th><th>Handlungsbedarf</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Risikostufe</strong></td><td>Abhängig vom Einsatzszenario</td><td>Betreiber muss Risikoklasse für den konkreten Anwendungsfall prüfen</td></tr>
+          <tr><td><strong>Transparenz gegenüber Nutzenden</strong></td><td>✨ KI-generiert-Label implementiert</td><td>Ausreichend für niedrige Risikostufe</td></tr>
+          <tr><td><strong>Menschliche Kontrolle</strong></td><td>Nutzer kann KI-Vorschläge ablehnen</td><td>Prozess dokumentieren</td></tr>
+          <tr><td><strong>Protokollierung</strong></td><td>Audit-Log in <code>codbi_ai_proxy</code> vorhanden</td><td>Ggf. erweitern für hochriskante Anwendungen</td></tr>
+          <tr><td><strong>Dokumentation</strong></td><td>Modellherkunft und -eigenschaften dokumentieren</td><td>Systemdokumentation für regulierte Bereiche</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>8.4 MailBridge und Transparenz</h3>
+    <p>E-Mails, die über die MailBridge versendet werden, erhalten einen konfigurierbaren <strong>Pflicht-Disclaimer</strong> (Standard: <code>AI-Generated</code>). Dies erfüllt die Kennzeichnungspflicht für KI-generierte Kommunikation.</p>
+  </section>
+
+  <!-- ── 9 ── -->
+  <section id="s9">
+    <h2>9. Sicherheitsarchitektur</h2>
+
+    <h3>9.1 Netzwerksicherheit</h3>
+    <ul>
+      <li><strong>Ausschließlich localhost-Kommunikation:</strong> LLaMA- und Whisper-Server binden nur an <code>127.0.0.1</code> — sie sind von außen nicht erreichbar</li>
+      <li><strong>AI-Proxy als einziger Zugangspunkt:</strong> Externer Zugriff erfolgt ausschließlich über den authentifizierten Proxy-Endpunkt</li>
+      <li><strong>IP-Whitelist (CIDR + Exact):</strong> Zugriff auf den Proxy auf IP-Ebene einschränkbar</li>
+      <li><strong>HTTP Basic Auth:</strong> Zusätzliche Authentifizierungsschicht</li>
+    </ul>
+
+    <h3>9.2 SSRF-Schutz (UrlFetcher)</h3>
+    <div class="callout callout-info">
+      Der <code>UrlFetcher</code>-Dienst enthält expliziten Schutz gegen Server-Side Request Forgery (SSRF):
+      private IP-Bereiche (<code>10.x.x.x</code>, <code>192.168.x.x</code>, <code>172.16–31.x.x</code>) und <code>localhost</code> sind blockiert.
+      Nur externe, öffentliche URLs werden zugelassen.
+    </div>
+
+    <h3>9.3 Download-Sicherheit (Zip-Slip-Schutz)</h3>
+    <p>Der <code>DownloadManager</code> enthält expliziten Schutz gegen <strong>Zip-Slip-Angriffe</strong> bei der Extraktion von ZIP- und tar.gz-Archiven (llama.cpp- und whisper.cpp-Releases).</p>
+
+    <h3>9.4 Ressourcenschutz</h3>
+    <ul>
+      <li><strong>Semaphore (FIFO):</strong> Maximale Anzahl paralleler KI-Anfragen begrenzt (<code>AI_LLAMA_ENGINE_MaxConcurrent</code>)</li>
+      <li><strong>RAM/CPU-Guards:</strong> Anfragen werden abgelehnt, wenn die Systemauslastung konfigurierte Schwellwerte überschreitet</li>
+      <li><strong>Streaming-Session-TTL:</strong> Sessions laufen nach 5 Minuten (Standard) bzw. 10 Minuten (Thinking) automatisch ab</li>
+    </ul>
+
+    <h3>9.5 MailBridge-Sicherheit</h3>
+    <ul>
+      <li>Empfänger werden gegen eine <strong>Regex-Whitelist</strong> geprüft — unkonfiguriert ist kein Versand möglich</li>
+      <li>Rate-Limiting auf globaler und Sitzungsebene verhindert Missbrauch</li>
+    </ul>
+  </section>
+
+  <!-- ── 10 ── -->
+  <section id="s10">
+    <h2>10. Externe KI-Dienste und Risikobewertung</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Dienst</th><th>Aktivierung</th><th>Weitergeleitete Daten</th><th>DSGVO</th><th>Maßnahme</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Lokales LLaMA</strong></td><td>Standard</td><td>Keine (lokal)</td><td><span class="sev-ok">unkritisch</span></td><td>—</td></tr>
+          <tr><td><strong>Lokaler Whisper</strong></td><td>Standard</td><td>Keine (lokal)</td><td><span class="sev-ok">unkritisch</span></td><td>—</td></tr>
+          <tr><td><strong>Tesseract</strong></td><td>Standard</td><td>Keine (lokal, in-process)</td><td><span class="sev-ok">unkritisch</span></td><td>—</td></tr>
+          <tr><td><strong>Brave Search API</strong></td><td><code>AI_BraveSearch_ApiKey</code></td><td>Suchanfragen</td><td><span class="sev-check">Prüfen</span></td><td>AVV mit Brave; Datenschutzhinweis</td></tr>
+          <tr><td><strong>Nominatim (OSM)</strong></td><td>Geolokalisierung aktiv</td><td>Koordinaten</td><td><span class="sev-low">Gering</span></td><td>Datenschutzhinweis auf OSM-Nutzungsbedingungen</td></tr>
+          <tr><td><strong>ipwho.is</strong></td><td>Geolokalisierung aktiv</td><td>Server-IP</td><td><span class="sev-low">Gering</span></td><td>Datenschutzhinweis; eigene Domain konfigurierbar</td></tr>
+          <tr><td><strong>Externe KI-API</strong> (z. B. GPT-4o, Groq)</td><td><code>AI_LLAMA_STD_ExternalUrl</code></td><td><strong>Gesamter Chat-Inhalt inkl. ggf. Bürgerdaten</strong></td><td><span class="sev-critical">Kritisch</span></td><td>AVV zwingend; Drittlandtransfer prüfen; ggf. Einwilligung</td></tr>
+          <tr><td><strong>Externe Whisper-API</strong></td><td><code>AI_Whisper_ExternalUrl</code></td><td><strong>Audiodaten</strong></td><td><span class="sev-critical">Kritisch</span></td><td>AVV zwingend; Drittlandtransfer prüfen</td></tr>
+          <tr><td><strong>HuggingFace</strong></td><td>Erster Start (Modell-Download)</td><td>Keine Nutzerdaten</td><td><span class="sev-ok">unkritisch</span></td><td>Einmalig; Offline-Deployment möglich</td></tr>
+          <tr><td><strong>GitHub API</strong></td><td>Erster Start + Update-Check</td><td>Keine Nutzerdaten</td><td><span class="sev-ok">unkritisch</span></td><td>Deaktivierbar</td></tr>
+          <tr><td><strong>Browser Web Speech API</strong></td><td>Browser-native Formulareingabe</td><td><strong>Audiodaten an Google/Microsoft</strong></td><td><span class="sev-critical">Kritisch</span></td><td>Einwilligung der Nutzenden; unabhängig von CodBi</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── 11 ── -->
+  <section id="s11">
+    <h2>11. Betrieb und Monitoring</h2>
+
+    <h3>11.1 Health-Monitoring</h3>
+    <ul>
+      <li><strong>Health-Check-Polling</strong> auf <code>/health</code>-Endpunkt der lokalen Server</li>
+      <li><strong>ResourceMonitor</strong> (Daemon-Thread): CPU- und RAM-Auslastung alle 3 Sekunden; GPU-Auslastung via <code>nvidia-smi</code> (CUDA)</li>
+      <li><strong>Automatischer Neustart</strong> bei Prozessabsturz</li>
+    </ul>
+
+    <h3>11.2 Logging</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ebene</th><th>Inhalt</th><th>Hinweis</th></tr></thead>
+        <tbody>
+          <tr><td>Plugin-Log (formcycle)</td><td>Start/Stop-Ereignisse, Fehler, Health-Status</td><td>Standard-formcycle-Logging</td></tr>
+          <tr><td>Audit-Tabelle <code>codbi_ai_proxy</code></td><td>Anfrage-Metadaten (UUID, Endpunkt, Status, Zeit)</td><td>Datenschutzkonform (keine Inhaltsdaten)</td></tr>
+          <tr><td>Benutzername-Hashing</td><td>SHA-256 im internen Log</td><td>Kein Klartext-Benutzername</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>11.3 Ressourcenplanung</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Ressource</th><th>Minimum</th><th>Empfohlen (GPU)</th></tr></thead>
+        <tbody>
+          <tr><td>RAM</td><td>8 GB</td><td>16 GB+</td></tr>
+          <tr><td>CPU</td><td>4 Kerne</td><td>8+ Kerne</td></tr>
+          <tr><td>GPU (optional)</td><td>VRAM 4 GB</td><td>VRAM 8 GB+ (CUDA/Vulkan)</td></tr>
+          <tr><td>Festplatte</td><td>5 GB (Modelle)</td><td>10 GB+ (mehrere Modelle)</td></tr>
+          <tr><td>Netzwerk (Erststart)</td><td>Einmaliger Download ~2,4 GB</td><td>Schnelle Internetverbindung empfohlen</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>11.4 Wartung</h3>
+    <ul>
+      <li><strong>Modell-Updates:</strong> Neue GGUF-Modelle können jederzeit durch Anpassen der <code>*_ModelUrl</code>-Properties eingespielt werden (formcycle-Neustart erforderlich)</li>
+      <li><strong>Binary-Updates:</strong> <code>AI_LLAMA_ENGINE_Release</code> und <code>AI_Whisper_Release</code> auf neue Release-Tags setzen</li>
+      <li><strong>Offline-Deployment:</strong> Alle URLs können auf interne Spiegel oder Dateipfade umgeleitet werden</li>
+    </ul>
+  </section>
+
+  <!-- ── 12 ── -->
+  <section id="s12">
+    <h2>12. Checkliste für den produktiven Betrieb</h2>
+
+    <div class="checklist-group">
+      <h4>Vor der Erstinstallation</h4>
+      <ul class="checklist">
+        <li>Systemanforderungen (RAM, CPU/GPU) geprüft</li>
+        <li>Netzwerkfreigaben für Erstdownload beantragt (github.com, huggingface.co)</li>
+        <li>Datenschutz-Folgenabschätzung (DSFA) für den geplanten Anwendungsfall durchgeführt</li>
+        <li>Zuständigen Datenschutzbeauftragten informiert</li>
+      </ul>
+    </div>
+
+    <div class="checklist-group">
+      <h4>Konfiguration</h4>
+      <ul class="checklist">
+        <li><code>Active_AI</code> auf benötigte Komponenten gesetzt</li>
+        <li><code>AI_Proxy_AllowedIPs</code> konfiguriert (Whitelist nicht leer lassen)</li>
+        <li><code>AI_Proxy_Users</code> mit sicheren Passwörtern gesetzt</li>
+        <li><code>AI_LLAMA_ENGINE_MaxConcurrent</code> auf Serverlast abgestimmt</li>
+        <li>Ggf. <code>AI_LLAMA_STD_Language</code> für einsprachigen Betrieb gesetzt</li>
+        <li><code>AI_Tesseract_Languages</code> auf benötigte Sprachen gesetzt</li>
+      </ul>
+    </div>
+
+    <div class="checklist-group">
+      <h4>Externe Dienste (nur bei Aktivierung)</h4>
+      <ul class="checklist">
+        <li><strong>Externe KI-API:</strong> AVV mit Anbieter abgeschlossen; Datenschutzhinweis für Nutzende</li>
+        <li><strong>Brave Search:</strong> API-Schlüssel sicher gespeichert; AVV geprüft</li>
+        <li><strong>MailBridge:</strong> <code>AI_Mail_AllowedRecipients</code> konfiguriert; Disclaimer angepasst</li>
+        <li><strong>Browser Web Speech API:</strong> DSGVO-Einwilligung der Nutzenden sichergestellt</li>
+      </ul>
+    </div>
+
+    <div class="checklist-group">
+      <h4>Compliance</h4>
+      <ul class="checklist">
+        <li>EU AI Act Risikoklasse für den Anwendungsfall bestimmt</li>
+        <li>✨ KI-generiert-Kennzeichnung in der UI überprüft</li>
+        <li>Audit-Log (<code>codbi_ai_proxy</code>) in Datenschutzdokumentation aufgenommen</li>
+        <li>Lösch-/Aufbewahrungskonzept für <code>codbi_ai_proxy</code>-Tabelle definiert</li>
+        <li>Verfahrensverzeichnis (Art. 30 DSGVO) aktualisiert</li>
+      </ul>
+    </div>
+
+    <div class="checklist-group">
+      <h4>Betrieb</h4>
+      <ul class="checklist">
+        <li>Health-Monitoring eingerichtet</li>
+        <li>Ressourcenmonitoring (CPU/RAM) konfiguriert</li>
+        <li>Backup-Strategie für Modell-Downloads (offline-fähig)</li>
+        <li>Update-Prozess für Modelle und Binaries definiert</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    Dieses Dokument bezieht sich auf CodBi ab Version 1.0.1 (Stand: April 2026). &nbsp;|&nbsp;
+    Für Fragen wenden Sie sich an die Projektverantwortlichen unter
+    <a href="mailto:Salvatore.Callari@Ansbach.de">Salvatore.Callari@Ansbach.de</a>.
+  </footer>
+
+</main>
+</div>
+</body>
+</html>

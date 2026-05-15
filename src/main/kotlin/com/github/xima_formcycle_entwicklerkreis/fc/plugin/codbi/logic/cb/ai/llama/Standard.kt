@@ -32,45 +32,46 @@ import org.slf4j.MDC
  * LLAMA-Server dies.
  *
  * ## Plugin Properties
- * |Property                               |Type   |Default                                      |Description                                                                                                                                                                 |
- * |---------------------------------------|-------|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
- * |`Active_AI`                            |String |—                                            |Must contain `llama_std` to activate this model                                                                                                                             |
- * |`AI_LLAMA_STD_ModelUrl`                |URL    |Qwen3-VL-2B Q4_K_M HuggingFace               |Download URL for the GGUF model file                                                                                                                                        |
- * |`AI_LLAMA_STD_MmprojUrl`               |URL    |Qwen3-VL-2B mmproj (when using default model)|Download URL for the vision projector (mmproj) file. Omit for text-only models (vision features disabled). Auto-set when using the default VL model                         |
- * |`AI_LLAMA_STD_MaxPixels`               |Long   |`3211264`                                    |Max pixel budget for image downscaling (min 3136)                                                                                                                           |
- * |`AI_LLAMA_STD_MaxUploadBytes`          |Long   |`52428800`                                   |Max raw image size in bytes before decoding (default 50 MB, min 1 MB)                                                                                                       |
- * |`AI_LLAMA_STD_MaxTokens`               |Int    |`2048`                                       |Maximum tokens to generate per response                                                                                                                                     |
- * |`AI_LLAMA_STD_MaxRAMPercent`           |Double |`101.0`                                      |RAM usage threshold (%) — blocks requests when exceeded                                                                                                                     |
- * |`AI_LLAMA_STD_MaxComputePercent`       |Double |`101.0`                                      |Compute usage threshold (%) — gates on GPU% (CUDA) or CPU% (fallback). Blocks requests when exceeded                                                                        |
- * |`AI_LLAMA_STD_MaxCPUPercent`           |Double |—                                            |Legacy alias for MaxComputePercent (accepted as fallback)                                                                                                                   |
- * |`AI_LLAMA_STD_LlamaRelease`            |String |`b8175`                                      |llama.cpp release tag for server binary download                                                                                                                            |
- * |`AI_LLAMA_STD_ServerUrl_<platform>`    |URL    |(auto from release tag)                      |Per-platform override for the LLAMA-Server binary URL                                                                                                                       |
- * |`AI_LLAMA_STD_UpdateCheckHours`        |Long   |`24`                                         |Hours between GitHub release checks (0 = disabled)                                                                                                                          |
- * |`AI_LLAMA_STD_NotifyEmail`             |String |—                                            |Email address for update notifications                                                                                                                                      |
- * |`AI_LLAMA_STD_ThinkingModelUrl`        |URL    |—                                            |Download URL for a dedicated thinking model GGUF (optional)                                                                                                                 |
- * |`AI_LLAMA_STD_ThinkingMmprojUrl`       |URL    |—                                            |Download URL for the thinking model's mmproj file (optional)                                                                                                                |
- * |`AI_LLAMA_STD_ExternalUrl`             |URL    |—                                            |Base URL of an external OpenAI-compatible API; overrides local model                                                                                                        |
- * |`AI_LLAMA_STD_ExternalApiKey`          |String |—                                            |API key for the external AI (sent as Bearer token)                                                                                                                          |
- * |`AI_LLAMA_STD_ExternalModel`           |String |—                                            |Model name for the external API (e.g. gpt-4o, claude-3-opus)                                                                                                                |
- * |`AI_LLAMA_STD_ExternalNoPrompt`        |Boolean|`false`                                      |When `true`, skips all built-in system-prompt sections (§1–§6) for the external AI — sends only the user message and chat history.                                          |
- * |`AI_LLAMA_STD_PromptIdentity`          |String |(built-in)                                   |Override the identity/role sentence ("You are a helpful assistant..."). Use `{date}` for today's date, `{time}` for current time.                                           |
- * |`AI_LLAMA_STD_PromptLocation`          |String |(built-in)                                   |Override the location-context instruction. Use `{location}` as placeholder.                                                                                                 |
- * |`AI_LLAMA_STD_PromptSearch`            |String |(built-in)                                   |Override the CALL:search instruction block (before examples).                                                                                                               |
- * |`AI_LLAMA_STD_PromptThinking`          |String |(built-in)                                   |Override the thinking-mode instruction. Use `{language}` as placeholder.                                                                                                    |
- * |`AI_LLAMA_STD_PromptNoInternet`        |String |(built-in)                                   |Override the no-internet-access warning.                                                                                                                                    |
- * |`AI_LLAMA_STD_PromptRules`             |String |(built-in)                                   |Override the general rules (language, measurements, independence).                                                                                                          |
- * |`AI_LLAMA_STD_FallbackLocation`        |String |—                                            |Fallback location string used when geolocation fails (e.g. `Ansbach, Nürnberger Straße 32, Bayern, Deutschland`)                                                            |
- * |`AI_LLAMA_STD_NominatimDomain`         |String |`nominatim.openstreetmap.org`                |Domain for reverse geocoding requests (without path).                                                                                                                       |
- * |`AI_LLAMA_STD_IpGeolocationDomain`     |String |`ipwho.is`                                   |Domain for IP geolocation requests (without path).                                                                                                                          |
- * |`AI_BraveSearch_ApiKey`                |String |—                                            |Brave Search API key — enables web search tool for the model                                                                                                                |
- * |`AI_BraveSearch_MaxResults`            |Int    |`5`                                          |Maximum number of Brave Search results per query (1–20).                                                                                                                    |
- * |`AI_LLAMA_STD_Language`                |String |—                                            |Two-letter ISO 639-1 code (e.g. `de`, `fr`) — forces the AI to respond in this language, skipping auto-detection. Overridden by per-functionality `responselanguage` toLoad.|
- * |`AI_LLAMA_STD_SPECIALIST_XXX`          |URL    |—                                            |Download URL for a specialist GGUF model named `XXX`. The name is chosen by the administrator and matched case-insensitively by the `specialist` toLoad property.           |
- * |`AI_LLAMA_STD_SPECIALIST_MMProj_XXX`   |URL    |—                                            |Download URL for the specialist `XXX`'s multimodal projector (mmproj). Optional — omit if the specialist model has no vision capability.                                    |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_XXX`      |URL    |—                                            |Base URL of an external OpenAI-compatible API for a specialist named `XXX`. Matched case-insensitively by the `specialist` toLoad property.                                 |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_Key_XXX`  |String |—                                            |API key for the external specialist `XXX` (sent as Bearer token). Optional.                                                                                                 |
- * |`AI_LLAMA_STD_EXT_SPECIALIST_Model_XXX`|String |—                                            |Model name for the external specialist `XXX` (e.g. `gpt-4o`). Optional — omit to use the API default.                                                                       |
- * |`AI_LLAMA_STD_ExtraParams`             |JSON   |—                                            |Extra parameters appended to every completion request body (e.g. `{"top_p":0.9,"seed":42}`). Keys `messages`, `stream`, `model`, `id_slot`, `logprobs` are silently ignored.|
+ * |Property                                   |Type   |Default                                      |Description                                                                                                                                                                 |
+ * |-------------------------------------------|-------|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+ * |`Active_AI`                                |String |—                                            |Must contain `llama_std` to activate this model                                                                                                                             |
+ * |`AI_LLAMA_STD_ModelUrl`                    |URL    |Qwen3-VL-2B Q4_K_M HuggingFace               |Download URL for the GGUF model file                                                                                                                                        |
+ * |`AI_LLAMA_STD_MmprojUrl`                   |URL    |Qwen3-VL-2B mmproj (when using default model)|Download URL for the vision projector (mmproj) file. Omit for text-only models (vision features disabled). Auto-set when using the default VL model                         |
+ * |`AI_LLAMA_STD_MaxPixels`                   |Long   |`3211264`                                    |Max pixel budget for image downscaling (min 3136)                                                                                                                           |
+ * |`AI_LLAMA_STD_MaxUploadBytes`              |Long   |`52428800`                                   |Max raw image size in bytes before decoding (default 50 MB, min 1 MB)                                                                                                       |
+ * |`AI_LLAMA_STD_MaxTokens`                   |Int    |`2048`                                       |Maximum tokens to generate per response                                                                                                                                     |
+ * |`AI_LLAMA_STD_MaxRAMPercent`               |Double |`101.0`                                      |RAM usage threshold (%) — blocks requests when exceeded                                                                                                                     |
+ * |`AI_LLAMA_STD_MaxComputePercent`           |Double |`101.0`                                      |Compute usage threshold (%) — gates on GPU% (CUDA) or CPU% (fallback). Blocks requests when exceeded                                                                        |
+ * |`AI_LLAMA_STD_MaxCPUPercent`               |Double |—                                            |Legacy alias for MaxComputePercent (accepted as fallback)                                                                                                                   |
+ * |`AI_LLAMA_STD_LlamaRelease`                |String |`b8175`                                      |llama.cpp release tag for server binary download                                                                                                                            |
+ * |`AI_LLAMA_STD_ServerUrl_<platform>`        |URL    |(auto from release tag)                      |Per-platform override for the LLAMA-Server binary URL                                                                                                                       |
+ * |`AI_LLAMA_STD_UpdateCheckHours`            |Long   |`24`                                         |Hours between GitHub release checks (0 = disabled)                                                                                                                          |
+ * |`AI_LLAMA_STD_NotifyEmail`                 |String |—                                            |Email address for update notifications                                                                                                                                      |
+ * |`AI_LLAMA_STD_ThinkingModelUrl`            |URL    |—                                            |Download URL for a dedicated thinking model GGUF (optional)                                                                                                                 |
+ * |`AI_LLAMA_STD_ThinkingMmprojUrl`           |URL    |—                                            |Download URL for the thinking model's mmproj file (optional)                                                                                                                |
+ * |`AI_LLAMA_STD_ExternalUrl`                 |URL    |—                                            |Base URL of an external OpenAI-compatible API; overrides local model                                                                                                        |
+ * |`AI_LLAMA_STD_ExternalApiKey`              |String |—                                            |API key for the external AI (sent as Bearer token)                                                                                                                          |
+ * |`AI_LLAMA_STD_ExternalModel`               |String |—                                            |Model name for the external API (e.g. gpt-4o, claude-3-opus)                                                                                                                |
+ * |`AI_LLAMA_STD_ExternalNoPrompt`            |Boolean|`false`                                      |When `true`, skips all built-in system-prompt sections (§1–§6) for the external AI — sends only the user message and chat history.                                          |
+ * |`AI_LLAMA_STD_PromptIdentity`              |String |(built-in)                                   |Override the identity/role sentence ("You are a helpful assistant..."). Use `{date}` for today's date, `{time}` for current time.                                           |
+ * |`AI_LLAMA_STD_PromptLocation`              |String |(built-in)                                   |Override the location-context instruction. Use `{location}` as placeholder.                                                                                                 |
+ * |`AI_LLAMA_STD_PromptSearch`                |String |(built-in)                                   |Override the CALL:search instruction block (before examples).                                                                                                               |
+ * |`AI_LLAMA_STD_PromptThinking`              |String |(built-in)                                   |Override the thinking-mode instruction. Use `{language}` as placeholder.                                                                                                    |
+ * |`AI_LLAMA_STD_PromptNoInternet`            |String |(built-in)                                   |Override the no-internet-access warning.                                                                                                                                    |
+ * |`AI_LLAMA_STD_PromptRules`                 |String |(built-in)                                   |Override the general rules (language, measurements, independence).                                                                                                          |
+ * |`AI_LLAMA_STD_FallbackLocation`            |String |—                                            |Fallback location string used when geolocation fails (e.g. `Ansbach, Nürnberger Straße 32, Bayern, Deutschland`)                                                            |
+ * |`AI_LLAMA_STD_NominatimDomain`             |String |`nominatim.openstreetmap.org`                |Domain for reverse geocoding requests (without path).                                                                                                                       |
+ * |`AI_LLAMA_STD_IpGeolocationDomain`         |String |`ipwho.is`                                   |Domain for IP geolocation requests (without path).                                                                                                                          |
+ * |`AI_BraveSearch_ApiKey`                    |String |—                                            |Brave Search API key — enables web search tool for the model                                                                                                                |
+ * |`AI_BraveSearch_MaxResults`                |Int    |`5`                                          |Maximum number of Brave Search results per query (1–20).                                                                                                                    |
+ * |`AI_LLAMA_STD_Language`                    |String |—                                            |Two-letter ISO 639-1 code (e.g. `de`, `fr`) — forces the AI to respond in this language, skipping auto-detection. Overridden by per-functionality `responselanguage` toLoad.|
+ * |`AI_LLAMA_STD_SPECIALIST_XXX`              |URL    |—                                            |Download URL for a specialist GGUF model named `XXX`. The name is chosen by the administrator and matched case-insensitively by the `specialist` toLoad property.           |
+ * |`AI_LLAMA_STD_SPECIALIST_MMProj_XXX`       |URL    |—                                            |Download URL for the specialist `XXX`'s multimodal projector (mmproj). Optional — omit if the specialist model has no vision capability.                                    |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_XXX`          |URL    |—                                            |Base URL of an external OpenAI-compatible API for a specialist named `XXX`. Matched case-insensitively by the `specialist` toLoad property.                                 |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_Key_XXX`      |String |—                                            |API key for the external specialist `XXX` (sent as Bearer token). Optional.                                                                                                 |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_Model_XXX`    |String |—                                            |Model name for the external specialist `XXX` (e.g. `gpt-4o`). Optional — omit to use the API default.                                                                       |
+ * |`AI_LLAMA_STD_EXT_SPECIALIST_MaxTokens_XXX`|Int    |—                                            |Maximum output tokens for specialist `XXX`. Overrides `AI_LLAMA_STD_MaxTokens` for this specialist only. Optional.                                                          |
+ * |`AI_LLAMA_STD_ExtraParams`                 |JSON   |—                                            |Extra parameters appended to every completion request body (e.g. `{"top_p":0.9,"seed":42}`). Keys `messages`, `stream`, `model`, `id_slot`, `logprobs` are silently ignored.|
  *
  * ## Domains to whitelist
  * - **github.com** — LLAMA-Server binary releases & release-check API
@@ -102,6 +103,24 @@ class Standard : LLAMA() {
     private const val DEFAULT_NOMINATIM_DOMAIN = "nominatim.openstreetmap.org"
     /** Default domain for IP geolocation fallback requests. */
     private const val DEFAULT_IP_GEOLOCATION_DOMAIN = "ipwho.is"
+
+    /**
+     * Represents a model available for AI Form Assistance, with a routing [id] and a user-facing
+     * [label].
+     */
+    data class ModelEntry(val id: String, val label: String)
+
+    /** The active [Standard] instance, set during [initialize] and cleared during [shutdown]. */
+    @Volatile
+    @JvmStatic
+    var instance: Standard? = null
+      private set
+
+    /** The list of available AI models for form assistance, populated during [initialize]. */
+    @Volatile
+    @JvmStatic
+    var availableModels: List<ModelEntry> = emptyList()
+      private set
   }
 
   // endregion Constants
@@ -370,7 +389,8 @@ class Standard : LLAMA() {
 
   /**
    * Scans all plugin properties for `AI_LLAMA_STD_EXT_SPECIALIST_XXX` entries and pairs each with
-   * its optional `EXT_SPECIALIST_Key_XXX` and `EXT_SPECIALIST_Model_XXX` companions.
+   * its optional `EXT_SPECIALIST_Key_XXX`, `EXT_SPECIALIST_Model_XXX`, and
+   * `EXT_SPECIALIST_MaxTokens_XXX` companions.
    *
    * @param props The raw plugin properties map.
    * @return A case-preserving map of specialist name → [StandardConfig.ExternalSpecialistEntry].
@@ -381,11 +401,15 @@ class Standard : LLAMA() {
     val prefix = "${PROP_PREFIX}_EXT_SPECIALIST_"
     val keyPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_Key_"
     val modelPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_Model_"
+    val maxTokensPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_MaxTokens_"
     val result = mutableMapOf<String, StandardConfig.ExternalSpecialistEntry>()
 
     for (key in props.stringPropertyNames()) {
       if (!key.startsWith(prefix)) continue
-      if (key.startsWith(keyPrefix) || key.startsWith(modelPrefix)) continue
+      if (key.startsWith(keyPrefix) ||
+          key.startsWith(modelPrefix) ||
+          key.startsWith(maxTokensPrefix))
+          continue
 
       val specialistName = key.removePrefix(prefix).trim()
       if (specialistName.isEmpty()) continue
@@ -395,9 +419,14 @@ class Standard : LLAMA() {
           props.getProperty("${keyPrefix}$specialistName")?.trim()?.takeIf { it.isNotEmpty() }
       val model =
           props.getProperty("${modelPrefix}$specialistName")?.trim()?.takeIf { it.isNotEmpty() }
+      val maxTokens =
+          props.getProperty("${maxTokensPrefix}$specialistName")?.trim()?.toIntOrNull()?.takeIf {
+            it > 0
+          }
 
       result[specialistName] =
-          StandardConfig.ExternalSpecialistEntry(url = url, apiKey = apiKey, model = model)
+          StandardConfig.ExternalSpecialistEntry(
+              url = url, apiKey = apiKey, model = model, maxTokens = maxTokens)
     }
 
     return result
@@ -587,6 +616,21 @@ class Standard : LLAMA() {
       val client = ExternalAiClient(entry.url, entry.apiKey, entry.model, logFn)
       externalSpecialistClients[name.lowercase()] = client
       log(LogLevel.INFO, "External specialist '$name' client created for ${entry.url}")
+    }
+
+    // Register instance and available models for AI Form Assistance
+    instance = this
+    availableModels = buildList {
+      if (config.isExternalMode) {
+        add(ModelEntry("standard", "External (${config.externalModel ?: "default"})"))
+      } else {
+        add(ModelEntry("standard", "Standard (local)"))
+      }
+      if (config.hasThinkingModel) add(ModelEntry("thinking", "Thinking (local)"))
+      for (name in config.specialists.keys) add(
+          ModelEntry("specialist:${name.lowercase()}", "Specialist: $name"))
+      for (name in config.externalSpecialists.keys) add(
+          ModelEntry("ext-specialist:${name.lowercase()}", "External: $name"))
     }
 
     if (config.isExternalMode) {
@@ -831,9 +875,59 @@ class Standard : LLAMA() {
     }
     executor = null
 
+    instance = null
+    availableModels = emptyList()
+
     super.shutdown(shutdownData)
   }
 
+  // region AI Form Assistance
+
+  /**
+   * Routes a form-assist request to the appropriate AI model and returns the raw completion text.
+   *
+   * @param modelId One of: `"standard"`, `"thinking"`, `"specialist:<name>"`,
+   *   `"ext-specialist:<name>"`.
+   * @param messagesJson A JSON array of chat-completion messages (system + user roles).
+   * @return The raw text response from the AI model.
+   */
+  internal fun performFormAssist(modelId: String, messagesJson: String): String {
+    val svc = chatCompletionService ?: error("AI service not ready")
+    // ext-specialist uses its own external client — skip local server readiness check
+    val usesLocalServer = !config.isExternalMode && !modelId.startsWith("ext-specialist:")
+    if (usesLocalServer) {
+      if (!serverReady || !isServerAlive()) {
+        error(
+            "Local AI model is not ready. It may still be loading or the server process has stopped.")
+      }
+    }
+    return when {
+      modelId == "thinking" -> svc.chatCompletion(messagesJson, enableThinking = true)
+      modelId.startsWith("specialist:") -> {
+        val name = modelId.removePrefix("specialist:")
+        val port = specialistServers[name]?.port ?: error("Specialist '$name' not ready")
+        svc.chatCompletion(messagesJson, overridePort = port)
+      }
+      modelId.startsWith("ext-specialist:") -> {
+        val name = modelId.removePrefix("ext-specialist:")
+        val client =
+            externalSpecialistClients[name] ?: error("External specialist '$name' not found")
+        val specialistMaxTokens =
+            config.externalSpecialists.entries
+                .firstOrNull { it.key.equals(name, ignoreCase = true) }
+                ?.value
+                ?.maxTokens
+        svc.chatCompletion(
+            messagesJson, overrideExternalClient = client, overrideMaxTokens = specialistMaxTokens)
+      }
+      // For form-assist the response is a full form JSON, which can be large.
+      // Passing overrideMaxTokens=null lets external APIs use their own (typically much higher)
+      // default limit. For local models, chatCompletion falls back to config.maxTokens.
+      else -> svc.chatCompletion(messagesJson)
+    }
+  }
+
+  // endregion AI Form Assistance
   // endregion Lifecycle
   // region Thinking Model Server
   // Extracted to ThinkingServerManager -- see ThinkingServerManager.kt

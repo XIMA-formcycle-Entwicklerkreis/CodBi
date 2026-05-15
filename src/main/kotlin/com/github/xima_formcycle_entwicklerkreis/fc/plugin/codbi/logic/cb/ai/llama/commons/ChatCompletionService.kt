@@ -65,7 +65,8 @@ internal class ChatCompletionService(
       idSlot: Int = -1,
       maxThinkingTokens: Int? = null,
       overridePort: Int? = null,
-      overrideExternalClient: ExternalAiClient? = null
+      overrideExternalClient: ExternalAiClient? = null,
+      overrideMaxTokens: Int? = null
   ): String {
     val useExtSpecialist = overrideExternalClient != null
     val external = useExtSpecialist || isExternalMode()
@@ -75,12 +76,14 @@ internal class ChatCompletionService(
     var requestBody = buildString {
       append("{\"messages\":$messagesJson")
 
-      // max_tokens is a local-model budget — external APIs manage their own token limits
-      if (!external) {
+      // For local models, max_tokens is a hard budget. For external APIs we skip it by default so
+      // the provider uses its own limit — but callers can force a value via overrideMaxTokens.
+      if (!external || overrideMaxTokens != null) {
         val effectiveMaxTokens =
-            if (enableThinking) {
-              maxThinkingTokens ?: (currentMaxTokens * 4).coerceAtLeast(4096)
-            } else currentMaxTokens
+            overrideMaxTokens
+                ?: if (enableThinking) {
+                  maxThinkingTokens ?: (currentMaxTokens * 4).coerceAtLeast(4096)
+                } else currentMaxTokens
         append(",\"max_tokens\":$effectiveMaxTokens")
       }
 

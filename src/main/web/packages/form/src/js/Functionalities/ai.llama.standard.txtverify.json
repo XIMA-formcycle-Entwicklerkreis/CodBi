@@ -1,0 +1,19 @@
+{
+  "Description": "/classes/Functionalities_ai.llama.standard.txtverify.AI_LLAMA_STANDARD_TXTVERIFY.html#functionality",
+  "Parameter": {
+    "Question": "",
+    "PositiveResponse": "",
+    "CaseInsensitive": "",
+    "VerifyErrorText": "",
+    "VerifyCheckboxLabel": "",
+    "InternetAccess": "",
+    "Thinking": "",
+    "MaxThinkingTokens": "",
+    "Language": "",
+    "ResponseLanguage": "",
+    "Specialist": "",
+    "QueueBadge": "",
+    "QueueText": "",
+    "FilterResults": ""
+  }
+}

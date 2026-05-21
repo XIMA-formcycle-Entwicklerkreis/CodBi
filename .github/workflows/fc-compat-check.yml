@@ -55,14 +55,20 @@ jobs:
             VERSION="${{ inputs.xfc_version }}"
             SOURCE="manual input"
           else
-            # Query XIMA Artifactory for the latest released fc-plugin-common version.
+            # Query XIMA Artifactory for the latest STABLE fc-plugin-common version.
+            # XIMA sometimes publishes snapshots as <release> in their metadata, so we
+            # extract all <version> entries, strip SNAPSHOTs and any non-numeric suffixes,
+            # then pick the highest remaining version.
             METADATA_URL="https://artifactory.xima-services.de/artifactory/fc-plugin-dev/de/xima/fc/fc-plugin-common/maven-metadata.xml"
             VERSION=$(curl -sf --max-time 10 "$METADATA_URL" \
-              | grep -o '<release>[^<]*</release>' \
+              | grep -o '<version>[^<]*</version>' \
               | sed 's/<[^>]*>//g' \
-              | head -1)
+              | grep -v -i 'snapshot' \
+              | grep -E '^[0-9]+\.[0-9]+(\.[0-9]+)?$' \
+              | sort -V \
+              | tail -1)
             if [ -n "$VERSION" ]; then
-              SOURCE="XIMA Artifactory (latest release)"
+              SOURCE="XIMA Artifactory (latest stable release)"
             else
               # Fallback: read xfc.version from pom.xml
               VERSION=$(./mvnw -q help:evaluate -Dexpression=xfc.version -DforceStdout 2>/dev/null || echo "")

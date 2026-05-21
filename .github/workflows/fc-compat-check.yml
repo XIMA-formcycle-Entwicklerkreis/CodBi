@@ -43,20 +43,36 @@ jobs:
       - name: Make Maven wrapper executable
         run: chmod +x mvnw
 
-      # Build the version flag only when an explicit version was supplied.
-      # When empty, Maven uses whatever xfc.version is declared in pom.xml.
+      # Resolve which FormCycle version to test against:
+      #   - explicit input  → use exactly that version
+      #   - no input        → fetch the current release from XIMA Artifactory;
+      #                       fall back to the version declared in pom.xml if the
+      #                       metadata endpoint is unreachable.
       - name: Resolve version flag
         id: ver
         run: |
           if [ -n "${{ inputs.xfc_version }}" ]; then
-            echo "flag=-Dxfc.version=${{ inputs.xfc_version }}" >> "$GITHUB_OUTPUT"
-            echo "label=${{ inputs.xfc_version }}" >> "$GITHUB_OUTPUT"
+            VERSION="${{ inputs.xfc_version }}"
+            SOURCE="manual input"
           else
-            echo "flag=" >> "$GITHUB_OUTPUT"
-            # Extract the default from pom.xml for the job summary
-            DEFAULT=$(./mvnw -q help:evaluate -Dexpression=xfc.version -DforceStdout 2>/dev/null || echo "unknown")
-            echo "label=${DEFAULT} (default)" >> "$GITHUB_OUTPUT"
+            # Query XIMA Artifactory for the latest released fc-plugin-common version.
+            METADATA_URL="https://artifactory.xima-services.de/artifactory/fc-plugin-dev/de/xima/fc/fc-plugin-common/maven-metadata.xml"
+            VERSION=$(curl -sf --max-time 10 "$METADATA_URL" \
+              | grep -o '<release>[^<]*</release>' \
+              | sed 's/<[^>]*>//g' \
+              | head -1)
+            if [ -n "$VERSION" ]; then
+              SOURCE="XIMA Artifactory (latest release)"
+            else
+              # Fallback: read xfc.version from pom.xml
+              VERSION=$(./mvnw -q help:evaluate -Dexpression=xfc.version -DforceStdout 2>/dev/null || echo "")
+              SOURCE="pom.xml fallback"
+            fi
           fi
+
+          echo "flag=-Dxfc.version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "label=${VERSION} (${SOURCE})" >> "$GITHUB_OUTPUT"
+          echo "Resolved FormCycle version: ${VERSION} — source: ${SOURCE}"
 
       # --- Step 1: Compile ---------------------------------------------------
       # A non-zero exit here means at least one FormCycle API changed in a way

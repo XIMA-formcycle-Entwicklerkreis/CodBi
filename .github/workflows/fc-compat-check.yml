@@ -1,0 +1,128 @@
+# Checks whether CodBi compiles and its declared dependencies stay consistent
+# when built against a specific FormCycle version.
+#
+# Runs weekly against the current default xfc.version, and can be triggered
+# manually with any target version to test compatibility before a client upgrades.
+#
+# Steps:
+#   1. compile     — detects API breakage (NoSuchMethodError candidates)
+#   2. dep:analyze — detects dependency drift (used-undeclared / unused-declared)
+#
+# Artifacts: compile-report.txt and dep-analyze-report.txt are uploaded on
+# both success and failure so the output is always available for review.
+
+name: FormCycle Compatibility Check
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # every Monday at 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      xfc_version:
+        description: 'FormCycle version to test against (e.g. 8.4.0). Leave empty to use the default in pom.xml.'
+        required: false
+        default: ''
+
+jobs:
+  compat:
+    name: Compile & dependency analysis
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Make Maven wrapper executable
+        run: chmod +x mvnw
+
+      # Build the version flag only when an explicit version was supplied.
+      # When empty, Maven uses whatever xfc.version is declared in pom.xml.
+      - name: Resolve version flag
+        id: ver
+        run: |
+          if [ -n "${{ inputs.xfc_version }}" ]; then
+            echo "flag=-Dxfc.version=${{ inputs.xfc_version }}" >> "$GITHUB_OUTPUT"
+            echo "label=${{ inputs.xfc_version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+            # Extract the default from pom.xml for the job summary
+            DEFAULT=$(./mvnw -q help:evaluate -Dexpression=xfc.version -DforceStdout 2>/dev/null || echo "unknown")
+            echo "label=${DEFAULT} (default)" >> "$GITHUB_OUTPUT"
+          fi
+
+      # --- Step 1: Compile ---------------------------------------------------
+      # A non-zero exit here means at least one FormCycle API changed in a way
+      # that breaks a call site in CodBi (the NoSuchMethodError class of problems
+      # caught at build time rather than at runtime).
+      - name: Compile against FormCycle ${{ steps.ver.outputs.label }}
+        id: compile
+        run: |
+          ./mvnw -B compile ${{ steps.ver.outputs.flag }} \
+            -Denforcer.skip \
+            --no-transfer-progress \
+            2>&1 | tee compile-report.txt
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      # --- Step 2: Dependency analysis ---------------------------------------
+      # Reports:
+      #   "used undeclared" — you rely on a transitive dep directly; risky if
+      #                        FormCycle stops bundling it in a future version.
+      #   "unused declared" — you declared a dep you never use; clean-up candidate.
+      #
+      # failOnWarning=false: we want the report even when warnings exist.
+      # The step itself is always run so we get the report even if compile failed.
+      - name: Dependency analysis
+        id: dep_analyze
+        run: |
+          ./mvnw -B dependency:analyze ${{ steps.ver.outputs.flag }} \
+            -DfailOnWarning=false \
+            -DignoreNonCompile=true \
+            --no-transfer-progress \
+            2>&1 | tee dep-analyze-report.txt
+          exit ${PIPESTATUS[0]}
+        continue-on-error: true
+
+      # --- Upload reports ----------------------------------------------------
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compat-reports-fc${{ steps.ver.outputs.label }}
+          path: |
+            compile-report.txt
+            dep-analyze-report.txt
+          retention-days: 30
+
+      # --- Job summary -------------------------------------------------------
+      - name: Write job summary
+        if: always()
+        run: |
+          VERSION="${{ steps.ver.outputs.label }}"
+          COMPILE="${{ steps.compile.outcome }}"
+          ANALYZE="${{ steps.dep_analyze.outcome }}"
+
+          echo "## FormCycle Compatibility Check — \`${VERSION}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Compile | $([ "$COMPILE" = "success" ] && echo "✅ passed" || echo "❌ failed — API breakage detected") |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Dependency analysis | $([ "$ANALYZE" = "success" ] && echo "✅ no drift" || echo "⚠️ warnings — see artifact") |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Download \`compat-reports-fc${VERSION}\` for the full Maven output." >> "$GITHUB_STEP_SUMMARY"
+
+      # --- Fail the job if compile broke ------------------------------------
+      # dependency:analyze warnings are informational; a compile failure is hard.
+      - name: Fail on compile error
+        if: steps.compile.outcome == 'failure'
+        run: |
+          echo "::error::CodBi does not compile against FormCycle ${{ steps.ver.outputs.label }}. Download compile-report.txt for details."
+          exit 1

@@ -94,8 +94,8 @@
           <artifactId>kotlin-maven-plugin</artifactId>
           <version>${kotlin.version}</version>
           <configuration>
-            <apiVersion>1.9</apiVersion>
-            <languageVersion>1.9</languageVersion>
+            <apiVersion>2.1</apiVersion>
+            <languageVersion>2.1</languageVersion>
             <jvmTarget>${java.version}</jvmTarget>
           </configuration>
         </plugin>
@@ -882,6 +882,16 @@
           <artifactId>fc-ms-metro-gui</artifactId>
           <classifier>classes</classifier>
           <scope>provided</scope>
+          <exclusions>
+            <exclusion>
+              <artifactId>json-schema-inferrer-gson</artifactId>
+              <groupId>de.xima</groupId>
+            </exclusion>
+            <exclusion>
+              <artifactId>json-schema-model</artifactId>
+              <groupId>de.xima</groupId>
+            </exclusion>
+          </exclusions>
         </dependency>
       </dependencies>
     </profile>
@@ -1089,6 +1099,12 @@
         </exclusion>
       </exclusions>
     </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.module</groupId>
+      <artifactId>jackson-module-kotlin</artifactId>
+      <version>2.17.3</version>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
   <dependencyManagement>
     <dependencies>
@@ -1182,12 +1198,12 @@
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>kotlin-reflect</artifactId>
         <version>${kotlin.version}</version>
-        <scope>provided</scope>
       </dependency>
       <dependency>
         <groupId>com.fasterxml.jackson.module</groupId>
         <artifactId>jackson-module-kotlin</artifactId>
         <version>${jackson.version}</version>
+        <scope>provided</scope>
       </dependency>
       <dependency>
         <groupId>com.google.errorprone</groupId>

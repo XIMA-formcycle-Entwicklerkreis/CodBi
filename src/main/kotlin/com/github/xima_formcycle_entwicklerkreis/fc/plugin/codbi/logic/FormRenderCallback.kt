@@ -23,15 +23,6 @@ import java.util.Stack
  * @since 1.0.0
  */
 internal object FormRenderCallback : IFormRenderPluginCallback {
-  /** Stores all functionalities used by the form. */
-  var usedFunctionalities: Set<String> = mutableSetOf<String>()
-  /** Stores all **E**lement **P**laceholders used by the form. */
-  var usedEPs: Set<String> = mutableSetOf<String>()
-  /**
-   * Stores the prefix to prepend when trying to load local libraries dynamically. Setting this to
-   * an empty [String] will result in the CodBi not even trying to load local library files.
-   */
-  var prefixLocalLib: String = ""
 
   /**
    * Extracts all **E**lement **P**laceholders used within a CodBi-Attribute's value with nesting
@@ -101,6 +92,9 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
     val renderProcessor = params?.let { FormRenderProcessor(it) }
 
     if (renderProcessor != null && properties?.enabled == true) {
+      val usedFunctionalities = mutableSetOf<String>()
+      val usedEPs = mutableSetOf<String>()
+
       for (child in params.xForm.xItems) {
         for (i in 0 until child.value.attributes.size) { // Iterate through all attributes...
           val currentEntry = child.value.attributes[i]
@@ -118,7 +112,7 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
                 val fileName = functionality.trim().lowercase()
 
                 if (CodbiFormResourcesPlugin.formResources["$fileName.js"]?.resource != null) {
-                  this.usedFunctionalities = this.usedFunctionalities.plus(fileName)
+                  usedFunctionalities.add(fileName)
                 }
               }
             } else {
@@ -131,7 +125,7 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
                   val fileName = ep.trim().lowercase()
 
                   if (CodbiFormResourcesPlugin.formResources["$fileName.js"]?.resource != null) {
-                    this.usedEPs = this.usedEPs.plus(ep.trim().lowercase())
+                    usedEPs.add(ep.trim().lowercase())
                   }
                 }
               }
@@ -140,7 +134,7 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
         }
       }
 
-      processCodeLib(renderProcessor, properties)
+      processCodeLib(renderProcessor, properties, usedFunctionalities, usedEPs)
     }
 
     return null
@@ -156,14 +150,16 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
    */
   private fun processCodeLib(
       renderProcessor: FormRenderProcessor,
-      properties: CodbiFormProperties
+      properties: CodbiFormProperties,
+      usedFunctionalities: Set<String>,
+      usedEPs: Set<String>
   ) {
     // Insert the main CSS and JavaScript for the code library
     renderProcessor.insertFormResourcePluginStyle("codbi-style", "codbi.css")
     renderProcessor.insertFormResourcePluginScript(
         "codbi-script", "codbi.js", isModule = false, prepend = true)
     // region Inject used functionalities
-    for (functionality in this.usedFunctionalities) {
+    for (functionality in usedFunctionalities) {
       if (CodbiFormResourcesPlugin.formResources["$functionality.js"]?.resource != null) {
         renderProcessor.insertFormResourcePluginScript(
             "codbi-functionality-" + functionality.replace(".", "-"), "$functionality.js")
@@ -174,7 +170,7 @@ internal object FormRenderCallback : IFormRenderPluginCallback {
     }
     // endregion Inject used functionalities
     // region Inject used element placeholders
-    for (ep in this.usedEPs) {
+    for (ep in usedEPs) {
       if (CodbiFormResourcesPlugin.formResources["$ep.js"]?.resource != null) {
         renderProcessor.insertFormResourcePluginScript(
             "codbi-elementplaceholder-" + ep.replace(".", "-"), "$ep.js")

@@ -50,8 +50,9 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
    *  - `<[CSSClass]>` — resolves to the value of the nearest element with that CSS class (scoped to the
    *    ancestor **XContainer**, with document-level fallback).
    *
-   *  The functionality automatically appends a reply-format instruction to the question — do **not** add
-   *  "reply with yes or no" or similar instructions manually.
+   *  The functionality automatically appends a reply-format instruction — do **not** add "reply with yes or no"
+   *  or similar instructions manually. When `<[this]>` is **not** used, the field value is prepended as
+   *  `Text: "…"` so that thinking models can resolve references like *"this text"* before reading the question.
    *
    *  Example: `data-cb-Question="Prüfe ob '<[this]>' eine deutsche Stadt ist."`
    *
@@ -102,7 +103,7 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(
-      HTMLInputElement,
+      [HTMLInputElement, HTMLTextAreaElement],
       undefined,
       'Is it not an <input type="text"/> or <textarea> that is tagged with this functionality?',
     )
@@ -211,12 +212,14 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
       // Append reply-format instruction so the AI knows what to return.
       // If a Language is configured it is appended here so the AI uses it for both
       // the positive-response word check and the error explanation.
-      // If the question does not embed the field value via <[this]>, append it automatically
-      // so the AI always has the content to check.
+      // If the question does not embed the field value via <[this]>, prepend it so the model
+      // can resolve "this text" references before reading the question — placing the text
+      // after the question confuses thinking models that parse the question first and find
+      // no referent for "this text".
       const embedsValue = rawQuestion.includes("<[this]>");
-      const questionWithValue = embedsValue ? resolved : `${resolved}\n\nText: "${currentValue}"`;
+      const questionWithValue = embedsValue ? resolved : `Text: "${currentValue}"\n\n${resolved}`;
 
-      return `${questionWithValue} If the text is valid, reply with "${positiveResponse}" only. If it is invalid, reply with at most 3 concise sentences explaining why — do not include any other text.${language ? ` Answer in ${language}.` : ""}`;
+      return `${questionWithValue}\n\nIf the text is valid, reply with "${positiveResponse}" only. If it is invalid, reply with at most 3 concise sentences explaining why — do not include any other text.${language ? ` Answer in ${language}.` : ""}`;
     };
     // #endregion Resolve the verification question
     // #region Remove loading indicator from label

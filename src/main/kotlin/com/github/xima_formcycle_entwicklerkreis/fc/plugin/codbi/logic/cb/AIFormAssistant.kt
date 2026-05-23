@@ -93,14 +93,21 @@ class AIFormAssistant : IPluginServletAction {
             "of child name strings (NOT the items themselves).\n" +
             "3. When ADDING new items: append them to the top-level 'items' array AND add their name " +
             "to the 'properties.elements' array of the target container/fieldset.\n" +
-            "4. Assign unique, descriptive values to new items' 'properties.name' (e.g. 'fdLebenslauf', 'fdZeugnis').\n" +
+            "4. Assign unique, descriptive values to new items' 'properties.name'. Use type-appropriate prefixes: \n" +
+            "   'tf' for XTextField/XTextArea (e.g. 'tfVorname', 'tfEmail'), \n" +
+            "   'fd' for XUpload (e.g. 'fdLebenslauf'), \n" +
+            "   'sel' for XSelect, 'cb' for XCheckbox, 'btn' for XButtonList buttons, \n" +
+            "   'sig' for XSignature.\n" +
             "5. Valid FORMCYCLE element className values (use ONLY these exact strings):\n" +
             "   - XTextField   — single-line text input\n" +
             "   - XTextArea    — multi-line text input\n" +
             "   - XUpload      — file upload / file download field\n" +
             "   - XSelect      — dropdown / select list; use 'options' array for static items\n" +
             "   - XCheckbox    — checkbox (note: lowercase 'b')\n" +
-            "   - XButtonList  — button or button group; uses 'buttons' array, no label\n" +
+            "   - XButtonList  — button or button group; no label; 'buttons' array contains button objects each with: " +
+            "'name' (technical ID), 'value' (display text, may be HTML), 'action' object; " +
+            "for a form-submit button: action.page=\"submit\", action.check=true; " +
+            "for no-action button: omit action or set action.page=\"\"\n" +
             "   - XSpan        — static text / label; text content goes in 'rtevalue', NOT 'label'\n" +
             "   - XImage       — image element\n" +
             "   - XFieldSet    — fieldset / group container; title goes in 'legend', NOT 'label'\n" +
@@ -121,9 +128,9 @@ class AIFormAssistant : IPluginServletAction {
             "'formI18n', or 'metadata' fields — they are handled separately and will be merged back.\n" +
             "9. Output ONLY valid JSON. No trailing commas. No comments.\n\n" +
             "ITEM TEMPLATES — minimal valid structure for each className (adapt name/id/label):\n" +
-            """{"className":"XTextField","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0","readonly":"0","placeholder":"","datatype":"","fullwidth":"0"}}""" +
+            """{"className":"XTextField","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","readonly":"0","placeholder":"","datatype":"","fullwidth":"0"}}""" +
             "\n" +
-            """{"className":"XTextArea","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0","readonly":"0","placeholder":"","fullwidth":"0","autosize":"0"}}""" +
+            """{"className":"XTextArea","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","readonly":"0","placeholder":"","fullwidth":"0","autosize":"0"}}""" +
             "\n" +
             """{"className":"XUpload","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0","fileextension":"","fullwidth":"0"}}""" +
             "\n" +
@@ -131,7 +138,7 @@ class AIFormAssistant : IPluginServletAction {
             "\n" +
             """{"className":"XCheckbox","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0","checkboxvalue":"1","checkedvalue":"1"}}""" +
             "\n" +
-            """{"className":"XButtonList","properties":{"name":"fdExample","id":"xi-fd-example","buttons":[]}}""" +
+            """{"className":"XButtonList","properties":{"name":"btlExample","id":"xi-btl-example","buttons":[{"name":"btnExample","value":"Button Text","action":{"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}}]}}""" +
             "\n" +
             """{"className":"XSpan","properties":{"name":"fdExample","id":"xi-fd-example","rtevalue":"Example text"}}""" +
             "\n" +

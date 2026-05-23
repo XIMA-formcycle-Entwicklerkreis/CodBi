@@ -1,0 +1,60 @@
+<p-dialog
+    [visible]="visible"
+    (visibleChange)="onVisibleChange($event)"
+    [modal]="true"
+    [draggable]="true"
+    [resizable]="false"
+    header="CodBi &#x2014; AI Assistant"
+    [style]="{ width: '620px', maxWidth: '92vw' }"
+    [closeOnEscape]="true"
+    [baseZIndex]="2000"
+    styleClass="cb-ai-assistant-dialog">
+
+    <div class="cb-ai-content" #contentContainer>
+        <p-select
+            [appendTo]="contentContainer"
+            [(ngModel)]="selectedModel"
+            [options]="models"
+            optionLabel="label"
+            optionValue="id"
+            styleClass="cb-ai-model-select"
+            panelStyleClass="cb-ai-model-select-panel"
+            placeholder="Select a model"
+            fluid />
+
+        <textarea
+            pTextarea
+            [(ngModel)]="promptText"
+            rows="5"
+            placeholder="Describe what you want to do&#x2026; e.g. &#x201C;Add an email field&#x201D; or &#x201C;Send an email when the submit button is clicked&#x201D;"
+            class="cb-ai-prompt"></textarea>
+
+        @if (loading) {
+            <div class="cb-ai-spinner-row">
+                <p-progressspinner [style]="{ width: '20px', height: '20px' }" strokeWidth="5" />
+                <span>{{ spinnerText }}</span>
+            </div>
+        }
+
+        @if (resultHtml) {
+            <p-message severity="success" [text]="resultHtml" [escape]="false" />
+        }
+
+        @if (errorText) {
+            <p-message severity="error" [text]="errorText" />
+        }
+    </div>
+
+    <ng-template #footer>
+        <p-button
+            label="Run"
+            icon="pi pi-play"
+            (onClick)="run()"
+            [disabled]="loading || !selectedModel || !promptText.trim()" />
+        <p-button
+            label="Close"
+            icon="pi pi-times"
+            severity="secondary"
+            (onClick)="close()" />
+    </ng-template>
+</p-dialog>

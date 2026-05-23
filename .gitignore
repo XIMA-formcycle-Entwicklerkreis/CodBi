@@ -18,6 +18,10 @@ codbi-config-template.ts
 *.jsfdia
 *target/
 *.komodo*
+*.class
+/de/
+/form-designer.min.js
+/fd2-version-info.properties
 
 *.DS_Store
 

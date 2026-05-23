@@ -922,9 +922,51 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@biomejs/biome@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@biomejs/biome@npm:2.4.3"
+  dependencies:
+    "@biomejs/cli-darwin-arm64": "npm:2.4.3"
+    "@biomejs/cli-darwin-x64": "npm:2.4.3"
+    "@biomejs/cli-linux-arm64": "npm:2.4.3"
+    "@biomejs/cli-linux-arm64-musl": "npm:2.4.3"
+    "@biomejs/cli-linux-x64": "npm:2.4.3"
+    "@biomejs/cli-linux-x64-musl": "npm:2.4.3"
+    "@biomejs/cli-win32-arm64": "npm:2.4.3"
+    "@biomejs/cli-win32-x64": "npm:2.4.3"
+  dependenciesMeta:
+    "@biomejs/cli-darwin-arm64":
+      optional: true
+    "@biomejs/cli-darwin-x64":
+      optional: true
+    "@biomejs/cli-linux-arm64":
+      optional: true
+    "@biomejs/cli-linux-arm64-musl":
+      optional: true
+    "@biomejs/cli-linux-x64":
+      optional: true
+    "@biomejs/cli-linux-x64-musl":
+      optional: true
+    "@biomejs/cli-win32-arm64":
+      optional: true
+    "@biomejs/cli-win32-x64":
+      optional: true
+  bin:
+    biome: bin/biome
+  checksum: 10c0/acbc413ba93d278b437856c5bb1748b64a248645d3845b2c1e098e0dc639d8e6ac43e6fb122cfbf7c4d76ce47de58cba8cd9e83233b11078cd4fae7c0017aed1
+  languageName: node
+  linkType: hard
+
 "@biomejs/cli-darwin-arm64@npm:1.9.4":
   version: 1.9.4
   resolution: "@biomejs/cli-darwin-arm64@npm:1.9.4"
+  conditions: os=darwin & cpu=arm64
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-darwin-arm64@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@biomejs/cli-darwin-arm64@npm:2.4.3"
   conditions: os=darwin & cpu=arm64
   languageName: node
   linkType: hard
@@ -936,9 +978,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@biomejs/cli-darwin-x64@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@biomejs/cli-darwin-x64@npm:2.4.3"
+  conditions: os=darwin & cpu=x64
+  languageName: node
+  linkType: hard
+
 "@biomejs/cli-linux-arm64-musl@npm:1.9.4":
   version: 1.9.4
   resolution: "@biomejs/cli-linux-arm64-musl@npm:1.9.4"
+  conditions: os=linux & cpu=arm64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-linux-arm64-musl@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@biomejs/cli-linux-arm64-musl@npm:2.4.3"
   conditions: os=linux & cpu=arm64 & libc=musl
   languageName: node
   linkType: hard
@@ -950,9 +1006,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@biomejs/cli-linux-arm64@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@biomejs/cli-linux-arm64@npm:2.4.3"
+  conditions: os=linux & cpu=arm64 & libc=glibc
+  languageName: node
+  linkType: hard
+
 "@biomejs/cli-linux-x64-musl@npm:1.9.4":
   version: 1.9.4
   resolution: "@biomejs/cli-linux-x64-musl@npm:1.9.4"
+  conditions: os=linux & cpu=x64 & libc=musl
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-linux-x64-musl@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@biomejs/cli-linux-x64-musl@npm:2.4.3"
   conditions: os=linux & cpu=x64 & libc=musl
   languageName: node
   linkType: hard
@@ -964,6 +1034,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@biomejs/cli-linux-x64@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@biomejs/cli-linux-x64@npm:2.4.3"
+  conditions: os=linux & cpu=x64 & libc=glibc
+  languageName: node
+  linkType: hard
+
 "@biomejs/cli-win32-arm64@npm:1.9.4":
   version: 1.9.4
   resolution: "@biomejs/cli-win32-arm64@npm:1.9.4"
@@ -971,9 +1048,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@biomejs/cli-win32-arm64@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@biomejs/cli-win32-arm64@npm:2.4.3"
+  conditions: os=win32 & cpu=arm64
+  languageName: node
+  linkType: hard
+
 "@biomejs/cli-win32-x64@npm:1.9.4":
   version: 1.9.4
   resolution: "@biomejs/cli-win32-x64@npm:1.9.4"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@biomejs/cli-win32-x64@npm:2.4.3":
+  version: 2.4.3
+  resolution: "@biomejs/cli-win32-x64@npm:2.4.3"
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
@@ -1144,13 +1235,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@de-xima/fc-backend-common@npm:8.3.3":
-  version: 8.3.3
-  resolution: "@de-xima/fc-backend-common@npm:8.3.3::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Fnpm-fs%2F%40de-xima%2Ffc-backend-common%2F-%2F%40de-xima%2Ffc-backend-common-8.3.3.tgz"
+"@de-xima/fc-backend-common@npm:8.5.3":
+  version: 8.5.3
+  resolution: "@de-xima/fc-backend-common@npm:8.5.3::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Ffc-plugin-dev-npm%2F%40de-xima%2Ffc-backend-common%2F-%2F%40de-xima%2Ffc-backend-common-8.5.3.tgz"
   dependencies:
     "@de-xima/elfinder": "npm:2.1.65+XIMA.12"
-    "@de-xima/xima-common-js-dom": "npm:~5.7.0"
-    "@de-xima/xima-common-js-lang": "npm:~5.7.0"
+    "@de-xima/xima-common-js-dom": "npm:~7.3.0"
+    "@de-xima/xima-common-js-lang": "npm:~7.3.0"
     "@fullcalendar/core": "npm:~5.11.0"
     "@types/ckeditor": "npm:~4.9.10"
     "@types/codemirror": "npm:0.0.109"
@@ -1161,20 +1252,20 @@ __metadata:
     moment: "npm:~2.29.4"
     monaco-editor: "npm:~0.37.1"
     primefaces: "npm:~13.0.0"
-    simplebar: "npm:~5.3.9"
-  checksum: 10c0/a68b551e55c29773cba0c09df9588c4fd75ceccf4e210b49869f95a1495c34227cc62a718a7929499b11f81ab5d2220e868804fd32038f30bea2b16e6a5c6508
+    simplebar: "npm:6.3.0"
+  checksum: 10c0/ea141fef0ae0b7dac09815c1e83993b90ff108850056171e11319fc6adfdc5d8f3ad20352992233e9313133530aaa45f94598ba9df261e13a5f3a9c4f783d938
   languageName: node
   linkType: hard
 
-"@de-xima/fc-form-designer@npm:8.3.3":
-  version: 8.3.3
-  resolution: "@de-xima/fc-form-designer@npm:8.3.3::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Fnpm-fs%2F%40de-xima%2Ffc-form-designer%2F-%2F%40de-xima%2Ffc-form-designer-8.3.3.tgz"
+"@de-xima/fc-form-designer@npm:8.5.3":
+  version: 8.5.3
+  resolution: "@de-xima/fc-form-designer@npm:8.5.3::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Ffc-plugin-dev-npm%2F%40de-xima%2Ffc-form-designer%2F-%2F%40de-xima%2Ffc-form-designer-8.5.3.tgz"
   dependencies:
-    "@biomejs/biome": "npm:1.9.4"
-    "@de-xima/fc-backend-common": "npm:8.3.3"
-    "@de-xima/fc-form-renderer": "npm:8.3.3"
-    "@de-xima/xima-common-js-dom": "npm:~5.7.0"
-    "@de-xima/xima-common-js-lang": "npm:~5.7.0"
+    "@biomejs/biome": "npm:2.4.3"
+    "@de-xima/fc-backend-common": "npm:8.5.3"
+    "@de-xima/fc-form-renderer": "npm:8.5.3"
+    "@de-xima/xima-common-js-dom": "npm:~7.3.0"
+    "@de-xima/xima-common-js-lang": "npm:~7.3.0"
     "@flatten-js/core": "npm:~1.3.5"
     "@types/jquery": "npm:~3.5.16"
     "@types/jqueryui": "npm:~1.12.16"
@@ -1183,23 +1274,24 @@ __metadata:
     autosize: "npm:~5.0.2"
     framebus: "npm:~5.2.0"
     monaco-editor: "npm:~0.37.1"
-  checksum: 10c0/b714f96d9208db171081bd896091914d2c8eba0acca87413644dd65b2742c38cd4dc0855ba96295c5edae2241cc2ec646241896f5a5f3e24e06b3ff80b2eb658
+  checksum: 10c0/6fee9ce0099f34c4f375134ae33a2f8e9c62ce4d4744c484aeedee63c64aa2494a36c7411d3e077b11cffacb9c87a0897508b1a2ef070b72a9526131e0bd647c
   languageName: node
   linkType: hard
 
-"@de-xima/fc-form-renderer@npm:8.3.3":
-  version: 8.3.3
-  resolution: "@de-xima/fc-form-renderer@npm:8.3.3::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Fnpm-fs%2F%40de-xima%2Ffc-form-renderer%2F-%2F%40de-xima%2Ffc-form-renderer-8.3.3.tgz"
+"@de-xima/fc-form-renderer@npm:8.5.3":
+  version: 8.5.3
+  resolution: "@de-xima/fc-form-renderer@npm:8.5.3::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Ffc-plugin-dev-npm%2F%40de-xima%2Ffc-form-renderer%2F-%2F%40de-xima%2Ffc-form-renderer-8.5.3.tgz"
   dependencies:
-    "@de-xima/xima-common-js-dom": "npm:~5.7.0"
-    "@de-xima/xima-common-js-lang": "npm:~5.7.0"
+    "@de-xima/xima-common-js-dom": "npm:~7.3.0"
+    "@de-xima/xima-common-js-lang": "npm:~7.3.0"
     "@types/jquery": "npm:~3.5.16"
     "@types/jqueryui": "npm:~1.12.21"
     "@types/uuid": "npm:~9.0.8"
+    autonumeric: "npm:~4.10.5"
     short-and-sweet: "npm:~1.0.4"
     tslib: "npm:~2.6.2"
     uuid: "npm:~9.0.1"
-  checksum: 10c0/3db7d97aad312b6be9b6ec0d9865021cd8b68d8efd0f739fba488f09010c0bb9449a3b6469785bf66d89a7ae0a7e9706dadcf9cb834361532bafa07532658c37
+  checksum: 10c0/5956ed74371b7b6afc5a7d4fbe78eb71916141f271909ff8a01052dd0d5e47a6eed87a8f9fea0a28340e8b0146bf0a1b8c58f628213da2ed669ce93ce4e84da3
   languageName: node
   linkType: hard
 
@@ -1215,24 +1307,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@de-xima/xima-common-js-dom@npm:~5.7.0":
-  version: 5.7.0
-  resolution: "@de-xima/xima-common-js-dom@npm:5.7.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Fnpm-fs%2F%40de-xima%2Fxima-common-js-dom%2F-%2F%40de-xima%2Fxima-common-js-dom-5.7.0.tgz"
+"@de-xima/xima-common-js-dom@npm:~7.3.0":
+  version: 7.3.0
+  resolution: "@de-xima/xima-common-js-dom@npm:7.3.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Ffc-plugin-dev-npm%2F%40de-xima%2Fxima-common-js-dom%2F-%2F%40de-xima%2Fxima-common-js-dom-7.3.0.tgz"
   dependencies:
-    "@de-xima/xima-common-js-lang": "npm:5.7.0"
+    "@de-xima/xima-common-js-lang": "npm:7.3.0"
     "@types/jquery": "npm:~3.5.14"
     jquery: "npm:~3.6.1"
-    tslib: "npm:~2.6.0"
-  checksum: 10c0/c291626470b96e1c0a75552302a719d6339c95101707e7ac701ba5c930dd2ec5448692bc11ca9fef87c5018e40efbb9c8142320ac31baecae285375ed01067e9
-  languageName: node
-  linkType: hard
-
-"@de-xima/xima-common-js-lang@npm:5.7.0, @de-xima/xima-common-js-lang@npm:~5.7.0":
-  version: 5.7.0
-  resolution: "@de-xima/xima-common-js-lang@npm:5.7.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Fnpm-fs%2F%40de-xima%2Fxima-common-js-lang%2F-%2F%40de-xima%2Fxima-common-js-lang-5.7.0.tgz"
-  dependencies:
-    tslib: "npm:~2.6.0"
-  checksum: 10c0/84bc60d5e99fae7a9b67644468be2179885eed73f55cb2ccfd36c9e2a94d1a8e8e4b443559d893882a60b1815377705c21d56a06b19fd112629bc090de25d325
+    tslib: "npm:~2.6.3"
+  checksum: 10c0/8971c4f9eadc1352eb554b7e884ff9c75ec209810f2ed3949dd3a91f36e47fae6e7fc82d4a7025f560dd51e2f65072888d5be35f52df68a9ab5ece5b99f84d90
   languageName: node
   linkType: hard
 
@@ -1242,6 +1325,15 @@ __metadata:
   dependencies:
     tslib: "npm:~2.6.3"
   checksum: 10c0/afc90da5c17bcc404b5ef5195fb1998d66064638939128b5d6c941672315d6527ec139a5b22d2a58b7ab8724d2f7f051e54ac8248413e12fc284ba1001302284
+  languageName: node
+  linkType: hard
+
+"@de-xima/xima-common-js-lang@npm:7.3.0, @de-xima/xima-common-js-lang@npm:~7.3.0":
+  version: 7.3.0
+  resolution: "@de-xima/xima-common-js-lang@npm:7.3.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Ffc-plugin-dev-npm%2F%40de-xima%2Fxima-common-js-lang%2F-%2F%40de-xima%2Fxima-common-js-lang-7.3.0.tgz"
+  dependencies:
+    tslib: "npm:~2.6.3"
+  checksum: 10c0/e76492f63cea46fdbf0b5a06f77190add0a92563ac9a847782e410d14cdb7523ac65a808217cf606baa2ed7c9b5a7a0da20cfa95b25ba26a05e335e99c1ed7e0
   languageName: node
   linkType: hard
 
@@ -2265,13 +2357,6 @@ __metadata:
     "@jridgewell/resolve-uri": "npm:^3.1.0"
     "@jridgewell/sourcemap-codec": "npm:^1.4.14"
   checksum: 10c0/3d1ce6ebc69df9682a5a8896b414c6537e428a1d68b02fcc8363b04284a8ca0df04d0ee3013132252ab14f2527bc13bea6526a912ecb5658f0e39fd2860b4df4
-  languageName: node
-  linkType: hard
-
-"@juggle/resize-observer@npm:^3.3.1":
-  version: 3.4.0
-  resolution: "@juggle/resize-observer@npm:3.4.0"
-  checksum: 10c0/12930242357298c6f2ad5d4ec7cf631dfb344ca7c8c830ab7f64e6ac11eb1aae486901d8d880fd08fb1b257800c160a0da3aee1e7ed9adac0ccbb9b7c5d93347
   languageName: node
   linkType: hard
 
@@ -4040,6 +4125,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"autonumeric@npm:~4.10.5":
+  version: 4.10.10
+  resolution: "autonumeric@npm:4.10.10"
+  checksum: 10c0/8cc5d00850846fb71eba002441fad0f6bd4abd886f360bfb9352cd3d3e0ea38e283755cae5f654d487dbe9233909d187e2e1fd5e21446d13d6afe52d16cd6827
+  languageName: node
+  linkType: hard
+
 "autonumeric@npm:~4.6.0":
   version: 4.6.3
   resolution: "autonumeric@npm:4.6.3"
@@ -4408,13 +4500,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"can-use-dom@npm:^0.1.0":
-  version: 0.1.0
-  resolution: "can-use-dom@npm:0.1.0"
-  checksum: 10c0/baeb98ded2744418c12ec865736eb4c2ef4481e5300874b616ca4944f13457d32cb05f91713b4aa6cabd1d83742ea0fe8a9e4b8e6a667d0c7d25c895f36892e5
-  languageName: node
-  linkType: hard
-
 "caniuse-lite@npm:^1.0.30001646, caniuse-lite@npm:^1.0.30001688":
   version: 1.0.30001700
   resolution: "caniuse-lite@npm:1.0.30001700"
@@ -4732,7 +4817,7 @@ __metadata:
   dependencies:
     "@biomejs/biome": "npm:1.9.4"
     "@de-xima/esbuild-plugin-postcss": "npm:~1.0.0"
-    "@de-xima/fc-form-designer": "npm:8.3.3"
+    "@de-xima/fc-form-designer": "npm:8.5.3"
     "@de-xima/xima-common-js-lang": "npm:^7.1.0"
     "@jest/globals": "npm:~29.7.0"
     "@ngneat/transloco": "npm:^6.0.4"
@@ -4767,7 +4852,7 @@ __metadata:
     "@biomejs/biome": "npm:1.9.4"
     "@callari/xdbc": "npm:^1.0.73"
     "@de-xima/esbuild-plugin-postcss": "npm:~1.0.0"
-    "@de-xima/fc-form-renderer": "npm:8.3.3"
+    "@de-xima/fc-form-renderer": "npm:8.5.3"
     "@de-xima/xima-common-js-dom": "npm:^7.1.0"
     "@de-xima/xima-common-js-lang": "npm:^7.1.0"
     "@jest/globals": "npm:~29.7.0"
@@ -4919,13 +5004,6 @@ __metadata:
   version: 0.7.2
   resolution: "cookie@npm:0.7.2"
   checksum: 10c0/9596e8ccdbf1a3a88ae02cf5ee80c1c50959423e1022e4e60b91dd87c622af1da309253d8abdb258fb5e3eacb4f08e579dc58b4897b8087574eee0fd35dfa5d2
-  languageName: node
-  linkType: hard
-
-"core-js@npm:^3.0.1":
-  version: 3.40.0
-  resolution: "core-js@npm:3.40.0"
-  checksum: 10c0/db7946ada881e845d8b157061945b1187618fa45cf162f392a151e8a497962aed2da688c982eaa1d444c864be97a70f8be4d73385294b515d224dd164d19f1d4
   languageName: node
   linkType: hard
 
@@ -7611,10 +7689,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lodash.debounce@npm:^4.0.8":
-  version: 4.0.8
-  resolution: "lodash.debounce@npm:4.0.8"
-  checksum: 10c0/762998a63e095412b6099b8290903e0a8ddcb353ac6e2e0f2d7e7d03abd4275fe3c689d88960eb90b0dde4f177554d51a690f22a343932ecbc50a5d111849987
+"lodash-es@npm:^4.17.21":
+  version: 4.18.1
+  resolution: "lodash-es@npm:4.18.1"
+  checksum: 10c0/35d4dcf87ef07f8d090f409447575800108057e360b445f590d0d25d09e3d1e33a163d2fc100d4d072b0f901d5e2fc533cd7c4bfd8eeb38a06abec693823c8b8
   languageName: node
   linkType: hard
 
@@ -7629,13 +7707,6 @@ __metadata:
   version: 4.1.2
   resolution: "lodash.memoize@npm:4.1.2"
   checksum: 10c0/c8713e51eccc650422716a14cece1809cfe34bc5ab5e242b7f8b4e2241c2483697b971a604252807689b9dd69bfe3a98852e19a5b89d506b000b4187a1285df8
-  languageName: node
-  linkType: hard
-
-"lodash.throttle@npm:^4.1.1":
-  version: 4.1.1
-  resolution: "lodash.throttle@npm:4.1.1"
-  checksum: 10c0/14628013e9e7f65ac904fc82fd8ecb0e55a9c4c2416434b1dd9cf64ae70a8937f0b15376a39a68248530adc64887ed0fe2b75204b2c9ec3eea1cb2d66ddd125d
   languageName: node
   linkType: hard
 
@@ -9727,17 +9798,22 @@ __metadata:
   languageName: node
   linkType: hard
 
-"simplebar@npm:~5.3.9":
-  version: 5.3.9
-  resolution: "simplebar@npm:5.3.9"
+"simplebar-core@npm:^1.3.0":
+  version: 1.3.2
+  resolution: "simplebar-core@npm:1.3.2"
   dependencies:
-    "@juggle/resize-observer": "npm:^3.3.1"
-    can-use-dom: "npm:^0.1.0"
-    core-js: "npm:^3.0.1"
-    lodash.debounce: "npm:^4.0.8"
-    lodash.memoize: "npm:^4.1.2"
-    lodash.throttle: "npm:^4.1.1"
-  checksum: 10c0/6a12b64a1ff4abde88fb74bea76a47755f1f31e63bb3f151a7d640e801847dbde4f0c8ccaf0b0504f1bd45ecc77cc91c12c066e8f7f282ab1ff68ec5bf7006bf
+    lodash: "npm:^4.17.21"
+    lodash-es: "npm:^4.17.21"
+  checksum: 10c0/a4844edac50099b30abb60e85f0852ebbcbfbe47e4b67e682f57f21449b08d06a3ac2432db7db5a6bcf571c3ce74d2a418da22f467909587ab295a33b6b551e3
+  languageName: node
+  linkType: hard
+
+"simplebar@npm:6.3.0":
+  version: 6.3.0
+  resolution: "simplebar@npm:6.3.0"
+  dependencies:
+    simplebar-core: "npm:^1.3.0"
+  checksum: 10c0/e74f2637065d3f447124342b6223dbf7098966fff2c3185b62d056a38295c1b846496024d7ee4c3b17c0497dfd9c800d2231d3890c33e4e50ec0c53558872529
   languageName: node
   linkType: hard
 
@@ -10285,7 +10361,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tslib@npm:~2.6.0, tslib@npm:~2.6.2, tslib@npm:~2.6.3":
+"tslib@npm:~2.6.2, tslib@npm:~2.6.3":
   version: 2.6.3
   resolution: "tslib@npm:2.6.3"
   checksum: 10c0/2598aef53d9dbe711af75522464b2104724d6467b26a60f2bdac8297d2b5f1f6b86a71f61717384aa8fd897240467aaa7bcc36a0700a0faf751293d1331db39a

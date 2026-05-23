@@ -17,7 +17,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@de-xima/fc-form-designer": "8.3.3",
+    "@de-xima/fc-form-designer": "8.5.3",
     "@de-xima/xima-common-js-lang": "^7.1.0",
     "@ngneat/transloco": "^6.0.4",
     "@tinymce/tinymce-angular": "^9.0.0",

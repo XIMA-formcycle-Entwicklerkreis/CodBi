@@ -85,6 +85,14 @@ private class LifecycleData :
   override fun getManifest(): IPluginManifest {
     return manifest
   }
+
+  override fun getPluginKey(): String {
+    return Constants.PLUGIN_KEY
+  }
+
+  override fun getPluginFileKey(): String {
+    return Constants.PLUGIN_KEY
+  }
 }
 
 /**

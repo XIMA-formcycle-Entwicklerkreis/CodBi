@@ -1,0 +1,83 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+      "command": "./mvnw",
+      "args": ["package"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$javac"]
+    },
+    {
+      "label": "build, test",
+      "type": "shell",
+      "command": "./mvnw",
+      "args": ["verify"],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$javac"]
+    },
+    {
+      "label": "clean, build, test",
+      "type": "shell",
+      "command": "./mvnw",
+      "args": ["clean", "verify"],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": ["$javac"]
+    },
+    {
+      "label": "build-dev, upload",
+      "type": "shell",
+      "command": "./mvnw",
+      "args": ["-P", "dev", "-DskipTests", "fc-deploy:deploy"],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "launch-server",
+      "type": "shell",
+      "command": "./mvnw",
+      "args": ["-P", "dev", "fc-server:run-ms-war"],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Safe Build Deploy",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NonInteractive",
+        "-File",
+        "${workspaceFolder}\\scripts\\Safe Build Deploy.ps1"
+      ],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

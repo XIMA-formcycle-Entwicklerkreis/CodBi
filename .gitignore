@@ -73,7 +73,10 @@ node_modules/
 *.war
 
 ## Visual Studio Code ##
-.vscode
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/extensions.json
 
 ## Generated build output (esbuild chunks) ##
 src/main/web/packages/form/undefined/

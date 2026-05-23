@@ -140,6 +140,9 @@ class AIFormAssistant : IPluginServletAction {
             "\n" +
             """{"className":"XButtonList","properties":{"name":"btlExample","id":"xi-btl-example","buttons":[{"name":"btnExample","value":"Button Text","action":{"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}}]}}""" +
             "\n" +
+            "   CRITICAL — for XButtonList: the 'action' property of each button object is ALWAYS a JSON object (never a string). " +
+            "Valid 'optionId' values: \"submit + check\", \"submit\", \"previous\", \"custom\". Do NOT use strings like \"sendmail\" or \"submit_form\" as 'action'." +
+            "\n" +
             """{"className":"XSpan","properties":{"name":"fdExample","id":"xi-fd-example","rtevalue":"Example text"}}""" +
             "\n" +
             """{"className":"XFieldSet","properties":{"name":"fsExample","id":"xi-fs-example","legend":"Group","elements":[],"fullwidth":"0"}}""" +

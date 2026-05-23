@@ -9,8 +9,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - Minimum supported FormCycle version raised from **8.3.3** to **8.5.3**. FormCycle 8.5.x extracted plugin-type interfaces (servlet actions, form resources, form render callbacks, entities, etc.) from `fc-plugin-common` into a new `fc-plugin-types` artifact. The compile dependency has been updated accordingly.
-- Kotlin upgraded from **1.9.22 → 2.2.0**; language and API version set to **2.1**. Obsolete `kotlin-stdlib-common`, `kotlin-stdlib-jdk7`, and `kotlin-stdlib-jdk8` dependency-management entries removed (merged into `kotlin-stdlib` in Kotlin 1.8+). `kotlin-reflect` scope set to `provided`. `kotlinx-coroutines-core` pinned to **1.11.0** for Kotlin 2.x compatibility.
+- Kotlin upgraded from **1.9.22 → 2.2.0**; language and API version set to **2.1**. Obsolete `kotlin-stdlib-common`, `kotlin-stdlib-jdk7`, and `kotlin-stdlib-jdk8` dependency-management entries removed (merged into `kotlin-stdlib` in Kotlin 1.8+). `kotlinx-coroutines-core` pinned to **1.11.0** for Kotlin 2.x compatibility. `kotlin-reflect` scope left as compile (bundled); `jackson-module-kotlin` scope set to `provided` because FC 8.5.x already supplies it via `fc-security`.
 - `fc-server-maven-plugin` updated from **8.3.0 → 8.5.3** to match the target FormCycle version; development server now provides a valid licence for FormCycle 8.5.x.
+- `enforce` profile: added exclusions for `de.xima:json-schema-inferrer-gson` and `de.xima:json-schema-model` from `fc-ms-metro-gui:classes` provisions; these new transitive dependencies of FC 8.5.x are gated behind XIMA Artifactory authentication not available in CI.
 
 ---
 

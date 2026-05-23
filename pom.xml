@@ -202,13 +202,14 @@
 				<groupId>org.jetbrains.kotlin</groupId>
 				<artifactId>kotlin-reflect</artifactId>
 				<version>${kotlin.version}</version>
-				<scope>provided</scope>
 			</dependency>
 
+			<!-- FC 8.5.x provides jackson-module-kotlin (via fc-security) at runtime. -->
 			<dependency>
 				<groupId>com.fasterxml.jackson.module</groupId>
 				<artifactId>jackson-module-kotlin</artifactId>
 				<version>${jackson.version}</version>
+				<scope>provided</scope>
 			</dependency>
 
 			<dependency>
@@ -314,23 +315,10 @@
 			<scope>test</scope>
 		</dependency>
 
+		<!-- Provided by FC server via fc-security since FC 8.5.x; scope comes from DM. -->
 		<dependency>
 			<groupId>com.fasterxml.jackson.module</groupId>
 			<artifactId>jackson-module-kotlin</artifactId>
-			<exclusions>
-				<exclusion>
-					<groupId>com.fasterxml.jackson.core</groupId>
-					<artifactId>jackson-databind</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>com.fasterxml.jackson.core</groupId>
-					<artifactId>jackson-annotations</artifactId>
-				</exclusion>
-				<exclusion>
-					<groupId>org.jetbrains.kotlin</groupId>
-					<artifactId>kotlin-stdlib</artifactId>
-				</exclusion>
-			</exclusions>
 		</dependency>
 	</dependencies>
 
@@ -1335,6 +1323,19 @@
 					<artifactId>fc-ms-metro-gui</artifactId>
 					<classifier>classes</classifier>
 					<scope>provided</scope>
+					<exclusions>
+						<!-- These de.xima:* transitive deps require Artifactory authentication -->
+						<!-- (fc-plugin-dev repo, status 401) which is not available in CI. -->
+						<!-- The banProvidedDependencies rule does not need to inspect them. -->
+						<exclusion>
+							<groupId>de.xima</groupId>
+							<artifactId>json-schema-inferrer-gson</artifactId>
+						</exclusion>
+						<exclusion>
+							<groupId>de.xima</groupId>
+							<artifactId>json-schema-model</artifactId>
+						</exclusion>
+					</exclusions>
 				</dependency>
 			</dependencies>
 			<build>

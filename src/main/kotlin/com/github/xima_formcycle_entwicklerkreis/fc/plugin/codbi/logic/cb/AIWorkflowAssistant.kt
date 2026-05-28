@@ -38,6 +38,14 @@ class AIWorkflowAssistant : IPluginServletAction {
 
   override fun getName(): String = "CodBi_AIWorkflowAssistant"
 
+  companion object {
+    /**
+     * Default sender address for FC_EMAIL workflow nodes. Set via plugin property
+     * AI_Workflow_DefaultFromEmail.
+     */
+    @Volatile var defaultFromEmail: String = ""
+  }
+
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
     val action =
         params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
@@ -194,15 +202,44 @@ class AIWorkflowAssistant : IPluginServletAction {
         "TRIGGER TYPES (use exactly one of these string values for 'triggerType'):\n" +
             "  - \"FC_FORM_SUBMIT_BUTTON\" — fires when a submit button is clicked; " +
             "triggerParams: {\"buttonName\":\"<technical name>\"} or empty {} for any button\n" +
-            "  - \"FC_MANUAL\" — manual invocation (user triggered); triggerParams: {}\n\n")
+            "  - \"FC_MANUAL\" — manual invocation (user triggered); triggerParams: {}\n" +
+            "  - \"FC_STATE_TIMER\" — fires after a delay once a record enters a state; " +
+            "triggerParams: {\"durationDays\":<N>,\"durationHours\":<N>,\"durationMinutes\":<N>}\n" +
+            "  - \"FC_FORM_RECORD_MESSAGE_POSTED\" — fires when an internal message is posted to the record; triggerParams: {}\n" +
+            "  - \"FC_CATCH_ERROR\" — fires when an error occurs in another workflow lane; triggerParams: {}\n" +
+            "  - \"FC_DOI_VERIFIED\" — fires when a double opt-in email link is confirmed; triggerParams: {}\n" +
+            "  - \"FC_USER_INVOCATION\" — fires when a logged-in user manually triggers it from the record detail view; triggerParams: {}\n\n")
     append(
         "NODE TYPES (use exactly one of these string values for 'nodeType'):\n" +
             "  - \"FC_EMAIL\" — sends an email; " +
             "nodeParams: {\"to\":\"<address or [%fieldname%] placeholder>\", " +
-            "\"subject\":\"<subject text>\", \"body\":\"<body text>\", " +
-            "\"from\":\"<sender address, empty if not specified>\", \"senderName\":\"<sender display name, empty if not specified>\"}\n" +
+            "\"subject\":\"<subject text>\", \"body\":\"<body text or HTML>\", " +
+            "\"from\":\"${if (defaultFromEmail.isNotEmpty()) defaultFromEmail else "<sender address — REQUIRED; use the address explicitly stated in the prompt>"}\", \"senderName\":\"<sender display name, empty if not specified>\", " +
+            "\"(do NOT include bodyFormatType — it is always set to BOTH automatically)\", " +
+            "\"attachments\":[\"<technicalId1>\",...] (optional — technicalIds of XUpload fields whose files to attach)}\n" +
             "  - \"FC_CHANGE_STATE\" — changes the form record state; " +
-            "nodeParams: {\"stateName\":\"<FORMCYCLE status name>\"}\n\n")
+            "nodeParams: {\"stateName\":\"<FORMCYCLE status name>\"}\n" +
+            "  - \"FC_HTTP_REQUEST\" — sends an HTTP request (e.g. webhook); " +
+            "nodeParams: {\"url\":\"<target URL>\", \"method\":\"POST|GET|PUT|DELETE|PATCH\" (default POST), " +
+            "\"body\":\"<request body, supports [%placeholder%]>\", " +
+            "\"contentType\":\"JSON|PLAIN_TEXT|XML|FORM_DATA\" (default JSON), " +
+            "\"headers\":[{\"name\":\"<header>\",\"value\":\"<value>\"},...] (optional)}\n" +
+            "  - \"FC_CHANGE_FORM_VALUE\" — sets the value of one or more form fields; " +
+            "nodeParams: {\"formValues\":[{\"name\":\"<technicalId>\",\"value\":\"<new value>\"},...]}⁠\n" +
+            "  - \"FC_LOG_ENTRY\" — writes a log message to the process log; " +
+            "nodeParams: {\"message\":\"<log text, supports [%placeholder%]>\", \"level\":\"INFO|WARNING|ERROR\" (default INFO)}\n" +
+            "  - \"FC_REDIRECT\" — redirects the user's browser to a URL; " +
+            "nodeParams: {\"url\":\"<target URL>\"}\n" +
+            "  - \"FC_SET_SAVED_FLAG\" — marks the form record as saved; nodeParams: {}\n" +
+            "  - \"FC_DELETE_FORM_RECORD\" — permanently deletes the current form record; nodeParams: {}\n" +
+            "  - \"FC_SEND_FORM_RECORD_MESSAGE\" — sends an internal message to the record's inbox; " +
+            "nodeParams: {\"message\":\"<message text, supports [%placeholder%]>\", \"senderName\":\"<optional sender name>\"}\n" +
+            "  - \"FC_CREATE_TEXT_FILE\" — creates a text/JSON/XML/HTML file as an attachment; " +
+            "nodeParams: {\"fileName\":\"<filename with extension>\", \"fileContent\":\"<content, supports [%placeholder%]>\", " +
+            "\"contentType\":\"PLAIN_TEXT|JSON|XML|HTML\" (default PLAIN_TEXT)}\n" +
+            "  - \"FC_WRITE_FORM_RECORD_ATTRIBUTES\" — writes custom key-value attributes to the record; " +
+            "nodeParams: {\"attributes\":[{\"name\":\"<key>\",\"value\":\"<value>\"},...]}⁠\n" +
+            "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field):\n" +
             "  Every workflow lane must end with a status transition (Endpunkt).\n" +
@@ -224,7 +261,11 @@ class AIWorkflowAssistant : IPluginServletAction {
             "  NEVER use a 'displayText' value in the output. NEVER guess or invent a technicalId.\n" +
             "  Even if the 'technicalId' looks wrong or random, copy it character-for-character.\n" +
             "  Elements with type 'BUTTON' are individual clickable buttons. For triggerParams.buttonName always use\n" +
-            "  the 'technicalId' of the individual BUTTON whose 'displayText' matches — never use a container's id.\n\n")
+            "  the 'technicalId' of the individual BUTTON whose 'displayText' matches — never use a container's id.\n" +
+            "  BUTTON entries may have 'actionPage' (e.g. 'submit', 'submitNoCheck', 'next', 'prev') — use this to\n" +
+            "  identify which button submits the form when the user says 'submit button', 'Absende-Button', etc.\n" +
+            "  NO-MATCH RULE: If no BUTTON in FORM ELEMENTS matches the description, use triggerParams:{} (matches any\n" +
+            "  button) instead of inventing a buttonName. NEVER construct names like 'btnSubmitOnP2' or similar.\n\n")
     if (formContext != null) {
       append(
           "FORM ELEMENTS (match user descriptions via 'displayText'; always use 'technicalId' in output):\n" +
@@ -805,7 +846,13 @@ class AIWorkflowAssistant : IPluginServletAction {
         val buttonName = spec.triggerParams["buttonName"] as? String ?: ""
         """{"buttonName":${gson.toJson(buttonName)}}"""
       }
-      else -> null // FC_MANUAL and others need no custom params
+      "FC_STATE_TIMER" -> {
+        val days = (spec.triggerParams["durationDays"] as? Number)?.toLong() ?: 0L
+        val hours = (spec.triggerParams["durationHours"] as? Number)?.toInt() ?: 0
+        val minutes = (spec.triggerParams["durationMinutes"] as? Number)?.toInt() ?: 0
+        """{"durationDays":$days,"durationHours":$hours,"durationMinutes":$minutes,"durationSeconds":0}"""
+      }
+      else -> "{}" // FC_MANUAL and others use empty params
     }
   }
 
@@ -831,9 +878,21 @@ class AIWorkflowAssistant : IPluginServletAction {
         val body = spec.nodeParams["body"] as? String ?: ""
         val from = spec.nodeParams["from"] as? String ?: ""
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST")
+        val attachments =
+            (spec.nodeParams["attachments"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val bodyFormatType = "BOTH"
         // to / cc / bcc are List<String> in FcEmailProps — serialise as JSON arrays
         val toJson = if (to.isNotBlank()) "[${gson.toJson(to)}]" else "[]"
-        """{"to":$toJson,"cc":[],"bcc":[],"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"bodyFormatType":"PLAIN","from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)}}"""
+        val multiFileJson =
+            if (attachments.isNotEmpty()) {
+              val resourcesJson =
+                  attachments.joinToString(",") { id ->
+                    """{"type":"UPLOAD","identifier":${gson.toJson(id)}}"""
+                  }
+              ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
+            } else ""
+        """{"to":$toJson,"cc":[],"bcc":[],"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":${gson.toJson(bodyFormatType)},"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)}$multiFileJson}"""
       }
       "FC_CHANGE_STATE" -> {
         val stateName = spec.nodeParams["stateName"] as? String ?: ""
@@ -847,7 +906,74 @@ class AIWorkflowAssistant : IPluginServletAction {
           """{"targetState":null}"""
         }
       }
-      else -> null
+      "FC_HTTP_REQUEST" -> {
+        val url = spec.nodeParams["url"] as? String ?: ""
+        val method = (spec.nodeParams["method"] as? String ?: "POST").uppercase()
+        val body = spec.nodeParams["body"] as? String ?: ""
+        val contentType = (spec.nodeParams["contentType"] as? String ?: "JSON").uppercase()
+        @Suppress("UNCHECKED_CAST")
+        val headers =
+            (spec.nodeParams["headers"] as? List<*>)?.filterIsInstance<Map<*, *>>()?.mapNotNull { h
+              ->
+              val name = h["name"] as? String ?: return@mapNotNull null
+              val value = h["value"] as? String ?: ""
+              """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
+            } ?: emptyList()
+        val headersJson = "[${headers.joinToString(",")}]"
+        if (contentType == "FORM_DATA") {
+          """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+        } else {
+          """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+        }
+      }
+      "FC_CHANGE_FORM_VALUE" -> {
+        @Suppress("UNCHECKED_CAST")
+        val formValues =
+            (spec.nodeParams["formValues"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.mapNotNull { fv ->
+                  val name = fv["name"] as? String ?: return@mapNotNull null
+                  val value = fv["value"] as? String ?: ""
+                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
+                } ?: emptyList()
+        """{"formValues":[${formValues.joinToString(",")}]}"""
+      }
+      "FC_LOG_ENTRY" -> {
+        val message = spec.nodeParams["message"] as? String ?: ""
+        val level = (spec.nodeParams["level"] as? String ?: "INFO").uppercase()
+        """{"comments":${gson.toJson(message)},"level":${gson.toJson(level)}}"""
+      }
+      "FC_REDIRECT" -> {
+        val url = spec.nodeParams["url"] as? String ?: ""
+        """{"urlManual":${gson.toJson(url)},"queryStringValues":[]}"""
+      }
+      "FC_SEND_FORM_RECORD_MESSAGE" -> {
+        val message = spec.nodeParams["message"] as? String ?: ""
+        val senderName = spec.nodeParams["senderName"] as? String ?: ""
+        """{"messageContent":${gson.toJson(message)},"senderName":${gson.toJson(senderName)}}"""
+      }
+      "FC_CREATE_TEXT_FILE" -> {
+        val fileName = spec.nodeParams["fileName"] as? String ?: "output.txt"
+        val fileContent = spec.nodeParams["fileContent"] as? String ?: ""
+        val contentType = (spec.nodeParams["contentType"] as? String ?: "PLAIN_TEXT").uppercase()
+        """{"fileName":${gson.toJson(fileName)},"fileContent":${gson.toJson(fileContent)},"contentType":${gson.toJson(contentType)}}"""
+      }
+      "FC_WRITE_FORM_RECORD_ATTRIBUTES" -> {
+        @Suppress("UNCHECKED_CAST")
+        val attributes =
+            (spec.nodeParams["attributes"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.mapNotNull { a ->
+                  val name = a["name"] as? String ?: return@mapNotNull null
+                  val value = a["value"] as? String ?: ""
+                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
+                } ?: emptyList()
+        """{"customAttributes":[${attributes.joinToString(",")}],"writeAttributesToForm":false}"""
+      }
+      "FC_SET_SAVED_FLAG",
+      "FC_DELETE_FORM_RECORD",
+      "FC_EMPTY" -> "{}"
+      else -> "{}"
     }
   }
 

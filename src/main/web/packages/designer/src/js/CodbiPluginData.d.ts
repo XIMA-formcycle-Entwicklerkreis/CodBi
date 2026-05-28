@@ -52,6 +52,19 @@ interface Window {
     /** Re-Populates the **Standard-Configuration** listing displayed in the form designer's form properties tab.*/
     populateStandards: () => void;
     /**
+     * Programmatically sets the active standard configurations CSV, updates the MultiSelect
+     * checkboxes, and fires the **set-property** callback so the form designer persists the change.
+     * Only available after the MultiSelect editor has been instantiated (form properties panel opened).
+     *
+     * @param csv Comma-separated list of active standard configuration names.
+     */
+    setStandardsValue?: (csv: string) => void;
+    /**
+     * Standards CSV computed by the AI assistant while the form properties panel was closed.
+     * Consumed and cleared by MultiSelect on its next instantiation (when the panel opens).
+     */
+    pendingStandards?: string;
+    /**
      * Updates the {@link EPManager }'s available options.
      *
      * @param options The CSV containing the entire now available options. */

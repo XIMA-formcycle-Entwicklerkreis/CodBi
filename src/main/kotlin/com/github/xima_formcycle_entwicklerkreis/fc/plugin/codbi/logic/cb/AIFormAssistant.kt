@@ -97,38 +97,86 @@ class AIFormAssistant : IPluginServletAction {
             "   'tf' for XTextField/XTextArea (e.g. 'tfVorname', 'tfEmail'), \n" +
             "   'fd' for XUpload (e.g. 'fdLebenslauf'), \n" +
             "   'sel' for XSelect, 'cb' for XCheckbox, 'btn' for XButtonList buttons, \n" +
-            "   'sig' for XSignature.\n" +
+            "   'sig' for XSignature, 'cin' for XContainerInvisible.\n" +
             "5. Valid FORMCYCLE element className values (use ONLY these exact strings):\n" +
-            "   - XTextField   — single-line text input\n" +
+            "   - XTextField   — single-line text input; set 'datatype' property to validate input (use ONLY these exact values):\n" +
+            "     \"\" plain text (default) · \"date\" native date picker · \"dateDE\" date DD.MM.YYYY · \"email\" e-mail ·\n" +
+            "     \"phone\" phone number · \"url\" URL · \"time\" time HH:MM · \"number\" decimal number · \"integer\" integer ·\n" +
+            "     \"posinteger\" non-negative integer · \"money\" money amount · \"posmoney\" non-negative money ·\n" +
+            "     \"posmoneyOptionalComma\" non-negative money (decimal optional) · \"formattedNumber\" number with custom format config ·\n" +
+            "     \"plzDE\" German ZIP code · \"ipv4\" IPv4 address · \"onlyLetterNumber\" alphanumeric · \"onlyLetterSp\" letters and spaces ·\n" +
+            "     \"regexp\" custom regex (also add datatypeHint property with the regex pattern and error message)\n" +
             "   - XTextArea    — multi-line text input\n" +
             "   - XUpload      — file upload / file download field\n" +
             "   - XSelect      — dropdown / select list; use 'options' array for static items\n" +
             "   - XCheckbox    — checkbox (note: lowercase 'b')\n" +
             "   - XButtonList  — button or button group; no label; 'buttons' array contains button objects each with: " +
-            "'name' (technical ID), 'value' (display text, may be HTML), 'action' object; " +
-            "for a form-submit button: action.page=\"submit\", action.check=true; " +
-            "for no-action button: omit action or set action.page=\"\"\n" +
+            "'name' (technical ID), 'value' (display text, may be HTML), 'action' object. " +
+            "WARNING: action.page uses special FORMCYCLE keywords, NOT form page names: " +
+            "\"submit\" = submit the form to the server (NOT a page name — do NOT replace with 'p1' or any other page); " +
+            "\"previous\" = go back; any page name (e.g. \"p1\") = navigate to that page. " +
+            "For a button that sends/submits the form: action.page=\"submit\", action.check=true. " +
+            "For a no-action button: omit action or set action.page=\"\"\n" +
             "   - XSpan        — static text / label; text content goes in 'rtevalue', NOT 'label'\n" +
             "   - XImage       — image element\n" +
             "   - XFieldSet    — fieldset / group container; title goes in 'legend', NOT 'label'\n" +
-            "   - XContainer   — generic layout container; has no 'label' property\n" +
-            "   - XSignature   — signature pad\n" +
-            "   - XAppointment — date / appointment picker\n" +
-            "   - XLine        — horizontal divider; has no 'label' property\n" +
+            "   - XContainer          — generic layout container; has no 'label' property\n" +
+            "   - XContainerInvisible — invisible/hidden layout container; same as XContainer but not rendered; has no 'label' property\n" +
+            "   - XSignature          — signature pad\n" +
+            "   - XAppointment        — appointment/calendar picker (do NOT use for date input fields — use XTextField with datatype=\"date\" instead)\n" +
+            "   - XLine               — horizontal divider; has no 'label' property\n" +
             "   - XSpacer      — empty spacer; has no 'label' property\n" +
             "   - XPage        — form page (top-level)\n" +
             "   - XHeader      — form header\n" +
             "   - XFooter      — form footer\n" +
             "   Do NOT invent class names. Use ONLY the names listed above.\n" +
+            "   NOTE: XContainerInvisible is a valid className even though it looks unusual — use it when you need a hidden container.\n" +
             "6. A 'download/upload field' in FORMCYCLE is className XUpload (NOT XFileUpload).\n" +
             "7. When creating a new item: if the form already contains an item of the same className, " +
             "copy its properties structure exactly and adapt name, id, label, and type-specific values. " +
             "If no item of that type exists yet, use the matching minimal template from ITEM TEMPLATES below.\n" +
             "8. Do NOT include 'css', 'script', 'image', 'images', 'pagePreview', 'rendered', " +
             "'formI18n', or 'metadata' fields — they are handled separately and will be merged back.\n" +
-            "9. Output ONLY valid JSON. No trailing commas. No comments.\n\n" +
-            "ITEM TEMPLATES — minimal valid structure for each className (adapt name/id/label):\n" +
+            "9. Output ONLY valid JSON. No trailing commas. No comments.\n" +
+            "10. MANDATORY RULE — XButtonList submit button: For any button that submits or sends the form " +
+            "(e.g. 'Absenden', 'Senden', 'Einreichen', 'Prüfen und Senden'), use EXACTLY this action: " +
+            "{\"page\":\"submit\",\"check\":true,\"customAction\":\"\",\"customClassNames\":\"\",\"displayName\":\"\",\"optionId\":\"submit + check\",\"value\":\"\"}. " +
+            "The string 'submit' is a FORMCYCLE server-side command — it is NOT a page name and must NEVER " +
+            "be replaced with any page name you see in the form (e.g. 'p1', 'p2', etc.). " +
+            "WRONG: action={\"page\":\"p1\",\"check\":true,\"optionId\":\"p1 + check\"} ← do not do this. " +
+            "CORRECT: action={\"page\":\"submit\",\"check\":true,\"optionId\":\"submit + check\"} ← always use this for submit buttons.\n\n" +
+            "DATE FIELDS — Use XTextField with datatype=\"date\" (NOT XAppointment) for any field whose label refers to a date: " +
+            "e.g. 'Datum', 'Geburtsdatum', 'Eintrittstermin', 'Termin', 'Abgabedatum', 'Anfangsdatum', 'Enddatum', 'date', 'birthday', 'start date', 'end date', 'due date'. " +
+            "Example: label 'Geburtsdatum' → XTextField with datatype=\"date\"; label 'Frühestmöglicher Eintrittstermin' → XTextField with datatype=\"date\".\n" +
+            "\n" +
+            "ITEM TEMPLATES — minimal valid structure for each className (adapt name/id/label).\n" +
+            "WARNING for XButtonList template: the value 'submit' in action.page is a literal server command, " +
+            "NOT a placeholder. Do NOT change it. Copy the template exactly for submit buttons.\n" +
             """{"className":"XTextField","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","readonly":"0","placeholder":"","datatype":"","fullwidth":"0"}}""" +
+            "\n" +
+            "   ← For DATE fields set datatype=\"date\": " +
+            """{"className":"XTextField","properties":{"name":"tfGeburtsdatum","id":"xi-tf-geburtsdatum","label":"Geburtsdatum","required":"0","readonly":"0","placeholder":"","datatype":"date","fullwidth":"0"}}""" +
+            "\n" +
+            "   ← For NUMBER fields set datatype=\"formattedNumber\": " +
+            """{"className":"XTextField","properties":{"name":"tfBetrag","id":"xi-tf-betrag","label":"Betrag","required":"0","readonly":"0","placeholder":"","datatype":"formattedNumber","fullwidth":"0"}}""" +
+            "\n" +
+            "   ← For EMAIL fields set datatype=\"email\": " +
+            """{"className":"XTextField","properties":{"name":"tfEmail","id":"xi-tf-email","label":"E-Mail","required":"0","readonly":"0","placeholder":"","datatype":"email","fullwidth":"0"}}""" +
+            "\n" +
+            "   ← For PHONE fields set datatype=\"phone\": " +
+            """{"className":"XTextField","properties":{"name":"tfTelefon","id":"xi-tf-telefon","label":"Telefon","required":"0","readonly":"0","placeholder":"","datatype":"phone","fullwidth":"0"}}""" +
+            "\n" +
+            "   ← For TIME fields set datatype=\"time\": " +
+            """{"className":"XTextField","properties":{"name":"tfUhrzeit","id":"xi-tf-uhrzeit","label":"Uhrzeit","required":"0","readonly":"0","placeholder":"","datatype":"time","fullwidth":"0"}}""" +
+            "\n" +
+            "   ← For INTEGER/COUNT fields set datatype=\"integer\": " +
+            """{"className":"XTextField","properties":{"name":"tfAnzahl","id":"xi-tf-anzahl","label":"Anzahl","required":"0","readonly":"0","placeholder":"","datatype":"integer","fullwidth":"0"}}""" +
+            "\n" +
+            "   ← For URL fields set datatype=\"url\": " +
+            """{"className":"XTextField","properties":{"name":"tfUrl","id":"xi-tf-url","label":"URL","required":"0","readonly":"0","placeholder":"","datatype":"url","fullwidth":"0"}}""" +
+            "\n" +
+            "   ← For GERMAN ZIP CODE fields set datatype=\"plzDE\": " +
+            """{"className":"XTextField","properties":{"name":"tfPlz","id":"xi-tf-plz","label":"PLZ","required":"0","readonly":"0","placeholder":"","datatype":"plzDE","fullwidth":"0"}}""" +
             "\n" +
             """{"className":"XTextArea","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","readonly":"0","placeholder":"","fullwidth":"0","autosize":"0"}}""" +
             "\n" +
@@ -141,7 +189,10 @@ class AIFormAssistant : IPluginServletAction {
             """{"className":"XButtonList","properties":{"name":"btlExample","id":"xi-btl-example","buttons":[{"name":"btnExample","value":"Button Text","action":{"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}}]}}""" +
             "\n" +
             "   CRITICAL — for XButtonList: the 'action' property of each button object is ALWAYS a JSON object (never a string). " +
-            "Valid 'optionId' values: \"submit + check\", \"submit\", \"previous\", \"custom\". Do NOT use strings like \"sendmail\" or \"submit_form\" as 'action'." +
+            "Valid 'optionId' values: \"submit + check\", \"submit\", \"previous\", \"custom\". Do NOT use strings like \"sendmail\" or \"submit_form\" as 'action'. " +
+            "IMPORTANT: action.page=\"submit\" is a special FORMCYCLE server-submit command, NOT a page name. " +
+            "Never replace \"submit\" with a page name like \"p1\" — doing so turns the button into a navigation button instead of a form-submission button. " +
+            "EXCEPTION to rule 7: do NOT copy action.page from existing buttons — always set it based on the button's purpose." +
             "\n" +
             """{"className":"XSpan","properties":{"name":"fdExample","id":"xi-fd-example","rtevalue":"Example text"}}""" +
             "\n" +
@@ -151,9 +202,28 @@ class AIFormAssistant : IPluginServletAction {
             "\n" +
             """{"className":"XSignature","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0"}}""" +
             "\n" +
+            """{"className":"XAppointment","properties":{"name":"apExample","id":"xi-ap-example","label":"Example","required":"0","fullwidth":"0"}}""" +
+            "\n" +
+            """{"className":"XContainerInvisible","properties":{"name":"cinExample","id":"xi-cin-example","elements":[],"fullwidth":"0"}}""" +
+            "\n" +
             """{"className":"XLine","properties":{"name":"liExample","id":"xi-li-example"}}""" +
             "\n" +
-            """{"className":"XSpacer","properties":{"name":"spExample","id":"xi-sp-example"}}"""
+            """{"className":"XSpacer","properties":{"name":"spExample","id":"xi-sp-example"}}""" +
+            "\n\nCODBI APPLICABILITY CHECK — before finalizing output, evaluate whether existing and newly created fields should receive CodBi functionalities/standards for validation, UX, or automation. " +
+            "Do not add random configs; only apply CodBi elements when they are logically useful for the current form intent. " +
+            "Examples: date/time ranges may need Time.Frame/Date.Frame; age checks may need Date.Min; restricted text may need HTML.Input.REGEX; postal/address flows may need OpenPLZ.Autocomplete. " +
+            "NEVER apply any CodBi functionality from compact knowledge only. " +
+            "Before applying a functionality, you MUST request its detailed API and parameter description via escalation. " +
+            "A functionality is considered applied only if target elements contain data-cb-func (newly created or extended as CSV with the functionality id). " +
+            "Most functionalities also require data-cb-* parameters, which are defined in detailed docs and MUST be set accordingly. " +
+            "Some referenced/helper elements may only carry data-cb-* parameters (without data-cb-func); rely on detailed docs for these exceptions. " +
+            "\n\nAPPLICABILITY REPORT PROTOCOL — ALWAYS include a short CodBi applicability report. " +
+            "For final form JSON responses, include top-level metadata field \"_codbiApplicability\" with shape {\"considered\":[...],\"applied\":[...],\"skipped\":[{\"id\":\"...\",\"reason\":\"...\"}]}. " +
+            "This metadata field is removed server-side before the form is applied. " +
+            "\n\nDETAIL ESCALATION PROTOCOL — if you need CodBi parameter/class details not present in this prompt, respond ONLY with this JSON and nothing else: " +
+            "{\"status\":\"need_codbi_details\",\"elements\":[\"<Functionality/EP/Standard ID>\",\"...\"],\"codbiApplicability\":{\"considered\":[...],\"applied\":[...],\"skipped\":[{\"id\":\"...\",\"reason\":\"...\"}]}}. " +
+            "After receiving full details, return the final form JSON object normally." +
+            CodbiCapabilities.buildSection()
 
     val userContent =
         "Instruction: $prompt\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}"
@@ -177,15 +247,81 @@ class AIFormAssistant : IPluginServletAction {
         }
 
     val withoutThinkTags = stripThinkTags(rawResponse)
-    val cleaned = extractJson(withoutThinkTags)
+    var cleaned = extractJson(withoutThinkTags)
+
+    fun rerunWithCodbiDetails(requested: List<String>): String {
+      val fullPrompt = "$systemPrompt\n\n${CodbiCapabilities.buildFullSectionFor(requested)}"
+      val retryMessagesJson = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(fullPrompt)}},""")
+        append("""{"role":"user","content":${gson.toJson(userContent)}}""")
+        append("]")
+      }
+
+      val retryRaw =
+          try {
+            instance.performFormAssist(modelId, retryMessagesJson)
+          } catch (e: ExternalAiHttpException) {
+            logger.warn("[AIFormAssistant] Full-detail rerun AI HTTP {}: {}", e.httpStatus, e.body)
+            throw e
+          } catch (e: Exception) {
+            logger.error("[AIFormAssistant] Full-detail rerun failed", e)
+            throw e
+          }
+      return extractJson(stripThinkTags(retryRaw))
+    }
+
+    val requestedDetails = extractCodbiDetailsRequest(cleaned)
+    if (requestedDetails != null) {
+      logger.info(
+          "[AIFormAssistant] AI requested CodBi details for: {} — rerunning with full compact API",
+          requestedDetails.elements.ifEmpty { listOf("<unspecified>") }.joinToString(", "))
+      if (!requestedDetails.applicabilityReport.isNullOrBlank()) {
+        logger.info(
+            "[AIFormAssistant] AI CodBi applicability report (detail request): {}",
+            requestedDetails.applicabilityReport)
+      }
+
+      cleaned =
+          try {
+            rerunWithCodbiDetails(requestedDetails.elements)
+          } catch (e: ExternalAiHttpException) {
+            return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+          } catch (e: Exception) {
+            return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+          }
+    } else {
+      val appliedCodbi = extractAppliedCodbiIds(cleaned)
+      if (appliedCodbi.isNotEmpty()) {
+        logger.warn(
+            "[AIFormAssistant] AI applied CodBi functionalities without requesting details first; forcing detail rerun for: {}",
+            appliedCodbi.joinToString(", "))
+        cleaned =
+            try {
+              rerunWithCodbiDetails(appliedCodbi)
+            } catch (e: ExternalAiHttpException) {
+              return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+            } catch (e: Exception) {
+              return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+            }
+      }
+    }
+
+    val (sanitizedCleaned, applicabilityReport) = extractAndStripCodbiApplicability(cleaned)
+    if (!applicabilityReport.isNullOrBlank()) {
+      logger.info("[AIFormAssistant] AI CodBi applicability report: {}", applicabilityReport)
+    } else {
+      logger.warn("[AIFormAssistant] AI response contains no CodBi applicability report")
+    }
 
     return try {
-      val parsed = JsonParser.parseString(cleaned)
+      val parsed = JsonParser.parseString(sanitizedCleaned)
       warnUnknownClassNames(parsed)
-      val merged = restoreStrippedFields(cleaned, persistJson)
+      val merged = restoreStrippedFields(sanitizedCleaned, persistJson)
       jsonResponse(merged)
     } catch (_: Exception) {
-      jsonResponse("""{"error":"AI returned invalid JSON","raw":${gson.toJson(cleaned)}}""")
+      jsonResponse(
+          """{"error":"AI returned invalid JSON","raw":${gson.toJson(sanitizedCleaned)}}""")
     }
   }
 
@@ -240,6 +376,63 @@ class AIFormAssistant : IPluginServletAction {
     return s
   }
 
+  private data class CodbiDetailsSignal(
+      val elements: List<String>,
+      val applicabilityReport: String?
+  )
+
+  private fun extractCodbiDetailsRequest(cleanedJson: String): CodbiDetailsSignal? {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any>
+      if ((obj?.get("status") as? String) != "need_codbi_details") {
+        return null
+      }
+      val arr = obj["elements"] as? List<*> ?: return CodbiDetailsSignal(emptyList(), null)
+      val elements = arr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+      val report = obj["codbiApplicability"]?.let { gson.toJson(it) }
+      CodbiDetailsSignal(elements = elements, applicabilityReport = report)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun extractAndStripCodbiApplicability(cleanedJson: String): Pair<String, String?> {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj =
+          gson.fromJson(cleanedJson, MutableMap::class.java) as? MutableMap<String, Any>
+              ?: return cleanedJson to null
+      var report: String? = null
+      for (key in listOf("_codbiApplicability", "codbiApplicability")) {
+        if (obj.containsKey(key)) {
+          report = gson.toJson(obj[key])
+          obj.remove(key)
+          break
+        }
+      }
+      gson.toJson(obj) to report
+    } catch (_: Exception) {
+      cleanedJson to null
+    }
+  }
+
+  private fun extractAppliedCodbiIds(cleanedJson: String): List<String> {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj =
+          gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any> ?: return emptyList()
+      val report =
+          (obj["_codbiApplicability"] as? Map<*, *>)
+              ?: (obj["codbiApplicability"] as? Map<*, *>)
+              ?: return emptyList()
+      val applied = report["applied"] as? List<*> ?: return emptyList()
+      applied.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
   /**
    * All class names that are valid FORMCYCLE form-item types (from `IPropertiesMap` in
    * `@de-xima/fc-form-designer`). Used to detect AI hallucinations in the returned JSON.
@@ -250,6 +443,7 @@ class AIFormAssistant : IPluginServletAction {
           "XButtonList",
           "XCheckbox",
           "XContainer",
+          "XContainerInvisible",
           "XDefault",
           "XFieldSet",
           "XFooter",
@@ -324,17 +518,74 @@ class AIFormAssistant : IPluginServletAction {
           "print_text_only",
           "print_break",
           "backgroundcolor",
-          "cssclasses",
-          "cssclasseswrapper",
           "helptext",
           "comment",
-          "attributes",
           "pdfImporterId",
           "rowid",
           "computedwidth",
           "maxwidth",
           "minwidth",
+          // Workflow-status / user-group visibility — stripped from slim JSON so the AI starts
+          // fresh (no copy-paste from existing items), but validated and re-applied for new
+          // AI-created items via sanitizeVisibilityProp(). Existing items still restore from
+          // the original.
+          "viewstatus",
+          "viewusergroup",
+          "readonly_viewstatus",
+          "readonly_viewusergroup",
+          "statusdependent",
+          "readonly_statusdependent",
+          "usergrouppendent",
+          "readonly_usergrouppendant",
       )
+
+  /**
+   * Visibility/access-control properties that the AI may set on **new** items it creates. Values
+   * are validated by [sanitizeVisibilityProp] before being written into the result.
+   */
+  private val SANITIZED_VISIBILITY_PROPS =
+      setOf(
+          "statusdependent",
+          "readonly_statusdependent",
+          "usergrouppendent",
+          "readonly_usergrouppendant",
+          "viewstatus",
+          "viewusergroup",
+          "readonly_viewstatus",
+          "readonly_viewusergroup",
+      )
+
+  /**
+   * Sanitizes a single visibility/access-control property value provided by the AI.
+   * - Boolean properties (`statusdependent` etc.) must be a JSON boolean primitive.
+   * - Array properties (`viewstatus` etc.) must be a JSON array of plain strings only; non-string
+   *   entries are silently dropped.
+   *
+   * @return The sanitized [JsonElement], or `null` if the value is structurally invalid.
+   */
+  private fun sanitizeVisibilityProp(key: String, value: JsonElement): JsonElement? =
+      when (key) {
+        "statusdependent",
+        "readonly_statusdependent",
+        "usergrouppendent",
+        "readonly_usergrouppendant" ->
+            value.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
+        "viewstatus",
+        "viewusergroup",
+        "readonly_viewstatus",
+        "readonly_viewusergroup" -> {
+          if (!value.isJsonArray) null
+          else
+              JsonArray().also { sanitized ->
+                for (entry in value.asJsonArray) {
+                  if (entry.isJsonPrimitive && entry.asJsonPrimitive.isString) {
+                    sanitized.add(entry)
+                  }
+                }
+              }
+        }
+        else -> null
+      }
 
   /**
    * Returns a copy of [json] with [STRIPPED_FIELDS] removed and empty/default values pruned from
@@ -359,6 +610,12 @@ class AIFormAssistant : IPluginServletAction {
               }
               .map { it.key }
       for (key in emptyKeys) props.remove(key)
+      // Strip action objects from XButtonList buttons so the AI cannot copy existing page values
+      if (el.asJsonObject.get("className")?.asString == "XButtonList") {
+        props.getAsJsonArray("buttons")?.forEach { btn ->
+          if (btn.isJsonObject) btn.asJsonObject.remove("action")
+        }
+      }
     }
     return gson.toJson(root)
   }
@@ -426,7 +683,22 @@ class AIFormAssistant : IPluginServletAction {
             item.getAsJsonObject("properties")?.get("name")?.asString
                 ?: item.get("name")?.asString
                 ?: continue
-        val origItem = originalByName[name]?.asJsonObject ?: continue
+        val origItem = originalByName[name]?.asJsonObject
+        if (origItem == null) {
+          // New item created by AI — validate and preserve workflow-visibility props, then
+          // strip all remaining code/presentation fields.
+          item.getAsJsonObject("properties")?.let { props ->
+            val validatedVisibility =
+                SANITIZED_VISIBILITY_PROPS.mapNotNull { key ->
+                  val v = props.get(key) ?: return@mapNotNull null
+                  val sanitized = sanitizeVisibilityProp(key, v) ?: return@mapNotNull null
+                  key to sanitized
+                }
+            for (key in STRIPPED_ITEM_PROPS) props.remove(key)
+            for ((key, value) in validatedVisibility) props.add(key, value)
+          }
+          continue
+        }
         val origProps = origItem.getAsJsonObject("properties") ?: continue
         val resultProps = item.getAsJsonObject("properties") ?: continue
         for (key in STRIPPED_ITEM_PROPS) {
@@ -436,6 +708,31 @@ class AIFormAssistant : IPluginServletAction {
         // Also restore any other keys that were pruned as empty (preserve original values)
         for (entry in origProps.entrySet()) {
           if (!resultProps.has(entry.key)) resultProps.add(entry.key, entry.value)
+        }
+        // For XButtonList: restore original action for each existing button by name, since
+        // action objects were stripped from slimPersistJson to prevent copy-paste errors.
+        // New buttons (no matching name in original) keep the AI's generated action.
+        if (item.get("className")?.asString == "XButtonList") {
+          val origBtns = origProps.getAsJsonArray("buttons")
+          val resultBtns = resultProps.getAsJsonArray("buttons")
+          if (origBtns != null && resultBtns != null) {
+            val origActionByName =
+                origBtns
+                    .mapNotNull { btn ->
+                      if (!btn.isJsonObject) return@mapNotNull null
+                      val bName = btn.asJsonObject.get("name")?.asString ?: return@mapNotNull null
+                      val action = btn.asJsonObject.get("action") ?: return@mapNotNull null
+                      bName to action
+                    }
+                    .toMap()
+            for (resultBtn in resultBtns) {
+              if (!resultBtn.isJsonObject) continue
+              val btnObj = resultBtn.asJsonObject
+              val bName = btnObj.get("name")?.asString ?: continue
+              val origAction = origActionByName[bName] ?: continue // new button — keep AI action
+              if (!btnObj.has("action")) btnObj.add("action", origAction)
+            }
+          }
         }
       }
       // Add back any original items the AI dropped — AI must not remove existing items
@@ -508,6 +805,12 @@ class AIFormAssistant : IPluginServletAction {
         // Merge base template properties that the AI omitted
         for (entry in baseProps.entrySet()) {
           if (!itemProps.has(entry.key)) itemProps.add(entry.key, entry.value)
+        }
+        // For new XTextField date fields: always enable the datepicker calendar widget,
+        // overriding any base-template default of "0".
+        if (className == "XTextField" &&
+            (itemProps.get("datatype")?.asString ?: "").startsWith("date")) {
+          itemProps.addProperty("datepicker", "1")
         }
         // Set parentid from the container's elements reference
         val parentId = itemToContainerId[name]

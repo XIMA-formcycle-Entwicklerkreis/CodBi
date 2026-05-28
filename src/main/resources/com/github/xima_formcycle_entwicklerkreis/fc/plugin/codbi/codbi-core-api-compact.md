@@ -1,0 +1,361 @@
+# CodBi Core Components API (Compact)
+
+Compact reference for AI prompts: one sentence per component and parameter.
+
+## Functionalities
+
+- AI.LLAMA.CHAT: Provides the AI_LLAMA_CHAT.functionality .
+  - AlertOnFinishText: Configures 'AlertOnFinishText' for this functionality.
+  - FilterResults: Configures 'FilterResults' for this functionality.
+  - Language: Configures 'Language' for this functionality.
+  - LLAMAbubble: Configures 'LLAMAbubble' for this functionality.
+  - LowConfidenceText: Configures 'LowConfidenceText' for this functionality.
+  - MaxPages: Configures 'MaxPages' for this functionality.
+  - MaxPixelSize: Configures 'MaxPixelSize' for this functionality.
+  - QueueBadge: Configures 'QueueBadge' for this functionality.
+  - QueueText: Configures 'QueueText' for this functionality.
+  - ResponseLanguage: Configures 'ResponseLanguage' for this functionality.
+  - RethinkButtonText: Configures 'RethinkButtonText' for this functionality.
+  - Rotation: Configures 'Rotation' for this functionality.
+  - ShowUncertainTokens: Configures 'ShowUncertainTokens' for this functionality.
+  - Specialist: Configures 'Specialist' for this functionality.
+  - UncertainText: Configures 'UncertainText' for this functionality.
+  - UserBubble: Configures 'UserBubble' for this functionality.
+  - VoiceHotkey: Configures 'VoiceHotkey' for this functionality.
+  - VoicePlaceholder: Configures 'VoicePlaceholder' for this functionality.
+  - VoiceSendHotkey: Configures 'VoiceSendHotkey' for this functionality.
+  - WaitingText: Configures 'WaitingText' for this functionality.
+  - WelcomeText: Configures 'WelcomeText' for this functionality.
+- AI.OCR: Provides the AI.functionality .
+  - Field: Configures 'Field' for this functionality.
+  - FieldPattern_: Configures 'FieldPattern_' for this functionality.
+  - InvalidImageText: Configures 'InvalidImageText' for this functionality.
+  - Maximum: Configures 'Maximum' for this functionality.
+  - MaxPages: Configures 'MaxPages' for this functionality.
+  - Mode: Configures 'Mode' for this functionality.
+  - Pattern: Configures 'Pattern' for this functionality.
+  - Preprocess: Configures 'Preprocess' for this functionality.
+  - ProcessingImageText: Configures 'ProcessingImageText' for this functionality.
+  - QueueBadge: Configures 'QueueBadge' for this functionality.
+  - QueueText: Configures 'QueueText' for this functionality.
+  - RegExFlags: Configures 'RegExFlags' for this functionality.
+  - Separator: Configures 'Separator' for this functionality.
+  - WrongFileMessage: Configures 'WrongFileMessage' for this functionality.
+- Date.Frame: Provides the HTML_Select_Injection.functionality .
+  - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
+  - MaxField: Configures 'MaxField' for this functionality.
+  - MsgMaxInvalid: Configures 'MsgMaxInvalid' for this functionality.
+  - MsgMinInvalid: Configures 'MsgMinInvalid' for this functionality.
+- Date.Min: Provides the Date_Min.functionality .
+  - Delimiter: Configures 'Delimiter' for this functionality.
+  - Minimum: Configures 'Minimum' for this functionality.
+  - MsgHigher: Configures 'MsgHigher' for this functionality.
+  - Reverse: Configures 'Reverse' for this functionality.
+  - Unit: Configures 'Unit' for this functionality.
+- Date.NoWeekends: Provides the HTML_Select_Injection.functionality .
+  - MsgNoWeekends: Configures 'MsgNoWeekends' for this functionality.
+- Form.Navigator: Registers the Form_Navigator.functionality .
+  - CSSBlockedNavButton: Configures 'CSSBlockedNavButton' for this functionality.
+  - CSSHoverNavButtons: Configures 'CSSHoverNavButtons' for this functionality.
+  - CSSNavButtons: Configures 'CSSNavButtons' for this functionality.
+  - Preview: Configures 'Preview' for this functionality.
+- HTML.CSS: Provides the HTML_Select_Injection.functionality .
+  - CSS: Configures 'CSS' for this functionality.
+  - Darkmode: Configures 'Darkmode' for this functionality.
+  - Destination: Configures 'Destination' for this functionality.
+  - Replacements: Configures 'Replacements' for this functionality.
+- HTML.Input.Cleave: Provides the HTML_Input_Cleave.functionality .
+  - Config: Configures 'Config' for this functionality.
+  - Date: Configures 'Date' for this functionality.
+  - DateMax: Configures 'DateMax' for this functionality.
+  - DateMin: Configures 'DateMin' for this functionality.
+  - DatePattern: Configures 'DatePattern' for this functionality.
+  - Delimiter: Configures 'Delimiter' for this functionality.
+- HTML.Input.REGEX: Provides the HTML_Input_REGEX.functionality .
+  - ErrorPostfix: Configures 'ErrorPostfix' for this functionality.
+  - ErrorPrefix: Configures 'ErrorPrefix' for this functionality.
+  - ExposeExpression: Configures 'ExposeExpression' for this functionality.
+  - Expression: Configures 'Expression' for this functionality.
+  - Flags: Configures 'Flags' for this functionality.
+  - KeyExpression: Configures 'KeyExpression' for this functionality.
+  - KeyFlags: Configures 'KeyFlags' for this functionality.
+- HTML.Panel: Provides the HTML_Panel.functionality .
+  - Accordion: Configures 'Accordion' for this functionality.
+  - AutoHeaderLevel: Configures 'AutoHeaderLevel' for this functionality.
+  - AutoHeaderTitle: Configures 'AutoHeaderTitle' for this functionality.
+  - AutoHeaderTitleSupplementsSpacer: Configures 'AutoHeaderTitleSupplementsSpacer' for this functionality.
+  - CSSAfterHeader: Configures 'CSSAfterHeader' for this functionality.
+  - CSSAfterHeaderContent: Configures 'CSSAfterHeaderContent' for this functionality.
+  - CSSAfterHeaderContentUnfolded: Configures 'CSSAfterHeaderContentUnfolded' for this functionality.
+  - CSSAnimFadeINPanel: Configures 'CSSAnimFadeINPanel' for this functionality.
+  - CSSAnimFadeINPanelDuration: Configures 'CSSAnimFadeINPanelDuration' for this functionality.
+  - CSSAnimFadeINPanelEasing: Configures 'CSSAnimFadeINPanelEasing' for this functionality.
+  - CSSBeforeHeader: Configures 'CSSBeforeHeader' for this functionality.
+  - CSSBeforeHeaderContent: Configures 'CSSBeforeHeaderContent' for this functionality.
+  - CSSBeforeHeaderContentUnfolded: Configures 'CSSBeforeHeaderContentUnfolded' for this functionality.
+  - CSSHeaderActive: Configures 'CSSHeaderActive' for this functionality.
+  - CSSHeaderHover: Configures 'CSSHeaderHover' for this functionality.
+  - CSSHeaderUnfolded: Configures 'CSSHeaderUnfolded' for this functionality.
+  - CSSRequiredFields: Configures 'CSSRequiredFields' for this functionality.
+  - CSSRequiredFieldsContent: Configures 'CSSRequiredFieldsContent' for this functionality.
+  - DCSSHeaderUnfolded: Configures 'DCSSHeaderUnfolded' for this functionality.
+  - Folded: Configures 'Folded' for this functionality.
+  - GenerateHeader: Configures 'GenerateHeader' for this functionality.
+  - Scroll: Configures 'Scroll' for this functionality.
+  - ScrollBlock: Configures 'ScrollBlock' for this functionality.
+  - ScrollToTop: Configures 'ScrollToTop' for this functionality.
+- HTML.SETAttribute: Provides the HTML_SETAttribute.functionality .
+  - Name: Configures 'Name' for this functionality.
+  - ToSet: Configures 'ToSet' for this functionality.
+- HTML.Text.Injector: Provides the HTML_Text_Injector.functionality .
+  - Placeholder: Configures 'Placeholder' for this functionality.
+  - Property: Configures 'Property' for this functionality.
+  - Replacement: Configures 'Replacement' for this functionality.
+- HTML.Text.Mapper: Provides the HTML_Text_Mapper.functionality .
+  - CSS: Configures 'CSS' for this functionality.
+  - Property: Configures 'Property' for this functionality.
+  - Replacements: Configures 'Replacements' for this functionality.
+- JSON.SET: Provides the JSON_SET.functionality .
+  - Path: Configures 'Path' for this functionality.
+  - Property: Configures 'Property' for this functionality.
+  - ToSet: Configures 'ToSet' for this functionality.
+- LDAP.Autocomplete.Set: Provides the LDAP_Autocomplete.functionality .
+  - CSSProposals: Configures 'CSSProposals' for this functionality.
+  - Property: Configures 'Property' for this functionality.
+  - URL: Configures 'URL' for this functionality.
+- LDAP.Autocomplete: Extended HTMLInputElement interface that adds support for LDAP match listeners.
+  - CSSProposals: Configures 'CSSProposals' for this functionality.
+  - MsgNotInLDAP: Configures 'MsgNotInLDAP' for this functionality.
+  - Property: Configures 'Property' for this functionality.
+  - URL: Configures 'URL' for this functionality.
+- Matomo.Tracking: Provides the HTML_Select_Injection.functionality .
+  - SiteID: Configures 'SiteID' for this functionality.
+  - URL: Configures 'URL' for this functionality.
+- Media.Image.Cropper: Provides the Media_Image_Cropper.functionality .
+  - AspectRatio: Configures 'AspectRatio' for this functionality.
+  - Container: Configures 'Container' for this functionality.
+  - CSSCropperHandle: Configures 'CSSCropperHandle' for this functionality.
+  - File: Configures 'File' for this functionality.
+  - OutputWidth: Configures 'OutputWidth' for this functionality.
+  - Target: Configures 'Target' for this functionality.
+  - Updater: Configures 'Updater' for this functionality.
+- MEDIA.INPUT.SPEECH: A single recognition hypothesis returned by the speech engine.
+  - Language: Configures 'Language' for this functionality.
+  - Placeholder: Configures 'Placeholder' for this functionality.
+  - ShowHint: Configures 'ShowHint' for this functionality.
+  - VoiceHotkey: Configures 'VoiceHotkey' for this functionality.
+- OpenPLZ.Autocomplete: Provides the OpenPLZ_Autocomplete.functionality .
+  - AllowEmpty: Configures 'AllowEmpty' for this functionality.
+  - Country: Configures 'Country' for this functionality.
+  - CSSProposals: Configures 'CSSProposals' for this functionality.
+  - DependentLocality: Configures 'DependentLocality' for this functionality.
+  - DependentPLZ: Configures 'DependentPLZ' for this functionality.
+  - FocusOnAutocomplete: Configures 'FocusOnAutocomplete' for this functionality.
+  - MsgNotKnown: Configures 'MsgNotKnown' for this functionality.
+  - TargetData: Configures 'TargetData' for this functionality.
+- Print.Remove: Provides the HTML_Select_Injection.functionality .
+  - DocumentSelector: Configures 'DocumentSelector' for this functionality.
+  - Invert: Configures 'Invert' for this functionality.
+  - ParentalLevel: Configures 'ParentalLevel' for this functionality.
+- Sys.Log.Console: Provides the Sys_Log_Console.functionality .
+  - Parameters: none.
+- Time.Frame: Provides the Time_Frame.functionality .
+  - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
+  - MaxField: Configures 'MaxField' for this functionality.
+  - MsgMaxInvalid: Configures 'MsgMaxInvalid' for this functionality.
+  - MsgMinInvalid: Configures 'MsgMinInvalid' for this functionality.
+
+## Element Placeholders (EPs)
+
+- AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question.
+  - Parameters: none.
+- BayVIS.Ansprechpartner: This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from.
+  - Param[1]: A property of the directory, like e.g.
+- BayVIS.Behoerden.Details: This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding.
+  - Param[1]: The ID of the authority to retrieve.
+  - Param[2]: An optional property of the directory, like e.g.
+- BayVIS.Behoerden.ID: This Element-Placeholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
+  - Param[1]: The Name of the authority to retrieve.
+- BayVIS.Behoerden: This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from.
+  - Param[1]: An property of the directory, like e.g.
+- Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >.
+  - Parameters: none.
+- Data.Join: Joins the properties of multiple object s into one.
+  - Parameters: none.
+- Date.Arithmetic: This Element-Placeholder turns a String into a Date .
+  - Param[1]: The String to turn to a Date.
+  - Param[2]: The optional format of the "dateString" (e.g.
+  - Param[3]: The operations to perform on the Date specified.
+- Date.FromString: This Element-Placeholder turns a String into a Date .
+  - Param[1]: The String to turn to a Date.
+  - Param[2]: An optional dateformat string like YYYY/MM/DD, for example.
+- Date.Holidays: The type of requests needed to identify identical requests.
+  - Parameters: none.
+- Date.Today: Provides the DATE_Today.retrieve al of the current Date along with arithmetic appliances.
+  - Parameters: none.
+- Date.Weekends: This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .
+  - Parameters: none.
+- DOM.Query: This Element-Placeholder queries an Element .
+  - Parameters: none.
+- F: Finds the objects within an Array that have a specific property with a specific value.
+  - Param[1]: The name of the property to look for.
+  - Param[2]: The value the property to look for has to have.
+  - Param[3]: The Array of objects to scan.
+- I: This Element-Placeholder acquires a specific element.
+  - Parameters: none.
+- JSON.Path: This Element-Placeholder retrieves an Object at a specific path out of the one given in the.
+  - Param[1]: The Object to retrieve the requested one from.
+  - Param[2]: The dotted path leading to the requested one.
+- LDAP.Find: This Elementplaceholder connects via a default (LDAP_URL in CodBi Settings) or an optionally specified.
+  - Param[1]: The mode to use for the filter.
+  - Param[2]: The LDAP conditions (like sn = Doe) separated by | (like sn = Doe | givenName = John).
+  - Param[3]: The optional URL to a Formcycle-LDAP-Query (which's content is (?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))) to use.
+- Net.URL: This Element-Placeholder retrieves the content of a URL.
+  - Parameters: none.
+- OpenPLZ.Localities: An OpenPLZ -Request specialized into searching for localities.
+  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's name.
+  - Param[3]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's postal code.
+  - Param[4]: An Optional number of pages to load.
+- OpenPLZ.Streets: An OpenPLZ -Request specialized into searching for streets.
+  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's name.
+  - Param[3]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's postal code.
+  - Param[4]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city's name used if the 3rd.
+  - Param[5]: An Optional number of pages to load.
+- OpenPLZ.TextSearch: An OpenPLZ -Request performing a full text-search.
+  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g.
+  - Param[3]: An Optional number of pages to load.
+- OpenPLZ: Retrieves data from the CodBi_OpenPLZ_Verwaltungseinheiten-Servlet according to the parameter specified.
+  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[2]: The orgaUnit to retrieve (e.g.
+  - Param[3]: The optional key of the state, province or canton to get details of.
+  - Param[4]: The optional detail to fetch about a certain state, province or canton identified by the.
+  - Param[5]: There may be up to four parameter passed along the request (e.g.
+  - Param[6]: There may be up to four parameter passed along the request (e.g.
+  - Param[7]: There may be up to four parameter passed along the request (e.g.
+  - Param[8]: There may be up to four parameter passed along the request (e.g.
+  - Param[9]: An Optional number of pages to load.
+- Sorted: An Elementplaceholder sorts the Array passed as the 1st parameter in.
+  - Param[1]: The Array to sort.
+  - Param[2]: The optional name of a property to use to sort elements of the given Array .
+- Unique: An Elementplaceholder filters the Array passed as the 1st parameter from duplicates.
+  - Param[1]: The Array to filter.
+  - Param[2]: The optional name of a property to use to filter out elements of the given Array .
+- V: This Element-Placeholder acquires a global variable's value.
+  - Param[1]: The name of the global variable.
+  - Param[2]: REPORT if a CodBiError shall be thrown when the global variable isn't.
+- VP: This Element-Placeholder acquires a value from window.codbiSettings.gv.
+  - Param[1]: The key (the part after the GV_ prefix in the plugin property name).
+  - Param[2]: REPORT if a CodBiError shall be thrown when the key isn't.
+
+## Standard Configuration Classes
+
+- AI: Registers standard configurations providing targets that're used with.
+  - .AI_LLAMA_CHAT_AlertOnFinish: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_AlertOnFinish'.
+  - .AI_LLAMA_CHAT_Input: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_Input'.
+  - .AI_LLAMA_CHAT_Internet: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_Internet'.
+  - .AI_LLAMA_CHAT_Location: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_Location'.
+  - .AI_LLAMA_CHAT_MailAddress: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_MailAddress'.
+  - .AI_LLAMA_CHAT_MailForward: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_MailForward'.
+  - .AI_LLAMA_CHAT_Send: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_Send'.
+  - .AI_LLAMA_CHAT_Stop: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_Stop'.
+  - .AI_LLAMA_CHAT_Thinking: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_Thinking'.
+  - .AI_LLAMA_CHAT_Upload: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_CHAT_Upload'.
+  - .AI_LLAMA_QA_Exclude: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_QA_Exclude'.
+  - .AI_LLAMA_STANDARD_QA_Question: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_STANDARD_QA_Question'.
+  - .AI_LLAMA_STANDARD_TXTQA_Question: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_STANDARD_TXTQA_Question'.
+  - .AI_LLAMA_TXTQA_Source: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_TXTQA_Source'.
+  - .AI_OCR_Receiver: Applies 'AI' behavior to elements tagged with '.AI_OCR_Receiver'.
+- Appointments: Registers standard configurations specific to appointment arrangements.
+  - .CodBi_DateFrame_1_Begin: The HTMLInputElement s tagged with these classes will be configured to not allow entering a date in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector "MaxField" points to.
+  - .CodBi_DateFrame_1_End: The HTMLInputElement s tagged with these classes will be configured to not allow entering a date in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector "MaxField" points to.
+  - .CodBi_DateFrame_2_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_DateFrame_2_Begin'.
+  - .CodBi_DateFrame_2_End: Applies 'Appointments' behavior to elements tagged with '.CodBi_DateFrame_2_End'.
+  - .CodBi_DateFrame_3_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_DateFrame_3_Begin'.
+  - .CodBi_DateFrame_3_End: Applies 'Appointments' behavior to elements tagged with '.CodBi_DateFrame_3_End'.
+  - .CodBi_DateFrame_4_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_DateFrame_4_Begin'.
+  - .CodBi_DateFrame_4_End: Applies 'Appointments' behavior to elements tagged with '.CodBi_DateFrame_4_End'.
+  - .CodBi_DateFrame_5_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_DateFrame_5_Begin'.
+  - .CodBi_DateFrame_5_End: Applies 'Appointments' behavior to elements tagged with '.CodBi_DateFrame_5_End'.
+  - .CodBi_Holidays_Listing: The HTMLSelectElement tagged with this class, will be filled with all holidays for the current and next years for the state specified in the global variable CodBi_Holidays_States.
+  - .CodBi_NoFutureDate: The HTMLInputElement tagged with this class may not be set to a future date.
+  - .CodBi_TimeFrame_1_Begin: The HTMLInputElement s tagged with these classes will be configured to not allow entering a time in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector "MaxField" points to.
+  - .CodBi_TimeFrame_1_End: The HTMLInputElement s tagged with these classes will be configured to not allow entering a time in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector "MaxField" points to.
+  - .CodBi_TimeFrame_2_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_TimeFrame_2_Begin'.
+  - .CodBi_TimeFrame_2_End: Applies 'Appointments' behavior to elements tagged with '.CodBi_TimeFrame_2_End'.
+  - .CodBi_TimeFrame_3_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_TimeFrame_3_Begin'.
+  - .CodBi_TimeFrame_3_End: Applies 'Appointments' behavior to elements tagged with '.CodBi_TimeFrame_3_End'.
+  - .CodBi_TimeFrame_4_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_TimeFrame_4_Begin'.
+  - .CodBi_TimeFrame_4_End: Applies 'Appointments' behavior to elements tagged with '.CodBi_TimeFrame_4_End'.
+  - .CodBi_TimeFrame_5_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_TimeFrame_5_Begin'.
+  - .CodBi_TimeFrame_5_End: Applies 'Appointments' behavior to elements tagged with '.CodBi_TimeFrame_5_End'.
+- BayVIS: Registers standard configurations specific to buildings registered in BayVIS.
+  - .CodBi_BayVIS_Ansprechpartner: All proper placeholder in the content of the tagged HTMLInputElement 's "innerHTML" will be replaced with the data of the building specified in the global variable BayVIS_WeitereAnsprechpartner.
+  - .CodBi_BayVIS_Auswahl_Behoerden: All the available authorities will be listed by the tagged HTMLSelectElement .
+  - .CodBi_BayVIS_Behoerde: All proper placeholder in the content of the tagged HTMLInputElement 's "innerHTML" will be replaced with the data of the building specified in the global variable BayVIS_Behoerde.
+  - .CodBi_BayVIS_BehoerdeUndAnsprechpartner: All proper placeholder in the content of the tagged HTMLInputElement 's "innerHTML" will be replaced with the data of the building specified in the global variable BayVIS_Behoerde and the contact details of the contact specified in BayVIS_Hauptansprechpartner.
+- Financial: Registers standard configurations specific to finances.
+  - .CodBi_Currency: The HTMLInputElement s tagged with this class will be formatted for Currencies using Cleave.
+  - .CodBi_TRANS_NTW: Applies 'Financial' behavior to elements tagged with '.CodBi_TRANS_NTW'.
+- Holistic.CSS.Standard: Registers a standard configuration that applies a standard CSS onto the form.
+  - Classes: none.
+- Holistic.Matomo.Tracking: Registers a standard configurations using the functionality.
+  - Classes: none.
+- Holistic.Media.Input.Speech: Registers a standard configuration that applies Speech-to-Text onto every.
+  - .CodBi_XCL_Speech: Applies 'Holistic.Media.Input.Speech' behavior to elements tagged with '.CodBi_XCL_Speech'.
+- Holistic.Media.Input.Speech.Whisper: Registers a standard configuration that applies Whisper Speech-to-Text onto every.
+  - .CodBi_XCL_Speech_Whisper: Applies 'Holistic.Media.Input.Speech.Whisper' behavior to elements tagged with '.CodBi_XCL_Speech_Whisper'.
+- LDAP.Autofill: Registers standard configurations specific to LDAP-Autocompletion in HTMLInputElement s.
+  - .CodBi_LDAP_AC_Account: This class matches the common LDAP-Property sAMAccountName.
+  - .CodBi_LDAP_AC_CommonName: This class matches the common LDAP-Property cn.
+  - .CodBi_LDAP_AC_Department: This class matches the common LDAP-Property department.
+  - .CodBi_LDAP_AC_DisplayName: This class matches the common LDAP-Property displayName.
+  - .CodBi_LDAP_AC_FirstName: This class matches the common LDAP-Property givenName.
+  - .CodBi_LDAP_AC_LastName: This class matches the common LDAP-Property sn.
+  - .CodBi_LDAP_AC_Mail: The HTMLInputElement s tagged with this class will be configured to be autocompleted as soon as the entered mail-address matches an entry in the connected LDAP.
+  - .CodBi_LDAP_AC_Telephone: This class matches the common LDAP-Property telephoneNumber.
+  - .CodBi_LDAP_AC_Title: This class matches the common LDAP-Property title.
+- OpenPLZ.AC.SET: Registers standard configurations that binds HTMLInputElements tagged with the.
+  - .CodBi_OpenPLZ_AC_SET_BuildingNumber: Represents the set's building number.
+  - .CodBi_OpenPLZ_AC_SET_Locality: Represents the set's locality.
+  - .CodBi_OpenPLZ_AC_SET_PLZ: Represents the set's postal code.
+  - .CodBi_OpenPLZ_AC_SET_Street: Represents the set's street.
+- People: Registers standard configurations specific to people characteristics.
+  - .CodBi_Fotocropper: Tagging the proper elements with these classes a fotocropper can be set up.
+  - .CodBi_Fotocropper_Board: Tagging the proper elements with these classes a fotocropper can be set up.
+  - .CodBi_Fotocropper_Foto: Tagging the proper elements with these classes a fotocropper can be set up.
+  - .CodBi_Fotocropper_ImageURL: Applies 'People' behavior to elements tagged with '.CodBi_Fotocropper_ImageURL'.
+  - .CodBi_Fotocropper_Update: Tagging the proper elements with these classes a fotocropper can be set up.
+  - .CodBi_Fotocropper_Uploader: Tagging the proper elements with these classes a fotocropper can be set up.
+  - .CodBi_OpenPLZ_Select_Localities: Fills a HTMLSelectElement with all the Localities of the country which's country code is specified in the global variable CodBi_OpenPLZ_Country according to the regular expression specified in the global variable CodBi_OpenPLZ_Selection_regexName for the name of the localities.
+  - .CodBi_OpenPLZ_Select_Orga_Bayern: Fills a HTMLSelectElement with all the government regions of Bayern (Germany).
+  - .CodBi_OpenPLZ_Select_Orga_Bundeslaender: Fills a HTMLSelectElement with all the federal states of Germany.
+  - .CodBi_OpenPLZ_Select_Streets_By_PLZ: Fills a HTMLSelectElement with all the streets in a locality that is identified by it'S postal code according to the regular expression placed in the global variable CodBi_OpenPLZ_Selection_Streets_regexName for the name of the streets.
+  - .CodBi_People_16plus: Applies 'People' behavior to elements tagged with '.CodBi_People_16plus'.
+  - .CodBi_People_18plus: The HTMLInputElement s tagged with this class will be configured to not allow entering or selecting dates from JQuery's datepicker that are less than 18 years in the past, which is useful for HTMLInputElement s taking birthdays.
+  - .CodBi_People_Alphanumeric: The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/: ]*[0-9A-za-z]$ and prevents entering characters not matching [-0-9A-za-z/: ].
+  - .CodBi_People_BuildingNumber: , CodBi_OpenPLZ_AC_SET_BuildingNumber The HTMLInputElement tagged with this class may only contain characters matching ^[0-9]+[-0-9A-Za-z/]*[0-9A-Za-z]$ and prevents entering characters not matching [-A-Za-z0-9/ ].
+  - .CodBi_People_Mail: The HTMLInputElement tagged with this class may only contain characters matching ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z][a-zA-Z]?$ and prevents entering characters not matching [a-zA-Z0-9._%+-@].
+  - .CodBi_People_Name: The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/:# ]*[0-9A-za-z]$ and prevents entering characters not matching [ A-Za-zÃ -Ã¿'-].
+  - .CodBi_People_OpenPLZ_AC_SET_BuildingNumber: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_BuildingNumber'.
+  - .CodBi_People_OpenPLZ_AC_SET_Locality: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_Locality'.
+  - .CodBi_People_OpenPLZ_AC_SET_PLZ: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_PLZ'.
+  - .CodBi_People_OpenPLZ_AC_SET_Street: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_Street'.
+  - .CodBi_People_Phone: The HTMLInputElement s tagged with this class will be configured to only allow valid phonenumber input.
+  - .CodBi_People_PLZ: The HTMLInputElement s tagged with this class will be configured to only allow valid german postal codes.
+- Print.Removal: Registers standard configurations that remove HTMLElement s from the DOM.
+  - .CodBi_Print_Remove_Parent: Applies 'Print.Removal' behavior to elements tagged with '.CodBi_Print_Remove_Parent'.
+  - .CodBi_Print_Remove_PrintOnly: Applies 'Print.Removal' behavior to elements tagged with '.CodBi_Print_Remove_PrintOnly'.
+  - .CodBi_Print_Remove_Tagged: HTMLElement.remove s the tagged element.
+- UI.Panels: Registers standard configurations providing CodBi-"HTML.Panel"s.
+  - .CodBi_Accordion_A: Sets up accordions using the HTML.Panel.Accordion Functionality named either CodBi_Accordion_A, CodBi_Accordion_B, CodBi_Accordion_C or CodBi_Accordion_D depending on the Standardconfiguration-Class used.
+  - .CodBi_Accordion_B: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_Accordion_B'.
+  - .CodBi_Accordion_C: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_Accordion_C'.
+  - .CodBi_Accordion_D: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_Accordion_D'.
+  - .CodBi_HTML_Panel_Flat: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Flat'.
+  - .CodBi_HTML_Panel_Index: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Index'.
+  - .CodBi_HTML_Panel_Minimal: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Minimal'.
+  - .CodBi_HTML_Panel_NoCordion: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_NoCordion'.
+  - .CodBi_HTML_Panel_Standard: A panel with shaded gray background for the auto generated \<h2> header that changes the title's color to darkgreen when unfolded.

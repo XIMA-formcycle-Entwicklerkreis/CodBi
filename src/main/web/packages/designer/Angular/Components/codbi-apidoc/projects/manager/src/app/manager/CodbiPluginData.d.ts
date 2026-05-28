@@ -80,5 +80,14 @@ interface Window {
     managerClosed: () => void;
     /** Gets an API-Doc Manager translation resource.*/
     retrieveManagerTranslatedResource(id: string): string;
+    /**
+     * Sets the selected standard configurations in the MultiSelect editor and fires the
+     * `set-property` callback to update the designer's form property model.
+     * Only present after the form properties panel has been opened and MultiSelect instantiated. */
+    setStandardsValue?: (csv: string) => void;
+    /**
+     * Queued standards CSV to apply when the MultiSelect editor is next instantiated
+     * (i.e. when the form properties panel opens). */
+    pendingStandards?: string;
   };
 }

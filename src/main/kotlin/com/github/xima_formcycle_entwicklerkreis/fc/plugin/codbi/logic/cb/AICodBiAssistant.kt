@@ -1,7 +1,9 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.Standard
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ImageProcessingService
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -29,11 +31,15 @@ import org.slf4j.LoggerFactory
  * Phase 2 — Execution: The frontend resends the prompt with `phase=2`, `intent=<value>`, and the
  * necessary context:
  * - `persist` — full IPersistJson string (required when intent is "form" or "both")
+ * - `currentStandards` — CSV of currently active standard configurations (optional, for
+ *   "form"/"both")
  * - `formElements` — JSON array of form elements (required when intent is "workflow" or "both")
  * - `workflowVersionId` — numeric ID of the active WorkflowVersion (required when intent is
  *   "workflow" or "both") The servlet runs the form-modification AI and/or the workflow-creation AI
  *   in sequence, then returns a combined JSON response:
- *   `{"intent":"...","formJson":{...},"workflowMessage":"..."}` (keys present only as applicable).
+ *   `{"intent":"...","formJson":{...},"standards":"...","workflowMessage":"..."}` (keys present
+ *   only as applicable). `standards` is the updated CSV for `codbi-prop-standards` with
+ *   Holistic.Cleave.* configs auto-managed based on field datatypes present in the modified form.
  *
  * Actions dispatched via the `X-Action` request header:
  * - **`Models`** (GET): returns the list of available AI models.
@@ -56,6 +62,24 @@ class AICodBiAssistant : IPluginServletAction {
       "Models" -> handleModels()
       "Run" -> handleRun(params)
       else -> jsonResponse("""{"error":"Unknown action"}""")
+    }
+  }
+
+  /**
+   * Builds the JSON value for a message `content` field. When [imageParts] are present the content
+   * becomes a vision-format array (text + one entry per image); otherwise a plain JSON string is
+   * returned. Image parts are expected to already be data URIs (e.g. `data:image/png;base64,...`).
+   */
+  private fun buildUserContent(text: String, imageParts: List<String>): String {
+    if (imageParts.isEmpty()) return gson.toJson(text)
+    return buildString {
+      append("[")
+      append("""{"type":"text","text":${gson.toJson(text)}}""")
+      for (dataUri in imageParts) {
+        append(",")
+        append("""{"type":"image_url","image_url":{"url":${gson.toJson(dataUri)}}}""")
+      }
+      append("]")
     }
   }
 
@@ -82,10 +106,29 @@ class AICodBiAssistant : IPluginServletAction {
 
     val phase = params.requestParameters["phase"]?.firstOrNull() ?: "1"
 
+    // Collect image attachments sent as `codbi-base64:<name>` data-URL params (the same format
+    // used by ai.llama.standard.qa). PDF pages are rendered to images client-side via PDF.js
+    // before upload, so the backend only ever receives PNG/JPEG data URIs here.
+    val imageService =
+        ImageProcessingService(
+            maxPixels = 3_211_264L,
+            maxUploadBytes = 50L * 1024 * 1024,
+            log = { level, msg ->
+              when (level) {
+                LogLevel.INFO -> logger.info("[AICodBiAssistant] {}", msg)
+                LogLevel.WARNING -> logger.warn("[AICodBiAssistant] {}", msg)
+                LogLevel.ERROR -> logger.error("[AICodBiAssistant] {}", msg)
+              }
+            })
+    val imageFileMap = imageService.collectImageData(params)
+    val imageParts = imageService.prepareImageParts(imageFileMap, null)
+
     // Phase 1 — classify intent
     if (phase == "1") {
       val intent =
           try {
+            // imageParts intentionally omitted: intent classification only needs the text prompt;
+            // sending vision-format array content to text-only models causes HTTP 400 errors.
             classifyIntent(prompt, modelId, instance)
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] AI returned HTTP {}: {}", e.httpStatus, e.body)
@@ -118,7 +161,7 @@ class AICodBiAssistant : IPluginServletAction {
       }
       val formJson =
           try {
-            runFormModification(prompt, persistJson, modelId, instance)
+            runFormModification(prompt, persistJson, modelId, instance, imageParts)
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
             return jsonResponse("""{"error":${gson.toJson("Form AI error: ${e.message}")}}""")
@@ -133,6 +176,20 @@ class AICodBiAssistant : IPluginServletAction {
         return jsonResponse(formJson)
       }
       result.append(""","formJson":$formJson""")
+      // Auto-manage Holistic.Cleave.* standard configurations based on field types in the form.
+      // Only performed when the frontend could read the current standards from the DOM
+      // (key absent = standards editor not yet rendered; skip to avoid overwriting manual
+      // settings).
+      val currentStandardsParam = params.requestParameters["currentStandards"]
+      if (currentStandardsParam != null) {
+        val currentStandards = currentStandardsParam.firstOrNull() ?: ""
+        // aiSetStandards is the full standards CSV the AI set on the previous run.
+        // Absent = first run this session; the backend then treats all Cleave configs as
+        // AI-controlled.
+        val aiSetStandards = params.requestParameters["aiSetStandards"]?.firstOrNull()
+        val updatedStandards = computeUpdatedStandards(formJson, currentStandards, aiSetStandards)
+        result.append(""","standards":${gson.toJson(updatedStandards)}""")
+      }
       // For "both" intent: extract up-to-date form elements from the newly modified form JSON
       // so the workflow AI can reference newly created buttons/fields by their correct names.
       if (intent == "both") {
@@ -154,7 +211,13 @@ class AICodBiAssistant : IPluginServletAction {
       val workflowMessage =
           try {
             runWorkflowCreation(
-                prompt, latestFormElements, workflowVersionId, modelId, params, instance)
+                prompt,
+                latestFormElements,
+                workflowVersionId,
+                modelId,
+                params,
+                instance,
+                imageParts)
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Workflow AI HTTP {}: {}", e.httpStatus, e.body)
             return jsonResponse("""{"error":${gson.toJson("Workflow AI error: ${e.message}")}}""")
@@ -179,7 +242,12 @@ class AICodBiAssistant : IPluginServletAction {
    * workflow automations, or both. Returns "form", "workflow", or "both". Defaults to "both" if the
    * AI response cannot be parsed or returns an unexpected value.
    */
-  private fun classifyIntent(prompt: String, modelId: String, instance: Standard): String {
+  private fun classifyIntent(
+      prompt: String,
+      modelId: String,
+      instance: Standard,
+      imageParts: List<String> = emptyList()
+  ): String {
     val systemPrompt =
         "You are a FORMCYCLE assistant router. Based on the user's request, determine what type of change is needed:\n" +
             "- \"form\": changes to the form structure (adding/removing/modifying form fields, labels, buttons, layout, etc.)\n" +
@@ -191,7 +259,7 @@ class AICodBiAssistant : IPluginServletAction {
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
-      append("""{"role":"user","content":${gson.toJson(prompt)}}""")
+      append("""{"role":"user","content":${buildUserContent(prompt, imageParts)}}""")
       append("]")
     }
 
@@ -234,29 +302,90 @@ class AICodBiAssistant : IPluginServletAction {
       prompt: String,
       persistJson: String,
       modelId: String,
-      instance: Standard
+      instance: Standard,
+      imageParts: List<String> = emptyList()
   ): String {
     val systemPrompt = buildFormSystemPrompt()
+    val imageHint =
+        if (imageParts.isNotEmpty()) {
+          val n = imageParts.size
+          val intro =
+              if (n == 1) "The attached image shows"
+              else "The attached $n images show the $n pages of"
+          val multiPageSuffix =
+              if (n > 1)
+                  " CRITICAL: Do NOT stop after page 1 — elements from image 2, 3, ... " +
+                      "are just as required as those from image 1."
+              else ""
+          "\n\n⚠ ATTACHED DOCUMENT: $intro the document to replicate. " +
+              "Each image is EXACTLY ONE page — you MUST process ALL $n image(s) and " +
+              "extract every visible element from every page. " +
+              "Text fields, text areas, dropdowns, checkboxes, file uploads, labels, " +
+              "section headings, and buttons on EVERY page must appear in the output." +
+              multiPageSuffix
+        } else ""
     val userContent =
-        "Instruction: $prompt\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}"
+        "Instruction: $prompt$imageHint\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}"
 
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
-      append("""{"role":"user","content":${gson.toJson(userContent)}}""")
+      append("""{"role":"user","content":${buildUserContent(userContent, imageParts)}}""")
       append("]")
     }
 
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
-    val cleaned = extractJson(stripThinkTags(rawResponse))
+    var cleaned = extractJson(stripThinkTags(rawResponse))
+
+    fun rerunWithCodbiDetails(requested: List<String>): String {
+      val fullPrompt = "$systemPrompt\n\n${CodbiCapabilities.buildFullSectionFor(requested)}"
+      val retryMessagesJson = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(fullPrompt)}},""")
+        append("""{"role":"user","content":${buildUserContent(userContent, imageParts)}}""")
+        append("]")
+      }
+      val retryRaw = instance.performFormAssist(modelId, retryMessagesJson)
+      return extractJson(stripThinkTags(retryRaw))
+    }
+
+    val requestedDetails = extractCodbiDetailsRequest(cleaned)
+    if (requestedDetails != null) {
+      logger.info(
+          "[AICodBiAssistant] AI requested CodBi details for: {} — rerunning with full compact API",
+          requestedDetails.elements.ifEmpty { listOf("<unspecified>") }.joinToString(", "))
+      if (!requestedDetails.applicabilityReport.isNullOrBlank()) {
+        logger.info(
+            "[AICodBiAssistant] AI CodBi applicability report (detail request): {}",
+            requestedDetails.applicabilityReport)
+      }
+      cleaned = rerunWithCodbiDetails(requestedDetails.elements)
+    } else {
+      val appliedCodbi = extractAppliedCodbiIds(cleaned)
+      if (appliedCodbi.isNotEmpty()) {
+        logger.warn(
+            "[AICodBiAssistant] AI applied CodBi functionalities without requesting details first; forcing detail rerun for: {}",
+            appliedCodbi.joinToString(", "))
+        cleaned = rerunWithCodbiDetails(appliedCodbi)
+      }
+    }
+
     logger.debug("[AICodBiAssistant] Form AI response: {}", cleaned)
 
+    val (sanitizedCleaned, applicabilityReport) = extractAndStripCodbiApplicability(cleaned)
+    if (!applicabilityReport.isNullOrBlank()) {
+      logger.info("[AICodBiAssistant] AI CodBi applicability report: {}", applicabilityReport)
+    } else {
+      logger.warn("[AICodBiAssistant] AI response contains no CodBi applicability report")
+    }
+
     return try {
-      val parsed = JsonParser.parseString(cleaned)
+      val parsed = JsonParser.parseString(sanitizedCleaned)
       warnUnknownClassNames(parsed)
-      restoreStrippedFields(cleaned, persistJson)
+      restoreStrippedFields(sanitizedCleaned, persistJson)
     } catch (_: Exception) {
-      """{"error":"AI returned invalid JSON","raw":${gson.toJson(cleaned)}}"""
+      logger.warn("[AICodBiAssistant] Form AI returned unparseable response: {}", sanitizedCleaned)
+      """{"error":"AI returned invalid JSON","raw":${gson.toJson(sanitizedCleaned)}}"""
     }
   }
 
@@ -279,38 +408,167 @@ class AICodBiAssistant : IPluginServletAction {
           "   'tf' for XTextField/XTextArea (e.g. 'tfVorname', 'tfEmail'), \n" +
           "   'fd' for XUpload (e.g. 'fdLebenslauf'), \n" +
           "   'sel' for XSelect, 'cb' for XCheckbox, 'btn' for XButtonList buttons, \n" +
-          "   'sig' for XSignature.\n" +
+          "   'sig' for XSignature, 'cin' for XContainerInvisible.\n" +
           "5. Valid FORMCYCLE element className values (use ONLY these exact strings):\n" +
-          "   - XTextField   — single-line text input\n" +
-          "   - XTextArea    — multi-line text input\n" +
-          "   - XUpload      — file upload / file download field\n" +
-          "   - XSelect      — dropdown / select list; use 'options' array for static items\n" +
-          "   - XCheckbox    — checkbox (note: lowercase 'b')\n" +
+          "   - XTextField          — single-line text input; set 'datatype' property to validate input (usdLY these exact values):\n" +
+          "     \"\" plain text (default) · \"dateDE\" German date DD.MM.YYYY (preferred; shown as 'Datum (TT.MM.YYYY)' in designer) · \"date\" HTML5 native date picker · \"email\" e-mail ·\n" +
+          "     \"phone\" phone number · \"url\" URL · \"time\" time HH:MM · \"number\" decimal number · \"integer\" integer ·\n" +
+          "     \"posinteger\" non-negative integer · \"money\" money amount · \"posmoney\" non-negative money ·\n" +
+          "     \"posmoneyOptionalComma\" non-negative money (decimal optional) · \"formattedNumber\" number with custom format config ·\n" +
+          "     \"plzDE\" German ZIP code · \"ipv4\" IPv4 address · \"onlyLetterNumber\" alphanumeric · \"onlyLetterSp\" letters and spaces ·\n" +
+          "     \"regexp\" custom regex (also add datatypeHint property with the regex pattern and error message)\n" +
+          "   - XTextArea           — multi-line text input\n" +
+          "   - XUpload             — file upload / file download field\n" +
+          "   - XSelect             — dropdown / select list; use 'options' array for static items\n" +
+          "   - XCheckbox           — checkbox (note: lowercase 'b')\n" +
           "   - XButtonList  — button or button group; no label; 'buttons' array contains button objects each with: " +
-          "'name' (technical ID), 'value' (display text, may be HTML), 'action' object; " +
-          "for a form-submit button: action.page=\"submit\", action.check=true; " +
-          "for no-action button: omit action or set action.page=\"\"\n" +
+          "'name' (technical ID), 'value' (display text, may be HTML), 'action' object. " +
+          "WARNING: action.page uses special FORMCYCLE keywords, NOT form page names: " +
+          "\"submit\" = submit the form to the server (NOT a page name — do NOT replace with 'p1' or any other page); " +
+          "\"previous\" = go back; any page name (e.g. \"p1\") = navigate to that page. " +
+          "For a button that sends/submits the form: action.page=\"submit\", action.check=true. " +
+          "For a no-action button: omit action or set action.page=\"\".\n" +
           "   - XSpan        — static text / label; text content goes in 'rtevalue', NOT 'label'\n" +
           "   - XImage       — image element\n" +
           "   - XFieldSet    — fieldset / group container; title goes in 'legend', NOT 'label'\n" +
-          "   - XContainer   — generic layout container; has no 'label' property\n" +
-          "   - XSignature   — signature pad\n" +
-          "   - XAppointment — date / appointment picker\n" +
-          "   - XLine        — horizontal divider; has no 'label' property\n" +
+          "   - XContainer          — generic layout container; has no 'label' property\n" +
+          "   - XContainerInvisible — invisible/hidden layout container; same as XContainer but not rendered; has no 'label' property\n" +
+          "   - XSignature          — signature pad\n" +
+          "   - XAppointment        — appointment/calendar picker (do NOT use for date input fields — use XTextField with datatype=\"dateDE\" instead)\n" +
+          "   - XLine               — horizontal divider; has no 'label' property\n" +
           "   - XSpacer      — empty spacer; has no 'label' property\n" +
           "   - XPage        — form page (top-level)\n" +
           "   - XHeader      — form header\n" +
           "   - XFooter      — form footer\n" +
           "   Do NOT invent class names. Use ONLY the names listed above.\n" +
+          "   NOTE: XContainerInvisible is a valid className even though it looks unusual — use it when you need a hidden container.\n" +
           "6. A 'download/upload field' in FORMCYCLE is className XUpload (NOT XFileUpload).\n" +
           "7. When creating a new item: if the form already contains an item of the same className, " +
           "copy its properties structure exactly and adapt name, id, label, and type-specific values. " +
           "If no item of that type exists yet, use the matching minimal template from ITEM TEMPLATES below.\n" +
           "8. Do NOT include 'css', 'script', 'image', 'images', 'pagePreview', 'rendered', " +
-          "'formI18n', or 'metadata' fields — they are handled separately and will be merged back.\n" +
-          "9. Output ONLY valid JSON. No trailing commas. No comments.\n\n" +
-          "ITEM TEMPLATES — minimal valid structure for each className (adapt name/id/label):\n" +
+          "'formI18n', or 'metadata' fields — they are handled separately and will be merged back. " +
+          "Also do NOT include any XFooter item in the items array — it is structural chrome preserved automatically.\n" +
+          "9. Output ONLY valid JSON. No trailing commas. No comments.\n" +
+          "10. CRITICAL — the instruction may contain BOTH form structure changes AND automation/workflow tasks. " +
+          "You must still create ALL mentioned form elements (input fields, buttons, labels, etc.) — " +
+          "a button is a form element regardless of what it does when clicked. " +
+          "IGNORE ONLY the automation/email/notification descriptions (e.g. 'send an email when clicked', " +
+          "'notify by mail', 'trigger an action on submit'). Those are handled by a separate system.\n" +
+          "11. MANDATORY RULE — XButtonList submit button: For any button that submits or sends the form " +
+          "(e.g. 'Absenden', 'Senden', 'Einreichen', 'Prüfen und Senden'), use EXACTLY this action: " +
+          "{\"page\":\"submit\",\"check\":true,\"customAction\":\"\",\"customClassNames\":\"\",\"displayName\":\"\",\"optionId\":\"submit + check\",\"value\":\"\"}. " +
+          "The string 'submit' is a FORMCYCLE server-side command — it is NOT a page name and must NEVER " +
+          "be replaced with any page name you see in the form (e.g. 'p1', 'p2', etc.). " +
+          "WRONG: action={\"page\":\"p1\",\"check\":true,\"optionId\":\"p1 + check\"} ← do not do this. " +
+          "CORRECT: action={\"page\":\"submit\",\"check\":true,\"optionId\":\"submit + check\"} ← always use this for submit buttons.\n\n" +
+          "12. ATTACHED IMAGES: When the user message contains a '⚠ ATTACHED DOCUMENT:' notice, " +
+          "one or more images are attached to this message regardless of what language the instruction is in. " +
+          "Those images ARE the form or document to replicate if the prompt asks you to. " +
+          "Inspect every visible element — text fields, text areas, dropdowns, checkboxes, file uploads, " +
+          "section headings, labels, and buttons — and produce a FORMCYCLE element for each one. " +
+          "Do NOT return an unmodified form: if the image contains fields, they MUST appear in the output.\n\n" +
+          "13. MULTIPLE PAGES: When multiple images are attached, each image is EXACTLY one document page. " +
+          "Create one XPage per image/page. Page 1 uses the existing 'p1' XPage; " +
+          "for each additional page create a new XPage (names 'p2', 'p3', ...; ids 'xi-p-2', 'xi-p-3', ...) and add it to 'items'. " +
+          "For EVERY page — including page 1 — do the following: " +
+          "(a) create one form element object per visible field/heading/button in that image and add each object to the top-level 'items' array; " +
+          "(b) list those element names in that page's XPage 'properties.elements' array (names only, not full objects). " +
+          "Each element name must appear in ONLY ONE page's 'properties.elements' — never list the same name under two pages. " +
+          "Every page MUST be non-empty: if an image shows any content, that page's elements array must contain those items. " +
+          "Example output structure for a 2-page form: " +
+          "top-level items = [p1-XPage({elements:[fieldA,fieldB]}), {fieldA-obj}, {fieldB-obj}, p2-XPage({elements:[fieldC,fieldD]}), {fieldC-obj}, {fieldD-obj}]. " +
+          "On all non-final pages add a 'Weiter' XButtonList at the bottom: " +
+          "action={\"page\":\"p2\",\"check\":true,\"customAction\":\"\",\"customClassNames\":\"\",\"displayName\":\"\",\"optionId\":\"p2 + check\",\"value\":\"\"} (substitute actual next page name). " +
+          "On all non-first pages add a 'Zurück' XButtonList at the top: " +
+          "action={\"page\":\"p1\",\"check\":false,\"customAction\":\"\",\"customClassNames\":\"\",\"displayName\":\"\",\"optionId\":\"p1\",\"value\":\"\"} (substitute actual previous page name). " +
+          "Put the final 'Absenden' submit button on the last page.\n" +
+          "14. DOCUMENT PATTERNS — these rules override Rule 12's default mapping for SPECIFIC matching elements only. " +
+          "Every element that does NOT match a pattern below is STILL generated normally per Rule 12. Apply automatically:\n" +
+          "   a) FILE UPLOAD OVERRIDE (applies ONLY to XCheckbox elements, never to text fields or any other type): " +
+          "When a checkbox label explicitly states that a specific named file or document IS being physically attached or WILL be uploaded as a file attachment — " +
+          "regardless of the label's language — do NOT generate an XCheckbox. Instead generate an XUpload field. " +
+          "Do NOT apply to checkboxes about consenting, agreeing, confirming, or merely referencing a document; ONLY apply when the checkbox is literally about attaching/uploading a physical file. " +
+          "ALWAYS rewrite the label to be short and action-oriented in the document's own language: " +
+          "derive a '[subject] [upload-verb]' label from the checkbox text (examples: " +
+          "'Downloadlink bzw. Zertifikat als Datei ist beigefügt' → 'Zertifikat hier hochladen'; " +
+          "'Lebenslauf als Datei beigefügt' → 'Lebenslauf hier hochladen'; " +
+          "'Certificate attached as file' → 'Upload certificate here'; " +
+          "'Certificado adjunto como archivo' → 'Subir certificado aquí'). " +
+          "The XUpload fully replaces the checkbox — no XCheckbox is created alongside it.\n" +
+          "   UPLOAD + SEND-LATER PAIRING: When the upload-triggering checkbox (Rule 14a) appears alongside a " +
+          "companion checkbox whose meaning is 'the document will be delivered later or via another channel' — " +
+          "i.e. the checkbox semantically means 'will be sent by email/mail/post', 'will be provided later', " +
+          "'will be submitted separately', or any equivalent in any language — " +
+          "replace BOTH checkboxes as a pair as follows: " +
+          "(1) Create an XSelect whose label is the subject noun and whose options are " +
+          "[{\"text\":\"[upload-now wording in document language]\",\"value\":\"jetzt\"},{\"text\":\"[companion checkbox text verbatim]\",\"value\":\"nachgereicht\"}]. " +
+          "(2) Directly below the XSelect, create an XUpload with the rewritten action-oriented label. " +
+          "Neither original checkbox is kept as an XCheckbox. " +
+          "The XUpload should only be shown when 'upload now' is selected — " +
+          "this visibility condition CANNOT be expressed in the JSON and must be configured in the form designer after import; " +
+          "add an XSpan with rtevalue='ℹ️ [In document language: reminder to the form author to configure the XUpload visibility condition so the upload field is only shown when the \"upload now\" option is selected].' " +
+          "directly below the XUpload as a reminder.\n" +
+          "   b) YES/NO CHOICE: A JA/NEIN or Ja/Nein checkbox pair, radio group, or tick-box group → " +
+          "XSelect with options [{\"text\":\"JA\",\"value\":\"JA\"},{\"text\":\"NEIN\",\"value\":\"NEIN\"}].\n" +
+          "   c) SIGNATURE OVERRIDE: Whenever a signature area, signature line, or closing salutation appears anywhere in the document " +
+          "— regardless of position — you MUST generate an XSignature element. Triggers include: " +
+          "'Unterschrift', 'Datum/Unterschrift', 'Datum, Unterschrift', 'Ort, Datum', 'Ort/Datum', " +
+          "'Mit freundlichen Grüßen', 'Mit freundlichen Grüssen', 'Freundliche Grüße', " +
+          "any blank underline or line labeled for signature, or any blank area following a closing salutation. " +
+          "Generate: XSpan (rtevalue = the closing text) followed immediately by XSignature. " +
+          "NEVER omit this — missing signatures are always a defect.\n" +
+          "   d) DOCUMENT HEADER: When the attached document has a header with an organization name, " +
+          "institution title, or letterhead text, update the form's existing XHeader item to show that text. " +
+          "Every form already contains exactly one XHeader — do NOT add a new XHeader item. " +
+          "Add an XSpan with the organization name as rtevalue to the top-level items array, " +
+          "then add its name to the existing XHeader's 'properties.elements' array. " +
+          "The logo image cannot be extracted from a rendered document page image — replicate visible text only.\n" +
+          "   e) GROUPED SUB-FIELDS: When a field label or description specifies more than one individual data point — " +
+          "either as a parenthetical list '(Name, Mailadresse, Telefon)' or after a colon 'Kontaktdaten: Name, Mailadresse, Telefon' " +
+          "— do NOT create a single combined field. " +
+          "Instead create an XFieldSet whose legend is the main label text (everything before the parenthetical or colon list), " +
+          "and inside it one XTextField per sub-item; the sub-item text becomes that XTextField's label. " +
+          "Example: 'Kontaktdaten unserer Einrichtung: (Name, Mailadresse, Telefon)' → " +
+          "XFieldSet legend='Kontaktdaten unserer Einrichtung' containing XTextField label='Name', " +
+          "XTextField label='Mailadresse', XTextField label='Telefon'. " +
+          "This applies to any field with a comma-separated sub-item list regardless of topic (contact details, location info, document references, etc.).\n\n" +
+          "ITEM TEMPLATES — minimal valid structure for each className (adapt name/id/label).\n" +
+          "WARNING for XButtonList template: the value 'submit' in action.page is a literal server command, " +
+          "NOT a placeholder. Do NOT change it. Copy the template exactly for submit buttons.\n" +
+          "15. DATE FIELDS — MANDATORY: Every field whose label refers to a date MUST have its datatype set. " +
+          "NEVER leave a date field with datatype=\"\". " +
+          "Use datatype=\"dateDE\" for all German-language forms (this is the DD.MM.YYYY text input, shown as 'Datum (TT.MM.YYYY)' in the designer UI — it is NOT named 'dateDE' in the UI, but that is the JSON value to use). " +
+          "Use datatype=\"date\" only when an HTML5 native browser date picker is explicitly required. " +
+          "Applies to fields whose label contains or means: " +
+          "'Datum', 'Geburtsdatum', 'Geburtstag', 'Eintrittstermin', 'Termin', 'Abgabedatum', 'Anfangsdatum', 'Enddatum', " +
+          "'date', 'birthday', 'birth date', 'start date', 'end date', 'due date', and any similar calendar-date label. " +
+          "Example: label 'Geburtsdatum' → XTextField with datatype=\"dateDE\".\n" +
           """{"className":"XTextField","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","readonly":"0","placeholder":"","datatype":"","fullwidth":"0"}}""" +
+          "\n" +
+          "   ← For DATE fields set datatype=\"dateDE\" (DD.MM.YYYY, preferred for German forms): " +
+          """{"className":"XTextField","properties":{"name":"tfGeburtsdatum","id":"xi-tf-geburtsdatum","label":"Geburtsdatum","required":"0","readonly":"0","placeholder":"","datatype":"dateDE","fullwidth":"0"}}""" +
+          "\n" +
+          "   ← For NUMBER fields set datatype=\"formattedNumber\": " +
+          """{"className":"XTextField","properties":{"name":"tfBetrag","id":"xi-tf-betrag","label":"Betrag","required":"0","readonly":"0","placeholder":"","datatype":"formattedNumber","fullwidth":"0"}}""" +
+          "\n" +
+          "   ← For EMAIL fields set datatype=\"email\": " +
+          """{"className":"XTextField","properties":{"name":"tfEmail","id":"xi-tf-email","label":"E-Mail","required":"0","readonly":"0","placeholder":"","datatype":"email","fullwidth":"0"}}""" +
+          "\n" +
+          "   ← For PHONE fields set datatype=\"phone\": " +
+          """{"className":"XTextField","properties":{"name":"tfTelefon","id":"xi-tf-telefon","label":"Telefon","required":"0","readonly":"0","placeholder":"","datatype":"phone","fullwidth":"0"}}""" +
+          "\n" +
+          "   ← For TIME fields set datatype=\"time\": " +
+          """{"className":"XTextField","properties":{"name":"tfUhrzeit","id":"xi-tf-uhrzeit","label":"Uhrzeit","required":"0","readonly":"0","placeholder":"","datatype":"time","fullwidth":"0"}}""" +
+          "\n" +
+          "   ← For INTEGER/COUNT fields set datatype=\"integer\": " +
+          """{"className":"XTextField","properties":{"name":"tfAnzahl","id":"xi-tf-anzahl","label":"Anzahl","required":"0","readonly":"0","placeholder":"","datatype":"integer","fullwidth":"0"}}""" +
+          "\n" +
+          "   ← For URL fields set datatype=\"url\": " +
+          """{"className":"XTextField","properties":{"name":"tfUrl","id":"xi-tf-url","label":"URL","required":"0","readonly":"0","placeholder":"","datatype":"url","fullwidth":"0"}}""" +
+          "\n" +
+          "   ← For GERMAN ZIP CODE fields set datatype=\"plzDE\": " +
+          """{"className":"XTextField","properties":{"name":"tfPlz","id":"xi-tf-plz","label":"PLZ","required":"0","readonly":"0","placeholder":"","datatype":"plzDE","fullwidth":"0"}}""" +
           "\n" +
           """{"className":"XTextArea","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","readonly":"0","placeholder":"","fullwidth":"0","autosize":"0"}}""" +
           "\n" +
@@ -318,9 +576,15 @@ class AICodBiAssistant : IPluginServletAction {
           "\n" +
           """{"className":"XSelect","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0","fullwidth":"0","options":[]}}""" +
           "\n" +
-          """{"className":"XCheckbox","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0","checkboxvalue":"1","checkedvalue":"1"}}""" +
+          """{"className":"XCheckbox","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0","checkboxvalue":"1","checkedvalue":""}}""" +
           "\n" +
           """{"className":"XButtonList","properties":{"name":"btlExample","id":"xi-btl-example","buttons":[{"name":"btnExample","value":"Button Text","action":{"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}}]}}""" +
+          "\n" +
+          "   IMPORTANT — XButtonList action.page uses fixed FORMCYCLE commands, not form page names: " +
+          "\"submit\" is a server-side submit command (NOT the page named 'p1' or any other page — never replace this with a page name); " +
+          "\"previous\" goes back one page; a page name (\"p1\", \"p2\", etc.) navigates to that page. " +
+          "For page navigation, set both action.page and action.optionId to the target page name. " +
+          "EXCEPTION to rule 7: do NOT copy action.page from existing buttons — always set it based on the button's purpose." +
           "\n" +
           """{"className":"XSpan","properties":{"name":"fdExample","id":"xi-fd-example","rtevalue":"Example text"}}""" +
           "\n" +
@@ -330,9 +594,90 @@ class AICodBiAssistant : IPluginServletAction {
           "\n" +
           """{"className":"XSignature","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0"}}""" +
           "\n" +
+          """{"className":"XAppointment","properties":{"name":"apExample","id":"xi-ap-example","label":"Example","required":"0","fullwidth":"0"}}""" +
+          "\n" +
+          """{"className":"XContainerInvisible","properties":{"name":"cinExample","id":"xi-cin-example","elements":[],"fullwidth":"0"}}""" +
+          "\n" +
           """{"className":"XLine","properties":{"name":"liExample","id":"xi-li-example"}}""" +
           "\n" +
-          """{"className":"XSpacer","properties":{"name":"spExample","id":"xi-sp-example"}}"""
+          """{"className":"XSpacer","properties":{"name":"spExample","id":"xi-sp-example"}}""" +
+          "\n" +
+          """{"className":"XPage","properties":{"name":"p2","id":"xi-p-2","header":"","subheader":"","elements":[]}}""" +
+          "\n" +
+          """{"className":"XHeader","properties":{"name":"header","id":"xi-header","elements":[]}}""" +
+          "\n\nCODBI APPLICABILITY CHECK — before finalizing output, evaluate whether existing and newly created fields should receive CodBi functionalities/standards for validation, UX, or automation. " +
+          "Do not add random configs; only apply CodBi elements when they are logically useful for the current form intent. " +
+          "Examples: date/time ranges may need Time.Frame/Date.Frame; age checks may need Date.Min; restricted text may need HTML.Input.REGEX; postal/address flows may need OpenPLZ.Autocomplete. " +
+          "NEVER apply any CodBi functionality from compact knowledge only. " +
+          "Before applying a functionality, you MUST request its detailed API and parameter description via escalation. " +
+          "A functionality is considered applied only if target elements contain data-cb-func (newly created or extended as CSV with the functionality id). " +
+          "Most functionalities also require data-cb-* parameters, which are defined in detailed docs and MUST be set accordingly. " +
+          "Some referenced/helper elements may only carry data-cb-* parameters (without data-cb-func); rely on detailed docs for these exceptions. " +
+          "\n\nAPPLICABILITY REPORT PROTOCOL — ALWAYS include a short CodBi applicability report. " +
+          "For final form JSON responses, include top-level metadata field \"_codbiApplicability\" with shape {\"considered\":[...],\"applied\":[...],\"skipped\":[{\"id\":\"...\",\"reason\":\"...\"}]}. " +
+          "This metadata field is removed server-side before the form is applied. " +
+          "\n\nDETAIL ESCALATION PROTOCOL — if you need CodBi parameter/class details not present in this prompt, respond ONLY with this JSON and nothing else: " +
+          "{\"status\":\"need_codbi_details\",\"elements\":[\"<Functionality/EP/Standard ID>\",\"...\"],\"codbiApplicability\":{\"considered\":[...],\"applied\":[...],\"skipped\":[{\"id\":\"...\",\"reason\":\"...\"}]}}. " +
+          "After receiving full details, return the final form JSON object normally." +
+          "\n" +
+          CodbiCapabilities.buildSection()
+
+  private data class CodbiDetailsSignal(
+      val elements: List<String>,
+      val applicabilityReport: String?
+  )
+
+  private fun extractCodbiDetailsRequest(cleanedJson: String): CodbiDetailsSignal? {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any>
+      if ((obj?.get("status") as? String) != "need_codbi_details") {
+        return null
+      }
+      val arr = obj["elements"] as? List<*> ?: return CodbiDetailsSignal(emptyList(), null)
+      val elements = arr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+      val report = obj["codbiApplicability"]?.let { gson.toJson(it) }
+      CodbiDetailsSignal(elements = elements, applicabilityReport = report)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun extractAndStripCodbiApplicability(cleanedJson: String): Pair<String, String?> {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj =
+          gson.fromJson(cleanedJson, MutableMap::class.java) as? MutableMap<String, Any>
+              ?: return cleanedJson to null
+      var report: String? = null
+      for (key in listOf("_codbiApplicability", "codbiApplicability")) {
+        if (obj.containsKey(key)) {
+          report = gson.toJson(obj[key])
+          obj.remove(key)
+          break
+        }
+      }
+      gson.toJson(obj) to report
+    } catch (_: Exception) {
+      cleanedJson to null
+    }
+  }
+
+  private fun extractAppliedCodbiIds(cleanedJson: String): List<String> {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj =
+          gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any> ?: return emptyList()
+      val report =
+          (obj["_codbiApplicability"] as? Map<*, *>)
+              ?: (obj["codbiApplicability"] as? Map<*, *>)
+              ?: return emptyList()
+      val applied = report["applied"] as? List<*> ?: return emptyList()
+      applied.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
 
   private val KNOWN_CLASS_NAMES =
       setOf(
@@ -340,6 +685,7 @@ class AICodBiAssistant : IPluginServletAction {
           "XButtonList",
           "XCheckbox",
           "XContainer",
+          "XContainerInvisible",
           "XDefault",
           "XFieldSet",
           "XFooter",
@@ -386,18 +732,117 @@ class AICodBiAssistant : IPluginServletAction {
           "print_size",
           "print_text_only",
           "print_break",
+          "print_border",
           "backgroundcolor",
-          "cssclasses",
-          "cssclasseswrapper",
           "helptext",
           "comment",
-          "attributes",
           "pdfImporterId",
           "rowid",
           "computedwidth",
           "maxwidth",
           "minwidth",
+          // Number formatting — display-only, ~15 fields per XTextField; AI doesn't need them,
+          // restoreStrippedFields re-applies them from the original for existing items.
+          "numberFormatDigitGroupMode",
+          "numberFormatInlineUnitSign",
+          "numberFormatDigitGroupSeparator",
+          "numberFormatNegativeSign",
+          "numberFormatUnitSignPlacement",
+          "numberFormatDecimalPlaces",
+          "numberFormatSignumSignPlacement",
+          "numberFormatShowPositiveSign",
+          "numberFormatEmptyMode",
+          "numberFormatPositiveSign",
+          "numberFormatDecimalPaddingMode",
+          "numberFormatRoundingMode",
+          "numberFormatLeadingZeroMode",
+          "numberFormatChangeValueOnWheel",
+          "numberFormatDecimalSeparator",
+          // Input constraints — AI creates fields from templates; defaults are fine for new items.
+          "maxlength",
+          "minlength",
+          "mask",
+          "autocomplete",
+          "datepicker",
+          "unitwidth",
+          // Layout — AI uses item templates which have FORMCYCLE defaults.
+          "labeldir",
+          "labelwidth",
+          "flex",
+          "height",
+          // Dynamic/repeatable — AI creates static items; restored for existing dynamic elements.
+          "dynamic",
+          "dynamicMinSize",
+          "dynamicMaxSize",
+          "dynamicAddTextShow",
+          // Conditional visibility/readonly — AI doesn't generate these; restored for originals.
+          "readonlyifclear",
+          "readonlyifmode",
+          "readonlyifcomp",
+          "requiredifcomp",
+          "hiddenifclear",
+          "hiddenifcomp",
+          // Workflow-status / user-group visibility — stripped from slim JSON so the AI starts
+          // fresh (no copy-paste from existing items), but validated and re-applied for new
+          // AI-created items via sanitizeVisibilityProp(). Existing items still restore from
+          // the original.
+          "viewstatus",
+          "viewusergroup",
+          "readonly_viewstatus",
+          "readonly_viewusergroup",
+          "statusdependent",
+          "readonly_statusdependent",
+          "usergrouppendent",
+          "readonly_usergrouppendant",
       )
+
+  /**
+   * Visibility/access-control properties that the AI may set on **new** items it creates. Values
+   * are validated by [sanitizeVisibilityProp] before being written into the result.
+   */
+  private val SANITIZED_VISIBILITY_PROPS =
+      setOf(
+          "statusdependent",
+          "readonly_statusdependent",
+          "usergrouppendent",
+          "readonly_usergrouppendant",
+          "viewstatus",
+          "viewusergroup",
+          "readonly_viewstatus",
+          "readonly_viewusergroup",
+      )
+
+  /**
+   * Sanitizes a single visibility/access-control property value provided by the AI.
+   * - Boolean properties (`statusdependent` etc.) must be a JSON boolean primitive.
+   * - Array properties (`viewstatus` etc.) must be a JSON array of plain strings only; non-string
+   *   entries are silently dropped.
+   *
+   * @return The sanitized [JsonElement], or `null` if the value is structurally invalid.
+   */
+  private fun sanitizeVisibilityProp(key: String, value: JsonElement): JsonElement? =
+      when (key) {
+        "statusdependent",
+        "readonly_statusdependent",
+        "usergrouppendent",
+        "readonly_usergrouppendant" ->
+            value.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
+        "viewstatus",
+        "viewusergroup",
+        "readonly_viewstatus",
+        "readonly_viewusergroup" -> {
+          if (!value.isJsonArray) null
+          else
+              JsonArray().also { sanitized ->
+                for (entry in value.asJsonArray) {
+                  if (entry.isJsonPrimitive && entry.asJsonPrimitive.isString) {
+                    sanitized.add(entry)
+                  }
+                }
+              }
+        }
+        else -> null
+      }
 
   private fun warnUnknownClassNames(element: JsonElement) {
     val items = element.takeIf { it.isJsonObject }?.asJsonObject?.getAsJsonArray("items") ?: return
@@ -415,6 +860,11 @@ class AICodBiAssistant : IPluginServletAction {
   private fun slimPersistJson(json: String): String {
     val root = JsonParser.parseString(json).asJsonObject
     for (field in STRIPPED_FIELDS) root.remove(field)
+    // Remove XFooter — structural chrome the AI must not see or modify; restored automatically
+    root.getAsJsonArray("items")?.let { arr ->
+      arr.firstOrNull { it.isJsonObject && it.asJsonObject.get("className")?.asString == "XFooter" }
+          ?.let { arr.remove(it) }
+    }
     root.getAsJsonArray("items")?.forEach { el ->
       if (!el.isJsonObject) return@forEach
       val props = el.asJsonObject.getAsJsonObject("properties") ?: return@forEach
@@ -429,6 +879,12 @@ class AICodBiAssistant : IPluginServletAction {
               }
               .map { it.key }
       for (key in emptyKeys) props.remove(key)
+      // Strip action objects from XButtonList buttons so the AI cannot copy existing page values
+      if (el.asJsonObject.get("className")?.asString == "XButtonList") {
+        props.getAsJsonArray("buttons")?.forEach { btn ->
+          if (btn.isJsonObject) btn.asJsonObject.remove("action")
+        }
+      }
     }
     return gson.toJson(root)
   }
@@ -482,7 +938,22 @@ class AICodBiAssistant : IPluginServletAction {
             item.getAsJsonObject("properties")?.get("name")?.asString
                 ?: item.get("name")?.asString
                 ?: continue
-        val origItem = originalByName[name]?.asJsonObject ?: continue
+        val origItem = originalByName[name]?.asJsonObject
+        if (origItem == null) {
+          // New item created by AI — validate and preserve workflow-visibility props, then
+          // strip all remaining code/presentation fields.
+          item.getAsJsonObject("properties")?.let { props ->
+            val validatedVisibility =
+                SANITIZED_VISIBILITY_PROPS.mapNotNull { key ->
+                  val v = props.get(key) ?: return@mapNotNull null
+                  val sanitized = sanitizeVisibilityProp(key, v) ?: return@mapNotNull null
+                  key to sanitized
+                }
+            for (key in STRIPPED_ITEM_PROPS) props.remove(key)
+            for ((key, value) in validatedVisibility) props.add(key, value)
+          }
+          continue
+        }
         val origProps = origItem.getAsJsonObject("properties") ?: continue
         val resultProps = item.getAsJsonObject("properties") ?: continue
         for (key in STRIPPED_ITEM_PROPS) {
@@ -491,6 +962,31 @@ class AICodBiAssistant : IPluginServletAction {
         }
         for (entry in origProps.entrySet()) {
           if (!resultProps.has(entry.key)) resultProps.add(entry.key, entry.value)
+        }
+        // For XButtonList: restore original action for each existing button by name, since
+        // action objects were stripped from slimPersistJson to prevent copy-paste errors.
+        // New buttons (no matching name in original) keep the AI's generated action.
+        if (item.get("className")?.asString == "XButtonList") {
+          val origBtns = origProps.getAsJsonArray("buttons")
+          val resultBtns = resultProps.getAsJsonArray("buttons")
+          if (origBtns != null && resultBtns != null) {
+            val origActionByName =
+                origBtns
+                    .mapNotNull { btn ->
+                      if (!btn.isJsonObject) return@mapNotNull null
+                      val bName = btn.asJsonObject.get("name")?.asString ?: return@mapNotNull null
+                      val action = btn.asJsonObject.get("action") ?: return@mapNotNull null
+                      bName to action
+                    }
+                    .toMap()
+            for (resultBtn in resultBtns) {
+              if (!resultBtn.isJsonObject) continue
+              val btnObj = resultBtn.asJsonObject
+              val bName = btnObj.get("name")?.asString ?: continue
+              val origAction = origActionByName[bName] ?: continue // new button — keep AI action
+              if (!btnObj.has("action")) btnObj.add("action", origAction)
+            }
+          }
         }
       }
       val resultItemNames = mutableSetOf<String>()
@@ -545,6 +1041,77 @@ class AICodBiAssistant : IPluginServletAction {
           if (ref.isJsonPrimitive) itemToContainerId[ref.asString] = containerId
         }
       }
+      // Fix orphaned new items: items added by the AI to the flat `items` array but not referenced
+      // in any container's `properties.elements` list. Without a container reference the FC
+      // designer
+      // ignores them completely. We attach orphans to the last XFieldSet (or XPage) found.
+      val containerClassNames = setOf("XPage", "XFieldSet", "XContainer", "XHeader", "XFooter")
+      val orphanedNames = mutableListOf<String>()
+      for (el in resultItems) {
+        if (!el.isJsonObject) continue
+        val className = el.asJsonObject.get("className")?.asString ?: continue
+        if (className in containerClassNames) continue
+        val name = el.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString ?: continue
+        if (name !in itemToContainerId) orphanedNames.add(name)
+      }
+      if (orphanedNames.isNotEmpty()) {
+        logger.warn(
+            "[AICodBiAssistant] {} orphaned items not in any container's elements (will auto-attach): {}",
+            orphanedNames.size,
+            orphanedNames)
+        // Build a name→index map so we can find each orphan's position in the array.
+        val indexByName =
+            resultItems
+                .mapIndexedNotNull { idx, el ->
+                  el.takeIf { it.isJsonObject }
+                      ?.asJsonObject
+                      ?.getAsJsonObject("properties")
+                      ?.get("name")
+                      ?.asString
+                      ?.let { name -> name to idx }
+                }
+                .toMap()
+        val attachContainerClassNames = setOf("XFieldSet", "XPage", "XContainer")
+        // Attach each orphan to the nearest preceding container, so items generated
+        // for page 2 land on p2 instead of on the last XFieldSet that belongs to page 1.
+        for (name in orphanedNames) {
+          val orphanIdx = indexByName[name] ?: continue
+          val targetContainer =
+              (orphanIdx - 1 downTo 0)
+                  .asSequence()
+                  .map { idx -> resultItems[idx] }
+                  .firstOrNull { el ->
+                    el.isJsonObject &&
+                        el.asJsonObject.get("className")?.asString in attachContainerClassNames
+                  }
+                  // Fallback: last XFieldSet or XPage in the whole array.
+                  ?: resultItems.lastOrNull {
+                    it.isJsonObject &&
+                        it.asJsonObject.get("className")?.asString in setOf("XFieldSet", "XPage")
+                  }
+          if (targetContainer == null) {
+            logger.warn("[AICodBiAssistant] No container found for orphaned item '{}'", name)
+            continue
+          }
+          val containerProps =
+              targetContainer.asJsonObject.getAsJsonObject("properties") ?: continue
+          val containerId = containerProps.get("id")?.asString
+          var elements = containerProps.getAsJsonArray("elements")
+          if (elements == null) {
+            val newArr = JsonArray()
+            containerProps.add("elements", newArr)
+            elements = newArr
+          }
+          if (elements.none { it.isJsonPrimitive && it.asString == name }) {
+            elements.add(name)
+            if (containerId != null) itemToContainerId[name] = containerId
+            logger.warn(
+                "[AICodBiAssistant] Auto-attached orphaned item '{}' to container '{}'",
+                name,
+                containerProps.get("name")?.asString)
+          }
+        }
+      }
       for (el in resultItems) {
         if (!el.isJsonObject) continue
         val item = el.asJsonObject
@@ -557,6 +1124,12 @@ class AICodBiAssistant : IPluginServletAction {
         for (entry in baseProps.entrySet()) {
           if (!itemProps.has(entry.key)) itemProps.add(entry.key, entry.value)
         }
+        // For new XTextField date fields: always enable the datepicker calendar widget,
+        // overriding any base-template default of "0".
+        if (className == "XTextField" &&
+            (itemProps.get("datatype")?.asString ?: "").startsWith("date")) {
+          itemProps.addProperty("datepicker", "1")
+        }
         val parentId = itemToContainerId[name]
         if (parentId != null &&
             (!itemProps.has("parentid") || itemProps.get("parentid").asString.isNullOrEmpty())) {
@@ -565,6 +1138,94 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
     return gson.toJson(result)
+  }
+
+  /**
+   * Computes which of the four auto-managed Holistic.Cleave.* configurations should be active,
+   * based solely on the field datatypes present in the given form persist JSON.
+   *
+   * @return Map of config name → `true` (should be active) / `false` (should not be active).
+   */
+  private fun computeCleaveConditions(formJson: String): Map<String, Boolean> {
+    var hasDate = false
+    var hasPhone = false
+    var hasPlz = false
+    var hasTime = false
+    try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items")
+      if (items != null) {
+        for (item in items) {
+          if (!item.isJsonObject) continue
+          val obj = item.asJsonObject
+          if (obj.get("className")?.asString != "XTextField") continue
+          val datatype = obj.getAsJsonObject("properties")?.get("datatype")?.asString ?: ""
+          when {
+            datatype.startsWith("date") -> hasDate = true
+            datatype == "phone" -> hasPhone = true
+            datatype == "plzDE" -> hasPlz = true
+            datatype == "time" -> hasTime = true
+          }
+        }
+      }
+    } catch (_: Exception) {
+      /* malformed JSON — all conditions stay false */
+    }
+    return linkedMapOf(
+        "Holistic.Cleave.Date" to hasDate,
+        "Holistic.Cleave.Phone" to hasPhone,
+        "Holistic.Cleave.PLZ" to hasPlz,
+        "Holistic.Cleave.Time" to hasTime)
+  }
+
+  /**
+   * Computes the updated set of active CodBi standard configurations after a form modification.
+   *
+   * For each Holistic.Cleave.* config the decision is:
+   * - If the current active state **matches** what [aiSetStandards] records as the AI's last set
+   *   value (or [aiSetStandards] is `null` = first AI run) → AI is in control → update to match the
+   *   field types present in [modifiedFormJson].
+   * - If the current active state **differs** from [aiSetStandards] → the user manually overrode it
+   *   since the last AI run → leave it unchanged.
+   *
+   * All non-Cleave configurations are always preserved unchanged.
+   *
+   * @param modifiedFormJson The form persist JSON after the AI modification.
+   * @param currentStandards The current CSV value of the `codbi-prop-standards` form property.
+   * @param aiSetStandards The full standards CSV the AI set on its most recent prior run, or `null`
+   *   when the AI has never run before (first-run mode).
+   * @return Updated CSV to be stored as `codbi-prop-standards`.
+   */
+  private fun computeUpdatedStandards(
+      modifiedFormJson: String,
+      currentStandards: String,
+      aiSetStandards: String?
+  ): String {
+    val active =
+        currentStandards.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+    return try {
+      // When aiSetStandards is null (first run), use an empty set.
+      // This means: if a config is currently OFF, AI is in control (it was never explicitly set by
+      // the user against AI's judgment); if currently ON, treat as user-set and leave it alone.
+      val aiSet =
+          aiSetStandards?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet()
+              ?: emptySet()
+      val after = computeCleaveConditions(modifiedFormJson)
+      for ((config, shouldBeAfter) in after) {
+        val wasAiOn = aiSet.contains(config)
+        val isActive = active.contains(config)
+        // Same state as AI last set → AI is still in control → apply the new condition.
+        // Different state → user overrode it since the last AI run → respect their choice.
+        if (wasAiOn == isActive) {
+          if (shouldBeAfter && !isActive) active.add(config)
+          else if (!shouldBeAfter && isActive) active.remove(config)
+        }
+      }
+      active.joinToString(",")
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to compute updated standards: {}", e.message)
+      currentStandards
+    }
   }
 
   // endregion Form Modification
@@ -659,14 +1320,15 @@ class AICodBiAssistant : IPluginServletAction {
       workflowVersionId: Long,
       modelId: String,
       params: IPluginServletActionParams,
-      instance: Standard
+      instance: Standard,
+      imageParts: List<String> = emptyList()
   ): String {
     val systemPrompt = buildWorkflowSystemPrompt(formElements)
 
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
-      append("""{"role":"user","content":${gson.toJson(prompt)}}""")
+      append("""{"role":"user","content":${buildUserContent(prompt, imageParts)}}""")
       append("]")
     }
 
@@ -704,15 +1366,47 @@ class AICodBiAssistant : IPluginServletAction {
         "TRIGGER TYPES (use exactly one of these string values for 'triggerType'):\n" +
             "  - \"FC_FORM_SUBMIT_BUTTON\" — fires when a submit button is clicked; " +
             "triggerParams: {\"buttonName\":\"<technical name>\"} or empty {} for any button\n" +
-            "  - \"FC_MANUAL\" — manual invocation (user triggered); triggerParams: {}\n\n")
+            "  - \"FC_MANUAL\" — manual invocation (user triggered); triggerParams: {}\n" +
+            "  - \"FC_STATE_TIMER\" — fires after a delay once a record enters a state; " +
+            "triggerParams: {\"durationDays\":<N>,\"durationHours\":<N>,\"durationMinutes\":<N>}\n" +
+            "  - \"FC_FORM_RECORD_MESSAGE_POSTED\" — fires when an internal message is posted to the record; triggerParams: {}\n" +
+            "  - \"FC_CATCH_ERROR\" — fires when an error occurs in another workflow lane; triggerParams: {}\n" +
+            "  - \"FC_DOI_VERIFIED\" — fires when a double opt-in email link is confirmed; triggerParams: {}\n" +
+            "  - \"FC_USER_INVOCATION\" — fires when a logged-in user manually triggers it from the record detail view; triggerParams: {}\n\n")
     append(
         "NODE TYPES (use exactly one of these string values for 'nodeType'):\n" +
             "  - \"FC_EMAIL\" — sends an email; " +
-            "nodeParams: {\"to\":\"<address or [%fieldname%] placeholder>\", " +
-            "\"subject\":\"<subject text>\", \"body\":\"<body text>\", " +
-            "\"from\":\"<sender address, empty if not specified>\", \"senderName\":\"<sender display name, empty if not specified>\"}\n" +
+            "nodeParams: {\"to\":\"<recipient address, [%fieldname%] placeholder, or empty string \\\"\\\" if no recipient is known — NEVER substitute FC_EMPTY for a missing address>\", " +
+            "\"subject\":\"<subject text>\", " +
+            "\"body\":\"<email body in HTML format — ALWAYS use HTML markup: use <br> for line breaks (NOT \\\\n), <p>…</p> for paragraphs, <b>…</b> for bold, <ul>/<li> for lists; use [%fieldname%] placeholders to include form field values>\", " +
+            "\"from\":\"<sender address, empty if not specified>\", \"senderName\":\"<sender display name, empty if not specified>\", " +
+            "\"(do NOT include bodyFormatType — it is always set to HTML automatically)\", " +
+            "\"attachments\":[\"<technicalId1>\",...] (optional — technicalIds of XUpload fields whose files to attach)}\n" +
             "  - \"FC_CHANGE_STATE\" — changes the form record state; " +
-            "nodeParams: {\"stateName\":\"<FORMCYCLE status name>\"}\n\n")
+            "nodeParams: {\"stateName\":\"<FORMCYCLE status name>\"}\n" +
+            "  - \"FC_HTTP_REQUEST\" — sends an HTTP request (e.g. webhook); " +
+            "nodeParams: {\"url\":\"<target URL>\", \"method\":\"POST|GET|PUT|DELETE|PATCH\" (default POST), " +
+            "\"body\":\"<request body, supports [%placeholder%]>\", " +
+            "\"contentType\":\"JSON|PLAIN_TEXT|XML|FORM_DATA\" (default JSON), " +
+            "\"headers\":[{\"name\":\"<header>\",\"value\":\"<value>\"},...] (optional)}\n" +
+            "  - \"FC_CHANGE_FORM_VALUE\" — sets the value of one or more form fields; " +
+            "nodeParams: {\"formValues\":[{\"name\":\"<technicalId>\",\"value\":\"<new value>\"},...]}\n" +
+            "  - \"FC_LOG_ENTRY\" — writes a log message to the process log; " +
+            "nodeParams: {\"message\":\"<log text, supports [%placeholder%]>\", \"level\":\"INFO|WARNING|ERROR\" (default INFO)}\n" +
+            "  - \"FC_REDIRECT\" — redirects the user's browser to a URL; " +
+            "nodeParams: {\"url\":\"<target URL>\"}\n" +
+            "  - \"FC_SET_SAVED_FLAG\" — marks the form record as saved; nodeParams: {}\n" +
+            "  - \"FC_DELETE_FORM_RECORD\" — permanently deletes the current form record; nodeParams: {}\n" +
+            "  - \"FC_SEND_FORM_RECORD_MESSAGE\" — sends an internal message to the record's inbox; " +
+            "nodeParams: {\"message\":\"<message text, supports [%placeholder%]>\", \"senderName\":\"<optional sender name>\"}\n" +
+            "  - \"FC_CREATE_TEXT_FILE\" — creates a text/JSON/XML/HTML file as an attachment; " +
+            "nodeParams: {\"fileName\":\"<filename with extension>\", \"fileContent\":\"<content, supports [%placeholder%]>\", " +
+            "\"contentType\":\"PLAIN_TEXT|JSON|XML|HTML\" (default PLAIN_TEXT)}\n" +
+            "  - \"FC_WRITE_FORM_RECORD_ATTRIBUTES\" — writes custom key-value attributes to the record; " +
+            "nodeParams: {\"attributes\":[{\"name\":\"<key>\",\"value\":\"<value>\"},...]}\n" +
+            "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}. " +
+            "WARNING: NEVER use FC_EMPTY to represent an email, state change, or any other action. " +
+            "If the user requests sending an email, always use FC_EMAIL even if 'to' is unknown (set 'to' to \"\").\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field):\n" +
             "  Every workflow lane must end with a status transition (Endpunkt).\n" +
@@ -734,7 +1428,11 @@ class AICodBiAssistant : IPluginServletAction {
             "  NEVER use a 'displayText' value in the output. NEVER guess or invent a technicalId.\n" +
             "  Even if the 'technicalId' looks wrong or random, copy it character-for-character.\n" +
             "  Elements with type 'BUTTON' are individual clickable buttons. For triggerParams.buttonName always use\n" +
-            "  the 'technicalId' of the individual BUTTON whose 'displayText' matches — never use a container's id.\n\n")
+            "  the 'technicalId' of the individual BUTTON whose 'displayText' matches — never use a container's id.\n" +
+            "  BUTTON entries may have 'actionPage' (e.g. 'submit', 'submitNoCheck', 'next', 'prev') — use this to\n" +
+            "  identify which button submits the form when the user says 'submit button', 'Absende-Button', etc.\n" +
+            "  NO-MATCH RULE: If no BUTTON in FORM ELEMENTS matches the description, use triggerParams:{} (matches any\n" +
+            "  button) instead of inventing a buttonName. NEVER construct names like 'btnSubmitOnP2' or similar.\n\n")
     if (formContext != null) {
       append(
           "FORM ELEMENTS (match user descriptions via 'displayText'; always use 'technicalId' in output):\n" +
@@ -749,7 +1447,7 @@ class AICodBiAssistant : IPluginServletAction {
             "  Step 2 — find field:  user says 'Mail-Feld' → matches displayText 'Mail'   → technicalId is 'tfHurra'  → use [%tfHurra%]\n" +
             "  Output: {\"taskName\":\"E-Mail bei Absenden\",\"taskDescription\":\"\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
             "\"triggerParams\":{\"buttonName\":\"btnZwolf\"},\"nodeType\":\"FC_EMAIL\"," +
-            "\"nodeParams\":{\"to\":\"[%tfHurra%]\",\"subject\":\"Eingang\",\"body\":\"Ihr Formular wurde empfangen.\"},\"endpointState\":\"Received\"}\n\n")
+            "\"nodeParams\":{\"to\":\"[%tfHurra%]\",\"subject\":\"Eingang\",\"body\":\"<p>Ihr Formular wurde empfangen.</p>\"},\"endpointState\":\"Received\"}\n\n")
     append("Output ONLY valid JSON. No trailing commas. No comments.")
   }
 
@@ -1104,7 +1802,13 @@ class AICodBiAssistant : IPluginServletAction {
         val buttonName = spec.triggerParams["buttonName"] as? String ?: ""
         """{"buttonName":${gson.toJson(buttonName)}}"""
       }
-      else -> null
+      "FC_STATE_TIMER" -> {
+        val days = (spec.triggerParams["durationDays"] as? Number)?.toLong() ?: 0L
+        val hours = (spec.triggerParams["durationHours"] as? Number)?.toInt() ?: 0
+        val minutes = (spec.triggerParams["durationMinutes"] as? Number)?.toInt() ?: 0
+        """{"durationDays":$days,"durationHours":$hours,"durationMinutes":$minutes,"durationSeconds":0}"""
+      }
+      else -> "{}" // FC_MANUAL and others use empty params
     }
   }
 
@@ -1120,8 +1824,20 @@ class AICodBiAssistant : IPluginServletAction {
         val body = spec.nodeParams["body"] as? String ?: ""
         val from = spec.nodeParams["from"] as? String ?: ""
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST")
+        val attachments =
+            (spec.nodeParams["attachments"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val bodyFormatType = "HTML"
         val toJson = if (to.isNotBlank()) "[${gson.toJson(to)}]" else "[]"
-        """{"to":$toJson,"cc":[],"bcc":[],"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"bodyFormatType":"PLAIN","from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)}}"""
+        val multiFileJson =
+            if (attachments.isNotEmpty()) {
+              val resourcesJson =
+                  attachments.joinToString(",") { id ->
+                    """{"type":"UPLOAD","identifier":${gson.toJson(id)}}"""
+                  }
+              ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
+            } else ""
+        """{"to":$toJson,"cc":[],"bcc":[],"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":${gson.toJson(bodyFormatType)},"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)}$multiFileJson}"""
       }
       "FC_CHANGE_STATE" -> {
         val stateName = spec.nodeParams["stateName"] as? String ?: ""
@@ -1135,7 +1851,74 @@ class AICodBiAssistant : IPluginServletAction {
           """{"targetState":null}"""
         }
       }
-      else -> null
+      "FC_HTTP_REQUEST" -> {
+        val url = spec.nodeParams["url"] as? String ?: ""
+        val method = (spec.nodeParams["method"] as? String ?: "POST").uppercase()
+        val body = spec.nodeParams["body"] as? String ?: ""
+        val contentType = (spec.nodeParams["contentType"] as? String ?: "JSON").uppercase()
+        @Suppress("UNCHECKED_CAST")
+        val headers =
+            (spec.nodeParams["headers"] as? List<*>)?.filterIsInstance<Map<*, *>>()?.mapNotNull { h
+              ->
+              val name = h["name"] as? String ?: return@mapNotNull null
+              val value = h["value"] as? String ?: ""
+              """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
+            } ?: emptyList()
+        val headersJson = "[${headers.joinToString(",")}]"
+        if (contentType == "FORM_DATA") {
+          """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+        } else {
+          """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+        }
+      }
+      "FC_CHANGE_FORM_VALUE" -> {
+        @Suppress("UNCHECKED_CAST")
+        val formValues =
+            (spec.nodeParams["formValues"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.mapNotNull { fv ->
+                  val name = fv["name"] as? String ?: return@mapNotNull null
+                  val value = fv["value"] as? String ?: ""
+                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
+                } ?: emptyList()
+        """{"formValues":[${formValues.joinToString(",")}]}"""
+      }
+      "FC_LOG_ENTRY" -> {
+        val message = spec.nodeParams["message"] as? String ?: ""
+        val level = (spec.nodeParams["level"] as? String ?: "INFO").uppercase()
+        """{"comments":${gson.toJson(message)},"level":${gson.toJson(level)}}"""
+      }
+      "FC_REDIRECT" -> {
+        val url = spec.nodeParams["url"] as? String ?: ""
+        """{"urlManual":${gson.toJson(url)},"queryStringValues":[]}"""
+      }
+      "FC_SEND_FORM_RECORD_MESSAGE" -> {
+        val message = spec.nodeParams["message"] as? String ?: ""
+        val senderName = spec.nodeParams["senderName"] as? String ?: ""
+        """{"messageContent":${gson.toJson(message)},"senderName":${gson.toJson(senderName)}}"""
+      }
+      "FC_CREATE_TEXT_FILE" -> {
+        val fileName = spec.nodeParams["fileName"] as? String ?: "output.txt"
+        val fileContent = spec.nodeParams["fileContent"] as? String ?: ""
+        val contentType = (spec.nodeParams["contentType"] as? String ?: "PLAIN_TEXT").uppercase()
+        """{"fileName":${gson.toJson(fileName)},"fileContent":${gson.toJson(fileContent)},"contentType":${gson.toJson(contentType)}}"""
+      }
+      "FC_WRITE_FORM_RECORD_ATTRIBUTES" -> {
+        @Suppress("UNCHECKED_CAST")
+        val attributes =
+            (spec.nodeParams["attributes"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.mapNotNull { a ->
+                  val name = a["name"] as? String ?: return@mapNotNull null
+                  val value = a["value"] as? String ?: ""
+                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
+                } ?: emptyList()
+        """{"customAttributes":[${attributes.joinToString(",")}],"writeAttributesToForm":false}"""
+      }
+      "FC_SET_SAVED_FLAG",
+      "FC_DELETE_FORM_RECORD",
+      "FC_EMPTY" -> "{}"
+      else -> "{}"
     }
   }
 

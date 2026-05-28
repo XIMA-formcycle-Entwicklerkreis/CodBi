@@ -78,6 +78,17 @@
         "panel": "shared"
       },
       "problemMatcher": []
+    },
+    {
+      "label": "launch-mailserver",
+      "type": "shell",
+      "command": "./mvnw",
+      "args": ["-P", "mailserver", "exec:java"],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "problemMatcher": []
     }
   ]
 }

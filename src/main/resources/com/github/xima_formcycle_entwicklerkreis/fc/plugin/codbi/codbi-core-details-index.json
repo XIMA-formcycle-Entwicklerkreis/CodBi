@@ -1,0 +1,772 @@
+{
+  "generatedAt": "2026-05-27T09:07:42.8591592+02:00",
+  "entries": {
+    "AI.LLAMA.CHAT": {
+      "id": "AI.LLAMA.CHAT",
+      "type": "functionality",
+      "summary": "Provides the AI_LLAMA_CHAT.functionality .",
+      "tsdoc": "Provides the {@link AI_LLAMA_CHAT.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "AI.OCR": {
+      "id": "AI.OCR",
+      "type": "functionality",
+      "summary": "Provides the AI.functionality .",
+      "tsdoc": "Provides the {@link AI.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Date.Frame": {
+      "id": "Date.Frame",
+      "type": "functionality",
+      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Date.Min": {
+      "id": "Date.Min",
+      "type": "functionality",
+      "summary": "Provides the Date_Min.functionality .",
+      "tsdoc": "Provides the {@link Date_Min.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Date.NoWeekends": {
+      "id": "Date.NoWeekends",
+      "type": "functionality",
+      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Form.Navigator": {
+      "id": "Form.Navigator",
+      "type": "functionality",
+      "summary": "Registers the Form_Navigator.functionality .",
+      "tsdoc": "Registers the {@link Form_Navigator.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "HTML.CSS": {
+      "id": "HTML.CSS",
+      "type": "functionality",
+      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "HTML.Input.Cleave": {
+      "id": "HTML.Input.Cleave",
+      "type": "functionality",
+      "summary": "Provides the HTML_Input_Cleave.functionality .",
+      "tsdoc": "Provides the {@link HTML_Input_Cleave.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "HTML.Input.REGEX": {
+      "id": "HTML.Input.REGEX",
+      "type": "functionality",
+      "summary": "Provides the HTML_Input_REGEX.functionality .",
+      "tsdoc": "Provides the {@link HTML_Input_REGEX.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "HTML.Panel": {
+      "id": "HTML.Panel",
+      "type": "functionality",
+      "summary": "Provides the HTML_Panel.functionality .",
+      "tsdoc": "Provides the {@link HTML_Panel.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "HTML.SETAttribute": {
+      "id": "HTML.SETAttribute",
+      "type": "functionality",
+      "summary": "Provides the HTML_SETAttribute.functionality .",
+      "tsdoc": "Provides the {@link HTML_SETAttribute.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "HTML.Text.Injector": {
+      "id": "HTML.Text.Injector",
+      "type": "functionality",
+      "summary": "Provides the HTML_Text_Injector.functionality .",
+      "tsdoc": "Provides the {@link HTML_Text_Injector.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "HTML.Text.Mapper": {
+      "id": "HTML.Text.Mapper",
+      "type": "functionality",
+      "summary": "Provides the HTML_Text_Mapper.functionality .",
+      "tsdoc": "Provides the {@link HTML_Text_Mapper.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "JSON.SET": {
+      "id": "JSON.SET",
+      "type": "functionality",
+      "summary": "Provides the JSON_SET.functionality .",
+      "tsdoc": "Provides the {@link JSON_SET.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "LDAP.Autocomplete.Set": {
+      "id": "LDAP.Autocomplete.Set",
+      "type": "functionality",
+      "summary": "Provides the LDAP_Autocomplete.functionality .",
+      "tsdoc": "Provides the {@link LDAP_Autocomplete.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "LDAP.Autocomplete": {
+      "id": "LDAP.Autocomplete",
+      "type": "functionality",
+      "summary": "Extended HTMLInputElement interface that adds support for LDAP match listeners.",
+      "tsdoc": "Extended HTMLInputElement interface that adds support for LDAP match listeners.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Matomo.Tracking": {
+      "id": "Matomo.Tracking",
+      "type": "functionality",
+      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Media.Image.Cropper": {
+      "id": "Media.Image.Cropper",
+      "type": "functionality",
+      "summary": "Provides the Media_Image_Cropper.functionality .",
+      "tsdoc": "Provides the {@link Media_Image_Cropper.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "MEDIA.INPUT.SPEECH": {
+      "id": "MEDIA.INPUT.SPEECH",
+      "type": "functionality",
+      "summary": "A single recognition hypothesis returned by the speech engine.",
+      "tsdoc": "A single recognition hypothesis returned by the speech engine.\n@see {@link https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognitionAlternative | MDN â€” SpeechRecognitionAlternative}",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "OpenPLZ.Autocomplete": {
+      "id": "OpenPLZ.Autocomplete",
+      "type": "functionality",
+      "summary": "Provides the OpenPLZ_Autocomplete.functionality .",
+      "tsdoc": "Provides the {@link OpenPLZ_Autocomplete.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Print.Remove": {
+      "id": "Print.Remove",
+      "type": "functionality",
+      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Sys.Log.Console": {
+      "id": "Sys.Log.Console",
+      "type": "functionality",
+      "summary": "Provides the Sys_Log_Console.functionality .",
+      "tsdoc": "Provides the {@link Sys_Log_Console.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Time.Frame": {
+      "id": "Time.Frame",
+      "type": "functionality",
+      "summary": "Provides the Time_Frame.functionality .",
+      "tsdoc": "Provides the {@link Time_Frame.functionality }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "AI.LLAMA.STD.QA": {
+      "id": "AI.LLAMA.STD.QA",
+      "type": "ep",
+      "summary": "This Element-Placeholder acquires the AI response to a question.",
+      "tsdoc": "This **E**lement-**P**laceholder acquires the AI response to a question.\n### Indexed Parameters:\n- 1st                         â€” The question to ask the AI.\n- 2nd **UseInternet**         â€” `\"true\"` to enable Brave Search internet access. Default: `\"false\"`.\n- 3rd **Location**            â€” `\"true\"` to enable geolocation access. Default: `\"false\"`.\n- 4th **Language**            â€” Language for the AI response (e.g. `\"German\"`, `\"English\"`). Appends\n`\"Answer in {language}.\"` to the question.\n- 5th **ResponseLanguage**    â€” Two-letter ISO 639-1 code (e.g. `\"de\"`, `\"fr\"`). Forces the AI\nto respond in this language, skipping auto-detection.\n- 6th **Specialist**          â€” Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`\nplugin property.\n- 7th **FilterResults**       â€” `\"true\"` to enable PII filtering on Brave Search queries.\n- 8th **JsonParse**           â€” `\"true\"` to parse the AI response as JSON. Default: `\"false\"`.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "BayVIS.Ansprechpartner": {
+      "id": "BayVIS.Ansprechpartner",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from\nthe corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: A property of the directory, like e.g. \"bezeichnung\".\n- returns Either an\n{@link Array \u003c{ anrede: string; vorname: string; nachname: string; funktion: string;\nstellenbezeichnung: string; email: string; website: string; zimmer: string;\nsortierreihenfolge: number; behoerdeId: number; behoerdeBezeichnung: string;\ngebaeudeId: number; gebaeudeBezeichnung: string; ansprechpartnerId: number;}\u003e}\nor an {@link Array \u003c string \u003e}, if a parameter is specified.",
+      "parameters": {
+        "1": "A property of the directory, like e.g."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Behoerden.Details": {
+      "id": "BayVIS.Behoerden.Details",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the details of an authority specified by the provided ID from the corresponding\nCodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st:  The ID of the authority to retrieve.\n- 2nd:  An optional property of the directory, like e.g. \"bezeichnung\".\n- returns Either an {@link Array \u003c{ bezeichnungBehoerde: string; behoerdeZuordnungen : object, behoerdenGebaeudeZuordnungen : object, behoerdenart : string, behoerdengruppe : string, bezeichnung : string, email : string, id : string, sortierreihenfolge : string}\u003e}\nor an {@link Array \u003c string \u003e}, if the 3rd parameter is specified.",
+      "parameters": {
+        "1": "The ID of the authority to retrieve.",
+        "2": "An optional property of the directory, like e.g."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Behoerden.ID": {
+      "id": "BayVIS.Behoerden.ID",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the IDs of authorities by their \"bezeichnung\" (case insensitive).",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the IDs of authorities by their \"bezeichnung\" (case insensitive).\nPlaceholder Parameter:\n- 1st: The Name of the authority to retrieve.\n- resolves to a {@link Array \u003c string \u003e} of authorities IDs with matching \"bezeichnung\".",
+      "parameters": {
+        "1": "The Name of the authority to retrieve."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Behoerden": {
+      "id": "BayVIS.Behoerden",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from\nthe corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: An property of the directory, like e.g. \"bezeichnung\".\n- returns Either an {@link Array \u003c{ behoerdenart : string, behoerdengruppe : string, bezeichnung : string, email : string, id : string, sortierreihenfolge : string}\u003e}\nor an {@link Array \u003c string \u003e}, if the 2nd parameter is specified.",
+      "parameters": {
+        "1": "An property of the directory, like e.g."
+      },
+      "classDescriptions": {}
+    },
+    "Data.CSV": {
+      "id": "Data.CSV",
+      "type": "ep",
+      "summary": "This Element Placeholder turns a CSV-String into an Array \u003c string \u003e.",
+      "tsdoc": "This **E**lement **P**laceholder turns a CSV-{@link String } into an {@link Array \u003c string \u003e}.\nConfig Parameter:\n1. The CSV-{@link String } to convert.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Data.Join": {
+      "id": "Data.Join",
+      "type": "ep",
+      "summary": "Joins the properties of multiple object s into one.",
+      "tsdoc": "Joins the properties of multiple {@link object }s into one.\nProperties will get overridden by the subsequent ones.\nConfig Parameter:\nThe {@link object }s to join.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Date.Arithmetic": {
+      "id": "Date.Arithmetic",
+      "type": "ep",
+      "summary": "This Element-Placeholder turns a String into a Date .",
+      "tsdoc": "This Element-Placeholder turns a {@link String } into a {@link Date }.\nPlaceholder Parameter:\n- 1st:  The {@link String } to turn to a {@link Date}.\n- 2nd:  The optional format of the \"dateString\" (e.g. DD/MM/YYYY).\n- 3rd:  The operations to perform on the {@link Date } specified.\nDays, months and years may be either added or subtracted by adding each\narithmetic option as a separate parameter (e.g. Date.Arithmetic \u003e 01.01.1978 ; -1d ; +2m ; -10y ).\n@param params The parameters for that Element-Placeholder (provided by CodBi).",
+      "parameters": {
+        "1": "The String to turn to a Date.",
+        "2": "The optional format of the \"dateString\" (e.g.",
+        "3": "The operations to perform on the Date specified."
+      },
+      "classDescriptions": {}
+    },
+    "Date.FromString": {
+      "id": "Date.FromString",
+      "type": "ep",
+      "summary": "This Element-Placeholder turns a String into a Date .",
+      "tsdoc": "This **E**lement-**P**laceholder turns a {@link String } into a {@link Date }.\nPlaceholder Parameter:\n- 1st:  The {@link String } to turn to a {@link Date}.\n- 2nd:  An optional dateformat {@link string } like YYYY/MM/DD, for example.\nIf omitted DD.MM.YYYY is assumed.",
+      "parameters": {
+        "1": "The String to turn to a Date.",
+        "2": "An optional dateformat string like YYYY/MM/DD, for example."
+      },
+      "classDescriptions": {}
+    },
+    "Date.Holidays": {
+      "id": "Date.Holidays",
+      "type": "ep",
+      "summary": "The type of requests needed to identify identical requests.",
+      "tsdoc": "The type of requests needed to identify identical requests.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Date.Today": {
+      "id": "Date.Today",
+      "type": "ep",
+      "summary": "Provides the DATE_Today.retrieve al of the current Date along with arithmetic appliances.",
+      "tsdoc": "Provides the {@link DATE_Today.retrieve }al of the current {@link Date } along with arithmetic appliances.\nPlaceholder Parameter:\nEither \"NOW\" to retrieve the current {@link Date } or a/multiple arithmetic operations like +1d ; -1m ; + 1y.\nThe parameters are case insensitive.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Date.Weekends": {
+      "id": "Date.Weekends",
+      "type": "ep",
+      "summary": "This Element-Placeholder Registers the \"Date.Weekend\"-EP along with a necessary CSS-Injection in the Document.head .",
+      "tsdoc": "This **E**lement-**P**laceholder Registers the \"Date.Weekend\"-EP along with a necessary CSS-Injection in the {@link Document.head }.\nThe EP retrieves a {@link Array \u003c string \u003e} of all dates that\u0027re Weekends (Saturday \u0026 Sunday) between\ntwo optional {@link Date }s that may be specified.\nIf just one parameter is specified it will be treated as the Ending-{@link Date }.\nNo Parameter will generate a range of dates between today and today in a year.\nConfig Parameter:\n1.  Beginning of the range of dates to return unless it is the only parameter. In that case it specifies the end\nof the range, while the beginning is today.\n2.  The end of the range.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "DOM.Query": {
+      "id": "DOM.Query",
+      "type": "ep",
+      "summary": "This Element-Placeholder queries an Element .",
+      "tsdoc": "This **E**lement-**P**laceholder queries an {@link Element }.\nPlaceholder Parameter:\nThe CSS-Selector targeting the desired {@link Element }.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "F": {
+      "id": "F",
+      "type": "ep",
+      "summary": "Finds the objects within an Array that have a specific property with a specific value.",
+      "tsdoc": "Finds the objects within an {@link Array } that have a specific **property** with a specific **value**.\nIf a single object is found, no {@link Array } will be returned, if no object is found an empty {@Array }.\nConfig Parameter:\n- 1st: The **name** of the property to look for.\n- 2nd: The **value** the property to look for has to have.\n- 3rd: The {@link Array } of objects to scan.",
+      "parameters": {
+        "1": "The name of the property to look for.",
+        "2": "The value the property to look for has to have.",
+        "3": "The Array of objects to scan."
+      },
+      "classDescriptions": {}
+    },
+    "I": {
+      "id": "I",
+      "type": "ep",
+      "summary": "This Element-Placeholder acquires a specific element.",
+      "tsdoc": "This **E**lement-**P**laceholder acquires a specific element\nwithin an {@link Array }.\nPlaceholder Parameter:\n- The index to retrieve.\n- The {@link Array } from which to retrieve the value from.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "JSON.Path": {
+      "id": "JSON.Path",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves an Object at a specific path out of the one given in the.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves an {@link Object } at a specific path out of the one given in the\nfirst parameter.\nPlaceholder Parameter:\n- 1st:  The {@link Object } to retrieve the requested one from.\n- 2nd:  The dotted path leading to the requested one.",
+      "parameters": {
+        "1": "The Object to retrieve the requested one from.",
+        "2": "The dotted path leading to the requested one."
+      },
+      "classDescriptions": {}
+    },
+    "LDAP.Find": {
+      "id": "LDAP.Find",
+      "type": "ep",
+      "summary": "This Elementplaceholder connects via a default (LDAP_URL in CodBi Settings) or an optionally specified.",
+      "tsdoc": "This Elementplaceholder connects via a default (**LDAP_URL** in CodBi Settings) or an optionally specified\nURL (optional **3rd parameter**) to a predefined Formcycle LDAP-Query requesting data from it.\nThe Query has to have following content in order to work with this Elementplaceholder:\n**(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**.\n**Furthermore Following currently supported LDAP-Attributes should be returned by the predefined Formcycle LDAP-Query**\n| LDAP Property | Corresponds To |\n| :------------ | :------------- |\n| givenName     | First Name     |\n| mail          | eMail Address  |\n| sn            | Last Name      |\n| title         | Title          |\n| department    | Department     |\n| telephoneNumber| Phonenumber   |\n| sAMAccountName| Account        |\n| cn            | Common Name    |\n| displayName   | Display Name   |\n### Config Parameter:\n- 1st:  The mode to use for the filter. Either **AND** or **OR** (case insensitive). Everything else will be interpreted as **AND**.\n- 2nd:  The LDAP conditions (like sn = Doe) separated by **|** (like sn = Doe | givenName = John).\n- 3rd:  The optional **URL** to a Formcycle-LDAP-Query (which\u0027s content is **(?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))**) to use.",
+      "parameters": {
+        "1": "The mode to use for the filter.",
+        "2": "The LDAP conditions (like sn = Doe) separated by | (like sn = Doe | givenName = John).",
+        "3": "The optional URL to a Formcycle-LDAP-Query (which\u0027s content is (?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))) to use."
+      },
+      "classDescriptions": {}
+    },
+    "Net.URL": {
+      "id": "Net.URL",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the content of a URL.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the content of a URL.\n### Config Parameter:\n1. The URL to retrieve from.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "OpenPLZ.Localities": {
+      "id": "OpenPLZ.Localities",
+      "type": "ep",
+      "summary": "An OpenPLZ -Request specialized into searching for localities.",
+      "tsdoc": "An {@link OpenPLZ }-Request specialized into searching for localities.\n### Config Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s name.\n- 3rd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s postal code.\n- 4th: An Optional number of pages to load.",
+      "parameters": {
+        "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
+        "2": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s name.",
+        "3": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality\u0027s postal code.",
+        "4": "An Optional number of pages to load."
+      },
+      "classDescriptions": {}
+    },
+    "OpenPLZ.Streets": {
+      "id": "OpenPLZ.Streets",
+      "type": "ep",
+      "summary": "An OpenPLZ -Request specialized into searching for streets.",
+      "tsdoc": "An {@link OpenPLZ }-Request specialized into searching for streets.\n### Config Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s name.\n- 3rd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s postal code. If this is empty the\n**4th** parameter will be used for the search as the street\u0027s city-name.\n- 4th: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city\u0027s name used if the **3rd**\nparameter is empty.\n- 5th: An Optional number of pages to load.",
+      "parameters": {
+        "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
+        "2": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s name.",
+        "3": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s postal code.",
+        "4": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city\u0027s name used if the 3rd.",
+        "5": "An Optional number of pages to load."
+      },
+      "classDescriptions": {}
+    },
+    "OpenPLZ.TextSearch": {
+      "id": "OpenPLZ.TextSearch",
+      "type": "ep",
+      "summary": "An OpenPLZ -Request performing a full text-search.",
+      "tsdoc": "An {@link OpenPLZ }-Request performing a full text-search.\nConfig Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g. 91522 NÃ¼rnbergerstrasse ).\n- 3rd: An Optional number of pages to load.",
+      "parameters": {
+        "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
+        "2": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g.",
+        "3": "An Optional number of pages to load."
+      },
+      "classDescriptions": {}
+    },
+    "OpenPLZ": {
+      "id": "OpenPLZ",
+      "type": "ep",
+      "summary": "Retrieves data from the CodBi_OpenPLZ_Verwaltungseinheiten-Servlet according to the parameter specified.",
+      "tsdoc": "Retrieves data from the **CodBi_OpenPLZ_Verwaltungseinheiten**-Servlet according to the parameter specified.\nThis is the base class for accessing the **[OpenPLZ REST API](https://www.openplzapi.org/de/)**, thus making all\nfeatures that the REST-Service provides accessible.\n### Config Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The **orgaUnit** to retrieve (e.g. **FederalStates**, **FederalProvinces** or **Cantons**).\n- 3rd: The optional key of the state, province or canton to get details of.\n- 4th: The optional detail to fetch about a certain state, province or canton identified by the\n**officialKey** (not optional if an official key is present). May be Municipalities or Districts.\n- 5th: There may be up to four parameter passed along the request (e.g. **postalCode**, **name**,\n**locality**, **searchTerm**).\n- 6th: There may be up to four parameter passed along the request (e.g. **postalCode**, **name**,\n**locality**, **searchTerm**).\n- 7th: There may be up to four parameter passed along the request (e.g. **postalCode**, **name**,\n**locality**, **searchTerm**).\n- 8th: There may be up to four parameter passed along the request (e.g. **postalCode**, **name**,\n**locality**, **searchTerm**).\n- 9th: An Optional number of pages to load.",
+      "parameters": {
+        "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
+        "2": "The orgaUnit to retrieve (e.g.",
+        "3": "The optional key of the state, province or canton to get details of.",
+        "4": "The optional detail to fetch about a certain state, province or canton identified by the.",
+        "5": "There may be up to four parameter passed along the request (e.g.",
+        "6": "There may be up to four parameter passed along the request (e.g.",
+        "7": "There may be up to four parameter passed along the request (e.g.",
+        "8": "There may be up to four parameter passed along the request (e.g.",
+        "9": "An Optional number of pages to load."
+      },
+      "classDescriptions": {}
+    },
+    "Sorted": {
+      "id": "Sorted",
+      "type": "ep",
+      "summary": "An Elementplaceholder sorts the Array passed as the 1st parameter in.",
+      "tsdoc": "An Elementplaceholder sorts the {@link Array } passed as the **1st** parameter in\nalphabetical (lexicographical) order.\n### Config Parameter:\n- 1st: The {@link Array } to sort.\n- 2nd: The optional name of a property to use to sort elements of the given {@link Array }.",
+      "parameters": {
+        "1": "The Array to sort.",
+        "2": "The optional name of a property to use to sort elements of the given Array ."
+      },
+      "classDescriptions": {}
+    },
+    "Unique": {
+      "id": "Unique",
+      "type": "ep",
+      "summary": "An Elementplaceholder filters the Array passed as the 1st parameter from duplicates.",
+      "tsdoc": "An Elementplaceholder filters the {@link Array } passed as the **1st** parameter from duplicates.\nIf the optional **2nd** parameter is specified the elements will be filtered according to a certain\nproperty.\nConfig Parameter:\n- 1st: The {@link Array } to filter.\n- 2nd: The optional name of a property to use to filter out elements of the given {@link Array }.",
+      "parameters": {
+        "1": "The Array to filter.",
+        "2": "The optional name of a property to use to filter out elements of the given Array ."
+      },
+      "classDescriptions": {}
+    },
+    "V": {
+      "id": "V",
+      "type": "ep",
+      "summary": "This Element-Placeholder acquires a global variable\u0027s value.",
+      "tsdoc": "This **E**lement-**P**laceholder acquires a global variable\u0027s value.\nPlaceholder Parameter:\n-1st: The name of the global variable.\n-2nd: **REPORT** if a {@link CodBiError } shall be thrown when the global variable isn\u0027t\nexistent. Otherwise an empty {@link string } will be acquired.",
+      "parameters": {
+        "1": "The name of the global variable.",
+        "2": "REPORT if a CodBiError shall be thrown when the global variable isn\u0027t."
+      },
+      "classDescriptions": {}
+    },
+    "VP": {
+      "id": "VP",
+      "type": "ep",
+      "summary": "This Element-Placeholder acquires a value from window.codbiSettings.gv.",
+      "tsdoc": "This **E**lement-**P**laceholder acquires a value from {@link window.codbiSettings.gv }\nthat was injected via a plugin property prefixed with **GV_**.\nPlaceholder Parameter:\n-1st: The key (the part after the **GV_** prefix in the plugin property name).\n-2nd: **REPORT** if a {@link CodBiError } shall be thrown when the key isn\u0027t\npresent in {@link window.codbiSettings.gv }. Otherwise an empty {@link string } will be acquired.",
+      "parameters": {
+        "1": "The key (the part after the GV_ prefix in the plugin property name).",
+        "2": "REPORT if a CodBiError shall be thrown when the key isn\u0027t."
+      },
+      "classDescriptions": {}
+    },
+    "AI": {
+      "id": "AI",
+      "type": "standard",
+      "summary": "Registers standard configurations providing targets that\u0027re used with.",
+      "tsdoc": "Registers standard configurations providing targets that\u0027re used with\nCodBi\u0027s **LLAMA**,**Tesseract** \u0026 **Whisper** implementations.\n#### CSS-Classes\n| Functionality | CSS Class | Description |\n| :--- | :--- | :--- |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_Input** | Identifies the `input type=\"text\"` or `textarea` where the user types their messages. |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_Send** | Identifies the `button` used to send the typed message. |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_Stop** | Identifies the `button` used to abort a running inference. |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_Upload** | Identifies the `input type=\"file\"` for uploading documents/images to the chat. |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_Thinking** | Identifies the `input type=\"checkbox\"` to toggle thinking mode (chain-of-thought) on/off. |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_Internet** | Identifies the `input type=\"checkbox\"` to toggle internet search availability. |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_Location** | Identifies the `input type=\"checkbox\"` to toggle geolocation. |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_MailForward** | Identifies the `input type=\"checkbox\"` to toggle auto-forwarding of AI responses via email. |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_MailAddress** | Identifies the `input` where the target email address is specified. |\n| [AI.LLAMA.CHAT](../classes/Functionalities_ai.llama.chat.AI_LLAMA_CHAT.html) | **AI_LLAMA_CHAT_AlertOnFinish** | Identifies the `input type=\"checkbox\"` to toggle browser alerts when inference finishes. |\n| [AI.LLAMA.STANDARD.QA](../classes/Functionalities_ai.llama.standard.qa.AI_LLAMA_STANDARD_QA.html) \u0026 [TXTQA](../classes/Functionalities_ai.llama.standard.txtqa.AI_LLAMA_STANDARD_TXTQA.html) | **AI_LLAMA_QA_Exclude** | Tags nested XContainer elements to exclude their contents from question search. |\n| [AI.LLAMA.STANDARD.QA](../classes/Functionalities_ai.llama.standard.qa.AI_LLAMA_STANDARD_QA.html) | **AI_LLAMA_STANDARD_QA_Question** | Tags {@link HTMLInputElement}s that receive responses to questions specified in the **data-cb-Question** attribute. Responses transformed by **HTML.Input.Trans.RegEx**. |\n| [AI.LLAMA.STANDARD.TXTQA](../classes/Functionalities_ai.llama.standard.txtqa.AI_LLAMA_STANDARD_TXTQA.html) | **AI_LLAMA_STANDARD_TXTQA_Question** | Identifies elements designed to receive the AI\u0027s response to questions based on source fields. |\n| [AI.LLAMA.STANDARD.TXTQA](../classes/Functionalities_ai.llama.standard.txtqa.AI_LLAMA_STANDARD_TXTQA.html) | **AI_LLAMA_TXTQA_Source** | Identifies elements whose values are to be supplied as source context to the AI. |\n| [AI.OCR](../classes/Functionalities_ai.ocr.AI_OCR.html) | **AI_OCR_Receiver** | Tags {@link HTMLInputElement}s that receive text extracted from an image by Tesseract. Matched via **data-cb-Name**. Transformed by **HTML.Input.Trans.RegEx**. |",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Appointments": {
+      "id": "Appointments",
+      "type": "standard",
+      "summary": "Registers standard configurations specific to appointment arrangements.",
+      "tsdoc": "Registers standard configurations specific to appointment arrangements.\nCSS-Classes:\n- **CodBi_NoFutureDate**\nThe {@link HTMLInputElement } tagged with this class may not be set to a future date.\n- **CodBi_DateFrame_1_Begin \u0026 CodBi_DateFrame_1_End ( 1 to 5 )**\nThe {@link HTMLInputElement }s tagged with these classes will be configured to not allow entering a date\nin the tagged {@link HTMLInputElement } that is higher than the one in the {@link HTMLInputElement } the\nCSS-Selector \"MaxField\" points to.\n- **CodBi_TimeFrame_1_Begin \u0026 CodBi_TimeFrame_1_End ( 1 to 5 )**\nThe {@link HTMLInputElement }s tagged with these classes will be configured to not allow entering a time\nin the tagged {@link HTMLInputElement } that is higher than the one in the {@link HTMLInputElement } the\nCSS-Selector \"MaxField\" points to.\nBoth {@link HTMLInputElement }s are restricted to HH:MM using following {@link RegExp }:\n^(0[0-9]|1[0-9]|2[0-3]):(0[0-9]|[1-5][0-9])$.\nBoth are formatted with Cleave to permit HH:MM only.\n- **CodBi_Holidays_Listing**\nThe {@link HTMLSelectElement } tagged with this class, will be filled with all holidays for the current\nand next years for the state specified in the global variable **CodBi_Holidays_States**.",
+      "parameters": {},
+      "classDescriptions": {
+        "CodBi_DateFrame_1_Begin": "The HTMLInputElement s tagged with these classes will be configured to not allow entering a date in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector \"MaxField\" points to.",
+        "CodBi_DateFrame_1_End": "The HTMLInputElement s tagged with these classes will be configured to not allow entering a date in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector \"MaxField\" points to.",
+        "CodBi_Holidays_Listing": "The HTMLSelectElement tagged with this class, will be filled with all holidays for the current and next years for the state specified in the global variable CodBi_Holidays_States.",
+        "CodBi_NoFutureDate": "The HTMLInputElement tagged with this class may not be set to a future date.",
+        "CodBi_TimeFrame_1_Begin": "The HTMLInputElement s tagged with these classes will be configured to not allow entering a time in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector \"MaxField\" points to.",
+        "CodBi_TimeFrame_1_End": "The HTMLInputElement s tagged with these classes will be configured to not allow entering a time in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector \"MaxField\" points to."
+      }
+    },
+    "BayVIS": {
+      "id": "BayVIS",
+      "type": "standard",
+      "summary": "Registers standard configurations specific to buildings registered in BayVIS.",
+      "tsdoc": "Registers standard configurations specific to buildings registered in BayVIS.\nCSS-Classes:\n- **CodBi_BayVIS_Behoerde**\nAll proper placeholder in the content of the tagged {@link HTMLInputElement }\u0027s \"innerHTML\" will be replaced with\nthe data of the building specified in the global variable **BayVIS_Behoerde**. Additionally the\ntagged {@link HTMLElement }\u0027s CSS **display** will be set to **block !important** when this config is applied thus\nenabling the element to be non present as long as it hasn\u0027t received it\u0027s values yet by setting it\u0027s\nCSS **display** to **none**.\nThe Placeholder\u0027s syntax is as follows: [(...)] e.g. [(postanschriftStrasse)].\n- **CodBi_BayVIS_BehoerdeUndAnsprechpartner**\nAll proper placeholder in the content of the tagged {@link HTMLInputElement }\u0027s \"innerHTML\" will be replaced with\nthe data of the building specified in the global variable **BayVIS_Behoerde** and the contact details of the\ncontact specified in **BayVIS_Hauptansprechpartner**.\nAdditionally the   tagged {@link HTMLElement }\u0027s CSS **display** will be set to **block !important** when\nthis config is applied thus enabling the element to be non present as long as it hasn\u0027t received it\u0027s values\nyet by setting it\u0027s CSS **display** to **none**.\nThe Placeholder\u0027s syntax is as follows: [(...)] e.g. [(vorname)].\n- **CodBi_BayVIS_Ansprechpartner**\nAll proper placeholder in the content of the tagged {@link HTMLInputElement }\u0027s \"innerHTML\" will be replaced with\nthe data of the building specified in the global variable **BayVIS_WeitereAnsprechpartner**.\nThis variable may contain multiple names separated by slashes. The content of the tagged\n{@link HTMLInputElement }\u0027s \"innerHTML\" will then be used as a template and repeated for as much names were\nprovided. If the contact for one or more of the names can\u0027t be found, that template-block won\u0027t be added to the\nresulting **innerHTML**.\nAdditionally the tagged {@link HTMLElement }\u0027s CSS **display** will be set to **block !important** when\nthis config is applied thus enabling the element to be non present as long as it hasn\u0027t received it\u0027s values\nyet by setting it\u0027s CSS **display** to **none**.\nThe Placeholder\u0027s syntax is as follows: [(...)] e.g. [(nachname)].\n- **CodBi_BayVIS_Auswahl_Behoerden**\nAll the available authorities will be listed by the tagged {@link HTMLSelectElement }.\nThe options that were set in the form designer will be overwritten.",
+      "parameters": {},
+      "classDescriptions": {
+        "CodBi_BayVIS_Ansprechpartner": "All proper placeholder in the content of the tagged HTMLInputElement \u0027s \"innerHTML\" will be replaced with the data of the building specified in the global variable BayVIS_WeitereAnsprechpartner.",
+        "CodBi_BayVIS_Auswahl_Behoerden": "All the available authorities will be listed by the tagged HTMLSelectElement .",
+        "CodBi_BayVIS_Behoerde": "All proper placeholder in the content of the tagged HTMLInputElement \u0027s \"innerHTML\" will be replaced with the data of the building specified in the global variable BayVIS_Behoerde.",
+        "CodBi_BayVIS_BehoerdeUndAnsprechpartner": "All proper placeholder in the content of the tagged HTMLInputElement \u0027s \"innerHTML\" will be replaced with the data of the building specified in the global variable BayVIS_Behoerde and the contact details of the contact specified in BayVIS_Hauptansprechpartner."
+      }
+    },
+    "Financial": {
+      "id": "Financial",
+      "type": "standard",
+      "summary": "Registers standard configurations specific to finances.",
+      "tsdoc": "Registers standard configurations specific to finances.\nCSS-Classes:\n- **CodBi_Currency**\nThe {@link HTMLInputElement }s tagged with this class will be formatted for Currencies using Cleave.",
+      "parameters": {},
+      "classDescriptions": {
+        "CodBi_Currency": "The HTMLInputElement s tagged with this class will be formatted for Currencies using Cleave."
+      }
+    },
+    "Holistic.CSS.Standard": {
+      "id": "Holistic.CSS.Standard",
+      "type": "standard",
+      "summary": "Registers a standard configuration that applies a standard CSS onto the form.",
+      "tsdoc": "Registers a standard configuration that applies a standard CSS onto the form.\nThe CSS is customizable via four basic accents (ACCENT, SHADOW, HIGHLIGHT \u0026 INPUT_BORDER).\nThese basics may be set via the global variables \"**CodBi_CSS_Scheme**\" \u0026 \"**CodBi_CSS_Darkmodescheme**\".\nIf not set they\u0027ll be set to\n\"**CodBi_CSS_Scheme**\" \u003e ACCENT | 65B22E, SHADOW | 000000, HIGHLIGHT | FF8C00, INPUT_BORDER | 66C430 and\n\"**CodBi_CSS_Darkmodescheme**\" \u003e ACCENT | 65B22E, SHADOW | FF8C00, HIGHLIGHT | FF8C00, INPUT_BORDER | 073507.\nThe values are hexadecimal color-codes without an alpha. The alpha will be varied by this configuration thus mustn\u0027t\nbe set.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Holistic.Matomo.Tracking": {
+      "id": "Holistic.Matomo.Tracking",
+      "type": "standard",
+      "summary": "Registers a standard configurations using the functionality.",
+      "tsdoc": "Registers a standard configurations using the functionality\n**Matomo.Tracking** that automatically initiates tracking according to either\nthe Plugin-Matomo-Config or the one provided via global variables whereas\nthe global one takes precedence.\nGlobal Variables:\n- **Matomo_SiteID** The functionalitie\u0027s **SiteID**-Parameter.\n- **URL** The functionalitie\u0027s **URL**-Parameter.",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Holistic.Media.Input.Speech": {
+      "id": "Holistic.Media.Input.Speech",
+      "type": "standard",
+      "summary": "Registers a standard configuration that applies Speech-to-Text onto every.",
+      "tsdoc": "Registers a standard configuration that applies Speech-to-Text onto every\n{@link HTMLInputElement } with `type=\"text\"` and every `\u003ctextarea\u003e`.\nGeneral excluding CSS-Class available (**CodBi_XCL**).\nExclusive excluding CSS-Class available (**CodBi_XCL_Speech**)",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "Holistic.Media.Input.Speech.Whisper": {
+      "id": "Holistic.Media.Input.Speech.Whisper",
+      "type": "standard",
+      "summary": "Registers a standard configuration that applies Whisper Speech-to-Text onto every.",
+      "tsdoc": "Registers a standard configuration that applies Whisper Speech-to-Text onto every\n{@link HTMLInputElement } with `type=\"text\"` and every `\u003ctextarea\u003e`.\nGeneral excluding CSS-Class available (**CodBi_XCL**).\nExclusive excluding CSS-Class available (**CodBi_XCL_Speech_Whisper**)",
+      "parameters": {},
+      "classDescriptions": {}
+    },
+    "LDAP.Autofill": {
+      "id": "LDAP.Autofill",
+      "type": "standard",
+      "summary": "Registers standard configurations specific to LDAP-Autocompletion in HTMLInputElement s.",
+      "tsdoc": "Registers standard configurations specific to LDAP-Autocompletion in {@link HTMLInputElement }s.\nCSS-Classes:\n- **CodBi_LDAP_AC_Mail**\nThe {@link HTMLInputElement }s tagged with this class will be configured to be autocompleted as soon as the\nentered mail-address matches an entry in the connected LDAP. As long as there are multiple matches, a selection\nwill be presented to the user.\nEntering an address that does not match any entry in the LDAP will not be tolerated.\nThis class matches the common LDAP-Property **mail**.\n- **CodBi_LDAP_AC_FirstName**\nThis class matches the common LDAP-Property **givenName**.\n- **CodBi_LDAP_AC_LastName**\nThis class matches the common LDAP-Property **sn**.\n- **CodBi_LDAP_AC_Title**\nThis class matches the common LDAP-Property **title**.\n- **CodBi_LDAP_AC_Department**\nThis class matches the common LDAP-Property **department**.\n- **CodBi_LDAP_AC_Telephone**\nThis class matches the common LDAP-Property **telephoneNumber**.\n- **CodBi_LDAP_AC_Account**\nThis class matches the common LDAP-Property **sAMAccountName**.\n- **CodBi_LDAP_AC_CommonName**\nThis class matches the common LDAP-Property **cn**.\n- **CodBi_LDAP_AC_DisplayName**\nThis class matches the common LDAP-Property **displayName**.",
+      "parameters": {},
+      "classDescriptions": {
+        "CodBi_LDAP_AC_Account": "This class matches the common LDAP-Property sAMAccountName.",
+        "CodBi_LDAP_AC_CommonName": "This class matches the common LDAP-Property cn.",
+        "CodBi_LDAP_AC_Department": "This class matches the common LDAP-Property department.",
+        "CodBi_LDAP_AC_DisplayName": "This class matches the common LDAP-Property displayName.",
+        "CodBi_LDAP_AC_FirstName": "This class matches the common LDAP-Property givenName.",
+        "CodBi_LDAP_AC_LastName": "This class matches the common LDAP-Property sn.",
+        "CodBi_LDAP_AC_Mail": "The HTMLInputElement s tagged with this class will be configured to be autocompleted as soon as the entered mail-address matches an entry in the connected LDAP.",
+        "CodBi_LDAP_AC_Telephone": "This class matches the common LDAP-Property telephoneNumber.",
+        "CodBi_LDAP_AC_Title": "This class matches the common LDAP-Property title."
+      }
+    },
+    "OpenPLZ.AC.SET": {
+      "id": "OpenPLZ.AC.SET",
+      "type": "standard",
+      "summary": "Registers standard configurations that binds HTMLInputElements tagged with the.",
+      "tsdoc": "Registers standard configurations that binds {@link HTMLInputElements } tagged with the\ndata-cb-func **OpenPLZ.Autocomplete** into a set of {@link HTMLInputElement }s that act together as an interface\nfor fast and accurate provision of an address within a specific country.\nSimply tag every {@link HTMLInputElement } within a {@link HTMLDivElement } with the the corresponding\n**CodBi-Class**. **These classes may also be used standalone**.\nCSS-Classes:\n- **CodBi_OpenPLZ_AC_SET_PLZ**:             Represents the set\u0027s **postal code**.\n- **CodBi_OpenPLZ_AC_SET_Locality**:        Represents the set\u0027s **locality**.\n- **CodBi_OpenPLZ_AC_SET_Street**:          Represents the set\u0027s **street**.\n- **CodBi_OpenPLZ_AC_SET_BuildingNumber**:  Represents the set\u0027s **building number**.\nGlobal Variables:\n- **CodBi_OpenPLZ_Country**: The code of the country to check. If not set the Plugin-Variable **OpenPLZ_Country**\nwill be used. If the Plugin-Variable is not set \"**de**\" will be used.",
+      "parameters": {},
+      "classDescriptions": {
+        "CodBi_OpenPLZ_AC_SET_BuildingNumber": "Represents the set\u0027s building number.",
+        "CodBi_OpenPLZ_AC_SET_Locality": "Represents the set\u0027s locality.",
+        "CodBi_OpenPLZ_AC_SET_PLZ": "Represents the set\u0027s postal code.",
+        "CodBi_OpenPLZ_AC_SET_Street": "Represents the set\u0027s street."
+      }
+    },
+    "People": {
+      "id": "People",
+      "type": "standard",
+      "summary": "Registers standard configurations specific to people characteristics.",
+      "tsdoc": "Registers standard configurations specific to people characteristics.\nCSS-Classes:\n- **CodBi_People_Alphanumeric**\nThe {@link HTMLInputElement } tagged with this class may only contain characters matching\n**^[-0-9A-za-z/: ]*[0-9A-za-z]$** and prevents entering characters not matching **[-0-9A-za-z/: ]**.\n- **CodBi_People_Name**\nThe {@link HTMLInputElement } tagged with this class may only contain characters matching\n**^[-0-9A-za-z/:# ]*[0-9A-za-z]$** and prevents entering characters not matching **[ A-Za-zÃ -Ã¿\u0027-]**.\n- **CodBi_People_BuildingNumber**, **CodBi_OpenPLZ_AC_SET_BuildingNumber**\nThe {@link HTMLInputElement } tagged with this class may only contain characters matching\n**^[0-9]+[-0-9A-Za-z/]*[0-9A-Za-z]$** and prevents entering characters not matching **[-A-Za-z0-9/ ]**.\n- **CodBi_People_Mail**\nThe {@link HTMLInputElement } tagged with this class may only contain characters matching\n**^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z][a-zA-Z]?$** and prevents entering characters not matching **[a-zA-Z0-9._%+-@]**.\n- **CodBi_People_18plus**\nThe {@link HTMLInputElement }s tagged with this class will be configured to not allow entering or selecting dates from JQuery\u0027s\ndatepicker that are less than 18 years in the past, which is useful for {@link HTMLInputElement }s taking birthdays.\nThe {@link HTMLInputElement } will be Cleave formatted with leading zeros and dots as separator.\n- **CodBi_People_Phone**\nThe {@link HTMLInputElement }s tagged with this class will be configured to only allow valid phonenumber input.\n- **CodBi_People_PLZ**\nThe {@link HTMLInputElement }s tagged with this class will be configured to only allow valid german postal codes.\n- **CodBi_Fotocropper_Board, CodBi_Fotocropper_Uploader, CodBi_Fotocropper_Update \u0026 CodBi_Fotocropper_Foto**\nTagging the proper elements with these classes a fotocropper can be set up.\n- **CodBi_OpenPLZ_AC_SET_PLZ**\nCombines **CodBi_OpenPLZ_AC_SET_PLZ** with **CodBi_People_PLZ**.\n- **CodBi_OpenPLZ_AC_SET_Locality**\nCombines **CodBi_OpenPLZ_AC_SET_Locality** with **CodBi_People_Name**.\n- **CodBi_OpenPLZ_AC_SET_Street**\nCombines **CodBi_OpenPLZ_AC_SET_Street** with **CodBi_People_Name**.\n- **CodBi_OpenPLZ_Select_Localities**\nFills a {@link HTMLSelectElement } with all the Localities of the country which\u0027s country code is specified\nin the global variable **CodBi_OpenPLZ_Country** according to the regular expression specified in the\nglobal variable **CodBi_OpenPLZ_Selection_regexName** for the name of the localities.\n- **CodBi_OpenPLZ_Select_Streets_By_PLZ**\nFills a {@link HTMLSelectElement } with all the streets in a locality that is identified by it\u0027S postal code\naccording to the regular expression placed in the global variable **CodBi_OpenPLZ_Selection_Streets_regexName**\nfor the name of the streets.\n- **CodBi_OpenPLZ_Select_Orga_Bundeslaender**\nFills a {@link HTMLSelectElement } with all the federal states of Germany.\n- **CodBi_OpenPLZ_Select_Orga_Bayern**\nFills a {@link HTMLSelectElement } with all the government regions of Bayern (Germany).",
+      "parameters": {},
+      "classDescriptions": {
+        "CodBi_Fotocropper": "Tagging the proper elements with these classes a fotocropper can be set up.",
+        "CodBi_Fotocropper_Board": "Tagging the proper elements with these classes a fotocropper can be set up.",
+        "CodBi_Fotocropper_Foto": "Tagging the proper elements with these classes a fotocropper can be set up.",
+        "CodBi_Fotocropper_Update": "Tagging the proper elements with these classes a fotocropper can be set up.",
+        "CodBi_Fotocropper_Uploader": "Tagging the proper elements with these classes a fotocropper can be set up.",
+        "CodBi_OpenPLZ_Select_Localities": "Fills a HTMLSelectElement with all the Localities of the country which\u0027s country code is specified in the global variable CodBi_OpenPLZ_Country according to the regular expression specified in the global variable CodBi_OpenPLZ_Selection_regexName for the name of the localities.",
+        "CodBi_OpenPLZ_Select_Orga_Bayern": "Fills a HTMLSelectElement with all the government regions of Bayern (Germany).",
+        "CodBi_OpenPLZ_Select_Orga_Bundeslaender": "Fills a HTMLSelectElement with all the federal states of Germany.",
+        "CodBi_OpenPLZ_Select_Streets_By_PLZ": "Fills a HTMLSelectElement with all the streets in a locality that is identified by it\u0027S postal code according to the regular expression placed in the global variable CodBi_OpenPLZ_Selection_Streets_regexName for the name of the streets.",
+        "CodBi_People_18plus": "The HTMLInputElement s tagged with this class will be configured to not allow entering or selecting dates from JQuery\u0027s datepicker that are less than 18 years in the past, which is useful for HTMLInputElement s taking birthdays.",
+        "CodBi_People_Alphanumeric": "The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/: ]*[0-9A-za-z]$ and prevents entering characters not matching [-0-9A-za-z/: ].",
+        "CodBi_People_BuildingNumber": ", CodBi_OpenPLZ_AC_SET_BuildingNumber The HTMLInputElement tagged with this class may only contain characters matching ^[0-9]+[-0-9A-Za-z/]*[0-9A-Za-z]$ and prevents entering characters not matching [-A-Za-z0-9/ ].",
+        "CodBi_People_Mail": "The HTMLInputElement tagged with this class may only contain characters matching ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z][a-zA-Z]?$ and prevents entering characters not matching [a-zA-Z0-9._%+-@].",
+        "CodBi_People_Name": "The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/:# ]*[0-9A-za-z]$ and prevents entering characters not matching [ A-Za-zÃ -Ã¿\u0027-].",
+        "CodBi_People_Phone": "The HTMLInputElement s tagged with this class will be configured to only allow valid phonenumber input.",
+        "CodBi_People_PLZ": "The HTMLInputElement s tagged with this class will be configured to only allow valid german postal codes."
+      }
+    },
+    "Print.Removal": {
+      "id": "Print.Removal",
+      "type": "standard",
+      "summary": "Registers standard configurations that remove HTMLElement s from the DOM.",
+      "tsdoc": "Registers standard configurations that remove {@link HTMLElement }s from the DOM.\nCSS-Classes:\n- **CodBi_Print_Remove_Tagged**\n{@link HTMLElement.remove }s the tagged element.",
+      "parameters": {},
+      "classDescriptions": {
+        "CodBi_Print_Remove_Tagged": "HTMLElement.remove s the tagged element."
+      }
+    },
+    "UI.Panels": {
+      "id": "UI.Panels",
+      "type": "standard",
+      "summary": "Registers standard configurations providing CodBi-\"HTML.Panel\"s.",
+      "tsdoc": "Registers standard configurations providing CodBi-\"HTML.Panel\"s\nCSS-Classes\n- **CodBi_HTML_Panel_Standard**\nA panel with shaded gray background for the auto generated \\\u003ch2\u003e header that changes the title\u0027s color to darkgreen\nwhen unfolded. The content will appear through a popup animation.\n**Usage:**\nTag the {@link HTMLDivElement } or fieldset with the CSS-Class \"CodBi_HTML_Panel_Standard\" and set the attribute \"cbAutoheaderTitle\"\nto define the title showed in the header.\n- **CodBi_Accordion_A to D**\nSets up accordions using the **HTML.Panel.Accordion** Functionality named either\n**CodBi_Accordion_A**, **CodBi_Accordion_B**, **CodBi_Accordion_C** or **CodBi_Accordion_D** depending\non the Standardconfiguration-Class used.",
+      "parameters": {},
+      "classDescriptions": {
+        "CodBi_Accordion_A": "Sets up accordions using the HTML.Panel.Accordion Functionality named either CodBi_Accordion_A, CodBi_Accordion_B, CodBi_Accordion_C or CodBi_Accordion_D depending on the Standardconfiguration-Class used.",
+        "CodBi_HTML_Panel_Standard": "A panel with shaded gray background for the auto generated \\\u003ch2\u003e header that changes the title\u0027s color to darkgreen when unfolded."
+      }
+    }
+  },
+  "aliases": {
+    "ai.llama.chat": "AI.LLAMA.CHAT",
+    "ai.ocr": "AI.OCR",
+    "date.frame": "Date.Frame",
+    "date.min": "Date.Min",
+    "date.noweekends": "Date.NoWeekends",
+    "form.navigator": "Form.Navigator",
+    "html.css": "HTML.CSS",
+    "html.input.cleave": "HTML.Input.Cleave",
+    "html.input.regex": "HTML.Input.REGEX",
+    "html.panel": "HTML.Panel",
+    "html.setattribute": "HTML.SETAttribute",
+    "html.text.injector": "HTML.Text.Injector",
+    "html.text.mapper": "HTML.Text.Mapper",
+    "json.set": "JSON.SET",
+    "ldap.autocomplete.set": "LDAP.Autocomplete.Set",
+    "ldap.autocomplete": "LDAP.Autocomplete",
+    "matomo.tracking": "Matomo.Tracking",
+    "media.image.cropper": "Media.Image.Cropper",
+    "media.input.speech": "MEDIA.INPUT.SPEECH",
+    "openplz.autocomplete": "OpenPLZ.Autocomplete",
+    "print.remove": "Print.Remove",
+    "sys.log.console": "Sys.Log.Console",
+    "time.frame": "Time.Frame",
+    "ai.llama.std.qa": "AI.LLAMA.STD.QA",
+    "bayvis.ansprechpartner": "BayVIS.Ansprechpartner",
+    "bayvis.behoerden.details": "BayVIS.Behoerden.Details",
+    "bayvis.behoerden.id": "BayVIS.Behoerden.ID",
+    "bayvis.behoerden": "BayVIS.Behoerden",
+    "data.csv": "Data.CSV",
+    "data.join": "Data.Join",
+    "date.arithmetic": "Date.Arithmetic",
+    "date.fromstring": "Date.FromString",
+    "date.holidays": "Date.Holidays",
+    "date.today": "Date.Today",
+    "date.weekends": "Date.Weekends",
+    "dom.query": "DOM.Query",
+    "f": "F",
+    "i": "I",
+    "json.path": "JSON.Path",
+    "ldap.find": "LDAP.Find",
+    "net.url": "Net.URL",
+    "openplz.localities": "OpenPLZ.Localities",
+    "openplz.streets": "OpenPLZ.Streets",
+    "openplz.textsearch": "OpenPLZ.TextSearch",
+    "openplz": "OpenPLZ",
+    "sorted": "Sorted",
+    "unique": "Unique",
+    "v": "V",
+    "vp": "VP",
+    "ai_llama_chat_alertonfinish": "AI",
+    "ai_llama_chat_input": "AI",
+    "ai_llama_chat_internet": "AI",
+    "ai_llama_chat_location": "AI",
+    "ai_llama_chat_mailaddress": "AI",
+    "ai_llama_chat_mailforward": "AI",
+    "ai_llama_chat_send": "AI",
+    "ai_llama_chat_stop": "AI",
+    "ai_llama_chat_thinking": "AI",
+    "ai_llama_chat_upload": "AI",
+    "ai_llama_qa_exclude": "AI",
+    "ai_llama_standard_qa_question": "AI",
+    "ai_llama_standard_txtqa_question": "AI",
+    "ai_llama_txtqa_source": "AI",
+    "ai_ocr_receiver": "AI",
+    "ai": "AI",
+    "codbi_dateframe_1_begin": "Appointments",
+    "codbi_dateframe_1_end": "Appointments",
+    "codbi_dateframe_2_begin": "Appointments",
+    "codbi_dateframe_2_end": "Appointments",
+    "codbi_dateframe_3_begin": "Appointments",
+    "codbi_dateframe_3_end": "Appointments",
+    "codbi_dateframe_4_begin": "Appointments",
+    "codbi_dateframe_4_end": "Appointments",
+    "codbi_dateframe_5_begin": "Appointments",
+    "codbi_dateframe_5_end": "Appointments",
+    "codbi_holidays_listing": "Appointments",
+    "codbi_nofuturedate": "Appointments",
+    "codbi_timeframe_1_begin": "Appointments",
+    "codbi_timeframe_1_end": "Appointments",
+    "codbi_timeframe_2_begin": "Appointments",
+    "codbi_timeframe_2_end": "Appointments",
+    "codbi_timeframe_3_begin": "Appointments",
+    "codbi_timeframe_3_end": "Appointments",
+    "codbi_timeframe_4_begin": "Appointments",
+    "codbi_timeframe_4_end": "Appointments",
+    "codbi_timeframe_5_begin": "Appointments",
+    "codbi_timeframe_5_end": "Appointments",
+    "appointments": "Appointments",
+    "codbi_bayvis_ansprechpartner": "BayVIS",
+    "codbi_bayvis_auswahl_behoerden": "BayVIS",
+    "codbi_bayvis_behoerde": "BayVIS",
+    "codbi_bayvis_behoerdeundansprechpartner": "BayVIS",
+    "bayvis": "BayVIS",
+    "codbi_currency": "Financial",
+    "codbi_trans_ntw": "Financial",
+    "financial": "Financial",
+    "holistic.css.standard": "Holistic.CSS.Standard",
+    "holistic.matomo.tracking": "Holistic.Matomo.Tracking",
+    "codbi_xcl_speech": "Holistic.Media.Input.Speech",
+    "holistic.media.input.speech": "Holistic.Media.Input.Speech",
+    "codbi_xcl_speech_whisper": "Holistic.Media.Input.Speech.Whisper",
+    "holistic.media.input.speech.whisper": "Holistic.Media.Input.Speech.Whisper",
+    "codbi_ldap_ac_account": "LDAP.Autofill",
+    "codbi_ldap_ac_commonname": "LDAP.Autofill",
+    "codbi_ldap_ac_department": "LDAP.Autofill",
+    "codbi_ldap_ac_displayname": "LDAP.Autofill",
+    "codbi_ldap_ac_firstname": "LDAP.Autofill",
+    "codbi_ldap_ac_lastname": "LDAP.Autofill",
+    "codbi_ldap_ac_mail": "LDAP.Autofill",
+    "codbi_ldap_ac_telephone": "LDAP.Autofill",
+    "codbi_ldap_ac_title": "LDAP.Autofill",
+    "ldap.autofill": "LDAP.Autofill",
+    "codbi_openplz_ac_set_buildingnumber": "OpenPLZ.AC.SET",
+    "codbi_openplz_ac_set_locality": "OpenPLZ.AC.SET",
+    "codbi_openplz_ac_set_plz": "OpenPLZ.AC.SET",
+    "codbi_openplz_ac_set_street": "OpenPLZ.AC.SET",
+    "openplz.ac.set": "OpenPLZ.AC.SET",
+    "codbi_fotocropper": "People",
+    "codbi_fotocropper_board": "People",
+    "codbi_fotocropper_foto": "People",
+    "codbi_fotocropper_imageurl": "People",
+    "codbi_fotocropper_update": "People",
+    "codbi_fotocropper_uploader": "People",
+    "codbi_openplz_select_localities": "People",
+    "codbi_openplz_select_orga_bayern": "People",
+    "codbi_openplz_select_orga_bundeslaender": "People",
+    "codbi_openplz_select_streets_by_plz": "People",
+    "codbi_people_16plus": "People",
+    "codbi_people_18plus": "People",
+    "codbi_people_alphanumeric": "People",
+    "codbi_people_buildingnumber": "People",
+    "codbi_people_mail": "People",
+    "codbi_people_name": "People",
+    "codbi_people_openplz_ac_set_buildingnumber": "People",
+    "codbi_people_openplz_ac_set_locality": "People",
+    "codbi_people_openplz_ac_set_plz": "People",
+    "codbi_people_openplz_ac_set_street": "People",
+    "codbi_people_phone": "People",
+    "codbi_people_plz": "People",
+    "people": "People",
+    "codbi_print_remove_parent": "Print.Removal",
+    "codbi_print_remove_printonly": "Print.Removal",
+    "codbi_print_remove_tagged": "Print.Removal",
+    "print.removal": "Print.Removal",
+    "codbi_accordion_a": "UI.Panels",
+    "codbi_accordion_b": "UI.Panels",
+    "codbi_accordion_c": "UI.Panels",
+    "codbi_accordion_d": "UI.Panels",
+    "codbi_html_panel_flat": "UI.Panels",
+    "codbi_html_panel_index": "UI.Panels",
+    "codbi_html_panel_minimal": "UI.Panels",
+    "codbi_html_panel_nocordion": "UI.Panels",
+    "codbi_html_panel_standard": "UI.Panels",
+    "ui.panels": "UI.Panels"
+  }
+}

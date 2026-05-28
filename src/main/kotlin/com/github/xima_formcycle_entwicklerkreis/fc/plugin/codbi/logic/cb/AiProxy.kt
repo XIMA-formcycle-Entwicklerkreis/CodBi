@@ -164,6 +164,11 @@ class AiProxy : AI() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { MailBridge.aiDisclaimer = it }
+    configData.properties
+        .getProperty("AI_Workflow_DefaultFromEmail")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { AIWorkflowAssistant.defaultFromEmail = it }
     // MailBridge reads CodbiEntities.entityManagerFactory lazily at send time
 
     log(

@@ -41,6 +41,20 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
   /** Cache for raw file listing string to detect changes. */
   private _listingCacheRaw: string | null = null;
   /**
+   * The last value that was passed to {@link setValue}, tracked so that
+   * {@link populateStandards} can restore it after rebuilding the checkbox list
+   * even when the DOM checkbox state is no longer reliable (e.g. after FORMCYCLE's
+   * catalog-loading re-renders the panel).
+   */
+  private _currentValue: string = "";
+  /**
+   * Set to `true` while {@link setStandardsValue} is executing its
+   * {@link Callbacks} fire, so that FORMCYCLE's synchronous internal
+   * reset `setValue("")` call cannot wipe {@link _currentValue} before
+   * {@link populateStandards} runs to restore it.
+   */
+  private _protecting = false;
+  /**
    * Converts a value to a stable JSON string representation.
    *
    * For objects, keys are sorted alphabetically to ensure consistent output
@@ -85,12 +99,26 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     // Note: the second argument is deprecated, we pass the empty string
     super(config, "", "text");
     window.CodbiPluginData.populateStandards = this.populateStandards.bind(this);
+    window.CodbiPluginData.setStandardsValue = this.setStandardsValue.bind(this);
 
     this._element = document.createElement("div");
 
     this._element.setAttribute("id", "CodBi_Standardslisting");
     this._element.addEventListener("change", this._onListingChange);
     this.populateStandards();
+    // If the AI computed updated standards while this panel was closed, they were queued in
+    // pendingStandards. Consume and apply them deferred by one event cycle so FORMCYCLE's own
+    // synchronous initial setValue() call (which fires right after construction) runs first and
+    // won't overwrite the AI-computed result.
+    const pending =
+      window.CodbiPluginData.pendingStandards ?? sessionStorage.getItem("codbi-pending-standards") ?? undefined;
+    if (typeof pending === "string") {
+      delete window.CodbiPluginData.pendingStandards;
+      sessionStorage.removeItem("codbi-pending-standards");
+      setTimeout(() => {
+        this.setStandardsValue(pending);
+      }, 0);
+    }
   }
   /**
    * Sets the active state of a standard configuration in the global standards detail object.
@@ -169,7 +197,9 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     const listing = this._listingCache ?? [];
     // #endregion Retrieve available standard configurations
     // #region Clear
-    const bufValue: string = this.getValue();
+    // Use the last tracked value rather than reading live checkbox state: the checkboxes
+    // may have been reset by FORMCYCLE between the previous setValue call and this repopulate.
+    const bufValue: string = this._currentValue;
 
     this._element.innerHTML = "";
     this._inputs = [];
@@ -192,10 +222,43 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     return $(this._element);
   }
   /**
+   * Programmatically sets the active standard configurations, updates the UI checkboxes, and
+   * fires the **set-property** callback so the form designer persists the change.
+   *
+   * Used by the AI assistant to apply auto-managed standard configuration updates.
+   *
+   * @param csv Comma-separated list of active standard configuration names.
+   */
+  setStandardsValue(csv: string): void {
+    this._protecting = true;
+    try {
+      this.setValue(csv);
+      Callbacks["set-property"].fire(this.config.property, this.getValue(), this);
+    } finally {
+      this._protecting = false;
+    }
+  }
+  /**
    * Generates a CSV of all selected standard configurations.
    *
    * @returns A CSV of all selected standard configurations. */
   override getValue(): string {
+    // If the AI queued updated standards while the panel was closed, merge them
+    // with whatever the user currently has checked so manual selections are preserved.
+    const pending =
+      window.CodbiPluginData.pendingStandards ?? sessionStorage.getItem("codbi-pending-standards") ?? undefined;
+    if (typeof pending === "string" && this._inputs.length > 0) {
+      delete window.CodbiPluginData.pendingStandards;
+      sessionStorage.removeItem("codbi-pending-standards");
+      const currentlyChecked = this._inputs.filter((i) => i.checked).map((i) => i.value);
+      const pendingItems = pending
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const merged = [...new Set([...currentlyChecked, ...pendingItems])].join(",");
+      this.setValue(merged);
+    }
+
     const result: string[] = [];
     for (const current of this._inputs) {
       if (current.checked) {
@@ -210,6 +273,14 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
    *
    * @param data See {@link Editors.BaseEditor }'s **setValue**. */
   override setValue(data: unknown): void {
+    const normalized = typeof data === "string" ? data : data != null ? String(data) : "";
+    // Only update the tracked value when not in a protection window or the incoming value is
+    // non-empty. This prevents FORMCYCLE's internal reset setValue("") call — fired synchronously
+    // inside the Callbacks["set-property"] chain — from wiping the last desired value before
+    // populateStandards() runs to restore it.
+    if (!this._protecting || normalized !== "") {
+      this._currentValue = normalized;
+    }
     if (this._inputs.length === 0) {
       return;
     }

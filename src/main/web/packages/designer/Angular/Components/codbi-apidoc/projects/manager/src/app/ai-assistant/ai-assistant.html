@@ -22,12 +22,56 @@
             placeholder="Select a model"
             fluid />
 
-        <textarea
-            pTextarea
-            [(ngModel)]="promptText"
-            rows="5"
-            placeholder="Describe what you want to do&#x2026; e.g. &#x201C;Add an email field&#x201D; or &#x201C;Send an email when the submit button is clicked&#x201D;"
-            class="cb-ai-prompt"></textarea>
+        <div class="cb-ai-prompt-wrapper">
+            <textarea
+                pTextarea
+                [(ngModel)]="promptText"
+                rows="5"
+                placeholder="Describe what you want to do&#x2026; e.g. &#x201C;Add an email field&#x201D; or &#x201C;Send an email when the submit button is clicked&#x201D;"
+                class="cb-ai-prompt"></textarea>
+            @if (speechSupported) {
+                <button
+                    type="button"
+                    class="cb-ai-mic-btn"
+                    [class.cb-ai-mic-btn--recording]="isSpeechRecording"
+                    (click)="toggleSpeech()"
+                    [disabled]="loading"
+                    [title]="isSpeechRecording ? 'Stop recording' : 'Voice input'">
+                    <svg class="cb-ai-mic-gauge" viewBox="0 0 36 36" aria-hidden="true">
+                        <circle class="cb-ai-mic-gauge__track" cx="18" cy="18" r="16" />
+                        <circle class="cb-ai-mic-gauge__fill" cx="18" cy="18" r="16" />
+                    </svg>
+                    <svg class="cb-ai-mic-icon" viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
+                        <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm-1-9a1 1 0 1 1 2 0v6a1 1 0 1 1-2 0V5zm6 6a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.93V21h2v-3.07A7 7 0 0 0 19 11h-2z"/>
+                    </svg>
+                </button>
+            }
+        </div>
+
+        <div class="cb-ai-attachment-row">
+            <p-button
+                label="Attach file"
+                icon="pi pi-paperclip"
+                severity="secondary"
+                size="small"
+                [outlined]="true"
+                (onClick)="triggerFileInput()"
+                [disabled]="loading"
+                title="Attach an image (PNG, JPG, WebP, GIF) or PDF — the AI will use it as context" />
+            @if (attachedFile) {
+                <span class="cb-ai-attachment-name" title="{{ attachedFile.name }}">
+                    <i class="pi pi-file"></i>&nbsp;{{ attachedFile.name }}
+                </span>
+                <p-button
+                    icon="pi pi-times"
+                    severity="secondary"
+                    size="small"
+                    [text]="true"
+                    [rounded]="true"
+                    title="Remove attachment"
+                    (onClick)="clearAttachment()" />
+            }
+        </div>
 
         @if (loading) {
             <div class="cb-ai-spinner-row">
@@ -43,9 +87,37 @@
         @if (errorText) {
             <p-message severity="error" [text]="errorText" />
         }
+
+        @if (showHistory) {
+            <div class="cb-ai-history">
+                <div class="cb-ai-history__header">Undo &mdash; restore a previous state</div>
+                <ul class="cb-ai-history__list">
+                    @for (entry of history; track entry.timestamp) {
+                        <li
+                            class="cb-ai-history__entry"
+                            (click)="restoreSnapshot(entry)"
+                            [title]="entry.prompt">
+                            <span class="cb-ai-history__time">{{ formatHistoryTime(entry.timestamp) }}</span>
+                            <span class="cb-ai-history__badge cb-ai-history__badge--{{ entry.intent }}">{{ entry.intent }}</span>
+                            <span class="cb-ai-history__prompt">{{ entry.prompt }}</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
     </div>
 
     <ng-template #footer>
+        @if (history.length > 0) {
+            <p-button
+                [label]="showHistory ? 'Hide history' : 'Undo'"
+                icon="pi pi-history"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="toggleHistory()"
+                [disabled]="loading"
+                title="Browse and restore previous AI changes" />
+        }
         <p-button
             label="Run"
             icon="pi pi-play"

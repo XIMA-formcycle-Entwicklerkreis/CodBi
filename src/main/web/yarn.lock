@@ -4779,6 +4779,7 @@ __metadata:
     karma-coverage: "npm:~2.2.0"
     karma-jasmine: "npm:~5.1.0"
     karma-jasmine-html-reporter: "npm:~2.1.0"
+    pdfjs-dist: "npm:^3.11.174"
     primeflex: "npm:^4.0.0"
     primeicons: "npm:^7.0.0"
     primeng: "npm:^20.0.0"

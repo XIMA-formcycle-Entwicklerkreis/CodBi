@@ -57,6 +57,8 @@
 
 		<!-- Tools -->
 		<biome.version>1.9.4</biome.version>
+		<exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+		<greenmail.version>2.1.3</greenmail.version>
 		<junit-jupiter.version>5.11.4</junit-jupiter.version>
 		<mockk.version>1.13.13</mockk.version>
 		<kotlin.version>2.2.0</kotlin.version>
@@ -500,6 +502,11 @@
 					<groupId>com.diffplug.spotless</groupId>
 					<artifactId>spotless-maven-plugin</artifactId>
 					<version>${spotless-maven-plugin.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.codehaus.mojo</groupId>
+					<artifactId>exec-maven-plugin</artifactId>
+					<version>${exec-maven-plugin.version}</version>
 				</plugin>
 			</plugins>
 		</pluginManagement>
@@ -1361,6 +1368,54 @@
 								</configuration>
 							</execution>
 						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<!-- Run a GreenMail dev SMTP server: mvn -Pmailserver exec:java -->
+		<!-- SMTP on localhost:3025 (no auth), REST API at http://localhost:8025/api/service -->
+		<profile>
+			<id>mailserver</id>
+			<dependencies>
+				<dependency>
+					<groupId>com.icegreen</groupId>
+					<artifactId>greenmail-standalone</artifactId>
+					<version>${greenmail.version}</version>
+				</dependency>
+			</dependencies>
+			<build>
+				<plugins>
+					<!-- Skip enforcer: mailserver profile is a dev tool, not a build artifact -->
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-enforcer-plugin</artifactId>
+						<configuration>
+							<skip>true</skip>
+						</configuration>
+					</plugin>
+					<plugin>
+						<groupId>org.codehaus.mojo</groupId>
+						<artifactId>exec-maven-plugin</artifactId>
+						<configuration>
+							<mainClass>com.icegreen.greenmail.standalone.GreenMailStandaloneRunner</mainClass>
+							<systemProperties>
+								<!-- Start SMTP (3025), IMAP (3143) and POP3 (3110) -->
+								<systemProperty>
+									<key>greenmail.setup.test.all</key>
+									<value>true</value>
+								</systemProperty>
+								<!-- Disable SMTP authentication so formcycle can send without credentials -->
+								<systemProperty>
+									<key>greenmail.auth.disabled</key>
+									<value>true</value>
+								</systemProperty>
+								<!-- REST API on port 8025 (avoids conflict with formcycle on 8080) -->
+								<systemProperty>
+									<key>greenmail.web.port</key>
+									<value>8025</value>
+								</systemProperty>
+							</systemProperties>
+						</configuration>
 					</plugin>
 				</plugins>
 			</build>

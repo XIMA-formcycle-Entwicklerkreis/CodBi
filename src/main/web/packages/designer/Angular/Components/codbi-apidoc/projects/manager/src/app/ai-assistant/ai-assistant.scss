@@ -17,16 +17,40 @@ cb-ai-assistant {
     position: absolute !important;
     left: 0;
     top: 2em;
+    z-index: 1000 !important;
 }
 
 .cb-ai-model-select {
     width: 100%;
+    background: transparent !important;
+}
+
+.cb-ai-model-select .p-select,
+.cb-ai-model-select .p-select-label {
+    background: transparent !important;
+}
+
+/* Watermark faded behind the entire popup — two-layer gradient over SVG creates opacity effect. */
+.p-dialog.cb-ai-assistant-dialog {
+    background-image: linear-gradient(rgba(255,255,255,0.91), rgba(255,255,255,0.91)),
+                      var(--cb-ai-watermark-url, none) !important;
+    background-color: #fff !important;
+    background-size: cover, min(200px, 30%) auto !important;
+    background-position: 0 0, center center !important;
+    background-repeat: no-repeat, no-repeat !important;
+}
+
+.p-dialog.cb-ai-assistant-dialog .p-dialog-header,
+.p-dialog.cb-ai-assistant-dialog .p-dialog-content {
+    background: transparent !important;
 }
 
 .cb-ai-prompt {
     width: 100%;
     resize: vertical;
     font-family: inherit;
+    padding-bottom: 2.8rem;
+    background: transparent !important;
 }
 
 .cb-ai-spinner-row {
@@ -35,4 +59,175 @@ cb-ai-assistant {
     gap: 0.5rem;
     font-size: 0.88em;
     color: #666;
+}
+
+.cb-ai-attachment-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.cb-ai-attachment-name {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.85em;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #444;
+}
+
+.cb-ai-prompt-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.cb-ai-mic-btn {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: #888;
+    transition: color 0.15s, background-color 0.15s;
+
+    &:hover:not(:disabled) {
+        color: #444;
+        background-color: rgba(0, 0, 0, 0.06);
+    }
+
+    &:disabled {
+        opacity: 0.35;
+        cursor: default;
+    }
+
+    &--recording {
+        color: #d32f2f;
+    }
+}
+
+.cb-ai-mic-gauge {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 36px;
+    height: 36px;
+    transform: rotate(-90deg);
+    pointer-events: none;
+
+    &__track {
+        fill: none;
+        stroke: rgba(0, 0, 0, 0.12);
+        stroke-width: 2;
+    }
+
+    &__fill {
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-dasharray: 100.53;
+        stroke-dashoffset: 100.53;
+        stroke-linecap: round;
+        transition: stroke-dashoffset 0.15s ease;
+    }
+}
+
+.cb-ai-mic-btn--recording .cb-ai-mic-gauge__fill {
+    animation: cb-mic-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes cb-mic-pulse {
+    0%, 100% { stroke-dashoffset: 75; }
+    50% { stroke-dashoffset: 15; }
+}
+
+.cb-ai-mic-icon {
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+}
+
+.cb-ai-content .p-message {
+    background: transparent !important;
+    max-height: 10rem;
+    overflow-y: auto;
+    word-break: break-word;
+}
+
+.cb-ai-history {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    overflow: hidden;
+
+    &__header {
+        padding: 0.45rem 0.75rem;
+        font-size: 0.78em;
+        font-weight: 600;
+        color: #555;
+        background: #f5f5f5;
+        border-bottom: 1px solid #e0e0e0;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    &__list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    &__entry {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.38rem 0.75rem;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.1s;
+
+        &:last-child { border-bottom: none; }
+        &:hover { background: #eef2ff; }
+    }
+
+    &__time {
+        flex-shrink: 0;
+        font-size: 0.78em;
+        font-family: monospace;
+        color: #888;
+    }
+
+    &__badge {
+        flex-shrink: 0;
+        font-size: 0.72em;
+        padding: 1px 5px;
+        border-radius: 3px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+
+        &--form     { background: #e8f5e9; color: #2e7d32; }
+        &--workflow { background: #e3f2fd; color: #1565c0; }
+        &--both     { background: #f3e5f5; color: #6a1b9a; }
+    }
+
+    &__prompt {
+        font-size: 0.83em;
+        color: #333;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+    }
 }

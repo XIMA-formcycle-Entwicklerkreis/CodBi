@@ -720,7 +720,9 @@ export class AiAssistant implements OnInit, OnDestroy {
 
               // Always record as pending so any upcoming reload (our doReload, FORMCYCLE's
               // publish-reload, or beforeunload) can restore the value via sessionStorage.
+              // Use localStorage so the value survives the designer being closed and reopened.
               if (cpd) cpd.pendingStandards = newStandards;
+              localStorage.setItem("codbi-pending-standards", newStandards);
               // Remember what AI set so the next run can detect user overrides.
               this.prevAiStandards = newStandards;
             }
@@ -747,8 +749,9 @@ export class AiAssistant implements OnInit, OnDestroy {
             // Write pending standards at the very last moment — after publish() completes and
             // immediately before the page unloads — so the value cannot be consumed by any
             // MultiSelect reconstruction that happened during async rendering.
+            // Use localStorage so the value survives the designer being closed and reopened.
             if (typeof standardsForReload === "string") {
-              sessionStorage.setItem("codbi-pending-standards", standardsForReload);
+              localStorage.setItem("codbi-pending-standards", standardsForReload);
             }
             window.location.reload();
           };

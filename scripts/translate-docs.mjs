@@ -127,6 +127,7 @@ async function processFile(filePath) {
     for (const match of matches) {
         const lines = match[1].split('\n');
         const lineInfos = [];
+        let inCodeBlock = false; // Track whether we are inside a ``` code block
 
         for (const line of lines) {
             const m = line.match(/^(\s*\*\s?)(.*)/);
@@ -134,6 +135,19 @@ async function processFile(filePath) {
 
             const prefix = m[1];
             const body = m[2];
+
+            // Toggle code block state on triple backtick lines
+            if (/^\s*```/.test(body.trim())) {
+                inCodeBlock = !inCodeBlock;
+                lineInfos.push({ raw: line });
+                continue;
+            }
+
+            // Inside code blocks: preserve verbatim, do not translate
+            if (inCodeBlock) {
+                lineInfos.push({ raw: line });
+                continue;
+            }
 
             if (!body.trim() || body.trim() === '/') {
                 lineInfos.push({ raw: line });

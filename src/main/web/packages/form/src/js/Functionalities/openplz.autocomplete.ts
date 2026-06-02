@@ -61,17 +61,17 @@ export class OpenPLZ_Autocomplete {
    * It suggests completions as soon as there are multiple matches and only allows entries that match exactly one OpenPLZ-Entry.
    *
    * Config Parameter:
-   *  - Country:            The optional **country** to retrieve the data of (if not provided either the country specified in
-   *                        the CodBi's Configuration **OpenPLZ_Country** will be used or, if not specified, "de").
-   *  - TargetData:         What type of data shall be received by the target (Localities, PostalCode or Streets ).
-   *  - DependentPLZ        The CSS-Selector of the field that restricts the search of streets by it's value resembling a
-   *                        postal-code, only if **DependentLocality** is **undefined**.
-   *  - DependentLocality   The CSS-Selector of the field that restricts the search of streets by it's value resembling a
-   *                        locality (overwrites **DependentPLZ**).
-   *  - FocusOnAutocomplete The CSS-Selector of the field to focus when an autocomplete has occurred.
-   *  - MsgNotKnown:        The message to show when trying to set a value that can't be found in OpenPLZ.
-   *  - CSSProposals:       The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.
-   *  - AllowEmpty:         If set to **"true"** an empty input value won't trigger an error message. */
+   *  - ```Country```:              The optional **country** to retrieve the data of (if not provided either the country specified in
+   *                                the CodBi's Configuration **OpenPLZ_Country** will be used or, if not specified, "de").
+   *  - ```TargetData```:           What type of data shall be received by the target (```Localities```, ```PostalCode```, or ```Streets```).
+   *  - ```DependentPLZ```:         The CSS-Selector of the field that restricts the search of streets by it's value resembling a
+   *                                postal-code, only if ```DependentLocality``` is ```undefined```.
+   *  - ```DependentLocality```:    The CSS-Selector of the field that restricts the search of streets by it's value resembling a
+   *                                locality (overwrites ```DependentPLZ```).
+   *  - ```FocusOnAutocomplete```:  The CSS-Selector of the field to focus when an autocomplete has occurred.
+   *  - ```MsgNotKnown```:          The message to show when trying to set a value that can't be found in OpenPLZ.
+   *  - ```CSSProposals```:         The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.
+   *  - ```AllowEmpty```:           If set to **"true"** an empty input value won't trigger an error message. */
   @DBC.ParamvalueProvider
   public static functionality(
     @DEFINED.PRE("targetdata :: focusonautocomplete")
@@ -80,7 +80,7 @@ export class OpenPLZ_Autocomplete {
       "targetdata :: country :: cssproposals :: msgnotknown :: dependent :: dependentplz :: dependentlocality :: focusonautocomplete :: allowempty",
     )
     @REGEX.PRE(/(de|en|at|li|ch)/i, "country")
-    @REGEX.PRE(/^(localities|postalcode|streets)$/i, "targetdata")
+    @REGEX.PRE(/^(localities|postalcodes|streets)$/i, "targetdata")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "dependentplz")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "dependentlocality")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "focusonautocomplete")

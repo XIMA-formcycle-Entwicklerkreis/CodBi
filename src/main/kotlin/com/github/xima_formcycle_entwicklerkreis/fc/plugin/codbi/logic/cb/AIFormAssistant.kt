@@ -7,6 +7,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
@@ -93,6 +94,14 @@ class AIFormAssistant : IPluginServletAction {
             "of child name strings (NOT the items themselves).\n" +
             "3. When ADDING new items: append them to the top-level 'items' array AND add their name " +
             "to the 'properties.elements' array of the target container/fieldset.\n" +
+            "3b. MANDATORY for containers/fieldsets: When the instruction asks you to create a section/group " +
+            "that CONTAINS specific input fields, you MUST create ALL child input items in the same response. " +
+            "Do NOT output a container with an empty 'elements':[] when the user asked for content inside it. " +
+            "Each child item must appear both in the top-level 'items' array AND by name in the container's 'elements'. " +
+            "TIME RANGE example — 'a section with a start time and end time': " +
+            "items = [..., {XFieldSet name=fsZeit elements=[tfVonUhrzeit,tfBisUhrzeit]}, " +
+            "{XTextField name=tfVonUhrzeit datatype=time label=Von}, " +
+            "{XTextField name=tfBisUhrzeit datatype=time label=Bis}]\n" +
             "4. Assign unique, descriptive values to new items' 'properties.name'. Use type-appropriate prefixes: \n" +
             "   'tf' for XTextField/XTextArea (e.g. 'tfVorname', 'tfEmail'), \n" +
             "   'fd' for XUpload (e.g. 'fdLebenslauf'), \n" +
@@ -209,24 +218,20 @@ class AIFormAssistant : IPluginServletAction {
             """{"className":"XLine","properties":{"name":"liExample","id":"xi-li-example"}}""" +
             "\n" +
             """{"className":"XSpacer","properties":{"name":"spExample","id":"xi-sp-example"}}""" +
-            "\n\nCODBI APPLICABILITY CHECK — before finalizing output, evaluate whether existing and newly created fields should receive CodBi functionalities/standards for validation, UX, or automation. " +
-            "Do not add random configs; only apply CodBi elements when they are logically useful for the current form intent. " +
-            "Examples: date/time ranges may need Time.Frame/Date.Frame; age checks may need Date.Min; restricted text may need HTML.Input.REGEX; postal/address flows may need OpenPLZ.Autocomplete. " +
-            "NEVER apply any CodBi functionality from compact knowledge only. " +
-            "Before applying a functionality, you MUST request its detailed API and parameter description via escalation. " +
-            "A functionality is considered applied only if target elements contain data-cb-func (newly created or extended as CSV with the functionality id). " +
-            "Most functionalities also require data-cb-* parameters, which are defined in detailed docs and MUST be set accordingly. " +
-            "Some referenced/helper elements may only carry data-cb-* parameters (without data-cb-func); rely on detailed docs for these exceptions. " +
-            "\n\nAPPLICABILITY REPORT PROTOCOL — ALWAYS include a short CodBi applicability report. " +
-            "For final form JSON responses, include top-level metadata field \"_codbiApplicability\" with shape {\"considered\":[...],\"applied\":[...],\"skipped\":[{\"id\":\"...\",\"reason\":\"...\"}]}. " +
-            "This metadata field is removed server-side before the form is applied. " +
-            "\n\nDETAIL ESCALATION PROTOCOL — if you need CodBi parameter/class details not present in this prompt, respond ONLY with this JSON and nothing else: " +
-            "{\"status\":\"need_codbi_details\",\"elements\":[\"<Functionality/EP/Standard ID>\",\"...\"],\"codbiApplicability\":{\"considered\":[...],\"applied\":[...],\"skipped\":[{\"id\":\"...\",\"reason\":\"...\"}]}}. " +
-            "After receiving full details, return the final form JSON object normally." +
+            "\n\nCODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
+            "For each listed element, consider whether any field in this form could meaningfully benefit from it. " +
+            "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete. " +
+            "Do NOT apply any CodBi element in this pass — just note which ones look relevant. " +
+            "Return the form JSON normally. Include a top-level \"_codbiApplicability\" field with these exact keys: " +
+            "{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace 4 with actual field count; replace 23 with how many CODBI CORE ELEMENTS list entries you read)," +
+            "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"formElementId\", ...]}] (CodBi functionality IDs with the form element ids they could apply to),\"applied\":[],\"skipped\":[]}. " +
+            "The server will handle application in a second pass if candidates are found. This metadata field is removed server-side before the form is applied." +
+            "\n" +
             CodbiCapabilities.buildSection()
 
     val userContent =
-        "Instruction: $prompt\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}"
+        "Instruction: $prompt\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
+            "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt."
 
     val messagesJson = buildString {
       append("[")
@@ -235,6 +240,10 @@ class AIFormAssistant : IPluginServletAction {
       append("]")
     }
 
+    logger.debug(
+        "[AIFormAssistant] Sending form AI request — system prompt: {} chars, CodBi section present: {}",
+        systemPrompt.length,
+        systemPrompt.contains("CODBI CANDIDATE REVIEW"))
     val rawResponse =
         try {
           instance.performFormAssist(modelId, messagesJson)
@@ -250,12 +259,190 @@ class AIFormAssistant : IPluginServletAction {
     var cleaned = extractJson(withoutThinkTags)
 
     fun rerunWithCodbiDetails(requested: List<String>): String {
-      val fullPrompt = "$systemPrompt\n\n${CodbiCapabilities.buildFullSectionFor(requested)}"
-      val retryMessagesJson = buildString {
-        append("[")
-        append("""{"role":"system","content":${gson.toJson(fullPrompt)}},""")
-        append("""{"role":"user","content":${gson.toJson(userContent)}}""")
-        append("]")
+      val pass1Obj =
+          try {
+            JsonParser.parseString(cleaned).asJsonObject
+          } catch (_: Exception) {
+            null
+          }
+      val allItems = pass1Obj?.getAsJsonArray("items") ?: JsonArray()
+
+      val retryMessagesJson: String
+
+      if (requested.isEmpty()) {
+        // Blind rethink pass: AI previously concluded nothing applies — ask it to reconsider.
+        // Use the full compact API reference (including parameter names) so the AI can
+        // generate correct data-cb-* parameter attributes instead of inventing names.
+        val rethinkSystemPrompt =
+            "You are a CodBi form element configurator. " +
+                "Your previous evaluation of the following FORMCYCLE form elements concluded that no CodBi functionalities apply. " +
+                "Please reconsider carefully. Review each element's className and properties and check whether any functionality from the list below is applicable. " +
+                "If a functionality applies: add data-cb-func to the element's properties (as CSV if multiple), and set any required data-cb-* attributes. " +
+                "Respond ONLY with a JSON object: " +
+                "{\"items\":[...all elements, modified where CodBi applies...],\"_codbiApplicability\":{\"formElementsProcessed\":N,\"codbiElementsEvaluated\":23 (replace counts)," +
+                "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
+                "\"applied\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
+                "\"skipped\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...],\"reason\":\"...\"}]}}. " +
+                "No explanation, no markdown, no code fences.\n\n" +
+                "FORM ELEMENTS:\n${gson.toJson(allItems)}" +
+                CodbiCapabilities.buildFullSection()
+
+        logger.info(
+            "[AIFormAssistant] Blind rethink pass — sending {} item(s) with compact CodBi reference (system-only)",
+            allItems.size())
+        if (allItems.size() == 0) {
+          logger.warn(
+              "[AIFormAssistant] Blind rethink pass has 0 items — pass-1 items array may be missing or empty")
+        }
+
+        retryMessagesJson = buildString {
+          append("[")
+          append("""{"role":"system","content":${gson.toJson(rethinkSystemPrompt)}}""")
+          append("]")
+        }
+      } else {
+        // Targeted rerun: AI identified candidates but did not apply full details — send specific
+        // elements with full TSDoc for the requested functionality IDs.
+        val candidateClause = requested.joinToString(", ")
+        val targetElementIds = extractConsideredElementTargets(cleaned)
+        val targetItems =
+            if (targetElementIds.isEmpty()) {
+              allItems
+            } else {
+              // Expand target IDs to include:
+              // 1. Child elements of targeted containers/fieldsets (e.g. targeting a fieldset for
+              //    OpenPLZ.Autocomplete should also send its child text fields)
+              // 2. Sibling elements of targeted items (e.g. targeting one time field for Time.Frame
+              //    should also send the other time field so the AI can set cross-referencing
+              // params)
+              val expandedIds = targetElementIds.toMutableSet()
+              // Build a map of item name -> parent container name for all items
+              val parentOfItem = mutableMapOf<String, String>()
+              for (item in allItems) {
+                if (!item.isJsonObject) continue
+                val containerName =
+                    item.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
+                        ?: continue
+                val elements =
+                    item.asJsonObject.getAsJsonObject("properties")?.getAsJsonArray("elements")
+                        ?: continue
+                for (nameEl in elements) {
+                  if (nameEl.isJsonPrimitive) parentOfItem[nameEl.asString] = containerName
+                }
+              }
+              // Build a map of container name -> list of child item names
+              val childrenOf = mutableMapOf<String, List<String>>()
+              for (item in allItems) {
+                if (!item.isJsonObject) continue
+                val containerName =
+                    item.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
+                        ?: continue
+                val elements =
+                    item.asJsonObject.getAsJsonObject("properties")?.getAsJsonArray("elements")
+                        ?: continue
+                childrenOf[containerName] =
+                    elements.mapNotNull { e -> if (e.isJsonPrimitive) e.asString else null }
+              }
+              for (item in allItems) {
+                if (!item.isJsonObject) continue
+                val itemId =
+                    item.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString ?: continue
+                val itemName =
+                    item.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
+                        ?: continue
+                if (itemId in targetElementIds) {
+                  // Step 1: Expand children of targeted containers
+                  val elements =
+                      item.asJsonObject.getAsJsonObject("properties")?.getAsJsonArray("elements")
+                          ?: emptyList()
+                  for (nameEl in elements) {
+                    if (!nameEl.isJsonPrimitive) continue
+                    val childName = nameEl.asString
+                    val child =
+                        allItems.firstOrNull { childItem ->
+                          childItem.isJsonObject &&
+                              childItem.asJsonObject
+                                  .getAsJsonObject("properties")
+                                  ?.get("name")
+                                  ?.asString == childName
+                        }
+                    if (child != null) {
+                      val childId =
+                          child.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString
+                      if (childId != null) expandedIds.add(childId)
+                    }
+                  }
+                  // Step 2: Expand siblings of targeted items (same parent)
+                  val parentName = parentOfItem[itemName]
+                  if (parentName != null) {
+                    val siblings = childrenOf[parentName] ?: emptyList()
+                    for (sibName in siblings) {
+                      if (sibName == itemName) continue
+                      val sib =
+                          allItems.firstOrNull { sibItem ->
+                            sibItem.isJsonObject &&
+                                sibItem.asJsonObject
+                                    .getAsJsonObject("properties")
+                                    ?.get("name")
+                                    ?.asString == sibName
+                          }
+                      if (sib != null) {
+                        val sibId =
+                            sib.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString
+                        if (sibId != null) expandedIds.add(sibId)
+                      }
+                    }
+                  }
+                }
+              }
+              JsonArray().also { arr ->
+                for (item in allItems) {
+                  if (!item.isJsonObject) continue
+                  val itemId = item.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString
+                  if (itemId != null && itemId in expandedIds) arr.add(item)
+                }
+              }
+            }
+
+        val applySystemPrompt =
+            "You are a CodBi form element configurator. " +
+                "You receive a JSON array of FORMCYCLE form element objects. Each element has a \"className\" and a \"properties\" object (which includes \"id\"). " +
+                "Apply the CodBi functionalities listed below to the appropriate elements. " +
+                "To apply a functionality: set data-cb-func in the element's properties as CSV (create the key if absent). " +
+                "CRITICAL — ALL documented parameters MUST be set as data-cb-ParamName attributes. Do NOT skip any parameter even if it appears optional. " +
+                "Use the element's property values to infer sensible parameter values: " +
+                "  - For CSS-Selector parameters (e.g. MaxField, MinField): use the CSS selector constructed from the target element's properties.name prefixed with '#', e.g. \"#tfBisUhrzeit\". Use the element's 'properties.name' to construct the selector, NOT the 'properties.id' value with 'xi-' prefix. " +
+                "  - For string parameters (e.g. Country, MsgNotKnown): set a reasonable default based on the form context. " +
+                "  - For boolean parameters (e.g. EqualityPermitted): set a reasonable default. " +
+                "Set data-cb-* parameter attributes as documented. " +
+                "Respond ONLY with a JSON object: " +
+                "{\"items\":[...same elements with modifications applied...],\"_codbiApplicability\":{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace counts)," +
+                "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
+                "\"applied\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
+                "\"skipped\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...],\"reason\":\"...\"}]}}. " +
+                "No explanation, no markdown, no code fences." +
+                CodbiCapabilities.buildFullSectionFor(requested)
+
+        val pass2UserContent =
+            "Apply CodBi functionalities ($candidateClause) to these form elements:\n${gson.toJson(targetItems)}"
+
+        logger.info(
+            "[AIFormAssistant] Pass-2 CodBi — candidates: {}, targetIds: {}, sending {} item(s)",
+            candidateClause,
+            if (targetElementIds.isEmpty()) "<none from pass-1>"
+            else targetElementIds.joinToString(", "),
+            targetItems.size())
+        if (targetItems.size() == 0) {
+          logger.warn(
+              "[AIFormAssistant] Pass-2 has 0 items to send — pass-1 items array may be missing or empty")
+        }
+
+        retryMessagesJson = buildString {
+          append("[")
+          append("""{"role":"system","content":${gson.toJson(applySystemPrompt)}},""")
+          append("""{"role":"user","content":${gson.toJson(pass2UserContent)}}""")
+          append("]")
+        }
       }
 
       val retryRaw =
@@ -268,7 +455,9 @@ class AIFormAssistant : IPluginServletAction {
             logger.error("[AIFormAssistant] Full-detail rerun failed", e)
             throw e
           }
-      return extractJson(stripThinkTags(retryRaw))
+      val pass2Cleaned = extractJson(stripThinkTags(retryRaw))
+      logger.info("[AIFormAssistant] Pass-2 raw result: {}", pass2Cleaned)
+      return splicePass2IntoPass1(cleaned, pass2Cleaned)
     }
 
     val requestedDetails = extractCodbiDetailsRequest(cleaned)
@@ -304,6 +493,46 @@ class AIFormAssistant : IPluginServletAction {
             } catch (e: Exception) {
               return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
             }
+      } else {
+        val consideredCodbi = extractConsideredCodbiIds(cleaned)
+        if (consideredCodbi.isNotEmpty()) {
+          logger.info(
+              "[AIFormAssistant] AI identified CodBi candidates but did not escalate; forcing detail rerun for: {}",
+              consideredCodbi.joinToString(", "))
+          cleaned =
+              try {
+                rerunWithCodbiDetails(consideredCodbi)
+              } catch (e: ExternalAiHttpException) {
+                return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+              } catch (e: Exception) {
+                return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+              }
+        } else {
+          // AI returned _codbiApplicability but with an empty considered list.
+          // This can happen non-deterministically even when candidates exist — the AI evaluates
+          // the list but wrongly decides nothing applies. Always run a blind pass-2 so CodBi
+          // is never silently skipped.
+          val hasApplicabilityField =
+              try {
+                @Suppress("UNCHECKED_CAST")
+                (gson.fromJson(cleaned, Map::class.java) as? Map<String, Any>)?.containsKey(
+                    "_codbiApplicability") == true
+              } catch (_: Exception) {
+                false
+              }
+          val reason =
+              if (!hasApplicabilityField) "omitted _codbiApplicability entirely"
+              else "evaluated CodBi list but found no candidates — forcing blind evaluation"
+          logger.info("[AIFormAssistant] AI {} — triggering blind CodBi evaluation pass", reason)
+          cleaned =
+              try {
+                rerunWithCodbiDetails(emptyList())
+              } catch (e: ExternalAiHttpException) {
+                return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+              } catch (e: Exception) {
+                return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+              }
+        }
       }
     }
 
@@ -417,6 +646,54 @@ class AIFormAssistant : IPluginServletAction {
     }
   }
 
+  private fun extractConsideredCodbiIds(cleanedJson: String): List<String> {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj =
+          gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any> ?: return emptyList()
+      val report =
+          (obj["_codbiApplicability"] as? Map<*, *>)
+              ?: (obj["codbiApplicability"] as? Map<*, *>)
+              ?: return emptyList()
+      val considered = report["considered"] as? List<*> ?: return emptyList()
+      considered.mapNotNull { entry ->
+        when (entry) {
+          is String -> entry.trim().takeIf { it.isNotEmpty() }
+          is Map<*, *> -> (entry["id"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+          else -> null
+        }
+      }
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  private fun extractConsideredElementTargets(cleanedJson: String): Set<String> {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj =
+          gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any> ?: return emptySet()
+      val report =
+          (obj["_codbiApplicability"] as? Map<*, *>)
+              ?: (obj["codbiApplicability"] as? Map<*, *>)
+              ?: return emptySet()
+      val considered = report["considered"] as? List<*> ?: return emptySet()
+      considered
+          .flatMap { entry ->
+            when (entry) {
+              is Map<*, *> ->
+                  (entry["targets"] as? List<*>)?.mapNotNull {
+                    (it as? String)?.trim()?.takeIf { s -> s.isNotEmpty() }
+                  } ?: emptyList()
+              else -> emptyList()
+            }
+          }
+          .toSet()
+    } catch (_: Exception) {
+      emptySet()
+    }
+  }
+
   private fun extractAppliedCodbiIds(cleanedJson: String): List<String> {
     return try {
       @Suppress("UNCHECKED_CAST")
@@ -513,6 +790,11 @@ class AIFormAssistant : IPluginServletAction {
           "readonly_statusdependent",
           "usergrouppendent",
           "readonly_usergrouppendant",
+          // Attributes — stripped to prevent stale data-cb-* entries from surviving when items
+          // are restored in restoreStrippedFields. The AI always outputs fresh data-cb-* as
+          // direct property keys, which are converted to the proper attributes array at the end
+          // of restoreStrippedFields.
+          "attributes",
           "print_hide",
           "print_size",
           "print_text_only",
@@ -820,7 +1102,115 @@ class AIFormAssistant : IPluginServletAction {
         }
       }
     }
+    // Convert any AI-generated data-cb-* direct property keys to the proper attributes array
+    // format. FORMCYCLE reads custom HTML attributes from properties["attributes"] as
+    // [{text: "attr-name", value: "attr-value"}] objects, NOT as direct property keys.
+    // CRITICAL: Before adding AI's fresh values, purge any stale data-cb-* entries from the
+    // existing attributes array (which may have been restored from the original form with
+    // stale values from a previous run). This prevents stale entries from surviving alongside
+    // the AI's correct values.
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val attrs =
+          if (props.has("attributes") && props.get("attributes").isJsonArray)
+              props.getAsJsonArray("attributes")
+          else null
+      // Purge any stale data-cb-* entries from the existing attributes array
+      // (may have been restored from the original form). Build a filtered array by copying
+      // only non-data-cb-* entries.
+      if (attrs != null && attrs.size() > 0) {
+        val filtered = JsonArray()
+        for (e in attrs) {
+          val isStaleCb =
+              e.isJsonObject &&
+                  e.asJsonObject.get("text")?.isJsonPrimitive == true &&
+                  e.asJsonObject.get("text").asString.startsWith("data-cb-")
+          if (!isStaleCb) filtered.add(e)
+        }
+        props.add("attributes", filtered)
+      }
+
+      val cbKeys = props.entrySet().filter { it.key.startsWith("data-cb-") }.map { it.key }
+      if (cbKeys.isEmpty()) continue
+
+      val cleanAttrs =
+          if (props.has("attributes") && props.get("attributes").isJsonArray) {
+            props.getAsJsonArray("attributes")
+          } else {
+            JsonArray().also { props.add("attributes", it) }
+          }
+      for (key in cbKeys) {
+        val value = if (props.get(key)?.isJsonPrimitive == true) props.get(key).asString else null
+        if (value != null) {
+          val attrObj = JsonObject()
+          attrObj.addProperty("text", key)
+          attrObj.addProperty("value", value)
+          cleanAttrs.add(attrObj)
+        }
+        props.remove(key)
+      }
+    }
     return gson.toJson(result)
+  }
+
+  private fun splicePass2IntoPass1(pass1: String, pass2: String): String {
+    // Merge pass2 modifications into pass1: replace pass1 items with pass2 versions by id,
+    // add new items from pass2, and overlay pass2 top-level fields (e.g. _codbiApplicability).
+    try {
+      val obj1 = JsonParser.parseString(pass1).asJsonObject
+      val obj2 = JsonParser.parseString(pass2).asJsonObject
+
+      // Build a lookup of pass2 items by their id, for replacing pass1 items with updated versions
+      val modifiedById = mutableMapOf<String, JsonObject>()
+      val pass2Ids = mutableSetOf<String>()
+      obj2.getAsJsonArray("items")?.forEach { item ->
+        if (!item.isJsonObject) return@forEach
+        val id =
+            item.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString ?: return@forEach
+        pass2Ids.add(id)
+        modifiedById[id] = item.asJsonObject
+      }
+
+      val pass1Items = obj1.getAsJsonArray("items")
+      if (pass1Items != null && modifiedById.isNotEmpty()) {
+        val newItems = JsonArray()
+        val pass1Ids = mutableSetOf<String>()
+        for (item in pass1Items) {
+          if (item.isJsonObject) {
+            val id = item.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString
+            if (id != null) {
+              pass1Ids.add(id)
+              // Replace with pass2 version if modified, otherwise keep pass1 item
+              newItems.add(modifiedById[id] ?: item)
+            } else {
+              newItems.add(item)
+            }
+          } else {
+            newItems.add(item)
+          }
+        }
+        // Add new items from pass2 that did not exist in pass1
+        for ((id, item) in modifiedById) {
+          if (id !in pass1Ids) {
+            newItems.add(item)
+          }
+        }
+        obj1.add("items", newItems)
+      }
+
+      // Merge other top-level fields from pass2 that are not present in pass1
+      for ((key, value) in obj2.entrySet()) {
+        if (key == "items") continue
+        if (!obj1.has(key)) {
+          obj1.add(key, value)
+        }
+      }
+      return gson.toJson(obj1)
+    } catch (e: Exception) {
+      logger.warn("[AIFormAssistant] splicePass2IntoPass1 failed: {}", e.message)
+      return pass2
+    }
   }
 
   private fun jsonResponse(json: String): IPluginServletActionRetVal =

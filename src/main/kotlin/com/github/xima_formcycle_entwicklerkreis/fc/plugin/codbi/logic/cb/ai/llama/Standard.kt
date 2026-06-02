@@ -921,11 +921,12 @@ class Standard : LLAMA() {
             messagesJson, overrideExternalClient = client, overrideMaxTokens = specialistMaxTokens)
       }
       // For form-assist the response is a full form JSON, which can be large.
-      // External APIs (e.g. Groq) may have a conservative default max_tokens (often ~1024) that
-      // truncates complex multi-page forms. Explicitly request a large output budget so the
-      // response is never cut off. For local models, chatCompletion falls back to config.maxTokens.
+      // Local models default to AI_LLAMA_STD_MaxTokens (default 2048), which is too small for
+      // complex multi-page forms. Force a larger budget for local models only.
+      // External APIs (e.g. Groq) use their own generous defaults and count requested max_tokens
+      // toward rate limits, so we do not override them here.
       else -> {
-        val formMaxTokens = if (config.isExternalMode) 16384 else null
+        val formMaxTokens = if (config.isExternalMode) null else 16384
         svc.chatCompletion(messagesJson, overrideMaxTokens = formMaxTokens)
       }
     }

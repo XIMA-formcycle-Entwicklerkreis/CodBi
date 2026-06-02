@@ -529,8 +529,10 @@ export class AiAssistant implements OnInit, OnDestroy {
         return;
       }
       data["persist"] = innerJson;
-      // Read current CodBi standards from the MultiSelect editor DOM.
+      // Read current CodBi standards from the MultiSelect editor DOM or fallback to form property model.
       const standardsContainer = document.getElementById("CodBi_Standardslisting");
+      const storedStandards = designer?.getFormPropertyValueForCurrentLang("codbi-prop-standards");
+      const fallbackStandards = typeof storedStandards === "string" ? storedStandards : "";
       if (standardsContainer) {
         // DOM is available: read the actual checkbox state.
         data["currentStandards"] = Array.from(
@@ -538,19 +540,15 @@ export class AiAssistant implements OnInit, OnDestroy {
         )
           .map((cb) => cb.value)
           .join(",");
-        // Tell the backend what the AI set on its last run so it can detect user overrides.
-        // Omitted when null (first-run mode) — backend then treats all Cleave configs as AI-controlled.
-        if (this.prevAiStandards !== null) {
-          data["aiSetStandards"] = this.prevAiStandards;
-        }
-      } else if (this.prevAiStandards === null) {
-        // DOM absent but first AI run: read the actual stored value from the designer's form property model.
-        const storedStandards = designer?.getFormPropertyValueForCurrentLang("codbi-prop-standards");
-        data["currentStandards"] = typeof storedStandards === "string" ? storedStandards : "";
-        // No aiSetStandards — first run, all Cleave configs are AI-controlled.
+      } else {
+        // DOM absent: read from the form property model directly.
+        data["currentStandards"] = fallbackStandards;
       }
-      // DOM absent + prevAiStandards !== null (subsequent run, panel not reopened):
-      // skip entirely — cannot determine user overrides since last AI run.
+      // Tell the backend what the AI set on its last run so it can detect user overrides.
+      // Omitted when null (first-run mode) — backend then treats all Cleave configs as AI-controlled.
+      if (this.prevAiStandards !== null) {
+        data["aiSetStandards"] = this.prevAiStandards;
+      }
     }
 
     // Collect form elements + workflowVersionId (needed for workflow and both)

@@ -2,9 +2,16 @@
 
 Compact reference for AI prompts: one sentence per component and parameter.
 
+### GENERIC RULE for all CSS-Selector parameters below
+When a parameter below requires a CSS-Selector referencing another form element,
+ALWAYS use the target element's properties.name value prefixed with a dot '.' (e.g., '.tfInterviewBis' or '.taAddress').
+NEVER use an ID selector (# prefix, e.g., '#xi-tf-interviewbis'), because
+element IDs are mangled in repeatable containers; only properties.name-based selectors work reliably
+when CodBi searches within the shared parent container.
+
 ## Functionalities
 
-- AI.LLAMA.CHAT: Provides the AI_LLAMA_CHAT.functionality .
+- AI.LLAMA.CHAT: Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).
   - AlertOnFinishText: Configures 'AlertOnFinishText' for this functionality.
   - FilterResults: Configures 'FilterResults' for this functionality.
   - Language: Configures 'Language' for this functionality.
@@ -26,8 +33,8 @@ Compact reference for AI prompts: one sentence per component and parameter.
   - VoiceSendHotkey: Configures 'VoiceSendHotkey' for this functionality.
   - WaitingText: Configures 'WaitingText' for this functionality.
   - WelcomeText: Configures 'WelcomeText' for this functionality.
-- AI.OCR: Provides the AI.functionality .
-  - Field: Configures 'Field' for this functionality.
+- AI.OCR: Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
+  - Field: CSS-Class-Selector for the field receiving the OCR output (e.g., '.tfExtractedText'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - FieldPattern_: Configures 'FieldPattern_' for this functionality.
   - InvalidImageText: Configures 'InvalidImageText' for this functionality.
   - Maximum: Configures 'Maximum' for this functionality.
@@ -41,127 +48,128 @@ Compact reference for AI prompts: one sentence per component and parameter.
   - RegExFlags: Configures 'RegExFlags' for this functionality.
   - Separator: Configures 'Separator' for this functionality.
   - WrongFileMessage: Configures 'WrongFileMessage' for this functionality.
-- Date.Frame: Provides the HTML_Select_Injection.functionality .
-  - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
-  - MaxField: Configures 'MaxField' for this functionality.
-  - MsgMaxInvalid: Configures 'MsgMaxInvalid' for this functionality.
-  - MsgMinInvalid: Configures 'MsgMinInvalid' for this functionality.
-- Date.Min: Provides the Date_Min.functionality .
-  - Delimiter: Configures 'Delimiter' for this functionality.
-  - Minimum: Configures 'Minimum' for this functionality.
-  - MsgHigher: Configures 'MsgHigher' for this functionality.
-  - Reverse: Configures 'Reverse' for this functionality.
-  - Unit: Configures 'Unit' for this functionality.
-- Date.NoWeekends: Provides the HTML_Select_Injection.functionality .
-  - MsgNoWeekends: Configures 'MsgNoWeekends' for this functionality.
-- Form.Navigator: Registers the Form_Navigator.functionality .
+- Date.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.
+  - EqualityPermitted: A boolean indicating whether equality between minimum and maximum dates is allowed.
+  - MaxField: CSS-Class-Selector for the max date input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
+  - MsgMaxInvalid: The string to show as the error message when the maximumHTMLInputElement 's value is before.
+  - MsgMinInvalid: The string to show as the error message when the minimum-HTMLInputElement 's value is after.
+- Date.Min: Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates).
+  - Delimiter: The string separating the day, month & year.
+  - Minimum: The amount of years/months/weeks (depending on the Unit set) in the past the tagged.
+  - MsgHigher: The error message to show if the "minimum" is not enough years in the past or the corresponding.
+  - Reverse: Reverse the logic of this functionality in order to permit Date s up to a certain one (defaults to: FALSE).
+  - Unit: A string -character specifying what unit Minimum is of.
+- Date.NoWeekends: Applicable on a XTextField of type 'date' to disallow weekend dates.
+  - MsgNoWeekends: The optional string to be shown when a weekend is entered.
+- Form.Navigator: Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.
   - CSSBlockedNavButton: Configures 'CSSBlockedNavButton' for this functionality.
   - CSSHoverNavButtons: Configures 'CSSHoverNavButtons' for this functionality.
   - CSSNavButtons: Configures 'CSSNavButtons' for this functionality.
   - Preview: Configures 'Preview' for this functionality.
-- HTML.CSS: Provides the HTML_Select_Injection.functionality .
-  - CSS: Configures 'CSS' for this functionality.
-  - Darkmode: Configures 'Darkmode' for this functionality.
-  - Destination: Configures 'Destination' for this functionality.
-  - Replacements: Configures 'Replacements' for this functionality.
-- HTML.Input.Cleave: Provides the HTML_Input_Cleave.functionality .
-  - Config: Configures 'Config' for this functionality.
-  - Date: Configures 'Date' for this functionality.
-  - DateMax: Configures 'DateMax' for this functionality.
-  - DateMin: Configures 'DateMin' for this functionality.
-  - DatePattern: Configures 'DatePattern' for this functionality.
-  - Delimiter: Configures 'Delimiter' for this functionality.
-- HTML.Input.REGEX: Provides the HTML_Input_REGEX.functionality .
-  - ErrorPostfix: Configures 'ErrorPostfix' for this functionality.
-  - ErrorPrefix: Configures 'ErrorPrefix' for this functionality.
-  - ExposeExpression: Configures 'ExposeExpression' for this functionality.
-  - Expression: Configures 'Expression' for this functionality.
-  - Flags: Configures 'Flags' for this functionality.
-  - KeyExpression: Configures 'KeyExpression' for this functionality.
-  - KeyFlags: Configures 'KeyFlags' for this functionality.
-- HTML.Panel: Provides the HTML_Panel.functionality .
+- HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
+  - CSS: The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an.
+  - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the.
+  - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
+  - Replacements: An Array < string > of two elements each that are separated by a "|".
+- HTML.Input.Cleave: Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
+  - Config: The CleaveOptions to set instead of the other shorthand parameter.
+  - Date: The CleaveOptions.date .
+  - DateMax: The CleaveOptions.dateMax .
+  - DateMin: The CleaveOptions.dateMin .
+  - DatePattern: The CleaveOptions.datePattern .
+  - Delimiter: The CleaveOptions.delimiter .
+- HTML.Input.REGEX: Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.
+  - ErrorPostfix: The final part of the error message string displayed after to the "expression".
+  - ErrorPrefix: The first part of the error message string displayed prior to the "expression".
+  - ExposeExpression: Will expose the "expression" within the errormessage if set to TRUE (case insensitive).
+  - Expression: The RegExp - string the value of "toProcess" has to comply to.
+  - Flags: The RegExp - flags string used to create the "expression" (defaults to "g").
+  - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
+  - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
+- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget.
   - Accordion: Configures 'Accordion' for this functionality.
-  - AutoHeaderLevel: Configures 'AutoHeaderLevel' for this functionality.
-  - AutoHeaderTitle: Configures 'AutoHeaderTitle' for this functionality.
+  - AutoHeaderLevel: Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,.
+  - AutoHeaderTitle: The string the automatically generated header shall display.
   - AutoHeaderTitleSupplementsSpacer: Configures 'AutoHeaderTitleSupplementsSpacer' for this functionality.
-  - CSSAfterHeader: Configures 'CSSAfterHeader' for this functionality.
-  - CSSAfterHeaderContent: Configures 'CSSAfterHeaderContent' for this functionality.
-  - CSSAfterHeaderContentUnfolded: Configures 'CSSAfterHeaderContentUnfolded' for this functionality.
-  - CSSAnimFadeINPanel: Configures 'CSSAnimFadeINPanel' for this functionality.
-  - CSSAnimFadeINPanelDuration: Configures 'CSSAnimFadeINPanelDuration' for this functionality.
-  - CSSAnimFadeINPanelEasing: Configures 'CSSAnimFadeINPanelEasing' for this functionality.
-  - CSSBeforeHeader: Configures 'CSSBeforeHeader' for this functionality.
-  - CSSBeforeHeaderContent: Configures 'CSSBeforeHeaderContent' for this functionality.
-  - CSSBeforeHeaderContentUnfolded: Configures 'CSSBeforeHeaderContentUnfolded' for this functionality.
-  - CSSHeaderActive: Configures 'CSSHeaderActive' for this functionality.
-  - CSSHeaderHover: Configures 'CSSHeaderHover' for this functionality.
-  - CSSHeaderUnfolded: Configures 'CSSHeaderUnfolded' for this functionality.
-  - CSSRequiredFields: Configures 'CSSRequiredFields' for this functionality.
-  - CSSRequiredFieldsContent: Configures 'CSSRequiredFieldsContent' for this functionality.
-  - DCSSHeaderUnfolded: Configures 'DCSSHeaderUnfolded' for this functionality.
-  - Folded: Configures 'Folded' for this functionality.
-  - GenerateHeader: Configures 'GenerateHeader' for this functionality.
+  - CSSAfterHeader: The CSS:after to be applied onto the header when the panel is folded.
+  - CSSAfterHeaderContent: The CSS:after content to be applied onto the header when the panel is folded.
+  - CSSAfterHeaderContentUnfolded: The CSS:after content to be applied onto the header when the panel is unfolded.
+  - CSSAnimFadeINPanel: The optional animation to be applied onto the panel whenever the panel.
+  - CSSAnimFadeINPanelDuration: The optional animation's duration that is applied onto the panel whenever.
+  - CSSAnimFadeINPanelEasing: The optional animation's easing function that is applied onto the panel.
+  - CSSBeforeHeader: The CSS:before to be applied onto the header when the panel is folded.
+  - CSSBeforeHeaderContent: The CSS:before content to be applied onto the header when the panel is folded.
+  - CSSBeforeHeaderContentUnfolded: The CSS:after content to be applied onto the header when the panel is unfolded.
+  - CSSHeaderActive: The optional header's CSS:active (defaults to { scale : .9 ;}).
+  - CSSHeaderHover: The optional header's CSS:hover (defaults to { scale : 1.1 ;}).
+  - CSSHeaderUnfolded: The optional CSS to be applied onto the header when the panel is unfolded.
+  - CSSRequiredFields: The CSS:before to applied onto the header if it contains a validation.
+  - CSSRequiredFieldsContent: The CSS:before content to applied onto the header if it contains a validation.
+  - DCSSHeaderUnfolded: The optional Darkmode CSS to be applied onto the header when the panel is unfolded.
+  - Folded: States whether this panel is folded (TRUE) or unfolded (everything else) when.
+  - GenerateHeader: States whether a header shall be automatically generated.
   - Scroll: Configures 'Scroll' for this functionality.
-  - ScrollBlock: Configures 'ScrollBlock' for this functionality.
+  - ScrollBlock: Defines the logical position to scroll to when the panel.
   - ScrollToTop: Configures 'ScrollToTop' for this functionality.
-- HTML.SETAttribute: Provides the HTML_SETAttribute.functionality .
-  - Name: Configures 'Name' for this functionality.
-  - ToSet: Configures 'ToSet' for this functionality.
-- HTML.Text.Injector: Provides the HTML_Text_Injector.functionality .
-  - Placeholder: Configures 'Placeholder' for this functionality.
-  - Property: Configures 'Property' for this functionality.
-  - Replacement: Configures 'Replacement' for this functionality.
-- HTML.Text.Mapper: Provides the HTML_Text_Mapper.functionality .
+- HTML.SETAttribute: Applicable on any element to dynamically set one or more HTML attributes on it.
+  - Name: The name of the attribute to set.
+  - ToSet: The string to set the attribute to.
+- HTML.Text.Injector: Applicable on any element to inject a dynamic text value into a specific property of that element.
+  - Placeholder: Specifies the string that shall be replaced within the.
+  - Property: Specifies which property of the Element "toProcess" shall receive the "Replacement".
+  - Replacement: The string to replace all occurrences of the specified "Placeholder" or at the end of the.
+- HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template.
   - CSS: Configures 'CSS' for this functionality.
   - Property: Configures 'Property' for this functionality.
   - Replacements: Configures 'Replacements' for this functionality.
-- JSON.SET: Provides the JSON_SET.functionality .
-  - Path: Configures 'Path' for this functionality.
-  - Property: Configures 'Property' for this functionality.
-  - ToSet: Configures 'ToSet' for this functionality.
-- LDAP.Autocomplete.Set: Provides the LDAP_Autocomplete.functionality .
+- JSON.SET: Applicable on a hidden field to store a JSON-serialized value derived from another element.
+  - Path: The dotted path string leading to the object, starting from the.
+  - Property: The name of the property to set.
+  - ToSet: The object to set the "Property" to.
+- LDAP.Autocomplete.Set: Applicable on form fields that should be auto-filled from a selected LDAP directory match.
   - CSSProposals: Configures 'CSSProposals' for this functionality.
   - Property: Configures 'Property' for this functionality.
   - URL: Configures 'URL' for this functionality.
-- LDAP.Autocomplete: Extended HTMLInputElement interface that adds support for LDAP match listeners.
-  - CSSProposals: Configures 'CSSProposals' for this functionality.
-  - MsgNotInLDAP: Configures 'MsgNotInLDAP' for this functionality.
-  - Property: Configures 'Property' for this functionality.
-  - URL: Configures 'URL' for this functionality.
-- Matomo.Tracking: Provides the HTML_Select_Injection.functionality .
-  - SiteID: Configures 'SiteID' for this functionality.
-  - URL: Configures 'URL' for this functionality.
-- Media.Image.Cropper: Provides the Media_Image_Cropper.functionality .
-  - AspectRatio: Configures 'AspectRatio' for this functionality.
-  - Container: Configures 'Container' for this functionality.
+- LDAP.Autocomplete: Applicable on a text input that should autocomplete entries from an LDAP directory search.
+  - CSSProposals: The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.
+  - MsgNotInLDAP: The message to display when the entered value is not found in the LDAP.
+  - Property: The LDAP-Property that shall be autocompleted.
+  - URL: The URL of the Formcycle predefined LDAP-Query to use.
+- Matomo.Tracking: Applicable on any form to add Matomo/Piwik analytics event tracking.
+  - SiteID: The ID of the Matomo-Project-Site that shall be used for tracking.
+  - URL: The URL of the Matomo-Server that shall track the tagged form.
+- Media.Image.Cropper: Applicable on an XUpload field for images; adds an interactive crop dialog before upload.
+  - AspectRatio: The optional cropper's aspect-ratio to retain (e.g.
+  - Container: CSS-Class-Selector for the container element (e.g., '.divCropperBoard'). Use dot-prefixed class selector. Do NOT use an ID selector.
   - CSSCropperHandle: Configures 'CSSCropperHandle' for this functionality.
-  - File: Configures 'File' for this functionality.
+  - File: CSS-Class-Selector for the file input (e.g., '.fuUpload'). Use dot-prefixed class selector. Do NOT use an ID selector.
   - OutputWidth: Configures 'OutputWidth' for this functionality.
-  - Target: Configures 'Target' for this functionality.
-  - Updater: Configures 'Updater' for this functionality.
-- MEDIA.INPUT.SPEECH: A single recognition hypothesis returned by the speech engine.
+  - Target: CSS-Class-Selector for the target image element (e.g., '.imgCropped'). Use dot-prefixed class selector. Do NOT use an ID selector.
+  - Updater: CSS-Class-Selector for the update button (e.g., '.btnUpdate'). Use dot-prefixed class selector. Do NOT use an ID selector.
+- MEDIA.INPUT.SPEECH: Applicable on a text input field to enable speech-to-text dictation via the Web Speech API.
   - Language: Configures 'Language' for this functionality.
   - Placeholder: Configures 'Placeholder' for this functionality.
   - ShowHint: Configures 'ShowHint' for this functionality.
   - VoiceHotkey: Configures 'VoiceHotkey' for this functionality.
-- OpenPLZ.Autocomplete: Provides the OpenPLZ_Autocomplete.functionality .
-  - AllowEmpty: Configures 'AllowEmpty' for this functionality.
-  - Country: Configures 'Country' for this functionality.
-  - CSSProposals: Configures 'CSSProposals' for this functionality.
-  - DependentLocality: Configures 'DependentLocality' for this functionality.
-  - DependentPLZ: Configures 'DependentPLZ' for this functionality.
-  - FocusOnAutocomplete: Configures 'FocusOnAutocomplete' for this functionality.
-  - MsgNotKnown: Configures 'MsgNotKnown' for this functionality.
-  - TargetData: Configures 'TargetData' for this functionality.
-- Print.Remove: Provides the HTML_Select_Injection.functionality .
-  - DocumentSelector: Configures 'DocumentSelector' for this functionality.
-  - Invert: Configures 'Invert' for this functionality.
-  - ParentalLevel: Configures 'ParentalLevel' for this functionality.
-- Sys.Log.Console: Provides the Sys_Log_Console.functionality .
+- OpenPLZ.Autocomplete: Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). Tag EACH address field with this functionality and set its own parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ to reference the postal code field and DependentLocality to reference the locality/city field. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field that gets filled automatically (e.g., on a postal code field set Dependent to the locality field, on a locality field set Dependent to the postal code field). On POSTAL CODE and LOCALITY fields: set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.
+  - AllowEmpty: If set to 'true', an empty input value won't trigger an error message.
+  - Country: Country code for address data: de (Germany), at (Austria), li (Liechtenstein), ch (Switzerland), or en (England).
+  - CSSProposals: CSS style for the proposals popup appearing when there are multiple matches.
+  - Dependent: CSS-Class-Selector of the field that gets automatically filled when an autocomplete selection is made. For postal code fields: set to the locality field (e.g., '.tfCity'). For locality fields: set to the postal code field (e.g., '.tfPLZ'). Do NOT use on the street field. Do NOT use an ID selector.
+  - DependentLocality: CSS-Class-Selector referencing the locality/city field in the same address group (e.g., '.tfCity'). Set this on each tagged field when a locality/city field exists in the group. Can be set together with DependentPLZ when both exist. Do NOT use an ID selector.
+  - DependentPLZ: CSS-Class-Selector referencing the postal-code field in the same address group (e.g., '.tfPLZ'). Set this on each tagged field when a postal code field exists in the group. Do NOT use an ID selector.
+  - FocusOnAutocomplete: CSS-Class-Selector of the field to focus after an autocomplete selection. On POSTAL CODE and LOCALITY fields: set to the street field (e.g., '.tfStreet'). On the STREET field: set to the building number field if one exists (e.g., '.tfBuildingNumber'). Do NOT use an ID selector.
+  - MsgNotKnown: Message to show when the entered value is not found in the OpenPLZ database.
+  - TargetData: Defines what type of data is being autocompleted: 'Localities' (city/town), 'PostalCodes' (ZIP/PLZ), or 'Streets'. Pick the one that matches the tagged field's purpose.
+- Print.Remove: Applicable on any element that should be invisible when the form is printed.
+  - DocumentSelector: CSS-Class-Selector for the element to remove (e.g., '.divPrintSection'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
+  - Invert: Specifies whether this functionality shall be inverted, e.g.
+  - ParentalLevel: The number of elements to climb up the HTMLElement.parentElement -Tree to get to.
+- Sys.Log.Console: Applicable for debugging; logs CodBi runtime data to the browser developer console.
   - Parameters: none.
-- Time.Frame: Provides the Time_Frame.functionality .
+- Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
   - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
-  - MaxField: Configures 'MaxField' for this functionality.
+  - MaxField: CSS-Class-Selector for the max time input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
   - MsgMaxInvalid: Configures 'MsgMaxInvalid' for this functionality.
   - MsgMinInvalid: Configures 'MsgMinInvalid' for this functionality.
 
@@ -189,9 +197,9 @@ Compact reference for AI prompts: one sentence per component and parameter.
 - Date.FromString: This Element-Placeholder turns a String into a Date .
   - Param[1]: The String to turn to a Date.
   - Param[2]: An optional dateformat string like YYYY/MM/DD, for example.
-- Date.Holidays: The type of requests needed to identify identical requests.
+- Date.Holidays: The requested years.
   - Parameters: none.
-- Date.Today: Provides the DATE_Today.retrieve al of the current Date along with arithmetic appliances.
+- Date.Today: Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.
   - Parameters: none.
 - Date.Weekends: This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .
   - Parameters: none.

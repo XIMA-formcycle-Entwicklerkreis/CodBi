@@ -64,6 +64,49 @@ function Get-ElementDescription {
   return ""
 }
 
+function Get-AllDocBlocks {
+  # Returns all /** ... */ blocks as an array of cleaned doc strings.
+  param([string]$Content)
+  $blocks = @()
+  foreach ($m in [regex]::Matches($Content, "(?s)/\*\*(.*?)\*/")) {
+    $raw = $m.Groups[1].Value
+    $lines = $raw -split "`r?`n" | ForEach-Object { ($_ -replace "^\s*\*\s?", "").TrimEnd() }
+    $blocks += ,($lines -join "`n")
+  }
+  return $blocks
+}
+
+function Get-BestDescription {
+  # Returns the best one-sentence description from the file.
+  # Priority: (1) JSDoc block immediately before functionality()/retrieve() static method,
+  #           (2) first non-stub JSDoc block,
+  #           (3) first non-empty description.
+  param([string]$FileContent)
+  # Priority 1: JSDoc directly before the core static method
+  $coreMatch = [regex]::Match($FileContent, "(?s)/\*\*(.*?)\*/\s*(?:public\s+)?static\s+(?:functionality|retrieve)\s*\(")
+  if ($coreMatch.Success) {
+    $raw = $coreMatch.Groups[1].Value
+    $lines = $raw -split "`r?`n" | ForEach-Object { ($_ -replace "^\s*\*\s?", "").TrimEnd() }
+    $d = Get-ElementDescription ($lines -join "`n")
+    if ($d) { return $d }
+  }
+  # Priority 2: first non-stub JSDoc block
+  $stubPattern = "^(Provides the |Registers the |Extended |A single |The type of )"
+  $blocks = Get-AllDocBlocks $FileContent
+  foreach ($block in $blocks) {
+    $d = Get-ElementDescription $block
+    if ($d -and $d -notmatch $stubPattern) {
+      return $d
+    }
+  }
+  # Priority 3: any description
+  foreach ($block in $blocks) {
+    $d = Get-ElementDescription $block
+    if ($d) { return $d }
+  }
+  return ""
+}
+
 function Get-ConfigParamHints {
   param([string]$Doc)
   $map = @{}
@@ -75,6 +118,19 @@ function Get-ConfigParamHints {
     }
   }
   return $map
+}
+
+function Get-AllConfigParamHints {
+  # Scans every /** ... */ block in the full file content for Config Parameter hints,
+  # so method-level docs are captured even when the class-level doc has none.
+  param([string]$FileContent)
+  $combined = ""
+  foreach ($m in [regex]::Matches($FileContent, "(?s)/\*\*(.*?)\*/")) {
+    $raw = $m.Groups[1].Value
+    $lines = $raw -split "`r?`n" | ForEach-Object { ($_ -replace "^\s*\*\s?", "").TrimEnd() }
+    $combined += "`n" + ($lines -join "`n")
+  }
+  return Get-ConfigParamHints $combined
 }
 
 function Get-EpParamHints {
@@ -200,6 +256,80 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine("Compact reference for AI prompts: one sentence per component and parameter.")
 [void]$sb.AppendLine("")
 
+# BEGIN: GENERIC AI GUIDANCE FOR REFERENCING FORM ELEMENTS
+# This preamble applies to every CSS-selector parameter below.
+# Reason: In repeatable containers, element IDs are mangled/duplicated.
+# CodBi's pattern always searches within the shared parent container
+# (e.g., parentElement.parentElement.querySelector(...)), so only
+# selectors based on the element's properties.name work reliably.
+[void]$sb.AppendLine("### GENERIC RULE for all CSS-Selector parameters below")
+[void]$sb.AppendLine("When a parameter below requires a CSS-Selector referencing another form element,")
+[void]$sb.AppendLine("ALWAYS use the target element's properties.name value prefixed with a dot '.' (e.g., '.tfInterviewBis' or '.taAddress').")
+[void]$sb.AppendLine("NEVER use an ID selector (# prefix, e.g., '#xi-tf-interviewbis'), because")
+[void]$sb.AppendLine("element IDs are mangled in repeatable containers; only properties.name-based selectors work reliably")
+[void]$sb.AppendLine("when CodBi searches within the shared parent container.")
+[void]$sb.AppendLine("")
+
+# Human-authored applicability descriptions that override auto-generated ones.
+# These tell the AI *when* and *where* each CodBi element should be applied.
+$compactDescOverrides = @{
+  "Time.Frame"           = "Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element."
+  "Date.Frame"           = "Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element."
+  "Date.Min"             = "Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates)."
+  "Date.NoWeekends"      = "Applicable on a XTextField of type 'date' to disallow weekend dates."
+  "HTML.Input.REGEX"     = "Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern."
+  "HTML.Input.Cleave"    = "Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js."
+  "OpenPLZ.Autocomplete" = "Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). Tag EACH address field with this functionality and set its own parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ to reference the postal code field and DependentLocality to reference the locality/city field. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field that gets filled automatically (e.g., on a postal code field set Dependent to the locality field, on a locality field set Dependent to the postal code field). On POSTAL CODE and LOCALITY fields: set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists."
+  "Form.Navigator"       = "Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms."
+  "HTML.CSS"             = "Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements)."
+  "HTML.Panel"           = "Applicable on any element to wrap it in a collapsible accordion/panel widget."
+  "HTML.SETAttribute"    = "Applicable on any element to dynamically set one or more HTML attributes on it."
+  "HTML.Text.Injector"   = "Applicable on any element to inject a dynamic text value into a specific property of that element."
+  "HTML.Text.Mapper"     = "Applicable on any element to map object properties to named placeholders in a text template."
+  "JSON.SET"             = "Applicable on a hidden field to store a JSON-serialized value derived from another element."
+  "LDAP.Autocomplete"    = "Applicable on a text input that should autocomplete entries from an LDAP directory search."
+  "LDAP.Autocomplete.Set"= "Applicable on form fields that should be auto-filled from a selected LDAP directory match."
+  "Matomo.Tracking"      = "Applicable on any form to add Matomo/Piwik analytics event tracking."
+  "Media.Image.Cropper"  = "Applicable on an XUpload field for images; adds an interactive crop dialog before upload."
+  "MEDIA.INPUT.SPEECH"   = "Applicable on a text input field to enable speech-to-text dictation via the Web Speech API."
+  "Print.Remove"         = "Applicable on any element that should be invisible when the form is printed."
+  "Sys.Log.Console"      = "Applicable for debugging; logs CodBi runtime data to the browser developer console."
+  "AI.OCR"               = "Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR."
+  "AI.LLAMA.CHAT"        = "Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings)."
+}
+
+# Parameter-level hints that override auto-extracted JSDoc descriptions.
+# Critical for guiding the AI to use correct CSS class selectors (dot-prefixed) rather than
+# ID selectors (hash-prefixed) when referencing other form elements by their name.
+# In repeatable containers, IDs are mangled — only class-based selectors work reliably
+# since CodBi searches within the nearest shared parent container.
+$paramDescOverrides = @{
+  # Time/Date frame - reference maximum field
+  "Time.Frame.MaxField" = "CSS-Class-Selector for the max time input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers."
+  "Date.Frame.MaxField" = "CSS-Class-Selector for the max date input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers."
+  # HTML.CSS - destination element for CSS injection
+  "HTML.CSS.Destination" = "CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector."
+  # Media.Image.Cropper - references to UI/form elements
+  "Media.Image.Cropper.Container" = "CSS-Class-Selector for the container element (e.g., '.divCropperBoard'). Use dot-prefixed class selector. Do NOT use an ID selector."
+  "Media.Image.Cropper.File" = "CSS-Class-Selector for the file input (e.g., '.fuUpload'). Use dot-prefixed class selector. Do NOT use an ID selector."
+  "Media.Image.Cropper.Target" = "CSS-Class-Selector for the target image element (e.g., '.imgCropped'). Use dot-prefixed class selector. Do NOT use an ID selector."
+  "Media.Image.Cropper.Updater" = "CSS-Class-Selector for the update button (e.g., '.btnUpdate'). Use dot-prefixed class selector. Do NOT use an ID selector."
+  # Print.Remove - selector for element to remove
+  "Print.Remove.DocumentSelector" = "CSS-Class-Selector for the element to remove (e.g., '.divPrintSection'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector."
+  # AI.OCR - field to receive OCR output
+  "AI.OCR.Field" = "CSS-Class-Selector for the field receiving the OCR output (e.g., '.tfExtractedText'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector."
+  # OpenPLZ.Autocomplete - address field cross-references
+  "OpenPLZ.Autocomplete.TargetData" = "Defines what type of data is being autocompleted: 'Localities' (city/town), 'PostalCodes' (ZIP/PLZ), or 'Streets'. Pick the one that matches the tagged field's purpose."
+  "OpenPLZ.Autocomplete.Country" = "Country code for address data: de (Germany), at (Austria), li (Liechtenstein), ch (Switzerland), or en (England)."
+  "OpenPLZ.Autocomplete.AllowEmpty" = "If set to 'true', an empty input value won't trigger an error message."
+  "OpenPLZ.Autocomplete.MsgNotKnown" = "Message to show when the entered value is not found in the OpenPLZ database."
+  "OpenPLZ.Autocomplete.CSSProposals" = "CSS style for the proposals popup appearing when there are multiple matches."
+  "OpenPLZ.Autocomplete.Dependent" = "CSS-Class-Selector of the field that gets automatically filled when an autocomplete selection is made. For postal code fields: set to the locality field (e.g., '.tfCity'). For locality fields: set to the postal code field (e.g., '.tfPLZ'). Do NOT use on the street field. Do NOT use an ID selector."
+  "OpenPLZ.Autocomplete.DependentPLZ" = "CSS-Class-Selector referencing the postal-code field in the same address group (e.g., '.tfPLZ'). Set this on each tagged field when a postal code field exists in the group. Do NOT use an ID selector."
+  "OpenPLZ.Autocomplete.DependentLocality" = "CSS-Class-Selector referencing the locality/city field in the same address group (e.g., '.tfCity'). Set this on each tagged field when a locality/city field exists in the group. Can be set together with DependentPLZ when both exist. Do NOT use an ID selector."
+  "OpenPLZ.Autocomplete.FocusOnAutocomplete" = "CSS-Class-Selector of the field to focus after an autocomplete selection. On POSTAL CODE and LOCALITY fields: set to the street field (e.g., '.tfStreet'). On the STREET field: set to the building number field if one exists (e.g., '.tfBuildingNumber'). Do NOT use an ID selector."
+}
+
 [void]$sb.AppendLine("## Functionalities")
 [void]$sb.AppendLine("")
 $detailsEntries = [ordered]@{}
@@ -215,9 +345,11 @@ Get-ChildItem $funcDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
   $id = $idMatch.Groups[1].Value
   $doc = Get-DocBlock $ts
   $docDetail = Get-DocDetail $doc
-  $desc = Get-ElementDescription $doc
-  if (-not $desc) {
-    $desc = "Executes this functionality on tagged form elements."
+  $desc = if ($compactDescOverrides.ContainsKey($id)) {
+    $compactDescOverrides[$id]
+  } else {
+    $d = Get-BestDescription $ts
+    if (-not $d) { "Executes this functionality on tagged form elements." } else { $d }
   }
   [void]$sb.AppendLine("- ${id}: $desc")
 
@@ -230,19 +362,22 @@ Get-ChildItem $funcDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
     }
   }
 
-  $paramHints = Get-ConfigParamHints $doc
+  $paramHints = Get-AllConfigParamHints $ts
   $entryParams = [ordered]@{}
   if ($paramKeys.Count -eq 0) {
     [void]$sb.AppendLine("  - Parameters: none.")
   } else {
     foreach ($paramName in $paramKeys) {
-      $pDesc = if ($paramHints.ContainsKey($paramName)) {
+      $overrideKey = "${id}.${paramName}"
+      $pDesc = if ($paramDescOverrides.ContainsKey($overrideKey)) {
+        $paramDescOverrides[$overrideKey]
+      } elseif ($paramHints.ContainsKey($paramName)) {
         $paramHints[$paramName]
       } else {
         "Configures '$paramName' for this functionality."
       }
-      if ($paramHints.ContainsKey($paramName)) {
-        $entryParams[$paramName] = $paramHints[$paramName]
+      if ($paramHints.ContainsKey($paramName) -or $paramDescOverrides.ContainsKey($overrideKey)) {
+        $entryParams[$paramName] = $pDesc
       }
       [void]$sb.AppendLine("  - ${paramName}: $pDesc")
     }
@@ -273,7 +408,7 @@ Get-ChildItem $epDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
   $id = $idMatch.Groups[1].Value
   $doc = Get-DocBlock $ts
   $docDetail = Get-DocDetail $doc
-  $desc = Get-ElementDescription $doc
+  $desc = Get-BestDescription $ts
   if (-not $desc) {
     $desc = "Returns placeholder data for use in CodBi expressions."
   }

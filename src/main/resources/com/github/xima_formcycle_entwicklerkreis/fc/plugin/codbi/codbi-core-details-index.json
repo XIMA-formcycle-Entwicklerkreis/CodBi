@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-05-27T09:07:42.8591592+02:00",
+  "generatedAt": "2026-06-02T21:33:21.1572234+02:00",
   "entries": {
     "AI.LLAMA.CHAT": {
       "id": "AI.LLAMA.CHAT",
       "type": "functionality",
-      "summary": "Provides the AI_LLAMA_CHAT.functionality .",
+      "summary": "Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).",
       "tsdoc": "Provides the {@link AI_LLAMA_CHAT.functionality }.",
       "parameters": {},
       "classDescriptions": {}
@@ -12,39 +12,54 @@
     "AI.OCR": {
       "id": "AI.OCR",
       "type": "functionality",
-      "summary": "Provides the AI.functionality .",
+      "summary": "Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.",
       "tsdoc": "Provides the {@link AI.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "Field": "CSS-Class-Selector for the field receiving the OCR output (e.g., \u0027.tfExtractedText\u0027). Use dot-prefixed class selector based on the target element\u0027s name. Do NOT use an ID selector."
+      },
       "classDescriptions": {}
     },
     "Date.Frame": {
       "id": "Date.Frame",
       "type": "functionality",
-      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "summary": "Applicable ONLY on the BEGIN (minimum) XTextField of type \u0027date\u0027 when there is a second related end date field. The end field is referenced via the \u0027MaxField\u0027 parameter. Do NOT put this functionality on the end date element.",
       "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "EqualityPermitted": "A boolean indicating whether equality between minimum and maximum dates is allowed.",
+        "MaxField": "CSS-Class-Selector for the max date input (e.g., \u0027.tfInterviewBis\u0027). Use the target element\u0027s name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.",
+        "MsgMaxInvalid": "The string to show as the error message when the maximumHTMLInputElement \u0027s value is before.",
+        "MsgMinInvalid": "The string to show as the error message when the minimum-HTMLInputElement \u0027s value is after."
+      },
       "classDescriptions": {}
     },
     "Date.Min": {
       "id": "Date.Min",
       "type": "functionality",
-      "summary": "Provides the Date_Min.functionality .",
+      "summary": "Applicable on a XTextField of type \u0027date\u0027 to enforce a minimum allowed date (e.g. prevent past dates).",
       "tsdoc": "Provides the {@link Date_Min.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "Delimiter": "The string separating the day, month \u0026 year.",
+        "Minimum": "The amount of years/months/weeks (depending on the Unit set) in the past the tagged.",
+        "MsgHigher": "The error message to show if the \"minimum\" is not enough years in the past or the corresponding.",
+        "Reverse": "Reverse the logic of this functionality in order to permit Date s up to a certain one (defaults to: FALSE).",
+        "Unit": "A string -character specifying what unit Minimum is of."
+      },
       "classDescriptions": {}
     },
     "Date.NoWeekends": {
       "id": "Date.NoWeekends",
       "type": "functionality",
-      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "summary": "Applicable on a XTextField of type \u0027date\u0027 to disallow weekend dates.",
       "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "MsgNoWeekends": "The optional string to be shown when a weekend is entered."
+      },
       "classDescriptions": {}
     },
     "Form.Navigator": {
       "id": "Form.Navigator",
       "type": "functionality",
-      "summary": "Registers the Form_Navigator.functionality .",
+      "summary": "Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.",
       "tsdoc": "Registers the {@link Form_Navigator.functionality }.",
       "parameters": {},
       "classDescriptions": {}
@@ -52,55 +67,103 @@
     "HTML.CSS": {
       "id": "HTML.CSS",
       "type": "functionality",
-      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "summary": "Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).",
       "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "CSS": "The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an.",
+        "Darkmode": "The Darkmode-Replacements that will replace all placeholders ending with \"_DM\" in the.",
+        "Destination": "CSS-Class-Selector of the destination element (e.g., \u0027.tfHeadline\u0027). Use a dot-prefixed class selector based on the target element\u0027s name. Do NOT use an ID selector.",
+        "Replacements": "An Array \u003c string \u003e of two elements each that are separated by a \"|\"."
+      },
       "classDescriptions": {}
     },
     "HTML.Input.Cleave": {
       "id": "HTML.Input.Cleave",
       "type": "functionality",
-      "summary": "Provides the HTML_Input_Cleave.functionality .",
+      "summary": "Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.",
       "tsdoc": "Provides the {@link HTML_Input_Cleave.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "Config": "The CleaveOptions to set instead of the other shorthand parameter.",
+        "Date": "The CleaveOptions.date .",
+        "DateMax": "The CleaveOptions.dateMax .",
+        "DateMin": "The CleaveOptions.dateMin .",
+        "DatePattern": "The CleaveOptions.datePattern .",
+        "Delimiter": "The CleaveOptions.delimiter ."
+      },
       "classDescriptions": {}
     },
     "HTML.Input.REGEX": {
       "id": "HTML.Input.REGEX",
       "type": "functionality",
-      "summary": "Provides the HTML_Input_REGEX.functionality .",
+      "summary": "Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.",
       "tsdoc": "Provides the {@link HTML_Input_REGEX.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "ErrorPostfix": "The final part of the error message string displayed after to the \"expression\".",
+        "ErrorPrefix": "The first part of the error message string displayed prior to the \"expression\".",
+        "ExposeExpression": "Will expose the \"expression\" within the errormessage if set to TRUE (case insensitive).",
+        "Expression": "The RegExp - string the value of \"toProcess\" has to comply to.",
+        "Flags": "The RegExp - flags string used to create the \"expression\" (defaults to \"g\").",
+        "KeyExpression": "The RegExp - string the individual keystrokes have to comply to.",
+        "KeyFlags": "The RegExp - flags string used to create the \"keyexpression\" (defaults to \"g\")."
+      },
       "classDescriptions": {}
     },
     "HTML.Panel": {
       "id": "HTML.Panel",
       "type": "functionality",
-      "summary": "Provides the HTML_Panel.functionality .",
+      "summary": "Applicable on any element to wrap it in a collapsible accordion/panel widget.",
       "tsdoc": "Provides the {@link HTML_Panel.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "AutoHeaderLevel": "Which level of enclosing \\\u003ch\u003es the \"AutoHeaderTitle\" shall have,.",
+        "AutoHeaderTitle": "The string the automatically generated header shall display.",
+        "CSSAfterHeader": "The CSS:after to be applied onto the header when the panel is folded.",
+        "CSSAfterHeaderContent": "The CSS:after content to be applied onto the header when the panel is folded.",
+        "CSSAfterHeaderContentUnfolded": "The CSS:after content to be applied onto the header when the panel is unfolded.",
+        "CSSAnimFadeINPanel": "The optional animation to be applied onto the panel whenever the panel.",
+        "CSSAnimFadeINPanelDuration": "The optional animation\u0027s duration that is applied onto the panel whenever.",
+        "CSSAnimFadeINPanelEasing": "The optional animation\u0027s easing function that is applied onto the panel.",
+        "CSSBeforeHeader": "The CSS:before to be applied onto the header when the panel is folded.",
+        "CSSBeforeHeaderContent": "The CSS:before content to be applied onto the header when the panel is folded.",
+        "CSSBeforeHeaderContentUnfolded": "The CSS:after content to be applied onto the header when the panel is unfolded.",
+        "CSSHeaderActive": "The optional header\u0027s CSS:active (defaults to { scale : .9 ;}).",
+        "CSSHeaderHover": "The optional header\u0027s CSS:hover (defaults to { scale : 1.1 ;}).",
+        "CSSHeaderUnfolded": "The optional CSS to be applied onto the header when the panel is unfolded.",
+        "CSSRequiredFields": "The CSS:before to applied onto the header if it contains a validation.",
+        "CSSRequiredFieldsContent": "The CSS:before content to applied onto the header if it contains a validation.",
+        "DCSSHeaderUnfolded": "The optional Darkmode CSS to be applied onto the header when the panel is unfolded.",
+        "Folded": "States whether this panel is folded (TRUE) or unfolded (everything else) when.",
+        "GenerateHeader": "States whether a header shall be automatically generated.",
+        "ScrollBlock": "Defines the logical position to scroll to when the panel."
+      },
       "classDescriptions": {}
     },
     "HTML.SETAttribute": {
       "id": "HTML.SETAttribute",
       "type": "functionality",
-      "summary": "Provides the HTML_SETAttribute.functionality .",
+      "summary": "Applicable on any element to dynamically set one or more HTML attributes on it.",
       "tsdoc": "Provides the {@link HTML_SETAttribute.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "Name": "The name of the attribute to set.",
+        "ToSet": "The string to set the attribute to."
+      },
       "classDescriptions": {}
     },
     "HTML.Text.Injector": {
       "id": "HTML.Text.Injector",
       "type": "functionality",
-      "summary": "Provides the HTML_Text_Injector.functionality .",
+      "summary": "Applicable on any element to inject a dynamic text value into a specific property of that element.",
       "tsdoc": "Provides the {@link HTML_Text_Injector.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "Placeholder": "Specifies the string that shall be replaced within the.",
+        "Property": "Specifies which property of the Element \"toProcess\" shall receive the \"Replacement\".",
+        "Replacement": "The string to replace all occurrences of the specified \"Placeholder\" or at the end of the."
+      },
       "classDescriptions": {}
     },
     "HTML.Text.Mapper": {
       "id": "HTML.Text.Mapper",
       "type": "functionality",
-      "summary": "Provides the HTML_Text_Mapper.functionality .",
+      "summary": "Applicable on any element to map object properties to named placeholders in a text template.",
       "tsdoc": "Provides the {@link HTML_Text_Mapper.functionality }.",
       "parameters": {},
       "classDescriptions": {}
@@ -108,15 +171,19 @@
     "JSON.SET": {
       "id": "JSON.SET",
       "type": "functionality",
-      "summary": "Provides the JSON_SET.functionality .",
+      "summary": "Applicable on a hidden field to store a JSON-serialized value derived from another element.",
       "tsdoc": "Provides the {@link JSON_SET.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "Path": "The dotted path string leading to the object, starting from the.",
+        "Property": "The name of the property to set.",
+        "ToSet": "The object to set the \"Property\" to."
+      },
       "classDescriptions": {}
     },
     "LDAP.Autocomplete.Set": {
       "id": "LDAP.Autocomplete.Set",
       "type": "functionality",
-      "summary": "Provides the LDAP_Autocomplete.functionality .",
+      "summary": "Applicable on form fields that should be auto-filled from a selected LDAP directory match.",
       "tsdoc": "Provides the {@link LDAP_Autocomplete.functionality }.",
       "parameters": {},
       "classDescriptions": {}
@@ -124,31 +191,45 @@
     "LDAP.Autocomplete": {
       "id": "LDAP.Autocomplete",
       "type": "functionality",
-      "summary": "Extended HTMLInputElement interface that adds support for LDAP match listeners.",
+      "summary": "Applicable on a text input that should autocomplete entries from an LDAP directory search.",
       "tsdoc": "Extended HTMLInputElement interface that adds support for LDAP match listeners.",
-      "parameters": {},
+      "parameters": {
+        "CSSProposals": "The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.",
+        "MsgNotInLDAP": "The message to display when the entered value is not found in the LDAP.",
+        "Property": "The LDAP-Property that shall be autocompleted.",
+        "URL": "The URL of the Formcycle predefined LDAP-Query to use."
+      },
       "classDescriptions": {}
     },
     "Matomo.Tracking": {
       "id": "Matomo.Tracking",
       "type": "functionality",
-      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "summary": "Applicable on any form to add Matomo/Piwik analytics event tracking.",
       "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "SiteID": "The ID of the Matomo-Project-Site that shall be used for tracking.",
+        "URL": "The URL of the Matomo-Server that shall track the tagged form."
+      },
       "classDescriptions": {}
     },
     "Media.Image.Cropper": {
       "id": "Media.Image.Cropper",
       "type": "functionality",
-      "summary": "Provides the Media_Image_Cropper.functionality .",
+      "summary": "Applicable on an XUpload field for images; adds an interactive crop dialog before upload.",
       "tsdoc": "Provides the {@link Media_Image_Cropper.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "AspectRatio": "The optional cropper\u0027s aspect-ratio to retain (e.g.",
+        "Container": "CSS-Class-Selector for the container element (e.g., \u0027.divCropperBoard\u0027). Use dot-prefixed class selector. Do NOT use an ID selector.",
+        "File": "CSS-Class-Selector for the file input (e.g., \u0027.fuUpload\u0027). Use dot-prefixed class selector. Do NOT use an ID selector.",
+        "Target": "CSS-Class-Selector for the target image element (e.g., \u0027.imgCropped\u0027). Use dot-prefixed class selector. Do NOT use an ID selector.",
+        "Updater": "CSS-Class-Selector for the update button (e.g., \u0027.btnUpdate\u0027). Use dot-prefixed class selector. Do NOT use an ID selector."
+      },
       "classDescriptions": {}
     },
     "MEDIA.INPUT.SPEECH": {
       "id": "MEDIA.INPUT.SPEECH",
       "type": "functionality",
-      "summary": "A single recognition hypothesis returned by the speech engine.",
+      "summary": "Applicable on a text input field to enable speech-to-text dictation via the Web Speech API.",
       "tsdoc": "A single recognition hypothesis returned by the speech engine.\n@see {@link https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognitionAlternative | MDN â€” SpeechRecognitionAlternative}",
       "parameters": {},
       "classDescriptions": {}
@@ -156,23 +237,37 @@
     "OpenPLZ.Autocomplete": {
       "id": "OpenPLZ.Autocomplete",
       "type": "functionality",
-      "summary": "Provides the OpenPLZ_Autocomplete.functionality .",
+      "summary": "Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). Tag EACH address field with this functionality and set its own parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ to reference the postal code field and DependentLocality to reference the locality/city field. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field that gets filled automatically (e.g., on a postal code field set Dependent to the locality field, on a locality field set Dependent to the postal code field). On POSTAL CODE and LOCALITY fields: set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.",
       "tsdoc": "Provides the {@link OpenPLZ_Autocomplete.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "AllowEmpty": "If set to \u0027true\u0027, an empty input value won\u0027t trigger an error message.",
+        "Country": "Country code for address data: de (Germany), at (Austria), li (Liechtenstein), ch (Switzerland), or en (England).",
+        "CSSProposals": "CSS style for the proposals popup appearing when there are multiple matches.",
+        "Dependent": "CSS-Class-Selector of the field that gets automatically filled when an autocomplete selection is made. For postal code fields: set to the locality field (e.g., \u0027.tfCity\u0027). For locality fields: set to the postal code field (e.g., \u0027.tfPLZ\u0027). Do NOT use on the street field. Do NOT use an ID selector.",
+        "DependentLocality": "CSS-Class-Selector referencing the locality/city field in the same address group (e.g., \u0027.tfCity\u0027). Set this on each tagged field when a locality/city field exists in the group. Can be set together with DependentPLZ when both exist. Do NOT use an ID selector.",
+        "DependentPLZ": "CSS-Class-Selector referencing the postal-code field in the same address group (e.g., \u0027.tfPLZ\u0027). Set this on each tagged field when a postal code field exists in the group. Do NOT use an ID selector.",
+        "FocusOnAutocomplete": "CSS-Class-Selector of the field to focus after an autocomplete selection. On POSTAL CODE and LOCALITY fields: set to the street field (e.g., \u0027.tfStreet\u0027). On the STREET field: set to the building number field if one exists (e.g., \u0027.tfBuildingNumber\u0027). Do NOT use an ID selector.",
+        "MsgNotKnown": "Message to show when the entered value is not found in the OpenPLZ database.",
+        "TargetData": "Defines what type of data is being autocompleted: \u0027Localities\u0027 (city/town), \u0027PostalCodes\u0027 (ZIP/PLZ), or \u0027Streets\u0027. Pick the one that matches the tagged field\u0027s purpose."
+      },
       "classDescriptions": {}
     },
     "Print.Remove": {
       "id": "Print.Remove",
       "type": "functionality",
-      "summary": "Provides the HTML_Select_Injection.functionality .",
+      "summary": "Applicable on any element that should be invisible when the form is printed.",
       "tsdoc": "Provides the {@link HTML_Select_Injection.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "DocumentSelector": "CSS-Class-Selector for the element to remove (e.g., \u0027.divPrintSection\u0027). Use dot-prefixed class selector based on the target element\u0027s name. Do NOT use an ID selector.",
+        "Invert": "Specifies whether this functionality shall be inverted, e.g.",
+        "ParentalLevel": "The number of elements to climb up the HTMLElement.parentElement -Tree to get to."
+      },
       "classDescriptions": {}
     },
     "Sys.Log.Console": {
       "id": "Sys.Log.Console",
       "type": "functionality",
-      "summary": "Provides the Sys_Log_Console.functionality .",
+      "summary": "Applicable for debugging; logs CodBi runtime data to the browser developer console.",
       "tsdoc": "Provides the {@link Sys_Log_Console.functionality }.",
       "parameters": {},
       "classDescriptions": {}
@@ -180,9 +275,11 @@
     "Time.Frame": {
       "id": "Time.Frame",
       "type": "functionality",
-      "summary": "Provides the Time_Frame.functionality .",
+      "summary": "Applicable ONLY on the BEGIN (minimum) XTextField of type \u0027time\u0027 when there is a second related end time field. The end field is referenced via the \u0027MaxField\u0027 parameter. Do NOT put this functionality on the end time element.",
       "tsdoc": "Provides the {@link Time_Frame.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "MaxField": "CSS-Class-Selector for the max time input (e.g., \u0027.tfInterviewBis\u0027). Use the target element\u0027s name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers."
+      },
       "classDescriptions": {}
     },
     "AI.LLAMA.STD.QA": {
@@ -276,7 +373,7 @@
     "Date.Holidays": {
       "id": "Date.Holidays",
       "type": "ep",
-      "summary": "The type of requests needed to identify identical requests.",
+      "summary": "The requested years.",
       "tsdoc": "The type of requests needed to identify identical requests.",
       "parameters": {},
       "classDescriptions": {}
@@ -284,7 +381,7 @@
     "Date.Today": {
       "id": "Date.Today",
       "type": "ep",
-      "summary": "Provides the DATE_Today.retrieve al of the current Date along with arithmetic appliances.",
+      "summary": "Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.",
       "tsdoc": "Provides the {@link DATE_Today.retrieve }al of the current {@link Date } along with arithmetic appliances.\nPlaceholder Parameter:\nEither \"NOW\" to retrieve the current {@link Date } or a/multiple arithmetic operations like +1d ; -1m ; + 1y.\nThe parameters are case insensitive.",
       "parameters": {},
       "classDescriptions": {}

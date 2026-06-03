@@ -113,7 +113,7 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     const pending =
       window.CodbiPluginData.pendingStandards ?? sessionStorage.getItem("codbi-pending-standards") ?? undefined;
     if (typeof pending === "string") {
-      delete window.CodbiPluginData.pendingStandards;
+      window.CodbiPluginData.pendingStandards = undefined;
       sessionStorage.removeItem("codbi-pending-standards");
       setTimeout(() => {
         this.setStandardsValue(pending);
@@ -248,7 +248,7 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     const pending =
       window.CodbiPluginData.pendingStandards ?? sessionStorage.getItem("codbi-pending-standards") ?? undefined;
     if (typeof pending === "string" && this._inputs.length > 0) {
-      delete window.CodbiPluginData.pendingStandards;
+      window.CodbiPluginData.pendingStandards = undefined;
       sessionStorage.removeItem("codbi-pending-standards");
       const currentlyChecked = this._inputs.filter((i) => i.checked).map((i) => i.value);
       const pendingItems = pending
@@ -280,6 +280,13 @@ export class MultiSelect extends Editors.BaseEditor<typeof MultiSelectType> {
     // populateStandards() runs to restore it.
     if (!this._protecting || normalized !== "") {
       this._currentValue = normalized;
+    }
+    // Prevent FORMCYCLE's internal reset setValue("") call — fired synchronously inside the
+    // Callbacks["set-property"] chain from setStandardsValue — from clearing the checkbox DOM
+    // after the intended value has already been applied. The _currentValue guard above protects
+    // the tracked value, but we must also protect the checkbox states.
+    if (this._protecting && normalized === "") {
+      return;
     }
     if (this._inputs.length === 0) {
       return;

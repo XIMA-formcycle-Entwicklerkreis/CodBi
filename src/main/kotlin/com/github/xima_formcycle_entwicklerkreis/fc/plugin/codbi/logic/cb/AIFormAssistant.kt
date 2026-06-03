@@ -218,7 +218,31 @@ class AIFormAssistant : IPluginServletAction {
             """{"className":"XLine","properties":{"name":"liExample","id":"xi-li-example"}}""" +
             "\n" +
             """{"className":"XSpacer","properties":{"name":"spExample","id":"xi-sp-example"}}""" +
-            "\n\nCODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
+            "\n\n" +
+            "11. CSS CLASSES — You can apply CodBi CSS classes to form elements by adding a \"class\" property to the element's \"properties\" object. " +
+            "This tells FORMCYCLE to render the element with that CSS class, enabling CodBi standard configuration behavior on that field. " +
+            "Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfVorname\",\"label\":\"Vorname\",\"class\":\"CodBi_People_Name\"}}. " +
+            "The following CSS classes are available from CodBi standard configurations.\n" +
+            "   - CodBi_People_Name: Apply to a text field representing a person's name (Vorname, Nachname, full name). " +
+            "When you create such a field, also ensure the 'People' standard configuration is active (this is auto-managed server-side).\n" +
+            "   - CodBi_People_Alphanumeric: Apply to a text field that should only accept alphanumeric characters.\n" +
+            "   - CodBi_People_Mail: Apply to an email/contact text field.\n" +
+            "   - CodBi_People_Phone: Apply to a phone number text field.\n" +
+            "   - CodBi_People_PLZ: Apply to a German postal code text field.\n" +
+            "   - CodBi_People_18plus: Apply to a date-of-birth field to enforce minimum age of 18.\n" +
+            "   - CodBi_People_BuildingNumber: Apply to a building/house number field.\n" +
+            "   - CodBi_Currency: Apply to a money/currency text field (decimal number).\n" +
+            "   - CodBi_TRANS_NTW: Apply to a net/tax amount text field.\n" +
+            "   - CodBi_DateFrame_*_Begin / CodBi_DateFrame_*_End: Apply to begin/end date pairs.\n" +
+            "   - CodBi_TimeFrame_*_Begin / CodBi_TimeFrame_*_End: Apply to begin/end time pairs.\n" +
+            "   - CodBi_LDAP_AC_LastName / CodBi_LDAP_AC_FirstName: Apply to name fields for LDAP autofill.\n" +
+            "   - CodBi_LDAP_AC_Mail: Apply to email fields for LDAP autofill.\n" +
+            "   - CodBi_LDAP_AC_Department: Apply to department fields for LDAP autofill.\n" +
+            "   - CodBi_LDAP_AC_Telephone: Apply to telephone fields for LDAP autofill.\n" +
+            "   - CodBi_LDAP_AC_Account: Apply to account/username fields for LDAP autofill.\n" +
+            "When the instruction asks for a specific field type (e.g. 'Vorname und Nachname') that matches a CSS class description above, " +
+            "you MUST add both the field and the corresponding CSS class.\n\n" +
+            "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
             "For each listed element, consider whether any field in this form could meaningfully benefit from it. " +
             "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete. " +
             "Do NOT apply any CodBi element in this pass — just note which ones look relevant. " +

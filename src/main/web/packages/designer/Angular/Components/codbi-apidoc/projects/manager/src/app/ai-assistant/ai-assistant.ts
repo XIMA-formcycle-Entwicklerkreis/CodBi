@@ -605,6 +605,7 @@ export class AiAssistant implements OnInit, OnDestroy {
       success: (phase2Response: unknown) => {
         this.loading = false;
         const p2 = phase2Response as Record<string, unknown> | null;
+        console.log("[AICodBiAssistant] Phase 2 response:", JSON.stringify(p2));
 
         if (!p2 || typeof p2 !== "object") {
           this.setError("Unexpected response from server.");
@@ -685,6 +686,7 @@ export class AiAssistant implements OnInit, OnDestroy {
                 if (persist?.formI18n != null && lang != null) {
                   (persist.formI18n[lang] as Record<string, unknown>) ??= {};
                   (persist.formI18n[lang] as Record<string, unknown>)["codbi-prop-standards"] = newStandards;
+                  console.log("[AICodBiAssistant] persist.formI18n[%s][codbi-prop-standards] = %s", lang, newStandards);
                 }
               }
 
@@ -786,6 +788,11 @@ export class AiAssistant implements OnInit, OnDestroy {
                     const i18n = persist2["formI18n"] as Record<string, Record<string, unknown>>;
                     i18n[lang2] = i18n[lang2] ?? {};
                     i18n[lang2]["codbi-prop-standards"] = stdVal;
+                    console.log(
+                      "[AICodBiAssistant] (pre-publish) persist.formI18n[%s][codbi-prop-standards] = %s",
+                      lang2,
+                      stdVal,
+                    );
                   }
                   // Patch 2: update persist.persist (the cached serialised JSON string).
                   // publish() reads directly from this string when serialising the form to
@@ -822,10 +829,60 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.resultText = `${String(p2["workflowMessage"])} Reloading designer\u2026`;
           setTimeout(() => window.location.reload(), 1500);
         } else if (hasFormJson) {
-          // Form only: reload the designer so localStorage-based pending standards
-          // are picked up and applied, exactly as the "both" flow does.
-          this.resultText = "Reloading designer\u2026";
-          setTimeout(() => window.location.reload(), 500);
+          // Form only: wait for async rendering to complete (same as "both"), then patch
+          // everything exactly as the "both" flow does to ensure standards stick.
+          const dSave = designer as unknown as Record<string, unknown>;
+          const doPatch = (): void => {
+            if (typeof p2["standards"] === "string") {
+              const stdVal = p2["standards"] as string;
+              const lang2 = designer.getFormEditLanguage?.() ?? "default";
+              // Patch 1: update the live formI18n object
+              const persist2 = designer.getPersist?.() as unknown as Record<string, unknown> | undefined;
+              if (persist2?.["formI18n"] != null) {
+                const i18n = persist2["formI18n"] as Record<string, Record<string, unknown>>;
+                i18n[lang2] = i18n[lang2] ?? {};
+                i18n[lang2]["codbi-prop-standards"] = stdVal;
+                console.log(
+                  "[AICodBiAssistant] (form-only) persist.formI18n[%s][codbi-prop-standards] = %s",
+                  lang2,
+                  stdVal,
+                );
+              }
+              // Patch 2: update persist.persist (the cached serialised JSON string)
+              if (persist2 != null && typeof persist2["persist"] === "string") {
+                try {
+                  const parsed = JSON.parse(persist2["persist"] as string) as Record<string, unknown>;
+                  const pI18n = (parsed["formI18n"] as Record<string, Record<string, unknown>> | undefined) ?? {};
+                  pI18n[lang2] = pI18n[lang2] ?? {};
+                  pI18n[lang2]["codbi-prop-standards"] = stdVal;
+                  parsed["formI18n"] = pI18n;
+                  persist2["persist"] = JSON.stringify(parsed);
+                } catch {
+                  // Ignore parse errors
+                }
+              }
+              // Patch 3: update the live checkboxes via the editor API
+              const cpd2 = (window as any).CodbiPluginData as typeof window.CodbiPluginData | undefined;
+              if (typeof cpd2?.setStandardsValue === "function") {
+                cpd2.setStandardsValue(stdVal);
+              }
+            }
+            this.visible = false;
+          };
+          const waitUntilReady = (): Promise<void> =>
+            new Promise<void>((resolve) => {
+              const maxWait = 10_000;
+              const start = Date.now();
+              const poll = (): void => {
+                if (!dSave["_isLoading"] || Date.now() - start >= maxWait) {
+                  resolve();
+                } else {
+                  setTimeout(poll, 100);
+                }
+              };
+              poll();
+            });
+          waitUntilReady().then(doPatch).catch(doPatch);
         } else {
           this.setError("Unexpected response format.");
         }

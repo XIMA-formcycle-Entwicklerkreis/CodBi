@@ -826,7 +826,31 @@ class AICodBiAssistant : IPluginServletAction {
           """{"className":"XPage","properties":{"name":"p2","id":"xi-p-2","header":"","subheader":"","elements":[]}}""" +
           "\n" +
           """{"className":"XHeader","properties":{"name":"header","id":"xi-header","elements":[]}}""" +
-          "\n\nCODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
+          "\n\n" +
+          "14. CSS CLASSES — You can apply CodBi CSS classes to form elements by adding a \"class\" property to the element's \"properties\" object. " +
+          "This tells FORMCYCLE to render the element with that CSS class, enabling CodBi standard configuration behavior on that field. " +
+          "Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfVorname\",\"label\":\"Vorname\",\"class\":\"CodBi_People_Name\"}}. " +
+          "The following CSS classes are available from CodBi standard configurations.\n" +
+          "   - CodBi_People_Name: Apply to a text field representing a person's name (Vorname, Nachname, full name). " +
+          "When you create such a field, also ensure the 'People' standard configuration is active (this is auto-managed server-side).\n" +
+          "   - CodBi_People_Alphanumeric: Apply to a text field that should only accept alphanumeric characters.\n" +
+          "   - CodBi_People_Mail: Apply to an email/contact text field.\n" +
+          "   - CodBi_People_Phone: Apply to a phone number text field.\n" +
+          "   - CodBi_People_PLZ: Apply to a German postal code text field.\n" +
+          "   - CodBi_People_18plus: Apply to a date-of-birth field to enforce minimum age of 18.\n" +
+          "   - CodBi_People_BuildingNumber: Apply to a building/house number field.\n" +
+          "   - CodBi_Currency: Apply to a money/currency text field (decimal number).\n" +
+          "   - CodBi_TRANS_NTW: Apply to a net/tax amount text field.\n" +
+          "   - CodBi_DateFrame_*_Begin / CodBi_DateFrame_*_End: Apply to begin/end date pairs.\n" +
+          "   - CodBi_TimeFrame_*_Begin / CodBi_TimeFrame_*_End: Apply to begin/end time pairs.\n" +
+          "   - CodBi_LDAP_AC_LastName / CodBi_LDAP_AC_FirstName: Apply to name fields for LDAP autofill.\n" +
+          "   - CodBi_LDAP_AC_Mail: Apply to email fields for LDAP autofill.\n" +
+          "   - CodBi_LDAP_AC_Department: Apply to department fields for LDAP autofill.\n" +
+          "   - CodBi_LDAP_AC_Telephone: Apply to telephone fields for LDAP autofill.\n" +
+          "   - CodBi_LDAP_AC_Account: Apply to account/username fields for LDAP autofill.\n" +
+          "When the instruction asks for a specific field type (e.g. 'Vorname und Nachname') that matches a CSS class description above, " +
+          "you MUST add both the field and the corresponding CSS class.\n\n" +
+          "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
           "For each listed element, consider whether any field in this form could meaningfully benefit from it. " +
           "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete. " +
           "Do NOT apply any CodBi element in this pass — just note which ones look relevant. " +
@@ -1442,13 +1466,21 @@ class AICodBiAssistant : IPluginServletAction {
         }
       }
     }
-    // Convert any AI-generated data-cb-* direct property keys to the proper attributes array
-    // format. FORMCYCLE reads custom HTML attributes from properties["attributes"] as
-    // [{text: "attr-name", value: "attr-value"}] objects, NOT as direct property keys.
+    // Convert any AI-generated data-cb-* and common HTML attribute property keys to the proper
+    // attributes array format. FORMCYCLE reads custom HTML attributes from properties["attributes"]
+    // as [{text: "attr-name", value: "attr-value"}] objects, NOT as direct property keys.
     // CRITICAL: Before adding AI's fresh values, purge any stale data-cb-* entries from the
     // existing attributes array (which may have been restored from the original form with
     // stale values from a previous run). This prevents stale entries from surviving alongside
     // the AI's correct values.
+    //
+    // Supported direct property keys that get auto-converted to attributes array entries:
+    //   - data-cb-*  →  any custom CodBi data attribute
+    //   - class      →  CSS class(es) for the rendered element (e.g. "CodBi_People_Name")
+    // NOTE: Only "class" is supported for standard HTML attributes — "style" is intentionally
+    // excluded to prevent the AI from generating inline CSS.
+    val STALE_PREFIXES = listOf("data-cb-")
+    val CONVERTIBLE_KEYS = setOf("class")
     for (el in resultItems) {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
@@ -1456,23 +1488,29 @@ class AICodBiAssistant : IPluginServletAction {
           if (props.has("attributes") && props.get("attributes").isJsonArray)
               props.getAsJsonArray("attributes")
           else null
-      // Purge any stale data-cb-* entries from the existing attributes array
-      // (may have been restored from the original form). Build a filtered array by copying
-      // only non-data-cb-* entries.
+      // Purge any stale entries from the existing attributes array that match the
+      // convertible prefixes/keys (they may have been restored from the original form).
       if (attrs != null && attrs.size() > 0) {
         val filtered = JsonArray()
         for (e in attrs) {
-          val isStaleCb =
-              e.isJsonObject &&
-                  e.asJsonObject.get("text")?.isJsonPrimitive == true &&
-                  e.asJsonObject.get("text").asString.startsWith("data-cb-")
-          if (!isStaleCb) filtered.add(e)
+          if (!(e.isJsonObject && e.asJsonObject.get("text")?.isJsonPrimitive == true)) {
+            filtered.add(e)
+          } else {
+            val attrName = e.asJsonObject.get("text").asString
+            val isStale =
+                STALE_PREFIXES.any { attrName.startsWith(it) } || attrName in CONVERTIBLE_KEYS
+            if (!isStale) filtered.add(e)
+          }
         }
         props.add("attributes", filtered)
       }
 
-      val cbKeys = props.entrySet().filter { it.key.startsWith("data-cb-") }.map { it.key }
-      if (cbKeys.isEmpty()) continue
+      val convertibleKeys =
+          props
+              .entrySet()
+              .filter { it.key.startsWith("data-cb-") || it.key in CONVERTIBLE_KEYS }
+              .map { it.key }
+      if (convertibleKeys.isEmpty()) continue
 
       val cleanAttrs =
           if (props.has("attributes") && props.get("attributes").isJsonArray) {
@@ -1480,7 +1518,7 @@ class AICodBiAssistant : IPluginServletAction {
           } else {
             JsonArray().also { props.add("attributes", it) }
           }
-      for (key in cbKeys) {
+      for (key in convertibleKeys) {
         val value = if (props.get(key)?.isJsonPrimitive == true) props.get(key).asString else null
         if (value != null) {
           val attrObj = JsonObject()

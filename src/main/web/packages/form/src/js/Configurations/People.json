@@ -2,7 +2,7 @@
   "Description": "/functions/Configurations_People.loadConfig.html",
   "classes": {
     "CodBi_People_Alphanumeric": "",
-    "CodBi_People_Name": "",
+    "CodBi_People_Name": "Apply this CSS class to any XTextField or XTextArea that represents a person's name (e.g. Vorname, Nachname, full name). When you create such a field, you MUST also ensure the 'People' standard configuration is checked/active in the form properties (codbi-prop-standards).",
     "CodBi_People_BuildingNumber": "",
     "CodBi_People_Mail": "",
     "CodBi_People_18plus": "",

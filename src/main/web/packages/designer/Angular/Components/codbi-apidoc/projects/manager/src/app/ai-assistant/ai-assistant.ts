@@ -822,8 +822,10 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.resultText = `${String(p2["workflowMessage"])} Reloading designer\u2026`;
           setTimeout(() => window.location.reload(), 1500);
         } else if (hasFormJson) {
-          // Form only: close dialog
-          this.visible = false;
+          // Form only: reload the designer so localStorage-based pending standards
+          // are picked up and applied, exactly as the "both" flow does.
+          this.resultText = "Reloading designer\u2026";
+          setTimeout(() => window.location.reload(), 500);
         } else {
           this.setError("Unexpected response format.");
         }

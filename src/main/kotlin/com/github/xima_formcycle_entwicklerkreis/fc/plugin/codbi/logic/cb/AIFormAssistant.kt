@@ -219,29 +219,33 @@ class AIFormAssistant : IPluginServletAction {
             "\n" +
             """{"className":"XSpacer","properties":{"name":"spExample","id":"xi-sp-example"}}""" +
             "\n\n" +
-            "11. CSS CLASSES — You can apply CodBi CSS classes to form elements by adding a \"class\" property to the element's \"properties\" object. " +
-            "This tells FORMCYCLE to render the element with that CSS class, enabling CodBi standard configuration behavior on that field. " +
-            "Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfVorname\",\"label\":\"Vorname\",\"class\":\"CodBi_People_Name\"}}. " +
-            "The following CSS classes are available from CodBi standard configurations.\n" +
-            "   - CodBi_People_Name: Apply to a text field representing a person's name (Vorname, Nachname, full name). " +
-            "When you create such a field, also ensure the 'People' standard configuration is active (this is auto-managed server-side).\n" +
-            "   - CodBi_People_Alphanumeric: Apply to a text field that should only accept alphanumeric characters.\n" +
-            "   - CodBi_People_Mail: Apply to an email/contact text field.\n" +
-            "   - CodBi_People_Phone: Apply to a phone number text field.\n" +
-            "   - CodBi_People_PLZ: Apply to a German postal code text field.\n" +
-            "   - CodBi_People_18plus: Apply to a date-of-birth field to enforce minimum age of 18.\n" +
-            "   - CodBi_People_BuildingNumber: Apply to a building/house number field.\n" +
-            "   - CodBi_Currency: Apply to a money/currency text field (decimal number).\n" +
-            "   - CodBi_TRANS_NTW: Apply to a net/tax amount text field.\n" +
-            "   - CodBi_DateFrame_*_Begin / CodBi_DateFrame_*_End: Apply to begin/end date pairs.\n" +
-            "   - CodBi_TimeFrame_*_Begin / CodBi_TimeFrame_*_End: Apply to begin/end time pairs.\n" +
-            "   - CodBi_LDAP_AC_LastName / CodBi_LDAP_AC_FirstName: Apply to name fields for LDAP autofill.\n" +
-            "   - CodBi_LDAP_AC_Mail: Apply to email fields for LDAP autofill.\n" +
-            "   - CodBi_LDAP_AC_Department: Apply to department fields for LDAP autofill.\n" +
-            "   - CodBi_LDAP_AC_Telephone: Apply to telephone fields for LDAP autofill.\n" +
-            "   - CodBi_LDAP_AC_Account: Apply to account/username fields for LDAP autofill.\n" +
-            "When the instruction asks for a specific field type (e.g. 'Vorname und Nachname') that matches a CSS class description above, " +
-            "you MUST add both the field and the corresponding CSS class.\n\n" +
+            "11. CSS CLASSES — You can apply CodBi CSS classes to form elements by adding a \"cssclasses\" array to the element's \"properties\". " +
+            "The matching standard configuration is auto-activated server-side. " +
+            "IMPORTANT RULES:\n" +
+            "   a) Apply AT MOST ONE CSS class per field — do NOT stack multiple classes on the same element.\n" +
+            "   b) Only apply a CSS class when it has an EXACT match to the field's purpose. If no class matches, leave cssclasses empty/absent.\n" +
+            "   c) FIRST CHOICE: Use a CSS class like CodBi_TimeFrame_1_Begin or CodBi_DateFrame_1_Begin when available (N=1-5). FALLBACK: If all 5 are already used, use data-cb-func instead. When using a CSS class, do NOT also add data-cb-func, data-cb-MaxField, or any data-cb-* parameters — the CSS class alone is sufficient (unless the user prompt explicitly asks for both).\n" +
+            "   h) NUMBERING — When creating frame CSS classes (CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End), scan existing form items for which N (1-5) are already used. Use the lowest unused N for each new pair. If all 5 taken, use data-cb-func.\n" +
+            "   d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or other non-alphanumeric-code fields.\n" +
+            "   e) REDUNDANCY RULE: When the datatype of a field already triggers a Holistic.Cleave.* standard (phone→Cleave.Phone, plzDE→Cleave.PLZ, dateDE/time→Cleave.Date/Time), do NOT apply the equivalent People CSS class:\n" +
+            "      - Phone fields (datatype=\"phone\"): do NOT apply CodBi_People_Phone — Holistic.Cleave.Phone handles it.\n" +
+            "      - Postal code fields (datatype=\"plzDE\"): do NOT apply CodBi_People_PLZ — Holistic.Cleave.PLZ handles it.\n" +
+            "      - Date fields (datatype=\"dateDE\" or \"date\"): do NOT apply formatting People classes — Cleave handles it.\n" +
+            "   f) Street names and locality/city names have no dedicated People CSS class — leave them without a CSS class.\n" +
+            "Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfVorname\",\"label\":\"Vorname\",\"cssclasses\":[\"CodBi_People_Name\"]}}.\n" +
+            "Available CSS classes by standard:\n\n" +
+            "=== People === CodBi_People_Name (names only), CodBi_People_Alphanumeric (codes/IDs only), Mail, Phone, PLZ (postal codes, use alone), 18plus, 16plus, BuildingNumber\n" +
+            "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
+            "=== Appointments === CodBi_NoFutureDate, DateFrame_N_Begin/End, TimeFrame_N_Begin/End (N=1-5; no data-cb-func needed)\n" +
+            "=== LDAP.Autofill === CodBi_LDAP_AC_*\n" +
+            "=== AI === AI_LLAMA_*, AI_OCR_*\n" +
+            "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_*\n" +
+            "=== Print.Removal === CodBi_Print_Remove_*\n" +
+            "=== BayVIS === CodBi_BayVIS_*\n" +
+            "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
+            "=== Holistic === CodBi_XCL_Speech, CodBi_XCL_Speech_Whisper\n" +
+            "When the instruction asks for a specific field type that matches a CSS class above, " +
+            "add the corresponding CSS class following the rules above.\n\n" +
             "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
             "For each listed element, consider whether any field in this form could meaningfully benefit from it. " +
             "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete. " +
@@ -302,6 +306,17 @@ class AIFormAssistant : IPluginServletAction {
                 "Your previous evaluation of the following FORMCYCLE form elements concluded that no CodBi functionalities apply. " +
                 "Please reconsider carefully. Review each element's className and properties and check whether any functionality from the list below is applicable. " +
                 "If a functionality applies: add data-cb-func to the element's properties (as CSV if multiple), and set any required data-cb-* attributes. " +
+                "ADDITIONALLY, you MUST also set CSS classes on elements where applicable. " +
+                "To set a CSS class: add a \"cssclasses\" array to the element's \"properties\" (e.g. \"cssclasses\":[\"CodBi_People_Name\"]). " +
+                "RULES: (a) Apply AT MOST ONE CSS class per field. (b) Only apply on EXACT match. (c) FIRST CHOICE: Use DateFrame_N_Begin/End or TimeFrame_N_Begin/End CSS class (N=1-5). FALLBACK: If all 5 used, use data-cb-func. (d) CSS class replaces data-cb-func ONLY for same behavior (unless user asks for both). (e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (f) REDUNDANCY: Phone/PLZ/Date Cleave auto → no People CSS. (g) Street names/localities have no CSS class. (h) NUMBERING: Scan used N values, use lowest unused N for new frame pairs.\n" +
+                "=== People === CodBi_People_Name (names only), Alphanumeric (codes only), Mail, Phone, PLZ (alone), 18plus, 16plus, BuildingNumber\n" +
+                "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
+                "=== Appointments === CodBi_NoFutureDate, DateFrame_N_Begin/End (N=1-5), TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 used\n" +
+                "=== LDAP.Autofill === CodBi_LDAP_AC_*, AI === AI_LLAMA_*, AI_OCR_*\n" +
+                "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_*\n" +
+                "=== Print.Removal === CodBi_Print_Remove_*\n" +
+                "=== BayVIS === CodBi_BayVIS_*\n" +
+                "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
                 "Respond ONLY with a JSON object: " +
                 "{\"items\":[...all elements, modified where CodBi applies...],\"_codbiApplicability\":{\"formElementsProcessed\":N,\"codbiElementsEvaluated\":23 (replace counts)," +
                 "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
@@ -439,6 +454,18 @@ class AIFormAssistant : IPluginServletAction {
                 "  - For string parameters (e.g. Country, MsgNotKnown): set a reasonable default based on the form context. " +
                 "  - For boolean parameters (e.g. EqualityPermitted): set a reasonable default. " +
                 "Set data-cb-* parameter attributes as documented. " +
+                "ADDITIONALLY, you MUST also set CSS classes on elements where applicable. " +
+                "To set a CSS class: add a \"cssclasses\" array to the element's \"properties\" (e.g. \"cssclasses\":[\"CodBi_People_Name\"]). " +
+                "RULES: (a) Apply AT MOST ONE CSS class per field. (b) Only apply on EXACT match. (c) FIRST CHOICE: Use DateFrame_N_Begin/End or TimeFrame_N_Begin/End CSS class (N=1-5). FALLBACK: If all 5 used, use data-cb-func. (d) CSS class replaces data-cb-func ONLY for same behavior (unless user asks for both). (e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (f) REDUNDANCY: Phone/PLZ/Date Cleave auto → no People CSS. (g) Street names/localities have no CSS class. (h) NUMBERING: Scan used N values, use lowest unused N for new frame pairs.\n" +
+                "=== People === CodBi_People_Name (names only), Alphanumeric (codes only), Mail, Phone, PLZ (alone), 18plus, 16plus, BuildingNumber\n" +
+                "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
+                "=== Appointments === CodBi_NoFutureDate, DateFrame_N_Begin/End (N=1-5), TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 used\n" +
+                "=== LDAP.Autofill === CodBi_LDAP_AC_*, AI === AI_LLAMA_*, AI_OCR_*\n" +
+                "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_*\n" +
+                "=== Print.Removal === CodBi_Print_Remove_*\n" +
+                "=== BayVIS === CodBi_BayVIS_*\n" +
+                "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
+                "IMPORTANT: PRESERVE any existing \"cssclasses\" array already set on elements from the input — only add entries or create a new array if none exists.\n" +
                 "Respond ONLY with a JSON object: " +
                 "{\"items\":[...same elements with modifications applied...],\"_codbiApplicability\":{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace counts)," +
                 "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +

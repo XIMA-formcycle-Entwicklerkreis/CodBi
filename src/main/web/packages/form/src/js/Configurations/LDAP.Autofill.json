@@ -1,14 +1,14 @@
 {
   "Description": "/functions/Configurations_LDAP.Autofill.loadConfig.html",
   "classes": {
-    "CodBi_LDAP_AC_Mail": "",
-    "CodBi_LDAP_AC_FirstName": "",
-    "CodBi_LDAP_AC_LastName": "",
-    "CodBi_LDAP_AC_Title": "",
-    "CodBi_LDAP_AC_Department": "",
-    "CodBi_LDAP_AC_Telephone": "",
-    "CodBi_LDAP_AC_Account": "",
-    "CodBi_LDAP_AC_CommonName": "",
-    "CodBi_LDAP_AC_DisplayName": ""
+    "CodBi_LDAP_AC_Mail": "Apply to an XTextField representing an email address. Autocompletes from LDAP directory when the entered mail matches an LDAP entry.",
+    "CodBi_LDAP_AC_FirstName": "Apply to an XTextField representing a first name. Autocompletes from LDAP directory (maps to LDAP givenName).",
+    "CodBi_LDAP_AC_LastName": "Apply to an XTextField representing a last name/surname. Autocompletes from LDAP directory (maps to LDAP sn).",
+    "CodBi_LDAP_AC_Title": "Apply to an XTextField representing a job title. Autocompletes from LDAP directory (maps to LDAP title).",
+    "CodBi_LDAP_AC_Department": "Apply to an XTextField representing a department. Autocompletes from LDAP directory (maps to LDAP department).",
+    "CodBi_LDAP_AC_Telephone": "Apply to an XTextField representing a phone number. Autocompletes from LDAP directory (maps to LDAP telephoneNumber).",
+    "CodBi_LDAP_AC_Account": "Apply to an XTextField representing a username/account name. Autocompletes from LDAP directory (maps to LDAP sAMAccountName).",
+    "CodBi_LDAP_AC_CommonName": "Apply to an XTextField representing a common name. Autocompletes from LDAP directory (maps to LDAP cn).",
+    "CodBi_LDAP_AC_DisplayName": "Apply to an XTextField representing a display name. Autocompletes from LDAP directory (maps to LDAP displayName)."
   }
 }

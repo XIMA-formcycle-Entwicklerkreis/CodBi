@@ -1,9 +1,9 @@
 {
   "Description": "/functions/Configurations_OpenPLZ.AC.SET.loadConfig.html",
   "classes": {
-    "CodBi_OpenPLZ_AC_SET_PLZ": "",
-    "CodBi_OpenPLZ_AC_SET_Locality": "",
-    "CodBi_OpenPLZ_AC_SET_Street": "",
-    "CodBi_OpenPLZ_AC_SET_BuildingNumber": ""
+    "CodBi_OpenPLZ_AC_SET_PLZ": "Apply to an XTextField representing a postal code in an OpenPLZ address autocomplete set. Must be grouped with related address fields (Locality, Street, BuildingNumber).",
+    "CodBi_OpenPLZ_AC_SET_Locality": "Apply to an XTextField representing a locality/city in an OpenPLZ address autocomplete set.",
+    "CodBi_OpenPLZ_AC_SET_Street": "Apply to an XTextField representing a street in an OpenPLZ address autocomplete set.",
+    "CodBi_OpenPLZ_AC_SET_BuildingNumber": "Apply to an XTextField representing a building number in an OpenPLZ address autocomplete set."
   }
 }

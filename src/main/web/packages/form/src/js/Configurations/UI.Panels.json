@@ -1,14 +1,14 @@
 {
   "Description": "/functions/Configurations_UI.Panels.loadConfig.html",
   "classes": {
-    "CodBi_HTML_Panel_Standard": "",
-    "CodBi_HTML_Panel_Flat": "",
-    "CodBi_HTML_Panel_Minimal": "",
-    "CodBi_HTML_Panel_Index": "",
-    "CodBi_HTML_Panel_NoCordion": "",
-    "CodBi_Accordion_A": "",
-    "CodBi_Accordion_B": "",
-    "CodBi_Accordion_C": "",
-    "CodBi_Accordion_D": ""
+    "CodBi_HTML_Panel_Standard": "Apply to a container (XContainer or XFieldSet) to wrap it in a collapsible panel with shaded header that changes color when unfolded.",
+    "CodBi_HTML_Panel_Flat": "Apply to a container to wrap it in a flat (no shading) collapsible panel.",
+    "CodBi_HTML_Panel_Minimal": "Apply to a container to wrap it in a minimal collapsible panel.",
+    "CodBi_HTML_Panel_Index": "Apply to a container to add an index/anchor navigation panel.",
+    "CodBi_HTML_Panel_NoCordion": "Apply to a container inside an accordion group to exclude it from accordion behavior.",
+    "CodBi_Accordion_A": "Apply to a container to set up accordion group A. Panels with the same accordion letter will fold/unfold together.",
+    "CodBi_Accordion_B": "Apply to a container to set up accordion group B.",
+    "CodBi_Accordion_C": "Apply to a container to set up accordion group C.",
+    "CodBi_Accordion_D": "Apply to a container to set up accordion group D."
   }
 }

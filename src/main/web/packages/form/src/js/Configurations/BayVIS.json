@@ -1,10 +1,10 @@
 {
   "Description": "/functions/Configurations_BayVIS.loadConfig.html",
   "classes": {
-    "CodBi_BayVIS_Behoerde": "",
-    "CodBi_BayVIS_BehoerdeUndAnsprechpartner": "",
-    "CodBi_BayVIS_Ansprechpartner": "",
-    "CodBi_BayVIS_Auswahl_Behoerden": ""
+    "CodBi_BayVIS_Behoerde": "Apply to an XTextField or XSpan whose content should be filled with data of a BayVIS authority building specified in the global variable BayVIS_Behoerde.",
+    "CodBi_BayVIS_BehoerdeUndAnsprechpartner": "Apply to an XTextField or XSpan whose content should be filled with data of a BayVIS authority AND its contact person specified in BayVIS_Behoerde and BayVIS_Hauptansprechpartner.",
+    "CodBi_BayVIS_Ansprechpartner": "Apply to an XTextField or XSpan whose content should be filled with contact person data from BayVIS specified in BayVIS_WeitereAnsprechpartner.",
+    "CodBi_BayVIS_Auswahl_Behoerden": "Apply to an XSelect that should list all available BayVIS authorities for selection."
   },
   "globals": {
     "BayVIS_Behoerde": "",

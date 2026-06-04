@@ -189,6 +189,11 @@ class AICodBiAssistant : IPluginServletAction {
         // AI-controlled.
         val aiSetStandards = params.requestParameters["aiSetStandards"]?.firstOrNull()
         val updatedStandards = computeUpdatedStandards(formJson, currentStandards, aiSetStandards)
+        logger.info(
+            "[AICodBiAssistant] Computed updated standards: current='{}', aiSet='{}', result='{}'",
+            currentStandards,
+            aiSetStandards,
+            updatedStandards)
         result.append(""","standards":${gson.toJson(updatedStandards)}""")
       }
       // For "both" intent: extract up-to-date form elements from the newly modified form JSON
@@ -363,6 +368,20 @@ class AICodBiAssistant : IPluginServletAction {
                 "Your previous evaluation of the following FORMCYCLE form elements concluded that no CodBi functionalities apply. " +
                 "Please reconsider carefully. Review each element's className and properties and check whether any functionality from the list below is applicable. " +
                 "If a functionality applies: add data-cb-func to the element's properties (as CSV if multiple), and set any required data-cb-* attributes. " +
+                "ADDITIONALLY, you MUST also set CSS classes on elements where applicable. " +
+                "To set a CSS class: add a \"cssclasses\" array to the element's \"properties\" (e.g. \"cssclasses\":[\"CodBi_People_Name\"]). " +
+                "RULES: (a) Apply AT MOST ONE CSS class per field. (b) Only apply a class when it has an EXACT match. (c) FIRST CHOICE: Use a CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End CSS class (N=1-5). FALLBACK: If all 5 are already used, use data-cb-func. When using a CSS class, do NOT add data-cb-func. (d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (e) REDUNDANCY: A CSS class replaces data-cb-func ONLY when they provide the SAME behavior. CodBi_People_PLZ (Cleave formatting) does NOT replace OpenPLZ.Autocomplete. (f) Street names and localities have no CSS class. (g) CRITICAL — OpenPLZ.Autocomplete via data-cb-func must be set on ALL address fields in a group (postal code, locality, street, building number). Never skip the postal code field.\n" +
+                "   h) NUMBERING — When creating frame CSS classes (TimeFrame_N_Begin/End or DateFrame_N_Begin/End), scan existing form items for which N (1-5) are already used. Use the lowest unused N for each new pair.\n" +
+                "Available CSS classes:\n" +
+                "=== People === CodBi_People_Name (for person names only), CodBi_People_Alphanumeric (codes/IDs only), CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ (postal codes, use alone), CodBi_People_18plus, CodBi_People_16plus, CodBi_People_BuildingNumber\n" +
+                "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
+                "=== Appointments === CodBi_NoFutureDate, CodBi_DateFrame_N_Begin/End (N=1-5), CodBi_TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 pairs used\n" +
+                "=== LDAP.Autofill === CodBi_LDAP_AC_*\n" +
+                "=== AI === AI_LLAMA_*, AI_OCR_*\n" +
+                "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_*\n" +
+                "=== Print.Removal === CodBi_Print_Remove_*\n" +
+                "=== BayVIS === CodBi_BayVIS_*\n" +
+                "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
                 "Respond ONLY with a JSON object: " +
                 "{\"items\":[...all elements, modified where CodBi applies...],\"_codbiApplicability\":{\"formElementsProcessed\":N,\"codbiElementsEvaluated\":23 (replace counts)," +
                 "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
@@ -500,6 +519,20 @@ class AICodBiAssistant : IPluginServletAction {
                 "  - For string parameters (e.g. Country, MsgNotKnown): set a reasonable default based on the form context. " +
                 "  - For boolean parameters (e.g. EqualityPermitted): set a reasonable default. " +
                 "Set data-cb-* parameter attributes as documented. " +
+                "ADDITIONALLY, you MUST also set CSS classes on elements where applicable. " +
+                "To set a CSS class: add a \"cssclasses\" array to the element's \"properties\" (e.g. \"cssclasses\":[\"CodBi_People_Name\"]). " +
+                "RULES: (a) Apply AT MOST ONE CSS class per field. (b) Only apply when it has an EXACT match. (c) FIRST CHOICE: Use CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End CSS class (N=1-5). FALLBACK: If all 5 are used, use data-cb-func. When using a CSS class, do NOT add data-cb-func. (d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (e) REDUNDANCY: A CSS class replaces data-cb-func ONLY for same behavior. CodBi_People_PLZ does NOT replace OpenPLZ.Autocomplete. (f) Street names and localities have no CSS class. (g) CRITICAL: OpenPLZ.Autocomplete via data-cb-func on ALL address fields including postal code. (h) NUMBERING: Scan existing items for used TimeFrame/DateFrame N values. Use unused N (1-5) for new pairs.\n" +
+                "Available CSS classes:\n" +
+                "=== People === CodBi_People_Name (person names only), CodBi_People_Alphanumeric (codes/IDs only), CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ (postal codes, use alone), CodBi_People_18plus, CodBi_People_16plus, CodBi_People_BuildingNumber\n" +
+                "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
+                "=== Appointments === CodBi_NoFutureDate, CodBi_DateFrame_N_Begin/End (N=1-5), CodBi_TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 used\n" +
+                "=== LDAP.Autofill === CodBi_LDAP_AC_*\n" +
+                "=== AI === AI_LLAMA_*, AI_OCR_*\n" +
+                "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_*\n" +
+                "=== Print.Removal === CodBi_Print_Remove_*\n" +
+                "=== BayVIS === CodBi_BayVIS_*\n" +
+                "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
+                "IMPORTANT: PRESERVE any existing \"cssclasses\" array already set on elements from the input — only add entries or create a new array if none exists.\n" +
                 "Respond ONLY with a JSON object: " +
                 "{\"items\":[...same elements with modifications applied...],\"_codbiApplicability\":{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace counts)," +
                 "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
@@ -827,29 +860,45 @@ class AICodBiAssistant : IPluginServletAction {
           "\n" +
           """{"className":"XHeader","properties":{"name":"header","id":"xi-header","elements":[]}}""" +
           "\n\n" +
-          "14. CSS CLASSES — You can apply CodBi CSS classes to form elements by adding a \"class\" property to the element's \"properties\" object. " +
-          "This tells FORMCYCLE to render the element with that CSS class, enabling CodBi standard configuration behavior on that field. " +
-          "Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfVorname\",\"label\":\"Vorname\",\"class\":\"CodBi_People_Name\"}}. " +
-          "The following CSS classes are available from CodBi standard configurations.\n" +
-          "   - CodBi_People_Name: Apply to a text field representing a person's name (Vorname, Nachname, full name). " +
-          "When you create such a field, also ensure the 'People' standard configuration is active (this is auto-managed server-side).\n" +
-          "   - CodBi_People_Alphanumeric: Apply to a text field that should only accept alphanumeric characters.\n" +
-          "   - CodBi_People_Mail: Apply to an email/contact text field.\n" +
-          "   - CodBi_People_Phone: Apply to a phone number text field.\n" +
-          "   - CodBi_People_PLZ: Apply to a German postal code text field.\n" +
-          "   - CodBi_People_18plus: Apply to a date-of-birth field to enforce minimum age of 18.\n" +
-          "   - CodBi_People_BuildingNumber: Apply to a building/house number field.\n" +
-          "   - CodBi_Currency: Apply to a money/currency text field (decimal number).\n" +
-          "   - CodBi_TRANS_NTW: Apply to a net/tax amount text field.\n" +
-          "   - CodBi_DateFrame_*_Begin / CodBi_DateFrame_*_End: Apply to begin/end date pairs.\n" +
-          "   - CodBi_TimeFrame_*_Begin / CodBi_TimeFrame_*_End: Apply to begin/end time pairs.\n" +
-          "   - CodBi_LDAP_AC_LastName / CodBi_LDAP_AC_FirstName: Apply to name fields for LDAP autofill.\n" +
-          "   - CodBi_LDAP_AC_Mail: Apply to email fields for LDAP autofill.\n" +
-          "   - CodBi_LDAP_AC_Department: Apply to department fields for LDAP autofill.\n" +
-          "   - CodBi_LDAP_AC_Telephone: Apply to telephone fields for LDAP autofill.\n" +
-          "   - CodBi_LDAP_AC_Account: Apply to account/username fields for LDAP autofill.\n" +
-          "When the instruction asks for a specific field type (e.g. 'Vorname und Nachname') that matches a CSS class description above, " +
-          "you MUST add both the field and the corresponding CSS class.\n\n" +
+          "14. CSS CLASSES — You can apply CodBi CSS classes to form elements by adding a \"cssclasses\" array to the element's \"properties\". " +
+          "The matching standard configuration is auto-activated server-side. " +
+          "IMPORTANT RULES:\n" +
+          "   a) Apply AT MOST ONE CSS class per field — do NOT stack multiple classes on the same element.\n" +
+          "   b) Only apply a CSS class when it has an EXACT match to the field's purpose. If no class matches, leave cssclasses as empty or absent.\n" +
+          "   c) FIRST CHOICE: Use a CSS class like CodBi_TimeFrame_1_Begin or CodBi_DateFrame_1_Begin when available (N=1-5). FALLBACK: If all 5 frame classes of the needed type are already used, use data-cb-func=time.frame (or date.frame) with data-cb-MaxField parameter instead. When using a CSS class, do NOT also add data-cb-func, data-cb-MaxField, or any other data-cb-* parameters — the CSS class alone enables the behavior (unless the user prompt explicitly asks for both a CSS class and data-cb-func).\n" +
+          "   h) NUMBERING — When creating frame CSS classes (CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End), scan the existing form items for which frame numbers N (1-5) are already in use. Use the lowest unused N for each new pair. If all 5 numbers are taken, fall back to data-cb-func. Example: if the form already has TimeFrame_1_Begin and TimeFrame_2_Begin, the next new pair must use TimeFrame_3_Begin/End.\n" +
+          "   g) CRITICAL — OpenPLZ.Autocomplete MUST be set on ALL fields of an address group (postal code, locality, street, building number) via data-cb-func. A People CSS class like CodBi_People_PLZ does NOT provide OpenPLZ autocomplete behavior — it only provides Cleave input formatting. The postal code field needs BOTH its data-cb-func=OpenPLZ.Autocomplete (with TargetData=PostalCodes) AND any Cleave formatting (handled by datatype=plzDE). Never skip the postal code field's OpenPLZ.Autocomplete just because it has a PLZ datatype.\n" +
+          "   d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or other non-alphanumeric-code fields — it is ONLY for actual alphanumeric codes and IDs.\n" +
+          "   e) REDUNDANCY RULE: When the datatype of a field already triggers a Holistic.Cleave.* standard (e.g. datatype=\"phone\" → Holistic.Cleave.Phone, datatype=\"plzDE\" → Holistic.Cleave.PLZ, datatype=\"dateDE\" or \"time\" → Holistic.Cleave.Date/Time), do NOT apply the equivalent People CSS class. The Cleave config already handles formatting. Specifically:\n" +
+          "      - Phone fields (datatype=\"phone\"): do NOT apply CodBi_People_Phone — Holistic.Cleave.Phone handles it.\n" +
+          "      - Postal code fields (datatype=\"plzDE\"): do NOT apply CodBi_People_PLZ — Holistic.Cleave.PLZ handles it.\n" +
+          "      - Date fields (datatype=\"dateDE\" or \"date\"): do NOT apply CodBi_People_18plus or CodBi_People_16plus for formatting — the Cleave date config handles formatting. Age restrictions (18plus/16plus) may still be added if the field is specifically a date-of-birth field.\n" +
+          "   f) Street names and locality/city names have no dedicated People CSS class — leave them without a CSS class.\n" +
+          "   i) REPEATABLE CONTAINERS — To make an XContainer or XContainerInvisible repeatable (add dynamic rows), set \"dynamic\":\"1\" in its properties. Also set \"dynamicMinSize\" (min rows, default 1), \"dynamicMaxSize\" (max rows, default 10), \"dynamicAddText\" (add button label), \"dynamicDeleteText\" (delete button label) as needed. Example: {\"className\":\"XContainer\",\"properties\":{\"name\":\"coAdressen\",\"dynamic\":\"1\",\"dynamicMinSize\":\"1\",\"dynamicMaxSize\":\"5\",\"elements\":[\"tfName\",\"tfEmail\"]}}\n" +
+          "Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfVorname\",\"label\":\"Vorname\",\"cssclasses\":[\"CodBi_People_Name\"]}}.\n" +
+          "Available CSS classes by standard configuration:\n\n" +
+          "=== People (person-related fields) ===\n" +
+          "   - CodBi_People_Name: For a person's name (Vorname, Nachname). Do NOT apply to street names or localities.\n" +
+          "   - CodBi_People_Alphanumeric: ONLY for alphanumeric codes/IDs. Do NOT apply to names, streets, localities, or postal codes.\n" +
+          "   - CodBi_People_Mail: For email addresses.\n" +
+          "   - CodBi_People_Phone: For phone numbers.\n" +
+          "   - CodBi_People_PLZ: For German postal codes. Use ALONE — do not combine with other People classes.\n" +
+          "   - CodBi_People_18plus: For date-of-birth fields (min age 18).\n" +
+          "   - CodBi_People_16plus: For date fields (min age 16).\n" +
+          "   - CodBi_People_BuildingNumber: For building/house numbers.\n" +
+          "   - CodBi_Fotocropper*: For photo cropper components (Board, Uploader, Update, ImageURL, Foto).\n" +
+          "   - CodBi_OpenPLZ_Select_*: For OpenPLZ address select dropdowns.\n" +
+          "=== Financial === CodBi_Currency (money), CodBi_TRANS_NTW (net/tax)\n" +
+          "=== Appointments === CodBi_NoFutureDate (no future dates), CodBi_DateFrame_N_Begin/End (date ranges, N=1-5), CodBi_TimeFrame_N_Begin/End (time ranges, N=1-5). When using CodBi_TimeFrame_* or CodBi_DateFrame_* classes, do NOT also add data-cb-func.\n" +
+          "=== LDAP.Autofill === CodBi_LDAP_AC_* fields for LDAP autocomplete.\n" +
+          "=== AI === AI_LLAMA_CHAT_*, AI_LLAMA_STANDARD_QA_Question, AI_LLAMA_STANDARD_TXTQA_Question, AI_LLAMA_TXTQA_Source, AI_LLAMA_QA_Exclude, AI_OCR_Receiver\n" +
+          "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_A/B/C/D for panels and accordions.\n" +
+          "=== Print.Removal === CodBi_Print_Remove_Tagged / Parent / PrintOnly.\n" +
+          "=== BayVIS === CodBi_BayVIS_Behoerde / BehoerdeUndAnsprechpartner / Ansprechpartner / Auswahl_Behoerden.\n" +
+          "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_PLZ / Locality / Street / BuildingNumber.\n" +
+          "=== Holistic === CodBi_XCL_Speech, CodBi_XCL_Speech_Whisper.\n" +
+          "When the instruction asks for a specific field type that matches a CSS class description above, " +
+          "add the corresponding CSS class(es) following the rules above.\n\n" +
           "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
           "For each listed element, consider whether any field in this form could meaningfully benefit from it. " +
           "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete. " +
@@ -1099,11 +1148,9 @@ class AICodBiAssistant : IPluginServletAction {
           "labelwidth",
           "flex",
           "height",
-          // Dynamic/repeatable — AI creates static items; restored for existing dynamic elements.
-          "dynamic",
-          "dynamicMinSize",
-          "dynamicMaxSize",
-          "dynamicAddTextShow",
+          // Dynamic/repeatable — visible to AI so it can create repeatable containers.
+          // AI can set dynamic=1 with
+          // dynamicMinSize/MaxSize/AddText/DeleteText/HideButtons/Trigger.
           // Conditional visibility/readonly — AI doesn't generate these; restored for originals.
           "readonlyifclear",
           "readonlyifmode",
@@ -1466,21 +1513,19 @@ class AICodBiAssistant : IPluginServletAction {
         }
       }
     }
-    // Convert any AI-generated data-cb-* and common HTML attribute property keys to the proper
-    // attributes array format. FORMCYCLE reads custom HTML attributes from properties["attributes"]
-    // as [{text: "attr-name", value: "attr-value"}] objects, NOT as direct property keys.
+    // Convert any AI-generated data-cb-* direct property keys to the proper attributes array
+    // format. FORMCYCLE reads custom HTML attributes from properties["attributes"] as
+    // [{text: "attr-name", value: "attr-value"}] objects, NOT as direct property keys.
     // CRITICAL: Before adding AI's fresh values, purge any stale data-cb-* entries from the
     // existing attributes array (which may have been restored from the original form with
     // stale values from a previous run). This prevents stale entries from surviving alongside
     // the AI's correct values.
     //
-    // Supported direct property keys that get auto-converted to attributes array entries:
-    //   - data-cb-*  →  any custom CodBi data attribute
-    //   - class      →  CSS class(es) for the rendered element (e.g. "CodBi_People_Name")
-    // NOTE: Only "class" is supported for standard HTML attributes — "style" is intentionally
-    // excluded to prevent the AI from generating inline CSS.
+    // NOTE: CSS classes are NOT stored as HTML "class" attributes in the attributes array.
+    // FORMCYCLE uses the dedicated "cssclasses" array property on each element
+    // (e.g. "cssclasses":["CodBi_People_Name"]). The AI sets this directly as a property
+    // and no conversion is needed.
     val STALE_PREFIXES = listOf("data-cb-")
-    val CONVERTIBLE_KEYS = setOf("class")
     for (el in resultItems) {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
@@ -1488,8 +1533,8 @@ class AICodBiAssistant : IPluginServletAction {
           if (props.has("attributes") && props.get("attributes").isJsonArray)
               props.getAsJsonArray("attributes")
           else null
-      // Purge any stale entries from the existing attributes array that match the
-      // convertible prefixes/keys (they may have been restored from the original form).
+      // Purge any stale data-cb-* entries from the existing attributes array
+      // (may have been restored from the original form).
       if (attrs != null && attrs.size() > 0) {
         val filtered = JsonArray()
         for (e in attrs) {
@@ -1497,20 +1542,14 @@ class AICodBiAssistant : IPluginServletAction {
             filtered.add(e)
           } else {
             val attrName = e.asJsonObject.get("text").asString
-            val isStale =
-                STALE_PREFIXES.any { attrName.startsWith(it) } || attrName in CONVERTIBLE_KEYS
-            if (!isStale) filtered.add(e)
+            if (!STALE_PREFIXES.any { attrName.startsWith(it) }) filtered.add(e)
           }
         }
         props.add("attributes", filtered)
       }
 
-      val convertibleKeys =
-          props
-              .entrySet()
-              .filter { it.key.startsWith("data-cb-") || it.key in CONVERTIBLE_KEYS }
-              .map { it.key }
-      if (convertibleKeys.isEmpty()) continue
+      val cbKeys = props.entrySet().filter { it.key.startsWith("data-cb-") }.map { it.key }
+      if (cbKeys.isEmpty()) continue
 
       val cleanAttrs =
           if (props.has("attributes") && props.get("attributes").isJsonArray) {
@@ -1518,7 +1557,7 @@ class AICodBiAssistant : IPluginServletAction {
           } else {
             JsonArray().also { props.add("attributes", it) }
           }
-      for (key in convertibleKeys) {
+      for (key in cbKeys) {
         val value = if (props.get(key)?.isJsonPrimitive == true) props.get(key).asString else null
         if (value != null) {
           val attrObj = JsonObject()
@@ -1571,7 +1610,74 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Maps a CSS class name (or prefix) to its owning CodBi standard configuration. Used by
+   * [computeUpdatedStandards] to auto-activate standards based on which CSS classes the AI placed
+   * on form elements.
+   */
+  private val CSS_CLASS_TO_STANDARD: List<Pair<String, String>> =
+      listOf(
+          // People standard (includes fotocropper and OpenPLZ address classes)
+          "CodBi_People_" to "People",
+          "CodBi_Fotocropper" to "People",
+          "CodBi_OpenPLZ_" to "People",
+          // Financial standard
+          "CodBi_Currency" to "Financial",
+          "CodBi_TRANS_" to "Financial",
+          // Appointments standard
+          "CodBi_DateFrame_" to "Appointments",
+          "CodBi_TimeFrame_" to "Appointments",
+          "CodBi_NoFutureDate" to "Appointments",
+          "CodBi_Holidays_" to "Appointments",
+          // LDAP.Autofill standard
+          "CodBi_LDAP_" to "LDAP.Autofill",
+          // AI standard
+          "AI_LLAMA_" to "AI",
+          "AI_OCR_" to "AI",
+          // BayVIS standard
+          "CodBi_BayVIS_" to "BayVIS",
+          // Print.Removal standard
+          "CodBi_Print_" to "Print.Removal",
+          // UI.Panels standard
+          "CodBi_UI_" to "UI.Panels")
+
+  /**
+   * Scans all items in the modified form JSON for CSS classes (stored in properties.cssclasses) and
+   * returns the set of standard configuration names that should be activated.
+   */
+  private fun computeStandardsFromCssClasses(modifiedFormJson: String): Set<String> {
+    val needed = mutableSetOf<String>()
+    try {
+      val root = JsonParser.parseString(modifiedFormJson).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return needed
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val props = item.asJsonObject.getAsJsonObject("properties") ?: continue
+        val cssClasses = props.getAsJsonArray("cssclasses") ?: continue
+        for (cssEl in cssClasses) {
+          if (!cssEl.isJsonPrimitive) continue
+          val cssClass = cssEl.asString
+          for ((prefixOrName, standard) in CSS_CLASS_TO_STANDARD) {
+            if (cssClass == prefixOrName || cssClass.startsWith(prefixOrName)) {
+              needed.add(standard)
+            }
+          }
+        }
+      }
+    } catch (_: Exception) {
+      /* malformed JSON — no standards from CSS classes */
+    }
+    return needed
+  }
+
+  /**
    * Computes the updated set of active CodBi standard configurations after a form modification.
+   *
+   * Two independent mechanisms are combined:
+   * 1. **Holistic.Cleave.* auto-management** — activated/deactivated based on field datatypes
+   *    present in the form (dates → Cleave.Date, phone → Cleave.Phone, etc.).
+   * 2. **CSS-class-based auto-activation** — standards are activated when the AI placed a matching
+   *    CSS class (e.g. `CodBi_People_Name`) on any form element. This ensures the standard
+   *    configuration is active so its JavaScript runs at render time.
    *
    * For each Holistic.Cleave.* config the decision is:
    * - If the current active state **matches** what [aiSetStandards] records as the AI's last set
@@ -1580,7 +1686,8 @@ class AICodBiAssistant : IPluginServletAction {
    * - If the current active state **differs** from [aiSetStandards] → the user manually overrode it
    *   since the last AI run → leave it unchanged.
    *
-   * All non-Cleave configurations are always preserved unchanged.
+   * Non-Cleave configurations are never removed automatically — they are only added when CSS
+   * classes referencing them are found in the form.
    *
    * @param modifiedFormJson The form persist JSON after the AI modification.
    * @param currentStandards The current CSV value of the `codbi-prop-standards` form property.
@@ -1596,6 +1703,7 @@ class AICodBiAssistant : IPluginServletAction {
     val active =
         currentStandards.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
     return try {
+      // --- Mechanism 1: Holistic.Cleave.* auto-management ---
       // When aiSetStandards is null (first AI run this session), AI is in control of ALL
       // Cleave configs — apply the new conditions unconditionally regardless of current state.
       if (aiSetStandards == null) {
@@ -1616,6 +1724,18 @@ class AICodBiAssistant : IPluginServletAction {
             if (shouldBeAfter && !isActive) active.add(config)
             else if (!shouldBeAfter && isActive) active.remove(config)
           }
+        }
+      }
+      // --- Mechanism 2: CSS-class-based auto-activation ---
+      // Scan all items for cssclasses and activate the corresponding standards.
+      // Non-Cleave standards are never removed — only added when CSS class usage is detected.
+      val standardsFromCss = computeStandardsFromCssClasses(modifiedFormJson)
+      for (standard in standardsFromCss) {
+        if (standard !in active) {
+          active.add(standard)
+          logger.info(
+              "[AICodBiAssistant] Auto-activated standard '{}' because matching CSS class was found in form items",
+              standard)
         }
       }
       active.joinToString(",")

@@ -1,8 +1,8 @@
 {
   "Description": "/functions/Configurations_Print.Removal.loadConfig.html",
   "classes": {
-    "CodBi_Print_Remove_Tagged": "",
-    "CodBi_Print_Remove_Parent": "",
-    "CodBi_Print_Remove_PrintOnly": ""
+    "CodBi_Print_Remove_Tagged": "Apply to any form element that should be removed/hidden when the form is printed.",
+    "CodBi_Print_Remove_Parent": "Apply to any form element whose parent container should be removed when printing.",
+    "CodBi_Print_Remove_PrintOnly": "Apply to any form element that should ONLY be visible when printing (hidden on screen)."
   }
 }

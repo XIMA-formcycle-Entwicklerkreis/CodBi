@@ -1529,10 +1529,45 @@ class AICodBiAssistant : IPluginServletAction {
     // FORMCYCLE uses the dedicated "cssclasses" array property on each element
     // (e.g. "cssclasses":["CodBi_People_Name"]). The AI sets this directly as a property
     // and no conversion is needed.
+    //
+    // SERVER-SIDE CSS CLASS VALIDATION: Strip any CSS class names that the AI may have
+    // invented (e.g. "CodBi_NavigationBar") — only classes matching known prefixes from
+    // CSS_CLASS_TO_STANDARD are allowed. Non-matching classes are removed with a warning.
+    val validCssPrefixes = CSS_CLASS_TO_STANDARD.map { it.first }.toList()
     val STALE_PREFIXES = listOf("data-cb-")
     for (el in resultItems) {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val cssClasses = props.getAsJsonArray("cssclasses")
+      if (cssClasses != null && cssClasses.size() > 0) {
+        val filtered = JsonArray()
+        var stripped = false
+        for (cls in cssClasses) {
+          if (!cls.isJsonPrimitive) {
+            stripped = true
+            continue
+          }
+          val className = cls.asString
+          val isValid =
+              validCssPrefixes.any { prefix -> className == prefix || className.startsWith(prefix) }
+          if (isValid) {
+            filtered.add(cls)
+          } else {
+            stripped = true
+            logger.warn(
+                "[AICodBiAssistant] Stripped non-existent CSS class '{}' from item '{}'",
+                className,
+                props.get("name")?.asString ?: "<unknown>")
+          }
+        }
+        if (stripped) {
+          if (filtered.size() > 0) {
+            props.add("cssclasses", filtered)
+          } else {
+            props.remove("cssclasses")
+          }
+        }
+      }
       val attrs =
           if (props.has("attributes") && props.get("attributes").isJsonArray)
               props.getAsJsonArray("attributes")

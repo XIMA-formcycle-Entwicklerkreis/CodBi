@@ -132,6 +132,13 @@ class Whisper : AI() {
   private var binDir: File? = null
   /** Directory containing downloaded GGML model files. */
   private var modelsDir: File? = null
+  /** Optional SHA-256 digest for [modelUrl] (lowercase hex). When set, verified after download. */
+  private var modelUrlSha256: String? = null
+  /**
+   * Optional SHA-256 digest for the whisper-server binary archive (lowercase hex). When set,
+   * verified after download.
+   */
+  private var binaryUrlSha256: String? = null
   /** Update notification service for whisper.cpp releases. */
   private var notificationService: NotificationService? = null
   /** Executor for background tasks (update checker). */
@@ -232,7 +239,9 @@ class Whisper : AI() {
         threadCount = threadCount,
         maxRAMPercent = maxRAMPercent,
         maxComputePercent = maxComputePercent,
-        onReady = { port -> activeWhisperPort = port })
+        onReady = { port -> activeWhisperPort = port },
+        modelSha256 = modelUrlSha256,
+        binarySha256 = binaryUrlSha256)
 
     executor?.shutdownNow()
     executor =
@@ -304,6 +313,20 @@ class Whisper : AI() {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
         ?.let { modelUrl = it }
+
+    configData.properties
+        .getProperty("${PROP_PREFIX}_ModelUrl_SHA256")
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { modelUrlSha256 = it }
+
+    configData.properties
+        .getProperty("${PROP_PREFIX}_BinaryUrl_SHA256")
+        ?.trim()
+        ?.lowercase()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { binaryUrlSha256 = it }
 
     configData.properties.getProperty("${PROP_PREFIX}_Port")?.trim()?.toIntOrNull()?.let {
       if (it in 1024..65535) serverPort = it

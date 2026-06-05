@@ -129,6 +129,19 @@ abstract class LLAMA : AI() {
   protected val cudaDllUrls: MutableMap<String, String> = mutableMapOf()
 
   /**
+   * Optional SHA-256 digests (lowercase hex) for [serverUrls] overrides, keyed by platform. When
+   * set, the downloaded archive is verified before the `.complete` marker is written. A mismatch
+   * causes the download to fail and the partial file to be deleted.
+   */
+  protected val serverUrlSha256s: MutableMap<String, String> = mutableMapOf()
+
+  /**
+   * Optional SHA-256 digests (lowercase hex) for [cudaDllUrls] overrides, keyed by platform. Same
+   * semantics as [serverUrlSha256s].
+   */
+  protected val cudaDllSha256s: MutableMap<String, String> = mutableMapOf()
+
+  /**
    * Builds the platform→URL map for a given llama.cpp release tag (CPU-only).
    *
    * @param release The llama.cpp release tag (e.g. `"b8175"`).
@@ -245,8 +258,12 @@ abstract class LLAMA : AI() {
   // region Download & Extraction (delegates to DownloadManager)
 
   /** Downloads a file with HTTP Range resume support. See [DownloadManager.downloadWithResume]. */
-  protected fun downloadWithResume(url: String, targetFile: File, label: String): Boolean =
-      downloadManager.downloadWithResume(url, targetFile, label)
+  protected fun downloadWithResume(
+      url: String,
+      targetFile: File,
+      label: String,
+      expectedSha256: String? = null
+  ): Boolean = downloadManager.downloadWithResume(url, targetFile, label, expectedSha256)
 
   /** Extracts a ZIP archive with Zip-Slip protection. See [DownloadManager.extractZip]. */
   protected fun extractZip(zipFile: File, targetDir: File) =
@@ -324,7 +341,8 @@ abstract class LLAMA : AI() {
     val archiveMarker = File(binDir, "$archiveFileName.complete")
 
     if (!archiveMarker.exists()) {
-      if (!downloadWithResume(serverArchiveUrl, archiveFile, "LLAMA-Server binary")) {
+      if (!downloadWithResume(
+          serverArchiveUrl, archiveFile, "LLAMA-Server binary", serverUrlSha256s[platformKey])) {
         log(LogLevel.ERROR, "Failed to download LLAMA-Server binary")
 
         return null
@@ -342,7 +360,8 @@ abstract class LLAMA : AI() {
         val cudaArchiveName = cudaDllUrl.substringAfterLast("/")
         val cudaArchive = File(binDir, cudaArchiveName)
 
-        if (downloadWithResume(cudaDllUrl, cudaArchive, "CUDA runtime DLLs")) {
+        if (downloadWithResume(
+            cudaDllUrl, cudaArchive, "CUDA runtime DLLs", cudaDllSha256s[platformKey])) {
           if (cudaArchiveName.endsWith(".zip")) {
             extractZip(cudaArchive, extractDir)
           } else {

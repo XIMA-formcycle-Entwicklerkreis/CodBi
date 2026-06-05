@@ -98,10 +98,15 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 | `AI_LLAMA_STD_NotifyEmail` | String | — | Email for update notifications |
 | `AI_LLAMA_STD_LlamaRelease` | String | *(same as `AI_LLAMA_ENGINE_Release`)* | Override llama.cpp release tag for this module |
 | `AI_LLAMA_STD_ServerUrl_windows_x86_64` | URL | *(auto from release tag)* | Override binary download URL for Windows x86-64 (e.g. internal mirror) |
+| `AI_LLAMA_STD_ServerUrl_windows_x86_64_SHA256` | String | — | SHA-256 digest (lowercase hex) to verify the Windows x86-64 binary archive after download |
 | `AI_LLAMA_STD_ServerUrl_linux_x86_64` | URL | *(auto from release tag)* | Override binary download URL for Linux x86-64 |
+| `AI_LLAMA_STD_ServerUrl_linux_x86_64_SHA256` | String | — | SHA-256 digest to verify the Linux x86-64 binary archive |
 | `AI_LLAMA_STD_ServerUrl_macos_x86_64` | URL | *(auto from release tag)* | Override binary download URL for macOS x86-64 |
+| `AI_LLAMA_STD_ServerUrl_macos_x86_64_SHA256` | String | — | SHA-256 digest to verify the macOS x86-64 binary archive |
 | `AI_LLAMA_STD_ServerUrl_macos_aarch64` | URL | *(auto from release tag)* | Override binary download URL for macOS ARM64 |
+| `AI_LLAMA_STD_ServerUrl_macos_aarch64_SHA256` | String | — | SHA-256 digest to verify the macOS ARM64 binary archive |
 | `AI_LLAMA_STD_CudaDllUrl_windows_x86_64` | URL | *(auto from release tag)* | Override CUDA runtime DLL (`cudart`) download URL for Windows x86-64 (CUDA GPU only) |
+| `AI_LLAMA_STD_CudaDllUrl_windows_x86_64_SHA256` | String | — | SHA-256 digest to verify the CUDA runtime DLL archive |
 
 **Thinking Mode:**
 
@@ -124,7 +129,9 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 | Property | Type | Description |
 |----------|------|-------------|
 | `AI_LLAMA_STD_SPECIALIST_XXX` | URL | Local specialist GGUF URL |
+| `AI_LLAMA_STD_SPECIALIST_XXX_SHA256` | String | SHA-256 digest to verify the specialist GGUF after download |
 | `AI_LLAMA_STD_SPECIALIST_MMProj_XXX` | URL | Specialist vision projector |
+| `AI_LLAMA_STD_SPECIALIST_MMProj_XXX_SHA256` | String | SHA-256 digest to verify the specialist mmproj after download |
 | `AI_LLAMA_STD_EXT_SPECIALIST_XXX` | URL | External specialist API URL |
 | `AI_LLAMA_STD_EXT_SPECIALIST_Key_XXX` | String | External specialist API key |
 | `AI_LLAMA_STD_EXT_SPECIALIST_Model_XXX` | String | External specialist model name |
@@ -146,6 +153,8 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 |----------|------|---------|-------------|
 | `AI_Whisper_Port` | Int | `8393` | Local whisper-server port |
 | `AI_Whisper_ModelUrl` | URL | ggml-small.bin | GGML model URL |
+| `AI_Whisper_ModelUrl_SHA256` | String | — | SHA-256 digest (lowercase hex) to verify the model file after download |
+| `AI_Whisper_BinaryUrl_SHA256` | String | — | SHA-256 digest (lowercase hex) to verify the whisper-server binary archive after download |
 | `AI_Whisper_Release` | String | `v1.7.6` | whisper.cpp release tag |
 | `AI_Whisper_ReleaseBaseUrl` | URL | GitHub releases | Base URL for whisper.cpp binary downloads (release tag appended automatically). Override for internal mirror |
 | `AI_Whisper_NoGpu` | Boolean | `false` | Force CPU-only mode |

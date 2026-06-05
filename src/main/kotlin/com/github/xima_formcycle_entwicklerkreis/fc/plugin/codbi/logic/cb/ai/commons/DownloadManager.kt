@@ -7,6 +7,7 @@ import java.io.InputStream
 import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URI
+import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
 /**
@@ -41,12 +42,20 @@ class DownloadManager(private val log: (LogLevel, String) -> Unit) {
    * @param url The URL to download.
    * @param targetFile The destination file.
    * @param label A human-readable label for log messages (e.g., "GGUF model").
+   * @param expectedSha256 Optional lowercase hex SHA-256 digest. When non-null, the downloaded file
+   *   is verified after the transfer completes. On mismatch the file is deleted and `false` is
+   *   returned. Already-completed downloads (marker present) skip re-verification.
    * @return `true` if the download succeeded (or the file already existed at full size).
    *
    * The method also creates a marker file (`<targetFile>.complete`) upon successful completion,
    * which is used to quickly check.
    */
-  fun downloadWithResume(url: String, targetFile: File, label: String): Boolean {
+  fun downloadWithResume(
+      url: String,
+      targetFile: File,
+      label: String,
+      expectedSha256: String? = null
+  ): Boolean {
     val markerFile = File(targetFile.parent, "${targetFile.name}.complete")
 
     if (targetFile.exists() && markerFile.exists()) {
@@ -126,7 +135,7 @@ class DownloadManager(private val log: (LogLevel, String) -> Unit) {
 
           if (redirectUrl != null) {
             log(LogLevel.INFO, "$label: following redirect → $redirectUrl")
-            return downloadWithResume(redirectUrl, targetFile, label)
+            return downloadWithResume(redirectUrl, targetFile, label, expectedSha256)
           } else {
             log(LogLevel.ERROR, "$label: redirect with no Location header (HTTP $responseCode)")
 
@@ -148,6 +157,12 @@ class DownloadManager(private val log: (LogLevel, String) -> Unit) {
       }
 
       connection.disconnect()
+
+      if (expectedSha256 != null && !verifySha256(targetFile, expectedSha256, label)) {
+        targetFile.delete()
+        return false
+      }
+
       markerFile.writeText("${targetFile.length()}")
 
       val sizeMB = "%.1f".format(targetFile.length() / (1024.0 * 1024.0))
@@ -163,6 +178,32 @@ class DownloadManager(private val log: (LogLevel, String) -> Unit) {
           "$label: download failed at $partialMB MB — ${X.message}. " +
               "The download will resume on next startup.")
       return false
+    }
+  }
+
+  /**
+   * Computes the SHA-256 digest of [file] and compares it to [expected] (case-insensitive hex).
+   *
+   * @return `true` when the digest matches; `false` (with error log) otherwise.
+   */
+  private fun verifySha256(file: File, expected: String, label: String): Boolean {
+    log(LogLevel.INFO, "$label: verifying SHA-256…")
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+      val buffer = ByteArray(DOWNLOAD_BUFFER_SIZE)
+      var read: Int
+      while (input.read(buffer).also { read = it } != -1) digest.update(buffer, 0, read)
+    }
+    val actual = digest.digest().joinToString("") { "%02x".format(it) }
+    val normalised = expected.trim().lowercase()
+    return if (actual == normalised) {
+      log(LogLevel.INFO, "$label: SHA-256 verified OK")
+      true
+    } else {
+      log(
+          LogLevel.ERROR,
+          "$label: SHA-256 mismatch — expected $normalised, got $actual — file will be deleted")
+      false
     }
   }
 

@@ -296,10 +296,15 @@ Die Konfiguration erfolgt ausschließlich über XIMA-formcycle-Plugin-Properties
 |---|---|---|
 | `AI_LLAMA_STD_LlamaRelease` | *(wie `AI_LLAMA_ENGINE_Release`)* | Überschreibt den llama.cpp Release-Tag für dieses Modul |
 | `AI_LLAMA_STD_ServerUrl_windows_x86_64` | *(automatisch aus Release-Tag)* | Binary-Download-URL für Windows x86-64 – kann auf internen Mirror zeigen |
+| `AI_LLAMA_STD_ServerUrl_windows_x86_64_SHA256` | *(leer)* | SHA-256-Prüfsumme (Hex, Kleinbuchstaben) für das Windows-x86-64-Archiv |
 | `AI_LLAMA_STD_ServerUrl_linux_x86_64` | *(automatisch aus Release-Tag)* | Binary-Download-URL für Linux x86-64 |
+| `AI_LLAMA_STD_ServerUrl_linux_x86_64_SHA256` | *(leer)* | SHA-256-Prüfsumme für das Linux-x86-64-Archiv |
 | `AI_LLAMA_STD_ServerUrl_macos_x86_64` | *(automatisch aus Release-Tag)* | Binary-Download-URL für macOS x86-64 |
+| `AI_LLAMA_STD_ServerUrl_macos_x86_64_SHA256` | *(leer)* | SHA-256-Prüfsumme für das macOS-x86-64-Archiv |
 | `AI_LLAMA_STD_ServerUrl_macos_aarch64` | *(automatisch aus Release-Tag)* | Binary-Download-URL für macOS ARM64 |
+| `AI_LLAMA_STD_ServerUrl_macos_aarch64_SHA256` | *(leer)* | SHA-256-Prüfsumme für das macOS-ARM64-Archiv |
 | `AI_LLAMA_STD_CudaDllUrl_windows_x86_64` | *(automatisch aus Release-Tag)* | Download-URL für die CUDA-Runtime-DLL (`cudart`) unter Windows x86-64 (nur bei CUDA-GPU) |
+| `AI_LLAMA_STD_CudaDllUrl_windows_x86_64_SHA256` | *(leer)* | SHA-256-Prüfsumme für das CUDA-Runtime-DLL-Archiv |
 | `AI_LLAMA_STD_EXT_SPECIALIST_Key_<Name>` | API-Schlüssel für externen Specialist |
 
 ### 5.6 Whisper
@@ -308,6 +313,7 @@ Die Konfiguration erfolgt ausschließlich über XIMA-formcycle-Plugin-Properties
 |---|---|---|
 | `AI_Whisper_Port` | `8393` | Lokaler Port des Whisper-Servers |
 | `AI_Whisper_ModelUrl` | ggml-small (~466 MB) | GGML-Modell-URL |
+| `AI_Whisper_ModelUrl_SHA256` | *(leer)* | SHA-256-Prüfsumme (Hex, Kleinbuchstaben) zur Verifikation der Modelldatei nach dem Download |
 | `AI_Whisper_Release` | `v1.7.6` | whisper.cpp Release-Tag |
 | `AI_Whisper_ReleaseBaseUrl` | GitHub Releases | Basis-URL für whisper.cpp-Binary-Downloads (Release-Tag wird automatisch angehängt). Kann auf internen Mirror umgestellt werden |
 | `AI_Whisper_NoGpu` | `false` | GPU deaktivieren (CPU-only) |

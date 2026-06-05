@@ -89,8 +89,12 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
    * @param label Human-readable artifact label used in logs.
    * @return `true` when the file is fully downloaded or already complete.
    */
-  private fun downloadWithResume(url: String, targetFile: File, label: String): Boolean =
-      downloadManager.downloadWithResume(url, targetFile, label)
+  private fun downloadWithResume(
+      url: String,
+      targetFile: File,
+      label: String,
+      expectedSha256: String? = null
+  ): Boolean = downloadManager.downloadWithResume(url, targetFile, label, expectedSha256)
 
   /**
    * Extracts a ZIP archive via [DownloadManager].
@@ -167,6 +171,10 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
    * @param maxRAMPercent RAM usage threshold for resource gating.
    * @param maxComputePercent Compute usage threshold for resource gating.
    * @param onReady Called when the server is fully ready (for updating static port fields).
+   * @param modelSha256 Optional lowercase hex SHA-256 digest for [modelUrl]. When set, the
+   *   downloaded model file is verified before the `.complete` marker is written.
+   * @param binarySha256 Optional lowercase hex SHA-256 digest for the whisper-server binary
+   *   archive. When set, the archive is verified after download before extraction.
    */
   fun startAsync(
       preferredPort: Int,
@@ -180,7 +188,9 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
       threadCount: Int?,
       maxRAMPercent: Double,
       maxComputePercent: Double,
-      onReady: (port: Int) -> Unit
+      onReady: (port: Int) -> Unit,
+      modelSha256: String? = null,
+      binarySha256: String? = null
   ) {
     Thread(
             {
@@ -190,7 +200,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
 
                 log(LogLevel.INFO, "Platform: ${platform.os}/${platform.arch}")
 
-                val binary = downloadBinary(platform, binDir, whisperRelease, noGpu)
+                val binary = downloadBinary(platform, binDir, whisperRelease, noGpu, binarySha256)
 
                 if (binary == null) {
                   loadError = IllegalStateException("Failed to download whisper-server binary")
@@ -200,7 +210,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
 
                 val modelFile = File(modelsDir, modelUrl.substringAfterLast("/"))
 
-                if (!downloadWithResume(modelUrl, modelFile, "Whisper model")) {
+                if (!downloadWithResume(modelUrl, modelFile, "Whisper model", modelSha256)) {
                   loadError = IllegalStateException("Failed to download Whisper model")
 
                   return@Thread
@@ -402,6 +412,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
    * @param binDir Directory for binary extraction.
    * @param whisperRelease whisper.cpp release tag.
    * @param noGpu Whether GPU is disabled.
+   * @param binarySha256 Optional SHA-256 digest to verify the binary archive after download.
    * @return The whisper-server binary [File], or `null` on failure.
    */
   @Suppress("UNUSED_PARAMETER")
@@ -409,7 +420,8 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
       platform: Platform,
       binDir: File,
       whisperRelease: String,
-      _noGpu: Boolean
+      _noGpu: Boolean,
+      binarySha256: String? = null
   ): File? {
     detectedGpu = detectGpu()
 
@@ -439,7 +451,7 @@ class WhisperServerManager(private val log: (LogLevel, String) -> Unit) {
     val archiveFileName = archiveUrl.substringAfterLast("/")
     val archiveFile = File(binDir, archiveFileName)
     if (!File(binDir, "$archiveFileName.complete").exists()) {
-      if (!downloadWithResume(archiveUrl, archiveFile, "whisper-server binary")) {
+      if (!downloadWithResume(archiveUrl, archiveFile, "whisper-server binary", binarySha256)) {
         log(LogLevel.ERROR, "Failed to download whisper-server binary")
 
         return null

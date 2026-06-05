@@ -80,8 +80,16 @@ internal data class StandardConfig(
    * @param modelUrl Download URL for the specialist GGUF model.
    * @param mmprojUrl Download URL for the specialist's mmproj file, or `null` if not
    *   vision-capable.
+   * @param sha256 Optional SHA-256 digest (lowercase hex) to verify the GGUF after download.
+   * @param mmprojSha256 Optional SHA-256 digest (lowercase hex) to verify the mmproj after
+   *   download.
    */
-  data class SpecialistEntry(val modelUrl: String, val mmprojUrl: String?)
+  data class SpecialistEntry(
+      val modelUrl: String,
+      val mmprojUrl: String?,
+      val sha256: String? = null,
+      val mmprojSha256: String? = null
+  )
 
   /**
    * An external specialist entry parsed from `AI_LLAMA_STD_EXT_SPECIALIST_XXX` plugin properties.

@@ -241,8 +241,14 @@ class Standard : LLAMA() {
     }
     serverUrls.keys.toList().forEach { platform ->
       str("ServerUrl_$platform")?.let { serverUrls[platform] = it }
+      str("ServerUrl_${platform}_SHA256")?.let {
+        serverUrlSha256s[platform] = it.trim().lowercase()
+      }
     }
     str("CudaDllUrl_windows_x86_64")?.let { cudaDllUrls["windows_x86_64"] = it }
+    str("CudaDllUrl_windows_x86_64_SHA256")?.let {
+      cudaDllSha256s["windows_x86_64"] = it.trim().lowercase()
+    }
     props
         .getProperty("AI_BraveSearch_ApiKey")
         ?.trim()
@@ -371,8 +377,9 @@ class Standard : LLAMA() {
 
     for (key in props.stringPropertyNames()) {
       if (!key.startsWith(prefix)) continue
-      // Skip MMProj entries — they're looked up as companions below
+      // Skip MMProj entries and SHA256 entries — they're looked up as companions below
       if (key.startsWith(mmprojPrefix)) continue
+      if (key.endsWith("_SHA256")) continue
 
       val specialistName = key.removePrefix(prefix).trim()
       if (specialistName.isEmpty()) continue
@@ -380,9 +387,23 @@ class Standard : LLAMA() {
       val modelUrl = props.getProperty(key)?.trim()?.takeIf { it.isNotEmpty() } ?: continue
       val mmprojUrl =
           props.getProperty("${mmprojPrefix}$specialistName")?.trim()?.takeIf { it.isNotEmpty() }
+      val sha256 =
+          props.getProperty("${prefix}${specialistName}_SHA256")?.trim()?.lowercase()?.takeIf {
+            it.isNotEmpty()
+          }
+      val mmprojSha256 =
+          props
+              .getProperty("${mmprojPrefix}${specialistName}_SHA256")
+              ?.trim()
+              ?.lowercase()
+              ?.takeIf { it.isNotEmpty() }
 
       specialists[specialistName] =
-          StandardConfig.SpecialistEntry(modelUrl = modelUrl, mmprojUrl = mmprojUrl)
+          StandardConfig.SpecialistEntry(
+              modelUrl = modelUrl,
+              mmprojUrl = mmprojUrl,
+              sha256 = sha256,
+              mmprojSha256 = mmprojSha256)
     }
 
     return specialists
@@ -760,7 +781,8 @@ class Standard : LLAMA() {
 
             val specModelFile = File(modelsDir, entry.modelUrl.substringAfterLast("/"))
 
-            if (!downloadWithResume(entry.modelUrl, specModelFile, "Specialist '$name' model")) {
+            if (!downloadWithResume(
+                entry.modelUrl, specModelFile, "Specialist '$name' model", entry.sha256)) {
               log(LogLevel.WARNING, "Failed to download specialist '$name' model — skipping")
               continue
             }
@@ -771,7 +793,10 @@ class Standard : LLAMA() {
               specMmprojFile = File(modelsDir, entry.mmprojUrl.substringAfterLast("/"))
 
               if (!downloadWithResume(
-                  entry.mmprojUrl, specMmprojFile, "Specialist '$name' mmproj")) {
+                  entry.mmprojUrl,
+                  specMmprojFile,
+                  "Specialist '$name' mmproj",
+                  entry.mmprojSha256)) {
                 log(
                     LogLevel.WARNING,
                     "Failed to download specialist '$name' mmproj — starting without vision")

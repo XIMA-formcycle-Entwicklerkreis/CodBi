@@ -221,18 +221,23 @@ class AIFormAssistant : IPluginServletAction {
             "\n\n" +
             "11. CSS CLASSES — You can apply CodBi CSS classes to form elements by adding a \"cssclasses\" array to the element's \"properties\". " +
             "The matching standard configuration is auto-activated server-side. " +
-            "IMPORTANT RULES:\n" +
+            "IMPORTANT — TWO-OPTION RULE:\n" +
+            "CSS classes exist ONLY for the specific patterns listed below under 'Available CSS classes'. " +
+            "For EVERY field you modify, you have exactly TWO options — pick ONE:\n" +
+            "  OPTION A — CSS class exists in the list below → use it (e.g. CodBi_People_Name for a name field)\n" +
+            "  OPTION B — No matching CSS class in the list → use data-cb-func (e.g. Form.Navigator has NO CSS class → data-cb-func=form.navigator)\n" +
+            "CRITICAL: NEVER invent CSS class names. If a CSS class is not in the list below, it does NOT exist — use data-cb-func instead.\n" +
+            "APPLICATION RULES:\n" +
             "   a) Apply AT MOST ONE CSS class per field — do NOT stack multiple classes on the same element.\n" +
-            "   b) Only apply a CSS class when it has an EXACT match to the field's purpose. If no class matches, leave cssclasses empty/absent.\n" +
-            "   c) FIRST CHOICE: Use a CSS class like CodBi_TimeFrame_1_Begin or CodBi_DateFrame_1_Begin when available (N=1-5). FALLBACK: If all 5 are already used, use data-cb-func instead. When using a CSS class, do NOT add data-cb-func for the SAME behavior that the CSS class provides — they would be redundant. However, you MAY still add data-cb-func for a DIFFERENT, non-conflicting functionality on the same field. Example: CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends is valid — the CSS class handles date-frame cross-referencing while data-cb-func handles no-weekend validation (different purposes). Do NOT add data-cb-func=date.frame on a field that already has CodBi_DateFrame_* — that would be redundant.\n" +
-            "   h) NUMBERING — When creating frame CSS classes (CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End), scan existing form items for which N (1-5) are already used. Use the lowest unused N for each new pair. If all 5 taken, use data-cb-func.\n" +
-            "   d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or other non-alphanumeric-code fields.\n" +
-            "   e) REDUNDANCY RULE: When the datatype of a field already triggers a Holistic.Cleave.* standard (phone→Cleave.Phone, plzDE→Cleave.PLZ, dateDE/time→Cleave.Date/Time), do NOT apply the equivalent People CSS class:\n" +
-            "      - Phone fields (datatype=\"phone\"): do NOT apply CodBi_People_Phone — Holistic.Cleave.Phone handles it.\n" +
-            "      - Postal code fields (datatype=\"plzDE\"): do NOT apply CodBi_People_PLZ — Holistic.Cleave.PLZ handles it.\n" +
+            "   b) Only apply a CSS class when it has an EXACT match to the field's purpose. If no class matches, use data-cb-func.\n" +
+            "   c) For Time/Date frame ranges: When a CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End CSS class exists (N=1-5), use it. FALLBACK: If all 5 numbers are already used, use data-cb-func=time.frame (or date.frame). When using a frame CSS class, do NOT add data-cb-func=time.frame or data-cb-func=date.frame — that would be redundant. However, you MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends is valid).\n" +
+            "   d) NUMBERING — When creating frame CSS classes, scan existing form items for which N (1-5) are already used. Use the lowest unused N for each pair. If all 5 taken, use data-cb-func.\n" +
+            "   e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or other non-alphanumeric-code fields.\n" +
+            "   f) REDUNDANCY RULE: When a field's datatype already triggers a Holistic.Cleave.* standard (phone→Cleave.Phone, plzDE→Cleave.PLZ, dateDE/time→Cleave.Date/Time), do NOT apply the equivalent People CSS class:\n" +
+            "      - Phone fields (datatype=\"phone\"): do NOT apply CodBi_People_Phone — Cleave handles formatting.\n" +
+            "      - Postal code fields (datatype=\"plzDE\"): do NOT apply CodBi_People_PLZ — Cleave handles formatting.\n" +
             "      - Date fields (datatype=\"dateDE\" or \"date\"): do NOT apply formatting People classes — Cleave handles it.\n" +
-            "   f) Street names and locality/city names have no dedicated People CSS class — leave them without a CSS class.\n" +
-            "   i) CRITICAL — CSS classes ONLY exist for the domains and patterns listed below in 'Available CSS classes'. For any CodBi functionality NOT represented by a CSS class in that list (e.g. Form.Navigator, OpenPLZ.Autocomplete, Date.Min, Date.NoWeekends, HTML.Input.REGEX, HTML.CSS, and all other data-cb-func-only functionalities), there is NO CSS class — you MUST use data-cb-func. NEVER invent CSS class names — only use exact matches from the list below. If you cannot find an exact matching CSS class for a required behavior, use data-cb-func instead.\n" +
+            "   g) Street names and locality/city names have no dedicated People CSS class — leave them without a CSS class.\n" +
             "Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfVorname\",\"label\":\"Vorname\",\"cssclasses\":[\"CodBi_People_Name\"]}}.\n" +
             "Available CSS classes by standard:\n\n" +
             "=== People === CodBi_People_Name (names only), CodBi_People_Alphanumeric (codes/IDs only), Mail, Phone, PLZ (postal codes, use alone), 18plus, 16plus, BuildingNumber\n" +
@@ -250,7 +255,7 @@ class AIFormAssistant : IPluginServletAction {
             "REMINDER: CSS classes ONLY exist for the domains listed above. For everything else, use data-cb-func. Never invent CSS class names.\n\n" +
             "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
             "For each listed element, consider whether any field in this form could meaningfully benefit from it. " +
-            "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete. " +
+            "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator. " +
             "Do NOT apply any CodBi element in this pass — just note which ones look relevant. " +
             "Return the form JSON normally. Include a top-level \"_codbiApplicability\" field with these exact keys: " +
             "{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace 4 with actual field count; replace 23 with how many CODBI CORE ELEMENTS list entries you read)," +
@@ -310,7 +315,7 @@ class AIFormAssistant : IPluginServletAction {
                 "If a functionality applies: add data-cb-func to the element's properties (as CSV if multiple), and set any required data-cb-* attributes. " +
                 "ADDITIONALLY, you MUST also set CSS classes on elements where applicable. " +
                 "To set a CSS class: add a \"cssclasses\" array to the element's \"properties\" (e.g. \"cssclasses\":[\"CodBi_People_Name\"]). " +
-                "RULES: (a) Apply AT MOST ONE CSS class per field. (b) Only apply on EXACT match. (c) FIRST CHOICE: Use DateFrame_N_Begin/End or TimeFrame_N_Begin/End CSS class (N=1-5). FALLBACK: If all 5 used, use data-cb-func. (d) CSS class replaces data-cb-func ONLY for same behavior — you MAY still add data-cb-func for a DIFFERENT functionality on the same field (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends is valid). (e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (f) REDUNDANCY: Phone/PLZ/Date Cleave auto → no People CSS. (g) Street names/localities have no CSS class. (h) NUMBERING: Scan used N values, use lowest unused N for new frame pairs.\n" +
+                "RULES — TWO-OPTION RULE: CSS classes exist ONLY in the list below. For each field, pick ONE: (A) exact CSS class match exists → use it; (B) no CSS class → use data-cb-func. NEVER invent CSS class names. (a) Apply AT MOST ONE CSS class per field. (b) Only apply on EXACT match. (c) For Time/Date frames: use CSS class when available (N=1-5); fallback to data-cb-func if all 5 used. When using a CSS class, do NOT add data-cb-func for the SAME behavior — but MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends). (d) CSS class replaces data-cb-func ONLY for same behavior. (e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (f) REDUNDANCY: Phone/PLZ/Date Cleave auto → no People CSS. (g) Street names/localities have no CSS class. (h) NUMBERING: Scan used N values, use lowest unused N for new frame pairs.\n" +
                 "=== People === CodBi_People_Name (names only), Alphanumeric (codes only), Mail, Phone, PLZ (alone), 18plus, 16plus, BuildingNumber\n" +
                 "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
                 "=== Appointments === CodBi_NoFutureDate, DateFrame_N_Begin/End (N=1-5), TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 used\n" +
@@ -459,7 +464,7 @@ class AIFormAssistant : IPluginServletAction {
                 "Set data-cb-* parameter attributes as documented. " +
                 "ADDITIONALLY, you MUST also set CSS classes on elements where applicable. " +
                 "To set a CSS class: add a \"cssclasses\" array to the element's \"properties\" (e.g. \"cssclasses\":[\"CodBi_People_Name\"]). " +
-                "RULES: (a) Apply AT MOST ONE CSS class per field. (b) Only apply on EXACT match. (c) FIRST CHOICE: Use DateFrame_N_Begin/End or TimeFrame_N_Begin/End CSS class (N=1-5). FALLBACK: If all 5 used, use data-cb-func. (d) CSS class replaces data-cb-func ONLY for same behavior — you MAY still add data-cb-func for a DIFFERENT functionality on the same field (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends is valid). (e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (f) REDUNDANCY: Phone/PLZ/Date Cleave auto → no People CSS. (g) Street names/localities have no CSS class. (h) NUMBERING: Scan used N values, use lowest unused N for new frame pairs.\n" +
+                "RULES — TWO-OPTION RULE: CSS classes exist ONLY in the list below. For each field, pick ONE: (A) exact CSS class match exists → use it; (B) no CSS class → use data-cb-func. NEVER invent CSS class names. (a) Apply AT MOST ONE CSS class per field. (b) Only apply on EXACT match. (c) For Time/Date frames: use CSS class when available (N=1-5); fallback to data-cb-func if all 5 used. When using a CSS class, do NOT add data-cb-func for the SAME behavior — but MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends). (d) CSS class replaces data-cb-func ONLY for same behavior. (e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (f) REDUNDANCY: Phone/PLZ/Date Cleave auto → no People CSS. (g) Street names/localities have no CSS class. (h) NUMBERING: Scan used N values, use lowest unused N for new frame pairs.\n" +
                 "=== People === CodBi_People_Name (names only), Alphanumeric (codes only), Mail, Phone, PLZ (alone), 18plus, 16plus, BuildingNumber\n" +
                 "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
                 "=== Appointments === CodBi_NoFutureDate, DateFrame_N_Begin/End (N=1-5), TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 used\n" +

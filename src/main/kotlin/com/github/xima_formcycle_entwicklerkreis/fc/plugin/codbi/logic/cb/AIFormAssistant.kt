@@ -331,6 +331,7 @@ class AIFormAssistant : IPluginServletAction {
                 "\"applied\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
                 "\"skipped\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...],\"reason\":\"...\"}]}}. " +
                 "No explanation, no markdown, no code fences.\n\n" +
+                "ORIGINAL USER REQUEST: ${gson.toJson(prompt)}\n\n" +
                 "FORM ELEMENTS:\n${gson.toJson(allItems)}" +
                 CodbiCapabilities.buildFullSection()
 
@@ -484,7 +485,7 @@ class AIFormAssistant : IPluginServletAction {
                 CodbiCapabilities.buildFullSectionFor(requested)
 
         val pass2UserContent =
-            "Apply CodBi functionalities ($candidateClause) to these form elements:\n${gson.toJson(targetItems)}"
+            "Original user request: ${gson.toJson(prompt)}\n\nApply CodBi functionalities ($candidateClause) to these form elements:\n${gson.toJson(targetItems)}"
 
         logger.info(
             "[AIFormAssistant] Pass-2 CodBi — candidates: {}, targetIds: {}, sending {} item(s)",

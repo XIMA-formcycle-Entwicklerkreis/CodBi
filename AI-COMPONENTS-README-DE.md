@@ -289,6 +289,17 @@ Die Konfiguration erfolgt ausschließlich über XIMA-formcycle-Plugin-Properties
 | `AI_LLAMA_STD_ThinkingModelUrl` | GGUF-URL für dediziertes Thinking-Modell |
 | `AI_LLAMA_STD_SPECIALIST_<Name>` | URL eines lokalen Specialist-Modells |
 | `AI_LLAMA_STD_EXT_SPECIALIST_<Name>` | URL einer externen Specialist-API |
+
+**Offline- / Air-Gapped-Betrieb:**
+
+| Property | Standard | Beschreibung |
+|---|---|---|
+| `AI_LLAMA_STD_LlamaRelease` | *(wie `AI_LLAMA_ENGINE_Release`)* | Überschreibt den llama.cpp Release-Tag für dieses Modul |
+| `AI_LLAMA_STD_ServerUrl_windows_x86_64` | *(automatisch aus Release-Tag)* | Binary-Download-URL für Windows x86-64 – kann auf internen Mirror zeigen |
+| `AI_LLAMA_STD_ServerUrl_linux_x86_64` | *(automatisch aus Release-Tag)* | Binary-Download-URL für Linux x86-64 |
+| `AI_LLAMA_STD_ServerUrl_macos_x86_64` | *(automatisch aus Release-Tag)* | Binary-Download-URL für macOS x86-64 |
+| `AI_LLAMA_STD_ServerUrl_macos_aarch64` | *(automatisch aus Release-Tag)* | Binary-Download-URL für macOS ARM64 |
+| `AI_LLAMA_STD_CudaDllUrl_windows_x86_64` | *(automatisch aus Release-Tag)* | Download-URL für die CUDA-Runtime-DLL (`cudart`) unter Windows x86-64 (nur bei CUDA-GPU) |
 | `AI_LLAMA_STD_EXT_SPECIALIST_Key_<Name>` | API-Schlüssel für externen Specialist |
 
 ### 5.6 Whisper
@@ -298,10 +309,13 @@ Die Konfiguration erfolgt ausschließlich über XIMA-formcycle-Plugin-Properties
 | `AI_Whisper_Port` | `8393` | Lokaler Port des Whisper-Servers |
 | `AI_Whisper_ModelUrl` | ggml-small (~466 MB) | GGML-Modell-URL |
 | `AI_Whisper_Release` | `v1.7.6` | whisper.cpp Release-Tag |
+| `AI_Whisper_ReleaseBaseUrl` | GitHub Releases | Basis-URL für whisper.cpp-Binary-Downloads (Release-Tag wird automatisch angehängt). Kann auf internen Mirror umgestellt werden |
 | `AI_Whisper_NoGpu` | `false` | GPU deaktivieren (CPU-only) |
 | `AI_Whisper_AutoDetectLanguage` | `false` | Automatische Sprachendetektion |
 | `AI_Whisper_ExternalUrl` | *(leer)* | Externe STT-API-URL |
 | `AI_Whisper_ExternalApiKey` | *(leer)* | API-Schlüssel für externe STT |
+| `AI_Whisper_UpdateCheckHours` | `24` | Stunden zwischen GitHub-Release-Checks für whisper.cpp (0 = deaktiviert) |
+| `AI_Whisper_NotifyEmail` | *(leer)* | E-Mail für Update-Benachrichtigungen |
 
 ### 5.7 Tesseract
 

@@ -5,11 +5,14 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.Log
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.AI
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.commons.WhisperRequestHandler
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.commons.WhisperServerManager
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.NotificationService
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginShutdownData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
 import java.io.File
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 // endregion Imports
 /**
@@ -70,6 +73,13 @@ class Whisper : AI() {
     /** Default base URL prefix for whisper.cpp release downloads. */
     private const val DEFAULT_WHISPER_RELEASE_BASE_URL =
         "https://github.com/ggml-org/whisper.cpp/releases/download"
+    /** GitHub API endpoint for the latest whisper.cpp release. */
+    private const val GITHUB_RELEASES_API =
+        "https://api.github.com/repos/ggml-org/whisper.cpp/releases/latest"
+    /** Default update check interval in hours. */
+    private const val DEFAULT_CHECK_INTERVAL_HOURS = 24L
+    /** Thread counter for executor thread naming. */
+    private val threadCounter = AtomicInteger(0)
   }
 
   // endregion Companion Object
@@ -122,6 +132,14 @@ class Whisper : AI() {
   private var binDir: File? = null
   /** Directory containing downloaded GGML model files. */
   private var modelsDir: File? = null
+  /** Update notification service for whisper.cpp releases. */
+  private var notificationService: NotificationService? = null
+  /** Executor for background tasks (update checker). */
+  private var executor: java.util.concurrent.ExecutorService? = null
+  /** Configured update check interval in hours (0 = disabled). */
+  private var updateCheckHours: Long = DEFAULT_CHECK_INTERVAL_HOURS
+  /** Optional email address for update notifications. */
+  private var notifyEmail: String? = null
   // endregion State
 
   // region Delegates
@@ -215,6 +233,26 @@ class Whisper : AI() {
         maxRAMPercent = maxRAMPercent,
         maxComputePercent = maxComputePercent,
         onReady = { port -> activeWhisperPort = port })
+
+    executor?.shutdownNow()
+    executor =
+        Executors.newCachedThreadPool { r ->
+          Thread(r, "codbi-whisper-${threadCounter.getAndIncrement()}").apply { isDaemon = true }
+        }
+
+    notificationService =
+        NotificationService(
+            llamaRelease = whisperRelease,
+            platformKey = "",
+            notifyEmail = notifyEmail,
+            pluginFolder = configData.fileHelper.pluginFolder,
+            llamaEngineDir = whisperDir!!,
+            propPrefix = PROP_PREFIX,
+            githubReleasesApi = GITHUB_RELEASES_API,
+            buildServerUrls = { _ -> mutableMapOf() },
+            log = { level, msg -> log(level, msg) },
+            executor = executor!!)
+    notificationService!!.start(updateCheckHours)
   }
 
   /**
@@ -224,6 +262,10 @@ class Whisper : AI() {
    * @param shutdownData Plugin shutdown context (may be `null`).
    */
   override fun shutdown(shutdownData: IPluginShutdownData?) {
+    notificationService?.shutdown()
+    notificationService = null
+    executor?.shutdownNow()
+    executor = null
     serverManager.shutdown()
 
     activeWhisperPort = 0
@@ -322,6 +364,19 @@ class Whisper : AI() {
         ?.trim()
         ?.lowercase()
         ?.let { autoDetectLanguage = it == "true" || it == "1" }
+
+    configData.properties
+        .getProperty("${PROP_PREFIX}_UpdateCheckHours")
+        ?.trim()
+        ?.toLongOrNull()
+        ?.takeIf { it >= 0 }
+        ?.let { updateCheckHours = it }
+
+    configData.properties
+        .getProperty("${PROP_PREFIX}_NotifyEmail")
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { notifyEmail = it }
   }
 
   // endregion Plugin Properties

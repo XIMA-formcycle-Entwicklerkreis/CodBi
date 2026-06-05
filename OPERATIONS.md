@@ -96,6 +96,12 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 | `AI_LLAMA_STD_Language` | String | — | Force response language (ISO 639-1, e.g. `de`) |
 | `AI_LLAMA_STD_UpdateCheckHours` | Long | `24` | Hours between GitHub release checks |
 | `AI_LLAMA_STD_NotifyEmail` | String | — | Email for update notifications |
+| `AI_LLAMA_STD_LlamaRelease` | String | *(same as `AI_LLAMA_ENGINE_Release`)* | Override llama.cpp release tag for this module |
+| `AI_LLAMA_STD_ServerUrl_windows_x86_64` | URL | *(auto from release tag)* | Override binary download URL for Windows x86-64 (e.g. internal mirror) |
+| `AI_LLAMA_STD_ServerUrl_linux_x86_64` | URL | *(auto from release tag)* | Override binary download URL for Linux x86-64 |
+| `AI_LLAMA_STD_ServerUrl_macos_x86_64` | URL | *(auto from release tag)* | Override binary download URL for macOS x86-64 |
+| `AI_LLAMA_STD_ServerUrl_macos_aarch64` | URL | *(auto from release tag)* | Override binary download URL for macOS ARM64 |
+| `AI_LLAMA_STD_CudaDllUrl_windows_x86_64` | URL | *(auto from release tag)* | Override CUDA runtime DLL (`cudart`) download URL for Windows x86-64 (CUDA GPU only) |
 
 **Thinking Mode:**
 
@@ -141,6 +147,7 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 | `AI_Whisper_Port` | Int | `8393` | Local whisper-server port |
 | `AI_Whisper_ModelUrl` | URL | ggml-small.bin | GGML model URL |
 | `AI_Whisper_Release` | String | `v1.7.6` | whisper.cpp release tag |
+| `AI_Whisper_ReleaseBaseUrl` | URL | GitHub releases | Base URL for whisper.cpp binary downloads (release tag appended automatically). Override for internal mirror |
 | `AI_Whisper_NoGpu` | Boolean | `false` | Force CPU-only mode |
 | `AI_Whisper_Threads` | Int | auto | CPU threads |
 | `AI_Whisper_MaxRAMPercent` | Double | `101.0` | RAM gate threshold |
@@ -149,6 +156,8 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 | `AI_Whisper_ExternalUrl` | URL | — | External API URL (skips local server) |
 | `AI_Whisper_ExternalApiKey` | String | — | External API key |
 | `AI_Whisper_ExternalModel` | String | `whisper-1` | External API model name |
+| `AI_Whisper_UpdateCheckHours` | Long | `24` | Hours between GitHub release checks for whisper.cpp (0 = disabled) |
+| `AI_Whisper_NotifyEmail` | String | — | Email for update notifications |
 
 ### 2.5 Tesseract Properties (`AI_Tesseract_*`)
 
@@ -362,9 +371,78 @@ Example pattern:
 |---------|-------|----------|
 | Health check timeout (120s) | Port conflict | Change `AI_LLAMA_ENGINE_Port` or kill the process using the port |
 | Process exits immediately | Missing GPU driver | Set `AI_LLAMA_ENGINE_GpuLayers=0` to force CPU mode |
-| Download fails | Network/firewall | Manually download the binary and place in `<pluginFolder>/ai/llama_engine/bin/` |
+| Download fails | Network/firewall | See [Manual / Offline Deployment](#manual--offline-deployment) below |
 | "Binary not found" | Corrupted extraction | Delete `<pluginFolder>/ai/llama_engine/bin/extracted/` and restart |
 | Model too large for RAM | Insufficient memory | Use a smaller quantized model (Q4_K_M instead of Q8_0) |
+
+### Manual / Offline Deployment
+
+For air-gapped environments or when downloads from GitHub/Hugging Face are blocked, all binaries and models can be placed manually. The plugin skips any download when **both** the target file and a corresponding `.complete` marker file are present.
+
+#### LLaMA (llama-server binary)
+
+The archive filename depends on the configured release tag (`AI_LLAMA_ENGINE_Release`, default `b8175`) and the detected GPU backend.
+
+**CPU-only (all platforms):**
+
+| Platform | Archive name |
+|----------|-------------|
+| Windows x86-64 | `llama-<release>-bin-win-cpu-x64.zip` |
+| Linux x86-64 | `llama-<release>-bin-ubuntu-x64.tar.gz` |
+| macOS x86-64 | `llama-<release>-bin-macos-x64.tar.gz` |
+| macOS ARM64 | `llama-<release>-bin-macos-arm64.tar.gz` |
+
+**Vulkan GPU (Windows/Linux):**
+
+| Platform | Archive name |
+|----------|-------------|
+| Windows x86-64 | `llama-<release>-bin-win-vulkan-x64.zip` |
+| Linux x86-64 | `llama-<release>-bin-ubuntu-vulkan-x64.tar.gz` |
+
+**CUDA 12 GPU (Windows/Linux):**
+
+| Platform | Binary archive | Additional CUDA runtime DLL archive |
+|----------|---------------|--------------------------------------|
+| Windows x86-64 | `llama-<release>-bin-win-cuda-12.4-x64.zip` | `cudart-llama-bin-win-cuda-12.4-x64.zip` |
+| Linux x86-64 | `llama-<release>-bin-ubuntu-vulkan-x64.tar.gz` | — |
+
+**Steps:**
+
+1. Download the appropriate archive(s) from `https://github.com/ggml-org/llama.cpp/releases/`
+2. Extract the archive contents into `<pluginFolder>/ai/llama_engine/bin/extracted/`
+3. Place the original archive file(s) (unextracted) in `<pluginFolder>/ai/llama_engine/bin/`
+4. Create an empty marker file for each archive: `<pluginFolder>/ai/llama_engine/bin/<archiveName>.complete`
+
+> **Example for Windows CPU with release b8175:**
+> - Extract `llama-b8175-bin-win-cpu-x64.zip` → `bin/extracted/`
+> - Create `bin/llama-b8175-bin-win-cpu-x64.zip.complete`
+
+> **Example for Windows CUDA with release b8175:**
+> - Extract `llama-b8175-bin-win-cuda-12.4-x64.zip` → `bin/extracted/`
+> - Extract `cudart-llama-bin-win-cuda-12.4-x64.zip` → `bin/extracted/`
+> - Create `bin/llama-b8175-bin-win-cuda-12.4-x64.zip.complete`
+> - Create `bin/cudart-llama-bin-win-cuda-12.4-x64.zip.complete`
+
+The plugin also writes two marker files itself after a successful download to track the active configuration:
+- `bin/release-tag.txt` — contains the release tag
+- `bin/gpu-backend.txt` — contains the detected GPU backend name
+
+For manual deployments, create these files with the appropriate content to prevent unnecessary re-downloads on restart.
+
+#### LLaMA (GGUF models)
+
+1. Download the GGUF model file (e.g. from Hugging Face)
+2. Place it in `<pluginFolder>/ai/llama_engine/models/`
+3. Create an empty marker file: `<pluginFolder>/ai/llama_engine/models/<modelFileName>.complete`
+
+Repeat for the mmproj file (if using a vision model) and any thinking/specialist models.
+
+#### Whisper
+
+1. Download the GGML model file (e.g. `ggml-small.bin`) from `https://huggingface.co/ggerganov/whisper.cpp`
+2. Place in `<pluginFolder>/ai/whisper/models/`
+3. Create marker file: `<pluginFolder>/ai/whisper/models/<modelFileName>.complete`
+4. Download the whisper-server binary from `https://github.com/ggml-org/whisper.cpp/releases/`, extract to `<pluginFolder>/ai/whisper/bin/extracted/`, place archive in `<pluginFolder>/ai/whisper/bin/` and create the `.complete` marker.
 
 ### 5.2 Tesseract Issues
 

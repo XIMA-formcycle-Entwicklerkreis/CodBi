@@ -122,6 +122,13 @@ abstract class LLAMA : AI() {
   protected val serverUrls: MutableMap<String, String> = buildServerUrls(DEFAULT_LLAMA_RELEASE)
 
   /**
+   * Optional override URLs for the CUDA runtime DLL archive per platform key. When set, replaces
+   * the default GitHub URL used for the `cudart` download on CUDA builds. Useful for air-gapped /
+   * internal-mirror deployments.
+   */
+  protected val cudaDllUrls: MutableMap<String, String> = mutableMapOf()
+
+  /**
    * Builds the platform→URL map for a given llama.cpp release tag (CPU-only).
    *
    * @param release The llama.cpp release tag (e.g. `"b8175"`).
@@ -164,17 +171,24 @@ abstract class LLAMA : AI() {
       return when (platformKey) {
         "windows_x86_64" ->
             Pair(
-                "$base/llama-$release-bin-win-cuda-12.4-x64.zip",
-                "$base/cudart-llama-bin-win-cuda-12.4-x64.zip")
-        "linux_x86_64" -> Pair("$base/llama-$release-bin-ubuntu-vulkan-x64.tar.gz", null)
+                serverUrls[platformKey] ?: "$base/llama-$release-bin-win-cuda-12.4-x64.zip",
+                cudaDllUrls[platformKey] ?: "$base/cudart-llama-bin-win-cuda-12.4-x64.zip")
+        "linux_x86_64" ->
+            Pair(
+                serverUrls[platformKey] ?: "$base/llama-$release-bin-ubuntu-vulkan-x64.tar.gz",
+                null)
         else -> Pair(serverUrls[platformKey] ?: buildServerUrls(release)[platformKey]!!, null)
       }
     }
 
     if (gpuBackend == GpuBackend.VULKAN) {
       return when (platformKey) {
-        "windows_x86_64" -> Pair("$base/llama-$release-bin-win-vulkan-x64.zip", null)
-        "linux_x86_64" -> Pair("$base/llama-$release-bin-ubuntu-vulkan-x64.tar.gz", null)
+        "windows_x86_64" ->
+            Pair(serverUrls[platformKey] ?: "$base/llama-$release-bin-win-vulkan-x64.zip", null)
+        "linux_x86_64" ->
+            Pair(
+                serverUrls[platformKey] ?: "$base/llama-$release-bin-ubuntu-vulkan-x64.tar.gz",
+                null)
         else -> Pair(serverUrls[platformKey] ?: buildServerUrls(release)[platformKey]!!, null)
       }
     }

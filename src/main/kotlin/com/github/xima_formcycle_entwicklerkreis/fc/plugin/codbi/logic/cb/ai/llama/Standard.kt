@@ -242,6 +242,7 @@ class Standard : LLAMA() {
     serverUrls.keys.toList().forEach { platform ->
       str("ServerUrl_$platform")?.let { serverUrls[platform] = it }
     }
+    str("CudaDllUrl_windows_x86_64")?.let { cudaDllUrls["windows_x86_64"] = it }
     props
         .getProperty("AI_BraveSearch_ApiKey")
         ?.trim()

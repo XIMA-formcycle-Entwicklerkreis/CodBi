@@ -159,3 +159,6 @@ branch-test-output.txt
 
 # Agent
 AGENT.md
+
+# Local self-signed development certificates
+.certs/

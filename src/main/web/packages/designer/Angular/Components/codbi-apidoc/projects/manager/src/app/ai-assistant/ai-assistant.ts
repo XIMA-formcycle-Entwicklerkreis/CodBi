@@ -868,6 +868,7 @@ export class AiAssistant implements OnInit, OnDestroy {
               }
             }
             this.visible = false;
+            this.cdr.markForCheck();
           };
           const waitUntilReady = (): Promise<void> =>
             new Promise<void>((resolve) => {

@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpServer
 import java.io.File
 import java.io.FileOutputStream
 import java.net.InetSocketAddress
+import java.security.MessageDigest
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.jupiter.api.AfterAll
@@ -604,6 +605,109 @@ class DownloadManagerTest {
           logMessages.any {
             it.second.contains("already complete") || it.second.contains("download complete")
           })
+    }
+  }
+
+  // endregion
+
+  // region downloadWithResume — SHA-256 verification
+
+  @Nested
+  inner class DownloadSha256Test {
+
+    private fun sha256Of(bytes: ByteArray): String {
+      val digest = MessageDigest.getInstance("SHA-256")
+      return digest.digest(bytes).joinToString("") { "%02x".format(it) }
+    }
+
+    @Test
+    fun acceptsDownloadWithCorrectSha256() {
+      val content = "Hello, this is the full file content for testing downloads."
+      val expected = sha256Of(content.toByteArray(Charsets.UTF_8))
+      val target = File(tempDir, "verified.bin")
+
+      val result =
+          dm.downloadWithResume(
+              "http://127.0.0.1:$serverPort/full-file", target, "Sha256OK", expected)
+
+      assertTrue(result)
+      assertTrue(target.exists())
+      assertTrue(File(tempDir, "verified.bin.complete").exists())
+      assertTrue(logMessages.any { it.second.contains("SHA-256 verified OK") })
+    }
+
+    @Test
+    fun rejectsDownloadWithWrongSha256() {
+      val target = File(tempDir, "bad-hash.bin")
+
+      val result =
+          dm.downloadWithResume(
+              "http://127.0.0.1:$serverPort/full-file", target, "Sha256Fail", "0".repeat(64))
+
+      assertFalse(result)
+      assertFalse(target.exists(), "File must be deleted on hash mismatch")
+      assertFalse(
+          File(tempDir, "bad-hash.bin.complete").exists(),
+          "Marker must not be written on hash mismatch")
+      assertTrue(
+          logMessages.any { (level, msg) ->
+            level == LogLevel.ERROR && msg.contains("SHA-256 mismatch")
+          })
+    }
+
+    @Test
+    fun mismatchLogsBothExpectedAndActualHash() {
+      val target = File(tempDir, "mismatch-log.bin")
+      val wrong = "deadbeef" + "0".repeat(56)
+
+      dm.downloadWithResume("http://127.0.0.1:$serverPort/full-file", target, "MismatchLog", wrong)
+
+      val errorMsg = logMessages.first { it.first == LogLevel.ERROR }.second
+      assertTrue(errorMsg.contains(wrong), "Error log must include the expected (wrong) hash")
+      // Actual hash must also appear so the admin can diagnose the mismatch
+      assertTrue(errorMsg.contains("got "), "Error log must include the actual hash")
+    }
+
+    @Test
+    fun nullSha256SkipsVerificationAndSucceeds() {
+      val target = File(tempDir, "no-check.bin")
+
+      val result =
+          dm.downloadWithResume("http://127.0.0.1:$serverPort/full-file", target, "NoCheck", null)
+
+      assertTrue(result)
+      assertFalse(
+          logMessages.any { it.second.contains("SHA-256") },
+          "No SHA-256 log messages expected when hash is null")
+    }
+
+    @Test
+    fun acceptsUppercaseSha256() {
+      val content = "Hello, this is the full file content for testing downloads."
+      val expected = sha256Of(content.toByteArray(Charsets.UTF_8)).uppercase()
+      val target = File(tempDir, "uppercase-hash.bin")
+
+      val result =
+          dm.downloadWithResume(
+              "http://127.0.0.1:$serverPort/full-file", target, "UpperCase", expected)
+
+      assertTrue(result, "Uppercase SHA-256 input must be accepted after normalization")
+    }
+
+    @Test
+    fun sha256CheckAppliedAfterRedirect() {
+      val content = "Hello, this is the full file content for testing downloads."
+      val expected = sha256Of(content.toByteArray(Charsets.UTF_8))
+      val target = File(tempDir, "redirect-hash.bin")
+
+      val result =
+          dm.downloadWithResume(
+              "http://127.0.0.1:$serverPort/redirect", target, "RedirectSha", expected)
+
+      assertTrue(result)
+      assertTrue(
+          logMessages.any { it.second.contains("SHA-256 verified OK") },
+          "SHA-256 must be verified even when download followed a redirect")
     }
   }
 

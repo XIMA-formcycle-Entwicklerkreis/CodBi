@@ -382,6 +382,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "=== Print.Removal === CodBi_Print_Remove_*\n" +
                 "=== BayVIS === CodBi_BayVIS_*\n" +
                 "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
+                "CRITICAL: CSS classes ONLY exist for the domains listed above. For any functionality NOT listed here (e.g. Form.Navigator, OpenPLZ.Autocomplete, Date.Min, Date.NoWeekends, HTML.Input.REGEX, HTML.CSS, etc.), there is NO CSS class — you MUST use data-cb-func. NEVER invent CSS class names.\n" +
                 "Respond ONLY with a JSON object: " +
                 "{\"items\":[...all elements, modified where CodBi applies...],\"_codbiApplicability\":{\"formElementsProcessed\":N,\"codbiElementsEvaluated\":23 (replace counts)," +
                 "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
@@ -532,6 +533,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "=== Print.Removal === CodBi_Print_Remove_*\n" +
                 "=== BayVIS === CodBi_BayVIS_*\n" +
                 "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
+                "CRITICAL: CSS classes ONLY exist for the domains listed above. For any functionality NOT listed here (e.g. Form.Navigator, OpenPLZ.Autocomplete, Date.Min, Date.NoWeekends, HTML.Input.REGEX, HTML.CSS, etc.), there is NO CSS class — you MUST use data-cb-func. NEVER invent CSS class names.\n" +
                 "IMPORTANT: PRESERVE any existing \"cssclasses\" array already set on elements from the input — only add entries or create a new array if none exists.\n" +
                 "Respond ONLY with a JSON object: " +
                 "{\"items\":[...same elements with modifications applied...],\"_codbiApplicability\":{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace counts)," +
@@ -875,6 +877,7 @@ class AICodBiAssistant : IPluginServletAction {
           "      - Date fields (datatype=\"dateDE\" or \"date\"): do NOT apply CodBi_People_18plus or CodBi_People_16plus for formatting — the Cleave date config handles formatting. Age restrictions (18plus/16plus) may still be added if the field is specifically a date-of-birth field.\n" +
           "   f) Street names and locality/city names have no dedicated People CSS class — leave them without a CSS class.\n" +
           "   i) REPEATABLE CONTAINERS — To make an XContainer or XContainerInvisible repeatable (add dynamic rows), set \"dynamic\":\"1\" in its properties. Also set \"dynamicMinSize\" (min rows, default 1), \"dynamicMaxSize\" (max rows, default 10), \"dynamicAddText\" (add button label), \"dynamicDeleteText\" (delete button label) as needed. Example: {\"className\":\"XContainer\",\"properties\":{\"name\":\"coAdressen\",\"dynamic\":\"1\",\"dynamicMinSize\":\"1\",\"dynamicMaxSize\":\"5\",\"elements\":[\"tfName\",\"tfEmail\"]}}\n" +
+          "   j) CRITICAL — CSS classes ONLY exist for the domains and patterns listed below in 'Available CSS classes'. For any CodBi functionality NOT represented by a CSS class in that list (e.g. Form.Navigator, OpenPLZ.Autocomplete, Date.Min, Date.NoWeekends, HTML.Input.REGEX, HTML.CSS, and all other data-cb-func-only functionalities), there is NO CSS class — you MUST use data-cb-func. NEVER invent CSS class names — only use exact matches from the list below. If you cannot find an exact matching CSS class for a required behavior, use data-cb-func instead.\n" +
           "Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfVorname\",\"label\":\"Vorname\",\"cssclasses\":[\"CodBi_People_Name\"]}}.\n" +
           "Available CSS classes by standard configuration:\n\n" +
           "=== People (person-related fields) ===\n" +
@@ -898,7 +901,8 @@ class AICodBiAssistant : IPluginServletAction {
           "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_PLZ / Locality / Street / BuildingNumber.\n" +
           "=== Holistic === CodBi_XCL_Speech, CodBi_XCL_Speech_Whisper.\n" +
           "When the instruction asks for a specific field type that matches a CSS class description above, " +
-          "add the corresponding CSS class(es) following the rules above.\n\n" +
+          "add the corresponding CSS class(es) following the rules above. " +
+          "REMINDER: CSS classes ONLY exist for the domains listed above. For everything else, use data-cb-func. Never invent CSS class names.\n\n" +
           "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
           "For each listed element, consider whether any field in this form could meaningfully benefit from it. " +
           "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete. " +

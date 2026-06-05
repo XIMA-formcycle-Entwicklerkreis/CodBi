@@ -61,7 +61,12 @@
       "type": "functionality",
       "summary": "Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.",
       "tsdoc": "Registers the {@link Form_Navigator.functionality }.",
-      "parameters": {},
+      "parameters": {
+        "Preview": "Boolean (true/false). When true (default), permits navigating to any page even if not yet visited. When false, only visited pages are accessible.",
+        "CSSNavButtons": "Optional CSS to apply to the navigation buttons.",
+        "CSSHoverNavButtons": "Optional CSS to apply to the navigation buttons on hover.",
+        "CSSBlockedNavButton": "Optional CSS to apply to blocked navigation buttons."
+      },
       "classDescriptions": {}
     },
     "HTML.CSS": {

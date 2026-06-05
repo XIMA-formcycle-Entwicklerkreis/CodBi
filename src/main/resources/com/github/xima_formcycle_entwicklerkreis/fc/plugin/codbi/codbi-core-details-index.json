@@ -63,9 +63,9 @@
       "tsdoc": "Registers the {@link Form_Navigator.functionality }.",
       "parameters": {
         "Preview": "Boolean (true/false). When true (default), permits navigating to any page even if not yet visited. When false, only visited pages are accessible.",
-        "CSSNavButtons": "Optional CSS to apply to the navigation buttons.",
-        "CSSHoverNavButtons": "Optional CSS to apply to the navigation buttons on hover.",
-        "CSSBlockedNavButton": "Optional CSS to apply to blocked navigation buttons."
+        "CSSNavButtons": "Optional — CSS styling string (e.g. \"font-size:14px;\") applied as inline style to navigation buttons. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values.",
+        "CSSHoverNavButtons": "Optional — CSS styling string (e.g. \"background:#eee;\") applied as inline style to navigation buttons on hover. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values.",
+        "CSSBlockedNavButton": "Optional — CSS styling string (e.g. \"color:red;\") applied as inline style to blocked/inaccessible navigation buttons. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values."
       },
       "classDescriptions": {}
     },

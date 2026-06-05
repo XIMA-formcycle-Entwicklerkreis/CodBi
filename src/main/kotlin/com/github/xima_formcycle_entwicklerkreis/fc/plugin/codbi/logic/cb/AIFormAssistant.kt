@@ -458,7 +458,7 @@ class AIFormAssistant : IPluginServletAction {
                 "You receive a JSON array of FORMCYCLE form element objects. Each element has a \"className\" and a \"properties\" object (which includes \"id\"). " +
                 "Apply the CodBi functionalities listed below to the appropriate elements. " +
                 "To apply a functionality: set data-cb-func in the element's properties as CSV (create the key if absent). " +
-                "CRITICAL — ALL documented parameters MUST be set as data-cb-ParamName attributes. Do NOT skip any parameter even if it appears optional. " +
+                "CRITICAL — All REQUIRED parameters MUST be set as data-cb-ParamName attributes. Parameters documented as 'Optional — ... Only set if ... Leave empty otherwise — do NOT invent values' should be OMITTED entirely (not set to empty, not created at all) unless the user explicitly asks for that feature. " +
                 "Use the element's property values to infer sensible parameter values: " +
                 "  - For CSS-Selector parameters (e.g. MaxField, MinField): use the CSS selector constructed from the target element's properties.name prefixed with '#', e.g. \"#tfBisUhrzeit\". Use the element's 'properties.name' to construct the selector, NOT the 'properties.id' value with 'xi-' prefix. " +
                 "  - For string parameters (e.g. Country, MsgNotKnown): set a reasonable default based on the form context. " +

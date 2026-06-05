@@ -62,10 +62,10 @@ when CodBi searches within the shared parent container.
 - Date.NoWeekends: Applicable on a XTextField of type 'date' to disallow weekend dates.
   - MsgNoWeekends: The optional string to be shown when a weekend is entered.
 - Form.Navigator: Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.
-  - CSSBlockedNavButton: Configures 'CSSBlockedNavButton' for this functionality.
-  - CSSHoverNavButtons: Configures 'CSSHoverNavButtons' for this functionality.
-  - CSSNavButtons: Configures 'CSSNavButtons' for this functionality.
-  - Preview: Configures 'Preview' for this functionality.
+  - CSSBlockedNavButton: Optional — CSS styling string (e.g. "color:red;") applied as inline style to blocked/inaccessible navigation buttons. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values.
+  - CSSHoverNavButtons: Optional — CSS styling string (e.g. "background:#eee;") applied as inline style to navigation buttons on hover. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values.
+  - CSSNavButtons: Optional — CSS styling string (e.g. "font-size:14px;") applied as inline style to navigation buttons. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values.
+  - Preview: Boolean (true/false). When true, permits navigating to any page even if not yet visited. Defaults to true.
 - HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
   - CSS: The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an.
   - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the.

@@ -516,7 +516,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "You receive a JSON array of FORMCYCLE form element objects. Each element has a \"className\" and a \"properties\" object (which includes \"id\"). " +
                 "Apply the CodBi functionalities listed below to the appropriate elements. " +
                 "To apply a functionality: set data-cb-func in the element's properties as CSV (create the key if absent). " +
-                "CRITICAL — ALL documented parameters MUST be set as data-cb-ParamName attributes. Do NOT skip any parameter even if it appears optional. " +
+                "CRITICAL — All REQUIRED parameters MUST be set as data-cb-ParamName attributes. Parameters documented as 'Optional — ... Only set if ... Leave empty otherwise — do NOT invent values' should be OMITTED entirely (not set to empty, not created at all) unless the user explicitly asks for that feature. " +
                 "Use the element's property values to infer sensible parameter values: " +
                 "  - For CSS-Selector parameters referencing other form elements (e.g. MaxField, MinField, DependentPLZ, DependentLocality, FocusOnAutocomplete, Target, File, Container, Updater, DocumentSelector, Field, Destination): use the target element's properties.name value prefixed with a dot '.', e.g. \".tfBisUhrzeit\" or \".tfaAdresse\". Do NOT use an ID selector (# prefix) -- IDs break in repeatable containers. " +
                 "  - For string parameters (e.g. Country, MsgNotKnown): set a reasonable default based on the form context. " +

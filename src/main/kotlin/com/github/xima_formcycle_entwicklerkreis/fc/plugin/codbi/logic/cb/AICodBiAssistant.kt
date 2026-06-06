@@ -903,7 +903,7 @@ class AICodBiAssistant : IPluginServletAction {
           "=== Appointments === CodBi_NoFutureDate (no future dates), CodBi_DateFrame_N_Begin/End (date ranges, N=1-5), CodBi_TimeFrame_N_Begin/End (time ranges, N=1-5). When using CodBi_TimeFrame_* or CodBi_DateFrame_* classes, do NOT also add data-cb-func=time.frame or data-cb-func=date.frame — the CSS class already provides that behavior. You MAY still add data-cb-func for a DIFFERENT functionality on the same field (e.g. date.noweekends).\n" +
           "=== LDAP.Autofill === CodBi_LDAP_AC_* fields for LDAP autocomplete.\n" +
           "=== AI === AI_LLAMA_CHAT_*, AI_LLAMA_STANDARD_QA_Question, AI_LLAMA_STANDARD_TXTQA_Question, AI_LLAMA_TXTQA_Source, AI_LLAMA_QA_Exclude, AI_OCR_Receiver\n" +
-          "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_A/B/C/D for panels and accordions.\n" +
+          "=== UI.Panels === CodBi_HTML_Panel_Standard (default), Flat, Index, Minimal, NoCordion for panels; CodBi_Accordion_A/B/C/D for accordions. PREFER these CSS classes over data-cb-func=html.panel — they apply pre-configured styling. For nested panels (panel inside another panel), use different CSS classes so each nesting level has a distinct visual style (e.g. outer: CodBi_HTML_Panel_Standard, inner: CodBi_HTML_Panel_Flat). The CSS class alone is sufficient; do NOT add data-cb-func.\n" +
           "=== Print.Removal === CodBi_Print_Remove_Tagged / Parent / PrintOnly.\n" +
           "=== BayVIS === CodBi_BayVIS_Behoerde / BehoerdeUndAnsprechpartner / Ansprechpartner / Auswahl_Behoerden.\n" +
           "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_PLZ / Locality / Street / BuildingNumber.\n" +

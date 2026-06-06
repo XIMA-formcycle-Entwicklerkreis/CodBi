@@ -92,10 +92,10 @@ when CodBi searches within the shared parent container.
   - Flags: The RegExp - flags string used to create the "expression" (defaults to "g").
   - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
   - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
-- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget.
+- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. PREFER using UI.Panels standard config CSS classes (CodBi_HTML_Panel_*, CodBi_Accordion_*) instead of applying data-cb-func=html.panel directly — the standard classes come with pre-configured styling. The CSS class alone is sufficient; do NOT add data-cb-func when using a UI.Panels CSS class.
   - Accordion: Configures 'Accordion' for this functionality.
   - AutoHeaderLevel: Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,.
-  - AutoHeaderTitle: The string the automatically generated header shall display.
+  - AutoHeaderTitle: REQUIRED — the string the automatically generated header shall display. Must be set to a descriptive title when using data-cb-func=html.panel directly. When using UI.Panels CSS classes, this can be set via a "cbAutoheaderTitle" attribute on the element.
   - AutoHeaderTitleSupplementsSpacer: Configures 'AutoHeaderTitleSupplementsSpacer' for this functionality.
   - CSSAfterHeader: The CSS:after to be applied onto the header when the panel is folded.
   - CSSAfterHeaderContent: The CSS:after content to be applied onto the header when the panel is folded.

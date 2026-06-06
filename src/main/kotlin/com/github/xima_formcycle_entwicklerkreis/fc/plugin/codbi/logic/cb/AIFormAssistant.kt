@@ -246,7 +246,7 @@ class AIFormAssistant : IPluginServletAction {
             "=== Appointments === CodBi_NoFutureDate, DateFrame_N_Begin/End, TimeFrame_N_Begin/End (N=1-5; no data-cb-func=date.frame/time.frame needed — the CSS class provides that. You MAY still add data-cb-func for a DIFFERENT functionality like date.noweekends)\n" +
             "=== LDAP.Autofill === CodBi_LDAP_AC_*\n" +
             "=== AI === AI_LLAMA_*, AI_OCR_*\n" +
-            "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_*\n" +
+            "=== UI.Panels === CodBi_HTML_Panel_Standard (default), Flat, Index, Minimal, NoCordion for panels; CodBi_Accordion_A/B/C/D for accordions. PREFER CSS classes over data-cb-func=html.panel. For nested panels use different classes for each level (e.g. outer: Standard, inner: Flat). The CSS class alone is sufficient; do NOT add data-cb-func.\n" +
             "=== Print.Removal === CodBi_Print_Remove_*\n" +
             "=== BayVIS === CodBi_BayVIS_*\n" +
             "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
@@ -321,7 +321,7 @@ class AIFormAssistant : IPluginServletAction {
                 "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
                 "=== Appointments === CodBi_NoFutureDate, DateFrame_N_Begin/End (N=1-5), TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 used\n" +
                 "=== LDAP.Autofill === CodBi_LDAP_AC_*, AI === AI_LLAMA_*, AI_OCR_*\n" +
-                "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_*\n" +
+                "=== UI.Panels === CodBi_HTML_Panel_* (Standard, Flat, Index, Minimal, NoCordion), CodBi_Accordion_A/B/C/D. PREFER CSS classes over data-cb-func=html.panel. For nested panels use different classes per level. CSS class alone is sufficient — do NOT add data-cb-func.\n" +
                 "=== Print.Removal === CodBi_Print_Remove_*\n" +
                 "=== BayVIS === CodBi_BayVIS_*\n" +
                 "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
@@ -471,7 +471,7 @@ class AIFormAssistant : IPluginServletAction {
                 "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
                 "=== Appointments === CodBi_NoFutureDate, DateFrame_N_Begin/End (N=1-5), TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 used\n" +
                 "=== LDAP.Autofill === CodBi_LDAP_AC_*, AI === AI_LLAMA_*, AI_OCR_*\n" +
-                "=== UI.Panels === CodBi_HTML_Panel_*, CodBi_Accordion_*\n" +
+                "=== UI.Panels === CodBi_HTML_Panel_* (Standard, Flat, Index, Minimal, NoCordion), CodBi_Accordion_A/B/C/D. PREFER CSS classes over data-cb-func=html.panel. For nested panels use different classes per level. CSS class alone is sufficient — do NOT add data-cb-func.\n" +
                 "=== Print.Removal === CodBi_Print_Remove_*\n" +
                 "=== BayVIS === CodBi_BayVIS_*\n" +
                 "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +

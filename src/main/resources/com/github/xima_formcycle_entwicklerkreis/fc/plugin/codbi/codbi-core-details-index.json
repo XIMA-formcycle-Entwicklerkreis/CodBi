@@ -113,6 +113,20 @@
       },
       "classDescriptions": {}
     },
+    "HTML.Input.Blacklist": {
+      "id": "HTML.Input.Blacklist",
+      "type": "functionality",
+      "summary": "Applicable on a XTextField to blacklist specific values (e.g. specific dates). Prevents direct input AND jQuery calendar selection of blacklisted items. Use on date fields (datatype=\"dateDE\"). Dates must use 2-digit format (DD.MM.YYYY).",
+      "tsdoc": "Provides the {@link HTML_Input_Blacklist.functionality }.",
+      "parameters": {
+        "List": "CSV of forbidden values (e.g. \"01.10.2011,01.10.2026\").",
+        "Prefix": "Optional text to show before the blacklist in the error message.",
+        "Postfix": "Optional text to show after the blacklist in the error message.",
+        "Separator": "Separator between items in the error message (defaults to \", \").",
+        "ShowBlacklist": "Whether to display the blacklist in the error message (true/false, defaults to false)."
+      },
+      "classDescriptions": {}
+    },
     "HTML.Panel": {
       "id": "HTML.Panel",
       "type": "functionality",

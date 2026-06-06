@@ -26,7 +26,7 @@ export class HTML_CSS {
    */
   public static sanitizeCss(css: string): string {
     return css
-      .replace(/url\s*\(\s*(?:https?:\/\/[^)]*)\s*\)/gi, "/* external url blocked */")
+      .replace(/url\s*\(\s*(?:https?:\/\/[^)]*)\s*\)/gi, "/* external URL blocked */")
       .replace(/javascript\s*:/gi, "blocked:")
       .replace(/expression\s*\(/gi, "blocked(")
       .replace(/-moz-binding\s*:/gi, "-moz-blocked:")

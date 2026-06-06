@@ -11,6 +11,7 @@ Element-only reference: what each functionality, element placeholder, and standa
 - Date.NoWeekends: Applicable on a XTextField of type 'date' to disallow weekend dates.
 - Form.Navigator: Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.
 - HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
+- HTML.Input.Blacklist: Applicable on a XTextField to blacklist specific values (e.g. dates). Prevents direct input AND jQuery calendar selection of blacklisted items. Use on date fields with datatype="dateDE". The List parameter accepts a CSV of forbidden values (dates must use 2-digit format: DD.MM.YYYY).
 - HTML.Input.Cleave: Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
 - HTML.Input.REGEX: Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.
 - HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget.

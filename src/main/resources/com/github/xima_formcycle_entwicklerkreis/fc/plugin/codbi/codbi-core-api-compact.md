@@ -71,6 +71,12 @@ when CodBi searches within the shared parent container.
   - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the provided CSS.
   - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Replacements: An Array < string > of two elements each that are separated by a "|".
+- HTML.Input.Blacklist: Applicable on a XTextField to blacklist specific values (e.g. specific dates). Prevents direct input AND jQuery calendar selection of blacklisted items. Use on date fields (datatype="dateDE") to forbid specific dates like national holidays. Dates in the List parameter must use 2-digit day/month format (DD.MM.YYYY), e.g. "01.10.2011" not "1.10.2011".
+  - List: CSV of forbidden values (e.g. "01.10.2011,01.10.2026").
+  - Prefix: Optional text to show before the blacklist in the error message.
+  - Postfix: Optional text to show after the blacklist in the error message.
+  - Separator: Separator between blacklist items in the error message (defaults to ", ").
+  - ShowBlacklist: Whether to display the blacklist in the error message (true/false, defaults to false).
 - HTML.Input.Cleave: Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
   - Config: The CleaveOptions to set instead of the other shorthand parameter.
   - Date: The CleaveOptions.date .

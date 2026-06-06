@@ -92,10 +92,10 @@ when CodBi searches within the shared parent container.
   - Flags: The RegExp - flags string used to create the "expression" (defaults to "g").
   - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
   - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
-- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. Use UI.Panels CSS classes (CodBi_HTML_Panel_*) for standard panels with pre-configured styling (no data-cb-func needed). Use data-cb-func=html.panel directly when the user wants custom CSS, custom header, accordion behavior, or fine-grained control.
+- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. Available CSS classes: CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for standalone panels; CodBi_Accordion_A/B/C/D for accordions; CodBi_HTML_Panel_NoCordion to exclude from accordion. Use a CSS class (no data-cb-func needed) for standard pre-configured panels. Use data-cb-func=html.panel when the user wants custom CSS or custom header.
   - Accordion: Configures 'Accordion' for this functionality.
   - AutoHeaderLevel: Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,.
-  - AutoHeaderTitle: CRITICAL — when the user provides a title, set this to the title string. When the user wants custom CSS but did NOT specify a title, set this to true (boolean) to auto-generate the header and prevent an exception. If omitted, no header is shown.
+  - AutoHeaderTitle: Set to a title string when the user provides a title. Set to true (boolean) when the user wants custom CSS but no title — this auto-generates the header and prevents an exception. If omitted entirely, no header is shown.
   - AutoHeaderTitleSupplementsSpacer: Configures 'AutoHeaderTitleSupplementsSpacer' for this functionality.
   - CSSAfterHeader: The CSS:after to be applied onto the header when the panel is folded.
   - CSSAfterHeaderContent: The CSS:after content to be applied onto the header when the panel is folded.

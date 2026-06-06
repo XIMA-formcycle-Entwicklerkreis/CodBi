@@ -30,6 +30,8 @@ Element-only reference: what each functionality, element placeholder, and standa
 - Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
 ## Element Placeholders (EPs)
 
+Element Placeholders resolve dynamic values at runtime. To use an EP in a CodBi parameter value, wrap it in curly braces with the EP name and optional parameters separated by '>': {EP_Name>param1;param2}. Example: {Date.Holidays>this_year;this_year+1} returns all holidays for the current and next year. EPs can be used in data-cb-* attribute values (e.g. data-cb-List={Date.Holidays>this_year}) where they are resolved to their actual values automatically. EPs can be mixed with regular values in comma-separated attributes — each array element is resolved individually. Example: data-cb-List=01.01.2024,{Date.Holidays>this_year},25.12.2024.
+
 - AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question.
 - BayVIS.Ansprechpartner: This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from.
 - BayVIS.Behoerden.Details: This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding.
@@ -39,7 +41,7 @@ Element-only reference: what each functionality, element placeholder, and standa
 - Data.Join: Joins the properties of multiple object s into one.
 - Date.Arithmetic: This Element-Placeholder turns a String into a Date .
 - Date.FromString: This Element-Placeholder turns a String into a Date .
-- Date.Holidays: The requested years.
+- Date.Holidays: Retrieves German holidays for the given year(s). EP syntax: {Date.Holidays>year1;year2;...}. Use "this_year" for current year, "this_year + 1" for next year. Returns an array of holiday Date objects.
 - Date.Today: Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.
 - Date.Weekends: This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .
 - DOM.Query: This Element-Placeholder queries an Element .

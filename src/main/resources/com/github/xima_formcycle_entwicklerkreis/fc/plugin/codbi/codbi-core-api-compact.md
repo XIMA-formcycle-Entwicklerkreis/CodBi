@@ -72,7 +72,7 @@ when CodBi searches within the shared parent container.
   - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Replacements: An Array < string > of two elements each that are separated by a "|".
 - HTML.Input.Blacklist: Applicable on a XTextField to blacklist specific values (e.g. specific dates). Prevents direct input AND jQuery calendar selection of blacklisted items. Use on date fields (datatype="dateDE") to forbid specific dates like national holidays. Dates in the List parameter must use 2-digit day/month format (DD.MM.YYYY), e.g. "01.10.2011" not "1.10.2011".
-  - List: CSV of forbidden values (e.g. "01.10.2011,01.10.2026").
+  - List: CSV of forbidden values (e.g. "01.10.2011,01.10.2026"). Can also contain Element Placeholders (EPs) like {Date.Holidays>this_year;this_year+1} to dynamically fetch all holidays for the given years and use them as the blacklist.
   - Prefix: Optional text to show before the blacklist in the error message.
   - Postfix: Optional text to show after the blacklist in the error message.
   - Separator: Separator between blacklist items in the error message (defaults to ", ").
@@ -203,8 +203,9 @@ when CodBi searches within the shared parent container.
 - Date.FromString: This Element-Placeholder turns a String into a Date .
   - Param[1]: The String to turn to a Date.
   - Param[2]: An optional dateformat string like YYYY/MM/DD, for example.
-- Date.Holidays: The requested years.
-  - Parameters: none.
+- Date.Holidays: Retrieves German holidays for the given year(s) from the "API-Feiertage.de" service. Returns an array of Date objects representing all holidays for the specified years. EP syntax: {Date.Holidays>year1;year2;...}. Use special values: "this_year" for current year, "this_year + 1" for next year. Example: {Date.Holidays>this_year;this_year+1} returns all holidays for current and next year.
+  - Param[1]: Year to fetch holidays for (e.g. "2026", "this_year", "this_year + 1").
+  - Param[2]: Optional additional year.
 - Date.Today: Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.
   - Parameters: none.
 - Date.Weekends: This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .

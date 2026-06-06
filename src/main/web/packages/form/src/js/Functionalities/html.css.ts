@@ -80,7 +80,11 @@ export class HTML_CSS {
       }
     }
 
-    style.innerHTML = (toLoad.css as string).replace(/</g, "{").replace(/>/g, "}").replace(/§/g, ",");
+    // Security: Use textContent instead of innerHTML to prevent XSS via
+    // malicious CSS values (e.g. </style><script>alert(1)</script>).
+    // The < → { and > → } replacements are still applied for the CodBi
+    // CSS placeholder syntax.
+    style.textContent = (toLoad.css as string).replace(/</g, "{").replace(/>/g, "}").replace(/§/g, ",");
 
     toProcess.setAttribute("cbCSS", "");
 

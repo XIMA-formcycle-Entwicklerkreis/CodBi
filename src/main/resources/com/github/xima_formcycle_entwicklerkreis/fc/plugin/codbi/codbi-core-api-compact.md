@@ -67,8 +67,8 @@ when CodBi searches within the shared parent container.
   - CSSNavButtons: Optional — CSS styling string (e.g. "font-size:14px;") applied as inline style to navigation buttons. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values.
   - Preview: Boolean (true/false). When true, permits navigating to any page even if not yet visited. Defaults to true.
 - HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
-  - CSS: The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an.
-  - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the.
+  - CSS: The CSS to inject. CRITICAL FORMAT: Use `<` instead of `{` and `>` instead of `}` (the engine replaces them at runtime). The CSS MUST include a selector targeting the destination element. Format: `destinationSelector < property: value; >`. Example: `.ed1 < background-color: red; >` becomes `background-color: red;` applied to element with class `ed1`. Do NOT use raw `{` or `}` characters.
+  - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the provided CSS.
   - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Replacements: An Array < string > of two elements each that are separated by a "|".
 - HTML.Input.Cleave: Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.

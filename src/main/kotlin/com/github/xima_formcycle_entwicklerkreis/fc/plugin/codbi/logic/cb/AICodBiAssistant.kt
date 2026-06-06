@@ -912,7 +912,7 @@ class AICodBiAssistant : IPluginServletAction {
           "add the corresponding CSS class(es) following the rules above. " +
           "REMINDER: CSS classes ONLY exist for the domains listed above. For everything else, use data-cb-func. Never invent CSS class names.\n\n" +
           "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
-          "For each listed element, consider whether any field in this form could meaningfully benefit from it. " +
+          "For each listed element, use your judgment to decide if a functionality is useful for a field. Consider BOTH whether it could benefit AND whether it would be inappropriate (e.g. Date.NoWeekends makes sense for job appointments but NOT for birthdays). Only mark candidates that are genuinely appropriate. " +
           "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator. " +
           "Do NOT apply any CodBi element in this pass — just note which ones look relevant. " +
           "Return the form JSON normally. Include a top-level \"_codbiApplicability\" field with these exact keys: " +

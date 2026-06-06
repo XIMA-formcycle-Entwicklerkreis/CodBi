@@ -2,9 +2,7 @@
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { TYPE } from "xdbc/src/DBC/TYPE";
-import { AE } from "xdbc/src/DBC/AE";
 import { REGEX } from "xdbc/src/DBC/REGEX";
-import { IF } from "xdbc/src/DBC/IF";
 // #endregion XDBC
 // #endregion Imports
 /**
@@ -15,6 +13,26 @@ import { IF } from "xdbc/src/DBC/IF";
  * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class HTML_CSS {
+  /**
+   * Strips known dangerous CSS patterns that could be used for injection:
+   * - url(http://...) and url(https://...) — blocks external URLs to
+   *   prevent data exfiltration via attribute selectors + background-image
+   *   requests. Allows relative URLs (e.g. url(/images/bg.png)) and
+   *   data: URIs (e.g. url(data:image/png;base64,...)).
+   * - javascript: URLs in CSS values (defense-in-depth)
+   * - expression() — IE legacy JS execution in CSS
+   * - -moz-binding — Firefox legacy XBL execution
+   * - behavior: — IE legacy
+   */
+  public static sanitizeCss(css: string): string {
+    return css
+      .replace(/url\s*\(\s*(?:https?:\/\/[^)]*)\s*\)/gi, "/* external url blocked */")
+      .replace(/javascript\s*:/gi, "blocked:")
+      .replace(/expression\s*\(/gi, "blocked(")
+      .replace(/-moz-binding\s*:/gi, "-moz-blocked:")
+      .replace(/behavior\s*:/gi, "blocked:");
+  }
+
   /** The {@link RegExp} used to validate replacement strings. */
   public static rexpReplacements: RegExp = /^.+\s*\|\s*.+$/;
   /**
@@ -80,11 +98,16 @@ export class HTML_CSS {
       }
     }
 
-    // Security: Use textContent instead of innerHTML to prevent XSS via
-    // malicious CSS values (e.g. </style><script>alert(1)</script>).
-    // The < → { and > → } replacements are still applied for the CodBi
-    // CSS placeholder syntax.
-    style.textContent = (toLoad.css as string).replace(/</g, "{").replace(/>/g, "}").replace(/§/g, ",");
+    // Security:
+    // 1. Sanitize known dangerous CSS patterns (javascript:, expression(), etc.)
+    // 2. Use textContent instead of innerHTML to prevent XSS via
+    //    malicious CSS values (e.g. </style><script>alert(1)</script>).
+    // 3. The < → { and > → } replacements are still applied for the CodBi
+    //    CSS placeholder syntax.
+    style.textContent = HTML_CSS.sanitizeCss(toLoad.css as string)
+      .replace(/</g, "{")
+      .replace(/>/g, "}")
+      .replace(/§/g, ",");
 
     toProcess.setAttribute("cbCSS", "");
 

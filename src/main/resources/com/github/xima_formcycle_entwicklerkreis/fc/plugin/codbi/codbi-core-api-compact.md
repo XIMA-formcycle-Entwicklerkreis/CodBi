@@ -1,5 +1,19 @@
 # CodBi Core Components API (Compact)
 
+### CRITICAL — PANEL CSS CLASSES vs XCONTAINERS
+Panel CSS classes (CodBi_HTML_Panel_*) ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' property that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. Therefore, for containers (XContainer, XContainerInvisible) that need to be a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader="true" and a data-cb-autoheadertitle. If the user's prompt specifies a title, use that as the data-cb-autoheadertitle value; otherwise generate a descriptive title from the container's content (e.g. "Geburtsdatum" for a date-of-birth section, "Anschrift" for an address section).
+
+### CRITICAL — COLLAPSIBLE XCONTAINERS (UI.Panels)
+When the user asks for a collapsible, expandable, or foldable container ("aus- und einklappbar", "auf- und zuklappbar", "accordion") and it is an XContainer (div), use data-cb-func=html.panel via the attributes array (as {"text":"data-cb-func","value":"html.panel"}). ALSO set data-cb-generateheader="true" (as {"text":"data-cb-generateheader","value":"true"}) and data-cb-autoheadertitle in the attributes array for the panel header title. If the user's prompt specifies a title use that, otherwise generate a descriptive title from the container's content (e.g. "Geburtsdatum" for a date-of-birth section, "Anschrift" for an address section).
+- Folded state: By default the panel starts unfolded. Only add data-cb-folded="true" (as {"text":"data-cb-folded","value":"true"}) if the user explicitly wants the panel to start collapsed.
+- COLLAPSIBLE FIELDSETS: This does NOT apply to XFieldSet (fieldset). For fieldsets, the panel automatically uses the fieldset's legend as the title. Use the CSS class CodBi_HTML_Panel_Standard on the fieldset instead (no data-cb-func=html.panel needed — the CSS class triggers the standard configuration which provides the HTML.Panel behavior).
+- XContainer example: {"className":"XContainer","properties":{"name":"coGeburtsdatum","id":"xi-co-geburtsdatum","elements":["tfGeburtsdatum"],"fullwidth":"0","attributes":[{"text":"data-cb-func","value":"html.panel"},{"text":"data-cb-generateheader","value":"true"},{"text":"data-cb-autoheadertitle","value":"Geburtsdatum"}]}}
+- XFieldSet example (CSS class, no data-cb-func needed): {"className":"XFieldSet","properties":{"name":"fsGeburtsdatum","id":"xi-fs-geburtsdatum","legend":"Geburtsdatum","elements":["tfGeburtsdatum"],"fullwidth":"0","cssclasses":["CodBi_HTML_Panel_Standard"]}}
+- Available panel classes: CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal
+- Accordion classes: CodBi_Accordion_A/B/C/D
+- Exclusion class: CodBi_HTML_Panel_NoCordion (marks panels inside an accordion that should NOT participate in accordion behavior)
+- For nested panels use different classes per level (e.g. outer on fieldset: CodBi_HTML_Panel_Standard, inner on fieldset: CodBi_HTML_Panel_Flat).
+
 Compact reference for AI prompts: one sentence per component and parameter.
 
 ### GENERIC RULE for all CSS-Selector parameters below
@@ -92,6 +106,19 @@ when CodBi searches within the shared parent container.
   - Flags: The RegExp - flags string used to create the "expression" (defaults to "g").
   - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
   - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
+- HTML.Select.Favorites: Applicable on a XSelect element to rearrange options so that specified favorites appear at the top, separated by an optional divider.
+  - Divider: The text content for the divider option that separates favorites from the rest.
+  - DividerTarget: The value of the option to select when the user clicks the divider (defaults to previously selected option).
+  - Favorites: CSV string of option texts (innerHTML) to show as favorites at the top, e.g. "Bayern,Hessen,Sachsen". CodBi automatically converts the CSV to an array at runtime.
+  - InitialElement: The value (NOT the display text) of the option to select when the form loads. When not specified by the user's prompt, set the data-cb-initialElement attribute on the <select> element to the value of the FIRST option — the runtime will use it as the default selection. This prevents the divider from being unintentionally selected. Example: data-cb-initialElement="bayern".
+- HTML.Select.Injection: Applicable on a XSelect element to dynamically populate it with options from an array of values. Supports Element Placeholders (EPs) like {BayVIS.Behoerden>bezeichnung} to fill the select from external directories at render time. Use this whenever the user wants a select to contain data from an external source (BayVIS directory, API, etc.).
+  - Values: REQUIRED. An array of option texts/values. Can contain Element Placeholders (EPs) like "{BayVIS.Behoerden>bezeichnung}" which are resolved at render time to populate the select with all entries from the BayVIS authority directory. When the user asks for a select with "all offices from BayVIS" or similar, use Values="{BayVIS.Behoerden>bezeichnung}".
+  - Titles: REQUIRED. An array of title attributes for the options. ALWAYS set this to the same value as data-cb-Values unless the user explicitly specifies different titles. Example: if data-cb-Values="{BayVIS.Behoerden>bezeichnung}" then also set data-cb-Titles="{BayVIS.Behoerden>bezeichnung}".
+  - ReClean: Optional boolean (true/false). When true, clears existing options before populating. Defaults to false.
+  - ValueProperty: Optional — the property name to extract as the option's value from each object in Values.
+  - TextProperty: Optional — the property name to extract as the option's display text from each object in Values.
+  - TitleProperty: Optional — the property name to extract as the option's title from each object in Values.
+  Note: When EPs like {BayVIS.Behoerden>bezeichnung} are used, set data-cb-Values to the EP string (the EP is resolved server-side at render time).
 - HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. Available CSS classes: CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for standalone panels; CodBi_Accordion_A/B/C/D for accordions; CodBi_HTML_Panel_NoCordion to exclude from accordion. Use a CSS class (no data-cb-func needed) for standard pre-configured panels. Use data-cb-func=html.panel when the user wants custom CSS or custom header.
   - Accordion: Configures 'Accordion' for this functionality.
   - AutoHeaderLevel: Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,.
@@ -117,13 +144,14 @@ when CodBi searches within the shared parent container.
   - Scroll: Configures 'Scroll' for this functionality.
   - ScrollBlock: Defines the logical position to scroll to when the panel.
   - ScrollToTop: Configures 'ScrollToTop' for this functionality.
-- HTML.SETAttribute: Applicable on any element to dynamically set one or more HTML attributes on it.
-  - Name: The name of the attribute to set.
-  - ToSet: The string to set the attribute to.
-- HTML.Text.Injector: Applicable on any element to inject a dynamic text value into a specific property of that element.
-  - Placeholder: Specifies the string that shall be replaced within the.
-  - Property: Specifies which property of the Element "toProcess" shall receive the "Replacement".
-  - Replacement: The string to replace all occurrences of the specified "Placeholder" or at the end of the.
+- HTML.SETAttribute: Applicable on any element to set an HTML attribute to a specified value. Can be combined with other functionalities on the same element by comma-separating data-cb-func values (e.g. data-cb-func="html.select.injection,html.setattribute").
+  - Name: The name of the attribute to set (e.g. "style", "class", "data-custom", "aria-label", "role").
+  - ToSet: The string value to set the attribute to.
+  Example: To set style="box-shadow: 0 0 1em darkorange" on a select that already has html.select.injection, use data-cb-func="html.select.injection,html.setattribute" with data-cb-Name="style" and data-cb-ToSet="box-shadow: 0 0 1em darkorange".
+- HTML.Text.Injector: Applicable on any element to replace placeholder text with a dynamic replacement value at runtime. The element's static content (e.g. "rtevalue" for XSpan) MUST keep its placeholder text unchanged — do NOT replace it with the EP expression. Instead, apply data-cb-func="html.text.injector" on the element and set the parameters below. Example: An XSpan with rtevalue="Aktuelle Daten: [[INJECTOR_REPLACEMENT]]" must keep that rtevalue as-is. Add attributes: [{"text":"data-cb-func","value":"html.text.injector"},{"text":"data-cb-replacement","value":"{ Data.CSV > { Net.URL > https://example.com/data.csv }}"},{"text":"data-cb-property","value":"innerHTML"}]. The EP expression goes into data-cb-replacement, NOT into rtevalue.
+  - Placeholder: Specifies the string that shall be replaced within the tagged element's specified Property. Defaults to "[[INJECTOR_REPLACEMENT]]". Keep this placeholder in the element's static content — do NOT replace it with the EP. CRITICAL: Set this to the EXACT text found in the element's content (e.g. "[[PH]]" or "##VALUE##"). Do NOT use FORMCYCLE's [%fieldname%] syntax — that is a different system for field value references, NOT for CodBi placeholder replacement. Look at the element's rtevalue/textContent to determine what placeholder string is actually present, then copy it verbatim.
+  - Property: Specifies which DOM property of the Element "toProcess" shall receive the "Replacement". CRITICAL: This is a DOM element property name, NOT a FORMCYCLE IPersistJson property. For XSpan content use "innerHTML" (not "rtevalue" — rtevalue is the data model field, not a DOM property). For text nodes use "textContent". For input fields use "value". The runtime accesses element[property], so the value must be a real HTMLElement property.
+  - Replacement: The string to replace all occurrences of the specified "Placeholder" or at the end of the Property's value. Can contain Element Placeholders (EPs) like "{ Data.CSV > { Net.URL > https://example.com/data.csv }}" for dynamic content loading. CRITICAL: Place the EP expression here (data-cb-replacement), NOT in the element's rtevalue or other form properties — EPs are ONLY resolved in data-cb-* attribute values.
 - HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template.
   - CSS: Configures 'CSS' for this functionality.
   - Property: Configures 'Property' for this functionality.
@@ -190,9 +218,10 @@ when CodBi searches within the shared parent container.
   - Param[2]: An optional property of the directory, like e.g.
 - BayVIS.Behoerden.ID: This Element-Placeholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
   - Param[1]: The Name of the authority to retrieve.
-- BayVIS.Behoerden: This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from.
-  - Param[1]: An property of the directory, like e.g.
-- Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >.
+- BayVIS.Behoerden: This Element-Placeholder retrieves the whole BayVIS Authority Directory or a specified property of each entry.
+  - Param[1]: A property of the directory entry to extract. Valid values: behoerdenart (authority type), behoerdengruppe (authority group), bezeichnung (name), email (email address), id (unique ID), sortierreihenfolge (sort order). If omitted, returns the full directory objects.
+  - Usage with HTML.Select.Injection: Set data-cb-Values to "{BayVIS.Behoerden>bezeichnung}" on a XSelect with data-cb-func=html.select.injection to populate the select with all authority names from the BayVIS directory at render time.
+- Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >. Often chained with Net.URL to load remote CSV data: { Data.CSV > { Net.URL > https://example.com/data.csv }}. The inner Net.URL EP fetches the CSV content from the URL, and Data.CSV splits it into an array of strings by comma.
   - Parameters: none.
 - Data.Join: Joins the properties of multiple object s into one.
   - Parameters: none.

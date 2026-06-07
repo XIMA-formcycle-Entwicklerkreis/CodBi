@@ -1,10 +1,11 @@
 {
   "Description": "/functions/Configurations_UI.Panels.loadConfig.html",
+  "notes": "CRITICAL — COLLAPSIBLE XCONTAINERS: When a user asks for a collapsible container (aus- und einklappbar) and it is an XContainer (div), use data-cb-func=html.panel with data-cb-generateheader=\"true\" and data-cb-autoheadertitle for the title (from the prompt or auto-generated). For XFieldSet (fieldset), use the CSS class CodBi_HTML_Panel_Standard instead — the legend provides the title. By default the panel starts unfolded; only add data-cb-folded=true if the user explicitly wants the panel to start collapsed.",
   "classes": {
-    "CodBi_HTML_Panel_Standard": "Apply to a container (XContainer or XFieldSet) to wrap it in a collapsible panel with shaded header that changes color when unfolded.",
-    "CodBi_HTML_Panel_Flat": "Apply to a container to wrap it in a flat (no shading) collapsible panel.",
-    "CodBi_HTML_Panel_Minimal": "Apply to a container to wrap it in a minimal collapsible panel.",
-    "CodBi_HTML_Panel_Index": "Apply to a container to add an index/anchor navigation panel.",
+    "CodBi_HTML_Panel_Standard": "Apply to a fieldset to wrap it in a collapsible panel with shaded header that changes color when unfolded. Use on XFieldSet only (containers must use data-cb-func=html.panel with data-cb-autoheadertitle).",
+    "CodBi_HTML_Panel_Flat": "Apply to a fieldset to wrap it in a flat (no shading) collapsible panel. Use on XFieldSet only.",
+    "CodBi_HTML_Panel_Minimal": "Apply to a fieldset to wrap it in a minimal collapsible panel. Use on XFieldSet only.",
+    "CodBi_HTML_Panel_Index": "Apply to a fieldset to add an index/anchor navigation panel. Use on XFieldSet only.",
     "CodBi_HTML_Panel_NoCordion": "Apply to a container inside an accordion group to exclude it from accordion behavior.",
     "CodBi_Accordion_A": "Apply to a container to set up accordion group A. Panels with the same accordion letter will fold/unfold together.",
     "CodBi_Accordion_B": "Apply to a container to set up accordion group B.",

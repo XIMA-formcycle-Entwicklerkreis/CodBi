@@ -373,7 +373,8 @@ class AICodBiAssistant : IPluginServletAction {
                 "RULES — TWO-OPTION RULE: CSS classes exist ONLY in the list below. For each field, pick ONE: (A) exact CSS class match exists → use it; (B) no CSS class → use data-cb-func. NEVER invent CSS class names. (a) Apply AT MOST ONE CSS class per field. (b) Only apply a class when it has an EXACT match. (c) For Time/Date frames: use CSS class when available (N=1-5); fallback to data-cb-func if all 5 used. When using a CSS class, do NOT add data-cb-func for the SAME behavior — but MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends). (d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (e) REDUNDANCY: A CSS class replaces data-cb-func ONLY when they provide the SAME behavior. CodBi_People_PLZ (Cleave formatting) does NOT replace OpenPLZ.Autocomplete. (f) Street names and localities have no CSS class. (g) CRITICAL — OpenPLZ.Autocomplete via data-cb-func must be set on ALL address fields in a group (postal code, locality, street, building number). Never skip the postal code field.\n" +
                 "   h) NUMBERING — When creating frame CSS classes (TimeFrame_N_Begin/End or DateFrame_N_Begin/End), scan existing form items for which N (1-5) are already used. Use the lowest unused N for each new pair.\n" +
                 "   i) Form.Navigator AUTO-GENERATES navigation buttons — do NOT add XButtonList or manual page-navigation buttons. The functionality creates them automatically.\n" +
-                "   j) For panels and accordions: CodBi_HTML_Panel_* CSS classes exist — use them. Do NOT add data-cb-func=html.panel when using a panel CSS class.\n" +
+                "   j) CRITICAL — Panel CSS classes (CodBi_HTML_Panel_*) ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. For containers that need a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and data-cb-autoheadertitle. For fieldsets, panel CSS classes are fine (the legend provides the title).\n" +
+                "   k) CRITICAL — HTML.Select.Favorites: When applying this functionality you MUST also add a data-cb-initialElement attribute to the XSelect's attributes array. Set its value to the value property (NOT the display text) of the FIRST option. Example: first option is {\"text\":\"Bayern\",\"value\":\"Bayern\"} → add {\"text\":\"data-cb-initialElement\",\"value\":\"Bayern\"}. This prevents the divider from being unintentionally selected.\n" +
                 "Available CSS classes:\n" +
                 "=== People === CodBi_People_Name (for person names only), CodBi_People_Alphanumeric (codes/IDs only), CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ (postal codes, use alone), CodBi_People_18plus, CodBi_People_16plus, CodBi_People_BuildingNumber\n" +
                 "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
@@ -381,6 +382,8 @@ class AICodBiAssistant : IPluginServletAction {
                 "=== LDAP.Autofill === CodBi_LDAP_AC_*\n" +
                 "=== AI === AI_LLAMA_*, AI_OCR_*\n" +
                 "=== UI.Panels === CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for panels. CodBi_HTML_Panel_NoCordion marks panels excluded from accordion. CodBi_Accordion_A/B/C/D for accordions.\n" +
+                "CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' property that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. Therefore, for containers (XContainer, XContainerInvisible) that need to be a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and a data-cb-autoheadertitle. If the user's prompt specifies a title, use that as the data-cb-autoheadertitle value; otherwise generate a descriptive title from the container's content (e.g. \"Geburtsdatum\" for a date-of-birth section, \"Anschrift\" for an address section).\n" +
+                "CRITICAL — COLLAPSIBLE XCONTAINERS: When the user asks for a collapsible/expandable/foldable container and it is an XContainer (div), use data-cb-func=html.panel via the attributes array. ALSO set data-cb-generateheader=\"true\" and data-cb-autoheadertitle for the title (from the prompt or auto-generated). For XFieldSet (fieldset), use the CSS class CodBi_HTML_Panel_Standard instead — the legend provides the title. Only add \"data-cb-folded\":\"true\" if the user explicitly wants the panel to start collapsed.\n" +
                 "=== Print.Removal === CodBi_Print_Remove_*\n" +
                 "=== BayVIS === CodBi_BayVIS_*\n" +
                 "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
@@ -525,7 +528,8 @@ class AICodBiAssistant : IPluginServletAction {
                 "Set data-cb-* parameter attributes as documented. " +
                 "ADDITIONALLY, you MUST also set CSS classes on elements where applicable. " +
                 "To set a CSS class: add a \"cssclasses\" array to the element's \"properties\" (e.g. \"cssclasses\":[\"CodBi_People_Name\"]). " +
-                "RULES — TWO-OPTION RULE: CSS classes exist ONLY in the list below. For each field, pick ONE: (A) exact CSS class match exists → use it; (B) no CSS class → use data-cb-func. NEVER invent CSS class names. (a) Apply AT MOST ONE CSS class per field. (b) Only apply when it has an EXACT match. (c) For Time/Date frames: use CSS class when available (N=1-5); fallback to data-cb-func if all 5 used. When using a CSS class, do NOT add data-cb-func for the SAME behavior — but MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends). (d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (e) REDUNDANCY: A CSS class replaces data-cb-func ONLY for same behavior. CodBi_People_PLZ does NOT replace OpenPLZ.Autocomplete. (f) Street names and localities have no CSS class. (g) CRITICAL: OpenPLZ.Autocomplete via data-cb-func on ALL address fields including postal code. (h) NUMBERING: Scan existing items for used TimeFrame/DateFrame N values. Use unused N (1-5) for new pairs. (i) Form.Navigator AUTO-GENERATES navigation buttons — do NOT add XButtonList or manual page-navigation buttons. The functionality creates them automatically. (j) For panels and accordions: CodBi_HTML_Panel_* CSS classes exist — use them. Do NOT add data-cb-func=html.panel when using a panel CSS class. The CSS class alone provides the panel behavior.\n" +
+                "RULES — TWO-OPTION RULE: CSS classes exist ONLY in the list below. For each field, pick ONE: (A) exact CSS class match exists → use it; (B) no CSS class → use data-cb-func. NEVER invent CSS class names. (a) Apply AT MOST ONE CSS class per field. (b) Only apply when it has an EXACT match. (c) For Time/Date frames: use CSS class when available (N=1-5); fallback to data-cb-func if all 5 used. When using a CSS class, do NOT add data-cb-func for the SAME behavior — but MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends). (d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (e) REDUNDANCY: A CSS class replaces data-cb-func ONLY for same behavior. CodBi_People_PLZ does NOT replace OpenPLZ.Autocomplete. (f) Street names and localities have no CSS class. (g) CRITICAL: OpenPLZ.Autocomplete via data-cb-func on ALL address fields including postal code. (h) NUMBERING: Scan existing items for used TimeFrame/DateFrame N values. Use unused N (1-5) for new pairs. (i) Form.Navigator AUTO-GENERATES navigation buttons — do NOT add XButtonList or manual page-navigation buttons. The functionality creates them automatically. (j) CRITICAL — Panel CSS classes (CodBi_HTML_Panel_*) ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. For containers that need a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and data-cb-autoheadertitle. For fieldsets, panel CSS classes are fine (the legend provides the title).\n" +
+                "(k) CRITICAL — HTML.Select.Favorites: When applying this functionality you MUST also add a data-cb-initialElement attribute to the XSelect's attributes array. Set its value to the value property (NOT the display text) of the FIRST option. Example: first option is {\"text\":\"Bayern\",\"value\":\"Bayern\"} → add {\"text\":\"data-cb-initialElement\",\"value\":\"Bayern\"}. This prevents the divider from being unintentionally selected.\n" +
                 "Available CSS classes:\n" +
                 "=== People === CodBi_People_Name (person names only), CodBi_People_Alphanumeric (codes/IDs only), CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ (postal codes, use alone), CodBi_People_18plus, CodBi_People_16plus, CodBi_People_BuildingNumber\n" +
                 "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
@@ -533,10 +537,13 @@ class AICodBiAssistant : IPluginServletAction {
                 "=== LDAP.Autofill === CodBi_LDAP_AC_*\n" +
                 "=== AI === AI_LLAMA_*, AI_OCR_*\n" +
                 "=== UI.Panels === CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for panels. CodBi_HTML_Panel_NoCordion marks panels excluded from accordion. CodBi_Accordion_A/B/C/D for accordions.\n" +
+                "CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' property that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. Therefore, for containers (XContainer, XContainerInvisible) that need to be a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and a data-cb-autoheadertitle. If the user's prompt specifies a title, use that as the data-cb-autoheadertitle value; otherwise generate a descriptive title from the container's content (e.g. \"Geburtsdatum\" for a date-of-birth section, \"Anschrift\" for an address section).\n" +
+                "CRITICAL — COLLAPSIBLE XCONTAINERS: When the user asks for a collapsible/expandable/foldable container and it is an XContainer (div), use data-cb-func=html.panel via the attributes array. ALSO set data-cb-generateheader=\"true\" and data-cb-autoheadertitle for the title (from the prompt or auto-generated). For XFieldSet (fieldset), use the CSS class CodBi_HTML_Panel_Standard instead — the legend provides the title. Only add \"data-cb-folded\":\"true\" if the user explicitly wants the panel to start collapsed.\n" +
                 "=== Print.Removal === CodBi_Print_Remove_*\n" +
                 "=== BayVIS === CodBi_BayVIS_*\n" +
                 "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
                 "CRITICAL: CSS classes ONLY exist for the domains listed above. For any functionality NOT listed here (e.g. Form.Navigator, OpenPLZ.Autocomplete, Date.Min, Date.NoWeekends, HTML.Input.REGEX, HTML.CSS, etc.), there is NO CSS class — you MUST use data-cb-func. NEVER invent CSS class names.\n" +
+                "CRITICAL: PRESERVE the element's EXISTING content properties (\"rtevalue\", \"textContent\", \"label\", \"legend\", \"placeholder\", \"value\") — do NOT modify them. The CodBi functionality will replace the placeholder text at runtime via data-cb-replacement. If you change rtevalue to contain the EP expression \"{ Data.CSV > ... }\", the user will see the literal EP text in the browser because EPs are NOT resolved in form element properties.\n" +
                 "IMPORTANT: PRESERVE any existing \"cssclasses\" array already set on elements from the input — only add entries or create a new array if none exists.\n" +
                 "Respond ONLY with a JSON object: " +
                 "{\"items\":[...same elements with modifications applied...],\"_codbiApplicability\":{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace counts)," +
@@ -851,11 +858,15 @@ class AICodBiAssistant : IPluginServletAction {
           "\n" +
           """{"className":"XContainer","properties":{"name":"coExample","id":"xi-co-example","elements":[],"fullwidth":"0"}}""" +
           "\n" +
+          "   ← For COLLAPSIBLE containers (\"aus- und einklappbar\", \"auf- und zuklappbar\"): add attributes with data-cb-func=html.panel, data-cb-generateheader=\"true\" and data-cb-autoheadertitle (see COLLAPSIBLE XCONTAINERS rule below). Do NOT use panel CSS classes — they only work on XFieldSet.\n" +
+          "\n" +
           """{"className":"XSignature","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0"}}""" +
           "\n" +
           """{"className":"XAppointment","properties":{"name":"apExample","id":"xi-ap-example","label":"Example","required":"0","fullwidth":"0"}}""" +
           "\n" +
           """{"className":"XContainerInvisible","properties":{"name":"cinExample","id":"xi-cin-example","elements":[],"fullwidth":"0"}}""" +
+          "\n" +
+          "   ← For COLLAPSIBLE containers (\"aus- und einklappbar\", \"auf- und zuklappbar\"): add attributes with data-cb-func=html.panel, data-cb-generateheader=\"true\" and data-cb-autoheadertitle (see COLLAPSIBLE XCONTAINERS rule below). Do NOT use panel CSS classes — they only work on XFieldSet.\n" +
           "\n" +
           """{"className":"XLine","properties":{"name":"liExample","id":"xi-li-example"}}""" +
           "\n" +
@@ -904,7 +915,9 @@ class AICodBiAssistant : IPluginServletAction {
           "=== Appointments === CodBi_NoFutureDate (no future dates), CodBi_DateFrame_N_Begin/End (date ranges, N=1-5), CodBi_TimeFrame_N_Begin/End (time ranges, N=1-5). When using CodBi_TimeFrame_* or CodBi_DateFrame_* classes, do NOT also add data-cb-func=time.frame or data-cb-func=date.frame — the CSS class already provides that behavior. You MAY still add data-cb-func for a DIFFERENT functionality on the same field (e.g. date.noweekends).\n" +
           "=== LDAP.Autofill === CodBi_LDAP_AC_* fields for LDAP autocomplete.\n" +
           "=== AI === AI_LLAMA_CHAT_*, AI_LLAMA_STANDARD_QA_Question, AI_LLAMA_STANDARD_TXTQA_Question, AI_LLAMA_TXTQA_Source, AI_LLAMA_QA_Exclude, AI_OCR_Receiver\n" +
-          "=== UI.Panels === CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for standalone panels; CodBi_Accordion_A/B/C/D for accordions. CodBi_HTML_Panel_NoCordion is a marker class for panels inside an accordion that should NOT participate in the accordion behavior. Use a CSS class for standard pre-configured panels. Use data-cb-func=html.panel with parameters when the user wants custom CSS or custom title. For nested panels use different CSS classes per level (e.g. outer: CodBi_HTML_Panel_Standard, inner: CodBi_HTML_Panel_Flat).\n" +
+          "=== UI.Panels === CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for standalone panels; CodBi_Accordion_A/B/C/D for accordions. CodBi_HTML_Panel_NoCordion is a marker class for panels inside an accordion that should NOT participate in the accordion behavior.\n" +
+          "CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' property that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. Therefore, for containers (XContainer, XContainerInvisible) that need to be a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and a data-cb-autoheadertitle. If the user's prompt specifies a title, use that as the data-cb-autoheadertitle value; otherwise generate a descriptive title from the container's content (e.g. \"Geburtsdatum\" for a date-of-birth section, \"Anschrift\" for an address section). For nested panels use different CSS classes per level (e.g. outer on fieldset: CodBi_HTML_Panel_Standard, inner on fieldset: CodBi_HTML_Panel_Flat).\n" +
+          "CRITICAL — COLLAPSIBLE XCONTAINERS: When the user asks for a collapsible/expandable/foldable container and it is an XContainer (div), use data-cb-func=html.panel via the attributes array. ALSO set data-cb-generateheader=\"true\" and data-cb-autoheadertitle for the title (from the prompt or auto-generated). For XFieldSet (fieldset), use the CSS class CodBi_HTML_Panel_Standard instead — the legend provides the title. Only add \"data-cb-folded\":\"true\" if the user explicitly wants the panel to start collapsed.\n" +
           "=== Print.Removal === CodBi_Print_Remove_Tagged / Parent / PrintOnly.\n" +
           "=== BayVIS === CodBi_BayVIS_Behoerde / BehoerdeUndAnsprechpartner / Ansprechpartner / Auswahl_Behoerden.\n" +
           "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_PLZ / Locality / Street / BuildingNumber.\n" +
@@ -914,12 +927,19 @@ class AICodBiAssistant : IPluginServletAction {
           "REMINDER: CSS classes ONLY exist for the domains listed above. For everything else, use data-cb-func. Never invent CSS class names.\n\n" +
           "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
           "For each listed element, use your judgment to decide if a functionality is useful for a field. Consider BOTH whether it could benefit AND whether it would be inappropriate (e.g. Date.NoWeekends makes sense for job appointments but NOT for birthdays). Only mark candidates that are genuinely appropriate. " +
-          "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator. " +
+          "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; " +
+          "Any prompt asking to \"replace placeholders\" or \"fill in\" dynamic content from an EP (like \"{ Data.CSV > { Net.URL > ... }}\") into an element → HTML.Text.Injector on the target element. Set data-cb-replacement to the EP expression AS-IS (do NOT resolve it), data-cb-placeholder to the placeholder string verbatim (copy it character-for-character from the element's content — e.g. \"<<PH>>\", \"[[PH]]\", \"##VALUE##\", \"{{name}}\", whatever it literally is). CRITICAL: do NOT change the brackets or formatting; if the text has \"[[PH]]\" set \"[[PH]]\", not \"[%PH%]\". data-cb-property=\"innerHTML\". Keep the element's rtevalue unchanged. " +
           "Do NOT apply any CodBi element in this pass — just note which ones look relevant. " +
           "Return the form JSON normally. Include a top-level \"_codbiApplicability\" field with these exact keys: " +
           "{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace 4 with actual field count; replace 23 with how many CODBI CORE ELEMENTS list entries you read)," +
           "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"formElementId\", ...]}] (CodBi functionality IDs with the form element ids they could apply to),\"applied\":[],\"skipped\":[]}. " +
           "The server will handle application in a second pass if candidates are found. This metadata field is removed server-side before the form is applied." +
+          "\n" +
+          "CRITICAL — HTML.Select.Favorites: When applying this functionality you MUST also add a data-cb-initialElement attribute " +
+          "to the XSelect's attributes array. Set its value to the value property (NOT the display text) of the FIRST option. " +
+          "This prevents the divider from being unintentionally selected. " +
+          "Example: the first option is {\"text\":\"Bayern\",\"value\":\"Bayern\"} → add {\"text\":\"data-cb-initialElement\",\"value\":\"Bayern\"} to the attributes array. " +
+          "Do NOT skip this — the runtime requires it to select the correct default option.\n" +
           "\n" +
           CodbiCapabilities.buildSection()
 
@@ -1332,6 +1352,36 @@ class AICodBiAssistant : IPluginServletAction {
           // New item created by AI — validate and preserve workflow-visibility props, then
           // strip all remaining code/presentation fields.
           item.getAsJsonObject("properties")?.let { props ->
+            // Extract any data-cb-* attributes from the AI's attributes object/array BEFORE
+            // stripping, and promote them to direct property keys. The conversion code at the
+            // end of restoreStrippedFields will convert them to the proper attributes array
+            // format ([{"text":"data-cb-func","value":"html.panel"},...]).
+            val attrsEl = props.get("attributes")
+            if (attrsEl != null) {
+              if (attrsEl.isJsonObject) {
+                // AI output format: "attributes": {"data-cb-func":"html.panel", ...}
+                for ((key, value) in attrsEl.asJsonObject.entrySet()) {
+                  if (key.startsWith("data-cb-") && value.isJsonPrimitive) {
+                    props.addProperty(key, value.asString)
+                  }
+                }
+              } else if (attrsEl.isJsonArray) {
+                // Proper array format: "attributes": [{"text":"data-cb-func","value":"html.panel"},
+                // ...]
+                // Also support "name" key which some AI models use instead of "text".
+                for (item in attrsEl.asJsonArray) {
+                  if (item.isJsonObject) {
+                    val text =
+                        item.asJsonObject.get("text")?.asString
+                            ?: item.asJsonObject.get("name")?.asString
+                    val value = item.asJsonObject.get("value")?.asString
+                    if (text != null && text.startsWith("data-cb-") && value != null) {
+                      props.addProperty(text, value)
+                    }
+                  }
+                }
+              }
+            }
             val validatedVisibility =
                 SANITIZED_VISIBILITY_PROPS.mapNotNull { key ->
                   val v = props.get(key) ?: return@mapNotNull null
@@ -1345,6 +1395,34 @@ class AICodBiAssistant : IPluginServletAction {
         }
         val origProps = origItem.getAsJsonObject("properties") ?: continue
         val resultProps = item.getAsJsonObject("properties") ?: continue
+        // Promote any data-cb-* entries from the AI's attributes array to direct property
+        // keys BEFORE restoring the original attributes (which may be empty). This mirrors
+        // the promotion done for new items (see above) and handles cases where the AI
+        // outputs attributes in the array format rather than as direct property keys.
+        val attrsEl = resultProps.get("attributes")
+        if (attrsEl != null) {
+          if (attrsEl.isJsonObject) {
+            for ((key, value) in attrsEl.asJsonObject.entrySet()) {
+              if (key.startsWith("data-cb-") && value.isJsonPrimitive) {
+                resultProps.addProperty(key, value.asString)
+              }
+            }
+          } else if (attrsEl.isJsonArray) {
+            for (item in attrsEl.asJsonArray) {
+              if (item.isJsonObject) {
+                // Support both {"text":"data-cb-...","value":"..."} and
+                // {"name":"data-cb-...","value":"..."}
+                val text =
+                    item.asJsonObject.get("text")?.asString
+                        ?: item.asJsonObject.get("name")?.asString
+                val value = item.asJsonObject.get("value")?.asString
+                if (text != null && text.startsWith("data-cb-") && value != null) {
+                  resultProps.addProperty(text, value)
+                }
+              }
+            }
+          }
+        }
         for (key in STRIPPED_ITEM_PROPS) {
           val v = origProps.get(key)
           if (v != null) resultProps.add(key, v) else resultProps.remove(key)
@@ -1606,8 +1684,10 @@ class AICodBiAssistant : IPluginServletAction {
             JsonArray().also { props.add("attributes", it) }
           }
       for (key in cbKeys) {
-        val value = if (props.get(key)?.isJsonPrimitive == true) props.get(key).asString else null
+        var value = if (props.get(key)?.isJsonPrimitive == true) props.get(key).asString else null
         if (value != null) {
+          // Decode common Unicode escapes that some AI models produce (e.g. \u003e → >)
+          value = decodeUnicodeEscapes(value)
           val attrObj = JsonObject()
           attrObj.addProperty("text", key)
           attrObj.addProperty("value", value)
@@ -1617,6 +1697,19 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
     return gson.toJson(result)
+  }
+
+  /**
+   * Decodes common Unicode escape sequences that some AI models produce in JSON string values. For
+   * example, `\u003e` (Unicode escape for `>`) is decoded to `>`. This ensures element placeholders
+   * like {BayVIS.Behoerden>bezeichnung} are not corrupted when the AI escapes the `>` character as
+   * `\u003e`.
+   */
+  private fun decodeUnicodeEscapes(value: String): String {
+    return value.replace(Regex("\\\\u([0-9a-fA-F]{4})")) { matchResult ->
+      val hex = matchResult.groupValues[1]
+      Integer.parseInt(hex, 16).toChar().toString()
+    }
   }
 
   /**
@@ -1686,7 +1779,8 @@ class AICodBiAssistant : IPluginServletAction {
           // Print.Removal standard
           "CodBi_Print_" to "Print.Removal",
           // UI.Panels standard
-          "CodBi_UI_" to "UI.Panels")
+          "CodBi_HTML_Panel_" to "UI.Panels",
+          "CodBi_Accordion_" to "UI.Panels")
 
   /**
    * Scans all items in the modified form JSON for CSS classes (stored in properties.cssclasses) and

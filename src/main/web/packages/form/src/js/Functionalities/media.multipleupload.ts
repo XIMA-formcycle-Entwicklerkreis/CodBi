@@ -35,14 +35,37 @@ export class Media_MultipleUpload {
     toLoad: { [key: string]: string },
 
     @INSTANCE.PRE(HTMLInputElement, "Is it not an <input> that is tagged with this functionality?")
-    @EQ.PRE("type", false, 'Is it not an <input type = "file"> that is tagged with this functionality?', "type")
+    @EQ.PRE("file", false, 'Is it not an <input type = "file"> that is tagged with this functionality?', "type")
     toProcess: Element,
   ): void {
     const maximum = toLoad.maximum ? Number.parseInt(toLoad.maximum) : 2;
-    const labelText = DEFINED.tsCheck<HTMLSpanElement>(
-      toProcess.parentElement.querySelector("label span"),
-      'Isn\'t there a <label> with a <span> for the tagged <input type="file">?',
-    ).innerHTML;
+
+    // Resolve the label text element: prefer a <span> inside the <label>. If no <span> exists,
+    // create one and move the label's text nodes into it (so we never risk wiping out the <input>
+    // by writing innerHTML on the <label> itself).
+    const label = DEFINED.tsCheck<HTMLElement>(
+      toProcess.parentElement.querySelector("label"),
+      'Isn\'t there a <label> for the tagged <input type="file">?',
+    );
+    let labelTextEl = label.querySelector("span");
+    if (!labelTextEl) {
+      labelTextEl = document.createElement("span");
+      // Collect text nodes from the label, excluding the <input> and other elements
+      const textParts: string[] = [];
+      for (const node of label.childNodes) {
+        if (node.nodeType === Node.TEXT_NODE) {
+          textParts.push(node.textContent ?? "");
+        }
+      }
+      labelTextEl.textContent = textParts.join("").trim();
+      label.insertBefore(labelTextEl, label.querySelector("input"));
+    }
+    const labelText = labelTextEl.innerHTML;
+
+    // Helper to set the label text back (restore or update with filenames).
+    const setLabelText = (text: string): void => {
+      labelTextEl.innerHTML = text;
+    };
 
     // Prevent formcycle's combined filename length check from triggering false positives
     // when multiple files are selected. The individual check below replaces it.
@@ -65,38 +88,34 @@ export class Media_MultipleUpload {
           getJQuery()(toProcess).error(`Filename "${tooLong.name}" exceeds the maximum length of ${limit} characters.`);
         } else {
           getJQuery()(toProcess).error("");
-          toProcess.parentElement.querySelector("label span").innerHTML = labelText;
+          setLabelText(labelText);
 
           if ((toProcess as HTMLInputElement).files.length !== 1) {
-            toProcess.parentElement.querySelector("label span").innerHTML = `${labelText} (`;
+            let text = `${labelText} (`;
 
             for (const file of (toProcess as HTMLInputElement).files) {
-              toProcess.parentElement.querySelector("label span").innerHTML += `${file.name}, `;
+              text += `${file.name}, `;
             }
 
-            toProcess.parentElement.querySelector("label span").innerHTML = toProcess.parentElement
-              .querySelector("label span")
-              .innerHTML.substring(0, toProcess.parentElement.querySelector("label span").innerHTML.length - 2);
-
-            toProcess.parentElement.querySelector("label span").innerHTML += ")";
+            text = text.substring(0, text.length - 2);
+            text += ")";
+            setLabelText(text);
           }
         }
       } else {
         getJQuery()(toProcess).error("");
-        toProcess.parentElement.querySelector("label span").innerHTML = labelText;
+        setLabelText(labelText);
 
         if ((toProcess as HTMLInputElement).files.length !== 1) {
-          toProcess.parentElement.querySelector("label span").innerHTML = `${labelText} (`;
+          let text = `${labelText} (`;
 
           for (const file of (toProcess as HTMLInputElement).files) {
-            toProcess.parentElement.querySelector("label span").innerHTML += `${file.name}, `;
+            text += `${file.name}, `;
           }
 
-          toProcess.parentElement.querySelector("label span").innerHTML = toProcess.parentElement
-            .querySelector("label span")
-            .innerHTML.substring(0, toProcess.parentElement.querySelector("label span").innerHTML.length - 2);
-
-          toProcess.parentElement.querySelector("label span").innerHTML += ")";
+          text = text.substring(0, text.length - 2);
+          text += ")";
+          setLabelText(text);
         }
       }
     });

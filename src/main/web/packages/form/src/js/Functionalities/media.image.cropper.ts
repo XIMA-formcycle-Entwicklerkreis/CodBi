@@ -56,7 +56,7 @@ export class Media_Image_Cropper {
     @REGEX.PRE(REGEX.stdExp.cssSelector, "imageurl")
     @TYPE.PRE("string | number", "aspectratio :: outputwidth")
     @IF.PRE(new TYPE("string"), new REGEX(Media_Image_Cropper.stdExp.aspectRatio), "aspectratio")
-    @IF.PRE(new TYPE("string"), new REGEX(/[1-9][1-9][1-9]+/), "outputwidth")
+    @IF.PRE(new TYPE("string"), new REGEX(/[0-9][0-9][0-9]+/), "outputwidth")
     toLoad: { [key: string]: unknown },
 
     @OR.PRE(
@@ -158,7 +158,7 @@ export class Media_Image_Cropper {
 
           if (canvas) {
             const targetBoundingClientRect = target.getBoundingClientRect();
-            console.log(canvas, canvas?.clientHeight, canvas?.clientHeight, window.devicePixelRatio, "canvas");
+
             canvas
               .$toCanvas({
                 width: toLoad.outputwidth ? (toLoad.outputwidth as number) : 1000,

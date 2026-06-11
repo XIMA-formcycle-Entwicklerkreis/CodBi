@@ -47,6 +47,19 @@ when CodBi searches within the shared parent container.
   - VoiceSendHotkey: Configures 'VoiceSendHotkey' for this functionality.
   - WaitingText: Configures 'WaitingText' for this functionality.
   - WelcomeText: Configures 'WelcomeText' for this functionality.
+- OnChange.Conditional: Applicable on any input field to conditionally apply a CodBi functionality to a target element depending on whether the field's value satisfies a comparison with a reference value.
+  - Candidate: CSS-Class-Selector for the monitored input field (e.g., '.tfGeburtsdatum'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
+  - DateFormat: Optional date format string (e.g. "DD.MM.YYYY") when comparing date values. Triggers date parsing of the candidate value before comparison.
+  - Mode: Comparison mode: GT (greater than), GTEQ (greater than or equal), LT (lower than), LTEQ (lower than or equal), EQ (equal), NEQ (not equal).
+  - Reference: The value to compare against. Can be a literal or an Element Placeholder (EP) expression like "{ Date.Today > -18y }" for "today minus 18 years".
+  - Target: CSS-Class-Selector for the element to modify when the condition is TRUE or FALSE (e.g., '.cdivErziehungsberechtigter'). Use dot-prefixed class selector. Do NOT use an ID selector.
+  - _T_FUNC: Functionality ID to apply to the Target when the condition is TRUE (e.g. "HTML.SETAttribute"). Sets data-cb-func on the target.
+  - _T_Name: Attribute name to set on the Target when TRUE (e.g. "style"). Sets data-cb-name on the target.
+  - _T_ToSet: Attribute value to set on the Target when TRUE (e.g. "width:100%;display:block;"). Sets data-cb-toset on the target.
+  - _F_FUNC: Functionality ID to apply to the Target when the condition is FALSE.
+  - _F_Name: Attribute name to set on the Target when FALSE (e.g. "style").
+  - _F_ToSet: Attribute value to set on the Target when FALSE (e.g. "width:100%;display:none;").
+  Use OnChange.Conditional for wenn...dann... / if...then... conditions — NOT Date.Min or CodBi_People_18plus (those restrict input, they do not conditionally apply functionality). EDGE CASE: when showing/hiding a single field with OnChange.Conditional, wrap that field in an XContainer and target the container instead.
 - AI.OCR: Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
   - Field: CSS-Class-Selector for the field receiving the OCR output (e.g., '.tfExtractedText'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - FieldPattern_: Configures 'FieldPattern_' for this functionality.
@@ -106,6 +119,14 @@ when CodBi searches within the shared parent container.
   - Flags: The RegExp - flags string used to create the "expression" (defaults to "g").
   - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
   - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
+- HTML.Input.Trans.Capital: Applicable on a XTextField to auto-capitalize each word as the user types (first letter uppercase, rest lowercase). No parameters.
+- HTML.Input.Trans.NTW: Applicable on a XTextField to transform a typed number into its word representation (e.g. "123" → "one-two-three").
+  - NumberWords: Array of strings representing the word for each digit 0-9. The index corresponds to the digit.
+  - PreFix: String prepended to the result.
+  - PostFix: String appended to the result.
+- HTML.Input.Trans.RegEx: Applicable on a XTextField to transform input using a custom regex pattern.
+  - Extractor: The regex pattern string to find values to be replaced.
+  - Replacements: The replacement string.
 - HTML.Select.Favorites: Applicable on a XSelect element to rearrange options so that specified favorites appear at the top, separated by an optional divider.
   - Divider: The text content for the divider option that separates favorites from the rest.
   - DividerTarget: The value of the option to select when the user clicks the divider (defaults to previously selected option).
@@ -152,15 +173,15 @@ when CodBi searches within the shared parent container.
   - Placeholder: Specifies the string that shall be replaced within the tagged element's specified Property. Defaults to "[[INJECTOR_REPLACEMENT]]". Keep this placeholder in the element's static content — do NOT replace it with the EP. CRITICAL: Set this to the EXACT text found in the element's content (e.g. "[[PH]]" or "##VALUE##"). Do NOT use FORMCYCLE's [%fieldname%] syntax — that is a different system for field value references, NOT for CodBi placeholder replacement. Look at the element's rtevalue/textContent to determine what placeholder string is actually present, then copy it verbatim.
   - Property: Specifies which DOM property of the Element "toProcess" shall receive the "Replacement". CRITICAL: This is a DOM element property name, NOT a FORMCYCLE IPersistJson property. For XSpan content use "innerHTML" (not "rtevalue" — rtevalue is the data model field, not a DOM property). For text nodes use "textContent". For input fields use "value". The runtime accesses element[property], so the value must be a real HTMLElement property.
   - Replacement: The string to replace all occurrences of the specified "Placeholder" or at the end of the Property's value. Can contain Element Placeholders (EPs) like "{ Data.CSV > { Net.URL > https://example.com/data.csv }}" for dynamic content loading. CRITICAL: Place the EP expression here (data-cb-replacement), NOT in the element's rtevalue or other form properties — EPs are ONLY resolved in data-cb-* attribute values.
-- HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template.
-  - CSS: Configures 'CSS' for this functionality.
-  - Property: Configures 'Property' for this functionality.
-  - Replacements: Configures 'Replacements' for this functionality.
+- HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template. The placeholder syntax is Property-Name surrounded by "[(" and ")]" (e.g. [(vorname)], [(nachname)], [(postanschriftStrasse)]). Use this when the element's content contains [(propertyName)] style placeholders that correspond to data fields from a structured directory (like BayVIS). Do NOT use HTML.Text.Injector for [(...)] placeholders — Injector is for single literal placeholders (e.g. "[[INJECTOR_REPLACEMENT]]", "[[PH]]", "##VALUE##") that are replaced verbatim with a value. CRITICAL — The element's static content (e.g. rtevalue for XSpan) MUST keep its [(placeholder)] text UNCHANGED — do NOT replace it with the EP expression. The EP expression goes ONLY into data-cb-replacements. Example: An XSpan with rtevalue="Ansprechpartner: [(vorname)] [(nachname)]" keeps that rtevalue as-is. Add attributes: data-cb-func="html.text.mapper", data-cb-replacements="{ BayVIS.Ansprechpartner.Details > { BayVIS.Ansprechpartner.ID > { V > BayVIS_Hauptansprechpartner }}}", data-cb-property="innerHTML", data-cb-css="display:block !important". When data must be acquired from multiple EPs, wrap them in Data.Join: "{ Data.Join > { EP1 > ... } ; { EP2 > ... }}".
+  - CSS: Configures 'CSS' for this functionality. Use "display:block !important" to show the element only after placeholders are replaced.
+  - Property: Specifies which DOM property of the Element contains the template string with [(propertyName)] placeholders. CRITICAL: This is a DOM element property name, NOT a FORMCYCLE IPersistJson property. For XSpan content use "innerHTML" (not "rtevalue"). For input fields use "value".
+  - Replacements: An Element Placeholder (EP) expression that resolves to an object whose property names match the [(propertyName)] placeholders in the template. The mapper replaces each [(propertyName)] with the corresponding property value from the resolved object. Can also be an array of objects — if so, the template string is repeated for each object in the array, enabling dynamic list generation. CRITICAL: Place the EP expression here (data-cb-replacements), NOT in the element's rtevalue — EPs are ONLY resolved in data-cb-* attribute values. When multiple EPs are needed to fill all placeholders, use the Data.Join EP to merge them: "{ Data.Join > { EP_A > param } ; { EP_B > param }}".
 - JSON.SET: Applicable on a hidden field to store a JSON-serialized value derived from another element.
   - Path: The dotted path string leading to the object, starting from the.
   - Property: The name of the property to set.
   - ToSet: The object to set the "Property" to.
-- LDAP.Autocomplete.Set: Applicable on form fields that should be auto-filled from a selected LDAP directory match.
+- LDAP.Autocomplete.Set: Applicable on a CONTAINER (XFieldSet or XContainer) that wraps LDAP-autocompleted fields. When a match is found on any child field tagged with LDAP.Autocomplete, all other child fields get auto-filled with their corresponding LDAP properties.
   - CSSProposals: Configures 'CSSProposals' for this functionality.
   - Property: Configures 'Property' for this functionality.
   - URL: Configures 'URL' for this functionality.
@@ -180,6 +201,10 @@ when CodBi searches within the shared parent container.
   - OutputWidth: Configures 'OutputWidth' for this functionality.
   - Target: CSS-Class-Selector for the target image element (e.g., '.imgCropped'). Use dot-prefixed class selector. Do NOT use an ID selector.
   - Updater: CSS-Class-Selector for the update button (e.g., '.btnUpdate'). Use dot-prefixed class selector. Do NOT use an ID selector.
+- Media.MultipleUpload: Applicable on an XUpload field to enable selecting and uploading multiple files at once.
+  - Maximum: The maximum number of files that may be uploaded (default: 2).
+  - prefixTooMany: The message displayed before the maximum count when too many files are selected.
+  - postfixTooMany: The message displayed after the maximum count when too many files are selected.
 - MEDIA.INPUT.SPEECH: Applicable on a text input field to enable speech-to-text dictation via the Web Speech API.
   - Language: Configures 'Language' for this functionality.
   - Placeholder: Configures 'Placeholder' for this functionality.
@@ -195,12 +220,12 @@ when CodBi searches within the shared parent container.
   - FocusOnAutocomplete: CSS-Class-Selector of the field to focus after an autocomplete selection. On POSTAL CODE and LOCALITY fields: set to the street field (e.g., '.tfStreet'). On the STREET field: set to the building number field if one exists (e.g., '.tfBuildingNumber'). Do NOT use an ID selector.
   - MsgNotKnown: Message to show when the entered value is not found in the OpenPLZ database.
   - TargetData: Defines what type of data is being autocompleted: 'Localities' (city/town), 'PostalCodes' (ZIP/PLZ), or 'Streets'. Pick the one that matches the tagged field's purpose.
-- Print.Remove: Applicable on any element that should be invisible when the form is printed.
+- Print.Remove: Applicable on any element that should be invisible when the form is printed. CSS class alternatives: add "CodBi_Print_Remove_Tagged" to the element's cssclasses (hides the element when printing), "CodBi_Print_Remove_Parent" (hides the element's parent container — e.g. the label wrapper — when printing), or "CodBi_Print_Remove_PrintOnly" (shows the element ONLY when printing, hides it otherwise). Do NOT use both data-cb-func and CSS class — pick one per the TWO-OPTION RULE.
   - DocumentSelector: CSS-Class-Selector for the element to remove (e.g., '.divPrintSection'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Invert: Specifies whether this functionality shall be inverted, e.g.
   - ParentalLevel: The number of elements to climb up the HTMLElement.parentElement -Tree to get to.
-- Sys.Log.Console: Applicable for debugging; logs CodBi runtime data to the browser developer console.
-  - Parameters: none.
+- Sys.Log.Console: Applicable on any element for debugging; logs the specified data to the browser developer console.
+  - Data: The value to log to the console. Can be a literal string or an Element Placeholder (EP) like "{ Date.Weekends > 01.01.2000 ; 31.12.2002 }" to log weekends between dates.
 - Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
   - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
   - MaxField: CSS-Class-Selector for the max time input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
@@ -213,9 +238,25 @@ when CodBi searches within the shared parent container.
   - Parameters: none.
 - BayVIS.Ansprechpartner: This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from.
   - Param[1]: A property of the directory, like e.g.
+- BayVIS.Ansprechpartner.Details: This Element-Placeholder retrieves details of a specific contact from the BayVIS directory. Returns an object with properties: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl, apEmail. When only one contact is requested (single ID), returns a single object. When multiple IDs are specified (separated by "/"), returns an array of objects. If the 2nd parameter is specified, returns only that property as an array of strings.
+  - Param[1]: The ID of the contact whose details are to be retrieved. Multiple IDs may be provided using "/" as divider (e.g. "12345/678901"). If a name (string) is given instead of a numeric ID, it is resolved to an ID via BayVIS.Ansprechpartner.ID automatically.
+  - Param[2]: Optional property to extract (e.g. "nachname"). Valid values: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl, apEmail.
+  - CRITICAL for HTML.Text.Mapper: When using this EP to populate [(propertyName)] placeholders, omit the 2nd parameter so the full object is returned. The mapper will then match the returned property names to the [(propertyName)] placeholders automatically.
+- BayVIS.Ansprechpartner.ID: This Element-Placeholder retrieves the IDs of contacts by their name from the BayVIS contact directory.
+  - Param[1]: The name of the contact to find the ID for.
+  - Param[2]: An optional property to extract (instead of returning the ID).
 - BayVIS.Behoerden.Details: This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding.
   - Param[1]: The ID of the authority to retrieve.
   - Param[2]: An optional property of the directory, like e.g.
+- BayVIS.Behoerden.Details.Gebaeude: This Element-Placeholder retrieves building details for an authority from the BayVIS building directory. Returns an object with address properties including: amtsbezeichnung, postanschriftStrasse, postanschriftPLZ, postanschriftOrt, hausanschriftStrasse, hausanschriftPLZ, hausanschriftOrt, etc. CRITICAL: This EP REQUIRES exactly 2 parameters — do NOT omit the 2nd parameter.
+  - Param[1] (REQUIRED): The ID of the authority (resolved via BayVIS.Behoerden.ID from the authority name).
+  - Param[2] (REQUIRED): The building ID (resolved via BayVIS.Behoerden.Gebaeude.ID). The building ID itself needs the authority name as its parameter to resolve.
+  - Param[3] (optional): A specific property to extract (e.g. "postanschriftStrasse"). If omitted, the full object with all address properties is returned.
+  - EP syntax with literal names: { BayVIS.Behoerden.Details.Gebaeude > { BayVIS.Behoerden.ID > Amt für Digitales } ; { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > Amt für Digitales }}}
+  - CRITICAL for HTML.Text.Mapper: When using this EP to populate [(propertyName)] placeholders like [(amtsbezeichnung)], [(postanschriftStrasse)], [(postanschriftPLZ)], [(postanschriftOrt)], omit the 3rd property parameter so the full object with all address properties is returned. The 1st and 2nd parameters (authority ID + building ID) are still MANDATORY.
+- BayVIS.Behoerden.Gebaeude.ID: This Element-Placeholder retrieves building IDs for an authority from the BayVIS building directory.
+  - Param[1]: The ID of the authority whose building IDs shall be retrieved (resolved via BayVIS.Behoerden.ID).
+  - Param[2]: An optional property to extract from each building entry.
 - BayVIS.Behoerden.ID: This Element-Placeholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
   - Param[1]: The Name of the authority to retrieve.
 - BayVIS.Behoerden: This Element-Placeholder retrieves the whole BayVIS Authority Directory or a specified property of each entry.
@@ -223,7 +264,7 @@ when CodBi searches within the shared parent container.
   - Usage with HTML.Select.Injection: Set data-cb-Values to "{BayVIS.Behoerden>bezeichnung}" on a XSelect with data-cb-func=html.select.injection to populate the select with all authority names from the BayVIS directory at render time.
 - Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >. Often chained with Net.URL to load remote CSV data: { Data.CSV > { Net.URL > https://example.com/data.csv }}. The inner Net.URL EP fetches the CSV content from the URL, and Data.CSV splits it into an array of strings by comma.
   - Parameters: none.
-- Data.Join: Joins the properties of multiple object s into one.
+- Data.Join: Joins the properties of multiple objects into one. Takes one or more objects and merges them into a single object. Later objects' properties override earlier ones if they have the same key. CRITICAL: Use this EP when data from multiple EPs must be combined to fill all [(propertyName)] placeholders in a text template. The parameters are separated by ";" in the EP expression. Example: { Data.Join > { EP1 > param1 } ; { EP2 > param2 }} first resolves EP1 (returns an object), then EP2 (returns another object), then merges both into one object with all properties from both. The result is always an array containing the single merged object, which is the correct format for HTML.Text.Mapper's data-cb-replacements.
   - Parameters: none.
 - Date.Arithmetic: This Element-Placeholder turns a String into a Date .
   - Param[1]: The String to turn to a Date.
@@ -237,8 +278,9 @@ when CodBi searches within the shared parent container.
   - Param[2]: Optional additional year.
 - Date.Today: Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.
   - Parameters: none.
-- Date.Weekends: This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .
-  - Parameters: none.
+- Date.Weekends: Element Placeholder that returns an array of weekend dates (Saturday & Sunday) between two optional dates. Parameters are DD.MM.YYYY formatted dates. With 2 params: returns weekends between them. With 1 param: returns weekends from today to that date. With no params: returns weekends from today to one year from now.
+  - Param[1]: Optional beginning date (DD.MM.YYYY). If omitted, today is used.
+  - Param[2]: Optional end date (DD.MM.YYYY). If omitted, one year from the beginning date is used.
 - DOM.Query: This Element-Placeholder queries an Element .
   - Parameters: none.
 - F: Finds the objects within an Array that have a specific property with a specific value.

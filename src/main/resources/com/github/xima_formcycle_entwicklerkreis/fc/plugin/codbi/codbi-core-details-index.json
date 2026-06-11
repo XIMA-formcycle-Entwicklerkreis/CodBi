@@ -19,6 +19,20 @@
       },
       "classDescriptions": {}
     },
+    "OnChange.Conditional": {
+      "id": "OnChange.Conditional",
+      "type": "functionality",
+      "summary": "Applicable on any input field to conditionally apply a CodBi functionality to a target element depending on whether the field's value satisfies a comparison with a reference value.",
+      "tsdoc": "Provides the {@link OnChange_Conditional.functionality }.",
+      "parameters": {
+        "Reference": "The value to compare against. Can be a literal or an Element Placeholder (EP) expression like \"{ Date.Today > -18y }\" for \"today minus 18 years\".",
+        "Mode": "Comparison mode: GT (greater than), GTEQ (greater than or equal), LT (lower than), LTEQ (lower than or equal), EQ (equal), NEQ (not equal).",
+        "Target": "CSS-Class-Selector for the element to modify when the condition is TRUE or FALSE.",
+        "DateFormat": "Optional date format string (e.g. 'DD.MM.YYYY') when comparing date values. Triggers date parsing of the candidate value before comparison.",
+        "Candidate": "CSS-Class-Selector for the monitored input field whose value is compared with the Reference."
+      },
+      "classDescriptions": {}
+    },
     "Date.Frame": {
       "id": "Date.Frame",
       "type": "functionality",
@@ -319,6 +333,28 @@
       },
       "classDescriptions": {}
     },
+    "BayVIS.Ansprechpartner.Details": {
+      "id": "BayVIS.Ansprechpartner.Details",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves details of a specific contact from the BayVIS directory.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves details of a specific contact from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The ID of the contact who's details are to be retrieved. Multiple IDs may be provided by using \"/\" as a divider.\n- 2nd: An optional property of the contact, like e.g. \"nachname\".\n- resolves to either an object with properties: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl, apEmail. Or an Array<string> if the 2nd parameter is specified.\nCRITICAL: This EP REQUIRES exactly 1 parameter (contact ID or name). When used with HTML.Text.Mapper, omit the 2nd parameter so the full object is returned.",
+      "parameters": {
+        "1": "The ID of the contact. If a name is given instead of a numeric ID, it is resolved automatically via BayVIS.Ansprechpartner.ID.",
+        "2": "Optional property to extract (e.g. \"nachname\"). If omitted, returns the full contact object."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Ansprechpartner.ID": {
+      "id": "BayVIS.Ansprechpartner.ID",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves the IDs of contacts by their name from the BayVIS contact directory.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the IDs of contacts by their name from the BayVIS contact directory.\nPlaceholder Parameter:\n- 1st: The name of the contact to find the ID for.\n- 2nd: An optional property to extract.\n- resolves to an Array<string> of matching contact IDs.",
+      "parameters": {
+        "1": "The name of the contact to find the ID for.",
+        "2": "An optional property to extract."
+      },
+      "classDescriptions": {}
+    },
     "BayVIS.Behoerden.Details": {
       "id": "BayVIS.Behoerden.Details",
       "type": "ep",
@@ -327,6 +363,29 @@
       "parameters": {
         "1": "The ID of the authority to retrieve.",
         "2": "An optional property of the directory, like e.g."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Behoerden.Details.Gebaeude": {
+      "id": "BayVIS.Behoerden.Details.Gebaeude",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves building details for an authority from the BayVIS building directory.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves the details of an authority's building specified by the provided ID from the corresponding CodBi-Plugin servlet.\nPlaceholder Parameter:\n- 1st: The ID of the authority to retrieve.\n- 2nd: The building's ID.\n- 3rd: An optional property of the building, like e.g. \"postanschriftStrasse\".\n- returns Either an Array of building objects with properties: bezeichnung, hausanschriftPLZ, hausanschriftOrt, hausanschriftStrasse, postanschriftPLZ, postanschriftOrt, postanschriftStrasse, logo, etc. Or an Array<string> if the 3rd parameter is specified.\nCRITICAL: This EP REQUIRES exactly 2 parameters (authority ID + building ID). Do NOT omit the 2nd parameter.",
+      "parameters": {
+        "1": "The ID of the authority (resolved via BayVIS.Behoerden.ID).",
+        "2": "The building's ID (resolved via BayVIS.Behoerden.Gebaeude.ID).",
+        "3": "Optional property to extract (e.g. \"postanschriftStrasse\"). Omit to get the full building object."
+      },
+      "classDescriptions": {}
+    },
+    "BayVIS.Behoerden.Gebaeude.ID": {
+      "id": "BayVIS.Behoerden.Gebaeude.ID",
+      "type": "ep",
+      "summary": "This Element-Placeholder retrieves building IDs for an authority from the BayVIS building directory.",
+      "tsdoc": "This **E**lement-**P**laceholder retrieves building IDs for an authority from the BayVIS building directory.\nPlaceholder Parameter:\n- 1st: The ID of the authority whose building IDs to retrieve.\n- 2nd: An optional property to extract from each building entry.\n- resolves to an Array<string> of building IDs.",
+      "parameters": {
+        "1": "The ID of the authority (resolved via BayVIS.Behoerden.ID).",
+        "2": "An optional property to extract."
       },
       "classDescriptions": {}
     },
@@ -755,7 +814,11 @@
     "time.frame": "Time.Frame",
     "ai.llama.std.qa": "AI.LLAMA.STD.QA",
     "bayvis.ansprechpartner": "BayVIS.Ansprechpartner",
+    "bayvis.ansprechpartner.details": "BayVIS.Ansprechpartner.Details",
+    "bayvis.ansprechpartner.id": "BayVIS.Ansprechpartner.ID",
     "bayvis.behoerden.details": "BayVIS.Behoerden.Details",
+    "bayvis.behoerden.details.gebaeude": "BayVIS.Behoerden.Details.Gebaeude",
+    "bayvis.behoerden.gebaeude.id": "BayVIS.Behoerden.Gebaeude.ID",
     "bayvis.behoerden.id": "BayVIS.Behoerden.ID",
     "bayvis.behoerden": "BayVIS.Behoerden",
     "data.csv": "Data.CSV",

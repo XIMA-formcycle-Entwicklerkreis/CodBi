@@ -106,7 +106,7 @@ class AIFormAssistant : IPluginServletAction {
             "   'tf' for XTextField/XTextArea (e.g. 'tfVorname', 'tfEmail'), \n" +
             "   'fd' for XUpload (e.g. 'fdLebenslauf'), \n" +
             "   'sel' for XSelect, 'cb' for XCheckbox, 'btn' for XButtonList buttons, \n" +
-            "   'sig' for XSignature, 'cin' for XContainerInvisible.\n" +
+            "   'sig' for XSignature, 'div' for XContainerInvisible.\n" +
             "5. Valid FORMCYCLE element className values (use ONLY these exact strings):\n" +
             "   - XTextField   — single-line text input; set 'datatype' property to validate input (use ONLY these exact values):\n" +
             "     \"\" plain text (default) · \"date\" native date picker · \"dateDE\" date DD.MM.YYYY · \"email\" e-mail ·\n" +
@@ -154,6 +154,12 @@ class AIFormAssistant : IPluginServletAction {
             "be replaced with any page name you see in the form (e.g. 'p1', 'p2', etc.). " +
             "WRONG: action={\"page\":\"p1\",\"check\":true,\"optionId\":\"p1 + check\"} ← do not do this. " +
             "CORRECT: action={\"page\":\"submit\",\"check\":true,\"optionId\":\"submit + check\"} ← always use this for submit buttons.\n\n" +
+            "10b. CONTAINER FOR CONDITIONALLY SHOWN FIELDS — When the prompt describes a field that should be shown or hidden based on a condition (wenn...dann..., if...then...), wrap that field in an XContainer. The container becomes the target of the conditional functionality — do NOT apply show/hide directly on the form field itself. You MUST create BOTH the container AND the child field as separate items in the top-level 'items' array, AND reference the child by name in the container's 'elements' array. Example: add XContainer coErziehungsberechtigter with elements=[\"tfNameDesErziehungsberechtigten\"] to the items array AND also add XTextField tfNameDesErziehungsberechtigten as a separate item in the same items array. Rule 3 and 3b apply — do NOT create a container with an empty elements array.\n\n" +
+            "10c. MATOMO TRACKING — When the prompt says \"Matomo-Tracking aktivieren\" or \"activate Matomo tracking\" without specifying a SiteID, do NOT add Matomo.Tracking functionality via data-cb-func on any element. " +
+            "Do NOT include Matomo.Tracking in _codbiApplicability.considered. " +
+            "Do NOT include Matomo.Tracking in _codbiApplicability.applied. " +
+            "Instead, include {\"id\":\"Holistic.Matomo.Tracking\",\"targets\":[]} in _codbiApplicability.applied — the server reads this and activates the standard configuration. " +
+            "Only apply Matomo.Tracking functionality with data-cb-SiteID when a SiteID IS explicitly specified in the prompt.\n\n" +
             "DATE FIELDS — Use XTextField with datatype=\"date\" (NOT XAppointment) for any field whose label refers to a date: " +
             "e.g. 'Datum', 'Geburtsdatum', 'Eintrittstermin', 'Termin', 'Abgabedatum', 'Anfangsdatum', 'Enddatum', 'date', 'birthday', 'start date', 'end date', 'due date'. " +
             "Example: label 'Geburtsdatum' → XTextField with datatype=\"date\"; label 'Frühestmöglicher Eintrittstermin' → XTextField with datatype=\"date\".\n" +
@@ -215,7 +221,7 @@ class AIFormAssistant : IPluginServletAction {
             "\n" +
             """{"className":"XAppointment","properties":{"name":"apExample","id":"xi-ap-example","label":"Example","required":"0","fullwidth":"0"}}""" +
             "\n" +
-            """{"className":"XContainerInvisible","properties":{"name":"cinExample","id":"xi-cin-example","elements":[],"fullwidth":"0"}}""" +
+            """{"className":"XContainerInvisible","properties":{"name":"divExample","id":"xi-div-example","elements":[],"fullwidth":"0"}}""" +
             "\n" +
             "   ← For COLLAPSIBLE containers (\"aus- und einklappbar\", \"auf- und zuklappbar\"): add attributes with data-cb-func=html.panel, data-cb-generateheader=\"true\" and data-cb-autoheadertitle (see COLLAPSIBLE XCONTAINERS rule below). Do NOT use panel CSS classes — they only work on XFieldSet.\n" +
             "\n" +
@@ -266,13 +272,19 @@ class AIFormAssistant : IPluginServletAction {
             "REMINDER: CSS classes ONLY exist for the domains listed above. For everything else, use data-cb-func. Never invent CSS class names.\n\n" +
             "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
             "For each listed element, use your judgment to decide if a functionality is useful for a field. Consider BOTH whether it could benefit AND whether it would be inappropriate (e.g. Date.NoWeekends makes sense for job appointments but NOT for birthdays). Only mark candidates that are genuinely appropriate. " +
-            "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; date field where past dates should be forbidden → Date.Min; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; " +
+            "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; input auto-capitalize words → HTML.Input.Trans.Capital; set CSS property on element → HTML.SETAttribute (Name=\"style\" ToSet=CSS value). JSON.SET fallback only on explicit user request. console output / in der Konsole ausgeben / debug logging → Sys.Log.Console. Create an XContainerInvisible (name prefix div) at the top of the first page's elements array, set data-cb-func=\"Sys.Log.Console\" and data-cb-Data to what to log (can use EPs like \"{ Date.Weekends > 01.01.2000 ; 31.12.2002 }\" for weekend dates). This keeps the functionality accessible in the designer. Do NOT create a workflow for this. Matomo tracking aktivieren / activate tracking → standard configuration activation, NOT a workflow. LDAP container → LDAP.Autocomplete.Set on the CONTAINER (XFieldSet/XContainer), LDAP.Autocomplete on each individual field inside it. Without SiteID: include ONLY \"Holistic.Matomo.Tracking\" in _codbiApplicability.applied (not \"Matomo.Tracking\" anywhere) (as {\"id\":\"Holistic.Matomo.Tracking\",\"targets\":[]}). With SiteID: apply Matomo.Tracking functionality on the form header with data-cb-SiteID and data-cb-URL. wenn...dann... / if...then... conditions → OnChange.Conditional on the trigger field. Reference=\"{ Date.Today > -18y }\" for age rules. Mode options: GT=Greater Than, GTEQ=Greater Than or Equal, LT=Lower Than, LTEQ=Lower Than or Equal, EQ=Equal, NEQ=Not Equal. LOGIC: GT means candidate date is LATER/MORE RECENT than reference (date less than 18y in past → GT). LT means candidate date is EARLIER (date more than 18y in past → LT). Target=dot-prefixed container CSS selector. Candidate=dot-prefixed field selector. DateFormat=DD.MM.YYYY for dateDE. _T_* parameters apply functionality to Target when TRUE: _T_FUNC (any functionality ID), _T_Name, _T_ToSet, etc. _F_* similar for FALSE. Show/hide example: _T_FUNC=HTML.SETAttribute _T_Name=style _T_ToSet=\"width:100%;display:block;\" _F_ToSet=\"width:100%;display:none;\". EDGE CASE: when OnChange.Conditional must show/hide a single field, wrap that field in an XContainer and target the container instead. CRITICAL: Date.Min forbids selecting past dates (input validation). OnChange.Conditional applies a functionality to a target based on a condition. WENN...DANN... anzeigen/ausblenden → use OnChange.Conditional, NOT Date.Min, NOT CodBi_People_18plus. Image cropper → Media.Image.Cropper on the prompted container. Generate SIBLINGS: CodBi_Fotocropper_Board div (height:25em), CodBi_Fotocropper_Uploader input, CodBi_Fotocropper_Update button, CodBi_Fotocropper_ImageURL input (right of button), CodBi_Fotocropper_Foto img. Board contains NO other elements. Element unsichtbar im Druck / hidden when printing → add CSS class \"CodBi_Print_Remove_Tagged\" to the element's cssclasses array. print parent (including label) → add CSS class \"CodBi_Print_Remove_Parent\". Nur im Druck sichtbar / only visible when printing → add CSS class \"CodBi_Print_Remove_PrintOnly\". " +
             "Any prompt asking to \"replace placeholders\" or \"fill in\" dynamic content from an EP (like \"{ Data.CSV > { Net.URL > ... }}\") into an element → HTML.Text.Injector on the target element. Set data-cb-replacement to the EP expression AS-IS (do NOT resolve it), data-cb-placeholder to the placeholder string verbatim (copy it character-for-character from the element's content — e.g. \"<<PH>>\", \"[[PH]]\", \"##VALUE##\", \"{{name}}\", whatever it literally is). CRITICAL: do NOT change the brackets or formatting; if the text has \"[[PH]]\" set \"[[PH]]\", not \"[%PH%]\". data-cb-property=\"innerHTML\". Keep the element's rtevalue unchanged. " +
-            "Do NOT apply any CodBi element in this pass — just note which ones look relevant. " +
+            "Do NOT apply any CodBi functionality to elements in this pass (no data-cb-func, no CSS classes) — just note which ones look relevant in the \"considered\" array. " +
+            "EXCEPTION — Standard configuration activation: if the prompt requests Matomo tracking " +
+            "WITHOUT a SiteID, you MUST include {\"id\":\"Holistic.Matomo.Tracking\",\"targets\":[]} " +
+            "in the \"applied\" array (this is not a functionality being applied — it is a standard configuration " +
+            "name that the server reads and activates). No other entries go in \"applied\" in this pass.\n" +
             "Return the form JSON normally. Include a top-level \"_codbiApplicability\" field with these exact keys: " +
             "{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace 4 with actual field count; replace 23 with how many CODBI CORE ELEMENTS list entries you read)," +
-            "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"formElementId\", ...]}] (CodBi functionality IDs with the form element ids they could apply to),\"applied\":[],\"skipped\":[]}. " +
-            "The server will handle application in a second pass if candidates are found. This metadata field is removed server-side before the form is applied." +
+            "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"formElementId\", ...]}] (CodBi functionality IDs with the form element ids they could apply to)," +
+            "\"applied\":[{\"id\":\"Holistic.Matomo.Tracking\",\"targets\":[]}] (standard configuration names ONLY — see exception above — leave empty otherwise)," +
+            "\"skipped\":[]}. " +
+            "The server will handle functionality application in a second pass if candidates are found. This metadata field is removed server-side before the form is applied." +
             "\n" +
             CodbiCapabilities.buildSection()
 
@@ -535,6 +547,12 @@ class AIFormAssistant : IPluginServletAction {
       return splicePass2IntoPass1(cleaned, pass2Cleaned)
     }
 
+    // Normalize _codbiApplicability before any extraction logic: the AI often puts
+    // "Matomo.Tracking" in considered/applied instead of "Holistic.Matomo.Tracking"
+    // (Rule 10c). Correct this server-side by replacing the ID in the raw JSON so that
+    // all downstream extraction functions see the correct value.
+    cleaned = normalizeMatomoTrackingInRawJson(cleaned)
+
     val requestedDetails = extractCodbiDetailsRequest(cleaned)
     if (requestedDetails != null) {
       logger.info(
@@ -555,7 +573,7 @@ class AIFormAssistant : IPluginServletAction {
             return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
           }
     } else {
-      val appliedCodbi = extractAppliedCodbiIds(cleaned)
+      val appliedCodbi = extractAppliedCodbiIds(cleaned).filterNot { it == "Matomo.Tracking" }
       if (appliedCodbi.isNotEmpty()) {
         logger.warn(
             "[AIFormAssistant] AI applied CodBi functionalities without requesting details first; forcing detail rerun for: {}",
@@ -569,7 +587,8 @@ class AIFormAssistant : IPluginServletAction {
               return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
             }
       } else {
-        val consideredCodbi = extractConsideredCodbiIds(cleaned)
+        val consideredCodbi =
+            extractConsideredCodbiIds(cleaned).filterNot { it == "Matomo.Tracking" }
         if (consideredCodbi.isNotEmpty()) {
           logger.info(
               "[AIFormAssistant] AI identified CodBi candidates but did not escalate; forcing detail rerun for: {}",
@@ -701,6 +720,65 @@ class AIFormAssistant : IPluginServletAction {
     }
   }
 
+  /**
+   * Normalizes "Matomo.Tracking" → "Holistic.Matomo.Tracking" in the raw JSON string's
+   * _codbiApplicability field. Called before any extraction logic so that downstream functions
+   * (extractConsideredCodbiIds, extractAppliedCodbiIds, etc.) see the corrected value. The AI often
+   * ignores Rule 10c and outputs "Matomo.Tracking" instead of "Holistic.Matomo.Tracking"; this
+   * server-side correction ensures correct behavior.
+   *
+   * Only normalizes when Matomo.Tracking is NOT in the "applied" array (meaning the AI could not
+   * apply it due to missing SiteID/URL parameters). If the AI successfully placed Matomo.Tracking
+   * in "applied" (with proper data-cb-SiteID/data-cb-URL on form elements), it is left untouched.
+   */
+  private fun normalizeMatomoTrackingInRawJson(json: String): String {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj =
+          gson.fromJson(json, MutableMap::class.java) as? MutableMap<String, Any> ?: return json
+      for (key in listOf("_codbiApplicability", "codbiApplicability")) {
+        val report = obj[key] ?: continue
+        normalizeMatomoTrackingInReport(report)
+      }
+      gson.toJson(obj)
+    } catch (_: Exception) {
+      json
+    }
+  }
+
+  /**
+   * If the AI placed "Matomo.Tracking" in "considered" but NOT in "applied" (meaning it identified
+   * tracking as relevant but couldn't apply it due to missing SiteID/URL parameters), correct it to
+   * "Holistic.Matomo.Tracking". If "Matomo.Tracking" IS in "applied", the AI successfully applied
+   * it with parameters — leave it untouched.
+   */
+  @Suppress("UNCHECKED_CAST")
+  private fun normalizeMatomoTrackingInReport(reportValue: Any) {
+    val report = reportValue as? MutableMap<String, Any> ?: return
+    val applied = report["applied"] as? MutableList<*> ?: return
+
+    // If Matomo.Tracking is already in "applied", the AI applied it successfully — don't touch
+    val hasMatomoInApplied =
+        applied.any { entry -> (entry as? Map<*, *>)?.get("id") == "Matomo.Tracking" }
+    if (hasMatomoInApplied) return
+
+    // Matomo.Tracking was NOT applied — it's only in considered/skipped due to missing params.
+    // Replace in "applied" (if present as object) and "considered".
+    for (i in applied.indices) {
+      val entry = applied[i] as? MutableMap<String, Any> ?: continue
+      if (entry["id"] == "Matomo.Tracking" && entry["id"] is String) {
+        entry["id"] = "Holistic.Matomo.Tracking"
+      }
+    }
+    val considered = report["considered"] as? MutableList<*> ?: return
+    for (i in considered.indices) {
+      val entry = considered[i] as? MutableMap<String, Any> ?: continue
+      if (entry["id"] == "Matomo.Tracking" && entry["id"] is String) {
+        entry["id"] = "Holistic.Matomo.Tracking"
+      }
+    }
+  }
+
   private fun extractAndStripCodbiApplicability(cleanedJson: String): Pair<String, String?> {
     return try {
       @Suppress("UNCHECKED_CAST")
@@ -710,6 +788,7 @@ class AIFormAssistant : IPluginServletAction {
       var report: String? = null
       for (key in listOf("_codbiApplicability", "codbiApplicability")) {
         if (obj.containsKey(key)) {
+          normalizeMatomoTrackingInReport(obj[key]!!)
           report = gson.toJson(obj[key])
           obj.remove(key)
           break
@@ -1260,6 +1339,41 @@ class AIFormAssistant : IPluginServletAction {
           if (!isStaleCb) filtered.add(e)
         }
         props.add("attributes", filtered)
+      }
+
+      // --- Normalize Print.Remove: if the AI applied data-cb-func=print.remove instead of the
+      // CSS class (per TWO-OPTION RULE, CSS classes should be preferred when available), convert
+      // it to the CodBi_Print_Remove_Tagged CSS class and remove the data-cb-func entry.
+      val printRemoveFunc = props.get("data-cb-func")?.asString
+      if (printRemoveFunc != null && printRemoveFunc.contains("print.remove", ignoreCase = true)) {
+        val cssClasses =
+            if (props.has("cssclasses") && props.get("cssclasses").isJsonArray)
+                props.getAsJsonArray("cssclasses")
+            else JsonArray().also { props.add("cssclasses", it) }
+        var hasPrintRemoveTagged = false
+        for (i in 0 until cssClasses.size()) {
+          val cls = cssClasses.get(i)
+          if (cls.isJsonPrimitive && cls.asString == "CodBi_Print_Remove_Tagged") {
+            hasPrintRemoveTagged = true
+            break
+          }
+        }
+        if (!hasPrintRemoveTagged) {
+          cssClasses.add("CodBi_Print_Remove_Tagged")
+          logger.info(
+              "[AIFormAssistant] Normalized data-cb-func=print.remove to CSS class 'CodBi_Print_Remove_Tagged'")
+        }
+        // Remove print.remove from data-cb-func (other comma-separated funcs are preserved)
+        val remaining =
+            printRemoveFunc
+                .split(",")
+                .map { it.trim() }
+                .filterNot { it.equals("print.remove", ignoreCase = true) }
+        if (remaining.isEmpty()) {
+          props.remove("data-cb-func")
+        } else {
+          props.addProperty("data-cb-func", remaining.joinToString(","))
+        }
       }
 
       val cbKeys = props.entrySet().filter { it.key.startsWith("data-cb-") }.map { it.key }

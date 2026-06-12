@@ -60,20 +60,20 @@ when CodBi searches within the shared parent container.
   - _F_Name: Attribute name to set on the Target when FALSE (e.g. "style").
   - _F_ToSet: Attribute value to set on the Target when FALSE (e.g. "width:100%;display:none;").
   Use OnChange.Conditional for wenn...dann... / if...then... conditions — NOT Date.Min or CodBi_People_18plus (those restrict input, they do not conditionally apply functionality). EDGE CASE: when showing/hiding a single field with OnChange.Conditional, wrap that field in an XContainer and target the container instead.
-- AI.OCR: Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
-  - Field: CSS-Class-Selector for the field receiving the OCR output (e.g., '.tfExtractedText'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
-  - FieldPattern_: Configures 'FieldPattern_' for this functionality.
-  - InvalidImageText: Configures 'InvalidImageText' for this functionality.
-  - Maximum: Configures 'Maximum' for this functionality.
-  - MaxPages: Configures 'MaxPages' for this functionality.
-  - Mode: Configures 'Mode' for this functionality.
-  - Pattern: Configures 'Pattern' for this functionality.
-  - Preprocess: Configures 'Preprocess' for this functionality.
-  - ProcessingImageText: Configures 'ProcessingImageText' for this functionality.
-  - QueueBadge: Configures 'QueueBadge' for this functionality.
-  - QueueText: Configures 'QueueText' for this functionality.
-  - RegExFlags: Configures 'RegExFlags' for this functionality.
-  - Separator: Configures 'Separator' for this functionality.
+- AI.OCR: Applicable on an XUpload field to extract text from uploaded images/PDFs via OCR and optionally validate the extracted content against a regex pattern. CRITICAL — For content validation on uploads, use AI.OCR's Pattern parameter — do NOT apply HTML.Input.REGEX to XUpload fields (REGEX is for XTextField only).
+  - Field: CSS-Class-Selector for the field receiving the OCR output (e.g., '.tfExtractedText'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector. Omit if only validation (verify mode) is needed and no output field is required.
+  - FieldPattern_: The pattern that the field selector must match.
+  - InvalidImageText: The error message to display when the OCR-extracted text does NOT match the Pattern (used in verify mode). Example: "The uploaded document must contain the word 'callari' and an email address."
+  - Maximum: The maximum number of pages to process (default: 1).
+  - MaxPages: Alias for Maximum.
+  - Mode: The mode of operation. Set to "verify" when the uploaded content must be validated against the Pattern (e.g. upload is only valid if the extracted text contains certain words/patterns). Omit (or leave empty) for plain text extraction without validation.
+  - Pattern: The regex pattern to validate the OCR-extracted text against. CRITICAL — Use this instead of HTML.Input.REGEX on XUpload fields. HTML.Input.REGEX is ONLY for XTextField, NOT for uploads. Example: "(?=.*callari)(?=.*\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)" to require "callari" AND an email address. Set Mode="verify" when using Pattern for validation.
+  - Preprocess: Whether to preprocess images (deskew, contrast, etc.) before OCR. Set to "true" to enable preprocessing.
+  - ProcessingImageText: The text to display while OCR processing is in progress (e.g. "Scanning document..."). Defaults to "Processing image...".
+  - QueueBadge: Badge text shown on the upload field's queue indicator.
+  - QueueText: Text shown on the upload field's queue indicator.
+  - RegExFlags: Regex flags for the Pattern (e.g. "gi" for case-insensitive global matching). Defaults to "g".
+  - Separator: Separator string inserted between extracted text values when multiple pages/fields are processed.
   - WrongFileMessage: Configures 'WrongFileMessage' for this functionality.
 - Date.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.
   - EqualityPermitted: A boolean indicating whether equality between minimum and maximum dates is allowed.
@@ -111,7 +111,7 @@ when CodBi searches within the shared parent container.
   - DateMin: The CleaveOptions.dateMin .
   - DatePattern: The CleaveOptions.datePattern .
   - Delimiter: The CleaveOptions.delimiter .
-- HTML.Input.REGEX: Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.
+- HTML.Input.REGEX: Applicable ONLY on a XTextField (input field) to validate or reformat the typed value against a regular expression pattern. CRITICAL — Do NOT apply HTML.Input.REGEX to XUpload fields. For regex validation on uploads, use AI.OCR's Pattern parameter with Mode="verify" instead.
   - ErrorPostfix: The final part of the error message string displayed after to the "expression".
   - ErrorPrefix: The first part of the error message string displayed prior to the "expression".
   - ExposeExpression: Will expose the "expression" within the errormessage if set to TRUE (case insensitive).

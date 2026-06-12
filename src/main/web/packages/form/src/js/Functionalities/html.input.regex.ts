@@ -47,7 +47,7 @@ export class HTML_Input_REGEX {
   ): void {
     // #region Normalize Parameter.
     if (toLoad.expression) {
-      toLoad.expression = (toLoad.expression as string).replace(/°/, "^");
+      toLoad.expression = (toLoad.expression as string).replace(/°\{/g, "{").replace(/°\}/g, "}").replace(/°/g, "^");
     }
     toLoad.exposeexpression = toLoad.exposeexpression
       ? typeof toLoad.exposeexpression === "string"

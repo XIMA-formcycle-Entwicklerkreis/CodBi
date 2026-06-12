@@ -373,23 +373,42 @@ export class CodBi implements CodbiGlobal {
    *
    * @throws A {@link CodBiError } if the count of the opening & closing {@link CodBi.nestingBraces } doesn't match. */
   public getOutermostEP(toGetFrom: string): { keyPlaceholder: string | null; params: string | null } | null {
-    if (toGetFrom.indexOf(this.nestingBraces.opening) === -1) {
+    // #region Find the first unescaped opening brace (not preceded by °).
+    let openingIdx = -1;
+    for (let i = 0; i < toGetFrom.length; i++) {
+      if (toGetFrom[i] === "{" && (i === 0 || toGetFrom[i - 1] !== "°")) {
+        openingIdx = i;
+        break;
+      }
+    }
+    if (openingIdx === -1) {
       return null;
     }
-    // #region Check if nesting braces count matches.
-    if (
-      toGetFrom.split(this.nestingBraces.opening).length - 1 !==
-      toGetFrom.split(this.nestingBraces.closing).length - 1
-    ) {
+    // #region Find the last unescaped closing brace (not preceded by °).
+    let closingIdx = -1;
+    for (let i = toGetFrom.length - 1; i >= 0; i--) {
+      if (toGetFrom[i] === "}" && (i === 0 || toGetFrom[i - 1] !== "°")) {
+        closingIdx = i;
+        break;
+      }
+    }
+    if (closingIdx === -1) {
+      return null;
+    }
+    // #region Check if nesting braces count matches (only unescaped ones).
+    let openCount = 0;
+    let closeCount = 0;
+    for (let i = 0; i < toGetFrom.length; i++) {
+      if (toGetFrom[i] === "{" && (i === 0 || toGetFrom[i - 1] !== "°")) openCount++;
+      if (toGetFrom[i] === "}" && (i === 0 || toGetFrom[i - 1] !== "°")) closeCount++;
+    }
+    if (openCount !== closeCount) {
       throw new EPCodBiError(toGetFrom, "Count of opening & closing nesting braces doesn't match");
     }
-    // #endregion Check if nesting braces count matches.
+    // #endregion
     const result = { keyPlaceholder: "", params: "" };
     const parts = new Array<string>();
-    const inner = toGetFrom.substring(
-      toGetFrom.indexOf(this.nestingBraces.opening) + 1,
-      toGetFrom.lastIndexOf(this.nestingBraces.closing),
-    );
+    const inner = toGetFrom.substring(openingIdx + 1, closingIdx);
     const innerParamseparator = inner.indexOf(this.nestingBraces.epSeparator);
 
     if (innerParamseparator !== -1) {
@@ -951,6 +970,11 @@ export class CodBi implements CodbiGlobal {
 
     for (let i = 0; i < toExtractFrom.length; i++) {
       const char = toExtractFrom[i];
+      // Skip escaped curly braces (preceded by °).
+      if ((char === "{" || char === "}") && i > 0 && toExtractFrom[i - 1] === "°") {
+        // If currently inside a segment, treat the °{ as literal text, not as brace.
+        continue;
+      }
 
       switch (char) {
         case "{":
@@ -1178,7 +1202,9 @@ export class CodBi implements CodbiGlobal {
         codbiAttributes[candidate.name.substring(8)] =
           candidate.value.indexOf(",") !== -1 && candidate.value[0] !== "^"
             ? candidate.value.split(",").map((str) => str.trim())
-            : candidate.value.replace(/\^/g, "");
+            : candidate.value[0] === "^"
+              ? candidate.value.substring(1).replace(/\{/g, "°{").replace(/\}/g, "°}")
+              : candidate.value;
       }
     }
 

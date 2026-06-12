@@ -197,7 +197,9 @@ export class AI_OCR {
           if (fieldName && pattern) {
             const fieldObj: { [key: string]: string } = {};
 
-            fieldObj[fieldName] = encodeURIComponent(pattern.replace(/°/, "^"));
+            fieldObj[fieldName] = encodeURIComponent(
+              pattern.replace(/°\{/g, "{").replace(/°\}/g, "}").replace(/°/g, "^"),
+            );
 
             fieldPatterns.push(fieldObj);
           }
@@ -269,7 +271,7 @@ export class AI_OCR {
 
       if ((toLoad.mode as string).toLowerCase() !== "print") {
         ajaxHeaders["X-Pattern"] = encodeURIComponent(
-          toLoad.pattern ? (toLoad.pattern as string).replace(/°/, "^") : "",
+          toLoad.pattern ? (toLoad.pattern as string).replace(/°\{/g, "{").replace(/°\}/g, "}").replace(/°/g, "^") : "",
         );
       }
 
@@ -515,7 +517,8 @@ export class AI_OCR {
           break;
         case "verify":
           if (pattern) {
-            const regex = new RegExp(pattern, regexFlags || "");
+            const decoded = pattern.replace(/°\{/g, "{").replace(/°\}/g, "}").replace(/°/g, "^");
+            const regex = new RegExp(decoded, regexFlags || "");
             results[filename] = regex.test(text);
           }
           break;

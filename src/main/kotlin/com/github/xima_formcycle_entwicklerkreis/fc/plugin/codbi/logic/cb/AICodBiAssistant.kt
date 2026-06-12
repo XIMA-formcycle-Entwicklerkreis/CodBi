@@ -378,7 +378,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "   k) CRITICAL — HTML.Select.Favorites: When applying this functionality you MUST also add a data-cb-initialElement attribute to the XSelect's attributes array. Set its value to the value property (NOT the display text) of the FIRST option. Example: first option is {\"text\":\"Bayern\",\"value\":\"Bayern\"} → add {\"text\":\"data-cb-initialElement\",\"value\":\"Bayern\"}. This prevents the divider from being unintentionally selected.\n" +
                 "Available CSS classes:\n" +
                 "=== People === CodBi_People_Name (for person names only), CodBi_People_Alphanumeric (codes/IDs only), CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ (postal codes, use alone), CodBi_People_18plus, CodBi_People_16plus, CodBi_People_BuildingNumber\n" +
-                "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
+                "=== Financial === CodBi_Currency\n" +
                 "=== Appointments === CodBi_NoFutureDate, CodBi_DateFrame_N_Begin/End (N=1-5), CodBi_TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 pairs used\n" +
                 "=== LDAP.Autofill === CodBi_LDAP_AC_*\n" +
                 "=== AI === AI_LLAMA_*, AI_OCR_*\n" +
@@ -533,7 +533,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "(k) CRITICAL — HTML.Select.Favorites: When applying this functionality you MUST also add a data-cb-initialElement attribute to the XSelect's attributes array. Set its value to the value property (NOT the display text) of the FIRST option. Example: first option is {\"text\":\"Bayern\",\"value\":\"Bayern\"} → add {\"text\":\"data-cb-initialElement\",\"value\":\"Bayern\"}. This prevents the divider from being unintentionally selected.\n" +
                 "Available CSS classes:\n" +
                 "=== People === CodBi_People_Name (person names only), CodBi_People_Alphanumeric (codes/IDs only), CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ (postal codes, use alone), CodBi_People_18plus, CodBi_People_16plus, CodBi_People_BuildingNumber\n" +
-                "=== Financial === CodBi_Currency, CodBi_TRANS_NTW\n" +
+                "=== Financial === CodBi_Currency\n" +
                 "=== Appointments === CodBi_NoFutureDate, CodBi_DateFrame_N_Begin/End (N=1-5), CodBi_TimeFrame_N_Begin/End (N=1-5) — fallback to data-cb-func if all 5 used\n" +
                 "=== LDAP.Autofill === CodBi_LDAP_AC_*\n" +
                 "=== AI === AI_LLAMA_*, AI_OCR_*\n" +
@@ -924,7 +924,7 @@ class AICodBiAssistant : IPluginServletAction {
           "   - CodBi_People_BuildingNumber: For building/house numbers.\n" +
           "   - CodBi_Fotocropper*: For photo cropper components (Board, Uploader, Update, ImageURL, Foto).\n" +
           "   - CodBi_OpenPLZ_Select_*: For OpenPLZ address select dropdowns.\n" +
-          "=== Financial === CodBi_Currency (money), CodBi_TRANS_NTW (net/tax)\n" +
+          "=== Financial === CodBi_Currency (money)\n" +
           "=== Appointments === CodBi_NoFutureDate (no future dates), CodBi_DateFrame_N_Begin/End (date ranges, N=1-5), CodBi_TimeFrame_N_Begin/End (time ranges, N=1-5). When using CodBi_TimeFrame_* or CodBi_DateFrame_* classes, do NOT also add data-cb-func=time.frame or data-cb-func=date.frame — the CSS class already provides that behavior. You MAY still add data-cb-func for a DIFFERENT functionality on the same field (e.g. date.noweekends).\n" +
           "=== LDAP.Autofill === CodBi_LDAP_AC_* fields for LDAP autocomplete.\n" +
           "=== AI === AI_LLAMA_CHAT_*, AI_LLAMA_STANDARD_QA_Question, AI_LLAMA_STANDARD_TXTQA_Question, AI_LLAMA_TXTQA_Source, AI_LLAMA_QA_Exclude, AI_OCR_Receiver\n" +

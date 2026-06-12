@@ -120,8 +120,8 @@ when CodBi searches within the shared parent container.
   - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
   - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
 - HTML.Input.Trans.Capital: Applicable on a XTextField to auto-capitalize each word as the user types (first letter uppercase, rest lowercase). No parameters.
-- HTML.Input.Trans.NTW: Applicable on a XTextField to transform a typed number into its word representation (e.g. "123" → "one-two-three").
-  - NumberWords: Array of strings representing the word for each digit 0-9. The index corresponds to the digit.
+- HTML.Input.Trans.NTW: Applicable on a XTextField to transform a typed number into its word representation. CRITICAL — ALWAYS apply HTML.Input.REGEX on the SAME element to permit only digits. Combine both in data-cb-func as CSV: data-cb-func="html.input.trans.ntw,html.input.regex". Set ONLY data-cb-KeyExpression="[\d]" (prevents non-digit keystrokes). Do NOT set data-cb-Expression — only the keystroke filter is needed, not full-value validation. Do NOT set data-cb-Flags, data-cb-ErrorPrefix, data-cb-ErrorPostfix, data-cb-ExposeExpression, or data-cb-KeyFlags. CRITICAL — ALWAYS set data-cb-NumberWords to a comma-separated list of the words for digits 0-9. First write the words in your default language, THEN translate every single word into the language of the user's request below. Format: plain CSV, no brackets, no quotes.
+  - NumberWords: Comma-separated list of the words for each digit 0-9. CRITICAL — first generate then translate into the language of the user's request below. Format: plain CSV, no brackets, no quotes.
   - PreFix: String prepended to the result.
   - PostFix: String appended to the result.
 - HTML.Input.Trans.RegEx: Applicable on a XTextField to transform input using a custom regex pattern.
@@ -384,7 +384,6 @@ when CodBi searches within the shared parent container.
   - .CodBi_BayVIS_BehoerdeUndAnsprechpartner: All proper placeholder in the content of the tagged HTMLInputElement 's "innerHTML" will be replaced with the data of the building specified in the global variable BayVIS_Behoerde and the contact details of the contact specified in BayVIS_Hauptansprechpartner.
 - Financial: Registers standard configurations specific to finances.
   - .CodBi_Currency: The HTMLInputElement s tagged with this class will be formatted for Currencies using Cleave.
-  - .CodBi_TRANS_NTW: Applies 'Financial' behavior to elements tagged with '.CodBi_TRANS_NTW'.
 - Holistic.CSS.Standard: Registers a standard configuration that applies a standard CSS onto the form.
   - Classes: none.
 - Holistic.Matomo.Tracking: Registers a standard configurations using the functionality.

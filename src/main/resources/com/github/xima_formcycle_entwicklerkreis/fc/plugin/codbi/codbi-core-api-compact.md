@@ -74,7 +74,7 @@ when CodBi searches within the shared parent container.
   - QueueText: Text shown on the upload field's queue indicator.
   - RegExFlags: Regex flags for the Pattern (e.g. "gi" for case-insensitive global matching). CRITICAL — ALWAYS set data-cb-RegexFlags when applying AI.OCR. Default to "gi" unless the user specifies otherwise. Without this, the regex may not match correctly (e.g. case differences would cause verification to fail).
   - Separator: Separator string inserted between extracted text values when multiple pages/fields are processed.
-  - WrongFileMessage: Configures 'WrongFileMessage' for this functionality.
+  - WrongFileMessage: The label text for the manual verification checkbox (human-in-the-loop) shown when OCR verification fails. CRITICAL — ALWAYS set data-cb-WrongFileMessage when applying AI.OCR. The message should state what content was expected and that the checkbox can be checked to manually override. Example: "The document did not contain the expected content. If you are sure the correct document was uploaded, check this box to proceed."
 - Date.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.
   - EqualityPermitted: A boolean indicating whether equality between minimum and maximum dates is allowed.
   - MaxField: CSS-Class-Selector for the max date input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.

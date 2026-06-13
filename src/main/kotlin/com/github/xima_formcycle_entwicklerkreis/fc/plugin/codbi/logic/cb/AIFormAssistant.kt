@@ -193,7 +193,7 @@ class AIFormAssistant : IPluginServletAction {
             "   ← For GERMAN ZIP CODE fields set datatype=\"plzDE\": " +
             """{"className":"XTextField","properties":{"name":"tfPlz","id":"xi-tf-plz","label":"PLZ","required":"0","readonly":"0","placeholder":"","datatype":"plzDE","fullwidth":"0"}}""" +
             "\n" +
-            """{"className":"XTextArea","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","readonly":"0","placeholder":"","fullwidth":"1","autosize":"0"}}""" +
+            """{"className":"XTextArea","properties":{"name":"tfExample","id":"xi-tf-example","label":"Example","required":"0","readonly":"0","placeholder":"","fullwidth":"1","autosize":"0"}}  ← CRITICAL: ALWAYS set fullwidth="1" on every XTextArea, regardless of other XTextAreas in the form.""" +
             "\n" +
             """{"className":"XUpload","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0","fileextension":"","fullwidth":"0"}}""" +
             "\n" +

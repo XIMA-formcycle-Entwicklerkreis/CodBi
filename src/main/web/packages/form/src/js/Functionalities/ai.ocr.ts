@@ -601,6 +601,8 @@ export class AI_OCR {
           }
 
           receiverElem.value = responseText;
+          // Dispatch an input event so auto-resize (autosize) listeners fire.
+          receiverElem.dispatchEvent(new Event("input", { bubbles: true }));
         } else {
           window.codbi.log(
             "INFO",

@@ -72,7 +72,7 @@ when CodBi searches within the shared parent container.
   - ProcessingImageText: The text to display while OCR processing is in progress (e.g. "Scanning document..."). Defaults to "Processing image...".
   - QueueBadge: Badge text shown on the upload field's queue indicator.
   - QueueText: Text shown on the upload field's queue indicator.
-  - RegExFlags: Regex flags for the Pattern (e.g. "gi" for case-insensitive global matching). Defaults to "g".
+  - RegExFlags: Regex flags for the Pattern (e.g. "gi" for case-insensitive global matching). CRITICAL — ALWAYS set data-cb-RegexFlags when applying AI.OCR. Default to "gi" unless the user specifies otherwise. Without this, the regex may not match correctly (e.g. case differences would cause verification to fail).
   - Separator: Separator string inserted between extracted text values when multiple pages/fields are processed.
   - WrongFileMessage: Configures 'WrongFileMessage' for this functionality.
 - Date.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.

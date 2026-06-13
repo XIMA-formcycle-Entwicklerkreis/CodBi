@@ -257,9 +257,10 @@ class AICodBiAssistant : IPluginServletAction {
   ): String {
     val systemPrompt =
         "You are a FORMCYCLE assistant router. Based on the user's request, determine what type of change is needed:\n" +
-            "- \"form\": changes to the form structure (adding/removing/modifying form fields, labels, buttons, layout, etc.) OR activating/deactivating standard configurations (like tracking, analytics, panels, autocomplete) — these are form property changes, not workflows.\n" +
+            "- \"form\": changes to the form structure (adding/removing/modifying form fields, labels, buttons, layout, etc.) OR applying CodBi functionalities (AI.OCR, HTML.Panel, Form.Navigator, etc.) OR activating/deactivating standard configurations (tracking, analytics, panels, autocomplete) — these are form property changes, NOT workflows.\n" +
             "- \"workflow\": creating or modifying workflow automations (emails after submission, state changes, triggers, notifications, etc.)\n" +
             "- \"both\": both form structure changes AND workflow automations in the same request\n" +
+            "Examples: \"Add an upload field that extracts document text\" → form (this adds fields and applies CodBi AI.OCR functionality, no workflow). \"Send an email when the form is submitted\" → workflow. \"Add an upload field and send its content via email after submission\" → both.\n" +
             "Respond ONLY with valid JSON: {\"intent\":\"form\"} or {\"intent\":\"workflow\"} or {\"intent\":\"both\"}\n" +
             "No explanation, no markdown, no code fences."
 

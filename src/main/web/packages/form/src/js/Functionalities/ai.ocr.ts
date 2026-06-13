@@ -604,7 +604,7 @@ export class AI_OCR {
         } else {
           window.codbi.log(
             "INFO",
-            `Receiver element with class 'CodBi_AI_Tesseract_Receiver' not found in #${toProcess.parentElement.parentElement.getAttribute("id")}.`,
+            `Receiver element with class 'CodBi_AI_OCR_Receiver' not found in #${toProcess.parentElement.parentElement.getAttribute("id")}.`,
             "AI / OCR",
           );
         }

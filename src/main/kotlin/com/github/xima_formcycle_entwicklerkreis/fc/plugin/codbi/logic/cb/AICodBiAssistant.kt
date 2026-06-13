@@ -1888,6 +1888,7 @@ class AICodBiAssistant : IPluginServletAction {
           // AI standard
           "AI_LLAMA_" to "AI",
           "AI_OCR_" to "AI",
+          "CodBi_AI_OCR_" to "AI",
           // BayVIS standard
           "CodBi_BayVIS_" to "BayVIS",
           // Print.Removal standard

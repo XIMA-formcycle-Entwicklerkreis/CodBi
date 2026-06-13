@@ -67,7 +67,7 @@ when CodBi searches within the shared parent container.
   - Maximum: The maximum number of pages to process (default: 1).
   - MaxPages: Alias for Maximum.
   - Mode: The mode of operation. Set to "verify" when the uploaded content must be validated against the Pattern (e.g. upload is only valid if the extracted text contains certain words/patterns). Omit (or leave empty) for plain text extraction without validation.
-  - Pattern: The regex pattern to validate the OCR-extracted text against. CRITICAL — Use this instead of HTML.Input.REGEX on XUpload fields. HTML.Input.REGEX is ONLY for XTextField, NOT for uploads. Example: "(?=.*callari)(?=.*\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)" to require "callari" AND an email address. Set Mode="verify" when using Pattern for validation.
+  - Pattern: The regex pattern to validate the OCR-extracted text against. CRITICAL — Use this instead of HTML.Input.REGEX on XUpload fields. HTML.Input.REGEX is ONLY for XTextField, NOT for uploads. Example: "^(?=.*callari)(?=.*\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)" to require "callari" AND an email address. Set Mode="verify" when using Pattern for validation. CRITICAL — When the regex contains curly braces (like {2,}), ALWAYS prefix the entire value with "^" (e.g. "^[\d]{2,4}") — the "^" is stripped at runtime and prevents curly braces from being misinterpreted as Element Placeholders.
   - Preprocess: Whether to preprocess images (deskew, contrast, etc.) before OCR. Set to "true" to enable preprocessing.
   - ProcessingImageText: The text to display while OCR processing is in progress (e.g. "Scanning document..."). Defaults to "Processing image...".
   - QueueBadge: Badge text shown on the upload field's queue indicator.

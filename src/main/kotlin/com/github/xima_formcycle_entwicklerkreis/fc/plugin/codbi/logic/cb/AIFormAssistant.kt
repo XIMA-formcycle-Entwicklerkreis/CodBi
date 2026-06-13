@@ -280,11 +280,10 @@ class AIFormAssistant : IPluginServletAction {
             "Include {\"id\":\"Holistic.Matomo.Tracking\",\"targets\":[]} in \"applied\" when the prompt requests Matomo tracking " +
             "WITHOUT a SiteID. " +
             "These are standard configuration names that the server reads and activates — they are NOT functionalities being applied.\n" +
-            "MANDATORY AI.OCR OUTPUT RULES — When you create an XUpload with data-cb-func attributes for AI.OCR, you MUST also create an XTextField to receive the OCR result. " +
-            "That XTextField MUST have cssclasses containing \"CodBi_AI_OCR_Receiver\". Example: " +
-            "{\"className\":\"XTextField\",\"properties\":{\"name\":\"tfOcrResult\",\"label\":\"Extracted Text\",\"cssclasses\":[\"CodBi_AI_OCR_Receiver\"]}}. " +
-            "And the _codbiApplicability.applied array MUST include {\"id\":\"AI\",\"targets\":[]}. " +
-            "These two requirements (CSS class + AI standard config) are MANDATORY whenever AI.OCR is used.\n\n" +
+            "MANDATORY AI.OCR OUTPUT RULES — Mode=\"print\": MUST create an XTextField with cssclasses [\"CodBi_AI_OCR_Receiver\"] for the extracted text " +
+            "(Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfOcrResult\",\"label\":\"Extracted Text\",\"cssclasses\":[\"CodBi_AI_OCR_Receiver\"]}}). " +
+            "Mode=\"verify\": no receiver textfield needed — only the upload field with data-cb-func and parameters. " +
+            "BOTH modes: the _codbiApplicability.applied array MUST include {\"id\":\"AI\",\"targets\":[]} (AI standard config activation is required for any AI.OCR usage).\n\n" +
             "Return the form JSON normally. Include a top-level \"_codbiApplicability\" field with these exact keys: " +
             "{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace 4 with actual field count; replace 23 with how many CODBI CORE ELEMENTS list entries you read)," +
             "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"formElementId\", ...]}] (CodBi functionality IDs with the form element ids they could apply to)," +

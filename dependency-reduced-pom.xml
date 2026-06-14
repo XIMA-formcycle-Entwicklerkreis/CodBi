@@ -772,8 +772,6 @@
         <artifactId>fc-server-maven-plugin</artifactId>
         <configuration>
           <appDir>xfc-server</appDir>
-          <https>true</https>
-          <httpsPort>8443</httpsPort>
         </configuration>
       </plugin>
       <plugin>

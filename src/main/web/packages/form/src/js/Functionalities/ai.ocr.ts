@@ -602,8 +602,17 @@ export class AI_OCR {
 
           receiverElem.value = responseText;
           // Resize the textarea to fit its content.
+          const initialHeight = receiverElem.offsetHeight;
           receiverElem.style.height = "auto";
-          receiverElem.style.height = `${receiverElem.scrollHeight}px`;
+          const scrollH = receiverElem.scrollHeight;
+          const pad = receiverElem.offsetHeight - receiverElem.clientHeight;
+          const finalHeight = scrollH + pad;
+          window.codbi.log(
+            "INFO",
+            `AI.OCR resize: value length=${responseText.length}, initialH=${initialHeight}, scrollH=${scrollH}, pad=${pad}, finalH=${finalHeight}`,
+            "AI / OCR",
+          );
+          receiverElem.style.height = `${Math.max(finalHeight, initialHeight)}px`;
         } else {
           window.codbi.log(
             "INFO",

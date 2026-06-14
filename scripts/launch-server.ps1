@@ -69,14 +69,6 @@ if (-not $PlainHttp) {
   Write-Host "HTTPS mode enabled"
   Write-Host "  Keystore: $keystorePath"
 
-  # Set Spring Boot SSL environment variables so the fc-server-maven-plugin
-  # (which runs an embedded Spring Boot / Tomcat) picks them up.
-  $env:SERVER_SSL_KEY_STORE          = $keystorePath
-  $env:SERVER_SSL_KEY_STORE_PASSWORD = $StorePassword
-  $env:SERVER_SSL_KEY_STORE_TYPE     = "PKCS12"
-  $env:SERVER_SSL_KEY_ALIAS          = "formcycle-dev"
-  $env:SERVER_SSL_ENABLED            = "true"
-
   Write-Host "  Server will start on one of the candidate HTTPS URLs below."
 } else {
   # Clear any lingering SSL env vars from a previous HTTPS session
@@ -133,10 +125,14 @@ try {
   # Determine Maven arguments
   $mvnArgs = @("-P$Profile", $skipTestsArg)
   if (-not $PlainHttp) {
-    # The fc-server-maven-plugin uses an embedded Spring Boot server.
-    # Pass the server.port as a JVM property so the server listens on the
-    # first available port from the range.
+    # The fc-server-maven-plugin uses an embedded Spring Boot / Tomcat.
+    # Pass SSL properties as -D arguments so the forked JVM picks them up.
     $mvnArgs += "-Dserver.port=$PortStart"
+    $mvnArgs += "-Dserver.ssl.enabled=true"
+    $mvnArgs += "-Dserver.ssl.key-store=$keystorePath"
+    $mvnArgs += "-Dserver.ssl.key-store-password=$StorePassword"
+    $mvnArgs += "-Dserver.ssl.key-store-type=PKCS12"
+    $mvnArgs += "-Dserver.ssl.key-alias=formcycle-dev"
   }
   $mvnArgs += "fc-server:run-ms-war"
 
@@ -146,10 +142,6 @@ try {
   $cts.Cancel()
   try { $notifyTask.Wait(1500) } catch {}
   Pop-Location
-  # Clean up SSL env vars
-  if (-not $PlainHttp) {
-    Remove-Item Env:\SERVER_SSL_* -ErrorAction SilentlyContinue
-  }
 }
 
 exit $exitCode

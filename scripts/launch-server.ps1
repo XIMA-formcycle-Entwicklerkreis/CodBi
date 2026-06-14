@@ -12,33 +12,13 @@ param(
   [string]$Path   = "/xima-formcycle",
   [string]$Profile = "dev",
   [switch]$SkipTests = $true,
-  [switch]$PlainHttp = $false,
-  [string]$KeystoreDir,
-  [string]$KeystoreFile = "formcycle-dev.p12",
-  [string]$StorePassword = "changeit"
+  [switch]$PlainHttp = $false
 )
 
 $ErrorActionPreference = "Stop"
 
 function Resolve-RepoRoot {
   return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-}
-
-function Ensure-Keystore {
-  param([string]$KeystorePath, [string]$StorePassword)
-  if (Test-Path $KeystorePath) { return }
-  Write-Host "Auto-generating self-signed certificate..."
-  Write-Host "  Keystore: $KeystorePath"
-  $dir = Split-Path $KeystorePath -Parent
-  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-  $dname = "CN=Formcycle Dev Server, OU=Development, O=Local, L=Local, ST=Bavaria, C=DE"
-  $san = "san=dns:localhost,ip:127.0.0.1,ip:::1"
-  $keytoolCmd = "keytool -genkeypair -alias formcycle-dev -keyalg RSA -keysize 2048 -storetype PKCS12 " +
-    "-keystore `"$KeystorePath`" -storepass $StorePassword -keypass $StorePassword " +
-    "-dname `"$dname`" -validity 3650 -ext `"$san`""
-  $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $keytoolCmd" -NoNewWindow -Wait -PassThru
-  if ($process.ExitCode -ne 0) { throw "keytool exited with code $($process.ExitCode)" }
-  Write-Host "Certificate generated successfully."
 }
 
 function Resolve-Mvnw {
@@ -60,27 +40,10 @@ function Build-UrlCandidates {
 $repoRoot = Resolve-RepoRoot
 $mvnw     = Resolve-Mvnw -RepoRoot $repoRoot
 
-# --- HTTPS setup ---
-if (-not $PlainHttp) {
-  if (-not $KeystoreDir) { $KeystoreDir = Join-Path $repoRoot ".certs" }
-  $keystorePath = Join-Path $KeystoreDir $KeystoreFile
-  Ensure-Keystore -KeystorePath $keystorePath -StorePassword $StorePassword
-
-  Write-Host "HTTPS mode enabled"
-  Write-Host "  Keystore: $keystorePath"
-
-  # Set Spring Boot SSL environment variables so the fc-server-maven-plugin
-  # (which runs an embedded Spring Boot / Tomcat) picks them up.
-  $env:SERVER_SSL_KEY_STORE          = $keystorePath
-  $env:SERVER_SSL_KEY_STORE_PASSWORD = $StorePassword
-  $env:SERVER_SSL_KEY_STORE_TYPE     = "PKCS12"
-  $env:SERVER_SSL_KEY_ALIAS          = "formcycle-dev"
-  $env:SERVER_SSL_ENABLED            = "true"
-
-  Write-Host "  Server will start on one of the candidate HTTPS URLs below."
+if ($PlainHttp) {
+  Write-Host "HTTP mode (plain HTTP, no HTTPS)"
 } else {
-  # Clear any lingering SSL env vars from a previous HTTPS session
-  Remove-Item Env:\SERVER_SSL_* -ErrorAction SilentlyContinue
+  Write-Host "HTTPS mode enabled (fc-server-maven-plugin handles certificate automatically)"
 }
 
 $cts      = New-Object System.Threading.CancellationTokenSource
@@ -133,10 +96,7 @@ try {
   # Determine Maven arguments
   $mvnArgs = @("-P$Profile", $skipTestsArg)
   if (-not $PlainHttp) {
-    # The fc-server-maven-plugin uses an embedded Spring Boot server.
-    # Pass the server.port as a JVM property so the server listens on the
-    # first available port from the range.
-    $mvnArgs += "-Dserver.port=$PortStart"
+    $mvnArgs += "-DhttpsPort=$PortStart"
   }
   $mvnArgs += "fc-server:run-ms-war"
 
@@ -146,11 +106,6 @@ try {
   $cts.Cancel()
   try { $notifyTask.Wait(1500) } catch {}
   Pop-Location
-  # Clean up SSL env vars
-  if (-not $PlainHttp) {
-    Remove-Item Env:\SERVER_SSL_* -ErrorAction SilentlyContinue
-  }
 }
 
 exit $exitCode
-

@@ -601,8 +601,9 @@ export class AI_OCR {
           }
 
           receiverElem.value = responseText;
-          // Dispatch an input event so auto-resize (autosize) listeners fire.
-          receiverElem.dispatchEvent(new Event("input", { bubbles: true }));
+          // Resize the textarea to fit its content.
+          receiverElem.style.height = "auto";
+          receiverElem.style.height = `${receiverElem.scrollHeight}px`;
         } else {
           window.codbi.log(
             "INFO",

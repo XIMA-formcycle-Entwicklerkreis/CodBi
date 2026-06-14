@@ -1,28 +1,53 @@
 # Launch a local FORMCYCLE server and play a sound once it becomes reachable.
 # Usage (PowerShell):
 #   .\scripts\launch-server.ps1
+#   .\scripts\launch-server.ps1 -PortStart 8443 -PortEnd 8453 -Profile dev -SkipTests
 #   .\scripts\launch-server.ps1 -PlainHttp
 #   .\scripts\launch-server.ps1 -PlainHttp -PortStart 8080 -PortEnd 8090
 
 [CmdletBinding()]
 param(
-  [int]$PortStart = 8080,
-  [int]$PortEnd   = 8090,
+  [int]$PortStart = 8443,
+  [int]$PortEnd   = 8453,
   [string]$Path   = "/xima-formcycle",
   [string]$Profile = "dev",
   [switch]$SkipTests = $true,
-  [switch]$PlainHttp = $false
+  [switch]$PlainHttp = $false,
+  [string]$KeystoreDir,
+  [string]$KeystoreFile = "formcycle-dev.p12",
+  [string]$StorePassword = "changeit"
 )
 
 $ErrorActionPreference = "Stop"
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+
+function Resolve-RepoRoot {
+  return (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+}
+
+function Ensure-Keystore {
+  param([string]$KeystorePath, [string]$StorePassword)
+  if (Test-Path $KeystorePath) { return }
+  Write-Host "Auto-generating self-signed certificate..."
+  Write-Host "  Keystore: $KeystorePath"
+  $dir = Split-Path $KeystorePath -Parent
+  if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+  $dname = "CN=Formcycle Dev Server, OU=Development, O=Local, L=Local, ST=Bavaria, C=DE"
+  $san = "san=dns:localhost,ip:127.0.0.1,ip:::1"
+  $keytoolCmd = "keytool -genkeypair -alias formcycle-dev -keyalg RSA -keysize 2048 -storetype PKCS12 " +
+    "-keystore `"$KeystorePath`" -storepass $StorePassword -keypass $StorePassword " +
+    "-dname `"$dname`" -validity 3650 -ext `"$san`""
+  $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c $keytoolCmd" -NoNewWindow -Wait -PassThru
+  if ($process.ExitCode -ne 0) { throw "keytool exited with code $($process.ExitCode)" }
+  Write-Host "Certificate generated successfully."
+}
 
 function Resolve-Mvnw {
-  $mvnwCmd = Join-Path $repoRoot "mvnw.cmd"
+  param([string]$RepoRoot)
+  $mvnwCmd = Join-Path $RepoRoot "mvnw.cmd"
   if (Test-Path $mvnwCmd) { return $mvnwCmd }
-  $mvnw = Join-Path $repoRoot "mvnw"
+  $mvnw = Join-Path $RepoRoot "mvnw"
   if (Test-Path $mvnw) { return $mvnw }
-  throw "Could not find mvnw.cmd or mvnw in repo root: $repoRoot"
+  throw "Could not find mvnw.cmd or mvnw in repo root: $RepoRoot"
 }
 
 function Build-UrlCandidates {
@@ -32,85 +57,45 @@ function Build-UrlCandidates {
   return $ports | ForEach-Object { "${scheme}://localhost:$($_)$Path" }
 }
 
-$mvnw = Resolve-Mvnw
-$httpsPort = 8443
-$stunnelProcess = $null
+$repoRoot = Resolve-RepoRoot
+$mvnw     = Resolve-Mvnw -RepoRoot $repoRoot
 
+# --- HTTPS setup ---
 if (-not $PlainHttp) {
-  Write-Host "HTTPS mode: stunnel will wrap HTTP with TLS"
-  $certsDir = Join-Path $repoRoot ".certs"
-  if (-not (Test-Path $certsDir)) { New-Item -ItemType Directory -Path $certsDir -Force | Out-Null }
+  if (-not $KeystoreDir) { $KeystoreDir = Join-Path $repoRoot ".certs" }
+  $keystorePath = Join-Path $KeystoreDir $KeystoreFile
+  Ensure-Keystore -KeystorePath $keystorePath -StorePassword $StorePassword
 
-  # Generate self-signed PKCS12 keystore if missing
-  $p12Path = Join-Path $certsDir "formcycle-dev.p12"
-  if (-not (Test-Path $p12Path)) {
-    Write-Host "  Generating self-signed certificate..."
-    & "$PSScriptRoot\generate-selfsigned-cert.ps1" -Quiet
-  }
+  Write-Host "HTTPS mode enabled"
+  Write-Host "  Keystore: $keystorePath"
 
-  # Generate PEM for stunnel (cert + private key combined) using keytool + PowerShell
-  $pemPath = Join-Path $certsDir "stunnel.pem"
-  if (-not (Test-Path $pemPath) -and (Test-Path $p12Path)) {
-    Write-Host "  Converting certificate for stunnel..."
-    # Use .NET to export cert and key from PKCS12
-    $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($p12Path, "changeit", [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
-    $exportBytes = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert, "changeit")
-    $certWithKey = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($exportBytes, "changeit", [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
-    $pkcs12Export = $certWithKey.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12, "changeit")
-    [System.IO.File]::WriteAllBytes($pemPath, $pkcs12Export)
-    Write-Host "  Certificate ready: $pemPath"
-  }
+  # Set Spring Boot SSL environment variables so the fc-server-maven-plugin
+  # (which runs an embedded Spring Boot / Tomcat) picks them up.
+  $env:SERVER_SSL_KEY_STORE          = $keystorePath
+  $env:SERVER_SSL_KEY_STORE_PASSWORD = $StorePassword
+  $env:SERVER_SSL_KEY_STORE_TYPE     = "PKCS12"
+  $env:SERVER_SSL_KEY_ALIAS          = "formcycle-dev"
+  $env:SERVER_SSL_ENABLED            = "true"
 
-  # Ensure stunnel directory
-  $stunnelDir = Join-Path $repoRoot ".stunnel"
-  if (-not (Test-Path $stunnelDir)) { New-Item -ItemType Directory -Path $stunnelDir -Force | Out-Null }
-  $stunnelBin = Join-Path $stunnelDir "stunnel.exe"
-
-  # Download stunnel for Windows if not present
-  if (-not (Test-Path $stunnelBin)) {
-    Write-Host "  Downloading stunnel for Windows..."
-    $url = "https://www.stunnel.org/downloads/stunnel-5.74-win64-installer.exe"
-    $installerPath = Join-Path $stunnelDir "stunnel-installer.exe"
-    try {
-      Invoke-WebRequest -Uri $url -OutFile $installerPath -UseBasicParsing -ErrorAction Stop
-      Start-Process -FilePath $installerPath -ArgumentList "/S /D=$stunnelDir" -NoNewWindow -Wait
-      $exe = Get-ChildItem -Path $stunnelDir -Recurse -Filter "stunnel.exe" | Select-Object -First 1
-      if ($exe) { Copy-Item $exe.FullName $stunnelBin -Force }
-      Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
-    } catch {
-      Write-Host "  WARNING: Could not download stunnel automatically."
-      Write-Host "  Install manually from: https://www.stunnel.org/"
-      Write-Host "  Falling back to plain HTTP."
-      $PlainHttp = $true
-    }
-  }
-
-  # Start stunnel if binary exists
-  if (Test-Path $stunnelBin) {
-    $configContent = @"
-foreground = yes
-[https]
-accept = $httpsPort
-connect = $PortStart
-cert = $pemPath
-"@
-    $configPath = Join-Path $stunnelDir "stunnel.conf"
-    $configContent | Out-File -FilePath $configPath -Encoding ASCII -Force
-
-    Write-Host "  Starting stunnel: https://localhost:$httpsPort -> http://localhost:$PortStart"
-    $stunnelProcess = Start-Process -FilePath $stunnelBin -ArgumentList $configPath -NoNewWindow -PassThru
-  }
+  Write-Host "  Server will start on one of the candidate HTTPS URLs below."
+} else {
+  # Clear any lingering SSL env vars from a previous HTTPS session
+  Remove-Item Env:\SERVER_SSL_* -ErrorAction SilentlyContinue
 }
 
-$cts = New-Object System.Threading.CancellationTokenSource
-$urls = Build-UrlCandidates -PortStart $PortStart -PortEnd $PortEnd -Path $Path -UseHttps:$(-not $PlainHttp)
+$cts      = New-Object System.Threading.CancellationTokenSource
+$urls     = Build-UrlCandidates -PortStart $PortStart -PortEnd $PortEnd -Path $Path -UseHttps:$(-not $PlainHttp)
 
 $notifyTask = [System.Threading.Tasks.Task]::Run([Action]{
   $handler = New-Object System.Net.Http.HttpClientHandler
   $handler.AllowAutoRedirect = $true
-  $handler.ServerCertificateCustomValidationCallback = [System.Net.Security.RemoteCertificateValidationCallback]{ param($a,$b,$c,$d) $true }
-  $client = New-Object System.Net.Http.HttpClient($handler)
+  # Accept self-signed certificates for local development
+  $handler.ServerCertificateCustomValidationCallback = [System.Net.Security.RemoteCertificateValidationCallback]{
+    param($sender, $certificate, $chain, $sslPolicyErrors) return $true
+  }
+  $client  = New-Object System.Net.Http.HttpClient($handler)
   $client.Timeout = [TimeSpan]::FromSeconds(1)
+
   try {
     while(-not $cts.IsCancellationRequested) {
       foreach($url in $urls) {
@@ -127,24 +112,45 @@ $notifyTask = [System.Threading.Tasks.Task]::Run([Action]{
             try { [System.Media.SystemSounds]::Asterisk.Play() } catch { try { [Console]::Beep(800, 250) } catch {} }
             return
           }
-        } catch { } finally { if($null -ne $resp) { $resp.Dispose() } }
+        } catch {
+          # ignore and keep polling
+        } finally {
+          if($null -ne $resp) { $resp.Dispose() }
+        }
       }
       Start-Sleep -Milliseconds 500
     }
-  } finally { $client.Dispose() }
+  } finally {
+    $client.Dispose()
+  }
 }, $cts.Token)
 
 $exitCode = 0
 try {
   Push-Location $repoRoot
   $skipTestsArg = if($SkipTests) { "-DskipTests=true" } else { "-DskipTests=false" }
-  & $mvnw "-P$Profile" $skipTestsArg "fc-server:run-ms-war"
+
+  # Determine Maven arguments
+  $mvnArgs = @("-P$Profile", $skipTestsArg)
+  if (-not $PlainHttp) {
+    # The fc-server-maven-plugin uses an embedded Spring Boot server.
+    # Pass the server.port as a JVM property so the server listens on the
+    # first available port from the range.
+    $mvnArgs += "-Dserver.port=$PortStart"
+  }
+  $mvnArgs += "fc-server:run-ms-war"
+
+  & $mvnw $mvnArgs
   $exitCode = $LASTEXITCODE
 } finally {
   $cts.Cancel()
   try { $notifyTask.Wait(1500) } catch {}
   Pop-Location
-  if ($stunnelProcess -and -not $stunnelProcess.HasExited) { $stunnelProcess.Kill() }
+  # Clean up SSL env vars
+  if (-not $PlainHttp) {
+    Remove-Item Env:\SERVER_SSL_* -ErrorAction SilentlyContinue
+  }
 }
 
 exit $exitCode
+

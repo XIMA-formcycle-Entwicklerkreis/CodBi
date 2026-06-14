@@ -69,10 +69,18 @@ if (-not $PlainHttp) {
   Write-Host "HTTPS mode enabled"
   Write-Host "  Keystore: $keystorePath"
 
+  # Set MAVEN_OPTS with SSL properties — Maven always reads this for its JVM.
+  $sslOpts = "-Dserver.ssl.enabled=true -Dserver.ssl.key-store=`"$keystorePath`" " +
+    "-Dserver.ssl.key-store-password=$StorePassword -Dserver.ssl.key-store-type=PKCS12 " +
+    "-Dserver.ssl.key-alias=formcycle-dev"
+  $env:MAVEN_OPTS = if ($env:MAVEN_OPTS) { "$sslOpts $env:MAVEN_OPTS" } else { $sslOpts }
+  Write-Host "  MAVEN_OPTS SSL: $sslOpts"
+
   Write-Host "  Server will start on one of the candidate HTTPS URLs below."
 } else {
-  # Clear any lingering SSL env vars from a previous HTTPS session
+  # Clear any lingering SSL env vars
   Remove-Item Env:\SERVER_SSL_* -ErrorAction SilentlyContinue
+  Remove-Item Env:MAVEN_OPTS -ErrorAction SilentlyContinue
 }
 
 $cts      = New-Object System.Threading.CancellationTokenSource

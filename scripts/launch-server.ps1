@@ -1,18 +1,18 @@
 # Launch a local FORMCYCLE server and play a sound once it becomes reachable.
 # Usage (PowerShell):
 #   .\scripts\launch-server.ps1
-#   .\scripts\launch-server.ps1 -PortStart 8080 -PortEnd 8090 -Profile dev -SkipTests
-#   .\scripts\launch-server.ps1 -UseHttps
-#   .\scripts\launch-server.ps1 -UseHttps -PortStart 8443 -PortEnd 8453
+#   .\scripts\launch-server.ps1 -PortStart 8443 -PortEnd 8453 -Profile dev -SkipTests
+#   .\scripts\launch-server.ps1 -PlainHttp
+#   .\scripts\launch-server.ps1 -PlainHttp -PortStart 8080 -PortEnd 8090
 
 [CmdletBinding()]
 param(
-  [int]$PortStart = 8080,
-  [int]$PortEnd   = 8090,
+  [int]$PortStart = 8443,
+  [int]$PortEnd   = 8453,
   [string]$Path   = "/xima-formcycle",
   [string]$Profile = "dev",
   [switch]$SkipTests = $true,
-  [switch]$UseHttps = $false,
+  [switch]$PlainHttp = $false,
   [string]$KeystoreDir,
   [string]$KeystoreFile = "formcycle-dev.p12",
   [string]$StorePassword = "changeit"
@@ -61,7 +61,7 @@ $repoRoot = Resolve-RepoRoot
 $mvnw     = Resolve-Mvnw -RepoRoot $repoRoot
 
 # --- HTTPS setup ---
-if ($UseHttps) {
+if (-not $PlainHttp) {
   if (-not $KeystoreDir) { $KeystoreDir = Join-Path $repoRoot ".certs" }
   $keystorePath = Join-Path $KeystoreDir $KeystoreFile
   Ensure-Keystore -KeystorePath $keystorePath -StorePassword $StorePassword
@@ -84,7 +84,7 @@ if ($UseHttps) {
 }
 
 $cts      = New-Object System.Threading.CancellationTokenSource
-$urls     = Build-UrlCandidates -PortStart $PortStart -PortEnd $PortEnd -Path $Path -UseHttps:$UseHttps
+$urls     = Build-UrlCandidates -PortStart $PortStart -PortEnd $PortEnd -Path $Path -UseHttps:$(-not $PlainHttp)
 
 $notifyTask = [System.Threading.Tasks.Task]::Run([Action]{
   $handler = New-Object System.Net.Http.HttpClientHandler
@@ -132,7 +132,7 @@ try {
 
   # Determine Maven arguments
   $mvnArgs = @("-P$Profile", $skipTestsArg)
-  if ($UseHttps) {
+  if (-not $PlainHttp) {
     # The fc-server-maven-plugin uses an embedded Spring Boot server.
     # Pass the server.port as a JVM property so the server listens on the
     # first available port from the range.
@@ -147,7 +147,7 @@ try {
   try { $notifyTask.Wait(1500) } catch {}
   Pop-Location
   # Clean up SSL env vars
-  if ($UseHttps) {
+  if (-not $PlainHttp) {
     Remove-Item Env:\SERVER_SSL_* -ErrorAction SilentlyContinue
   }
 }

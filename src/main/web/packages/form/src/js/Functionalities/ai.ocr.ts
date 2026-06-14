@@ -161,17 +161,25 @@ export class AI_OCR {
       const pdfTextResults: { [filename: string]: string } = {};
 
       for (const file of Array.from(files)) {
-        if (file.type === "application/pdf") {
-          const pdfResult = await AI_OCR.processPdfFile(file, maxPages);
+        const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+        if (isPdf) {
+          try {
+            const pdfResult = await AI_OCR.processPdfFile(file, maxPages);
 
-          if (pdfResult.hasText) {
-            pdfTextResults[file.name] = pdfResult.text;
-          } else {
-            for (let i = 0; i < pdfResult.images.length; i++) {
-              const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
+            if (pdfResult.hasText) {
+              pdfTextResults[file.name] = pdfResult.text;
+            } else {
+              for (let i = 0; i < pdfResult.images.length; i++) {
+                const imageName = `${file.name.replace(".pdf", "")}_page_${i + 1}.png`;
 
-              formData.append(imageName, pdfResult.images[i], imageName);
+                formData.append(imageName, pdfResult.images[i], imageName);
+              }
             }
+          } catch (err) {
+            window.codbi.log("ERROR", `Failed to process PDF '${file.name}': ${err}`, "AI / OCR");
+            // Fall back: render as image for OCR server-side.
+            const downscaledImage = await AI_OCR.downscaleImageForOCR(file);
+            formData.append(file.name, downscaledImage, file.name);
           }
         } else {
           const downscaledImage = await AI_OCR.downscaleImageForOCR(file);
@@ -607,11 +615,7 @@ export class AI_OCR {
           const scrollH = receiverElem.scrollHeight;
           const pad = receiverElem.offsetHeight - receiverElem.clientHeight;
           const finalHeight = scrollH + pad;
-          window.codbi.log(
-            "INFO",
-            `AI.OCR resize: value length=${responseText.length}, initialH=${initialHeight}, scrollH=${scrollH}, pad=${pad}, finalH=${finalHeight}`,
-            "AI / OCR",
-          );
+
           receiverElem.style.height = `${Math.max(finalHeight, initialHeight)}px`;
         } else {
           window.codbi.log(

@@ -70,7 +70,7 @@
 		<java.version>11</java.version>
 
 		<!-- Dependency versions -->
-		<jakarta-servlet-api.version>4.0.4</jakarta-servlet-api.version>
+		<jakarta-servlet-api.version>6.1.0</jakarta-servlet-api.version>
 		<jackson.version>2.17.3</jackson.version>
 
 		<!-- Plugins -->

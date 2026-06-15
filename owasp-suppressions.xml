@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+	<!--
+		OWASP Dependency-Check False-Positive Suppressions
+
+		Add <suppress> entries here for CVEs that are confirmed false positives
+		or not applicable to how CodBi uses the flagged dependency.
+		Each entry should include a <notes> explaining the rationale.
+	-->
+</suppressions>

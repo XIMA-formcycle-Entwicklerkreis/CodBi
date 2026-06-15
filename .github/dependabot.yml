@@ -1,0 +1,68 @@
+# Dependabot configuration for CodBi
+# See: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Maven (Java / Kotlin backend) — root pom.xml
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "java"
+    reviewers:
+      - "XIMA-formcycle-Entwicklerkreis/maintainers"
+    groups:
+      # Group minor/patch updates for faster review
+      maven-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # npm / Yarn (TypeScript frontend) — src/main/web
+  - package-ecosystem: "npm"
+    directory: "/src/main/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 10
+    versioning-strategy: increase
+    labels:
+      - "dependencies"
+      - "javascript"
+    reviewers:
+      - "XIMA-formcycle-Entwicklerkreis/maintainers"
+    ignore:
+      # Managed / aligned with FormCycle server version; updated via xfc.version in pom.xml
+      - dependency-name: "@de-xima/fc-backend-common"
+      - dependency-name: "@de-xima/fc-form-designer"
+      - dependency-name: "@de-xima/fc-form-renderer"
+    groups:
+      npm-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions workflows themselves
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"

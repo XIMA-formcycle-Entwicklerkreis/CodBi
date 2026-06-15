@@ -98,6 +98,8 @@
 		<properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
 		<spotless-maven-plugin.version>2.44.2</spotless-maven-plugin.version>
 		<jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
+		<dependency-check-maven.version>10.0.4</dependency-check-maven.version>
+		<cyclonedx-maven-plugin.version>2.9.1</cyclonedx-maven-plugin.version>
 	</properties>
 
 	<dependencyManagement>
@@ -507,6 +509,48 @@
 					<groupId>org.codehaus.mojo</groupId>
 					<artifactId>exec-maven-plugin</artifactId>
 					<version>${exec-maven-plugin.version}</version>
+				</plugin>
+	
+				<!-- OWASP Dependency-Check: scans project dependencies for known CVEs -->
+				<plugin>
+					<groupId>org.owasp</groupId>
+					<artifactId>dependency-check-maven</artifactId>
+					<version>${dependency-check-maven.version}</version>
+					<configuration>
+						<!-- Fail the build only on CVSS 7+ (High/Critical) vulnerabilities -->
+						<failBuildOnCVSS>7</failBuildOnCVSS>
+						<!-- Suppress false positives (path relative to project root) -->
+						<suppressionFiles>
+							<suppressionFile>${project.basedir}/owasp-suppressions.xml</suppressionFile>
+						</suppressionFiles>
+						<!-- Skip if the skip flag is set (useful for dev builds) -->
+						<skip>${skip.owasp}</skip>
+						<!-- Output formats -->
+						<formats>
+							<format>HTML</format>
+							<format>JSON</format>
+							<format>XML</format>
+						</formats>
+					</configuration>
+				</plugin>
+	
+				<!-- CycloneDX SBOM: generates a Software Bill of Materials in CycloneDX format -->
+				<plugin>
+					<groupId>org.cyclonedx</groupId>
+					<artifactId>cyclonedx-maven-plugin</artifactId>
+					<version>${cyclonedx-maven-plugin.version}</version>
+					<configuration>
+						<!-- Include all scopes (compile, runtime, provided, test, system) -->
+						<includeProvidedScope>true</includeProvidedScope>
+						<includeSystemScope>true</includeSystemScope>
+						<includeTestScope>true</includeTestScope>
+						<!-- Output format -->
+						<outputFormat>json</outputFormat>
+						<!-- Schema version -->
+						<schemaVersion>1.6</schemaVersion>
+						<!-- Output directory for the BOM -->
+						<outputDirectory>${project.build.directory}/sbom</outputDirectory>
+					</configuration>
 				</plugin>
 			</plugins>
 		</pluginManagement>
@@ -1229,6 +1273,34 @@
 				</configuration>
 			</plugin>
 
+			<!-- OWASP Dependency-Check: scan dependencies for CVEs during verify phase -->
+			<plugin>
+				<groupId>org.owasp</groupId>
+				<artifactId>dependency-check-maven</artifactId>
+				<executions>
+					<execution>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<phase>verify</phase>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- CycloneDX SBOM: generate a Software Bill of Materials during verify phase -->
+			<plugin>
+				<groupId>org.cyclonedx</groupId>
+				<artifactId>cyclonedx-maven-plugin</artifactId>
+				<executions>
+					<execution>
+						<goals>
+							<goal>makeAggregateBom</goal>
+						</goals>
+						<phase>verify</phase>
+					</execution>
+				</executions>
+			</plugin>
+
 		</plugins>
 
 		<sourceDirectory>${project.basedir}/src/main/kotlin</sourceDirectory>
@@ -1241,6 +1313,7 @@
 			<id>dev</id>
 			<properties>
 				<skipTests>true</skipTests>
+				<skip.owasp>true</skip.owasp>
 			</properties>
 			<build>
 				<resources>

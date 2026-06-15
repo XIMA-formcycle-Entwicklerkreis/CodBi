@@ -1,10 +1,9 @@
-# This workflow will build a Java project with Maven, and cache/restore any dependencies to improve the workflow execution time
+# Builds the project with Maven, runs OWASP Dependency-Check for CVE scanning,
+# and generates a CycloneDX SBOM. See also:
+#   - docs.yml                 — documentation generation & deployment
+#   - fc-compat-check.yml      — weekly FormCycle compatibility verification
+#
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-maven
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
 
 name: Java CI with Maven
 
@@ -14,22 +13,70 @@ on:
   pull_request:
     branches: [ "main" ]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
     - uses: actions/checkout@v4
+
     - name: Set up JDK 11
       uses: actions/setup-java@v4
       with:
         java-version: '11'
         distribution: 'temurin'
         cache: maven
+
     - name: Make Maven wrapper executable
       run: chmod +x mvnw
-    - name: Build with Maven wrapper
+
+    # ── Main build (compile, test, package) ──────────────────────────────
+    - name: Build with Maven
       run: ./mvnw -B clean verify -Denforcer.skip --file pom.xml
+
+    # ── OWASP Dependency-Check ───────────────────────────────────────────
+    # Scans all project dependencies (including transitive) against the NVD
+    # and other CVE feeds. Fails the build only on CVSS >= 7 (High/Critical).
+    # The step continues on error so the report is always uploaded.
+    - name: OWASP Dependency-Check
+      id: owasp
+      continue-on-error: true
+      run: ./mvnw -B dependency-check:check -Denforcer.skip --file pom.xml
+
+    - name: Upload OWASP Dependency-Check report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: owasp-dependency-check-report
+        path: |
+          target/dependency-check-report.html
+          target/dependency-check-report.json
+          target/dependency-check-report.xml
+        retention-days: 30
+
+    # ── CycloneDX SBOM ──────────────────────────────────────────────────
+    # Generates a Software Bill of Materials in CycloneDX JSON format
+    # (schema v1.6) covering all dependency scopes.
+    - name: Generate CycloneDX SBOM
+      run: ./mvnw -B cyclonedx:makeAggregateBom -Denforcer.skip --file pom.xml
+
+    - name: Upload CycloneDX SBOM
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: cyclonedx-sbom
+        path: target/sbom/
+        retention-days: 90
+
+    # ── Enforcer ────────────────────────────────────────────────────────
     - name: Enforce Maven rules
       run: ./mvnw -B enforcer:enforce -P enforce --file pom.xml
+
+    # ── Fail the job if OWASP found High/Critical CVEs ──────────────────
+    - name: Fail on OWASP vulnerabilities
+      if: steps.owasp.outcome == 'failure'
+      run: |
+        echo "::error::OWASP Dependency-Check found High or Critical vulnerabilities. Download the 'owasp-dependency-check-report' artifact for details."
+        exit 1

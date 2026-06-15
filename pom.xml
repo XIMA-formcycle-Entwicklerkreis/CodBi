@@ -92,7 +92,7 @@
 		<maven-site-plugin.version>3.21.0</maven-site-plugin.version>
 		<maven-surefire-plugin.version>3.5.2</maven-surefire-plugin.version>
 		<maven-surefire-junit5-tree-reporter.version>1.4.0</maven-surefire-junit5-tree-reporter.version>
-		<dokka-maven-plugin.version>1.9.20</dokka-maven-plugin.version>
+		<dokka-maven-plugin.version>2.2.0</dokka-maven-plugin.version>
 		<dokka.sourceDir>${project.basedir}/src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic</dokka.sourceDir>
 		<dokka.outputDir>${project.build.directory}/dokka</dokka.outputDir>
 		<properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>

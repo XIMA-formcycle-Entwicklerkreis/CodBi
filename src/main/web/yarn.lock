@@ -295,17 +295,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@angular/router@npm:^20.0.5":
-  version: 20.0.5
-  resolution: "@angular/router@npm:20.0.5"
+"@angular/router@npm:^22.0.1":
+  version: 22.0.1
+  resolution: "@angular/router@npm:22.0.1"
   dependencies:
     tslib: "npm:^2.3.0"
   peerDependencies:
-    "@angular/common": 20.0.5
-    "@angular/core": 20.0.5
-    "@angular/platform-browser": 20.0.5
+    "@angular/common": 22.0.1
+    "@angular/core": 22.0.1
+    "@angular/platform-browser": 22.0.1
     rxjs: ^6.5.3 || ^7.4.0
-  checksum: 10c0/746bf7e9ee0ca112b4b0364fb5f0d39329df164f4adf68bddf1181a4f1d8e3062af4689adb1903ea59e0e51cad7c18fd7b4b251ab20e8c8ea50b426077ac9892
+  checksum: 10c0/6dfae3da31743a1d21c9c1168e686b0ffcf6b6324a2c2ad1efd70244ff4b5a161717dbf5b0904934c6dcadea87dd384c26ba536f5135f9404d2fce3da6e6a187
   languageName: node
   linkType: hard
 
@@ -4769,7 +4769,7 @@ __metadata:
     "@angular/elements": "npm:^20.0.5"
     "@angular/forms": "npm:^20.0.0"
     "@angular/platform-browser": "npm:^20.0.5"
-    "@angular/router": "npm:^20.0.5"
+    "@angular/router": "npm:^22.0.1"
     "@primeng/themes": "npm:^20.0.0"
     "@primeuix/themes": "npm:^1.2.1"
     "@types/jasmine": "npm:~5.1.0"

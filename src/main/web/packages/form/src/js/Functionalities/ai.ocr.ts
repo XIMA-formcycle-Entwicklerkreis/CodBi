@@ -104,7 +104,7 @@ export class AI_OCR {
   ): void {
     (toProcess as HTMLInputElement).addEventListener("change", async (event) => {
       const container =
-        (toProcess as HTMLElement).closest(".XContainer") ??
+        (toProcess as HTMLElement).closest(".XContainer, .XFieldSet") ??
         document.querySelector(`div .CXUpload:has( #${toProcess.getAttribute("id")})`).parentElement;
 
       // #region Symbol resolution for pattern/question

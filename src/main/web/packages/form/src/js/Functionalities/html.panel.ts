@@ -589,6 +589,93 @@ export class HTML_Panel {
           untag.classList.remove("CodBi_HTML_Panel_MissingRequiredField");
         }
         // #endregion Untag missing required fields.
+        // #region Build required group lookup from XM_FORM_MODEL at submit time.
+        // XM_FORM_MODEL is set by the Formcycle renderer and contains validation group definitions.
+        // Groups are arrays of element IDs. Fields with a "vgr" property belong to that group.
+        // If any group member has a value/file, all members of that group are considered valid.
+        const xmFormModel = (
+          window as unknown as {
+            XM_FORM_MODEL?: {
+              validation?: {
+                revids?: { groups?: Record<string, string[]> };
+                fields?: Record<string, { vgr?: string }>;
+              };
+            };
+          }
+        ).XM_FORM_MODEL;
+        const validationGroups: Record<string, string[]> = xmFormModel?.validation?.revids?.groups ?? {};
+        /** Maps element ID → group ID for quick lookup. */
+        const elementToGroup: Record<string, string> = {};
+        if (xmFormModel?.validation?.fields) {
+          for (const [elId, fieldInfo] of Object.entries(xmFormModel.validation.fields)) {
+            if (fieldInfo.vgr) {
+              elementToGroup[elId] = fieldInfo.vgr;
+            }
+          }
+        }
+        /**
+         * Checks if any member of a required group has a non-empty value or file selected.
+         *
+         * @param groupId The required group ID.
+         *
+         * @returns TRUE if at least one element in the group is filled. */
+        const groupHasFilledMember = (groupId: string): boolean => {
+          const members = validationGroups[groupId];
+          if (!members || members.length === 0) {
+            return false;
+          }
+          return members.some((memberId) => {
+            const el = document.getElementById(memberId) as
+              | (HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement)
+              | null;
+            if (!el) {
+              return false;
+            }
+            // Check standard value (text inputs, textareas, selects).
+            const val = el.value;
+            if (val !== "" && val !== undefined && val !== null) {
+              return true;
+            }
+            // Check native file input (HTML5 File API).
+            if ((el as HTMLInputElement).files?.length > 0) {
+              return true;
+            }
+            // Check Formcycle's internal upload tracking on the element's jQuery data.
+            // The renderer stores uploaded file info as "xfc-uploaded-files" data attribute.
+            try {
+              const $ = getJQuery();
+              const $el = $(el);
+              // xfc-uploaded-files is set by Formcycle's XUpload component when files are uploaded.
+              if (
+                $el.data &&
+                Array.isArray($el.data("xfc-uploaded-files")) &&
+                ($el.data("xfc-uploaded-files") as unknown[]).length > 0
+              ) {
+                return true;
+              }
+              // xfc-file-list tracks pending uploads.
+              if (
+                $el.data &&
+                Array.isArray($el.data("xfc-file-list")) &&
+                ($el.data("xfc-file-list") as unknown[]).length > 0
+              ) {
+                return true;
+              }
+            } catch (_ignored) {
+              // jQuery not available or data API fails — skip.
+            }
+            return false;
+          });
+        };
+        /** Set of group IDs that already have a filled member (computed once per submit). */
+        const satisfiedGroups = new Set<string>();
+        for (const [groupId, members] of Object.entries(validationGroups)) {
+          if (groupHasFilledMember(groupId)) {
+            satisfiedGroups.add(groupId);
+          }
+        }
+        // #endregion Build required group lookup from XM_FORM_MODEL at submit time.
+
         let reallyInvalid = false;
 
         for (const candidate of document.querySelectorAll('[ aria-required = "true"]')) {
@@ -596,6 +683,16 @@ export class HTML_Panel {
             (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value === "" ||
             (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value === undefined
           ) {
+            // #region Check if the field belongs to a required group that is already satisfied.
+            const candidateId = candidate.getAttribute("id");
+            if (candidateId && elementToGroup[candidateId]) {
+              const groupId = elementToGroup[candidateId];
+              if (satisfiedGroups.has(groupId)) {
+                // Another member of this required group has a value — skip this field.
+                continue;
+              }
+            }
+            // #endregion Check if the field belongs to a required group that is already satisfied.
             HTML_Panel.unfoldPanelAncestors(candidate as HTMLElement);
 
             if (!isDisplayNone(candidate as HTMLElement)) {

@@ -319,10 +319,34 @@
 			<scope>test</scope>
 		</dependency>
 
-		<!-- Provided by FC server via fc-security since FC 8.5.x; scope comes from DM. -->
+		<!-- FC 8.5.x may not provide jackson-module-kotlin at runtime.
+		     Include standalone jar; FC provides all Jackson & Kotlin transitive deps. -->
 		<dependency>
 			<groupId>com.fasterxml.jackson.module</groupId>
 			<artifactId>jackson-module-kotlin</artifactId>
+			<scope>compile</scope>
+			<exclusions>
+				<exclusion>
+					<groupId>com.fasterxml.jackson.core</groupId>
+					<artifactId>jackson-databind</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>com.fasterxml.jackson.core</groupId>
+					<artifactId>jackson-annotations</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>com.fasterxml.jackson.core</groupId>
+					<artifactId>jackson-core</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.jetbrains.kotlin</groupId>
+					<artifactId>kotlin-reflect</artifactId>
+				</exclusion>
+				<exclusion>
+					<groupId>org.jetbrains.kotlin</groupId>
+					<artifactId>kotlin-stdlib</artifactId>
+				</exclusion>
+			</exclusions>
 		</dependency>
 	</dependencies>
 
@@ -510,7 +534,7 @@
 					<artifactId>exec-maven-plugin</artifactId>
 					<version>${exec-maven-plugin.version}</version>
 				</plugin>
-	
+
 				<!-- OWASP Dependency-Check: scans project dependencies for known CVEs -->
 				<plugin>
 					<groupId>org.owasp</groupId>
@@ -533,7 +557,7 @@
 						</formats>
 					</configuration>
 				</plugin>
-	
+
 				<!-- CycloneDX SBOM: generates a Software Bill of Materials in CycloneDX format -->
 				<plugin>
 					<groupId>org.cyclonedx</groupId>

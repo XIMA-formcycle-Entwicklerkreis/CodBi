@@ -1,19 +1,5 @@
 # CodBi Core Components API (Compact)
 
-### CRITICAL — PANEL CSS CLASSES vs XCONTAINERS
-Panel CSS classes (CodBi_HTML_Panel_*) ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' property that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. Therefore, for containers (XContainer, XContainerInvisible) that need to be a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader="true" and a data-cb-autoheadertitle. If the user's prompt specifies a title, use that as the data-cb-autoheadertitle value; otherwise generate a descriptive title from the container's content (e.g. "Geburtsdatum" for a date-of-birth section, "Anschrift" for an address section).
-
-### CRITICAL — COLLAPSIBLE XCONTAINERS (UI.Panels)
-When the user asks for a collapsible, expandable, or foldable container ("aus- und einklappbar", "auf- und zuklappbar", "accordion") and it is an XContainer (div), use data-cb-func=html.panel via the attributes array (as {"text":"data-cb-func","value":"html.panel"}). ALSO set data-cb-generateheader="true" (as {"text":"data-cb-generateheader","value":"true"}) and data-cb-autoheadertitle in the attributes array for the panel header title. If the user's prompt specifies a title use that, otherwise generate a descriptive title from the container's content (e.g. "Geburtsdatum" for a date-of-birth section, "Anschrift" for an address section).
-- Folded state: By default the panel starts unfolded. Only add data-cb-folded="true" (as {"text":"data-cb-folded","value":"true"}) if the user explicitly wants the panel to start collapsed.
-- COLLAPSIBLE FIELDSETS: This does NOT apply to XFieldSet (fieldset). For fieldsets, the panel automatically uses the fieldset's legend as the title. Use the CSS class CodBi_HTML_Panel_Standard on the fieldset instead (no data-cb-func=html.panel needed — the CSS class triggers the standard configuration which provides the HTML.Panel behavior).
-- XContainer example: {"className":"XContainer","properties":{"name":"coGeburtsdatum","id":"xi-co-geburtsdatum","elements":["tfGeburtsdatum"],"fullwidth":"0","attributes":[{"text":"data-cb-func","value":"html.panel"},{"text":"data-cb-generateheader","value":"true"},{"text":"data-cb-autoheadertitle","value":"Geburtsdatum"}]}}
-- XFieldSet example (CSS class, no data-cb-func needed): {"className":"XFieldSet","properties":{"name":"fsGeburtsdatum","id":"xi-fs-geburtsdatum","legend":"Geburtsdatum","elements":["tfGeburtsdatum"],"fullwidth":"0","cssclasses":["CodBi_HTML_Panel_Standard"]}}
-- Available panel classes: CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal
-- Accordion classes: CodBi_Accordion_A/B/C/D
-- Exclusion class: CodBi_HTML_Panel_NoCordion (marks panels inside an accordion that should NOT participate in accordion behavior)
-- For nested panels use different classes per level (e.g. outer on fieldset: CodBi_HTML_Panel_Standard, inner on fieldset: CodBi_HTML_Panel_Flat).
-
 Compact reference for AI prompts: one sentence per component and parameter.
 
 ### GENERIC RULE for all CSS-Selector parameters below
@@ -47,35 +33,21 @@ when CodBi searches within the shared parent container.
   - VoiceSendHotkey: Configures 'VoiceSendHotkey' for this functionality.
   - WaitingText: Configures 'WaitingText' for this functionality.
   - WelcomeText: Configures 'WelcomeText' for this functionality.
-- OnChange.Conditional: Applicable on any input field to conditionally apply a CodBi functionality to a target element depending on whether the field's value satisfies a comparison with a reference value.
-  - Candidate: CSS-Class-Selector for the monitored input field (e.g., '.tfGeburtsdatum'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
-  - DateFormat: Optional date format string (e.g. "DD.MM.YYYY") when comparing date values. Triggers date parsing of the candidate value before comparison.
-  - Mode: Comparison mode: GT (greater than), GTEQ (greater than or equal), LT (lower than), LTEQ (lower than or equal), EQ (equal), NEQ (not equal).
-  - Reference: The value to compare against. Can be a literal or an Element Placeholder (EP) expression like "{ Date.Today > -18y }" for "today minus 18 years".
-  - Target: CSS-Class-Selector for the element to modify when the condition is TRUE or FALSE (e.g., '.cdivErziehungsberechtigter'). Use dot-prefixed class selector. Do NOT use an ID selector.
-  - _T_FUNC: Functionality ID to apply to the Target when the condition is TRUE (e.g. "HTML.SETAttribute"). Sets data-cb-func on the target.
-  - _T_Name: Attribute name to set on the Target when TRUE (e.g. "style"). Sets data-cb-name on the target.
-  - _T_ToSet: Attribute value to set on the Target when TRUE (e.g. "width:100%;display:block;"). Sets data-cb-toset on the target.
-  - _F_FUNC: Functionality ID to apply to the Target when the condition is FALSE.
-  - _F_Name: Attribute name to set on the Target when FALSE (e.g. "style").
-  - _F_ToSet: Attribute value to set on the Target when FALSE (e.g. "width:100%;display:none;").
-  Use OnChange.Conditional for wenn...dann... / if...then... conditions — NOT Date.Min or CodBi_People_18plus (those restrict input, they do not conditionally apply functionality). EDGE CASE: when showing/hiding a single field with OnChange.Conditional, wrap that field in an XContainer and target the container instead.
-- AI.OCR: Applicable on an XUpload field to extract text from uploaded images/PDFs via OCR and optionally validate or extract specific content. CRITICAL — For content validation on uploads, use AI.OCR's Pattern parameter — do NOT apply HTML.Input.REGEX to XUpload fields (REGEX is for XTextField only). CRITICAL — When a Pattern contains curly braces (e.g. regex quantifiers like {2,}) that would be misinterpreted as Element Placeholders, prefix the value with "^" to mark it as raw (the "^" is stripped at runtime). Three modes: "print" (extract full text as a whole), "verify" (validate content against a Pattern), "Extract Fields" (extract specific parts — even into a single field). In "Extract Fields" mode: on the upload set data-cb-Mode="Extract Fields" and data-cb-Pattern_<name> for each field to extract — the <name> MUST match the receiver field's data-cb-Field value (e.g. if receiver has data-cb-Field="firstMWord", the upload must have data-cb-Pattern_firstMWord, NOT data-cb-Pattern_1). Each target receiver field gets cssclasses ["CodBi_AI_OCR_Receiver"] AND data-cb-Field="<name>" matching the pattern name from the upload. Do NOT apply HTML.Input.REGEX to receiver fields, do NOT use data-cb-Expression.
-  - Field: CSS-Class-Selector for the field receiving the OCR output (e.g., '.tfExtractedText'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector. CRITICAL — Do NOT set data-cb-Field when using Mode="print". The receiver field is identified by CodBi_AI_OCR_Receiver CSS class instead.
-  - FieldPattern_: The pattern that the field selector must match.
-  - InvalidImageText: The error message to display when the OCR-extracted text does NOT match the Pattern (used in verify mode only — do NOT set in Extract Fields mode). CRITICAL — Write this message in the EXACT language of the user's request. CRITICAL — If the message contains commas, prefix the entire value with "^" so CodBi treats it as a single string. Example (English): "The uploaded document must contain the word 'callari' and an email address." Example (German): "Das hochgeladene Dokument muss das Wort 'callari' und eine E-Mail-Adresse enthalten."
-  - Maximum: The maximum number of pages to process (default: 1).
-  - MaxPages: Alias for Maximum.
-  - Mode: The mode of operation. CRITICAL — ALWAYS set data-cb-Mode. "print" for plain text extraction (returns the full extracted text to a CodBi_AI_OCR_Receiver-tagged XTextField — create one if not present), "verify" for content validation against a Pattern, "Extract Fields" for extracting specific patterns into separate fields (when only parts of the text should be extracted).
-  - Pattern: The regex pattern to validate the OCR-extracted text against (used in "verify" mode). CRITICAL — Use this instead of HTML.Input.REGEX on XUpload fields. HTML.Input.REGEX is ONLY for XTextField, NOT for uploads. Example: "^(?=.*callari)(?=.*\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b)" to require "callari" AND an email address. Set Mode="verify" when using Pattern for validation. CRITICAL — When the regex contains curly braces (like {2,}), ALWAYS prefix the entire value with "^" (e.g. "^[\d]{2,4}") — the "^" is stripped at runtime and prevents curly braces from being misinterpreted as Element Placeholders.
-  - Preprocess: Whether to preprocess images (deskew, contrast, etc.) before OCR. Set to "true" to enable preprocessing.
-  - ProcessingImageText: The text to display while OCR processing is in progress (e.g. "Scanning document..."). Defaults to "Processing image...".
-  - QueueBadge: Badge text shown on the upload field's queue indicator.
-  - QueueText: Text shown on the upload field's queue indicator.
-  - RegExFlags: Regex flags for the Pattern (e.g. "gi" for case-insensitive global matching). CRITICAL — ALWAYS set data-cb-RegexFlags when applying AI.OCR. Default to "gi" unless the user specifies otherwise. Without this, the regex may not match correctly (e.g. case differences would cause verification to fail).
-  - Separator: Separator string inserted between extracted text values when multiple pages/fields are processed.
-  - WrongFileMessage: The label text for the manual verification checkbox (human-in-the-loop) shown when OCR verification fails (used in verify mode only — do NOT set in Extract Fields mode). CRITICAL — ALWAYS set data-cb-WrongFileMessage when using Mode="verify". The message should state what content was expected and that the checkbox can be checked to manually override. CRITICAL — Write this message in the EXACT language of the user's request. CRITICAL — If the message contains commas, prefix the entire value with "^" so CodBi treats it as a single string (e.g. "^The document did not contain the expected content. If you are sure, check this box."). Example (English): "The document did not contain the expected content. If you are sure the correct document was uploaded, check this box to proceed." Example (German): "Das Dokument enthielt nicht den erwarteten Inhalt. Wenn Sie sicher sind, dass das korrekte Dokument hochgeladen wurde, aktivieren Sie dieses Kontrollkästchen, um fortzufahren."
-  - Pattern_1, Pattern_2, ...: Named patterns for "Extract Fields" mode. Each Pattern_N defines a regex extraction for the corresponding CodBi_AI_OCR_Receiver-tagged field. The order of Pattern_N matches the order of receiver fields. CRITICAL — In "Extract Fields" mode, do NOT use HTML.Input.REGEX on the receiver fields. The extracted value goes directly into the field via CodBi_AI_OCR_Receiver CSS class binding, not via HTML.Input.REGEX. Set the extraction regex as data-cb-Pattern_1, data-cb-Pattern_2 etc. on the XUpload (not on the receiver fields). Do NOT set data-cb-Expression — that is a HTML.Input.REGEX parameter, not an AI.OCR parameter.
+- AI.OCR: Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
+  - Field: CSS-Class-Selector for the field receiving the OCR output (e.g., '.tfExtractedText'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
+  - FieldPattern_: Configures 'FieldPattern_' for this functionality.
+  - InvalidImageText: Configures 'InvalidImageText' for this functionality.
+  - Maximum: Configures 'Maximum' for this functionality.
+  - MaxPages: Configures 'MaxPages' for this functionality.
+  - Mode: Configures 'Mode' for this functionality.
+  - Pattern: Configures 'Pattern' for this functionality.
+  - Preprocess: Configures 'Preprocess' for this functionality.
+  - ProcessingImageText: Configures 'ProcessingImageText' for this functionality.
+  - QueueBadge: Configures 'QueueBadge' for this functionality.
+  - QueueText: Configures 'QueueText' for this functionality.
+  - RegExFlags: Configures 'RegExFlags' for this functionality.
+  - Separator: Configures 'Separator' for this functionality.
+  - WrongFileMessage: Configures 'WrongFileMessage' for this functionality.
 - Date.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.
   - EqualityPermitted: A boolean indicating whether equality between minimum and maximum dates is allowed.
   - MaxField: CSS-Class-Selector for the max date input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
@@ -90,21 +62,15 @@ when CodBi searches within the shared parent container.
 - Date.NoWeekends: Applicable on a XTextField of type 'date' to disallow weekend dates.
   - MsgNoWeekends: The optional string to be shown when a weekend is entered.
 - Form.Navigator: Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.
-  - CSSBlockedNavButton: Optional — CSS styling string (e.g. "color:red;") applied as inline style to blocked/inaccessible navigation buttons. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values.
-  - CSSHoverNavButtons: Optional — CSS styling string (e.g. "background:#eee;") applied as inline style to navigation buttons on hover. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values.
-  - CSSNavButtons: Optional — CSS styling string (e.g. "font-size:14px;") applied as inline style to navigation buttons. Only set if the user explicitly asks for custom button styling. Leave empty otherwise — do NOT invent values.
-  - Preview: Boolean (true/false). When true, permits navigating to any page even if not yet visited. Defaults to true.
+  - CSSBlockedNavButton: Configures 'CSSBlockedNavButton' for this functionality.
+  - CSSHoverNavButtons: Configures 'CSSHoverNavButtons' for this functionality.
+  - CSSNavButtons: Configures 'CSSNavButtons' for this functionality.
+  - Preview: Configures 'Preview' for this functionality.
 - HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
-  - CSS: The CSS to inject. CRITICAL FORMAT: Use `<` instead of `{` and `>` instead of `}` (the engine replaces them at runtime). The CSS MUST include a selector targeting the destination element. Format: `destinationSelector < property: value; >`. Example: `.ed1 < background-color: red; >` becomes `background-color: red;` applied to element with class `ed1`. Do NOT use raw `{` or `}` characters.
-  - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the provided CSS.
+  - CSS: The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an.
+  - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the.
   - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Replacements: An Array < string > of two elements each that are separated by a "|".
-- HTML.Input.Blacklist: Applicable on a XTextField to blacklist specific values (e.g. specific dates). Prevents direct input AND jQuery calendar selection of blacklisted items. Use on date fields (datatype="dateDE") to forbid specific dates like national holidays. Dates in the List parameter must use 2-digit day/month format (DD.MM.YYYY), e.g. "01.10.2011" not "1.10.2011".
-  - List: CSV of forbidden values (e.g. "01.10.2011,01.10.2026"). Can also contain Element Placeholders (EPs) like {Date.Holidays>this_year;this_year+1} to dynamically fetch all holidays for the given years and use them as the blacklist.
-  - Prefix: Optional text to show before the blacklist in the error message.
-  - Postfix: Optional text to show after the blacklist in the error message.
-  - Separator: Separator between blacklist items in the error message (defaults to ", ").
-  - ShowBlacklist: Whether to display the blacklist in the error message (true/false, defaults to false).
 - HTML.Input.Cleave: Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
   - Config: The CleaveOptions to set instead of the other shorthand parameter.
   - Date: The CleaveOptions.date .
@@ -112,7 +78,7 @@ when CodBi searches within the shared parent container.
   - DateMin: The CleaveOptions.dateMin .
   - DatePattern: The CleaveOptions.datePattern .
   - Delimiter: The CleaveOptions.delimiter .
-- HTML.Input.REGEX: Applicable ONLY on a XTextField (input field) to validate or reformat the typed value against a regular expression pattern. CRITICAL — Do NOT apply HTML.Input.REGEX to XUpload fields. For regex validation on uploads, use AI.OCR's Pattern parameter with Mode="verify" instead.
+- HTML.Input.REGEX: Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.
   - ErrorPostfix: The final part of the error message string displayed after to the "expression".
   - ErrorPrefix: The first part of the error message string displayed prior to the "expression".
   - ExposeExpression: Will expose the "expression" within the errormessage if set to TRUE (case insensitive).
@@ -120,31 +86,12 @@ when CodBi searches within the shared parent container.
   - Flags: The RegExp - flags string used to create the "expression" (defaults to "g").
   - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
   - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
-- HTML.Input.Trans.Capital: Applicable on a XTextField to auto-capitalize each word as the user types (first letter uppercase, rest lowercase). No parameters.
-- HTML.Input.Trans.NTW: Applicable on a XTextField to transform a typed number into its word representation. CRITICAL — ALWAYS apply HTML.Input.REGEX on the SAME element to permit only digits. Combine both in data-cb-func as CSV: data-cb-func="html.input.trans.ntw,html.input.regex". Set ONLY data-cb-KeyExpression="[\d]" (prevents non-digit keystrokes). Do NOT set data-cb-Expression — only the keystroke filter is needed, not full-value validation. Do NOT set data-cb-Flags, data-cb-ErrorPrefix, data-cb-ErrorPostfix, data-cb-ExposeExpression, or data-cb-KeyFlags. CRITICAL — ALWAYS set data-cb-NumberWords to a comma-separated list of the words for digits 0-9 in the EXACT language of the user's request. Example: if the user writes in English, use "zero,one,two,three,four,five,six,seven,eight,nine"; if in German, use "Null,Eins,Zwei,Drei,Vier,Fünf,Sieben,Acht,Neun". Format: plain CSV, no brackets, no quotes.
-  - NumberWords: Comma-separated list of the words for each digit 0-9 in the language of the user's request. Example: English → "zero,one,two,three,four,five,six,seven,eight,nine"; German → "Null,Eins,Zwei,Drei,Vier,Fünf,Sieben,Acht,Neun". Format: plain CSV, no brackets, no quotes.
-  - PreFix: String prepended to the result.
-  - PostFix: String appended to the result.
-- HTML.Input.Trans.RegEx: Applicable on a XTextField to transform input using a custom regex pattern.
-  - Extractor: The regex pattern string to find values to be replaced.
-  - Replacements: The replacement string.
-- HTML.Select.Favorites: Applicable on a XSelect element to rearrange options so that specified favorites appear at the top, separated by an optional divider.
-  - Divider: The text content for the divider option that separates favorites from the rest.
-  - DividerTarget: The value of the option to select when the user clicks the divider (defaults to previously selected option).
-  - Favorites: CSV string of option texts (innerHTML) to show as favorites at the top, e.g. "Bayern,Hessen,Sachsen". CodBi automatically converts the CSV to an array at runtime.
-  - InitialElement: The value (NOT the display text) of the option to select when the form loads. When not specified by the user's prompt, set the data-cb-initialElement attribute on the <select> element to the value of the FIRST option — the runtime will use it as the default selection. This prevents the divider from being unintentionally selected. Example: data-cb-initialElement="bayern".
-- HTML.Select.Injection: Applicable on a XSelect element to dynamically populate it with options from an array of values. Supports Element Placeholders (EPs) like {BayVIS.Behoerden>bezeichnung} to fill the select from external directories at render time. Use this whenever the user wants a select to contain data from an external source (BayVIS directory, API, etc.).
-  - Values: REQUIRED. An array of option texts/values. Can contain Element Placeholders (EPs) like "{BayVIS.Behoerden>bezeichnung}" which are resolved at render time to populate the select with all entries from the BayVIS authority directory. When the user asks for a select with "all offices from BayVIS" or similar, use Values="{BayVIS.Behoerden>bezeichnung}".
-  - Titles: REQUIRED. An array of title attributes for the options. ALWAYS set this to the same value as data-cb-Values unless the user explicitly specifies different titles. Example: if data-cb-Values="{BayVIS.Behoerden>bezeichnung}" then also set data-cb-Titles="{BayVIS.Behoerden>bezeichnung}".
-  - ReClean: Optional boolean (true/false). When true, clears existing options before populating. Defaults to false.
-  - ValueProperty: Optional — the property name to extract as the option's value from each object in Values.
-  - TextProperty: Optional — the property name to extract as the option's display text from each object in Values.
-  - TitleProperty: Optional — the property name to extract as the option's title from each object in Values.
-  Note: When EPs like {BayVIS.Behoerden>bezeichnung} are used, set data-cb-Values to the EP string (the EP is resolved server-side at render time).
-- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. Available CSS classes: CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for standalone panels; CodBi_Accordion_A/B/C/D for accordions; CodBi_HTML_Panel_NoCordion to exclude from accordion. Use a CSS class (no data-cb-func needed) for standard pre-configured panels. Use data-cb-func=html.panel when the user wants custom CSS or custom header.
+- HTML.Panel.Accordion: Applicable on a container (XContainer/XFieldSet) that wraps multiple collapsible panels. Joins all child panels with the .CodBi.--HTML_Panel class into an accordion group where only one panel can be open at a time. Set the data-cb-Accordion parameter to a unique group name.
+  - Accordion: Configures 'Accordion' for this functionality.
+- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget.
   - Accordion: Configures 'Accordion' for this functionality.
   - AutoHeaderLevel: Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,.
-  - AutoHeaderTitle: Set to a title string when the user provides a title. Set to true (boolean) when the user wants custom CSS but no title — this auto-generates the header and prevents an exception. If omitted entirely, no header is shown.
+  - AutoHeaderTitle: The string the automatically generated header shall display.
   - AutoHeaderTitleSupplementsSpacer: Configures 'AutoHeaderTitleSupplementsSpacer' for this functionality.
   - CSSAfterHeader: The CSS:after to be applied onto the header when the panel is folded.
   - CSSAfterHeaderContent: The CSS:after content to be applied onto the header when the panel is folded.
@@ -166,23 +113,22 @@ when CodBi searches within the shared parent container.
   - Scroll: Configures 'Scroll' for this functionality.
   - ScrollBlock: Defines the logical position to scroll to when the panel.
   - ScrollToTop: Configures 'ScrollToTop' for this functionality.
-- HTML.SETAttribute: Applicable on any element to set an HTML attribute to a specified value. Can be combined with other functionalities on the same element by comma-separating data-cb-func values (e.g. data-cb-func="html.select.injection,html.setattribute").
-  - Name: The name of the attribute to set (e.g. "style", "class", "data-custom", "aria-label", "role").
-  - ToSet: The string value to set the attribute to.
-  Example: To set style="box-shadow: 0 0 1em darkorange" on a select that already has html.select.injection, use data-cb-func="html.select.injection,html.setattribute" with data-cb-Name="style" and data-cb-ToSet="box-shadow: 0 0 1em darkorange".
-- HTML.Text.Injector: Applicable on any element to replace placeholder text with a dynamic replacement value at runtime. The element's static content (e.g. "rtevalue" for XSpan) MUST keep its placeholder text unchanged — do NOT replace it with the EP expression. Instead, apply data-cb-func="html.text.injector" on the element and set the parameters below. Example: An XSpan with rtevalue="Aktuelle Daten: [[INJECTOR_REPLACEMENT]]" must keep that rtevalue as-is. Add attributes: [{"text":"data-cb-func","value":"html.text.injector"},{"text":"data-cb-replacement","value":"{ Data.CSV > { Net.URL > https://example.com/data.csv }}"},{"text":"data-cb-property","value":"innerHTML"}]. The EP expression goes into data-cb-replacement, NOT into rtevalue.
-  - Placeholder: Specifies the string that shall be replaced within the tagged element's specified Property. Defaults to "[[INJECTOR_REPLACEMENT]]". Keep this placeholder in the element's static content — do NOT replace it with the EP. CRITICAL: Set this to the EXACT text found in the element's content (e.g. "[[PH]]" or "##VALUE##"). Do NOT use FORMCYCLE's [%fieldname%] syntax — that is a different system for field value references, NOT for CodBi placeholder replacement. Look at the element's rtevalue/textContent to determine what placeholder string is actually present, then copy it verbatim.
-  - Property: Specifies which DOM property of the Element "toProcess" shall receive the "Replacement". CRITICAL: This is a DOM element property name, NOT a FORMCYCLE IPersistJson property. For XSpan content use "innerHTML" (not "rtevalue" — rtevalue is the data model field, not a DOM property). For text nodes use "textContent". For input fields use "value". The runtime accesses element[property], so the value must be a real HTMLElement property.
-  - Replacement: The string to replace all occurrences of the specified "Placeholder" or at the end of the Property's value. Can contain Element Placeholders (EPs) like "{ Data.CSV > { Net.URL > https://example.com/data.csv }}" for dynamic content loading. CRITICAL: Place the EP expression here (data-cb-replacement), NOT in the element's rtevalue or other form properties — EPs are ONLY resolved in data-cb-* attribute values.
-- HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template. The placeholder syntax is Property-Name surrounded by "[(" and ")]" (e.g. [(vorname)], [(nachname)], [(postanschriftStrasse)]). Use this when the element's content contains [(propertyName)] style placeholders that correspond to data fields from a structured directory (like BayVIS). Do NOT use HTML.Text.Injector for [(...)] placeholders — Injector is for single literal placeholders (e.g. "[[INJECTOR_REPLACEMENT]]", "[[PH]]", "##VALUE##") that are replaced verbatim with a value. CRITICAL — The element's static content (e.g. rtevalue for XSpan) MUST keep its [(placeholder)] text UNCHANGED — do NOT replace it with the EP expression. The EP expression goes ONLY into data-cb-replacements. Example: An XSpan with rtevalue="Ansprechpartner: [(vorname)] [(nachname)]" keeps that rtevalue as-is. Add attributes: data-cb-func="html.text.mapper", data-cb-replacements="{ BayVIS.Ansprechpartner.Details > { BayVIS.Ansprechpartner.ID > { V > BayVIS_Hauptansprechpartner }}}", data-cb-property="innerHTML", data-cb-css="display:block !important". When data must be acquired from multiple EPs, wrap them in Data.Join: "{ Data.Join > { EP1 > ... } ; { EP2 > ... }}".
-  - CSS: Configures 'CSS' for this functionality. Use "display:block !important" to show the element only after placeholders are replaced.
-  - Property: Specifies which DOM property of the Element contains the template string with [(propertyName)] placeholders. CRITICAL: This is a DOM element property name, NOT a FORMCYCLE IPersistJson property. For XSpan content use "innerHTML" (not "rtevalue"). For input fields use "value".
-  - Replacements: An Element Placeholder (EP) expression that resolves to an object whose property names match the [(propertyName)] placeholders in the template. The mapper replaces each [(propertyName)] with the corresponding property value from the resolved object. Can also be an array of objects — if so, the template string is repeated for each object in the array, enabling dynamic list generation. CRITICAL: Place the EP expression here (data-cb-replacements), NOT in the element's rtevalue — EPs are ONLY resolved in data-cb-* attribute values. When multiple EPs are needed to fill all placeholders, use the Data.Join EP to merge them: "{ Data.Join > { EP_A > param } ; { EP_B > param }}".
+- HTML.SETAttribute: Applicable on any element to dynamically set one or more HTML attributes on it.
+  - Name: The name of the attribute to set.
+  - ToSet: The string to set the attribute to.
+- HTML.Text.Injector: Applicable on any element to inject a dynamic text value into a specific property of that element.
+  - Placeholder: Specifies the string that shall be replaced within the.
+  - Property: Specifies which property of the Element "toProcess" shall receive the "Replacement".
+  - Replacement: The string to replace all occurrences of the specified "Placeholder" or at the end of the.
+- HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template.
+  - CSS: Configures 'CSS' for this functionality.
+  - Property: Configures 'Property' for this functionality.
+  - Replacements: Configures 'Replacements' for this functionality.
 - JSON.SET: Applicable on a hidden field to store a JSON-serialized value derived from another element.
   - Path: The dotted path string leading to the object, starting from the.
   - Property: The name of the property to set.
   - ToSet: The object to set the "Property" to.
-- LDAP.Autocomplete.Set: Applicable on a CONTAINER (XFieldSet or XContainer) that wraps LDAP-autocompleted fields. When a match is found on any child field tagged with LDAP.Autocomplete, all other child fields get auto-filled with their corresponding LDAP properties.
+- LDAP.Autocomplete.Set: Applicable on form fields that should be auto-filled from a selected LDAP directory match.
   - CSSProposals: Configures 'CSSProposals' for this functionality.
   - Property: Configures 'Property' for this functionality.
   - URL: Configures 'URL' for this functionality.
@@ -192,6 +138,7 @@ when CodBi searches within the shared parent container.
   - Property: The LDAP-Property that shall be autocompleted.
   - URL: The URL of the Formcycle predefined LDAP-Query to use.
 - Matomo.Tracking: Applicable on any form to add Matomo/Piwik analytics event tracking.
+  - ImageURL: Configures 'ImageURL' for this functionality.
   - SiteID: The ID of the Matomo-Project-Site that shall be used for tracking.
   - URL: The URL of the Matomo-Server that shall track the tagged form.
 - Media.Image.Cropper: Applicable on an XUpload field for images; adds an interactive crop dialog before upload.
@@ -202,11 +149,12 @@ when CodBi searches within the shared parent container.
   - OutputWidth: Configures 'OutputWidth' for this functionality.
   - Target: CSS-Class-Selector for the target image element (e.g., '.imgCropped'). Use dot-prefixed class selector. Do NOT use an ID selector.
   - Updater: CSS-Class-Selector for the update button (e.g., '.btnUpdate'). Use dot-prefixed class selector. Do NOT use an ID selector.
-- Media.MultipleUpload: Applicable on an XUpload field to enable selecting and uploading multiple files at once.
-  - Maximum: The maximum number of files that may be uploaded (default: 2).
-  - prefixTooMany: The message displayed before the maximum count when too many files are selected.
-  - postfixTooMany: The message displayed after the maximum count when too many files are selected.
 - MEDIA.INPUT.SPEECH: Applicable on a text input field to enable speech-to-text dictation via the Web Speech API.
+  - Language: Configures 'Language' for this functionality.
+  - Placeholder: Configures 'Placeholder' for this functionality.
+  - ShowHint: Configures 'ShowHint' for this functionality.
+  - VoiceHotkey: Configures 'VoiceHotkey' for this functionality.
+- Media.Input.Speech.Whisper: Applicable on a text input field or textarea to enable speech-to-text dictation via a self-hosted Whisper model on the Formcycle server. DSGVO/GDPR-compliant as no audio data leaves the server.
   - Language: Configures 'Language' for this functionality.
   - Placeholder: Configures 'Placeholder' for this functionality.
   - ShowHint: Configures 'ShowHint' for this functionality.
@@ -221,12 +169,12 @@ when CodBi searches within the shared parent container.
   - FocusOnAutocomplete: CSS-Class-Selector of the field to focus after an autocomplete selection. On POSTAL CODE and LOCALITY fields: set to the street field (e.g., '.tfStreet'). On the STREET field: set to the building number field if one exists (e.g., '.tfBuildingNumber'). Do NOT use an ID selector.
   - MsgNotKnown: Message to show when the entered value is not found in the OpenPLZ database.
   - TargetData: Defines what type of data is being autocompleted: 'Localities' (city/town), 'PostalCodes' (ZIP/PLZ), or 'Streets'. Pick the one that matches the tagged field's purpose.
-- Print.Remove: Applicable on any element that should be invisible when the form is printed. CSS class alternatives: add "CodBi_Print_Remove_Tagged" to the element's cssclasses (hides the element when printing), "CodBi_Print_Remove_Parent" (hides the element's parent container — e.g. the label wrapper — when printing), or "CodBi_Print_Remove_PrintOnly" (shows the element ONLY when printing, hides it otherwise). Do NOT use both data-cb-func and CSS class — pick one per the TWO-OPTION RULE.
+- Print.Remove: Applicable on any element that should be invisible when the form is printed.
   - DocumentSelector: CSS-Class-Selector for the element to remove (e.g., '.divPrintSection'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Invert: Specifies whether this functionality shall be inverted, e.g.
   - ParentalLevel: The number of elements to climb up the HTMLElement.parentElement -Tree to get to.
-- Sys.Log.Console: Applicable on any element for debugging; logs the specified data to the browser developer console.
-  - Data: The value to log to the console. Can be a literal string or an Element Placeholder (EP) like "{ Date.Weekends > 01.01.2000 ; 31.12.2002 }" to log weekends between dates.
+- Sys.Log.Console: Applicable for debugging; logs CodBi runtime data to the browser developer console.
+  - DATA: The data to log to the console.
 - Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
   - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
   - MaxField: CSS-Class-Selector for the max time input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
@@ -237,35 +185,20 @@ when CodBi searches within the shared parent container.
 
 - AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question.
   - Parameters: none.
+- BayVIS.Ansprechpartner.ID: This Element-Placeholder retrieves the ID of a contact by first- & last-name (order insensitive).
+  - Param[1]: The first- and last-name separated by a space (order- & case-insensitive).
 - BayVIS.Ansprechpartner: This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from.
   - Param[1]: A property of the directory, like e.g.
-- BayVIS.Ansprechpartner.Details: This Element-Placeholder retrieves details of a specific contact from the BayVIS directory. Returns an object with properties: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl, apEmail. When only one contact is requested (single ID), returns a single object. When multiple IDs are specified (separated by "/"), returns an array of objects. If the 2nd parameter is specified, returns only that property as an array of strings.
-  - Param[1]: The ID of the contact whose details are to be retrieved. Multiple IDs may be provided using "/" as divider (e.g. "12345/678901"). If a name (string) is given instead of a numeric ID, it is resolved to an ID via BayVIS.Ansprechpartner.ID automatically.
-  - Param[2]: Optional property to extract (e.g. "nachname"). Valid values: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl, apEmail.
-  - CRITICAL for HTML.Text.Mapper: When using this EP to populate [(propertyName)] placeholders, omit the 2nd parameter so the full object is returned. The mapper will then match the returned property names to the [(propertyName)] placeholders automatically.
-- BayVIS.Ansprechpartner.ID: This Element-Placeholder retrieves the IDs of contacts by their name from the BayVIS contact directory.
-  - Param[1]: The name of the contact to find the ID for.
-  - Param[2]: An optional property to extract (instead of returning the ID).
 - BayVIS.Behoerden.Details: This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding.
   - Param[1]: The ID of the authority to retrieve.
   - Param[2]: An optional property of the directory, like e.g.
-- BayVIS.Behoerden.Details.Gebaeude: This Element-Placeholder retrieves building details for an authority from the BayVIS building directory. Returns an object with address properties including: amtsbezeichnung, postanschriftStrasse, postanschriftPLZ, postanschriftOrt, hausanschriftStrasse, hausanschriftPLZ, hausanschriftOrt, etc. CRITICAL: This EP REQUIRES exactly 2 parameters — do NOT omit the 2nd parameter.
-  - Param[1] (REQUIRED): The ID of the authority (resolved via BayVIS.Behoerden.ID from the authority name).
-  - Param[2] (REQUIRED): The building ID (resolved via BayVIS.Behoerden.Gebaeude.ID). The building ID itself needs the authority name as its parameter to resolve.
-  - Param[3] (optional): A specific property to extract (e.g. "postanschriftStrasse"). If omitted, the full object with all address properties is returned.
-  - EP syntax with literal names: { BayVIS.Behoerden.Details.Gebaeude > { BayVIS.Behoerden.ID > Amt für Digitales } ; { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > Amt für Digitales }}}
-  - CRITICAL for HTML.Text.Mapper: When using this EP to populate [(propertyName)] placeholders like [(amtsbezeichnung)], [(postanschriftStrasse)], [(postanschriftPLZ)], [(postanschriftOrt)], omit the 3rd property parameter so the full object with all address properties is returned. The 1st and 2nd parameters (authority ID + building ID) are still MANDATORY.
-- BayVIS.Behoerden.Gebaeude.ID: This Element-Placeholder retrieves building IDs for an authority from the BayVIS building directory.
-  - Param[1]: The ID of the authority whose building IDs shall be retrieved (resolved via BayVIS.Behoerden.ID).
-  - Param[2]: An optional property to extract from each building entry.
 - BayVIS.Behoerden.ID: This Element-Placeholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
   - Param[1]: The Name of the authority to retrieve.
-- BayVIS.Behoerden: This Element-Placeholder retrieves the whole BayVIS Authority Directory or a specified property of each entry.
-  - Param[1]: A property of the directory entry to extract. Valid values: behoerdenart (authority type), behoerdengruppe (authority group), bezeichnung (name), email (email address), id (unique ID), sortierreihenfolge (sort order). If omitted, returns the full directory objects.
-  - Usage with HTML.Select.Injection: Set data-cb-Values to "{BayVIS.Behoerden>bezeichnung}" on a XSelect with data-cb-func=html.select.injection to populate the select with all authority names from the BayVIS directory at render time.
-- Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >. Often chained with Net.URL to load remote CSV data: { Data.CSV > { Net.URL > https://example.com/data.csv }}. The inner Net.URL EP fetches the CSV content from the URL, and Data.CSV splits it into an array of strings by comma.
+- BayVIS.Behoerden: This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from.
+  - Param[1]: An property of the directory, like e.g.
+- Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >.
   - Parameters: none.
-- Data.Join: Joins the properties of multiple objects into one. Takes one or more objects and merges them into a single object. Later objects' properties override earlier ones if they have the same key. CRITICAL: Use this EP when data from multiple EPs must be combined to fill all [(propertyName)] placeholders in a text template. The parameters are separated by ";" in the EP expression. Example: { Data.Join > { EP1 > param1 } ; { EP2 > param2 }} first resolves EP1 (returns an object), then EP2 (returns another object), then merges both into one object with all properties from both. The result is always an array containing the single merged object, which is the correct format for HTML.Text.Mapper's data-cb-replacements.
+- Data.Join: Joins the properties of multiple object s into one.
   - Parameters: none.
 - Date.Arithmetic: This Element-Placeholder turns a String into a Date .
   - Param[1]: The String to turn to a Date.
@@ -274,14 +207,12 @@ when CodBi searches within the shared parent container.
 - Date.FromString: This Element-Placeholder turns a String into a Date .
   - Param[1]: The String to turn to a Date.
   - Param[2]: An optional dateformat string like YYYY/MM/DD, for example.
-- Date.Holidays: Retrieves German holidays for the given year(s) from the "API-Feiertage.de" service. Returns an array of Date objects representing all holidays for the specified years. EP syntax: {Date.Holidays>year1;year2;...}. Use special values: "this_year" for current year, "this_year + 1" for next year. Example: {Date.Holidays>this_year;this_year+1} returns all holidays for current and next year.
-  - Param[1]: Year to fetch holidays for (e.g. "2026", "this_year", "this_year + 1").
-  - Param[2]: Optional additional year.
+- Date.Holidays: The requested years.
+  - Parameters: none.
 - Date.Today: Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.
   - Parameters: none.
-- Date.Weekends: Element Placeholder that returns an array of weekend dates (Saturday & Sunday) between two optional dates. Parameters are DD.MM.YYYY formatted dates. With 2 params: returns weekends between them. With 1 param: returns weekends from today to that date. With no params: returns weekends from today to one year from now.
-  - Param[1]: Optional beginning date (DD.MM.YYYY). If omitted, today is used.
-  - Param[2]: Optional end date (DD.MM.YYYY). If omitted, one year from the beginning date is used.
+- Date.Weekends: This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .
+  - Parameters: none.
 - DOM.Query: This Element-Placeholder queries an Element .
   - Parameters: none.
 - F: Finds the objects within an Array that have a specific property with a specific value.
@@ -385,6 +316,7 @@ when CodBi searches within the shared parent container.
   - .CodBi_BayVIS_BehoerdeUndAnsprechpartner: All proper placeholder in the content of the tagged HTMLInputElement 's "innerHTML" will be replaced with the data of the building specified in the global variable BayVIS_Behoerde and the contact details of the contact specified in BayVIS_Hauptansprechpartner.
 - Financial: Registers standard configurations specific to finances.
   - .CodBi_Currency: The HTMLInputElement s tagged with this class will be formatted for Currencies using Cleave.
+  - .CodBi_TRANS_NTW: Applies 'Financial' behavior to elements tagged with '.CodBi_TRANS_NTW'.
 - Holistic.CSS.Standard: Registers a standard configuration that applies a standard CSS onto the form.
   - Classes: none.
 - Holistic.Matomo.Tracking: Registers a standard configurations using the functionality.
@@ -424,7 +356,7 @@ when CodBi searches within the shared parent container.
   - .CodBi_People_Alphanumeric: The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/: ]*[0-9A-za-z]$ and prevents entering characters not matching [-0-9A-za-z/: ].
   - .CodBi_People_BuildingNumber: , CodBi_OpenPLZ_AC_SET_BuildingNumber The HTMLInputElement tagged with this class may only contain characters matching ^[0-9]+[-0-9A-Za-z/]*[0-9A-Za-z]$ and prevents entering characters not matching [-A-Za-z0-9/ ].
   - .CodBi_People_Mail: The HTMLInputElement tagged with this class may only contain characters matching ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z][a-zA-Z]?$ and prevents entering characters not matching [a-zA-Z0-9._%+-@].
-  - .CodBi_People_Name: The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/:# ]*[0-9A-za-z]$ and prevents entering characters not matching [ A-Za-zÃ -Ã¿'-].
+  - .CodBi_People_Name: The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/:# ]*[0-9A-za-z]$ and prevents entering characters not matching [ A-Za-zà-ÿ'-].
   - .CodBi_People_OpenPLZ_AC_SET_BuildingNumber: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_BuildingNumber'.
   - .CodBi_People_OpenPLZ_AC_SET_Locality: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_Locality'.
   - .CodBi_People_OpenPLZ_AC_SET_PLZ: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_PLZ'.

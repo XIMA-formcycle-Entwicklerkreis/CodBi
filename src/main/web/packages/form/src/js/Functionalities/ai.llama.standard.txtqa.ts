@@ -135,12 +135,12 @@ export class AI_LLAMA_STANDARD_TXTQA {
     // #endregion Initialize config from toLoad
     const handleChange = async (force = false) => {
       // #region Determine the search container
-      const container = (toProcess as HTMLElement).closest(".XContainer");
+      const container = (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
 
       if (!container) {
         window.codbi.log(
           "ERROR",
-          `Could not find ancestor .XContainer for element #${toProcess.getAttribute("id")}`,
+          `Could not find ancestor .XContainer/.XFieldSet for element #${toProcess.getAttribute("id")}`,
           "AI / LLAMA / TXTQA",
         );
 
@@ -195,7 +195,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
       const questionElements: Element[] = [];
 
       for (const qEl of allQuestionElements) {
-        const innerContainer = qEl.closest(".XContainer");
+        const innerContainer = qEl.closest(".XContainer, .XFieldSet");
 
         if (
           innerContainer &&
@@ -615,7 +615,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
     // #region Listen for focusout on AI_LLAMA_TXTQA_Source elements — focusout (not input/change)
     // so inference waits until the user leaves the field, and the debounce timer
     // resets if they tab between source fields quickly.
-    const immediateCX = (toProcess as HTMLElement).closest(".XContainer");
+    const immediateCX = (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
     const sourceContainer = immediateCX;
 
     if (sourceContainer) {

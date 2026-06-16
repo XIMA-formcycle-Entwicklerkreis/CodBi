@@ -169,7 +169,7 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
     // #endregion Block form submission while this field's inference is running
     // #region Resolve the verification question
     const resolveQuestion = (): string | null => {
-      const container = (toProcess as HTMLElement).closest(".XContainer");
+      const container = (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
       // Prefer data-cb-Question on the element; fall back to the Question config parameter.
       const rawQuestion =
         toProcess.getAttribute("data-cb-Question") ?? (toLoad.question != null ? String(toLoad.question) : null);

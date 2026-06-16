@@ -3780,10 +3780,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/jasmine@npm:~5.1.0":
-  version: 5.1.8
-  resolution: "@types/jasmine@npm:5.1.8"
-  checksum: 10c0/a43a93058e2dee95a1e4de083e5ac8c3a212d3d37855f9af2c73807f6948ff6a1759446193e3032ef4a34df995a038a7cc6594634ca3d977b75bdddb3df20b46
+"@types/jasmine@npm:~6.0.0":
+  version: 6.0.0
+  resolution: "@types/jasmine@npm:6.0.0"
+  checksum: 10c0/9521bb7bd9c897ba6333478cd1c4acd68f813ea9b2ebf0f61283cc0357a9d7581c44f1798f4733ad662b3d1498449ebbb074a0e8bf96b95d6c72e9651fe7e047
   languageName: node
   linkType: hard
 
@@ -4844,7 +4844,7 @@ __metadata:
     "@angular/router": "npm:^20.0.5"
     "@primeng/themes": "npm:^20.0.0"
     "@primeuix/themes": "npm:^1.2.1"
-    "@types/jasmine": "npm:~5.1.0"
+    "@types/jasmine": "npm:~6.0.0"
     jasmine-core: "npm:~5.7.0"
     karma: "npm:~6.4.0"
     karma-chrome-launcher: "npm:~3.2.0"

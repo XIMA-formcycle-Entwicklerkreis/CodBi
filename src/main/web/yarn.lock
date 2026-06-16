@@ -1480,15 +1480,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@de-xima/xima-common-js-dom@npm:^7.1.0":
-  version: 7.1.0
-  resolution: "@de-xima/xima-common-js-dom@npm:7.1.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Fnpm-fs%2F%40de-xima%2Fxima-common-js-dom%2F-%2F%40de-xima%2Fxima-common-js-dom-7.1.0.tgz"
+"@de-xima/xima-common-js-dom@npm:^8.0.0":
+  version: 8.0.0
+  resolution: "@de-xima/xima-common-js-dom@npm:8.0.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Ffc-plugin-dev-npm%2F%40de-xima%2Fxima-common-js-dom%2F-%2F%40de-xima%2Fxima-common-js-dom-8.0.0.tgz"
   dependencies:
-    "@de-xima/xima-common-js-lang": "npm:7.1.0"
-    "@types/jquery": "npm:~3.5.14"
-    jquery: "npm:~3.6.1"
-    tslib: "npm:~2.6.3"
-  checksum: 10c0/e2f3e99406a65e59d8ea505faf0d644ae33b75ffdeee17276547d68c46aa4d6995519d3079fb255ae4c7263ff21f079dc4bd23a497de520a26345d91fd275777
+    "@de-xima/xima-common-js-lang": "npm:8.0.0"
+    "@types/jquery": "npm:~3.5.33"
+    jquery: "npm:~3.6.4"
+    tslib: "npm:~2.8.1"
+  dependenciesMeta:
+    jquery:
+      optional: true
+  checksum: 10c0/d4e47ea65d8c6cb56a306ed63d58f7ef34539b4a5486ef4f01235265b474e55c6e6d6953e91b300a1a9faec9465f78f580250165ef5a2379996b7024279303ea
   languageName: node
   linkType: hard
 
@@ -1504,21 +1507,30 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@de-xima/xima-common-js-lang@npm:7.1.0, @de-xima/xima-common-js-lang@npm:^7.1.0":
-  version: 7.1.0
-  resolution: "@de-xima/xima-common-js-lang@npm:7.1.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Fnpm-fs%2F%40de-xima%2Fxima-common-js-lang%2F-%2F%40de-xima%2Fxima-common-js-lang-7.1.0.tgz"
-  dependencies:
-    tslib: "npm:~2.6.3"
-  checksum: 10c0/afc90da5c17bcc404b5ef5195fb1998d66064638939128b5d6c941672315d6527ec139a5b22d2a58b7ab8724d2f7f051e54ac8248413e12fc284ba1001302284
-  languageName: node
-  linkType: hard
-
 "@de-xima/xima-common-js-lang@npm:7.3.0, @de-xima/xima-common-js-lang@npm:~7.3.0":
   version: 7.3.0
   resolution: "@de-xima/xima-common-js-lang@npm:7.3.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Ffc-plugin-dev-npm%2F%40de-xima%2Fxima-common-js-lang%2F-%2F%40de-xima%2Fxima-common-js-lang-7.3.0.tgz"
   dependencies:
     tslib: "npm:~2.6.3"
   checksum: 10c0/e76492f63cea46fdbf0b5a06f77190add0a92563ac9a847782e410d14cdb7523ac65a808217cf606baa2ed7c9b5a7a0da20cfa95b25ba26a05e335e99c1ed7e0
+  languageName: node
+  linkType: hard
+
+"@de-xima/xima-common-js-lang@npm:8.0.0":
+  version: 8.0.0
+  resolution: "@de-xima/xima-common-js-lang@npm:8.0.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Ffc-plugin-dev-npm%2F%40de-xima%2Fxima-common-js-lang%2F-%2F%40de-xima%2Fxima-common-js-lang-8.0.0.tgz"
+  dependencies:
+    tslib: "npm:~2.8.1"
+  checksum: 10c0/3b899da3c606872d2d1c4206014e7fdbd56b83f79646ed524c420a592f1408e68931845382d85f763d5ad452beecc86240e4cd75f5bd6f998755d34bbd83cd46
+  languageName: node
+  linkType: hard
+
+"@de-xima/xima-common-js-lang@npm:^7.1.0":
+  version: 7.1.0
+  resolution: "@de-xima/xima-common-js-lang@npm:7.1.0::__archiveUrl=https%3A%2F%2Fartifactory.xima-services.de%2Fartifactory%2Fapi%2Fnpm%2Fnpm-fs%2F%40de-xima%2Fxima-common-js-lang%2F-%2F%40de-xima%2Fxima-common-js-lang-7.1.0.tgz"
+  dependencies:
+    tslib: "npm:~2.6.3"
+  checksum: 10c0/afc90da5c17bcc404b5ef5195fb1998d66064638939128b5d6c941672315d6527ec139a5b22d2a58b7ab8724d2f7f051e54ac8248413e12fc284ba1001302284
   languageName: node
   linkType: hard
 
@@ -4230,6 +4242,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/jquery@npm:~3.5.33":
+  version: 3.5.34
+  resolution: "@types/jquery@npm:3.5.34"
+  dependencies:
+    "@types/sizzle": "npm:*"
+  checksum: 10c0/c85eec82531912cc497c34daad3509cf54875a0457c64d82b4fe17a4a27a313150c0882b7dd345b7e98c9116e0bae64c3942b7a76f6edcd664efa701cd1f2d81
+  languageName: node
+  linkType: hard
+
 "@types/jqueryui@npm:^1.12.16, @types/jqueryui@npm:~1.12.16, @types/jqueryui@npm:~1.12.21":
   version: 1.12.23
   resolution: "@types/jqueryui@npm:1.12.23"
@@ -5393,7 +5414,7 @@ __metadata:
   resolution: "codbi-common@workspace:packages/common"
   dependencies:
     "@biomejs/biome": "npm:1.9.4"
-    "@de-xima/xima-common-js-dom": "npm:^7.1.0"
+    "@de-xima/xima-common-js-dom": "npm:^8.0.0"
     "@de-xima/xima-common-js-lang": "npm:^7.1.0"
     "@jest/globals": "npm:~29.7.0"
     "@types/jest": "npm:~29.5.14"
@@ -5452,7 +5473,7 @@ __metadata:
     "@callari/xdbc": "npm:^1.0.73"
     "@de-xima/esbuild-plugin-postcss": "npm:~1.0.0"
     "@de-xima/fc-form-renderer": "npm:8.5.3"
-    "@de-xima/xima-common-js-dom": "npm:^7.1.0"
+    "@de-xima/xima-common-js-dom": "npm:^8.0.0"
     "@de-xima/xima-common-js-lang": "npm:^7.1.0"
     "@jest/globals": "npm:~29.7.0"
     "@jonkoops/matomo-tracker": "npm:^0.7.0"
@@ -8125,7 +8146,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jquery@npm:~3.6.1":
+"jquery@npm:~3.6.1, jquery@npm:~3.6.4":
   version: 3.6.4
   resolution: "jquery@npm:3.6.4"
   checksum: 10c0/2429baf39338803702900e64f10a11283d7660961ea8ee59d26c0bcba4769273835d81d69628fec898830b6d0e4cde05832ec38fdf37a51e7d004bc4f97a4862

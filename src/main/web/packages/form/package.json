@@ -19,7 +19,7 @@
   "dependencies": {
     "@callari/xdbc": "^1.0.73",
     "@de-xima/fc-form-renderer": "8.5.3",
-    "@de-xima/xima-common-js-dom": "^7.1.0",
+    "@de-xima/xima-common-js-dom": "^8.0.0",
     "@de-xima/xima-common-js-lang": "^7.1.0",
     "@jonkoops/matomo-tracker": "^0.7.0",
     "@types/cropperjs": "^1.3.3",

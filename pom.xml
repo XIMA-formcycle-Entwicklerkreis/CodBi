@@ -100,7 +100,7 @@
 		<dokka.sourceDir>${project.basedir}/src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic</dokka.sourceDir>
 		<dokka.outputDir>${project.build.directory}/dokka</dokka.outputDir>
 
-		<dependency-check-maven.version>10.0.4</dependency-check-maven.version>
+		<dependency-check-maven.version>12.2.2</dependency-check-maven.version>
 		<cyclonedx-maven-plugin.version>2.9.1</cyclonedx-maven-plugin.version>
 	</properties>
 

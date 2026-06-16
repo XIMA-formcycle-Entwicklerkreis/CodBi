@@ -408,7 +408,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     if (!context) throw new Error("Failed to get canvas 2D context");
     canvas.width = viewport.width;
     canvas.height = viewport.height;
-    await page.render({ canvasContext: context, viewport: viewport }).promise;
+    await page.render({ canvas: canvas, viewport: viewport }).promise;
     return this.canvasToBlob(canvas);
   }
 

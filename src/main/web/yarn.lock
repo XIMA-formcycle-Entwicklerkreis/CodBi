@@ -4908,7 +4908,7 @@ __metadata:
     postcss: "npm:~8.5.2"
     postcss-load-config: "npm:~6.0.1"
     rxjs: "npm:~7.8.0"
-    tinymce: "npm:^7.9.1"
+    tinymce: "npm:^8.6.0"
     ts-jest: "npm:^29.3.4"
     tslib: "npm:~2.8.1"
     typedoc: "npm:^0.28.4"
@@ -10155,10 +10155,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"tinymce@npm:^7.9.1":
-  version: 7.9.1
-  resolution: "tinymce@npm:7.9.1"
-  checksum: 10c0/eaf0c6c53c4726a3ad1e185dc2128adc77a24d73b516d3a6fa392dfad2b1f7ae46dd658d19dbc605df5d5ef41b32bacdb8e37333967d3af26603742c54ad2c8d
+"tinymce@npm:^8.6.0":
+  version: 8.6.0
+  resolution: "tinymce@npm:8.6.0"
+  checksum: 10c0/5a8af437c55a665aa8f02baf42259e977b445b7ff5235c55c9e2b38ecb9e2b39e8e12f683180f56c1ae798931e02af0876cd63d5ce890406970b23142f00f818
   languageName: node
   linkType: hard
 

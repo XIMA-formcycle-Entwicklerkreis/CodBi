@@ -9,6 +9,9 @@ NEVER use an ID selector (# prefix, e.g., '#xi-tf-interviewbis'), because
 element IDs are mangled in repeatable containers; only properties.name-based selectors work reliably
 when CodBi searches within the shared parent container.
 
+## FORMCYCLE Form Elements
+- XAppointment: Appointment finder / Terminfinder. When the prompt says "Terminfinder für X", set property "appointmentPlan":"X" (e.g., "appointmentPlan":"ddd"). The backend auto-resolves the plan name to the UUID for "appointmentTemplate". Other properties: dateFormat="dd.mm.yy", required="0", closeable="0", showUntil="0", showCapacity="0".
+
 ## Functionalities
 
 - AI.LLAMA.CHAT: Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).
@@ -86,9 +89,7 @@ when CodBi searches within the shared parent container.
   - Flags: The RegExp - flags string used to create the "expression" (defaults to "g").
   - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
   - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
-- HTML.Panel.Accordion: Applicable on a container (XContainer/XFieldSet) that wraps multiple collapsible panels. Joins all child panels with the .CodBi.--HTML_Panel class into an accordion group where only one panel can be open at a time. Set the data-cb-Accordion parameter to a unique group name.
-  - Accordion: Configures 'Accordion' for this functionality.
-- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget.
+- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: "Standard-Panel" means creating an XFieldSet (fieldset) with CSS class CodBi_HTML_Panel_Standard and a "legend" property for the title. Do NOT use XContainer for standard panels — panels on XFieldSet use CSS classes, panels on XContainer use data-cb-func=html.panel. For a plain "Standard-Panel" without a specific title: create XFieldSet with legend="Panel", cssclasses=["CodBi_HTML_Panel_Standard"].
   - Accordion: Configures 'Accordion' for this functionality.
   - AutoHeaderLevel: Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,.
   - AutoHeaderTitle: The string the automatically generated header shall display.
@@ -154,11 +155,6 @@ when CodBi searches within the shared parent container.
   - Placeholder: Configures 'Placeholder' for this functionality.
   - ShowHint: Configures 'ShowHint' for this functionality.
   - VoiceHotkey: Configures 'VoiceHotkey' for this functionality.
-- Media.Input.Speech.Whisper: Applicable on a text input field or textarea to enable speech-to-text dictation via a self-hosted Whisper model on the Formcycle server. DSGVO/GDPR-compliant as no audio data leaves the server.
-  - Language: Configures 'Language' for this functionality.
-  - Placeholder: Configures 'Placeholder' for this functionality.
-  - ShowHint: Configures 'ShowHint' for this functionality.
-  - VoiceHotkey: Configures 'VoiceHotkey' for this functionality.
 - OpenPLZ.Autocomplete: Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). Tag EACH address field with this functionality and set its own parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ to reference the postal code field and DependentLocality to reference the locality/city field. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field that gets filled automatically (e.g., on a postal code field set Dependent to the locality field, on a locality field set Dependent to the postal code field). On POSTAL CODE and LOCALITY fields: set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.
   - AllowEmpty: If set to 'true', an empty input value won't trigger an error message.
   - Country: Country code for address data: de (Germany), at (Austria), li (Liechtenstein), ch (Switzerland), or en (England).
@@ -183,23 +179,44 @@ when CodBi searches within the shared parent container.
 
 ## Element Placeholders (EPs)
 
-- AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question.
-  - Parameters: none.
-- BayVIS.Ansprechpartner.ID: This Element-Placeholder retrieves the ID of a contact by first- & last-name (order insensitive).
-  - Param[1]: The first- and last-name separated by a space (order- & case-insensitive).
-- BayVIS.Ansprechpartner: This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from.
-  - Param[1]: A property of the directory, like e.g.
-- BayVIS.Behoerden.Details: This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding.
+- AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question. USE THIS EP when the prompt asks to get/retrieve/ask the AI for information (weather, data, answers, etc.) via an AI query.
+  - Param[1]: The question to ask the AI (e.g., "Wie wird das Wetter morgen?").
+  - Param[2]: UseInternet — `"true"` to enable Brave Search internet access. Default: `"false"`.
+  - Param[3]: Location — `"true"` to enable geolocation access. Default: `"false"`.
+  - Param[4]: Language — Language for the AI response (e.g., "German", "English").
+  - Param[5]: ResponseLanguage — Two-letter ISO 639-1 code (e.g., "de", "fr").
+  - Param[6]: Specialist — Name of a specialist model (optional).
+  - Param[7]: FilterResults — `"true"` to enable PII filtering. Default: `"false"`.
+  - Param[8]: JsonParse — `"true"` to parse the AI response as JSON. Default: `"false"`.
+  - CRITICAL: Unused optional parameters MUST be passed as empty strings using trailing semicolons. Example: "{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }" — the 6 empty params after "true" are params 3-8 set to empty strings. Do NOT omit trailing semicolons for unused params.
+  - Correct example for weather: "{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }".
+  - Use Sys.Log.Console with data-cb-Data set to this EP when the prompt asks to output the AI response to the console.
+- BayVIS.Ansprechpartner.Details: Retrieves details of a specific BAVARIAN government contact from the BayVIS (Bayerisches Verwaltungsinformationssystem) servlet. CRITICAL: BayVIS queries **Bavarian government authorities/offices/contacts** (Behörden) — their addresses, buildings, contact persons. It is NOT for geographic/political subdivisions like cantons, districts, federal states, municipalities. For geographic subdivisions across multiple countries (de, at, ch, li, en) use OpenPLZ with FederalStates, Cantons, Districts, Municipalities instead.
+  - Param[1]: The ID of the contact whose details are to be retrieved.
+  - Param[2]: An optional property of the contact (e.g., "email", "vorname", "nachname", "funktion").
+- BayVIS.Ansprechpartner.ID: Retrieves the BayVIS contact ID by first & last name (case-insensitive). CRITICAL: BayVIS is for **Bavarian government contacts** — NOT for geographic subdivisions (cantons, districts, federal states). For those use OpenPLZ.
+  - Param[1]: The first and last name separated by a space (e.g., "Salvatore Callari").
+- BayVIS.Ansprechpartner: Retrieves the whole BayVIS authority directory or a specified detail. CRITICAL: BayVIS is for **Bavarian government contacts** — NOT for geographic/political subdivisions.
+  - Param[1]: A property of the contact directory (e.g., "bezeichnung", "vorname", "nachname", "email").
+- BayVIS.Behoerden.Details.Gebaeude: Retrieves details of a Bavarian authority's building by authority ID and building ID. CRITICAL: BayVIS is for **Bavarian government authorities/offices** — NOT for geographic subdivisions like cantons, districts, Bundesländer. For those use OpenPLZ.
   - Param[1]: The ID of the authority to retrieve.
-  - Param[2]: An optional property of the directory, like e.g.
-- BayVIS.Behoerden.ID: This Element-Placeholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
-  - Param[1]: The Name of the authority to retrieve.
-- BayVIS.Behoerden: This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from.
-  - Param[1]: An property of the directory, like e.g.
+  - Param[2]: The building's ID.
+  - Param[3]: An optional property to extract (e.g., "bezeichnung", "hausanschriftStrasse").
+- BayVIS.Behoerden.Details: Retrieves details of a Bavarian authority by its ID from the BayVIS servlet. CRITICAL: BayVIS is for **Bavarian government authorities/offices** (e.g., "Amt für Digitales", "Landratsamt München"). It is NOT for geographic/political subdivisions (cantons, districts, Bundesländer, municipalities). For Swiss cantons/districts use OpenPLZ with Cantons/Districts; for German Bundesländer use OpenPLZ with FederalStates.
+  - Param[1]: The ID of the authority to retrieve.
+  - Param[2]: An optional property of the authority (e.g., "bezeichnung", "email", "behoerdenart").
+- BayVIS.Behoerden.Gebaeude.ID: Retrieves the building IDs of a Bavarian authority by authority ID. CRITICAL: BayVIS is for **Bavarian government authorities/offices** — NOT for geographic subdivisions.
+  - Param[1]: The ID of the authority to retrieve.
+- BayVIS.Behoerden.ID: Retrieves Bavarian authority IDs by their name/bezeichnung (case-insensitive). CRITICAL: BayVIS is for **Bavarian government authorities/offices** (e.g., "Amt für Digitales"). It is NOT for geographic/political subdivisions (cantons, districts, Bundesländer). For those use OpenPLZ.
+  - Param[1]: The name of the authority to retrieve (e.g., "Amt für Digitales").
+- BayVIS.Behoerden: Retrieves the whole BayVIS authority directory or a specified detail. CRITICAL: BayVIS is for **Bavarian government authorities/offices** — NOT for geographic/political subdivisions.
+  - Param[1]: A property of the authority directory (e.g., "bezeichnung", "behoerdenart").
 - Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >.
-  - Parameters: none.
+  - Param[1]: The CSV-String to convert.
 - Data.Join: Joins the properties of multiple object s into one.
-  - Parameters: none.
+  - Param[1]: The first object to join.
+  - Param[2]: The second object to join (optional).
+  - Param[3]: The third object to join (optional).
 - Date.Arithmetic: This Element-Placeholder turns a String into a Date .
   - Param[1]: The String to turn to a Date.
   - Param[2]: The optional format of the "dateString" (e.g.
@@ -210,57 +227,95 @@ when CodBi searches within the shared parent container.
 - Date.Holidays: The requested years.
   - Parameters: none.
 - Date.Today: Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.
-  - Parameters: none.
+  - Param[1]: "NOW" to retrieve the current date, or an arithmetic operation like "+1d" (add days), "-1m" (subtract months), "+1y" (add years).
+  - Param[2]: Additional arithmetic operation (optional), e.g.
 - Date.Weekends: This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .
   - Parameters: none.
-- DOM.Query: This Element-Placeholder queries an Element .
-  - Parameters: none.
-- F: Finds the objects within an Array that have a specific property with a specific value.
-  - Param[1]: The name of the property to look for.
-  - Param[2]: The value the property to look for has to have.
-  - Param[3]: The Array of objects to scan.
-- I: This Element-Placeholder acquires a specific element.
-  - Parameters: none.
+- DOM.Query: This Element-Placeholder queries an Element via a CSS-Selector. Returns only the FIRST matching element (uses querySelector, not querySelectorAll). When the prompt asks for a specific index (e.g. "element in Index 0", "first element", "zweites Element"), chain with the I EP: "{ I > 0 ; { DOM.Query > .p1 } }" retrieves the element at the specified index.
+  - Param[1]: The CSS-Selector string targeting the desired Element (e.g., ".p1", ".tfName", ".taAddress"). Use the dot-prefixed class name of the target element; do NOT use an ID selector.
+- F: Finds objects within an Array that have a specific property with an EXACT value (strict equality ===). CRITICAL: F does EXACT MATCH, not regex. Use F when the prompt asks to filter by a specific value like postalCode="91522". Do NOT use OpenPLZ Param[3] (regex) for exact value filtering — use F instead.
+  - Param[1]: The name of the property to look for (e.g., "postalCode").
+  - Param[2]: The EXACT value the property must have (e.g., "91522"). Uses strict equality (===).
+  - Param[3]: The Array of objects to scan — typically a nested EP that returns an array of objects.
+  - Correct example: "{ F > postalCode ; 91522 ; { sorted > { unique > { openplz.localities > de ; ^a.* }; name }; name } }" — gets all German cities starting with "a", deduplicates by name, sorts by name, then filters to only those with exact postalCode "91522".
+  - WRONG (do NOT generate): "{ OpenPLZ.Localities > de ; ^An ; 91522 }" alone when the prompt asks for exact postalCode matching — use F EP instead for exact match.
+- I: This Element-Placeholder acquires an element at a specific index from an Array. When chained with DOM.Query (e.g. "{ I > 0 ; { DOM.Query > .p1 } }"), it picks the element at the given index from an EP result. If the EP result is not an array (e.g. DOM.Query returns a single element), only index 0 works (pass-through); for higher indices the EP result must be an array.
+  - Param[1]: The 0-based index of the element to retrieve (e.g., "0" for first, "1" for second).
+  - Param[2]: The Array (or single element) to retrieve from — typically a nested EP like DOM.Query.
 - JSON.Path: This Element-Placeholder retrieves an Object at a specific path out of the one given in the.
   - Param[1]: The Object to retrieve the requested one from.
   - Param[2]: The dotted path leading to the requested one.
-- LDAP.Find: This Elementplaceholder connects via a default (LDAP_URL in CodBi Settings) or an optionally specified.
-  - Param[1]: The mode to use for the filter.
-  - Param[2]: The LDAP conditions (like sn = Doe) separated by | (like sn = Doe | givenName = John).
-  - Param[3]: The optional URL to a Formcycle-LDAP-Query (which's content is (?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))) to use.
+  - CRITICAL — F EXCEPTION: When F (Find) is used for exact property filtering, F MUST be the outermost EP. Do NOT wrap F in JSON.Path — doing so would break F's parameter structure. F already returns the filtered objects. Correct: "{ F > postalCode ; 91522 ; { sorted > ... } }". WRONG: "{ JSON.Path > { F > ... } ; name }".
+- LDAP.Find: Connects to an LDAP directory and returns an Array<object> of matching user entries. Each entry contains properties like givenName, sn, mail, title, department, telephoneNumber, sAMAccountName, cn, displayName. CRITICAL: returns an ARRAY — use I (indexer) to get a single element, then JSON.Path to extract a property. Do NOT try to pass a property name like "mail" as the mode — use JSON.Path for property extraction.
+  - Param[1]: The filter mode — MUST be "AND" (all conditions must match) or "OR" (any condition matches). CRITICAL: no other values are accepted. Do NOT use "search", "mail", or any property name here.
+  - Param[2]: The LDAP conditions separated by |. Format: "property=value" pairs (e.g., "sn=Callari | givenName=Salvatore"). Supported properties: givenName, sn, mail, title, department, telephoneNumber, sAMAccountName, cn, displayName.
+  - Param[3]: Optional — the URL to a Formcycle-LDAP-Query to use (defaults to LDAP_URL from CodBi Settings).
+  - Returns: Array<object> — NOT a single value. Each object has all LDAP properties. To extract a specific property (e.g., mail), nest this EP inside I (to get the first array element) and then inside JSON.Path (to extract the property).
+  - Correct usage example: "{ json.path > { i > 0 ; { LDAP.Find > AND; sn=Callari | givenName=Salvatore }}; mail }" — first resolves LDAP.Find to get the array, then I to get element 0, then JSON.Path to extract "mail".
+  - WRONG (do NOT generate): "{ LDAP.Find > mail ; sn=Callari }" — "mail" is not a valid mode; LDAP.Find cannot select which property to return.
+  - WRONG (do NOT generate): "{ LDAP.Find > AND; sn=Callari }" alone — this returns Array<object>, not a string. Missing I and JSON.Path nesting.
 - Net.URL: This Element-Placeholder retrieves the content of a URL.
   - Parameters: none.
-- OpenPLZ.Localities: An OpenPLZ -Request specialized into searching for localities.
-  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
-  - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's name.
-  - Param[3]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's postal code.
-  - Param[4]: An Optional number of pages to load.
-- OpenPLZ.Streets: An OpenPLZ -Request specialized into searching for streets.
-  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
-  - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's name.
-  - Param[3]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's postal code.
-  - Param[4]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city's name used if the 3rd.
-  - Param[5]: An Optional number of pages to load.
-- OpenPLZ.TextSearch: An OpenPLZ -Request performing a full text-search.
-  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
-  - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g.
-  - Param[3]: An Optional number of pages to load.
-- OpenPLZ: Retrieves data from the CodBi_OpenPLZ_Verwaltungseinheiten-Servlet according to the parameter specified.
-  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
-  - Param[2]: The orgaUnit to retrieve (e.g.
-  - Param[3]: The optional key of the state, province or canton to get details of.
-  - Param[4]: The optional detail to fetch about a certain state, province or canton identified by the.
-  - Param[5]: There may be up to four parameter passed along the request (e.g.
-  - Param[6]: There may be up to four parameter passed along the request (e.g.
-  - Param[7]: There may be up to four parameter passed along the request (e.g.
-  - Param[8]: There may be up to four parameter passed along the request (e.g.
-  - Param[9]: An Optional number of pages to load.
-- Sorted: An Elementplaceholder sorts the Array passed as the 1st parameter in.
+- OpenPLZ.Localities: Searches for localities (cities/towns) via the OpenPLZ API. USE THIS EP when the prompt asks for cities, towns, localities, places, or municipalities by name or postal code. Returns Array<object> with properties like "name", "postalCode", "locality", "canton", "state". Use JSON.Path to extract a specific property.
+  - Param[1]: Country code — "de" (Germany), "en" (England), "at" (Austria), "li" (Liechtenstein), "ch" (Switzerland). Falls back to OpenPLZ_Country config or "de" if empty.
+  - Param[2]: POSIX regular expression for the locality name. CRITICAL: This is a REGEX PATTERN, not a plain text search. For "starts with" queries you MUST use the ^ anchor. Examples: "^An" for names starting with "An", "^München" for names starting with "München", "berg$" for names ending with "berg", ".*burg.*" for names containing "burg".
+  - Param[3]: POSIX regular expression for the postal code (e.g., "80.*" for Munich-area codes). CRITICAL: This is a REGEX pattern — use it for pattern-based filtering only. When the prompt asks for an EXACT postal code match (e.g., "postalCode = 91522"), use the F (Find) EP instead for exact equality: "{ F > postalCode ; 91522 ; { OpenPLZ.Localities > de ; ^An } }".
+  - Param[4]: Optional number of pages to load (more pages = more results).
+  - CRITICAL: Returns Array<object>. To extract just the names: "{ json.path > { OpenPLZ.Localities > de ; München } ; name }".
+  - DEDUPLICATION HINT: When the prompt asks for a list of names (e.g., "all cities in Germany") without requesting additional distinguishing properties (like postalCode), the same name may appear multiple times with different postal codes. In such cases, wrap with Unique to eliminate duplicates: "{ Unique > { OpenPLZ.Localities > de ; .* } ; name }" — this returns each city name only once. Only omit Unique if the user explicitly asks for postal codes or other distinguishing properties alongside names.
+  - CORRECT for cities starting with "An": "{ json.path > { OpenPLZ.Localities > de ; ^An } ; name }" — searches for locality names starting with "An" in Germany.
+  - WRONG (do NOT generate): "{ OpenPLZ.TextSearch > de ; An }" for city queries — use OpenPLZ.Localities instead. TextSearch is for general mixed-content searches, not for specific locality lookups.
+- OpenPLZ.OrganizationalUnits: Retrieves administrative organizational units (FederalStates, Cantons, Provinces, Municipalities, Districts) via the OpenPLZ API. Returns Array<object> with properties like "name", "officialKey", "type". Use JSON.Path to extract a specific property.
+  - Param[1]: Country code — "de", "en", "at", "li", "ch". Falls back to OpenPLZ_Country config or "de".
+  - Param[2]: The organizational unit type to retrieve — e.g., "FederalStates", "FederalProvinces", "Cantons", "Municipalities", "Districts".
+  - Param[3]: Optional official key of a parent unit to filter by (e.g., canton key "19" to get districts within that canton).
+  - Param[4]: Optional sub-detail to fetch (e.g., "Municipalities" to get municipalities within a district, or "Districts" to get districts within a canton).
+  - Param[5]: Optional number of pages to load.
+  - DEDUPLICATION HINT: When the prompt asks for a list of names without distinguishing properties, same names may appear multiple times (e.g., same city name in different states). Wrap with Unique: "{ Unique > { OpenPLZ.OrganizationalUnits > de ; Municipalities } ; name }".
+- OpenPLZ.Streets: Searches for streets via the OpenPLZ API. Returns Array<object> with properties like "name", "postalCode", "locality", "city". Use JSON.Path to extract a specific property (e.g., "name").
+  - Param[1]: Country code — "de", "en", "at", "li", "ch". Falls back to OpenPLZ_Country config or "de".
+  - Param[2]: POSIX regular expression for the street name (e.g., "Hauptstr.*", "Karolinen").
+  - Param[3]: POSIX regular expression for the postal code (e.g., "8033[1-9]", "91522").
+  - Param[4]: POSIX regular expression for the city name (used when Param[3] is omitted).
+  - Param[5]: Optional number of pages to load.
+  - CRITICAL: Returns Array<object>. To extract just street names: "{ json.path > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }".
+  - DEDUPLICATION HINT: If the prompt asks for street names only (no postal codes or cities), same street names may appear in different locations. Wrap with Unique: "{ Unique > { JSON.Path > { OpenPLZ.Streets > de ; Hauptstr } ; name } ; name }" — but since Unique handles property paths internally, prefer: "{ Unique > { OpenPLZ.Streets > de ; Hauptstr } ; name }".
+- OpenPLZ.TextSearch: Performs a full text search across ALL OpenPLZ data (localities, streets, POIs, etc.) in one query. USE ONLY for mixed/generic searches where you don't know the data type. Returns Array<object>. The search term combines ALL criteria into one parameter. Use JSON.Path to extract a specific property.
+  - Param[1]: Country code — MUST be "de" (Germany), "en" (England), "at" (Austria), "li" (Liechtenstein), or "ch" (Switzerland). Falls back to OpenPLZ_Country config or "de". CRITICAL: This is the COUNTRY, NOT a postal code. Do NOT put a postal code here.
+  - Param[2]: The full search query combining ALL criteria in one string — e.g., "91522 Karolinen" searches for "Karolinen" with postal code "91522". Also accepts a single term like "Karolinen" or "Berlin". CRITICAL: do NOT split postal code and name into separate parameters — put them together in Param[2].
+  - Param[3]: Optional number of pages to load.
+  - DEDUPLICATION HINT: Same logic applies — wrap with Unique when extracting a single property that may have duplicates.
+  - Correct example: "{ OpenPLZ.TextSearch > de ; 91522 Karolinen }" — searches for "Karolinen" with PLZ 91522 in Germany.
+  - WRONG (do NOT generate): "{ OpenPLZ.TextSearch > 91522 ; Karolinen }" — "91522" is NOT a valid country code.
+  - CRITICAL — USE THE CORRECT SPECIALIZED EP INSTEAD: When the prompt specifically asks for cities/localities, use OpenPLZ.Localities instead of TextSearch. When the prompt specifically asks for streets, use OpenPLZ.Streets instead. TextSearch is only for mixed/generic searches where the data type is unclear.
+- OpenPLZ: Base EP for querying administrative divisions (FederalStates, FederalProvinces, Cantons, Districts, Municipalities) via the OpenPLZ REST API (https://www.openplzapi.org/). Covers Germany (de), Switzerland (ch), Austria (at), Liechtenstein (li), England (en). PARAMETER ORDER is always: country → unit to retrieve → parent officialKey → sub-detail. Returns Array<object> where each object has properties like "name", "officialKey", "type", "postalCode", "locality", etc. Use JSON.Path to extract specific properties from the results.
+  - Param[1]: Country code — MUST be "de" (Germany), "en" (England), "at" (Austria), "li" (Liechtenstein), or "ch" (Switzerland). Falls back to OpenPLZ_Country config or "de" if empty.
+  - Param[2]: The organizational unit to retrieve — e.g., "FederalStates", "FederalProvinces", "Cantons", "Districts", "Municipalities". CRITICAL: This is the MAIN unit type you want in the result. For Swiss cantons use "Cantons"; for German federal states use "FederalStates"; for districts within a canton use "Districts".
+  - Param[3]: The official key of a PARENT unit to filter by. Use this to drill down: e.g., canton key "19" limits results to districts/municipalities within canton 19 (Zurich). Omit to get all units of the type specified in Param[2].
+  - Param[4]: The sub-detail (child unit) to retrieve about the parent identified by Param[3]. CRITICAL: Param[4] describes what CHILD units to fetch for the parent in Param[3]. E.g., Param[2]="Cantons", Param[3]="19", Param[4]="Districts" means: get all DISTRICTS within canton 19. Param[2]="Districts", Param[3]="...", Param[4]="Municipalities" means: get municipalities within that district.
+  - Param[5-8]: Additional search parameters. Format: "key=value" (e.g., "postalCode=8033", "name=Zürich", "locality=...", "searchTerm=...").
+  - Param[9]: Optional number of pages to load.
+  - Returns: Array<object> with properties like "name", "officialKey", "type", "postalCode", "locality", "canton", etc. To extract just one property (e.g., the name), nest this EP inside JSON.Path: "{ json.path > { OpenPLZ > ch ; Cantons ; 19 ; Districts }; name }".
+  - Correct usage examples:
+    - "{ OpenPLZ > ch ; Cantons }" — all Swiss cantons (returns array of objects with names, keys).
+    - "{ OpenPLZ > ch ; Cantons ; 19 ; Districts }" — all districts of canton 19 (Zurich).
+    - "{ json.path > { OpenPLZ > ch ; Cantons ; 19 ; Districts }; name }" — extracts just the "name" property from each district object.
+    - "{ OpenPLZ > de ; FederalStates }" — all German federal states (Bundesländer).
+    - "{ OpenPLZ > de ; FederalStates ; 09 ; Districts }" — all districts (Regierungsbezirke) of Bavaria (key 09).
+    - "{ OpenPLZ > de ; Districts ; 09162 ; Municipalities }" — all municipalities of district München (key 09162).
+  - WRONG (do NOT generate): "{ OpenPLZ > ch ; Districts ; 19 ; Cantons }" — the parameter order is wrong. Param[2] must be the unit you want (Cantons), Param[4] is the sub-detail (Districts). The AI swapped them because it parsed the German genitive "des 19. Distrikts" as the main unit.
+  - IMPORTANT: OpenPLZ returns an array of objects — use JSON.Path to extract a property, or Sys.Log.Console to log to the browser console.
+- Sorted: Sorts an Array by an optional property. CRITICAL: Sorted returns the SORTED ARRAY OF OBJECTS, not extracted property values. To get JUST the sorted property values, extract first with JSON.Path then sort: "{ Sorted > { JSON.Path > { OpenPLZ.Localities > de ; ^An } ; name } }" extracts names, then sorts them as strings. Param[2] is a property name for sorting, NOT a JSON.Path expression — do NOT wrap in JSON.Path when the intent is just to sort objects.
   - Param[1]: The Array to sort.
-  - Param[2]: The optional name of a property to use to sort elements of the given Array .
-- Unique: An Elementplaceholder filters the Array passed as the 1st parameter from duplicates.
+  - Param[2]: The optional name of a property to sort by (e.g., "name", "officialKey"). The EP accesses this property on each element internally — no need for JSON.Path. When the array already contains plain values (e.g., after JSON.Path extraction), omit Param[2] for default string sort.
+  - Correct for sorting objects: "{ Sorted > { OpenPLZ > ch ; Cantons } ; name }" — returns objects sorted by name property.
+  - Correct for extracting + sorting values: "{ Sorted > { JSON.Path > { OpenPLZ.Localities > de ; ^An } ; name } }" — extracts city names, then sorts them. Omit Param[2] since the array is already strings.
+- Unique: Filters an Array, removing duplicate elements. CRITICAL: Unique returns the FILTERED ARRAY OF OBJECTS, not extracted property values. To get UNIQUE property values, extract first with JSON.Path then deduplicate: "{ Unique > { JSON.Path > { OpenPLZ > ch ; Cantons } ; name } }" extracts names, then removes duplicates. Param[2] is a property name for deduplication, NOT a JSON.Path expression — do NOT wrap in JSON.Path when the intent is just to filter objects.
   - Param[1]: The Array to filter.
-  - Param[2]: The optional name of a property to use to filter out elements of the given Array .
+  - Param[2]: The optional name of a property to deduplicate by (e.g., "name", "officialKey"). The EP accesses this property on each element internally — no need for JSON.Path. When the array already contains plain values, omit Param[2].
+  - Correct for deduplicating objects: "{ Unique > { OpenPLZ > ch ; Cantons } ; name }" — removes duplicate cantons by comparing their name property.
+  - Correct for extracting unique values: "{ Unique > { JSON.Path > { OpenPLZ > ch ; Cantons } ; name } }" — extracts canton names, then removes duplicates.
+  - Redundant (avoid): "{ Unique > { JSON.Path > { OpenPLZ > ch ; Cantons } ; name } ; name }" — unnecessary extra "; name" after JSON.Path extraction.
 - V: This Element-Placeholder acquires a global variable's value.
   - Param[1]: The name of the global variable.
   - Param[2]: REPORT if a CodBiError shall be thrown when the global variable isn't.
@@ -356,7 +411,7 @@ when CodBi searches within the shared parent container.
   - .CodBi_People_Alphanumeric: The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/: ]*[0-9A-za-z]$ and prevents entering characters not matching [-0-9A-za-z/: ].
   - .CodBi_People_BuildingNumber: , CodBi_OpenPLZ_AC_SET_BuildingNumber The HTMLInputElement tagged with this class may only contain characters matching ^[0-9]+[-0-9A-Za-z/]*[0-9A-Za-z]$ and prevents entering characters not matching [-A-Za-z0-9/ ].
   - .CodBi_People_Mail: The HTMLInputElement tagged with this class may only contain characters matching ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+.[a-zA-Z][a-zA-Z]?$ and prevents entering characters not matching [a-zA-Z0-9._%+-@].
-  - .CodBi_People_Name: The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/:# ]*[0-9A-za-z]$ and prevents entering characters not matching [ A-Za-zà-ÿ'-].
+  - .CodBi_People_Name: The HTMLInputElement tagged with this class may only contain characters matching ^[-0-9A-za-z/:# ]*[0-9A-za-z]$ and prevents entering characters not matching [ A-Za-zÃ -Ã¿'-].
   - .CodBi_People_OpenPLZ_AC_SET_BuildingNumber: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_BuildingNumber'.
   - .CodBi_People_OpenPLZ_AC_SET_Locality: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_Locality'.
   - .CodBi_People_OpenPLZ_AC_SET_PLZ: Applies 'People' behavior to elements tagged with '.CodBi_People_OpenPLZ_AC_SET_PLZ'.

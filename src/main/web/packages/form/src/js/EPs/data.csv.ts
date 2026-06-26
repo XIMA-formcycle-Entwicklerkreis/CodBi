@@ -8,9 +8,10 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion Imports
 /**
  * This **E**lement **P**laceholder turns a CSV-{@link String } into an {@link Array < string >}.
+ * Takes a CSV string as its first parameter and splits it by commas into individual elements.
  *
- * Config Parameter:
- *  1. The CSV-{@link String } to convert.
+ * Placeholder Parameter:
+ *  - 1st: The CSV-{@link String } to convert.
  *
  * @remarks
  * Initial Author: Callari, Salvatore (Callari@WaXCode.net)

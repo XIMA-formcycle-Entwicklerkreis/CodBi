@@ -8,10 +8,13 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #endregion XDBC
 // #endregion Imports
 /**
- * Provides the {@link DATE_Today.retrieve }al of the current {@link Date } along with arithmetic appliances.
+ * Provides the current {@link Date } along with arithmetic appliances.
+ * Supports arithmetic directly — no need to wrap in Date.Arithmetic.
  *
  * Placeholder Parameter:
- *  Either "NOW" to retrieve the current {@link Date } or a/multiple arithmetic operations like +1d ; -1m ; + 1y.
+ *  - 1st: "NOW" to retrieve the current date, or an arithmetic operation like "+1d" (add days), "-1m" (subtract months), "+1y" (add years).
+ *  - 2nd: Additional arithmetic operation (optional), e.g. "-1d ; +2m ; -10y".
+ *  - 3rd and beyond: More arithmetic operations (optional).
  *  The parameters are case insensitive.
  *
  * @remarks

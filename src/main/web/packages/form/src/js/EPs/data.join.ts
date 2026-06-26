@@ -9,9 +9,12 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
 /**
  * Joins the properties of multiple {@link object }s into one.
  * Properties will get overridden by the subsequent ones.
+ * Takes multiple EP results as parameters and merges their properties into a single object.
  *
- * Config Parameter:
- *  The {@link object }s to join.
+ * Placeholder Parameter:
+ *  - 1st: The first {@link object } to join.
+ *  - 2nd: The second {@link object } to join (optional).
+ *  - 3rd: The third {@link object } to join (optional).
  *
  * @remarks
  * Initial Author: Callari, Salvatore (Callari@WaXCode.net)

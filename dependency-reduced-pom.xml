@@ -154,6 +154,36 @@
           <artifactId>exec-maven-plugin</artifactId>
           <version>${exec-maven-plugin.version}</version>
         </plugin>
+        <plugin>
+          <groupId>org.owasp</groupId>
+          <artifactId>dependency-check-maven</artifactId>
+          <version>${dependency-check-maven.version}</version>
+          <configuration>
+            <failBuildOnCVSS>7</failBuildOnCVSS>
+            <suppressionFiles>
+              <suppressionFile>${project.basedir}/owasp-suppressions.xml</suppressionFile>
+            </suppressionFiles>
+            <skip>${skip.owasp}</skip>
+            <formats>
+              <format>HTML</format>
+              <format>JSON</format>
+              <format>XML</format>
+            </formats>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.cyclonedx</groupId>
+          <artifactId>cyclonedx-maven-plugin</artifactId>
+          <version>${cyclonedx-maven-plugin.version}</version>
+          <configuration>
+            <includeProvidedScope>true</includeProvidedScope>
+            <includeSystemScope>true</includeSystemScope>
+            <includeTestScope>true</includeTestScope>
+            <outputFormat>json</outputFormat>
+            <schemaVersion>1.6</schemaVersion>
+            <outputDirectory>${project.build.directory}/sbom</outputDirectory>
+          </configuration>
+        </plugin>
       </plugins>
     </pluginManagement>
     <plugins>
@@ -780,6 +810,30 @@
           <release>${java.version}</release>
         </configuration>
       </plugin>
+      <plugin>
+        <groupId>org.owasp</groupId>
+        <artifactId>dependency-check-maven</artifactId>
+        <executions>
+          <execution>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.cyclonedx</groupId>
+        <artifactId>cyclonedx-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>verify</phase>
+            <goals>
+              <goal>makeAggregateBom</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
   <profiles>
@@ -852,6 +906,7 @@
       </build>
       <properties>
         <skipTests>true</skipTests>
+        <skip.owasp>true</skip.owasp>
       </properties>
     </profile>
     <profile>
@@ -1145,12 +1200,6 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.module</groupId>
-      <artifactId>jackson-module-kotlin</artifactId>
-      <version>2.17.3</version>
-      <scope>provided</scope>
-    </dependency>
   </dependencies>
   <dependencyManagement>
     <dependencies>
@@ -1272,52 +1321,54 @@
     </dependencies>
   </dependencyManagement>
   <properties>
-    <maven-enforcer-rule-ban-provided-dependencies.version>1.0.5</maven-enforcer-rule-ban-provided-dependencies.version>
-    <maven-install-plugin.version>3.1.3</maven-install-plugin.version>
-    <fc-build-helper-maven-plugin.version>2.9.0</fc-build-helper-maven-plugin.version>
-    <dokka-maven-plugin.version>1.9.20</dokka-maven-plugin.version>
     <kotlin.version>2.2.0</kotlin.version>
     <failsafe.report.dirname>failsafe-reports</failsafe.report.dirname>
-    <xfc.version>8.5.3</xfc.version>
     <yarn.version>v1.22.22</yarn.version>
     <jackson.version>2.17.3</jackson.version>
     <web.directory>${project.basedir}/src/main/web</web.directory>
     <jakarta-servlet-api.version>4.0.4</jakarta-servlet-api.version>
+    <fc-server-maven-plugin.version>8.5.3</fc-server-maven-plugin.version>
+    <dokka.sourceDir>${project.basedir}/src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic</dokka.sourceDir>
+    <dokka.outputDir>${project.build.directory}/dokka</dokka.outputDir>
+    <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
+    <maven-surefire-junit5-tree-reporter.version>1.4.0</maven-surefire-junit5-tree-reporter.version>
+    <maven.version>3.9.9</maven.version>
+    <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
+    <frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
+    <maven-clean-plugin.version>3.4.0</maven-clean-plugin.version>
+    <surefire.report.dirname>surefire-reports</surefire.report.dirname>
+    <spotless-maven-plugin.version>2.44.2</spotless-maven-plugin.version>
+    <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
+    <maven-surefire-plugin.version>3.5.2</maven-surefire-plugin.version>
+    <fc-deploy-plugin-maven-plugin.version>8.0.2</fc-deploy-plugin-maven-plugin.version>
+    <git-build-hook-maven-plugin.version>3.5.0</git-build-hook-maven-plugin.version>
+    <cyclonedx-maven-plugin.version>2.9.1</cyclonedx-maven-plugin.version>
+    <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
+    <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
+    <maven-enforcer-rule-ban-provided-dependencies.version>1.0.5</maven-enforcer-rule-ban-provided-dependencies.version>
+    <maven-install-plugin.version>3.1.3</maven-install-plugin.version>
+    <fc-build-helper-maven-plugin.version>2.9.0</fc-build-helper-maven-plugin.version>
+    <dokka-maven-plugin.version>1.9.20</dokka-maven-plugin.version>
+    <xfc.version>8.5.3</xfc.version>
+    <dependency-check-maven.version>10.0.4</dependency-check-maven.version>
     <web.output.directory>${project.build.directory}/generated-resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi</web.output.directory>
     <biome.version>1.9.4</biome.version>
     <maven.build.timestamp.format>yyyyMMddHHmm</maven.build.timestamp.format>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <web.yarn.directory>${web.directory}/.yarn</web.yarn.directory>
-    <fc-server-maven-plugin.version>8.5.3</fc-server-maven-plugin.version>
-    <dokka.sourceDir>${project.basedir}/src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic</dokka.sourceDir>
     <jacoco-maven-plugin.version>0.8.12</jacoco-maven-plugin.version>
     <maven-deploy-plugin.version>3.1.3</maven-deploy-plugin.version>
-    <dokka.outputDir>${project.build.directory}/dokka</dokka.outputDir>
-    <maven-jar-plugin.version>3.4.2</maven-jar-plugin.version>
-    <maven-surefire-junit5-tree-reporter.version>1.4.0</maven-surefire-junit5-tree-reporter.version>
-    <maven.version>3.9.9</maven.version>
     <java.version>11</java.version>
-    <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
     <kotlin.compiler.incremental>false</kotlin.compiler.incremental>
     <build-helper-maven-plugin.version>3.6.0</build-helper-maven-plugin.version>
-    <frontend-maven-plugin.version>1.15.1</frontend-maven-plugin.version>
     <properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
-    <maven-clean-plugin.version>3.4.0</maven-clean-plugin.version>
     <maven-assembly-plugin.version>3.7.1</maven-assembly-plugin.version>
     <quietTests>true</quietTests>
-    <surefire.report.dirname>surefire-reports</surefire.report.dirname>
-    <spotless-maven-plugin.version>2.44.2</spotless-maven-plugin.version>
     <mockk.version>1.13.13</mockk.version>
-    <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
     <junit-jupiter.version>5.11.4</junit-jupiter.version>
-    <maven-surefire-plugin.version>3.5.2</maven-surefire-plugin.version>
     <node.version>v22.14.0</node.version>
-    <fc-deploy-plugin-maven-plugin.version>8.0.2</fc-deploy-plugin-maven-plugin.version>
-    <git-build-hook-maven-plugin.version>3.5.0</git-build-hook-maven-plugin.version>
     <ktfmt.version>0.54</ktfmt.version>
     <greenmail.version>2.1.3</greenmail.version>
-    <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
     <maven-site-plugin.version>3.21.0</maven-site-plugin.version>
-    <exec-maven-plugin.version>3.5.0</exec-maven-plugin.version>
   </properties>
 </project>

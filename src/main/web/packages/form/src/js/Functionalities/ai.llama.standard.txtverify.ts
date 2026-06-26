@@ -85,6 +85,10 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
    *                            the reply instruction sent to the AI. Affects both the positive-response check and the
    *                            error explanation returned to the user. Works alongside **ResponseLanguage**.
    * - **FilterResults**:       `"true"` to enable PII filtering on Brave Search queries.
+   * - **QuestionRoot**:        Optional CSS selector specifying an alternate root element from which to search for
+   *                            elements referenced by `<[CSSClass]>` placeholders. When set, the placeholder resolution
+   *                            searches from the element matched by this selector instead of the nearest ancestor
+   *                            **XContainer** or **XFieldSet** of the verified field.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -100,6 +104,7 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "thinking")
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "internetaccess")
     @OR.PRE([new TYPE("number"), new TYPE("string")], "maxthinkingtokens")
+    @IF.PRE(new TYPE("string"), new REGEX(/^[.#a-zA-Z]/), "questionroot")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(
@@ -169,7 +174,10 @@ export class AI_LLAMA_STANDARD_TXTVERIFY {
     // #endregion Block form submission while this field's inference is running
     // #region Resolve the verification question
     const resolveQuestion = (): string | null => {
-      const container = (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
+      const questionRoot = toLoad.questionroot != null ? String(toLoad.questionroot).trim() : null;
+      const container = questionRoot
+        ? (document.querySelector(questionRoot) as HTMLElement | null)
+        : (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
       // Prefer data-cb-Question on the element; fall back to the Question config parameter.
       const rawQuestion =
         toProcess.getAttribute("data-cb-Question") ?? (toLoad.question != null ? String(toLoad.question) : null);

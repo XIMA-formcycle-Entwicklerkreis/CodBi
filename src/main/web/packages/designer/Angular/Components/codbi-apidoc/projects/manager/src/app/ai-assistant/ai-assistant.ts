@@ -97,6 +97,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   showHistory = false;
   private readonly HISTORY_KEY = "codbi-ai-undo-history";
   private readonly MAX_HISTORY = 10;
+  /** Cookie name for persisting the selected AI model across page reloads. */
+  private readonly MODEL_COOKIE = "codbi-ai-selected-model";
   // #endregion State
 
   private readonly openHandler = (): void => this.open();
@@ -130,6 +132,17 @@ export class AiAssistant implements OnInit, OnDestroy {
   }
   // #endregion Template helpers
 
+  // #region Model cookie persistence
+  private saveModelCookie(modelId: string): void {
+    document.cookie = `${this.MODEL_COOKIE}=${encodeURIComponent(modelId)}; path=/; max-age=31536000; SameSite=Lax`;
+  }
+
+  private loadModelCookie(): string | null {
+    const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${this.MODEL_COOKIE}=([^;]*)`));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+  // #endregion Model cookie persistence
+
   // #region Open / close
   private open(): void {
     this.resultText = null;
@@ -138,6 +151,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.showHistory = false;
 
     if (this.models.length > 0) {
+      this.selectedModel = this.loadModelCookie() ?? this.models[0]?.id ?? null;
       this.visible = true;
       this.cdr.markForCheck();
       return;
@@ -153,7 +167,8 @@ export class AiAssistant implements OnInit, OnDestroy {
         } else {
           const list = response as AiModel[];
           this.models = list;
-          this.selectedModel = list[0]?.id ?? null;
+          const saved = this.loadModelCookie();
+          this.selectedModel = saved && list.some((m) => m.id === saved) ? saved : (list[0]?.id ?? null);
         }
         this.visible = true;
         this.cdr.markForCheck();
@@ -170,6 +185,13 @@ export class AiAssistant implements OnInit, OnDestroy {
   close(): void {
     this.visible = false;
     this.cdr.markForCheck();
+  }
+
+  onModelChange(modelId: string): void {
+    this.selectedModel = modelId;
+    if (modelId) {
+      this.saveModelCookie(modelId);
+    }
   }
   // #endregion Open / close
 

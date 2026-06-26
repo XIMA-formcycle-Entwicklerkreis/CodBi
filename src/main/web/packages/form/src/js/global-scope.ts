@@ -72,6 +72,14 @@ export interface CodbiGlobal {
    *                Will be placed after a slash in the log header ([[ CodBi / <adjunct> ] ... ]).
    */
   log(level: "INFO" | "WARNING" | "ERROR", message: string, adjunct?: string): void;
+  /**
+   * Submission trigger callbacks invoked by the HTML.Panel functionality.
+   * Set these to run custom logic when a form submission is determined valid or invalid.
+   */
+  triggers: {
+    validSubmission: (() => void) | null;
+    invalidSubmission: (() => void) | null;
+  };
 }
 /** Defines a contract for objects representing a **CodBi-Configuration**. */
 export interface CodbiSettings {
@@ -214,6 +222,11 @@ export class CodBi implements CodbiGlobal {
   public autoCheckAttributes: boolean = false;
   /** See {@link CodbiGlobal.formReady }. */
   public formReady: boolean = false;
+  /** See {@link CodbiGlobal.triggers }. */
+  public triggers: { validSubmission: (() => void) | null; invalidSubmission: (() => void) | null } = {
+    validSubmission: null,
+    invalidSubmission: null,
+  };
   /**
    * See {@link CodbiGlobal.nncHandler }.
    *

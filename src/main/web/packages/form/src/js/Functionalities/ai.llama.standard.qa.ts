@@ -114,9 +114,16 @@ export class AI_LLAMA_STANDARD_QA {
    * - **FilterResults**:       If set to `"true"`, enables PII filtering on Brave Search queries
    *                            for this instance, overriding the global `AI_BraveSearch_FilterResults`
    *                            plugin property. Default: determined by plugin property.
+   * - **QuestionRoot**:        Optional CSS selector specifying an alternate root element from which to search
+   *                            for **AI_LLAMA_STANDARD_QA_Question** elements. When set, the search begins from
+   *                            the element matched by this selector instead of the nearest ancestor **XContainer**
+   *                            or **XFieldSet** of the tagged upload field. The element must exist in the DOM
+   *                            at the time the search is performed.
    *
    * Questions are acquired from DOM elements within the nearest ancestor **XContainer** of the
    * {@link HTMLInputElement } **toProcess** that're tagged with the class **AI_LLAMA_STANDARD_QA_Question**.
+   * If the **QuestionRoot** parameter is set, that ancestor lookup is bypassed and the search scope is
+   * the element matched by the provided CSS selector instead.
    * Each such element should have:
    *  - An **id** attribute (used as the question key)
    *  - A **data-cb-Question**  attribute (contains the question text which may include symbols like <[FieldName]>
@@ -151,6 +158,7 @@ export class AI_LLAMA_STANDARD_QA {
     @OR.PRE([new TYPE("number"), new TYPE("string")], "maxthinkingtokens")
     @OR.PRE([new TYPE("string"), new TYPE("boolean")], "filterresults")
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "filterresults")
+    @IF.PRE(new TYPE("string"), new REGEX(/^[.#a-zA-Z]/), "questionroot")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(
@@ -258,8 +266,22 @@ export class AI_LLAMA_STANDARD_QA {
       }
       // #endregion Determine user-set rotation
       // #region Determine the search container
-      const container = (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
+      const questionRoot = toLoad.questionroot != null ? String(toLoad.questionroot).trim() : null;
+      const container = questionRoot
+        ? (document.querySelector(questionRoot) as HTMLElement | null)
+        : (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
 
+      if (!container) {
+        window.codbi.log(
+          "ERROR",
+          questionRoot
+            ? `QuestionRoot selector "${questionRoot}" did not match any element in the DOM`
+            : `Could not find ancestor .XContainer/.XFieldSet for element #${toProcess.getAttribute("id")}`,
+          "AI / LLAMA / STD / QA",
+        );
+
+        return;
+      }
       // #endregion Determine the search container
       // #region Acquire Questions
       const allQuestionElements = container.querySelectorAll(".AI_LLAMA_STANDARD_QA_Question");

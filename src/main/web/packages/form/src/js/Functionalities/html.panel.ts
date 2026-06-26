@@ -110,6 +110,12 @@ export class HTML_Panel {
    *                                      bottom-right of the unfolded panel. Possible values: **"true"** (always
    *                                      visible), **"auto"** (visible only when the panel's content is taller
    *                                      than 1.5× the viewport height), or **"false"** (hidden). Defaults to AUTO.
+   *  - {@link CodbiGlobal.triggers | Submission triggers }: Before returning the validation result, this
+   *                                      functionality invokes {@link CodbiGlobal.triggers.validSubmission } if the
+   *                                      form is valid and the callback is not null, or
+   *                                      {@link CodbiGlobal.triggers.invalidSubmission } if the form is invalid
+   *                                      and the callback is not null. Set these on `window.codbi.triggers`
+   *                                      to run custom logic on submission outcome.
    *
    * @param toLoad    Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
    * @param toProcess Provided by {@link CodBi.checkAttributes } / {@link CodBi.loadConfig }.
@@ -719,6 +725,7 @@ export class HTML_Panel {
 
                 (candidate as HTMLElement).classList.add("CodBi_HTML_Panel_MissingRequiredField");
 
+                window.codbi.triggers?.invalidSubmission?.();
                 return { preventSubmission: true };
               }
             }
@@ -731,6 +738,7 @@ export class HTML_Panel {
         );
 
         if (HTML_Panel.invalidElements.length === 0) {
+          window.codbi.triggers?.validSubmission?.();
           return { preventSubmission: false };
         } else {
           for (const invalid of HTML_Panel.invalidElements) {
@@ -748,6 +756,11 @@ export class HTML_Panel {
             invalid.focus();
           }
 
+          if (reallyInvalid) {
+            window.codbi.triggers?.invalidSubmission?.();
+          } else {
+            window.codbi.triggers?.validSubmission?.();
+          }
           return { preventSubmission: reallyInvalid };
         }
       });

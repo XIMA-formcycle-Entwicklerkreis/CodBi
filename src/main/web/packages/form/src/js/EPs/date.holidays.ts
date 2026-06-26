@@ -24,12 +24,14 @@ type ApiRequest = {
  * This **E**lement **P**laceholder registers the "Date.Holidays"-EP that makes requests to "API-Feiertage.de" in order to
  * retrieve german holidays of all states.
  *
- * Config Parameter (order doesn't matter, case-insensitive):
- *  - States:         bw,by,be,bb,hb,hh,he,mv,ni,nw,rp,sl,sn,st,sh,th
- *  - "THIS_YEAR":    Represents the current year and supports arithmetical
- *                    operations ( +/- e.g. THIS_YEAR + 1 = next year)
- *  - "Friedensfest": The Augsburg's festival of peace.
- *  - "KATHOLISCH":   Katholic holidays
+ * Placeholder Parameter (order doesn't matter, case-insensitive):
+ *  - 1st: A state abbreviation (bw, by, be, bb, hb, hh, he, mv, ni, nw, rp, sl, sn, st, sh, th) or "THIS_YEAR" for the current year.
+ *  - 2nd: A state abbreviation, a year, "THIS_YEAR" (optionally with +/- arithmetic like "THIS_YEAR + 1"), "Friedensfest" or "KATHOLISCH".
+ *  - 3rd and beyond: More states, years, "THIS_YEAR", "Friedensfest" or "KATHOLISCH" in any order.
+ *  - "THIS_YEAR":    Represents the current year and supports arithmetical operations ( +/- e.g. THIS_YEAR + 1 = next year).
+ *  - "Friedensfest": Include the Augsburg's festival of peace.
+ *  - "KATHOLISCH":   Include catholic holidays.
+ *  - States:         bw (Baden-Württemberg), by (Bayern), be (Berlin), bb (Brandenburg), hb (Bremen), hh (Hamburg), he (Hessen), mv (Mecklenburg-Vorpommern), ni (Niedersachsen), nw (Nordrhein-Westfalen), rp (Rheinland-Pfalz), sl (Saarland), sn (Sachsen), st (Sachsen-Anhalt), sh (Schleswig-Holstein), th (Thüringen).
  *
  * @remarks
  * Initial Author: Callari, Salvatore (Callari@WaXCode.net)

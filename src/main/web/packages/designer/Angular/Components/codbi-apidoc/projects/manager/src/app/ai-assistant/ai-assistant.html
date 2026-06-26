@@ -13,7 +13,8 @@
     <div class="cb-ai-content" #contentContainer>
         <p-select
             [appendTo]="contentContainer"
-            [(ngModel)]="selectedModel"
+            [ngModel]="selectedModel"
+            (ngModelChange)="onModelChange($event)"
             [options]="models"
             optionLabel="label"
             optionValue="id"

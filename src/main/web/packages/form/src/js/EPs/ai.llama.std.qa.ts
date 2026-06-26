@@ -15,17 +15,17 @@ import { TYPE } from "xdbc/src/DBC/TYPE";
  * This **E**lement-**P**laceholder acquires the AI response to a question.
  *
  * ### Indexed Parameters:
- *  - 1st                         — The question to ask the AI.
- *  - 2nd **UseInternet**         — `"true"` to enable Brave Search internet access. Default: `"false"`.
- *  - 3rd **Location**            — `"true"` to enable geolocation access. Default: `"false"`.
- *  - 4th **Language**            — Language for the AI response (e.g. `"German"`, `"English"`). Appends
- *                                `"Answer in {language}."` to the question.
- *  - 5th **ResponseLanguage**    — Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI
- *                                  to respond in this language, skipping auto-detection.
- *  - 6th **Specialist**          — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
- *                                  plugin property.
- *  - 7th **FilterResults**       — `"true"` to enable PII filtering on Brave Search queries.
- *  - 8th **JsonParse**           — `"true"` to parse the AI response as JSON. Default: `"false"`.
+ *  - 1st: The question to ask the AI.
+ *  - 2nd: UseInternet — `"true"` to enable Brave Search internet access. Default: `"false"`.
+ *  - 3rd: Location — `"true"` to enable geolocation access. Default: `"false"`.
+ *  - 4th: Language — Language for the AI response (e.g. `"German"`, `"English"`). Appends
+ *         `"Answer in {language}."` to the question.
+ *  - 5th: ResponseLanguage — Two-letter ISO 639-1 code (e.g. `"de"`, `"fr"`). Forces the AI
+ *         to respond in this language, skipping auto-detection.
+ *  - 6th: Specialist — Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`
+ *         plugin property.
+ *  - 7th: FilterResults — `"true"` to enable PII filtering on Brave Search queries.
+ *  - 8th: JsonParse — `"true"` to parse the AI response as JSON. Default: `"false"`.
  *
  * @remarks
  * Initial Author: Callari, Salvatore (Callari@WaXCode.net)

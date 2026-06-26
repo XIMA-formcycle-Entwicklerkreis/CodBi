@@ -20,7 +20,7 @@ import { CodBiError } from "../global-scope.js";
  * the corresponding CodBi-Plugin servlet.
  *
  * Placeholder Parameter:
- *  - 1st: An property of the directory, like e.g. "bezeichnung".
+ *  - 1st: An property of the directory, for example "bezeichnung".
  *
  *  - returns Either an {@link Array <{ behoerdenart : string, behoerdengruppe : string, bezeichnung : string, email : string, id : string, sortierreihenfolge : string}>}
  *            or an {@link Array < string >}, if the 2nd parameter is specified.

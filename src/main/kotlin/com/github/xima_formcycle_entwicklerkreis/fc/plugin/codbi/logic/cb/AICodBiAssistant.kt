@@ -1,6 +1,7 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.Standard
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ImageProcessingService
@@ -62,6 +63,7 @@ class AICodBiAssistant : IPluginServletAction {
     return when (action) {
       "Models" -> handleModels()
       "Run" -> handleRun(params)
+      "AppointmentPlan" -> handleAppointmentPlan(params)
       else -> jsonResponse("""{"error":"Unknown action"}""")
     }
   }
@@ -92,6 +94,183 @@ class AICodBiAssistant : IPluginServletAction {
       return jsonResponse("""{"error":"AI service not available"}""")
     }
     return jsonResponse(gson.toJson(models))
+  }
+
+  /**
+   * Looks up an appointment plan UUID by its human-readable name. Called with X-Action:
+   * AppointmentPlan and X-Plan-Name: <name>. Queries the FORMCYCLE appointment_plan table. NOTE:
+   * The table name 'appointment_plan' may differ in your FORMCYCLE version. Check your database
+   * schema if the query fails.
+   */
+  private fun handleAppointmentPlan(
+      params: IPluginServletActionParams
+  ): IPluginServletActionRetVal {
+    val planName =
+        params.headerMap.entries
+            .find { it.key.equals("X-Plan-Name", ignoreCase = true) }
+            ?.value
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return jsonResponse("""{"error":"Missing X-Plan-Name header"}""")
+    val emf =
+        CodbiEntities.entityManagerFactory
+            ?: return jsonResponse("""{"error":"Database not available"}""")
+    return try {
+      val em = emf.createEntityManager()
+      try {
+        val query = em.createNativeQuery("SELECT UUID FROM APPOINTMENT_TEMPLATE WHERE NAME = :name")
+        query.setParameter("name", planName)
+        val result = query.resultList
+        if (result.isEmpty()) {
+          jsonResponse(gson.toJson(mapOf("error" to "Appointment plan '$planName' not found")))
+        } else {
+          val uuid = result[0].toString()
+          jsonResponse(gson.toJson(mapOf("uuid" to uuid, "name" to planName)))
+        }
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to look up appointment plan: ${e.message}")
+      // Log available tables to help identify the correct table name
+      try {
+        val em2 = emf.createEntityManager()
+        try {
+          val schemaQuery =
+              em2.createNativeQuery(
+                  "SELECT table_name FROM information_schema.tables WHERE table_name ILIKE '%appointment%' OR table_name ILIKE '%termin%' OR table_name ILIKE '%schedule%' ORDER BY table_name")
+          val tables = schemaQuery.resultList
+          logger.warn(
+              "[AICodBiAssistant] Available tables matching appointment/termin/schedule: {}",
+              tables)
+        } finally {
+          em2.close()
+        }
+      } catch (_: Exception) {
+        // Schema query not supported by this database
+      }
+      jsonResponse(gson.toJson(mapOf("error" to "Query failed: ${e.message}")))
+    }
+  }
+
+  /** True after the first schema dump has been logged. */
+  private var schemaDumped = false
+
+  /**
+   * Scans the form JSON for XAppointment elements that have an "appointmentPlan" (human-readable
+   * schedule name) but no "appointmentTemplate" (UUID). Resolves the name to a UUID by querying the
+   * FORMCYCLE appointment_plan database table and injects the "appointmentTemplate" property.
+   */
+  private fun resolveAppointmentPlans(formJson: String): String {
+    logger.info(
+        "[AICodBiAssistant] resolveAppointmentPlans called with formJson length={}",
+        formJson.length)
+    val emf =
+        CodbiEntities.entityManagerFactory
+            ?: return formJson.also {
+              logger.info("[AICodBiAssistant] resolveAppointmentPlans: no EntityManagerFactory")
+            }
+    // Dump schema info once on first call for debugging
+    if (!schemaDumped) {
+      schemaDumped = true
+      try {
+        val em = emf.createEntityManager()
+        try {
+          val tq =
+              em.createNativeQuery(
+                  "SELECT table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('information_schema', 'pg_catalog', 'mysql') ORDER BY table_name")
+          logger.info("[AICodBiAssistant] All database tables: {}", tq.resultList)
+          // Also dump APPOINTMENT_TEMPLATE columns
+          try {
+            val colQ =
+                em.createNativeQuery(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'APPOINTMENT_TEMPLATE' ORDER BY ordinal_position")
+            logger.info("[AICodBiAssistant] APPOINTMENT_TEMPLATE columns: {}", colQ.resultList)
+          } catch (_: Exception) {
+            logger.warn("[AICodBiAssistant] Could not query APPOINTMENT_TEMPLATE columns")
+          }
+          // Sample first row
+          try {
+            val sampleQ =
+                em.createNativeQuery("SELECT * FROM APPOINTMENT_TEMPLATE FETCH FIRST 1 ROWS ONLY")
+            logger.info(
+                "[AICodBiAssistant] APPOINTMENT_TEMPLATE sample row: {}", sampleQ.resultList)
+          } catch (_: Exception) {
+            try {
+              val sampleQ2 = em.createNativeQuery("SELECT * FROM APPOINTMENT_TEMPLATE LIMIT 1")
+              logger.info(
+                  "[AICodBiAssistant] APPOINTMENT_TEMPLATE sample row: {}", sampleQ2.resultList)
+            } catch (_: Exception) {
+              logger.warn("[AICodBiAssistant] Could not sample APPOINTMENT_TEMPLATE")
+            }
+          }
+        } finally {
+          em.close()
+        }
+      } catch (e: Exception) {
+        logger.warn("[AICodBiAssistant] Failed to dump schema: ${e.message}")
+      }
+    }
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items =
+          root.getAsJsonArray("items")
+              ?: return formJson.also {
+                logger.info(
+                    "[AICodBiAssistant] resolveAppointmentPlans: no items array in formJson")
+              }
+      logger.info("[AICodBiAssistant] resolveAppointmentPlans: scanning {} items", items.size())
+      var changed = false
+      for (i in 0 until items.size()) {
+        val item = items[i].asJsonObject
+        val className = item.get("className")?.asString ?: continue
+        if (className != "XAppointment") continue
+        val props = item.getAsJsonObject("properties") ?: continue
+        logger.info(
+            "[AICodBiAssistant] resolveAppointmentPlans: found XAppointment '{}', props keys: {}",
+            props.get("name")?.asString,
+            props.keySet())
+        if (props.has("appointmentTemplate")) {
+          logger.info(
+              "[AICodBiAssistant] resolveAppointmentPlans: XAppointment already has appointmentTemplate, skipping")
+          continue
+        }
+        val planName = props.get("appointmentPlan")?.asString
+        if (planName == null) {
+          logger.info(
+              "[AICodBiAssistant] resolveAppointmentPlans: XAppointment has no appointmentPlan, skipping")
+          continue
+        }
+        logger.info(
+            "[AICodBiAssistant] Found XAppointment with appointmentPlan='{}' — resolving...",
+            planName)
+        val em = emf.createEntityManager()
+        try {
+          val query =
+              em.createNativeQuery("SELECT UUID FROM APPOINTMENT_TEMPLATE WHERE NAME = :name")
+          query.setParameter("name", planName)
+          val result = query.resultList
+          if (result.isNotEmpty()) {
+            props.addProperty("appointmentTemplate", result[0].toString())
+            changed = true
+            logger.info(
+                "[AICodBiAssistant] Resolved appointment plan '{}' to UUID '{}'",
+                planName,
+                result[0])
+          } else {
+            logger.warn(
+                "[AICodBiAssistant] Appointment plan '{}' not found — query returned no rows",
+                planName)
+          }
+        } finally {
+          em.close()
+        }
+      }
+      if (changed) gson.toJson(root) else formJson
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to resolve appointment plans: ${e.message}")
+      formJson
+    }
   }
 
   private fun handleRun(params: IPluginServletActionParams): IPluginServletActionRetVal {
@@ -176,7 +355,9 @@ class AICodBiAssistant : IPluginServletAction {
       if (formParsed?.isJsonObject == true && formParsed.asJsonObject.has("error")) {
         return jsonResponse(formJson)
       }
-      result.append(""","formJson":$formJson""")
+      // Auto-resolve appointment plan names to UUIDs for XAppointment elements.
+      val resolvedFormJson = resolveAppointmentPlans(formJson)
+      result.append(""","formJson":$resolvedFormJson""")
       // Auto-manage Holistic.Cleave.* standard configurations based on field types in the form.
       // Only performed when the frontend could read the current standards from the DOM
       // (key absent = standards editor not yet rendered; skip to avoid overwriting manual
@@ -189,7 +370,8 @@ class AICodBiAssistant : IPluginServletAction {
         // AI-controlled.
         val aiSetStandards = params.requestParameters["aiSetStandards"]?.firstOrNull()
         val updatedStandards =
-            computeUpdatedStandards(formJson, currentStandards, aiSetStandards, applicabilityReport)
+            computeUpdatedStandards(
+                resolvedFormJson, currentStandards, aiSetStandards, applicabilityReport)
         logger.info(
             "[AICodBiAssistant] Computed updated standards: current='{}', aiSet='{}', result='{}'",
             currentStandards,
@@ -200,7 +382,7 @@ class AICodBiAssistant : IPluginServletAction {
       // For "both" intent: extract up-to-date form elements from the newly modified form JSON
       // so the workflow AI can reference newly created buttons/fields by their correct names.
       if (intent == "both") {
-        latestFormElements = extractFormElementsFromJson(formJson) ?: latestFormElements
+        latestFormElements = extractFormElementsFromJson(resolvedFormJson) ?: latestFormElements
         logger.info(
             "[AICodBiAssistant] Updated form elements for workflow AI: {}", latestFormElements)
       }
@@ -272,6 +454,8 @@ class AICodBiAssistant : IPluginServletAction {
       append("]")
     }
 
+    logger.info(
+        "[AICodBiAssistant] Phase-1 messages sent to AI (model={}): {}", modelId, messagesJson)
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
     val cleaned = extractJson(stripThinkTags(rawResponse))
 
@@ -344,10 +528,10 @@ class AICodBiAssistant : IPluginServletAction {
       append("]")
     }
 
-    logger.debug(
-        "[AICodBiAssistant] Sending form AI request — system prompt: {} chars, CodBi section present: {}",
-        systemPrompt.length,
-        systemPrompt.contains("CODBI CANDIDATE REVIEW"))
+    logger.info(
+        "[AICodBiAssistant] Form data sent to AI (model={}): {}",
+        modelId,
+        slimPersistJson(persistJson))
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
     var cleaned = extractJson(stripThinkTags(rawResponse))
 
@@ -369,14 +553,23 @@ class AICodBiAssistant : IPluginServletAction {
         val rethinkSystemPrompt =
             "You are a CodBi form element configurator. " +
                 "Your previous evaluation of the following FORMCYCLE form elements concluded that no CodBi functionalities apply. " +
+                "CRITICAL — If any element is missing an \"id\" property, you MUST add one. The 'id' is the HTML/DOM element identifier and must be unique. Convention: use the prefix 'xi-' followed by the element's name (e.g., name=\"tfVorname\" → id=\"xi-tf-Vorname\"). " +
+                "CRITICAL — The 'elements' array uses 'name' values, NOT 'id' values. Example: element with name=\"tfVorname\" and id=\"xi-tf-vorname\" → add \"tfVorname\" (the name) to the container's elements array, NOT \"xi-tf-vorname\" (the id).\n" +
+                "CRITICAL — When creating NEW elements, use ONLY these valid classNames: XTextField, XTextArea, XUpload, XSelect, XCheckbox, XButtonList (NOT 'XButton' — XButton does NOT exist), XSpan, XImage, XFieldSet, XContainer, XContainerInvisible, XSignature, XAppointment, XLine, XSpacer, XPage, XDatalistAdvanced, XTextfieldAdvanced, XFormula, XRating, XCaptcha, XReCaptcha, XHtmlWidget, XMap, XNavigationBar, XLanguageSwich. 'XButton' is INVALID — use XButtonList with a 'buttons' array. XTextField uses 'datatype' (NOT 'type') for input validation. EVERY element needs a 'label' property (containers/fieldsets use 'legend'). New elements MUST be listed in a container's 'elements' array by name.\n" +
                 "Please reconsider carefully. Review each element's className and properties and check whether any functionality from the list below is applicable. " +
+                "CRITICAL — XAppointment appointmentPlan: If the user's original request mentions \"Terminfinder für X\" (e.g., \"Terminfinder für ddd\"), you MUST add the property \"appointmentPlan\":\"X\" to the XAppointment element's properties. Example: add \"appointmentPlan\":\"ddd\" to the XAppointment.\n" +
                 "If a functionality applies: add data-cb-func to the element's properties (as CSV if multiple), and set any required data-cb-* attributes. " +
                 "ADDITIONALLY, you MUST also set CSS classes on elements where applicable. " +
                 "To set a CSS class: add a \"cssclasses\" array to the element's \"properties\" (e.g. \"cssclasses\":[\"CodBi_People_Name\"]). " +
-                "RULES — TWO-OPTION RULE: CSS classes exist ONLY in the list below. For each field, pick ONE: (A) exact CSS class match exists → use it; (B) no CSS class → use data-cb-func. NEVER invent CSS class names. (a) Apply AT MOST ONE CSS class per field. (b) Only apply a class when it has an EXACT match. (c) For Time/Date frames: use CSS class when available (N=1-5); fallback to data-cb-func if all 5 used. When using a CSS class, do NOT add data-cb-func for the SAME behavior — but MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends). (d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (e) REDUNDANCY: A CSS class replaces data-cb-func ONLY when they provide the SAME behavior. CodBi_People_PLZ (Cleave formatting) does NOT replace OpenPLZ.Autocomplete. (f) Street names and localities have no CSS class. (g) CRITICAL — OpenPLZ.Autocomplete via data-cb-func must be set on ALL address fields in a group (postal code, locality, street, building number). Never skip the postal code field.\n" +
+                "RULES — TWO-OPTION RULE: CSS classes exist ONLY in the list below. For each field, pick ONE: (A) exact CSS class match exists → use it; (B) no CSS class → use data-cb-func. NEVER invent CSS class names. (a) Apply AT MOST ONE CSS class per field. (b) Only apply a class when it has an EXACT match. (c) For Time/Date frames: use CSS class when available (N=1-5); fallback to data-cb-func if all 5 used. When using a CSS class, do NOT add data-cb-func for the SAME behavior — but MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends). (d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (e) REDUNDANCY: A CSS class replaces data-cb-func ONLY when they provide the SAME behavior. CodBi_People_PLZ (Cleave formatting) does NOT replace OpenPLZ.Autocomplete. (f) Street names and localities have no CSS class. (g) CRITICAL — OpenPLZ.Autocomplete via data-cb-func must be set on ALL address fields in EVERY address group (postal code, locality, street, building number), regardless of which plugin/system they come from (Bürger-Services/BundID, BayernID, or custom). Never skip the postal code field. ALL required parameters (Country, TargetData, Dependent, FocusOnAutocomplete) MUST be set on each address field.\n" +
                 "   h) NUMBERING — When creating frame CSS classes (TimeFrame_N_Begin/End or DateFrame_N_Begin/End), scan existing form items for which N (1-5) are already used. Use the lowest unused N for each new pair.\n" +
-                "   i) Form.Navigator AUTO-GENERATES navigation buttons — do NOT add XButtonList or manual page-navigation buttons. The functionality creates them automatically.\n" +
+                "   i) Form.Navigator AUTO-GENERATES navigation buttons — CRITICAL: Create a SEPARATE XContainer (div) for the nav bar — do NOT put data-cb-func=form.navigator on XPage elements. XPage is not a div and the functionality requires HTMLDivElement. Add the container to the first page's elements array. CRITICAL — Distinguish from XNavigationBar plugin: Use data-cb-func=form.navigator ONLY when the prompt mentions \"CodBi Navbar\" or \"CodBi Navigation\". When the prompt mentions \"XIMA Navigationsleiste\", \"XIMA navbar\", \"FORMCYCLE navbar\", \"Navigationsleiste\", \"Progress Bar\", \"FC-Navbar\", or \"formcycle navigation bar\", use className=\"XNavigationBar\" instead — do NOT use data-cb-func=form.navigator.\n" +
+                "   j) CRITICAL — Bürger-Services/BundID fields (all tfAntragsteller* fields) are autofilled by the authentication system. Do NOT add data-cb-func (no OpenPLZ.Autocomplete, no ldap.autocomplete). HOWEVER, CSS classes for client-side formatting (CodBi_People_Name, CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ, CodBi_People_BuildingNumber) SHOULD still be applied where they make sense — they are purely formatting and do not interfere with authentication autofill.\n" +
+                "   j2) CRITICAL — Form Chatbot Plugin (XIMA Chatbot/Chat-Assistent): When the prompt says \"XIMA Chatbot\" or \"XIMA Chat-Assistent\" or similar, use the Form Chatbot Plugin — NOT ai.llama.chat. This plugin adds form-level properties (\"ChatbotEnabled\":\"true\" at the FORM root), NOT individual elements. The CodBi \"ai.llama.chat\" widget is a DIFFERENT feature that creates explicit form elements — use it only when \"CodBi KI-Chat\" is mentioned.\n" +
+                "   n) CRITICAL — Common Validation Rules (fc-plugin-common-validation-rules) are NOT CodBi functionalities. Do NOT add them as data-cb-func. These are validation-only plugins applied via data-vdt attribute — they validate input, they do NOT provide CodBi EP/functionality features. If an element already has a data-vdt attribute, leave it. Never add data-cb-func for a validation rule plugin class name.\n" +
                 "   j) CRITICAL — Panel CSS classes (CodBi_HTML_Panel_*) ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. For containers that need a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and data-cb-autoheadertitle. For fieldsets, panel CSS classes are fine (the legend provides the title).\n" +
+                "   j2) CRITICAL — \"Standard-Panel\" prompt: When the user asks for a \"standard panel\" or \"einfaches Panel\", create an XFieldSet with cssclasses=[\"CodBi_HTML_Panel_Standard\"] and a \"legend\" property. Do NOT use XContainer.\n" +
+                "   j3) CRITICAL — Panel type mapping: Standard-Panel → CodBi_HTML_Panel_Standard. Flat Panel/flaches Panel → CodBi_HTML_Panel_Flat. Minimal Panel → CodBi_HTML_Panel_Minimal. Index Panel → CodBi_HTML_Panel_Index.\n" +
                 "   k) CRITICAL — HTML.Select.Favorites: When applying this functionality you MUST also add a data-cb-initialElement attribute to the XSelect's attributes array. Set its value to the value property (NOT the display text) of the FIRST option. Example: first option is {\"text\":\"Bayern\",\"value\":\"Bayern\"} → add {\"text\":\"data-cb-initialElement\",\"value\":\"Bayern\"}. This prevents the divider from being unintentionally selected.\n" +
                 "   l) CRITICAL — XTextArea: ALWAYS set fullwidth=\"1\" on every XTextArea, regardless of other XTextAreas in the form.\n" +
                 "Available CSS classes:\n" +
@@ -526,7 +719,10 @@ class AICodBiAssistant : IPluginServletAction {
 
         val applySystemPrompt =
             "You are a CodBi form element configurator. " +
-                "You receive a JSON array of FORMCYCLE form element objects. Each element has a \"className\" and a \"properties\" object (which includes \"id\"). " +
+                "You receive a JSON array of FORMCYCLE form element objects. Each element has a \"className\" and a \"properties\" object. " +
+                "CRITICAL — If an element is missing an \"id\" property, you MUST add one. The 'id' is the HTML/DOM element identifier and must be unique. Convention: use the prefix 'xi-' followed by the element's name (e.g., name=\"tfVorname\" → id=\"xi-tf-Vorname\"). " +
+                "CRITICAL — The 'elements' array uses 'name' values, NOT 'id' values. Example: element with name=\"tfVorname\" and id=\"xi-tf-vorname\" → add \"tfVorname\" (the name) to the container's elements array, NOT \"xi-tf-vorname\" (the id).\n" +
+                "CRITICAL — When creating NEW elements, use ONLY these valid classNames: XTextField, XTextArea, XUpload, XSelect, XCheckbox, XButtonList (NOT 'XButton' — XButton does NOT exist), XSpan, XImage, XFieldSet, XContainer, XContainerInvisible, XSignature, XAppointment, XLine, XSpacer, XPage, XDatalistAdvanced, XTextfieldAdvanced, XFormula, XRating, XCaptcha, XReCaptcha, XHtmlWidget, XMap, XNavigationBar, XLanguageSwich. XTextField uses 'datatype' (NOT 'type') for input validation. EVERY element needs a 'label' property (containers/fieldsets use 'legend'). New elements MUST be listed in a container's 'elements' array by name.\n" +
                 "Apply the CodBi functionalities listed below to the appropriate elements. " +
                 "To apply a functionality: set data-cb-func in the element's properties as CSV (create the key if absent). " +
                 "CRITICAL — All REQUIRED parameters MUST be set as data-cb-ParamName attributes. Parameters documented as 'Optional — ... Only set if ... Leave empty otherwise — do NOT invent values' should be OMITTED entirely (not set to empty, not created at all) unless the user explicitly asks for that feature. " +
@@ -537,8 +733,11 @@ class AICodBiAssistant : IPluginServletAction {
                 "Set data-cb-* parameter attributes as documented. " +
                 "ADDITIONALLY, you MUST also set CSS classes on elements where applicable. " +
                 "To set a CSS class: add a \"cssclasses\" array to the element's \"properties\" (e.g. \"cssclasses\":[\"CodBi_People_Name\"]). " +
-                "RULES — TWO-OPTION RULE: CSS classes exist ONLY in the list below. For each field, pick ONE: (A) exact CSS class match exists → use it; (B) no CSS class → use data-cb-func. NEVER invent CSS class names. (a) Apply AT MOST ONE CSS class per field. (b) Only apply when it has an EXACT match. (c) For Time/Date frames: use CSS class when available (N=1-5); fallback to data-cb-func if all 5 used. When using a CSS class, do NOT add data-cb-func for the SAME behavior — but MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends). (d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (e) REDUNDANCY: A CSS class replaces data-cb-func ONLY for same behavior. CodBi_People_PLZ does NOT replace OpenPLZ.Autocomplete. (f) Street names and localities have no CSS class. (g) CRITICAL: OpenPLZ.Autocomplete via data-cb-func on ALL address fields including postal code. (h) NUMBERING: Scan existing items for used TimeFrame/DateFrame N values. Use unused N (1-5) for new pairs. (i) Form.Navigator AUTO-GENERATES navigation buttons — do NOT add XButtonList or manual page-navigation buttons. The functionality creates them automatically. (j) CRITICAL — Panel CSS classes (CodBi_HTML_Panel_*) ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. For containers that need a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and data-cb-autoheadertitle. For fieldsets, panel CSS classes are fine (the legend provides the title).\n" +
+                "RULES — TWO-OPTION RULE: CSS classes exist ONLY in the list below. For each field, pick ONE: (A) exact CSS class match exists → use it; (B) no CSS class → use data-cb-func. NEVER invent CSS class names. (a) Apply AT MOST ONE CSS class per field. (b) Only apply when it has an EXACT match. (c) For Time/Date frames: use CSS class when available (N=1-5); fallback to data-cb-func if all 5 used. When using a CSS class, do NOT add data-cb-func for the SAME behavior — but MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends). (d) Do NOT use CodBi_People_Alphanumeric on street names, localities, or postal codes. (e) REDUNDANCY: A CSS class replaces data-cb-func ONLY for same behavior. CodBi_People_PLZ does NOT replace OpenPLZ.Autocomplete. (f) Street names and localities have no CSS class. (g) CRITICAL: OpenPLZ.Autocomplete via data-cb-func on ALL address fields in EVERY address group (postal code, locality, street, building number), regardless of which plugin/system they come from (Bürger-Services/BundID, BayernID, or custom). ALL required parameters (Country, TargetData, Dependent, FocusOnAutocomplete) MUST be set on each address field. (h) NUMBERING: Scan existing items for used TimeFrame/DateFrame N values. Use unused N (1-5) for new pairs. (i) Form.Navigator AUTO-GENERATES navigation buttons — CRITICAL: Create a SEPARATE XContainer (div) for the nav bar — do NOT put data-cb-func=form.navigator on XPage elements. XPage is not a div and the functionality requires HTMLDivElement. Add the container to the first page's elements array. CRITICAL — Distinguish from XNavigationBar plugin: Use data-cb-func=form.navigator ONLY when the prompt mentions \"CodBi Navbar\" or \"CodBi Navigation\". When the prompt mentions \"XIMA Navigationsleiste\", \"XIMA navbar\", \"FORMCYCLE navbar\", \"Navigationsleiste\", \"Progress Bar\", \"FC-Navbar\", or \"formcycle navigation bar\", use className=\"XNavigationBar\" instead — do NOT use data-cb-func=form.navigator. (j) CRITICAL — Panel CSS classes (CodBi_HTML_Panel_*) ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. For containers that need a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and data-cb-autoheadertitle. For fieldsets, panel CSS classes are fine (the legend provides the title).\n" +
                 "(k) CRITICAL — HTML.Select.Favorites: When applying this functionality you MUST also add a data-cb-initialElement attribute to the XSelect's attributes array. Set its value to the value property (NOT the display text) of the FIRST option. Example: first option is {\"text\":\"Bayern\",\"value\":\"Bayern\"} → add {\"text\":\"data-cb-initialElement\",\"value\":\"Bayern\"}. This prevents the divider from being unintentionally selected.\n" +
+                "(l) CRITICAL — Bürger-Services/BundID fields (all tfAntragsteller* fields) are autofilled by the authentication system. Do NOT add data-cb-func (no OpenPLZ.Autocomplete, no ldap.autocomplete). HOWEVER, CSS classes for client-side formatting (CodBi_People_Name, CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ, CodBi_People_BuildingNumber) SHOULD still be applied where they make sense — they are purely formatting and do not interfere with authentication autofill.\n" +
+                "(m) CRITICAL — Form Chatbot Plugin (XIMA Chatbot/Chat-Assistent): When the prompt says \"XIMA Chatbot\" or \"XIMA Chat-Assistent\" or similar, use the Form Chatbot Plugin — NOT ai.llama.chat. This plugin adds form-level properties (\"ChatbotEnabled\":\"true\" at the FORM root), NOT individual elements. The CodBi \"ai.llama.chat\" widget is a DIFFERENT feature — use it only when \"CodBi KI-Chat\" is mentioned.\n" +
+                "(n) CRITICAL — Common Validation Rules (fc-plugin-common-validation-rules) are NOT CodBi functionalities. Do NOT add them as data-cb-func. These are validation-only plugins applied via data-vdt attribute only — they validate input, they do NOT provide CodBi EP/functionality features. The data-vdt attribute is already set by the form structure AI (Pass-1). If an element already has a data-vdt attribute, leave it as-is. Never add data-cb-func for a validation rule plugin class name.\n" +
                 "Available CSS classes:\n" +
                 "=== People === CodBi_People_Name (person names only), CodBi_People_Alphanumeric (codes/IDs only), CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ (postal codes, use alone), CodBi_People_18plus, CodBi_People_16plus, CodBi_People_BuildingNumber\n" +
                 "=== Financial === CodBi_Currency\n" +
@@ -551,16 +750,33 @@ class AICodBiAssistant : IPluginServletAction {
                 "AI CHAT WIDGET — For AI chat / KI-Chat elements: data-cb-func=\"ai.llama.chat\" goes ONLY on the chat display XTextArea — NOT on the container. Add cssclasses: AI_LLAMA_CHAT_Send to the send button, AI_LLAMA_CHAT_Stop to the stop button, AI_LLAMA_CHAT_Upload on upload, AI_LLAMA_CHAT_Thinking/Internet/Location/AlertOnFinish on checkboxes, AI_LLAMA_CHAT_MailForward on mail checkbox, AI_LLAMA_CHAT_MailAddress on email text field. On the MailAddress field also set hiddenif=\"<MailForwardCheckbox_ID>\" (set to the MailForward checkbox's id value, NOT a mode number), hiddenifcomp=0 and hiddenifclear=\"false\" as DIRECT properties (not inside attributes). Keep all items in the items array.\n" +
                 "=== UI.Panels === CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for panels. CodBi_HTML_Panel_NoCordion marks panels excluded from accordion. CodBi_Accordion_A/B/C/D for accordions.\n" +
                 "CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' property that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. Therefore, for containers (XContainer, XContainerInvisible) that need to be a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and a data-cb-autoheadertitle. If the user's prompt specifies a title, use that as the data-cb-autoheadertitle value; otherwise generate a descriptive title from the container's content (e.g. \"Geburtsdatum\" for a date-of-birth section, \"Anschrift\" for an address section).\n" +
+                "CRITICAL — \"Standard-Panel\" prompt: When the user asks for a \"Standard-Panel\" or \"standard panel\" or \"einfaches Panel\", create an XFieldSet with cssclasses=[\"CodBi_HTML_Panel_Standard\"] and a \"legend\" property set to \"Panel\" (or a descriptive title if one is implied). Do NOT create an XContainer — panels MUST be XFieldSet. Do NOT use data-cb-func for standard panels — use the CSS class.\n" +
+                "CRITICAL — Panel type to CSS class mapping: \"Standard-Panel\" or \"einfaches Panel\" → CodBi_HTML_Panel_Standard. \"Flaches Panel\" or \"Flat Panel\" → CodBi_HTML_Panel_Flat. \"Minimales Panel\" or \"Minimal Panel\" → CodBi_HTML_Panel_Minimal. \"Index-Panel\" or \"Index Panel\" → CodBi_HTML_Panel_Index. Always create XFieldSet, add the corresponding CSS class, and set a \"legend\" property.\n" +
                 "CRITICAL — COLLAPSIBLE XCONTAINERS: When the user asks for a collapsible/expandable/foldable container and it is an XContainer (div), use data-cb-func=html.panel via the attributes array. ALSO set data-cb-generateheader=\"true\" and data-cb-autoheadertitle for the title (from the prompt or auto-generated). For XFieldSet (fieldset), use the CSS class CodBi_HTML_Panel_Standard instead — the legend provides the title. Only add \"data-cb-folded\":\"true\" if the user explicitly wants the panel to start collapsed.\n" +
                 "=== Print.Removal === CodBi_Print_Remove_*\n" +
                 "=== BayVIS === CodBi_BayVIS_*\n" +
                 "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
                 "CRITICAL: CSS classes ONLY exist for the domains listed above. For any functionality NOT listed here (e.g. Form.Navigator, OpenPLZ.Autocomplete, Date.Min, Date.NoWeekends, HTML.Input.REGEX, HTML.CSS, etc.), there is NO CSS class — you MUST use data-cb-func. NEVER invent CSS class names.\n" +
-                "EP CHAINING — Element Placeholders (EPs) can be chained with > syntax to pass one EP's result as input to another EP. This works in ANY data-cb-* parameter that accepts EPs (e.g. data-cb-Data, data-cb-replacement, data-cb-Values, data-cb-replacements). Example: \"{ BayVIS.Ansprechpartner.Details > { V > VariableName } }\" first resolves V to get an ID, then fetches the contact details. The inner EP is always resolved first and its result becomes the parameter for the outer EP.\nCRITICAL — EP parameter values are raw strings without quotes. Write { BayVIS.Ansprechpartner.ID > Salvatore Callari } NOT { BayVIS.Ansprechpartner.ID > \"Salvatore Callari\" }. Quotes are part of the EP syntax itself (the { } braces), do NOT add extra quotes around parameter values.\n" +
+                "CRITICAL — AI.LLAMA.STD.QA: This EP queries the AI to answer a question. USE IT when the prompt asks to get/retrieve/ask/fetch information from an AI, including weather, data lookups, or any knowledge question. Param[1]=the question string. Param[2]=UseInternet (\"true\" to enable web search). CRITICAL: Unused optional params (3-8) MUST be passed as empty strings via trailing semicolons. For weather queries: \"{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }\". When the prompt asks to output the result to the console, use Sys.Log.Console with data-cb-Data set to this EP.\n" +
+                "EP CHAINING — Element Placeholders (EPs) can be chained with > syntax to pass one EP's result as input to another EP. This works in ANY data-cb-* parameter that accepts EPs (e.g. data-cb-Data, data-cb-replacement, data-cb-Values, data-cb-replacements). Example: \"{ BayVIS.Ansprechpartner.Details > { V > VariableName } }\" first resolves V to get an ID, then fetches the contact details. The inner EP is always resolved first and its result becomes the parameter for the outer EP.\n" +
+                "Date.Today already supports arithmetic directly — do NOT wrap it in Date.Arithmetic. Use \"{ Date.Today > +1d }\" for tomorrow, \"{ Date.Today > -1d }\" for yesterday, \"{ Date.Today > +7d }\" for a week from now. Arithmetic operations: +N d/m/y (add days/months/years), -N d/m/y (subtract). No need for nested EPs.\n" +
+                "Date.FromString turns a date string into a Date object. Use it for prompts asking to convert/parse a date string. Example: \"{ Date.FromString > 01.12.1978 }\" returns a Date object for December 1st, 1978. An optional second parameter sets the format (e.g. \"DD/MM/YYYY\").\n" +
+                "JSON.Path extracts a property from an object using a dotted path. It can also call methods on an object by using the method name with parentheses as the path, e.g. \"toString()\" calls the toString method. Example: \"{ JSON.Path > { Date.FromString > 01.12.1978 } ; toString() }\" creates a Date and calls toString() on it. Use JSON.Path for any prompt asking to retrieve a property or call a method on a CodBi EP result.\n" +
+                "Data.Join merges the properties of multiple EP results into one object. Use Data.Join when the prompt asks to combine/join/merge/zusammen data from multiple EPs. Example: \"{ Data.Join > { BayVIS.Behoerden.Details > { BayVIS.Behoerden.ID > Amt für Digitales } ; bezeichnung } ; { BayVIS.Behoerden.Details.Gebaeude > { BayVIS.Behoerden.ID > Amt für Digitales } ; { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > Amt für Digitales } } } }\" joins the authority designation with its building details into one combined object. Data.Join takes two or more EP results as semicolon-separated parameters.\n" +
+                "CRITICAL — BayVIS Detail EPs expect NUMERIC IDs, not names: BayVIS.Behoerden.Details, BayVIS.Behoerden.Details.Gebaeude, BayVIS.Behoerden.Gebaeude.ID, BayVIS.Ansprechpartner.Details all take numeric IDs. The ID-resolver EPs take plain STRING names: BayVIS.Behoerden.ID (authority name like \"Amt für Digitales\"), BayVIS.Ansprechpartner.ID (contact name like \"Salvatore Callari\"). The directory EPs REQUIRE a property name parameter: BayVIS.Behoerden > bezeichnung (not bare { BayVIS.Behoerden }), BayVIS.Ansprechpartner > nachname (not bare { BayVIS.Ansprechpartner }). BayVIS.Behoerden valid property values: behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge. BayVIS.Ansprechpartner valid property values: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, sortierreihenfolge, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId.\n" +
+                "CRITICAL — BayVIS.Behoerden.Details.Gebaeude takes TWO numeric parameters: param 1 = authority ID, param 2 = building ID. To look up building details by authority name, chain BOTH IDs: \"{ BayVIS.Behoerden.Details.Gebaeude > { BayVIS.Behoerden.ID > Amt für Digitales } ; { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > Amt für Digitales } } }\" — first param resolves the authority name to its numeric ID, second param resolves the building ID for that authority. BayVIS.Behoerden.Details returns authority METADATA (name, email, type), NOT building addresses. For BUILDING details (street, PLZ, city) use BayVIS.Behoerden.Details.Gebaeude.\n" +
+                "CRITICAL — BayVIS.Behoerden.Details also accepts an OPTIONAL second parameter: a property name to extract just that specific field. When the prompt asks for a particular property (e.g. \"Bezeichnung\", \"email\", \"behoerdenart\"), add it as the second parameter: \"{ BayVIS.Behoerden.Details > { BayVIS.Behoerden.ID > Amt für Digitales } ; bezeichnung }\" returns only the authority's designation. Valid property values: bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, behoerdeZuordnungen, behoerdenGebaeudeZuordnungen. Without this second param, ALL details are returned.\n" +
+                "CRITICAL — F (Find) EP must be the OUTERMOST EP when filtering an array by exact property value. F takes (propertyName, exactValue, arrayToSearch). The arrayToSearch is typically a chain of EPs like Sorted > Unique > OpenPLZ. Do NOT put F inside Sorted or Unique. Correct: \"{ F > postalCode ; 91522 ; { sorted > { unique > { openplz.localities > de ; ^a.* }; name }; name } }\". WRONG: \"{ Sorted > { F > ... } }\" or \"{ JSON.Path > { F > ... } }\".\n" +
+                "EXACT PROMPT PATTERN: For prompt \"Gib in der Konsole die Namen aller Städte Deutschlands die mit An anfangen sortiert nach dem Namen aus. Gib nur die Einträge aus deren postalCode-Eigenschaft den Wert 91522 haben.\" the data-cb-Data value MUST be: \"{ F > postalCode ; 91522 ; { sorted > { unique > { openplz.localities > de ; ^a.* }; name }; name } }\". The EP name is JSON.Path (with dot), NOT \"JSON Path\" (with space). The EP name is OpenPLZ.Localities (dot, case-sensitive), NOT \"OpenPlz.Localities\" or \"openplz.localities\". Use EXACT registered EP names: JSON.Path, OpenPLZ.Localities, OpenPLZ.Streets, LDAP.Find, etc.\n" +
+                "CRITICAL — ALL OpenPLZ EPs (OpenPLZ, OpenPLZ.Streets, OpenPLZ.Localities, OpenPLZ.OrganizationalUnits, OpenPLZ.TextSearch) return Array<object>. Each object has properties like \"name\", \"officialKey\", \"type\", \"postalCode\", \"locality\". To extract a specific property (e.g. street names), wrap the EP in JSON.Path: \"{ JSON.Path > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }\". If the prompt asks for names only (e.g., \"Gib die Namen der Straßen aus\") and the same name may appear with different postal codes, deduplicate with Unique: \"{ Unique > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }\". CRITICAL: Never generate bare \"{ OpenPLZ.Streets > de ; Karolinen ; 91522 }\" when the prompt asks for a specific property like \"name\" or \"Namen\" — you MUST wrap in JSON.Path first. EXCEPTION: When using F (Find) for exact property filtering, F MUST be the outermost EP — do NOT wrap in JSON.Path. The F EP already returns the filtered objects and JSON.Path would break the F parameter structure.\n" +
+                "CRITICAL — EP parameter values are raw strings without quotes. Write { BayVIS.Ansprechpartner.ID > Salvatore Callari } NOT { BayVIS.Ansprechpartner.ID > \"Salvatore Callari\" }. Quotes are part of the EP syntax itself (the { } braces), do NOT add extra quotes around parameter values.\n" +
+                "Sys.Log.Console does NOT need an existing form element — it is a standalone functionality. When the user asks to output/print/log/show anything to the browser console (URL content, BayVIS data, CSV, global variables, DOM elements, etc.), you MUST create a NEW XContainerInvisible at the top of the first page's elements array. Set its \"name\" property (prefix \"div\"), an \"id\" property (prefix \"xi-log-\"), an empty \"elements\" array, and put data-cb-func and data-cb-Data in the \"attributes\" array as {\"text\":\"...\",\"value\":\"...\"} pairs. Example: {\"className\":\"XContainerInvisible\",\"properties\":{\"name\":\"divConsoleOutput\",\"id\":\"xi-log-1\",\"elements\":[],\"attributes\":[{\"text\":\"data-cb-func\",\"value\":\"Sys.Log.Console\"},{\"text\":\"data-cb-Data\",\"value\":\"{ Data.CSV > { Net.URL > http://... } }\"}]}}. If the prompt explicitly mentions CSV (e.g. \"als CSV\"), use Data.CSV wrapping Net.URL in data-cb-Data. If no CSV is mentioned, use Net.URL alone. For dynamic URLs from a variable: \"{ Net.URL > { V > VariableName } }\" (with or without Data.CSV wrapper per the CSV rule). For BayVIS data, chain the BayVIS EP directly in data-cb-Data. When the prompt asks to output/print/log/show a form element or DOM element to the console (e.g. \"Gib das Formular-Element .p1 in der Konsole aus\"), use the DOM.Query EP in data-cb-Data: \"{ DOM.Query > .p1 }\" — the CSS selector is the parameter passed to DOM.Query (the dot-prefixed class name from the prompt). Do NOT set data-cb-value. If the prompt additionally specifies an index (e.g. \"Element in Index 0\", \"first element\", \"zweites Element\", \"das 3. Element\"), wrap the DOM.Query in the I EP: \"{ I > 0 ; { DOM.Query > .p1 } }\" — the I EP takes the 0-based index as its first parameter and the DOM EP result as its second parameter. If the prompt asks for a property of the DOM result (e.g. \"Länge\", \"length\", \"tagName\", \"textContent\"), wrap the DOM.Query in the JSON.Path EP: \"{ JSON.Path > { DOM.Query > .p1 } ; length }\" — JSON.Path extracts the specified property (dotted path) from the DOM EP result.\n" +
                 "CRITICAL: PRESERVE the element's EXISTING content properties (\"rtevalue\", \"textContent\", \"label\", \"legend\", \"placeholder\", \"value\") — do NOT modify them. The CodBi functionality will replace the placeholder text at runtime via data-cb-replacement. If you change rtevalue to contain the EP expression \"{ Data.CSV > ... }\", the user will see the literal EP text in the browser because EPs are NOT resolved in form element properties.\n" +
                 "IMPORTANT: PRESERVE any existing \"cssclasses\" array already set on elements from the input — only add entries or create a new array if none exists.\n" +
+                "You MAY create new elements (e.g. XContainerInvisible for Sys.Log.Console) when the prompt requires outputting data to the console, listing BayVIS data, or any other action that needs a new CodBi-tagged element. Add new elements at the top of the first page's elements array.\n" +
+                "REMEMBER THE OpenPLZ JSON.Path RULE: OpenPLZ, OpenPLZ.Streets, OpenPLZ.Localities return Array<object>. When the prompt asks for a property like \"name\"/\"Namen\", you MUST wrap in JSON.Path. Example: \"{ JSON.Path > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }\" — NOT bare \"{ OpenPLZ.Streets > de ; Karolinen ; 91522 }\". JSON.Path is REQUIRED for property extraction.\n" +
                 "Respond ONLY with a JSON object: " +
-                "{\"items\":[...same elements with modifications applied...],\"_codbiApplicability\":{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace counts)," +
+                "{\"items\":[...same elements with modifications applied, plus any new elements created...],\"_codbiApplicability\":{\"formElementsProcessed\":4,\"codbiElementsEvaluated\":23 (replace counts)," +
                 "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
                 "\"applied\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
                 "\"skipped\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...],\"reason\":\"...\"}]}}. " +
@@ -581,6 +797,10 @@ class AICodBiAssistant : IPluginServletAction {
               "[AICodBiAssistant] Pass-2 has 0 items to send — pass-1 items array may be missing or empty")
         }
 
+        logger.info(
+            "[AICodBiAssistant] Pass-2 form elements sent to AI (model={}): {}",
+            modelId,
+            gson.toJson(targetItems))
         retryMessagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(applySystemPrompt)}},""")
@@ -660,7 +880,32 @@ class AICodBiAssistant : IPluginServletAction {
     return try {
       val parsed = JsonParser.parseString(sanitizedCleaned)
       warnUnknownClassNames(parsed)
-      restoreStrippedFields(sanitizedCleaned, persistJson) to applicabilityReport
+      val restored = restoreStrippedFields(sanitizedCleaned, persistJson)
+      // Log item names in the final form JSON to debug missing elements
+      try {
+        val root = JsonParser.parseString(restored).asJsonObject
+        val names =
+            root.getAsJsonArray("items")?.mapNotNull { el ->
+              el.takeIf { it.isJsonObject }
+                  ?.asJsonObject
+                  ?.getAsJsonObject("properties")
+                  ?.get("name")
+                  ?.asString
+            } ?: emptyList()
+        val pageElements =
+            root
+                .getAsJsonArray("items")
+                ?.firstOrNull {
+                  it.isJsonObject && it.asJsonObject.get("className")?.asString == "XPage"
+                }
+                ?.asJsonObject
+                ?.getAsJsonObject("properties")
+                ?.getAsJsonArray("elements")
+                ?.mapNotNull { it.takeIf { it.isJsonPrimitive }?.asString } ?: emptyList()
+        logger.info("[AICodBiAssistant] Final form item names ({}): {}", names.size, names)
+        logger.info("[AICodBiAssistant] First page elements: {}", pageElements)
+      } catch (_: Exception) {}
+      restored to applicabilityReport
     } catch (_: Exception) {
       logger.warn("[AICodBiAssistant] Form AI returned unparseable response: {}", sanitizedCleaned)
       ("""{"error":"AI returned invalid JSON","raw":${gson.toJson(sanitizedCleaned)}}""") to null
@@ -673,6 +918,23 @@ class AICodBiAssistant : IPluginServletAction {
           "instruction. Your ONLY output must be the same partial IPersistJson — modified according " +
           "to the instruction — as a raw JSON object. No explanation, no markdown, no code fences.\n\n" +
           "CRITICAL RULES — violating any of these will corrupt the form:\n" +
+          "0. CRITICAL — XAppointment appointmentPlan: When the prompt says \"Terminfinder für X\" (e.g., \"Terminfinder für ddd\"), you MUST add the property \"appointmentPlan\":\"X\" to the XAppointment element's properties. Example: if the prompt says \"Terminfinder für ddd\", set \"appointmentPlan\":\"ddd\" on the XAppointment. The backend auto-resolves this to the UUID. NEVER omit appointmentPlan when the prompt names a specific schedule.\n" +
+          "0a. CRITICAL — Date Utils plugin (dateUtil): When the prompt asks for date restrictions/constraints (e.g., \"Datum vor\", \"Datum nach\", \"nur Werktage\", \"Feiertage ausblenden\"), add these custom properties to XTextField elements with datatype=\"dateDE\" or datatype=\"date\": dateUtilBefore (date must be before), dateUtilBeforeEqual (date before or equal), dateUtilAfter (date must be after), dateUtilAfterEqual (date after or equal), dateUtilShowWeekends (\"true\" to show weekends), dateUtilShowHolidaysFor (German state code for holiday display: bw, by, be, bb, hb, hh, he, mv, ni, nw, rp, sl, sn, st, sh, th), dateUtilIncludeAssumptionOfMary (\"true\" for Bavaria only), dateUtilDisableSaturdays (\"true\"), dateUtilDisableSundays (\"true\"), dateUtilDisableHolidays (\"true\" to disable holidays). All properties use placeholder syntax like \"24.12.2025\", \"[%tf1%]\", \"[%\$DATE%]\", \"[%\$form_date_created%]+2y\", \"[%\$form_date_modified%]-18y3m5d\" for relative dates.\n" +
+          "0b. CRITICAL — Bürger-Services (citizen services) form elements: When the prompt asks for \"Bürger-Services\", \"Bürgerkonto\", \"BundID\", or citizen eID form fields, use these pre-configured element names and properties. The fields are usually grouped inside an XFieldSet named \"fsBKAllDaten\" with legend \"Ihre Anmeldedaten\". PERSON fields: use XSelect name=\"selPersTyp\" for login type (radio, options: NatPers/NNatPers). XSelect name=\"selAntragstellerGeschlecht\" for gender. XSelect name=\"tfAntragstellerAnrede\" for salutation. XTextField name=\"tfAntragstellerTitel\" for academic title, name=\"tfAntragstellerVorname\" for first name, name=\"tfAntragstellerName\" for last name, name=\"tfAntragstellerZusatzname\" for last name suffix, name=\"tfAntragstellerEmail\" (datatype=\"email\") for email, name=\"tfAntragstellerGeburtsdatum\" (datatype=\"dateDE\") for birth date, name=\"tfAntragstellerGeburtsname\" for birth name, name=\"tfAntragstellerGeburtsort\" for place of birth, name=\"tfAntragstellerTelefon\" for phone. OPTIGOV EXTRA fields (optiGov plugin): name=\"tfAntragstellerMittelname\" for middle name, name=\"tfAntragstellerKuenstlername\" for artist name, name=\"tfAntragstellerDoktorgrad\" for doctorate degree, name=\"tfAntragstellerPseudonym\" for pseudonym, name=\"tfAntragstellerDeMail\" (datatype=\"email\") for DE-Mail, name=\"tfAntragstellerLand\" for country, name=\"tfAntragstellerNationalitaet\" for nationality, name=\"tfAntragstellerAusstellenderStaat\" for issuing state. ADDRESS fields: name=\"tfAntragstellerAdresse\" for street address, name=\"tfAntragstellerAuslandsAdresse\" for foreign address, name=\"tfAntragstellerPLZ\" (datatype=\"plzDE\") for postal code, name=\"tfAntragstellerOrt\" for city, name=\"tfAntragstellerAGS\" (isreadonly=\"2\") for community ID. TECHNICAL fields (readonly): name=\"tfAuthentifizierungsLevel\", name=\"tfAuthentifizierungsName\", name=\"tfDokumentTyp\", name=\"TrustLevel\" (Vertrauensniveau), name=\"PostboxId\", name=\"tfAntragsId\", name=\"IdentitaetsPruefer\", name=\"BPK2\", name=\"tfPersTyp\".\n" +
+          "   CRITICAL — Bürger-Services/BundID fields (all tfAntragsteller* and technical fields) are autofilled by the authentication system AFTER login. Do NOT add data-cb-func (no OpenPLZ.Autocomplete, no ldap.autocomplete) to these fields — the Bürger-Services plugin itself maps the authentication response data. However, CSS classes for client-side formatting/validation (CodBi_People_Name on name fields, CodBi_People_Mail on email, CodBi_People_Phone on phone, CodBi_People_PLZ on postal code, CodBi_People_BuildingNumber on building number) SHOULD still be applied — these are purely formatting and do NOT interfere with authentication autofill.\n" +
+          "0c. CRITICAL — XBsLogin (Bürger-Services login button): When the prompt asks for a \"BundID Login-Button\", \"Bürgerkonto Login\", or \"Authentifizierungsbutton\", create an element with className=\"XBsLogin\". Set these properties: name (e.g. \"bsLogin\"), id (e.g. \"xi-bs-login\"), bs_btn_text (button label, e.g. \"Mit BundID anmelden\"), bs_auth_ref (authenticator reference, e.g. \"BUND_ID::https://idp.bundid.de\"), bs_show_in_popup (\"true\" for popup login), bs_page_name (page after login), bs_cancel_page_name (page on cancel), bs_check_page (\"true\" to validate), bs_postbox_mandatory (\"true\" if postbox required), bs_trust_level (trust level: \"m|0\"=no restriction, \"e|3\"=certificate, \"m|3\"=certificate or ID, \"e|4\"=ID card), bs_login_method (restrict login method: comma-separated values like \"EID,ELSTER\"), bs_requested_attributes (requested SAML attributes), bs_suffix (auth data suffix), bs_hide_if_userprofile_exists (\"true\" to hide if already logged in), bs_ui_info_display_name (display name for the authenticator).\n" +
+          "0d. CRITICAL — Form Chatbot Plugin (fc-plugin-form-chatbot): When the prompt asks for a \"XIMA Chatbot\", \"XIMA Chat-Assistent\", \"Chat-Assistent\", \"Chatbot\", \"KI-Chat-Assistent\" on the form level (especially when \"XIMA\" is mentioned), use the Form Chatbot Plugin — NOT the CodBi ai.llama.chat widget. This plugin adds form-level properties — NOT individual form elements. The chat bubble (toggle button + chat window) is auto-rendered by the plugin at runtime. Set these properties at the FORM level (in the form JSON root, NOT inside an element's properties): \"ChatbotEnabled\":\"true\" to activate the chat assistant. Optionally set \"ChatbotQuery\" to select a prompt query and \"ChatbotQueryParam\" to select which response property contains the answer text. Do NOT create form elements for the chat bubble — the plugin handles rendering automatically. The CodBi \"ai.llama.chat\" widget (which creates explicit XContainer, XTextArea, XButtonList, XCheckbox elements) is a DIFFERENT feature — use it only when \"CodBI KI-Chat\" or \"CodBi Chat\" is explicitly mentioned, NOT for \"XIMA Chatbot\".\n" +
+          "0e. CRITICAL — DS Widget Plugin (plugin-bundle-ds-widget): When the prompt asks for a \"filterbares Textfeld\" or \"filterable text field\", create an element with className=\"XTextfieldAdvanced\". Properties: name, id, label, xtf_ds_param (datasource parameter to filter by), xtf_use_colvalue (\"true\" to use the 'col'-attribute for filtering), xtf_colnumber ('col'-attribute column number), xtf_filter_colnumber (datasource column to apply filter on). When the prompt asks for a \"filterbare Auswahl\" or \"filterable select\", create an element with className=\"XDatalistAdvanced\". Properties: name, id, label, xda_ds_param (datasource parameter to filter by), xda_use_colvalue (\"true\" to use the 'col'-attribute for filtering), xda_colnumber ('col'-attribute column number), xda_filter_colnumber (datasource column to apply filter on), xda_show_please_select (\"true\" to show a default \"please select\" option). Both widgets receive data from a datasource and can filter each other — after a filter element updates, a \"datasource-changed\" event fires for chained filtering.\n" +
+          "0f. CRITICAL — XFormula Widget Plugin (fc-plugin-widget-bundle-xformula): When the prompt asks for a \"Berechnungsfeld\", \"calculation field\", \"formula field\", or \"computed field\", create an element with className=\"XFormula\". This is a read-only input whose value is auto-computed from a JavaScript formula. CRITICAL: The formula expression goes into 'xformula_value' (NOT 'value' — using 'value' is wrong and won't work). All optional properties use the 'xformula_' prefix: xformula_type (\"auto\"=determine automatically, \"text\"=always text), xformula_empty_as_zero (\"0\"=treat empty as text, \"1\"=treat as zero), xformula_index (order index). Formatting properties (only when xformula_mask=\"true\"): xformula_unit (display unit), xformula_align (\"p\"=before number, \"s\"=after number), xformula_external (\"true\" for unit outside field), xformula_external_width (unit width in px), xformula_mdec (decimal places), xformula_decimal (decimal separator), xformula_thousands (thousands separator), xformula_color_value (\"true\" to enable color change), xformula_color_pos (CSS color for positive values), xformula_color_neg (CSS color for negative values). Do NOT set datatype, readonlyif, readonlyifmode, readonlyifcomp, or readonlyifvalue on XFormula — the designer auto-removes them.\n" +
+          "0g. CRITICAL — XRating Widget Plugin (fc-plugin-widget-xrating): When the prompt asks for a \"Bewertung\", \"Bewertungsfeld\", \"rating\", \"rating widget\", \"star rating\", or \"Sternebewertung\", create an element with className=\"XRating\". This is a visual rating widget with configurable icons (stars, thumbs, emoticons). Properties: name, id, label. The NUMBER of icons is determined by the 'options' array — each entry in 'options' generates one clickable icon. For example, for 20 stars, create an options array with 20 entries (values \"1\" through \"20\", texts like \"1 Star\" through \"20 Stars\"). Optional properties use the 'xrating_' prefix: xrating_icon_inactive (icon for unselected state — common values: \"ico-rating-star\", \"ico-rating-star-outline\", \"ico-rating-thumb-up\", \"ico-rating-thumb-down\", \"ico-rating-emoticon-happy\", \"ico-rating-emoticon-sad\", \"ico-rating-emoticon-neutral\"), xrating_icon_active (icon for selected state — same icon options), xrating_color_gradient (\"true\" to enable color gradient), xrating_color_start (start color in rgb() format, e.g. \"rgb(181,45,58)\" — CRITICAL: use rgb(R,G,B) format, NOT hex like \"#b52d3a\" because XRating.java only parses rgb() format), xrating_color_end (end color in rgb() format, e.g. \"rgb(85,201,55)\" — same: rgb() only, NOT hex).\n" +
+          "0h. CRITICAL — CAPTCHA Plugin (fc-plugin-bundle-captcha): When the prompt asks for a \"Captcha\", \"CAPTCHA\", \"Sicherheitsabfrage\", or \"Spam-Schutz\", create an element with className=\"XCaptcha\". This shows a hard-to-read challenge text that the user must enter to prove they are human. Standard properties: name, id, label. Has built-in refresh and audio play buttons. No custom properties needed.\n" +
+          "0i. CRITICAL — Google reCAPTCHA Plugin (fc-plugin-bundle-google-recaptcha): When the prompt asks for a \"Google reCaptcha\", \"reCaptcha\", or \"Google CAPTCHA\", create an element with className=\"XReCaptcha\". This integrates Google reCAPTCHA into the form. Properties: name, id, label, recaptcha_site_key (Google reCAPTCHA site key), recaptcha_secret_key (Google reCAPTCHA secret key).\n" +
+          "0j. CRITICAL — XHtml Widget Plugin (fc-plugin-widget-xhtml): When the prompt asks for an \"HTML-Element\", \"HTML widget\", \"benutzerdefiniertes HTML\", or \"custom HTML element\", create an element with className=\"XHtmlWidget\". This renders custom HTML code in the form. Standard properties: name, id, label. Custom property: html_code (the HTML content to render, e.g. \"<h1>Überschrift</h1><p>Text</p>\").\n" +
+          "0k. CRITICAL — XMap Widget Plugin (fc-plugin-widget-xmap): When the prompt asks for a \"Karte\", \"map\", \"Karten-Widget\", or \"Leaflet map\", create an element with className=\"XMap\". This is a Leaflet-based map widget. Key props (all 'xmap_' prefix): xmap_latitude, xmap_longitude, xmap_zoom, xmap_min_zoom/xmap_max_zoom, xmap_min_markers/xmap_max_markers, xmap_geometry_point/xmap_geometry_line/xmap_geometry_area, xmap_localize, xmap_locate_button, xmap_color_marker_point/xmap_color_marker_user/xmap_color_line/xmap_color_area_border/xmap_color_area_fill. Advanced: xmap_use_custom_map_source, xmap_custom_map_source, xmap_custom_map_source_type (\"tms\"/\"wms\"/\"wmts\"), xmap_wms_layers, xmap_wms_format, xmap_wms_version, xmap_wms_crs, xmap_use_http_settings.\n" +
+          "0l. CRITICAL — XNavigationBar Plugin (fc-plugin-widget-xnavbar): When the prompt asks for a \"XIMA Navigationsleiste\", \"XIMA navbar\", \"FORMCYCLE navbar\", \"Navigationsleiste\", \"Progress Bar\", \"FC-Navbar\", \"formcycle navigation bar\", or \"FC-Navigationsleiste\", create an element with className=\"XNavigationBar\". This is the FORMCYCLE navigation bar / progress bar widget. It renders a visual step indicator bar showing all form pages. Standard properties: name, id, label. Steps are defined via the \"options\" array - each entry creates one step with \"text\" (display name) and \"value\" (page identifier). For custom step count, provide that many options (e.g. for 20 steps: 20 options). Uses custom action button types for the page navigation buttons: xnavbar_next (next page), xnavbar_next_check (next page + validation), xnavbar_prev (previous page), xnavbar_prev_check (previous page + validation). Add the XNavigationBar as a top-level item in the items array and add its name to the first page's elements array. CRITICAL — Distinguish from CodBi Form.Navigator: Use XNavigationBar (this plugin) when the prompt mentions FORMCYCLE navbar/navigationsleiste. Use CodBi Form.Navigator (data-cb-func=form.navigator on XContainer) when the prompt mentions \"CodBi Navbar\" or \"CodBi Navigation\".\n" +
+          "0m. CRITICAL — XSignature Widget Plugin (fc-plugin-widget-xsignature): When the prompt asks for a \"Unterschrift\", \"signature\", \"Signaturfeld\", or \"signature pad\", use className=\"XSignature\". This plugin extends the standard XSignature with: xsignature_stroke_color (pen stroke color in hex, e.g. \"#0000ff\" for blue), xsignature_base_line_show (\"0\"=hide, \"1\"=show baseline), xsignature_base_line_color (baseline color in hex), xsignature_base_line_hide_print (\"0\"=show, \"1\"=hide baseline in print).\n" +
+          "0n. CRITICAL — XLanguageSwich Plugin (fc-plugin-widget-xlangswitch): When the prompt asks for a \"Sprachauswahl\", \"Sprachwechsler\", \"language selector\", or \"Sprachauswahl-Widget\", create an element with className=\"XLanguageSwich\". Languages are defined via the \"options\" array - each entry creates one language link with \"text\" (display name, e.g. \"Deutsch\") and \"value\" (language code, e.g. \"de\"). For custom languages, provide that many options (e.g. for 4 languages: 4 options). Standard properties: name, id, label. Custom property: xlangswitch_page_redirect (\"0\"=off, \"1\"=remember current page after language switch). Add the XLanguageSwich as a top-level item in the items array and add its name to the first page's elements array.\n" +
+          "0o. CRITICAL — Common Validation Rules Plugin (fc-plugin-common-validation-rules): When the prompt asks for a \"KFZ-Kennzeichen\", \"license plate\", \"Kfz-Kennzeichen\", or \"Autokennzeichen\", set datatype=\"de.xima.fc.plugin.fc-plugin-common-validation-rules.KfzDE\". For \"IBAN\": datatype=\"...IbanValidationPlugin\". For \"BIC Inland\" (domestic BIC): datatype=\"...Bic11InlandValidationPlugin\". For \"BIC Ausland\" (foreign BIC): datatype=\"...Bic8To11AuslandValidationPlugin\". For \"Geldbetrag\"/\"money amount\" with comma: datatype=\"...MoneyValidationPlugin\". For \"AHV\" (Swiss): datatype=\"...AhvNumberValidationPlugin\". For \"Datum und Uhrzeit\" (date+time): datatype=\"...DateTimeValidationPlugin\". For US date mm-dd-yyyy: datatype=\"...DateFormatUSValidationPlugin\". For UK date dd/mm/yyyy: datatype=\"...DateFormatUKValidationPlugin\". For decimal with period: datatype=\"...FloatFormatValidationPlugin\". For email without special chars before @: datatype=\"...LocalPartRFC5322MailAddressValidationPlugin\". Use the FULL path as shown — these are the exact getKey() values registered by the plugin. Do NOT add data-cb-func for these.\n" +
           "1. PRESERVE every existing item exactly as-is unless the instruction explicitly targets it. " +
           "Do NOT remove, rename, or reorder existing items.\n" +
           "2. The 'items' array is FLAT at the top level — all form elements live here, including " +
@@ -695,7 +957,12 @@ class AICodBiAssistant : IPluginServletAction {
           "   'fd' for XUpload (e.g. 'fdLebenslauf'), \n" +
           "   'sel' for XSelect, 'cb' for XCheckbox, 'btn' for XButtonList buttons, \n" +
           "   'sig' for XSignature, 'div' for XContainerInvisible.\n" +
-          "5. Valid FORMCYCLE element className values (use ONLY these exact strings):\n" +
+          "4b. MANDATORY — EVERY generated element MUST also have a unique 'id' property. The 'id' is the HTML/DOM element identifier and must be unique within the form. Convention: use the prefix 'xi-' followed by the element name (e.g., name=\"tfVorname\" → id=\"xi-tf-Vorname\"; name=\"bsLogin\" → id=\"xi-bs-login\"; name=\"app1\" → id=\"xi-app-1\"). Do NOT reuse 'id' values — each element's id must be unique across the entire form. Without a valid unique 'id', the form will not render correctly.\n" +
+          "   CRITICAL — The 'elements' array of containers/fieldsets/pages uses 'name' values, NOT 'id' values. Example: element with name=\"tfVorname\" and id=\"xi-tf-vorname\" → add \"tfVorname\" (the name) to the container's elements array, NOT \"xi-tf-vorname\" (the id). The 'elements' array is a list of child NAME strings, not ID strings.\n" +
+          "5. Valid FORMCYCLE element className values (use ONLY these exact strings — do NOT invent class names like 'XButton', 'XInput', 'XText', etc.):\n" +
+          "   CRITICAL — 'XButton' does NOT exist. Use XButtonList with a 'buttons' array for any button.\n" +
+          "   CRITICAL — XTextField uses 'datatype' (not 'type') for input validation. The 'type' property does NOT exist on XTextField.\n" +
+          "   CRITICAL — EVERY element needs a 'label' property (except containers/fieldsets which use 'legend'). Without a label, the element won't render in the designer.\n" +
           "   - XTextField          — single-line text input; set 'datatype' property to validate input (usdLY these exact values):\n" +
           "     \"\" plain text (default) · \"dateDE\" German date DD.MM.YYYY (preferred; shown as 'Datum (TT.MM.YYYY)' in designer) · \"date\" HTML5 native date picker · \"email\" e-mail ·\n" +
           "     \"phone\" phone number · \"url\" URL · \"time\" time HH:MM · \"number\" decimal number · \"integer\" integer ·\n" +
@@ -703,6 +970,7 @@ class AICodBiAssistant : IPluginServletAction {
           "     \"posmoneyOptionalComma\" non-negative money (decimal optional) · \"formattedNumber\" number with custom format config ·\n" +
           "     \"plzDE\" German ZIP code · \"ipv4\" IPv4 address · \"onlyLetterNumber\" alphanumeric · \"onlyLetterSp\" letters and spaces ·\n" +
           "     \"regexp\" custom regex (also add datatypeHint property with the regex pattern and error message)\n" +
+          "     Common Validation Rules (fc-plugin-common-validation-rules) custom datatypes — set directly as datatype value. Use FULL getKey() path: \"de.xima.fc.plugin.fc-plugin-common-validation-rules.KfzDE\" for German license plate, \"...IbanValidationPlugin\" for IBAN, \"...Bic11InlandValidationPlugin\" for BIC (domestic), \"...Bic8To11AuslandValidationPlugin\" for BIC (foreign), \"...MoneyValidationPlugin\" for money amount, \"...AhvNumberValidationPlugin\" for Swiss AHV, \"...DateTimeValidationPlugin\" for date+time, \"...DateFormatUSValidationPlugin\" for US date, \"...DateFormatUKValidationPlugin\" for UK date, \"...FloatFormatValidationPlugin\" for decimal with period. Do NOT add data-cb-func for these.\n" +
           "   - XTextArea           — multi-line text input\n" +
           "   - XUpload             — file upload / file download field\n" +
           "   - XSelect             — dropdown / select list; use 'options' array for static items\n" +
@@ -719,11 +987,22 @@ class AICodBiAssistant : IPluginServletAction {
           "   - XFieldSet    — fieldset / group container; title goes in 'legend', NOT 'label'\n" +
           "   - XContainer          — generic layout container; has no 'label' property\n" +
           "   - XContainerInvisible — invisible/hidden layout container; same as XContainer but not rendered; has no 'label' property\n" +
-          "   - XSignature          — signature pad\n" +
-          "   - XAppointment        — appointment/calendar picker (do NOT use for date input fields — use XTextField with datatype=\"dateDE\" instead)\n" +
+          "   - XSignature          — signature pad (XSignature Widget Plugin); supports pen stroke color via \"xsignature_stroke_color\" (hex e.g. #0000ff for blue), baseline via \"xsignature_base_line_show\", baseline color via \"xsignature_base_line_color\", hide baseline in print via \"xsignature_base_line_hide_print\".\n" +
+          "   - XAppointment        — appointment/calendar picker / Terminfinder (do NOT use for date input fields — use XTextField with datatype=\"dateDE\" instead). When the prompt says \"Terminfinder\" or \"Terminkalender\" or \"appointment picker\", create XAppointment. Properties: name (e.g. \"app1\"), id (e.g. \"xi-app-1\"), label (set to a descriptive title like \"Termin\"), dateFormat=\"dd.mm.yy\", required=\"0\", closeable=\"0\", showUntil=\"0\", showCapacity=\"0\". Display options: AlsTextfeld (set \"1\" to show as text field initially, \"0\" to always show calendar), FreiePlaetze/showCapacity (\"1\" to show available slots), Terminende (\"1\" to show end time). Gesperrt (\"1\" locked, cannot be changed). Versteckt (\"1\" hidden). Requires a Terminplan (schedule) configured in the backend Terminverwaltung. The Appointments standard config in codbi-prop-standards enables this functionality.\n" +
+          "CRITICAL — When the prompt names a specific Terminplan (e.g., \"Terminfinder für ddd\"), add 'appointmentPlan' with the schedule name as value (e.g., \"appointmentPlan\":\"ddd\"). The backend automatically resolves the name to the correct UUID for 'appointmentTemplate'. You do NOT need to set 'appointmentTemplate' yourself.\n" +
           "   - XLine               — horizontal divider; has no 'label' property\n" +
           "   - XSpacer      — empty spacer; has no 'label' property\n" +
           "   - XPage        — form page (top-level)\n" +
+          "   - XDatalistAdvanced — filterable select/datalist (DS Widget Plugin); properties: xda_ds_param (datasource parameter to filter by), xda_use_colvalue (\"true\" to use 'col'-attribute for filter), xda_colnumber ('col'-attribute column number), xda_filter_colnumber (datasource column to filter on), xda_show_please_select (\"true\" to show default option).\n" +
+          "   - XTextfieldAdvanced — filterable text field (DS Widget Plugin); properties: xtf_ds_param (datasource parameter to filter by), xtf_use_colvalue (\"true\" to use 'col'-attribute for filter), xtf_colnumber ('col'-attribute column number), xtf_filter_colnumber (datasource column to filter on).\n" +
+          "   - XFormula — calculation/formula field (XFormula Widget Plugin); read-only input whose value is auto-computed from a JavaScript formula. CRITICAL: The formula expression goes into 'xformula_value' (NOT 'value'). All properties use the 'xformula_' prefix: xformula_value (the formula, e.g. \"[%tf1%] + [%tf2%]\"), xformula_type (\"auto\" or \"text\"), xformula_empty_as_zero (\"0\"=treat empty as text, \"1\"=treat as zero), xformula_index (order index). Formatting properties (only when xformula_mask=\"true\"): xformula_unit (display unit), xformula_align (\"p\"=before number, \"s\"=after number), xformula_external (\"true\" for unit outside field), xformula_external_width (unit width in px), xformula_mdec (decimal places), xformula_decimal (decimal separator), xformula_thousands (thousands separator), xformula_color_value (\"true\" to enable color change), xformula_color_pos (CSS color for positive values), xformula_color_neg (CSS color for negative values). Do NOT set datatype, readonlyif, readonlyifmode, readonlyifcomp, or readonlyifvalue on XFormula — the plugin auto-removes them.\n" +
+          "   - XRating — rating widget (XRating Widget Plugin); visual rating with icons (stars, thumbs, emoticons). Properties: xrating_icon_inactive (icon for unselected state — e.g. \"ico-rating-star\", \"ico-rating-star-outline\", \"ico-rating-thumb-up\", \"ico-rating-emoticon-happy\"), xrating_icon_active (icon for selected state — same icon options), xrating_color_gradient (\"true\" to enable color gradient), xrating_color_start (start color in rgb() format, e.g. \"rgb(181,45,58)\" — CRITICAL: use rgb(R,G,B) format, hex like \"#b52d3a\" crashes the renderer), xrating_color_end (end color in rgb() format, e.g. \"rgb(85,201,55)\" — same: rgb() only, NOT hex). The user clicks icons to set a rating value.\n" +
+          "   - XCaptcha — captcha widget (CAPTCHA Plugin); displays a hard-to-read challenge text that the user must enter to prove they are human. Standard properties: name, id, label. Has built-in refresh and audio play buttons. No custom properties needed.\n" +
+          "   - XReCaptcha — Google reCAPTCHA widget (reCAPTCHA Plugin); integrates Google reCAPTCHA. Properties: recaptcha_site_key (site key), recaptcha_secret_key (secret key).\n" +
+          "   - XHtmlWidget — custom HTML element (XHtml Widget Plugin); renders custom HTML code. Properties: html_code (the HTML content, e.g. \"<h1>Title</h1>\").\n" +
+          "   - XMap — Leaflet map widget (XMap Plugin); displays an interactive map. Properties use 'xmap_' prefix: xmap_latitude, xmap_longitude, xmap_zoom, xmap_min_zoom, xmap_max_zoom, xmap_min_markers, xmap_max_markers, xmap_geometry_point/xmap_geometry_line/xmap_geometry_area, xmap_localize, xmap_locate_button, xmap_color_marker_point, xmap_color_marker_user, xmap_color_line, xmap_color_area_border, xmap_color_area_fill. Advanced: xmap_use_custom_map_source, xmap_custom_map_source, xmap_custom_map_source_type, xmap_use_http_settings, xmap_wms_layers.\n" +
+          "   - XNavigationBar — navigation bar / progress bar widget (XNavigationBar Plugin); renders a visual step indicator showing all pages. Use when the prompt mentions \"XIMA Navigationsleiste\", \"XIMA navbar\", \"FORMCYCLE navbar\", \"Navigationsleiste\", \"Progress Bar\", \"FC-Navbar\", \"formcycle navigation bar\", or \"FC-Navigationsleiste\". Standard properties: name, id, label. Steps are defined via the \"options\" array - each entry creates one step with \"text\" (display name) and \"value\" (page identifier). For custom step count, provide that many options entries (e.g. for 20 steps: 20 options). Uses custom action button types for page navigation: xnavbar_next (next page button), xnavbar_next_check (next page + validation), xnavbar_prev (previous page button), xnavbar_prev_check (previous page + validation). Add the XNavigationBar as a top-level item in the items array and add its name to the first page's elements array.\n" +
+          "   - XLanguageSwich — language selector widget (XLanguageSwich Plugin); renders one or more language links for switching the form language. Languages are defined via the \"options\" array - each entry creates one language link with \"text\" (display name, e.g. \"Deutsch\") and \"value\" (language code, e.g. \"de\"). For custom languages, provide that many options (e.g. for 4 languages: 4 options). Standard properties: name, id, label. Custom property: xlangswitch_page_redirect (\"0\"=off, \"1\"=remember current page after language switch). Add the XLanguageSwich as a top-level item and its name to the first page's elements array.\n" +
           "   - XHeader      — form header\n" +
           "   - XFooter      — form footer\n" +
           "   Do NOT invent class names. Use ONLY the names listed above.\n" +
@@ -748,7 +1027,8 @@ class AICodBiAssistant : IPluginServletAction {
           "be replaced with any page name you see in the form (e.g. 'p1', 'p2', etc.). " +
           "WRONG: action={\"page\":\"p1\",\"check\":true,\"optionId\":\"p1 + check\"} ← do not do this. " +
           "CORRECT: action={\"page\":\"submit\",\"check\":true,\"optionId\":\"submit + check\"} ← always use this for submit buttons.\n\n" +
-          "10b. CONTAINER FOR CONDITIONALLY SHOWN FIELDS — When the prompt describes a field that should be shown or hidden based on a condition (wenn...dann..., if...then...), wrap that field in an XContainer. The container becomes the target of the conditional functionality — do NOT apply show/hide directly on the form field itself. You MUST create BOTH the container AND the child field as separate items in the top-level 'items' array, AND reference the child by name in the container's 'elements' array. Example: add XContainer coErziehungsberechtigter with elements=[\"tfNameDesErziehungsberechtigten\"] to the items array AND also add XTextField tfNameDesErziehungsberechtigten as a separate item in the same items array. Rule 3 and 3b apply — do NOT create a container with an empty elements array.\n\n" +
+          "10b. CONTAINER FOR CONDITIONALLY SHOWN FIELDS — When the prompt describes a field that should be shown or hidden based on a condition (wenn...dann..., if...then...), wrap that field in an XContainer. The container becomes the target of the conditional functionality — do NOT apply show/hide directly on the form field itself. You MUST create BOTH the container AND the child field as separate items in the top-level 'items' array, AND reference the child by name in the container's 'elements' array. Example: add XContainer coErziehungsberechtigter with elements=[\"tfNameDesErziehungsberechtigten\"] to the items array AND also add XTextField tfNameDesErziehungsberechtigten as a separate item in the same items array. Rule 3 and 3b apply — do NOT create a container with an empty elements array.\n" +
+          "10b2. EXCEPTION — BundID fsBKAllDaten: When the prompt asks to show/hide BundID/Bürger-Services fields based on any condition (wenn...dann..., if...then..., checkbox, select, etc.), do NOT create a new container. The existing XFieldSet named 'fsBKAllDaten' (legend='Ihre Anmeldedaten') is already the container for all BundID fields. Instead, add the show/hide properties ('hiddenif', 'hiddenifcomp', 'hiddenifvalue') directly to the fsBKAllDaten element. Refer to the controlling element by its id. Do NOT create a new container or wrap the fields again.\n\n" +
           "10c. MATOMO TRACKING — When the prompt says \"Matomo-Tracking aktivieren\" or \"activate Matomo tracking\" without specifying a SiteID, do NOT add Matomo.Tracking functionality via data-cb-func on any element. " +
           "Do NOT include Matomo.Tracking in _codbiApplicability.considered. " +
           "Do NOT include Matomo.Tracking in _codbiApplicability.applied. " +
@@ -905,7 +1185,7 @@ class AICodBiAssistant : IPluginServletAction {
           "\n" +
           """{"className":"XSignature","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0"}}""" +
           "\n" +
-          """{"className":"XAppointment","properties":{"name":"apExample","id":"xi-ap-example","label":"Example","required":"0","fullwidth":"0"}}""" +
+          """{"className":"XAppointment","properties":{"name":"apExample","id":"xi-ap-example","label":"Example","required":"0","dateFormat":"dd.mm.yy","closeable":"0","showUntil":"0","showCapacity":"0"}}""" +
           "\n" +
           """{"className":"XContainerInvisible","properties":{"name":"divExample","id":"xi-div-example","elements":[],"fullwidth":"0"}}""" +
           "\n" +
@@ -932,7 +1212,7 @@ class AICodBiAssistant : IPluginServletAction {
           "   b) Only apply a CSS class when it has an EXACT match to the field's purpose. If no class matches, use data-cb-func.\n" +
           "   c) For Time/Date frame ranges: When a CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End CSS class exists (N=1-5), use it. FALLBACK: If all 5 numbers are already used, use data-cb-func=time.frame (or date.frame) with data-cb-MaxField parameter. When using a frame CSS class, do NOT add data-cb-func=time.frame or data-cb-func=date.frame — that would be redundant. However, you MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends is valid — different purposes).\n" +
           "   d) NUMBERING — When creating frame CSS classes (CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End), scan the existing form items for which frame numbers N (1-5) are already in use. Use the lowest unused N for each new pair. If all 5 numbers are taken, fall back to data-cb-func.\n" +
-          "   e) OpenPLZ.Autocomplete — ALWAYS uses data-cb-func=OpenPLZ.Autocomplete (no CSS class exists). Must be set on ALL address fields (postal code, locality, street, building number). A People CSS class like CodBi_People_PLZ does NOT provide OpenPLZ autocomplete.\n" +
+          "   e) OpenPLZ.Autocomplete — ALWAYS uses data-cb-func=OpenPLZ.Autocomplete (no CSS class exists). Must be set on ALL address fields in EVERY address group — regardless of whether the fields are from Bürger-Services/BundID (tfAntragsteller*), BayernID, or any custom address group. Any field representing a postal code, locality/city, or street address must get the full OpenPLZ.Autocomplete treatment. A People CSS class like CodBi_People_PLZ does NOT provide OpenPLZ autocomplete. ALL required parameters (Country, TargetData, Dependent, FocusOnAutocomplete) MUST be set on each address field.\n" +
           "   f) Do NOT use CodBi_People_Alphanumeric on street names, localities, or other non-alphanumeric-code fields — it is ONLY for actual alphanumeric codes and IDs.\n" +
           "   g) REDUNDANCY RULE: When a field's datatype already triggers a Holistic.Cleave.* standard (datatype=\"phone\" → Cleave.Phone, \"plzDE\" → Cleave.PLZ, \"dateDE\"/\"time\" → Cleave.Date/Time), do NOT apply the equivalent People CSS class:\n" +
           "      - Phone fields (datatype=\"phone\"): do NOT apply CodBi_People_Phone — Holistic.Cleave.Phone handles formatting.\n" +
@@ -940,7 +1220,7 @@ class AICodBiAssistant : IPluginServletAction {
           "      - Date fields (datatype=\"dateDE\" or \"date\"): do NOT apply CodBi_People_18plus/16plus for formatting — Cleave handles it. Age restrictions may still be added if it is specifically a date-of-birth field.\n" +
           "   h) Street names and locality/city names have no dedicated People CSS class — leave them without a CSS class.\n" +
           "   i) REPEATABLE CONTAINERS — To make an XContainer or XContainerInvisible repeatable (add dynamic rows), set \"dynamic\":\"1\" in its properties. Also set \"dynamicMinSize\" (min rows, default 1), \"dynamicMaxSize\" (max rows, default 10), \"dynamicAddText\" (add button label), \"dynamicDeleteText\" (delete button label) as needed. Example: {\"className\":\"XContainer\",\"properties\":{\"name\":\"coAdressen\",\"dynamic\":\"1\",\"dynamicMinSize\":\"1\",\"dynamicMaxSize\":\"5\",\"elements\":[\"tfName\",\"tfEmail\"]}}\n" +
-          "   j) Form.Navigator AUTO-GENERATES navigation buttons — When applying data-cb-func=form.navigator to a container, do NOT add XButtonList or any manual button elements for page navigation inside it. The Form.Navigator functionality creates the navigation buttons automatically at render time. The container should be left empty (no child elements needed) or may keep existing non-navigation elements.\n" +
+          "   j) Form.Navigator AUTO-GENERATES navigation buttons — CRITICAL: Create a SEPARATE XContainer (not applied to the page itself) for the navigation bar. Form.Navigator requires an HTMLDivElement (XContainer renders as a div) — do NOT put data-cb-func=form.navigator on XPage elements because XPage is not a div. Create an XContainer with name prefix 'coNav' (e.g. 'coNavBar'), add it to the top-level items array, and add its name to the first page's elements array. Set \"attributes\":[{\"text\":\"data-cb-func\",\"value\":\"form.navigator\"}] on the container. The container should be left empty (no child elements needed) — the Form.Navigator functionality creates the navigation buttons automatically at render time. The container will also be auto-selected to show/navigate the form pages. CRITICAL — Distinguish from XNavigationBar plugin: Use data-cb-func=form.navigator ONLY when the prompt mentions \"CodBi Navbar\" or \"CodBi Navigation\". When the prompt mentions \"XIMA Navigationsleiste\", \"XIMA navbar\", \"FORMCYCLE navbar\", \"Navigationsleiste\", \"Progress Bar\", \"FC-Navbar\", or \"formcycle navigation bar\", use className=\"XNavigationBar\" instead — do NOT use data-cb-func=form.navigator.\n" +
           "Example: {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfVorname\",\"label\":\"Vorname\",\"cssclasses\":[\"CodBi_People_Name\"]}}.\n" +
           "Available CSS classes by standard configuration:\n\n" +
           "=== People (person-related fields) ===\n" +
@@ -965,6 +1245,8 @@ class AICodBiAssistant : IPluginServletAction {
           "AI CHAT WIDGET — When the user asks for an AI chat / KI-Chat / chatbot, create: XContainer wrapper. XTextArea (chat display, ONLY element with data-cb-func=\"ai.llama.chat\", must have data-cb-MaxPixelSize=\"360000\" and data-cb-maxchatwindowheight=\"1200\" in attributes). User input: XTextArea (cssclasses=[\"AI_LLAMA_CHAT_Input\"]). Send: XButtonList with single button (cssclasses=[\"AI_LLAMA_CHAT_Send\"]). Stop: SEPARATE XButtonList with single button (cssclasses=[\"AI_LLAMA_CHAT_Stop\"]). Upload: XUpload (cssclasses=[\"AI_LLAMA_CHAT_Upload\"]). Four checkboxes: XCheckbox with cssclasses [\"AI_LLAMA_CHAT_Thinking\"], [\"AI_LLAMA_CHAT_Internet\"], [\"AI_LLAMA_CHAT_Location\"], [\"AI_LLAMA_CHAT_AlertOnFinish\"]. Mail Forwarding group: XContainer containing XCheckbox (cssclasses=[\"AI_LLAMA_CHAT_MailForward\"]) and XTextField (cssclasses=[\"AI_LLAMA_CHAT_MailAddress\"], datatype=\"email\"). On the MailAddress field, set hiddenif=\"<MailForwardCheckbox_ID>\" (set to the MailForward checkbox's id value, NOT a mode number), hiddenifcomp=0 and hiddenifclear=\"false\" so it is hidden when MailForward is unchecked and its value persists when shown again. CRITICAL: hiddenif, hiddenifcomp and hiddenifclear are DIRECT properties on the element — do NOT put them inside the attributes array. ALL elements MUST have their cssclasses array set.\n" +
           "=== UI.Panels === CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for standalone panels; CodBi_Accordion_A/B/C/D for accordions. CodBi_HTML_Panel_NoCordion is a marker class for panels inside an accordion that should NOT participate in the accordion behavior.\n" +
           "CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' property that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title. Therefore, for containers (XContainer, XContainerInvisible) that need to be a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader=\"true\" and a data-cb-autoheadertitle. If the user's prompt specifies a title, use that as the data-cb-autoheadertitle value; otherwise generate a descriptive title from the container's content (e.g. \"Geburtsdatum\" for a date-of-birth section, \"Anschrift\" for an address section). For nested panels use different CSS classes per level (e.g. outer on fieldset: CodBi_HTML_Panel_Standard, inner on fieldset: CodBi_HTML_Panel_Flat).\n" +
+          "CRITICAL — \"Standard-Panel\" prompt: When the user asks for a \"standard panel\" or \"einfaches Panel\", create an XFieldSet with cssclasses=[\"CodBi_HTML_Panel_Standard\"] and a \"legend\" property set to \"Panel\" (or a descriptive title). Do NOT create an XContainer.\n" +
+          "CRITICAL — Panel type mapping: Standard-Panel → CodBi_HTML_Panel_Standard. Flat Panel/flaches Panel → CodBi_HTML_Panel_Flat. Minimal Panel → CodBi_HTML_Panel_Minimal. Index Panel → CodBi_HTML_Panel_Index.\n" +
           "CRITICAL — COLLAPSIBLE XCONTAINERS: When the user asks for a collapsible/expandable/foldable container and it is an XContainer (div), use data-cb-func=html.panel via the attributes array. ALSO set data-cb-generateheader=\"true\" and data-cb-autoheadertitle for the title (from the prompt or auto-generated). For XFieldSet (fieldset), use the CSS class CodBi_HTML_Panel_Standard instead — the legend provides the title. Only add \"data-cb-folded\":\"true\" if the user explicitly wants the panel to start collapsed.\n" +
           "ACCORDION BEHAVIOR — When the user asks for multiple collapsible sections where only ONE should be open at a time (\"nur eines gleichzeitig aufgeklappt\", \"accordion\", \"nur einer offen\", \"nur einer sichtbar\"), create a wrapper XContainer around ALL the panels. Apply data-cb-func=\"html.panel.accordion\" and data-cb-Accordion=\"<uniqueGroupName>\" (e.g. \"group1\") to the wrapper. Each inner panel gets data-cb-func=\"html.panel\" via its own attributes array or the CodBi_HTML_Panel_Standard CSS class for fieldsets, with data-cb-generateheader=\"true\" and data-cb-autoheadertitle. CRITICAL — EVERY panel MUST explicitly set data-cb-folded in its attributes array. The first panel gets data-cb-folded=\"false\" (unfolded). All subsequent panels (2nd, 3rd, ...) get data-cb-folded=\"true\" (folded). This applies to BOTH CSS-class-based XFieldSet panels AND data-cb-func-based XContainer panels. Example wrapper: {\"className\":\"XContainer\",\"properties\":{\"name\":\"coAccordion\",\"elements\":[\"fsBereich1\",\"fsBereich2\",\"fsBereich3\"],\"attributes\":[{\"text\":\"data-cb-func\",\"value\":\"html.panel.accordion\"},{\"text\":\"data-cb-Accordion\",\"value\":\"group1\"}]}}. Example unfolded first panel (data-cb-folded=\"false\"): {\"className\":\"XFieldSet\",\"properties\":{\"name\":\"fsBereich1\",\"legend\":\"Bereich 1\",\"cssclasses\":[\"CodBi_HTML_Panel_Standard\"],\"elements\":[\"tfEingabe1\"],\"attributes\":[{\"text\":\"data-cb-folded\",\"value\":\"false\"}]}}. Example folded second panel (data-cb-folded=\"true\"): {\"className\":\"XFieldSet\",\"properties\":{\"name\":\"fsBereich2\",\"legend\":\"Bereich 2\",\"cssclasses\":[\"CodBi_HTML_Panel_Standard\"],\"elements\":[\"tfEingabe2\"],\"attributes\":[{\"text\":\"data-cb-folded\",\"value\":\"true\"]}}.\n" +
           "=== Print.Removal === CodBi_Print_Remove_Tagged / Parent / PrintOnly.\n" +
@@ -974,10 +1256,23 @@ class AICodBiAssistant : IPluginServletAction {
           "When the instruction asks for a specific field type that matches a CSS class description above, " +
           "add the corresponding CSS class(es) following the rules above. " +
           "REMINDER: CSS classes ONLY exist for the domains listed above. For everything else, use data-cb-func. Never invent CSS class names.\n\n" +
-          "EP CHAINING — Element Placeholders (EPs) can be chained with > syntax to pass one EP's result as input to another EP. This works in ANY data-cb-* parameter that accepts EPs (e.g. data-cb-Data, data-cb-replacement, data-cb-Values, data-cb-replacements). Example: \"{ BayVIS.Ansprechpartner.Details > { V > VariableName } }\" first resolves V to get an ID, then fetches the contact details. The inner EP is always resolved first and its result becomes the parameter for the outer EP.\nCRITICAL — EP parameter values are raw strings without quotes. Write { BayVIS.Ansprechpartner.ID > Salvatore Callari } NOT { BayVIS.Ansprechpartner.ID > \"Salvatore Callari\" }. Quotes are part of the EP syntax itself (the { } braces), do NOT add extra quotes around parameter values.\n\n" +
+          "CRITICAL — AI.LLAMA.STD.QA: This EP queries an AI to answer a question. USE for weather/AI/knowledge queries. Param[1]=question, Param[2]=UseInternet (\"true\"). CRITICAL: trailing semicolons for unused params. Example: \"{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }\".\n" +
+          "EP CHAINING — Element Placeholders (EPs) can be chained with > syntax to pass one EP's result as input to another EP. This works in ANY data-cb-* parameter that accepts EPs (e.g. data-cb-Data, data-cb-replacement, data-cb-Values, data-cb-replacements). Example: \"{ BayVIS.Ansprechpartner.Details > { V > VariableName } }\" first resolves V to get an ID, then fetches the contact details. The inner EP is always resolved first and its result becomes the parameter for the outer EP.\n" +
+          "Date.Today already supports arithmetic directly — do NOT wrap it in Date.Arithmetic. Use \"{ Date.Today > +1d }\" for tomorrow, \"{ Date.Today > -1d }\" for yesterday. Arithmetic: +N d/m/y (add), -N d/m/y (subtract).\n" +
+          "Date.FromString turns a date string into a Date object. Use Date.FromString for any prompt about converting/parsing a date string. Example: \"{ Date.FromString > 01.12.1978 }\" returns a Date object for December 1st, 1978. Optional second param sets the format.\n" +
+          "JSON.Path extracts a property from an object using a dotted path. It can also call methods by using the method name with parentheses as the path (e.g. \"toString()\"). Example: \"{ JSON.Path > { Date.FromString > 01.12.1978 } ; toString() }\" creates a Date and calls toString() on it.\n" +
+          "CRITICAL — BayVIS Detail EPs expect NUMERIC IDs, not names: BayVIS.Behoerden.Details, BayVIS.Behoerden.Details.Gebaeude, BayVIS.Behoerden.Gebaeude.ID, BayVIS.Ansprechpartner.Details all take numeric IDs. The ID-resolver EPs take plain STRING names: BayVIS.Behoerden.ID (authority name like \"Amt für Digitales\"), BayVIS.Ansprechpartner.ID (contact name like \"Salvatore Callari\"). The directory EPs REQUIRE a property name parameter: BayVIS.Behoerden > bezeichnung (not bare { BayVIS.Behoerden }), BayVIS.Ansprechpartner > nachname (not bare { BayVIS.Ansprechpartner }). BayVIS.Behoerden valid property values: behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge. BayVIS.Ansprechpartner valid property values: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, sortierreihenfolge, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId.\n" +
+          "CRITICAL — BayVIS.Behoerden.Details.Gebaeude takes TWO numeric parameters: param 1 = authority ID, param 2 = building ID. To look up building details by authority name, chain BOTH IDs: \"{ BayVIS.Behoerden.Details.Gebaeude > { BayVIS.Behoerden.ID > Amt für Digitales } ; { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > Amt für Digitales } } }\" — first param resolves the authority name to its numeric ID, second param resolves the building ID for that authority. BayVIS.Behoerden.Details returns authority METADATA (name, email, type), NOT building addresses. For BUILDING details (street, PLZ, city) use BayVIS.Behoerden.Details.Gebaeude.\n" +
+          "CRITICAL — BayVIS.Behoerden.Details also accepts an OPTIONAL second parameter: a property name to extract just that specific field. When the prompt asks for a particular property (e.g. \"Bezeichnung\", \"email\", \"behoerdenart\"), add it as the second parameter: \"{ BayVIS.Behoerden.Details > { BayVIS.Behoerden.ID > Amt für Digitales } ; bezeichnung }\" returns only the authority's designation. Valid property values: bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, behoerdeZuordnungen, behoerdenGebaeudeZuordnungen. Without this second param, ALL details are returned.\n" +
+          "CRITICAL — F (Find) EP must be the OUTERMOST EP when filtering an array by exact property value. Correct: \"{ F > postalCode ; 91522 ; { sorted > { unique > { openplz.localities > de ; ^a.* }; name }; name } }\". WRONG: \"{ Sorted > { F > ... } }\" or \"{ JSON.Path > { F > ... } }\". Do NOT wrap F in JSON.Path — F must be outermost.\n" +
+          "EP NAME ACCURACY: Use EXACT registered EP names with dots: JSON.Path (NOT \"JSON Path\"), OpenPLZ.Localities, OpenPLZ.Streets, LDAP.Find (NOT \"Ldap.Find\").\n" +
+          "CRITICAL — EP parameter values are raw strings without quotes. Write { BayVIS.Ansprechpartner.ID > Salvatore Callari } NOT { BayVIS.Ansprechpartner.ID > \"Salvatore Callari\" }. Quotes are part of the EP syntax itself (the { } braces), do NOT add extra quotes around parameter values.\n" +
+          "CRITICAL — ALL OpenPLZ EPs (OpenPLZ, OpenPLZ.Streets, OpenPLZ.Localities, OpenPLZ.OrganizationalUnits, OpenPLZ.TextSearch) return Array<object> with properties like \"name\", \"officialKey\", \"type\", \"postalCode\", \"locality\". To extract a specific property (e.g. street names), wrap the EP in JSON.Path: \"{ JSON.Path > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }\". If the prompt asks for names only and duplicates may occur, deduplicate with Unique: \"{ Unique > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }\". Never generate bare \"{ OpenPLZ.Streets > de ; Karolinen ; 91522 }\" when the prompt asks for a specific property — MUST wrap in JSON.Path.\n" +
+          "Data.Join merges the properties of multiple EP results into one object. Use Data.Join when the prompt asks to combine/join/merge/zusammen data from multiple EPs. Example: \"{ Data.Join > { BayVIS.Behoerden.Details > { BayVIS.Behoerden.ID > Amt für Digitales } ; bezeichnung } ; { BayVIS.Behoerden.Details.Gebaeude > { BayVIS.Behoerden.ID > Amt für Digitales } ; { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > Amt für Digitales } } } }\" joins the authority designation with its building details into one combined object.\n\n" +
           "CODBI CANDIDATE REVIEW — while designing the form output, scan the CODBI CORE ELEMENTS (COMPACT) list at the end of this prompt. " +
-          "For each listed element, use your judgment to decide if a functionality is useful for a field. Consider BOTH whether it could benefit AND whether it would be inappropriate (e.g. Date.NoWeekends makes sense for job appointments but NOT for birthdays). Only mark candidates that are genuinely appropriate. " +
-          "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; input auto-capitalize words → HTML.Input.Trans.Capital; set CSS property on element → HTML.SETAttribute (Name=\"style\" ToSet=CSS value). JSON.SET fallback only on explicit user request. console output / in der Konsole ausgeben / debug logging → Sys.Log.Console. Create an XContainerInvisible (name prefix div) at the top of the first page's elements array, set data-cb-func=\"Sys.Log.Console\" and data-cb-Data to what to log (can use EPs like \"{ Date.Weekends > 01.01.2000 ; 31.12.2002 }\" for weekend dates. For global variables use the V EP: \"{ V > VariableName }\" (e.g. \"{ V > BayVIS_WeitereAnsprechpartner }\"). When a user in any language asks to output/print/log/show a global variable's value to the browser console → Sys.Log.Console with the V EP. When a user asks to list/retrieve BayVIS data directly (e.g. all contacts, all last names) without referencing a specific variable name, use the BayVIS EP directly: { BayVIS.Ansprechpartner > property } (e.g. { BayVIS.Ansprechpartner > nachname } for all last names). Do NOT use the V EP for BayVIS directory lookups — V is only for accessing named global variables like BayVIS_WeitereAnsprechpartner. EP CHAINING — EPs can be chained with > syntax to pass one EP's result into another. When the user asks to log details from a data EP (BayVIS.Ansprechpartner.Details, BayVIS.Behoerden.Details, etc.) that requires IDs stored in a global variable, chain them: \"{ DataEP > { V > VariableName } }\" (e.g. \"{ BayVIS.Ansprechpartner.Details > { V > BayVIS_WeitereAnsprechpartner } }\" for contact details). This keeps the functionality accessible in the designer. Do NOT create a workflow for this. Matomo tracking aktivieren / activate tracking → standard configuration activation, NOT a workflow. LDAP container → LDAP.Autocomplete.Set on the CONTAINER (XFieldSet/XContainer), LDAP.Autocomplete on each individual field inside it. Without SiteID: include ONLY \"Holistic.Matomo.Tracking\" in _codbiApplicability.applied (not \"Matomo.Tracking\" anywhere) (as {\"id\":\"Holistic.Matomo.Tracking\",\"targets\":[]}). With SiteID: apply Matomo.Tracking functionality on the form header with data-cb-SiteID and data-cb-URL. wenn...dann... / if...then... conditions → OnChange.Conditional on the trigger field. Reference=\"{ Date.Today > -18y }\" for age rules. Mode options: GT=Greater Than, GTEQ=Greater Than or Equal, LT=Lower Than, LTEQ=Lower Than or Equal, EQ=Equal, NEQ=Not Equal. LOGIC: GT means candidate date is LATER/MORE RECENT than reference (date less than 18y in past → GT). LT means candidate date is EARLIER (date more than 18y in past → LT). Target=dot-prefixed container CSS selector. Candidate=dot-prefixed field selector. DateFormat=DD.MM.YYYY for dateDE. _T_* parameters apply functionality to Target when TRUE: _T_FUNC (any functionality ID), _T_Name, _T_ToSet, etc. _F_* similar for FALSE. Show/hide example: _T_FUNC=HTML.SETAttribute _T_Name=style _T_ToSet=\"width:100%;display:block;\" _F_ToSet=\"width:100%;display:none;\". EDGE CASE: when OnChange.Conditional must show/hide a single field, wrap that field in an XContainer and target the container instead. CRITICAL: Date.Min forbids selecting past dates (input validation). OnChange.Conditional applies a functionality to a target based on a condition. WENN...DANN... anzeigen/ausblenden → use OnChange.Conditional, NOT Date.Min, NOT CodBi_People_18plus. Image cropper → Media.Image.Cropper on the prompted container. Generate SIBLINGS: CodBi_Fotocropper_Board div (height:25em), CodBi_Fotocropper_Uploader input, CodBi_Fotocropper_Update button, CodBi_Fotocropper_ImageURL input (right of button), CodBi_Fotocropper_Foto img. Board contains NO other elements. Element unsichtbar im Druck / hidden when printing → add CSS class \"CodBi_Print_Remove_Tagged\" to the element's cssclasses array. print parent (including label) → add CSS class \"CodBi_Print_Remove_Parent\". Nur im Druck sichtbar / only visible when printing → add CSS class \"CodBi_Print_Remove_PrintOnly\". " +
+          "CRITICAL — Sys.Log.Console is a STANDALONE functionality that does NOT need any existing form element. When the prompt asks to output/print/log/show anything to the browser console (URL content, CSV data, BayVIS data, global variables, DOM elements / form elements, etc.), ALWAYS include Sys.Log.Console in the considered/applied arrays even if no existing form element matches. The server will create the necessary XContainerInvisible in the application pass.\n" +
+          "For each listed element, use your judgment to decide if a functionality is useful for a field or if it applies standalone (no field needed). Consider BOTH whether it could benefit AND whether it would be inappropriate (e.g. Date.NoWeekends makes sense for job appointments but NOT for birthdays). Only mark candidates that are genuinely appropriate. " +
+          "Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; input auto-capitalize words → HTML.Input.Trans.Capital; set CSS property on element → HTML.SETAttribute (Name=\"style\" ToSet=CSS value). JSON.SET fallback only on explicit user request. console output / in der Konsole ausgeben / debug logging → Sys.Log.Console. Create an XContainerInvisible (name prefix div) at the top of the first page's elements array, set data-cb-func=\"Sys.Log.Console\" and data-cb-Data to what to log (can use EPs like \"{ Date.Weekends > 01.01.2000 ; 31.12.2002 }\" for weekend dates, or \"{ Net.URL > http://... }\" to fetch and log URL content, or \"{ Data.CSV > { Net.URL > http://... } }\" only when the prompt explicitly mentions CSV, or \"{ Net.URL > { V > VariableName } }\" / \"{ Data.CSV > { Net.URL > { V > VariableName } } }\" for dynamic URLs from a variable — only wrap in Data.CSV if CSV is explicitly mentioned). For global variables use the V EP: \"{ V > VariableName }\" (e.g. \"{ V > BayVIS_WeitereAnsprechpartner }\"). When a user in any language asks to output/print/log/show a form element or DOM element to the browser console (e.g. \"Gib das Formular-Element .p1 in der Konsole aus\"), use the DOM.Query EP in data-cb-Data: \"{ DOM.Query > .p1 }\" — the CSS selector from the prompt (dot-prefixed class name) is the parameter passed to DOM.Query. Do NOT set data-cb-value. If the prompt additionally specifies an index (e.g. \"Element in Index 0\", \"first element\", \"zweites Element\", \"das 3. Element\"), wrap the DOM.Query in the I EP: \"{ I > 0 ; { DOM.Query > .p1 } }\" — the I EP takes the 0-based index as its first parameter and the DOM EP result as its second parameter. When a user in any language asks to output/print/log/show a global variable's value to the browser console → Sys.Log.Console with the V EP. When a user asks to list/retrieve BayVIS data directly (e.g. all contacts, all last names) without referencing a specific variable name, use the BayVIS EP directly: { BayVIS.Ansprechpartner > property } (e.g. { BayVIS.Ansprechpartner > nachname } for all last names). Do NOT use the V EP for BayVIS directory lookups — V is only for accessing named global variables like BayVIS_WeitereAnsprechpartner. EP CHAINING — EPs can be chained with > syntax to pass one EP's result into another. When the user asks to log details from a data EP (BayVIS.Ansprechpartner.Details, BayVIS.Behoerden.Details, etc.) that requires IDs stored in a global variable, chain them: \"{ DataEP > { V > VariableName } }\" (e.g. \"{ BayVIS.Ansprechpartner.Details > { V > BayVIS_WeitereAnsprechpartner } }\" for contact details). This keeps the functionality accessible in the designer. Do NOT create a workflow for this. Matomo tracking aktivieren / activate tracking → standard configuration activation, NOT a workflow. LDAP container → LDAP.Autocomplete.Set on the CONTAINER (XFieldSet/XContainer), LDAP.Autocomplete on each individual field inside it. Without SiteID: include ONLY \"Holistic.Matomo.Tracking\" in _codbiApplicability.applied (not \"Matomo.Tracking\" anywhere) (as {\"id\":\"Holistic.Matomo.Tracking\",\"targets\":[]}). With SiteID: apply Matomo.Tracking functionality on the form header with data-cb-SiteID and data-cb-URL. wenn...dann... / if...then... conditions → OnChange.Conditional on the trigger field. Reference=\"{ Date.Today > -18y }\" for age rules. Mode options: GT=Greater Than, GTEQ=Greater Than or Equal, LT=Lower Than, LTEQ=Lower Than or Equal, EQ=Equal, NEQ=Not Equal. LOGIC: GT means candidate date is LATER/MORE RECENT than reference (date less than 18y in past → GT). LT means candidate date is EARLIER (date more than 18y in past → LT). Target=dot-prefixed container CSS selector. Candidate=dot-prefixed field selector. DateFormat=DD.MM.YYYY for dateDE. _T_* parameters apply functionality to Target when TRUE: _T_FUNC (any functionality ID), _T_Name, _T_ToSet, etc. _F_* similar for FALSE. Show/hide example: _T_FUNC=HTML.SETAttribute _T_Name=style _T_ToSet=\"width:100%;display:block;\" _F_ToSet=\"width:100%;display:none;\". EDGE CASE: when OnChange.Conditional must show/hide a single field, wrap that field in an XContainer and target the container instead. CRITICAL: Date.Min forbids selecting past dates (input validation). OnChange.Conditional applies a functionality to a target based on a condition. WENN...DANN... anzeigen/ausblenden → use OnChange.Conditional, NOT Date.Min, NOT CodBi_People_18plus. Image cropper → Media.Image.Cropper on the prompted container. Generate SIBLINGS: CodBi_Fotocropper_Board div (height:25em), CodBi_Fotocropper_Uploader input, CodBi_Fotocropper_Update button, CodBi_Fotocropper_ImageURL input (right of button), CodBi_Fotocropper_Foto img. Board contains NO other elements. Element unsichtbar im Druck / hidden when printing → add CSS class \"CodBi_Print_Remove_Tagged\" to the element's cssclasses array. print parent (including label) → add CSS class \"CodBi_Print_Remove_Parent\". Nur im Druck sichtbar / only visible when printing → add CSS class \"CodBi_Print_Remove_PrintOnly\". " +
           "Any prompt asking to \"replace placeholders\" or \"fill in\" dynamic content from an EP (like \"{ Data.CSV > { Net.URL > ... }}\") into an element → HTML.Text.Injector on the target element. Set data-cb-replacement to the EP expression AS-IS (do NOT resolve it), data-cb-placeholder to the placeholder string verbatim (copy it character-for-character from the element's content — e.g. \"<<PH>>\", \"[[PH]]\", \"##VALUE##\", \"{{name}}\", whatever it literally is). CRITICAL: do NOT change the brackets or formatting; if the text has \"[[PH]]\" set \"[[PH]]\", not \"[%PH%]\". data-cb-property=\"innerHTML\". Keep the element's rtevalue unchanged. " +
           "Do NOT apply any CodBi functionality to elements in this pass (no data-cb-func, no CSS classes) — just note which ones look relevant in the \"considered\" array. " +
           "EXCEPTION — Standard configuration activation: if the prompt requests Matomo tracking " +
@@ -1154,23 +1449,52 @@ class AICodBiAssistant : IPluginServletAction {
       val pass2Obj = JsonParser.parseString(pass2Json).asJsonObject
 
       val modifiedById = mutableMapOf<String, JsonObject>()
+      val modifiedByName = mutableMapOf<String, JsonObject>()
       pass2Obj.getAsJsonArray("items")?.forEach { item ->
         if (!item.isJsonObject) return@forEach
-        val id =
-            item.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString ?: return@forEach
-        modifiedById[id] = item.asJsonObject
+        val props = item.asJsonObject.getAsJsonObject("properties") ?: return@forEach
+        val id = props.get("id")?.asString
+        val name = props.get("name")?.asString
+        if (id != null) {
+          modifiedById[id] = item.asJsonObject
+        } else if (name != null) {
+          modifiedByName[name] = item.asJsonObject
+        }
       }
 
       val pass1Items = pass1Obj.getAsJsonArray("items")
-      if (pass1Items != null && modifiedById.isNotEmpty()) {
+      if (pass1Items != null && (modifiedById.isNotEmpty() || modifiedByName.isNotEmpty())) {
+        val matchedIds = mutableSetOf<String>()
+        val matchedNames = mutableSetOf<String>()
         val newItems = JsonArray()
         for (item in pass1Items) {
           if (item.isJsonObject) {
-            val id = item.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString
-            newItems.add(if (id != null) modifiedById[id] ?: item else item)
+            val props = item.asJsonObject.getAsJsonObject("properties")
+            val id = props?.get("id")?.asString
+            val name = props?.get("name")?.asString
+            val replacement =
+                when {
+                  id != null && id in modifiedById -> {
+                    matchedIds.add(id)
+                    modifiedById[id]
+                  }
+                  name != null && name in modifiedByName -> {
+                    matchedNames.add(name)
+                    modifiedByName[name]
+                  }
+                  else -> null
+                }
+            newItems.add(replacement ?: item)
           } else {
             newItems.add(item)
           }
+        }
+        // Append any NEW items from pass-2 that were not matched to any pass-1 item
+        for ((id, item) in modifiedById) {
+          if (id !in matchedIds) newItems.add(item)
+        }
+        for ((name, item) in modifiedByName) {
+          if (name !in matchedNames) newItems.add(item)
         }
         pass1Obj.add("items", newItems)
       }
@@ -1205,14 +1529,23 @@ class AICodBiAssistant : IPluginServletAction {
       setOf(
           "XAppointment",
           "XButtonList",
+          "XCaptcha",
+          "XReCaptcha",
           "XCheckbox",
           "XContainer",
           "XContainerInvisible",
+          "XDatalistAdvanced",
           "XDefault",
           "XFieldSet",
           "XFooter",
+          "XFormula",
+          "XHtmlWidget",
           "XHeader",
+          "XRating",
           "XImage",
+          "XMap",
+          "XNavigationBar",
+          "XLanguageSwich",
           "XLine",
           "XPage",
           "XSelect",
@@ -1221,6 +1554,7 @@ class AICodBiAssistant : IPluginServletAction {
           "XSpan",
           "XTextArea",
           "XTextField",
+          "XTextfieldAdvanced",
           "XUpload",
       )
 
@@ -2284,6 +2618,8 @@ class AICodBiAssistant : IPluginServletAction {
       append("]")
     }
 
+    logger.info(
+        "[AICodBiAssistant] Workflow AI request messages (model={}): {}", modelId, messagesJson)
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
     val cleaned = extractJson(stripThinkTags(rawResponse))
     logger.debug("[AICodBiAssistant] Workflow AI response: {}", cleaned)

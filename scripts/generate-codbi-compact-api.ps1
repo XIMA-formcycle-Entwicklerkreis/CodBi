@@ -283,7 +283,7 @@ $compactDescOverrides = @{
   "Form.Navigator"       = "Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms."
   "HTML.CSS"             = "Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements)."
   "HTML.Panel.Accordion" = "Applicable on a container (XContainer/XFieldSet) that wraps multiple collapsible panels. Joins all child panels with the .CodBi.--HTML_Panel class into an accordion group where only one panel can be open at a time. Set the data-cb-Accordion parameter to a unique group name."
-  "HTML.Panel"           = "Applicable on any element to wrap it in a collapsible accordion/panel widget."
+  "HTML.Panel"           = "Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: \"Standard-Panel\" means creating an XFieldSet (fieldset) with CSS class CodBi_HTML_Panel_Standard and a \"legend\" property for the title. Do NOT use XContainer for standard panels — panels on XFieldSet use CSS classes, panels on XContainer use data-cb-func=html.panel."
   "HTML.SETAttribute"    = "Applicable on any element to dynamically set one or more HTML attributes on it."
   "HTML.Text.Injector"   = "Applicable on any element to inject a dynamic text value into a specific property of that element."
   "HTML.Text.Mapper"     = "Applicable on any element to map object properties to named placeholders in a text template."
@@ -404,7 +404,7 @@ $epDir = Join-Path $jsRoot "EPs"
 Get-ChildItem $epDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
   $file = $_
   $ts = Get-Content -Raw $file.FullName
-  $idMatch = [regex]::Match($ts, 'registerEP\("([^"]+)"')
+  $idMatch = [regex]::Match($ts, 'registerEP\(\s*"([^"]+)"')
   if (-not $idMatch.Success) { return }
 
   $id = $idMatch.Groups[1].Value

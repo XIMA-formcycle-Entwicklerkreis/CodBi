@@ -71,6 +71,11 @@ export class AI_LLAMA_STANDARD_TXTQA {
    *                        thinking model (if configured) for deeper reasoning. Default: `false`.
    * - **MaxThinkingTokens**: Maximum token budget for thinking inference. Set higher if the
    *                        model needs more room to reason. Has no effect when Thinking is `false`.
+   * - **QuestionRoot**:    Optional CSS selector specifying an alternate root element from which to search
+   *                        for **AI_LLAMA_STANDARD_TXTQA_Question** and **AI_LLAMA_TXTQA_Source** elements.
+   *                        When set, both the question search and source element discovery begin from
+   *                        the element matched by this selector instead of the nearest ancestor **XContainer**
+   *                        or **XFieldSet** of the tagged field.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi. */
@@ -94,6 +99,7 @@ export class AI_LLAMA_STANDARD_TXTQA {
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "filterresults")
     @IF.PRE(new TYPE("string"), new REGEX(/^(true|false)$/i), "thinking")
     @OR.PRE([new TYPE("number"), new TYPE("string")], "maxthinkingtokens")
+    @IF.PRE(new TYPE("string"), new REGEX(/^[.#a-zA-Z]/), "questionroot")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(
@@ -135,12 +141,17 @@ export class AI_LLAMA_STANDARD_TXTQA {
     // #endregion Initialize config from toLoad
     const handleChange = async (force = false) => {
       // #region Determine the search container
-      const container = (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
+      const questionRoot = toLoad.questionroot != null ? String(toLoad.questionroot).trim() : null;
+      const container = questionRoot
+        ? (document.querySelector(questionRoot) as HTMLElement | null)
+        : (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
 
       if (!container) {
         window.codbi.log(
           "ERROR",
-          `Could not find ancestor .XContainer/.XFieldSet for element #${toProcess.getAttribute("id")}`,
+          questionRoot
+            ? `QuestionRoot selector "${questionRoot}" did not match any element in the DOM`
+            : `Could not find ancestor .XContainer/.XFieldSet for element #${toProcess.getAttribute("id")}`,
           "AI / LLAMA / TXTQA",
         );
 
@@ -615,7 +626,10 @@ export class AI_LLAMA_STANDARD_TXTQA {
     // #region Listen for focusout on AI_LLAMA_TXTQA_Source elements — focusout (not input/change)
     // so inference waits until the user leaves the field, and the debounce timer
     // resets if they tab between source fields quickly.
-    const immediateCX = (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
+    const questionRootSetup = toLoad.questionroot != null ? String(toLoad.questionroot).trim() : null;
+    const immediateCX = questionRootSetup
+      ? (document.querySelector(questionRootSetup) as HTMLElement | null)
+      : (toProcess as HTMLElement).closest(".XContainer, .XFieldSet");
     const sourceContainer = immediateCX;
 
     if (sourceContainer) {

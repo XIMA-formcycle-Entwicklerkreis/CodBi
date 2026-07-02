@@ -1,5 +1,6 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.Standard
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
@@ -129,7 +130,25 @@ class AIWorkflowAssistant : IPluginServletAction {
           }
         } else null
 
-    val systemPrompt = buildSystemPrompt(formContext, workflowContext, isPhase1 = phase == "1")
+    val userContext = getUserContext(params)
+    val completionPagesJson: String? =
+        try {
+          fetchCompletionPages(userContext, workflowVersionId)
+        } catch (e: Exception) {
+          logger.warn("[AIWorkflowAssistant] Could not fetch completion pages", e)
+          null
+        }
+    logger.info(
+        "[AIWorkflowAssistant] handleRun: phase={}, completionPages={}",
+        phase,
+        completionPagesJson ?: "null (no pages found or query failed)")
+
+    val systemPrompt =
+        buildSystemPrompt(
+            formContext,
+            workflowContext,
+            isPhase1 = phase == "1",
+            completionPages = completionPagesJson)
 
     val messagesJson = buildString {
       append("[")
@@ -151,7 +170,7 @@ class AIWorkflowAssistant : IPluginServletAction {
         }
 
     val cleaned = extractJson(stripThinkTags(rawResponse))
-    logger.debug("[AIWorkflowAssistant] AI response (phase {}): {}", phase, cleaned)
+    logger.info("[AIWorkflowAssistant] AI response (phase {}): {}", phase, cleaned)
 
     // Phase 1 only: check if the AI is signalling that it needs more context before answering.
     if (phase == "1") {
@@ -164,7 +183,16 @@ class AIWorkflowAssistant : IPluginServletAction {
 
     val taskSpec =
         try {
-          gson.fromJson(cleaned, WorkflowTaskSpec::class.java)
+          gson.fromJson(cleaned, WorkflowTaskSpec::class.java).also { spec ->
+            if (spec.nodeType == "FC_DOI_INIT") {
+              logger.info(
+                  "[AIWorkflowAssistant] DOI workflow task spec: nodeType=FC_DOI_INIT, failurePage='{}', all nodeParams keys={}",
+                  spec.nodeParams["failurePage"] ?: "<NOT SET BY AI>",
+                  spec.nodeParams.keys)
+            } else {
+              logger.info("[AIWorkflowAssistant] Workflow task spec: nodeType={}", spec.nodeType)
+            }
+          }
         } catch (e: Exception) {
           logger.warn("[AIWorkflowAssistant] Could not parse AI response as JSON: {}", cleaned)
           return jsonResponse("""{"error":"AI returned invalid JSON: ${gson.toJson(e.message)}"}""")
@@ -183,32 +211,94 @@ class AIWorkflowAssistant : IPluginServletAction {
    * Builds the system prompt for the AI. When [isPhase1] is `true` and no context has been fetched
    * yet, the prompt instructs the AI to signal if it needs form or workflow data (by returning a
    * special `{"need":"..."}` JSON). When [formContext] and/or [workflowContext] are provided (phase
-   * 2), they are embedded directly so the AI can use exact field/button names.
+   * 2), they are embedded directly so the AI can use exact field/button names. When
+   * [completionPages] is provided, available Abschlussseiten are listed for FC_DOI_INIT node
+   * creation.
    */
   private fun buildSystemPrompt(
       formContext: String?,
       workflowContext: String?,
-      isPhase1: Boolean
+      isPhase1: Boolean,
+      completionPages: String? = null
   ): String = buildString {
     append(
         "You are a FORMCYCLE workflow assistant. The user will describe a desired workflow " +
             "action in natural language. Your ONLY output must be a single JSON object that " +
             "describes the workflow task to create. No explanation, no markdown, no code fences.\n\n")
     append(
-        "Output format (JSON object with exactly these keys):\n" +
-            "\"{\"taskName\":\"...\", \"taskDescription\":\"...\", \"triggerType\":\"...\", \"triggerParams\":{}, \"nodeType\":\"...\", \"nodeParams\":{}, \"endpointState\":\"...\"}\"" +
-            "\n\n")
+        "Output format: Output EITHER a single JSON object (for ONE workflow lane) OR an array of JSON objects (for MULTIPLE lanes).\n" +
+            "  Single lane: {\"taskName\":\"...\", \"taskDescription\":\"...\", \"triggerType\":\"...\", \"triggerParams\":{}, \"nodeType\":\"...\", \"nodeParams\":{}, \"endpointState\":\"...\"}\n" +
+            "  Multiple lanes: [{\"taskName\":\"...\", ...}, {\"taskName\":\"...\", ...}]\n" +
+            "  Each object has exactly these keys: taskName, taskDescription, triggerType, triggerParams, nodeType, nodeParams, endpointState.\n" +
+            "  CRITICAL — Use an array ONLY when the user's request describes MULTIPLE INDEPENDENT workflows triggered by DIFFERENT events.\n" +
+            "  Example of when to use an array: \"Beim Klick auf senden DOI-Mail verschicken, nach Bestätigung Status ändern\"\n" +
+            "    → Lane 1: FC_FORM_SUBMIT_BUTTON → FC_DOI_INIT, Lane 2: FC_DOI_VERIFIED → FC_CHANGE_STATE\n" +
+            "  CRITICAL — Do NOT use an array for setting a form record status. The status transition (\"endpointState\") is automatically\n" +
+            "  added as the bottommost node of EVERY lane. If the user says \"set status to XYZ\", just set endpointState to \"XYZ\".\n" +
+            "  A single lane can send an email AND transition to a status — both happen in ONE lane.\n\n")
     append(
         "TRIGGER TYPES (use exactly one of these string values for 'triggerType'):\n" +
-            "  - \"FC_FORM_SUBMIT_BUTTON\" — fires when a submit button is clicked; " +
-            "triggerParams: {\"buttonName\":\"<technical name>\"} or empty {} for any button\n" +
-            "  - \"FC_MANUAL\" — manual invocation (user triggered); triggerParams: {}\n" +
-            "  - \"FC_STATE_TIMER\" — fires after a delay once a record enters a state; " +
-            "triggerParams: {\"durationDays\":<N>,\"durationHours\":<N>,\"durationMinutes\":<N>}\n" +
-            "  - \"FC_FORM_RECORD_MESSAGE_POSTED\" — fires when an internal message is posted to the record; triggerParams: {}\n" +
-            "  - \"FC_CATCH_ERROR\" — fires when an error occurs in another workflow lane; triggerParams: {}\n" +
-            "  - \"FC_DOI_VERIFIED\" — fires when a double opt-in email link is confirmed; triggerParams: {}\n" +
-            "  - \"FC_USER_INVOCATION\" — fires when a logged-in user manually triggers it from the record detail view; triggerParams: {}\n\n")
+            "  - \"FC_FORM_SUBMIT_BUTTON\" — fires when a submit button is clicked;\n" +
+            "    triggerParams: {\"buttonName\":\"<technical name>\"} or {} for any button\n" +
+            "  - \"FC_QUALIFIED_FORM_SUBMIT_BUTTON\" — fires when a qualified (electronic signature) submit button is clicked;\n" +
+            "    triggerParams: {\"buttonName\":\"<name>\",\"qualifier\":\"<qualifier>\"}\n" +
+            "  - \"FC_MANUAL\" — manual invocation (user triggered);\n" +
+            "    triggerParams: {} (allowed states/groups configured in the FC designer)\n" +
+            "  - \"FC_STATE_TIMER\" — fires AFTER A TIME DELAY once a record enters a specific state;\n" +
+            "    THIS IS A TIME-BASED TRIGGER. It does NOT fire immediately on state change — it waits for the configured duration.\n" +
+            "    CRITICAL — You MUST set 'applicableStateNames' to the state(s) to watch. Without this, the trigger has no states selected and will never fire.\n" +
+            "    triggerParams: {\"applicableStateNames\":[\"StateName1\",\"StateName2\"],\"durationDays\":<N>,\"durationHours\":<N>,\"durationMinutes\":<N>}\n" +
+            "    Example: \"2 Stunden nach Statusänderung auf 'Abgesendet'\" → {\"applicableStateNames\":[\"Abgesendet\"],\"durationDays\":0,\"durationHours\":2,\"durationMinutes\":0}\n" +
+            "  - \"FC_TIME_POINT\" — fires at a specific date/time. Has TWO modes:\n" +
+            "    Mode 1 — FIXED: fires at a fixed calendar date/time.\n" +
+            "      CRITICAL — fixedDateTime MUST include both the date AND time in ISO-8601 format WITH timezone offset (e.g. \"2026-07-02T08:48:00+02:00\").\n" +
+            "      If the user specifies only a time (e.g. \"um 08:48 Uhr\"), use TODAY's date and the Europe/Berlin timezone.\n" +
+            "      CRITICAL — Do NOT omit the date. Do NOT omit the timezone.\n" +
+            "      triggerParams: {\"timePointType\":\"FIXED\",\"fixedDateTime\":\"<ISO-8601 with offset>\",\"fireWhenInPast\":<true|false>}\n" +
+            "    Mode 2 — EXPRESSION_WITH_FORMAT: fires at a date/time computed from a form field value, optionally with an offset.\n" +
+            "      Use this when the user says \"X days|hours|weeks|months|years after field Y\", \"one day after the date in Start\", \"zwei Wochen nach Start\", etc.\n" +
+            "      The dateTimeTemplate uses [%technicalId%] to reference a form field. The dateTimeFormat is a Java DateTimeFormatter pattern matching the field's date format (typically \"dd.MM.yyyy\" for German date fields).\n" +
+            "      triggerParams: {\"timePointType\":\"EXPRESSION_WITH_FORMAT\",\"dateTimeTemplate\":\"[%technicalId%]\",\"dateTimeFormat\":\"<pattern>\",\"operation\":\"PLUS|MINUS\",\"offsetDuration\":\"<number>\",\"durationUnit\":\"DAYS|HOURS|MINUTES|SECONDS|WEEKS|MONTHS|YEARS\",\"fireWhenInPast\":<true|false>}\n" +
+            "      CRITICAL — Map German time units EXACTLY to durationUnit:\n" +
+            "        \"Sekunde\" / \"Sekunden\" → SECONDS\n" +
+            "        \"Minute\" / \"Minuten\"   → MINUTES\n" +
+            "        \"Stunde\" / \"Stunden\"   → HOURS\n" +
+            "        \"Tag\" / \"Tage\"         → DAYS\n" +
+            "        \"Woche\" / \"Wochen\"     → WEEKS\n" +
+            "        \"Monat\" / \"Monate\"     → MONTHS\n" +
+            "        \"Jahr\" / \"Jahre\"       → YEARS\n" +
+            "      Examples:\n" +
+            "        \"Ein Tag nach Start\"        → {\"timePointType\":\"EXPRESSION_WITH_FORMAT\",\"dateTimeTemplate\":\"[%tfStart%]\",\"dateTimeFormat\":\"dd.MM.yyyy\",\"operation\":\"PLUS\",\"offsetDuration\":\"1\",\"durationUnit\":\"DAYS\",\"fireWhenInPast\":false}\n" +
+            "        \"Zwei Wochen nach Start\"    → {\"timePointType\":\"EXPRESSION_WITH_FORMAT\",\"dateTimeTemplate\":\"[%tfStart%]\",\"dateTimeFormat\":\"dd.MM.yyyy\",\"operation\":\"PLUS\",\"offsetDuration\":\"2\",\"durationUnit\":\"WEEKS\",\"fireWhenInPast\":false}\n" +
+            "        \"3 Monate nach Geburtsdatum\" → {\"timePointType\":\"EXPRESSION_WITH_FORMAT\",\"dateTimeTemplate\":\"[%tfGeburtsdatum%]\",\"dateTimeFormat\":\"dd.MM.yyyy\",\"operation\":\"PLUS\",\"offsetDuration\":\"3\",\"durationUnit\":\"MONTHS\",\"fireWhenInPast\":false}\n" +
+            "        \"2 Stunden nach Start\"      → {\"timePointType\":\"EXPRESSION_WITH_FORMAT\",\"dateTimeTemplate\":\"[%tfStart%]\",\"dateTimeFormat\":\"dd.MM.yyyy HH:mm\",\"operation\":\"PLUS\",\"offsetDuration\":\"2\",\"durationUnit\":\"HOURS\",\"fireWhenInPast\":false}\n" +
+            "    IMPORTANT — For date-based triggers from form field values, use FC_TIME_POINT (Mode 2). Do NOT use FC_STATE_TIMER.\n" +
+            "    FC_STATE_TIMER is ONLY for time delays AFTER a record enters a specific workflow state.\n" +
+            "  - \"FC_FORM_RECORD_MESSAGE_POSTED\" — fires when an internal message is posted to the record;\n" +
+            "    triggerParams: {\"senderContext\":[\"INTERNAL\",\"EXTERNAL\"]} (optional filter)\n" +
+            "  - \"FC_FORM_RECORD_MESSAGE_UPLOAD_REQUEST_FULFILLED\" — fires when a file upload request submitted via internal message is fulfilled;\n" +
+            "    triggerParams: {}\n" +
+            "  - \"FC_CATCH_ERROR\" — fires when an error occurs in another workflow lane;\n" +
+            "    The 'Limit to certain error' property category has these configurable filters (all optional):\n" +
+            "      - \"Action Name\" (nodeName) — filter by the name of the specific action/node instance that raised the error\n" +
+            "      - \"Action Name match type\" (nodeNameMatchType) — \"EXACT\"|\"CONTAINS\"|\"STARTS_WITH\"|\"ENDS_WITH\"\n" +
+            "      - \"Action Type\" (nodeType) — filter by the type of action; available values: FC_EMAIL, FC_HTTP_REQUEST, FC_CHANGE_STATE, FC_SQL_STATEMENT, FC_DOI_INIT, FC_COUNTER, FC_EXPORT_TO_XML, FC_SAVE_TO_WEBDAV, FC_CREATE_TEXT_FILE, FC_PROMPT_QUERY, FC_SWITCH, FC_CHANGE_FORM_AVAILABILITY, FC_FOR_EACH_LOOP, FC_WRITE_FORM_RECORD_ATTR, FC_EXPORT_TO_PERSISTENCE, FC_CHANGE_FORM_VALUE, FC_SHOW_TEMPLATE, FC_FILL_PDF, FC_COMPRESS_AS_ZIP, FC_SAVE_TO_FILE_SYSTEM, FC_LDAP_QUERY, FC_ENCODE_BASE64, FC_DECODE_BASE64, FC_RETURN_FILE, FC_MOVE_FORM_RECORD_TO_INBOX, FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, FC_PROCESS_LOG_PDF, FC_SET_SAVED_FLAG, FC_SET_FORM_RECORD_PASSWORD, FC_RENEW_PROCESS_ID, FC_CHANGE_FORM_RECORD_ACTIVENESS, FC_COPY_FORM_RECORD, FC_DELETE_ATTACHMENT, FC_FILL_WORD, FC_WITH_FORM_ELEMENT_CONTEXT, FC_SEND_FORM_RECORD_MESSAGE, FC_QUEUE_TASK, FC_LOG_ENTRY, FC_EXPORT_FORM_RECORD_CHATS, FC_REDIRECT, FC_MULTIPLE_CONDITION, FC_PROVIDE_RESOURCE, FC_THROW_EXCEPTION, FC_IMPORT_FORM_VALUE_FROM_XML, FC_EXPERIMENT\n" +
+            "      - \"Action Type match type\" (nodeTypeMatchType) — \"EXACT\"|\"CONTAINS\"|\"STARTS_WITH\"|\"ENDS_WITH\"\n" +
+            "      - \"Error Code\" (errorCode) — filter by specific error code (e.g. EMAIL_SEND_FAILED, DATABASE_ERROR, NETWORK_FAILURE)\n" +
+            "      - \"Error Code match type\" (errorCodeMatchType) — \"EXACT\"|\"CONTAINS\"|\"STARTS_WITH\"|\"ENDS_WITH\"\n" +
+            "    triggerParams example: {\"nodeName\":\"MeineAktion\",\"nodeNameMatchType\":\"EXACT\",\"nodeType\":\"FC_EMAIL\",\"nodeTypeMatchType\":\"EXACT\",\"errorCode\":\"EMAIL_SEND_FAILED\",\"errorCodeMatchType\":\"EXACT\"}\n" +
+            "  - \"FC_DOI_VERIFIED\" — CORRECT trigger for actions after DOI email confirmation (e.g. status change, welcome email);\n" +
+            "    triggerParams: {}\n" +
+            "  - \"FC_INVITATION_SENT\" — fires when an invitation email (DOI) is sent;\n" +
+            "    triggerParams: {}\n" +
+            "  - \"FC_INVITATION_ERROR\" — fires when an invitation email (DOI) delivery fails;\n" +
+            "    triggerParams: {}\n" +
+            "  - \"FC_USER_INVOCATION\" — fires when a logged-in user manually triggers it from the record detail view;\n" +
+            "    triggerParams: {} (allowed states/groups configured in the FC designer)\n" +
+            "  IMPORTANT — There is NO \"after state change\" trigger type in FORMCYCLE.\n" +
+            "  The closest equivalent is FC_STATE_TIMER with applicableStateNames set and a duration of 0 if you need it to fire immediately.\n" +
+            "  However, FC_STATE_TIMER with 0 duration fires on the NEXT server tick after the state change. For DOI flows,\n" +
+            "  use FC_DOI_VERIFIED as the trigger (fires when the DOI confirmation link is clicked).\n\n")
     append(
         "NODE TYPES (use exactly one of these string values for 'nodeType'):\n" +
             "  - \"FC_EMAIL\" — sends an email; " +
@@ -216,14 +306,24 @@ class AIWorkflowAssistant : IPluginServletAction {
             "\"subject\":\"<subject text>\", \"body\":\"<body text or HTML>\", " +
             "\"from\":\"${if (defaultFromEmail.isNotEmpty()) defaultFromEmail else "<sender address — REQUIRED; use the address explicitly stated in the prompt>"}\", \"senderName\":\"<sender display name, empty if not specified>\", " +
             "\"(do NOT include bodyFormatType — it is always set to BOTH automatically)\", " +
+            "  - \"FC_DOI_INIT\" — sends a double opt-in invitation email with DOI confirmation link; " +
+            "nodeParams: {\"to\":\"<recipient address>\", \"subject\":\"<subject>\", \"body\":\"<HTML body>\", \"from\":\"<sender address>\", \"senderName\":\"<sender name>\", " +
+            "\"failurePage\":\"<name of the Abschlussseite to display if the DOI verification fails — MUST be one of the AVAILABLE ABSCHLUSSSEITEN listed below>\"}. " +
+            "CRITICAL — This is the CORRECT node type for double opt-in invitations, NOT FC_EMAIL. The DOI system automatically adds the confirmation link to the email. " +
+            "CRITICAL — The email BODY MUST include the verification link as HTML: <a href=\"[%\$FORM_VERIFY_LINK%]\">E-Mail-Adresse bestätigen</a> (or equivalent in the user's language). " +
+            "The placeholder [%\$FORM_VERIFY_LINK%] is automatically resolved by FORMCYCLE at runtime — use it exactly as shown. " +
+            "Use together with trigger FC_DOI_VERIFIED.\n" +
             "\"attachments\":[\"<technicalId1>\",...] (optional — technicalIds of XUpload fields whose files to attach)}\n" +
             "  - \"FC_CHANGE_STATE\" — changes the form record state; " +
             "nodeParams: {\"stateName\":\"<FORMCYCLE status name>\"}\n" +
-            "  - \"FC_HTTP_REQUEST\" — sends an HTTP request (e.g. webhook); " +
-            "nodeParams: {\"url\":\"<target URL>\", \"method\":\"POST|GET|PUT|DELETE|PATCH\" (default POST), " +
-            "\"body\":\"<request body, supports [%placeholder%]>\", " +
+            "  - \"FC_HTTP_REQUEST\" — sends an HTTP request (e.g. webhook, REST API call); " +
+            "nodeParams: {\"url\":\"<target URL — REQUIRED, must be set to the exact URL from the user's prompt>\", " +
+            "\"method\":\"POST|GET|PUT|DELETE|PATCH\" (default POST), " +
+            "\"body\":\"<request body, supports [%placeholder%] to reference form field values>\", " +
             "\"contentType\":\"JSON|PLAIN_TEXT|XML|FORM_DATA\" (default JSON), " +
             "\"headers\":[{\"name\":\"<header>\",\"value\":\"<value>\"},...] (optional)}\n" +
+            "    The httpRequestType is automatically derived from contentType: \"CUSTOM\" for JSON|PLAIN_TEXT|XML, " +
+            "\"FORM_DATA\" for FORM_DATA, \"URL\" when no body is needed (GET/DELETE).\n" +
             "  - \"FC_CHANGE_FORM_VALUE\" — sets the value of one or more form fields; " +
             "nodeParams: {\"formValues\":[{\"name\":\"<technicalId>\",\"value\":\"<new value>\"},...]}⁠\n" +
             "  - \"FC_LOG_ENTRY\" — writes a log message to the process log; " +
@@ -241,12 +341,25 @@ class AIWorkflowAssistant : IPluginServletAction {
             "nodeParams: {\"attributes\":[{\"name\":\"<key>\",\"value\":\"<value>\"},...]}⁠\n" +
             "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}\n\n")
     append(
-        "ENDPOINT STATE (\"endpointState\" field):\n" +
-            "  Every workflow lane must end with a status transition (Endpunkt).\n" +
-            "  'endpointState' is the FORMCYCLE status name to set the form record to after all actions complete.\n" +
-            "  Default: \"Received\" — use this unless the user specifies a different end status.\n" +
+        "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
+            "  Every workflow lane automatically ends with a status transition (Endpunkt). The 'endpointState' field\n" +
+            "  specifies the FORMCYCLE status name to set the form record to after all actions in the lane complete.\n" +
+            "  DEFAULT: \"Received\" — use this unless the user specifies a different end status.\n" +
+            "  CRITICAL — If the user says \"set status to <XYZ>\" or \"das Formular auf den Status <XYZ> setzen\",\n" +
+            "  use EXACTLY the status name the user specified in their prompt. Do NOT pick a different status.\n" +
             "  Exception: if nodeType is \"FC_CHANGE_STATE\", the state change IS the endpoint; " +
-            "set endpointState to the same value as nodeParams.stateName.\n\n")
+            "set endpointState to the same value as nodeParams.stateName.\n" +
+            "  STATE PROPERTIES (\"stateProperties\" field — optional):\n" +
+            "  If the user specifies additional requirements for the endpoint state, include a 'stateProperties' object.\n" +
+            "  Supported boolean properties: externalAccessPermitted, allowAccessToApplicant, allowAccessAllParticipants,\n" +
+            "  allowAccessToAnonymousApplicant, allowAuthenticatedUser, formRecordDeletable, useSystemAuthentication.\n" +
+            "  Example 1: \"von extern aufrufbar\" → stateProperties: {\"externalAccessPermitted\": true}\n" +
+            "  Example 2: \"für alle Beteiligten aufrufbar\" → stateProperties: {\"allowAccessAllParticipants\": true}\n" +
+            "  Example 3: \"für alle authentifizierten Beteiligten aufrufbar\" → stateProperties: {\"allowAccessAllParticipants\": true, \"allowAuthenticatedUser\": true}\n" +
+            "  Example 4: \"Der Vorgang soll löschbar sein\" → stateProperties: {\"formRecordDeletable\": true}\n" +
+            "  Example 5: \"Passwort XXX\" → stateProperties: {\"useSystemAuthentication\": true}\n" +
+            "  NOTE: The actual form password value (e.g. \"XXX\") must be configured manually in the workflow state\n" +
+            "  editor after creation — it is stored in a separate authenticator entity.\n\n")
     append(
         "PLACEHOLDERS: To include a form field value in email body/subject/recipient use " +
             "[%technicalId%] where 'technicalId' is taken from the FORM ELEMENTS list. " +
@@ -286,6 +399,16 @@ class AIWorkflowAssistant : IPluginServletAction {
               "  2. No form field is mentioned (not even vaguely — e.g. 'email field', 'name field', 'E-Mail-Adresse')\n" +
               "  3. All values needed for triggerParams and nodeParams are explicitly given as exact technical identifiers\n" +
               "If ANY of these conditions is NOT met, respond ONLY with: {\"need\":\"form_data\"}\n\n")
+    }
+    if (!completionPages.isNullOrBlank()) {
+      append(
+          "AVAILABLE ABSCHLUSSSEITEN (completion pages — pick one for failurePage when creating a FC_DOI_INIT node):\n" +
+              completionPages +
+              "\n\n" +
+              "Select the most suitable Abschlussseite from the list above based on the form/project context. " +
+              "If the project has multiple pages, prefer one whose name suggests it is a generic error/failure page " +
+              "(e.g. \"Fehler\", \"Error\", \"Allgemein\", \"Standard\") or create a new one with a descriptive name. " +
+              "The Abschlussseite is displayed to the user when the DOI email verification fails.\n\n")
     }
     append(
         "EXAMPLE (note: technicalId values are arbitrary — use them verbatim):\n" +
@@ -369,7 +492,7 @@ class AIWorkflowAssistant : IPluginServletAction {
     workflowTriggerClass
         .getMethod("setUUIDObject", UUID::class.java)
         .invoke(trigger, UUID.randomUUID())
-    val triggerParamsJson = buildTriggerParamsJson(spec)
+    val triggerParamsJson = buildTriggerParamsJson(spec, workflowVersion, userContext)
     if (triggerParamsJson != null) {
       workflowTriggerClass
           .getMethod("setCustomParameters", String::class.java)
@@ -476,9 +599,217 @@ class AIWorkflowAssistant : IPluginServletAction {
       workflowNodeClass
           .getMethod("setUUIDObject", UUID::class.java)
           .invoke(endpointNode, UUID.randomUUID())
-      val endpointStateUuid =
-          resolveStateUuid(userContext, workflowVersion, spec.endpointState)
-              ?: resolveFirstStateUuid(userContext, workflowVersion)
+
+      // Resolve the state UUID — either find an existing state or create a new one
+      val stateName = spec.endpointState.ifBlank { "Received" }
+      var endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName)
+
+      // Apply optional state properties to the resolved or newly created state
+      if (spec.stateProperties.isNotEmpty()) {
+        try {
+          val workflowStateClass = Class.forName("de.xima.fc.entities.WorkflowState")
+          val stateApi = apiProviderClass.getField("WORKFLOW_STATE_API").get(null)
+
+          val stateObject: Any
+          if (endpointStateUuid == null) {
+            // Create new state
+            val newState = workflowStateClass.getDeclaredConstructor().newInstance()
+            workflowStateClass.getMethod("setName", String::class.java).invoke(newState, stateName)
+            workflowStateClass
+                .getMethod("setUUIDObject", UUID::class.java)
+                .invoke(newState, UUID.randomUUID())
+            workflowStateClass
+                .getMethod("setVersion", Class.forName("de.xima.fc.entities.WorkflowVersion"))
+                .invoke(newState, workflowVersion)
+            val existingStates = loadWorkflowStates(userContext, workflowVersion)
+            var maxOrder = -1
+            for (st in existingStates) {
+              try {
+                val idx = st.javaClass.getMethod("getOrderIndex").invoke(st) as? Int
+                if (idx != null && idx > maxOrder) maxOrder = idx
+              } catch (_: Exception) {}
+            }
+            workflowStateClass
+                .getMethod("setOrderIndex", Int::class.java)
+                .invoke(newState, maxOrder + 1)
+            stateObject = newState
+          } else {
+            // State already exists — find it by UUID via the state list, then fetch by ID
+            val allStates = loadWorkflowStates(userContext, workflowVersion)
+            val matchedState =
+                allStates.firstOrNull { st ->
+                  try {
+                    st.javaClass.getMethod("getUUIDObject").invoke(st) == endpointStateUuid
+                  } catch (_: Exception) {
+                    false
+                  }
+                }
+            val stateId = matchedState?.javaClass?.getMethod("getId")?.invoke(matchedState) as? Long
+            stateObject =
+                if (stateId != null) {
+                  stateApi.javaClass
+                      .getMethod("getById", userContextClass, java.lang.Long::class.java)
+                      .invoke(stateApi, userContext, stateId)
+                } else throw Exception("Could not find existing state by UUID")
+          }
+
+          for ((propName, propValue) in spec.stateProperties) {
+            val setterName = "set${propName.replaceFirstChar { it.uppercase() }}"
+            try {
+              val setter =
+                  workflowStateClass.methods.firstOrNull { m ->
+                    m.name.equals(setterName, ignoreCase = true) && m.parameterCount == 1
+                  }
+              if (setter != null) {
+                val arg =
+                    when (setter.parameterTypes[0]) {
+                      Boolean::class.java,
+                      java.lang.Boolean::class.java ->
+                          when (propValue) {
+                            is Boolean -> propValue
+                            is String -> propValue.toBoolean()
+                            else -> propValue.toString().toBoolean()
+                          }
+                      Int::class.java,
+                      Integer::class.java ->
+                          when (propValue) {
+                            is Number -> propValue.toInt()
+                            else -> propValue.toString().toIntOrNull() ?: 0
+                          }
+                      String::class.java -> propValue.toString()
+                      else -> propValue
+                    }
+                setter.invoke(stateObject, arg)
+                logger.info("[AIWorkflowAssistant] Set state property '{}' = {}", setterName, arg)
+              }
+            } catch (e: Exception) {
+              logger.warn(
+                  "[AIWorkflowAssistant] Failed to set state property '{}': {}",
+                  setterName,
+                  e.message)
+            }
+          }
+
+          // Handle allowAuthenticatedUser — requires creating a WorkflowStateAuthenticatorConfig
+          // with EAuthClientType.FORM (FormCycle's internal user authentication).
+          if (spec.stateProperties["allowAuthenticatedUser"] == true) {
+            try {
+              val authConfigClass =
+                  Class.forName("de.xima.fc.entities.WorkflowStateAuthenticatorConfig")
+              val eAuthClientTypeClass = Class.forName("de.xima.fc.mdl.enums.EAuthClientType")
+              val formType = eAuthClientTypeClass.getField("FORM").get(null)
+
+              val authConfig = authConfigClass.getDeclaredConstructor().newInstance()
+              authConfigClass
+                  .getMethod("setWorkflowState", workflowStateClass)
+                  .invoke(authConfig, stateObject)
+              authConfigClass
+                  .getMethod("setAuthenticatorType", eAuthClientTypeClass)
+                  .invoke(authConfig, formType)
+
+              // For a newly created state (plain POJO), addAuthenticatorConfig works directly.
+              // For an existing state (Hibernate proxy), the lazy authenticatorConfigs
+              // collection cannot be accessed outside a session. Use GenericAPI.create() to
+              // persist the config as a standalone entity instead.
+              if (endpointStateUuid == null) {
+                workflowStateClass
+                    .getMethod("addAuthenticatorConfig", authConfigClass)
+                    .invoke(stateObject, authConfig)
+              } else {
+                val genericApi = apiProviderClass.getField("GENERIC").get(null)
+                genericApi.javaClass
+                    .getMethod(
+                        "create",
+                        Class::class.java,
+                        userContextClass,
+                        Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity"))
+                    .invoke(genericApi, authConfigClass, userContext, authConfig)
+              }
+
+              logger.info(
+                  "[AIWorkflowAssistant] Created FORM authenticator config for allowAuthenticatedUser")
+            } catch (e: Exception) {
+              val causeMsg =
+                  if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
+                    "${e.cause!!::class.simpleName}: ${e.cause!!.message}"
+                  } else {
+                    "${e::class.simpleName}: ${e.message}"
+                  }
+              logger.warn(
+                  "[AIWorkflowAssistant] Failed to create authenticator config for allowAuthenticatedUser: {}",
+                  causeMsg)
+            }
+          }
+
+          if (endpointStateUuid == null) {
+            val savedState =
+                stateApi.javaClass
+                    .getMethod("create", userContextClass, iTransferableEntityClass)
+                    .invoke(stateApi, userContext, stateObject)
+            endpointStateUuid =
+                savedState.javaClass.getMethod("getUUIDObject").invoke(savedState) as? UUID
+            logger.info(
+                "[AIWorkflowAssistant] Created new workflow state '{}' with UUID {}",
+                stateName,
+                endpointStateUuid)
+          } else {
+            stateApi.javaClass
+                .getMethod("update", userContextClass, iTransferableEntityClass)
+                .invoke(stateApi, userContext, stateObject)
+            logger.info(
+                "[AIWorkflowAssistant] Updated existing workflow state '{}' properties", stateName)
+          }
+        } catch (e: Exception) {
+          logger.warn(
+              "[AIWorkflowAssistant] Failed to update/create workflow state '{}': {}",
+              stateName,
+              e.message)
+          if (endpointStateUuid == null)
+              endpointStateUuid = resolveFirstStateUuid(userContext, workflowVersion)
+        }
+      } else if (endpointStateUuid == null) {
+        // Create minimal state without properties
+        try {
+          val workflowStateClass = Class.forName("de.xima.fc.entities.WorkflowState")
+          val stateApi = apiProviderClass.getField("WORKFLOW_STATE_API").get(null)
+          val newState = workflowStateClass.getDeclaredConstructor().newInstance()
+          workflowStateClass.getMethod("setName", String::class.java).invoke(newState, stateName)
+          workflowStateClass
+              .getMethod("setUUIDObject", UUID::class.java)
+              .invoke(newState, UUID.randomUUID())
+          workflowStateClass
+              .getMethod("setVersion", Class.forName("de.xima.fc.entities.WorkflowVersion"))
+              .invoke(newState, workflowVersion)
+          val existingStates = loadWorkflowStates(userContext, workflowVersion)
+          var maxOrder = -1
+          for (st in existingStates) {
+            try {
+              val idx = st.javaClass.getMethod("getOrderIndex").invoke(st) as? Int
+              if (idx != null && idx > maxOrder) maxOrder = idx
+            } catch (_: Exception) {}
+          }
+          workflowStateClass
+              .getMethod("setOrderIndex", Int::class.java)
+              .invoke(newState, maxOrder + 1)
+          val savedState =
+              stateApi.javaClass
+                  .getMethod("create", userContextClass, iTransferableEntityClass)
+                  .invoke(stateApi, userContext, newState)
+          endpointStateUuid =
+              savedState.javaClass.getMethod("getUUIDObject").invoke(savedState) as? UUID
+          logger.info(
+              "[AIWorkflowAssistant] Created new workflow state '{}' with UUID {}",
+              stateName,
+              endpointStateUuid)
+        } catch (e: Exception) {
+          logger.warn(
+              "[AIWorkflowAssistant] Failed to create workflow state '{}': {}",
+              stateName,
+              e.message)
+          endpointStateUuid = resolveFirstStateUuid(userContext, workflowVersion)
+        }
+      }
+
       if (endpointStateUuid != null) {
         val endpointParamsJson =
             """{ "targetState":{"uuid":${gson.toJson(endpointStateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
@@ -796,6 +1127,7 @@ class AIWorkflowAssistant : IPluginServletAction {
                   trigger?.javaClass?.getMethod("getType")?.invoke(trigger) as? String ?: ""
               val nodeType =
                   rootNode?.javaClass?.getMethod("getType")?.invoke(rootNode) as? String ?: ""
+
               mapOf("name" to name, "triggerType" to triggerType, "nodeType" to nodeType)
             } catch (_: Exception) {
               null
@@ -840,19 +1172,136 @@ class AIWorkflowAssistant : IPluginServletAction {
    * - `FC_FORM_SUBMIT_BUTTON`: `{"buttonName": "<name>"}` — single String field. Empty string means
    *   any button fires the trigger.
    */
-  private fun buildTriggerParamsJson(spec: WorkflowTaskSpec): String? {
+  private fun buildTriggerParamsJson(
+      spec: WorkflowTaskSpec,
+      workflowVersion: Any? = null,
+      userContext: Any? = null
+  ): String? {
     return when (spec.triggerType) {
       "FC_FORM_SUBMIT_BUTTON" -> {
         val buttonName = spec.triggerParams["buttonName"] as? String ?: ""
         """{"buttonName":${gson.toJson(buttonName)}}"""
       }
       "FC_STATE_TIMER" -> {
-        val days = (spec.triggerParams["durationDays"] as? Number)?.toLong() ?: 0L
-        val hours = (spec.triggerParams["durationHours"] as? Number)?.toInt() ?: 0
-        val minutes = (spec.triggerParams["durationMinutes"] as? Number)?.toInt() ?: 0
-        """{"durationDays":$days,"durationHours":$hours,"durationMinutes":$minutes,"durationSeconds":0}"""
+        var days = (spec.triggerParams["durationDays"] as? Number)?.toLong() ?: 0L
+        var hours = (spec.triggerParams["durationHours"] as? Number)?.toInt() ?: 0
+        var minutes = (spec.triggerParams["durationMinutes"] as? Number)?.toInt() ?: 0
+        // If the prompt does not specify a delay, default to 1 minute —
+        // all-zero duration (0d 0h 0m) is invalid for the FC_STATE_TIMER trigger.
+        if (days == 0L && hours == 0 && minutes == 0) {
+          minutes = 1
+        }
+        // Resolve applicableStateNames (human-readable state names from the AI) to
+        // applicableStates (List<UuidEntityRef> with UUIDs) for the "After change to state" field.
+        @Suppress("UNCHECKED_CAST")
+        val stateNames =
+            (spec.triggerParams["applicableStateNames"] as? List<*>)?.filterIsInstance<String>()
+                ?: emptyList()
+        val statesJson =
+            if (stateNames.isNotEmpty() && workflowVersion != null && userContext != null) {
+              stateNames.mapNotNull { name ->
+                val uuid = resolveStateUuid(userContext, workflowVersion, name)
+                if (uuid != null) {
+                  """{"uuid":${gson.toJson(uuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}"""
+                } else null
+              }
+            } else emptyList<String>()
+        val statesArrayJson = "[${statesJson.joinToString(",")}]"
+        """{"applicableStates":$statesArrayJson,"durationDays":$days,"durationHours":$hours,"durationMinutes":$minutes,"durationSeconds":0}"""
       }
-      else -> "{}" // FC_MANUAL and others use empty params
+      "FC_TIME_POINT" -> {
+        // Format required by Formcycle's FastJson for FcTimePointProps:
+        //   Mode FIXED:
+        //     timePointType: "FIXED"
+        //     timePointFixed.fireDateTime:
+        // {"year":N,"month":N,"day":N,"hour":N,"minute":N,"second":N,"nano":N}
+        //     timePointFixed.zoneId: "Europe/Berlin" (string)
+        //   Mode EXPRESSION_WITH_FORMAT:
+        //     timePointType: "EXPRESSION_WITH_FORMAT"
+        //     timePointExpressionWithFormat.dateTimeTemplate: "[%technicalId%]"
+        //     timePointExpressionWithFormat.dateTimeFormat: "dd.MM.yyyy"
+        //     timePointExpressionWithFormat.operation: "PLUS"|"MINUS"
+        //     timePointExpressionWithFormat.offsetDuration: "1"
+        //     timePointExpressionWithFormat.durationUnit:
+        // "DAYS"|"HOURS"|"MINUTES"|"WEEKS"|"MONTHS"|"YEARS"
+        //   Shared:
+        //     fireWhenInPast: boolean
+        //     allowedStates: [] (empty list)
+        val timePointType = spec.triggerParams["timePointType"] as? String ?: "FIXED"
+        val fireWhenInPast = spec.triggerParams["fireWhenInPast"] as? Boolean ?: false
+        when (timePointType) {
+          "EXPRESSION_WITH_FORMAT" -> {
+            val dateTimeTemplate = spec.triggerParams["dateTimeTemplate"] as? String ?: ""
+            val dateTimeFormat = spec.triggerParams["dateTimeFormat"] as? String ?: "dd.MM.yyyy"
+            val operation = spec.triggerParams["operation"] as? String ?: "PLUS"
+            val offsetDuration = spec.triggerParams["offsetDuration"] as? String ?: "0"
+            val durationUnit = spec.triggerParams["durationUnit"] as? String ?: "DAYS"
+            """{"timePointType":"EXPRESSION_WITH_FORMAT","timePointExpressionWithFormat":{"dateTimeTemplate":${gson.toJson(dateTimeTemplate)},"dateTimeFormat":${gson.toJson(dateTimeFormat)},"operation":${gson.toJson(operation)},"offsetDuration":${gson.toJson(offsetDuration)},"durationUnit":${gson.toJson(durationUnit)}},"fireWhenInPast":$fireWhenInPast,"allowedStates":[]}"""
+          }
+          else -> { // FIXED (default)
+            val fixedDateTimeStr = spec.triggerParams["fixedDateTime"] as? String
+            if (fixedDateTimeStr != null) {
+              val zdt =
+                  try {
+                    java.time.ZonedDateTime.parse(fixedDateTimeStr)
+                  } catch (_: Exception) {
+                    try {
+                      val odt = java.time.OffsetDateTime.parse(fixedDateTimeStr)
+                      odt.toZonedDateTime()
+                    } catch (_: Exception) {
+                      try {
+                        val ldt = java.time.LocalDateTime.parse(fixedDateTimeStr)
+                        ldt.atZone(java.time.ZoneId.systemDefault())
+                      } catch (_: Exception) {
+                        null
+                      }
+                    }
+                  }
+              if (zdt != null) {
+                val ldt = zdt.toLocalDateTime()
+                val zoneId = zdt.zone.id
+                """{"timePointType":"FIXED","timePointFixed":{"fireDateTime":{"year":${ldt.year},"month":${ldt.monthValue},"day":${ldt.dayOfMonth},"hour":${ldt.hour},"minute":${ldt.minute},"second":${ldt.second},"nano":${ldt.nano}},"zoneId":${gson.toJson(zoneId)}},"fireWhenInPast":$fireWhenInPast,"allowedStates":[]}"""
+              } else {
+                """{"fireWhenInPast":$fireWhenInPast,"allowedStates":[]}"""
+              }
+            } else {
+              """{"fireWhenInPast":$fireWhenInPast,"allowedStates":[]}"""
+            }
+          }
+        }
+      }
+      "FC_CATCH_ERROR" -> {
+        @Suppress("UNCHECKED_CAST") val errorCode = spec.triggerParams["errorCode"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST")
+        val errorCodeMatchType = spec.triggerParams["errorCodeMatchType"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST") val nodeName = spec.triggerParams["nodeName"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST")
+        val nodeNameMatchType = spec.triggerParams["nodeNameMatchType"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST") val nodeType = spec.triggerParams["nodeType"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST")
+        val nodeTypeMatchType = spec.triggerParams["nodeTypeMatchType"] as? String ?: ""
+        val fields = mutableListOf<String>()
+        if (errorCode.isNotBlank()) {
+          fields.add(""""errorCode":${gson.toJson(errorCode)}""")
+          if (errorCodeMatchType.isNotBlank()) {
+            fields.add(""""errorCodeMatchType":${gson.toJson(errorCodeMatchType)}""")
+          }
+        }
+        if (nodeName.isNotBlank()) {
+          fields.add(""""nodeName":${gson.toJson(nodeName)}""")
+          if (nodeNameMatchType.isNotBlank()) {
+            fields.add(""""nodeNameMatchType":${gson.toJson(nodeNameMatchType)}""")
+          }
+        }
+        if (nodeType.isNotBlank()) {
+          fields.add(""""nodeType":${gson.toJson(nodeType)}""")
+          if (nodeTypeMatchType.isNotBlank()) {
+            fields.add(""""nodeTypeMatchType":${gson.toJson(nodeTypeMatchType)}""")
+          }
+        }
+        if (fields.isEmpty()) "{}" else fields.joinToString(",", "{", "}")
+      }
+      else -> "{}" // FC_MANUAL, FC_DOI_VERIFIED and others use empty params
     }
   }
 
@@ -894,6 +1343,43 @@ class AIWorkflowAssistant : IPluginServletAction {
             } else ""
         """{"to":$toJson,"cc":[],"bcc":[],"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":${gson.toJson(bodyFormatType)},"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)}$multiFileJson}"""
       }
+      "FC_DOI_INIT" -> {
+        val to = spec.nodeParams["to"] as? String ?: ""
+        val subject = spec.nodeParams["subject"] as? String ?: ""
+        val body = spec.nodeParams["body"] as? String ?: ""
+        val from = spec.nodeParams["from"] as? String ?: ""
+        val senderName = spec.nodeParams["senderName"] as? String ?: ""
+        val failurePage = spec.nodeParams["failurePage"] as? String ?: ""
+        val toJson = if (to.isNotBlank()) "[${gson.toJson(to)}]" else "[]"
+        logger.info(
+            "[AIWorkflowAssistant] buildNodeParams FC_DOI_INIT: failurePage='{}', workflowVersion=null?{}, userContext=null?{}",
+            failurePage,
+            workflowVersion == null,
+            userContext == null)
+        val failurePageJson =
+            if (failurePage.isNotBlank() && workflowVersion != null && userContext != null) {
+              val uuid = resolveCompletionPageUuid(userContext, workflowVersion, failurePage)
+              logger.info(
+                  "[AIWorkflowAssistant] buildNodeParams FC_DOI_INIT: resolveCompletionPageUuid('{}') returned {}",
+                  failurePage,
+                  uuid?.toString() ?: "null")
+              if (uuid != null) {
+                val uuidStr = uuid.toString()
+                ""","doiFailTemplate":{"entityClass":"TextTemplate","id":${gson.toJson(uuidStr)},"type":"TextTemplate","uuid":${gson.toJson(uuidStr)}}"""
+              } else ""","doiFailTemplate":null"""
+            } else {
+              logger.info(
+                  "[AIWorkflowAssistant] buildNodeParams FC_DOI_INIT: SKIPPING doiFailTemplate — failurePage blank={}, workflowVersion null={}, userContext null={}",
+                  failurePage.isBlank(),
+                  workflowVersion == null,
+                  userContext == null)
+              ""","doiFailTemplate":null"""
+            }
+        val resultJson =
+            """{"to":$toJson,"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)},"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":"HTML"$failurePageJson}"""
+        logger.info("[AIWorkflowAssistant] buildNodeParams FC_DOI_INIT: final JSON={}", resultJson)
+        resultJson
+      }
       "FC_CHANGE_STATE" -> {
         val stateName = spec.nodeParams["stateName"] as? String ?: ""
         val stateUuid =
@@ -920,8 +1406,21 @@ class AIWorkflowAssistant : IPluginServletAction {
               """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
             } ?: emptyList()
         val headersJson = "[${headers.joinToString(",")}]"
-        if (contentType == "FORM_DATA") {
+        // Map contentType to httpRequestType enum:
+        //   CUSTOM – for JSON/PLAIN_TEXT/XML (body provided as customBodyContent)
+        //   FORM_DATA – for FORM_DATA (key-value pairs in requestParameters)
+        //   URL – for GET/DELETE/HEAD (no body, parameters sent as query string)
+        val httpRequestType =
+            when {
+              method == "GET" || method == "DELETE" || method == "HEAD" || method == "OPTIONS" ->
+                  "URL"
+              contentType == "FORM_DATA" -> "FORM_DATA"
+              else -> "CUSTOM" // JSON, PLAIN_TEXT, XML → custom body content
+            }
+        if (httpRequestType == "FORM_DATA") {
           """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+        } else if (httpRequestType == "URL") {
+          """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
         } else {
           """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
         }
@@ -1027,6 +1526,465 @@ class AIWorkflowAssistant : IPluginServletAction {
     }
   }
 
+  /**
+   * Queries the database for available Abschlussseiten (completion pages) for the given workflow
+   * version's project. Uses JPQL with known FORMCYCLE entity class names first (most reliable),
+   * then falls back to native SQL with schema-discovery.
+   *
+   * @return A compact JSON array string like `[{"name":"Standard-Fehlerseite","uuid":"..."},...]`,
+   *   or `null` if the query fails.
+   */
+  private fun fetchCompletionPages(userContext: Any, workflowVersionId: Long): String? {
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId) ?: return null
+      val project =
+          workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion) ?: return null
+      val projectId = project.javaClass.getMethod("getId").invoke(project) as? Long ?: return null
+
+      val emf = CodbiEntities.entityManagerFactory ?: return null
+      val em = emf.createEntityManager()
+      try {
+        // Strategy 1: Try JPQL navigating from Projekt entity (collection property)
+        val projektCollectionProperties =
+            listOf(
+                "p.abschlussSeiten",
+                "p.completionPages",
+                "p.projektAbschlussSeiten",
+                "p.absclussSeiten")
+        for (collectionPath in projektCollectionProperties) {
+          try {
+            val jpql =
+                "SELECT cp FROM de.xima.fc.entities.Projekt p JOIN $collectionPath cp WHERE p.id = :pid"
+            val query = em.createQuery(jpql)
+            query.setParameter("pid", projectId)
+            query.maxResults = 100
+            @Suppress("UNCHECKED_CAST") val results = query.resultList as? List<Any> ?: continue
+            if (results.isEmpty()) {
+              logger.info(
+                  "[AIWorkflowAssistant] JPQL Projekt collection '$collectionPath' exists but returned 0 pages for project $projectId")
+              continue
+            }
+            val pages =
+                results.mapNotNull { cp ->
+                  try {
+                    val nameMethod = cp.javaClass.getMethod("getName")
+                    val uuidMethod = cp.javaClass.getMethod("getUUIDObject")
+                    val name = nameMethod.invoke(cp) as? String ?: return@mapNotNull null
+                    val uuid = uuidMethod.invoke(cp) as? UUID ?: return@mapNotNull null
+                    """{"name":${gson.toJson(name)},"uuid":${gson.toJson(uuid.toString())}}"""
+                  } catch (_: Exception) {
+                    null
+                  }
+                }
+            if (pages.isEmpty()) continue
+            val json = "[${pages.joinToString(",")}]"
+            logger.info(
+                "[AIWorkflowAssistant] Found {} completion pages via Projekt collection '$collectionPath' for project $projectId: {}",
+                pages.size,
+                json)
+            return json
+          } catch (e: Exception) {
+            logger.info(
+                "[AIWorkflowAssistant] JPQL Projekt collection '$collectionPath' not available: ${e.message}")
+            continue
+          }
+        }
+
+        // Strategy 2: Try JPQL with standalone entity class names
+        val entityClasses =
+            listOf(
+                "de.xima.fc.entities.ProjectDOIData",
+                "de.xima.fc.entities.CompletionPage",
+                "de.xima.fc.entities.ProjektAbschlussSeite",
+                "de.xima.fc.entities.AbschlussSeite",
+                "de.xima.fc.entities.ProjektAbschluss",
+                "de.xima.fc.entities.Abschluss")
+        for (entityClass in entityClasses) {
+          try {
+            // First try a simple COUNT to verify the entity is mapped
+            val countQuery = em.createQuery("SELECT COUNT(cp) FROM $entityClass cp")
+            val totalCount = (countQuery.singleResult as? Number)?.toLong() ?: 0L
+            if (totalCount == 0L) {
+              logger.info("[AIWorkflowAssistant] JPQL entity '$entityClass' has 0 total rows")
+              continue
+            }
+            // Fetch all and filter programmatically
+            val fetchQuery = em.createQuery("SELECT cp FROM $entityClass cp")
+            fetchQuery.maxResults = 200
+            @Suppress("UNCHECKED_CAST")
+            val allResults = (fetchQuery.resultList as? List<Any>) ?: continue
+            if (allResults.isEmpty()) continue
+            val first = allResults[0]
+            val methods = first.javaClass.methods
+            val getters =
+                methods.filter { m ->
+                  m.name.startsWith("get") && m.parameterCount == 0 && m.name != "getClass"
+                }
+            logger.info(
+                "[AIWorkflowAssistant] JPQL entity '$entityClass' has {} total rows, getters: {}",
+                totalCount,
+                getters.map { it.name })
+            // Try to filter by project - look for projektId/projectId getters
+            val projectIdGetters = listOf("getProjektId", "getProjectId")
+            var projectIdGetter: java.lang.reflect.Method? = null
+            for (gName in projectIdGetters) {
+              try {
+                projectIdGetter = first.javaClass.getMethod(gName)
+                break
+              } catch (_: Exception) {}
+            }
+            val projectRefGetters =
+                getters.filter { m ->
+                  !m.name.startsWith("getC") &&
+                      (m.name.contains("Projekt", ignoreCase = true) ||
+                          m.name.contains("Project", ignoreCase = true)) &&
+                      m.returnType != String::class.java
+                }
+            val filteredResults =
+                if (projectIdGetter != null) {
+                  allResults.filter { cp ->
+                    try {
+                      projectIdGetter!!.invoke(cp)?.toString() == projectId.toString()
+                    } catch (_: Exception) {
+                      false
+                    }
+                  }
+                } else if (projectRefGetters.isNotEmpty()) {
+                  allResults.filter { cp ->
+                    projectRefGetters.any { getter ->
+                      try {
+                        val ref = getter.invoke(cp)
+                        ref?.javaClass?.getMethod("getId")?.invoke(ref)?.toString() ==
+                            projectId.toString()
+                      } catch (_: Exception) {
+                        false
+                      }
+                    }
+                  }
+                } else allResults
+            if (filteredResults.isEmpty()) {
+              logger.info(
+                  "[AIWorkflowAssistant] JPQL entity '$entityClass' has {} total rows, 0 for project $projectId",
+                  totalCount)
+              continue
+            }
+            val pages =
+                filteredResults.mapNotNull { cp ->
+                  try {
+                    var name: String? = null
+                    try {
+                      name = cp.javaClass.getMethod("getName").invoke(cp) as? String
+                    } catch (_: Exception) {}
+                    if (name == null) {
+                      try {
+                        name = cp.javaClass.getMethod("getTemplateName").invoke(cp) as? String
+                      } catch (_: Exception) {}
+                    }
+                    if (name == null) {
+                      val strGetters =
+                          methods.filter { m ->
+                            m.returnType == String::class.java &&
+                                (m.name.contains("ame", ignoreCase = true) ||
+                                    m.name.contains("itle", ignoreCase = true) ||
+                                    m.name.contains("ezeichnung", ignoreCase = true))
+                          }
+                      name = strGetters.firstOrNull()?.invoke(cp) as? String
+                    }
+                    val nm = name ?: return@mapNotNull null
+                    val uuidObj: UUID? =
+                        try {
+                          cp.javaClass.getMethod("getUUIDObject").invoke(cp) as? UUID
+                        } catch (_: Exception) {
+                          try {
+                            val s = cp.javaClass.getMethod("getUuid").invoke(cp) as? String
+                            if (s != null) UUID.fromString(s) else null
+                          } catch (_: Exception) {
+                            try {
+                              val id = cp.javaClass.getMethod("getId").invoke(cp) as? Number
+                              if (id != null) UUID.nameUUIDFromBytes(id.toString().toByteArray())
+                              else null
+                            } catch (_: Exception) {
+                              null
+                            }
+                          }
+                        }
+                    val uu = uuidObj ?: return@mapNotNull null
+                    """{"name":${gson.toJson(nm)},"uuid":${gson.toJson(uu.toString())}}"""
+                  } catch (_: Exception) {
+                    null
+                  }
+                }
+            if (pages.isNotEmpty()) {
+              val json = "[${pages.joinToString(",")}]"
+              logger.info(
+                  "[AIWorkflowAssistant] Found {} completion pages via JPQL entity '$entityClass' for project $projectId: {}",
+                  pages.size,
+                  json)
+              return json
+            }
+          } catch (e: Exception) {
+            logger.info(
+                "[AIWorkflowAssistant] JPQL entity class '$entityClass' not available: ${e.message}")
+            continue
+          }
+        }
+
+        // Strategy 3: Native SQL with schema discovery (expanded table names)
+        val possibleTables =
+            listOf(
+                "PROJECT_DOI_DATA",
+                "COMPLETION_PAGE",
+                "PROJEKT_ABSCHLUSS_SEITE",
+                "PROJEKTABSCHLUSSSEITE",
+                "PROJECT_COMPLETION_PAGE",
+                "ABSCHLUSS_SEITE",
+                "ABSCHLUSSSEITE",
+                "FORM_COMPLETION_PAGE",
+                "WORKFLOW_COMPLETION_PAGE",
+                "PROJEKT_ABSCHLUSS",
+                "PROJEKTABSCHLUSS")
+        for (tableName in possibleTables) {
+          try {
+            val columnsQuery =
+                em.createNativeQuery(
+                    "SELECT column_name FROM information_schema.columns WHERE UPPER(table_name) = :tbl ORDER BY ordinal_position")
+            columnsQuery.setParameter("tbl", tableName)
+            val columns = columnsQuery.resultList
+            if (columns.isEmpty()) continue
+            val colNames = columns.map { it.toString().uppercase() }
+            val hasName = colNames.any { it == "NAME" || it == "BEZEICHNUNG" || it == "TITLE" }
+            val hasUuid = colNames.any { it == "UUID" }
+            val projectCol =
+                colNames.firstOrNull {
+                  it == "PROJECT_ID" ||
+                      it == "PROJEKT_ID" ||
+                      it == "PROJEKTID" ||
+                      it == "FK_PROJEKT"
+                }
+            val nameCol =
+                when {
+                  "NAME" in colNames -> "NAME"
+                  "BEZEICHNUNG" in colNames -> "BEZEICHNUNG"
+                  "TITLE" in colNames -> "TITLE"
+                  else -> null
+                }
+            if (nameCol == null) continue
+            val selectCol = if (hasUuid) "UUID, $nameCol" else "ID, $nameCol"
+            val sql =
+                if (projectCol != null)
+                    "SELECT $selectCol FROM $tableName WHERE $projectCol = :pid ORDER BY $nameCol"
+                else "SELECT $selectCol FROM $tableName ORDER BY $nameCol"
+            val query = em.createNativeQuery(sql)
+            if (projectCol != null) query.setParameter("pid", projectId)
+            val results = query.resultList
+            if (results.isEmpty()) continue
+            val pages =
+                results.mapNotNull { row ->
+                  when (row) {
+                    is Array<*> -> {
+                      val idOrUuid = row[0]?.toString() ?: return@mapNotNull null
+                      val name = row[1]?.toString() ?: return@mapNotNull null
+                      """{"name":${gson.toJson(name)},"uuid":${gson.toJson(idOrUuid)}}"""
+                    }
+                    else -> null
+                  }
+                }
+            val json = "[${pages.joinToString(",")}]"
+            logger.info(
+                "[AIWorkflowAssistant] Found {} completion pages via native table '$tableName' for project $projectId: {}",
+                pages.size,
+                json)
+            return json
+          } catch (_: Exception) {
+            continue
+          }
+        }
+
+        logger.warn("[AIWorkflowAssistant] No completion-pages table found among: $possibleTables")
+        try {
+          val allTablesQuery =
+              em.createNativeQuery(
+                  "SELECT table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('information_schema', 'pg_catalog', 'mysql') ORDER BY table_name")
+          val allTables = allTablesQuery.resultList
+          logger.warn("[AIWorkflowAssistant] ALL database tables: {}", allTables)
+          val likeTablesQuery =
+              em.createNativeQuery(
+                  "SELECT table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('information_schema', 'pg_catalog', 'mysql') AND (table_name ILIKE '%abschluss%' OR table_name ILIKE '%completion%' OR table_name ILIKE '%seite%' OR table_name ILIKE '%page%' OR table_name ILIKE '%vorlage%' OR table_name ILIKE '%template%' OR table_name ILIKE '%eigenschaft%' OR table_name ILIKE '%property%' OR table_name ILIKE '%config%' OR table_name ILIKE '%konfig%' OR table_name ILIKE '%doi%' OR table_name ILIKE '%doppel%') ORDER BY table_name")
+          val likeTables = likeTablesQuery.resultList
+          logger.warn(
+              "[AIWorkflowAssistant] Tables matching page/seite/template/vorlage/property/eigenschaft/doi: {}",
+              likeTables)
+        } catch (_: Exception) {}
+        null
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AIWorkflowAssistant] Failed to fetch completion pages: ${e.message}")
+      null
+    }
+  }
+
+  /**
+   * Resolves the UUID of a completion page (Abschlussseite) by its name. Uses JPQL with known
+   * FORMCYCLE entity class names first, then falls back to native SQL with schema discovery.
+   */
+  private fun resolveCompletionPageUuid(
+      userContext: Any,
+      workflowVersion: Any,
+      pageName: String
+  ): UUID? {
+    if (pageName.isBlank()) return null
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      val project =
+          workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion) ?: return null
+      val projectId = project.javaClass.getMethod("getId").invoke(project) as? Long ?: return null
+
+      // Strategy 1: Try JPQL navigating from Projekt entity (collection property)
+      val projektCollectionProperties =
+          listOf(
+              "p.abschlussSeiten",
+              "p.completionPages",
+              "p.projektAbschlussSeiten",
+              "p.absclussSeiten")
+      for (collectionPath in projektCollectionProperties) {
+        try {
+          val jpql =
+              "SELECT cp FROM de.xima.fc.entities.Projekt p JOIN $collectionPath cp WHERE p.id = :pid AND cp.name = :name"
+          val query = em.createQuery(jpql)
+          query.setParameter("pid", projectId)
+          query.setParameter("name", pageName)
+          val results = query.resultList
+          if (results.isNotEmpty()) {
+            val cp = results[0] ?: continue
+            val uuid = cp.javaClass.getMethod("getUUIDObject").invoke(cp) as? UUID
+            if (uuid != null) {
+              logger.info(
+                  "[AIWorkflowAssistant] Resolved completion page '{}' to UUID {} via Projekt collection '$collectionPath'",
+                  pageName,
+                  uuid)
+              return uuid
+            }
+          }
+        } catch (_: Exception) {
+          continue
+        }
+      }
+
+      // Strategy 2: Try JPQL with known entity class names
+      val entityClasses =
+          listOf(
+              "de.xima.fc.entities.ProjectDOIData",
+              "de.xima.fc.entities.CompletionPage",
+              "de.xima.fc.entities.ProjektAbschlussSeite",
+              "de.xima.fc.entities.AbschlussSeite",
+              "de.xima.fc.entities.ProjektAbschluss",
+              "de.xima.fc.entities.Abschluss")
+      for (entityClass in entityClasses) {
+        try {
+          val jpql =
+              "SELECT cp FROM $entityClass cp WHERE cp.name = :name AND (cp.project.id = :pid OR cp.projekt.id = :pid)"
+          val query = em.createQuery(jpql)
+          query.setParameter("name", pageName)
+          query.setParameter("pid", projectId)
+          val results = query.resultList
+          if (results.isNotEmpty()) {
+            val cp = results[0] ?: continue
+            val uuid = cp.javaClass.getMethod("getUUIDObject").invoke(cp) as? UUID
+            if (uuid != null) {
+              logger.info(
+                  "[AIWorkflowAssistant] Resolved completion page '{}' to UUID {} via JPQL entity '{}'",
+                  pageName,
+                  uuid,
+                  entityClass)
+              return uuid
+            }
+          }
+        } catch (_: Exception) {
+          continue
+        }
+      }
+
+      // Strategy 3: Native SQL with schema discovery (expanded table names)
+      val possibleTables =
+          listOf(
+              "PROJECT_DOI_DATA",
+              "COMPLETION_PAGE",
+              "PROJEKT_ABSCHLUSS_SEITE",
+              "PROJEKTABSCHLUSSSEITE",
+              "PROJECT_COMPLETION_PAGE",
+              "ABSCHLUSS_SEITE",
+              "ABSCHLUSSSEITE",
+              "FORM_COMPLETION_PAGE",
+              "WORKFLOW_COMPLETION_PAGE",
+              "PROJEKT_ABSCHLUSS",
+              "PROJEKTABSCHLUSS")
+      for (tableName in possibleTables) {
+        try {
+          val nameColQuery =
+              em.createNativeQuery(
+                  "SELECT column_name FROM information_schema.columns WHERE table_name = :tbl AND (column_name IN ('NAME', 'BEZEICHNUNG', 'TITLE', 'UUID')) ORDER BY ordinal_position")
+          nameColQuery.setParameter("tbl", tableName)
+          val cols = nameColQuery.resultList.map { it.toString().uppercase() }
+          if (cols.isEmpty()) continue
+          val hasUuidCol = "UUID" in cols
+          val nameCol =
+              when {
+                "NAME" in cols -> "NAME"
+                "BEZEICHNUNG" in cols -> "BEZEICHNUNG"
+                "TITLE" in cols -> "TITLE"
+                else -> continue
+              }
+          val idCol = if (hasUuidCol) "UUID" else "ID"
+          val projectColQuery =
+              em.createNativeQuery(
+                  "SELECT column_name FROM information_schema.columns WHERE table_name = :tbl AND (column_name = 'PROJECT_ID' OR column_name = 'PROJEKT_ID' OR column_name = 'PROJEKTID' OR column_name = 'FK_PROJEKT') ORDER BY ordinal_position")
+          projectColQuery.setParameter("tbl", tableName)
+          val pcols = projectColQuery.resultList
+          val projectCol = if (pcols.isNotEmpty()) pcols[0].toString() else null
+          val sql =
+              if (projectCol != null)
+                  "SELECT $idCol FROM $tableName WHERE $nameCol = :name AND $projectCol = :pid"
+              else "SELECT $idCol FROM $tableName WHERE $nameCol = :name"
+          val query = em.createNativeQuery(sql)
+          query.setParameter("name", pageName)
+          if (projectCol != null) query.setParameter("pid", projectId)
+          val results = query.resultList
+          if (results.isNotEmpty()) {
+            val raw = results[0].toString()
+            return try {
+              UUID.fromString(raw)
+            } catch (_: Exception) {
+              UUID.nameUUIDFromBytes(raw.toByteArray())
+            }
+          }
+        } catch (_: Exception) {
+          continue
+        }
+      }
+      logger.warn(
+          "[AIWorkflowAssistant] Completion page '{}' not found in any table for project $projectId",
+          pageName)
+      return null
+    } catch (e: Exception) {
+      logger.warn(
+          "[AIWorkflowAssistant] Could not resolve completion page UUID for '{}': {}",
+          pageName,
+          e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
   // endregion Parameter JSON Builders
 
   // region JSON Utilities
@@ -1082,7 +2040,8 @@ class AIWorkflowAssistant : IPluginServletAction {
       val triggerParams: Map<String, Any> = emptyMap(),
       val nodeType: String = "FC_EMAIL",
       val nodeParams: Map<String, Any> = emptyMap(),
-      val endpointState: String = "Received"
+      val endpointState: String = "Received",
+      val stateProperties: Map<String, Any> = emptyMap()
   )
 
   // endregion Data Classes

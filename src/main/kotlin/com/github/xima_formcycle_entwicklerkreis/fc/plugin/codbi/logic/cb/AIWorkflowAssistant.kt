@@ -323,7 +323,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             "\"contentType\":\"JSON|PLAIN_TEXT|XML|FORM_DATA\" (default JSON), " +
             "\"headers\":[{\"name\":\"<header>\",\"value\":\"<value>\"},...] (optional)}\n" +
             "    The httpRequestType is automatically derived from contentType: \"CUSTOM\" for JSON|PLAIN_TEXT|XML, " +
-            "\"FORM_DATA\" for FORM_DATA, \"URL\" when no body is needed (GET/DELETE).\n" +
+            "\"FORM_DATA\" for FORM_DATA, \"URL\" when no body is needed (GET/DELETE/OPTIONS or POST with empty body).\n" +
             "  - \"FC_CHANGE_FORM_VALUE\" — sets the value of one or more form fields; " +
             "nodeParams: {\"formValues\":[{\"name\":\"<technicalId>\",\"value\":\"<new value>\"},...]}⁠\n" +
             "  - \"FC_LOG_ENTRY\" — writes a log message to the process log; " +
@@ -1409,12 +1409,13 @@ class AIWorkflowAssistant : IPluginServletAction {
         // Map contentType to httpRequestType enum:
         //   CUSTOM – for JSON/PLAIN_TEXT/XML (body provided as customBodyContent)
         //   FORM_DATA – for FORM_DATA (key-value pairs in requestParameters)
-        //   URL – for GET/DELETE/HEAD (no body, parameters sent as query string)
+        //   URL – for GET/DELETE/HEAD/OPTIONS OR when no body content is specified
         val httpRequestType =
             when {
               method == "GET" || method == "DELETE" || method == "HEAD" || method == "OPTIONS" ->
                   "URL"
               contentType == "FORM_DATA" -> "FORM_DATA"
+              body.isBlank() -> "URL" // POST with no body content → use URL type
               else -> "CUSTOM" // JSON, PLAIN_TEXT, XML → custom body content
             }
         val nodeParamsJson =

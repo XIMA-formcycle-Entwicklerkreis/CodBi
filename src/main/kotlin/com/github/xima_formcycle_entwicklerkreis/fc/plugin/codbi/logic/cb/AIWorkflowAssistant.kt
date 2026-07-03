@@ -1417,13 +1417,21 @@ class AIWorkflowAssistant : IPluginServletAction {
               contentType == "FORM_DATA" -> "FORM_DATA"
               else -> "CUSTOM" // JSON, PLAIN_TEXT, XML → custom body content
             }
-        if (httpRequestType == "FORM_DATA") {
-          """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
-        } else if (httpRequestType == "URL") {
-          """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
-        } else {
-          """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
-        }
+        val nodeParamsJson =
+            if (httpRequestType == "FORM_DATA") {
+              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+            } else if (httpRequestType == "URL") {
+              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+            } else {
+              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+            }
+        logger.info(
+            "[AIWorkflowAssistant] buildNodeParams FC_HTTP_REQUEST: url='{}', httpVerb='{}', httpRequestType='{}', params={}",
+            url,
+            method,
+            httpRequestType,
+            nodeParamsJson)
+        nodeParamsJson
       }
       "FC_CHANGE_FORM_VALUE" -> {
         @Suppress("UNCHECKED_CAST")

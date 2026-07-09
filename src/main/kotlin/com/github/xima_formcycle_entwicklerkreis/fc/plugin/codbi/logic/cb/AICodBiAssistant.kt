@@ -440,10 +440,11 @@ class AICodBiAssistant : IPluginServletAction {
     val systemPrompt =
         "You are a FORMCYCLE assistant router. Based on the user's request, determine what type of change is needed:\n" +
             "- \"form\": changes to the form structure (adding/removing/modifying form fields, labels, buttons, layout, etc.) OR applying CodBi functionalities (AI.OCR, HTML.Panel, Form.Navigator, Sys.Log.Console, etc.) OR activating/deactivating standard configurations (tracking, analytics, panels, autocomplete) — these are form property changes, NOT workflows.\n" +
-            "- \"workflow\": creating or modifying workflow automations (emails after submission, state changes, triggers, notifications, etc.)\n" +
+            "- \"workflow\": creating or modifying workflow automations (emails after submission, state changes, triggers, notifications, file downloads, etc.)\n" +
             "- \"both\": both form structure changes AND workflow automations in the same request\n" +
             "Examples: \"Add an upload field that extracts document text\" → form (this adds fields and applies CodBi AI.OCR functionality, no workflow). \"Send an email when the form is submitted\" → workflow. \"Add an upload field and send its content via email after submission\" → both.\n" +
             "\"Gib in der Konsole ... aus\" / \"console output\" / \"log variable to console\" → form (Sys.Log.Console is a CodBi form functionality, NOT a workflow). \"Erstelle einen Bereich\" / \"add a panel\" → form. \"Sende eine E-Mail\" / \"send an email\" → workflow.\n" +
+            "\"Datei herunterladen\" / \"file download\" / \"soll heruntergeladen werden\" when combined with \"submit\" / \"absenden\" / \"Klick\" → workflow (downloading a file on form submission is a workflow automation, NOT a form structure change).\n" +
             "Respond ONLY with valid JSON: {\"intent\":\"form\"} or {\"intent\":\"workflow\"} or {\"intent\":\"both\"}\n" +
             "No explanation, no markdown, no code fences."
 
@@ -590,6 +591,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "=== BayVIS === CodBi_BayVIS_*\n" +
                 "=== OpenPLZ.AC.SET === CodBi_OpenPLZ_AC_SET_*\n" +
                 "CRITICAL: CSS classes ONLY exist for the domains listed above. For any functionality NOT listed here (e.g. Form.Navigator, OpenPLZ.Autocomplete, Date.Min, Date.NoWeekends, HTML.Input.REGEX, HTML.CSS, etc.), there is NO CSS class — you MUST use data-cb-func. NEVER invent CSS class names.\n" +
+                "CRITICAL — FILE DOWNLOAD ON SUBMIT: When the original user request asks for a file to be downloaded when a button is clicked or the form is submitted (e.g. \"soll heruntergeladen werden\", \"file download\"), do NOT add data-cb-download or any similar custom attribute. This is NOT a CodBi functionality — it requires a workflow FC_RETURN_FILE node. Leave the form unchanged.\n" +
                 "Respond ONLY with a JSON object: " +
                 "{\"items\":[...all elements, modified where CodBi applies...],\"_codbiApplicability\":{\"formElementsProcessed\":N,\"codbiElementsEvaluated\":23 (replace counts)," +
                 "\"considered\":[{\"id\":\"CodBi.ID\",\"targets\":[\"elementId\",...]}]," +
@@ -1105,6 +1107,10 @@ class AICodBiAssistant : IPluginServletAction {
           "XFieldSet legend='Kontaktdaten unserer Einrichtung' containing XTextField label='Name', " +
           "XTextField label='Mailadresse', XTextField label='Telefon'. " +
           "This applies to any field with a comma-separated sub-item list regardless of topic (contact details, location info, document references, etc.).\n\n" +
+          "17. CRITICAL — FILE DOWNLOAD ON SUBMIT: When the prompt asks to download a file when a button is clicked or when the form is submitted (e.g. \"soll heruntergeladen werden\", \"file download\", \"download xoxo.txt\"), this is a WORKFLOW automation action. " +
+          "Do NOT handle it via data-cb-* attributes on the button or any form element. " +
+          "Do NOT invent data-cb-download or any similar custom attribute. " +
+          "Leave the form structure unchanged and report this in _codbiApplicability with an explanation that this requires a workflow FC_RETURN_FILE node, not a form change.\n\n" +
           "ITEM TEMPLATES — minimal valid structure for each className (adapt name/id/label).\n" +
           "WARNING for XButtonList template: the value 'submit' in action.page is a literal server command, " +
           "NOT a placeholder. Do NOT change it. Copy the template exactly for submit buttons.\n" +
@@ -2911,6 +2917,246 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Queries the database for available HTML templates for the given workflow version's project.
+   * These are templates stored in TEMPLATE_CLIENT, FORM_TEMPLATE, or similar tables that can be
+   * used with the FC_SHOW_TEMPLATE workflow node.
+   *
+   * @return A compact JSON array string like `[{"name":"Allgemeiner Fehler 2","uuid":"..."},...]`,
+   *   or `null` if the query fails.
+   */
+  private fun fetchHtmlTemplates(userContext: Any, workflowVersionId: Long): String? {
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId) ?: return null
+      val project =
+          workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion) ?: return null
+      val projectId = project.javaClass.getMethod("getId").invoke(project) as? Long ?: return null
+
+      val emf = CodbiEntities.entityManagerFactory ?: return null
+      val em = emf.createEntityManager()
+      try {
+        // Strategy 1: Try JPQL with entity class names for HTML/template entities
+        val entityClasses =
+            listOf(
+                "de.xima.fc.entities.ClientTemplate",
+                "de.xima.fc.entities.TextTemplate",
+                "de.xima.fc.entities.FormTemplate",
+                "de.xima.fc.entities.ProjectDOIData",
+                "de.xima.fc.entities.CompletionPage",
+                "de.xima.fc.entities.ProjektAbschlussSeite",
+                "de.xima.fc.entities.AbschlussSeite",
+                "de.xima.fc.entities.ProjektAbschluss",
+                "de.xima.fc.entities.Abschluss")
+        for (entityClass in entityClasses) {
+          try {
+            val countQuery = em.createQuery("SELECT COUNT(t) FROM $entityClass t")
+            val totalCount = (countQuery.singleResult as? Number)?.toLong() ?: 0L
+            if (totalCount == 0L) {
+              logger.debug(
+                  "[AICodBiAssistant] JPQL HTML template entity '$entityClass' has 0 total rows")
+              continue
+            }
+            val fetchQuery = em.createQuery("SELECT t FROM $entityClass t")
+            fetchQuery.maxResults = 200
+            @Suppress("UNCHECKED_CAST")
+            val allResults = (fetchQuery.resultList as? List<Any>) ?: continue
+            if (allResults.isEmpty()) continue
+            val first = allResults[0]
+            val methods = first.javaClass.methods
+
+            // Filter by project
+            val projectIdGetters = listOf("getProjektId", "getProjectId")
+            var projectIdGetter: java.lang.reflect.Method? = null
+            for (gName in projectIdGetters) {
+              try {
+                projectIdGetter = first.javaClass.getMethod(gName)
+                break
+              } catch (_: Exception) {}
+            }
+            val projectRefGetters =
+                methods.filter { m ->
+                  m.name.startsWith("get") &&
+                      m.parameterCount == 0 &&
+                      (m.name.contains("Projekt", ignoreCase = true) ||
+                          m.name.contains("Project", ignoreCase = true))
+                }
+            val filteredResults =
+                if (projectIdGetter != null) {
+                  allResults.filter { t ->
+                    try {
+                      projectIdGetter!!.invoke(t)?.toString() == projectId.toString()
+                    } catch (_: Exception) {
+                      false
+                    }
+                  }
+                } else if (projectRefGetters.isNotEmpty()) {
+                  allResults.filter { t ->
+                    projectRefGetters.any { getter ->
+                      try {
+                        val ref = getter.invoke(t)
+                        ref?.javaClass?.getMethod("getId")?.invoke(ref)?.toString() ==
+                            projectId.toString()
+                      } catch (_: Exception) {
+                        false
+                      }
+                    }
+                  }
+                } else allResults
+
+            if (filteredResults.isEmpty()) {
+              logger.debug(
+                  "[AICodBiAssistant] JPQL HTML template entity '$entityClass' has {} total rows, 0 for project $projectId",
+                  totalCount)
+              continue
+            }
+
+            val templates =
+                filteredResults.mapNotNull { t ->
+                  try {
+                    var name: String? = null
+                    try {
+                      name = t.javaClass.getMethod("getName").invoke(t) as? String
+                    } catch (_: Exception) {}
+                    if (name == null) {
+                      try {
+                        name = t.javaClass.getMethod("getTemplateName").invoke(t) as? String
+                      } catch (_: Exception) {}
+                    }
+                    if (name == null) {
+                      val strGetters =
+                          methods.filter { m ->
+                            m.returnType == String::class.java &&
+                                (m.name.contains("ame", ignoreCase = true) ||
+                                    m.name.contains("itle", ignoreCase = true) ||
+                                    m.name.contains("ezeichnung", ignoreCase = true))
+                          }
+                      name = strGetters.firstOrNull()?.invoke(t) as? String
+                    }
+                    val nm = name ?: return@mapNotNull null
+                    val uuidObj: UUID? =
+                        try {
+                          t.javaClass.getMethod("getUUIDObject").invoke(t) as? UUID
+                        } catch (_: Exception) {
+                          try {
+                            val s = t.javaClass.getMethod("getUuid").invoke(t) as? String
+                            if (s != null) UUID.fromString(s) else null
+                          } catch (_: Exception) {
+                            null
+                          }
+                        }
+                    val uu = uuidObj ?: return@mapNotNull null
+                    """{"name":${gson.toJson(nm)},"uuid":${gson.toJson(uu.toString())}}"""
+                  } catch (_: Exception) {
+                    null
+                  }
+                }
+            if (templates.isNotEmpty()) {
+              val json = "[${templates.joinToString(",")}]"
+              logger.info(
+                  "[AICodBiAssistant] Found {} HTML templates via JPQL entity '$entityClass' for project $projectId: {}",
+                  templates.size,
+                  json)
+              return json
+            }
+          } catch (e: Exception) {
+            logger.debug(
+                "[AICodBiAssistant] JPQL entity class '$entityClass' not available: ${e.message}")
+            continue
+          }
+        }
+
+        // Strategy 2: Native SQL with schema discovery for template-related tables
+        val possibleTables =
+            listOf(
+                "TEMPLATE_CLIENT",
+                "FORM_TEMPLATE",
+                "TEXT_TEMPLATE",
+                "CLIENT_TEMPLATE",
+                "PROJECT_DOI_DATA",
+                "COMPLETION_PAGE",
+                "PROJEKT_ABSCHLUSS_SEITE",
+                "PROJEKTABSCHLUSSSEITE",
+                "PROJECT_COMPLETION_PAGE",
+                "ABSCHLUSS_SEITE",
+                "ABSCHLUSSSEITE",
+                "FORM_COMPLETION_PAGE",
+                "WORKFLOW_COMPLETION_PAGE",
+                "PROJEKT_ABSCHLUSS",
+                "PROJEKTABSCHLUSS")
+        for (tableName in possibleTables) {
+          try {
+            val columnsQuery =
+                em.createNativeQuery(
+                    "SELECT column_name FROM information_schema.columns WHERE UPPER(table_name) = :tbl ORDER BY ordinal_position")
+            columnsQuery.setParameter("tbl", tableName)
+            val columns = columnsQuery.resultList
+            if (columns.isEmpty()) continue
+            val colNames = columns.map { it.toString().uppercase() }
+            val hasName = colNames.any { it == "NAME" || it == "BEZEICHNUNG" || it == "TITLE" }
+            val hasUuid = colNames.any { it == "UUID" }
+            val projectCol =
+                colNames.firstOrNull {
+                  it == "PROJECT_ID" ||
+                      it == "PROJEKT_ID" ||
+                      it == "PROJEKTID" ||
+                      it == "FK_PROJEKT"
+                }
+            val nameCol =
+                when {
+                  "NAME" in colNames -> "NAME"
+                  "BEZEICHNUNG" in colNames -> "BEZEICHNUNG"
+                  "TITLE" in colNames -> "TITLE"
+                  else -> null
+                }
+            if (nameCol == null) continue
+            val selectCol = if (hasUuid) "UUID, $nameCol" else "ID, $nameCol"
+            val sql =
+                if (projectCol != null)
+                    "SELECT $selectCol FROM $tableName WHERE $projectCol = :pid ORDER BY $nameCol"
+                else "SELECT $selectCol FROM $tableName ORDER BY $nameCol"
+            val query = em.createNativeQuery(sql)
+            if (projectCol != null) query.setParameter("pid", projectId)
+            val results = query.resultList
+            if (results.isEmpty()) continue
+            val templates =
+                results.mapNotNull { row ->
+                  when (row) {
+                    is Array<*> -> {
+                      val idOrUuid = row[0]?.toString() ?: return@mapNotNull null
+                      val name = row[1]?.toString() ?: return@mapNotNull null
+                      """{"name":${gson.toJson(name)},"uuid":${gson.toJson(idOrUuid)}}"""
+                    }
+                    else -> null
+                  }
+                }
+            val json = "[${templates.joinToString(",")}]"
+            logger.info(
+                "[AICodBiAssistant] Found {} HTML templates via native table '$tableName' for project $projectId: {}",
+                templates.size,
+                json)
+            return json
+          } catch (_: Exception) {
+            continue
+          }
+        }
+
+        logger.warn("[AICodBiAssistant] No HTML template table found")
+        null
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to fetch HTML templates: ${e.message}")
+      null
+    }
+  }
+
+  /**
    * Runs the workflow-creation AI call and creates the workflow task in FORMCYCLE. Unlike
    * [AIWorkflowAssistant], this method does NOT use a multi-turn context protocol: the frontend
    * already supplies [formElements] in phase 2, so a single AI call suffices.
@@ -2932,12 +3178,156 @@ class AICodBiAssistant : IPluginServletAction {
     logger.debug(
         "[AICodBiAssistant] runWorkflowCreation: completionPages={}",
         completionPagesJson ?: "null (no pages found or query failed)")
+    val htmlTemplatesJson = fetchHtmlTemplates(userContext, workflowVersionId)
+    logger.debug(
+        "[AICodBiAssistant] runWorkflowCreation: htmlTemplates={}",
+        htmlTemplatesJson ?: "null (no templates found or query failed)")
+    // DEBUG: Log custom_parameters of existing FC_SHOW_TEMPLATE nodes to identify the correct JSON
+    // format
+    try {
+      val emfDebug = CodbiEntities.entityManagerFactory
+      if (emfDebug != null) {
+        val emDebug = emfDebug.createEntityManager()
+        try {
+          // Discover ALL column names of workflow_node dynamically
+          val allColQuery =
+              emDebug.createNativeQuery(
+                  "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'WORKFLOW_NODE' ORDER BY ordinal_position")
+          val allCols = allColQuery.resultList
+          logger.warn("[AICodBiAssistant] DEBUG: Full workflow_node schema:")
+          for (col in allCols) {
+            when (col) {
+              is Array<*> ->
+                  logger.warn("[AICodBiAssistant] DEBUG:   column: {} ({})", col[0], col[1])
+            }
+          }
+          // Find the type column and custom_params column
+          // Prefer CUSTOM_PARAMS (the actual config JSON) over CUSTOM_PARAMS_VER (version number)
+          var typeCol: String? = null
+          var customParamsCol: String? = null
+          var customParamsVerCol: String? = null
+          for (col in allCols) {
+            when (col) {
+              is Array<*> -> {
+                val colName = col[0]?.toString()?.uppercase() ?: ""
+                if (colName == "ITEM_TYPE") typeCol = col[0].toString()
+                else if (colName == "CUSTOM_PARAMS") customParamsCol = col[0].toString()
+                else if (colName == "CUSTOM_PARAMS_VER") customParamsVerCol = col[0].toString()
+              }
+            }
+          }
+          typeCol = typeCol ?: "ITEM_TYPE"
+          customParamsCol = customParamsCol ?: "CUSTOM_PARAMS"
+          logger.warn(
+              "[AICodBiAssistant] DEBUG: Using typeCol='{}', customParamsCol='{}'",
+              typeCol,
+              customParamsCol)
+          if (customParamsCol != null) {
+            // Cast CLOB to VARCHAR to read the actual JSON content
+            val debugQuery =
+                emDebug.createNativeQuery(
+                    "SELECT id, CAST($customParamsCol AS VARCHAR(10000)) FROM workflow_node WHERE $typeCol = 'FC_SHOW_TEMPLATE' AND $customParamsCol IS NOT NULL ORDER BY id DESC")
+            debugQuery.maxResults = 5
+            val debugResults = debugQuery.resultList
+            if (debugResults.isNotEmpty()) {
+              logger.warn("[AICodBiAssistant] DEBUG: Existing FC_SHOW_TEMPLATE nodes:")
+              for (row in debugResults) {
+                when (row) {
+                  is Array<*> ->
+                      logger.warn(
+                          "[AICodBiAssistant] DEBUG:   node id={}, params={}", row[0], row[1])
+                }
+              }
+            } else {
+              logger.warn(
+                  "[AICodBiAssistant] DEBUG: No FC_SHOW_TEMPLATE nodes found with $customParamsCol IS NOT NULL")
+            }
+          }
+          // DEBUG: Also query FC_REDIRECT nodes to see their ITEM_NAME (node name)
+          try {
+            val redirectQuery =
+                emDebug.createNativeQuery(
+                    "SELECT id, ITEM_NAME, CAST($customParamsCol AS VARCHAR(500)) FROM workflow_node WHERE ITEM_TYPE = 'FC_REDIRECT' AND $customParamsCol IS NOT NULL ORDER BY id DESC")
+            redirectQuery.maxResults = 10
+            val redirectResults = redirectQuery.resultList
+            if (redirectResults.isNotEmpty()) {
+              logger.warn("[AICodBiAssistant] DEBUG: Existing FC_REDIRECT nodes:")
+              for (row in redirectResults) {
+                when (row) {
+                  is Array<*> ->
+                      logger.warn(
+                          "[AICodBiAssistant] DEBUG:   node id={}, name='{}', params={}",
+                          row[0],
+                          row[1],
+                          if ((row[2] as? String)?.length ?: 0 > 200) (row[2] as? String)?.take(200)
+                          else row[2])
+                }
+              }
+            } else {
+              logger.warn("[AICodBiAssistant] DEBUG: No FC_REDIRECT nodes found")
+            }
+            // Also query SEQUENCE nodes to compare their naming
+            val seqQuery =
+                emDebug.createNativeQuery(
+                    "SELECT id, ITEM_NAME, ITEM_TYPE FROM workflow_node WHERE ITEM_TYPE = 'SEQUENCE' ORDER BY id DESC")
+            seqQuery.maxResults = 5
+            val seqResults = seqQuery.resultList
+            if (seqResults.isNotEmpty()) {
+              logger.warn("[AICodBiAssistant] DEBUG: SEQUENCE nodes:")
+              for (row in seqResults) {
+                when (row) {
+                  is Array<*> ->
+                      logger.warn(
+                          "[AICodBiAssistant] DEBUG:   node id={}, name='{}', type='{}'",
+                          row[0],
+                          row[1],
+                          row[2])
+                }
+              }
+            }
+            // Also query ALL nodes (any type) for the most recent 5 to see their data
+            try {
+              val allQuery =
+                  emDebug.createNativeQuery(
+                      "SELECT id, ITEM_TYPE, ITEM_NAME, CAST($customParamsCol AS VARCHAR(500)) FROM workflow_node ORDER BY id DESC")
+              allQuery.maxResults = 10
+              val allResults = allQuery.resultList
+              if (allResults.isNotEmpty()) {
+                logger.warn("[AICodBiAssistant] DEBUG: Most recent 10 nodes:")
+                for (row in allResults) {
+                  when (row) {
+                    is Array<*> ->
+                        logger.warn(
+                            "[AICodBiAssistant] DEBUG:   node id={}, type='{}', name='{}', params_len={}",
+                            row[0],
+                            row[1],
+                            row[2],
+                            (row[3] as? String)?.length ?: 0)
+                  }
+                }
+              }
+            } catch (e: Exception) {
+              logger.warn("[AICodBiAssistant] DEBUG all nodes query failed: ${e.message}")
+            }
+          } catch (e: Exception) {
+            logger.warn("[AICodBiAssistant] DEBUG FC_REDIRECT query failed: ${e.message}")
+          }
+        } catch (e: Exception) {
+          logger.warn("[AICodBiAssistant] DEBUG query failed: ${e.message}")
+        } finally {
+          emDebug.close()
+        }
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] DEBUG setup failed: ${e.message}")
+    }
     val workflowStatesJson = fetchWorkflowStates(userContext, workflowVersionId)
     logger.debug(
         "[AICodBiAssistant] runWorkflowCreation: workflowStates={}",
         workflowStatesJson ?: "null (no states found or query failed)")
     val systemPrompt =
-        buildWorkflowSystemPrompt(formElements, completionPagesJson, workflowStatesJson)
+        buildWorkflowSystemPrompt(
+            formElements, htmlTemplatesJson, completionPagesJson, workflowStatesJson)
 
     val messagesJson = buildString {
       append("[")
@@ -2993,11 +3383,14 @@ class AICodBiAssistant : IPluginServletAction {
    * Builds the system prompt for the workflow-creation AI call. When [formContext] is provided, it
    * is embedded so the AI can match field/button names. When [completionPages] is provided, it
    * lists available Abschlussseiten (completion pages) that the AI can select for FC_DOI_INIT
-   * failure pages. Unlike [AIWorkflowAssistant.buildSystemPrompt], there is no phase-1 "signal
-   * needed" section: the frontend always supplies form elements before calling this.
+   * failure pages. When [htmlTemplates] is provided, it lists available HTML templates that the AI
+   * can select for FC_SHOW_TEMPLATE node creation. Unlike [AIWorkflowAssistant.buildSystemPrompt],
+   * there is no phase-1 "signal needed" section: the frontend always supplies form elements before
+   * calling this.
    */
   private fun buildWorkflowSystemPrompt(
       formContext: String?,
+      htmlTemplates: String? = null,
       completionPages: String? = null,
       workflowStates: String? = null
   ): String = buildString {
@@ -3010,6 +3403,14 @@ class AICodBiAssistant : IPluginServletAction {
             "  Single lane: {\"taskName\":\"...\", \"taskDescription\":\"...\", \"triggerType\":\"...\", \"triggerParams\":{}, \"nodeType\":\"...\", \"nodeParams\":{}}\n" +
             "  Multiple lanes: [{\"taskName\":\"...\", ...}, {\"taskName\":\"...\", ...}]\n" +
             "  Each object has exactly these keys: taskName, taskDescription, triggerType, triggerParams, nodeType, nodeParams, endpointState.\n" +
+            "  taskName MUST be a short, meaningful AND SPECIFIC description of the workflow action. " +
+            "Include key details like the target URL (without http://), template name, parameter names/values, or email subject. " +
+            "EXAMPLES: \"Redirect to msn de with parameter F2 equals YOLO\" (NOT generic like \"Redirect on submit with parameter\"), " +
+            "\"Show Allgemeiner Fehler 2 completion page\", \"Send DOI email with subject Welcome\".\n" +
+            "  taskName CHARACTER RESTRICTIONS — only the following characters are allowed: letters (a-z, A-Z), numbers (0-9), spaces, hyphens (-), underscores (_), and parentheses (). " +
+            "Characters like dots (.), equals signs (=), slashes (/), colons (:), question marks (?), ampersands (&), and all other special characters are FORBIDDEN in taskName. " +
+            "If the user's prompt contains such characters, replace them with allowed alternatives (e.g. \"msn.de\" → \"msn de\", \"F2=YOLO\" → \"F2 equals YOLO\", \"http://...\" → omit the protocol).\n" +
+            "Do NOT leave taskName empty or use generic names like \"AI-generated task\".\n" +
             "  CRITICAL — Use an array ONLY when the user's request describes MULTIPLE INDEPENDENT workflows triggered by DIFFERENT events.\n" +
             "  Example of when to use an array: \"Send a DOI invitation when the form is submitted, then send a welcome email after the email is confirmed.\"\n" +
             "    → Lane 1: FC_FORM_SUBMIT_BUTTON → FC_DOI_INIT, Lane 2: FC_DOI_VERIFIED → FC_EMAIL\n" +
@@ -3062,7 +3463,7 @@ class AICodBiAssistant : IPluginServletAction {
             "    The 'Limit to certain error' property category has these configurable filters (all optional):\n" +
             "      - \"Action Name\" (nodeName) — filter by the name of the specific action/node instance that raised the error\n" +
             "      - \"Action Name match type\" (nodeNameMatchType) — \"EXACT\"|\"CONTAINS\"|\"STARTS_WITH\"|\"ENDS_WITH\"\n" +
-            "      - \"Action Type\" (nodeType) — filter by the type of action; available values: FC_EMAIL, FC_HTTP_REQUEST, FC_CHANGE_STATE, FC_SQL_STATEMENT, FC_DOI_INIT, FC_COUNTER, FC_EXPORT_TO_XML, FC_SAVE_TO_WEBDAV, FC_CREATE_TEXT_FILE, FC_PROMPT_QUERY, FC_SWITCH, FC_CHANGE_FORM_AVAILABILITY, FC_FOR_EACH_LOOP, FC_WRITE_FORM_RECORD_ATTR, FC_EXPORT_TO_PERSISTENCE, FC_CHANGE_FORM_VALUE, FC_SHOW_TEMPLATE, FC_FILL_PDF, FC_COMPRESS_AS_ZIP, FC_SAVE_TO_FILE_SYSTEM, FC_LDAP_QUERY, FC_ENCODE_BASE64, FC_DECODE_BASE64, FC_RETURN_FILE, FC_MOVE_FORM_RECORD_TO_INBOX, FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, FC_PROCESS_LOG_PDF, FC_SET_SAVED_FLAG, FC_SET_FORM_RECORD_PASSWORD, FC_RENEW_PROCESS_ID, FC_CHANGE_FORM_RECORD_ACTIVENESS, FC_COPY_FORM_RECORD, FC_DELETE_ATTACHMENT, FC_FILL_WORD, FC_WITH_FORM_ELEMENT_CONTEXT, FC_SEND_FORM_RECORD_MESSAGE, FC_QUEUE_TASK, FC_LOG_ENTRY, FC_EXPORT_FORM_RECORD_CHATS, FC_REDIRECT, FC_MULTIPLE_CONDITION, FC_PROVIDE_RESOURCE, FC_THROW_EXCEPTION, FC_IMPORT_FORM_VALUE_FROM_XML, FC_EXPERIMENT\n" +
+            "      - \"Action Type\" (nodeType) — filter by the type of action; available values: FC_EMAIL, FC_POST_REQUEST, FC_CHANGE_STATE, FC_SQL_STATEMENT, FC_DOI_INIT, FC_COUNTER, FC_EXPORT_TO_XML, FC_SAVE_TO_WEBDAV, FC_CREATE_TEXT_FILE, FC_PROMPT_QUERY, FC_SWITCH, FC_CHANGE_FORM_AVAILABILITY, FC_FOR_EACH_LOOP, FC_WRITE_FORM_RECORD_ATTR, FC_EXPORT_TO_PERSISTENCE, FC_CHANGE_FORM_VALUE, FC_SHOW_TEMPLATE, FC_FILL_PDF, FC_COMPRESS_AS_ZIP, FC_SAVE_TO_FILE_SYSTEM, FC_LDAP_QUERY, FC_ENCODE_BASE64, FC_DECODE_BASE64, FC_RETURN_FILE, FC_MOVE_FORM_RECORD_TO_INBOX, FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, FC_PROCESS_LOG_PDF, FC_SET_SAVED_FLAG, FC_SET_FORM_RECORD_PASSWORD, FC_RENEW_PROCESS_ID, FC_CHANGE_FORM_RECORD_ACTIVENESS, FC_COPY_FORM_RECORD, FC_DELETE_ATTACHMENT, FC_FILL_WORD, FC_WITH_FORM_ELEMENT_CONTEXT, FC_SEND_FORM_RECORD_MESSAGE, FC_QUEUE_TASK, FC_LOG_ENTRY, FC_EXPORT_FORM_RECORD_CHATS, FC_REDIRECT, FC_MULTIPLE_CONDITION, FC_PROVIDE_RESOURCE, FC_THROW_EXCEPTION, FC_IMPORT_FORM_VALUE_FROM_XML, FC_EXPERIMENT\n" +
             "      - \"Action Type match type\" (nodeTypeMatchType) — \"EXACT\"|\"CONTAINS\"|\"STARTS_WITH\"|\"ENDS_WITH\"\n" +
             "      - \"Error Code\" (errorCode) — filter by specific error code (e.g. EMAIL_SEND_FAILED, DATABASE_ERROR, NETWORK_FAILURE)\n" +
             "      - \"Error Code match type\" (errorCodeMatchType) — \"EXACT\"|\"CONTAINS\"|\"STARTS_WITH\"|\"ENDS_WITH\"\n" +
@@ -3097,20 +3498,43 @@ class AICodBiAssistant : IPluginServletAction {
             "\"attachments\":[\"<technicalId1>\",...] (optional — technicalIds of XUpload fields whose files to attach)}\n" +
             "  - \"FC_CHANGE_STATE\" — changes the form record state; " +
             "nodeParams: {\"stateName\":\"<FORMCYCLE status name>\"}\n" +
-            "  - \"FC_HTTP_REQUEST\" — sends an HTTP request (e.g. webhook, REST API call); " +
-            "nodeParams: {\"url\":\"<target URL — REQUIRED, must be set to the exact URL from the user's prompt>\", " +
-            "\"method\":\"POST|GET|PUT|DELETE|PATCH\" (default POST), " +
-            "\"body\":\"<request body, supports [%placeholder%] to reference form field values>\", " +
-            "\"contentType\":\"JSON|PLAIN_TEXT|XML|FORM_DATA\" (default JSON), " +
-            "\"headers\":[{\"name\":\"<header>\",\"value\":\"<value>\"},...] (optional)}\n" +
+            "  - \"FC_POST_REQUEST\" — sends an HTTP request (e.g. webhook, REST API call). " +
+            "ALL nodeParams fields are optional unless marked REQUIRED:\n" +
+            "    REQUIRED: \"url\":\"<target URL — must be set to the exact URL from the user's prompt>\",\n" +
+            "    \"method\":\"POST|GET|PUT|DELETE|PATCH\" (default POST),\n" +
+            "    \"body\":\"<request body, supports [%placeholder%] to reference form field values>\",\n" +
+            "    \"contentType\":\"JSON|PLAIN_TEXT|XML|FORM_DATA\" (default JSON),\n" +
+            "    \"headers\":[{\"name\":\"<header>\",\"value\":\"<value>\"},...] (optional),\n" +
+            "    \"sendAllFormValues\":<true|false> (optional, default false) — send all form field values as request parameters,\n" +
+            "    \"allowInvalidCertificates\":<true|false> (optional, default false) — accept self-signed/invalid SSL certificates,\n" +
+            "    \"asResponsePage\":<true|false> (optional, default false). " +
+            "CRITICAL: false = HTTP runs in background, formcycle shows Abschlussseite. true = HTTP response REPLACES formcycle page. " +
+            "Set true ONLY when user explicitly asks to show HTTP response to the user.\n" +
+            "    \"treat4xxAsNormal\":<true|false> (optional, default false) — 4xx status codes do NOT cause workflow error. Use when user says \"400er sollen keine Fehler verursachen\", \"treat 4xx as normal\", etc.,\n" +
+            "    \"treat5xxAsNormal\":<true|false> (optional, default false) — 5xx status codes do NOT cause workflow error,\n" +
+            "    \"useBasicAuth\":<true|false> (optional, default false) — enable HTTP basic authentication,\n" +
+            "    \"inputCharset\":\"<charset>\" (optional, default \"UTF-8\"),\n" +
+            "    \"outputCharset\":\"<charset>\" (optional, default \"UTF-8\"),\n" +
+            "    \"outputFileName\":\"<filename>\" (optional) — name of the output file,\n" +
+            "    \"connectTimeoutSeconds\":<number> (optional, default 30),\n" +
+            "    \"readTimeoutMinutes\":<number> (optional, default 5)}\n" +
             "    The httpRequestType is automatically derived from contentType: \"CUSTOM\" for JSON|PLAIN_TEXT|XML, " +
             "\"FORM_DATA\" for FORM_DATA, \"URL\" when no body is needed (GET/DELETE/OPTIONS or POST with empty body).\n" +
             "  - \"FC_CHANGE_FORM_VALUE\" — sets the value of one or more form fields; " +
             "nodeParams: {\"formValues\":[{\"name\":\"<technicalId>\",\"value\":\"<new value>\"},...]}\n" +
             "  - \"FC_LOG_ENTRY\" — writes a log message to the process log; " +
             "nodeParams: {\"message\":\"<log text, supports [%placeholder%]>\", \"level\":\"INFO|WARNING|ERROR\" (default INFO)}\n" +
-            "  - \"FC_REDIRECT\" — redirects the user's browser to a URL; " +
-            "nodeParams: {\"url\":\"<target URL>\"}\n" +
+            "  - \"FC_REDIRECT\" — redirects the user's browser to a URL. " +
+            "Has TWO mutually exclusive modes:\n" +
+            "    Mode 1 — Manual URL: set \"url\":\"<target URL>\". Use this when the prompt gives an explicit URL.\n" +
+            "    Mode 2 — URL template: set \"urlTemplate\":\"<name of the URL template to use — MUST be one of the AVAILABLE URL TEMPLATES listed below>\". " +
+            "Use this when the prompt says \"URL-Template\", \"URL-Vorlage\" or mentions a named template (e.g. \"X2\", \"MeineVorlage\").\n" +
+            "    CRITICAL: When the prompt says \"URL-Template X2\" or similar, use Mode 2 (urlTemplate), NOT Mode 1 (url).\n" +
+            "    QUERY STRING PARAMETERS (optional): If the prompt mentions URL parameters like \"Parameter F2 mit Wert YOLO\", " +
+            "\"Parameter X mit Wert Y\" etc., add a \"queryParams\" array: " +
+            "\"queryParams\":[{\"name\":\"F2\",\"value\":\"YOLO\"},{\"name\":\"X\",\"value\":\"Y\"}]. " +
+            "These are appended as query string parameters to the redirect URL.\n" +
+            "    nodeParams example: {\"urlTemplate\":\"X2\",\"queryParams\":[{\"name\":\"F2\",\"value\":\"YOLO\"}]} or {\"url\":\"https://example.com\"}\n" +
             "  - \"FC_SET_SAVED_FLAG\" — marks the form record as saved; nodeParams: {}\n" +
             "  - \"FC_DELETE_FORM_RECORD\" — permanently deletes the current form record; nodeParams: {}\n" +
             "  - \"FC_SEND_FORM_RECORD_MESSAGE\" — sends an internal message to the record's inbox; " +
@@ -3120,6 +3544,19 @@ class AICodBiAssistant : IPluginServletAction {
             "\"contentType\":\"PLAIN_TEXT|JSON|XML|HTML\" (default PLAIN_TEXT)}\n" +
             "  - \"FC_WRITE_FORM_RECORD_ATTRIBUTES\" — writes custom key-value attributes to the record; " +
             "nodeParams: {\"attributes\":[{\"name\":\"<key>\",\"value\":\"<value>\"},...]}\n" +
+            "  - \"FC_RETURN_FILE\" — returns a file to the user's browser for download; " +
+            "nodeParams: {\"fileName\":\"<filename, e.g. 'xoxo.txt'>\", " +
+            "\"forceDownload\":<true|false> (optional, default true — forces download instead of inline display), " +
+            "\"deleteFileAfterDownload\":<true|false> (optional, default false)}\n" +
+            "    Use this when the user says a file should be downloaded when a button is clicked. " +
+            "The file is typically found in the form's file management section (form resources/files tab). " +
+            "Set 'fileName' to the exact filename as stored in the form's file section (e.g. \"xoxo.txt\").\n" +
+            "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
+            "nodeParams: {\"htmlTemplate\":\"<name of the HTML template to display — MUST be one of the AVAILABLE HTML TEMPLATES listed below>\"}. " +
+            "CRITICAL — The mandatory \"Template HTML\" property MUST reference an HTML template " +
+            "(stored in the project's template library, e.g. TEMPLATE_CLIENT or FORM_TEMPLATE tables). " +
+            "Use this when the user says a specific completion page, Abschlussseite, or error page should be displayed " +
+            "after a button is clicked (e.g. \"Bei Klick auf submit, Abschlussseite 'Allgemeiner Fehler 2' anzeigen\").\n" +
             "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}. " +
             "WARNING: NEVER use FC_EMPTY to represent an email, state change, or any other action. " +
             "If the user requests sending an email, always use FC_EMAIL even if 'to' is unknown (set 'to' to \"\").\n\n")
@@ -3194,6 +3631,27 @@ class AICodBiAssistant : IPluginServletAction {
               "  3. LAST RESORT — If neither exists, pick the most generically named page.\n" +
               "NEVER create a new page — always pick from the list above.\n\n")
     }
+    if (!htmlTemplates.isNullOrBlank()) {
+      append(
+          "AVAILABLE HTML TEMPLATES (for htmlTemplate when creating a FC_SHOW_TEMPLATE node — pick the EXACT match to the user's request):\n" +
+              htmlTemplates +
+              "\n\n" +
+              "The HTML template is rendered to the user when the workflow runs (e.g. after clicking a submit button). " +
+              "Use this when the user says a specific completion page, Abschlussseite, error page, or template should be displayed " +
+              "(e.g. \"Bei Klick auf submit, Abschlussseite 'Allgemeiner Fehler 2' anzeigen\"). " +
+              "NEVER create a new template — always pick from the list above.\n\n")
+    }
+    if (!htmlTemplates.isNullOrBlank()) {
+      // URL templates come from the same TEMPLATE_CLIENT table as HTML templates
+      append(
+          "AVAILABLE URL TEMPLATES (for urlTemplate when creating a FC_REDIRECT node — pick the EXACT match to the user's request):\n" +
+              htmlTemplates +
+              "\n\n" +
+              "The URL template is a named URL stored in the system. " +
+              "Use this when the user says \"URL-Template\", \"URL-Vorlage\" or mentions a named template " +
+              "(e.g. \"Bei Klick auf submit, an die URL-Template X2 umleiten\"). " +
+              "NEVER create a new template — always pick from the list above.\n\n")
+    }
     append(
         "EXAMPLE (note: technicalId values are arbitrary — use them verbatim):\n" +
             "  FORM ELEMENTS: [{\"technicalId\":\"tfHurra\",\"displayText\":\"Mail\",\"type\":\"XTextField\"},{\"technicalId\":\"btnZwolf\",\"displayText\":\"Senden\",\"type\":\"BUTTON\",\"actionPage\":\"submit\"}]\n" +
@@ -3257,7 +3715,14 @@ class AICodBiAssistant : IPluginServletAction {
         .invoke(rootNode, UUID.randomUUID())
 
     val actionNode = workflowNodeClass.getDeclaredConstructor().newInstance()
-    workflowNodeClass.getMethod("setName", String::class.java).invoke(actionNode, spec.nodeType)
+    val actionNodeName = spec.taskName.ifBlank { spec.nodeType }
+    logger.info(
+        "[AICodBiAssistant] Creating actionNode: type={}, setting name='{}' (taskName='{}', nodeType='{}')",
+        spec.nodeType,
+        actionNodeName,
+        spec.taskName,
+        spec.nodeType)
+    workflowNodeClass.getMethod("setName", String::class.java).invoke(actionNode, actionNodeName)
     workflowNodeClass.getMethod("setType", String::class.java).invoke(actionNode, spec.nodeType)
     workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(actionNode, true)
     workflowNodeClass
@@ -3310,6 +3775,22 @@ class AICodBiAssistant : IPluginServletAction {
     workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(actionNode, savedTask)
     workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(actionNode, savedRootNode)
     val savedActionNode = createNodeMethod.invoke(workflowNodeApi, userContext, actionNode)
+
+    // DEBUG: Verify the node name was persisted correctly
+    try {
+      val savedNodeName =
+          savedActionNode.javaClass.getMethod("getName").invoke(savedActionNode) as? String
+      val savedNodeType =
+          savedActionNode.javaClass.getMethod("getType").invoke(savedActionNode) as? String
+      logger.info(
+          "[AICodBiAssistant] POST-PERSIST actionNode: id={}, type='{}', name='{}' (expected='{}')",
+          savedActionNode.javaClass.getMethod("getId").invoke(savedActionNode),
+          savedNodeType,
+          savedNodeName,
+          actionNodeName)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] POST-PERSIST name verification failed: {}", e.message)
+    }
 
     fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
 
@@ -3976,7 +4457,7 @@ class AICodBiAssistant : IPluginServletAction {
           """{"targetState":null}"""
         }
       }
-      "FC_HTTP_REQUEST" -> {
+      "FC_POST_REQUEST" -> {
         val url = spec.nodeParams["url"] as? String ?: ""
         val method = (spec.nodeParams["method"] as? String ?: "POST").uppercase()
         val body = spec.nodeParams["body"] as? String ?: ""
@@ -3994,6 +4475,9 @@ class AICodBiAssistant : IPluginServletAction {
         //   CUSTOM – for JSON/PLAIN_TEXT/XML (body provided as customBodyContent)
         //   FORM_DATA – for FORM_DATA (key-value pairs in requestParameters)
         //   URL – for GET/DELETE/HEAD/OPTIONS OR when no body content is specified
+        val asResponsePage = spec.nodeParams["asResponsePage"] as? Boolean ?: false
+        val treat4xxAsNormal = spec.nodeParams["treat4xxAsNormal"] as? Boolean ?: false
+        val treat5xxAsNormal = spec.nodeParams["treat5xxAsNormal"] as? Boolean ?: false
         val httpRequestType =
             when {
               method == "GET" || method == "DELETE" || method == "HEAD" || method == "OPTIONS" ->
@@ -4004,11 +4488,11 @@ class AICodBiAssistant : IPluginServletAction {
             }
         val nodeParamsJson =
             if (httpRequestType == "FORM_DATA") {
-              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
             } else if (httpRequestType == "URL") {
-              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
             } else {
-              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false}"""
+              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
             }
         logger.info(
             "[AICodBiAssistant] buildNodeParams FC_HTTP_REQUEST: url='{}', httpVerb='{}', httpRequestType='{}', params={}",
@@ -4037,7 +4521,34 @@ class AICodBiAssistant : IPluginServletAction {
       }
       "FC_REDIRECT" -> {
         val url = spec.nodeParams["url"] as? String ?: ""
-        """{"urlManual":${gson.toJson(url)},"queryStringValues":[]}"""
+        val urlTemplate = spec.nodeParams["urlTemplate"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST")
+        val queryParams =
+            (spec.nodeParams["queryParams"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.mapNotNull { qp ->
+                  val name = qp["name"] as? String ?: return@mapNotNull null
+                  val value = qp["value"] as? String ?: ""
+                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)},"deletable":true,"required":false,"nameEditable":true,"valueEditable":true}"""
+                } ?: emptyList()
+        val queryStringJson = "[${queryParams.joinToString(",")}]"
+        val nodeName = spec.taskName.ifBlank { spec.nodeType }
+        if (urlTemplate.isNotBlank() && workflowVersion != null && userContext != null) {
+          val uuid = resolveUrlTemplateUuid(userContext, workflowVersion, urlTemplate)
+          logger.info(
+              "[AICodBiAssistant] buildNodeParams FC_REDIRECT: urlTemplate='{}' → uuid={}, queryParams={}",
+              urlTemplate,
+              uuid?.toString() ?: "null",
+              queryStringJson)
+          if (uuid != null) {
+            val uuidStr = uuid.toString()
+            """{"name":${gson.toJson(nodeName)},"urlManual":"","urlTemplate":{"entityClass":"TextTemplate","id":${gson.toJson(uuidStr)},"type":"TextTemplate","uuid":${gson.toJson(uuidStr)}},"queryStringValues":$queryStringJson}"""
+          } else {
+            """{"name":${gson.toJson(nodeName)},"urlManual":"","urlTemplate":null,"queryStringValues":$queryStringJson}"""
+          }
+        } else {
+          """{"name":${gson.toJson(nodeName)},"urlManual":${gson.toJson(url)},"queryStringValues":$queryStringJson}"""
+        }
       }
       "FC_SEND_FORM_RECORD_MESSAGE" -> {
         val message = spec.nodeParams["message"] as? String ?: ""
@@ -4061,6 +4572,58 @@ class AICodBiAssistant : IPluginServletAction {
                   """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
                 } ?: emptyList()
         """{"customAttributes":[${attributes.joinToString(",")}],"writeAttributesToForm":false}"""
+      }
+      "FC_RETURN_FILE" -> {
+        val fileName = spec.nodeParams["fileName"] as? String ?: ""
+        val forceDownload = spec.nodeParams["forceDownload"] as? Boolean ?: true
+        val deleteAfter = spec.nodeParams["deleteFileAfterDownload"] as? Boolean ?: false
+        val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+        if (fileUuid != null) {
+          // Found file by name — reference it directly via ResourceItem with type FORM
+          val uuidStr = fileUuid.toString()
+          """{"multiFile":{"resources":[{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}}],"attachmentFilter":[]},"forceDownload":$forceDownload}"""
+        } else {
+          // File not found in DB — use attachment search approach as fallback
+          """{"multiFile":{"resources":[{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(fileName)}}],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(fileName)}},"forceDownload":$forceDownload}"""
+        }
+      }
+      "FC_SHOW_TEMPLATE" -> {
+        val templateName = spec.nodeParams["htmlTemplate"] as? String ?: ""
+        logger.info(
+            "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: htmlTemplate='{}', workflowVersion=null?{}, userContext=null?{}",
+            templateName,
+            workflowVersion == null,
+            userContext == null)
+        if (templateName.isNotBlank() && workflowVersion != null && userContext != null) {
+          val uuid = resolveHtmlTemplateUuid(userContext, workflowVersion, templateName)
+          logger.info(
+              "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: resolveHtmlTemplateUuid('{}') returned {}",
+              templateName,
+              uuid?.toString() ?: "null")
+          if (uuid != null) {
+            val uuidStr = uuid.toString()
+            // Match the exact pattern from doiFailTemplate: entityClass + id + type + uuid
+            val result =
+                """{"htmlTemplate":{"entityClass":"TextTemplate","id":${gson.toJson(uuidStr)},"type":"TextTemplate","uuid":${gson.toJson(uuidStr)}}}"""
+            logger.info(
+                "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: FINAL JSON = {}", result)
+            result
+          } else {
+            val result = """{"htmlTemplate":null}"""
+            logger.warn(
+                "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: UUID was null, returning {}",
+                result)
+            result
+          }
+        } else {
+          logger.info(
+              "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: SKIPPING htmlTemplate — templateName blank={}, workflowVersion null={}, userContext null={}",
+              templateName.isBlank(),
+              workflowVersion == null,
+              userContext == null)
+          val result = """{"htmlTemplate":null}"""
+          result
+        }
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
@@ -4395,6 +4958,192 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  /**
+   * Resolves the UUID of an HTML template by its name. Queries the same set of template-related
+   * tables as [fetchHtmlTemplates], using JPQL first then native SQL with schema discovery.
+   */
+  private fun resolveHtmlTemplateUuid(
+      userContext: Any,
+      workflowVersion: Any,
+      templateName: String
+  ): UUID? {
+    if (templateName.isBlank()) return null
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      val project =
+          workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion) ?: return null
+      val projectId = project.javaClass.getMethod("getId").invoke(project) as? Long ?: return null
+
+      // Strategy 1: Try JPQL with known entity class names
+      val entityClasses =
+          listOf(
+              "de.xima.fc.entities.ClientTemplate",
+              "de.xima.fc.entities.TextTemplate",
+              "de.xima.fc.entities.FormTemplate",
+              "de.xima.fc.entities.ProjectDOIData",
+              "de.xima.fc.entities.CompletionPage",
+              "de.xima.fc.entities.ProjektAbschlussSeite",
+              "de.xima.fc.entities.AbschlussSeite",
+              "de.xima.fc.entities.ProjektAbschluss",
+              "de.xima.fc.entities.Abschluss")
+      for (entityClass in entityClasses) {
+        try {
+          val jpql =
+              "SELECT t FROM $entityClass t WHERE t.name = :name AND (t.project.id = :pid OR t.projekt.id = :pid)"
+          val query = em.createQuery(jpql)
+          query.setParameter("name", templateName)
+          query.setParameter("pid", projectId)
+          val results = query.resultList
+          if (results.isNotEmpty()) {
+            val t = results[0] ?: continue
+            val uuid =
+                try {
+                  t.javaClass.getMethod("getUUIDObject").invoke(t) as? UUID
+                } catch (_: Exception) {
+                  try {
+                    val s = t.javaClass.getMethod("getUuid").invoke(t) as? String
+                    if (s != null) UUID.fromString(s) else null
+                  } catch (_: Exception) {
+                    null
+                  }
+                }
+            if (uuid != null) {
+              logger.info(
+                  "[AICodBiAssistant] Resolved HTML template '{}' to UUID {} via JPQL entity '{}'",
+                  templateName,
+                  uuid,
+                  entityClass)
+              return uuid
+            }
+          }
+        } catch (_: Exception) {
+          continue
+        }
+      }
+
+      // Strategy 2: Try JPQL navigating from Projekt entity (collection property)
+      val projektCollectionProperties =
+          listOf(
+              "p.abschlussSeiten",
+              "p.completionPages",
+              "p.projektAbschlussSeiten",
+              "p.absclussSeiten")
+      for (collectionPath in projektCollectionProperties) {
+        try {
+          val jpql =
+              "SELECT cp FROM de.xima.fc.entities.Projekt p JOIN $collectionPath cp WHERE p.id = :pid AND cp.name = :name"
+          val query = em.createQuery(jpql)
+          query.setParameter("pid", projectId)
+          query.setParameter("name", templateName)
+          val results = query.resultList
+          if (results.isNotEmpty()) {
+            val cp = results[0] ?: continue
+            val uuid = cp.javaClass.getMethod("getUUIDObject").invoke(cp) as? UUID
+            if (uuid != null) {
+              logger.info(
+                  "[AICodBiAssistant] Resolved HTML template '{}' to UUID {} via Projekt collection '$collectionPath'",
+                  templateName,
+                  uuid)
+              return uuid
+            }
+          }
+        } catch (_: Exception) {
+          continue
+        }
+      }
+
+      // Strategy 3: Native SQL with schema discovery
+      val possibleTables =
+          listOf(
+              "TEMPLATE_CLIENT",
+              "FORM_TEMPLATE",
+              "TEXT_TEMPLATE",
+              "CLIENT_TEMPLATE",
+              "PROJECT_DOI_DATA",
+              "COMPLETION_PAGE",
+              "PROJEKT_ABSCHLUSS_SEITE",
+              "PROJEKTABSCHLUSSSEITE",
+              "PROJECT_COMPLETION_PAGE",
+              "ABSCHLUSS_SEITE",
+              "ABSCHLUSSSEITE",
+              "FORM_COMPLETION_PAGE",
+              "WORKFLOW_COMPLETION_PAGE",
+              "PROJEKT_ABSCHLUSS",
+              "PROJEKTABSCHLUSS")
+      for (tableName in possibleTables) {
+        try {
+          val nameColQuery =
+              em.createNativeQuery(
+                  "SELECT column_name FROM information_schema.columns WHERE table_name = :tbl AND (column_name IN ('NAME', 'BEZEICHNUNG', 'TITLE', 'UUID')) ORDER BY ordinal_position")
+          nameColQuery.setParameter("tbl", tableName)
+          val cols = nameColQuery.resultList.map { it.toString().uppercase() }
+          if (cols.isEmpty()) continue
+          val hasUuidCol = "UUID" in cols
+          val nameCol =
+              when {
+                "NAME" in cols -> "NAME"
+                "BEZEICHNUNG" in cols -> "BEZEICHNUNG"
+                "TITLE" in cols -> "TITLE"
+                else -> continue
+              }
+          val idCol = if (hasUuidCol) "UUID" else "ID"
+          val projectColQuery =
+              em.createNativeQuery(
+                  "SELECT column_name FROM information_schema.columns WHERE table_name = :tbl AND (column_name = 'PROJECT_ID' OR column_name = 'PROJEKT_ID' OR column_name = 'PROJEKTID' OR column_name = 'FK_PROJEKT') ORDER BY ordinal_position")
+          projectColQuery.setParameter("tbl", tableName)
+          val pcols = projectColQuery.resultList
+          val projectCol = if (pcols.isNotEmpty()) pcols[0].toString() else null
+          val sql =
+              if (projectCol != null)
+                  "SELECT $idCol FROM $tableName WHERE $nameCol = :name AND $projectCol = :pid"
+              else "SELECT $idCol FROM $tableName WHERE $nameCol = :name"
+          val query = em.createNativeQuery(sql)
+          query.setParameter("name", templateName)
+          if (projectCol != null) query.setParameter("pid", projectId)
+          val results = query.resultList
+          if (results.isNotEmpty()) {
+            val raw = results[0].toString()
+            return try {
+              UUID.fromString(raw)
+            } catch (_: Exception) {
+              UUID.nameUUIDFromBytes(raw.toByteArray())
+            }
+          }
+        } catch (_: Exception) {
+          continue
+        }
+      }
+
+      logger.warn(
+          "[AICodBiAssistant] HTML template '{}' not found in any table for project $projectId",
+          templateName)
+      return null
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] Could not resolve HTML template UUID for '{}': {}",
+          templateName,
+          e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Fetches available URL templates (same source as HTML templates — the TEMPLATE_CLIENT table).
+   * URL templates are named URLs stored in the system that can be referenced by FC_REDIRECT nodes.
+   */
+  private fun fetchUrlTemplates(userContext: Any, workflowVersionId: Long): String? =
+      fetchHtmlTemplates(userContext, workflowVersionId)
+
+  /** Resolves the UUID of a URL template by its name. */
+  private fun resolveUrlTemplateUuid(
+      userContext: Any,
+      workflowVersion: Any,
+      templateName: String
+  ): UUID? = resolveHtmlTemplateUuid(userContext, workflowVersion, templateName)
+
   // endregion Workflow Creation
 
   // region JSON Utilities
@@ -4436,6 +5185,77 @@ class AICodBiAssistant : IPluginServletAction {
       PluginServletActionRetVal(ServletResponse(EResponseType.JSON, json))
 
   // endregion JSON Utilities
+
+  /**
+   * Resolves the UUID of a project-level file resource by its filename. Queries the
+   * RESOURCE_PROJECT table to find a file matching the given name for the workflow version's
+   * project. Returns null if the file is not found.
+   */
+  private fun resolveProjectFileUuid(
+      userContext: Any?,
+      workflowVersion: Any?,
+      fileName: String
+  ): UUID? {
+    if (fileName.isBlank() || workflowVersion == null || userContext == null) return null
+    return try {
+      val project =
+          workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion) ?: return null
+      val projectId = project.javaClass.getMethod("getId").invoke(project) as? Long ?: return null
+      val emf = CodbiEntities.entityManagerFactory ?: return null
+      val em = emf.createEntityManager()
+      try {
+        // Try RESOURCE_PROJECT table (project-level file resources — form's file management
+        // section)
+        val tableNames = listOf("RESOURCE_PROJECT", "FILE_RESOURCE_PROJECT", "FILE_PROJECT")
+        for (tableName in tableNames) {
+          try {
+            val sql = "SELECT uuid FROM $tableName WHERE project_id = ?1 AND name = ?2"
+            val query = em.createNativeQuery(sql)
+            query.setParameter(1, projectId)
+            query.setParameter(2, fileName)
+            val results = query.resultList
+            if (results.isNotEmpty()) {
+              val uuidStr = results[0]?.toString() ?: continue
+              return try {
+                UUID.fromString(uuidStr)
+              } catch (_: Exception) {
+                null
+              }
+            }
+          } catch (_: Exception) {
+            continue
+          }
+        }
+        // Fallback: try querying with 'filename' column instead of 'name'
+        for (tableName in tableNames) {
+          try {
+            val sql = "SELECT uuid FROM $tableName WHERE project_id = ?1 AND filename = ?2"
+            val query = em.createNativeQuery(sql)
+            query.setParameter(1, projectId)
+            query.setParameter(2, fileName)
+            val results = query.resultList
+            if (results.isNotEmpty()) {
+              val uuidStr = results[0]?.toString() ?: continue
+              return try {
+                UUID.fromString(uuidStr)
+              } catch (_: Exception) {
+                null
+              }
+            }
+          } catch (_: Exception) {
+            continue
+          }
+        }
+        null
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] Could not resolve project file UUID for '$fileName': ${e.message}")
+      null
+    }
+  }
 
   // region Data Classes
 

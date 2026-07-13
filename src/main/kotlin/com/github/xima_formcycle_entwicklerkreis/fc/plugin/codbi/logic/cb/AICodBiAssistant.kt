@@ -3285,6 +3285,39 @@ class AICodBiAssistant : IPluginServletAction {
                 }
               }
             }
+            // DEBUG: Query FC_DECODE_BASE64 and FC_PROVIDE_RESOURCE nodes for CUSTOM_PARAMS
+            try {
+              val sampleQuery =
+                  emDebug.createNativeQuery(
+                      "SELECT id, ITEM_TYPE, ITEM_NAME, CAST($customParamsCol AS VARCHAR(2000)) FROM workflow_node " +
+                          "WHERE ITEM_TYPE IN ('FC_DECODE_BASE64', 'FC_PROVIDE_RESOURCE') AND $customParamsCol IS NOT NULL " +
+                          "ORDER BY id DESC")
+              sampleQuery.maxResults = 5
+              val sampleResults = sampleQuery.resultList
+              if (sampleResults.isNotEmpty()) {
+                logger.warn(
+                    "[AICodBiAssistant] DEBUG: FC_DECODE_BASE64 / FC_PROVIDE_RESOURCE nodes:")
+                for (row in sampleResults) {
+                  when (row) {
+                    is Array<*> ->
+                        logger.warn(
+                            "[AICodBiAssistant] DEBUG:   node id={}, type='{}', name='{}', params={}",
+                            row[0],
+                            row[1],
+                            row[2],
+                            if ((row[3] as? String)?.length ?: 0 > 1500)
+                                (row[3] as? String)?.take(1500)
+                            else row[3])
+                  }
+                }
+              } else {
+                logger.warn(
+                    "[AICodBiAssistant] DEBUG: No FC_DECODE_BASE64 or FC_PROVIDE_RESOURCE nodes found")
+              }
+            } catch (e: Exception) {
+              logger.warn(
+                  "[AICodBiAssistant] DEBUG FC_DECODE_BASE64/FC_PROVIDE_RESOURCE query failed: ${e.message}")
+            }
             // Also query ALL nodes (any type) for the most recent 5 to see their data
             try {
               val allQuery =
@@ -3403,20 +3436,28 @@ class AICodBiAssistant : IPluginServletAction {
             "  Single lane: {\"taskName\":\"...\", \"taskDescription\":\"...\", \"triggerType\":\"...\", \"triggerParams\":{}, \"nodeType\":\"...\", \"nodeParams\":{}}\n" +
             "  Multiple lanes: [{\"taskName\":\"...\", ...}, {\"taskName\":\"...\", ...}]\n" +
             "  Each object has exactly these keys: taskName, taskDescription, triggerType, triggerParams, nodeType, nodeParams, endpointState.\n" +
-            "  taskName MUST be a short, meaningful AND SPECIFIC description of the workflow action. " +
-            "Include key details like the target URL (without http://), template name, parameter names/values, or email subject. " +
-            "EXAMPLES: \"Redirect to msn de with parameter F2 equals YOLO\" (NOT generic like \"Redirect on submit with parameter\"), " +
-            "\"Show Allgemeiner Fehler 2 completion page\", \"Send DOI email with subject Welcome\".\n" +
+            "  CRITICAL — taskName is MANDATORY for EVERY node type. You MUST always set a short, meaningful AND SPECIFIC description " +
+            "of the workflow action. No exceptions. Never leave taskName empty or use generic names like \"AI-generated task\".\n" +
+            "  Include key details like the target URL (without http://), template name, parameter names/values, email subject, " +
+            "file name, file content, or HTTP endpoint.\n" +
+            "  EXAMPLES per node type:\n" +
+            "    FC_REDIRECT:       \"Redirect to msn de with parameter F2 equals YOLO\" (NOT generic like \"Redirect on submit with parameter\")\n" +
+            "    FC_SHOW_TEMPLATE:   \"Show Allgemeiner Fehler 2 completion page\"\n" +
+            "    FC_EMAIL:           \"Send DOI email with subject Welcome\"\n" +
+            "    FC_RETURN_FILE:     \"Download xoxo txt on submit\" (NOT \"File download\")\n" +
+            "    FC_CREATE_TEXT_FILE: \"Create YOLO content text file on submit\" (NOT \"Create file\")\n" +
+            "    FC_POST_REQUEST:    \"Send data to example com api\" (NOT \"HTTP request\")\n" +
+            "    FC_CHANGE_STATE:    \"Set status to Approved\" (NOT \"Status change\")\n" +
+            "    FC_LOG_ENTRY:       \"Log submission to process log\"\n" +
+            "  The pattern is always: action + key details. Apply this to ANY nodeType, not just those listed.\n" +
             "  taskName CHARACTER RESTRICTIONS — only the following characters are allowed: letters (a-z, A-Z), numbers (0-9), spaces, hyphens (-), underscores (_), and parentheses (). " +
             "Characters like dots (.), equals signs (=), slashes (/), colons (:), question marks (?), ampersands (&), and all other special characters are FORBIDDEN in taskName. " +
             "If the user's prompt contains such characters, replace them with allowed alternatives (e.g. \"msn.de\" → \"msn de\", \"F2=YOLO\" → \"F2 equals YOLO\", \"http://...\" → omit the protocol).\n" +
-            "Do NOT leave taskName empty or use generic names like \"AI-generated task\".\n" +
             "  CRITICAL — Use an array ONLY when the user's request describes MULTIPLE INDEPENDENT workflows triggered by DIFFERENT events.\n" +
             "  Example of when to use an array: \"Send a DOI invitation when the form is submitted, then send a welcome email after the email is confirmed.\"\n" +
             "    → Lane 1: FC_FORM_SUBMIT_BUTTON → FC_DOI_INIT, Lane 2: FC_DOI_VERIFIED → FC_EMAIL\n" +
-            "  CRITICAL — Do NOT use an array for setting a form record status. The status transition (\"endpointState\") is automatically\n" +
-            "  added as the bottommost node of EVERY lane. If the user says \"set status to XYZ\", just set endpointState to \"XYZ\".\n" +
-            "  A single lane can send an email AND transition to a status — both happen in ONE lane.\n\n")
+            "  CHAINED NODES (\"chainedNodes\" field) — For sequential actions where the second action processes the first action's output (e.g. decode Base64 then download the result), add a \"chainedNodes\" array inside a single task spec. Each entry has \"nodeType\" and \"nodeParams\". Use \"%prev%\" to reference the preceding node's UUID.\n" +
+            "  CRITICAL — Do NOT use an array for setting a form record status. The status transition (\"endpointState\") is automatically\n\n")
     append(
         "TRIGGER TYPES (use exactly one of these string values for 'triggerType'):\n" +
             "  - \"FC_FORM_SUBMIT_BUTTON\" — fires when a submit button is clicked;\n" +
@@ -3551,6 +3592,15 @@ class AICodBiAssistant : IPluginServletAction {
             "    Use this when the user says a file should be downloaded when a button is clicked. " +
             "The file is typically found in the form's file management section (form resources/files tab). " +
             "Set 'fileName' to the exact filename as stored in the form's file section (e.g. \"xoxo.txt\").\n" +
+            "  - \"FC_ENCODE_BASE64\" — encodes a file or form upload to Base64; " +
+            "nodeParams: {\"file\":\"<filename from form resources, e.g. 'xoxo.txt'>\"}\n" +
+            "  - \"FC_DECODE_BASE64\" — decodes a Base64-encoded file back to its original format; " +
+            "nodeParams: {\"base64\":\"<base64 content>\", \"exportName\":\"<output filename, e.g. 'xoxo.txt'>\"}\n" +
+            "  - \"FC_PROVIDE_RESOURCE\" — provides (downloads) a file from a preceding action node's output; " +
+            "nodeParams: {\"exportName\":\"<filename for download, e.g. 'decoded.txt'>\", \"sourceNode\":\"%prev%\"}. " +
+            "CRITICAL — Use as a chained node after FC_DECODE_BASE64 to make the decoded file downloadable. " +
+            "The sourceNode \"%prev%\" placeholder resolves to the preceding node's UUID at creation time.\n" +
+            "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "nodeParams: {\"htmlTemplate\":\"<name of the HTML template to display — MUST be one of the AVAILABLE HTML TEMPLATES listed below>\"}. " +
             "CRITICAL — The mandatory \"Template HTML\" property MUST reference an HTML template " +
@@ -3715,14 +3765,26 @@ class AICodBiAssistant : IPluginServletAction {
         .invoke(rootNode, UUID.randomUUID())
 
     val actionNode = workflowNodeClass.getDeclaredConstructor().newInstance()
-    val actionNodeName = spec.taskName.ifBlank { spec.nodeType }
+    val actionNodeName = deriveNodeName(spec)
     logger.info(
-        "[AICodBiAssistant] Creating actionNode: type={}, setting name='{}' (taskName='{}', nodeType='{}')",
+        "[AICodBiAssistant] Creating actionNode: type={}, setting name='{}' (taskName='{}', nodeType='{}', derived='{}')",
         spec.nodeType,
         actionNodeName,
         spec.taskName,
-        spec.nodeType)
+        spec.nodeType,
+        actionNodeName)
     workflowNodeClass.getMethod("setName", String::class.java).invoke(actionNode, actionNodeName)
+    val nodeDescription = spec.taskDescription ?: ""
+    if (nodeDescription.isNotBlank()) {
+      try {
+        workflowNodeClass
+            .getMethod("setDescription", String::class.java)
+            .invoke(actionNode, nodeDescription)
+      } catch (_: Exception) {
+        logger.warn(
+            "[AICodBiAssistant] WorkflowNode has no setDescription method: {}", nodeDescription)
+      }
+    }
     workflowNodeClass.getMethod("setType", String::class.java).invoke(actionNode, spec.nodeType)
     workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(actionNode, true)
     workflowNodeClass
@@ -3793,6 +3855,50 @@ class AICodBiAssistant : IPluginServletAction {
     }
 
     fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
+
+    // Process chained nodes (sequential actions in the same task)
+    if (spec.chainedNodes != null && spec.chainedNodes.isNotEmpty()) {
+      var prevNodeUuid = actionNode.javaClass.getMethod("getUUIDObject").invoke(actionNode) as UUID
+      var prevTaskUuid = task.javaClass.getMethod("getUUIDObject").invoke(task) as UUID
+      for ((chainIdx, chainSpecMap) in spec.chainedNodes.withIndex()) {
+        val chainSpec = gson.fromJson(gson.toJson(chainSpecMap), WorkflowTaskSpec::class.java)
+        val chainNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+        val chainNodeName = deriveNodeName(chainSpec)
+        workflowNodeClass.getMethod("setName", String::class.java).invoke(chainNode, chainNodeName)
+        workflowNodeClass
+            .getMethod("setType", String::class.java)
+            .invoke(chainNode, chainSpec.nodeType)
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(chainNode, true)
+        val chainNodeUuidVal = UUID.randomUUID()
+        workflowNodeClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(chainNode, chainNodeUuidVal)
+        val resolvedParams =
+            chainSpec.nodeParams.mapValues { (_, v) ->
+              when (v) {
+                "%prev%",
+                "%sourceNodeUuid%" -> prevNodeUuid.toString()
+                "%sourceTaskUuid%" -> prevTaskUuid.toString()
+                else -> v
+              }
+            } +
+                mapOf(
+                    "_resolvedNodeUuid" to prevNodeUuid.toString(),
+                    "_resolvedTaskUuid" to prevTaskUuid.toString())
+        val chainSpecWithUuids = chainSpec.copy(nodeParams = resolvedParams)
+        val chainParamsJson = buildNodeParamsJson(chainSpecWithUuids, workflowVersion, userContext)
+        if (chainParamsJson != null) {
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(chainNode, chainParamsJson)
+        }
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(chainNode, savedTask)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(chainNode, savedRootNode)
+        val savedChainNode = createNodeMethod.invoke(workflowNodeApi, userContext, chainNode)
+        fixParentOrderIndex(savedChainNode, savedRootNode, userContext)
+        prevNodeUuid = chainNodeUuidVal
+      }
+    }
 
     // Endpoint node: every workflow lane requires a final FC_CHANGE_STATE (Endpunkt) that
     // sets the form record to its terminal status. Skip only when the main action IS
@@ -4386,6 +4492,8 @@ class AICodBiAssistant : IPluginServletAction {
       workflowVersion: Any? = null,
       userContext: Any? = null
   ): String? {
+    val nodeName = deriveNodeName(spec)
+    val nodeDescription = spec.taskDescription ?: ""
     return when (spec.nodeType) {
       "FC_EMAIL" -> {
         val to = spec.nodeParams["to"] as? String ?: ""
@@ -4406,7 +4514,7 @@ class AICodBiAssistant : IPluginServletAction {
                   }
               ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
             } else ""
-        """{"to":$toJson,"cc":[],"bcc":[],"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":${gson.toJson(bodyFormatType)},"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)}$multiFileJson}"""
+        """{"name":${gson.toJson(nodeName)},"to":$toJson,"cc":[],"bcc":[],"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":${gson.toJson(bodyFormatType)},"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)}$multiFileJson}"""
       }
       "FC_DOI_INIT" -> {
         val to = spec.nodeParams["to"] as? String ?: ""
@@ -4441,7 +4549,7 @@ class AICodBiAssistant : IPluginServletAction {
               ""","doiFailTemplate":null"""
             }
         val resultJson =
-            """{"to":$toJson,"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)},"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":"HTML"$failurePageJson}"""
+            """{"name":${gson.toJson(nodeName)},"to":$toJson,"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)},"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":"HTML"$failurePageJson}"""
         logger.info("[AICodBiAssistant] buildNodeParams FC_DOI_INIT: final JSON={}", resultJson)
         resultJson
       }
@@ -4452,9 +4560,9 @@ class AICodBiAssistant : IPluginServletAction {
                 resolveStateUuid(userContext, workflowVersion, stateName)
             else null
         if (stateUuid != null) {
-          """{"targetState":{"uuid":${gson.toJson(stateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
+          """{"name":${gson.toJson(nodeName)},"targetState":{"uuid":${gson.toJson(stateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
         } else {
-          """{"targetState":null}"""
+          """{"name":${gson.toJson(nodeName)},"targetState":null}"""
         }
       }
       "FC_POST_REQUEST" -> {
@@ -4488,11 +4596,11 @@ class AICodBiAssistant : IPluginServletAction {
             }
         val nodeParamsJson =
             if (httpRequestType == "FORM_DATA") {
-              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
             } else if (httpRequestType == "URL") {
-              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
             } else {
-              """{"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"CUSTOM","customBodyContent":${gson.toJson(body)},"customBodyContentType":${gson.toJson(contentType)},"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
             }
         logger.info(
             "[AICodBiAssistant] buildNodeParams FC_HTTP_REQUEST: url='{}', httpVerb='{}', httpRequestType='{}', params={}",
@@ -4512,12 +4620,12 @@ class AICodBiAssistant : IPluginServletAction {
                   val value = fv["value"] as? String ?: ""
                   """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
                 } ?: emptyList()
-        """{"formValues":[${formValues.joinToString(",")}]}"""
+        """{"name":${gson.toJson(nodeName)},"formValues":[${formValues.joinToString(",")}]}"""
       }
       "FC_LOG_ENTRY" -> {
         val message = spec.nodeParams["message"] as? String ?: ""
         val level = (spec.nodeParams["level"] as? String ?: "INFO").uppercase()
-        """{"comments":${gson.toJson(message)},"level":${gson.toJson(level)}}"""
+        """{"name":${gson.toJson(nodeName)},"comments":${gson.toJson(message)},"level":${gson.toJson(level)}}"""
       }
       "FC_REDIRECT" -> {
         val url = spec.nodeParams["url"] as? String ?: ""
@@ -4532,7 +4640,6 @@ class AICodBiAssistant : IPluginServletAction {
                   """{"name":${gson.toJson(name)},"value":${gson.toJson(value)},"deletable":true,"required":false,"nameEditable":true,"valueEditable":true}"""
                 } ?: emptyList()
         val queryStringJson = "[${queryParams.joinToString(",")}]"
-        val nodeName = spec.taskName.ifBlank { spec.nodeType }
         if (urlTemplate.isNotBlank() && workflowVersion != null && userContext != null) {
           val uuid = resolveUrlTemplateUuid(userContext, workflowVersion, urlTemplate)
           logger.info(
@@ -4553,13 +4660,13 @@ class AICodBiAssistant : IPluginServletAction {
       "FC_SEND_FORM_RECORD_MESSAGE" -> {
         val message = spec.nodeParams["message"] as? String ?: ""
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
-        """{"messageContent":${gson.toJson(message)},"senderName":${gson.toJson(senderName)}}"""
+        """{"name":${gson.toJson(nodeName)},"messageContent":${gson.toJson(message)},"senderName":${gson.toJson(senderName)}}"""
       }
       "FC_CREATE_TEXT_FILE" -> {
         val fileName = spec.nodeParams["fileName"] as? String ?: "output.txt"
         val fileContent = spec.nodeParams["fileContent"] as? String ?: ""
         val contentType = (spec.nodeParams["contentType"] as? String ?: "PLAIN_TEXT").uppercase()
-        """{"fileName":${gson.toJson(fileName)},"fileContent":${gson.toJson(fileContent)},"contentType":${gson.toJson(contentType)}}"""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fileName":${gson.toJson(fileName)},"fileContent":${gson.toJson(fileContent)},"contentType":${gson.toJson(contentType)}}"""
       }
       "FC_WRITE_FORM_RECORD_ATTRIBUTES" -> {
         @Suppress("UNCHECKED_CAST")
@@ -4571,7 +4678,32 @@ class AICodBiAssistant : IPluginServletAction {
                   val value = a["value"] as? String ?: ""
                   """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
                 } ?: emptyList()
-        """{"customAttributes":[${attributes.joinToString(",")}],"writeAttributesToForm":false}"""
+        """{"name":${gson.toJson(nodeName)},"customAttributes":[${attributes.joinToString(",")}],"writeAttributesToForm":false}"""
+      }
+      "FC_PROVIDE_RESOURCE" -> {
+        val exportName = spec.nodeParams["exportName"] as? String ?: ""
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"singleFile":{"resource":{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}},"exportName":${gson.toJson(exportName)},"fileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+        } else {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"singleFile":{"resource":{"type":"FILE_PROVIDE_ACTION"}},"exportName":${gson.toJson(exportName)},"fileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+        }
+      }
+      "FC_ENCODE_BASE64" -> {
+        val fileName = spec.nodeParams["file"] as? String ?: ""
+        val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+        if (fileUuid != null) {
+          val uuidStr = fileUuid.toString()
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"singleFile":{"resource":{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}},"attachmentFilter":[]}}"""
+        } else {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"singleFile":{"searchFilename":${gson.toJson(fileName)},"attachmentFilter":["FORM_UPLOAD"]}}"""
+        }
+      }
+      "FC_DECODE_BASE64" -> {
+        val base64 = spec.nodeParams["base64"] as? String ?: ""
+        val exportName = spec.nodeParams["exportName"] as? String ?: ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"base64":${gson.toJson(base64)},"decodedFileProvision":{"attachToFormRecord":true,"attachmentAccessibleToEndUser":true},"exportName":${gson.toJson(exportName)}}"""
       }
       "FC_RETURN_FILE" -> {
         val fileName = spec.nodeParams["fileName"] as? String ?: ""
@@ -4581,10 +4713,10 @@ class AICodBiAssistant : IPluginServletAction {
         if (fileUuid != null) {
           // Found file by name — reference it directly via ResourceItem with type FORM
           val uuidStr = fileUuid.toString()
-          """{"multiFile":{"resources":[{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}}],"attachmentFilter":[]},"forceDownload":$forceDownload}"""
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}}],"attachmentFilter":[]},"forceDownload":$forceDownload}"""
         } else {
           // File not found in DB — use attachment search approach as fallback
-          """{"multiFile":{"resources":[{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(fileName)}}],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(fileName)}},"forceDownload":$forceDownload}"""
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(fileName)}}],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(fileName)}},"forceDownload":$forceDownload}"""
         }
       }
       "FC_SHOW_TEMPLATE" -> {
@@ -4604,12 +4736,12 @@ class AICodBiAssistant : IPluginServletAction {
             val uuidStr = uuid.toString()
             // Match the exact pattern from doiFailTemplate: entityClass + id + type + uuid
             val result =
-                """{"htmlTemplate":{"entityClass":"TextTemplate","id":${gson.toJson(uuidStr)},"type":"TextTemplate","uuid":${gson.toJson(uuidStr)}}}"""
+                """{"name":${gson.toJson(nodeName)},"htmlTemplate":{"entityClass":"TextTemplate","id":${gson.toJson(uuidStr)},"type":"TextTemplate","uuid":${gson.toJson(uuidStr)}}}"""
             logger.info(
                 "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: FINAL JSON = {}", result)
             result
           } else {
-            val result = """{"htmlTemplate":null}"""
+            val result = """{"name":${gson.toJson(nodeName)},"htmlTemplate":null}"""
             logger.warn(
                 "[AICodBiAssistant] buildNodeParams FC_SHOW_TEMPLATE: UUID was null, returning {}",
                 result)
@@ -4621,14 +4753,15 @@ class AICodBiAssistant : IPluginServletAction {
               templateName.isBlank(),
               workflowVersion == null,
               userContext == null)
-          val result = """{"htmlTemplate":null}"""
+          val result = """{"name":${gson.toJson(nodeName)},"htmlTemplate":null}"""
           result
         }
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
-      "FC_EMPTY" -> "{}"
-      else -> "{}"
+      "FC_EMPTY" ->
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+      else -> """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
     }
   }
 
@@ -5206,44 +5339,127 @@ class AICodBiAssistant : IPluginServletAction {
       try {
         // Try RESOURCE_PROJECT table (project-level file resources — form's file management
         // section)
-        val tableNames = listOf("RESOURCE_PROJECT", "FILE_RESOURCE_PROJECT", "FILE_PROJECT")
-        for (tableName in tableNames) {
-          try {
-            val sql = "SELECT uuid FROM $tableName WHERE project_id = ?1 AND name = ?2"
-            val query = em.createNativeQuery(sql)
-            query.setParameter(1, projectId)
-            query.setParameter(2, fileName)
-            val results = query.resultList
-            if (results.isNotEmpty()) {
-              val uuidStr = results[0]?.toString() ?: continue
-              return try {
-                UUID.fromString(uuidStr)
-              } catch (_: Exception) {
-                null
-              }
+        // Try schema discovery first: find tables with project_id + name columns
+        var foundUuid: UUID? = null
+        val schemaTables = mutableListOf<String>()
+        try {
+          val schemaQuery =
+              em.createNativeQuery(
+                  "SELECT LOWER(table_name), LOWER(column_name) FROM information_schema.columns " +
+                      "WHERE LOWER(table_name) LIKE '%resource%' OR LOWER(table_name) LIKE '%file%' " +
+                      "ORDER BY table_name, ordinal_position")
+          val schemaRows = schemaQuery.resultList
+          val tableCols = mutableMapOf<String, MutableList<String>>()
+          for (row in schemaRows) {
+            if (row is Array<*>) {
+              val t = row[0]?.toString() ?: continue
+              val col = row[1]?.toString() ?: continue
+              tableCols.getOrPut(t) { mutableListOf() }.add(col)
             }
-          } catch (_: Exception) {
-            continue
           }
-        }
-        // Fallback: try querying with 'filename' column instead of 'name'
-        for (tableName in tableNames) {
-          try {
-            val sql = "SELECT uuid FROM $tableName WHERE project_id = ?1 AND filename = ?2"
-            val query = em.createNativeQuery(sql)
-            query.setParameter(1, projectId)
-            query.setParameter(2, fileName)
-            val results = query.resultList
-            if (results.isNotEmpty()) {
-              val uuidStr = results[0]?.toString() ?: continue
-              return try {
-                UUID.fromString(uuidStr)
+          // DEBUG: Log all discovered table schemas for file resource debugging
+          for ((tbl, cols) in tableCols) {
+            logger.warn(
+                "[AICodBiAssistant] DEBUG resolveProjectFileUuid: table='{}' columns={}",
+                tbl,
+                cols.joinToString(", "))
+          }
+          // Fallback: log ALL tables matching resource/file patterns even without expected columns
+          logger.warn(
+              "[AICodBiAssistant] DEBUG resolveProjectFileUuid: discovered {} resource/file tables",
+              tableCols.size)
+          for ((tbl, cols) in tableCols) {
+            val hasProjId =
+                cols.any { it == "project_id" || it == "projekt_id" || it == "fk_projekt" }
+            val hasName =
+                cols.any {
+                  it == "name" || it == "filename" || it == "bezeichnung" || it == "dateiname"
+                }
+            val idCol =
+                when {
+                  "uuid" in cols -> "uuid"
+                  "id" in cols -> "id"
+                  else -> null
+                }
+            val nameCol =
+                when {
+                  "name" in cols -> "name"
+                  "filename" in cols -> "filename"
+                  "bezeichnung" in cols -> "bezeichnung"
+                  "dateiname" in cols -> "dateiname"
+                  else -> null
+                }
+            val projCol =
+                when {
+                  "project_id" in cols -> "project_id"
+                  "projekt_id" in cols -> "projekt_id"
+                  "fk_projekt" in cols -> "fk_projekt"
+                  else -> null
+                }
+            if (hasProjId && nameCol != null && idCol != null && projCol != null) {
+              schemaTables.add(tbl)
+              try {
+                val sql = "SELECT $idCol FROM $tbl WHERE $projCol = ?1 AND $nameCol = ?2"
+                val q = em.createNativeQuery(sql)
+                q.setParameter(1, projectId)
+                q.setParameter(2, fileName)
+                val results = q.resultList
+                if (results.isNotEmpty()) {
+                  val idStr = results[0]?.toString() ?: continue
+                  foundUuid =
+                      try {
+                        UUID.fromString(idStr)
+                      } catch (_: Exception) {
+                        if (idCol == "id") UUID.nameUUIDFromBytes(idStr.toByteArray()) else null
+                      }
+                  if (foundUuid != null) break
+                }
               } catch (_: Exception) {
-                null
+                continue
               }
             }
-          } catch (_: Exception) {
-            continue
+          }
+        } catch (_: Exception) {}
+        if (foundUuid != null) return foundUuid
+        // Fallback: table registry + query combinations
+        val nameCols = listOf("name", "filename", "bezeichnung", "dateiname")
+        val projCols = listOf("project_id", "projekt_id", "fk_projekt")
+        val tableNames =
+            if (schemaTables.isNotEmpty()) schemaTables
+            else
+                listOf(
+                    "RESOURCE_PROJECT",
+                    "FILE_RESOURCE_PROJECT",
+                    "FILE_PROJECT",
+                    "PROJEKTRESSOURCE",
+                    "PROJEKT_RESSOURCE",
+                    "PROJECT_RESOURCE",
+                    "RESSOURCE_PROJEKT",
+                    "RESOURCE_PROJECT",
+                    "PROJEKT_DATEI")
+        for (tableName in tableNames) {
+          for (nameCol in nameCols) {
+            for (projCol in projCols) {
+              for (idCol in listOf("uuid", "id")) {
+                try {
+                  val sql = "SELECT $idCol FROM $tableName WHERE $projCol = ?1 AND $nameCol = ?2"
+                  val q = em.createNativeQuery(sql)
+                  q.setParameter(1, projectId)
+                  q.setParameter(2, fileName)
+                  val results = q.resultList
+                  if (results.isNotEmpty()) {
+                    val idStr = results[0]?.toString() ?: continue
+                    return try {
+                      UUID.fromString(idStr)
+                    } catch (_: Exception) {
+                      if (idCol == "id") UUID.nameUUIDFromBytes(idStr.toByteArray()) else null
+                    }
+                  }
+                } catch (_: Exception) {
+                  continue
+                }
+              }
+            }
           }
         }
         null
@@ -5257,6 +5473,96 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  /**
+   * Derives a meaningful node name from the workflow spec when the AI's taskName is blank or
+   * generic. Uses the nodeType and key nodeParams to generate a human-readable description. The
+   * result is sanitized to only allow characters valid for FORMCYCLE node names.
+   */
+  private fun deriveNodeName(spec: WorkflowTaskSpec): String {
+    val raw = spec.taskName.trim()
+    if (raw.isNotBlank() && !raw.equals("AI-generated task", ignoreCase = true)) {
+      return raw
+    }
+    val result =
+        when (spec.nodeType) {
+          "FC_RETURN_FILE" -> {
+            val fileName = spec.nodeParams["fileName"] as? String
+            if (!fileName.isNullOrBlank()) "Download ${fileName.take(40)}"
+            else "Return file to browser"
+          }
+          "FC_CREATE_TEXT_FILE" -> {
+            val content = spec.nodeParams["fileContent"] as? String
+            val fileName = spec.nodeParams["fileName"] as? String
+            when {
+              !content.isNullOrBlank() -> "Create ${content.take(20)} text file"
+              !fileName.isNullOrBlank() -> "Create $fileName"
+              else -> "Create text file"
+            }
+          }
+          "FC_EMAIL" -> {
+            val subject = spec.nodeParams["subject"] as? String
+            if (!subject.isNullOrBlank()) "Send email ${subject.take(40)}" else "Send email"
+          }
+          "FC_POST_REQUEST" -> {
+            val url = spec.nodeParams["url"] as? String
+            if (!url.isNullOrBlank()) "POST to ${url.take(40)}" else "Send HTTP request"
+          }
+          "FC_REDIRECT" -> {
+            val url = spec.nodeParams["url"] as? String
+            val tmpl = spec.nodeParams["urlTemplate"] as? String
+            when {
+              !tmpl.isNullOrBlank() -> "Redirect to template $tmpl"
+              !url.isNullOrBlank() -> "Redirect to ${url.take(40)}"
+              else -> "Redirect user"
+            }
+          }
+          "FC_CHANGE_STATE" -> {
+            val state = spec.nodeParams["stateName"] as? String
+            if (!state.isNullOrBlank()) "Set status to $state" else "Change form state"
+          }
+          "FC_LOG_ENTRY" -> {
+            val message = spec.nodeParams["message"] as? String
+            if (!message.isNullOrBlank()) "Log ${message.take(30)}" else "Write log entry"
+          }
+          "FC_SHOW_TEMPLATE" -> {
+            val template = spec.nodeParams["htmlTemplate"] as? String
+            if (!template.isNullOrBlank()) "Show $template" else "Show template"
+          }
+          "FC_DOI_INIT" -> "Send DOI email"
+          "FC_CHANGE_FORM_VALUE" -> "Set form field values"
+          "FC_SEND_FORM_RECORD_MESSAGE" -> "Send record message"
+          "FC_SET_SAVED_FLAG" -> "Mark record as saved"
+          "FC_DELETE_FORM_RECORD" -> "Delete form record"
+          "FC_COUNTER" -> "Increment counter"
+          "FC_PROMPT_QUERY" -> "Prompt user query"
+          "FC_COMPRESS_AS_ZIP" -> "Compress as ZIP"
+          "FC_FILL_PDF" -> "Fill PDF"
+          "FC_FILL_WORD" -> "Fill Word document"
+          "FC_SAVE_TO_FILE_SYSTEM" -> "Save to file system"
+          "FC_SAVE_TO_WEBDAV" -> "Save to WebDAV"
+          "FC_EXPORT_TO_XML" -> "Export to XML"
+          "FC_EXPORT_TO_PERSISTENCE" -> "Export to persistence"
+          "FC_LDAP_QUERY" -> "LDAP query"
+          "FC_ENCODE_BASE64" -> "Encode Base64"
+          "FC_DECODE_BASE64" -> "Decode Base64"
+          "FC_MOVE_FORM_RECORD_TO_INBOX" -> "Move record to inbox"
+          "FC_CHANGE_FORM_AVAILABILITY" -> "Change form availability"
+          "FC_CHANGE_FORM_RECORD_ACTIVENESS" -> "Toggle record activeness"
+          "FC_SET_FORM_RECORD_PASSWORD" -> "Set record password"
+          "FC_COPY_FORM_RECORD" -> "Copy form record"
+          "FC_FOR_EACH_LOOP" -> "For each loop"
+          "FC_WHILE_LOOP" -> "While loop"
+          "FC_DO_UNTIL_LOOP" -> "Do until loop"
+          "FC_SWITCH" -> "Switch condition"
+          "FC_MULTIPLE_CONDITION" -> "Multiple condition"
+          "FC_THROW_EXCEPTION" -> "Throw exception"
+          "FC_EMPTY" -> "Empty placeholder"
+          else -> spec.nodeType
+        }
+    // Sanitize: only allow letters, numbers, spaces, hyphens, underscores, parentheses
+    return result.replace(Regex("[^a-zA-Z0-9 _\\-()]"), "").trim().ifBlank { spec.nodeType }
+  }
+
   // region Data Classes
 
   private data class WorkflowTaskSpec(
@@ -5266,6 +5572,7 @@ class AICodBiAssistant : IPluginServletAction {
       val triggerParams: Map<String, Any> = emptyMap(),
       val nodeType: String = "FC_EMAIL",
       val nodeParams: Map<String, Any> = emptyMap(),
+      val chainedNodes: List<Map<String, Any>>? = null,
       val endpointState: String = "Received",
       val stateProperties: Map<String, Any> = emptyMap()
   )

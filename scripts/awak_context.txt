@@ -1,0 +1,14 @@
+private fun resolveProjectFileUuid(
+      userContext: Any?,
+      workflowVersion: Any?,
+      fileName: String
+  ): UUID? {
+    if (fileName.isBlank() || workflowVersion == null || userContext == null) return null
+    return try {
+      val project =
+          workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion) ?: return null
+      val projectId = project.javaClass.getMethod("getId").invoke(project) as? Long ?: return null
+      val emf = CodbiEntities.entityManagerFactory ?: return null
+      val em = emf.createEntityManager()
+      try {
+        val tableNames = listO

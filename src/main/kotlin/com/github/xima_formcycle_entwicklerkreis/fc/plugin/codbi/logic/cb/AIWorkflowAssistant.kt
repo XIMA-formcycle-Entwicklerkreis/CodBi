@@ -411,6 +411,10 @@ class AIWorkflowAssistant : IPluginServletAction {
             "nodeParams: {\"file\":\"<filename from form resources, e.g. 'xoxo.txt'>\"}\n" +
             "  - \"FC_DECODE_BASE64\" — decodes a Base64-encoded file back to its original format; " +
             "nodeParams: {\"base64\":\"<base64 content>\", \"exportName\":\"<output filename, e.g. 'xoxo.txt'>\"}\n" +
+            "  - \"FC_PROCESS_LOG_PDF\" — generates a PDF from the current process log messages; " +
+            "nodeParams: {\"fileName\":\"<output PDF filename, e.g. 'prozess-meldungen.pdf'>\"}. " +
+            "Use this when the user wants the process log messages to be compiled into a PDF file. " +
+            "The file is automatically provided for download via the logFileProvision setting.\n" +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "nodeParams: {\"htmlTemplate\":\"<name of the HTML template to display — MUST be one of the AVAILABLE HTML TEMPLATES listed below>\"}. " +
             "CRITICAL — The mandatory \"Template HTML\" property MUST reference an HTML template " +
@@ -1669,6 +1673,10 @@ class AIWorkflowAssistant : IPluginServletAction {
           """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(fileName)}}],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(fileName)}},"forceDownload":$forceDownload}"""
         }
       }
+      "FC_PROCESS_LOG_PDF" -> {
+        val fileName = spec.nodeParams["fileName"] as? String ?: "prozess-meldungen.pdf"
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fileName":${gson.toJson(fileName)},"logFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+      }
       "FC_SHOW_TEMPLATE" -> {
         val templateName = spec.nodeParams["htmlTemplate"] as? String ?: ""
         logger.info(
@@ -2845,6 +2853,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           "FC_DO_UNTIL_LOOP" -> "Do until loop"
           "FC_SWITCH" -> "Switch condition"
           "FC_MULTIPLE_CONDITION" -> "Multiple condition"
+          "FC_PROCESS_LOG_PDF" -> "Generate process log PDF"
           "FC_THROW_EXCEPTION" -> "Throw exception"
           "FC_EMPTY" -> "Empty placeholder"
           else -> spec.nodeType

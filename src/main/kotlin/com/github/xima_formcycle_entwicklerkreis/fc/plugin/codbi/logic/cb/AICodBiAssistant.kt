@@ -3603,7 +3603,8 @@ class AICodBiAssistant : IPluginServletAction {
             "  - \"FC_PROCESS_LOG_PDF\" — generates a PDF from the current process log messages; " +
             "nodeParams: {\"fileName\":\"<output PDF filename, e.g. 'prozess-meldungen.pdf'>\"}. " +
             "Use this when the user wants the process log messages to be compiled into a PDF file. " +
-            "The file is automatically provided for download via the logFileProvision setting.\n" +
+            "The PDF is attached to the form record. For automatic download, chain an FC_PROVIDE_RESOURCE node " +
+            "after this one with {\"exportName\":\"<same filename>\",\"sourceNode\":\"%prev%\"}.\n" +
             "  - \"FC_FILL_PDF\" — fills a PDF template with form data and produces a filled PDF; " +
             "nodeParams: {\"file\":\"<template filename from form resources, e.g. 'vorlage.pdf'>\", " +
             "\"exportName\":\"<output filename, e.g. 'ausgefuellt.pdf'>\", " +
@@ -4760,7 +4761,7 @@ class AICodBiAssistant : IPluginServletAction {
       }
       "FC_PROCESS_LOG_PDF" -> {
         val fileName = spec.nodeParams["fileName"] as? String ?: "prozess-meldungen.pdf"
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fileName":${gson.toJson(fileName)},"logFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fileName":${gson.toJson(fileName)},"logFileProvision":{"attachToFormRecord":true,"attachmentAccessibleToEndUser":true}}"""
       }
       "FC_SHOW_TEMPLATE" -> {
         val templateName = spec.nodeParams["htmlTemplate"] as? String ?: ""

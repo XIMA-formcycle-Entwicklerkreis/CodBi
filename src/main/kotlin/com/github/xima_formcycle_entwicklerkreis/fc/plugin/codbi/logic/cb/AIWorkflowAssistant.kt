@@ -427,15 +427,18 @@ class AIWorkflowAssistant : IPluginServletAction {
             "When used as a chained node, the template is taken from the preceding node's output.\n" +
             "  - \"FC_COMPRESS_AS_ZIP\" — compresses one or more files into a ZIP archive; " +
             "nodeParams: {\"compressedFileName\":\"<output ZIP filename, e.g. 'archive.zip'>\", " +
-            "\"files\":[\"<filename1>\",\"<filename2>\"]}. " +
+            "\"files\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
+            "The 'files' array must contain the technical IDs of the form upload fields whose files should be compressed. " +
             "When used as a chained node, compresses the file from the preceding node's output.\n" +
             "  - \"FC_SAVE_TO_FILE_SYSTEM\" — saves a file to the server's file system; " +
             "nodeParams: {\"exportDirectory\":\"<target directory path>\", " +
-            "\"files\":[\"<filename1>\"]}. " +
+            "\"files\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
+            "The 'files' array must contain the technical IDs of the form upload fields whose files should be saved. " +
             "When used as a chained node, saves the preceding node's output file to the directory.\n" +
             "  - \"FC_SAVE_TO_WEBDAV\" — saves a file to a WebDAV server; " +
             "nodeParams: {\"path\":\"<target path on WebDAV>\", " +
-            "\"files\":[\"<filename1>\"]}. " +
+            "\"files\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
+            "The 'files' array must contain the technical IDs of the form upload fields whose files should be saved. " +
             "When used as a chained node, saves the preceding node's output to the WebDAV path.\n" +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "nodeParams: {\"htmlTemplate\":\"<name of the HTML template to display — MUST be one of the AVAILABLE HTML TEMPLATES listed below>\"}. " +
@@ -1810,9 +1813,9 @@ class AIWorkflowAssistant : IPluginServletAction {
               if (files.isNotEmpty()) {
                 val resourcesJson =
                     files.joinToString(",") { f ->
-                      """{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(f)}}"""
+                      """{"type":"UPLOAD","identifier":${gson.toJson(f)}}"""
                     }
-                ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(files[0])}}"""
+                ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
               } else ""
             }
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"compressedFileName":${gson.toJson(compressedFileName)},"namingScheme":${gson.toJson(namingScheme)}$multiFileJson,"compressedFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
@@ -1831,9 +1834,9 @@ class AIWorkflowAssistant : IPluginServletAction {
               if (files.isNotEmpty()) {
                 val resourcesJson =
                     files.joinToString(",") { f ->
-                      """{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(f)}}"""
+                      """{"type":"UPLOAD","identifier":${gson.toJson(f)}}"""
                     }
-                ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(files[0])}}"""
+                ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
               } else ""
             }
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportDirectory":${gson.toJson(exportDirectory)}$multiFileJson}"""
@@ -1853,9 +1856,9 @@ class AIWorkflowAssistant : IPluginServletAction {
               if (files.isNotEmpty()) {
                 val resourcesJson =
                     files.joinToString(",") { f ->
-                      """{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(f)}}"""
+                      """{"type":"UPLOAD","identifier":${gson.toJson(f)}}"""
                     }
-                ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(files[0])}}"""
+                ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
               } else ""
             }
         val connJson =

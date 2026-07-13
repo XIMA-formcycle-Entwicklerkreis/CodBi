@@ -431,13 +431,15 @@ class AIWorkflowAssistant : IPluginServletAction {
             "The 'files' array must contain the technical IDs of the form upload fields whose files should be compressed. " +
             "When used as a chained node, compresses the file from the preceding node's output.\n" +
             "  - \"FC_SAVE_TO_FILE_SYSTEM\" — saves a file to the server's file system; " +
-            "nodeParams: {\"exportDirectory\":\"<target directory path>\", " +
+            "nodeParams: {\"exportDirectory\":\"<target directory path, e.g. '/Test/'>\", " +
             "\"files\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
+            "When a path is specified, allowPathInPlaceholder is automatically set to true. " +
             "The 'files' array must contain the technical IDs of the form upload fields whose files should be saved. " +
             "When used as a chained node, saves the preceding node's output file to the directory.\n" +
             "  - \"FC_SAVE_TO_WEBDAV\" — saves a file to a WebDAV server; " +
             "nodeParams: {\"path\":\"<target path on WebDAV>\", " +
             "\"files\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
+            "When a path is specified, allowPathInPlaceholder is automatically set to true. " +
             "The 'files' array must contain the technical IDs of the form upload fields whose files should be saved. " +
             "When used as a chained node, saves the preceding node's output to the WebDAV path.\n" +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
@@ -1822,6 +1824,7 @@ class AIWorkflowAssistant : IPluginServletAction {
       }
       "FC_SAVE_TO_FILE_SYSTEM" -> {
         val exportDirectory = spec.nodeParams["exportDirectory"] as? String ?: ""
+        val allowPathInPlaceholder = exportDirectory.isNotBlank()
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
         val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
         val multiFileJson =
@@ -1839,10 +1842,11 @@ class AIWorkflowAssistant : IPluginServletAction {
                 ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
               } else ""
             }
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportDirectory":${gson.toJson(exportDirectory)}$multiFileJson}"""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportDirectory":${gson.toJson(exportDirectory)},"allowPathInPlaceholder":$allowPathInPlaceholder$multiFileJson}"""
       }
       "FC_SAVE_TO_WEBDAV" -> {
         val path = spec.nodeParams["path"] as? String ?: ""
+        val allowPathInPlaceholder = path.isNotBlank()
         val webdavConnection = spec.nodeParams["webdavConnection"] as? String ?: ""
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
         val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
@@ -1865,7 +1869,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             if (webdavConnection.isNotBlank())
                 ""","webdavConnection":${gson.toJson(webdavConnection)}"""
             else ""
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"path":${gson.toJson(path)}$connJson$multiFileJson}"""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"path":${gson.toJson(path)},"allowPathInPlaceholder":$allowPathInPlaceholder$connJson$multiFileJson}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

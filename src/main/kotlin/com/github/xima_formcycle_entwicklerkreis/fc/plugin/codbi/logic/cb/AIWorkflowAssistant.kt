@@ -415,6 +415,27 @@ class AIWorkflowAssistant : IPluginServletAction {
             "nodeParams: {\"fileName\":\"<output PDF filename, e.g. 'prozess-meldungen.pdf'>\"}. " +
             "Use this when the user wants the process log messages to be compiled into a PDF file. " +
             "The file is automatically provided for download via the logFileProvision setting.\n" +
+            "  - \"FC_FILL_PDF\" — fills a PDF template with form data and produces a filled PDF; " +
+            "nodeParams: {\"file\":\"<template filename from form resources, e.g. 'vorlage.pdf'>\", " +
+            "\"exportName\":\"<output filename, e.g. 'ausgefuellt.pdf'>\", " +
+            "\"flatten\":<true|false> (optional, default true)}. " +
+            "When used as a chained node, the template file is taken from the preceding node's output.\n" +
+            "  - \"FC_FILL_WORD\" — fills a Word template with form data and produces a filled document; " +
+            "nodeParams: {\"file\":\"<template filename from form resources, e.g. 'vorlage.docx'>\", " +
+            "\"exportName\":\"<output filename, e.g. 'ausgefuellt.docx'>\"}. " +
+            "When used as a chained node, the template is taken from the preceding node's output.\n" +
+            "  - \"FC_COMPRESS_AS_ZIP\" — compresses one or more files into a ZIP archive; " +
+            "nodeParams: {\"compressedFileName\":\"<output ZIP filename, e.g. 'archive.zip'>\", " +
+            "\"files\":[\"<filename1>\",\"<filename2>\"]}. " +
+            "When used as a chained node, compresses the file from the preceding node's output.\n" +
+            "  - \"FC_SAVE_TO_FILE_SYSTEM\" — saves a file to the server's file system; " +
+            "nodeParams: {\"exportDirectory\":\"<target directory path>\", " +
+            "\"files\":[\"<filename1>\"]}. " +
+            "When used as a chained node, saves the preceding node's output file to the directory.\n" +
+            "  - \"FC_SAVE_TO_WEBDAV\" — saves a file to a WebDAV server; " +
+            "nodeParams: {\"path\":\"<target path on WebDAV>\", " +
+            "\"files\":[\"<filename1>\"]}. " +
+            "When used as a chained node, saves the preceding node's output to the WebDAV path.\n" +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "nodeParams: {\"htmlTemplate\":\"<name of the HTML template to display — MUST be one of the AVAILABLE HTML TEMPLATES listed below>\"}. " +
             "CRITICAL — The mandatory \"Template HTML\" property MUST reference an HTML template " +
@@ -1466,6 +1487,8 @@ class AIWorkflowAssistant : IPluginServletAction {
         val body = spec.nodeParams["body"] as? String ?: ""
         val from = spec.nodeParams["from"] as? String ?: ""
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
         @Suppress("UNCHECKED_CAST")
         val attachments =
             (spec.nodeParams["attachments"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
@@ -1473,7 +1496,9 @@ class AIWorkflowAssistant : IPluginServletAction {
         // to / cc / bcc are List<String> in FcEmailProps — serialise as JSON arrays
         val toJson = if (to.isNotBlank()) "[${gson.toJson(to)}]" else "[]"
         val multiFileJson =
-            if (attachments.isNotEmpty()) {
+            if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
+              ""","multiFile":{"resources":[{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}],"attachmentFilter":[]}"""
+            } else if (attachments.isNotEmpty()) {
               val resourcesJson =
                   attachments.joinToString(",") { id ->
                     """{"type":"UPLOAD","identifier":${gson.toJson(id)}}"""
@@ -1647,13 +1672,19 @@ class AIWorkflowAssistant : IPluginServletAction {
         """{"name":${gson.toJson(nodeName)},"customAttributes":[${attributes.joinToString(",")}],"writeAttributesToForm":false}"""
       }
       "FC_ENCODE_BASE64" -> {
-        val fileName = spec.nodeParams["file"] as? String ?: ""
-        val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
-        if (fileUuid != null) {
-          val uuidStr = fileUuid.toString()
-          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"singleFile":{"resource":{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}},"attachmentFilter":[]}}"""
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"singleFile":{"resource":{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}},"attachmentFilter":[]}"""
         } else {
-          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"singleFile":{"searchFilename":${gson.toJson(fileName)},"attachmentFilter":["FORM_UPLOAD"]}}"""
+          val fileName = spec.nodeParams["file"] as? String ?: ""
+          val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+          if (fileUuid != null) {
+            val uuidStr = fileUuid.toString()
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"singleFile":{"resource":{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}},"attachmentFilter":[]}}"""
+          } else {
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"singleFile":{"searchFilename":${gson.toJson(fileName)},"attachmentFilter":["FORM_UPLOAD"]}}"""
+          }
         }
       }
       "FC_DECODE_BASE64" -> {
@@ -1662,15 +1693,21 @@ class AIWorkflowAssistant : IPluginServletAction {
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"base64":${gson.toJson(base64)},"decodedFileProvision":{"attachToFormRecord":true,"attachmentAccessibleToEndUser":true},"exportName":${gson.toJson(exportName)}}"""
       }
       "FC_RETURN_FILE" -> {
-        val fileName = spec.nodeParams["fileName"] as? String ?: ""
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
         val forceDownload = spec.nodeParams["forceDownload"] as? Boolean ?: true
-        // Try resolving file UUID from project resources
-        val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
-        if (fileUuid != null) {
-          val uuidStr = fileUuid.toString()
-          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}}],"attachmentFilter":[]},"forceDownload":$forceDownload}"""
+        val deleteAfter = spec.nodeParams["deleteFileAfterDownload"] as? Boolean ?: false
+        if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}],"attachmentFilter":[]},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
         } else {
-          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(fileName)}}],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(fileName)}},"forceDownload":$forceDownload}"""
+          val fileName = spec.nodeParams["fileName"] as? String ?: ""
+          val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+          if (fileUuid != null) {
+            val uuidStr = fileUuid.toString()
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}}],"attachmentFilter":[]},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
+          } else {
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"multiFile":{"resources":[{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(fileName)}}],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(fileName)}},"forceDownload":$forceDownload,"deleteFileAfterDownload":$deleteAfter}"""
+          }
         }
       }
       "FC_PROCESS_LOG_PDF" -> {
@@ -1713,6 +1750,118 @@ class AIWorkflowAssistant : IPluginServletAction {
               userContext == null)
           """{"name":${gson.toJson(nodeName)},"htmlTemplate":null}"""
         }
+      }
+      "FC_FILL_PDF" -> {
+        val exportName = spec.nodeParams["exportName"] as? String ?: "filled.pdf"
+        val flatten = spec.nodeParams["flatten"] as? Boolean ?: true
+        val usedFont = spec.nodeParams["usedFont"] as? String ?: ""
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        val singleFileJson =
+            if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
+              ""","singleFile":{"resource":{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}}"""
+            } else {
+              val fileName = spec.nodeParams["file"] as? String ?: ""
+              val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+              if (fileUuid != null) {
+                val uuidStr = fileUuid.toString()
+                ""","singleFile":{"resource":{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}},"attachmentFilter":[]}"""
+              } else if (fileName.isNotBlank()) {
+                ""","singleFile":{"searchFilename":${gson.toJson(fileName)},"attachmentFilter":["FORM_UPLOAD"]}"""
+              } else ""
+            }
+        val usedFontJson =
+            if (usedFont.isNotBlank()) ""","usedFont":${gson.toJson(usedFont)}""" else ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportName":${gson.toJson(exportName)},"flatten":$flatten$usedFontJson$singleFileJson,"pdfFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+      }
+      "FC_FILL_WORD" -> {
+        val exportName = spec.nodeParams["exportName"] as? String ?: "filled.docx"
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        val singleFileJson =
+            if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
+              ""","singleFile":{"resource":{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}}"""
+            } else {
+              val fileName = spec.nodeParams["file"] as? String ?: ""
+              val fileUuid = resolveProjectFileUuid(userContext, workflowVersion, fileName)
+              if (fileUuid != null) {
+                val uuidStr = fileUuid.toString()
+                ""","singleFile":{"resource":{"type":"FORM","entity":{"entityClass":"de.xima.fc.entities.ProjektRessource","uuid":"$uuidStr"}},"attachmentFilter":[]}"""
+              } else if (fileName.isNotBlank()) {
+                ""","singleFile":{"searchFilename":${gson.toJson(fileName)},"attachmentFilter":["FORM_UPLOAD"]}"""
+              } else ""
+            }
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportName":${gson.toJson(exportName)}$singleFileJson,"wordFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+      }
+      "FC_COMPRESS_AS_ZIP" -> {
+        val compressedFileName = spec.nodeParams["compressedFileName"] as? String ?: "archive.zip"
+        val namingScheme =
+            (spec.nodeParams["namingScheme"] as? String ?: "FLAT_FILE_NAME_ONLY").uppercase()
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        val multiFileJson =
+            if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
+              ""","multiFile":{"resources":[{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}],"attachmentFilter":[]}"""
+            } else {
+              @Suppress("UNCHECKED_CAST")
+              val files =
+                  (spec.nodeParams["files"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+              if (files.isNotEmpty()) {
+                val resourcesJson =
+                    files.joinToString(",") { f ->
+                      """{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(f)}}"""
+                    }
+                ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(files[0])}}"""
+              } else ""
+            }
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"compressedFileName":${gson.toJson(compressedFileName)},"namingScheme":${gson.toJson(namingScheme)}$multiFileJson,"compressedFileProvision":{"attachToFormRecord":false,"attachmentAccessibleToEndUser":true}}"""
+      }
+      "FC_SAVE_TO_FILE_SYSTEM" -> {
+        val exportDirectory = spec.nodeParams["exportDirectory"] as? String ?: ""
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        val multiFileJson =
+            if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
+              ""","multiFile":{"resources":[{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}],"attachmentFilter":[]}"""
+            } else {
+              @Suppress("UNCHECKED_CAST")
+              val files =
+                  (spec.nodeParams["files"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+              if (files.isNotEmpty()) {
+                val resourcesJson =
+                    files.joinToString(",") { f ->
+                      """{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(f)}}"""
+                    }
+                ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(files[0])}}"""
+              } else ""
+            }
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportDirectory":${gson.toJson(exportDirectory)}$multiFileJson}"""
+      }
+      "FC_SAVE_TO_WEBDAV" -> {
+        val path = spec.nodeParams["path"] as? String ?: ""
+        val webdavConnection = spec.nodeParams["webdavConnection"] as? String ?: ""
+        val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
+        val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
+        val multiFileJson =
+            if (nodeUuid.isNotBlank() && taskUuid.isNotBlank()) {
+              ""","multiFile":{"resources":[{"type":"FILE_PROVIDE_ACTION","nodeKey":{"uuid":${gson.toJson(nodeUuid)},"taskUuid":${gson.toJson(taskUuid)}}}],"attachmentFilter":[]}"""
+            } else {
+              @Suppress("UNCHECKED_CAST")
+              val files =
+                  (spec.nodeParams["files"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+              if (files.isNotEmpty()) {
+                val resourcesJson =
+                    files.joinToString(",") { f ->
+                      """{"type":"ATTACHMENT_SEARCH","identifier":${gson.toJson(f)}}"""
+                    }
+                ""","multiFile":{"resources":[$resourcesJson],"attachmentFilter":["FORM_UPLOAD"],"searchFilename":${gson.toJson(files[0])}}"""
+              } else ""
+            }
+        val connJson =
+            if (webdavConnection.isNotBlank())
+                ""","webdavConnection":${gson.toJson(webdavConnection)}"""
+            else ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"path":${gson.toJson(path)}$connJson$multiFileJson}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
@@ -2854,6 +3003,11 @@ class AIWorkflowAssistant : IPluginServletAction {
           "FC_SWITCH" -> "Switch condition"
           "FC_MULTIPLE_CONDITION" -> "Multiple condition"
           "FC_PROCESS_LOG_PDF" -> "Generate process log PDF"
+          "FC_FILL_PDF" -> "Fill PDF template"
+          "FC_FILL_WORD" -> "Fill Word template"
+          "FC_COMPRESS_AS_ZIP" -> "Compress as ZIP"
+          "FC_SAVE_TO_FILE_SYSTEM" -> "Save to file system"
+          "FC_SAVE_TO_WEBDAV" -> "Save to WebDAV"
           "FC_THROW_EXCEPTION" -> "Throw exception"
           "FC_EMPTY" -> "Empty placeholder"
           else -> spec.nodeType

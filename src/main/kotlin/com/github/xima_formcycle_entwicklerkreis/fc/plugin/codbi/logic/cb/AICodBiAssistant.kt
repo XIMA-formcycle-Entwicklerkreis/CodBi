@@ -3631,11 +3631,12 @@ class AICodBiAssistant : IPluginServletAction {
             "When a path is specified, allowPathInPlaceholder is automatically set to true. " +
             "The 'files' array must contain the technical IDs of the form upload fields whose files should be saved. " +
             "When used as a chained node, saves the preceding node's output to the WebDAV path.\n" +
-            "  - \"FC_COUNTER\" — increments or decrements a counter; " +
+            "  - \"FC_COUNTER\" — increments, decrements, or resets a counter; " +
             "nodeParams: {\"counterName\":\"<counter name, e.g. 'XXX'>\", " +
             "\"action\":\"COUNT_UP\"|\"COUNT_DOWN\"|\"COUNT_RESET\" (default COUNT_UP), " +
             "\"step\":\"<step size, e.g. '1'>\" (optional, default \"1\")}. " +
-            "Use this when the user says a counter should be incremented, decremented, or reset.\n" +
+            "Use COUNT_RESET when the user says a counter should be reset, zurückgesetzt, or " +
+            "\"auf den Standardwert zurückgesetzt\" (reset to default value).\n" +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "nodeParams: {\"htmlTemplate\":\"<name of the HTML template to display — MUST be one of the AVAILABLE HTML TEMPLATES listed below>\"}. " +

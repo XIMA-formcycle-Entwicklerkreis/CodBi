@@ -448,6 +448,11 @@ class AIWorkflowAssistant : IPluginServletAction {
             "\"step\":\"<step size, e.g. '1'>\" (optional, default \"1\")}. " +
             "Use COUNT_RESET when the user says a counter should be reset, zurückgesetzt, or " +
             "\"auf den Standardwert zurückgesetzt\" (reset to default value).\n" +
+            "  - \"FC_CHANGE_FORM_AVAILABILITY\" — sets the form online or offline; " +
+            "nodeParams: {\"changeType\":\"SET_ONLINE\"|\"SET_OFFLINE\"}. " +
+            "Use this when the user says the form should go offline or online, " +
+            "e.g. \"Formular offline gehen\", \"Formular online schalten\". " +
+            "Do NOT use this for setting the form record status — that is endpointState.\n" +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "nodeParams: {\"htmlTemplate\":\"<name of the HTML template to display — MUST be one of the AVAILABLE HTML TEMPLATES listed below>\"}. " +
             "CRITICAL — The mandatory \"Template HTML\" property MUST reference an HTML template " +
@@ -1882,6 +1887,10 @@ class AIWorkflowAssistant : IPluginServletAction {
         val action = (spec.nodeParams["action"] as? String ?: "COUNT_UP").uppercase()
         val step = spec.nodeParams["step"] as? String ?: "1"
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"counterRef":{"nameRef":${gson.toJson(counterName)},"refType":"NAME_VALUE"},"actionType":${gson.toJson(action)},"step":${gson.toJson(step)}}"""
+      }
+      "FC_CHANGE_FORM_AVAILABILITY" -> {
+        val changeType = (spec.nodeParams["changeType"] as? String ?: "SET_OFFLINE").uppercase()
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"changeType":${gson.toJson(changeType)}}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

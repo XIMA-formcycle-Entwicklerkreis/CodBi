@@ -3631,6 +3631,11 @@ class AICodBiAssistant : IPluginServletAction {
             "When a path is specified, allowPathInPlaceholder is automatically set to true. " +
             "The 'files' array must contain the technical IDs of the form upload fields whose files should be saved. " +
             "When used as a chained node, saves the preceding node's output to the WebDAV path.\n" +
+            "  - \"FC_COUNTER\" — increments or decrements a counter; " +
+            "nodeParams: {\"counterName\":\"<counter name, e.g. 'XXX'>\", " +
+            "\"action\":\"COUNT_UP\"|\"COUNT_DOWN\"|\"COUNT_RESET\" (default COUNT_UP), " +
+            "\"step\":\"<step size, e.g. '1'>\" (optional, default \"1\")}. " +
+            "Use this when the user says a counter should be incremented, decremented, or reset.\n" +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "nodeParams: {\"htmlTemplate\":\"<name of the HTML template to display — MUST be one of the AVAILABLE HTML TEMPLATES listed below>\"}. " +
@@ -4919,6 +4924,12 @@ class AICodBiAssistant : IPluginServletAction {
                 ""","webdavConnection":${gson.toJson(webdavConnection)}"""
             else ""
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"path":${gson.toJson(path)},"allowPathInPlaceholder":$allowPathInPlaceholder$connJson$multiFileJson}"""
+      }
+      "FC_COUNTER" -> {
+        val counterName = spec.nodeParams["counterName"] as? String ?: ""
+        val action = (spec.nodeParams["action"] as? String ?: "COUNT_UP").uppercase()
+        val step = spec.nodeParams["step"] as? String ?: "1"
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"counterRef":{"nameRef":${gson.toJson(counterName)},"refType":"NAME_VALUE"},"actionType":${gson.toJson(action)},"step":${gson.toJson(step)}}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

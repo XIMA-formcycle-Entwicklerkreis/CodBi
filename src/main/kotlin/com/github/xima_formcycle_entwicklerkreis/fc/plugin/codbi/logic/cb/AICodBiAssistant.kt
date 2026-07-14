@@ -5000,8 +5000,6 @@ class AICodBiAssistant : IPluginServletAction {
                 .invoke(q, 1, projectName)
             @Suppress("UNCHECKED_CAST")
             val results = q.javaClass.getMethod("getResultList").invoke(q) as List<*>
-            @Suppress("UNCHECKED_CAST")
-            val results = q.javaClass.getMethod("getResultList").invoke(q) as List<*>
             if (results.isNotEmpty()) {
               val uuidStr = results[0]?.toString()
               if (uuidStr != null) projectUuid = UUID.fromString(uuidStr)
@@ -5029,7 +5027,6 @@ class AICodBiAssistant : IPluginServletAction {
                 entityContextFactoryClass
                     .getMethod("newEntityContext", ucClass)
                     .invoke(null, userContext)
-            val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
             val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
             // Use native SQL with UPPERCASE table names (H2 default)
             val q =

@@ -1944,7 +1944,9 @@ class AIWorkflowAssistant : IPluginServletAction {
             val q =
                 em.javaClass
                     .getMethod("createQuery", String::class.java)
-                    .invoke(em, "SELECT p.uuid FROM Projekt p WHERE LOWER(p.name) = LOWER(:pname)")
+                    .invoke(
+                        em,
+                        "SELECT p.UUIDObject FROM Projekt p WHERE LOWER(p.name) = LOWER(:pname)")
             q.javaClass
                 .getMethod("setParameter", String::class.java, Any::class.java)
                 .invoke(q, "pname", projectName)
@@ -1983,7 +1985,7 @@ class AIWorkflowAssistant : IPluginServletAction {
                     .getMethod("createQuery", String::class.java)
                     .invoke(
                         em,
-                        "SELECT ws.uuid FROM WorkflowState ws WHERE ws.version.project.uuid = :puid AND LOWER(ws.name) = LOWER(:sname)")
+                        "SELECT ws.UUIDObject FROM WorkflowState ws WHERE ws.version.project.UUIDObject = :puid AND LOWER(ws.name) = LOWER(:sname)")
             q.javaClass
                 .getMethod("setParameter", String::class.java, Any::class.java)
                 .invoke(q, "puid", projectUuid)

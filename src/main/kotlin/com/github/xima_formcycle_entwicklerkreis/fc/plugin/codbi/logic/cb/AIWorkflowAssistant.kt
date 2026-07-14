@@ -1944,7 +1944,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             val q =
                 em.javaClass
                     .getMethod("createNativeQuery", String::class.java)
-                    .invoke(em, "SELECT uuid FROM projekt WHERE LOWER(name) = LOWER(?1)")
+                    .invoke(em, "SELECT UUID FROM PROJEKT WHERE LOWER(NAME) = LOWER(?1)")
             q.javaClass
                 .getMethod("setParameter", Int::class.java, Any::class.java)
                 .invoke(q, 1, projectName)
@@ -1983,10 +1983,10 @@ class AIWorkflowAssistant : IPluginServletAction {
                     .getMethod("createNativeQuery", String::class.java)
                     .invoke(
                         em,
-                        "SELECT ws.uuid FROM workflow_state ws " +
-                            "JOIN workflow_version wv ON ws.version_id = wv.id " +
-                            "JOIN projekt p ON wv.project_id = p.id OR wv.projekt_id = p.id " +
-                            "WHERE p.uuid = ?1 AND LOWER(ws.name) = LOWER(?2)")
+                        "SELECT ws.UUID FROM WORKFLOW_STATE ws " +
+                            "JOIN WORKFLOW_VERSION wv ON ws.VERSION_ID = wv.ID " +
+                            "JOIN PROJEKT p ON wv.PROJECT_ID = p.ID OR wv.PROJEKT_ID = p.ID " +
+                            "WHERE p.UUID = ?1 AND LOWER(ws.NAME) = LOWER(?2)")
             q.javaClass
                 .getMethod("setParameter", Int::class.java, Any::class.java)
                 .invoke(q, 1, projectUuid.toString())

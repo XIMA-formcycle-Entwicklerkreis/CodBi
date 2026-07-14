@@ -5007,10 +5007,16 @@ class AICodBiAssistant : IPluginServletAction {
             }
             entityContext.javaClass.getMethod("close").invoke(entityContext)
           } catch (e: Exception) {
+            val causeMsg =
+                if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
+                  "${e.cause!!::class.simpleName}: ${e.cause!!.message}"
+                } else {
+                  "${e::class.simpleName}: ${e.message ?: "null"}"
+                }
             logger.warn(
                 "[AICodBiAssistant] Could not resolve project UUID for '{}': {}",
                 projectName,
-                e.message)
+                causeMsg)
           }
         }
         val projectJson =
@@ -5049,11 +5055,17 @@ class AICodBiAssistant : IPluginServletAction {
             }
             entityContext.javaClass.getMethod("close").invoke(entityContext)
           } catch (e: Exception) {
+            val causeMsg =
+                if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
+                  "${e.cause!!::class.simpleName}: ${e.cause!!.message}"
+                } else {
+                  "${e::class.simpleName}: ${e.message ?: "null"}"
+                }
             logger.warn(
                 "[AICodBiAssistant] Could not resolve state UUID for '{}' in project '{}': {}",
                 stateName,
                 projectName,
-                e.message)
+                causeMsg)
           }
         }
         val stateJson =

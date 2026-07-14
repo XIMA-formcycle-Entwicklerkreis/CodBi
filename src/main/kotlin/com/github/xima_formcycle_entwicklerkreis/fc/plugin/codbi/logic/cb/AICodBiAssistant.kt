@@ -4978,15 +4978,17 @@ class AICodBiAssistant : IPluginServletAction {
                   }
               ""","otherAttachments":{"resources":[$resourcesJson],"attachmentFilter":[]},"copyOtherAttachments":true"""
             } else ""
-        val projectJson =
-            if (projectName.isNotBlank())
-                ""","project":{"nameRef":${gson.toJson(projectName)},"refType":"NAME_VALUE"}"""
-            else ""
+        val stateUuid =
+            if (stateName.isNotBlank() && workflowVersion != null && userContext != null)
+                resolveStateUuid(userContext, workflowVersion, stateName)
+            else null
         val stateJson =
-            if (stateName.isNotBlank())
+            if (stateUuid != null)
+                ""","stateNewRecord":{"uuid":${gson.toJson(stateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}"""
+            else if (stateName.isNotBlank())
                 ""","stateNewRecord":{"nameRef":${gson.toJson(stateName)},"refType":"NAME_VALUE"}"""
             else ""
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"copyValues":true,"copyAll":$copyAll$projectJson$stateJson$elementsToCopyJson$multiFileJson}"""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"copyValues":true,"copyAll":$copyAll$elementsToCopyJson$multiFileJson$stateJson}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

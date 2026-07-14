@@ -1929,7 +1929,87 @@ class AIWorkflowAssistant : IPluginServletAction {
                   }
               ""","otherAttachments":{"resources":[$resourcesJson],"attachmentFilter":[]},"copyOtherAttachments":true"""
             } else ""
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"copyValues":true,"copyAll":$copyAll$elementsToCopyJson$multiFileJson}"""
+        // Resolve project UUID via JPQL (entity class name, no native SQL table names)
+        var projectUuid: UUID? = null
+        if (projectName.isNotBlank() && userContext != null) {
+          try {
+            val entityContextFactoryClass =
+                Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+            val ucClass = Class.forName("de.xima.fc.user.UserContext")
+            val entityContext =
+                entityContextFactoryClass
+                    .getMethod("newEntityContext", ucClass)
+                    .invoke(null, userContext)
+            val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+            val q =
+                em.javaClass
+                    .getMethod("createQuery", String::class.java)
+                    .invoke(em, "SELECT p.uuid FROM Projekt p WHERE LOWER(p.name) = LOWER(:pname)")
+            q.javaClass
+                .getMethod("setParameter", String::class.java, Any::class.java)
+                .invoke(q, "pname", projectName)
+            @Suppress("UNCHECKED_CAST")
+            val results = q.javaClass.getMethod("getResultList").invoke(q) as List<*>
+            if (results.isNotEmpty()) {
+              val raw = results[0]?.toString()
+              if (raw != null) projectUuid = UUID.fromString(raw)
+            }
+            entityContext.javaClass.getMethod("close").invoke(entityContext)
+          } catch (e: Exception) {
+            logger.warn(
+                "[AIWorkflowAssistant] Could not resolve project UUID for '{}': {}",
+                projectName,
+                e.message)
+          }
+        }
+        val projectJson =
+            if (projectUuid != null)
+                ""","project":{"uuid":${gson.toJson(projectUuid.toString())},"entityClass":"de.xima.fc.entities.Projekt"}"""
+            else ""
+        // Resolve state UUID via JPQL using entity class names
+        var stateUuid: UUID? = null
+        if (stateName.isNotBlank() && projectUuid != null && userContext != null) {
+          try {
+            val entityContextFactoryClass =
+                Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+            val ucClass = Class.forName("de.xima.fc.user.UserContext")
+            val entityContext =
+                entityContextFactoryClass
+                    .getMethod("newEntityContext", ucClass)
+                    .invoke(null, userContext)
+            val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+            val q =
+                em.javaClass
+                    .getMethod("createQuery", String::class.java)
+                    .invoke(
+                        em,
+                        "SELECT ws.uuid FROM WorkflowState ws WHERE ws.version.project.uuid = :puid AND LOWER(ws.name) = LOWER(:sname)")
+            q.javaClass
+                .getMethod("setParameter", String::class.java, Any::class.java)
+                .invoke(q, "puid", projectUuid)
+            q.javaClass
+                .getMethod("setParameter", String::class.java, Any::class.java)
+                .invoke(q, "sname", stateName)
+            @Suppress("UNCHECKED_CAST")
+            val results = q.javaClass.getMethod("getResultList").invoke(q) as List<*>
+            if (results.isNotEmpty()) {
+              val raw = results[0]?.toString()
+              if (raw != null) stateUuid = UUID.fromString(raw)
+            }
+            entityContext.javaClass.getMethod("close").invoke(entityContext)
+          } catch (e: Exception) {
+            logger.warn(
+                "[AIWorkflowAssistant] Could not resolve state UUID for '{}' in project '{}': {}",
+                stateName,
+                projectName,
+                e.message)
+          }
+        }
+        val stateJson =
+            if (stateUuid != null)
+                ""","stateNewRecord":{"uuid":${gson.toJson(stateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}"""
+            else ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"copyValues":true,"copyAll":$copyAll$projectJson$stateJson$elementsToCopyJson$multiFileJson}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

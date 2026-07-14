@@ -2023,7 +2023,16 @@ class AIWorkflowAssistant : IPluginServletAction {
             if (stateUuid != null)
                 ""","stateNewRecord":{"uuid":${gson.toJson(stateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}"""
             else ""
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"copyValues":true,"copyAll":$copyAll$projectJson$stateJson$elementsToCopyJson$multiFileJson}"""
+        val pluginResult =
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"copyValues":true,"copyAll":$copyAll$projectJson$stateJson$elementsToCopyJson$multiFileJson}"""
+        logger.info(
+            "[AIWorkflowAssistant] CreateRecordNodePlugin JSON: projectName='{}', stateName='{}', projectUuid={}, stateUuid={}, result_len={}",
+            projectName,
+            stateName,
+            projectUuid,
+            stateUuid,
+            pluginResult.length)
+        pluginResult
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

@@ -453,6 +453,15 @@ class AIWorkflowAssistant : IPluginServletAction {
             "Use this when the user says the form should go offline or online, " +
             "e.g. \"Formular offline gehen\", \"Formular online schalten\". " +
             "Do NOT use this for setting the form record status — that is endpointState.\n" +
+            "  - \"de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin\" — " +
+            "creates a new form record (Vorgang) in another form. " +
+            "nodeParams: {\"projectName\":\"<target form name, e.g. 'CMIS Test'>\", " +
+            "\"stateName\":\"<target state name for new record, e.g. 'Eingegangen'>\", " +
+            "\"elementsToCopy\":[{\"name\":\"<target field ID>\",\"value\":\"<value>\"},...], " +
+            "\"copyAll\":<true|false> (optional, default false — copy fields with matching names), " +
+            "\"files\":[\"<upload field technical ID, e.g. 'upl1'>\"] (optional — files to transfer)}. " +
+            "Use this when the user says a new form record (Vorgang) should be created " +
+            "in another form with specific field values and optionally file attachments.\n" +
             "  - \"FC_SHOW_TEMPLATE\" — renders an HTML template to the user; " +
             "nodeParams: {\"htmlTemplate\":\"<name of the HTML template to display — MUST be one of the AVAILABLE HTML TEMPLATES listed below>\"}. " +
             "CRITICAL — The mandatory \"Template HTML\" property MUST reference an HTML template " +
@@ -1891,6 +1900,44 @@ class AIWorkflowAssistant : IPluginServletAction {
       "FC_CHANGE_FORM_AVAILABILITY" -> {
         val changeType = (spec.nodeParams["changeType"] as? String ?: "SET_OFFLINE").uppercase()
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"changeType":${gson.toJson(changeType)}}"""
+      }
+      "de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin" -> {
+        val projectName = spec.nodeParams["projectName"] as? String ?: ""
+        val stateName = spec.nodeParams["stateName"] as? String ?: ""
+        val copyAll = spec.nodeParams["copyAll"] as? Boolean ?: false
+        @Suppress("UNCHECKED_CAST")
+        val elementsToCopy =
+            (spec.nodeParams["elementsToCopy"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.mapNotNull { m ->
+                  val name = m["name"] as? String ?: return@mapNotNull null
+                  val value = m["value"] as? String ?: ""
+                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)},"deletable":true,"nameEditable":true,"valueEditable":true,"required":false}"""
+                } ?: emptyList()
+        val elementsToCopyJson =
+            if (elementsToCopy.isNotEmpty())
+                ""","elementsToCopy":[${elementsToCopy.joinToString(",")}]"""
+            else ""
+        @Suppress("UNCHECKED_CAST")
+        val files =
+            (spec.nodeParams["files"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val multiFileJson =
+            if (files.isNotEmpty()) {
+              val resourcesJson =
+                  files.joinToString(",") { f ->
+                    """{"type":"UPLOAD","identifier":${gson.toJson(f)}}"""
+                  }
+              ""","otherAttachments":{"resources":[$resourcesJson],"attachmentFilter":[]},"copyOtherAttachments":true"""
+            } else ""
+        val projectJson =
+            if (projectName.isNotBlank())
+                ""","project":{"nameRef":${gson.toJson(projectName)},"refType":"NAME_VALUE"}"""
+            else ""
+        val stateJson =
+            if (stateName.isNotBlank())
+                ""","stateNewRecord":{"nameRef":${gson.toJson(stateName)},"refType":"NAME_VALUE"}"""
+            else ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"copyValues":true,"copyAll":$copyAll$projectJson$stateJson$elementsToCopyJson$multiFileJson}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

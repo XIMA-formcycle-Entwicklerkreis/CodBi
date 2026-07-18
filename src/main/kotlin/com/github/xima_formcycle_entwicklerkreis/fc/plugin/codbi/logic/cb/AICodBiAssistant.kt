@@ -3614,6 +3614,10 @@ class AICodBiAssistant : IPluginServletAction {
             "nodeParams: {\"file\":\"<template filename from form resources, e.g. 'vorlage.docx'>\", " +
             "\"exportName\":\"<output filename, e.g. 'ausgefuellt.docx'>\"}. " +
             "When used as a chained node, the template is taken from the preceding node's output.\n" +
+            "  - \"FC_DELETE_ATTACHMENT\" — deletes attachments from the specified upload fields; " +
+            "nodeParams: {\"attachments\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
+            "The 'attachments' array must contain the technical IDs of the form upload fields whose files should be deleted. " +
+            "CRITICAL — Use this when the user says an attachment/file/upload should be removed, gelöscht, entfernt, or cleared from a specific upload field.\n" +
             "  - \"FC_COMPRESS_AS_ZIP\" — compresses one or more files into a ZIP archive; " +
             "nodeParams: {\"compressedFileName\":\"<output ZIP filename, e.g. 'archive.zip'>\", " +
             "\"files\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
@@ -3658,6 +3662,10 @@ class AICodBiAssistant : IPluginServletAction {
             "(stored in the project's template library, e.g. TEMPLATE_CLIENT or FORM_TEMPLATE tables). " +
             "Use this when the user says a specific completion page, Abschlussseite, or error page should be displayed " +
             "after a button is clicked (e.g. \"Bei Klick auf submit, Abschlussseite 'Allgemeiner Fehler 2' anzeigen\").\n" +
+            "  - \"FC_DELETE_ATTACHMENT\" — deletes attachments from the specified upload fields; " +
+            "nodeParams: {\"attachments\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
+            "The 'attachments' array must contain the technical IDs of the form upload fields whose files should be deleted. " +
+            "CRITICAL — Use this when the user says an attachment/file/upload should be removed, gelöscht, entfernt, or cleared from a specific upload field.\n" +
             "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}. " +
             "WARNING: NEVER use FC_EMPTY to represent an email, state change, or any other action. " +
             "If the user requests sending an email, always use FC_EMAIL even if 'to' is unknown (set 'to' to \"\").\n\n")
@@ -5081,6 +5089,70 @@ class AICodBiAssistant : IPluginServletAction {
             pluginResult.length)
         pluginResult
       }
+      "FC_DELETE_ATTACHMENT" -> {
+        @Suppress("UNCHECKED_CAST")
+        val attachments =
+            (spec.nodeParams["attachments"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val resultJson =
+            if (attachments.isNotEmpty()) {
+              // Use attachmentsToDelete with MultiAttachment structure (decompiled from
+              // FcDeleteAttachmentProps)
+              // Property key must be "attachmentsToDelete" matching the field in
+              // FcDeleteAttachmentProps class
+              val attachmentItemsJson =
+                  attachments.joinToString(",") { id ->
+                    """{"type":"UPLOAD","identifier":${gson.toJson(id)}}"""
+                  }
+              val json =
+                  """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"attachmentsToDelete":{"attachments":[$attachmentItemsJson]}}"""
+              logger.info(
+                  "[AICodBiAssistant] FC_DELETE_ATTACHMENT generated (attachmentsToDelete): {}",
+                  json)
+              json
+            } else {
+              """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+            }
+        // Query existing FC_DELETE_ATTACHMENT nodes for structure reference
+        try {
+          val emfDecrypt = CodbiEntities.entityManagerFactory
+          if (emfDecrypt != null) {
+            val emDecrypt = emfDecrypt.createEntityManager()
+            try {
+              // Query all FC_DELETE_ATTACHMENT nodes (including manually configured) with full
+              // columns
+              val decryptQuery =
+                  emDecrypt.createNativeQuery(
+                      "SELECT id, ITEM_NAME, CAST(CUSTOM_PARAMS AS VARCHAR(3000)), CUSTOM_PARAMS_VER FROM workflow_node " +
+                          "WHERE ITEM_TYPE = 'FC_DELETE_ATTACHMENT' AND CUSTOM_PARAMS IS NOT NULL " +
+                          "ORDER BY id DESC")
+              decryptQuery.maxResults = 5
+              val decryptResults = decryptQuery.resultList
+              for (row in decryptResults) {
+                if (row is Array<*> && row.size >= 4) {
+                  val nodeId = row[0]?.toString() ?: ""
+                  val nodeName = row[1]?.toString() ?: ""
+                  val rawParams = row[2]?.toString() ?: ""
+                  val paramsVer = row[3]?.toString() ?: ""
+                  // Check if params look like plain JSON (start with {) or encrypted (Base64)
+                  val isEncrypted = rawParams.isNotEmpty() && !rawParams.trimStart().startsWith("{")
+                  logger.info(
+                      "[AICodBiAssistant] FC_DELETE_ATTACHMENT REF node id={}, name='{}', ver='{}', encrypted={}, params_preview={}",
+                      nodeId,
+                      nodeName,
+                      paramsVer,
+                      isEncrypted,
+                      if (rawParams.length > 100) rawParams.take(100) + "..." else rawParams)
+                }
+              }
+            } finally {
+              emDecrypt.close()
+            }
+          }
+        } catch (e: Exception) {
+          logger.warn("[AICodBiAssistant] FC_DELETE_ATTACHMENT ref query failed: ${e.message}")
+        }
+        resultJson
+      }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
       "FC_EMPTY" ->
@@ -5857,6 +5929,7 @@ class AICodBiAssistant : IPluginServletAction {
           "FC_SEND_FORM_RECORD_MESSAGE" -> "Send record message"
           "FC_SET_SAVED_FLAG" -> "Mark record as saved"
           "FC_DELETE_FORM_RECORD" -> "Delete form record"
+          "FC_DELETE_ATTACHMENT" -> "Delete attachment"
           "FC_COUNTER" -> "Increment counter"
           "FC_PROMPT_QUERY" -> "Prompt user query"
           "FC_COMPRESS_AS_ZIP" -> "Compress as ZIP"

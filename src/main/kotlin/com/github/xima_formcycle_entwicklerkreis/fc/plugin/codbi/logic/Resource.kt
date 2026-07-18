@@ -7,19 +7,27 @@ import de.xima.fc.mdl.response.ServletResponse
 import de.xima.fc.plugin.exception.FCPluginException
 import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.nio.charset.StandardCharsets
+import java.nio.file.Files
 import java.util.*
 
 /**
- * This servlet retrieves a resource form within it's JAR.
+ * This servlet retrieves a resource form within it's JAR or from an external override directory.
  *
  * The **Path**-URL-Parameter specifies the path within the JAR to retrieve the file from as also
  * the file's name.
  *
  * If there's no **Path** specified following will be used:
  * /com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg.
+ *
+ * ## External Override
+ * If the system property **CodBi_ExternalResourceDir** is set or the plugin property
+ * **ExternalResourceDir** is configured, the servlet checks that directory first before falling
+ * back to the classpath. This allows updating resources (e.g. TinyMCE) at runtime without
+ * redeploying the JAR.
  */
 class Resource : IPluginServletAction {
   companion object {
@@ -29,6 +37,21 @@ class Resource : IPluginServletAction {
     private const val CONTENT_TYPE_SVG = "image/svg+xml"
     private const val CONTENT_TYPE_PLAIN = "text/plain"
     private const val CACHE_CONTROL_HEADER = "public, max-age=31536000"
+    private const val SYSTEM_PROP_EXTERNAL_DIR = "CodBi_ExternalResourceDir"
+
+    /** The external override directory, or null if not configured. */
+    @Volatile
+    var externalResourceDir: String? = null
+      private set
+
+    /**
+     * Sets the external resource override directory. Called during plugin initialization.
+     *
+     * @param dir The absolute path to the external resource directory, or null to disable.
+     */
+    fun setExternalResourceDir(dir: String?) {
+      externalResourceDir = dir
+    }
   }
 
   private val availableMimeTypes =
@@ -70,6 +93,8 @@ class Resource : IPluginServletAction {
    * Retrieves the file using the provided **Path**-URL-Parameter or
    * /com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg, if none was
    * provided.
+   *
+   * Tries the external override directory first (if configured), then falls back to the classpath.
    */
   public override fun execute(p0: IPluginServletActionParams): IPluginServletActionRetVal {
     try {
@@ -87,6 +112,34 @@ class Resource : IPluginServletAction {
         return PluginServletActionRetVal(errorResponse)
       }
 
+      // #region Compute relative path within the codbi resource tree
+      // Strip the ALLOWED_PREFIX to get the relative path (e.g. "tinymce/tinymce.min.js")
+      val relativePath = requestedPath.substring(ALLOWED_PREFIX.length)
+      // #endregion Compute relative path within the codbi resource tree
+
+      // #region Try external override directory first
+      val externalDirPath = externalResourceDir ?: System.getProperty(SYSTEM_PROP_EXTERNAL_DIR)
+
+      if (externalDirPath != null && externalDirPath.isNotBlank()) {
+        val externalFile = File(externalDirPath, relativePath)
+
+        if (externalFile.exists() && externalFile.isFile) {
+          val fileBytes = Files.readAllBytes(externalFile.toPath())
+
+          val successResponse =
+              ServletResponse(EResponseType.SHOW_FILE).apply {
+                httpStatusCode = HttpURLConnection.HTTP_OK
+                contentType = getContentType(relativePath)
+                binValue = fileBytes
+                httpHeader = Collections.singletonMap("Cache-Control", CACHE_CONTROL_HEADER)
+              }
+
+          return PluginServletActionRetVal(successResponse)
+        }
+      }
+      // #endregion Try external override directory first
+
+      // #region Fall back to classpath resource from JAR
       val svgInputStream = javaClass.getResourceAsStream(requestedPath)
 
       if (svgInputStream == null) {
@@ -113,6 +166,7 @@ class Resource : IPluginServletAction {
 
       return PluginServletActionRetVal(successResponse)
       // #endregion Serve found resource
+      // #endregion Fall back to classpath resource from JAR
     } catch (x: IOException) {
       val errorResponse =
           ServletResponse(EResponseType.HTML).apply {

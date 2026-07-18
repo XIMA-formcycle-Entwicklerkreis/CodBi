@@ -468,6 +468,10 @@ class AIWorkflowAssistant : IPluginServletAction {
             "(stored in the project's template library, e.g. TEMPLATE_CLIENT or FORM_TEMPLATE tables). " +
             "Use this when the user says a specific completion page, Abschlussseite, or error page should be displayed " +
             "after a button is clicked (e.g. \"Bei Klick auf Senden, Abschlussseite 'Allgemeiner Fehler 2' anzeigen\").\n" +
+            "  - \"FC_DELETE_ATTACHMENT\" — deletes attachments from the specified upload fields; " +
+            "nodeParams: {\"attachments\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
+            "The 'attachments' array must contain the technical IDs of the form upload fields whose files should be deleted. " +
+            "CRITICAL — Use this when the user says an attachment/file/upload should be removed, gelöscht, entfernt, or cleared from a specific upload field.\n" +
             "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
@@ -2034,6 +2038,29 @@ class AIWorkflowAssistant : IPluginServletAction {
             pluginResult.length)
         pluginResult
       }
+      "FC_DELETE_ATTACHMENT" -> {
+        @Suppress("UNCHECKED_CAST")
+        val attachments =
+            (spec.nodeParams["attachments"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        if (attachments.isNotEmpty()) {
+          // Use attachmentsToDelete with MultiAttachment structure (decompiled from
+          // FcDeleteAttachmentProps)
+          // Property key must be "attachmentsToDelete" matching the field in
+          // FcDeleteAttachmentProps class
+          val attachmentItemsJson =
+              attachments.joinToString(",") { id ->
+                """{"type":"UPLOAD","identifier":${gson.toJson(id)}}"""
+              }
+          val resultJson =
+              """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"attachmentsToDelete":{"attachments":[$attachmentItemsJson]}}"""
+          logger.info(
+              "[AIWorkflowAssistant] FC_DELETE_ATTACHMENT generated (attachmentsToDelete): {}",
+              resultJson)
+          resultJson
+        } else {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+        }
+      }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
       "FC_EMPTY" ->
@@ -3151,6 +3178,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           "FC_SEND_FORM_RECORD_MESSAGE" -> "Send record message"
           "FC_SET_SAVED_FLAG" -> "Mark record as saved"
           "FC_DELETE_FORM_RECORD" -> "Delete form record"
+          "FC_DELETE_ATTACHMENT" -> "Delete attachment"
           "FC_COUNTER" -> "Increment counter"
           "FC_PROMPT_QUERY" -> "Prompt user query"
           "FC_COMPRESS_AS_ZIP" -> "Compress as ZIP"

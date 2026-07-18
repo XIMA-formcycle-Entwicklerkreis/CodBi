@@ -71,19 +71,27 @@ export class OpenPLZ_Autocomplete {
    *  - ```FocusOnAutocomplete```:  The CSS-Selector of the field to focus when an autocomplete has occurred.
    *  - ```MsgNotKnown```:          The message to show when trying to set a value that can't be found in OpenPLZ.
    *  - ```CSSProposals```:         The CSS-Style for the proposals-Select-Element appearing when there are multiple matches.
-   *  - ```AllowEmpty```:           If set to **"true"** an empty input value won't trigger an error message. */
+   *  - ```AllowEmpty```:           If set to **"true"** an empty input value won't trigger an error message.
+   *  - ```AllowedValues```:        A **CSV** of additional values that are also accepted without requiring an OpenPLZ match
+   *                                (bypasses the "not known" validation). Use **semicolons** to optionally restrict a value to
+   *                                a specific dependent locality and/or PLZ:
+   *                                - ```Value```:                      Always allowed.
+   *                                - ```Value;Locality```:             Only allowed when ```DependentLocality``` matches.
+   *                                - ```Value;;PLZ```:                 Only allowed when ```DependentPLZ``` matches.
+   *                                - ```Value;Locality;PLZ```:         Only allowed when both fields match. */
   @DBC.ParamvalueProvider
   public static functionality(
     @DEFINED.PRE("targetdata :: focusonautocomplete")
     @TYPE.PRE(
       "string",
-      "targetdata :: country :: cssproposals :: msgnotknown :: dependent :: dependentplz :: dependentlocality :: focusonautocomplete :: allowempty",
+      "targetdata :: country :: cssproposals :: msgnotknown :: dependent :: dependentplz :: dependentlocality :: focusonautocomplete :: allowempty :: allowedvalues",
     )
     @REGEX.PRE(/(de|en|at|li|ch)/i, "country")
     @REGEX.PRE(/^(localities|postalcodes|streets)$/i, "targetdata")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "dependentplz")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "dependentlocality")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "focusonautocomplete")
+    @REGEX.PRE(/^(|[^,]+(,[^,]+)*)$/, "allowedvalues")
     toLoad: { [key: string]: string },
 
     @INSTANCE.PRE(HTMLInputElement, "Is it not an <input> that is tagged with this functionality?")
@@ -119,6 +127,56 @@ export class OpenPLZ_Autocomplete {
         return;
       }
       userHasTyped = false;
+
+      // #region Check if the value matches one of the CSV-allowed values (bypasses OpenPLZ validation).
+      if (toLoad.allowedvalues) {
+        const typedValue = (toProcess as HTMLInputElement).value.trim();
+        const allowedValues = toLoad.allowedvalues
+          .split(",")
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0);
+
+        const isAllowed = allowedValues.some((entry) => {
+          const parts = entry.split(";").map((p) => p.trim());
+          const csvValue = parts[0];
+
+          if (csvValue.toLowerCase() !== typedValue.toLowerCase()) {
+            return false;
+          }
+
+          // #region Check locality restriction.
+          if (parts[1] && parts[1].length > 0 && toLoad.dependentlocality) {
+            const locField = toProcess.parentElement.parentElement.parentElement.querySelector(
+              toLoad.dependentlocality,
+            ) as HTMLInputElement;
+
+            if (locField && locField.value.trim().toLowerCase() !== parts[1].toLowerCase()) {
+              return false;
+            }
+          }
+          // #endregion Check locality restriction.
+          // #region Check PLZ restriction.
+          if (parts[2] && parts[2].length > 0 && toLoad.dependentplz) {
+            const plzField = toProcess.parentElement.parentElement.parentElement.querySelector(
+              toLoad.dependentplz,
+            ) as HTMLInputElement;
+
+            if (plzField && plzField.value.trim().toLowerCase() !== parts[2].toLowerCase()) {
+              return false;
+            }
+          }
+          // #endregion Check PLZ restriction.
+
+          return true;
+        });
+
+        if (isAllowed) {
+          $(toProcess).error("");
+
+          return;
+        }
+      }
+      // #endregion Check if the value matches one of the CSV-allowed values (bypasses OpenPLZ validation).
 
       let result: Array<unknown>;
 
@@ -395,6 +453,57 @@ export class OpenPLZ_Autocomplete {
 
           break;
       }
+      // #region Merge CSV-allowed values into results for autocomplete/proposals.
+      if (toLoad.allowedvalues) {
+        const typedValue = (toProcess as HTMLInputElement).value.trim().toLowerCase();
+
+        if (typedValue.length > 0) {
+          const allowedValues = toLoad.allowedvalues
+            .split(",")
+            .map((v) => v.trim())
+            .filter((v) => v.length > 0);
+
+          const csvMatches = allowedValues
+            .filter((entry) => {
+              const parts = entry.split(";").map((p) => p.trim());
+              const csvValue = parts[0];
+
+              if (!csvValue.toLowerCase().includes(typedValue)) {
+                return false;
+              }
+
+              // #region Check locality restriction.
+              if (parts[1] && parts[1].length > 0 && toLoad.dependentlocality) {
+                const locField = toProcess.parentElement.parentElement.parentElement.querySelector(
+                  toLoad.dependentlocality,
+                ) as HTMLInputElement;
+
+                if (locField && locField.value.trim().toLowerCase() !== parts[1].toLowerCase()) {
+                  return false;
+                }
+              }
+              // #endregion Check locality restriction.
+              // #region Check PLZ restriction.
+              if (parts[2] && parts[2].length > 0 && toLoad.dependentplz) {
+                const plzField = toProcess.parentElement.parentElement.parentElement.querySelector(
+                  toLoad.dependentplz,
+                ) as HTMLInputElement;
+
+                if (plzField && plzField.value.trim().toLowerCase() !== parts[2].toLowerCase()) {
+                  return false;
+                }
+              }
+              // #endregion Check PLZ restriction.
+
+              return true;
+            })
+            .map((v) => ({ [targetResultProperty]: v.split(";")[0].trim() }));
+
+          result = removeDuplicates([...result, ...csvMatches], targetResultProperty);
+        }
+      }
+      // #endregion Merge CSV-allowed values into results for autocomplete/proposals.
+
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       if (result.length === 0 || (result[0] as any).result) {
         return;

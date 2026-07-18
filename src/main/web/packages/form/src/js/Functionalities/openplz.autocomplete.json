@@ -9,6 +9,7 @@
     "DependentPLZ": "",
     "DependentLocality": "",
     "FocusOnAutocomplete": "",
-    "AllowEmpty": ""
+    "AllowEmpty": "",
+    "AllowedValues": ""
   }
 }

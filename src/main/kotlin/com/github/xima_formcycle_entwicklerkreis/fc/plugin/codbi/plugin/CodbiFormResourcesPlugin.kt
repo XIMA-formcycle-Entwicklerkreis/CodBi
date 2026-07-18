@@ -1,6 +1,8 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.localize
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.Resource
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.TinyMCEUpdater
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.PLUGIN_FORM_RESOURCES_ID
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.RESOURCE_PATH_CODBI_CSS
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.RESOURCE_PATH_CODBI_SCRIPT
@@ -166,6 +168,30 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
     }
 
     formResources = dynamicResources
+
+    // #region TinyMCE Auto-Update
+    try {
+      val autoUpdateRaw = initData?.properties?.getProperty("TinyMCE_AutoUpdate")?.trim() ?: "false"
+
+      TinyMCEUpdater.mode = autoUpdateRaw
+      TinyMCEUpdater.versionUrl =
+          initData?.properties?.getProperty("TinyMCE_Update_VersionURL")?.trim()
+              ?: "https://registry.npmjs.org/tinymce/latest"
+      TinyMCEUpdater.downloadBaseUrl =
+          initData?.properties?.getProperty("TinyMCE_Update_DownloadBaseURL")?.trim()
+              ?: "https://cdn.jsdelivr.net/npm/tinymce@{version}"
+      TinyMCEUpdater.externalDir =
+          initData?.properties?.getProperty("TinyMCE_Update_ExternalDir")?.trim()
+              ?: "${System.getProperty("user.home", "/tmp")}/.codbi/tinymce"
+
+      // Also set the external resource directory for the Resource servlet
+      Resource.setExternalResourceDir(TinyMCEUpdater.externalDir)
+
+      TinyMCEUpdater.checkAndUpdate()
+    } catch (e: Exception) {
+      LOG.severe("TinyMCE auto-update failed: ${e.message}")
+    }
+    // #endregion TinyMCE Auto-Update
   }
 
   override fun shutdown(shutdownData: IPluginShutdownData?) {

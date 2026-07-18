@@ -3157,6 +3157,59 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Fetches available inboxes (Postfach entities) for the project's client/mandant and returns them
+   * as a JSON array string (e.g. [{"name":"Default inbox","uuid":"..."}...]). Returns null if the
+   * inboxes cannot be loaded. Uses PostfachAPI.getAllByClient() via reflection.
+   */
+  private fun fetchInboxes(userContext: Any, workflowVersionId: Long): String? {
+    try {
+      val emf = CodbiEntities.entityManagerFactory ?: return null
+      val em = emf.createEntityManager()
+      try {
+        val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+        val postfachApi = apiProviderClass.getField("POSTFACH").get(null)
+        val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+        val ucClass = Class.forName("de.xima.fc.user.UserContext")
+        val workflowVersion =
+            workflowVersionApi.javaClass
+                .getMethod("getById", ucClass, Long::class.javaObjectType)
+                .invoke(workflowVersionApi, userContext, workflowVersionId)
+        val getProjektMethod = workflowVersion.javaClass.getMethod("getProjekt")
+        val projekt = getProjektMethod.invoke(workflowVersion)
+        val getMandantMethod = projekt.javaClass.getMethod("getMandant")
+        val mandant = getMandantMethod.invoke(projekt)
+        val getAllByClientMethod =
+            postfachApi.javaClass.getMethod(
+                "getAllByClient", ucClass, Class.forName("de.xima.fc.entities.Mandant"))
+        @Suppress("UNCHECKED_CAST")
+        val postfaecher = getAllByClientMethod.invoke(postfachApi, userContext, mandant) as? List<*>
+        if (postfaecher.isNullOrEmpty()) return null
+        val inboxes =
+            postfaecher.mapNotNull { p ->
+              if (p == null) return@mapNotNull null
+              try {
+                val name =
+                    p::class.java.getMethod("getName").invoke(p) as? String
+                        ?: return@mapNotNull null
+                val uuidObj =
+                    p::class.java.getMethod("getUUIDObject").invoke(p) as? java.util.UUID
+                        ?: return@mapNotNull null
+                """{"name":${gson.toJson(name)},"uuid":${gson.toJson(uuidObj.toString())}}"""
+              } catch (_: Exception) {
+                null
+              }
+            }
+        return "[${inboxes.joinToString(",")}]"
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to fetch inboxes: ${e.message}")
+      return null
+    }
+  }
+
+  /**
    * Runs the workflow-creation AI call and creates the workflow task in FORMCYCLE. Unlike
    * [AIWorkflowAssistant], this method does NOT use a multi-turn context protocol: the frontend
    * already supplies [formElements] in phase 2, so a single AI call suffices.
@@ -3358,9 +3411,13 @@ class AICodBiAssistant : IPluginServletAction {
     logger.debug(
         "[AICodBiAssistant] runWorkflowCreation: workflowStates={}",
         workflowStatesJson ?: "null (no states found or query failed)")
+    val inboxesJson = fetchInboxes(userContext, workflowVersionId)
+    logger.debug(
+        "[AICodBiAssistant] runWorkflowCreation: inboxes={}",
+        inboxesJson ?: "null (no inboxes found or query failed)")
     val systemPrompt =
         buildWorkflowSystemPrompt(
-            formElements, htmlTemplatesJson, completionPagesJson, workflowStatesJson)
+            formElements, htmlTemplatesJson, completionPagesJson, workflowStatesJson, inboxesJson)
 
     val messagesJson = buildString {
       append("[")
@@ -3425,7 +3482,8 @@ class AICodBiAssistant : IPluginServletAction {
       formContext: String?,
       htmlTemplates: String? = null,
       completionPages: String? = null,
-      workflowStates: String? = null
+      workflowStates: String? = null,
+      inboxes: String? = null
   ): String = buildString {
     append(
         "You are a FORMCYCLE workflow assistant. The user will describe a desired workflow " +
@@ -3618,6 +3676,12 @@ class AICodBiAssistant : IPluginServletAction {
             "nodeParams: {\"attachments\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
             "The 'attachments' array must contain the technical IDs of the form upload fields whose files should be deleted. " +
             "CRITICAL — Use this when the user says an attachment/file/upload should be removed, gelöscht, entfernt, or cleared from a specific upload field.\n" +
+            "  - \"FC_MOVE_FORM_RECORD_TO_INBOX\" — moves the form record to a specified inbox; " +
+            "nodeParams: {\"inboxName\":\"<inbox display name>\", " +
+            "\"targetType\":\"STATIC_INBOX\"|\"COMPUTED_INBOX_NAME\" (optional, default STATIC_INBOX)}. " +
+            "Use STATIC_INBOX when a known inbox exists (resolved by UUID). " +
+            "Use COMPUTED_INBOX_NAME when the inbox should be searched by name at runtime " +
+            "(e.g. when user says \"über den Namen suchen\", \"find by name\", or the inbox name is dynamic).\n" +
             "  - \"FC_COMPRESS_AS_ZIP\" — compresses one or more files into a ZIP archive; " +
             "nodeParams: {\"compressedFileName\":\"<output ZIP filename, e.g. 'archive.zip'>\", " +
             "\"files\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
@@ -3666,6 +3730,12 @@ class AICodBiAssistant : IPluginServletAction {
             "nodeParams: {\"attachments\":[\"<upload field technical ID, e.g. 'upl1'>\"]}. " +
             "The 'attachments' array must contain the technical IDs of the form upload fields whose files should be deleted. " +
             "CRITICAL — Use this when the user says an attachment/file/upload should be removed, gelöscht, entfernt, or cleared from a specific upload field.\n" +
+            "  - \"FC_MOVE_FORM_RECORD_TO_INBOX\" — moves the form record to a specified inbox; " +
+            "nodeParams: {\"inboxName\":\"<inbox display name>\", " +
+            "\"targetType\":\"STATIC_INBOX\"|\"COMPUTED_INBOX_NAME\" (optional, default STATIC_INBOX)}. " +
+            "Use STATIC_INBOX when a known inbox exists (resolved by UUID). " +
+            "Use COMPUTED_INBOX_NAME when the inbox should be searched by name at runtime " +
+            "(e.g. when user says \"über den Namen suchen\", \"find by name\", or the inbox name is dynamic).\n" +
             "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}. " +
             "WARNING: NEVER use FC_EMPTY to represent an email, state change, or any other action. " +
             "If the user requests sending an email, always use FC_EMAIL even if 'to' is unknown (set 'to' to \"\").\n\n")
@@ -3760,6 +3830,18 @@ class AICodBiAssistant : IPluginServletAction {
               "Use this when the user says \"URL-Template\", \"URL-Vorlage\" or mentions a named template " +
               "(e.g. \"Bei Klick auf submit, an die URL-Template X2 umleiten\"). " +
               "NEVER create a new template — always pick from the list above.\n\n")
+    }
+    if (!inboxes.isNullOrBlank()) {
+      append(
+          "AVAILABLE INBOXES (for inboxName when creating a FC_MOVE_FORM_RECORD_TO_INBOX node — pick the EXACT match to the user's request):\n" +
+              inboxes +
+              "\n\n" +
+              "CRITICAL — If the user explicitly provides a specific inbox name and says \"suche über den Namen\" " +
+              "(search by name), \"find by name\", or provides a name that is NOT in the list above, " +
+              "then use targetType:\"COMPUTED_INBOX_NAME\" with inboxName set to the EXACT name the user provided. " +
+              "Do NOT pick a different inbox from the list. " +
+              "Only use STATIC_INBOX (default) when the user mentions an inbox that EXISTS in the list above " +
+              "and does NOT instruct to search by name.\n\n")
     }
     append(
         "EXAMPLE (note: technicalId values are arbitrary — use them verbatim):\n" +
@@ -5152,6 +5234,67 @@ class AICodBiAssistant : IPluginServletAction {
           logger.warn("[AICodBiAssistant] FC_DELETE_ATTACHMENT ref query failed: ${e.message}")
         }
         resultJson
+      }
+      "FC_MOVE_FORM_RECORD_TO_INBOX" -> {
+        @Suppress("UNCHECKED_CAST") val inboxName = spec.nodeParams["inboxName"] as? String ?: ""
+        val targetType = spec.nodeParams["targetType"] as? String ?: ""
+        if (inboxName.isNotBlank()) {
+          val json =
+              if (targetType == "COMPUTED_INBOX_NAME") {
+                // AI explicitly wants runtime name lookup — use COMPUTED_INBOX_NAME
+                """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"targetType":"COMPUTED_INBOX_NAME","inboxName":${gson.toJson(inboxName)}}"""
+              } else {
+                // Default: try to resolve inbox UUID via PostfachAPI
+                var inboxUuid: String? = null
+                if (workflowVersion != null && userContext != null) {
+                  try {
+                    val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+                    val postfachApi = apiProviderClass.getField("POSTFACH").get(null)
+                    val getByMandantAndNameMethod =
+                        postfachApi.javaClass.getMethod(
+                            "getByMandantAndName",
+                            Class.forName("de.xima.fc.user.UserContext"),
+                            Class.forName("de.xima.fc.entities.Mandant"),
+                            String::class.java)
+                    val getProjektMethod = workflowVersion.javaClass.getMethod("getProjekt")
+                    val projekt = getProjektMethod.invoke(workflowVersion)
+                    val getMandantMethod = projekt.javaClass.getMethod("getMandant")
+                    val mandant = getMandantMethod.invoke(projekt)
+                    val postfach =
+                        getByMandantAndNameMethod.invoke(
+                            postfachApi, userContext, mandant, inboxName)
+                    if (postfach != null) {
+                      val getUUIDObjectMethod = postfach.javaClass.getMethod("getUUIDObject")
+                      val uuidObj = getUUIDObjectMethod.invoke(postfach) as? java.util.UUID
+                      if (uuidObj != null) {
+                        inboxUuid = uuidObj.toString()
+                        logger.info(
+                            "[AICodBiAssistant] FC_MOVE_FORM_RECORD_TO_INBOX resolved inbox '{}' to UUID: {}",
+                            inboxName,
+                            inboxUuid)
+                      }
+                    } else {
+                      logger.warn(
+                          "[AICodBiAssistant] FC_MOVE_FORM_RECORD_TO_INBOX inbox '{}' not found by name",
+                          inboxName)
+                    }
+                  } catch (e: Exception) {
+                    logger.warn(
+                        "[AICodBiAssistant] FC_MOVE_FORM_RECORD_TO_INBOX could not resolve inbox UUID: {}",
+                        e.message)
+                  }
+                }
+                if (inboxUuid != null) {
+                  """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"targetType":"STATIC_INBOX","inboxReference":{"uuid":${gson.toJson(inboxUuid)},"entityClass":"de.xima.fc.entities.Postfach"}}"""
+                } else {
+                  """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"targetType":"COMPUTED_INBOX_NAME","inboxName":${gson.toJson(inboxName)}}"""
+                }
+              }
+          logger.info("[AICodBiAssistant] FC_MOVE_FORM_RECORD_TO_INBOX generated: {}", json)
+          json
+        } else {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+        }
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

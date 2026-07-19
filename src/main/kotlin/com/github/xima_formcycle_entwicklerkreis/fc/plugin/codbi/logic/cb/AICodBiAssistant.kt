@@ -3210,6 +3210,48 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Queries FormCycle's plugin system for available message services (portals) that can be selected
+   * as the message service for FC_SEND_FORM_RECORD_MESSAGE nodes with recipientType=INBOX_ID. Uses
+   * PluginAPI.getPluginNames() to find all registered IPluginMessageService implementations.
+   * Returns a JSON array of plugin names, or null if the query fails.
+   */
+  private fun fetchMessageServices(userContext: Any, workflowVersionId: Long): String? {
+    logger.info("[AICodBiAssistant] fetchMessageServices: querying plugin message services...")
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId) ?: return null
+      val project =
+          workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion) ?: return null
+      val mandant = project.javaClass.getMethod("getMandant").invoke(project) ?: return null
+      val pluginApi = apiProviderClass.getField("PLUGINS").get(null)
+      val pluginServiceClass =
+          Class.forName("de.xima.fc.plugin.interfaces.form_record.message.IPluginMessageService")
+      val getPluginNamesMethod =
+          pluginApi.javaClass.getMethod(
+              "getPluginNames",
+              ucClass,
+              Class.forName("de.xima.fc.entities.Mandant"),
+              Class::class.java)
+      @Suppress("UNCHECKED_CAST")
+      val pluginNames =
+          getPluginNamesMethod.invoke(pluginApi, userContext, mandant, pluginServiceClass)
+              as? Set<*> ?: return null
+      val names = pluginNames.mapNotNull { it?.toString()?.takeIf { n -> n.isNotBlank() } }
+      logger.info(
+          "[AICodBiAssistant] fetchMessageServices: found {} service(s): {}", names.size, names)
+      if (names.isEmpty()) null else gson.toJson(names)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to fetch message services: ${e.message}")
+      null
+    }
+  }
+
+  /**
    * Runs the workflow-creation AI call and creates the workflow task in FORMCYCLE. Unlike
    * [AIWorkflowAssistant], this method does NOT use a multi-turn context protocol: the frontend
    * already supplies [formElements] in phase 2, so a single AI call suffices.
@@ -3415,9 +3457,18 @@ class AICodBiAssistant : IPluginServletAction {
     logger.debug(
         "[AICodBiAssistant] runWorkflowCreation: inboxes={}",
         inboxesJson ?: "null (no inboxes found or query failed)")
+    val messageServicesJson = fetchMessageServices(userContext, workflowVersionId)
+    logger.info(
+        "[AICodBiAssistant] runWorkflowCreation: messageServices={}",
+        messageServicesJson ?: "null (no services found or query failed)")
     val systemPrompt =
         buildWorkflowSystemPrompt(
-            formElements, htmlTemplatesJson, completionPagesJson, workflowStatesJson, inboxesJson)
+            formElements,
+            htmlTemplatesJson,
+            completionPagesJson,
+            workflowStatesJson,
+            inboxesJson,
+            messageServicesJson)
 
     val messagesJson = buildString {
       append("[")
@@ -3483,7 +3534,8 @@ class AICodBiAssistant : IPluginServletAction {
       htmlTemplates: String? = null,
       completionPages: String? = null,
       workflowStates: String? = null,
-      inboxes: String? = null
+      inboxes: String? = null,
+      messageServices: String? = null
   ): String = buildString {
     append(
         "You are a FORMCYCLE workflow assistant. The user will describe a desired workflow " +
@@ -3637,12 +3689,21 @@ class AICodBiAssistant : IPluginServletAction {
             "  - \"FC_SET_SAVED_FLAG\" — marks the form record as saved; nodeParams: {}\n" +
             "  - \"FC_DELETE_FORM_RECORD\" — permanently deletes the current form record; nodeParams: {}\n" +
             "  - \"FC_SEND_FORM_RECORD_MESSAGE\" — sends an internal message to the record's inbox; " +
-            "nodeParams: {\"message\":\"<message text, supports [%placeholder%]>\", \"senderName\":\"<optional sender name>\"}\n" +
+            "nodeParams: {\"message\":\"<message text, supports [%placeholder%]>\", \"senderName\":\"<sender display name — ALWAYS set a meaningful name, e.g. the current processor's name or 'System'; leave empty ONLY if truly unknown>\", " +
+            "\"subject\":\"<subject text — ALWAYS derive a concise subject from the prompt context; leave empty ONLY if no subject can be determined>\", " +
+            "\"recipientType\":\"<INITIAL_SUBMITTER|LATEST_SUBMITTER|EMAIL|INBOX_ID — determines the recipient: INITIAL_SUBMITTER = the person who originally submitted the form; LATEST_SUBMITTER = the most recent submitter; EMAIL = a specific email address (also set 'recipientEmail' to the address); INBOX_ID = a specific inbox/postfach (also set 'recipientInboxId' and 'recipientMessageService'); default INITIAL_SUBMITTER>\", " +
+            "\"recipientEmail\":\"<recipient email address — REQUIRED when recipientType=EMAIL; set to the email address from the prompt>\", " +
+            "\"recipientInboxId\":\"<inbox/postfach ID — REQUIRED when recipientType=INBOX_ID; set to the inbox/postfach name from the prompt>\", " +
+            "\"recipientMessageService\":\"<message service / portal name — REQUIRED when recipientType=INBOX_ID; set this to the EXACT name from the AVAILABLE MESSAGE SERVICES list below that best matches what the user's prompt describes; do NOT guess or invent a service name>\", " +
+            "\"email\":\"<alternative email address — set when the prompt mentions an alternative/further email for the recipient (different from recipientEmail)>\", " +
+            "\"attachments\":[\"<technicalId1>\",...] (optional — technicalIds of XUpload fields whose files to attach)}\n" +
             "  - \"FC_CREATE_TEXT_FILE\" — creates a text/JSON/XML/HTML file as an attachment; " +
             "nodeParams: {\"fileName\":\"<filename with extension>\", \"fileContent\":\"<content, supports [%placeholder%]>\", " +
             "\"contentType\":\"PLAIN_TEXT|JSON|XML|HTML\" (default PLAIN_TEXT)}\n" +
-            "  - \"FC_WRITE_FORM_RECORD_ATTRIBUTES\" — writes custom key-value attributes to the record; " +
-            "nodeParams: {\"attributes\":[{\"name\":\"<key>\",\"value\":\"<value>\"},...]}\n" +
+            "  - \"FC_WRITE_FORM_RECORD_ATTRIBUTES\" — writes custom key-value attributes to the record AND optionally also updates matching form fields; " +
+            "CRITICAL — If the attribute names match form field technical IDs, set \"writeAttributesToForm\":true to also update those form fields. " +
+            "Do NOT create a separate FC_CHANGE_FORM_VALUE node for the same values; use writeAttributesToForm instead.\n" +
+            "nodeParams: {\"attributes\":[{\"name\":\"<key>\",\"value\":\"<value>\"},...], \"writeAttributesToForm\":<true|false>}\n" +
             "  - \"FC_RETURN_FILE\" — returns a file to the user's browser for download; " +
             "nodeParams: {\"fileName\":\"<filename, e.g. 'xoxo.txt'>\", " +
             "\"forceDownload\":<true|false> (optional, default true — forces download instead of inline display), " +
@@ -3738,7 +3799,17 @@ class AICodBiAssistant : IPluginServletAction {
             "(e.g. when user says \"über den Namen suchen\", \"find by name\", or the inbox name is dynamic).\n" +
             "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}. " +
             "WARNING: NEVER use FC_EMPTY to represent an email, state change, or any other action. " +
-            "If the user requests sending an email, always use FC_EMAIL even if 'to' is unknown (set 'to' to \"\").\n\n")
+            "If the user requests sending an email, always use FC_EMAIL even if 'to' is unknown (set 'to' to \"\").\n" +
+            "  - \"FC_SET_FORM_RECORD_PASSWORD\" — sets a password on the form record for access restriction;\n" +
+            "Supports TWO modes:\n" +
+            "  Mode 1 — Fixed (manually entered) password: nodeParams: {\"targetType\":\"MANUALLY_ENTERED_PASSWORD\",\"inputPassword\":\"<the password>\"}\n" +
+            "  Mode 2 — Generate password: nodeParams: {\"targetType\":\"GENERATED_PASSWORD\",\"generatedLength\":10,\"policyRuleLowercase\":true,\"policyRuleUppercase\":true,\"policyRuleDigit\":true,\"policyRuleSymbol\":true,\"policyRuleAlphabetical\":false}\n" +
+            "  policyRuleAlphabetical means letters a-z in any case; policyRuleLowercase means a-z lowercase; policyRuleUppercase means A-Z uppercase; policyRuleDigit means 0-9 digits; policyRuleSymbol means special characters like !@#$%.\n" +
+            "CRITICAL: Use this node type when the user says a specific trigger/action should password-protect\n" +
+            "the record (e.g. \"beim Klick auf submit mit Passwort schützen\", \"beim Absenden zugangsbeschränken\", \"generiertes Passwort\").\n" +
+            "When the user says \"generiert\", \"generate\", \"Passwort generieren\", or specifies character types (lowercase, uppercase, digits, special characters)\n" +
+            "or a password length, use Mode 2 (GENERATE) with the appropriate parameters enabled.\n" +
+            "Do NOT use this for permanent state-level password configuration — use stateProperties instead.\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
             "  Every workflow lane automatically ends with a status transition (Endpunkt). The 'endpointState' field\n" +
@@ -3758,12 +3829,26 @@ class AICodBiAssistant : IPluginServletAction {
             "  Example 1: \"von extern aufrufbar\" → stateProperties: {\"externalAccessPermitted\": true}\n" +
             "  Example 2: \"für alle Beteiligten aufrufbar\" → stateProperties: {\"allowAccessAllParticipants\": true}\n" +
             "  Example 3: \"für alle authentifizierten Beteiligten aufrufbar\" → stateProperties: {\"allowAccessAllParticipants\": true, \"allowAuthenticatedUser\": true}\n" +
-            "  Example 4: \"Passwort XXX\" → stateProperties: {\"useSystemAuthentication\": true}\n" +
-            "  NOTE: The actual form password value (e.g. \"XXX\") must be configured manually in the workflow state\n" +
-            "  editor after creation — it is stored in a separate authenticator entity.\n" +
-            "  IMPORTANT: \"Password\", \"Passwort\", \"Status\", and \"form status\" mentioned together with workflow\n" +
-            "  configuration are workflow state properties, NOT form fields. Do NOT add them as form elements.\n" +
-            "  Handle them exclusively via endpointState and stateProperties.\n\n")
+            "  Example 4: \"Passwort XXX\" — TWO APPROACHES depending on intent:\n" +
+            "    APPROACH A — State-level (permanent): Use when the user says the STATE itself should be\n" +
+            "    password-protected for ALL records entering it (e.g. \"der Status XYZ soll passwortgeschützt sein\",\n" +
+            "    \"der Endstatus benötigt ein Passwort\"). → Set endpointState.stateProperties:\n" +
+            "    {\"useSystemAuthentication\": true}. Do NOT generate an FC_SET_FORM_RECORD_PASSWORD node.\n" +
+            "    NOTE: The actual password value must be configured manually in the workflow state editor's\n" +
+            "    authenticator configuration after creation — it is a state-level setting, not a workflow action.\n" +
+            "    APPROACH B — Workflow-level (conditional): Use when the user says a SPECIFIC TRIGGER/ACTION\n" +
+            "    should password-protect the record (e.g. \"beim Klick auf submit mit Passwort schützen\",\n" +
+            "    \"beim Absenden zugangsbeschränken\", \"Passwort XXX beim submit\", \"Passwort generieren\"). → Generate an\n" +
+            "    FC_SET_FORM_RECORD_PASSWORD workflow action node\n" +
+            "    Use Mode 1 (MANUALLY_ENTERED_PASSWORD) when the user provides a specific password text:\n" +
+            "    nodeParams: {\"targetType\":\"MANUALLY_ENTERED_PASSWORD\",\"inputPassword\":\"<the password text>\"}\n" +
+            "    Use Mode 2 (GENERATED_PASSWORD) when the user asks for a generated password or specifies character types/length:\n" +
+            "    nodeParams: {\"targetType\":\"GENERATED_PASSWORD\",\"generatedLength\":10,\"policyRuleLowercase\":true,\"policyRuleUppercase\":true,\"policyRuleDigit\":true,\"policyRuleSymbol\":true,\"policyRuleAlphabetical\":false}\n" +
+            "    This sets the password directly on the form record. Do NOT set stateProperties in this case —\n" +
+            "    the password is stored in the workflow action node, not the endpoint state.\n" +
+            "  CRITICAL — Choose ONE approach, never both. APPROACH B (FC_SET_FORM_RECORD_PASSWORD node)\n" +
+            "  is for conditional/circumstantial password protection tied to a specific trigger. APPROACH A\n" +
+            "  (stateProperties) is for permanent state-level password configuration.\n\n")
     if (!workflowStates.isNullOrBlank()) {
       append(
           "AVAILABLE WORKFLOW STATES (for reference only — use the user's requested status name, not this list):\n" +
@@ -3852,6 +3937,12 @@ class AICodBiAssistant : IPluginServletAction {
             "  Output: {\"taskName\":\"E-Mail bei Absenden\",\"taskDescription\":\"\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
             "\"triggerParams\":{\"buttonName\":\"btnZwolf\"},\"nodeType\":\"FC_EMAIL\"," +
             "\"nodeParams\":{\"to\":\"[%tfHurra%]\",\"subject\":\"Eingang\",\"body\":\"<p>Ihr Formular wurde empfangen.</p>\"},\"endpointState\":\"Received\"}\n\n")
+    if (!messageServices.isNullOrBlank()) {
+      append(
+          "AVAILABLE MESSAGE SERVICES (for 'recipientMessageService' when creating a FC_SEND_FORM_RECORD_MESSAGE node with recipientType=INBOX_ID — pick the EXACT match from this list):\n" +
+              messageServices +
+              "\n\n")
+    }
     append("Output ONLY valid JSON. No trailing commas. No comments.")
   }
 
@@ -4805,7 +4896,33 @@ class AICodBiAssistant : IPluginServletAction {
       "FC_SEND_FORM_RECORD_MESSAGE" -> {
         val message = spec.nodeParams["message"] as? String ?: ""
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
-        """{"name":${gson.toJson(nodeName)},"messageContent":${gson.toJson(message)},"senderName":${gson.toJson(senderName)}}"""
+        val subject = spec.nodeParams["subject"] as? String ?: ""
+        val email = spec.nodeParams["email"] as? String ?: ""
+        val recipientType = spec.nodeParams["recipientType"] as? String ?: ""
+        val recipientEmail = spec.nodeParams["recipientEmail"] as? String ?: ""
+        val recipientInboxId = spec.nodeParams["recipientInboxId"] as? String ?: ""
+        val recipientMessageService = spec.nodeParams["recipientMessageService"] as? String ?: ""
+        @Suppress("UNCHECKED_CAST")
+        val attachmentIds =
+            (spec.nodeParams["attachments"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+        val receiverJson =
+            when (recipientType.uppercase()) {
+              "LATEST_SUBMITTER" -> ""","receiver":{"type":"LATEST_SUBMITTER"}"""
+              "INITIAL_SUBMITTER" -> ""","receiver":{"type":"INITIAL_SUBMITTER"}"""
+              "EMAIL" -> ""","receiver":{"type":"EMAIL","email":${gson.toJson(recipientEmail)}}"""
+              "INBOX_ID" ->
+                  ""","receiver":{"type":"INBOX_ID","inboxId":${gson.toJson(recipientInboxId)},"messageService":${gson.toJson(recipientMessageService)}}"""
+              else -> ""
+            }
+        val attachmentsJson =
+            if (attachmentIds.isNotEmpty()) {
+              val resourcesJson =
+                  attachmentIds.joinToString(",") { id ->
+                    """{"type":"UPLOAD","identifier":${gson.toJson(id)}}"""
+                  }
+              ""","attachments":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
+            } else ""
+        """{"name":${gson.toJson(nodeName)},"messageContent":${gson.toJson(message)},"senderName":${gson.toJson(senderName)},"subject":${gson.toJson(subject)},"email":${gson.toJson(email)}$receiverJson$attachmentsJson}"""
       }
       "FC_CREATE_TEXT_FILE" -> {
         val fileName = spec.nodeParams["fileName"] as? String ?: "output.txt"
@@ -4823,7 +4940,12 @@ class AICodBiAssistant : IPluginServletAction {
                   val value = a["value"] as? String ?: ""
                   """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
                 } ?: emptyList()
-        """{"name":${gson.toJson(nodeName)},"customAttributes":[${attributes.joinToString(",")}],"writeAttributesToForm":false}"""
+        val writeAttributesToForm = spec.nodeParams["writeAttributesToForm"] as? Boolean ?: false
+        logger.info(
+            "[AICodBiAssistant] buildNodeParams FC_WRITE_FORM_RECORD_ATTRIBUTES: {} attributes, writeAttributesToForm={}",
+            attributes.size,
+            writeAttributesToForm)
+        """{"name":${gson.toJson(nodeName)},"customAttributes":[${attributes.joinToString(",")}],"writeAttributesToForm":$writeAttributesToForm}"""
       }
       "FC_PROVIDE_RESOURCE" -> {
         val exportName = spec.nodeParams["exportName"] as? String ?: ""
@@ -5294,6 +5416,29 @@ class AICodBiAssistant : IPluginServletAction {
           json
         } else {
           """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+        }
+      }
+      "FC_SET_FORM_RECORD_PASSWORD" -> {
+        val targetType = spec.nodeParams["targetType"] as? String ?: ""
+        if (targetType == "GENERATED_PASSWORD") {
+          val generatedLength = spec.nodeParams["generatedLength"] as? Number ?: 10
+          val policyRuleLowercase = spec.nodeParams["policyRuleLowercase"] as? Boolean ?: true
+          val policyRuleUppercase = spec.nodeParams["policyRuleUppercase"] as? Boolean ?: true
+          val policyRuleDigit = spec.nodeParams["policyRuleDigit"] as? Boolean ?: true
+          val policyRuleSymbol = spec.nodeParams["policyRuleSymbol"] as? Boolean ?: true
+          val policyRuleAlphabetical =
+              spec.nodeParams["policyRuleAlphabetical"] as? Boolean ?: false
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"targetType":"GENERATED_PASSWORD","generatedLength":${generatedLength.toInt()},"policyRuleLowercase":$policyRuleLowercase,"policyRuleUppercase":$policyRuleUppercase,"policyRuleDigit":$policyRuleDigit,"policyRuleSymbol":$policyRuleSymbol,"policyRuleAlphabetical":$policyRuleAlphabetical}"""
+        } else {
+          val inputPassword =
+              spec.nodeParams["inputPassword"] as? String
+                  ?: spec.nodeParams["password"] as? String
+                  ?: ""
+          if (inputPassword.isNotBlank()) {
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"targetType":"MANUALLY_ENTERED_PASSWORD","inputPassword":${gson.toJson(inputPassword)}}"""
+          } else {
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"targetType":"MANUALLY_ENTERED_PASSWORD","inputPassword":""}"""
+          }
         }
       }
       "FC_SET_SAVED_FLAG",

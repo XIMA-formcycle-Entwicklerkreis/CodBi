@@ -330,7 +330,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             "    The 'Limit to certain error' property category has these configurable filters (all optional):\n" +
             "      - \"Action Name\" (nodeName) — filter by the name of the specific action/node instance that raised the error\n" +
             "      - \"Action Name match type\" (nodeNameMatchType) — \"EXACT\"|\"CONTAINS\"|\"STARTS_WITH\"|\"ENDS_WITH\"\n" +
-            "      - \"Action Type\" (nodeType) — filter by the type of action; available values: FC_EMAIL, FC_POST_REQUEST, FC_CHANGE_STATE, FC_SQL_STATEMENT, FC_DOI_INIT, FC_COUNTER, FC_EXPORT_TO_XML, FC_SAVE_TO_WEBDAV, FC_CREATE_TEXT_FILE, FC_PROMPT_QUERY, FC_SWITCH, FC_CHANGE_FORM_AVAILABILITY, FC_FOR_EACH_LOOP, FC_WRITE_FORM_RECORD_ATTR, FC_EXPORT_TO_PERSISTENCE, FC_CHANGE_FORM_VALUE, FC_SHOW_TEMPLATE, FC_FILL_PDF, FC_COMPRESS_AS_ZIP, FC_SAVE_TO_FILE_SYSTEM, FC_LDAP_QUERY, FC_ENCODE_BASE64, FC_DECODE_BASE64, FC_RETURN_FILE, FC_MOVE_FORM_RECORD_TO_INBOX, FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, FC_PROCESS_LOG_PDF, FC_SET_SAVED_FLAG, FC_SET_FORM_RECORD_PASSWORD, FC_RENEW_PROCESS_ID, FC_CHANGE_FORM_RECORD_ACTIVENESS, FC_COPY_FORM_RECORD, FC_DELETE_ATTACHMENT, FC_FILL_WORD, FC_WITH_FORM_ELEMENT_CONTEXT, FC_SEND_FORM_RECORD_MESSAGE, FC_QUEUE_TASK, FC_LOG_ENTRY, FC_EXPORT_FORM_RECORD_CHATS, FC_REDIRECT, FC_MULTIPLE_CONDITION, FC_PROVIDE_RESOURCE, FC_THROW_EXCEPTION, FC_IMPORT_FORM_VALUE_FROM_XML, FC_EXPERIMENT\n" +
+            "      - \"Action Type\" (nodeType) — filter by the type of action; available values: FC_EMAIL, FC_POST_REQUEST, FC_CHANGE_STATE, FC_SQL_STATEMENT, FC_DOI_INIT, FC_COUNTER, FC_EXPORT_TO_XML, FC_SAVE_TO_WEBDAV, FC_CREATE_TEXT_FILE, FC_PROMPT_QUERY, FC_SWITCH, FC_CHANGE_FORM_AVAILABILITY, FC_FOR_EACH_LOOP, FC_WRITE_FORM_RECORD_ATTR, FC_EXPORT_TO_PERSISTENCE, FC_CHANGE_FORM_VALUE, FC_SHOW_TEMPLATE, FC_FILL_PDF, FC_COMPRESS_AS_ZIP, FC_SAVE_TO_FILE_SYSTEM, FC_LDAP_QUERY, FC_ENCODE_BASE64, FC_DECODE_BASE64, FC_RETURN_FILE, FC_MOVE_FORM_RECORD_TO_INBOX, FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, FC_PROCESS_LOG_PDF, FC_SET_SAVED_FLAG, FC_SET_FORM_RECORD_PASSWORD, FC_RENEW_PROCESS_ID, FC_CHANGE_FORM_RECORD_ACTIVENESS, FC_COPY_FORM_RECORD, FC_DELETE_ATTACHMENT, FC_FILL_WORD, FC_WITH_FORM_ELEMENT_CONTEXT, FC_SEND_FORM_RECORD_MESSAGE, FC_QUEUE_TASK, FC_LOG_ENTRY, FC_EXPORT_FORM_RECORD_CHATS, FC_REDIRECT, FC_MULTIPLE_CONDITION, FC_PROVIDE_RESOURCE, FC_THROW_EXCEPTION, FC_IMPORT_FORM_VALUE_FROM_XML, FC_EXPERIMENT, FC_CHANGE_FORM_RECORD_CHAT_ACTIVENESS\n" +
             "      - \"Action Type match type\" (nodeTypeMatchType) — \"EXACT\"|\"CONTAINS\"|\"STARTS_WITH\"|\"ENDS_WITH\"\n" +
             "      - \"Error Code\" (errorCode) — filter by specific error code (e.g. EMAIL_SEND_FAILED, DATABASE_ERROR, NETWORK_FAILURE)\n" +
             "      - \"Error Code match type\" (errorCodeMatchType) — \"EXACT\"|\"CONTAINS\"|\"STARTS_WITH\"|\"ENDS_WITH\"\n" +
@@ -412,6 +412,13 @@ class AIWorkflowAssistant : IPluginServletAction {
             "\"recipientMessageService\":\"<message service / portal name — REQUIRED when recipientType=INBOX_ID; set this to the EXACT portal/service name from the prompt (e.g. if prompt says 'Bayern ID' then set 'Bayern ID'; if 'Nutzerportal' then 'Nutzerportal'; copy the name VERBATIM from the prompt, do NOT translate or guess)>\", " +
             "\"email\":\"<alternative email address — set when the prompt mentions an alternative/further email for the recipient (different from recipientEmail)>\", " +
             "\"attachments\":[\"<technicalId1>\",...] (optional — technicalIds of XUpload fields whose files to attach)}\n" +
+            "  - \"FC_CHANGE_FORM_RECORD_CHAT_ACTIVENESS\" — opens or closes a form record chat; " +
+            "nodeParams: {\"changeType\":\"OPEN|CLOSE\" (REQUIRED — OPEN to start a chat, CLOSE to end one), " +
+            "\"recipientType\":\"<INITIAL_SUBMITTER|LATEST_SUBMITTER|EMAIL|INBOX_ID — determines the chat recipient (same semantics as FC_SEND_FORM_RECORD_MESSAGE); default INITIAL_SUBMITTER>\", " +
+            "\"recipientEmail\":\"<recipient email address — when recipientType=EMAIL>\", " +
+            "\"recipientInboxId\":\"<inbox/postfach ID — when recipientType=INBOX_ID>\", " +
+            "\"recipientMessageService\":\"<message service / portal name — when recipientType=INBOX_ID; set this to the EXACT name from the AVAILABLE MESSAGE SERVICES list>\"" +
+            "}\n" +
             "  - \"FC_CREATE_TEXT_FILE\" — creates a text/JSON/XML/HTML file as an attachment; " +
             "nodeParams: {\"fileName\":\"<filename with extension>\", \"fileContent\":\"<content, supports [%placeholder%]>\", " +
             "\"contentType\":\"PLAIN_TEXT|JSON|XML|HTML\" (default PLAIN_TEXT)}\n" +
@@ -1818,6 +1825,25 @@ class AIWorkflowAssistant : IPluginServletAction {
               ""","attachments":{"resources":[$resourcesJson],"attachmentFilter":[]}"""
             } else ""
         """{"name":${gson.toJson(nodeName)},"messageContent":${gson.toJson(message)},"senderName":${gson.toJson(senderName)},"subject":${gson.toJson(subject)},"email":${gson.toJson(email)}$receiverJson$attachmentsJson}"""
+      }
+      "FC_CHANGE_FORM_RECORD_CHAT_ACTIVENESS" -> {
+        val changeType = (spec.nodeParams["changeType"] as? String ?: "OPEN").uppercase()
+        val recipientType = spec.nodeParams["recipientType"] as? String ?: ""
+        val recipientEmail = spec.nodeParams["recipientEmail"] as? String ?: ""
+        val recipientInboxId = spec.nodeParams["recipientInboxId"] as? String ?: ""
+        val recipientMessageService = spec.nodeParams["recipientMessageService"] as? String ?: ""
+        val changeTypeJson = if (changeType == "CLOSE") "CLOSE" else "OPEN"
+        val targetChatUserJson =
+            when (recipientType.uppercase()) {
+              "LATEST_SUBMITTER" -> ""","targetChatUser":{"type":"LATEST_SUBMITTER"}"""
+              "INITIAL_SUBMITTER" -> ""","targetChatUser":{"type":"INITIAL_SUBMITTER"}"""
+              "EMAIL" ->
+                  ""","targetChatUser":{"type":"EMAIL","email":${gson.toJson(recipientEmail)}}"""
+              "INBOX_ID" ->
+                  ""","targetChatUser":{"type":"INBOX_ID","inboxId":${gson.toJson(recipientInboxId)},"messageService":${gson.toJson(recipientMessageService)}}"""
+              else -> ""
+            }
+        """{"name":${gson.toJson(nodeName)},"changeType":"$changeTypeJson"$targetChatUserJson}"""
       }
       "FC_CREATE_TEXT_FILE" -> {
         val fileName = spec.nodeParams["fileName"] as? String ?: "output.txt"

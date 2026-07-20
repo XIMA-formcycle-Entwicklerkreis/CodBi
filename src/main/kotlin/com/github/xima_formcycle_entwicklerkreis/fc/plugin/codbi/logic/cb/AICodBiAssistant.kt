@@ -3731,6 +3731,10 @@ class AICodBiAssistant : IPluginServletAction {
             "Use this when the user wants the process log messages to be compiled into a PDF file. " +
             "The PDF is attached to the form record. For automatic download, chain an FC_PROVIDE_RESOURCE node " +
             "after this one with {\"exportName\":\"<same filename>\",\"sourceNode\":\"%prev%\"}.\n" +
+            "  - \"FC_EXPORT_FORM_RECORD_CHATS\" — exports the form record chat/conversation as a PDF file; " +
+            "nodeParams: {\"fileName\":\"<output PDF filename, e.g. 'Konversation.pdf'>\", " +
+            "\"attachToFormRecord\":<true|false> (optional, default true — attach the PDF to the form record)}. " +
+            "Use this when the user says the chat/conversation should be exported or saved as PDF.\n" +
             "  - \"FC_FILL_PDF\" — fills a PDF template with form data and produces a filled PDF; " +
             "nodeParams: {\"file\":\"<template filename from form resources, e.g. 'vorlage.pdf'>\", " +
             "\"exportName\":\"<output filename, e.g. 'ausgefuellt.pdf'>\", " +
@@ -5025,6 +5029,11 @@ class AICodBiAssistant : IPluginServletAction {
       "FC_PROCESS_LOG_PDF" -> {
         val fileName = spec.nodeParams["fileName"] as? String ?: "prozess-meldungen.pdf"
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fileName":${gson.toJson(fileName)},"logFileProvision":{"attachToFormRecord":true,"attachmentAccessibleToEndUser":true}}"""
+      }
+      "FC_EXPORT_FORM_RECORD_CHATS" -> {
+        val exportName = spec.nodeParams["fileName"] as? String ?: "konversation.pdf"
+        val attachToRecord = spec.nodeParams["attachToFormRecord"] as? Boolean ?: true
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"exportName":${gson.toJson(exportName)},"chatsFileProvision":{"attachToFormRecord":$attachToRecord,"attachmentAccessibleToEndUser":true}}"""
       }
       "FC_SHOW_TEMPLATE" -> {
         val templateName = spec.nodeParams["htmlTemplate"] as? String ?: ""

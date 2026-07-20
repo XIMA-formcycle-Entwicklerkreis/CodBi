@@ -848,9 +848,10 @@ class AIWorkflowAssistant : IPluginServletAction {
     fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
 
     // 9d. Endpoint node: every workflow lane requires a final FC_CHANGE_STATE (Endpunkt) that
-    //     sets the form record to its terminal status. Skip only when the main action IS
-    //     a state change (it already serves as the endpoint).
-    if (spec.nodeType != "FC_CHANGE_STATE") {
+    //     sets the form record to its terminal status. Skip when the main action IS
+    //     a state change (it already serves as the endpoint) OR when the record is deleted
+    //     (there is no status to transition to after deletion).
+    if (spec.nodeType != "FC_CHANGE_STATE" && spec.nodeType != "FC_DELETE_FORM_RECORD") {
       val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
       workflowNodeClass
           .getMethod("setName", String::class.java)

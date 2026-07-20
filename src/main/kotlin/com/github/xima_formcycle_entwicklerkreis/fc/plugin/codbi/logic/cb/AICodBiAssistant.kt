@@ -3826,6 +3826,8 @@ class AICodBiAssistant : IPluginServletAction {
             "  Every workflow lane automatically ends with a status transition (Endpunkt). The 'endpointState' field\n" +
             "  specifies the FORMCYCLE status name to set the form record to after all actions in the lane complete.\n" +
             "  DEFAULT: \"Received\" — use this unless the user specifies a different end status.\n" +
+            "  EXCEPTION — When nodeType is \"FC_DELETE_FORM_RECORD\", set endpointState to \"\" (empty string) " +
+            "because the record is being deleted and there is no status to transition to.\n" +
             "  CRITICAL — If the user says \"set status to <XYZ>\" or \"das Formular auf den Status <XYZ> setzen\",\n" +
             "  use EXACTLY the status name the user specified in their prompt. Do NOT pick a different status from the\n" +
             "  available list below. The user's requested status name may be new or different from existing ones.\n" +

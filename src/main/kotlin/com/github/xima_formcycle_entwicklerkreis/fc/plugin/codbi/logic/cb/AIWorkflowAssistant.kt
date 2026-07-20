@@ -3490,7 +3490,7 @@ class AIWorkflowAssistant : IPluginServletAction {
       val triggerParams: Map<String, Any> = emptyMap(),
       val nodeType: String = "FC_EMAIL",
       val nodeParams: Map<String, Any> = emptyMap(),
-      val endpointState: String = "Received",
+      val endpointState: String = "",
       val stateProperties: Map<String, Any> = emptyMap()
   )
 

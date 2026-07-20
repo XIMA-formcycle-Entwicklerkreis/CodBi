@@ -4145,11 +4145,13 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
+    // Determine the last action node in the lane (check chained nodes, fallback to main node)
+    val lastNodeType = spec.chainedNodes?.lastOrNull()?.get("nodeType") as? String ?: spec.nodeType
     // Endpoint node: every workflow lane requires a final FC_CHANGE_STATE (Endpunkt) that
-    // sets the form record to its terminal status. Skip when the main action IS
-    // a state change (it already serves as the endpoint) OR when the record is deleted
-    // (there is no status to transition to after deletion).
-    if (spec.nodeType != "FC_CHANGE_STATE" && spec.nodeType != "FC_DELETE_FORM_RECORD") {
+    // sets the form record to its terminal status. Skip when:
+    // - the last action is a state change (it already serves as the endpoint), or
+    // - the record is deleted (no status to transition to after deletion).
+    if (lastNodeType != "FC_CHANGE_STATE" && lastNodeType != "FC_DELETE_FORM_RECORD") {
       val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
       workflowNodeClass
           .getMethod("setName", String::class.java)
@@ -6302,7 +6304,7 @@ class AICodBiAssistant : IPluginServletAction {
       val nodeType: String = "FC_EMAIL",
       val nodeParams: Map<String, Any> = emptyMap(),
       val chainedNodes: List<Map<String, Any>>? = null,
-      val endpointState: String = "Received",
+      val endpointState: String = "",
       val stateProperties: Map<String, Any> = emptyMap()
   )
 

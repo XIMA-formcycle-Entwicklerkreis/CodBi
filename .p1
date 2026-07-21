@@ -1,2 +1,0 @@
-Fixed Länge
-Context: "wrap the DOM.Query in the JSON.Path EP: \"{ JSON.Path > { DOM.Query > .p1 } ; length }\" — JSON.Path extracts the specifie"

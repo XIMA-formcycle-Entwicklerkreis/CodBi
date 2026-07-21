@@ -3922,6 +3922,20 @@ class AICodBiAssistant : IPluginServletAction {
             "Use STATIC_INBOX when a known inbox exists (resolved by UUID). " +
             "Use COMPUTED_INBOX_NAME when the inbox should be searched by name at runtime " +
             "(e.g. when user says \"über den Namen suchen\", \"find by name\", or the inbox name is dynamic).\n" +
+            "  - \"FC_THROW_EXCEPTION\" — throws/causes a workflow error/exception; " +
+            "nodeParams: {\"errorMessage\":\"<error message text describing what went wrong; use [%\$CURRENT_ERROR_MESSAGE%] or [%\$LATEST_ERROR_MESSAGE%] to reference the current/latest error message>\", " +
+            "\"errorType\":\"<error code/type; use [%\$CURRENT_ERROR_CODE%] or [%\$LATEST_ERROR_CODE%] to reference the current/latest error code>\", " +
+            "\"errorData\":\"<optional additional error data as JSON string>\"}. " +
+            "Use this when the user says an error should be thrown, raised, geworfen, or " +
+            "a Fehler geworfen werden soll (e.g. \"Beim Klick auf submit soll ein Fehler geworfen werden\"). " +
+            "AVAILABLE SERVER VARIABLES (placeholders) for error values — " +
+            "use prefix CURRENT_ (current error), LATEST_ or LAST_ (latest error): " +
+            "[%\$CURRENT_ERROR%], [%\$CURRENT_ERROR_CODE%], [%\$CURRENT_ERROR_MESSAGE%], " +
+            "[%\$CURRENT_ERROR_NODE_NAME%], [%\$CURRENT_ERROR_NODE_TYPE%] " +
+            "(analogous with LATEST_ or LAST_ prefix, e.g. [%\$LATEST_ERROR_CODE%] or [%\$LAST_ERROR_MESSAGE%]). " +
+            "Optional: append (index) for a specific exception, e.g. [%\$CURRENT_ERROR(0)%]; " +
+            "append .property for property access, e.g. [%\$CURRENT_ERROR.someProperty%]. " +
+            "The thrown error can be caught by an FC_CATCH_ERROR trigger in another lane.\n" +
             "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}. " +
             "WARNING: NEVER use FC_EMPTY to represent an email, state change, or any other action. " +
             "If the user requests sending an email, always use FC_EMAIL even if 'to' is unknown (set 'to' to \"\").\n" +
@@ -3992,6 +4006,62 @@ class AICodBiAssistant : IPluginServletAction {
         "PLACEHOLDERS: To include a form field value in email body/subject/recipient use " +
             "[%technicalId%] where 'technicalId' is taken from the FORM ELEMENTS list. " +
             "Example: [%tfEmail%] for a field whose 'technicalId' is 'tfEmail'.\n\n")
+    append(
+        "AVAILABLE SERVER VARIABLES (system placeholders — use [%\$NAME%] syntax, no curly braces):\n" +
+            "  FORM RECORD:\n" +
+            "    [%\$PROCESS_ID%] or [%\$PROZESS_ID%] — form record process ID (string)\n" +
+            "    [%\$RECORD_ID%] — form record database ID (numeric)\n" +
+            "    [%\$RECORD_SUBJECT%] — form record subject/title\n" +
+            "    [%\$RECORD_READ%] — true/false whether record has been read\n" +
+            "    [%\$RECORD_UNREAD%] — true/false whether record is unread\n" +
+            "    [%\$RECORD_ATTR%] or [%\$RECORD_ATTR.customKey%] — custom record attributes\n" +
+            "    [%\$SOURCE_SERVER%] — source server name\n" +
+            "    [%\$SOURCE_SERVER_URL%] — source server URL\n" +
+            "  WORKFLOW STATUS:\n" +
+            "    [%\$STATUS_ID%] — current workflow status ID\n" +
+            "    [%\$STATUS_TYPE%] — current workflow status type\n" +
+            "    [%\$STATUS_NAME%] — current workflow status name\n" +
+            "  PROJECT:\n" +
+            "    [%\$PROJECT_ID%] or [%\$PROJEKT_ID%] — project ID\n" +
+            "    [%\$PROJECT_ALIAS%] — project alias\n" +
+            "    [%\$PROJECT_NAME%] — project name\n" +
+            "    [%\$PROJECT_TITLE%] — project title\n" +
+            "    [%\$PROJECT_DESCRIPTION%] — project description\n" +
+            "  CLIENT:\n" +
+            "    [%\$MANDANT_ID%] or [%\$CLIENT_ID%] — client/mandant ID\n" +
+            "    [%\$COUNTER_CLIENT%] or [%\$COUNTER_CLIENT.someKey%] — client counter\n" +
+            "    [%\$DEFAULT_MAIL_SENDER%] — system default mail sender address\n" +
+            "    [%\$CLIENT_MAIL_SENDER%] — client mail sender address\n" +
+            "    [%\$DEFAULT_MAIL_SENDERNAME%] — system default mail sender name\n" +
+            "    [%\$CLIENT_MAIL_SENDERNAME%] — client mail sender name\n" +
+            "  USER DATA (supports JSONPath, e.g. [%\$USER.firstName%]):\n" +
+            "    [%\$USER%] — current user data (JSON)\n" +
+            "    [%\$INITIAL_USER%] — initial submitter data (JSON)\n" +
+            "    [%\$LAST_USER%] — last editor data (JSON)\n" +
+            "  LINKS:\n" +
+            "    [%\$FORM_LINK%] — link to the form\n" +
+            "    [%\$FORM_REVIEW_LINK%] — link to review the form record\n" +
+            "    [%\$FORM_PROCESS_LINK%] or [%\$FORM_PROZESS_LINK%] — link to the process view\n" +
+            "    [%\$FORM_INVITE_LINK%] — invitation link\n" +
+            "    [%\$FORM_VERIFY_LINK%] — DOI email verification link\n" +
+            "    [%\$FORM_VERIFY_PAGE_LINK%] — DOI verification page link\n" +
+            "    [%\$FORM_INBOX_LINK%] — link to the form inbox\n" +
+            "    [%\$FORM_INBOX_NAME%] — form inbox name\n" +
+            "    [%\$FORM_PROCESS_HTML%] — process protocol as HTML\n" +
+            "    [%\$PORTAL_LINK%] — user portal link\n" +
+            "    [%\$PORTAL_FORM_RECORDS_LINK%] — portal form records link\n" +
+            "  WORKFLOW ERRORS (prefix: CURRENT_, LATEST_, or LAST_):\n" +
+            "    [%\$CURRENT_ERROR%] — the thrown error object\n" +
+            "    [%\$CURRENT_ERROR_CODE%] — the error code/type\n" +
+            "    [%\$CURRENT_ERROR_MESSAGE%] — the error message\n" +
+            "    [%\$CURRENT_ERROR_NODE_NAME%] — name of the node that threw the error\n" +
+            "    [%\$CURRENT_ERROR_NODE_TYPE%] — type of the node that threw the error\n" +
+            "    (same with LATEST_ or LAST_ prefix, e.g. [%\$LATEST_ERROR_CODE%])\n" +
+            "    Optional: append (index) for a specific exception, e.g. [%\$CURRENT_ERROR(0)%]\n" +
+            "  APPOINTMENTS:\n" +
+            "    [%\$APPOINTMENT%] — appointment data\n" +
+            "    [%\$APPOINTMENT_LIST%] — appointments list (HTML)\n" +
+            "    [%\$APPOINTMENT_LINK%] — appointment booking link\n\n")
     append(
         "CRITICAL — output rules for form element identifiers:\n" +
             "  FORM ELEMENTS entries have: 'technicalId' (always), 'displayText' (visible label/text), 'type' (e.g. XTextField, BUTTON),\n" +
@@ -5643,6 +5713,13 @@ class AICodBiAssistant : IPluginServletAction {
             if (triggerUuid.isNotBlank()) triggerUuid
             else java.util.UUID.nameUUIDFromBytes(eventName.toByteArray()).toString()
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"triggerToInvoke":{"uuid":"$uuid","taskUuid":""},"addToEnd":true}"""
+      }
+      "FC_THROW_EXCEPTION" -> {
+        val errorMessage = spec.nodeParams["errorMessage"] as? String ?: ""
+        val errorType =
+            spec.nodeParams["errorType"] as? String ?: spec.nodeParams["errorCode"] as? String ?: ""
+        val errorData = spec.nodeParams["errorData"] as? String ?: ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"errorMessage":${gson.toJson(errorMessage)},"errorType":${gson.toJson(errorType)},"errorData":${gson.toJson(errorData)}}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

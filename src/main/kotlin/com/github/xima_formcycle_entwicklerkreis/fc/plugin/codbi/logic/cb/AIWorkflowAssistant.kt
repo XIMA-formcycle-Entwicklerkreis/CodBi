@@ -258,9 +258,9 @@ class AIWorkflowAssistant : IPluginServletAction {
             "describes the workflow task to create. No explanation, no markdown, no code fences.\n\n")
     append(
         "Output format: Output EITHER a single JSON object (for ONE workflow lane) OR an array of JSON objects (for MULTIPLE lanes).\n" +
-            "  Single lane: {\"taskName\":\"...\", \"taskDescription\":\"...\", \"triggerType\":\"...\", \"triggerParams\":{}, \"nodeType\":\"...\", \"nodeParams\":{}, \"endpointState\":\"...\"}\n" +
+            "  Single lane: {\"taskName\":\"...\", \"taskDescription\":\"...\", \"triggerType\":\"...\", \"triggerParams\":{}, \"nodeType\":\"...\", \"nodeParams\":{}, \"endpointState\":\"...\", \"endpointType\":\"...\"}\n" +
             "  Multiple lanes: [{\"taskName\":\"...\", ...}, {\"taskName\":\"...\", ...}]\n" +
-            "  Each object has exactly these keys: taskName, taskDescription, triggerType, triggerParams, nodeType, nodeParams, endpointState.\n" +
+            "  Each object has exactly these keys: taskName, taskDescription, triggerType, triggerParams, nodeType, nodeParams, endpointState, endpointType.\n" +
             "  CRITICAL — taskName is MANDATORY for EVERY node type. You MUST always set a short, meaningful AND SPECIFIC description " +
             "of the workflow action. No exceptions. Never leave taskName empty or use generic names like \"AI-generated task\".\n" +
             "  Include key details like the target URL (without http://), template name, parameter names/values, email subject, " +
@@ -401,6 +401,12 @@ class AIWorkflowAssistant : IPluginServletAction {
             "\"queryParams\":[{\"name\":\"F2\",\"value\":\"YOLO\"},{\"name\":\"X\",\"value\":\"Y\"}]. " +
             "These are appended as query string parameters to the redirect URL.\n" +
             "    nodeParams example: {\"urlTemplate\":\"X2\",\"queryParams\":[{\"name\":\"F2\",\"value\":\"YOLO\"}]} or {\"url\":\"https://example.com\"}\n" +
+            "  - \"FC_RETURN\" — simply ends/terminates the workflow process without changing the form record state and without any other action; " +
+            "nodeParams: {}. " +
+            "Use this when the user says the process should just be ended/terminated (e.g. \"der Prozess soll beendet werden\", " +
+            "\"Prozess beenden\", \"workflow beenden\", \"Vorgang abschließen\"). " +
+            "When nodeType is FC_RETURN, there is NO need for a separate endpoint — the FC_RETURN node itself IS the endpoint. " +
+            "Set endpointType to \"FC_RETURN\" and endpointState to \"\" (empty string).\n" +
             "  - \"FC_SET_SAVED_FLAG\" — marks the form record as saved; nodeParams: {}\n" +
             "  - \"FC_DELETE_FORM_RECORD\" — permanently deletes the current form record; nodeParams: {}\n" +
             "  - \"FC_QUEUE_TASK\" — queues an event/task for execution; this is a TERMINAL node (no endpoint state needed after it); " +
@@ -524,11 +530,17 @@ class AIWorkflowAssistant : IPluginServletAction {
             "Do NOT use this for permanent state-level password configuration — use stateProperties instead.\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
-            "  Every workflow lane automatically ends with a status transition (Endpunkt). The 'endpointState' field\n" +
+            "  Every workflow lane automatically ends with an endpoint (Endpunkt). The 'endpointState' field\n" +
             "  specifies the FORMCYCLE status name to set the form record to after all actions in the lane complete.\n" +
             "  DEFAULT: \"Received\" — use this unless the user specifies a different end status.\n" +
-            "  EXCEPTION — When nodeType is \"FC_DELETE_FORM_RECORD\" or \"FC_QUEUE_TASK\", set endpointState to \"\" (empty string) " +
+            "  EXCEPTION — When nodeType is \"FC_DELETE_FORM_RECORD\", \"FC_QUEUE_TASK\", or \"FC_RETURN\", set endpointState to \"\" (empty string) " +
             "because these are terminal nodes and there is no status to transition to.\n" +
+            "  ENDPOINT TYPE (\"endpointType\" field) — specifies the type of endpoint node to create:\n" +
+            "  DEFAULT: \"FC_CHANGE_STATE\" — creates a status transition endpoint. Use this for most cases.\n" +
+            "  ALTERNATIVE: \"FC_RETURN\" — creates a return endpoint that simply ends the workflow process " +
+            "without changing the form record state. Use this when the user says the process should be ended/terminated " +
+            "(e.g. \"der Prozess soll beendet werden\", \"Prozess beenden\", \"workflow beenden\", \"Vorgang abschließen\"). " +
+            "When endpointType is \"FC_RETURN\", the endpointState field is ignored (no state transition needed).\n" +
             "  CRITICAL — If the user says \"set status to <XYZ>\" or \"das Formular auf den Status <XYZ> setzen\",\n" +
             "  use EXACTLY the status name the user specified in their prompt. Do NOT pick a different status.\n" +
             "  Exception: if nodeType is \"FC_CHANGE_STATE\", the state change IS the endpoint; " +
@@ -651,7 +663,11 @@ class AIWorkflowAssistant : IPluginServletAction {
             "  Step 2 — find field:  user says 'Mail-Feld' → matches displayText 'Mail'   → technicalId is 'tfHurra'  → use [%tfHurra%]\n" +
             "  Output: {\"taskName\":\"E-Mail bei Absenden\",\"taskDescription\":\"\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
             "\"triggerParams\":{\"buttonName\":\"btnZwolf\"},\"nodeType\":\"FC_EMAIL\"," +
-            "\"nodeParams\":{\"to\":\"[%tfHurra%]\",\"subject\":\"Eingang\",\"body\":\"Ihr Formular wurde empfangen.\"},\"endpointState\":\"Received\"}\n\n")
+            "\"nodeParams\":{\"to\":\"[%tfHurra%]\",\"subject\":\"Eingang\",\"body\":\"Ihr Formular wurde empfangen.\"},\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  User input: \"Beim Klick auf submit soll der Prozess beendet werden.\"\n" +
+            "  Output: {\"taskName\":\"Prozess beenden bei Absenden\",\"taskDescription\":\"\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_RETURN\"," +
+            "\"nodeParams\":{},\"endpointState\":\"\",\"endpointType\":\"FC_RETURN\"}\n\n")
     append("Output ONLY valid JSON. No trailing commas. No comments.")
   }
 
@@ -852,38 +868,216 @@ class AIWorkflowAssistant : IPluginServletAction {
     //     collection.add()). A NULL here causes PersistentList to throw on the next load.
     fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
 
-    // 9d. Endpoint node: every workflow lane requires a final FC_CHANGE_STATE (Endpunkt) that
-    //     sets the form record to its terminal status. Skip when the main action IS
-    //     a state change (it already serves as the endpoint) OR when the record is deleted
-    //     (there is no status to transition to after deletion).
+    // 9d. Endpoint node: every workflow lane requires a final endpoint (Endpunkt) that
+    //     sets the form record to its terminal status (FC_CHANGE_STATE) or simply ends
+    //     the process (FC_RETURN). Skip when the main action IS a state change (it already
+    //     serves as the endpoint) OR when the record is deleted (there is no status to
+    //     transition to after deletion).
+    val effectiveEndpointType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
     if (spec.nodeType != "FC_CHANGE_STATE" &&
         spec.nodeType != "FC_DELETE_FORM_RECORD" &&
-        spec.nodeType != "FC_QUEUE_TASK") {
+        spec.nodeType != "FC_QUEUE_TASK" &&
+        spec.nodeType != "FC_RETURN") {
       val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
       workflowNodeClass
           .getMethod("setName", String::class.java)
-          .invoke(endpointNode, "FC_CHANGE_STATE")
+          .invoke(endpointNode, effectiveEndpointType)
       workflowNodeClass
           .getMethod("setType", String::class.java)
-          .invoke(endpointNode, "FC_CHANGE_STATE")
+          .invoke(endpointNode, effectiveEndpointType)
       workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(endpointNode, true)
       workflowNodeClass
           .getMethod("setUUIDObject", UUID::class.java)
           .invoke(endpointNode, UUID.randomUUID())
 
-      // Resolve the state UUID — either find an existing state or create a new one
-      val stateName = spec.endpointState.ifBlank { "Received" }
-      var endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName)
+      // FC_RETURN is a terminal node that ends the workflow process without a state transition.
+      // It does NOT need a target state — just create the node and attach it to the task.
+      if (effectiveEndpointType == "FC_RETURN") {
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
+        workflowNodeClass
+            .getMethod("setParent", workflowNodeClass)
+            .invoke(endpointNode, savedRootNode)
+        val savedEndpointNode = createNodeMethod.invoke(workflowNodeApi, userContext, endpointNode)
+        fixParentOrderIndex(savedEndpointNode, savedRootNode, userContext)
+        logger.info(
+            "[AIWorkflowAssistant] Created FC_RETURN endpoint node (process ends without state change)")
+      } else {
+        // FC_CHANGE_STATE: Resolve the state UUID and create the endpoint with target state
+        val stateName = spec.endpointState.ifBlank { "Received" }
+        var endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName)
 
-      // Apply optional state properties to the resolved or newly created state
-      if (spec.stateProperties.isNotEmpty()) {
-        try {
-          val workflowStateClass = Class.forName("de.xima.fc.entities.WorkflowState")
-          val stateApi = apiProviderClass.getField("WORKFLOW_STATE_API").get(null)
+        // Apply optional state properties to the resolved or newly created state
+        if (spec.stateProperties.isNotEmpty()) {
+          try {
+            val workflowStateClass = Class.forName("de.xima.fc.entities.WorkflowState")
+            val stateApi = apiProviderClass.getField("WORKFLOW_STATE_API").get(null)
 
-          val stateObject: Any
-          if (endpointStateUuid == null) {
-            // Create new state
+            val stateObject: Any
+            if (endpointStateUuid == null) {
+              // Create new state
+              val newState = workflowStateClass.getDeclaredConstructor().newInstance()
+              workflowStateClass
+                  .getMethod("setName", String::class.java)
+                  .invoke(newState, stateName)
+              workflowStateClass
+                  .getMethod("setUUIDObject", UUID::class.java)
+                  .invoke(newState, UUID.randomUUID())
+              workflowStateClass
+                  .getMethod("setVersion", Class.forName("de.xima.fc.entities.WorkflowVersion"))
+                  .invoke(newState, workflowVersion)
+              val existingStates = loadWorkflowStates(userContext, workflowVersion)
+              var maxOrder = -1
+              for (st in existingStates) {
+                try {
+                  val idx = st.javaClass.getMethod("getOrderIndex").invoke(st) as? Int
+                  if (idx != null && idx > maxOrder) maxOrder = idx
+                } catch (_: Exception) {}
+              }
+              workflowStateClass
+                  .getMethod("setOrderIndex", Int::class.java)
+                  .invoke(newState, maxOrder + 1)
+              stateObject = newState
+            } else {
+              // State already exists — find it by UUID via the state list, then fetch by ID
+              val allStates = loadWorkflowStates(userContext, workflowVersion)
+              val matchedState =
+                  allStates.firstOrNull { st ->
+                    try {
+                      st.javaClass.getMethod("getUUIDObject").invoke(st) == endpointStateUuid
+                    } catch (_: Exception) {
+                      false
+                    }
+                  }
+              val stateId =
+                  matchedState?.javaClass?.getMethod("getId")?.invoke(matchedState) as? Long
+              stateObject =
+                  if (stateId != null) {
+                    stateApi.javaClass
+                        .getMethod("getById", userContextClass, java.lang.Long::class.java)
+                        .invoke(stateApi, userContext, stateId)
+                  } else throw Exception("Could not find existing state by UUID")
+            }
+
+            for ((propName, propValue) in spec.stateProperties) {
+              val setterName = "set${propName.replaceFirstChar { it.uppercase() }}"
+              try {
+                val setter =
+                    workflowStateClass.methods.firstOrNull { m ->
+                      m.name.equals(setterName, ignoreCase = true) && m.parameterCount == 1
+                    }
+                if (setter != null) {
+                  val arg =
+                      when (setter.parameterTypes[0]) {
+                        Boolean::class.java,
+                        java.lang.Boolean::class.java ->
+                            when (propValue) {
+                              is Boolean -> propValue
+                              is String -> propValue.toBoolean()
+                              else -> propValue.toString().toBoolean()
+                            }
+                        Int::class.java,
+                        Integer::class.java ->
+                            when (propValue) {
+                              is Number -> propValue.toInt()
+                              else -> propValue.toString().toIntOrNull() ?: 0
+                            }
+                        String::class.java -> propValue.toString()
+                        else -> propValue
+                      }
+                  setter.invoke(stateObject, arg)
+                  logger.info("[AIWorkflowAssistant] Set state property '{}' = {}", setterName, arg)
+                }
+              } catch (e: Exception) {
+                logger.warn(
+                    "[AIWorkflowAssistant] Failed to set state property '{}': {}",
+                    setterName,
+                    e.message)
+              }
+            }
+
+            // Handle allowAuthenticatedUser — requires creating a WorkflowStateAuthenticatorConfig
+            // with EAuthClientType.FORM (FormCycle's internal user authentication).
+            if (spec.stateProperties["allowAuthenticatedUser"] == true) {
+              try {
+                val authConfigClass =
+                    Class.forName("de.xima.fc.entities.WorkflowStateAuthenticatorConfig")
+                val eAuthClientTypeClass = Class.forName("de.xima.fc.mdl.enums.EAuthClientType")
+                val formType = eAuthClientTypeClass.getField("FORM").get(null)
+
+                val authConfig = authConfigClass.getDeclaredConstructor().newInstance()
+                authConfigClass
+                    .getMethod("setWorkflowState", workflowStateClass)
+                    .invoke(authConfig, stateObject)
+                authConfigClass
+                    .getMethod("setAuthenticatorType", eAuthClientTypeClass)
+                    .invoke(authConfig, formType)
+
+                // For a newly created state (plain POJO), addAuthenticatorConfig works directly.
+                // For an existing state (Hibernate proxy), the lazy authenticatorConfigs
+                // collection cannot be accessed outside a session. Use GenericAPI.create() to
+                // persist the config as a standalone entity instead.
+                if (endpointStateUuid == null) {
+                  workflowStateClass
+                      .getMethod("addAuthenticatorConfig", authConfigClass)
+                      .invoke(stateObject, authConfig)
+                } else {
+                  val genericApi = apiProviderClass.getField("GENERIC").get(null)
+                  genericApi.javaClass
+                      .getMethod(
+                          "create",
+                          Class::class.java,
+                          userContextClass,
+                          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity"))
+                      .invoke(genericApi, authConfigClass, userContext, authConfig)
+                }
+
+                logger.info(
+                    "[AIWorkflowAssistant] Created FORM authenticator config for allowAuthenticatedUser")
+              } catch (e: Exception) {
+                val causeMsg =
+                    if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
+                      "${e.cause!!::class.simpleName}: ${e.cause!!.message}"
+                    } else {
+                      "${e::class.simpleName}: ${e.message}"
+                    }
+                logger.warn(
+                    "[AIWorkflowAssistant] Failed to create authenticator config for allowAuthenticatedUser: {}",
+                    causeMsg)
+              }
+            }
+
+            if (endpointStateUuid == null) {
+              val savedState =
+                  stateApi.javaClass
+                      .getMethod("create", userContextClass, iTransferableEntityClass)
+                      .invoke(stateApi, userContext, stateObject)
+              endpointStateUuid =
+                  savedState.javaClass.getMethod("getUUIDObject").invoke(savedState) as? UUID
+              logger.info(
+                  "[AIWorkflowAssistant] Created new workflow state '{}' with UUID {}",
+                  stateName,
+                  endpointStateUuid)
+            } else {
+              stateApi.javaClass
+                  .getMethod("update", userContextClass, iTransferableEntityClass)
+                  .invoke(stateApi, userContext, stateObject)
+              logger.info(
+                  "[AIWorkflowAssistant] Updated existing workflow state '{}' properties",
+                  stateName)
+            }
+          } catch (e: Exception) {
+            logger.warn(
+                "[AIWorkflowAssistant] Failed to update/create workflow state '{}': {}",
+                stateName,
+                e.message)
+            if (endpointStateUuid == null)
+                endpointStateUuid = resolveFirstStateUuid(userContext, workflowVersion)
+          }
+        } else if (endpointStateUuid == null) {
+          // Create minimal state without properties
+          try {
+            val workflowStateClass = Class.forName("de.xima.fc.entities.WorkflowState")
+            val stateApi = apiProviderClass.getField("WORKFLOW_STATE_API").get(null)
             val newState = workflowStateClass.getDeclaredConstructor().newInstance()
             workflowStateClass.getMethod("setName", String::class.java).invoke(newState, stateName)
             workflowStateClass
@@ -903,198 +1097,41 @@ class AIWorkflowAssistant : IPluginServletAction {
             workflowStateClass
                 .getMethod("setOrderIndex", Int::class.java)
                 .invoke(newState, maxOrder + 1)
-            stateObject = newState
-          } else {
-            // State already exists — find it by UUID via the state list, then fetch by ID
-            val allStates = loadWorkflowStates(userContext, workflowVersion)
-            val matchedState =
-                allStates.firstOrNull { st ->
-                  try {
-                    st.javaClass.getMethod("getUUIDObject").invoke(st) == endpointStateUuid
-                  } catch (_: Exception) {
-                    false
-                  }
-                }
-            val stateId = matchedState?.javaClass?.getMethod("getId")?.invoke(matchedState) as? Long
-            stateObject =
-                if (stateId != null) {
-                  stateApi.javaClass
-                      .getMethod("getById", userContextClass, java.lang.Long::class.java)
-                      .invoke(stateApi, userContext, stateId)
-                } else throw Exception("Could not find existing state by UUID")
-          }
-
-          for ((propName, propValue) in spec.stateProperties) {
-            val setterName = "set${propName.replaceFirstChar { it.uppercase() }}"
-            try {
-              val setter =
-                  workflowStateClass.methods.firstOrNull { m ->
-                    m.name.equals(setterName, ignoreCase = true) && m.parameterCount == 1
-                  }
-              if (setter != null) {
-                val arg =
-                    when (setter.parameterTypes[0]) {
-                      Boolean::class.java,
-                      java.lang.Boolean::class.java ->
-                          when (propValue) {
-                            is Boolean -> propValue
-                            is String -> propValue.toBoolean()
-                            else -> propValue.toString().toBoolean()
-                          }
-                      Int::class.java,
-                      Integer::class.java ->
-                          when (propValue) {
-                            is Number -> propValue.toInt()
-                            else -> propValue.toString().toIntOrNull() ?: 0
-                          }
-                      String::class.java -> propValue.toString()
-                      else -> propValue
-                    }
-                setter.invoke(stateObject, arg)
-                logger.info("[AIWorkflowAssistant] Set state property '{}' = {}", setterName, arg)
-              }
-            } catch (e: Exception) {
-              logger.warn(
-                  "[AIWorkflowAssistant] Failed to set state property '{}': {}",
-                  setterName,
-                  e.message)
-            }
-          }
-
-          // Handle allowAuthenticatedUser — requires creating a WorkflowStateAuthenticatorConfig
-          // with EAuthClientType.FORM (FormCycle's internal user authentication).
-          if (spec.stateProperties["allowAuthenticatedUser"] == true) {
-            try {
-              val authConfigClass =
-                  Class.forName("de.xima.fc.entities.WorkflowStateAuthenticatorConfig")
-              val eAuthClientTypeClass = Class.forName("de.xima.fc.mdl.enums.EAuthClientType")
-              val formType = eAuthClientTypeClass.getField("FORM").get(null)
-
-              val authConfig = authConfigClass.getDeclaredConstructor().newInstance()
-              authConfigClass
-                  .getMethod("setWorkflowState", workflowStateClass)
-                  .invoke(authConfig, stateObject)
-              authConfigClass
-                  .getMethod("setAuthenticatorType", eAuthClientTypeClass)
-                  .invoke(authConfig, formType)
-
-              // For a newly created state (plain POJO), addAuthenticatorConfig works directly.
-              // For an existing state (Hibernate proxy), the lazy authenticatorConfigs
-              // collection cannot be accessed outside a session. Use GenericAPI.create() to
-              // persist the config as a standalone entity instead.
-              if (endpointStateUuid == null) {
-                workflowStateClass
-                    .getMethod("addAuthenticatorConfig", authConfigClass)
-                    .invoke(stateObject, authConfig)
-              } else {
-                val genericApi = apiProviderClass.getField("GENERIC").get(null)
-                genericApi.javaClass
-                    .getMethod(
-                        "create",
-                        Class::class.java,
-                        userContextClass,
-                        Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity"))
-                    .invoke(genericApi, authConfigClass, userContext, authConfig)
-              }
-
-              logger.info(
-                  "[AIWorkflowAssistant] Created FORM authenticator config for allowAuthenticatedUser")
-            } catch (e: Exception) {
-              val causeMsg =
-                  if (e is java.lang.reflect.InvocationTargetException && e.cause != null) {
-                    "${e.cause!!::class.simpleName}: ${e.cause!!.message}"
-                  } else {
-                    "${e::class.simpleName}: ${e.message}"
-                  }
-              logger.warn(
-                  "[AIWorkflowAssistant] Failed to create authenticator config for allowAuthenticatedUser: {}",
-                  causeMsg)
-            }
-          }
-
-          if (endpointStateUuid == null) {
             val savedState =
                 stateApi.javaClass
                     .getMethod("create", userContextClass, iTransferableEntityClass)
-                    .invoke(stateApi, userContext, stateObject)
+                    .invoke(stateApi, userContext, newState)
             endpointStateUuid =
                 savedState.javaClass.getMethod("getUUIDObject").invoke(savedState) as? UUID
             logger.info(
                 "[AIWorkflowAssistant] Created new workflow state '{}' with UUID {}",
                 stateName,
                 endpointStateUuid)
-          } else {
-            stateApi.javaClass
-                .getMethod("update", userContextClass, iTransferableEntityClass)
-                .invoke(stateApi, userContext, stateObject)
-            logger.info(
-                "[AIWorkflowAssistant] Updated existing workflow state '{}' properties", stateName)
+          } catch (e: Exception) {
+            logger.warn(
+                "[AIWorkflowAssistant] Failed to create workflow state '{}': {}",
+                stateName,
+                e.message)
+            endpointStateUuid = resolveFirstStateUuid(userContext, workflowVersion)
           }
-        } catch (e: Exception) {
-          logger.warn(
-              "[AIWorkflowAssistant] Failed to update/create workflow state '{}': {}",
-              stateName,
-              e.message)
-          if (endpointStateUuid == null)
-              endpointStateUuid = resolveFirstStateUuid(userContext, workflowVersion)
         }
-      } else if (endpointStateUuid == null) {
-        // Create minimal state without properties
-        try {
-          val workflowStateClass = Class.forName("de.xima.fc.entities.WorkflowState")
-          val stateApi = apiProviderClass.getField("WORKFLOW_STATE_API").get(null)
-          val newState = workflowStateClass.getDeclaredConstructor().newInstance()
-          workflowStateClass.getMethod("setName", String::class.java).invoke(newState, stateName)
-          workflowStateClass
-              .getMethod("setUUIDObject", UUID::class.java)
-              .invoke(newState, UUID.randomUUID())
-          workflowStateClass
-              .getMethod("setVersion", Class.forName("de.xima.fc.entities.WorkflowVersion"))
-              .invoke(newState, workflowVersion)
-          val existingStates = loadWorkflowStates(userContext, workflowVersion)
-          var maxOrder = -1
-          for (st in existingStates) {
-            try {
-              val idx = st.javaClass.getMethod("getOrderIndex").invoke(st) as? Int
-              if (idx != null && idx > maxOrder) maxOrder = idx
-            } catch (_: Exception) {}
-          }
-          workflowStateClass
-              .getMethod("setOrderIndex", Int::class.java)
-              .invoke(newState, maxOrder + 1)
-          val savedState =
-              stateApi.javaClass
-                  .getMethod("create", userContextClass, iTransferableEntityClass)
-                  .invoke(stateApi, userContext, newState)
-          endpointStateUuid =
-              savedState.javaClass.getMethod("getUUIDObject").invoke(savedState) as? UUID
-          logger.info(
-              "[AIWorkflowAssistant] Created new workflow state '{}' with UUID {}",
-              stateName,
-              endpointStateUuid)
-        } catch (e: Exception) {
-          logger.warn(
-              "[AIWorkflowAssistant] Failed to create workflow state '{}': {}",
-              stateName,
-              e.message)
-          endpointStateUuid = resolveFirstStateUuid(userContext, workflowVersion)
-        }
-      }
 
-      if (endpointStateUuid != null) {
-        val endpointParamsJson =
-            """{ "targetState":{"uuid":${gson.toJson(endpointStateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
-        workflowNodeClass
-            .getMethod("setCustomParameters", String::class.java)
-            .invoke(endpointNode, endpointParamsJson)
-        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
-        workflowNodeClass
-            .getMethod("setParent", workflowNodeClass)
-            .invoke(endpointNode, savedRootNode)
-        val savedEndpointNode = createNodeMethod.invoke(workflowNodeApi, userContext, endpointNode)
-        fixParentOrderIndex(savedEndpointNode, savedRootNode, userContext)
-      } else {
-        logger.warn("[AIWorkflowAssistant] Skipping endpoint node: no workflow states found")
+        if (endpointStateUuid != null) {
+          val endpointParamsJson =
+              """{ "targetState":{"uuid":${gson.toJson(endpointStateUuid.toString())},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(endpointNode, endpointParamsJson)
+          workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
+          workflowNodeClass
+              .getMethod("setParent", workflowNodeClass)
+              .invoke(endpointNode, savedRootNode)
+          val savedEndpointNode =
+              createNodeMethod.invoke(workflowNodeApi, userContext, endpointNode)
+          fixParentOrderIndex(savedEndpointNode, savedRootNode, userContext)
+        } else {
+          logger.warn("[AIWorkflowAssistant] Skipping endpoint node: no workflow states found")
+        }
       }
     }
 
@@ -3496,6 +3533,7 @@ class AIWorkflowAssistant : IPluginServletAction {
       val nodeType: String = "FC_EMAIL",
       val nodeParams: Map<String, Any> = emptyMap(),
       val endpointState: String = "",
+      val endpointType: String = "FC_CHANGE_STATE",
       val stateProperties: Map<String, Any> = emptyMap()
   )
 

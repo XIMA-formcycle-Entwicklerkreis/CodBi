@@ -403,6 +403,9 @@ class AIWorkflowAssistant : IPluginServletAction {
             "    nodeParams example: {\"urlTemplate\":\"X2\",\"queryParams\":[{\"name\":\"F2\",\"value\":\"YOLO\"}]} or {\"url\":\"https://example.com\"}\n" +
             "  - \"FC_SET_SAVED_FLAG\" — marks the form record as saved; nodeParams: {}\n" +
             "  - \"FC_DELETE_FORM_RECORD\" — permanently deletes the current form record; nodeParams: {}\n" +
+            "  - \"FC_QUEUE_TASK\" — queues an event/task for execution; this is a TERMINAL node (no endpoint state needed after it); " +
+            "nodeParams: {\"eventName\":\"<event/trigger name from the prompt, e.g. 'GoGo'>\"}. " +
+            "Use this when the user says an event should be executed, ausgeführt, triggered, or gestartet after submitting.\n" +
             "  - \"FC_SEND_FORM_RECORD_MESSAGE\" — sends an internal message to the record's inbox; " +
             "nodeParams: {\"message\":\"<message text, supports [%placeholder%]>\", \"senderName\":\"<sender display name — ALWAYS set a meaningful name, e.g. the current processor's name or 'System'; leave empty ONLY if truly unknown>\", " +
             "\"subject\":\"<subject text — ALWAYS derive a concise subject from the prompt context; leave empty ONLY if no subject can be determined>\", " +
@@ -524,8 +527,8 @@ class AIWorkflowAssistant : IPluginServletAction {
             "  Every workflow lane automatically ends with a status transition (Endpunkt). The 'endpointState' field\n" +
             "  specifies the FORMCYCLE status name to set the form record to after all actions in the lane complete.\n" +
             "  DEFAULT: \"Received\" — use this unless the user specifies a different end status.\n" +
-            "  EXCEPTION — When nodeType is \"FC_DELETE_FORM_RECORD\", set endpointState to \"\" (empty string) " +
-            "because the record is being deleted and there is no status to transition to.\n" +
+            "  EXCEPTION — When nodeType is \"FC_DELETE_FORM_RECORD\" or \"FC_QUEUE_TASK\", set endpointState to \"\" (empty string) " +
+            "because these are terminal nodes and there is no status to transition to.\n" +
             "  CRITICAL — If the user says \"set status to <XYZ>\" or \"das Formular auf den Status <XYZ> setzen\",\n" +
             "  use EXACTLY the status name the user specified in their prompt. Do NOT pick a different status.\n" +
             "  Exception: if nodeType is \"FC_CHANGE_STATE\", the state change IS the endpoint; " +
@@ -853,7 +856,9 @@ class AIWorkflowAssistant : IPluginServletAction {
     //     sets the form record to its terminal status. Skip when the main action IS
     //     a state change (it already serves as the endpoint) OR when the record is deleted
     //     (there is no status to transition to after deletion).
-    if (spec.nodeType != "FC_CHANGE_STATE" && spec.nodeType != "FC_DELETE_FORM_RECORD") {
+    if (spec.nodeType != "FC_CHANGE_STATE" &&
+        spec.nodeType != "FC_DELETE_FORM_RECORD" &&
+        spec.nodeType != "FC_QUEUE_TASK") {
       val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
       workflowNodeClass
           .getMethod("setName", String::class.java)

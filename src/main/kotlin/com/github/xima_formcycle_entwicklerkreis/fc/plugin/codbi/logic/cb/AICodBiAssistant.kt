@@ -3252,6 +3252,104 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Queries the database for available workflow triggers (events) in the given workflow version.
+   * Returns a JSON array of trigger names and UUIDs, or null if the query fails.
+   */
+  private fun fetchTriggers(userContext: Any, workflowVersionId: Long): String? {
+    logger.info(
+        "[AICodBiAssistant] fetchTriggers: querying triggers for workflowVersionId={}",
+        workflowVersionId)
+    val entityContextFactoryClass =
+        try {
+          Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] fetchTriggers: EntityContextFactory class not found: ${e.message}")
+          return null
+        }
+    val ucClass =
+        try {
+          Class.forName("de.xima.fc.user.UserContext")
+        } catch (e: Exception) {
+          logger.warn("[AICodBiAssistant] fetchTriggers: UserContext class not found: ${e.message}")
+          return null
+        }
+    val entityContext =
+        try {
+          entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] fetchTriggers: newEntityContext failed: ${e.message} / cause=${e.cause?.message}")
+          return null
+        }
+    logger.info(
+        "[AICodBiAssistant] fetchTriggers: EntityContext created, class={}",
+        entityContext.javaClass.name)
+    return try {
+      val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+      logger.info("[AICodBiAssistant] fetchTriggers: EM obtained, class={}", em.javaClass.name)
+      // Use JPQL via EntityContext (FormCycle-managed EM with all entities registered).
+      // Select full entity and extract properties via reflection because inherited properties
+      // from AWorkflowElement (uuid, flagActive) use field access, not property access,
+      // making them unresolvable in JPQL property paths.
+      val jpql =
+          "SELECT t FROM de.xima.fc.entities.WorkflowTrigger t " +
+              "JOIN t.task wta JOIN wta.process wp JOIN wp.version wv " +
+              "WHERE wv.id = :versionId"
+      val query = em.javaClass.getMethod("createQuery", String::class.java).invoke(em, jpql)
+      query.javaClass
+          .getMethod("setParameter", String::class.java, Any::class.java)
+          .invoke(query, "versionId", workflowVersionId)
+      @Suppress("UNCHECKED_CAST")
+      val resultList =
+          query.javaClass.getMethod("getResultList").invoke(query) as? List<*> ?: emptyList<Any>()
+      logger.info("[AICodBiAssistant] fetchTriggers: JPQL returned {} raw results", resultList.size)
+      // Find getter methods via reflection on the first result's class
+      val firstEl = resultList.firstOrNull()
+      val nameGetter =
+          firstEl?.javaClass?.let { cls ->
+            try {
+              cls.getMethod("getName")
+            } catch (_: Exception) {
+              null
+            }
+          }
+      val uuidGetter =
+          firstEl?.javaClass?.let { cls ->
+            try {
+              cls.getMethod("getUUID")
+            } catch (_: Exception) {
+              null
+            }
+          }
+      val triggerList =
+          resultList.mapNotNull { entity ->
+            if (entity == null) return@mapNotNull null
+            try {
+              val name = nameGetter?.invoke(entity) as? String ?: return@mapNotNull null
+              val uuidObj = uuidGetter?.invoke(entity)
+              val uuid = uuidObj?.toString() ?: return@mapNotNull null
+              """{"name":${gson.toJson(name)},"uuid":${gson.toJson(uuid)}}"""
+            } catch (_: Exception) {
+              null
+            }
+          }
+      logger.info(
+          "[AICodBiAssistant] fetchTriggers: found {} trigger(s): {}",
+          triggerList.size,
+          triggerList)
+      if (triggerList.isEmpty()) null else "[${triggerList.joinToString(",")}]"
+    } catch (e: Exception) {
+      val cause = e.cause
+      logger.warn(
+          "[AICodBiAssistant] Failed to fetch triggers: msg='${e.message}' cause='${cause?.message}' causeType='${cause?.javaClass?.name}'")
+      null
+    } finally {
+      runCatching { entityContext.javaClass.getMethod("close").invoke(entityContext) }
+    }
+  }
+
+  /**
    * Runs the workflow-creation AI call and creates the workflow task in FORMCYCLE. Unlike
    * [AIWorkflowAssistant], this method does NOT use a multi-turn context protocol: the frontend
    * already supplies [formElements] in phase 2, so a single AI call suffices.
@@ -3461,6 +3559,10 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] runWorkflowCreation: messageServices={}",
         messageServicesJson ?: "null (no services found or query failed)")
+    val triggersJson = fetchTriggers(userContext, workflowVersionId)
+    logger.info(
+        "[AICodBiAssistant] runWorkflowCreation: triggers={}",
+        triggersJson ?: "null (no triggers found or query failed)")
     val systemPrompt =
         buildWorkflowSystemPrompt(
             formElements,
@@ -3468,7 +3570,8 @@ class AICodBiAssistant : IPluginServletAction {
             completionPagesJson,
             workflowStatesJson,
             inboxesJson,
-            messageServicesJson)
+            messageServicesJson,
+            triggersJson)
 
     val messagesJson = buildString {
       append("[")
@@ -3535,7 +3638,8 @@ class AICodBiAssistant : IPluginServletAction {
       completionPages: String? = null,
       workflowStates: String? = null,
       inboxes: String? = null,
-      messageServices: String? = null
+      messageServices: String? = null,
+      triggers: String? = null
   ): String = buildString {
     append(
         "You are a FORMCYCLE workflow assistant. The user will describe a desired workflow " +
@@ -3694,6 +3798,10 @@ class AICodBiAssistant : IPluginServletAction {
             "These are appended as query string parameters to the redirect URL.\n" +
             "    nodeParams example: {\"urlTemplate\":\"X2\",\"queryParams\":[{\"name\":\"F2\",\"value\":\"YOLO\"}]} or {\"url\":\"https://example.com\"}\n" +
             "  - \"FC_SET_SAVED_FLAG\" — marks the form record as saved; nodeParams: {}\n" +
+            "  - \"FC_QUEUE_TASK\" — queues an event/task for execution; this is a TERMINAL node (no endpoint state needed after it); " +
+            "nodeParams: {\"eventName\":\"<event/trigger name from the prompt, e.g. 'GoGo'>\", " +
+            "\"triggerUuid\":\"<UUID of the event to invoke — pick the EXACT uuid from the AVAILABLE TRIGGERS list below matching the user's requested event name>\"}. " +
+            "Use this when the user says an event should be executed, ausgeführt, triggered, or gestartet after submitting.\n" +
             "  - \"FC_DELETE_FORM_RECORD\" — permanently deletes the current form record; nodeParams: {}\n" +
             "  - \"FC_SEND_FORM_RECORD_MESSAGE\" — sends an internal message to the record's inbox; " +
             "nodeParams: {\"message\":\"<message text, supports [%placeholder%]>\", \"senderName\":\"<sender display name — ALWAYS set a meaningful name, e.g. the current processor's name or 'System'; leave empty ONLY if truly unknown>\", " +
@@ -3826,8 +3934,8 @@ class AICodBiAssistant : IPluginServletAction {
             "  Every workflow lane automatically ends with a status transition (Endpunkt). The 'endpointState' field\n" +
             "  specifies the FORMCYCLE status name to set the form record to after all actions in the lane complete.\n" +
             "  DEFAULT: \"Received\" — use this unless the user specifies a different end status.\n" +
-            "  EXCEPTION — When nodeType is \"FC_DELETE_FORM_RECORD\", set endpointState to \"\" (empty string) " +
-            "because the record is being deleted and there is no status to transition to.\n" +
+            "  EXCEPTION — When nodeType is \"FC_DELETE_FORM_RECORD\" or \"FC_QUEUE_TASK\", set endpointState to \"\" (empty string) " +
+            "because these are terminal nodes and there is no status to transition to.\n" +
             "  CRITICAL — If the user says \"set status to <XYZ>\" or \"das Formular auf den Status <XYZ> setzen\",\n" +
             "  use EXACTLY the status name the user specified in their prompt. Do NOT pick a different status from the\n" +
             "  available list below. The user's requested status name may be new or different from existing ones.\n" +
@@ -3954,6 +4062,12 @@ class AICodBiAssistant : IPluginServletAction {
       append(
           "AVAILABLE MESSAGE SERVICES (for 'recipientMessageService' when creating a FC_SEND_FORM_RECORD_MESSAGE node with recipientType=INBOX_ID — pick the EXACT match from this list):\n" +
               messageServices +
+              "\n\n")
+    }
+    if (!triggers.isNullOrBlank()) {
+      append(
+          "AVAILABLE TRIGGERS (for 'triggerUuid' when creating a FC_QUEUE_TASK node — pick the EXACT uuid matching the user's requested event name):\n" +
+              triggers +
               "\n\n")
     }
     append("Output ONLY valid JSON. No trailing commas. No comments.")
@@ -4151,7 +4265,9 @@ class AICodBiAssistant : IPluginServletAction {
     // sets the form record to its terminal status. Skip when:
     // - the last action is a state change (it already serves as the endpoint), or
     // - the record is deleted (no status to transition to after deletion).
-    if (lastNodeType != "FC_CHANGE_STATE" && lastNodeType != "FC_DELETE_FORM_RECORD") {
+    if (lastNodeType != "FC_CHANGE_STATE" &&
+        lastNodeType != "FC_DELETE_FORM_RECORD" &&
+        lastNodeType != "FC_QUEUE_TASK") {
       val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
       workflowNodeClass
           .getMethod("setName", String::class.java)
@@ -5480,6 +5596,14 @@ class AICodBiAssistant : IPluginServletAction {
             """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"targetType":"MANUALLY_ENTERED_PASSWORD","inputPassword":""}"""
           }
         }
+      }
+      "FC_QUEUE_TASK" -> {
+        val eventName = spec.nodeParams["eventName"] as? String ?: ""
+        val triggerUuid = spec.nodeParams["triggerUuid"] as? String ?: ""
+        val uuid =
+            if (triggerUuid.isNotBlank()) triggerUuid
+            else java.util.UUID.nameUUIDFromBytes(eventName.toByteArray()).toString()
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"triggerToInvoke":{"uuid":"$uuid","taskUuid":""},"addToEnd":true}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

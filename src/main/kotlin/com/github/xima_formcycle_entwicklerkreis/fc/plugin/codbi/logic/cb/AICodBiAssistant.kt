@@ -3977,7 +3977,51 @@ class AICodBiAssistant : IPluginServletAction {
             "\"nodeParams\":{\"trustLevel\":\"CERTIFICATE\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"G@g.a\"}}]}," +
             "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
             "  CRITICAL — Do NOT include \"files\", \"attachments\", or any file-related fields in FC_EMAIL nodeParams " +
-            "unless the user explicitly specified files to attach. Empty arrays cause validation errors.\n\n")
+            "unless the user explicitly specified files to attach. Empty arrays cause validation errors.\n\n" +
+            "  - \"FC_MULTIPLE_CONDITION\" — checks whether a form field value meets a specified condition; " +
+            "This is a CONDITIONAL branching node — if the condition is met (YES branch), execution continues " +
+            "to the child nodes; if not (NO branch), the lane ends without executing the children. " +
+            "Use this when the user says an action should only be executed \"wenn\" (if) a field has a specific value, " +
+            "\"nur wenn\" (only if), \"falls\" (in case), or similar conditional language involving a form field value. " +
+            "nodeParams: {\"fieldTechnicalId\":\"<the technicalId of the form field to check>\", " +
+            "\"comparator\":\"EQUAL\" (supported: EMPTY, NOT_EMPTY, EQUAL, NOT_EQUAL, CONTAINS, NOT_CONTAINS, " +
+            "GREATER, GREATER_THAN_OR_EQUAL, LESSER, LESS_THAN_OR_EQUAL, STARTS_WITH, NOT_STARTS_WITH, " +
+            "ENDS_WITH, NOT_ENDS_WITH, REGEX_MATCH, NOT_REGEX_MATCH), " +
+            "\"compareValue\":\"<the value to compare against, e.g. 'A'>\", " +
+            "\"labelYes\":\"<optional custom label for the YES branch, defaults to 'Yes'>\", " +
+            "\"labelNo\":\"<optional custom label for the NO branch, defaults to 'No'>\"}. " +
+            "The server automatically wraps fieldTechnicalId in [%...%] notation (e.g. 'tf1' becomes '[%tf1%]'). " +
+            "CRITICAL — When the user's prompt states that an action should only be executed conditionally based on a form field value " +
+            "(e.g. \"nur ausgeführt werden wenn in Option 'A' steht\", \"nur wenn das Feld X den Wert Y hat\", " +
+            "\"falls das Feld ausgefüllt ist\"), " +
+            "you MUST use this nodeType as the primary action. " +
+            "The FC_MULTIPLE_CONDITION acts as a GUARD in the workflow lane — if the condition is met, " +
+            "execution continues to subsequent nodes in the same lane (YES branch). If not, the lane ends (NO branch).\n" +
+            "  CRITICAL — When the prompt contains BOTH a field-value condition AND an action (send email, change status, etc.), " +
+            "set nodeType to \"FC_MULTIPLE_CONDITION\". " +
+            "Include the child action nodes as a \"_childNodes\" array inside nodeParams. " +
+            "Each child has \"nodeType\" and \"nodeParams\". The server creates them on the YES branch.\n" +
+            "  MULTIPLE CONDITIONS — For multiple conditions (e.g. \"if field X equals A AND field Y equals B\"), " +
+            "use a \"conditions\" array instead of the single top-level fields. Each entry has the same " +
+            "\"fieldTechnicalId\", \"comparator\", and \"compareValue\" fields. " +
+            "Set \"combinationType\" to \"AND\" or \"OR\" to control how conditions are combined. " +
+            "For complex expressions like \"(C1 OR C2) AND C3\", set \"combinationType\" to \"CUSTOM\" " +
+            "and provide the expression as \"customExpression\". " +
+            "Each condition is indexed as C1, C2, C3,... in the order they appear in the array.\n" +
+            "  Example with multiple conditions:\n" +
+            "  {\"taskName\":\"Complex Condition\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_MULTIPLE_CONDITION\"," +
+            "\"nodeParams\":{\"combinationType\":\"AND\",\"conditions\":[{\"fieldTechnicalId\":\"tfOption\",\"comparator\":\"EQUAL\",\"compareValue\":\"A\"},{\"fieldTechnicalId\":\"tfAge\",\"comparator\":\"GREATER\",\"compareValue\":\"18\"}],\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{...}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  Example with custom expression:\n" +
+            "  {\"taskName\":\"Custom Expression\",...,\"nodeParams\":{\"combinationType\":\"CUSTOM\",\"conditions\":[{\"fieldTechnicalId\":\"tfOpt1\",\"comparator\":\"EQUAL\",\"compareValue\":\"A\"},{\"fieldTechnicalId\":\"tfOpt2\",\"comparator\":\"EQUAL\",\"compareValue\":\"B\"},{\"fieldTechnicalId\":\"tfOpt3\",\"comparator\":\"EQUAL\",\"compareValue\":\"C\"}],\"customExpression\":\"(C1 OR C2) AND C3\",\"_childNodes\":[...]}}\n" +
+            "  Example output for single condition (with sensible branch labels):\n" +
+            "  {\"taskName\":\"Send Mail Only if Option is A\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_MULTIPLE_CONDITION\"," +
+            "\"nodeParams\":{\"fieldTechnicalId\":\"tfOption\",\"comparator\":\"EQUAL\",\"compareValue\":\"A\",\"labelYes\":\"Option equals A\",\"labelNo\":\"Option is not A\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"G@g.a\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  CRITICAL — The fieldTechnicalId MUST be the EXACT technicalId from the FORM ELEMENTS list, " +
+            "not the display text. NEVER use the display text as the fieldTechnicalId.\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
             "  Every workflow lane automatically ends with an endpoint (Endpunkt). The 'endpointState' field\n" +
@@ -4268,7 +4312,8 @@ class AICodBiAssistant : IPluginServletAction {
     if (nodeParamsJson != null) {
       logger.info(
           "[AICodBiAssistant] Setting custom_params for nodeType={}: {}",
-          spec.nodeType, nodeParamsJson)
+          spec.nodeType,
+          nodeParamsJson)
       workflowNodeClass
           .getMethod("setCustomParameters", String::class.java)
           .invoke(actionNode, nodeParamsJson)
@@ -4330,79 +4375,114 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] POST-PERSIST name verification failed: {}", e.message)
     }
-fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
-// When the action node is a condition node (CheckTrustLevelPlugin) with _childNodes,
-// create a SEQUENCE wrapper as the YES-branch child of the condition node, and place
-// the actual action nodes inside that SEQUENCE. This matches Formcycle's standard
-// branching pattern (condition → SEQUENCE → actions), which WorkflowVersionStager
-// handles correctly.
-@Suppress("UNCHECKED_CAST")
-val childNodes = (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
-if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin") {
-  logger.info(
-      "[AICodBiAssistant] Creating YES-branch SEQUENCE wrapper for nodeType={}",
-      spec.nodeType)
-  // Step 1: Create SEQUENCE wrapper as child of condition node
-  val branchSequence = workflowNodeClass.getDeclaredConstructor().newInstance()
-  workflowNodeClass.getMethod("setName", String::class.java).invoke(branchSequence, "FcSequenceHandler")
-  workflowNodeClass.getMethod("setType", String::class.java).invoke(branchSequence, "SEQUENCE")
-  workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branchSequence, true)
-  workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(branchSequence, UUID.randomUUID())
-  workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branchSequence, savedTask)
-  workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(branchSequence, savedActionNode)
-  // Set parent_order_idx=0 (consequent/YES branch) before persist
-  trySetParentOrderIndex(workflowNodeClass, branchSequence, 0)
-  val savedBranchSeq = createNodeMethod.invoke(workflowNodeApi, userContext, branchSequence)
-  // Verify the index was persisted correctly
-  verifyChildIndex(savedBranchSeq, savedActionNode, 0, userContext)
-  logger.info(
-      "[AICodBiAssistant] Created YES-branch SEQUENCE wrapper id={}",
-      savedBranchSeq.javaClass.getMethod("getId").invoke(savedBranchSeq))
-  // Step 2: Create child nodes inside the SEQUENCE wrapper
-  for ((childIdx, childSpecMap) in childNodes.withIndex()) {
-    val childSpec = gson.fromJson(gson.toJson(childSpecMap), WorkflowTaskSpec::class.java)
-    val childNodeName = deriveNodeName(childSpec)
-    val childNode = workflowNodeClass.getDeclaredConstructor().newInstance()
-    workflowNodeClass.getMethod("setName", String::class.java).invoke(childNode, childNodeName)
-    workflowNodeClass.getMethod("setType", String::class.java).invoke(childNode, childSpec.nodeType)
-    workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(childNode, true)
-    workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(childNode, UUID.randomUUID())
-    val childParamsJson = buildNodeParamsJson(childSpec, workflowVersion, userContext)
-    if (childParamsJson != null) {
-      workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(childNode, childParamsJson)
+    fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
+    // When the action node is a condition node (CheckTrustLevelPlugin / FC_MULTIPLE_CONDITION)
+    // with _childNodes, create a SEQUENCE wrapper as the YES-branch child of the condition node,
+    // and place the actual action nodes inside that SEQUENCE. This matches Formcycle's standard
+    // branching pattern (condition → SEQUENCE → actions), which WorkflowVersionStager
+    // handles correctly.
+    @Suppress("UNCHECKED_CAST")
+    val childNodes = (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+    if (childNodes != null &&
+        (spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
+            spec.nodeType == "FC_MULTIPLE_CONDITION")) {
+      logger.info(
+          "[AICodBiAssistant] Creating YES-branch SEQUENCE wrapper for nodeType={}", spec.nodeType)
+      // Step 1: Create SEQUENCE wrapper as child of condition node
+      val branchSequence = workflowNodeClass.getDeclaredConstructor().newInstance()
+      workflowNodeClass
+          .getMethod("setName", String::class.java)
+          .invoke(branchSequence, "FcSequenceHandler")
+      workflowNodeClass.getMethod("setType", String::class.java).invoke(branchSequence, "SEQUENCE")
+      workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branchSequence, true)
+      workflowNodeClass
+          .getMethod("setUUIDObject", UUID::class.java)
+          .invoke(branchSequence, UUID.randomUUID())
+      workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branchSequence, savedTask)
+      workflowNodeClass
+          .getMethod("setParent", workflowNodeClass)
+          .invoke(branchSequence, savedActionNode)
+      // Set parent_order_idx=0 (consequent/YES branch) before persist
+      trySetParentOrderIndex(workflowNodeClass, branchSequence, 0)
+      val savedBranchSeq = createNodeMethod.invoke(workflowNodeApi, userContext, branchSequence)
+      // Verify the index was persisted correctly
+      verifyChildIndex(savedBranchSeq, savedActionNode, 0, userContext)
+      logger.info(
+          "[AICodBiAssistant] Created YES-branch SEQUENCE wrapper id={}",
+          savedBranchSeq.javaClass.getMethod("getId").invoke(savedBranchSeq))
+      // Step 2: Create child nodes inside the SEQUENCE wrapper
+      for ((childIdx, childSpecMap) in childNodes.withIndex()) {
+        val childSpec = gson.fromJson(gson.toJson(childSpecMap), WorkflowTaskSpec::class.java)
+        val childNodeName = deriveNodeName(childSpec)
+        val childNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass.getMethod("setName", String::class.java).invoke(childNode, childNodeName)
+        workflowNodeClass
+            .getMethod("setType", String::class.java)
+            .invoke(childNode, childSpec.nodeType)
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(childNode, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(childNode, UUID.randomUUID())
+        val childParamsJson = buildNodeParamsJson(childSpec, workflowVersion, userContext)
+        if (childParamsJson != null) {
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(childNode, childParamsJson)
+        }
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
+        workflowNodeClass
+            .getMethod("setParent", workflowNodeClass)
+            .invoke(childNode, savedBranchSeq)
+        val savedChildNode = createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
+        fixParentOrderIndex(savedChildNode, savedBranchSeq, userContext)
+        logger.info(
+            "[AICodBiAssistant] Created YES-branch node #{} type={} name='{}' inside SEQUENCE wrapper",
+            childIdx,
+            childSpec.nodeType,
+            childNodeName)
+      }
+      // Add endpoint inside the YES-branch SEQUENCE only when the endpoint type is neither
+      // FC_CHANGE_STATE (the default) nor FC_RETURN. For the default FC_CHANGE_STATE case,
+      // the endpoint is created as a sibling of the condition node by the outer endpoint logic,
+      // so it applies regardless of which branch was taken. The conditional node is a branching
+      // node: its YES branch executes the child actions, but the lane continues below it.
+      val effectiveEndpointType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
+      if (effectiveEndpointType != "FC_CHANGE_STATE" && effectiveEndpointType != "FC_RETURN") {
+        // FC_CHANGE_STATE: Resolve state UUID and create endpoint
+        val stateName = spec.endpointState.ifBlank { "Received" }
+        var endpointStateUuid: Any? = null
+        try {
+          endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName)
+        } catch (_: Exception) {}
+        val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(endpointNode, effectiveEndpointType)
+        workflowNodeClass
+            .getMethod("setType", String::class.java)
+            .invoke(endpointNode, effectiveEndpointType)
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(endpointNode, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(endpointNode, UUID.randomUUID())
+        if (endpointStateUuid != null) {
+          val uuidStr = endpointStateUuid.toString()
+          val epJson =
+              """{"targetState":{"uuid":${gson.toJson(uuidStr)},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(endpointNode, epJson)
+        }
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
+        workflowNodeClass
+            .getMethod("setParent", workflowNodeClass)
+            .invoke(endpointNode, savedBranchSeq)
+        val savedEp = createNodeMethod.invoke(workflowNodeApi, userContext, endpointNode)
+        fixParentOrderIndex(savedEp, savedBranchSeq, userContext)
+        logger.info(
+            "[AICodBiAssistant] Created endpoint '{}' inside YES-branch SEQUENCE", stateName)
+      }
     }
-    workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
-    workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(childNode, savedBranchSeq)
-    val savedChildNode = createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
-    fixParentOrderIndex(savedChildNode, savedBranchSeq, userContext)
-    logger.info(
-        "[AICodBiAssistant] Created YES-branch node #{} type={} name='{}' inside SEQUENCE wrapper",
-        childIdx, childSpec.nodeType, childNodeName)
-  }
-  // Add endpoint inside the YES-branch SEQUENCE
-  val effectiveEndpointType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
-  if (effectiveEndpointType != "FC_CHANGE_STATE" && effectiveEndpointType != "FC_RETURN") {
-    // FC_CHANGE_STATE: Resolve state UUID and create endpoint
-    val stateName = spec.endpointState.ifBlank { "Received" }
-    var endpointStateUuid: Any? = null
-    try { endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName) } catch (_: Exception) {}
-    val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
-    workflowNodeClass.getMethod("setName", String::class.java).invoke(endpointNode, effectiveEndpointType)
-    workflowNodeClass.getMethod("setType", String::class.java).invoke(endpointNode, effectiveEndpointType)
-    workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(endpointNode, true)
-    workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(endpointNode, UUID.randomUUID())
-    if (endpointStateUuid != null) {
-      val uuidStr = endpointStateUuid.toString()
-      val epJson = """{"targetState":{"uuid":${gson.toJson(uuidStr)},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
-      workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(endpointNode, epJson)
-    }
-    workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
-    workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(endpointNode, savedBranchSeq)
-    val savedEp = createNodeMethod.invoke(workflowNodeApi, userContext, endpointNode)
-    fixParentOrderIndex(savedEp, savedBranchSeq, userContext)
-    logger.info("[AICodBiAssistant] Created endpoint '{}' inside YES-branch SEQUENCE", stateName)
-  }
-}
 
     // Process chained nodes (sequential actions in the same task)
     if (spec.chainedNodes != null && spec.chainedNodes.isNotEmpty()) {
@@ -4413,21 +4493,32 @@ if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.no
         val chainNode = workflowNodeClass.getDeclaredConstructor().newInstance()
         val chainNodeName = deriveNodeName(chainSpec)
         workflowNodeClass.getMethod("setName", String::class.java).invoke(chainNode, chainNodeName)
-        workflowNodeClass.getMethod("setType", String::class.java).invoke(chainNode, chainSpec.nodeType)
+        workflowNodeClass
+            .getMethod("setType", String::class.java)
+            .invoke(chainNode, chainSpec.nodeType)
         workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(chainNode, true)
         val chainNodeUuidVal = UUID.randomUUID()
-        workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(chainNode, chainNodeUuidVal)
-        val resolvedParams = chainSpec.nodeParams.mapValues { (_, v) ->
-          when (v) {
-            "%prev%", "%sourceNodeUuid%" -> prevNodeUuid.toString()
-            "%sourceTaskUuid%" -> prevTaskUuid.toString()
-            else -> v
-          }
-        } + mapOf("_resolvedNodeUuid" to prevNodeUuid.toString(), "_resolvedTaskUuid" to prevTaskUuid.toString())
+        workflowNodeClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(chainNode, chainNodeUuidVal)
+        val resolvedParams =
+            chainSpec.nodeParams.mapValues { (_, v) ->
+              when (v) {
+                "%prev%",
+                "%sourceNodeUuid%" -> prevNodeUuid.toString()
+                "%sourceTaskUuid%" -> prevTaskUuid.toString()
+                else -> v
+              }
+            } +
+                mapOf(
+                    "_resolvedNodeUuid" to prevNodeUuid.toString(),
+                    "_resolvedTaskUuid" to prevTaskUuid.toString())
         val chainSpecWithUuids = chainSpec.copy(nodeParams = resolvedParams)
         val chainParamsJson = buildNodeParamsJson(chainSpecWithUuids, workflowVersion, userContext)
         if (chainParamsJson != null) {
-          workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(chainNode, chainParamsJson)
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(chainNode, chainParamsJson)
         }
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(chainNode, savedTask)
         workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(chainNode, savedRootNode)
@@ -4443,12 +4534,19 @@ if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.no
     // sets the form record to its terminal status (FC_CHANGE_STATE) or simply ends
     // the process (FC_RETURN). Skip when:
     // - the last action is a state change (it already serves as the endpoint), or
-    // - the record is deleted (no status to transition to after deletion).
+    // - the record is deleted (no status to transition to after deletion), or
+    // - the action is a conditional node with _childNodes that already has an endpoint
+    //   inside the YES branch (for non-default endpoint types).
+    val isNonDefaultEndpointInYesBranch =
+        childNodes != null &&
+            spec.endpointType.ifBlank { "FC_CHANGE_STATE" } != "FC_CHANGE_STATE" &&
+            spec.endpointType != "FC_RETURN"
     val effectiveEndpointType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
     if (lastNodeType != "FC_CHANGE_STATE" &&
         lastNodeType != "FC_DELETE_FORM_RECORD" &&
         lastNodeType != "FC_QUEUE_TASK" &&
-        lastNodeType != "FC_RETURN") {
+        lastNodeType != "FC_RETURN" &&
+        !isNonDefaultEndpointInYesBranch) {
       val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
       workflowNodeClass
           .getMethod("setName", String::class.java)
@@ -4909,17 +5007,11 @@ if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.no
 
   /**
    * Forces [childNode] (persisted under [parentNode]) to have [childIndex] as its
-   * `parent_order_idx`. This is needed for condition/branching nodes (e.g.
-   * CheckTrustLevelPlugin) which use `parent_order_idx` to distinguish YES branch
-   * (consequentChildIndex=0) from NO branch (alternateChildIndex=1). All children
-   * on the SAME branch share the same index value.
+   * `parent_order_idx`. This is needed for condition/branching nodes (e.g. CheckTrustLevelPlugin)
+   * which use `parent_order_idx` to distinguish YES branch (consequentChildIndex=0) from NO branch
+   * (alternateChildIndex=1). All children on the SAME branch share the same index value.
    */
-  private fun forceChildIndex(
-      childNode: Any,
-      parentNode: Any,
-      childIndex: Int,
-      userContext: Any
-  ) {
+  private fun forceChildIndex(childNode: Any, parentNode: Any, childIndex: Int, userContext: Any) {
     val nodeId =
         childNode.javaClass.getMethod("getId").invoke(childNode) as? Long
             ?: run {
@@ -4959,17 +5051,13 @@ if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.no
   }
 
   /**
-   * Tries to set [parentOrderIndex] on the given [node] entity BEFORE it is persisted,
-   * so Hibernate tracks the value properly. This avoids stale lockingVersion issues
-   * with WorkflowVersionStager that can occur when using direct SQL UPDATEs.
+   * Tries to set [parentOrderIndex] on the given [node] entity BEFORE it is persisted, so Hibernate
+   * tracks the value properly. This avoids stale lockingVersion issues with WorkflowVersionStager
+   * that can occur when using direct SQL UPDATEs.
    *
    * Silently does nothing if the entity lacks a setter (fallback handled by caller).
    */
-  private fun trySetParentOrderIndex(
-      nodeClass: Class<*>,
-      node: Any,
-      parentOrderIndex: Int
-  ) {
+  private fun trySetParentOrderIndex(nodeClass: Class<*>, node: Any, parentOrderIndex: Int) {
     try {
       nodeClass.getMethod("setParentOrderIndex", Int::class.java).invoke(node, parentOrderIndex)
     } catch (_: NoSuchMethodException) {
@@ -4982,19 +5070,13 @@ if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.no
   }
 
   /**
-   * Verifies that [childNode] (persisted under [parentNode]) has the expected
-   * [childIndex] for its `parent_order_idx`. If not (e.g. no setter was available
-   * on the entity), falls back to [forceChildIndex] with a direct SQL UPDATE.
+   * Verifies that [childNode] (persisted under [parentNode]) has the expected [childIndex] for its
+   * `parent_order_idx`. If not (e.g. no setter was available on the entity), falls back to
+   * [forceChildIndex] with a direct SQL UPDATE.
    */
-  private fun verifyChildIndex(
-      childNode: Any,
-      parentNode: Any,
-      childIndex: Int,
-      userContext: Any
-  ) {
+  private fun verifyChildIndex(childNode: Any, parentNode: Any, childIndex: Int, userContext: Any) {
     try {
-      val actualIdx =
-          childNode.javaClass.getMethod("getParentOrderIndex").invoke(childNode) as? Int
+      val actualIdx = childNode.javaClass.getMethod("getParentOrderIndex").invoke(childNode) as? Int
       if (actualIdx == null || actualIdx != childIndex) {
         forceChildIndex(childNode, parentNode, childIndex, userContext)
       }
@@ -5909,6 +5991,123 @@ if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.no
         val errorData = spec.nodeParams["errorData"] as? String ?: ""
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"errorMessage":${gson.toJson(errorMessage)},"errorType":${gson.toJson(errorType)},"errorData":${gson.toJson(errorData)}}"""
       }
+      "FC_MULTIPLE_CONDITION" -> {
+        // FC_MULTIPLE_CONDITION checks whether a form field value meets a condition.
+        // The AI provides: fieldTechnicalId, comparator, compareValue.
+        // _childNodes is handled separately in createWorkflowTask and must be excluded.
+        // Schema based on decompiled BaseMultipleConditionProps + SingleCondition:
+        //   combinationType: AND | OR | CUSTOM
+        //   conditions: [{ matchCondition: EQUAL|NOT_EQUAL|CONTAINS|..., matchOperandLhs:
+        // "[%techId%]", matchOperandRhs: "value", variableName: "" }]
+        //   customExpression: "(C1 OR C2) AND C3" (when combinationType=CUSTOM)
+        // matchOperandLhs uses [%technicalId%] notation to reference form fields.
+        // EMatchCondition constants: EMPTY, NOT_EMPTY, EQUAL, NOT_EQUAL, CONTAINS,
+        //   NOT_CONTAINS, GREATER, GREATER_THAN_OR_EQUAL, LESSER, LESS_THAN_OR_EQUAL,
+        //   STARTS_WITH, NOT_STARTS_WITH, ENDS_WITH, NOT_ENDS_WITH, REGEX_MATCH, NOT_REGEX_MATCH
+        val fieldTechnicalId = spec.nodeParams["fieldTechnicalId"] as? String ?: ""
+        val comparator = spec.nodeParams["comparator"] as? String ?: "EQUAL"
+        val compareValue = spec.nodeParams["compareValue"] as? String ?: ""
+        val combinationType = spec.nodeParams["combinationType"] as? String ?: "AND"
+        val customExpression = spec.nodeParams["customExpression"] as? String ?: ""
+        // Wrap field technicalId in Formcycle placeholder notation
+        val lhsRef = if (fieldTechnicalId.isNotBlank()) "[%$fieldTechnicalId%]" else ""
+        // Build the condition entries array; single condition is the common case.
+        // For multiple conditions, the AI can provide them in a "conditions" array.
+        @Suppress("UNCHECKED_CAST")
+        val conditions =
+            (spec.nodeParams["conditions"] as? List<Map<String, Any>>)?.ifEmpty { null }
+        val conditionsJson =
+            if (conditions != null) {
+              // Multiple conditions provided by AI.
+              // variableName MUST be a simple single-word identifier (no spaces, no special chars)
+              // because it is used as the variable reference in custom expressions like "(C1 OR C2)
+              // AND C3".
+              // Index-based naming (C1, C2, C3...) ensures unique, valid identifiers.
+              conditions
+                  .mapIndexed { idx, cond ->
+                    val condFieldId = (cond["fieldTechnicalId"] as? String ?: fieldTechnicalId)
+                    val condComparator = (cond["comparator"] as? String ?: comparator)
+                    val condValue = (cond["compareValue"] as? String ?: "")
+                    val condLhs = if (condFieldId.isNotBlank()) "[%$condFieldId%]" else ""
+                    val variableName =
+                        (cond["variableName"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: "C${idx + 1}"
+                    """{"matchCondition":${gson.toJson(condComparator)},"matchOperandLhs":${gson.toJson(condLhs)},"matchOperandRhs":${gson.toJson(condValue)},"variableName":${gson.toJson(variableName)}}"""
+                  }
+                  .joinToString(",", "[", "]")
+            } else {
+              // Single condition from top-level params.
+              // variableName MUST be a simple single-word identifier (no spaces).
+              val variableName = spec.nodeParams["conditionVariableName"] as? String ?: "C1"
+              """[{"matchCondition":${gson.toJson(comparator)},"matchOperandLhs":${gson.toJson(lhsRef)},"matchOperandRhs":${gson.toJson(compareValue)},"variableName":${gson.toJson(variableName)}}]"""
+            }
+        // Auto-derive sensible branch labels from the condition when AI doesn't provide them.
+        // For single condition: "tf1 equals A" / "Not: tf1 equals A"
+        // For multiple conditions: combine condition descriptions with "and"|"or" or use
+        // expression.
+        val compLabel = { raw: String ->
+          when (raw.uppercase()) {
+            "EMPTY" -> "is empty"
+            "NOT_EMPTY" -> "is not empty"
+            "EQUAL" -> "equals"
+            "NOT_EQUAL" -> "not equals"
+            "CONTAINS" -> "contains"
+            "NOT_CONTAINS" -> "does not contain"
+            "GREATER" -> "greater than"
+            "GREATER_THAN_OR_EQUAL" -> "≥"
+            "LESSER" -> "less than"
+            "LESS_THAN_OR_EQUAL" -> "≤"
+            "STARTS_WITH" -> "starts with"
+            "NOT_STARTS_WITH" -> "does not start with"
+            "ENDS_WITH" -> "ends with"
+            "NOT_ENDS_WITH" -> "does not end with"
+            "REGEX_MATCH" -> "matches"
+            "NOT_REGEX_MATCH" -> "does not match"
+            else -> raw.lowercase()
+          }
+        }
+        val describeCond = { fieldId: String, comp: String, val_: String ->
+          if (fieldId.isBlank()) ""
+          else {
+            val cl = compLabel(comp)
+            val vs = if (val_.isNotBlank()) " $val_" else ""
+            "$fieldId $cl$vs"
+          }
+        }
+        val conditionDesc =
+            if (conditions != null && conditions.isNotEmpty()) {
+              // Multiple conditions — build a combined description
+              val descs =
+                  conditions
+                      .mapIndexed { _, cond ->
+                        val cf = (cond["fieldTechnicalId"] as? String ?: "")
+                        val cc = (cond["comparator"] as? String ?: "EQUAL")
+                        val cv = (cond["compareValue"] as? String ?: "")
+                        describeCond(cf, cc, cv)
+                      }
+                      .filter { it.isNotBlank() }
+              when (combinationType.uppercase()) {
+                "AND" -> descs.joinToString(" and ")
+                "OR" -> descs.joinToString(" or ")
+                "CUSTOM" -> {
+                  if (customExpression.isNotBlank()) "Expr: $customExpression"
+                  else descs.joinToString(", ")
+                }
+                else -> descs.joinToString(", ")
+              }
+            } else {
+              describeCond(fieldTechnicalId, comparator, compareValue)
+            }
+        val defaultLabelYes = if (conditionDesc.isNotBlank()) conditionDesc else "Yes"
+        val defaultLabelNo = if (conditionDesc.isNotBlank()) "Not: $conditionDesc" else "No"
+        val labelYes = spec.nodeParams["labelYes"] as? String ?: defaultLabelYes
+        val labelNo = spec.nodeParams["labelNo"] as? String ?: defaultLabelNo
+        val customExprJson =
+            if (combinationType == "CUSTOM" && customExpression.isNotBlank()) {
+              ""","customExpression":${gson.toJson(customExpression)}"""
+            } else ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"labelYes":${gson.toJson(labelYes)},"labelNo":${gson.toJson(labelNo)},"combinationType":${gson.toJson(combinationType)},"conditions":$conditionsJson$customExprJson}"""
+      }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
       "FC_EMPTY" ->
@@ -5922,10 +6121,19 @@ if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.no
         val rawLevel = (spec.nodeParams["trustLevel"] as? String ?: "").lowercase()
         val mappedLevel =
             when {
-              rawLevel.contains("elster") || rawLevel == "substantial" || rawLevel == "substanziell" || rawLevel == "erheblich" -> "CERTIFICATE"
-              rawLevel.contains("eid") || rawLevel.contains("ausweis") || rawLevel == "hoch" || rawLevel == "high" -> "EPA"
+              rawLevel.contains("elster") ||
+                  rawLevel == "substantial" ||
+                  rawLevel == "substanziell" ||
+                  rawLevel == "erheblich" -> "CERTIFICATE"
+              rawLevel.contains("eid") ||
+                  rawLevel.contains("ausweis") ||
+                  rawLevel == "hoch" ||
+                  rawLevel == "high" -> "EPA"
               rawLevel.contains("fink") || rawLevel == "niedrig" || rawLevel == "low" -> "LOW"
-              rawLevel == "user_login" || rawLevel == "normal" || rawLevel.contains("benutzer") || rawLevel.contains("passwort") -> "USER_LOGIN"
+              rawLevel == "user_login" ||
+                  rawLevel == "normal" ||
+                  rawLevel.contains("benutzer") ||
+                  rawLevel.contains("passwort") -> "USER_LOGIN"
               rawLevel == "ohne" || rawLevel == "none" || rawLevel == "unknown" -> "UNKNOWN"
               rawLevel.isNotBlank() -> rawLevel.uppercase()
               else -> "USER_LOGIN"
@@ -6707,7 +6915,8 @@ if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.no
           "FC_SET_SAVED_FLAG" -> "Mark record as saved"
           "FC_DELETE_FORM_RECORD" -> "Delete form record"
           "FC_DELETE_ATTACHMENT" -> "Delete attachment"
-          "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" -> "Check authentication trust level"
+          "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ->
+              "Check authentication trust level"
           "FC_COUNTER" -> "Increment counter"
           "FC_PROMPT_QUERY" -> "Prompt user query"
           "FC_COMPRESS_AS_ZIP" -> "Compress as ZIP"

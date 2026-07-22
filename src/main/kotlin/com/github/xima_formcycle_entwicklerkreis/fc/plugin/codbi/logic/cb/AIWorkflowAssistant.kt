@@ -614,7 +614,31 @@ class AIWorkflowAssistant : IPluginServletAction {
             "\"nodeParams\":{\"fieldTechnicalId\":\"tfOption\",\"comparator\":\"EQUAL\",\"compareValue\":\"A\",\"labelYes\":\"Option equals A\",\"labelNo\":\"Option is not A\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"G@g.a\"}}]}," +
             "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
             "  CRITICAL — The fieldTechnicalId MUST be the EXACT technicalId from the FORM ELEMENTS list, " +
-            "not the display text. NEVER use the display text as the fieldTechnicalId.\n\n")
+            "not the display text. NEVER use the display text as the fieldTechnicalId.\n\n" +
+            "  - \"FC_SWITCH\" — switches execution based on the value of a form field, similar to a switch/case statement; " +
+            "This is a MULTI-BRANCH conditional node — the workflow takes different paths depending on the field's value. " +
+            "Use this when the user describes a switch-case pattern like \"if field X has value A do Y, if value B do Z\", " +
+            "\"steht in Feld X ein A dann..., bei B dann...\", \"je nach Wert von X\". " +
+            "nodeParams: {\"switchValue\":\"[%technicalId%]\" — the field whose value to switch on, wrapped in [%...%] notation}. " +
+            "Use a \"_cases\" array for the case branches. Each case entry has: " +
+            "\"caseValues\":[\"value1\",\"value2\",...] (the values to match for this case), " +
+            "\"combinationType\":\"OR\" (optional, how to combine multiple values: AND|OR|CUSTOM), " +
+            "\"customExpression\":\"(C1 OR C2) AND C3\" (optional, for CUSTOM combination), " +
+            "\"description\":\"<optional case description>\", " +
+            "and \"_childNodes\":[...] (the action nodes to execute for this case). " +
+            "Use \"_defaultChildNodes\" for the default branch (executed when no case matches).\n" +
+            "  CRITICAL — When the prompt describes DIFFERENT ACTIONS for DIFFERENT FIELD VALUES " +
+            "(e.g. \"bei A mache X, bei B mache Y\", \"if the field has value A do this, if B do that\"), " +
+            "you MUST use FC_SWITCH with a single lane, NOT multiple lanes with FC_MULTIPLE_CONDITION. " +
+            "A switch-case pattern is a SINGLE workflow lane with multiple branches, not multiple separate lanes.\n" +
+            "  Example output:\n" +
+            "  {\"taskName\":\"Send email with different senders\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_SWITCH\"," +
+            "\"nodeParams\":{\"switchValue\":\"[%tfKlausel%]\",\"_cases\":[{\"caseValues\":[\"A\"],\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"A@B.C\"}}]},{\"caseValues\":[\"B\"],\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"H@H.H\"}}]}],\"_defaultChildNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  CRITICAL — Do NOT confuse FC_SWITCH with FC_MULTIPLE_CONDITION. FC_MULTIPLE_CONDITION is for " +
+            "a single YES/NO condition check (\"nur ausgeführt werden wenn\"). FC_SWITCH is for multiple exclusive " +
+            "branches based on different values of the same field (\"bei A mache X, bei B mache Y\").\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
             "  Every workflow lane automatically ends with an endpoint (Endpunkt). The 'endpointState' field\n" +
@@ -1118,6 +1142,202 @@ class AIWorkflowAssistant : IPluginServletAction {
         logger.info(
             "[AIWorkflowAssistant] Created endpoint '{}' inside YES-branch SEQUENCE", stateName)
       }
+    }
+
+    // 9c-2. FC_SWITCH handler: creates a multi-branch switch/case structure.
+    @Suppress("UNCHECKED_CAST")
+    if (spec.nodeType == "FC_SWITCH") {
+      val cases = (spec.nodeParams["_cases"] as? List<Map<String, Any>>)?.ifEmpty { null }
+      val defaultChildNodes =
+          (spec.nodeParams["_defaultChildNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+      if (cases != null) {
+        for ((caseIdx, caseSpec) in cases.withIndex()) {
+          val caseValues =
+              (caseSpec["caseValues"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+          val caseCombinationType = caseSpec["combinationType"] as? String ?: "OR"
+          val caseCustomExpression = caseSpec["customExpression"] as? String ?: ""
+          val caseDescription = caseSpec["description"] as? String ?: ""
+          @Suppress("UNCHECKED_CAST")
+          val caseChildNodes =
+              (caseSpec["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+          val branchSequence = workflowNodeClass.getDeclaredConstructor().newInstance()
+          workflowNodeClass
+              .getMethod("setName", String::class.java)
+              .invoke(branchSequence, "FcSequenceHandler")
+          workflowNodeClass
+              .getMethod("setType", String::class.java)
+              .invoke(branchSequence, "SEQUENCE")
+          workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branchSequence, true)
+          workflowNodeClass
+              .getMethod("setUUIDObject", UUID::class.java)
+              .invoke(branchSequence, UUID.randomUUID())
+          val caseValuesJson =
+              caseValues.joinToString(",", "[", "]") { v ->
+                """{"caseValue":${gson.toJson(v)},"matchCondition":"EQUAL","variableName":"C${caseValues.indexOf(v) + 1}"}"""
+              }
+          val caseCustomExprJson =
+              if (caseCombinationType == "CUSTOM" && caseCustomExpression.isNotBlank()) {
+                ""","customExpression":${gson.toJson(caseCustomExpression)}"""
+              } else ""
+          val caseParamsJson =
+              """{"caseValues":$caseValuesJson,"combinationType":${gson.toJson(caseCombinationType)},"description":${gson.toJson(caseDescription)}$caseCustomExprJson}"""
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(branchSequence, caseParamsJson)
+          workflowNodeClass
+              .getMethod("setTask", workflowTaskClass)
+              .invoke(branchSequence, savedTask)
+          workflowNodeClass
+              .getMethod("setParent", workflowNodeClass)
+              .invoke(branchSequence, savedActionNode)
+          val savedBranchSeq = createNodeMethod.invoke(workflowNodeApi, userContext, branchSequence)
+          fixParentOrderIndex(savedBranchSeq, savedActionNode, userContext)
+          logger.info(
+              "[AIWorkflowAssistant] Created SWITCH case SEQUENCE #{} values={}",
+              caseIdx,
+              caseValues)
+          if (caseChildNodes != null) {
+            for ((childIdx, childSpecMap) in caseChildNodes.withIndex()) {
+              val childSpec = gson.fromJson(gson.toJson(childSpecMap), WorkflowTaskSpec::class.java)
+              val childNodeName = deriveNodeName(childSpec)
+              val childNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+              workflowNodeClass
+                  .getMethod("setName", String::class.java)
+                  .invoke(childNode, childNodeName)
+              workflowNodeClass
+                  .getMethod("setType", String::class.java)
+                  .invoke(childNode, childSpec.nodeType)
+              workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(childNode, true)
+              workflowNodeClass
+                  .getMethod("setUUIDObject", UUID::class.java)
+                  .invoke(childNode, UUID.randomUUID())
+              val childParamsJson = buildNodeParamsJson(childSpec, workflowVersion, userContext)
+              if (childParamsJson != null) {
+                workflowNodeClass
+                    .getMethod("setCustomParameters", String::class.java)
+                    .invoke(childNode, childParamsJson)
+              }
+              workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
+              workflowNodeClass
+                  .getMethod("setParent", workflowNodeClass)
+                  .invoke(childNode, savedBranchSeq)
+              val savedChildNode = createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
+              fixParentOrderIndex(savedChildNode, savedBranchSeq, userContext)
+            }
+          }
+          if (spec.endpointType != "FC_RETURN") {
+            val stateName = spec.endpointState.ifBlank { "Received" }
+            var endpointStateUuid: Any? = null
+            try {
+              endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName)
+            } catch (_: Exception) {}
+            val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+            val epType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
+            workflowNodeClass.getMethod("setName", String::class.java).invoke(endpointNode, epType)
+            workflowNodeClass.getMethod("setType", String::class.java).invoke(endpointNode, epType)
+            workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(endpointNode, true)
+            workflowNodeClass
+                .getMethod("setUUIDObject", UUID::class.java)
+                .invoke(endpointNode, UUID.randomUUID())
+            if (endpointStateUuid != null) {
+              val uuidStr = endpointStateUuid.toString()
+              val epJson =
+                  """{"targetState":{"uuid":${gson.toJson(uuidStr)},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
+              workflowNodeClass
+                  .getMethod("setCustomParameters", String::class.java)
+                  .invoke(endpointNode, epJson)
+            }
+            workflowNodeClass
+                .getMethod("setTask", workflowTaskClass)
+                .invoke(endpointNode, savedTask)
+            workflowNodeClass
+                .getMethod("setParent", workflowNodeClass)
+                .invoke(endpointNode, savedBranchSeq)
+            val savedEp = createNodeMethod.invoke(workflowNodeApi, userContext, endpointNode)
+            fixParentOrderIndex(savedEp, savedBranchSeq, userContext)
+          }
+        }
+      }
+      if (defaultChildNodes != null) {
+        val branchSequence = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(branchSequence, "FcSequenceHandler")
+        workflowNodeClass
+            .getMethod("setType", String::class.java)
+            .invoke(branchSequence, "SEQUENCE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branchSequence, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(branchSequence, UUID.randomUUID())
+        workflowNodeClass
+            .getMethod("setCustomParameters", String::class.java)
+            .invoke(branchSequence, "{}")
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branchSequence, savedTask)
+        workflowNodeClass
+            .getMethod("setParent", workflowNodeClass)
+            .invoke(branchSequence, savedActionNode)
+        val savedBranchSeq = createNodeMethod.invoke(workflowNodeApi, userContext, branchSequence)
+        fixParentOrderIndex(savedBranchSeq, savedActionNode, userContext)
+        logger.info("[AIWorkflowAssistant] Created SWITCH default SEQUENCE")
+        for ((childIdx, childSpecMap) in defaultChildNodes.withIndex()) {
+          val childSpec = gson.fromJson(gson.toJson(childSpecMap), WorkflowTaskSpec::class.java)
+          val childNodeName = deriveNodeName(childSpec)
+          val childNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+          workflowNodeClass
+              .getMethod("setName", String::class.java)
+              .invoke(childNode, childNodeName)
+          workflowNodeClass
+              .getMethod("setType", String::class.java)
+              .invoke(childNode, childSpec.nodeType)
+          workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(childNode, true)
+          workflowNodeClass
+              .getMethod("setUUIDObject", UUID::class.java)
+              .invoke(childNode, UUID.randomUUID())
+          val childParamsJson = buildNodeParamsJson(childSpec, workflowVersion, userContext)
+          if (childParamsJson != null) {
+            workflowNodeClass
+                .getMethod("setCustomParameters", String::class.java)
+                .invoke(childNode, childParamsJson)
+          }
+          workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
+          workflowNodeClass
+              .getMethod("setParent", workflowNodeClass)
+              .invoke(childNode, savedBranchSeq)
+          val savedChildNode = createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
+          fixParentOrderIndex(savedChildNode, savedBranchSeq, userContext)
+        }
+        if (spec.endpointType != "FC_RETURN") {
+          val stateName = spec.endpointState.ifBlank { "Received" }
+          var endpointStateUuid: Any? = null
+          try {
+            endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName)
+          } catch (_: Exception) {}
+          val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+          val epType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
+          workflowNodeClass.getMethod("setName", String::class.java).invoke(endpointNode, epType)
+          workflowNodeClass.getMethod("setType", String::class.java).invoke(endpointNode, epType)
+          workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(endpointNode, true)
+          workflowNodeClass
+              .getMethod("setUUIDObject", UUID::class.java)
+              .invoke(endpointNode, UUID.randomUUID())
+          if (endpointStateUuid != null) {
+            val uuidStr = endpointStateUuid.toString()
+            val epJson =
+                """{"targetState":{"uuid":${gson.toJson(uuidStr)},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
+            workflowNodeClass
+                .getMethod("setCustomParameters", String::class.java)
+                .invoke(endpointNode, epJson)
+          }
+          workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
+          workflowNodeClass
+              .getMethod("setParent", workflowNodeClass)
+              .invoke(endpointNode, savedBranchSeq)
+          val savedEp = createNodeMethod.invoke(workflowNodeApi, userContext, endpointNode)
+          fixParentOrderIndex(savedEp, savedBranchSeq, userContext)
+        }
+      }
+      return "Workflow task '${spec.taskName}' created: ${spec.triggerType} → ${spec.nodeType}"
     }
 
     // 9d. Endpoint node: every workflow lane requires a final endpoint (Endpunkt) that
@@ -2748,6 +2968,13 @@ class AIWorkflowAssistant : IPluginServletAction {
               ""","customExpression":${gson.toJson(customExpression)}"""
             } else ""
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"labelYes":${gson.toJson(labelYes)},"labelNo":${gson.toJson(labelNo)},"combinationType":${gson.toJson(combinationType)},"conditions":$conditionsJson$customExprJson}"""
+      }
+      "FC_SWITCH" -> {
+        // FC_SWITCH switches execution based on the value of a form field.
+        // CUSTOM_PARAMS stores FcSwitchProps: {"switchValue":"[%techId%]","description":"..."}
+        // _cases and _defaultChildNodes are handled separately in createWorkflowTask.
+        val switchValue = spec.nodeParams["switchValue"] as? String ?: ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"switchValue":${gson.toJson(switchValue)}}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

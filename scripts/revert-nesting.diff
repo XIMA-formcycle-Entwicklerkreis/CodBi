@@ -1,0 +1,167 @@
+Replace section from line 4321 to line 4415 with flat structure (no nesting):
+- Remove _childNodes nesting: convert to flat siblings under SEQUENCE
+- Remove isConditionNode/childParent logic: always use savedRootNode as parent
+- Keep endpoint always using savedRootNode
+
+--- a/src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt
++++ b/src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt
+@@ -4321 +4321 @@
+-    fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
++    // Keep flat structure: all nodes under SEQUENCE. Never nest children under condition nodes,
++    // as Formcycle's WorkflowVersionStager cannot cascade-delete nested parent-child FKs.
+ 
+@@ -4323,34 +4323,24 @@
+-// Auto-create child nodes on the YES branch from the _childNodes array in nodeParams.
+-// The AI includes this when the prompt has both an auth requirement AND actions
+-// (e.g. "ELSTER check + send email"). Each child has "nodeType" and "nodeParams".
+-@Suppress("UNCHECKED_CAST")
+-val childNodes = (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+-if (childNodes != null) {
+-  logger.info(
+-      "[AICodBiAssistant] Creating {} child node(s) from _childNodes for nodeType={}",
+-      childNodes.size, spec.nodeType)
+-  for ((childIdx, childSpecMap) in childNodes.withIndex()) {
+-    val childSpec = gson.fromJson(gson.toJson(childSpecMap), WorkflowTaskSpec::class.java)
+-    val childNodeName = deriveNodeName(childSpec)
+-    val childNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+-    workflowNodeClass.getMethod("setName", String::class.java).invoke(childNode, childNodeName)
+-    workflowNodeClass.getMethod("setType", String::class.java).invoke(childNode, childSpec.nodeType)
+-    workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(childNode, true)
+-    workflowNodeClass
+-        .getMethod("setUUIDObject", UUID::class.java)
+-        .invoke(childNode, UUID.randomUUID())
+-    val childParamsJson = buildNodeParamsJson(childSpec, workflowVersion, userContext)
+-    if (childParamsJson != null) {
+-      workflowNodeClass
+-          .getMethod("setCustomParameters", String::class.java)
+-          .invoke(childNode, childParamsJson)
+-    }
+-    trySetParentOrderIndex(workflowNodeClass, childNode, 0)
+-    workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
+-    workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(childNode, savedActionNode)
+-    val savedChildNode = createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
+-    verifyChildIndex(savedChildNode, savedActionNode, 0, userContext)
+-    logger.info(
+-        "[AICodBiAssistant] Created child node #{} type={} name='{}' on YES branch",
+-        childIdx, childSpec.nodeType, childNodeName)
+-  }
+-}
+-
+-// Determine if the action node is a condition node (e.g. CheckTrustLevelPlugin).
+-    // Condition nodes use child parent_order_idx to distinguish YES/NO branches:
+-    //   consequentChildIndex (YES) = 0, alternateChildIndex (NO) = 1.
+-    // Chained nodes and the endpoint must be children of the condition node on the YES branch.
+-    val isConditionNode =
+-        spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin"
+-    val childParent =
+-        if (isConditionNode) savedActionNode else savedRootNode
+-
+-    // Process chained nodes (sequential actions in the same task)
+-    if (spec.chainedNodes != null && spec.chainedNodes.isNotEmpty()) {
+-      var prevNodeUuid = actionNode.javaClass.getMethod("getUUIDObject").invoke(actionNode) as UUID
+-      var prevTaskUuid = task.javaClass.getMethod("getUUIDObject").invoke(task) as UUID
+-      for ((chainIdx, chainSpecMap) in spec.chainedNodes.withIndex()) {
+-        val chainSpec = gson.fromJson(gson.toJson(chainSpecMap), WorkflowTaskSpec::class.java)
+-        val chainNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+-        val chainNodeName = deriveNodeName(chainSpec)
+-        workflowNodeClass.getMethod("setName", String::class.java).invoke(chainNode, chainNodeName)
+-        workflowNodeClass
+-            .getMethod("setType", String::class.java)
+-            .invoke(chainNode, chainSpec.nodeType)
+-        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(chainNode, true)
+-        val chainNodeUuidVal = UUID.randomUUID()
+-        workflowNodeClass
+-            .getMethod("setUUIDObject", UUID::class.java)
+-            .invoke(chainNode, chainNodeUuidVal)
+-        val resolvedParams =
+-            chainSpec.nodeParams.mapValues { (_, v) ->
+-              when (v) {
+-                "%prev%",
+-                "%sourceNodeUuid%" -> prevNodeUuid.toString()
+-                "%sourceTaskUuid%" -> prevTaskUuid.toString()
+-                else -> v
+-              }
+-            } +
+-                mapOf(
+-                    "_resolvedNodeUuid" to prevNodeUuid.toString(),
+-                    "_resolvedTaskUuid" to prevTaskUuid.toString())
+-        val chainSpecWithUuids = chainSpec.copy(nodeParams = resolvedParams)
+-        val chainParamsJson = buildNodeParamsJson(chainSpecWithUuids, workflowVersion, userContext)
+-        if (chainParamsJson != null) {
+-          workflowNodeClass
+-              .getMethod("setCustomParameters", String::class.java)
+-              .invoke(chainNode, chainParamsJson)
+-        }
+-        trySetParentOrderIndex(workflowNodeClass, chainNode, 0)
+-        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(chainNode, savedTask)
+-        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(chainNode, childParent)
+-        val savedChainNode = createNodeMethod.invoke(workflowNodeApi, userContext, chainNode)
+-        if (isConditionNode) {
+-          verifyChildIndex(savedChainNode, childParent, 0, userContext)
+-        } else {
+-          fixParentOrderIndex(savedChainNode, childParent, userContext)
+-        }
++    // Convert _childNodes (from AI nodeParams) into flat sibling nodes under SEQUENCE.
++    // The CheckTrustLevelPlugin acts as a GUARD: if trust check passes, execution continues
++    // to sibling nodes; if it fails, the lane terminates. Flat sibling structure is required
++    // for compatibility with Formcycle's WorkflowVersionStager.
++    @Suppress("UNCHECKED_CAST")
++    val childNodes = (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
++    if (childNodes != null) {
++      logger.info(
++          "[AICodBiAssistant] Creating {} sibling node(s) from _childNodes for nodeType={}",
++          childNodes.size, spec.nodeType)
++      for ((childIdx, childSpecMap) in childNodes.withIndex()) {
++        val childSpec = gson.fromJson(gson.toJson(childSpecMap), WorkflowTaskSpec::class.java)
++        val childNodeName = deriveNodeName(childSpec)
++        val childNode = workflowNodeClass.getDeclaredConstructor().newInstance()
++        workflowNodeClass.getMethod("setName", String::class.java).invoke(childNode, childNodeName)
++        workflowNodeClass.getMethod("setType", String::class.java).invoke(childNode, childSpec.nodeType)
++        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(childNode, true)
++        workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(childNode, UUID.randomUUID())
++        val childParamsJson = buildNodeParamsJson(childSpec, workflowVersion, userContext)
++        if (childParamsJson != null) {
++          workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(childNode, childParamsJson)
++        }
++        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
++        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(childNode, savedRootNode)
++        val savedChildNode = createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
++        fixParentOrderIndex(savedChildNode, savedRootNode, userContext)
++        logger.info(
++            "[AICodBiAssistant] Created sibling node #{} type={} name='{}'",
++            childIdx, childSpec.nodeType, childNodeName)
++      }
++    }
++
++    // Process chained nodes (sequential actions in the same task)
++    if (spec.chainedNodes != null && spec.chainedNodes.isNotEmpty()) {
++      var prevNodeUuid = actionNode.javaClass.getMethod("getUUIDObject").invoke(actionNode) as UUID
++      var prevTaskUuid = task.javaClass.getMethod("getUUIDObject").invoke(task) as UUID
++      for ((chainIdx, chainSpecMap) in spec.chainedNodes.withIndex()) {
++        val chainSpec = gson.fromJson(gson.toJson(chainSpecMap), WorkflowTaskSpec::class.java)
++        val chainNode = workflowNodeClass.getDeclaredConstructor().newInstance()
++        val chainNodeName = deriveNodeName(chainSpec)
++        workflowNodeClass.getMethod("setName", String::class.java).invoke(chainNode, chainNodeName)
++        workflowNodeClass.getMethod("setType", String::class.java).invoke(chainNode, chainSpec.nodeType)
++        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(chainNode, true)
++        val chainNodeUuidVal = UUID.randomUUID()
++        workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(chainNode, chainNodeUuidVal)
++        val resolvedParams = chainSpec.nodeParams.mapValues { (_, v) ->
++          when (v) {
++            "%prev%", "%sourceNodeUuid%" -> prevNodeUuid.toString()
++            "%sourceTaskUuid%" -> prevTaskUuid.toString()
++            else -> v
++          }
++        } + mapOf("_resolvedNodeUuid" to prevNodeUuid.toString(), "_resolvedTaskUuid" to prevTaskUuid.toString())
++        val chainSpecWithUuids = chainSpec.copy(nodeParams = resolvedParams)
++        val chainParamsJson = buildNodeParamsJson(chainSpecWithUuids, workflowVersion, userContext)
++        if (chainParamsJson != null) {
++          workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(chainNode, chainParamsJson)
++        }
++        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(chainNode, savedTask)
++        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(chainNode, savedRootNode)
++        val savedChainNode = createNodeMethod.invoke(workflowNodeApi, userContext, chainNode)
++        fixParentOrderIndex(savedChainNode, savedRootNode, userContext)
+         prevNodeUuid = chainNodeUuidVal
+       }
+     }

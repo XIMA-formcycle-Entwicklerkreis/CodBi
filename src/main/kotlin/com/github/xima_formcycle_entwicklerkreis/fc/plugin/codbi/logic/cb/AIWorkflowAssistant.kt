@@ -541,7 +541,36 @@ class AIWorkflowAssistant : IPluginServletAction {
             "the record (e.g. \"beim Klick auf submit mit Passwort schützen\", \"beim Absenden zugangsbeschränken\", \"generiertes Passwort\").\n" +
             "When the user says \"generiert\", \"generate\", \"Passwort generieren\", or specifies character types (lowercase, uppercase, digits, special characters)\n" +
             "or a password length, use Mode 2 (GENERATE) with the appropriate parameters enabled.\n" +
-            "Do NOT use this for permanent state-level password configuration — use stateProperties instead.\n\n")
+            "Do NOT use this for permanent state-level password configuration — use stateProperties instead.\n\n" +
+            "  - \"de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin\" — checks the user's authentication trust level (e.g. ELSTER certificate, BundID level, etc.); " +
+            "This is a CONDITIONAL branching node — the workflow takes one path if the trust level is met (YES) and another if it is not (NO). " +
+            "nodeParams: {\"trustLevel\":\"<the ETrustLevel enum constant name — see table below>\"}. " +
+            "AVAILABLE ETrustLevel ENUM VALUES (set trustLevel to the CONSTANT NAME):\n" +
+            "  \"USER_LOGIN\" — login with username/password (BundID normal)\n" +
+            "  \"LOW\" — e.g. login with FINK (BundID niedrig)\n" +
+            "  \"CERTIFICATE\" — e.g. login with ELSTER certificate (BundID substanziell / substantial)\n" +
+            "  \"EPA\" — e.g. login with eID (BundID hoch / high)\n" +
+            "  \"UNKNOWN\" — unknown / without login (default)\n" +
+            "  MAPPING RULE: When the user mentions \"ELSTER\", \"ELSTER-Zertifikat\", or \"ELSTER certificate\", " +
+            "set trustLevel to \"CERTIFICATE\". When \"eID\" or \"Ausweis\" → \"EPA\". When \"FINK\" → \"LOW\". " +
+            "When \"Benutzername\" or \"Passwort\" or \"BundID normal\" → \"USER_LOGIN\".\n" +
+            "CRITICAL — When the user's prompt states that an action should only be executed \"wenn der Nutzer sich mindestens mit einem ELSTER-Zertifikat authentifiziert hat\" " +
+            "(if the user has authenticated with at least an ELSTER certificate) or mentions any similar authentication/trust-level requirement " +
+            "(e.g. \"nur bei authentifizierten Nutzern\", \"nur mit BundID\", \"nur mit ELSTER\"), " +
+            "you MUST use this nodeType as the primary action. " +
+            "The CheckTrustLevelPlugin acts as a GUARD in the workflow lane — if the trust level check passes, " +
+            "execution continues to subsequent nodes in the same lane (YES branch). If it fails, the lane ends (NO branch).\n" +
+            "  CRITICAL — When the prompt contains BOTH an authentication requirement (ELSTER, trust level) AND an action (send email, etc.), " +
+            "set nodeType to \"de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin\". " +
+            "Include the child action nodes as a \"_childNodes\" array inside nodeParams. " +
+            "Each child has \"nodeType\" and \"nodeParams\". The server creates them on the YES branch.\n" +
+            "  Example output:\n" +
+            "  {\"taskName\":\"ELSTER Auth Check and Send Email\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin\"," +
+            "\"nodeParams\":{\"trustLevel\":\"CERTIFICATE\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"G@g.a\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  CRITICAL — Do NOT include \"files\", \"attachments\", or any file-related fields in FC_EMAIL nodeParams " +
+            "unless the user explicitly specified files to attach. Empty arrays cause validation errors.\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
             "  Every workflow lane automatically ends with an endpoint (Endpunkt). The 'endpointState' field\n" +
@@ -3561,6 +3590,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           "FC_SET_SAVED_FLAG" -> "Mark record as saved"
           "FC_DELETE_FORM_RECORD" -> "Delete form record"
           "FC_DELETE_ATTACHMENT" -> "Delete attachment"
+          "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" -> "Check authentication trust level"
           "FC_COUNTER" -> "Increment counter"
           "FC_PROMPT_QUERY" -> "Prompt user query"
           "FC_COMPRESS_AS_ZIP" -> "Compress as ZIP"

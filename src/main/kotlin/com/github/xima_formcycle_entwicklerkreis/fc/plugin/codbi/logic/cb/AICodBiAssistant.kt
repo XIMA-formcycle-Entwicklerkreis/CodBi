@@ -3948,7 +3948,36 @@ class AICodBiAssistant : IPluginServletAction {
             "the record (e.g. \"beim Klick auf submit mit Passwort schützen\", \"beim Absenden zugangsbeschränken\", \"generiertes Passwort\").\n" +
             "When the user says \"generiert\", \"generate\", \"Passwort generieren\", or specifies character types (lowercase, uppercase, digits, special characters)\n" +
             "or a password length, use Mode 2 (GENERATE) with the appropriate parameters enabled.\n" +
-            "Do NOT use this for permanent state-level password configuration — use stateProperties instead.\n\n")
+            "Do NOT use this for permanent state-level password configuration — use stateProperties instead.\n\n" +
+            "  - \"de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin\" — checks the user's authentication trust level (e.g. ELSTER certificate, BundID level, etc.); " +
+            "This is a CONDITIONAL branching node — the workflow takes one path if the trust level is met (YES) and another if it is not (NO). " +
+            "nodeParams: {\"trustLevel\":\"<the ETrustLevel enum constant name — see table below>\"}. " +
+            "AVAILABLE ETrustLevel ENUM VALUES (set trustLevel to the CONSTANT NAME):\n" +
+            "  \"USER_LOGIN\" — login with username/password (BundID normal)\n" +
+            "  \"LOW\" — e.g. login with FINK (BundID niedrig)\n" +
+            "  \"CERTIFICATE\" — e.g. login with ELSTER certificate (BundID substanziell / substantial)\n" +
+            "  \"EPA\" — e.g. login with eID (BundID hoch / high)\n" +
+            "  \"UNKNOWN\" — unknown / without login (default)\n" +
+            "  MAPPING RULE: When the user mentions \"ELSTER\", \"ELSTER-Zertifikat\", or \"ELSTER certificate\", " +
+            "set trustLevel to \"CERTIFICATE\". When \"eID\" or \"Ausweis\" → \"EPA\". When \"FINK\" → \"LOW\". " +
+            "When \"Benutzername\" or \"Passwort\" or \"BundID normal\" → \"USER_LOGIN\".\n" +
+            "CRITICAL — When the user's prompt states that an action should only be executed \"wenn der Nutzer sich mindestens mit einem ELSTER-Zertifikat authentifiziert hat\" " +
+            "(if the user has authenticated with at least an ELSTER certificate) or mentions any similar authentication/trust-level requirement " +
+            "(e.g. \"nur bei authentifizierten Nutzern\", \"nur mit BundID\", \"nur mit ELSTER\"), " +
+            "you MUST use this nodeType as the primary action. " +
+            "The CheckTrustLevelPlugin acts as a GUARD in the workflow lane — if the trust level check passes, " +
+            "execution continues to subsequent nodes in the same lane (YES branch). If it fails, the lane ends (NO branch).\n" +
+            "  CRITICAL — When the prompt contains BOTH an authentication requirement (ELSTER, trust level) AND an action (send email, etc.), " +
+            "set nodeType to \"de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin\". " +
+            "Include the child action nodes as a \"_childNodes\" array inside nodeParams. " +
+            "Each child has \"nodeType\" and \"nodeParams\". The server creates them on the YES branch.\n" +
+            "  Example output:\n" +
+            "  {\"taskName\":\"ELSTER Auth Check and Send Email\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin\"," +
+            "\"nodeParams\":{\"trustLevel\":\"CERTIFICATE\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"G@g.a\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  CRITICAL — Do NOT include \"files\", \"attachments\", or any file-related fields in FC_EMAIL nodeParams " +
+            "unless the user explicitly specified files to attach. Empty arrays cause validation errors.\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
             "  Every workflow lane automatically ends with an endpoint (Endpunkt). The 'endpointState' field\n" +
@@ -4237,6 +4266,9 @@ class AICodBiAssistant : IPluginServletAction {
         .invoke(actionNode, UUID.randomUUID())
     val nodeParamsJson = buildNodeParamsJson(spec, workflowVersion, userContext)
     if (nodeParamsJson != null) {
+      logger.info(
+          "[AICodBiAssistant] Setting custom_params for nodeType={}: {}",
+          spec.nodeType, nodeParamsJson)
       workflowNodeClass
           .getMethod("setCustomParameters", String::class.java)
           .invoke(actionNode, nodeParamsJson)
@@ -4298,8 +4330,79 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] POST-PERSIST name verification failed: {}", e.message)
     }
-
-    fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
+fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
+// When the action node is a condition node (CheckTrustLevelPlugin) with _childNodes,
+// create a SEQUENCE wrapper as the YES-branch child of the condition node, and place
+// the actual action nodes inside that SEQUENCE. This matches Formcycle's standard
+// branching pattern (condition → SEQUENCE → actions), which WorkflowVersionStager
+// handles correctly.
+@Suppress("UNCHECKED_CAST")
+val childNodes = (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+if (childNodes != null && spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin") {
+  logger.info(
+      "[AICodBiAssistant] Creating YES-branch SEQUENCE wrapper for nodeType={}",
+      spec.nodeType)
+  // Step 1: Create SEQUENCE wrapper as child of condition node
+  val branchSequence = workflowNodeClass.getDeclaredConstructor().newInstance()
+  workflowNodeClass.getMethod("setName", String::class.java).invoke(branchSequence, "FcSequenceHandler")
+  workflowNodeClass.getMethod("setType", String::class.java).invoke(branchSequence, "SEQUENCE")
+  workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branchSequence, true)
+  workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(branchSequence, UUID.randomUUID())
+  workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branchSequence, savedTask)
+  workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(branchSequence, savedActionNode)
+  // Set parent_order_idx=0 (consequent/YES branch) before persist
+  trySetParentOrderIndex(workflowNodeClass, branchSequence, 0)
+  val savedBranchSeq = createNodeMethod.invoke(workflowNodeApi, userContext, branchSequence)
+  // Verify the index was persisted correctly
+  verifyChildIndex(savedBranchSeq, savedActionNode, 0, userContext)
+  logger.info(
+      "[AICodBiAssistant] Created YES-branch SEQUENCE wrapper id={}",
+      savedBranchSeq.javaClass.getMethod("getId").invoke(savedBranchSeq))
+  // Step 2: Create child nodes inside the SEQUENCE wrapper
+  for ((childIdx, childSpecMap) in childNodes.withIndex()) {
+    val childSpec = gson.fromJson(gson.toJson(childSpecMap), WorkflowTaskSpec::class.java)
+    val childNodeName = deriveNodeName(childSpec)
+    val childNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+    workflowNodeClass.getMethod("setName", String::class.java).invoke(childNode, childNodeName)
+    workflowNodeClass.getMethod("setType", String::class.java).invoke(childNode, childSpec.nodeType)
+    workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(childNode, true)
+    workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(childNode, UUID.randomUUID())
+    val childParamsJson = buildNodeParamsJson(childSpec, workflowVersion, userContext)
+    if (childParamsJson != null) {
+      workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(childNode, childParamsJson)
+    }
+    workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
+    workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(childNode, savedBranchSeq)
+    val savedChildNode = createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
+    fixParentOrderIndex(savedChildNode, savedBranchSeq, userContext)
+    logger.info(
+        "[AICodBiAssistant] Created YES-branch node #{} type={} name='{}' inside SEQUENCE wrapper",
+        childIdx, childSpec.nodeType, childNodeName)
+  }
+  // Add endpoint inside the YES-branch SEQUENCE
+  val effectiveEndpointType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
+  if (effectiveEndpointType != "FC_CHANGE_STATE" && effectiveEndpointType != "FC_RETURN") {
+    // FC_CHANGE_STATE: Resolve state UUID and create endpoint
+    val stateName = spec.endpointState.ifBlank { "Received" }
+    var endpointStateUuid: Any? = null
+    try { endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName) } catch (_: Exception) {}
+    val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+    workflowNodeClass.getMethod("setName", String::class.java).invoke(endpointNode, effectiveEndpointType)
+    workflowNodeClass.getMethod("setType", String::class.java).invoke(endpointNode, effectiveEndpointType)
+    workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(endpointNode, true)
+    workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(endpointNode, UUID.randomUUID())
+    if (endpointStateUuid != null) {
+      val uuidStr = endpointStateUuid.toString()
+      val epJson = """{"targetState":{"uuid":${gson.toJson(uuidStr)},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
+      workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(endpointNode, epJson)
+    }
+    workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
+    workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(endpointNode, savedBranchSeq)
+    val savedEp = createNodeMethod.invoke(workflowNodeApi, userContext, endpointNode)
+    fixParentOrderIndex(savedEp, savedBranchSeq, userContext)
+    logger.info("[AICodBiAssistant] Created endpoint '{}' inside YES-branch SEQUENCE", stateName)
+  }
+}
 
     // Process chained nodes (sequential actions in the same task)
     if (spec.chainedNodes != null && spec.chainedNodes.isNotEmpty()) {
@@ -4310,32 +4413,21 @@ class AICodBiAssistant : IPluginServletAction {
         val chainNode = workflowNodeClass.getDeclaredConstructor().newInstance()
         val chainNodeName = deriveNodeName(chainSpec)
         workflowNodeClass.getMethod("setName", String::class.java).invoke(chainNode, chainNodeName)
-        workflowNodeClass
-            .getMethod("setType", String::class.java)
-            .invoke(chainNode, chainSpec.nodeType)
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(chainNode, chainSpec.nodeType)
         workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(chainNode, true)
         val chainNodeUuidVal = UUID.randomUUID()
-        workflowNodeClass
-            .getMethod("setUUIDObject", UUID::class.java)
-            .invoke(chainNode, chainNodeUuidVal)
-        val resolvedParams =
-            chainSpec.nodeParams.mapValues { (_, v) ->
-              when (v) {
-                "%prev%",
-                "%sourceNodeUuid%" -> prevNodeUuid.toString()
-                "%sourceTaskUuid%" -> prevTaskUuid.toString()
-                else -> v
-              }
-            } +
-                mapOf(
-                    "_resolvedNodeUuid" to prevNodeUuid.toString(),
-                    "_resolvedTaskUuid" to prevTaskUuid.toString())
+        workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(chainNode, chainNodeUuidVal)
+        val resolvedParams = chainSpec.nodeParams.mapValues { (_, v) ->
+          when (v) {
+            "%prev%", "%sourceNodeUuid%" -> prevNodeUuid.toString()
+            "%sourceTaskUuid%" -> prevTaskUuid.toString()
+            else -> v
+          }
+        } + mapOf("_resolvedNodeUuid" to prevNodeUuid.toString(), "_resolvedTaskUuid" to prevTaskUuid.toString())
         val chainSpecWithUuids = chainSpec.copy(nodeParams = resolvedParams)
         val chainParamsJson = buildNodeParamsJson(chainSpecWithUuids, workflowVersion, userContext)
         if (chainParamsJson != null) {
-          workflowNodeClass
-              .getMethod("setCustomParameters", String::class.java)
-              .invoke(chainNode, chainParamsJson)
+          workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(chainNode, chainParamsJson)
         }
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(chainNode, savedTask)
         workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(chainNode, savedRootNode)
@@ -4812,6 +4904,102 @@ class AICodBiAssistant : IPluginServletAction {
       logger.warn("[AICodBiAssistant] Failed to fix parent_order_idx for node $nodeId", e)
     } finally {
       runCatching { entityContext.javaClass.getMethod("close").invoke(entityContext) }
+    }
+  }
+
+  /**
+   * Forces [childNode] (persisted under [parentNode]) to have [childIndex] as its
+   * `parent_order_idx`. This is needed for condition/branching nodes (e.g.
+   * CheckTrustLevelPlugin) which use `parent_order_idx` to distinguish YES branch
+   * (consequentChildIndex=0) from NO branch (alternateChildIndex=1). All children
+   * on the SAME branch share the same index value.
+   */
+  private fun forceChildIndex(
+      childNode: Any,
+      parentNode: Any,
+      childIndex: Int,
+      userContext: Any
+  ) {
+    val nodeId =
+        childNode.javaClass.getMethod("getId").invoke(childNode) as? Long
+            ?: run {
+              logger.warn("[AICodBiAssistant] forceChildIndex: child node has no ID yet")
+              return
+            }
+    val parentId =
+        parentNode.javaClass.getMethod("getId").invoke(parentNode) as? Long
+            ?: run {
+              logger.warn("[AICodBiAssistant] forceChildIndex: parent node has no ID")
+              return
+            }
+    val entityContextFactoryClass = Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+    val ucClass = Class.forName("de.xima.fc.user.UserContext")
+    val entityContext =
+        entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
+    val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+    val tx = em.javaClass.getMethod("getTransaction").invoke(em)
+    tx.javaClass.getMethod("begin").invoke(tx)
+    try {
+      val sql = "UPDATE workflow_node SET parent_order_idx = $childIndex WHERE id = $nodeId"
+      em.javaClass.getMethod("createNativeQuery", String::class.java).invoke(em, sql).let {
+        it.javaClass.getMethod("executeUpdate").invoke(it)
+      }
+      logger.info(
+          "[AICodBiAssistant] Force-set parent_order_idx = {} for child node id={} under parent id={}",
+          childIndex,
+          nodeId,
+          parentId)
+      tx.javaClass.getMethod("commit").invoke(tx)
+    } catch (e: Exception) {
+      runCatching { tx.javaClass.getMethod("rollback").invoke(tx) }
+      logger.warn("[AICodBiAssistant] Failed to force parent_order_idx for node $nodeId", e)
+    } finally {
+      runCatching { entityContext.javaClass.getMethod("close").invoke(entityContext) }
+    }
+  }
+
+  /**
+   * Tries to set [parentOrderIndex] on the given [node] entity BEFORE it is persisted,
+   * so Hibernate tracks the value properly. This avoids stale lockingVersion issues
+   * with WorkflowVersionStager that can occur when using direct SQL UPDATEs.
+   *
+   * Silently does nothing if the entity lacks a setter (fallback handled by caller).
+   */
+  private fun trySetParentOrderIndex(
+      nodeClass: Class<*>,
+      node: Any,
+      parentOrderIndex: Int
+  ) {
+    try {
+      nodeClass.getMethod("setParentOrderIndex", Int::class.java).invoke(node, parentOrderIndex)
+    } catch (_: NoSuchMethodException) {
+      try {
+        nodeClass.getMethod("setParentOrderIdx", Int::class.java).invoke(node, parentOrderIndex)
+      } catch (_: NoSuchMethodException) {
+        // Entity has no setter — caller must use forceChildIndex fallback
+      }
+    }
+  }
+
+  /**
+   * Verifies that [childNode] (persisted under [parentNode]) has the expected
+   * [childIndex] for its `parent_order_idx`. If not (e.g. no setter was available
+   * on the entity), falls back to [forceChildIndex] with a direct SQL UPDATE.
+   */
+  private fun verifyChildIndex(
+      childNode: Any,
+      parentNode: Any,
+      childIndex: Int,
+      userContext: Any
+  ) {
+    try {
+      val actualIdx =
+          childNode.javaClass.getMethod("getParentOrderIndex").invoke(childNode) as? Int
+      if (actualIdx == null || actualIdx != childIndex) {
+        forceChildIndex(childNode, parentNode, childIndex, userContext)
+      }
+    } catch (_: Exception) {
+      forceChildIndex(childNode, parentNode, childIndex, userContext)
     }
   }
 
@@ -5725,6 +5913,27 @@ class AICodBiAssistant : IPluginServletAction {
       "FC_DELETE_FORM_RECORD",
       "FC_EMPTY" ->
           """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+      "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" -> {
+        // The CheckTrustLevelProps class has:
+        //   trustLevels: List<ETrustLevel>  (NOT a single string!)
+        //   dataSuffix: String
+        // ETrustLevel enum values: USER_LOGIN, LOW, CERTIFICATE, EPA, UNKNOWN
+        // Map the AI's trustLevel param to the correct enum value.
+        val rawLevel = (spec.nodeParams["trustLevel"] as? String ?: "").lowercase()
+        val mappedLevel =
+            when {
+              rawLevel.contains("elster") || rawLevel == "substantial" || rawLevel == "substanziell" || rawLevel == "erheblich" -> "CERTIFICATE"
+              rawLevel.contains("eid") || rawLevel.contains("ausweis") || rawLevel == "hoch" || rawLevel == "high" -> "EPA"
+              rawLevel.contains("fink") || rawLevel == "niedrig" || rawLevel == "low" -> "LOW"
+              rawLevel == "user_login" || rawLevel == "normal" || rawLevel.contains("benutzer") || rawLevel.contains("passwort") -> "USER_LOGIN"
+              rawLevel == "ohne" || rawLevel == "none" || rawLevel == "unknown" -> "UNKNOWN"
+              rawLevel.isNotBlank() -> rawLevel.uppercase()
+              else -> "USER_LOGIN"
+            }
+        // ETrustLevel is an enum; Jackson serializes it as its constant name (e.g. "CERTIFICATE").
+        // The property trustLevels is List<ETrustLevel>, so we need a JSON array of enum names.
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"trustLevels":[${gson.toJson(mappedLevel)}],"dataSuffix":""}"""
+      }
       else -> """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
     }
   }
@@ -6498,6 +6707,7 @@ class AICodBiAssistant : IPluginServletAction {
           "FC_SET_SAVED_FLAG" -> "Mark record as saved"
           "FC_DELETE_FORM_RECORD" -> "Delete form record"
           "FC_DELETE_ATTACHMENT" -> "Delete attachment"
+          "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" -> "Check authentication trust level"
           "FC_COUNTER" -> "Increment counter"
           "FC_PROMPT_QUERY" -> "Prompt user query"
           "FC_COMPRESS_AS_ZIP" -> "Compress as ZIP"

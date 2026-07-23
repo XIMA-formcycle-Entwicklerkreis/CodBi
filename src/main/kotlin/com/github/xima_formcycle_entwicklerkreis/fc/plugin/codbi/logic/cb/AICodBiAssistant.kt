@@ -4054,7 +4054,49 @@ class AICodBiAssistant : IPluginServletAction {
             "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
             "  CRITICAL — Do NOT confuse FC_SWITCH with FC_MULTIPLE_CONDITION. FC_MULTIPLE_CONDITION is for " +
             "a single YES/NO condition check (\"nur ausgeführt werden wenn\"). FC_SWITCH is for multiple exclusive " +
-            "branches based on different values of the same field (\"bei A mache X, bei B mache Y\").\n\n")
+            "branches based on different values of the same field (\"bei A mache X, bei B mache Y\").\n\n" +
+            "  - \"FC_FOR_EACH_LOOP\" — iterates over items (repeatable form fields, field values, files, attachments, CSV, JSON) " +
+            "and executes child nodes for each item. " +
+            "Use this when the user says \"für jede/n\", \"for each\", \"jeweils\", \"per\", or needs to send separate emails/actions " +
+            "for each row of a repeatable container or each value of a field.\n" +
+            "  The source of items is determined by the item source type in sourceProps:\n" +
+            "    FORM_FIELD_REPETITIONS — iterate over each row of a repeatable container field (XContainer with dynamic=\"1\"). " +
+            "The form field must be inside a repeatable container so it has multiple rows of values. " +
+            "nodeParams: {\"fieldTechnicalId\":\"<technicalId of the field inside the repeatable container>\", " +
+            "\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{...}}]}\n" +
+            "    FIELD_VALUES — iterate over individual values of a multi-value field;\n" +
+            "    FILES — iterate over uploaded files;\n" +
+            "    ATTACHMENTS — iterate over attached files;\n" +
+            "    JSON_VALUE — iterate over items parsed from a JSON array string;\n" +
+            "    CHARACTER_SEPARATED_VALUES — iterate over values separated by a delimiter character (e.g. hyphens, commas, semicolons).\n" +
+            "    Set \"sourceType\":\"CHARACTER_SEPARATED_VALUES\", \"fieldTechnicalId\":\"<fieldId>\", \"delimiter\":\"<delimiter char>\"" +
+            " to iterate over values from a form field separated by a specific delimiter.\n" +
+            "    Example: {\"fieldTechnicalId\":\"tf1\",\"sourceType\":\"CHARACTER_SEPARATED_VALUES\",\"delimiter\":\"-\"," +
+            "\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{...}}]}\n" +
+            "  CRITICAL — When the user says \"für jede Klausel\" (for each clause), \"für jeden Eintrag\" (for each entry), " +
+            "\"pro Zeile\" (per row), or uses \"für jede/n\" (for each) with a field label, the field is inside a " +
+            "repeatable container. Use FC_FOR_EACH_LOOP with source type FORM_FIELD_REPETITIONS. " +
+            "Set \"fieldTechnicalId\" to the field's technicalId and wrap the action nodes in \"_childNodes\".\n" +
+            "  CRITICAL — When the user says \"durch ein X getrennt\" (separated by X), \"voneinander getrennt durch\" (separated by), " +
+            "\"getrennt durch Komma/Strich/Punkt\" (separated by comma/hyphen/dot), the field contains delimiter-separated values. " +
+            "Use CHARACTER_SEPARATED_VALUES as sourceType. " +
+            "Set \"fieldTechnicalId\" to the field's technicalId, \"delimiter\" to the delimiter character, " +
+            "and \"sourceType\":\"CHARACTER_SEPARATED_VALUES\".\n" +
+            "  CRITICAL — The child action nodes must be placed in a \"_childNodes\" array inside nodeParams, " +
+            "similar to FC_MULTIPLE_CONDITION. Each child has \"nodeType\" and \"nodeParams\".\n" +
+            "  Example output for repeatable field:\n" +
+            "  {\"taskName\":\"Send email per Klausel\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{\"buttonName\":\"btnSubmit\"},\"nodeType\":\"FC_FOR_EACH_LOOP\"," +
+            "\"nodeParams\":{\"fieldTechnicalId\":\"tfKlausel\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\"," +
+            "\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  Example output for character-separated values:\n" +
+            "  {\"taskName\":\"Send email per hyphen-separated Klausel text\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{\"buttonName\":\"btnSubmit\"},\"nodeType\":\"FC_FOR_EACH_LOOP\"," +
+            "\"nodeParams\":{\"fieldTechnicalId\":\"tf1\",\"sourceType\":\"CHARACTER_SEPARATED_VALUES\",\"delimiter\":\"-\"," +
+            "\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\"," +
+            "\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
             "  Every workflow lane automatically ends with an endpoint (Endpunkt). The 'endpointState' field\n" +
@@ -4418,7 +4460,8 @@ class AICodBiAssistant : IPluginServletAction {
     val childNodes = (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
     if (childNodes != null &&
         (spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
-            spec.nodeType == "FC_MULTIPLE_CONDITION")) {
+            spec.nodeType == "FC_MULTIPLE_CONDITION" ||
+            spec.nodeType == "FC_FOR_EACH_LOOP")) {
       logger.info(
           "[AICodBiAssistant] Creating YES-branch SEQUENCE wrapper for nodeType={}", spec.nodeType)
       // Step 1: Create SEQUENCE wrapper as child of condition node
@@ -6272,6 +6315,37 @@ class AICodBiAssistant : IPluginServletAction {
         // _cases and _defaultChildNodes are handled separately in createWorkflowTask.
         val switchValue = spec.nodeParams["switchValue"] as? String ?: ""
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"switchValue":${gson.toJson(switchValue)}}"""
+      }
+      "FC_FOR_EACH_LOOP" -> {
+        // FC_FOR_EACH_LOOP iterates over items and executes child nodes for each.
+        // CUSTOM_PARAMS stores FcForEachLoopProps with sourceProps determining the item source.
+        // The AI provides: fieldTechnicalId (for form field sources), csvString/delimiter (for
+        // character-separated values), _childNodes.
+        val sourceType =
+            (spec.nodeParams["sourceType"] as? String ?: "FORM_FIELD_REPETITIONS").uppercase()
+        val formFieldName =
+            spec.nodeParams["fieldTechnicalId"] as? String
+                ?: spec.nodeParams["formFieldName"] as? String
+                ?: ""
+        when (sourceType) {
+          "CHARACTER_SEPARATED_VALUES" -> {
+            // CHARACTER_SEPARATED_VALUES: iterate over values separated by a delimiter char.
+            // Schema: ListItemSourcePropsCharacterSeparatedValues extends
+            // AListItemSourcePropsCsvFormat
+            // csvString can be a literal or [%fieldName%] placeholder referencing the form field.
+            val csvString =
+                spec.nodeParams["csvString"] as? String
+                    ?: if (formFieldName.isNotBlank()) "[%$formFieldName%]" else ""
+            val delimiter = spec.nodeParams["delimiter"] as? String ?: ","
+            val trim = (spec.nodeParams["trim"] as? String)?.lowercase() ?: "true"
+            val filterEmpty = (spec.nodeParams["filterEmpty"] as? String)?.lowercase() ?: "true"
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"sourceProps":{"type":"characterSeparatedValues","csvString":${gson.toJson(csvString)},"delimiter":${gson.toJson(delimiter)},"trim":$trim,"filterEmpty":$filterEmpty,"treatLineBreaksAsDelimiter":false}}"""
+          }
+          else -> {
+            // Default: FORM_FIELD_REPETITIONS — iterate over rows of a repeatable container.
+            """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"sourceProps":{"type":"formFieldRepetitions","formFieldName":${gson.toJson(formFieldName)}}}"""
+          }
+        }
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

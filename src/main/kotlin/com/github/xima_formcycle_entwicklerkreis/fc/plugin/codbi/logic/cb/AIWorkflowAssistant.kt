@@ -631,18 +631,15 @@ class AIWorkflowAssistant : IPluginServletAction {
             "\"description\":\"<optional case description>\", " +
             "and \"_childNodes\":[...] (the action nodes to execute for this case). " +
             "Use \"_defaultChildNodes\" for the default branch (executed when no case matches).\n" +
-            "  CRITICAL — CASE VALUES RULES: Each \"caseValues\" array represents ONE logical group. " +
-            "If values should ALL match (AND relationship), use \"combinationType\":\"AND\" in a SEPARATE case entry. " +
-            "Do NOT combine values from different logical groups into the same caseValues array. " +
-            "Example: \"A oder X und Y\" (A OR (X AND Y)) means: caseValues=[\"A\"] (single) in one case entry, " +
-            "and caseValues=[\"X\",\"Y\"] with combinationType=\"AND\" in a SEPARATE case entry, " +
-            "both leading to the SAME _childNodes (same action).\n" +
-            "  CRITICAL — When the prompt describes DIFFERENT ACTIONS for DIFFERENT FIELD VALUES " +
-            "(e.g. \"bei A mache X, bei B mache Y\", \"if the field has value A do this, if B do that\"), " +
-            "you MUST use FC_SWITCH with a single lane, NOT multiple lanes with FC_MULTIPLE_CONDITION. " +
-            "A switch-case pattern is a SINGLE workflow lane with multiple branches, not multiple separate lanes.\n" +
-            "  Example with AND combination:\n" +
-            "  {\"taskName\":\"Send email with conditional from\",...,\"nodeParams\":{\"switchValue\":\"[%tf1%]\",\"_cases\":[{\"caseValues\":[\"A\"],\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"from\":\"A@B.C\"}}]},{\"caseValues\":[\"X\",\"Y\"],\"combinationType\":\"AND\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"from\":\"A@B.C\"}}]},{\"caseValues\":[\"B\"],\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"from\":\"H@H.H\"}}]}]}}\n" +
+            "  CRITICAL — CHOOSING BETWEEN FC_SWITCH AND FC_MULTIPLE_CONDITION: " +
+            "If MULTIPLE VALUES from the SAME field lead to the SAME ACTION (e.g. \"A oder X und Y\" all result in " +
+            "\"from A@B.C\", same email), then it is NOT a switch-case pattern — it is a single CONDITIONAL branch " +
+            "with complex boolean logic. In this case, you MUST use FC_MULTIPLE_CONDITION with " +
+            "combinationType \"CUSTOM\" and customExpression like \"C1 OR (C2 AND C3)\", NOT FC_SWITCH. " +
+            "FC_SWITCH is ONLY for when DIFFERENT VALUES lead to DIFFERENT ACTIONS " +
+            "(e.g. \"bei A mache X, bei B mache Y\" where each value has its own action). " +
+            "RULE OF THUMB: If all branching values go to the SAME _childNodes, use FC_MULTIPLE_CONDITION. " +
+            "If different values go to DIFFERENT _childNodes, use FC_SWITCH.\n" +
             "  Example output:\n" +
             "  {\"taskName\":\"Send email with different senders\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
             "\"triggerParams\":{},\"nodeType\":\"FC_SWITCH\"," +
@@ -1208,33 +1205,6 @@ class AIWorkflowAssistant : IPluginServletAction {
             fixParentOrderIndex(savedChildNode, savedSeq, userContext)
           }
         }
-        if (spec.endpointType != "FC_RETURN") {
-          val stateName = spec.endpointState.ifBlank { "Received" }
-          var endpointStateUuid: Any? = null
-          try {
-            endpointStateUuid = resolveStateUuid(userContext, workflowVersion, stateName)
-          } catch (_: Exception) {}
-          val epNode = workflowNodeClass.getDeclaredConstructor().newInstance()
-          val epType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
-          workflowNodeClass.getMethod("setName", String::class.java).invoke(epNode, epType)
-          workflowNodeClass.getMethod("setType", String::class.java).invoke(epNode, epType)
-          workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(epNode, true)
-          workflowNodeClass
-              .getMethod("setUUIDObject", UUID::class.java)
-              .invoke(epNode, UUID.randomUUID())
-          if (endpointStateUuid != null) {
-            val uuidStr = endpointStateUuid.toString()
-            val epJson =
-                """{"targetState":{"uuid":${gson.toJson(uuidStr)},"entityClass":"de.xima.fc.entities.WorkflowState"}}"""
-            workflowNodeClass
-                .getMethod("setCustomParameters", String::class.java)
-                .invoke(epNode, epJson)
-          }
-          workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(epNode, savedTask)
-          workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(epNode, savedSeq)
-          val savedEp = createNodeMethod.invoke(workflowNodeApi, userContext, epNode)
-          fixParentOrderIndex(savedEp, savedSeq, userContext)
-        }
       }
       // Step 1: Default branch first (index 0) — FC_SWITCH_DEFAULT, no conditions
       // Always create a default branch when there are cases, even without _defaultChildNodes.
@@ -1324,7 +1294,6 @@ class AIWorkflowAssistant : IPluginServletAction {
         spec.nodeType != "FC_DELETE_FORM_RECORD" &&
         spec.nodeType != "FC_QUEUE_TASK" &&
         spec.nodeType != "FC_RETURN" &&
-        spec.nodeType != "FC_SWITCH" &&
         !isNonDefaultEndpointInYesBranch) {
       val endpointNode = workflowNodeClass.getDeclaredConstructor().newInstance()
       workflowNodeClass

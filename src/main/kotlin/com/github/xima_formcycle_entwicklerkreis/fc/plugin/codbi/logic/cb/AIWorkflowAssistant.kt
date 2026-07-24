@@ -197,6 +197,7 @@ class AIWorkflowAssistant : IPluginServletAction {
         }
 
     val cleaned = extractJson(stripThinkTags(rawResponse))
+    val safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
     logger.info("[AIWorkflowAssistant] AI response (phase {}): {}", phase, cleaned)
 
     // Phase 1 only: check if the AI is signalling that it needs more context before answering.
@@ -210,7 +211,7 @@ class AIWorkflowAssistant : IPluginServletAction {
 
     val taskSpec =
         try {
-          gson.fromJson(cleaned, WorkflowTaskSpec::class.java).also { spec ->
+          gson.fromJson(safeCleaned, WorkflowTaskSpec::class.java).also { spec ->
             if (spec.nodeType == "FC_DOI_INIT") {
               logger.info(
                   "[AIWorkflowAssistant] DOI workflow task spec: nodeType=FC_DOI_INIT, failurePage='{}', all nodeParams keys={}",
@@ -221,7 +222,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             }
           }
         } catch (e: Exception) {
-          logger.warn("[AIWorkflowAssistant] Could not parse AI response as JSON: {}", cleaned)
+          logger.warn("[AIWorkflowAssistant] Could not parse AI response as JSON: {}", safeCleaned)
           return jsonResponse("""{"error":"AI returned invalid JSON: ${gson.toJson(e.message)}"}""")
         }
 
@@ -532,6 +533,18 @@ class AIWorkflowAssistant : IPluginServletAction {
             "append .property for property access, e.g. [%\$CURRENT_ERROR.someProperty%]. " +
             "The thrown error can be caught by an FC_CATCH_ERROR trigger in another lane.\n" +
             "  - \"FC_EMPTY\" — no-op placeholder node; nodeParams: {}\n" +
+            "  - \"FC_BREAK\" — breaks out of a loop (FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, or FC_FOR_EACH_LOOP). " +
+            "nodeParams: {}. " +
+            "Place this node on the YES branch _childNodes of a FC_MULTIPLE_CONDITION inside a loop " +
+            "to conditionally exit the loop (e.g. \"prüfe ob [B] und wenn ja, brich aus der Schleife aus\").\n" +
+            "    By default (nodeParams: {}), FC_BREAK breaks the NEAREST enclosing parent loop " +
+            "(the innermost FC_WHILE_LOOP or FC_DO_UNTIL_LOOP). " +
+            "To break a DIFFERENT loop (e.g. a parent FC_FOR_EACH_LOOP instead of the nearest FC_WHILE_LOOP), " +
+            "set nodeParams: {\"breakTarget\":\"\$ROOT\"} to break the outermost/parent loop, " +
+            "or {\"breakTarget\":\"<uuid of the target loop node>\"} for any specific loop. " +
+            "CRITICAL — Do NOT restructure the loop nesting order to make FC_BREAK break a different loop! " +
+            "Keep the loops in the order the user described. " +
+            "Use breakTarget to reference the specific loop to break when it is NOT the nearest parent loop.\n" +
             "  - \"FC_SET_FORM_RECORD_PASSWORD\" — sets a password on the form record for access restriction;\n" +
             "Supports TWO modes:\n" +
             "  Mode 1 — Fixed (manually entered) password: nodeParams: {\"targetType\":\"MANUALLY_ENTERED_PASSWORD\",\"inputPassword\":\"<the password>\"}\n" +
@@ -576,8 +589,12 @@ class AIWorkflowAssistant : IPluginServletAction {
             "to the child nodes; if not (NO branch), the lane ends without executing the children. " +
             "Use this when the user says an action should only be executed \"wenn\" (if) a field has a specific value, " +
             "\"nur wenn\" (only if), \"falls\" (in case), or similar ONE-TIME conditional language involving a form field value. " +
-            "CRITICAL — Do NOT use FC_MULTIPLE_CONDITION for \"solange\" (while, as long as) which implies a LOOP (repeated execution). " +
-            "Use FC_WHILE_LOOP for \"solange\" scenarios. " +
+            "CRITICAL — Do NOT use FC_MULTIPLE_CONDITION as the OUTER/primary node for \"solange\" (while, as long as) " +
+            "which implies a LOOP (repeated execution). The \"solange\" condition defines the loop's repetition condition. " +
+            "Use FC_WHILE_LOOP for \"solange\" scenarios with pre-check, or FC_DO_UNTIL_LOOP for post-check. " +
+            "However, FC_MULTIPLE_CONDITION CAN be used INSIDE a loop's _childNodes array to check break conditions " +
+            "(e.g. \"prüfe ob ... und wenn ja, brich aus\"), with FC_CHANGE_FORM_VALUE on its YES branch " +
+            "to modify the loop field value and cause the loop to exit. " +
             "nodeParams: {\"fieldTechnicalId\":\"<the technicalId of the form field to check>\", " +
             "\"comparator\":\"EQUAL\" (supported: EMPTY, NOT_EMPTY, EQUAL, NOT_EQUAL, CONTAINS, NOT_CONTAINS, " +
             "GREATER, GREATER_THAN_OR_EQUAL, LESSER, LESS_THAN_OR_EQUAL, STARTS_WITH, NOT_STARTS_WITH, " +
@@ -690,11 +707,24 @@ class AIWorkflowAssistant : IPluginServletAction {
             "ENDS_WITH, NOT_ENDS_WITH, REGEX_MATCH, NOT_REGEX_MATCH), " +
             "\"compareValue\":\"<the value to compare against, e.g. '1'>\"}. " +
             "Use a \"_childNodes\" array for the child action nodes (same pattern as FC_MULTIPLE_CONDITION). " +
-            "Each child has \"nodeType\" and \"nodeParams\". The children are executed on each iteration while the condition holds true.\n" +
-            "  Example output:\n" +
+            "Each child has \"nodeType\" and \"nodeParams\". The children are executed on each iteration while the condition holds true. " +
+            "You can have MULTIPLE children in the _childNodes array — they are executed in order on each iteration.\n" +
+            "  BREAK PATTERN — When the user says \"solange [A] ... dann prüfe ob [B] und wenn ja, brich aus\"\n" +
+            "    (while [A] ... then check if [B] and if so, break out of the loop), the \"solange\" condition [A] " +
+            "becomes the LOOP's condition. Inside the loop's _childNodes, add a FC_MULTIPLE_CONDITION " +
+            "that checks the break condition [B]. On its YES branch _childNodes, place a FC_BREAK node " +
+            "(nodeParams: {}) which causes the workflow executor to exit the nearest enclosing loop immediately. " +
+            "FC_BREAK automatically targets the nearest parent loop — no configuration needed.\n" +
+            "  Example output (simple — one child):\n" +
             "  {\"taskName\":\"Send mail while Klausel equals 1\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
             "\"triggerParams\":{},\"nodeType\":\"FC_WHILE_LOOP\"," +
             "\"nodeParams\":{\"fieldTechnicalId\":\"tfKlausel\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  Example output (with break pattern — multiple children):\n" +
+            "  User: \"Beim Klick soll solange in Klausel eine 1 steht eine Mail mit dem Betreff XXX und dem Inhalt ZZZ an A@B.C.DE von X@X.XX geschickt werden. Nach dem senden der Mail soll in der Schleife geprüft werden ob Klausel ein X enthält und wenn das so ist aus der Schleife ausgebrochen werden.\"\n" +
+            "  {\"taskName\":\"Send mail while Klausel equals 1 with break when Klausel contains X\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_WHILE_LOOP\"," +
+            "\"nodeParams\":{\"fieldTechnicalId\":\"tf1\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}},{\"nodeType\":\"FC_MULTIPLE_CONDITION\",\"nodeParams\":{\"fieldTechnicalId\":\"tf1\",\"comparator\":\"CONTAINS\",\"compareValue\":\"X\",\"labelYes\":\"Klausel contains X break\",\"labelNo\":\"Klausel does not contain X continue\",\"_childNodes\":[{\"nodeType\":\"FC_BREAK\",\"nodeParams\":{}}]}}]}," +
             "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
             "  CRITICAL — CHOOSING BETWEEN FC_WHILE_LOOP AND FC_DO_UNTIL_LOOP:\n" +
             "    FC_WHILE_LOOP checks the condition BEFORE executing the children (pre-check). " +
@@ -712,11 +742,21 @@ class AIWorkflowAssistant : IPluginServletAction {
             "or any similar post-check loop language. " +
             "CRITICAL — FC_DO_UNTIL_LOOP uses the SAME nodeParams schema as FC_WHILE_LOOP " +
             "(fieldTechnicalId, comparator, compareValue, conditions array, _childNodes). " +
-            "The only difference is WHEN the condition is evaluated: before (WHILE) vs after (DO-UNTIL) each iteration.\n" +
-            "  Example output:\n" +
+            "The only difference is WHEN the condition is evaluated: before (WHILE) vs after (DO-UNTIL) each iteration. " +
+            "You can have MULTIPLE children in the _childNodes array — they are executed in order on each iteration. " +
+            "The same BREAK PATTERN from FC_WHILE_LOOP applies here: to break out of the loop, " +
+            "add a FC_MULTIPLE_CONDITION child that checks the break condition, and on its YES branch " +
+            "_childNodes place a FC_BREAK node (nodeParams: {}) which exits the nearest enclosing loop.\n" +
+            "  Example output (simple — one child):\n" +
             "  {\"taskName\":\"Send mail then check Klausel\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
             "\"triggerParams\":{},\"nodeType\":\"FC_DO_UNTIL_LOOP\"," +
             "\"nodeParams\":{\"fieldTechnicalId\":\"tfKlausel\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  Example output (with break pattern — multiple children):\n" +
+            "  User: \"Beim Klick soll solange in Klausel eine 1 steht eine Mail mit dem Betreff XXX und dem Inhalt ZZZ an A@B.C.DE von X@X.XX geschickt werden. Nach dem senden der Mail soll in der Schleife geprüft werden ob Klausel ein X enthält und wenn das so ist aus der Schleife ausgebrochen werden.\"\n" +
+            "  {\"taskName\":\"Send mail while Klausel equals 1 with break when Klausel contains X\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_DO_UNTIL_LOOP\"," +
+            "\"nodeParams\":{\"fieldTechnicalId\":\"tf1\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}},{\"nodeType\":\"FC_MULTIPLE_CONDITION\",\"nodeParams\":{\"fieldTechnicalId\":\"tf1\",\"comparator\":\"CONTAINS\",\"compareValue\":\"X\",\"labelYes\":\"Klausel contains X break\",\"labelNo\":\"Klausel does not contain X continue\",\"_childNodes\":[{\"nodeType\":\"FC_BREAK\",\"nodeParams\":{}}]}}]}," +
             "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
@@ -1114,45 +1154,28 @@ class AIWorkflowAssistant : IPluginServletAction {
     //     collection.add()). A NULL here causes PersistentList to throw on the next load.
     fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
 
-    // 9c-1. When the action node is a condition node (CheckTrustLevelPlugin /
-    // FC_MULTIPLE_CONDITION)
-    // with _childNodes, create a SEQUENCE wrapper as the YES-branch child of the condition node,
-    // and place the actual action nodes inside that SEQUENCE. This matches Formcycle's standard
-    // branching pattern (condition → SEQUENCE → actions).
-    @Suppress("UNCHECKED_CAST")
-    val childNodes = (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
-    if (childNodes != null &&
-        (spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
-            spec.nodeType == "FC_MULTIPLE_CONDITION" ||
-            spec.nodeType == "FC_FOR_EACH_LOOP" ||
-            spec.nodeType == "FC_WHILE_LOOP" ||
-            spec.nodeType == "FC_DO_UNTIL_LOOP")) {
+    // 9c-1. Recursively create child nodes for conditional/loop nodes that have _childNodes.
+    // Handles unlimited nesting depth (e.g., FC_FOR_EACH_LOOP → FC_WHILE_LOOP →
+    // FC_MULTIPLE_CONDITION → FC_BREAK and beyond).
+    // Pattern: for each conditional/loop node with _childNodes, create a SEQUENCE wrapper
+    // as its YES-branch child, place action nodes inside it, then recurse into each.
+    // Capture the top-level loop node UUID for symbolic breakTarget resolution
+    val rootLoopUuid =
+        savedActionNode.javaClass.getMethod("getUuid").invoke(savedActionNode) as? java.util.UUID
+    fun processBranchChildren(
+        parentSpec: WorkflowTaskSpec,
+        savedParentNode: Any,
+        childSpecList: List<Map<String, Any>>,
+        depth: Int
+    ) {
+      val indent = "  ".repeat(depth)
       logger.info(
-          "[AIWorkflowAssistant] Creating YES-branch SEQUENCE wrapper for nodeType={}",
-          spec.nodeType)
-      // Step 1: Create SEQUENCE wrapper as child of condition node
-      val branchSequence = workflowNodeClass.getDeclaredConstructor().newInstance()
-      workflowNodeClass
-          .getMethod("setName", String::class.java)
-          .invoke(branchSequence, "FcSequenceHandler")
-      workflowNodeClass.getMethod("setType", String::class.java).invoke(branchSequence, "SEQUENCE")
-      workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branchSequence, true)
-      workflowNodeClass
-          .getMethod("setUUIDObject", UUID::class.java)
-          .invoke(branchSequence, UUID.randomUUID())
-      workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branchSequence, savedTask)
-      workflowNodeClass
-          .getMethod("setParent", workflowNodeClass)
-          .invoke(branchSequence, savedActionNode)
-      val savedBranchSeq = createNodeMethod.invoke(workflowNodeApi, userContext, branchSequence)
-      // Ensure the parent_order_idx is set correctly (YES branch = 0)
-      fixParentOrderIndex(savedBranchSeq, savedActionNode, userContext)
-      logger.info(
-          "[AIWorkflowAssistant] Created YES-branch SEQUENCE wrapper id={}",
-          savedBranchSeq.javaClass.getMethod("getId").invoke(savedBranchSeq))
-      // Step 2: Create child nodes inside the SEQUENCE wrapper
-      for ((childIdx, childSpecMap) in childNodes.withIndex()) {
-        val childSpec = gson.fromJson(gson.toJson(childSpecMap), WorkflowTaskSpec::class.java)
+          "[AIWorkflowAssistant]{} Processing branch children (depth={}) for nodeType={}",
+          indent,
+          depth,
+          parentSpec.nodeType)
+      for ((idx, specMap) in childSpecList.withIndex()) {
+        val childSpec = gson.fromJson(gson.toJson(specMap), WorkflowTaskSpec::class.java)
         val childNodeName = deriveNodeName(childSpec)
         val childNode = workflowNodeClass.getDeclaredConstructor().newInstance()
         workflowNodeClass.getMethod("setName", String::class.java).invoke(childNode, childNodeName)
@@ -1172,15 +1195,115 @@ class AIWorkflowAssistant : IPluginServletAction {
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
         workflowNodeClass
             .getMethod("setParent", workflowNodeClass)
-            .invoke(childNode, savedBranchSeq)
+            .invoke(childNode, savedParentNode)
         val savedChildNode = createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
-        fixParentOrderIndex(savedChildNode, savedBranchSeq, userContext)
+        fixParentOrderIndex(savedChildNode, savedParentNode, userContext)
+        // Resolve symbolic breakTarget for FC_BREAK nodes
+        if (childSpec.nodeType == "FC_BREAK") {
+          val breakTarget = childSpec.nodeParams["breakTarget"] as? String
+          if ((breakTarget == "\$ROOT" || breakTarget == "00000000-0000-0000-0000-000000000000") &&
+              rootLoopUuid != null) {
+            val resolvedJson =
+                """{"name":${gson.toJson(childNodeName)},"description":"","breakTarget":{"uuid":${gson.toJson(rootLoopUuid.toString())}}}"""
+            workflowNodeClass
+                .getMethod("setCustomParameters", String::class.java)
+                .invoke(savedChildNode, resolvedJson)
+            // Persist the change to database
+            try {
+              val updateNodeMethod =
+                  workflowNodeApi.javaClass.getMethod(
+                      "update", userContextClass, iTransferableEntityClass)
+              updateNodeMethod.invoke(workflowNodeApi, userContext, savedChildNode)
+            } catch (e: Exception) {
+              logger.warn(
+                  "[AIWorkflowAssistant]{} Could not persist breakTarget update: {}",
+                  indent,
+                  e.message)
+            }
+            logger.info(
+                "[AIWorkflowAssistant]{} Resolved breakTarget -> uuid={} for FC_BREAK, json={}",
+                indent,
+                rootLoopUuid,
+                resolvedJson)
+          }
+        }
         logger.info(
-            "[AIWorkflowAssistant] Created YES-branch node #{} type={} name='{}' inside SEQUENCE wrapper",
-            childIdx,
+            "[AIWorkflowAssistant]{} Created node #{} type={} name='{}' (depth={})",
+            indent,
+            idx,
             childSpec.nodeType,
-            childNodeName)
+            childNodeName,
+            depth)
+        // Recurse: if this child has its own _childNodes, create a SEQUENCE wrapper
+        // and process them at the next depth level
+        @Suppress("UNCHECKED_CAST")
+        val nestedChildNodes =
+            (childSpec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+        if (nestedChildNodes != null &&
+            (childSpec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
+                childSpec.nodeType == "FC_MULTIPLE_CONDITION" ||
+                childSpec.nodeType == "FC_FOR_EACH_LOOP" ||
+                childSpec.nodeType == "FC_WHILE_LOOP" ||
+                childSpec.nodeType == "FC_DO_UNTIL_LOOP")) {
+          logger.info(
+              "[AIWorkflowAssistant]{} Nesting deeper: creating SEQUENCE for nodeType={}",
+              indent,
+              childSpec.nodeType)
+          val nestedSeq = workflowNodeClass.getDeclaredConstructor().newInstance()
+          workflowNodeClass
+              .getMethod("setName", String::class.java)
+              .invoke(nestedSeq, "FcSequenceHandler")
+          workflowNodeClass.getMethod("setType", String::class.java).invoke(nestedSeq, "SEQUENCE")
+          workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(nestedSeq, true)
+          workflowNodeClass
+              .getMethod("setUUIDObject", UUID::class.java)
+              .invoke(nestedSeq, UUID.randomUUID())
+          workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(nestedSeq, savedTask)
+          workflowNodeClass
+              .getMethod("setParent", workflowNodeClass)
+              .invoke(nestedSeq, savedChildNode)
+          val savedNestedSeq = createNodeMethod.invoke(workflowNodeApi, userContext, nestedSeq)
+          fixParentOrderIndex(savedNestedSeq, savedChildNode, userContext)
+          logger.info(
+              "[AIWorkflowAssistant]{} Created SEQUENCE id={} (depth={})",
+              indent,
+              savedNestedSeq.javaClass.getMethod("getId").invoke(savedNestedSeq),
+              depth)
+          processBranchChildren(childSpec, savedNestedSeq, nestedChildNodes, depth + 1)
+        }
       }
+    }
+    @Suppress("UNCHECKED_CAST")
+    val topLevelChildNodes =
+        (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+    if (topLevelChildNodes != null &&
+        (spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
+            spec.nodeType == "FC_MULTIPLE_CONDITION" ||
+            spec.nodeType == "FC_FOR_EACH_LOOP" ||
+            spec.nodeType == "FC_WHILE_LOOP" ||
+            spec.nodeType == "FC_DO_UNTIL_LOOP")) {
+      logger.info(
+          "[AIWorkflowAssistant] Creating YES-branch SEQUENCE wrapper for nodeType={}",
+          spec.nodeType)
+      val branchSequence = workflowNodeClass.getDeclaredConstructor().newInstance()
+      workflowNodeClass
+          .getMethod("setName", String::class.java)
+          .invoke(branchSequence, "FcSequenceHandler")
+      workflowNodeClass.getMethod("setType", String::class.java).invoke(branchSequence, "SEQUENCE")
+      workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branchSequence, true)
+      workflowNodeClass
+          .getMethod("setUUIDObject", UUID::class.java)
+          .invoke(branchSequence, UUID.randomUUID())
+      workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branchSequence, savedTask)
+      workflowNodeClass
+          .getMethod("setParent", workflowNodeClass)
+          .invoke(branchSequence, savedActionNode)
+      val savedBranchSeq = createNodeMethod.invoke(workflowNodeApi, userContext, branchSequence)
+      fixParentOrderIndex(savedBranchSeq, savedActionNode, userContext)
+      logger.info(
+          "[AIWorkflowAssistant] Created YES-branch SEQUENCE wrapper id={}",
+          savedBranchSeq.javaClass.getMethod("getId").invoke(savedBranchSeq))
+      processBranchChildren(spec, savedBranchSeq, topLevelChildNodes, 1)
       // Add endpoint inside the YES-branch SEQUENCE only when the endpoint type is neither
       // FC_CHANGE_STATE (the default) nor FC_RETURN. For the default FC_CHANGE_STATE case,
       // the endpoint is created as a sibling of the condition node by the outer endpoint logic
@@ -1359,7 +1482,7 @@ class AIWorkflowAssistant : IPluginServletAction {
     //     - the action is a conditional node with _childNodes and a non-default endpoint
     //       type (the endpoint was already created inside the YES branch above).
     val isNonDefaultEndpointInYesBranch =
-        childNodes != null &&
+        topLevelChildNodes != null &&
             spec.endpointType.ifBlank { "FC_CHANGE_STATE" } != "FC_CHANGE_STATE" &&
             spec.endpointType != "FC_RETURN"
     val effectiveEndpointType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
@@ -3001,7 +3124,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             val csvString =
                 spec.nodeParams["csvString"] as? String
                     ?: if (formFieldName.isNotBlank()) "[%$formFieldName%]" else ""
-            val delimiter = spec.nodeParams["delimiter"] as? String ?: ","
+            val delimiter = (spec.nodeParams["delimiter"] as? String)?.ifBlank { "," } ?: ","
             val trim = (spec.nodeParams["trim"] as? String)?.lowercase() ?: "true"
             val filterEmpty = (spec.nodeParams["filterEmpty"] as? String)?.lowercase() ?: "true"
             """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"sourceProps":{"type":"characterSeparatedValues","csvString":${gson.toJson(csvString)},"delimiter":${gson.toJson(delimiter)},"trim":$trim,"filterEmpty":$filterEmpty,"treatLineBreaksAsDelimiter":false}}"""
@@ -3090,8 +3213,15 @@ class AIWorkflowAssistant : IPluginServletAction {
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
-      "FC_EMPTY" ->
+      "FC_EMPTY",
+      "FC_BREAK" -> {
+        val breakTarget = spec.nodeParams["breakTarget"] as? String
+        if (!breakTarget.isNullOrBlank()) {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"breakTarget":{"uuid":${gson.toJson(breakTarget)}}}"""
+        } else {
           """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+        }
+      }
       else -> """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
     }
   }
@@ -4237,6 +4367,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           "FC_SAVE_TO_FILE_SYSTEM" -> "Save to file system"
           "FC_SAVE_TO_WEBDAV" -> "Save to WebDAV"
           "FC_THROW_EXCEPTION" -> "Throw exception"
+          "FC_BREAK" -> "Break out of loop"
           "FC_EMPTY" -> "Empty placeholder"
           else -> spec.nodeType
         }

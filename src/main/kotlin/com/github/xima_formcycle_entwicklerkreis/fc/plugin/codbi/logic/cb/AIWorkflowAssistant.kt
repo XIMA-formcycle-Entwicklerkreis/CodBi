@@ -682,6 +682,24 @@ class AIWorkflowAssistant : IPluginServletAction {
             "  CRITICAL — Do NOT confuse FC_SWITCH with FC_MULTIPLE_CONDITION. FC_MULTIPLE_CONDITION is for " +
             "a single YES/NO condition check (\"nur ausgeführt werden wenn\"). FC_SWITCH is for multiple exclusive " +
             "branches based on different values of the same field (\"bei A mache X, bei B mache Y\").\n\n" +
+            "  - \"FC_EXPERIMENT\" — wraps an action with error handling (try-catch-finally pattern). " +
+            "Use this when the user says \"wenn ein Fehler auftritt\" (if an error occurs), " +
+            "\"bei Fehler\" (on error), \"falls etwas schiefgeht\" (if something goes wrong), " +
+            "or any similar error-handling language. " +
+            "This node has THREE child sections:\n" +
+            "    1. \"_childNodes\" — the MAIN action to execute (the try block); REQUIRED.\n" +
+            "    2. \"_handlerChildNodes\" — executes when the main action throws an exception (the catch block); OPTIONAL.\n" +
+            "    3. \"_finalizerChildNodes\" — ALWAYS executes after the main action, regardless of success or failure (the finally block); OPTIONAL.\n" +
+            "    nodeParams: {} (no custom parameters needed — FcExperimentProps is an empty marker).\n" +
+            "    CRITICAL — Do NOT generate TWO separate workflow lanes for the normal case and the error case. " +
+            "Instead, generate a SINGLE lane with FC_EXPERIMENT as the top-level node. " +
+            "Put the normal action in \"_childNodes\" and the error action in \"_handlerChildNodes\".\n" +
+            "    Example output (with error handler):\n" +
+            "    User: \"Beim Klick auf submit soll eine Mail von A@B.C an X@X.X mit dem Betreff Hallo und dem Inhalt Holla geschickt werden. Wenn dabei ein Fehler auftritt soll eine Mail an O@O.O von J@J.J mit dem Betreff Fehler und dem Inhalt Fehler geschickt werden.\"\n" +
+            "    {\"taskName\":\"Send email with error handling\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_EXPERIMENT\"," +
+            "\"nodeParams\":{\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"X@X.X\",\"subject\":\"Hallo\",\"body\":\"<p>Holla</p>\",\"from\":\"A@B.C\"}}],\"_handlerChildNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"O@O.O\",\"subject\":\"Fehler\",\"body\":\"<p>Fehler</p>\",\"from\":\"J@J.J\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n\n" +
             "  - \"FC_FOR_EACH_LOOP\" — iterates over items (repeatable form fields, field values, files, attachments, CSV, JSON) " +
             "and executes child nodes for each item. " +
             "Use this when the user says \"für jede/n\", \"for each\", \"jeweils\", \"per\", or needs to send separate emails/actions " +
@@ -1539,6 +1557,80 @@ class AIWorkflowAssistant : IPluginServletAction {
       }
       // Do NOT return early — let execution continue to the trigger creation,
       // task update, and proc_order_idx fix below.
+    }
+
+    // 9c-3. FC_EXPERIMENT handler: creates try-catch-finally structure.
+    // Structure: FC_EXPERIMENT (CHILD_BODY=index 0, CHILD_FINALIZER=index 1, CHILD_HANDLER=index 2)
+    // Each child type is a SEQUENCE containing the respective action nodes.
+    @Suppress("UNCHECKED_CAST")
+    if (spec.nodeType == "FC_EXPERIMENT") {
+      val bodyNodes = (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+      val handlerNodes =
+          (spec.nodeParams["_handlerChildNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+      val finalizerNodes =
+          (spec.nodeParams["_finalizerChildNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+      // Helper: create a SEQUENCE child at a specific parent_order_idx
+      val createChildSeq: (Int, String, List<Map<String, Any>>?) -> Unit =
+          { orderIdx, roleName, nodeList ->
+            if (nodeList != null) {
+              val seq = workflowNodeClass.getDeclaredConstructor().newInstance()
+              workflowNodeClass
+                  .getMethod("setName", String::class.java)
+                  .invoke(seq, "FcExperiment${roleName}Handler")
+              workflowNodeClass.getMethod("setType", String::class.java).invoke(seq, "SEQUENCE")
+              workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(seq, true)
+              workflowNodeClass
+                  .getMethod("setUUIDObject", UUID::class.java)
+                  .invoke(seq, UUID.randomUUID())
+              workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(seq, savedTask)
+              workflowNodeClass
+                  .getMethod("setParent", workflowNodeClass)
+                  .invoke(seq, savedActionNode)
+              val savedSeq = createNodeMethod.invoke(workflowNodeApi, userContext, seq)
+              fixParentOrderIndex(savedSeq, savedActionNode, userContext)
+              logger.info(
+                  "[AIWorkflowAssistant] Created FC_EXPERIMENT {} SEQUENCE at idx={}",
+                  roleName,
+                  orderIdx)
+              // Create the action nodes inside this SEQUENCE
+              for ((_, specMap) in nodeList.withIndex()) {
+                val childSpec = gson.fromJson(gson.toJson(specMap), WorkflowTaskSpec::class.java)
+                val childNodeName = deriveNodeName(childSpec)
+                val childNode = workflowNodeClass.getDeclaredConstructor().newInstance()
+                workflowNodeClass
+                    .getMethod("setName", String::class.java)
+                    .invoke(childNode, childNodeName)
+                workflowNodeClass
+                    .getMethod("setType", String::class.java)
+                    .invoke(childNode, childSpec.nodeType)
+                workflowNodeClass
+                    .getMethod("setActive", Boolean::class.java)
+                    .invoke(childNode, true)
+                workflowNodeClass
+                    .getMethod("setUUIDObject", UUID::class.java)
+                    .invoke(childNode, UUID.randomUUID())
+                val childParamsJson = buildNodeParamsJson(childSpec, workflowVersion, userContext)
+                if (childParamsJson != null) {
+                  workflowNodeClass
+                      .getMethod("setCustomParameters", String::class.java)
+                      .invoke(childNode, childParamsJson)
+                }
+                workflowNodeClass
+                    .getMethod("setTask", workflowTaskClass)
+                    .invoke(childNode, savedTask)
+                workflowNodeClass
+                    .getMethod("setParent", workflowNodeClass)
+                    .invoke(childNode, savedSeq)
+                val savedChildNode =
+                    createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
+                fixParentOrderIndex(savedChildNode, savedSeq, userContext)
+              }
+            }
+          }
+      // Create children in order: BODY(0), FINALIZER(1), HANDLER(2)
+      createChildSeq(0, "Body", bodyNodes)
+      createChildSeq(1, "Finalizer", finalizerNodes)
+      createChildSeq(2, "Handler", handlerNodes)
     }
 
     // 9d. Endpoint node: every workflow lane requires a final endpoint (Endpunkt) that
@@ -3281,6 +3373,7 @@ class AIWorkflowAssistant : IPluginServletAction {
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
       "FC_EMPTY",
+      "FC_EXPERIMENT",
       "FC_BREAK" -> {
         val breakTarget = spec.nodeParams["breakTarget"] as? String
         if (!breakTarget.isNullOrBlank()) {
@@ -4430,6 +4523,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           "FC_CHANGE_FORM_RECORD_ACTIVENESS" -> "Toggle record activeness"
           "FC_SET_FORM_RECORD_PASSWORD" -> "Set record password"
           "FC_COPY_FORM_RECORD" -> "Copy form record"
+          "FC_EXPERIMENT" -> "Experiment (try-catch-finally)"
           "FC_FOR_EACH_LOOP" -> "For each loop"
           "FC_WHILE_LOOP" -> "While loop"
           "FC_DO_UNTIL_LOOP" -> "Do until loop"

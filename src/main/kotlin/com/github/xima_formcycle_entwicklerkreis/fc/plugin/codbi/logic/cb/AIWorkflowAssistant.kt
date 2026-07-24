@@ -575,7 +575,9 @@ class AIWorkflowAssistant : IPluginServletAction {
             "This is a CONDITIONAL branching node — if the condition is met (YES branch), execution continues " +
             "to the child nodes; if not (NO branch), the lane ends without executing the children. " +
             "Use this when the user says an action should only be executed \"wenn\" (if) a field has a specific value, " +
-            "\"nur wenn\" (only if), \"falls\" (in case), or similar conditional language involving a form field value. " +
+            "\"nur wenn\" (only if), \"falls\" (in case), or similar ONE-TIME conditional language involving a form field value. " +
+            "CRITICAL — Do NOT use FC_MULTIPLE_CONDITION for \"solange\" (while, as long as) which implies a LOOP (repeated execution). " +
+            "Use FC_WHILE_LOOP for \"solange\" scenarios. " +
             "nodeParams: {\"fieldTechnicalId\":\"<the technicalId of the form field to check>\", " +
             "\"comparator\":\"EQUAL\" (supported: EMPTY, NOT_EMPTY, EQUAL, NOT_EQUAL, CONTAINS, NOT_CONTAINS, " +
             "GREATER, GREATER_THAN_OR_EQUAL, LESSER, LESS_THAN_OR_EQUAL, STARTS_WITH, NOT_STARTS_WITH, " +
@@ -673,6 +675,27 @@ class AIWorkflowAssistant : IPluginServletAction {
             "\"triggerParams\":{\"buttonName\":\"btnSubmit\"},\"nodeType\":\"FC_FOR_EACH_LOOP\"," +
             "\"nodeParams\":{\"fieldTechnicalId\":\"tfKlausel\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\"," +
             "\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n\n")
+    append(
+        "  - \"FC_WHILE_LOOP\" — repeatedly executes child actions as long as a form field value meets a specified condition. " +
+            "This is a LOOP node — unlike FC_MULTIPLE_CONDITION which checks the condition ONCE and then either executes " +
+            "or skips the children, FC_WHILE_LOOP continues to re-check the condition and re-execute the children " +
+            "as long as it remains true. " +
+            "Use this when the user says an action should be repeated \"solange\" (while, as long as) a field has a specific value, " +
+            "\"wiederholt solange\", or similar loop language implying repeated execution. " +
+            "CRITICAL — Do NOT map \"solange\" (while/as long as) to FC_MULTIPLE_CONDITION. " +
+            "\"solange\" implies a LOOP (keep doing while condition is true), not a one-time conditional check. " +
+            "nodeParams: {\"fieldTechnicalId\":\"<the technicalId of the form field to check>\", " +
+            "\"comparator\":\"EQUAL\" (same supported values as FC_MULTIPLE_CONDITION: EMPTY, NOT_EMPTY, EQUAL, NOT_EQUAL, CONTAINS, " +
+            "NOT_CONTAINS, GREATER, GREATER_THAN_OR_EQUAL, LESSER, LESS_THAN_OR_EQUAL, STARTS_WITH, NOT_STARTS_WITH, " +
+            "ENDS_WITH, NOT_ENDS_WITH, REGEX_MATCH, NOT_REGEX_MATCH), " +
+            "\"compareValue\":\"<the value to compare against, e.g. '1'>\"}. " +
+            "Use a \"_childNodes\" array for the child action nodes (same pattern as FC_MULTIPLE_CONDITION). " +
+            "Each child has \"nodeType\" and \"nodeParams\". The children are executed on each iteration while the condition holds true.\n" +
+            "  Example output:\n" +
+            "  {\"taskName\":\"Send mail while Klausel equals 1\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_WHILE_LOOP\"," +
+            "\"nodeParams\":{\"fieldTechnicalId\":\"tfKlausel\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}}]}," +
             "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
@@ -1080,7 +1103,8 @@ class AIWorkflowAssistant : IPluginServletAction {
     if (childNodes != null &&
         (spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
             spec.nodeType == "FC_MULTIPLE_CONDITION" ||
-            spec.nodeType == "FC_FOR_EACH_LOOP")) {
+            spec.nodeType == "FC_FOR_EACH_LOOP" ||
+            spec.nodeType == "FC_WHILE_LOOP")) {
       logger.info(
           "[AIWorkflowAssistant] Creating YES-branch SEQUENCE wrapper for nodeType={}",
           spec.nodeType)
@@ -2965,6 +2989,46 @@ class AIWorkflowAssistant : IPluginServletAction {
             """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"sourceProps":{"type":"formFieldRepetitions","formFieldName":${gson.toJson(formFieldName)}}}"""
           }
         }
+      }
+      "FC_WHILE_LOOP" -> {
+        // FC_WHILE_LOOP repeatedly executes child actions while a condition is true.
+        // Uses the SAME condition schema as FC_MULTIPLE_CONDITION (combinationType + conditions
+        // array
+        // with matchCondition/matchOperandLhs/matchOperandRhs/variableName), but NO
+        // labelYes/labelNo
+        // because while-loops do not have YES/NO branches — they just loop or exit.
+        val fieldTechnicalId = spec.nodeParams["fieldTechnicalId"] as? String ?: ""
+        val comparator = spec.nodeParams["comparator"] as? String ?: "EQUAL"
+        val compareValue = spec.nodeParams["compareValue"] as? String ?: ""
+        val combinationType = spec.nodeParams["combinationType"] as? String ?: "AND"
+        val customExpression = spec.nodeParams["customExpression"] as? String ?: ""
+        val lhsRef = if (fieldTechnicalId.isNotBlank()) "[%$fieldTechnicalId%]" else ""
+        @Suppress("UNCHECKED_CAST")
+        val conditions =
+            (spec.nodeParams["conditions"] as? List<Map<String, Any>>)?.ifEmpty { null }
+        val conditionsJson =
+            if (conditions != null) {
+              conditions
+                  .mapIndexed { idx, cond ->
+                    val condFieldId = (cond["fieldTechnicalId"] as? String ?: fieldTechnicalId)
+                    val condComparator = (cond["comparator"] as? String ?: comparator)
+                    val condValue = (cond["compareValue"] as? String ?: "")
+                    val condLhs = if (condFieldId.isNotBlank()) "[%$condFieldId%]" else ""
+                    val variableName =
+                        (cond["variableName"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: "C${idx + 1}"
+                    """{"matchCondition":${gson.toJson(condComparator)},"matchOperandLhs":${gson.toJson(condLhs)},"matchOperandRhs":${gson.toJson(condValue)},"variableName":${gson.toJson(variableName)}}"""
+                  }
+                  .joinToString(",", "[", "]")
+            } else {
+              val variableName = spec.nodeParams["conditionVariableName"] as? String ?: "C1"
+              """[{"matchCondition":${gson.toJson(comparator)},"matchOperandLhs":${gson.toJson(lhsRef)},"matchOperandRhs":${gson.toJson(compareValue)},"variableName":${gson.toJson(variableName)}}]"""
+            }
+        val customExprJson =
+            if (combinationType == "CUSTOM" && customExpression.isNotBlank()) {
+              ""","customExpression":${gson.toJson(customExpression)}"""
+            } else ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"combinationType":${gson.toJson(combinationType)},"conditions":$conditionsJson$customExprJson}"""
       }
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",

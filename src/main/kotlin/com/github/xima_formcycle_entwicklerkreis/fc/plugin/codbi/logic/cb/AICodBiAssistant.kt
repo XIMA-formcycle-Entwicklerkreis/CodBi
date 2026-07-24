@@ -4237,7 +4237,20 @@ class AICodBiAssistant : IPluginServletAction {
             "  The same CONTINUE PATTERN from FC_WHILE_LOOP applies here: to skip the rest of the current iteration " +
             "and continue with the next iteration of a parent/outer loop, " +
             "add a FC_MULTIPLE_CONDITION child that checks the continue condition, and on its YES branch " +
-            "_childNodes place a FC_CONTINUE node with the appropriate continueTarget.\n\n")
+            "_childNodes place a FC_CONTINUE node with the appropriate continueTarget.\n\n" +
+            "  - \"FC_WITH_FORM_ELEMENT_CONTEXT\" — a scoping node that wraps child actions and provides context " +
+            "about which form elements are in scope. " +
+            "CRITICAL — When user says \"im Kontext von\" (in context of) + field values to set, " +
+            "you MUST set nodeType to FC_WITH_FORM_ELEMENT_CONTEXT (NOT FC_CHANGE_FORM_VALUE). " +
+            "Put ALL three things in nodeParams:\n" +
+            "    (a) \"fieldValues\":[{\"name\":\"<techId>\",\"value\":\"<val>\"},...] — every field+value from prompt goes here as context.\n" +
+            "    (b) \"repetitions\":[{\"name\":\"<techId>\",\"value\":\"<index>\"},...] — repetition indices mentioned in prompt.\n" +
+            "    (c) \"_childNodes\":[{\"nodeType\":\"FC_CHANGE_FORM_VALUE\",\"nodeParams\":{\"formValues\":[{\"name\":\"<techId>\",\"value\":\"<val>\"},...]}}] — SAME fields as actual assignments.\n" +
+            "  Example:\n" +
+            "  {\"taskName\":\"Set fields in context\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_WITH_FORM_ELEMENT_CONTEXT\"," +
+            "\"nodeParams\":{\"fieldValues\":[{\"name\":\"tfVorname\",\"value\":\"Max\"},{\"name\":\"tfNachname\",\"value\":\"Mustermann\"}],\"repetitions\":[{\"name\":\"tfKlausel\",\"value\":\"1\"}],\"_childNodes\":[{\"nodeType\":\"FC_CHANGE_FORM_VALUE\",\"nodeParams\":{\"formValues\":[{\"name\":\"tfVorname\",\"value\":\"Max\"},{\"name\":\"tfNachname\",\"value\":\"Mustermann\"}]}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
             "  Every workflow lane automatically ends with an endpoint (Endpunkt). The 'endpointState' field\n" +
@@ -4716,7 +4729,8 @@ class AICodBiAssistant : IPluginServletAction {
                 childSpec.nodeType == "FC_MULTIPLE_CONDITION" ||
                 childSpec.nodeType == "FC_FOR_EACH_LOOP" ||
                 childSpec.nodeType == "FC_WHILE_LOOP" ||
-                childSpec.nodeType == "FC_DO_UNTIL_LOOP")) {
+                childSpec.nodeType == "FC_DO_UNTIL_LOOP" ||
+                childSpec.nodeType == "FC_WITH_FORM_ELEMENT_CONTEXT")) {
           logger.info(
               "[AICodBiAssistant]{} Nesting deeper: creating SEQUENCE for nodeType={}",
               indent,
@@ -4754,7 +4768,8 @@ class AICodBiAssistant : IPluginServletAction {
             spec.nodeType == "FC_MULTIPLE_CONDITION" ||
             spec.nodeType == "FC_FOR_EACH_LOOP" ||
             spec.nodeType == "FC_WHILE_LOOP" ||
-            spec.nodeType == "FC_DO_UNTIL_LOOP")) {
+            spec.nodeType == "FC_DO_UNTIL_LOOP" ||
+            spec.nodeType == "FC_WITH_FORM_ELEMENT_CONTEXT")) {
       logger.info(
           "[AICodBiAssistant] Creating YES-branch SEQUENCE wrapper for nodeType={}", spec.nodeType)
       val branchSequence = workflowNodeClass.getDeclaredConstructor().newInstance()
@@ -6761,7 +6776,14 @@ class AICodBiAssistant : IPluginServletAction {
       "FC_SET_SAVED_FLAG",
       "FC_DELETE_FORM_RECORD",
       "FC_EMPTY",
-      "FC_EXPERIMENT",
+      "FC_EXPERIMENT" -> {
+        // These nodes do not have CUSTOM_PARAMS or are handled at a higher level.
+        // FC_EMPTY: no-op, no params needed.
+        // FC_EXPERIMENT: handled by createWorkflowTask (builds the try-catch-finally structure).
+        // FC_SET_SAVED_FLAG: simple flag, no params needed.
+        // FC_DELETE_FORM_RECORD: simple delete, no params needed.
+        null
+      }
       "FC_BREAK" -> {
         // FC_BREAK breaks out of a loop. By default (no breakTarget) it breaks the nearest
         // parent loop. Optionally, breakTarget can specify a NodeKey (uuid) of a different loop.
@@ -6771,6 +6793,34 @@ class AICodBiAssistant : IPluginServletAction {
         } else {
           """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
         }
+      }
+      "FC_WITH_FORM_ELEMENT_CONTEXT" -> {
+        // FC_WITH_FORM_ELEMENT_CONTEXT: scoping/container node.
+        // CUSTOM_PARAMS stores FcWithFormElementContextProps with fieldValues and repetitions.
+        // The _childNodes are handled separately in createWorkflowTask.
+        val fieldValues = spec.nodeParams["fieldValues"] as? List<Map<String, Any>>
+        val repetitions = spec.nodeParams["repetitions"] as? List<Map<String, Any>>
+        val fieldValuesJson =
+            if (fieldValues != null && fieldValues.isNotEmpty()) {
+              fieldValues
+                  .map { fv ->
+                    val name = fv["name"] as? String ?: ""
+                    val value = fv["value"] as? String ?: ""
+                    """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
+                  }
+                  .joinToString(",", "[", "]")
+            } else "[]"
+        val repetitionsJson =
+            if (repetitions != null && repetitions.isNotEmpty()) {
+              repetitions
+                  .map { rep ->
+                    val name = rep["name"] as? String ?: ""
+                    val value = rep["value"] as? String ?: ""
+                    """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
+                  }
+                  .joinToString(",", "[", "]")
+            } else "[]"
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fieldValues":$fieldValuesJson,"repetitions":$repetitionsJson}"""
       }
       "FC_CONTINUE" -> {
         // FC_CONTINUE skips the rest of the current iteration and continues with the next
@@ -7608,6 +7658,7 @@ class AICodBiAssistant : IPluginServletAction {
           "FC_COPY_FORM_RECORD" -> "Copy form record"
           "FC_EXPERIMENT" -> "Experiment (try-catch-finally)"
           "FC_FOR_EACH_LOOP" -> "For each loop"
+          "FC_WITH_FORM_ELEMENT_CONTEXT" -> "With form element context"
           "FC_WHILE_LOOP" -> "While loop"
           "FC_DO_UNTIL_LOOP" -> "Do until loop"
           "FC_SWITCH" -> "Switch condition"

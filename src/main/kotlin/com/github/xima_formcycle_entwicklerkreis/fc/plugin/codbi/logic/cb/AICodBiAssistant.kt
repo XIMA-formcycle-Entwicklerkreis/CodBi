@@ -3953,6 +3953,21 @@ class AICodBiAssistant : IPluginServletAction {
             "CRITICAL — Do NOT restructure the loop nesting order to make FC_BREAK break a different loop! " +
             "Keep the loops in the order the user described. " +
             "Use breakTarget to reference the specific loop to break when it is NOT the nearest parent loop.\n" +
+            "  - \"FC_CONTINUE\" — skips the rest of the current iteration and continues with the NEXT iteration " +
+            "of a loop (FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, or FC_FOR_EACH_LOOP). " +
+            "This is analogous to the 'continue' statement in programming languages. " +
+            "nodeParams: {}. " +
+            "Place this node on the YES branch _childNodes of a FC_MULTIPLE_CONDITION inside a loop " +
+            "to conditionally skip the remainder of the current iteration and proceed to the next one " +
+            "(e.g. \"prüfe ob [B] und wenn ja, mit der nächsten Iteration fortfahren\").\n" +
+            "    By default (nodeParams: {}), FC_CONTINUE continues the NEAREST enclosing parent loop " +
+            "(the innermost FC_WHILE_LOOP or FC_DO_UNTIL_LOOP). " +
+            "To continue a DIFFERENT loop (e.g. a parent FC_FOR_EACH_LOOP instead of the nearest FC_WHILE_LOOP), " +
+            "set nodeParams: {\"continueTarget\":\"\$ROOT\"} to continue the outermost/parent loop, " +
+            "or {\"continueTarget\":\"<uuid of the target loop node>\"} for any specific loop. " +
+            "CRITICAL — Do NOT restructure the loop nesting order to make FC_CONTINUE continue a different loop! " +
+            "Keep the loops in the order the user described. " +
+            "Use continueTarget to reference the specific loop to continue when it is NOT the nearest parent loop.\n" +
             "  - \"FC_SET_FORM_RECORD_PASSWORD\" — sets a password on the form record for access restriction;\n" +
             "Supports TWO modes:\n" +
             "  Mode 1 — Fixed (manually entered) password: nodeParams: {\"targetType\":\"MANUALLY_ENTERED_PASSWORD\",\"inputPassword\":\"<the password>\"}\n" +
@@ -4150,6 +4165,25 @@ class AICodBiAssistant : IPluginServletAction {
             "\"triggerParams\":{},\"nodeType\":\"FC_WHILE_LOOP\"," +
             "\"nodeParams\":{\"fieldTechnicalId\":\"tf1\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}},{\"nodeType\":\"FC_MULTIPLE_CONDITION\",\"nodeParams\":{\"fieldTechnicalId\":\"tf1\",\"comparator\":\"CONTAINS\",\"compareValue\":\"X\",\"labelYes\":\"Klausel contains X break\",\"labelNo\":\"Klausel does not contain X continue\",\"_childNodes\":[{\"nodeType\":\"FC_BREAK\",\"nodeParams\":{}}]}}]}," +
             "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  CONTINUE PATTERN — When the user says \"solange [A] ... dann prüfe ob [B] und wenn ja, mit der nächsten Iteration fortfahren\"\n" +
+            "    (while [A] ... then check if [B] and if so, continue with the next iteration of the OUTER loop), " +
+            "the outer loop " +
+            "becomes a FC_FOR_EACH_LOOP or FC_WHILE_LOOP, and the inner \"solange\" condition [A] " +
+            "becomes an inner FC_WHILE_LOOP or FC_DO_UNTIL_LOOP. Inside the inner loop's _childNodes, " +
+            "add a FC_MULTIPLE_CONDITION that checks the continue condition [B]. On its YES branch " +
+            "_childNodes, place a FC_CONTINUE node with continueTarget set to the OUTER loop " +
+            "(e.g. {\"continueTarget\":\"\$ROOT\"}) which causes the workflow executor to skip the " +
+            "rest of the current iteration and proceed to the next one of the specified loop. " +
+            "This is DIFFERENT from FC_BREAK — FC_CONTINUE does NOT exit the loop, it only skips " +
+            "the remaining actions in the current iteration and moves to the next one.\n" +
+            "  Example output (with continue pattern — nested loops):\n" +
+            "  User: \"Beim Klick auf submit soll für jedes Zeichen in Go, solange in Klausel eine 1 steht eine Mail mit dem Betreff XXX und dem Inhalt ZZZ an A@B.C.DE von X@X.XX geschickt werden. Nach dem senden der Mail soll in der Schleife geprüft werden ob Klausel ein X enthält und wenn das so ist die Schleife für Go mit der nächsten iteration fortfahren. Die schleife die jedes Zeichen abarbeitet soll die äußerste Schleife sein.\"\n" +
+            "  {\"taskName\":\"For each char in Go send mail while Klausel=1, continue on X\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_FOR_EACH_LOOP\"," +
+            "\"nodeParams\":{\"fieldTechnicalId\":\"tfGo\",\"sourceType\":\"CHARACTER_SEPARATED_VALUES\",\"delimiter\":\"\"," +
+            "\"_childNodes\":[{\"nodeType\":\"FC_WHILE_LOOP\"," +
+            "\"nodeParams\":{\"fieldTechnicalId\":\"tfKlausel\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}},{\"nodeType\":\"FC_MULTIPLE_CONDITION\",\"nodeParams\":{\"fieldTechnicalId\":\"tfKlausel\",\"comparator\":\"CONTAINS\",\"compareValue\":\"X\",\"labelYes\":\"Klausel contains X - continue outer loop\",\"labelNo\":\"Klausel does not contain X\",\"_childNodes\":[{\"nodeType\":\"FC_CONTINUE\",\"nodeParams\":{\"continueTarget\":\"\$ROOT\"}}]}}]}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
             "  CRITICAL — CHOOSING BETWEEN FC_WHILE_LOOP AND FC_DO_UNTIL_LOOP:\n" +
             "    FC_WHILE_LOOP checks the condition BEFORE executing the children (pre-check). " +
             "If the condition is initially false, children run 0 times. Use for \"solange\" (while).\n" +
@@ -4181,7 +4215,11 @@ class AICodBiAssistant : IPluginServletAction {
             "  {\"taskName\":\"Send mail while Klausel equals 1 with break when Klausel contains X\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
             "\"triggerParams\":{},\"nodeType\":\"FC_DO_UNTIL_LOOP\"," +
             "\"nodeParams\":{\"fieldTechnicalId\":\"tf1\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}},{\"nodeType\":\"FC_MULTIPLE_CONDITION\",\"nodeParams\":{\"fieldTechnicalId\":\"tf1\",\"comparator\":\"CONTAINS\",\"compareValue\":\"X\",\"labelYes\":\"Klausel contains X break\",\"labelNo\":\"Klausel does not contain X continue\",\"_childNodes\":[{\"nodeType\":\"FC_BREAK\",\"nodeParams\":{}}]}}]}," +
-            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n\n")
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  The same CONTINUE PATTERN from FC_WHILE_LOOP applies here: to skip the rest of the current iteration " +
+            "and continue with the next iteration of a parent/outer loop, " +
+            "add a FC_MULTIPLE_CONDITION child that checks the continue condition, and on its YES branch " +
+            "_childNodes place a FC_CONTINUE node with the appropriate continueTarget.\n\n")
     append(
         "ENDPOINT STATE (\"endpointState\" field) — CRITICAL:\n" +
             "  Every workflow lane automatically ends with an endpoint (Endpunkt). The 'endpointState' field\n" +
@@ -4538,7 +4576,7 @@ class AICodBiAssistant : IPluginServletAction {
     fixParentOrderIndex(savedActionNode, savedRootNode, userContext)
     // Recursively create child nodes for conditional/loop nodes that have _childNodes.
     // Handles unlimited nesting depth (e.g., FC_FOR_EACH_LOOP → FC_WHILE_LOOP →
-    // FC_MULTIPLE_CONDITION → FC_BREAK and beyond).
+    // FC_MULTIPLE_CONDITION → FC_BREAK / FC_CONTINUE and beyond).
     // Pattern: for each conditional/loop node with _childNodes, create a SEQUENCE wrapper
     // as its YES-branch child, place action nodes inside it, then recurse into each.
     // Capture the top-level loop node UUID for symbolic breakTarget resolution
@@ -4607,6 +4645,37 @@ class AICodBiAssistant : IPluginServletAction {
             }
             logger.info(
                 "[AICodBiAssistant]{} Resolved breakTarget -> uuid={} for FC_BREAK, json={}",
+                indent,
+                rootLoopUuid,
+                resolvedJson)
+          }
+        }
+        // Resolve symbolic continueTarget for FC_CONTINUE nodes
+        if (childSpec.nodeType == "FC_CONTINUE") {
+          val continueTarget = childSpec.nodeParams["continueTarget"] as? String
+          if ((continueTarget == "\$ROOT" ||
+              continueTarget == "00000000-0000-0000-0000-000000000000") && rootLoopUuid != null) {
+            // Resolve "$ROOT" or placeholder UUID to the top-level loop node's UUID
+            val resolvedJson =
+                """{"name":${gson.toJson(childNodeName)},"description":"","continueTarget":{"uuid":${gson.toJson(rootLoopUuid.toString())}}}"""
+            // Update the in-memory object
+            workflowNodeClass
+                .getMethod("setCustomParameters", String::class.java)
+                .invoke(savedChildNode, resolvedJson)
+            // Persist the change to database
+            try {
+              val updateNodeMethod =
+                  workflowNodeApi.javaClass.getMethod(
+                      "update", userContextClass, iTransferableEntityClass)
+              updateNodeMethod.invoke(workflowNodeApi, userContext, savedChildNode)
+            } catch (e: Exception) {
+              logger.warn(
+                  "[AICodBiAssistant]{} Could not persist continueTarget update: {}",
+                  indent,
+                  e.message)
+            }
+            logger.info(
+                "[AICodBiAssistant]{} Resolved continueTarget -> uuid={} for FC_CONTINUE, json={}",
                 indent,
                 rootLoopUuid,
                 resolvedJson)
@@ -6609,6 +6678,18 @@ class AICodBiAssistant : IPluginServletAction {
           """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
         }
       }
+      "FC_CONTINUE" -> {
+        // FC_CONTINUE skips the rest of the current iteration and continues with the next
+        // iteration of a loop. By default (no continueTarget) it continues the nearest
+        // parent loop. Optionally, continueTarget can specify a NodeKey (uuid) of a different
+        // loop (analogous to breakTarget for FC_BREAK).
+        val continueTarget = spec.nodeParams["continueTarget"] as? String
+        if (!continueTarget.isNullOrBlank()) {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"continueTarget":{"uuid":${gson.toJson(continueTarget)}}}"""
+        } else {
+          """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
+        }
+      }
       "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" -> {
         // The CheckTrustLevelProps class has:
         //   trustLevels: List<ETrustLevel>  (NOT a single string!)
@@ -7444,6 +7525,7 @@ class AICodBiAssistant : IPluginServletAction {
           "FC_SAVE_TO_WEBDAV" -> "Save to WebDAV"
           "FC_THROW_EXCEPTION" -> "Throw exception"
           "FC_BREAK" -> "Break out of loop"
+          "FC_CONTINUE" -> "Continue to next iteration"
           "FC_EMPTY" -> "Empty placeholder"
           else -> spec.nodeType
         }

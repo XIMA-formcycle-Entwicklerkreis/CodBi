@@ -4100,12 +4100,11 @@ class AICodBiAssistant : IPluginServletAction {
             "\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}}]}," +
             "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n\n")
     append(
-        "  - \"FC_WHILE_LOOP\" — repeatedly executes child actions as long as a form field value meets a specified condition. " +
-            "This is a LOOP node — unlike FC_MULTIPLE_CONDITION which checks the condition ONCE and then either executes " +
-            "or skips the children, FC_WHILE_LOOP continues to re-check the condition and re-execute the children " +
-            "as long as it remains true. " +
+        "  - \"FC_WHILE_LOOP\" — repeatedly executes child actions WHILE a form field value meets a specified condition. " +
+            "This is a PRE-CHECK LOOP node — the condition is checked BEFORE each iteration. " +
+            "If the condition is false from the start, the children are NEVER executed (zero iterations). " +
             "Use this when the user says an action should be repeated \"solange\" (while, as long as) a field has a specific value, " +
-            "\"wiederholt solange\", or similar loop language implying repeated execution. " +
+            "\"wiederholt solange\", or similar loop language where the condition is checked BEFORE the action. " +
             "CRITICAL — Do NOT map \"solange\" (while/as long as) to FC_MULTIPLE_CONDITION. " +
             "\"solange\" implies a LOOP (keep doing while condition is true), not a one-time conditional check. " +
             "nodeParams: {\"fieldTechnicalId\":\"<the technicalId of the form field to check>\", " +
@@ -4118,6 +4117,28 @@ class AICodBiAssistant : IPluginServletAction {
             "  Example output:\n" +
             "  {\"taskName\":\"Send mail while Klausel equals 1\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
             "\"triggerParams\":{},\"nodeType\":\"FC_WHILE_LOOP\"," +
+            "\"nodeParams\":{\"fieldTechnicalId\":\"tfKlausel\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}}]}," +
+            "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n" +
+            "  CRITICAL — CHOOSING BETWEEN FC_WHILE_LOOP AND FC_DO_UNTIL_LOOP:\n" +
+            "    FC_WHILE_LOOP checks the condition BEFORE executing the children (pre-check). " +
+            "If the condition is initially false, children run 0 times. Use for \"solange\" (while).\n" +
+            "    FC_DO_UNTIL_LOOP executes the children FIRST, then checks the condition (post-check). " +
+            "Children ALWAYS run at least once. Use for \"zuerst ... dann Bedingung prüfen\" (first do, then check condition).\n\n")
+    append(
+        "  - \"FC_DO_UNTIL_LOOP\" — executes child actions FIRST, then checks whether a form field value continues to meet a specified condition. " +
+            "This is a POST-CHECK LOOP node — the condition is checked AFTER each iteration. " +
+            "The children ALWAYS execute at least once, regardless of the initial condition value. " +
+            "Use this when the user says an action should be performed FIRST before checking the condition, " +
+            "\"zuerst ... dann die Bedingung prüfen\" (first ..., then check the condition), " +
+            "\"erst ausführen dann prüfen\" (first execute then check), " +
+            "\"zuerst die Mail senden dann die Bedingung prüfen\" (first send the email then check the condition), " +
+            "or any similar post-check loop language. " +
+            "CRITICAL — FC_DO_UNTIL_LOOP uses the SAME nodeParams schema as FC_WHILE_LOOP " +
+            "(fieldTechnicalId, comparator, compareValue, conditions array, _childNodes). " +
+            "The only difference is WHEN the condition is evaluated: before (WHILE) vs after (DO-UNTIL) each iteration.\n" +
+            "  Example output:\n" +
+            "  {\"taskName\":\"Send mail then check Klausel\",\"triggerType\":\"FC_FORM_SUBMIT_BUTTON\"," +
+            "\"triggerParams\":{},\"nodeType\":\"FC_DO_UNTIL_LOOP\"," +
             "\"nodeParams\":{\"fieldTechnicalId\":\"tfKlausel\",\"comparator\":\"EQUAL\",\"compareValue\":\"1\",\"_childNodes\":[{\"nodeType\":\"FC_EMAIL\",\"nodeParams\":{\"to\":\"A@B.C.DE\",\"subject\":\"XXX\",\"body\":\"<p>ZZZ</p>\",\"from\":\"X@X.XX\"}}]}," +
             "\"endpointState\":\"Received\",\"endpointType\":\"FC_CHANGE_STATE\"}\n\n")
     append(
@@ -4485,7 +4506,8 @@ class AICodBiAssistant : IPluginServletAction {
         (spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
             spec.nodeType == "FC_MULTIPLE_CONDITION" ||
             spec.nodeType == "FC_FOR_EACH_LOOP" ||
-            spec.nodeType == "FC_WHILE_LOOP")) {
+            spec.nodeType == "FC_WHILE_LOOP" ||
+            spec.nodeType == "FC_DO_UNTIL_LOOP")) {
       logger.info(
           "[AICodBiAssistant] Creating YES-branch SEQUENCE wrapper for nodeType={}", spec.nodeType)
       // Step 1: Create SEQUENCE wrapper as child of condition node
@@ -6378,6 +6400,42 @@ class AICodBiAssistant : IPluginServletAction {
         // with matchCondition/matchOperandLhs/matchOperandRhs/variableName), but NO
         // labelYes/labelNo
         // because while-loops do not have YES/NO branches — they just loop or exit.
+        val fieldTechnicalId = spec.nodeParams["fieldTechnicalId"] as? String ?: ""
+        val comparator = spec.nodeParams["comparator"] as? String ?: "EQUAL"
+        val compareValue = spec.nodeParams["compareValue"] as? String ?: ""
+        val combinationType = spec.nodeParams["combinationType"] as? String ?: "AND"
+        val customExpression = spec.nodeParams["customExpression"] as? String ?: ""
+        val lhsRef = if (fieldTechnicalId.isNotBlank()) "[%$fieldTechnicalId%]" else ""
+        @Suppress("UNCHECKED_CAST")
+        val conditions =
+            (spec.nodeParams["conditions"] as? List<Map<String, Any>>)?.ifEmpty { null }
+        val conditionsJson =
+            if (conditions != null) {
+              conditions
+                  .mapIndexed { idx, cond ->
+                    val condFieldId = (cond["fieldTechnicalId"] as? String ?: fieldTechnicalId)
+                    val condComparator = (cond["comparator"] as? String ?: comparator)
+                    val condValue = (cond["compareValue"] as? String ?: "")
+                    val condLhs = if (condFieldId.isNotBlank()) "[%$condFieldId%]" else ""
+                    val variableName =
+                        (cond["variableName"] as? String)?.takeIf { it.isNotBlank() }
+                            ?: "C${idx + 1}"
+                    """{"matchCondition":${gson.toJson(condComparator)},"matchOperandLhs":${gson.toJson(condLhs)},"matchOperandRhs":${gson.toJson(condValue)},"variableName":${gson.toJson(variableName)}}"""
+                  }
+                  .joinToString(",", "[", "]")
+            } else {
+              val variableName = spec.nodeParams["conditionVariableName"] as? String ?: "C1"
+              """[{"matchCondition":${gson.toJson(comparator)},"matchOperandLhs":${gson.toJson(lhsRef)},"matchOperandRhs":${gson.toJson(compareValue)},"variableName":${gson.toJson(variableName)}}]"""
+            }
+        val customExprJson =
+            if (combinationType == "CUSTOM" && customExpression.isNotBlank()) {
+              ""","customExpression":${gson.toJson(customExpression)}"""
+            } else ""
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"combinationType":${gson.toJson(combinationType)},"conditions":$conditionsJson$customExprJson}"""
+      }
+      "FC_DO_UNTIL_LOOP" -> {
+        // FC_DO_UNTIL_LOOP executes child actions FIRST, then checks condition (post-check).
+        // Uses the SAME condition schema as FC_WHILE_LOOP.
         val fieldTechnicalId = spec.nodeParams["fieldTechnicalId"] as? String ?: ""
         val comparator = spec.nodeParams["comparator"] as? String ?: "EQUAL"
         val compareValue = spec.nodeParams["compareValue"] as? String ?: ""

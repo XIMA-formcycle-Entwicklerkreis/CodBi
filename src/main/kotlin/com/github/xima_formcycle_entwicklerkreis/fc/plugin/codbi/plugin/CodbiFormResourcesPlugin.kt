@@ -1,7 +1,9 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.plugin
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.localize
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.Resource
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.PromptLoader
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.TinyMCEUpdater
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.PLUGIN_FORM_RESOURCES_ID
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.model.Constants.RESOURCE_PATH_CODBI_CSS
@@ -18,13 +20,13 @@ import de.xima.fc.plugin.interfaces.form.IPluginFormResources
 import de.xima.fc.plugin.models.retval.form.DefaultPluginFormResourceDescriptor
 import de.xima.fc.workflow.ByteArrayResourceDescriptor
 import de.xima.fc.workflow.UrlResourceDescriptor
-import java.io.IOException // Neu: Für IOException
+import java.io.IOException
 import java.net.URI
 import java.nio.charset.StandardCharsets.UTF_8
 import java.util.*
-import java.util.jar.JarInputStream // Neu: Für das Scannen des JARs
-import java.util.logging.Logger // Neu: Für Logging
-import java.util.zip.ZipEntry // Neu: Für ZIP-Einträge
+import java.util.jar.JarInputStream
+import java.util.logging.Logger
+import java.util.zip.ZipEntry
 
 /**
  * Plugin that provides the frontend resources for the form designer to web forms.
@@ -80,6 +82,17 @@ class CodbiFormResourcesPlugin : IPluginFormResources, IFCRemoteSyncPlugin {
    * @param initData As provided by the framework.
    */
   override fun initialize(initData: IPluginInitializeData?) {
+    // Seed/update AI system prompts from classpath resources into the database.
+    // This runs on every plugin startup (including hot deploy) to catch new prompts.
+    try {
+      val emf = CodbiEntities.entityManagerFactory
+      if (emf != null) {
+        PromptLoader.seedIfNeeded(emf, System.currentTimeMillis().toString())
+      }
+    } catch (e: Exception) {
+      LOG.warning("Failed to seed AI prompts: ${e.message}")
+    }
+
     val stable = initData?.manifest?.versionSemVer?.isStable ?: false
     val version =
         if (stable) initData?.manifest?.version ?: "1.0.0"

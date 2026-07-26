@@ -105,6 +105,17 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
+  /** Opens the Prompt Manager dialog. */
+  openPromptManager(): void {
+    if (!document.querySelector("cb-prompt-manager")) {
+      document.body.appendChild(document.createElement("cb-prompt-manager"));
+    }
+    // Small delay to ensure the custom element is ready in the DOM
+    setTimeout(() => {
+      document.dispatchEvent(new CustomEvent("codbi:prompt-manager:open"));
+    }, 50);
+  }
+
   // #region Lifecycle
   ngOnInit(): void {
     document.addEventListener("codbi:ai-assistant:open", this.openHandler);

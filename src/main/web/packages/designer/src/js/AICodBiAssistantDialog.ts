@@ -31,9 +31,12 @@ export function enableAICodBiAssistantDialog(): void {
     document.head.appendChild(link);
   }
 
-  // Mount the custom element once
+  // Mount the custom elements once
   if (!document.querySelector("cb-ai-assistant")) {
     document.body.appendChild(document.createElement("cb-ai-assistant"));
+  }
+  if (!document.querySelector("cb-prompt-manager")) {
+    document.body.appendChild(document.createElement("cb-prompt-manager"));
   }
 
   // ALT+A => show the AI assistant

@@ -1,0 +1,17 @@
+[main 67429e15] FA  DB-Prompts to enable local changes and/or supplementation.
+ 20 files changed, 2430 insertions(+), 1596 deletions(-)
+ create mode 100644 Implemented
+ create mode 100644 plans/db-ai-prompts-plan.md
+ create mode 100644 scripts/drop-ai-prompt-table.sql
+ create mode 100644 scripts/fix-form-assistant-remaining.ps1
+ create mode 100644 src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/PromptLoader.kt
+ create mode 100644 src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-classify-intent.md
+ create mode 100644 src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-element-placeholders.md
+ create mode 100644 src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-functionalities.md
+ create mode 100644 src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-general.md
+ create mode 100644 src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-standard-configurations.md
+ create mode 100644 src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-general.md
+ create mode 100644 src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-widgets.md
+ create mode 100644 src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-workflow-nodes.md
+ create mode 100644 src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/index.json
+ create mode 100644 src/main/resources/db/changelog/codbi-ai-prompt-changelog.xml

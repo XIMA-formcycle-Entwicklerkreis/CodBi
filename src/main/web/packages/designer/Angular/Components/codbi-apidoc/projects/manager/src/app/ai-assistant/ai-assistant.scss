@@ -30,6 +30,43 @@ cb-ai-assistant {
     background: transparent !important;
 }
 
+/* Toolbar row — model selector + Prompt Manager button */
+.cb-ai-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cb-ai-toolbar .cb-ai-model-select {
+    flex: 1;
+}
+
+.cb-ai-pm-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    background: #f8f8f8;
+    cursor: pointer;
+    font-size: 0.82em;
+    color: #555;
+    white-space: nowrap;
+    transition: all 0.15s;
+}
+
+.cb-ai-pm-btn:hover {
+    background: #e8f5e9;
+    border-color: #39d088;
+    color: #2e7d32;
+}
+
+.cb-ai-pm-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* Watermark faded behind the entire popup — two-layer gradient over SVG creates opacity effect. */
 .p-dialog.cb-ai-assistant-dialog {
     background-image: linear-gradient(rgba(255,255,255,0.91), rgba(255,255,255,0.91)),

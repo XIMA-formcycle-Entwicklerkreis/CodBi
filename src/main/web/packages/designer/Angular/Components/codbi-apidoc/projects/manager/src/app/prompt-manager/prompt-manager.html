@@ -1,0 +1,146 @@
+<p-dialog
+    [visible]="visible"
+    (visibleChange)="close()"
+    [modal]="true"
+    [draggable]="true"
+    [resizable]="true"
+    header="CodBi &#x2014; Prompt Manager"
+    [style]="{ width: '85vw', maxWidth: '1200px', maxHeight: '85vh' }"
+    [closeOnEscape]="true"
+    [baseZIndex]="2100"
+    styleClass="cb-prompt-manager-dialog">
+
+    <div class="cb-pm-layout" #pmLayout>
+        <!-- Tree View (left panel) -->
+        <div class="cb-pm-tree-panel" #treePanel>
+            <div class="cb-pm-tree-toolbar">
+                <button type="button" class="cb-pm-filter-btn"
+                    [class.cb-pm-filter-btn--active]="viewMode === 'detailed'"
+                    (click)="switchView('detailed')"
+                    title="Edit detailed prompts">
+                    Detailed
+                </button>
+                <button type="button" class="cb-pm-filter-btn"
+                    [class.cb-pm-filter-btn--active]="viewMode === 'condensed'"
+                    (click)="switchView('condensed')"
+                    title="Edit condensed/short prompts">
+                    Condensed
+                </button>
+                <span class="cb-pm-filter-sep"></span>
+                <button type="button" class="cb-pm-filter-btn"
+                    [class.cb-pm-filter-btn--active]="showAllMode"
+                    (click)="showAllMode = true; toggleFilterMode()"
+                    title="Show all prompts">
+                    All
+                </button>
+                <button type="button" class="cb-pm-filter-btn"
+                    [class.cb-pm-filter-btn--active]="!showAllMode"
+                    (click)="showAllMode = false; toggleFilterMode()"
+                    title="Show only active prompts">
+                    Active
+                </button>
+            </div>
+            <p-tree
+                [value]="treeNodes"
+                selectionMode="single"
+                (onNodeSelect)="onNodeSelect($event)"
+                [filter]="true"
+                filterPlaceholder="Filter prompts..."
+                styleClass="cb-pm-tree">
+                <ng-template let-node pTemplate="default">
+                    <span class="cb-pm-tree-node-label">
+                        @if (isTreeNodeInactive(node)) {
+                            <span class="cb-pm-tree-inactive-icon" title="Inactive">&#x2716;</span>
+                        }
+                        {{ node.label }}
+                    </span>
+                </ng-template>
+            </p-tree>
+        </div>
+
+        <!-- Resize handle -->
+        <div class="cb-pm-splitter" (mousedown)="onSplitterMouseDown($event)" title="Drag to resize"></div>
+
+        <!-- Card View (right panel) — only shown for item nodes -->
+        <div class="cb-pm-card-panel">
+            @if (loading && !activeRecord) {
+                <div class="cb-pm-loading">Loading prompts...</div>
+            }
+
+            @if (errorText) {
+                <p-message severity="error" [text]="errorText" styleClass="cb-pm-message" />
+            }
+
+            @if (successText) {
+                <p-message severity="success" [text]="successText" styleClass="cb-pm-message" />
+            }
+
+            @if (activeRecord && !loading) {
+                <div class="cb-pm-card" [class.cb-pm-card--inactive]="!activeRecord.isActive">
+
+                    <!-- Color indicator (left border) — double width, click to toggle active -->
+                    <div
+                        class="cb-pm-card-indicator"
+                        [class.cb-pm-card-indicator--active]="activeRecord.isActive"
+                        [class.cb-pm-card-indicator--inactive]="!activeRecord.isActive"
+                        (click)="toggleActive()"
+                        [title]="activeRecord.isActive ? 'Active — click to deactivate' : 'Inactive — click to activate'">
+                    </div>
+
+                    <div class="cb-pm-card-body">
+                        <!-- Header -->
+                        <div class="cb-pm-card-header">
+                            <span class="cb-pm-display-name">{{ editDisplayName }}</span>
+                            <span class="cb-pm-key-badge">{{ activeRecord.promptKey }}</span>
+                        </div>
+
+                        <!-- Editable content -->
+                        <div class="cb-pm-card-editor">
+                            <label class="cb-pm-field-label">Pre-Prompt (added before the main prompt)</label>
+                            <textarea
+                                pTextarea
+                                [(ngModel)]="editPrePrompt"
+                                rows="2"
+                                class="cb-pm-textarea cb-pm-textarea--small"
+                                placeholder="Optional text prepended before the main prompt...">
+                            </textarea>
+
+                            <label class="cb-pm-field-label">Prompt</label>
+                            <textarea
+                                pTextarea
+                                [(ngModel)]="editPromptText"
+                                rows="6"
+                                class="cb-pm-textarea"
+                                placeholder="Prompt content...">
+                            </textarea>
+
+                            <label class="cb-pm-field-label">Post-Prompt (added after the main prompt)</label>
+                            <textarea
+                                pTextarea
+                                [(ngModel)]="editPostPrompt"
+                                rows="2"
+                                class="cb-pm-textarea cb-pm-textarea--small"
+                                placeholder="Optional text appended after the main prompt...">
+                            </textarea>
+
+                            <div class="cb-pm-actions">
+                                <p-button label="Save" icon="pi pi-check" (onClick)="save()"
+                                    [disabled]="loading" severity="primary" />
+                                <p-button label="Restore Original" icon="pi pi-refresh" (onClick)="restoreOriginal()"
+                                    [disabled]="loading" severity="secondary" [outlined]="true" />
+                                <p-button label="Export" icon="pi pi-download" (onClick)="exportPrompt()"
+                                    severity="secondary" [outlined]="true" />
+                                <p-button label="Import" icon="pi pi-upload" (onClick)="importPrompt()"
+                                    severity="secondary" [outlined]="true" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (!activeRecord && !loading) {
+                <div class="cb-pm-loading">Select a prompt from the tree to edit.</div>
+            }
+        </div>
+    </div>
+</p-dialog>

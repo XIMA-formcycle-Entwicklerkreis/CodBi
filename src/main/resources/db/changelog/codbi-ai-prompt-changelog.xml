@@ -29,14 +29,30 @@
         </rollback>
     </changeSet>
 
-    <!--
-      Manual cleanup changeset for uninstall:
-      Uncomment and run if Liquibase rollback was not executed automatically during plugin uninstall.
-
-      <changeSet id="codbi-ai-prompt-cleanup" author="codbi">
-          <comment>Drop AI prompt table on plugin uninstall (manual)</comment>
-          <dropTable tableName="codbi_ai_prompt"/>
-      </changeSet>
-    -->
+    <changeSet id="codbi-ai-prompt-2" author="codbi">
+        <comment>
+          Extend codbi_ai_prompt with columns for the Prompt Manager UI:
+          is_active (toggle to exclude from AI requests),
+          pre_prompt/post_prompt (custom user text wrapped around the main prompt),
+          original_text (snapshot of the seeded prompt for restore),
+          display_name (human-readable label for the UI)
+        </comment>
+        <addColumn tableName="codbi_ai_prompt">
+            <column name="is_active" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="pre_prompt" type="CLOB"/>
+            <column name="post_prompt" type="CLOB"/>
+            <column name="original_text" type="CLOB"/>
+            <column name="display_name" type="VARCHAR(200)"/>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_ai_prompt" columnName="is_active"/>
+            <dropColumn tableName="codbi_ai_prompt" columnName="pre_prompt"/>
+            <dropColumn tableName="codbi_ai_prompt" columnName="post_prompt"/>
+            <dropColumn tableName="codbi_ai_prompt" columnName="original_text"/>
+            <dropColumn tableName="codbi_ai_prompt" columnName="display_name"/>
+        </rollback>
+    </changeSet>
 
 </databaseChangeLog>

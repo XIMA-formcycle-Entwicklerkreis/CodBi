@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <changeSet id="codbi-compact-prompt-1" author="codbi">
+        <comment>Create table for compact (codbi-core-elements-compact / codbi-core-api-compact) AI prompts</comment>
+        <createTable tableName="codbi_compact_prompt">
+            <column name="prompt_key" type="VARCHAR(100)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="category" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="prompt_text" type="CLOB">
+                <constraints nullable="false"/>
+            </column>
+            <column name="prompt_version" type="VARCHAR(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="pre_prompt" type="CLOB"/>
+            <column name="post_prompt" type="CLOB"/>
+            <column name="original_text" type="CLOB"/>
+            <column name="is_active" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="display_name" type="VARCHAR(200)"/>
+            <column name="updated_at" type="TIMESTAMP" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <rollback>
+            <dropTable tableName="codbi_compact_prompt"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

@@ -1,0 +1,282 @@
+/* #region Dialog — force topmost z-index */
+.cb-prompt-manager-dialog {
+  z-index: 99999 !important;
+}
+
+.p-dialog-mask:has(.cb-prompt-manager-dialog) {
+  z-index: 99998 !important;
+}
+
+.cb-prompt-manager-dialog .p-dialog-content {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.cb-pm-layout {
+  display: flex;
+  height: 100%;
+  min-height: 300px;
+  max-height: 75vh;
+  overflow: hidden;
+}
+
+/* #region Tree panel (left) */
+.cb-pm-tree-panel {
+  width: auto;
+  min-width: 200px;
+  max-width: 50%;
+  border-right: 1px solid #e0e0e0;
+  overflow-y: auto;
+  padding: 8px;
+  white-space: nowrap;
+}
+
+.cb-pm-tree {
+  width: 100%;
+}
+
+/* Filter toolbar */
+.cb-pm-tree-toolbar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eee;
+}
+
+.cb-pm-filter-btn {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #f8f8f8;
+  cursor: pointer;
+  font-size: 0.82em;
+  color: #555;
+  text-align: center;
+  transition: all 0.15s;
+}
+
+.cb-pm-filter-btn:hover {
+  background: #e8f5e9;
+  border-color: #39d088;
+  color: #2e7d32;
+}
+
+.cb-pm-filter-btn--active {
+  background: #39d088;
+  border-color: #39d088;
+  color: #fff;
+}
+
+.cb-pm-filter-sep {
+  width: 1px;
+  min-width: 1px;
+  background: #e0e0e0;
+  margin: 0 2px;
+}
+
+/* Tree node with inactive icon */
+.cb-pm-tree-node-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cb-pm-tree-inactive-icon {
+  color: #e53935;
+  font-size: 0.85em;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+/* #region Card panel (right) */
+.cb-pm-card-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.cb-pm-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #888;
+  font-style: italic;
+  padding: 40px;
+}
+
+.cb-pm-message {
+  margin-bottom: 8px;
+}
+
+/* #region Card */
+.cb-pm-card {
+  display: flex;
+  border: 1px solid #d0d0d0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.2s;
+  flex: 1;
+  min-height: 200px;
+}
+
+.cb-pm-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Color indicator (left region) — double width */
+.cb-pm-card-indicator {
+  width: 16px;
+  min-width: 16px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.cb-pm-card-indicator--active {
+  background-color: #39d088;
+}
+
+.cb-pm-card-indicator--inactive {
+  background-color: #aec3c6;
+}
+
+.cb-pm-card-indicator:hover {
+  opacity: 0.8;
+}
+
+/* Card body */
+.cb-pm-card-body {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.cb-pm-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.cb-pm-display-name {
+  font-size: 1.1em;
+  font-weight: 600;
+  color: #333;
+  padding: 2px 4px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cb-pm-key-badge {
+  font-size: 0.78em;
+  color: #888;
+  background: #f0f0f0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  font-family: monospace;
+}
+
+/* Editor fields */
+.cb-pm-card-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.cb-pm-field-label {
+  font-size: 0.82em;
+  font-weight: 500;
+  color: #555;
+  margin-top: 4px;
+}
+
+.cb-pm-field-label:first-child {
+  margin-top: 0;
+}
+
+.cb-pm-textarea {
+  width: 100%;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 0.88em;
+  resize: vertical;
+  background: #fafafa !important;
+  border: 1px solid #ddd !important;
+  border-radius: 4px;
+  padding: 8px;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+}
+
+.cb-pm-textarea--small {
+  min-height: 60px;
+}
+
+.cb-pm-textarea:focus {
+  border-color: #39d088 !important;
+  box-shadow: 0 0 0 1px #39d088 !important;
+}
+
+/* Auto-grow textareas to fit content */
+.cb-pm-textarea {
+  min-height: 80px;
+  box-sizing: border-box;
+}
+
+/* Actions */
+.cb-pm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.cb-pm-actions button {
+  white-space: nowrap;
+}
+
+/* Resize splitter handle between tree and card panels */
+.cb-pm-splitter {
+  width: 5px;
+  min-width: 5px;
+  cursor: col-resize;
+  background: #e8e8e8;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cb-pm-splitter:hover {
+  background: #39d088;
+}
+
+.cb-pm-splitter::after {
+  content: "";
+  display: block;
+  width: 2px;
+  height: 24px;
+  background: #ccc;
+  border-radius: 1px;
+}
+
+.cb-pm-splitter:hover::after {
+  background: #fff;
+}

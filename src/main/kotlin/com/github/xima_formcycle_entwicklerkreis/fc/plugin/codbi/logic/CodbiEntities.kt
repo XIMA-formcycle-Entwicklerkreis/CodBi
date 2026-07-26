@@ -1,5 +1,6 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic
 
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.CompactPromptLoader
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.PromptLoader
 import de.xima.fc.interfaces.plugin.param.entities.IPluginEntitiesParams
 import de.xima.fc.plugin.entities.IPluginEntities
@@ -41,7 +42,8 @@ class CodbiEntities : IPluginEntities {
       listOf(
           "db/changelog/codbi-ai-proxy-changelog.xml",
           "db/changelog/codbi-local-apidoc-changelog.xml",
-          "db/changelog/codbi-ai-prompt-changelog.xml")
+          "db/changelog/codbi-ai-prompt-changelog.xml",
+          "db/changelog/codbi-compact-prompt-changelog.xml")
 
   @Throws(FCPluginException::class)
   override fun onDatabaseReady(params: IPluginEntitiesParams) {
@@ -50,16 +52,27 @@ class CodbiEntities : IPluginEntities {
     logger.info(
         "[[ CodBi / DB ] onDatabaseReady called — seeding AI prompts from classpath resources ]")
 
-    // Seed AI system prompts from classpath resources into the database.
-    // Uses a timestamp version so prompts are always reseeded on each deployment.
+    val version = System.currentTimeMillis().toString()
+
+    // Seed detailed AI system prompts from classpath resources
     try {
-      val version = System.currentTimeMillis().toString()
       logger.info("[[ CodBi / DB ] Calling PromptLoader.seedIfNeeded with version={} ]", version)
       PromptLoader.seedIfNeeded(params.entityManagerFactory, version)
       logger.info("[[ CodBi / DB ] PromptLoader.seedIfNeeded completed successfully ]")
     } catch (e: Exception) {
       logger.warn(
           "[[ CodBi / DB ] Failed to seed AI prompts: ${e.message} — continuing with fallbacks ]")
+    }
+
+    // Seed compact AI system prompts (codbi-core-elements/api-compact.md)
+    try {
+      logger.info(
+          "[[ CodBi / DB ] Calling CompactPromptLoader.seedIfNeeded with version={} ]", version)
+      CompactPromptLoader.seedIfNeeded(params.entityManagerFactory, version)
+      logger.info("[[ CodBi / DB ] CompactPromptLoader.seedIfNeeded completed successfully ]")
+    } catch (e: Exception) {
+      logger.warn(
+          "[[ CodBi / DB ] Failed to seed compact prompts: ${e.message} — continuing with fallbacks ]")
     }
 
     logger.info("[[ CodBi / DB ] Database ready — EntityManagerFactory available ]")

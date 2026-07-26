@@ -114,8 +114,14 @@ internal object PromptLoader {
           logger.warn("[PromptLoader] Resource file '{}' not found — skipping key '{}'", file, key)
           continue
         }
-        upsertPrompt(em, key, content, pluginVersion)
-        logger.info("[PromptLoader] Upserted prompt '{}' from '{}'", key, file)
+        // Files with ## section headers are split into individual items;
+        // files without ## are upserted as a single prompt.
+        if (content.contains("\n## ")) {
+          seedSplitFile(em, key, content, pluginVersion, file)
+        } else {
+          upsertPrompt(em, key, content, pluginVersion)
+          logger.info("[PromptLoader] Upserted prompt '{}' from '{}'", key, file)
+        }
       }
 
       upsertSeedVersion(em, pluginVersion)
@@ -141,15 +147,18 @@ internal object PromptLoader {
     // On hot deploy: attempt bulk seed so ALL prompts are seeded, not just this one key
     attemptBulkSeed(em)
 
-    // First try: load from DB
+    // First try: load from DB (only active prompts — pre_prompt + prompt_text + post_prompt)
     val dbResult =
         try {
           val query =
               em.createNativeQuery(
-                  "SELECT prompt_text FROM codbi_ai_prompt WHERE prompt_key = :key")
+                  // language=H2
+                  """SELECT COALESCE(pre_prompt, '') || prompt_text || COALESCE(post_prompt, '')
+                     FROM codbi_ai_prompt
+                     WHERE prompt_key = :key AND is_active = TRUE""")
           query.setParameter("key", key)
           val result = query.resultList
-          if (result.isEmpty()) null else (result[0] as? String)?.trim()
+          if (result.isEmpty()) null else resolveClob(result[0])
         } catch (e: Exception) {
           logger.warn("[PromptLoader] Failed to load prompt '{}': {}", key, e.message)
           null
@@ -232,14 +241,19 @@ internal object PromptLoader {
   }
 
   /**
-   * Queries the database for all prompts whose key starts with the given [prefix]. Returns a map of
-   * prompt_key → prompt_text (may be empty).
+   * Queries the database for all **active** prompts whose key starts with the given [prefix].
+   * Returns a map of prompt_key → pre_prompt + prompt_text + post_prompt (may be empty).
    */
   private fun queryCategory(em: EntityManager, prefix: String): Map<String, String> {
     return try {
       val query =
           em.createNativeQuery(
-              "SELECT prompt_key, prompt_text FROM codbi_ai_prompt WHERE prompt_key LIKE :prefix")
+              // language=H2
+              """SELECT prompt_key,
+                        COALESCE(pre_prompt, '') || prompt_text || COALESCE(post_prompt, '')
+                 FROM codbi_ai_prompt
+                 WHERE prompt_key LIKE :prefix AND is_active = TRUE
+                 ORDER BY prompt_key""")
       query.setParameter("prefix", "$prefix%")
       @Suppress("UNCHECKED_CAST")
       val rows = query.resultList as? List<Array<Any>> ?: return emptyMap()
@@ -247,7 +261,7 @@ internal object PromptLoader {
           .mapNotNull { row ->
             if (row.size >= 2) {
               val key = row[0]?.toString() ?: return@mapNotNull null
-              val text = row[1]?.toString()?.trim() ?: return@mapNotNull null
+              val text = resolveClob(row[1]) ?: return@mapNotNull null
               key to text
             } else null
           }
@@ -308,6 +322,27 @@ internal object PromptLoader {
 
   // region Internal helpers
 
+  /**
+   * Safely resolves a value from a native-query result row to a trimmed [String]. Handles both
+   * plain [String] and [java.sql.Clob] values — Hibernate returns Clob objects for CLOB columns via
+   * native queries. Returns `null` for null/empty input.
+   */
+  private fun resolveClob(value: Any?): String? {
+    if (value == null) return null
+    return when (value) {
+      is String -> value.trim().ifBlank { null }
+      is java.sql.Clob -> {
+        try {
+          val reader = value.characterStream ?: return null
+          java.io.BufferedReader(reader).readText().trim().ifBlank { null }
+        } catch (_: Exception) {
+          null
+        }
+      }
+      else -> value.toString().trim().ifBlank { null }
+    }
+  }
+
   /** Reads the `_seed_version` marker row, or `null` if the table is empty / not yet seeded. */
   private fun readSeedVersion(em: EntityManager): String? {
     return try {
@@ -315,7 +350,7 @@ internal object PromptLoader {
           em.createNativeQuery("SELECT prompt_text FROM codbi_ai_prompt WHERE prompt_key = :key")
       query.setParameter("key", SEED_VERSION_KEY)
       val result = query.resultList
-      if (result.isEmpty()) null else (result[0] as? String)?.trim()
+      if (result.isEmpty()) null else resolveClob(result[0])
     } catch (_: Exception) {
       null
     }
@@ -350,15 +385,312 @@ internal object PromptLoader {
     delete.executeUpdate()
 
     val category = key.substringBefore(".", key)
+    val displayName = deriveDisplayName(key)
     val insert =
         em.createNativeQuery(
-            "INSERT INTO codbi_ai_prompt (prompt_key, category, prompt_text, prompt_version) VALUES (:key, :cat, :text, :ver)")
+            // language=H2
+            """INSERT INTO codbi_ai_prompt
+               (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name)
+               VALUES (:key, :cat, :text, :ver, :orig, :active, :dname)""")
     insert.setParameter("key", key)
     insert.setParameter("cat", category)
     insert.setParameter("text", text)
     insert.setParameter("ver", version)
+    insert.setParameter("orig", text)
+    insert.setParameter("active", true)
+    insert.setParameter("dname", displayName)
     insert.executeUpdate()
   }
+
+  /**
+   * Derives a human-readable display name from a prompt key. E.g. "formcycle.workflow_nodes" →
+   * "Formcycle Workflow Nodes".
+   */
+  private fun deriveDisplayName(key: String): String {
+    return key.split(".").joinToString(" ") { part ->
+      part.replace("_", " ").split(" ").joinToString(" ") { word ->
+        word.replaceFirstChar { it.uppercase() }
+      }
+    }
+  }
+
+  /**
+   * Splits a resource file containing `##` section headers into individual prompt records.
+   *
+   * Content before the first `##` is stored under [baseKey] as the category-level prompt. Each `##`
+   * section block is stored under a sub-key like `baseKey.section_name`. `## GENERIC` / `## GENERIC
+   * RULE` sections are treated as part of the parent prompt (appended to the base content).
+   *
+   * The section name is derived from the `##` header line — lowercased, spaces/slashes replaced
+   * with underscores, special chars removed.
+   */
+  private fun seedSplitFile(
+      em: EntityManager,
+      baseKey: String,
+      content: String,
+      version: String,
+      fileName: String
+  ) {
+    val lines = content.lines()
+    val sections = mutableListOf<Pair<String, String>>()
+    val headerBuilder = StringBuilder()
+
+    var currentSection: String? = null
+    val currentBody = StringBuilder()
+
+    for (line in lines) {
+      val trimmed = line.trimStart()
+      if (trimmed.startsWith("## ")) {
+        // Flush previous section
+        if (currentSection != null) {
+          sections.add(currentSection!! to currentBody.toString().trim())
+          currentBody.clear()
+        }
+
+        val headerText = trimmed.removePrefix("## ").trim()
+        val isGeneric = headerText.uppercase().startsWith("GENERIC")
+        if (isGeneric) {
+          // Generic rules belong to the parent prompt
+          if (currentSection == null) {
+            headerBuilder.append("\n").append(line).append("\n")
+          }
+          currentSection = null
+        } else {
+          currentSection = headerText
+        }
+      } else if (currentSection != null) {
+        currentBody.append(line).append("\n")
+      } else {
+        headerBuilder.append(line).append("\n")
+      }
+    }
+    // Flush last section
+    if (currentSection != null) {
+      sections.add(currentSection!! to currentBody.toString().trim())
+    }
+
+    val parentContent = headerBuilder.toString().trim()
+    if (parentContent.isNotBlank()) {
+      upsertPrompt(em, baseKey, parentContent, version)
+      logger.info(
+          "[PromptLoader] Upserted parent prompt '{}' from '{}' ({} items)",
+          baseKey,
+          fileName,
+          sections.size)
+    }
+
+    for ((sectionName, sectionBody) in sections) {
+      if (sectionBody.isBlank()) continue
+      val itemKey = deriveItemKey(baseKey, sectionName)
+      upsertPrompt(em, itemKey, sectionBody, version)
+      logger.info("[PromptLoader] Upserted item prompt '{}' from '{}'", itemKey, fileName)
+    }
+  }
+
+  /**
+   * Derives a DB key for a section item from its parent key and section header. E.g.:
+   * - baseKey="codbi.functionalities", section="AI.OCR" → "codbi.functionalities.ai_ocr"
+   * - baseKey="formcycle.widgets", section="XTextField" → "formcycle.widgets.xtextfield"
+   */
+  private fun deriveItemKey(baseKey: String, sectionName: String): String {
+    val normalized =
+        sectionName
+            .lowercase()
+            .replace(Regex("[^a-z0-9_.]"), "_")
+            .replace(Regex("_+"), "_")
+            .trim('_')
+    return "$baseKey.$normalized"
+  }
+
+  // region Prompt Manager API
+
+  /**
+   * Data class representing the full prompt record as exposed by the Prompt Manager REST API.
+   * Includes all editable/metadata fields.
+   */
+  data class PromptRecord(
+      val promptKey: String,
+      val displayName: String?,
+      val category: String?,
+      val promptText: String?,
+      val originalText: String?,
+      val prePrompt: String?,
+      val postPrompt: String?,
+      val isActive: Boolean
+  )
+
+  /** Returns all prompt records for the Prompt Manager UI. Never returns `null`. */
+  fun listAllPrompts(em: EntityManager): List<PromptRecord> {
+    return try {
+      val query =
+          em.createNativeQuery(
+              // language=H2
+              """SELECT prompt_key, display_name, category, prompt_text, original_text,
+                        pre_prompt, post_prompt, is_active
+                 FROM codbi_ai_prompt
+                 WHERE prompt_key != :skipKey
+                 ORDER BY category, prompt_key""")
+      query.setParameter("skipKey", SEED_VERSION_KEY)
+      @Suppress("UNCHECKED_CAST")
+      val rows = query.resultList as? List<Array<Any>> ?: return emptyList()
+      rows.mapNotNull { row ->
+        if (row.size < 8) return@mapNotNull null
+        PromptRecord(
+            promptKey = row[0]?.toString() ?: return@mapNotNull null,
+            displayName = row[1]?.toString(),
+            category = row[2]?.toString(),
+            promptText = resolveClob(row[3]),
+            originalText = resolveClob(row[4]),
+            prePrompt = resolveClob(row[5]),
+            postPrompt = resolveClob(row[6]),
+            isActive = row[7]?.toString() == "true" || row[7]?.toString() == "1")
+      }
+    } catch (e: Exception) {
+      logger.warn("[PromptLoader] Failed to list all prompts: {}", e.message)
+      emptyList()
+    }
+  }
+
+  /**
+   * Saves (upserts) a single prompt record from the Prompt Manager. If [promptText] is null, the
+   * existing prompt_text is left unchanged. [prePrompt] and [postPrompt] are always overwritten.
+   */
+  fun savePrompt(
+      em: EntityManager,
+      key: String,
+      promptText: String?,
+      prePrompt: String?,
+      postPrompt: String?,
+      isActive: Boolean,
+      displayName: String?
+  ) {
+    val version = System.currentTimeMillis().toString()
+    try {
+      em.transaction.begin()
+
+      if (promptText != null) {
+        val update =
+            em.createNativeQuery(
+                // language=H2
+                """UPDATE codbi_ai_prompt
+                   SET prompt_text = :text, pre_prompt = :pre, post_prompt = :post,
+                       is_active = :active, display_name = :dname, prompt_version = :ver,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE prompt_key = :key""")
+        update.setParameter("text", promptText)
+        update.setParameter("pre", prePrompt)
+        update.setParameter("post", postPrompt)
+        update.setParameter("active", isActive)
+        update.setParameter("dname", displayName)
+        update.setParameter("ver", version)
+        update.setParameter("key", key)
+        update.executeUpdate()
+      } else {
+        val update =
+            em.createNativeQuery(
+                // language=H2
+                """UPDATE codbi_ai_prompt
+                   SET pre_prompt = :pre, post_prompt = :post,
+                       is_active = :active, display_name = :dname, prompt_version = :ver,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE prompt_key = :key""")
+        update.setParameter("pre", prePrompt)
+        update.setParameter("post", postPrompt)
+        update.setParameter("active", isActive)
+        update.setParameter("dname", displayName)
+        update.setParameter("ver", version)
+        update.setParameter("key", key)
+        update.executeUpdate()
+      }
+
+      em.transaction.commit()
+      logger.info("[PromptLoader] Saved prompt '{}' (active={})", key, isActive)
+    } catch (e: Exception) {
+      try {
+        em.transaction.rollback()
+      } catch (_: Exception) {}
+      logger.warn("[PromptLoader] Failed to save prompt '{}': {}", key, e.message)
+      throw e
+    }
+  }
+
+  /**
+   * Restores the original prompt text for the given [key] by copying [originalText] → [promptText].
+   * Leaves [prePrompt], [postPrompt], and [isActive] unchanged. Only restores the main prompt body.
+   */
+  fun restoreOriginal(em: EntityManager, key: String) {
+    try {
+      em.transaction.begin()
+      val version = System.currentTimeMillis().toString()
+      val update =
+          em.createNativeQuery(
+              // language=H2
+              """UPDATE codbi_ai_prompt
+                 SET prompt_text = original_text,
+                     prompt_version = :ver, updated_at = CURRENT_TIMESTAMP
+                 WHERE prompt_key = :key AND original_text IS NOT NULL""")
+      update.setParameter("ver", version)
+      update.setParameter("key", key)
+      val affected = update.executeUpdate()
+      em.transaction.commit()
+      logger.info("[PromptLoader] Restored original text for '{}' (rows={})", key, affected)
+    } catch (e: Exception) {
+      try {
+        em.transaction.rollback()
+      } catch (_: Exception) {}
+      logger.warn("[PromptLoader] Failed to restore original for '{}': {}", key, e.message)
+      throw e
+    }
+  }
+
+  /** Toggles the [isActive] flag for the given prompt [key]. Returns the new value. */
+  fun toggleActive(em: EntityManager, key: String): Boolean {
+    val current =
+        try {
+          val q =
+              em.createNativeQuery("SELECT is_active FROM codbi_ai_prompt WHERE prompt_key = :key")
+          q.setParameter("key", key)
+          val result = q.resultList
+          if (result.isEmpty()) return false
+          result[0]?.toString() == "true" || result[0]?.toString() == "1"
+        } catch (_: Exception) {
+          false
+        }
+    val newValue = !current
+    try {
+      em.transaction.begin()
+      val update =
+          em.createNativeQuery(
+              """UPDATE codbi_ai_prompt SET is_active = :active, updated_at = CURRENT_TIMESTAMP
+                 WHERE prompt_key = :key""")
+      update.setParameter("active", newValue)
+      update.setParameter("key", key)
+      update.executeUpdate()
+      em.transaction.commit()
+      logger.info("[PromptLoader] Toggled '{}' active={}", key, newValue)
+    } catch (e: Exception) {
+      try {
+        em.transaction.rollback()
+      } catch (_: Exception) {}
+      logger.warn("[PromptLoader] Failed to toggle '{}': {}", key, e.message)
+    }
+    return newValue
+  }
+
+  /** Imports a single prompt record (upserts it). */
+  fun importPrompt(
+      em: EntityManager,
+      key: String,
+      displayName: String?,
+      promptText: String,
+      prePrompt: String?,
+      postPrompt: String?
+  ) {
+    savePrompt(em, key, promptText, prePrompt, postPrompt, true, displayName)
+    logger.info("[PromptLoader] Imported prompt '{}'", key)
+  }
+
+  // endregion
 
   /** Loads the `index.json` manifest from the classpath. */
   private fun loadIndex(): List<Map<String, Any>>? {

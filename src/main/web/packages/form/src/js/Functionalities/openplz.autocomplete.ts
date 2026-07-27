@@ -84,14 +84,14 @@ export class OpenPLZ_Autocomplete {
     @DEFINED.PRE("targetdata :: focusonautocomplete")
     @TYPE.PRE(
       "string",
-      "targetdata :: country :: cssproposals :: msgnotknown :: dependent :: dependentplz :: dependentlocality :: focusonautocomplete :: allowempty :: allowedvalues",
+      "targetdata :: country :: cssproposals :: msgnotknown :: dependent :: dependentplz :: dependentlocality :: focusonautocomplete :: allowempty",
     )
+    @TYPE.PRE("string | object", "allowedvalues")
     @REGEX.PRE(/(de|en|at|li|ch)/i, "country")
     @REGEX.PRE(/^(localities|postalcodes|streets)$/i, "targetdata")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "dependentplz")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "dependentlocality")
     @REGEX.PRE(REGEX.stdExp.cssSelector, "focusonautocomplete")
-    @REGEX.PRE(/^(|[^,]+(,[^,]+)*)$/, "allowedvalues")
     toLoad: { [key: string]: string },
 
     @INSTANCE.PRE(HTMLInputElement, "Is it not an <input> that is tagged with this functionality?")
@@ -102,6 +102,12 @@ export class OpenPLZ_Autocomplete {
       toLoad.targetdata.toLowerCase() === "localities" || toLoad.targetdata.toLowerCase() === "streets"
         ? "name"
         : "postalCode";
+    // #region Normalize allowedvalues: the framework auto-converts data-cb-* attributes with
+    // commas to arrays. Re-join them into a CSV string for consistent processing.
+    if (toLoad.allowedvalues && Array.isArray(toLoad.allowedvalues)) {
+      toLoad.allowedvalues = (toLoad.allowedvalues as string[]).join(",");
+    }
+    // #endregion Normalize allowedvalues.
     // #region Remove entries that're not in LDAP.
     let userHasTyped = false;
     toProcess.addEventListener(

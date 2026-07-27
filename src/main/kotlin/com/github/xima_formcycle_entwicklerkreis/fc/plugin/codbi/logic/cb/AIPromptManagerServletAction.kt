@@ -52,7 +52,9 @@ class AIPromptManagerServletAction : IPluginServletAction {
         prePrompt: String?,
         postPrompt: String?,
         isActive: Boolean,
-        displayName: String?
+        displayName: String?,
+        prePromptActive: Boolean = true,
+        postPromptActive: Boolean = true
     )
 
     fun restoreOriginal(em: EntityManager, key: String)
@@ -65,7 +67,9 @@ class AIPromptManagerServletAction : IPluginServletAction {
         displayName: String?,
         promptText: String,
         prePrompt: String?,
-        postPrompt: String?
+        postPrompt: String?,
+        prePromptActive: Boolean = true,
+        postPromptActive: Boolean = true
     )
   }
 
@@ -86,8 +90,20 @@ class AIPromptManagerServletAction : IPluginServletAction {
         prePrompt: String?,
         postPrompt: String?,
         isActive: Boolean,
-        displayName: String?
-    ) = PromptLoader.savePrompt(em, key, promptText, prePrompt, postPrompt, isActive, displayName)
+        displayName: String?,
+        prePromptActive: Boolean,
+        postPromptActive: Boolean
+    ) =
+        PromptLoader.savePrompt(
+            em,
+            key,
+            promptText,
+            prePrompt,
+            postPrompt,
+            isActive,
+            displayName,
+            prePromptActive,
+            postPromptActive)
 
     override fun restoreOriginal(em: EntityManager, key: String) =
         PromptLoader.restoreOriginal(em, key)
@@ -100,8 +116,19 @@ class AIPromptManagerServletAction : IPluginServletAction {
         displayName: String?,
         promptText: String,
         prePrompt: String?,
-        postPrompt: String?
-    ) = PromptLoader.importPrompt(em, key, displayName, promptText, prePrompt, postPrompt)
+        postPrompt: String?,
+        prePromptActive: Boolean,
+        postPromptActive: Boolean
+    ) =
+        PromptLoader.importPrompt(
+            em,
+            key,
+            displayName,
+            promptText,
+            prePrompt,
+            postPrompt,
+            prePromptActive,
+            postPromptActive)
   }
 
   private object CompactApi : LoaderApi {
@@ -114,10 +141,20 @@ class AIPromptManagerServletAction : IPluginServletAction {
         prePrompt: String?,
         postPrompt: String?,
         isActive: Boolean,
-        displayName: String?
+        displayName: String?,
+        prePromptActive: Boolean,
+        postPromptActive: Boolean
     ) =
         CompactPromptLoader.savePrompt(
-            em, key, promptText, prePrompt, postPrompt, isActive, displayName)
+            em,
+            key,
+            promptText,
+            prePrompt,
+            postPrompt,
+            isActive,
+            displayName,
+            prePromptActive,
+            postPromptActive)
 
     override fun restoreOriginal(em: EntityManager, key: String) =
         CompactPromptLoader.restoreOriginal(em, key)
@@ -131,8 +168,19 @@ class AIPromptManagerServletAction : IPluginServletAction {
         displayName: String?,
         promptText: String,
         prePrompt: String?,
-        postPrompt: String?
-    ) = CompactPromptLoader.importPrompt(em, key, displayName, promptText, prePrompt, postPrompt)
+        postPrompt: String?,
+        prePromptActive: Boolean,
+        postPromptActive: Boolean
+    ) =
+        CompactPromptLoader.importPrompt(
+            em,
+            key,
+            displayName,
+            promptText,
+            prePrompt,
+            postPrompt,
+            prePromptActive,
+            postPromptActive)
   }
 
   // endregion
@@ -175,7 +223,18 @@ class AIPromptManagerServletAction : IPluginServletAction {
       val postPrompt = obj.get("post_prompt")?.asString?.ifBlank { null }
       val isActive = obj.get("is_active")?.asBoolean ?: true
       val displayName = obj.get("display_name")?.asString
-      loader.savePrompt(em, key, promptText, prePrompt, postPrompt, isActive, displayName)
+      val prePromptActive = obj.get("pre_prompt_active")?.asBoolean ?: true
+      val postPromptActive = obj.get("post_prompt_active")?.asBoolean ?: true
+      loader.savePrompt(
+          em,
+          key,
+          promptText,
+          prePrompt,
+          postPrompt,
+          isActive,
+          displayName,
+          prePromptActive,
+          postPromptActive)
       return jsonResponse("""{"status":"ok"}""")
     } catch (e: Exception) {
       logger.warn("[AIPromptManager] SaveOne failed", e)
@@ -310,7 +369,17 @@ class AIPromptManagerServletAction : IPluginServletAction {
       val prePrompt = obj.get("pre_prompt")?.asString?.ifBlank { null }
       val postPrompt = obj.get("post_prompt")?.asString?.ifBlank { null }
       val displayName = obj.get("display_name")?.asString
-      loader.importPrompt(em, key, displayName, promptText, prePrompt, postPrompt)
+      val prePromptActive = obj.get("pre_prompt_active")?.asBoolean ?: true
+      val postPromptActive = obj.get("post_prompt_active")?.asBoolean ?: true
+      loader.importPrompt(
+          em,
+          key,
+          displayName,
+          promptText,
+          prePrompt,
+          postPrompt,
+          prePromptActive,
+          postPromptActive)
       return jsonResponse("""{"status":"ok"}""")
     } catch (e: Exception) {
       logger.warn("[AIPromptManager] Import failed", e)

@@ -36,4 +36,24 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="codbi-compact-prompt-2" author="codbi">
+        <comment>
+          Add pre_prompt_active and post_prompt_active columns to allow
+          disabling pre/post prompts independently while keeping the
+          main prompt active.
+        </comment>
+        <addColumn tableName="codbi_compact_prompt">
+            <column name="pre_prompt_active" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="post_prompt_active" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_compact_prompt" columnName="pre_prompt_active"/>
+            <dropColumn tableName="codbi_compact_prompt" columnName="post_prompt_active"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

@@ -94,7 +94,9 @@ internal object CompactPromptLoader {
       val originalText: String?,
       val prePrompt: String?,
       val postPrompt: String?,
-      val isActive: Boolean
+      val isActive: Boolean,
+      val prePromptActive: Boolean = true,
+      val postPromptActive: Boolean = true
   )
 
   fun listAllPrompts(em: EntityManager): List<CompactRecord> {
@@ -108,9 +110,20 @@ internal object CompactPromptLoader {
       prePrompt: String?,
       postPrompt: String?,
       isActive: Boolean,
-      displayName: String?
+      displayName: String?,
+      prePromptActive: Boolean = true,
+      postPromptActive: Boolean = true
   ) {
-    savePromptInternal(em, key, promptText, prePrompt, postPrompt, isActive, displayName)
+    savePromptInternal(
+        em,
+        key,
+        promptText,
+        prePrompt,
+        postPrompt,
+        isActive,
+        displayName,
+        prePromptActive,
+        postPromptActive)
   }
 
   fun restoreOriginal(em: EntityManager, key: String) {
@@ -127,9 +140,20 @@ internal object CompactPromptLoader {
       displayName: String?,
       promptText: String,
       prePrompt: String?,
-      postPrompt: String?
+      postPrompt: String?,
+      prePromptActive: Boolean = true,
+      postPromptActive: Boolean = true
   ) {
-    savePrompt(em, key, promptText, prePrompt, postPrompt, true, displayName)
+    savePrompt(
+        em,
+        key,
+        promptText,
+        prePrompt,
+        postPrompt,
+        true,
+        displayName,
+        prePromptActive,
+        postPromptActive)
   }
 
   // endregion
@@ -185,13 +209,48 @@ internal object CompactPromptLoader {
   }
 
   private fun upsertPrompt(em: EntityManager, key: String, text: String, version: String) {
-    em.createNativeQuery("DELETE FROM $TABLE WHERE prompt_key = :key")
-        .setParameter("key", key)
-        .executeUpdate()
+    // Check if prompt exists and whether user has modified it
+    val existing =
+        try {
+          val r =
+              em.createNativeQuery(
+                      "SELECT prompt_text, original_text FROM $TABLE WHERE prompt_key = :key")
+                  .setParameter("key", key)
+                  .resultList
+          if (r.isEmpty()) null
+          else
+              (r[0] as? Array<*>)?.let { row ->
+                if (row.size >= 2) Pair(resolveClob(row[0]), resolveClob(row[1])) else null
+              }
+        } catch (_: Exception) {
+          null
+        }
+
+    if (existing != null) {
+      val (dbText, dbOriginal) = existing
+      if (dbText != null && dbOriginal != null && dbText != dbOriginal) {
+        logger.info(
+            "[CompactPromptLoader] Prompt '{}' was modified by user — preserving edits", key)
+        return
+      }
+      em.createNativeQuery(
+              "UPDATE $TABLE SET prompt_text = :text, original_text = :orig, prompt_version = :ver, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
+          .apply {
+            setParameter("text", text)
+            setParameter("orig", text)
+            setParameter("ver", version)
+            setParameter("key", key)
+          }
+          .executeUpdate()
+      logger.info("[CompactPromptLoader] Updated prompt '{}' from seed file", key)
+      return
+    }
+
+    // New prompt — insert
     val cat = key.substringBefore(".", key)
     val dname = deriveDisplayName(key)
     em.createNativeQuery(
-            "INSERT INTO $TABLE (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name) VALUES (:key, :cat, :text, :ver, :orig, :active, :dname)")
+            "INSERT INTO $TABLE (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name, pre_prompt_active, post_prompt_active) VALUES (:key, :cat, :text, :ver, :orig, :active, :dname, :preAct, :postAct)")
         .apply {
           setParameter("key", key)
           setParameter("cat", cat)
@@ -199,9 +258,12 @@ internal object CompactPromptLoader {
           setParameter("ver", version)
           setParameter("orig", text)
           setParameter("active", true)
+          setParameter("preAct", true)
+          setParameter("postAct", true)
           setParameter("dname", dname)
         }
         .executeUpdate()
+    logger.info("[CompactPromptLoader] Inserted new prompt '{}'", key)
   }
 
   private fun deriveDisplayName(key: String): String =
@@ -256,11 +318,11 @@ internal object CompactPromptLoader {
     return try {
       val q =
           em.createNativeQuery(
-              "SELECT prompt_key, display_name, category, prompt_text, original_text, pre_prompt, post_prompt, is_active FROM $TABLE WHERE prompt_key != :skip ORDER BY category, prompt_key")
+              "SELECT prompt_key, display_name, category, prompt_text, original_text, pre_prompt, post_prompt, is_active, pre_prompt_active, post_prompt_active FROM $TABLE WHERE prompt_key != :skip ORDER BY category, prompt_key")
       q.setParameter("skip", SEED_VERSION_KEY)
       @Suppress("UNCHECKED_CAST")
       (q.resultList as? List<Array<Any>>)?.mapNotNull { row ->
-        if (row.size < 8) return@mapNotNull null
+        if (row.size < 10) return@mapNotNull null
         CompactRecord(
             promptKey = row[0]?.toString() ?: return@mapNotNull null,
             displayName = row[1]?.toString(),
@@ -269,7 +331,9 @@ internal object CompactPromptLoader {
             originalText = resolveClob(row[4]),
             prePrompt = resolveClob(row[5]),
             postPrompt = resolveClob(row[6]),
-            isActive = row[7]?.toString() == "true" || row[7]?.toString() == "1")
+            isActive = row[7]?.toString() == "true" || row[7]?.toString() == "1",
+            prePromptActive = row[8]?.toString() == "true" || row[8]?.toString() == "1",
+            postPromptActive = row[9]?.toString() == "true" || row[9]?.toString() == "1")
       } ?: emptyList()
     } catch (e: Exception) {
       logger.warn("[CompactPromptLoader] Failed to list: {}", e.message)
@@ -284,21 +348,25 @@ internal object CompactPromptLoader {
       prePrompt: String?,
       postPrompt: String?,
       isActive: Boolean,
-      displayName: String?
+      displayName: String?,
+      prePromptActive: Boolean = true,
+      postPromptActive: Boolean = true
   ) {
     val ver = System.currentTimeMillis().toString()
     try {
       em.transaction.begin()
       val sql =
           if (promptText != null)
-              "UPDATE $TABLE SET prompt_text = :text, pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
+              "UPDATE $TABLE SET prompt_text = :text, pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
           else
-              "UPDATE $TABLE SET pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
+              "UPDATE $TABLE SET pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
       val u = em.createNativeQuery(sql)
       if (promptText != null) u.setParameter("text", promptText)
       u.setParameter("pre", prePrompt)
           .setParameter("post", postPrompt)
           .setParameter("active", isActive)
+          .setParameter("preAct", prePromptActive)
+          .setParameter("postAct", postPromptActive)
           .setParameter("dname", displayName)
           .setParameter("ver", ver)
           .setParameter("key", key)

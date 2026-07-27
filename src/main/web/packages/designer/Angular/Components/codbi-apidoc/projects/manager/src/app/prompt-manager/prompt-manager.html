@@ -4,11 +4,16 @@
     [modal]="true"
     [draggable]="true"
     [resizable]="true"
-    header="CodBi &#x2014; Prompt Manager"
     [style]="{ width: '85vw', maxWidth: '1200px', maxHeight: '85vh' }"
     [closeOnEscape]="true"
     [baseZIndex]="2100"
     styleClass="cb-prompt-manager-dialog">
+    <ng-template pTemplate="header">
+        <div class="cb-pm-dialog-header">
+            <img class="cb-pm-logo" [src]="logoUrl" alt="CodBi" />
+            <span class="cb-pm-title">Prompt Manager</span>
+        </div>
+    </ng-template>
 
     <div class="cb-pm-layout" #pmLayout>
         <!-- Tree View (left panel) -->
@@ -28,16 +33,33 @@
                 </button>
                 <span class="cb-pm-filter-sep"></span>
                 <button type="button" class="cb-pm-filter-btn"
+                    (click)="importAll()"
+                    title="Import prompts from JSON file">
+                    Import All
+                </button>
+                <button type="button" class="cb-pm-filter-btn"
+                    (click)="exportAll()"
+                    title="Export all prompts as JSON">
+                    <span class="pi pi-download" style="font-size:0.85em"></span> Export All
+                </button>
+                <span class="cb-pm-filter-sep"></span>
+                <button type="button" class="cb-pm-filter-btn"
                     [class.cb-pm-filter-btn--active]="showAllMode"
-                    (click)="showAllMode = true; toggleFilterMode()"
+                    (click)="showAllMode = true; showInactiveOnly = false; toggleFilterMode()"
                     title="Show all prompts">
                     All
                 </button>
                 <button type="button" class="cb-pm-filter-btn"
-                    [class.cb-pm-filter-btn--active]="!showAllMode"
-                    (click)="showAllMode = false; toggleFilterMode()"
+                    [class.cb-pm-filter-btn--active]="!showAllMode && !showInactiveOnly"
+                    (click)="showAllMode = false; showInactiveOnly = false; toggleFilterMode()"
                     title="Show only active prompts">
                     Active
+                </button>
+                <button type="button" class="cb-pm-filter-btn"
+                    [class.cb-pm-filter-btn--active]="showInactiveOnly"
+                    (click)="showAllMode = false; showInactiveOnly = true; toggleFilterMode()"
+                    title="Show only inactive prompts">
+                    InActive
                 </button>
             </div>
             <p-tree
@@ -47,12 +69,27 @@
                 [filter]="true"
                 filterPlaceholder="Filter prompts..."
                 styleClass="cb-pm-tree">
-                <ng-template let-node pTemplate="default">
+                <ng-template let-node pTemplate="item">
                     <span class="cb-pm-tree-node-label">
-                        @if (isTreeNodeInactive(node)) {
-                            <span class="cb-pm-tree-inactive-icon" title="Inactive">&#x2716;</span>
-                        }
-                        {{ node.label }}
+                        <span class="cb-pm-tree-inactive-icon" *ngIf="isTreeNodeInactive(node)" title="Inactive">&#x2716;</span>
+                        <span class="cb-pm-tree-partial-icon" *ngIf="isTreeNodePartiallyInactive(node)" title="Pre/Post prompt deactivated">&#x26A0;</span>
+                        <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
+                    </span>
+                </ng-template>
+                <ng-template let-node pTemplate="category">
+                    <span class="cb-pm-tree-node-label">
+                        <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
+                        <button type="button" class="cb-pm-tree-node-export-btn"
+                            (click)="exportCategory(node.data); $event.stopPropagation()"
+                            title="Export this category">&#x2913;</button>
+                    </span>
+                </ng-template>
+                <ng-template let-node pTemplate="subcategory">
+                    <span class="cb-pm-tree-node-label">
+                        <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
+                        <button type="button" class="cb-pm-tree-node-export-btn"
+                            (click)="exportCategory(node.data); $event.stopPropagation()"
+                            title="Export this category">&#x2913;</button>
                     </span>
                 </ng-template>
             </p-tree>
@@ -63,84 +100,125 @@
 
         <!-- Card View (right panel) — only shown for item nodes -->
         <div class="cb-pm-card-panel">
-            @if (loading && !activeRecord) {
-                <div class="cb-pm-loading">Loading prompts...</div>
-            }
+            <div class="cb-pm-loading" *ngIf="loading && !activeRecord">Loading prompts...</div>
 
-            @if (errorText) {
-                <p-message severity="error" [text]="errorText" styleClass="cb-pm-message" />
-            }
+            <p-message *ngIf="errorText" severity="error" [text]="errorText" styleClass="cb-pm-message" />
+            <p-message *ngIf="successText" severity="success" [text]="successText" styleClass="cb-pm-message" />
 
-            @if (successText) {
-                <p-message severity="success" [text]="successText" styleClass="cb-pm-message" />
-            }
+            <div *ngIf="activeRecord && !loading" class="cb-pm-card" [class.cb-pm-card--inactive]="!activeRecord.isActive">
 
-            @if (activeRecord && !loading) {
-                <div class="cb-pm-card" [class.cb-pm-card--inactive]="!activeRecord.isActive">
+                <!-- Color indicator (left border) — double width, click to toggle active -->
+                <div
+                    class="cb-pm-card-indicator"
+                    [class.cb-pm-card-indicator--active]="activeRecord.isActive"
+                    [class.cb-pm-card-indicator--inactive]="!activeRecord.isActive"
+                    (click)="toggleActive()"
+                    [title]="activeRecord.isActive ? 'Active — click to deactivate' : 'Inactive — click to activate'">
+                </div>
 
-                    <!-- Color indicator (left border) — double width, click to toggle active -->
-                    <div
-                        class="cb-pm-card-indicator"
-                        [class.cb-pm-card-indicator--active]="activeRecord.isActive"
-                        [class.cb-pm-card-indicator--inactive]="!activeRecord.isActive"
-                        (click)="toggleActive()"
-                        [title]="activeRecord.isActive ? 'Active — click to deactivate' : 'Inactive — click to activate'">
+                <div class="cb-pm-card-body">
+                    <!-- Header -->
+                    <div class="cb-pm-card-header">
+                        <span class="cb-pm-display-name">{{ editDisplayName }}</span>
                     </div>
 
-                    <div class="cb-pm-card-body">
-                        <!-- Header -->
-                        <div class="cb-pm-card-header">
-                            <span class="cb-pm-display-name">{{ editDisplayName }}</span>
-                            <span class="cb-pm-key-badge">{{ activeRecord.promptKey }}</span>
-                        </div>
-
-                        <!-- Editable content -->
-                        <div class="cb-pm-card-editor">
-                            <label class="cb-pm-field-label">Pre-Prompt (added before the main prompt)</label>
-                            <textarea
-                                pTextarea
-                                [(ngModel)]="editPrePrompt"
-                                rows="2"
-                                class="cb-pm-textarea cb-pm-textarea--small"
-                                placeholder="Optional text prepended before the main prompt...">
-                            </textarea>
-
-                            <label class="cb-pm-field-label">Prompt</label>
-                            <textarea
-                                pTextarea
-                                [(ngModel)]="editPromptText"
-                                rows="6"
-                                class="cb-pm-textarea"
-                                placeholder="Prompt content...">
-                            </textarea>
-
-                            <label class="cb-pm-field-label">Post-Prompt (added after the main prompt)</label>
-                            <textarea
-                                pTextarea
-                                [(ngModel)]="editPostPrompt"
-                                rows="2"
-                                class="cb-pm-textarea cb-pm-textarea--small"
-                                placeholder="Optional text appended after the main prompt...">
-                            </textarea>
-
-                            <div class="cb-pm-actions">
-                                <p-button label="Save" icon="pi pi-check" (onClick)="save()"
-                                    [disabled]="loading" severity="primary" />
-                                <p-button label="Restore Original" icon="pi pi-refresh" (onClick)="restoreOriginal()"
-                                    [disabled]="loading" severity="secondary" [outlined]="true" />
-                                <p-button label="Export" icon="pi pi-download" (onClick)="exportPrompt()"
-                                    severity="secondary" [outlined]="true" />
-                                <p-button label="Import" icon="pi pi-upload" (onClick)="importPrompt()"
-                                    severity="secondary" [outlined]="true" />
+                    <!-- Editable content -->
+                    <div class="cb-pm-card-editor">
+                        <div class="cb-pm-field-row">
+                            <label class="cb-pm-field-label">Pre-Prompt</label>
+                            <div class="cb-pm-field-actions">
+                                <button type="button" class="cb-pm-resize-btn"
+                                    (click)="autoResizePre()"
+                                    title="Fit to content">&#x21C5;</button>
+                                <button type="button" class="cb-pm-toggle-btn"
+                                    [class.cb-pm-toggle-btn--on]="editPrePromptActive"
+                                    [class.cb-pm-toggle-btn--off]="!editPrePromptActive"
+                                    (click)="togglePrePromptActive()"
+                                    [title]="editPrePromptActive ? 'Pre-Prompt is active — click to deactivate' : 'Pre-Prompt is inactive — click to activate'">
+                                    {{ editPrePromptActive ? 'ON' : 'OFF' }}
+                                </button>
                             </div>
+                        </div>
+                        <textarea
+                            #preTextarea
+                            pTextarea
+                            [(ngModel)]="editPrePrompt"
+                            rows="2"
+                            class="cb-pm-textarea cb-pm-textarea--small"
+                            placeholder="Optional text prepended before the main prompt..."
+                            (input)="autoGrow($event)">
+                        </textarea>
+
+                        <div class="cb-pm-field-row">
+                            <label class="cb-pm-field-label">Prompt</label>
+                            <button type="button" class="cb-pm-resize-btn"
+                                (click)="autoResizePrompt()"
+                                title="Fit to content">&#x21C5;</button>
+                        </div>
+                        <textarea
+                            #promptTextarea
+                            pTextarea
+                            [(ngModel)]="editPromptText"
+                            rows="6"
+                            class="cb-pm-textarea"
+                            placeholder="Prompt content..."
+                            (input)="autoGrow($event)">
+                        </textarea>
+
+                        <div class="cb-pm-field-row">
+                            <label class="cb-pm-field-label">Post-Prompt</label>
+                            <div class="cb-pm-field-actions">
+                                <button type="button" class="cb-pm-resize-btn"
+                                    (click)="autoResizePost()"
+                                    title="Fit to content">&#x21C5;</button>
+                                <button type="button" class="cb-pm-toggle-btn"
+                                    [class.cb-pm-toggle-btn--on]="editPostPromptActive"
+                                    [class.cb-pm-toggle-btn--off]="!editPostPromptActive"
+                                    (click)="togglePostPromptActive()"
+                                    [title]="editPostPromptActive ? 'Post-Prompt is active — click to deactivate' : 'Post-Prompt is inactive — click to activate'">
+                                    {{ editPostPromptActive ? 'ON' : 'OFF' }}
+                                </button>
+                            </div>
+                        </div>
+                        <textarea
+                            #postTextarea
+                            pTextarea
+                            [(ngModel)]="editPostPrompt"
+                            rows="2"
+                            class="cb-pm-textarea cb-pm-textarea--small"
+                            placeholder="Optional text appended after the main prompt..."
+                            (input)="autoGrow($event)">
+                        </textarea>
+
+                        <div class="cb-pm-actions">
+                            <p-button label="Save" icon="pi pi-check" (onClick)="save()"
+                                [disabled]="loading" severity="primary" />
+                            <p-button label="Restore Original" icon="pi pi-refresh" (onClick)="restoreOriginal()"
+                                [disabled]="loading" severity="secondary" [outlined]="true" />
+                            <p-button label="Export" icon="pi pi-download" (onClick)="exportPrompt()"
+                                severity="secondary" [outlined]="true" />
+                            <p-button label="Import" icon="pi pi-upload" (onClick)="importPrompt()"
+                                severity="secondary" [outlined]="true" />
                         </div>
                     </div>
                 </div>
-            }
+            </div>
 
-            @if (!activeRecord && !loading) {
-                <div class="cb-pm-loading">Select a prompt from the tree to edit.</div>
-            }
+            <div *ngIf="!activeRecord && !loading" class="cb-pm-category-empty">
+                <div class="cb-pm-loading">
+                    <ng-container *ngIf="selectedKey && isCategoryKey(selectedKey)">
+                        <span>Select a prompt or </span>
+                        <button type="button" class="cb-pm-filter-btn cb-pm-filter-btn--active"
+                            (click)="exportCategory(selectedKey)"
+                            title="Export all prompts in this category">
+                            Export Category
+                        </button>
+                    </ng-container>
+                    <ng-container *ngIf="!selectedKey || !isCategoryKey(selectedKey)">
+                        <span>Select a prompt from the tree to edit.</span>
+                    </ng-container>
+                </div>
+            </div>
         </div>
     </div>
 </p-dialog>

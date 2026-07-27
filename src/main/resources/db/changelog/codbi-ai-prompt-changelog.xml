@@ -55,4 +55,25 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="codbi-ai-prompt-3" author="codbi">
+        <comment>
+          Add pre_prompt_active and post_prompt_active columns to allow
+          disabling pre/post prompts independently while keeping the
+          main prompt active. When pre/post is deactivated, the tree
+          shows a yellow indicator instead of red.
+        </comment>
+        <addColumn tableName="codbi_ai_prompt">
+            <column name="pre_prompt_active" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="post_prompt_active" type="BOOLEAN" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_ai_prompt" columnName="pre_prompt_active"/>
+            <dropColumn tableName="codbi_ai_prompt" columnName="post_prompt_active"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

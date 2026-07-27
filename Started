@@ -1,0 +1,12 @@
+[main b430b9e4] FA  implementing DB Prompt Browser.
+ 19 files changed, 2802 insertions(+), 36 deletions(-)
+ create mode 100644 Started
+ create mode 100644 plans/prompt-manager-plan.md
+ create mode 100644 plans/prompt-manager-v2-plan.md
+ create mode 100644 plans/prompt-manager-v3-plan.md
+ create mode 100644 src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AIPromptManagerServletAction.kt
+ create mode 100644 src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/CompactPromptLoader.kt
+ create mode 100644 src/main/resources/db/changelog/codbi-compact-prompt-changelog.xml
+ create mode 100644 src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/prompt-manager/prompt-manager.html
+ create mode 100644 src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/prompt-manager/prompt-manager.scss
+ create mode 100644 src/main/web/packages/designer/Angular/Components/codbi-apidoc/projects/manager/src/app/prompt-manager/prompt-manager.ts

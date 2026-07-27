@@ -147,13 +147,17 @@ internal object PromptLoader {
     // On hot deploy: attempt bulk seed so ALL prompts are seeded, not just this one key
     attemptBulkSeed(em)
 
-    // First try: load from DB (only active prompts — pre_prompt + prompt_text + post_prompt)
+    // First try: load from DB (only active prompts — conditionally includes pre/post based on their
+    // active flag)
     val dbResult =
         try {
           val query =
               em.createNativeQuery(
                   // language=H2
-                  """SELECT COALESCE(pre_prompt, '') || prompt_text || COALESCE(post_prompt, '')
+                  """SELECT
+                        CASE WHEN COALESCE(pre_prompt_active, TRUE) THEN COALESCE(pre_prompt, '') ELSE '' END
+                        || prompt_text ||
+                        CASE WHEN COALESCE(post_prompt_active, TRUE) THEN COALESCE(post_prompt, '') ELSE '' END
                      FROM codbi_ai_prompt
                      WHERE prompt_key = :key AND is_active = TRUE""")
           query.setParameter("key", key)
@@ -250,7 +254,9 @@ internal object PromptLoader {
           em.createNativeQuery(
               // language=H2
               """SELECT prompt_key,
-                        COALESCE(pre_prompt, '') || prompt_text || COALESCE(post_prompt, '')
+                        CASE WHEN COALESCE(pre_prompt_active, TRUE) THEN COALESCE(pre_prompt, '') ELSE '' END
+                        || prompt_text ||
+                        CASE WHEN COALESCE(post_prompt_active, TRUE) THEN COALESCE(post_prompt, '') ELSE '' END
                  FROM codbi_ai_prompt
                  WHERE prompt_key LIKE :prefix AND is_active = TRUE
                  ORDER BY prompt_key""")
@@ -378,28 +384,76 @@ internal object PromptLoader {
     }
   }
 
-  /** Upserts a prompt row. Uses vendor-neutral merge strategy (DELETE + INSERT). */
+  /**
+   * Seeds a prompt row preserving user edits.
+   * - If the prompt does NOT exist in the DB: insert it with the new [text].
+   * - If the prompt EXISTS and the user has NOT modified it (prompt_text == original_text): update
+   *   it with the new [text] from the .md file.
+   * - If the prompt EXISTS and the user HAS modified it (prompt_text != original_text): skip it —
+   *   preserve the user's edits.
+   */
   private fun upsertPrompt(em: EntityManager, key: String, text: String, version: String) {
-    val delete = em.createNativeQuery("DELETE FROM codbi_ai_prompt WHERE prompt_key = :key")
-    delete.setParameter("key", key)
-    delete.executeUpdate()
+    // Check if prompt already exists and whether the user has modified it
+    val existing =
+        try {
+          val q =
+              em.createNativeQuery(
+                  "SELECT prompt_text, original_text FROM codbi_ai_prompt WHERE prompt_key = :key")
+          q.setParameter("key", key)
+          val result = q.resultList
+          if (result.isEmpty()) null
+          else
+              (result[0] as? Array<*>)?.let { row ->
+                if (row.size >= 2) Pair(resolveClob(row[0]), resolveClob(row[1])) else null
+              }
+        } catch (_: Exception) {
+          null
+        }
 
+    if (existing != null) {
+      val (dbText, dbOriginal) = existing
+      // User has modified this prompt — skip it to preserve edits
+      if (dbText != null && dbOriginal != null && dbText != dbOriginal) {
+        logger.info("[PromptLoader] Prompt '{}' was modified by user — preserving edits", key)
+        return
+      }
+      // Not modified — update with new content from .md file
+      val update =
+          em.createNativeQuery(
+              """UPDATE codbi_ai_prompt
+             SET prompt_text = :text, original_text = :orig, prompt_version = :ver,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE prompt_key = :key""")
+      update.setParameter("text", text)
+      update.setParameter("orig", text)
+      update.setParameter("ver", version)
+      update.setParameter("key", key)
+      update.executeUpdate()
+      logger.info("[PromptLoader] Updated prompt '{}' from seed file", key)
+      return
+    }
+
+    // New prompt — insert
     val category = key.substringBefore(".", key)
     val displayName = deriveDisplayName(key)
     val insert =
         em.createNativeQuery(
             // language=H2
             """INSERT INTO codbi_ai_prompt
-               (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name)
-               VALUES (:key, :cat, :text, :ver, :orig, :active, :dname)""")
+               (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name,
+                pre_prompt_active, post_prompt_active)
+               VALUES (:key, :cat, :text, :ver, :orig, :active, :dname, :preAct, :postAct)""")
     insert.setParameter("key", key)
     insert.setParameter("cat", category)
     insert.setParameter("text", text)
     insert.setParameter("ver", version)
     insert.setParameter("orig", text)
     insert.setParameter("active", true)
+    insert.setParameter("preAct", true)
+    insert.setParameter("postAct", true)
     insert.setParameter("dname", displayName)
     insert.executeUpdate()
+    logger.info("[PromptLoader] Inserted new prompt '{}'", key)
   }
 
   /**
@@ -516,7 +570,9 @@ internal object PromptLoader {
       val originalText: String?,
       val prePrompt: String?,
       val postPrompt: String?,
-      val isActive: Boolean
+      val isActive: Boolean,
+      val prePromptActive: Boolean = true,
+      val postPromptActive: Boolean = true
   )
 
   /** Returns all prompt records for the Prompt Manager UI. Never returns `null`. */
@@ -526,7 +582,8 @@ internal object PromptLoader {
           em.createNativeQuery(
               // language=H2
               """SELECT prompt_key, display_name, category, prompt_text, original_text,
-                        pre_prompt, post_prompt, is_active
+                        pre_prompt, post_prompt, is_active,
+                        pre_prompt_active, post_prompt_active
                  FROM codbi_ai_prompt
                  WHERE prompt_key != :skipKey
                  ORDER BY category, prompt_key""")
@@ -534,7 +591,7 @@ internal object PromptLoader {
       @Suppress("UNCHECKED_CAST")
       val rows = query.resultList as? List<Array<Any>> ?: return emptyList()
       rows.mapNotNull { row ->
-        if (row.size < 8) return@mapNotNull null
+        if (row.size < 10) return@mapNotNull null
         PromptRecord(
             promptKey = row[0]?.toString() ?: return@mapNotNull null,
             displayName = row[1]?.toString(),
@@ -543,7 +600,9 @@ internal object PromptLoader {
             originalText = resolveClob(row[4]),
             prePrompt = resolveClob(row[5]),
             postPrompt = resolveClob(row[6]),
-            isActive = row[7]?.toString() == "true" || row[7]?.toString() == "1")
+            isActive = row[7]?.toString() == "true" || row[7]?.toString() == "1",
+            prePromptActive = row[8]?.toString() == "true" || row[8]?.toString() == "1",
+            postPromptActive = row[9]?.toString() == "true" || row[9]?.toString() == "1")
       }
     } catch (e: Exception) {
       logger.warn("[PromptLoader] Failed to list all prompts: {}", e.message)
@@ -562,7 +621,9 @@ internal object PromptLoader {
       prePrompt: String?,
       postPrompt: String?,
       isActive: Boolean,
-      displayName: String?
+      displayName: String?,
+      prePromptActive: Boolean = true,
+      postPromptActive: Boolean = true
   ) {
     val version = System.currentTimeMillis().toString()
     try {
@@ -575,12 +636,15 @@ internal object PromptLoader {
                 """UPDATE codbi_ai_prompt
                    SET prompt_text = :text, pre_prompt = :pre, post_prompt = :post,
                        is_active = :active, display_name = :dname, prompt_version = :ver,
+                       pre_prompt_active = :preAct, post_prompt_active = :postAct,
                        updated_at = CURRENT_TIMESTAMP
                    WHERE prompt_key = :key""")
         update.setParameter("text", promptText)
         update.setParameter("pre", prePrompt)
         update.setParameter("post", postPrompt)
         update.setParameter("active", isActive)
+        update.setParameter("preAct", prePromptActive)
+        update.setParameter("postAct", postPromptActive)
         update.setParameter("dname", displayName)
         update.setParameter("ver", version)
         update.setParameter("key", key)
@@ -592,11 +656,14 @@ internal object PromptLoader {
                 """UPDATE codbi_ai_prompt
                    SET pre_prompt = :pre, post_prompt = :post,
                        is_active = :active, display_name = :dname, prompt_version = :ver,
+                       pre_prompt_active = :preAct, post_prompt_active = :postAct,
                        updated_at = CURRENT_TIMESTAMP
                    WHERE prompt_key = :key""")
         update.setParameter("pre", prePrompt)
         update.setParameter("post", postPrompt)
         update.setParameter("active", isActive)
+        update.setParameter("preAct", prePromptActive)
+        update.setParameter("postAct", postPromptActive)
         update.setParameter("dname", displayName)
         update.setParameter("ver", version)
         update.setParameter("key", key)
@@ -604,7 +671,12 @@ internal object PromptLoader {
       }
 
       em.transaction.commit()
-      logger.info("[PromptLoader] Saved prompt '{}' (active={})", key, isActive)
+      logger.info(
+          "[PromptLoader] Saved prompt '{}' (active={}, preActive={}, postActive={})",
+          key,
+          isActive,
+          prePromptActive,
+          postPromptActive)
     } catch (e: Exception) {
       try {
         em.transaction.rollback()
@@ -684,9 +756,20 @@ internal object PromptLoader {
       displayName: String?,
       promptText: String,
       prePrompt: String?,
-      postPrompt: String?
+      postPrompt: String?,
+      prePromptActive: Boolean = true,
+      postPromptActive: Boolean = true
   ) {
-    savePrompt(em, key, promptText, prePrompt, postPrompt, true, displayName)
+    savePrompt(
+        em,
+        key,
+        promptText,
+        prePrompt,
+        postPrompt,
+        true,
+        displayName,
+        prePromptActive,
+        postPromptActive)
     logger.info("[PromptLoader] Imported prompt '{}'", key)
   }
 

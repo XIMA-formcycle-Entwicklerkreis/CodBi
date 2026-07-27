@@ -1,4 +1,5 @@
 // #region Imports
+import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -27,6 +28,8 @@ interface PromptRecord {
   prePrompt: string | null;
   postPrompt: string | null;
   isActive: boolean;
+  prePromptActive: boolean;
+  postPromptActive: boolean;
 }
 
 interface PromptExport {
@@ -47,7 +50,7 @@ interface PromptExport {
 @Component({
   selector: "cb-prompt-manager",
   standalone: true,
-  imports: [FormsModule, Button, Dialog, Message, TreeModule, Textarea],
+  imports: [CommonModule, FormsModule, Button, Dialog, Message, TreeModule, Textarea],
   templateUrl: "./prompt-manager.html",
   styleUrl: "./prompt-manager.scss",
   encapsulation: ViewEncapsulation.None,
@@ -56,6 +59,8 @@ interface PromptExport {
 export class PromptManager implements OnInit, OnDestroy {
   private readonly baseUrl = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   private readonly servletUrl = `${this.baseUrl}plugin?name=CodBi_AIPromptManager`;
+  readonly logoUrl =
+    `${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg`;
 
   // #region State
   visible = false;
@@ -81,11 +86,22 @@ export class PromptManager implements OnInit, OnDestroy {
   editPromptText = "";
   editPostPrompt = "";
 
+  /** Local toggle states for pre/post prompt activity (independent of main isActive). */
+  editPrePromptActive = true;
+  editPostPromptActive = true;
+
   /** Filter mode: true = show all items, false = active only. */
   showAllMode = true;
 
+  /** Filter mode: true = show only inactive items. */
+  showInactiveOnly = false;
+
   /** View mode: "detailed" (codbi_ai_prompt) or "condensed" (codbi_compact_prompt). */
   viewMode: "detailed" | "condensed" = "detailed";
+
+  /** Storage key prefix for persisting pre/post active states in localStorage. */
+  private static readonly LS_PRE = "cb_pm_pre_";
+  private static readonly LS_POST = "cb_pm_post_";
   // #endregion
 
   private readonly openHandler = (): void => this.open();
@@ -130,7 +146,22 @@ export class PromptManager implements OnInit, OnDestroy {
       })
       .subscribe({
         next: (res) => {
-          this.allPrompts = res.prompts ?? [];
+          // #region Restore pre/post active states — prefer DB (from backend), fall back to localStorage
+          const incoming = res.prompts ?? [];
+          for (const p of incoming) {
+            const fromDb = p.prePromptActive !== undefined && p.prePromptActive !== null;
+            if (!fromDb) {
+              const lsPre = localStorage.getItem(`${PromptManager.LS_PRE}${p.promptKey}`);
+              p.prePromptActive = lsPre !== null ? lsPre === "true" : true;
+            }
+            const fromDbPost = p.postPromptActive !== undefined && p.postPromptActive !== null;
+            if (!fromDbPost) {
+              const lsPost = localStorage.getItem(`${PromptManager.LS_POST}${p.promptKey}`);
+              p.postPromptActive = lsPost !== null ? lsPost === "true" : true;
+            }
+          }
+          // #endregion
+          this.allPrompts = incoming;
           this.buildTree();
           this.loading = false;
           if (this.selectedKey) {
@@ -168,25 +199,30 @@ export class PromptManager implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  /** Toggles between "Show all" and "Active only" view modes. */
+  /** Toggles filter mode between All / Active / InActive. */
   toggleFilterMode(): void {
-    this.showAllMode = !this.showAllMode;
     this.buildTree();
     this.cdr.markForCheck();
   }
 
   /**
    * Builds a 3-level tree with filter support.
+   * - showAllMode=true, showInactiveOnly=false: show all items
+   * - showAllMode=false, showInactiveOnly=false: show only active items
+   * - showInactiveOnly=true: show only inactive items
    * Category labels use proper casing (e.g., "codbi" → "CodBi").
    * Subcategory/item labels omit the category prefix.
    * Inactive items show a red cross icon in the tree.
    */
   private buildTree(): void {
     const categories = new Map<string, Map<string, TreeNode[]>>();
+    this.activeMap.clear();
 
     for (const p of this.allPrompts) {
-      // Filter: skip inactive items when showAllMode is false
-      if (!this.showAllMode && !p.isActive) continue;
+      this.activeMap.set(p.promptKey, p.isActive);
+      // Filter: skip based on current mode
+      if (this.showInactiveOnly && p.isActive) continue;
+      if (!this.showAllMode && !this.showInactiveOnly && !p.isActive) continue;
 
       const parts = p.promptKey.split(".");
       const cat = parts[0];
@@ -253,9 +289,8 @@ export class PromptManager implements OnInit, OnDestroy {
       data: p.promptKey,
       type: "item",
       leaf: true,
+      key: p.promptKey,
     };
-    // Store isActive so the template can render the red cross icon
-    (node as any).isActive = p.isActive;
     return node;
   }
 
@@ -296,9 +331,65 @@ export class PromptManager implements OnInit, OnDestroy {
     );
   }
 
-  /** Template helper — returns true if the tree node represents an inactive item. */
+  /** Map of prompt_key → isActive for quick lookup in tree templates. */
+  private activeMap = new Map<string, boolean>();
+
+  /** Template helper — returns true if the tree node represents a fully inactive item (red cross). */
   isTreeNodeInactive(node: TreeNode): boolean {
-    return node.type === "item" && (node as any).isActive === false;
+    if (node.type !== "item") return false;
+    const key = node.data as string;
+    return key != null && this.activeMap.get(key) === false;
+  }
+
+  /**
+   * Template helper — returns true if the tree node's main prompt is active
+   * but one or both of pre/post prompts are inactive (yellow cross).
+   */
+  isTreeNodePartiallyInactive(node: TreeNode): boolean {
+    if (node.type !== "item") return false;
+    const key = node.data as string;
+    if (key == null) return false;
+    const isMainActive = this.activeMap.get(key);
+    if (isMainActive === false || isMainActive === undefined) return false;
+    const record = this.allPrompts.find((p) => p.promptKey === key);
+    if (!record) return false;
+    return record.prePromptActive === false || record.postPromptActive === false;
+  }
+
+  /** Auto-grows a textarea to fit its content. Bind to (input) event. */
+  autoGrow(event: Event): void {
+    const textarea = event.target as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.style.height = "auto";
+      textarea.style.height = `${textarea.scrollHeight}px`;
+    }
+  }
+
+  /** Resizes the pre-prompt textarea to fit its content. */
+  autoResizePre(): void {
+    const ta = document.querySelector<HTMLTextAreaElement>(".cb-pm-card-editor textarea:nth-of-type(1)");
+    if (ta) {
+      ta.style.height = "auto";
+      ta.style.height = `${ta.scrollHeight}px`;
+    }
+  }
+
+  /** Resizes the prompt textarea to fit its content. */
+  autoResizePrompt(): void {
+    const ta = document.querySelector<HTMLTextAreaElement>(".cb-pm-card-editor textarea:nth-of-type(2)");
+    if (ta) {
+      ta.style.height = "auto";
+      ta.style.height = `${ta.scrollHeight}px`;
+    }
+  }
+
+  /** Resizes the post-prompt textarea to fit its content. */
+  autoResizePost(): void {
+    const ta = document.querySelector<HTMLTextAreaElement>(".cb-pm-card-editor textarea:nth-of-type(3)");
+    if (ta) {
+      ta.style.height = "auto";
+      ta.style.height = `${ta.scrollHeight}px`;
+    }
   }
 
   // #region Splitter resize
@@ -339,11 +430,18 @@ export class PromptManager implements OnInit, OnDestroy {
 
   // #endregion
 
-  /** Returns true if the key represents a leaf item (editable card). */
-  private isItemKey(key: string): boolean {
+  /** Returns true if the key represents a leaf item (editable card). Template-accessible. */
+  isItemKey(key: string): boolean {
     const editableTwoPart = new Set(["formcycle.general", "codbi.general", "codbi.classify_intent"]);
     if (editableTwoPart.has(key)) return true;
     return key.split(".").length >= 3; // subcategory (3 parts) and items (4+) have cards
+  }
+
+  /** Template helper — returns true if the key is a category-level key (1 or 2 parts). */
+  isCategoryKey(key: string): boolean {
+    if (!key) return false;
+    const parts = key.split(".");
+    return parts.length <= 2;
   }
   // #endregion
 
@@ -356,6 +454,11 @@ export class PromptManager implements OnInit, OnDestroy {
       const firstChild = this.findFirstItemInTree(event.node);
       if (firstChild) {
         this.selectByKey(firstChild.data as string);
+      } else {
+        // No editable children — clear the card panel
+        this.activeRecord = null;
+        this.selectedKey = null;
+        this.cdr.markForCheck();
       }
       return;
     }
@@ -385,6 +488,8 @@ export class PromptManager implements OnInit, OnDestroy {
     this.editPrePrompt = record.prePrompt ?? "";
     this.editPromptText = record.promptText ?? "";
     this.editPostPrompt = record.postPrompt ?? "";
+    this.editPrePromptActive = record.prePromptActive ?? true;
+    this.editPostPromptActive = record.postPromptActive ?? true;
     this.errorText = null;
     this.successText = null;
     this.cdr.markForCheck();
@@ -423,6 +528,11 @@ export class PromptManager implements OnInit, OnDestroy {
           if (this.activeRecord) {
             this.activeRecord.isActive = res.is_active;
           }
+          // Also update allPrompts so buildTree() reads fresh data
+          if (key) {
+            const found = this.allPrompts.find((p) => p.promptKey === key);
+            if (found) found.isActive = res.is_active;
+          }
           this.loading = false;
           this.buildTree(); // Rebuild tree to reflect icon changes
           this.cdr.markForCheck();
@@ -433,6 +543,18 @@ export class PromptManager implements OnInit, OnDestroy {
           this.cdr.markForCheck();
         },
       });
+  }
+
+  /** Toggles the pre-prompt active state locally (no backend call — included in next save). */
+  togglePrePromptActive(): void {
+    this.editPrePromptActive = !this.editPrePromptActive;
+    this.cdr.markForCheck();
+  }
+
+  /** Toggles the post-prompt active state locally (no backend call — included in next save). */
+  togglePostPromptActive(): void {
+    this.editPostPromptActive = !this.editPostPromptActive;
+    this.cdr.markForCheck();
   }
 
   save(): void {
@@ -448,6 +570,8 @@ export class PromptManager implements OnInit, OnDestroy {
       pre_prompt: this.editPrePrompt,
       post_prompt: this.editPostPrompt,
       is_active: this.activeRecord?.isActive ?? true,
+      pre_prompt_active: this.editPrePromptActive,
+      post_prompt_active: this.editPostPromptActive,
     });
     this.http
       .post<{ status: string }>(this.servletUrl, `body=${encodeURIComponent(body)}`, {
@@ -457,6 +581,17 @@ export class PromptManager implements OnInit, OnDestroy {
         next: () => {
           this.loading = false;
           this.successText = "Prompt saved successfully.";
+          // #region Persist pre/post active states to localStorage (permanent across sessions)
+          if (key) {
+            localStorage.setItem(`${PromptManager.LS_PRE}${key}`, String(this.editPrePromptActive));
+            localStorage.setItem(`${PromptManager.LS_POST}${key}`, String(this.editPostPromptActive));
+            const localRecord = this.allPrompts.find((p) => p.promptKey === key);
+            if (localRecord) {
+              localRecord.prePromptActive = this.editPrePromptActive;
+              localRecord.postPromptActive = this.editPostPromptActive;
+            }
+          }
+          // #endregion
           this.loadPrompts();
           this.cdr.markForCheck();
         },
@@ -523,6 +658,101 @@ export class PromptManager implements OnInit, OnDestroy {
           this.cdr.markForCheck();
         },
       });
+  }
+
+  /** Exports all prompts whose key starts with the given prefix. */
+  exportCategory(categoryKey: string): void {
+    const filtered = categoryKey ? this.allPrompts.filter((p) => p.promptKey.startsWith(categoryKey)) : this.allPrompts;
+    if (filtered.length === 0) return;
+    const arr = filtered.map((p) => ({
+      prompt_key: p.promptKey,
+      display_name: p.displayName ?? "",
+      prompt_text: p.promptText ?? "",
+      pre_prompt: p.prePrompt ?? "",
+      post_prompt: p.postPrompt ?? "",
+      category: p.category ?? "",
+    }));
+    const json = JSON.stringify(arr, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = categoryKey ? `codbi-prompts-${categoryKey.replace(/\./g, "-")}.json` : "codbi-prompts-all.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /** Exports ALL prompts. */
+  exportAll(): void {
+    this.exportCategory("");
+  }
+
+  /** Imports multiple prompts from a JSON file (array of PromptExport). */
+  importAll(): void {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result as string);
+          const arr: PromptExport[] = Array.isArray(data) ? data : [data];
+          if (arr.length === 0) return;
+          this.loading = true;
+          let completed = 0;
+          let errors = 0;
+          const total = arr.length;
+          for (const item of arr) {
+            this.http
+              .post<{ status: string }>(
+                this.servletUrl,
+                `body=${encodeURIComponent(
+                  JSON.stringify({
+                    prompt_key: item.prompt_key,
+                    display_name: item.display_name,
+                    prompt_text: item.prompt_text,
+                    pre_prompt: item.pre_prompt,
+                    post_prompt: item.post_prompt,
+                  }),
+                )}`,
+                {
+                  headers: {
+                    "X-Action": "Import",
+                    "X-View": this.xView(),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                  },
+                },
+              )
+              .subscribe({
+                next: () => {
+                  completed++;
+                  this.checkImportDone(completed, errors, total);
+                },
+                error: () => {
+                  errors++;
+                  this.checkImportDone(completed, errors, total);
+                },
+              });
+          }
+        } catch {
+          this.errorText = "Invalid JSON file.";
+          this.cdr.markForCheck();
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  }
+
+  private checkImportDone(completed: number, errors: number, total: number): void {
+    if (completed + errors < total) return;
+    this.loading = false;
+    this.successText = `Imported ${completed} prompt(s)${errors > 0 ? ` (${errors} failed)` : ""}.`;
+    this.loadPrompts();
+    this.cdr.markForCheck();
   }
 
   importPrompt(): void {

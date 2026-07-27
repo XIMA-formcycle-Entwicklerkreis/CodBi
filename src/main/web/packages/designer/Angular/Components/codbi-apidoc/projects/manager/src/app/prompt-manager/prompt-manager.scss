@@ -3,6 +3,33 @@
   z-index: 99999 !important;
 }
 
+/* Dialog header with logo */
+.cb-pm-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cb-pm-logo {
+  height: 28px;
+  width: auto;
+}
+
+.cb-pm-title {
+  font-size: 1.15em;
+  font-weight: 600;
+  color: #333;
+}
+
+/* Category empty state */
+.cb-pm-category-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px;
+}
+
 .p-dialog-mask:has(.cb-prompt-manager-dialog) {
   z-index: 99998 !important;
 }
@@ -58,15 +85,16 @@
 }
 
 .cb-pm-filter-btn:hover {
-  background: #e8f5e9;
-  border-color: #39d088;
-  color: #2e7d32;
+  background: #fff3e0;
+  border-color: #ff8c00;
+  color: #e65100;
 }
 
 .cb-pm-filter-btn--active {
-  background: #39d088;
-  border-color: #39d088;
+  background: #ff8c00;
+  border-color: #ff8c00;
   color: #fff;
+  box-shadow: 0 2px 6px rgba(255, 140, 0, 0.4);
 }
 
 .cb-pm-filter-sep {
@@ -88,6 +116,43 @@
   font-size: 0.85em;
   font-weight: bold;
   flex-shrink: 0;
+}
+
+.cb-pm-tree-partial-icon {
+  color: #f9a825;
+  font-size: 0.9em;
+  font-weight: bold;
+  flex-shrink: 0;
+  margin-bottom: .1em;
+}
+
+.cb-pm-tree-node-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cb-pm-tree-node-export-btn {
+  padding: 1px 6px;
+  margin-left: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.4;
+  flex-shrink: 0;
+  border-radius: 10em;
+  background-color: transparent;
+  border-color: darkorange;
+  border-width: .15em;
+  color: darkorange;
+  font-weight: bolder;
+  font-size: 1.25em;
+  box-shadow: 0 0 .25em darkorange;
+}
+
+.cb-pm-tree-node-export-btn:hover {
+  background: #fff3e0;
+  border-color: #ff8c00;
+  color: #e65100;
 }
 
 /* #region Card panel (right) */
@@ -122,14 +187,14 @@
   border-radius: 8px;
   overflow: hidden;
   background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   transition: box-shadow 0.2s;
   flex: 1;
   min-height: 200px;
 }
 
 .cb-pm-card:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 
 /* Color indicator (left region) — double width */
@@ -141,7 +206,7 @@
 }
 
 .cb-pm-card-indicator--active {
-  background-color: #39d088;
+  background-color: #ff8c00;
 }
 
 .cb-pm-card-indicator--inactive {
@@ -200,15 +265,77 @@
   overflow-y: auto;
 }
 
+.cb-pm-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.cb-pm-field-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .cb-pm-field-label {
   font-size: 0.82em;
   font-weight: 500;
   color: #555;
-  margin-top: 4px;
+  margin-top: 0;
+}
+
+.cb-pm-resize-btn {
+  font-size: 0.75em;
+  padding: 1px 6px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  background: #f8f8f8;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.4;
+}
+
+.cb-pm-resize-btn:hover {
+  background: #fff3e0;
+  border-color: #ff8c00;
+  color: #e65100;
 }
 
 .cb-pm-field-label:first-child {
   margin-top: 0;
+}
+
+.cb-pm-toggle-btn {
+  font-size: 0.7em;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 10px;
+  border: 1px solid #d0d0d0;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: #f0f0f0;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.cb-pm-toggle-btn--on {
+  background: #ff8c00;
+  border-color: #e67e00;
+  color: #fff;
+  box-shadow: 0 2px 4px rgba(255, 140, 0, 0.3);
+}
+
+.cb-pm-toggle-btn--off {
+  background: #ef9a9a;
+  border-color: #ef5350;
+  color: #b71c1c;
+}
+
+.cb-pm-toggle-btn:hover {
+  opacity: 0.85;
 }
 
 .cb-pm-textarea {
@@ -230,8 +357,8 @@
 }
 
 .cb-pm-textarea:focus {
-  border-color: #39d088 !important;
-  box-shadow: 0 0 0 1px #39d088 !important;
+  border-color: #ff8c00 !important;
+  box-shadow: 0 0 0 1px #ff8c00 !important;
 }
 
 /* Auto-grow textareas to fit content */
@@ -246,6 +373,7 @@
   gap: 8px;
   margin-top: 12px;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 .cb-pm-actions button {
@@ -265,7 +393,7 @@
 }
 
 .cb-pm-splitter:hover {
-  background: #39d088;
+  background: #ff8c00;
 }
 
 .cb-pm-splitter::after {

@@ -247,6 +247,12 @@ internal object PromptLoader {
   /**
    * Queries the database for all **active** prompts whose key starts with the given [prefix].
    * Returns a map of prompt_key → pre_prompt + prompt_text + post_prompt (may be empty).
+   *
+   * **Important:** Because `##`-sectioned prompt files are split into sub-keys (e.g.
+   * `codbi.general._codbiapplicability_report`), this method also folds every sub-item's content
+   * back into its parent key. This ensures that code looking up `cb["codbi.general"]` receives BOTH
+   * the parent header AND all its section contents, matching the pre-DB-migration behavior where
+   * each file was a single hardcoded string.
    */
   private fun queryCategory(em: EntityManager, prefix: String): Map<String, String> {
     return try {
@@ -263,15 +269,29 @@ internal object PromptLoader {
       query.setParameter("prefix", "$prefix%")
       @Suppress("UNCHECKED_CAST")
       val rows = query.resultList as? List<Array<Any>> ?: return emptyMap()
-      rows
-          .mapNotNull { row ->
+      val flat =
+          rows.mapNotNull { row ->
             if (row.size >= 2) {
               val key = row[0]?.toString() ?: return@mapNotNull null
               val text = resolveClob(row[1]) ?: return@mapNotNull null
               key to text
             } else null
           }
-          .toMap()
+      // Fold sub-items into their parent keys so lookups like cb["codbi.functionalities"]
+      // return the full content (parent + all sections), not just the header before the first ##.
+      val allKeys = flat.map { it.first }.toSet()
+      val folded = mutableMapOf<String, String>()
+      for ((key, text) in flat) {
+        // Determine the parent key: a key that is a prefix of this key (followed by a dot)
+        val parentKey =
+            allKeys.filter { it != key && key.startsWith("$it.") }.maxByOrNull { it.length }
+        if (parentKey != null) {
+          folded[parentKey] = (folded[parentKey] ?: "") + "\n" + text
+        } else {
+          folded[key] = (folded[key] ?: "") + "\n" + text
+        }
+      }
+      folded
     } catch (e: Exception) {
       logger.warn("[PromptLoader] Failed to query category '{}': {}", prefix, e.message)
       emptyMap()

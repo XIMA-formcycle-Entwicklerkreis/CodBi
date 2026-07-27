@@ -136,7 +136,11 @@ class AIFormAssistant : IPluginServletAction {
 
         retryMessagesJson = buildString {
           append("[")
-          append("""{"role":"system","content":${gson.toJson(rethinkSystemPrompt)}}""")
+          append("""{"role":"system","content":${gson.toJson(rethinkSystemPrompt)}},""")
+          val formJson = gson.toJson(mapOf("items" to allItems))
+          val userContent =
+              "Modify the form below according to the user request. Form data: $formJson"
+          append("""{"role":"user","content":${gson.toJson(userContent)}}""")
           append("]")
         }
       } else {
@@ -1220,8 +1224,13 @@ class AIFormAssistant : IPluginServletAction {
     try {
       val categories =
           PromptLoader.loadCategory(em, "formcycle") + PromptLoader.loadCategory(em, "codbi")
+      val taskInstruction =
+          "You receive a partial form JSON (IPersistJson) and a natural language instruction. " +
+              "MODIFY the form according to the instruction and return the COMPLETE modified form JSON. " +
+              "Do NOT ask for more details — the user's instruction and the form data below are sufficient.\n\n"
       return PromptLoader.resolvePlaceholders(
-          (categories["formcycle.general"] ?: "") +
+          taskInstruction +
+              (categories["formcycle.general"] ?: "") +
               "\n" +
               (categories["formcycle.widgets"] ?: "") +
               "\n" +
@@ -1248,8 +1257,13 @@ class AIFormAssistant : IPluginServletAction {
     if (em == null) return FALLBACK_RETHINK_PROMPT
     try {
       val categories = PromptLoader.loadCategory(em, "codbi")
+      val taskInstruction =
+          "You receive a form to review for CodBi applicability. " +
+              "Review the form elements below and determine which CodBi functionalities apply. " +
+              "Return the form JSON with a _codbiApplicability field listing considered/applied/skipped items.\n\n"
       return PromptLoader.resolvePlaceholders(
-          (categories["codbi.standard_configurations"] ?: "") +
+          taskInstruction +
+              (categories["codbi.standard_configurations"] ?: "") +
               "\n" +
               (categories["codbi.functionalities"] ?: "") +
               "\n" +

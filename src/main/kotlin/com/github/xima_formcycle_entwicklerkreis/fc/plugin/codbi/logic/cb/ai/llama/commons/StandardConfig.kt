@@ -99,12 +99,15 @@ internal data class StandardConfig(
    * @param model Model name to inject into requests, or `null` for the API default.
    * @param maxTokens Maximum tokens this specialist may generate per response, or `null` to fall
    *   back to the global [StandardConfig.maxTokens].
+   * @param extraParams Extra JSON parameters injected into every request for this specialist (e.g.
+   *   `{"temperature":0.0,"seed":42}`). Overrides the global [extraParamsJson].
    */
   data class ExternalSpecialistEntry(
       val url: String,
       val apiKey: String?,
       val model: String?,
-      val maxTokens: Int? = null
+      val maxTokens: Int? = null,
+      val extraParams: String? = null
   )
 
   init {

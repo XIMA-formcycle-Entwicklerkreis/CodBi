@@ -105,7 +105,7 @@ export const appConfig: ApplicationConfig = {
     provideTransloco({
       config: translocoConfig({
         // <-- Ensure translocoConfig is used
-        availableLangs: ["en", "de"], // Your available languages
+        availableLangs: ["en", "de", "it"], // Your available languages
         defaultLang: "de",
         reRenderOnLangChange: true,
         // Make sure missingHandler is an object, and useFallbackTranslation is defined

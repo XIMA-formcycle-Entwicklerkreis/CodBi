@@ -884,9 +884,8 @@ class ChatCompletionServiceTest {
     @Test
     fun routesThroughExternalClient() {
       val client =
-          ExternalAiClient("http://specialist.example.com", "test-key", "specialist-model") { _, _
-            ->
-          }
+          ExternalAiClient(
+              "http://specialist.example.com", "test-key", "specialist-model", log = { _, _ -> })
 
       // Since we can't actually connect, verify the service tries to use the client
       val service =

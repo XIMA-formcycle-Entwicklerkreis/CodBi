@@ -76,4 +76,50 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="codbi-ai-prompt-4" author="codbi">
+        <comment>
+          Add is_system flag to distinguish built-in system prompts from
+          user-created prompts. Built-in prompts are seeded from classpath
+          resources; user prompts are created via the Prompt Manager UI.
+          Only user-created prompts can be renamed or deleted.
+        </comment>
+        <addColumn tableName="codbi_ai_prompt">
+            <column name="is_system" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_ai_prompt" columnName="is_system"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="codbi-ai-prompt-5" author="codbi">
+        <comment>
+          Increase prompt_key column size from VARCHAR(100) to VARCHAR(200) to
+          accommodate longer derived keys from deep ### sub-header nesting
+          (e.g., workflow node type names with fully qualified class names).
+        </comment>
+        <modifyDataType tableName="codbi_ai_prompt" columnName="prompt_key" newDataType="VARCHAR(200)"/>
+        <rollback>
+            <modifyDataType tableName="codbi_ai_prompt" columnName="prompt_key" newDataType="VARCHAR(100)"/>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="codbi-ai-prompt-6" author="codbi">
+        <comment>
+          Add update_available flag to indicate that a newer version of a system prompt
+          exists in the bundled .md resources while the local copy was customized by the
+          user. The Prompt Manager uses this to show a hint that offers to load the new
+          version via "Restore Original".
+        </comment>
+        <addColumn tableName="codbi_ai_prompt">
+            <column name="update_available" type="BOOLEAN" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_ai_prompt" columnName="update_available"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

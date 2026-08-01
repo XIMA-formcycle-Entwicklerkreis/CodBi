@@ -13,9 +13,15 @@ import { HttpClient } from "@angular/common/http";
 import { Button } from "primeng/button";
 import { Dialog } from "primeng/dialog";
 import { Message } from "primeng/message";
+import { InputText } from "primeng/inputtext";
 import { TreeModule } from "primeng/tree";
 import type { TreeNode } from "primeng/api";
 import { Textarea } from "primeng/textarea";
+import { Tooltip } from "primeng/tooltip";
+// #endregion
+
+// #region Transloco
+import { TranslocoModule, TranslocoPipe, TranslocoService } from "@ngneat/transloco";
 // #endregion
 
 // #region Interfaces
@@ -30,6 +36,9 @@ interface PromptRecord {
   isActive: boolean;
   prePromptActive: boolean;
   postPromptActive: boolean;
+  isSystem: boolean;
+  /** True when a newer bundled .md version exists but the local copy was customized. */
+  updateAvailable: boolean;
 }
 
 interface PromptExport {
@@ -50,7 +59,19 @@ interface PromptExport {
 @Component({
   selector: "cb-prompt-manager",
   standalone: true,
-  imports: [CommonModule, FormsModule, Button, Dialog, Message, TreeModule, Textarea],
+  imports: [
+    CommonModule,
+    FormsModule,
+    Button,
+    Dialog,
+    Message,
+    InputText,
+    TreeModule,
+    Textarea,
+    Tooltip,
+    TranslocoModule,
+    TranslocoPipe,
+  ],
   templateUrl: "./prompt-manager.html",
   styleUrl: "./prompt-manager.scss",
   encapsulation: ViewEncapsulation.None,
@@ -104,16 +125,126 @@ export class PromptManager implements OnInit, OnDestroy {
   private static readonly LS_POST = "cb_pm_post_";
   // #endregion
 
+  // #region Add Category dialog
+  showAddCategoryDialog = false;
+  newCategoryKey = "";
+  newCategoryDisplayName = "";
+  newCategoryPromptText = "";
+  // #endregion
+
+  // #region Add Item dialog
+  showAddItemDialog = false;
+  /** The parent key under which the new item will be created (e.g., "codbi.functionalities"). */
+  addItemParentKey: string | null = null;
+  addItemParentLabel = "";
+  newItemName = "";
+  newItemDisplayName = "";
+  newItemPromptText = "";
+
+  /** Computed preview of what the new item's key will look like. */
+  get newItemKeyPreview(): string {
+    const keyPart = this.newItemName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+    if (!keyPart) return "...";
+    return this.addItemParentKey ? `${this.addItemParentKey}.${keyPart}` : keyPart;
+  }
+  // #endregion
+
+  // #region Rename dialog
+  showRenameDialog = false;
+  renameNewName = "";
+
+  /** Computed preview of what the renamed key will look like. */
+  get renameKeyPreview(): string {
+    const keyPart = this.renameNewName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+    if (!keyPart || !this.selectedKey) return "...";
+    const parts = this.selectedKey.split(".");
+    parts[parts.length - 1] = keyPart;
+    return parts.join(".");
+  }
+  // #endregion
+
+  /** Returns true if the currently selected prompt was created by the user (not a built-in system prompt). */
+  isUserCreated(): boolean {
+    return this.activeRecord != null && !this.activeRecord.isSystem;
+  }
+
+  /** Returns true when a newer bundled version of the selected prompt is available for loading. */
+  hasUpdateAvailable(): boolean {
+    return this.activeRecord?.updateAvailable === true;
+  }
+
+  /**
+   * Returns true when the selected prompt is a server-side system standard configuration
+   * (e.g. "Holistic.Cleave.Date") whose prompt text is read-only (only activation can be toggled).
+   */
+  isSystemApp(): boolean {
+    return this.activeRecord != null && this.isSystemAppPrompt(this.activeRecord);
+  }
+
+  /** Tooltip text explaining what the user can do when a newer prompt version is available. */
+  get updateHintTooltip(): string {
+    return this.tr("pm.updateHint.tooltip");
+  }
+
+  /**
+   * Localized display description for the selected prompt, when a translation key exists for its
+   * prompt key (see `pm.desc.*` in the i18n files). Returns `null` when no translation is available.
+   */
+  get localizedDescription(): string | null {
+    const p = this.activeRecord;
+    if (!p) return null;
+    const key = `pm.desc.${p.promptKey}`;
+    const value = this.translocoService.translate(key);
+    return value === key ? null : value;
+  }
+
+  /** Card header: the category/key path prefix (shown as a rounded badge). */
+  get cardTitlePath(): string {
+    if (!this.selectedKey) return "";
+    const parts = this.selectedKey.split(".");
+    if (parts.length <= 1) return "";
+    return parts
+      .slice(0, -1)
+      .map((seg) => (seg === "codbi" ? "CodBi" : seg.replace(/_/g, "").replace(/^\w/, (c) => c.toUpperCase())))
+      .join(" / ");
+  }
+
+  /** Card header: the element name (last key segment, or the display name). */
+  get cardTitleName(): string {
+    if (!this.selectedKey) return "";
+    const displayName = this.editDisplayName.trim();
+    if (displayName) return displayName;
+    const parts = this.selectedKey.split(".");
+    return this.formatCategoryLabel(parts[parts.length - 1]);
+  }
+
   private readonly openHandler = (): void => this.open();
 
   constructor(
     private readonly http: HttpClient,
     private readonly cdr: ChangeDetectorRef,
+    private readonly translocoService: TranslocoService,
   ) {}
+
+  /** Convenience wrapper around TranslocoService.translate. */
+  private tr(key: string, params?: Record<string, unknown>): string {
+    return this.translocoService.translate(key, params);
+  }
 
   // #region Lifecycle
   ngOnInit(): void {
     document.addEventListener("codbi:prompt-manager:open", this.openHandler);
+    // Follow the Formcycle UI language (e.g. de / en / it) so the Prompt Manager matches the host.
+    const lang = (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage;
+    if (lang && ["de", "en", "it"].includes(lang)) {
+      this.translocoService.setActiveLang(lang);
+    }
   }
 
   ngOnDestroy(): void {
@@ -134,6 +265,8 @@ export class PromptManager implements OnInit, OnDestroy {
     this.visible = false;
     this.selectedKey = null;
     this.activeRecord = null;
+    this.showAddCategoryDialog = false;
+    this.showAddItemDialog = false;
     this.cdr.markForCheck();
   }
 
@@ -178,7 +311,7 @@ export class PromptManager implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.loading = false;
-          this.errorText = `Failed to load prompts: ${err.message}`;
+          this.errorText = this.tr("pm.err.loadFailed", { error: err.message });
           this.cdr.markForCheck();
         },
       });
@@ -284,14 +417,64 @@ export class PromptManager implements OnInit, OnDestroy {
     const parts = p.promptKey.split(".");
     // Remove category prefix from label display
     const label = this.formatItemLabel(p, parts, category);
-    const node: TreeNode = {
+    const node = {
       label,
       data: p.promptKey,
       type: "item",
       leaf: true,
       key: p.promptKey,
-    };
+      // Abstract codbi prompts (e.g., "EP Chaining") get a distinct style.
+      isAbstract: this.isAbstractPrompt(p),
+      // Server-side system standard configurations get a darkorange frame.
+      isSystemApp: this.isSystemAppPrompt(p),
+    } as TreeNode & { isAbstract: boolean; isSystemApp: boolean };
     return node;
+  }
+
+  /**
+   * Returns true for server-side system standard configurations (e.g. "Holistic.Cleave.Date",
+   * "Holistic.Matomo.Tracking") that are framed in darkorange to distinguish them from abstract
+   * instruction rules.
+   */
+  isSystemAppPrompt(p: PromptRecord): boolean {
+    const parts = p.promptKey.split(".");
+    return parts.length >= 4 && parts[0] === "codbi" && p.isSystem && parts[2] === "system_standard_configurations";
+  }
+
+  /**
+   * Returns true for abstract prompts (e.g., "EP Chaining", "OpenPLZ EPs", "Form Structure Rules",
+   * "Trigger Types") that describe general rules rather than a concrete element.
+   *
+   * - CodBi: descriptive multi-word phrases are abstract; real EPs have dotted, single-word, or
+   *   single-letter names ("Date.Today", "Sorted", "I", "BayVIS.Ansprechpartner").
+   * - Formcycle: all `formcycle.general.*` sections are abstract rules; workflow node group headers
+   *   (3-part keys like `formcycle.workflow_nodes.trigger_types`) are abstract, while actual nodes
+   *   (`...fc_email`) and widgets are real elements.
+   */
+  isAbstractPrompt(p: PromptRecord): boolean {
+    const parts = p.promptKey.split(".");
+    if (parts.length < 3) return false;
+    const category = parts[0];
+    if (category === "codbi") {
+      // User-created items added to Element Placeholders, Functionalities, or Standard
+      // Configurations always get a border so they stand out from seeded elements.
+      if (!p.isSystem) {
+        const sub = parts[1];
+        return sub === "element_placeholders" || sub === "functionalities" || sub === "standard_configurations";
+      }
+      // Server-side system standard configurations (e.g. Holistic.Matomo.Tracking,
+      // Holistic.Cleave.*) get their own darkorange frame (see isSystemAppPrompt) instead of
+      // the generic abstract frame.
+      if (parts.length >= 3 && parts[2] === "system_standard_configurations") return false;
+      const name = p.displayName?.trim() || "";
+      return name.length > 0 && name.includes(" ");
+    }
+    if (category === "formcycle") {
+      const sub = parts[1];
+      if (sub === "general") return true;
+      if (sub === "workflow_nodes") return parts.length === 3;
+    }
+    return false;
   }
 
   private formatCategoryLabel(cat: string): string {
@@ -300,35 +483,93 @@ export class PromptManager implements OnInit, OnDestroy {
     return cat.charAt(0).toUpperCase() + cat.slice(1);
   }
 
-  private formatItemLabel(p: PromptRecord, parts: string[], category: string): string {
-    if (parts.length >= 4) {
-      // Item under subcategory: show last part(s) without category prefix
-      return parts
-        .slice(2)
-        .join(".")
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+  /**
+   * Strips all parent key segment prefixes from a display name to avoid redundancy in the tree.
+   * E.g. for key "codbi.functionalities.ai_ocr" with keepFromIndex=2,
+   * display "Codbi Functionalities Ai Ocr" → "Ai Ocr".
+   * The comparison is case-insensitive.
+   */
+  /**
+   * Formats a key segment for display.
+   * - `"dots"` → "Ai.Llama.Std.Qa" (CodBi items)
+   * - `"spaces"` → "X Text Field" (formcycle widgets, etc.)
+   * - `"underscores"` → "Fc_Form_Record_Message_Posted" (workflow node names)
+   */
+  private formatKeySegment(segment: string, mode: "dots" | "spaces" | "underscores"): string {
+    const parts = segment.split("_");
+    const formatted = parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1));
+    switch (mode) {
+      case "dots":
+        return formatted.join(".");
+      case "underscores":
+        return formatted.join("_");
+      default:
+        return formatted.join(" ");
     }
-    if (parts.length === 3) {
-      // Subcategory: show the subcategory part
+  }
+
+  private stripParentPrefix(name: string, parts: string[], keepFromIndex: number): string {
+    const prefix = parts
+      .slice(0, keepFromIndex)
+      .map((p) => this.formatKeySegment(p, "spaces"))
+      .join(" ");
+    if (name.length >= prefix.length && name.substring(0, prefix.length).toLowerCase() === prefix.toLowerCase()) {
+      const rest = name.slice(prefix.length).trim();
+      if (rest) return rest;
+    }
+    return name;
+  }
+
+  /**
+   * Extracts a fully-qualified class name from a parenthetical in a display name, e.g.
+   * "CheckTrustLevelPlugin (de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin)"
+   * → "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin". Returns null if the
+   * parenthetical does not contain a dotted (class-like) name.
+   */
+  private extractClassName(name: string | null | undefined): string | null {
+    if (!name) return null;
+    const m = name.match(/\(([^()]*\.[^()]*)\)/);
+    return m ? m[1].trim() : null;
+  }
+
+  private formatItemLabel(p: PromptRecord, parts: string[], category: string): string {
+    // CodBi items: prefer the stored displayName (preserves original formatting like
+    // "Date.Today" or "EP Chaining"). Fall back to dots for real EPs, spaces for abstract.
+    if (category === "codbi" && parts.length >= 3) {
+      if (p.displayName && p.displayName.trim()) return p.displayName;
+      const last = parts[parts.length - 1];
+      // Real element placeholders use dots (e.g., "Ai.Llama.Std.Qa");
+      // abstract prompts (no dot in the name) use spaces (e.g., "EP Chaining").
+      const isRealEp = last.includes("_") && /^[a-z]+(_[a-z]+)+$/i.test(last) && last.split("_").length >= 2;
+      return this.formatKeySegment(last, isRealEp ? "dots" : "spaces");
+    }
+    // Formcycle workflow sub-items: underscores as separators, last segment only.
+    // Plugin nodes with a fully-qualified class name in parentheses (e.g.
+    // "CheckTrustLevelPlugin (de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin)")
+    // show the class path with dots → underscores as their label.
+    if (category === "formcycle" && parts.length >= 4 && parts[1] === "workflow_nodes") {
+      const className = this.extractClassName(p.displayName);
+      if (className) return className.replace(/\./g, "_");
+      return this.formatKeySegment(parts[parts.length - 1], "underscores");
+    }
+    // Other formcycle items: spaces as separators
+    const mode: "spaces" = "spaces";
+    if (parts.length >= 4) {
+      const label = p.displayName ? this.stripParentPrefix(p.displayName, parts, 2) : null;
       return (
-        p.displayName ??
+        label ??
         parts
-          .slice(1)
-          .join(".")
-          .replace(/_/g, " ")
-          .replace(/\b\w/g, (c) => c.toUpperCase())
+          .slice(2)
+          .map((s) => this.formatKeySegment(s, mode))
+          .join(" ")
       );
     }
-    // 2-part leaf: show display name or key without category
-    return (
-      p.displayName ??
-      parts
-        .slice(1)
-        .join(".")
-        .replace(/_/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase())
-    );
+    if (parts.length === 3) {
+      const label = p.displayName ? this.stripParentPrefix(p.displayName, parts, 2) : null;
+      return label ?? this.formatKeySegment(parts[2], mode);
+    }
+    const label = p.displayName ? this.stripParentPrefix(p.displayName, parts, 1) : null;
+    return label ?? this.formatKeySegment(parts[1], mode);
   }
 
   /** Map of prompt_key → isActive for quick lookup in tree templates. */
@@ -432,9 +673,17 @@ export class PromptManager implements OnInit, OnDestroy {
 
   /** Returns true if the key represents a leaf item (editable card). Template-accessible. */
   isItemKey(key: string): boolean {
-    const editableTwoPart = new Set(["formcycle.general", "codbi.general", "codbi.classify_intent"]);
-    if (editableTwoPart.has(key)) return true;
-    return key.split(".").length >= 3; // subcategory (3 parts) and items (4+) have cards
+    const parts = key.split(".");
+    // 3+ parts are always items
+    if (parts.length >= 3) return true;
+    // 2-part keys: check known system items OR any existing record (user-created categories)
+    if (parts.length === 2) {
+      const editableTwoPart = new Set(["formcycle.general", "codbi.general", "codbi.classify_intent"]);
+      if (editableTwoPart.has(key)) return true;
+      // User-created 2-part keys (e.g., "mycompany.general") should show their card
+      return this.allPrompts.some((p) => p.promptKey === key);
+    }
+    return false;
   }
 
   /** Template helper — returns true if the key is a category-level key (1 or 2 parts). */
@@ -505,6 +754,289 @@ export class PromptManager implements OnInit, OnDestroy {
   }
   // #endregion
 
+  // #region Add Category
+
+  /** Opens the dialog to create a new top-level category. */
+  openAddCategoryDialog(): void {
+    this.newCategoryKey = "";
+    this.newCategoryDisplayName = "";
+    this.newCategoryPromptText = "";
+    this.errorText = null;
+    this.successText = null;
+    this.showAddCategoryDialog = true;
+    this.cdr.markForCheck();
+  }
+
+  /** Closes the add-category dialog. */
+  closeAddCategoryDialog(): void {
+    this.showAddCategoryDialog = false;
+    this.cdr.markForCheck();
+  }
+
+  /** Creates a new top-level category with a `.general` prompt item. */
+  addCategory(): void {
+    const key = this.newCategoryKey.trim();
+    if (!key) {
+      this.errorText = this.tr("pm.err.categoryKeyRequired");
+      this.cdr.markForCheck();
+      return;
+    }
+    // Validate: only dots are forbidden (spaces and case are allowed)
+    if (key.includes(".")) {
+      this.errorText = this.tr("pm.err.categoryKeyInvalid");
+      this.cdr.markForCheck();
+      return;
+    }
+    const promptKey = `${key}.general`;
+    const displayName = this.newCategoryDisplayName.trim() || this.formatCategoryLabel(key) + " General";
+    const promptText =
+      this.newCategoryPromptText.trim() || `General instructions for the ${this.formatCategoryLabel(key)} category.`;
+
+    this.loading = true;
+    this.errorText = null;
+    this.successText = null;
+
+    const body = JSON.stringify({
+      prompt_key: promptKey,
+      display_name: displayName,
+      prompt_text: promptText,
+      category: key,
+    });
+
+    this.http
+      .post<{ status: string }>(this.servletUrl, `body=${encodeURIComponent(body)}`, {
+        headers: { "X-Action": "Create", "X-View": this.xView(), "Content-Type": "application/x-www-form-urlencoded" },
+      })
+      .subscribe({
+        next: () => {
+          this.loading = false;
+          this.showAddCategoryDialog = false;
+          this.successText = this.tr("pm.msg.categoryCreated", { name: this.formatCategoryLabel(key) });
+          this.loadPrompts();
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.loading = false;
+          this.errorText = this.tr("pm.err.categoryCreateFailed", { error: err.message });
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  // #endregion
+
+  // #region Add Item
+
+  /**
+   * Opens the dialog to add a new prompt item under the given parent.
+   * @param parentKey The parent key (e.g., "codbi.functionalities" for a subcategory).
+   */
+  openAddItemDialog(parentKey: string | null): void {
+    this.addItemParentKey = parentKey;
+    this.addItemParentLabel = parentKey ? parentKey.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "";
+    this.newItemName = "";
+    this.newItemDisplayName = "";
+    this.newItemPromptText = "";
+    this.errorText = null;
+    this.successText = null;
+    this.showAddItemDialog = true;
+    this.cdr.markForCheck();
+  }
+
+  /** Closes the add-item dialog. */
+  closeAddItemDialog(): void {
+    this.showAddItemDialog = false;
+    this.cdr.markForCheck();
+  }
+
+  /** Creates a new prompt item under the currently selected parent category/subcategory. */
+  addItem(): void {
+    const name = this.newItemName.trim();
+    if (!name) {
+      this.errorText = this.tr("pm.err.itemNameRequired");
+      this.cdr.markForCheck();
+      return;
+    }
+    // Dots are not allowed in element names created via the Prompt Manager
+    if (name.includes(".")) {
+      this.errorText = this.tr("pm.err.itemNameDots");
+      this.cdr.markForCheck();
+      return;
+    }
+    const displayNameInput = this.newItemDisplayName.trim();
+    if (displayNameInput.includes(".")) {
+      this.errorText = this.tr("pm.err.displayNameDots");
+      this.cdr.markForCheck();
+      return;
+    }
+    // Convert name to key part: lowercase, replace spaces/special chars with underscores
+    const keyPart = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+    if (!keyPart) {
+      this.errorText = this.tr("pm.err.itemNameAlpha");
+      this.cdr.markForCheck();
+      return;
+    }
+
+    const parent = this.addItemParentKey;
+    // Determine the full key
+    const promptKey = parent ? `${parent}.${keyPart}` : keyPart;
+    const displayName = this.newItemDisplayName.trim() || name;
+    const promptText = this.newItemPromptText.trim() || `Instructions for ${displayName}.`;
+
+    this.loading = true;
+    this.errorText = null;
+    this.successText = null;
+
+    // Extract category from parent or key
+    const category = parent ? parent.split(".")[0] : keyPart;
+
+    const body = JSON.stringify({
+      prompt_key: promptKey,
+      display_name: displayName,
+      prompt_text: promptText,
+      category,
+    });
+
+    this.http
+      .post<{ status: string }>(this.servletUrl, `body=${encodeURIComponent(body)}`, {
+        headers: { "X-Action": "Create", "X-View": this.xView(), "Content-Type": "application/x-www-form-urlencoded" },
+      })
+      .subscribe({
+        next: () => {
+          this.loading = false;
+          this.showAddItemDialog = false;
+          this.successText = this.tr("pm.msg.itemCreated", { name: displayName });
+          this.loadPrompts();
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.loading = false;
+          this.errorText = this.tr("pm.err.itemCreateFailed", { error: err.message });
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  // #endregion
+
+  // #region Delete / Rename (user-created prompts only)
+
+  /** Deletes the currently selected prompt. */
+  deletePrompt(): void {
+    const key = this.selectedKey;
+    if (!key || !this.isUserCreated()) return;
+    if (!confirm(this.tr("pm.confirm.delete", { name: this.editDisplayName }))) return;
+    this.loading = true;
+    this.errorText = null;
+    this.successText = null;
+    this.http
+      .post<{ status: string }>(this.servletUrl, `body=${encodeURIComponent(JSON.stringify({ prompt_key: key }))}`, {
+        headers: { "X-Action": "Delete", "X-View": this.xView(), "Content-Type": "application/x-www-form-urlencoded" },
+      })
+      .subscribe({
+        next: () => {
+          this.loading = false;
+          this.selectedKey = null;
+          this.activeRecord = null;
+          this.successText = this.tr("pm.msg.deleted", { name: this.editDisplayName });
+          this.loadPrompts();
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.loading = false;
+          this.errorText = this.tr("pm.err.deleteFailed", { error: err.message });
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  /** Opens the rename dialog for the currently selected prompt. */
+  openRenameDialog(): void {
+    if (!this.selectedKey || !this.isUserCreated()) return;
+    // Derive a suggested new name from the current display name or last key segment
+    const parts = this.selectedKey.split(".");
+    const lastSegment = parts[parts.length - 1]?.replace(/_/g, " ") ?? "";
+    this.renameNewName = lastSegment.charAt(0).toUpperCase() + lastSegment.slice(1);
+    this.errorText = null;
+    this.successText = null;
+    this.showRenameDialog = true;
+    this.cdr.markForCheck();
+  }
+
+  /** Closes the rename dialog. */
+  closeRenameDialog(): void {
+    this.showRenameDialog = false;
+    this.cdr.markForCheck();
+  }
+
+  /** Renames the currently selected prompt. */
+  renamePrompt(): void {
+    const oldKey = this.selectedKey;
+    if (!oldKey || !this.isUserCreated()) return;
+    const newName = this.renameNewName.trim();
+    if (!newName) {
+      this.errorText = this.tr("pm.err.newNameRequired");
+      this.cdr.markForCheck();
+      return;
+    }
+    // Dots are not allowed in element names created via the Prompt Manager
+    if (newName.includes(".")) {
+      this.errorText = this.tr("pm.err.newNameDots");
+      this.cdr.markForCheck();
+      return;
+    }
+    // Convert to key-safe format
+    const keyPart = newName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+    if (!keyPart) {
+      this.errorText = this.tr("pm.err.nameAlpha");
+      this.cdr.markForCheck();
+      return;
+    }
+    // Build new key: replace last segment while keeping the prefix
+    const parts = oldKey.split(".");
+    parts[parts.length - 1] = keyPart;
+    const newKey = parts.join(".");
+
+    this.loading = true;
+    this.errorText = null;
+    this.successText = null;
+    this.http
+      .post<{ status: string; new_key: string }>(
+        this.servletUrl,
+        `body=${encodeURIComponent(JSON.stringify({ prompt_key: oldKey, new_key: newKey, display_name: newName }))}`,
+        {
+          headers: {
+            "X-Action": "Rename",
+            "X-View": this.xView(),
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+        },
+      )
+      .subscribe({
+        next: () => {
+          this.loading = false;
+          this.showRenameDialog = false;
+          this.selectedKey = newKey;
+          this.successText = this.tr("pm.msg.renamed", { name: newName });
+          this.loadPrompts();
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.loading = false;
+          this.errorText = this.tr("pm.err.renameFailed", { error: err.message });
+          this.cdr.markForCheck();
+        },
+      });
+  }
+
+  // #endregion
+
   // #region Card Actions
 
   toggleActive(): void {
@@ -539,7 +1071,7 @@ export class PromptManager implements OnInit, OnDestroy {
         },
         error: (err) => {
           this.loading = false;
-          this.errorText = `Toggle failed: ${err.message}`;
+          this.errorText = this.tr("pm.err.toggleFailed", { error: err.message });
           this.cdr.markForCheck();
         },
       });
@@ -580,8 +1112,8 @@ export class PromptManager implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           this.loading = false;
-          this.successText = "Prompt saved successfully.";
-          // #region Persist pre/post active states to localStorage (permanent across sessions)
+          this.successText = this.tr("pm.msg.saved");
+          // #region Persist pre/post active states to localStorage and update local data
           if (key) {
             localStorage.setItem(`${PromptManager.LS_PRE}${key}`, String(this.editPrePromptActive));
             localStorage.setItem(`${PromptManager.LS_POST}${key}`, String(this.editPostPromptActive));
@@ -589,15 +1121,21 @@ export class PromptManager implements OnInit, OnDestroy {
             if (localRecord) {
               localRecord.prePromptActive = this.editPrePromptActive;
               localRecord.postPromptActive = this.editPostPromptActive;
+              localRecord.displayName = this.editDisplayName;
+              localRecord.prePrompt = this.editPrePrompt || null;
+              localRecord.promptText = this.editPromptText;
+              localRecord.postPrompt = this.editPostPrompt || null;
+              localRecord.updateAvailable = false;
             }
           }
           // #endregion
-          this.loadPrompts();
+          // Update the tree in-place without a full reload
+          this.buildTree();
           this.cdr.markForCheck();
         },
         error: (err) => {
           this.loading = false;
-          this.errorText = `Save failed: ${err.message}`;
+          this.errorText = this.tr("pm.err.saveFailed", { error: err.message });
           this.cdr.markForCheck();
         },
       });
@@ -621,13 +1159,13 @@ export class PromptManager implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           this.loading = false;
-          this.successText = "Prompt restored to original.";
+          this.successText = this.tr("pm.msg.restored");
           this.loadPrompts();
           this.cdr.markForCheck();
         },
         error: (err) => {
           this.loading = false;
-          this.errorText = `Restore failed: ${err.message}`;
+          this.errorText = this.tr("pm.err.restoreFailed", { error: err.message });
           this.cdr.markForCheck();
         },
       });
@@ -654,7 +1192,7 @@ export class PromptManager implements OnInit, OnDestroy {
           this.cdr.markForCheck();
         },
         error: (err) => {
-          this.errorText = `Export failed: ${err.message}`;
+          this.errorText = this.tr("pm.err.exportFailed", { error: err.message });
           this.cdr.markForCheck();
         },
       });
@@ -738,7 +1276,7 @@ export class PromptManager implements OnInit, OnDestroy {
               });
           }
         } catch {
-          this.errorText = "Invalid JSON file.";
+          this.errorText = this.tr("pm.err.invalidJson");
           this.cdr.markForCheck();
         }
       };
@@ -750,7 +1288,9 @@ export class PromptManager implements OnInit, OnDestroy {
   private checkImportDone(completed: number, errors: number, total: number): void {
     if (completed + errors < total) return;
     this.loading = false;
-    this.successText = `Imported ${completed} prompt(s)${errors > 0 ? ` (${errors} failed)` : ""}.`;
+    this.successText =
+      this.tr("pm.msg.importedOk", { count: completed }) +
+      (errors > 0 ? this.tr("pm.msg.importedFail", { failed: errors }) : "");
     this.loadPrompts();
     this.cdr.markForCheck();
   }
@@ -768,7 +1308,7 @@ export class PromptManager implements OnInit, OnDestroy {
           const data = JSON.parse(reader.result as string) as PromptExport;
           this.uploadImport(data);
         } catch {
-          this.errorText = "Invalid JSON file.";
+          this.errorText = this.tr("pm.err.invalidJson");
           this.cdr.markForCheck();
         }
       };
@@ -795,13 +1335,13 @@ export class PromptManager implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           this.loading = false;
-          this.successText = `Prompt "${data.prompt_key}" imported successfully.`;
+          this.successText = this.tr("pm.msg.promptImported", { key: data.prompt_key });
           this.loadPrompts();
           this.cdr.markForCheck();
         },
         error: (err) => {
           this.loading = false;
-          this.errorText = `Import failed: ${err.message}`;
+          this.errorText = this.tr("pm.err.importFailed", { error: err.message });
           this.cdr.markForCheck();
         },
       });

@@ -490,7 +490,22 @@ class AICodBiAssistant : IPluginServletAction {
       instance: Standard,
       imageParts: List<String> = emptyList()
   ): Pair<String, String?> {
-    val systemPrompt = buildFormSystemPrompt()
+    // Document-parsing rules are only included when the request references an attached document.
+    val hasAttachedDocument = imageParts.isNotEmpty()
+    val baseSystemPrompt = buildFormSystemPrompt()
+    val systemPrompt =
+        if (hasAttachedDocument) {
+          val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+          val docRules =
+              try {
+                em?.let { PromptLoader.loadDocumentParsingRules(it) }
+              } finally {
+                em?.close()
+              }
+          if (!docRules.isNullOrBlank()) {
+            "$baseSystemPrompt\n\n## DOCUMENT PARSING RULES (attached document)\n\n$docRules"
+          } else baseSystemPrompt
+        } else baseSystemPrompt
     val imageHint =
         if (imageParts.isNotEmpty()) {
           val n = imageParts.size
@@ -665,7 +680,7 @@ class AICodBiAssistant : IPluginServletAction {
               }
             }
 
-        val applySystemPrompt = loadCodbiApplyPrompt()
+        val applySystemPrompt = loadCodbiApplyPrompt(requested)
 
         val pass2UserContent =
             "Original user request: $prompt\n\nApply CodBi functionalities ($candidateClause) to these form elements:\n${gson.toJson(targetItems)}"
@@ -746,8 +761,14 @@ class AICodBiAssistant : IPluginServletAction {
           val reason =
               if (!hasApplicabilityField) "omitted _codbiApplicability entirely"
               else "evaluated CodBi list but found no candidates — forcing blind evaluation"
-          logger.info("[AICodBiAssistant] AI {} — triggering blind CodBi evaluation pass", reason)
-          cleaned = rerunWithCodbiDetails(emptyList())
+          if (jsonDeclaresNothingApplies(cleaned) || rawClaimsNothingApplies(rawResponse)) {
+            logger.info(
+                "[AICodBiAssistant] AI declared/stated no CodBi element applies — skipping blind reconsideration ({})",
+                reason)
+          } else {
+            logger.info("[AICodBiAssistant] AI {} — triggering blind CodBi evaluation pass", reason)
+            cleaned = rerunWithCodbiDetails(emptyList())
+          }
         }
       }
     }
@@ -816,6 +837,54 @@ class AICodBiAssistant : IPluginServletAction {
       CodbiDetailsSignal(elements = elements, applicabilityReport = report)
     } catch (_: Exception) {
       null
+    }
+  }
+
+  /**
+   * Returns true when the raw assistant response contains an explicit natural-language statement
+   * that no CodBi element is applicable. The JSON-extraction normally discards such prose;
+   * capturing it lets us avoid forcing a blind CodBi reconsideration pass when the model already
+   * decided there is nothing to apply.
+   */
+  private fun rawClaimsNothingApplies(raw: String): Boolean {
+    val text = raw.lowercase()
+    val patterns =
+        listOf(
+            "no applicable",
+            "nothing applies",
+            "nothing to apply",
+            "none apply",
+            "no codbi element",
+            "no codbi elements",
+            "no functionality applies",
+            "no element applies",
+            "kein codbi element",
+            "keine codbi elemente",
+            "kein element anwendbar",
+            "keine elemente anwendbar",
+            "keine funktionalität anwendbar",
+            "keine funktionalitaet anwendbar",
+            "nichts anwendbar")
+    return patterns.any { text.contains(it) }
+  }
+
+  /**
+   * Returns true when the AI explicitly declared in its `_codbiApplicability` report that no CodBi
+   * element is applicable (`codbiVerdict = "none"`). This is the structured, language-independent
+   * signal; [rawClaimsNothingApplies] remains as a fallback for prose-only verdicts.
+   */
+  private fun jsonDeclaresNothingApplies(cleanedJson: String): Boolean {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any> ?: return false
+      @Suppress("UNCHECKED_CAST")
+      val report =
+          (obj["_codbiApplicability"] as? Map<*, *>)
+              ?: (obj["codbiApplicability"] as? Map<*, *>)
+              ?: return false
+      (report["codbiVerdict"] as? String)?.equals("none", ignoreCase = true) == true
+    } catch (_: Exception) {
+      false
     }
   }
 
@@ -1949,6 +2018,16 @@ class AICodBiAssistant : IPluginServletAction {
   ): String {
     val active =
         currentStandards.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toMutableList()
+    // System standard configurations (e.g. Holistic.Cleave.*) whose prompt was deactivated in the
+    // Prompt Manager are never auto-applied; deactivated configs are also removed from the active
+    // set. Missing records (seed not run yet) are treated as enabled.
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    val enabledHolistic =
+        try {
+          PromptLoader.activeSystemStandardConfigs(em)
+        } finally {
+          em?.close()
+        }
     return try {
       // --- Mechanism 1: Holistic.Cleave.* auto-management ---
       // When aiSetStandards is null (first AI run this session), AI is in control of ALL
@@ -1956,6 +2035,15 @@ class AICodBiAssistant : IPluginServletAction {
       if (aiSetStandards == null) {
         val after = computeCleaveConditions(modifiedFormJson)
         for ((config, shouldBeAfter) in after) {
+          // Respect Prompt Manager deactivation of the corresponding system prompt.
+          if (config !in enabledHolistic) {
+            if (config in active) {
+              active.remove(config)
+              logger.info(
+                  "[AICodBiAssistant] Removed deactivated system standard config '{}'", config)
+            }
+            continue
+          }
           if (shouldBeAfter && config !in active) active.add(config)
           else if (!shouldBeAfter && config in active) active.remove(config)
         }
@@ -1963,6 +2051,15 @@ class AICodBiAssistant : IPluginServletAction {
         val aiSet = aiSetStandards.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
         val after = computeCleaveConditions(modifiedFormJson)
         for ((config, shouldBeAfter) in after) {
+          // Respect Prompt Manager deactivation of the corresponding system prompt.
+          if (config !in enabledHolistic) {
+            if (config in active) {
+              active.remove(config)
+              logger.info(
+                  "[AICodBiAssistant] Removed deactivated system standard config '{}'", config)
+            }
+            continue
+          }
           val wasAiOn = config in aiSet
           val isActive = config in active
           // Same state as AI last set → AI is still in control → apply the new condition.
@@ -1988,7 +2085,7 @@ class AICodBiAssistant : IPluginServletAction {
       // --- Mechanism 3: Standard configurations explicitly listed by the AI in _codbiApplicability
       // ---
       // The AI can request standard activation by including the standard name in the "applied"
-      // array.
+      // array. Known system standard configs are only honored when their prompt is active.
       if (!applicabilityReport.isNullOrBlank()) {
         try {
           val reportObj = JsonParser.parseString(applicabilityReport).asJsonObject
@@ -1997,7 +2094,9 @@ class AICodBiAssistant : IPluginServletAction {
             for (entry in appliedArr) {
               if (!entry.isJsonObject) continue
               val id = entry.asJsonObject.get("id")?.asString ?: continue
-              if (id.startsWith("Holistic.") && id !in active) {
+              if (id.startsWith("Holistic.") &&
+                  id !in active &&
+                  (id !in PromptLoader.SYSTEM_CONFIG_NAMES || id in enabledHolistic)) {
                 active.add(id)
                 logger.info(
                     "[AICodBiAssistant] Activated standard '{}' requested by AI in _codbiApplicability",
@@ -7222,7 +7321,7 @@ class AICodBiAssistant : IPluginServletAction {
               "\n" +
               (cb["codbi.general"] ?: "") +
               "\n" +
-              "{{CODBI_FULL_SECTION}}")
+              "{{CODBI_ELEMENTS_SECTION}}")
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load form system prompt", e)
       return FALLBACK_FORM_SYSTEM_PROMPT
@@ -7279,22 +7378,33 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
-  /** Loads the CodBi apply (pass-2) prompt from the database. */
-  private fun loadCodbiApplyPrompt(): String {
+  /**
+   * Loads the CodBi apply (pass-2) prompt from the database. When [requestedIds] is non-empty, only
+   * the details (parameters/TSDoc) of those specific elements are appended instead of the whole
+   * full API reference.
+   */
+  private fun loadCodbiApplyPrompt(requestedIds: List<String> = emptyList()): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return FALLBACK_APPLY_PROMPT
     try {
       val categories = PromptLoader.loadCategory(em, "codbi")
-      return PromptLoader.resolvePlaceholders(
+      val base =
           (categories["codbi.standard_configurations"] ?: "") +
               "\n" +
               (categories["codbi.functionalities"] ?: "") +
               "\n" +
               (categories["codbi.element_placeholders"] ?: "") +
               "\n" +
-              (categories["codbi.general"] ?: "") +
-              "\n" +
-              "{{CODBI_FULL_SECTION}}")
+              (categories["codbi.general"] ?: "")
+      if (requestedIds.isEmpty()) {
+        return PromptLoader.resolvePlaceholders(base + "\n{{CODBI_FULL_SECTION}}")
+      }
+      val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
+      // Fall back to the full reference when none of the requested IDs could be resolved.
+      if (details.isBlank()) {
+        return PromptLoader.resolvePlaceholders(base + "\n{{CODBI_FULL_SECTION}}")
+      }
+      return base + "\n\n" + details
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load apply prompt", e)
       return FALLBACK_APPLY_PROMPT

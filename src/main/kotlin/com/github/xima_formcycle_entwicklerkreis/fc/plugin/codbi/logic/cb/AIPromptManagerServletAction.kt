@@ -35,6 +35,9 @@ class AIPromptManagerServletAction : IPluginServletAction {
       "ToggleActive" -> handleToggleActive(params)
       "Export" -> handleExport(params)
       "Import" -> handleImport(params)
+      "Create" -> handleCreate(params)
+      "Delete" -> handleDelete(params)
+      "Rename" -> handleRename(params)
       else -> jsonResponse("""{"error":"Unknown action"}""")
     }
   }
@@ -71,6 +74,18 @@ class AIPromptManagerServletAction : IPluginServletAction {
         prePromptActive: Boolean = true,
         postPromptActive: Boolean = true
     )
+
+    fun createPrompt(
+        em: EntityManager,
+        key: String,
+        displayName: String?,
+        promptText: String,
+        category: String?
+    )
+
+    fun deletePrompt(em: EntityManager, key: String)
+
+    fun renamePrompt(em: EntityManager, oldKey: String, newKey: String, displayName: String? = null)
   }
 
   private fun resolveLoader(params: IPluginServletActionParams): LoaderApi {
@@ -129,6 +144,23 @@ class AIPromptManagerServletAction : IPluginServletAction {
             postPrompt,
             prePromptActive,
             postPromptActive)
+
+    override fun createPrompt(
+        em: EntityManager,
+        key: String,
+        displayName: String?,
+        promptText: String,
+        category: String?
+    ) = PromptLoader.createPrompt(em, key, displayName, promptText, category)
+
+    override fun deletePrompt(em: EntityManager, key: String) = PromptLoader.deletePrompt(em, key)
+
+    override fun renamePrompt(
+        em: EntityManager,
+        oldKey: String,
+        newKey: String,
+        displayName: String?
+    ) = PromptLoader.renamePrompt(em, oldKey, newKey, displayName)
   }
 
   private object CompactApi : LoaderApi {
@@ -181,6 +213,24 @@ class AIPromptManagerServletAction : IPluginServletAction {
             postPrompt,
             prePromptActive,
             postPromptActive)
+
+    override fun createPrompt(
+        em: EntityManager,
+        key: String,
+        displayName: String?,
+        promptText: String,
+        category: String?
+    ) = CompactPromptLoader.createPrompt(em, key, displayName, promptText, category)
+
+    override fun deletePrompt(em: EntityManager, key: String) =
+        CompactPromptLoader.deletePrompt(em, key)
+
+    override fun renamePrompt(
+        em: EntityManager,
+        oldKey: String,
+        newKey: String,
+        displayName: String?
+    ) = CompactPromptLoader.renamePrompt(em, oldKey, newKey, displayName)
   }
 
   // endregion
@@ -347,6 +397,77 @@ class AIPromptManagerServletAction : IPluginServletAction {
     } catch (e: Exception) {
       logger.warn("[AIPromptManager] Export failed", e)
       return jsonResponse("""{"error":"Export failed"}""")
+    } finally {
+      em.close()
+    }
+  }
+
+  private fun handleCreate(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    val body = readBody(params) ?: return jsonResponse("""{"error":"No body"}""")
+    val emf =
+        CodbiEntities.entityManagerFactory ?: return jsonResponse("""{"error":"DB not ready"}""")
+    val em = emf.createEntityManager()
+    val loader = resolveLoader(params)
+    try {
+      val obj = JsonParser.parseString(body).asJsonObject
+      val key =
+          obj.get("prompt_key")?.asString
+              ?: return jsonResponse("""{"error":"Missing prompt_key"}""")
+      val promptText =
+          obj.get("prompt_text")?.asString
+              ?: return jsonResponse("""{"error":"Missing prompt_text"}""")
+      val displayName = obj.get("display_name")?.asString
+      val category = obj.get("category")?.asString
+      loader.createPrompt(em, key, displayName, promptText, category)
+      return jsonResponse("""{"status":"ok"}""")
+    } catch (e: Exception) {
+      logger.warn("[AIPromptManager] Create failed", e)
+      return jsonResponse("""{"error":"Create failed"}""")
+    } finally {
+      em.close()
+    }
+  }
+
+  private fun handleDelete(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    val body = readBody(params) ?: return jsonResponse("""{"error":"No body"}""")
+    val emf =
+        CodbiEntities.entityManagerFactory ?: return jsonResponse("""{"error":"DB not ready"}""")
+    val em = emf.createEntityManager()
+    val loader = resolveLoader(params)
+    try {
+      val obj = JsonParser.parseString(body).asJsonObject
+      val key =
+          obj.get("prompt_key")?.asString
+              ?: return jsonResponse("""{"error":"Missing prompt_key"}""")
+      loader.deletePrompt(em, key)
+      return jsonResponse("""{"status":"ok"}""")
+    } catch (e: Exception) {
+      logger.warn("[AIPromptManager] Delete failed", e)
+      return jsonResponse("""{"error":"Delete failed"}""")
+    } finally {
+      em.close()
+    }
+  }
+
+  private fun handleRename(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    val body = readBody(params) ?: return jsonResponse("""{"error":"No body"}""")
+    val emf =
+        CodbiEntities.entityManagerFactory ?: return jsonResponse("""{"error":"DB not ready"}""")
+    val em = emf.createEntityManager()
+    val loader = resolveLoader(params)
+    try {
+      val obj = JsonParser.parseString(body).asJsonObject
+      val oldKey =
+          obj.get("prompt_key")?.asString
+              ?: return jsonResponse("""{"error":"Missing prompt_key"}""")
+      val newKey =
+          obj.get("new_key")?.asString ?: return jsonResponse("""{"error":"Missing new_key"}""")
+      val displayName = obj.get("display_name")?.asString
+      loader.renamePrompt(em, oldKey, newKey, displayName)
+      return jsonResponse("""{"status":"ok","new_key":"$newKey"}""")
+    } catch (e: Exception) {
+      logger.warn("[AIPromptManager] Rename failed", e)
+      return jsonResponse("""{"error":"Rename failed"}""")
     } finally {
       em.close()
     }

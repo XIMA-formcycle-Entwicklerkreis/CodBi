@@ -87,7 +87,7 @@ internal class ChatCompletionService(
         append(",\"max_tokens\":$effectiveMaxTokens")
       }
 
-      append(",\"temperature\":${if (enableThinking) "0.7" else "0.6"}")
+      append(",\"temperature\":${if (enableThinking) "0.7" else "0.0"}")
 
       if (!external) append(",\"repetition_penalty\":${if (enableThinking) "1.2" else "1.1"}")
       if (!external) append(",\"frequency_penalty\":${if (enableThinking) "0.3" else "0.5"}")
@@ -106,6 +106,7 @@ internal class ChatCompletionService(
 
     if (useExtSpecialist) {
       requestBody = overrideExternalClient!!.injectModelField(requestBody)
+      requestBody = overrideExternalClient!!.injectExtraParams(requestBody)
     } else if (external) {
       requestBody = injectModelField?.invoke(requestBody) ?: requestBody
 
@@ -208,6 +209,7 @@ internal class ChatCompletionService(
 
     if (useExtSpecialist) {
       requestBody = overrideExternalClient!!.injectModelField(requestBody)
+      requestBody = overrideExternalClient!!.injectExtraParams(requestBody)
     } else if (external) {
       requestBody = injectModelField?.invoke(requestBody) ?: requestBody
 

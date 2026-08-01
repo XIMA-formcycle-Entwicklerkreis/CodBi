@@ -95,6 +95,17 @@ class AiProxy : AI() {
 
     idLogMessages = "AI / Proxy"
 
+    // Check if prompt re-seed is requested via plugin property
+    val reseedRaw =
+        configData.properties.getProperty(PromptLoader.RESEED_PROPERTY)?.trim()?.lowercase()
+    if (reseedRaw == "true" || reseedRaw == "1" || reseedRaw == "yes") {
+      PromptLoader.forceReseed = true
+      CompactPromptLoader.forceReseed = true
+      log(
+          LogLevel.INFO,
+          "AI_Prompt_Reseed = true — will re-seed all prompts on next DB initialization")
+    }
+
     val ipRaw = configData.properties.getProperty("AI_Proxy_AllowedIPs") ?: ""
     val entries = ipRaw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
     val cidrs = mutableListOf<CidrEntry>()

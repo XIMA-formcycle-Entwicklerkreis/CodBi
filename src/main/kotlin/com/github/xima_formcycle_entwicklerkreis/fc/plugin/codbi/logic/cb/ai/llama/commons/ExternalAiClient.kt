@@ -27,7 +27,8 @@ internal class ExternalAiClient(
     private val baseUrl: String,
     private val apiKey: String?,
     private val model: String?,
-    private val log: (LogLevel, String) -> Unit
+    private val log: (LogLevel, String) -> Unit,
+    private val extraParams: String? = null
 ) {
 
   companion object {
@@ -196,6 +197,29 @@ internal class ExternalAiClient(
       json.toString()
     } catch (e: Exception) {
       log(LogLevel.WARNING, "Failed to inject model field via JSON parse: ${e.message}")
+      requestBody
+    }
+  }
+
+  /**
+   * Injects the specialist-specific extra JSON parameters (e.g. `{"temperature":0.0}`) into the
+   * request body. The parameters are merged into the root JSON object. Existing keys are
+   * overwritten so specialist params take precedence over globally set ones.
+   *
+   * @param requestBody The original JSON body.
+   * @return The body with extra parameters merged in, or unchanged if no extra params are set.
+   */
+  fun injectExtraParams(requestBody: String): String {
+    val ep = extraParams ?: return requestBody
+    return try {
+      val json = com.google.gson.JsonParser.parseString(requestBody).asJsonObject
+      val extra = com.google.gson.JsonParser.parseString(ep).asJsonObject
+      for (key in extra.keySet()) {
+        json.add(key, extra.get(key))
+      }
+      json.toString()
+    } catch (e: Exception) {
+      log(LogLevel.WARNING, "Failed to inject extra params via JSON parse: ${e.message}")
       requestBody
     }
   }

@@ -23,6 +23,9 @@ internal object CompactPromptLoader {
   private val gson = GsonBuilder().create()
   private var needsBulkSeedCheck = true
 
+  /** Set externally from plugin properties (e.g., `AI_Prompt_Reseed=true`) to force a re-seed. */
+  @Volatile internal var forceReseed = false
+
   /** Base classpath resource directory. */
   private const val RESOURCE_BASE = "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
 
@@ -38,6 +41,9 @@ internal object CompactPromptLoader {
   /** Seed version marker key. */
   private const val SEED_VERSION_KEY = "_seed_version"
 
+  /** Plugin property name for forcing a prompt re-seed via Formcycle plugin config. */
+  internal const val RESEED_PROPERTY = "AI_FormAssistant_Prompt_Reseed"
+
   // region Seed
 
   /** Seeds / updates all compact prompts from classpath resources. */
@@ -45,6 +51,18 @@ internal object CompactPromptLoader {
     val em = emf.createEntityManager()
     try {
       em.transaction.begin()
+
+      // Check for force reseed flag (set from plugin property AI_Prompt_Reseed)
+      if (forceReseed) {
+        logger.info(
+            "[CompactPromptLoader] Force reseed requested via plugin property '{}' — clearing stored version",
+            RESEED_PROPERTY)
+        em.createNativeQuery("DELETE FROM $TABLE WHERE prompt_key = :key")
+            .setParameter("key", SEED_VERSION_KEY)
+            .executeUpdate()
+        forceReseed = false
+      }
+
       val storedVersion = readSeedVersion(em)
       if (storedVersion == pluginVersion) {
         em.transaction.commit()
@@ -96,7 +114,9 @@ internal object CompactPromptLoader {
       val postPrompt: String?,
       val isActive: Boolean,
       val prePromptActive: Boolean = true,
-      val postPromptActive: Boolean = true
+      val postPromptActive: Boolean = true,
+      val isSystem: Boolean = false,
+      val updateAvailable: Boolean = false
   )
 
   fun listAllPrompts(em: EntityManager): List<CompactRecord> {
@@ -134,6 +154,40 @@ internal object CompactPromptLoader {
     return toggleActiveInternal(em, key)
   }
 
+  fun createPrompt(
+      em: EntityManager,
+      key: String,
+      displayName: String?,
+      promptText: String,
+      category: String?
+  ) {
+    val ver = System.currentTimeMillis().toString()
+    val cat = category ?: key.split(".").firstOrNull() ?: key
+    try {
+      em.transaction.begin()
+      em.createNativeQuery(
+              """INSERT INTO $TABLE
+               (prompt_key, category, prompt_text, original_text,
+                display_name, is_active, pre_prompt_active, post_prompt_active,
+                prompt_version, updated_at)
+             VALUES (:key, :cat, :txt, :txt, :dn, true, true, true, :ver, CURRENT_TIMESTAMP)""")
+          .setParameter("key", key)
+          .setParameter("cat", cat)
+          .setParameter("txt", promptText)
+          .setParameter("dn", displayName)
+          .setParameter("ver", ver)
+          .executeUpdate()
+      em.transaction.commit()
+      logger.info("[CompactPromptLoader] Created prompt '{}'", key)
+    } catch (e: Exception) {
+      try {
+        em.transaction.rollback()
+      } catch (_: Exception) {}
+      logger.warn("[CompactPromptLoader] Failed to create prompt '{}': {}", key, e.message)
+      throw e
+    }
+  }
+
   fun importPrompt(
       em: EntityManager,
       key: String,
@@ -154,6 +208,63 @@ internal object CompactPromptLoader {
         displayName,
         prePromptActive,
         postPromptActive)
+  }
+
+  fun deletePrompt(em: EntityManager, key: String) {
+    try {
+      em.transaction.begin()
+      em.createNativeQuery("DELETE FROM $TABLE WHERE prompt_key = :key")
+          .setParameter("key", key)
+          .executeUpdate()
+      em.transaction.commit()
+      logger.info("[CompactPromptLoader] Deleted prompt '{}'", key)
+    } catch (e: Exception) {
+      try {
+        em.transaction.rollback()
+      } catch (_: Exception) {}
+      logger.warn("[CompactPromptLoader] Failed to delete prompt '{}': {}", key, e.message)
+      throw e
+    }
+  }
+
+  fun renamePrompt(em: EntityManager, oldKey: String, newKey: String, displayName: String? = null) {
+    try {
+      em.transaction.begin()
+      val cat = newKey.split(".").firstOrNull() ?: newKey
+      if (displayName != null) {
+        em.createNativeQuery(
+                """UPDATE $TABLE
+               SET prompt_key = :newKey, category = :cat, display_name = :dn,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE prompt_key = :oldKey""")
+            .setParameter("newKey", newKey)
+            .setParameter("cat", cat)
+            .setParameter("dn", displayName)
+            .setParameter("oldKey", oldKey)
+            .executeUpdate()
+      } else {
+        em.createNativeQuery(
+                """UPDATE $TABLE
+               SET prompt_key = :newKey, category = :cat, updated_at = CURRENT_TIMESTAMP
+               WHERE prompt_key = :oldKey""")
+            .setParameter("newKey", newKey)
+            .setParameter("cat", cat)
+            .setParameter("oldKey", oldKey)
+            .executeUpdate()
+      }
+      em.transaction.commit()
+      logger.info("[CompactPromptLoader] Renamed prompt '{}' -> '{}'", oldKey, newKey)
+    } catch (e: Exception) {
+      try {
+        em.transaction.rollback()
+      } catch (_: Exception) {}
+      logger.warn(
+          "[CompactPromptLoader] Failed to rename prompt '{}' -> '{}': {}",
+          oldKey,
+          newKey,
+          e.message)
+      throw e
+    }
   }
 
   // endregion
@@ -229,12 +340,24 @@ internal object CompactPromptLoader {
     if (existing != null) {
       val (dbText, dbOriginal) = existing
       if (dbText != null && dbOriginal != null && dbText != dbOriginal) {
+        // A newer version is available when the bundled .md content differs from the stored
+        // original snapshot. Surface this via the update_available flag.
+        val newerAvailable = dbOriginal != text
+        em.createNativeQuery(
+                "UPDATE $TABLE SET update_available = :flag, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
+            .apply {
+              setParameter("flag", newerAvailable)
+              setParameter("key", key)
+            }
+            .executeUpdate()
         logger.info(
-            "[CompactPromptLoader] Prompt '{}' was modified by user — preserving edits", key)
+            "[CompactPromptLoader] Prompt '{}' was modified by user — preserving edits (updateAvailable={})",
+            key,
+            newerAvailable)
         return
       }
       em.createNativeQuery(
-              "UPDATE $TABLE SET prompt_text = :text, original_text = :orig, prompt_version = :ver, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
+              "UPDATE $TABLE SET prompt_text = :text, original_text = :orig, prompt_version = :ver, is_system = true, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
           .apply {
             setParameter("text", text)
             setParameter("orig", text)
@@ -250,7 +373,7 @@ internal object CompactPromptLoader {
     val cat = key.substringBefore(".", key)
     val dname = deriveDisplayName(key)
     em.createNativeQuery(
-            "INSERT INTO $TABLE (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name, pre_prompt_active, post_prompt_active) VALUES (:key, :cat, :text, :ver, :orig, :active, :dname, :preAct, :postAct)")
+            "INSERT INTO $TABLE (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name, pre_prompt_active, post_prompt_active, is_system, update_available) VALUES (:key, :cat, :text, :ver, :orig, :active, :dname, :preAct, :postAct, true, false)")
         .apply {
           setParameter("key", key)
           setParameter("cat", cat)
@@ -309,8 +432,50 @@ internal object CompactPromptLoader {
       if (body.isBlank()) continue
       val itemKey =
           "$baseKey.${name.lowercase().replace(Regex("[^a-z0-9_]"), "_").replace(Regex("_+"), "_").trim('_')}"
-      upsertPrompt(em, itemKey, body, version)
-      logger.info("[CompactPromptLoader] Upserted '{}' from '{}'", itemKey, fileName)
+
+      // Check for ### sub-headers within this section
+      val subLines = body.lines()
+      val subSections = mutableListOf<Pair<String, String>>()
+      var currentSub: String? = null
+      val subBody = StringBuilder()
+
+      for (line in subLines) {
+        val t = line.trimStart()
+        if (t.startsWith("### ")) {
+          if (currentSub != null) {
+            subSections.add(currentSub!! to subBody.toString().trim())
+            subBody.clear()
+          }
+          currentSub = t.removePrefix("### ").trim()
+        } else if (currentSub != null) {
+          subBody.append(line).append("\n")
+        }
+      }
+      if (currentSub != null) {
+        subSections.add(currentSub!! to subBody.toString().trim())
+      }
+
+      if (subSections.isNotEmpty()) {
+        val sectionMainBody =
+            subLines.takeWhile { !it.trimStart().startsWith("### ") }.joinToString("\n").trim()
+        if (sectionMainBody.isNotBlank()) {
+          upsertPrompt(em, itemKey, sectionMainBody, version)
+          logger.info(
+              "[CompactPromptLoader] Upserted section '{}' ({} sub-items)",
+              itemKey,
+              subSections.size)
+        }
+        for ((subName, subContent) in subSections) {
+          if (subContent.isBlank()) continue
+          val subKey =
+              "$itemKey.${subName.lowercase().replace(Regex("[^a-z0-9_]"), "_").replace(Regex("_+"), "_").trim('_')}"
+          upsertPrompt(em, subKey, subContent, version)
+          logger.info("[CompactPromptLoader] Upserted sub-item '{}'", subKey)
+        }
+      } else {
+        upsertPrompt(em, itemKey, body, version)
+        logger.info("[CompactPromptLoader] Upserted '{}' from '{}'", itemKey, fileName)
+      }
     }
   }
 
@@ -318,11 +483,11 @@ internal object CompactPromptLoader {
     return try {
       val q =
           em.createNativeQuery(
-              "SELECT prompt_key, display_name, category, prompt_text, original_text, pre_prompt, post_prompt, is_active, pre_prompt_active, post_prompt_active FROM $TABLE WHERE prompt_key != :skip ORDER BY category, prompt_key")
+              "SELECT prompt_key, display_name, category, prompt_text, original_text, pre_prompt, post_prompt, is_active, pre_prompt_active, post_prompt_active, is_system, update_available FROM $TABLE WHERE prompt_key != :skip ORDER BY category, prompt_key")
       q.setParameter("skip", SEED_VERSION_KEY)
       @Suppress("UNCHECKED_CAST")
       (q.resultList as? List<Array<Any>>)?.mapNotNull { row ->
-        if (row.size < 10) return@mapNotNull null
+        if (row.size < 12) return@mapNotNull null
         CompactRecord(
             promptKey = row[0]?.toString() ?: return@mapNotNull null,
             displayName = row[1]?.toString(),
@@ -333,7 +498,9 @@ internal object CompactPromptLoader {
             postPrompt = resolveClob(row[6]),
             isActive = row[7]?.toString() == "true" || row[7]?.toString() == "1",
             prePromptActive = row[8]?.toString() == "true" || row[8]?.toString() == "1",
-            postPromptActive = row[9]?.toString() == "true" || row[9]?.toString() == "1")
+            postPromptActive = row[9]?.toString() == "true" || row[9]?.toString() == "1",
+            isSystem = row[10]?.toString() == "true" || row[10]?.toString() == "1",
+            updateAvailable = row[11]?.toString() == "true" || row[11]?.toString() == "1")
       } ?: emptyList()
     } catch (e: Exception) {
       logger.warn("[CompactPromptLoader] Failed to list: {}", e.message)
@@ -357,9 +524,9 @@ internal object CompactPromptLoader {
       em.transaction.begin()
       val sql =
           if (promptText != null)
-              "UPDATE $TABLE SET prompt_text = :text, pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
+              "UPDATE $TABLE SET prompt_text = :text, pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
           else
-              "UPDATE $TABLE SET pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
+              "UPDATE $TABLE SET pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
       val u = em.createNativeQuery(sql)
       if (promptText != null) u.setParameter("text", promptText)
       u.setParameter("pre", prePrompt)
@@ -384,11 +551,26 @@ internal object CompactPromptLoader {
   private fun restoreOriginalInternal(em: EntityManager, key: String) {
     try {
       em.transaction.begin()
-      em.createNativeQuery(
-              "UPDATE $TABLE SET prompt_text = original_text, prompt_version = :ver, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key AND original_text IS NOT NULL")
-          .setParameter("ver", System.currentTimeMillis().toString())
-          .setParameter("key", key)
-          .executeUpdate()
+      val newest = resolveNewestSeedContent(key)
+      if (newest != null) {
+        em.createNativeQuery(
+                "UPDATE $TABLE SET prompt_text = :text, original_text = :text, prompt_version = :ver, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
+            .setParameter("text", newest)
+            .setParameter("ver", System.currentTimeMillis().toString())
+            .setParameter("key", key)
+            .executeUpdate()
+        logger.info(
+            "[CompactPromptLoader] Restored '{}' to newest bundled version ({} chars)",
+            key,
+            newest.length)
+      } else {
+        em.createNativeQuery(
+                "UPDATE $TABLE SET prompt_text = original_text, prompt_version = :ver, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key AND original_text IS NOT NULL")
+            .setParameter("ver", System.currentTimeMillis().toString())
+            .setParameter("key", key)
+            .executeUpdate()
+        logger.info("[CompactPromptLoader] Restored '{}' to stored original snapshot", key)
+      }
       em.transaction.commit()
     } catch (e: Exception) {
       try {
@@ -452,6 +634,94 @@ internal object CompactPromptLoader {
       logger.warn("[CompactPromptLoader] Failed to load '{}': {}", path, e.message)
       null
     }
+  }
+
+  /**
+   * Reconstructs the per-key seed content for every prompt that would be seeded from a file,
+   * mirroring the `##`/`###` section splitting of [seedSplitFile] without touching the DB.
+   */
+  private fun seedContentMap(baseKey: String, content: String): Map<String, String> {
+    val result = mutableMapOf<String, String>()
+    val lines = content.lines()
+    val headerBuilder = StringBuilder()
+    val sections = mutableListOf<Pair<String, String>>()
+    var currentSection: String? = null
+    val currentBody = StringBuilder()
+
+    for (line in lines) {
+      val trimmed = line.trimStart()
+      if (trimmed.startsWith("## ")) {
+        if (currentSection != null) {
+          sections.add(currentSection!! to currentBody.toString().trim())
+          currentBody.clear()
+        }
+        val ht = trimmed.removePrefix("## ").trim()
+        if (ht.uppercase().startsWith("GENERIC")) {
+          currentSection = null
+          headerBuilder.append("\n").append(line).append("\n")
+        } else {
+          currentSection = ht
+        }
+      } else if (currentSection != null) {
+        currentBody.append(line).append("\n")
+      } else {
+        headerBuilder.append(line).append("\n")
+      }
+    }
+    if (currentSection != null) sections.add(currentSection!! to currentBody.toString().trim())
+
+    val parent = headerBuilder.toString().trim()
+    if (parent.isNotBlank()) result[baseKey] = parent
+
+    for ((name, body) in sections) {
+      if (body.isBlank()) continue
+      val itemKey =
+          "$baseKey.${name.lowercase().replace(Regex("[^a-z0-9_]"), "_").replace(Regex("_+"), "_").trim('_')}"
+
+      val subLines = body.lines()
+      val subSections = mutableListOf<Pair<String, String>>()
+      var currentSub: String? = null
+      val subBody = StringBuilder()
+      for (line in subLines) {
+        val t = line.trimStart()
+        if (t.startsWith("### ")) {
+          if (currentSub != null) {
+            subSections.add(currentSub!! to subBody.toString().trim())
+            subBody.clear()
+          }
+          currentSub = t.removePrefix("### ").trim()
+        } else if (currentSub != null) {
+          subBody.append(line).append("\n")
+        }
+      }
+      if (currentSub != null) subSections.add(currentSub!! to subBody.toString().trim())
+
+      if (subSections.isNotEmpty()) {
+        val sectionMainBody =
+            subLines.takeWhile { !it.trimStart().startsWith("### ") }.joinToString("\n").trim()
+        if (sectionMainBody.isNotBlank()) result[itemKey] = sectionMainBody
+        for ((subName, subContent) in subSections) {
+          if (subContent.isBlank()) continue
+          result[
+              "$itemKey.${subName.lowercase().replace(Regex("[^a-z0-9_]"), "_").replace(Regex("_+"), "_").trim('_')}"] =
+              subContent
+        }
+      } else {
+        result[itemKey] = body
+      }
+    }
+    return result
+  }
+
+  /** Loads the newest bundled seed content for a given [key] from the classpath .md resources. */
+  private fun resolveNewestSeedContent(key: String): String? {
+    for ((resourcePath, baseKey) in SEED_FILES) {
+      if (key != baseKey && !key.startsWith("$baseKey.")) continue
+      val content = loadResourceFile(resourcePath) ?: continue
+      val newest = seedContentMap(baseKey, content)[key] ?: continue
+      return newest
+    }
+    return null
   }
 
   // endregion

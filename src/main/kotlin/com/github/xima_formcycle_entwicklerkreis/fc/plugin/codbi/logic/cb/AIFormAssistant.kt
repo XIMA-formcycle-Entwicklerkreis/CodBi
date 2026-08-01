@@ -247,7 +247,7 @@ class AIFormAssistant : IPluginServletAction {
               }
             }
 
-        val applySystemPrompt = loadCodbiApplyPrompt()
+        val applySystemPrompt = loadCodbiApplyPrompt(requested)
         val pass2UserContent =
             "Original user request: ${gson.toJson(prompt)}\n\nApply CodBi functionalities ($candidateClause) to these form elements:\n${gson.toJson(targetItems)}"
 
@@ -355,15 +355,21 @@ class AIFormAssistant : IPluginServletAction {
           val reason =
               if (!hasApplicabilityField) "omitted _codbiApplicability entirely"
               else "evaluated CodBi list but found no candidates — forcing blind evaluation"
-          logger.info("[AIFormAssistant] AI {} — triggering blind CodBi evaluation pass", reason)
-          cleaned =
-              try {
-                rerunWithCodbiDetails(emptyList())
-              } catch (e: ExternalAiHttpException) {
-                return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
-              } catch (e: Exception) {
-                return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
-              }
+          if (jsonDeclaresNothingApplies(cleaned) || rawClaimsNothingApplies(withoutThinkTags)) {
+            logger.info(
+                "[AIFormAssistant] AI declared/stated no CodBi element applies — skipping blind reconsideration ({})",
+                reason)
+          } else {
+            logger.info("[AIFormAssistant] AI {} — triggering blind CodBi evaluation pass", reason)
+            cleaned =
+                try {
+                  rerunWithCodbiDetails(emptyList())
+                } catch (e: ExternalAiHttpException) {
+                  return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+                } catch (e: Exception) {
+                  return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+                }
+          }
         }
       }
     }
@@ -455,6 +461,54 @@ class AIFormAssistant : IPluginServletAction {
       CodbiDetailsSignal(elements = elements, applicabilityReport = report)
     } catch (_: Exception) {
       null
+    }
+  }
+
+  /**
+   * Returns true when the raw assistant response contains an explicit natural-language statement
+   * that no CodBi element is applicable. The JSON-extraction normally discards such prose;
+   * capturing it lets us avoid forcing a blind CodBi reconsideration pass when the model already
+   * decided there is nothing to apply.
+   */
+  private fun rawClaimsNothingApplies(raw: String): Boolean {
+    val text = raw.lowercase()
+    val patterns =
+        listOf(
+            "no applicable",
+            "nothing applies",
+            "nothing to apply",
+            "none apply",
+            "no codbi element",
+            "no codbi elements",
+            "no functionality applies",
+            "no element applies",
+            "kein codbi element",
+            "keine codbi elemente",
+            "kein element anwendbar",
+            "keine elemente anwendbar",
+            "keine funktionalität anwendbar",
+            "keine funktionalitaet anwendbar",
+            "nichts anwendbar")
+    return patterns.any { text.contains(it) }
+  }
+
+  /**
+   * Returns true when the AI explicitly declared in its `_codbiApplicability` report that no CodBi
+   * element is applicable (`codbiVerdict = "none"`). This is the structured, language-independent
+   * signal; [rawClaimsNothingApplies] remains as a fallback for prose-only verdicts.
+   */
+  private fun jsonDeclaresNothingApplies(cleanedJson: String): Boolean {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any> ?: return false
+      @Suppress("UNCHECKED_CAST")
+      val report =
+          (obj["_codbiApplicability"] as? Map<*, *>)
+              ?: (obj["codbiApplicability"] as? Map<*, *>)
+              ?: return false
+      (report["codbiVerdict"] as? String)?.equals("none", ignoreCase = true) == true
+    } catch (_: Exception) {
+      false
     }
   }
 
@@ -1278,22 +1332,33 @@ class AIFormAssistant : IPluginServletAction {
     }
   }
 
-  /** Loads the CodBi apply (pass-2) prompt from the database. */
-  private fun loadCodbiApplyPrompt(): String {
+  /**
+   * Loads the CodBi apply (pass-2) prompt from the database. When [requestedIds] is non-empty, only
+   * the details (parameters/TSDoc) of those specific elements are appended instead of the whole
+   * full API reference.
+   */
+  private fun loadCodbiApplyPrompt(requestedIds: List<String> = emptyList()): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return FALLBACK_APPLY_PROMPT
     try {
       val categories = PromptLoader.loadCategory(em, "codbi")
-      return PromptLoader.resolvePlaceholders(
+      val base =
           (categories["codbi.standard_configurations"] ?: "") +
               "\n" +
               (categories["codbi.functionalities"] ?: "") +
               "\n" +
               (categories["codbi.element_placeholders"] ?: "") +
               "\n" +
-              (categories["codbi.general"] ?: "") +
-              "\n" +
-              "{{CODBI_FULL_SECTION}}")
+              (categories["codbi.general"] ?: "")
+      if (requestedIds.isEmpty()) {
+        return PromptLoader.resolvePlaceholders(base + "\n{{CODBI_FULL_SECTION}}")
+      }
+      val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
+      // Fall back to the full reference when none of the requested IDs could be resolved.
+      if (details.isBlank()) {
+        return PromptLoader.resolvePlaceholders(base + "\n{{CODBI_FULL_SECTION}}")
+      }
+      return base + "\n\n" + details
     } catch (e: Exception) {
       logger.warn("[AIFormAssistant] Failed to load apply prompt", e)
       return FALLBACK_APPLY_PROMPT

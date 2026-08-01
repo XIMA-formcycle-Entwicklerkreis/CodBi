@@ -4,6 +4,7 @@
     [modal]="true"
     [draggable]="true"
     [resizable]="true"
+    [maximizable]="true"
     [style]="{ width: '85vw', maxWidth: '1200px', maxHeight: '85vh' }"
     [closeOnEscape]="true"
     [baseZIndex]="2100"
@@ -11,7 +12,7 @@
     <ng-template pTemplate="header">
         <div class="cb-pm-dialog-header">
             <img class="cb-pm-logo" [src]="logoUrl" alt="CodBi" />
-            <span class="cb-pm-title">Prompt Manager</span>
+            <span class="cb-pm-title">{{ 'pm.title' | transloco }}</span>
         </div>
     </ng-template>
 
@@ -22,44 +23,50 @@
                 <button type="button" class="cb-pm-filter-btn"
                     [class.cb-pm-filter-btn--active]="viewMode === 'detailed'"
                     (click)="switchView('detailed')"
-                    title="Edit detailed prompts">
-                    Detailed
+                    [title]="'pm.view.detailed.tip' | transloco">
+                    {{ 'pm.view.detailed' | transloco }}
                 </button>
                 <button type="button" class="cb-pm-filter-btn"
                     [class.cb-pm-filter-btn--active]="viewMode === 'condensed'"
                     (click)="switchView('condensed')"
-                    title="Edit condensed/short prompts">
-                    Condensed
+                    [title]="'pm.view.condensed.tip' | transloco">
+                    {{ 'pm.view.condensed' | transloco }}
+                </button>
+                <span class="cb-pm-filter-sep"></span>
+                <button type="button" class="cb-pm-filter-btn cb-pm-filter-btn--add"
+                    (click)="openAddCategoryDialog()"
+                    [title]="'pm.addCategory.tip' | transloco">
+                    {{ 'pm.addCategory' | transloco }}
                 </button>
                 <span class="cb-pm-filter-sep"></span>
                 <button type="button" class="cb-pm-filter-btn"
                     (click)="importAll()"
-                    title="Import prompts from JSON file">
-                    Import All
+                    [title]="'pm.importAll.tip' | transloco">
+                    {{ 'pm.importAll' | transloco }}
                 </button>
                 <button type="button" class="cb-pm-filter-btn"
                     (click)="exportAll()"
-                    title="Export all prompts as JSON">
-                    <span class="pi pi-download" style="font-size:0.85em"></span> Export All
+                    [title]="'pm.exportAll.tip' | transloco">
+                    <span class="pi pi-download" style="font-size:0.85em"></span> {{ 'pm.exportAll' | transloco }}
                 </button>
                 <span class="cb-pm-filter-sep"></span>
                 <button type="button" class="cb-pm-filter-btn"
                     [class.cb-pm-filter-btn--active]="showAllMode"
                     (click)="showAllMode = true; showInactiveOnly = false; toggleFilterMode()"
-                    title="Show all prompts">
-                    All
+                    [title]="'pm.filter.all.tip' | transloco">
+                    {{ 'pm.filter.all' | transloco }}
                 </button>
                 <button type="button" class="cb-pm-filter-btn"
                     [class.cb-pm-filter-btn--active]="!showAllMode && !showInactiveOnly"
                     (click)="showAllMode = false; showInactiveOnly = false; toggleFilterMode()"
-                    title="Show only active prompts">
-                    Active
+                    [title]="'pm.filter.active.tip' | transloco">
+                    {{ 'pm.filter.active' | transloco }}
                 </button>
                 <button type="button" class="cb-pm-filter-btn"
                     [class.cb-pm-filter-btn--active]="showInactiveOnly"
                     (click)="showAllMode = false; showInactiveOnly = true; toggleFilterMode()"
-                    title="Show only inactive prompts">
-                    InActive
+                    [title]="'pm.filter.inactive.tip' | transloco">
+                    {{ 'pm.filter.inactive' | transloco }}
                 </button>
             </div>
             <p-tree
@@ -67,40 +74,48 @@
                 selectionMode="single"
                 (onNodeSelect)="onNodeSelect($event)"
                 [filter]="true"
-                filterPlaceholder="Filter prompts..."
+                [filterPlaceholder]="'pm.filterPlaceholder' | transloco"
                 styleClass="cb-pm-tree">
                 <ng-template let-node pTemplate="item">
-                    <span class="cb-pm-tree-node-label">
-                        <span class="cb-pm-tree-inactive-icon" *ngIf="isTreeNodeInactive(node)" title="Inactive">&#x2716;</span>
-                        <span class="cb-pm-tree-partial-icon" *ngIf="isTreeNodePartiallyInactive(node)" title="Pre/Post prompt deactivated">&#x26A0;</span>
+                    <span class="cb-pm-tree-node-label"
+                        [class.cb-pm-tree-node--abstract]="node.isAbstract"
+                        [class.cb-pm-tree-node--system-app]="node.isSystemApp">
+                        <span class="cb-pm-tree-inactive-icon" *ngIf="isTreeNodeInactive(node)" [title]="'pm.tree.inactive.tip' | transloco">&#x2716;</span>
+                        <span class="cb-pm-tree-partial-icon" *ngIf="isTreeNodePartiallyInactive(node)" [title]="'pm.tree.partial.tip' | transloco">&#x26A0;</span>
                         <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
                     </span>
                 </ng-template>
                 <ng-template let-node pTemplate="category">
                     <span class="cb-pm-tree-node-label">
+                        <button type="button" class="cb-pm-tree-node-add-btn"
+                            (click)="openAddItemDialog(node.data); $event.stopPropagation()"
+                            [title]="'pm.tree.add.tip' | transloco">+</button>
                         <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
                         <button type="button" class="cb-pm-tree-node-export-btn"
                             (click)="exportCategory(node.data); $event.stopPropagation()"
-                            title="Export this category">&#x2913;</button>
+                            [title]="'pm.tree.export.tip' | transloco"><span class="pi pi-download"></span></button>
                     </span>
                 </ng-template>
                 <ng-template let-node pTemplate="subcategory">
                     <span class="cb-pm-tree-node-label">
+                        <button type="button" class="cb-pm-tree-node-add-btn"
+                            (click)="openAddItemDialog(node.data); $event.stopPropagation()"
+                            [title]="'pm.tree.add.tip' | transloco">+</button>
                         <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
                         <button type="button" class="cb-pm-tree-node-export-btn"
                             (click)="exportCategory(node.data); $event.stopPropagation()"
-                            title="Export this category">&#x2913;</button>
+                            [title]="'pm.tree.export.tip' | transloco"><span class="pi pi-download"></span></button>
                     </span>
                 </ng-template>
             </p-tree>
         </div>
 
         <!-- Resize handle -->
-        <div class="cb-pm-splitter" (mousedown)="onSplitterMouseDown($event)" title="Drag to resize"></div>
+        <div class="cb-pm-splitter" (mousedown)="onSplitterMouseDown($event)" [title]="'pm.splitter.tip' | transloco"></div>
 
         <!-- Card View (right panel) — only shown for item nodes -->
         <div class="cb-pm-card-panel">
-            <div class="cb-pm-loading" *ngIf="loading && !activeRecord">Loading prompts...</div>
+            <div class="cb-pm-loading" *ngIf="loading && !activeRecord">{{ 'pm.loading' | transloco }}</div>
 
             <p-message *ngIf="errorText" severity="error" [text]="errorText" styleClass="cb-pm-message" />
             <p-message *ngIf="successText" severity="success" [text]="successText" styleClass="cb-pm-message" />
@@ -113,29 +128,49 @@
                     [class.cb-pm-card-indicator--active]="activeRecord.isActive"
                     [class.cb-pm-card-indicator--inactive]="!activeRecord.isActive"
                     (click)="toggleActive()"
-                    [title]="activeRecord.isActive ? 'Active — click to deactivate' : 'Inactive — click to activate'">
+                    [title]="activeRecord.isActive ? ('pm.indicator.active.tip' | transloco) : ('pm.indicator.inactive.tip' | transloco)">
                 </div>
 
                 <div class="cb-pm-card-body">
-                    <!-- Header -->
+                    <!-- Header: category path badge + element name -->
                     <div class="cb-pm-card-header">
-                        <span class="cb-pm-display-name">{{ editDisplayName }}</span>
+                        <span class="cb-pm-card-category-badge">{{ cardTitlePath }}</span>
+                        <span class="cb-pm-display-name">{{ cardTitleName }}</span>
+                    </div>
+
+                    <!-- Hint: a newer bundled version is available after a plugin update -->
+                    <div class="cb-pm-update-hint" *ngIf="hasUpdateAvailable()"
+                        [pTooltip]="updateHintTooltip" tooltipPosition="top"
+                        tooltipStyleClass="cb-pm-update-tooltip">
+                        <i class="pi pi-info-circle"></i>
+                        <span class="cb-pm-update-hint-text">{{ 'pm.updateHint.text' | transloco }}</span>
+                        <button type="button" class="cb-pm-filter-btn cb-pm-filter-btn--active"
+                            (click)="restoreOriginal()"
+                            [title]="'pm.updateHint.load.tip' | transloco">
+                            {{ 'pm.updateHint.load' | transloco }}
+                        </button>
+                    </div>
+
+                    <!-- Localized display description (when a translation exists for this prompt key) -->
+                    <div class="cb-pm-localized-desc" *ngIf="localizedDescription">
+                        <div class="cb-pm-field-label">{{ 'pm.descriptionLabel' | transloco }}</div>
+                        <div class="cb-pm-localized-desc-text">{{ localizedDescription }}</div>
                     </div>
 
                     <!-- Editable content -->
                     <div class="cb-pm-card-editor">
                         <div class="cb-pm-field-row">
-                            <label class="cb-pm-field-label">Pre-Prompt</label>
+                            <label class="cb-pm-field-label">{{ 'pm.prePrompt' | transloco }}</label>
                             <div class="cb-pm-field-actions">
                                 <button type="button" class="cb-pm-resize-btn"
                                     (click)="autoResizePre()"
-                                    title="Fit to content">&#x21C5;</button>
+                                    [title]="'pm.fit' | transloco">&#x21C5;</button>
                                 <button type="button" class="cb-pm-toggle-btn"
                                     [class.cb-pm-toggle-btn--on]="editPrePromptActive"
                                     [class.cb-pm-toggle-btn--off]="!editPrePromptActive"
                                     (click)="togglePrePromptActive()"
-                                    [title]="editPrePromptActive ? 'Pre-Prompt is active — click to deactivate' : 'Pre-Prompt is inactive — click to activate'">
-                                    {{ editPrePromptActive ? 'ON' : 'OFF' }}
+                                    [title]="(editPrePromptActive ? 'pm.prePrompt.active.tip' : 'pm.prePrompt.inactive.tip') | transloco">
+                                    {{ (editPrePromptActive ? 'pm.on' : 'pm.off') | transloco }}
                                 </button>
                             </div>
                         </div>
@@ -145,15 +180,15 @@
                             [(ngModel)]="editPrePrompt"
                             rows="2"
                             class="cb-pm-textarea cb-pm-textarea--small"
-                            placeholder="Optional text prepended before the main prompt..."
+                            [placeholder]="'pm.prePlaceholder' | transloco"
                             (input)="autoGrow($event)">
                         </textarea>
 
                         <div class="cb-pm-field-row">
-                            <label class="cb-pm-field-label">Prompt</label>
+                            <label class="cb-pm-field-label">{{ 'pm.prompt' | transloco }}</label>
                             <button type="button" class="cb-pm-resize-btn"
                                 (click)="autoResizePrompt()"
-                                title="Fit to content">&#x21C5;</button>
+                                [title]="'pm.fit' | transloco">&#x21C5;</button>
                         </div>
                         <textarea
                             #promptTextarea
@@ -161,22 +196,24 @@
                             [(ngModel)]="editPromptText"
                             rows="6"
                             class="cb-pm-textarea"
-                            placeholder="Prompt content..."
+                            [class.cb-pm-textarea--readonly]="isSystemApp()"
+                            [readonly]="isSystemApp()"
+                            [placeholder]="'pm.promptPlaceholder' | transloco"
                             (input)="autoGrow($event)">
                         </textarea>
 
                         <div class="cb-pm-field-row">
-                            <label class="cb-pm-field-label">Post-Prompt</label>
+                            <label class="cb-pm-field-label">{{ 'pm.postPrompt' | transloco }}</label>
                             <div class="cb-pm-field-actions">
                                 <button type="button" class="cb-pm-resize-btn"
                                     (click)="autoResizePost()"
-                                    title="Fit to content">&#x21C5;</button>
+                                    [title]="'pm.fit' | transloco">&#x21C5;</button>
                                 <button type="button" class="cb-pm-toggle-btn"
                                     [class.cb-pm-toggle-btn--on]="editPostPromptActive"
                                     [class.cb-pm-toggle-btn--off]="!editPostPromptActive"
                                     (click)="togglePostPromptActive()"
-                                    [title]="editPostPromptActive ? 'Post-Prompt is active — click to deactivate' : 'Post-Prompt is inactive — click to activate'">
-                                    {{ editPostPromptActive ? 'ON' : 'OFF' }}
+                                    [title]="(editPostPromptActive ? 'pm.postPrompt.active.tip' : 'pm.postPrompt.inactive.tip') | transloco">
+                                    {{ (editPostPromptActive ? 'pm.on' : 'pm.off') | transloco }}
                                 </button>
                             </div>
                         </div>
@@ -186,19 +223,26 @@
                             [(ngModel)]="editPostPrompt"
                             rows="2"
                             class="cb-pm-textarea cb-pm-textarea--small"
-                            placeholder="Optional text appended after the main prompt..."
+                            [placeholder]="'pm.postPlaceholder' | transloco"
                             (input)="autoGrow($event)">
                         </textarea>
 
                         <div class="cb-pm-actions">
-                            <p-button label="Save" icon="pi pi-check" (onClick)="save()"
+                            <p-button [label]="'pm.save' | transloco" icon="pi pi-check" (onClick)="save()"
                                 [disabled]="loading" severity="primary" />
-                            <p-button label="Restore Original" icon="pi pi-refresh" (onClick)="restoreOriginal()"
+                            <p-button [label]="'pm.restore' | transloco" icon="pi pi-refresh" (onClick)="restoreOriginal()"
                                 [disabled]="loading" severity="secondary" [outlined]="true" />
-                            <p-button label="Export" icon="pi pi-download" (onClick)="exportPrompt()"
+                            <p-button [label]="'pm.export' | transloco" icon="pi pi-download" (onClick)="exportPrompt()"
                                 severity="secondary" [outlined]="true" />
-                            <p-button label="Import" icon="pi pi-upload" (onClick)="importPrompt()"
+                            <p-button [label]="'pm.import' | transloco" icon="pi pi-upload" (onClick)="importPrompt()"
                                 severity="secondary" [outlined]="true" />
+                            <span class="cb-pm-actions-sep"></span>
+                            <p-button [label]="'pm.rename' | transloco" icon="pi pi-pencil" (onClick)="openRenameDialog()"
+                                [disabled]="loading" severity="help" [outlined]="true"
+                                *ngIf="isUserCreated()" />
+                            <p-button [label]="'pm.delete' | transloco" icon="pi pi-trash" (onClick)="deletePrompt()"
+                                [disabled]="loading" severity="danger" [outlined]="true"
+                                *ngIf="isUserCreated()" />
                         </div>
                     </div>
                 </div>
@@ -207,18 +251,193 @@
             <div *ngIf="!activeRecord && !loading" class="cb-pm-category-empty">
                 <div class="cb-pm-loading">
                     <ng-container *ngIf="selectedKey && isCategoryKey(selectedKey)">
-                        <span>Select a prompt or </span>
+                        <span>{{ 'pm.selectPrompt' | transloco }}</span>
                         <button type="button" class="cb-pm-filter-btn cb-pm-filter-btn--active"
                             (click)="exportCategory(selectedKey)"
-                            title="Export all prompts in this category">
-                            Export Category
+                            [title]="'pm.exportCategory.tip' | transloco">
+                            {{ 'pm.exportCategory' | transloco }}
+                        </button>
+                        <span> &middot; </span>
+                        <button type="button" class="cb-pm-filter-btn cb-pm-filter-btn--active"
+                            (click)="openAddItemDialog(selectedKey)"
+                            [title]="'pm.addItem.tip' | transloco">
+                            {{ 'pm.addItem' | transloco }}
                         </button>
                     </ng-container>
                     <ng-container *ngIf="!selectedKey || !isCategoryKey(selectedKey)">
-                        <span>Select a prompt from the tree to edit.</span>
+                        <span>{{ 'pm.selectFromTree' | transloco }}</span>
                     </ng-container>
                 </div>
             </div>
+        </div>
+    </div>
+</p-dialog>
+
+<!-- Add Category Dialog -->
+<p-dialog
+    [visible]="showAddCategoryDialog"
+    (visibleChange)="closeAddCategoryDialog()"
+    [modal]="true"
+    [draggable]="true"
+    [resizable]="false"
+    [style]="{ width: '450px' }"
+    [closeOnEscape]="true"
+    [baseZIndex]="2200"
+    styleClass="cb-pm-add-dialog">
+    <ng-template pTemplate="header">
+        <span class="cb-pm-title">{{ 'pm.addCategory.title' | transloco }}</span>
+    </ng-template>
+    <div class="cb-pm-add-dialog-body">
+        <p-message *ngIf="errorText" severity="error" [text]="errorText" styleClass="cb-pm-message" />
+
+        <div class="cb-pm-add-field">
+            <label class="cb-pm-add-label">{{ 'pm.field.categoryKey' | transloco }}</label>
+            <input
+                pInputText
+                [(ngModel)]="newCategoryKey"
+                [placeholder]="'pm.ph.categoryKey' | transloco"
+                class="cb-pm-add-input"
+                (keydown.enter)="addCategory()" />
+            <span class="cb-pm-add-hint">{{ 'pm.hint.categoryKey' | transloco }}</span>
+        </div>
+
+        <div class="cb-pm-add-field">
+            <label class="cb-pm-add-label">{{ 'pm.field.displayName' | transloco }}</label>
+            <input
+                pInputText
+                [(ngModel)]="newCategoryDisplayName"
+                [placeholder]="'pm.ph.displayName' | transloco"
+                class="cb-pm-add-input"
+                (keydown.enter)="addCategory()" />
+            <span class="cb-pm-add-hint">{{ 'pm.hint.displayName' | transloco }}</span>
+        </div>
+
+        <div class="cb-pm-add-field">
+            <label class="cb-pm-add-label">{{ 'pm.field.defaultPromptText' | transloco }}</label>
+            <textarea
+                pTextarea
+                [(ngModel)]="newCategoryPromptText"
+                rows="4"
+                class="cb-pm-textarea"
+                [placeholder]="'pm.ph.defaultPromptText' | transloco">
+            </textarea>
+            <span class="cb-pm-add-hint">{{ 'pm.hint.general' | transloco }}</span>
+        </div>
+
+        <div class="cb-pm-add-actions">
+            <p-button [label]="'pm.cancel' | transloco" icon="pi pi-times" (onClick)="closeAddCategoryDialog()"
+                severity="secondary" [outlined]="true" />
+            <p-button [label]="'pm.createCategory' | transloco" icon="pi pi-plus" (onClick)="addCategory()"
+                [disabled]="loading" severity="primary" />
+        </div>
+    </div>
+</p-dialog>
+
+<!-- Add Item Dialog -->
+<p-dialog
+    [visible]="showAddItemDialog"
+    (visibleChange)="closeAddItemDialog()"
+    [modal]="true"
+    [draggable]="true"
+    [resizable]="false"
+    [style]="{ width: '500px' }"
+    [closeOnEscape]="true"
+    [baseZIndex]="2200"
+    styleClass="cb-pm-add-dialog">
+    <ng-template pTemplate="header">
+        <span class="cb-pm-title">{{ 'pm.addItem.title' | transloco }}</span>
+    </ng-template>
+    <div class="cb-pm-add-dialog-body">
+        <p-message *ngIf="errorText" severity="error" [text]="errorText" styleClass="cb-pm-message" />
+
+        <div class="cb-pm-add-field">
+            <label class="cb-pm-add-label">{{ 'pm.field.parent' | transloco }}</label>
+            <div class="cb-pm-add-parent-badge">{{ addItemParentLabel || ('pm.topLevel' | transloco) }}</div>
+        </div>
+
+        <div class="cb-pm-add-field">
+            <label class="cb-pm-add-label">{{ 'pm.field.itemName' | transloco }}</label>
+            <input
+                pInputText
+                [(ngModel)]="newItemName"
+                [placeholder]="'pm.ph.itemName' | transloco"
+                class="cb-pm-add-input"
+                (keydown.enter)="addItem()" />
+            <span class="cb-pm-add-hint">
+                {{ 'pm.hint.keyPreview' | transloco }} <code>{{ newItemKeyPreview }}</code>
+            </span>
+        </div>
+
+        <div class="cb-pm-add-field">
+            <label class="cb-pm-add-label">{{ 'pm.field.displayName' | transloco }}</label>
+            <input
+                pInputText
+                [(ngModel)]="newItemDisplayName"
+                [placeholder]="'pm.ph.itemName' | transloco"
+                class="cb-pm-add-input"
+                (keydown.enter)="addItem()" />
+        </div>
+
+        <div class="cb-pm-add-field">
+            <label class="cb-pm-add-label">{{ 'pm.field.promptText' | transloco }}</label>
+            <textarea
+                pTextarea
+                [(ngModel)]="newItemPromptText"
+                rows="6"
+                class="cb-pm-textarea"
+                [placeholder]="'pm.ph.promptText' | transloco">
+            </textarea>
+        </div>
+
+        <div class="cb-pm-add-actions">
+            <p-button [label]="'pm.cancel' | transloco" icon="pi pi-times" (onClick)="closeAddItemDialog()"
+                severity="secondary" [outlined]="true" />
+            <p-button [label]="'pm.createItem' | transloco" icon="pi pi-plus" (onClick)="addItem()"
+                [disabled]="loading" severity="primary" />
+        </div>
+    </div>
+</p-dialog>
+
+<!-- Rename Dialog -->
+<p-dialog
+    [visible]="showRenameDialog"
+    (visibleChange)="closeRenameDialog()"
+    [modal]="true"
+    [draggable]="true"
+    [resizable]="false"
+    [style]="{ width: '400px' }"
+    [closeOnEscape]="true"
+    [baseZIndex]="2200"
+    styleClass="cb-pm-add-dialog">
+    <ng-template pTemplate="header">
+        <span class="cb-pm-title">{{ 'pm.rename.title' | transloco }}</span>
+    </ng-template>
+    <div class="cb-pm-add-dialog-body">
+        <p-message *ngIf="errorText" severity="error" [text]="errorText" styleClass="cb-pm-message" />
+
+        <div class="cb-pm-add-field">
+            <label class="cb-pm-add-label">{{ 'pm.field.currentKey' | transloco }}</label>
+            <div class="cb-pm-add-parent-badge">{{ selectedKey }}</div>
+        </div>
+
+        <div class="cb-pm-add-field">
+            <label class="cb-pm-add-label">{{ 'pm.field.newName' | transloco }}</label>
+            <input
+                pInputText
+                [(ngModel)]="renameNewName"
+                [placeholder]="'pm.ph.newName' | transloco"
+                class="cb-pm-add-input"
+                (keydown.enter)="renamePrompt()" />
+            <span class="cb-pm-add-hint">
+                {{ 'pm.hint.renamePreview' | transloco }} <code>{{ renameKeyPreview }}</code>
+            </span>
+        </div>
+
+        <div class="cb-pm-add-actions">
+            <p-button [label]="'pm.cancel' | transloco" icon="pi pi-times" (onClick)="closeRenameDialog()"
+                severity="secondary" [outlined]="true" />
+            <p-button [label]="'pm.renameAction' | transloco" icon="pi pi-check" (onClick)="renamePrompt()"
+                [disabled]="loading" severity="primary" />
         </div>
     </div>
 </p-dialog>

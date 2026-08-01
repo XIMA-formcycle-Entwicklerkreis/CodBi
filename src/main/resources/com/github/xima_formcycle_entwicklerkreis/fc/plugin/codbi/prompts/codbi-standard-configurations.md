@@ -87,3 +87,22 @@ CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContai
 When the prompt says "Matomo-Tracking aktivieren" or "activate Matomo tracking" without specifying a SiteID, do NOT add Matomo.Tracking functionality via data-cb-func on any element. Instead, include {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied — the server reads this and activates the standard configuration.
 
 Only apply Matomo.Tracking functionality with data-cb-SiteID when a SiteID IS explicitly specified in the prompt.
+
+## System Standard Configurations
+
+The following standard configurations are activated by the server (system applications) rather than through CSS classes on form elements. Each one can be deactivated in the Prompt Manager if it should not be applied.
+
+### Holistic.Matomo.Tracking
+Server-side standard configuration that activates Matomo/Piwik analytics tracking for the form. It is triggered when the AI reports {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied (e.g. when the user says "Matomo-Tracking aktivieren" without an explicit SiteID). Uses the Matomo_SiteID / Matomo_URL plugin configuration.
+
+### Holistic.Cleave.Date
+Server-side standard configuration that applies Cleave-based input formatting to date fields (datatype starting with "date"). The server activates it automatically based on the field datatypes present in the form.
+
+### Holistic.Cleave.Phone
+Server-side standard configuration that applies Cleave-based input formatting to phone number fields (datatype="phone"). The server activates it automatically based on the field datatypes present in the form.
+
+### Holistic.Cleave.PLZ
+Server-side standard configuration that applies Cleave-based input formatting to German postal code fields (datatype="plzDE"). The server activates it automatically based on the field datatypes present in the form.
+
+### Holistic.Cleave.Time
+Server-side standard configuration that applies Cleave-based input formatting to time fields (datatype="time"). The server activates it automatically based on the field datatypes present in the form.

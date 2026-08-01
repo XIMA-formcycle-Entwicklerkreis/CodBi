@@ -27,11 +27,6 @@ When the user asks for an AI chat / KI-Chat / chatbot, create all of the followi
 
 CRITICAL — Distinguish from Form Chatbot Plugin (XIMA Chatbot): Use XNavigationBar for XIMA mentioned navigation. Use CodBi ai.llama.chat ONLY when "CodBi KI-Chat" is explicitly mentioned.
 
-## AI.LLAMA.STD.QA
-
-This EP queries an AI to answer a question. USE for weather/AI/knowledge queries. Param[1]=question, Param[2]=UseInternet ("true"). CRITICAL: trailing semicolons for unused params.
-Example: "{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }"
-
 ## AI.OCR
 
 Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.

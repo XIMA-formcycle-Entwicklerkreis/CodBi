@@ -351,7 +351,8 @@ class ExternalAiClientTest {
       apiKey: String? = "test-key",
       model: String? = null
   ): ExternalAiClient {
-    return ExternalAiClient(baseUrl, apiKey, model) { level, msg -> logMessages.add(level to msg) }
+    return ExternalAiClient(
+        baseUrl, apiKey, model, log = { level, msg -> logMessages.add(level to msg) })
   }
 
   // endregion

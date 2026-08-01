@@ -49,15 +49,15 @@ Fetches content from a URL. Use for any prompt asking to retrieve web content.
 
 Queries the DOM for a CSS selector. The CSS selector from the prompt (dot-prefixed class name) is the parameter.
 
-## V (Variable)
+## V
 
 Resolves a global variable by name. Example: "{ V > BayVIS_WeitereAnsprechpartner }"
 
-## I (Index)
+## I
 
 Takes a 0-based index and a DOM EP result, returns the element at that index.
 
-## F (Find)
+## F
 
 Must be the OUTERMOST EP when filtering an array by exact property value. Do NOT wrap F in JSON.Path — F must be outermost.
 Correct: "{ F > postalCode ; 91522 ; { sorted > { unique > { openplz.localities > de ; ^a.* }; name }; name } }"
@@ -79,16 +79,42 @@ EP names use dots and are case-sensitive: OpenPLZ.Localities (NOT "openplz.local
 
 ## BayVIS EPs
 
-BayVIS Detail EPs expect NUMERIC IDs, not names:
-- BayVIS.Behoerden.Details, BayVIS.Behoerden.Details.Gebaeude, BayVIS.Behoerden.Gebaeude.ID, BayVIS.Ansprechpartner.Details all take numeric IDs.
-- The ID-resolver EPs take plain STRING names: BayVIS.Behoerden.ID (authority name), BayVIS.Ansprechpartner.ID (contact name).
-- The directory EPs REQUIRE a property name parameter: BayVIS.Behoerden > bezeichnung (not bare { BayVIS.Behoerden }), BayVIS.Ansprechpartner > nachname.
+BayVIS Detail EPs expect NUMERIC IDs, not names. The ID-resolver EPs take plain STRING names. The directory EPs REQUIRE a property name parameter.
 
-BayVIS.Behoerden valid property values: behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge.
-BayVIS.Ansprechpartner valid property values: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, sortierreihenfolge, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId.
+### BayVIS.Behoerden
 
-BayVIS.Behoerden.Details.Gebaeude takes TWO numeric parameters: param 1 = authority ID, param 2 = building ID. To look up building details by authority name, chain BOTH IDs.
+Directory EP — REQUIRES a property name parameter: { BayVIS.Behoerden > bezeichnung } (not bare { BayVIS.Behoerden }).
 
-BayVIS.Behoerden.Details returns authority METADATA (name, email, type), NOT building addresses. For BUILDING details use BayVIS.Behoerden.Details.Gebaeude.
+Valid property values: behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge.
 
-BayVIS.Behoerden.Details also accepts an OPTIONAL second parameter: a property name to extract just that specific field.
+### BayVIS.Behoerden.ID
+
+ID-resolver EP — takes a plain STRING authority name and returns the numeric ID. Example: { BayVIS.Behoerden.ID > <authority name> }.
+
+### BayVIS.Behoerden.Details
+
+Takes a NUMERIC authority ID. Returns authority METADATA (name, email, type), NOT building addresses. For BUILDING details use BayVIS.Behoerden.Details.Gebaeude.
+
+Also accepts an OPTIONAL second parameter: a property name to extract just that specific field.
+
+### BayVIS.Behoerden.Details.Gebaeude
+
+Takes TWO numeric parameters: param 1 = authority ID, param 2 = building ID. To look up building details by authority name, chain BOTH IDs.
+
+### BayVIS.Behoerden.Gebaeude.ID
+
+Takes NUMERIC IDs.
+
+### BayVIS.Ansprechpartner
+
+Directory EP — REQUIRES a property name parameter: { BayVIS.Ansprechpartner > nachname } (not bare { BayVIS.Ansprechpartner }).
+
+Valid property values: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, sortierreihenfolge, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId.
+
+### BayVIS.Ansprechpartner.ID
+
+ID-resolver EP — takes a plain STRING contact name and returns the numeric ID. Example: { BayVIS.Ansprechpartner.ID > <contact name> }.
+
+### BayVIS.Ansprechpartner.Details
+
+Takes a NUMERIC contact ID.

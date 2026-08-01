@@ -6,5 +6,6 @@
   { "file": "codbi-element-placeholders.md", "key": "codbi.element_placeholders" },
   { "file": "codbi-standard-configurations.md", "key": "codbi.standard_configurations" },
   { "file": "codbi-general.md", "key": "codbi.general" },
+  { "file": "codbi-document-parsing.md", "key": "codbi.document_parsing" },
   { "file": "codbi-classify-intent.md", "key": "codbi.classify_intent" }
 ]

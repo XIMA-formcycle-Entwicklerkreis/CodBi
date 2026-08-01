@@ -1,6 +1,45 @@
 /* #region Dialog — force topmost z-index */
 .cb-prompt-manager-dialog {
   z-index: 99999 !important;
+  box-shadow: 0 8px 32px rgba(255, 140, 0, 0.35);
+  border: 2px solid darkorange !important;
+  animation: cbPmDialogIn 0.5s ease-out;
+  /* Animate fullscreen maximize / restore (width/height change via .p-dialog-maximized) */
+  transition: width 0.35s ease, height 0.35s ease, max-width 0.35s ease,
+    max-height 0.35s ease, top 0.35s ease, left 0.35s ease, border-radius 0.35s ease;
+}
+
+@keyframes cbPmDialogIn {
+  from {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Fullscreen maximized state — fill entire viewport */
+.cb-prompt-manager-dialog.p-dialog-maximized {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  top: 0 !important;
+  left: 0 !important;
+  border-radius: 0;
+}
+
+.cb-prompt-manager-dialog.p-dialog-maximized .cb-pm-layout {
+  max-height: calc(100vh - 110px);
+  height: calc(100vh - 110px);
+}
+
+.cb-prompt-manager-dialog.p-dialog-maximized .p-dialog-content {
+  height: calc(100vh - 110px) !important;
+  max-height: none !important;
+  overflow: hidden;
 }
 
 /* Dialog header with logo */
@@ -45,6 +84,8 @@
   min-height: 300px;
   max-height: 75vh;
   overflow: hidden;
+  /* Animate the inner layout height when the dialog is maximized / restored */
+  transition: height 0.35s ease, max-height 0.35s ease;
 }
 
 /* #region Tree panel (left) */
@@ -132,6 +173,56 @@
   text-overflow: ellipsis;
 }
 
+/* Abstract CodBi prompts (e.g., "EP Chaining") — rounded border + shadow to distinguish
+   from real element placeholders */
+.cb-pm-tree-node--abstract {
+  background: #f3f6f8;
+  border: 1px solid #c8d4da;
+  border-radius: 8px;
+  padding: 2px 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  margin: 1px 0;
+}
+
+/* Server-side system standard configurations (e.g. "Holistic.Cleave.Date") — darkorange frame
+   to distinguish them from generic abstract instruction rules */
+.cb-pm-tree-node--system-app {
+  background: #fff3e0;
+  border: 1px solid #ff9800;
+  border-radius: 8px;
+  padding: 2px 8px;
+  box-shadow: 0 1px 4px rgba(255, 140, 0, 0.35);
+  margin: 1px 0;
+}
+
+/* Read-only prompt textarea for server-side system standard configurations */
+.cb-pm-textarea--readonly {
+  background: #f5f5f5;
+  color: #777;
+  cursor: not-allowed;
+}
+
+/* Localized display description for seeded prompt entries (via pm.desc.* translation keys) */
+.cb-pm-localized-desc {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid #e0e0e0;
+  border-left: 4px solid #90a4ae;
+  border-radius: 8px;
+  background: #fafafa;
+  color: #444;
+  font-size: 0.85em;
+}
+
+.cb-pm-localized-desc .cb-pm-field-label {
+  margin-bottom: 4px;
+}
+
+.cb-pm-localized-desc-text {
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
 .cb-pm-tree-node-export-btn {
   padding: 1px 6px;
   margin-left: 6px;
@@ -139,14 +230,15 @@
   transition: all 0.15s;
   line-height: 1.4;
   flex-shrink: 0;
-  border-radius: 10em;
+  border-radius: .5em;
   background-color: transparent;
-  border-color: darkorange;
-  border-width: .15em;
-  color: darkorange;
   font-weight: bolder;
-  font-size: 1.25em;
+  font-size: .75em !important;
   box-shadow: 0 0 .25em darkorange;
+}
+
+.cb-pm-tree-node-export-btn .pi {
+  font-size: .75em !important;
 }
 
 .cb-pm-tree-node-export-btn:hover {
@@ -232,6 +324,58 @@
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
+}
+
+/* Category/key path badge in the card header — rounded border + shadow to distinguish from the name */
+.cb-pm-card-category-badge {
+  font-size: 0.72em;
+  color: #8a5a00;
+  background: #fff3e0;
+  border: 1px solid #ffcc80;
+  border-radius: 10px;
+  padding: 2px 10px;
+  white-space: nowrap;
+  font-family: monospace;
+  box-shadow: 0 1px 4px rgba(255, 140, 0, 0.25);
+  flex-shrink: 0;
+}
+
+/* Hint shown when a newer bundled prompt version is available after a plugin update */
+.cb-pm-update-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid #ffb74d;
+  border-left: 4px solid #ff9800;
+  border-radius: 8px;
+  background: #fff8e1;
+  color: #7a4a00;
+  font-size: 0.85em;
+}
+
+.cb-pm-update-hint .pi {
+  color: #ff9800;
+  flex-shrink: 0;
+}
+
+.cb-pm-update-hint-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.cb-pm-update-hint .cb-pm-filter-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Tooltip with step-by-step directions for loading a newer prompt version */
+.cb-pm-update-tooltip {
+  max-width: 340px;
+  white-space: pre-line;
+  font-size: 0.85em;
+  line-height: 1.4;
 }
 
 .cb-pm-display-name {
@@ -380,6 +524,13 @@
   white-space: nowrap;
 }
 
+.cb-pm-actions-sep {
+  width: 1px;
+  min-width: 1px;
+  background: #e0e0e0;
+  margin: 0 4px;
+}
+
 /* Resize splitter handle between tree and card panels */
 .cb-pm-splitter {
   width: 5px;
@@ -407,4 +558,115 @@
 
 .cb-pm-splitter:hover::after {
   background: #fff;
+}
+
+/* #region Add buttons in tree nodes */
+.cb-pm-tree-node-add-btn {
+  padding: 0 5px;
+  margin-right: 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.4;
+  flex-shrink: 0;
+  border-radius: 3px;
+  background-color: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  color: #2e7d32;
+  font-weight: bold;
+  font-size: 1em;
+}
+
+.cb-pm-tree-node-add-btn:hover {
+  background: #c8e6c9;
+  border-color: #66bb6a;
+  color: #1b5e20;
+}
+
+.cb-pm-filter-btn--add {
+  background: #e8f5e9;
+  border-color: #a5d6a7;
+  color: #2e7d32;
+  font-weight: 600;
+}
+
+.cb-pm-filter-btn--add:hover {
+  background: #c8e6c9;
+  border-color: #66bb6a;
+  color: #1b5e20;
+}
+
+/* #region Add dialogs — must be above the main Prompt Manager dialog (99999) */
+.cb-pm-add-dialog,
+.p-dialog-mask:has(.cb-pm-add-dialog) {
+  z-index: 100000 !important;
+}
+
+.cb-pm-add-dialog .p-dialog-content {
+  padding: 16px !important;
+}
+
+.cb-pm-add-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cb-pm-add-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cb-pm-add-label {
+  font-size: 0.85em;
+  font-weight: 500;
+  color: #555;
+}
+
+.cb-pm-add-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  font-size: 0.9em;
+  transition: border-color 0.15s;
+}
+
+.cb-pm-add-input:focus {
+  border-color: #ff8c00;
+  outline: none;
+  box-shadow: 0 0 0 1px #ff8c00;
+}
+
+.cb-pm-add-hint {
+  font-size: 0.78em;
+  color: #888;
+  font-style: italic;
+}
+
+.cb-pm-add-hint code {
+  background: #f0f0f0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: 0.95em;
+  color: #555;
+}
+
+.cb-pm-add-parent-badge {
+  display: inline-block;
+  background: #fff3e0;
+  border: 1px solid #ffcc80;
+  color: #e65100;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.cb-pm-add-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
 }

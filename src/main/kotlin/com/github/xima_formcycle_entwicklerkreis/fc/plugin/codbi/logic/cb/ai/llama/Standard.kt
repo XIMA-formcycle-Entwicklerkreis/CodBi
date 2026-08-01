@@ -424,13 +424,15 @@ class Standard : LLAMA() {
     val keyPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_Key_"
     val modelPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_Model_"
     val maxTokensPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_MaxTokens_"
+    val extraParamsPrefix = "${PROP_PREFIX}_EXT_SPECIALIST_ExtraParams_"
     val result = mutableMapOf<String, StandardConfig.ExternalSpecialistEntry>()
 
     for (key in props.stringPropertyNames()) {
       if (!key.startsWith(prefix)) continue
       if (key.startsWith(keyPrefix) ||
           key.startsWith(modelPrefix) ||
-          key.startsWith(maxTokensPrefix))
+          key.startsWith(maxTokensPrefix) ||
+          key.startsWith(extraParamsPrefix))
           continue
 
       val specialistName = key.removePrefix(prefix).trim()
@@ -445,10 +447,18 @@ class Standard : LLAMA() {
           props.getProperty("${maxTokensPrefix}$specialistName")?.trim()?.toIntOrNull()?.takeIf {
             it > 0
           }
+      val extraParams =
+          props.getProperty("${extraParamsPrefix}$specialistName")?.trim()?.takeIf {
+            it.isNotEmpty()
+          }
 
       result[specialistName] =
           StandardConfig.ExternalSpecialistEntry(
-              url = url, apiKey = apiKey, model = model, maxTokens = maxTokens)
+              url = url,
+              apiKey = apiKey,
+              model = model,
+              maxTokens = maxTokens,
+              extraParams = extraParams)
     }
 
     return result
@@ -635,7 +645,7 @@ class Standard : LLAMA() {
 
     // Create external specialist clients (no downloads needed — instant)
     for ((name, entry) in config.externalSpecialists) {
-      val client = ExternalAiClient(entry.url, entry.apiKey, entry.model, logFn)
+      val client = ExternalAiClient(entry.url, entry.apiKey, entry.model, logFn, entry.extraParams)
       externalSpecialistClients[name.lowercase()] = client
       log(LogLevel.INFO, "External specialist '$name' client created for ${entry.url}")
     }

@@ -77,7 +77,7 @@
   "pm.view.condensed.tip": "Edit condensed/short prompts",
   "pm.addCategory": "+ Add Category",
   "pm.addCategory.tip": "Add a new top-level category",
-  "pm.importAll": "Import All",
+  "pm.importAll": "Import",
   "pm.importAll.tip": "Import prompts from JSON file",
   "pm.exportAll": "Export All",
   "pm.exportAll.tip": "Export all prompts as JSON",
@@ -153,6 +153,15 @@
   "pm.hint.renamePreview": "Only the last segment will change. Preview:",
   "pm.renameAction": "Rename",
   "pm.descriptionLabel": "Description",
+
+  "pm.legend.user": "User-created",
+  "pm.legend.system": "System application",
+  "pm.legend.abstract": "Abstract rule",
+
+  "pm.viewTotal": "Total tokens",
+  "pm.viewTotal.tip": "Total token size for the current view",
+  "pm.tokens.tip": "Approximate token count for this prompt",
+  "pm.tokens.tip.group": "Approximate token count for this category",
 
   "pm.err.categoryKeyRequired": "Category key is required.",
   "pm.err.categoryKeyInvalid": "Category key must not contain dots.",

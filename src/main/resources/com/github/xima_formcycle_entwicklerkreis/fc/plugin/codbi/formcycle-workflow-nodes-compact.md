@@ -1,0 +1,123 @@
+# Formcycle Workflow Nodes (Compact)
+
+Condensed reference: the FORMCYCLE workflow triggers and node types and what each is for. You receive ONLY this list initially. Before you emit the final workflow task JSON you MUST request the exact triggerParams/nodeParams details for every trigger and node type you intend to use by returning a details request with a "nodes" array (and optionally "triggers") listing ALL the names you need — the server then provides the exact JSON schemas for exactly those. List every trigger and node you plan to use (including condition/loop/container nodes) so none is missing.
+
+Output format: Output EITHER a single JSON object (for ONE workflow lane) OR an array of JSON objects (for MULTIPLE independent lanes). Each object has exactly these keys: taskName, taskDescription, triggerType, triggerParams, nodeType, nodeParams, endpointState, endpointType.
+
+## Trigger Types
+
+### FC_FORM_SUBMIT_BUTTON
+FC_FORM_SUBMIT_BUTTON — Fires when a submit button is clicked.
+### FC_QUALIFIED_FORM_SUBMIT_BUTTON
+FC_QUALIFIED_FORM_SUBMIT_BUTTON — Fires when a qualified (electronic signature) submit button is clicked.
+### FC_MANUAL
+FC_MANUAL — Manual invocation (user triggered).
+### FC_STATE_TIMER
+FC_STATE_TIMER — Fires AFTER A TIME DELAY once a record enters a specific state (time-based trigger).
+### FC_TIME_POINT
+FC_TIME_POINT — Fires at a specific date/time (fixed date or computed from a form field value).
+### FC_FORM_RECORD_MESSAGE_POSTED
+FC_FORM_RECORD_MESSAGE_POSTED — Fires when an internal message is posted to the record.
+### FC_FORM_RECORD_MESSAGE_UPLOAD_REQUEST_FULFILLED
+FC_FORM_RECORD_MESSAGE_UPLOAD_REQUEST_FULFILLED — Fires when a file upload request submitted via internal message is fulfilled.
+### FC_CATCH_ERROR
+FC_CATCH_ERROR — Fires when an error occurs in another workflow lane (configurable filters).
+### FC_DOI_VERIFIED
+FC_DOI_VERIFIED — Fires after a DOI email confirmation (e.g. status change, welcome email).
+### FC_INVITATION_SENT
+FC_INVITATION_SENT — Fires when an invitation (DOI) email is sent.
+### FC_INVITATION_ERROR
+FC_INVITATION_ERROR — Fires when an invitation (DOI) email delivery fails.
+### FC_USER_INVOCATION
+FC_USER_INVOCATION — Fires when a logged-in user manually triggers it from the record detail view.
+
+## Node Types
+
+### FC_EMAIL
+FC_EMAIL — Sends an email.
+### FC_DOI_INIT
+FC_DOI_INIT — Sends a double opt-in invitation email with DOI confirmation link (CORRECT for DOI, not FC_EMAIL).
+### FC_CHANGE_STATE
+FC_CHANGE_STATE — Changes the form record state.
+### FC_POST_REQUEST
+FC_POST_REQUEST — Sends an HTTP request (webhook, REST API call).
+### FC_CHANGE_FORM_VALUE
+FC_CHANGE_FORM_VALUE — Sets the value of one or more form fields.
+### FC_LOG_ENTRY
+FC_LOG_ENTRY — Writes a log message to the process log.
+### FC_REDIRECT
+FC_REDIRECT — Redirects the user's browser to a URL (manual URL or URL template).
+### FC_RETURN
+FC_RETURN — Simply ends/terminates the workflow process without changing the form record state.
+### FC_SET_SAVED_FLAG
+FC_SET_SAVED_FLAG — Marks the form record as saved.
+### FC_DELETE_FORM_RECORD
+FC_DELETE_FORM_RECORD — Permanently deletes the current form record.
+### FC_QUEUE_TASK
+FC_QUEUE_TASK — Queues an event/task for execution (terminal node).
+### FC_SEND_FORM_RECORD_MESSAGE
+FC_SEND_FORM_RECORD_MESSAGE — Sends an internal message to the record's inbox.
+### FC_CHANGE_FORM_RECORD_CHAT_ACTIVENESS
+FC_CHANGE_FORM_RECORD_CHAT_ACTIVENESS — Opens or closes a form record chat.
+### FC_CREATE_TEXT_FILE
+FC_CREATE_TEXT_FILE — Creates a text/JSON/XML/HTML file as an attachment.
+### FC_WRITE_FORM_RECORD_ATTRIBUTES
+FC_WRITE_FORM_RECORD_ATTRIBUTES — Writes custom key-value attributes to the record.
+### FC_RETURN_FILE
+FC_RETURN_FILE — Returns a file to the user's browser for download.
+### FC_ENCODE_BASE64
+FC_ENCODE_BASE64 — Encodes a file or form upload to Base64.
+### FC_DECODE_BASE64
+FC_DECODE_BASE64 — Decodes a Base64-encoded file back to its original format.
+### FC_PROCESS_LOG_PDF
+FC_PROCESS_LOG_PDF — Generates a PDF from the current process log messages.
+### FC_EXPORT_FORM_RECORD_CHATS
+FC_EXPORT_FORM_RECORD_CHATS — Exports the form record chat/conversation as a PDF file.
+### FC_FILL_PDF
+FC_FILL_PDF — Fills a PDF template with form data.
+### FC_FILL_WORD
+FC_FILL_WORD — Fills a Word template with form data.
+### FC_COMPRESS_AS_ZIP
+FC_COMPRESS_AS_ZIP — Compresses one or more files into a ZIP archive.
+### FC_SAVE_TO_FILE_SYSTEM
+FC_SAVE_TO_FILE_SYSTEM — Saves a file to the server's file system.
+### FC_SAVE_TO_WEBDAV
+FC_SAVE_TO_WEBDAV — Saves a file to a WebDAV server.
+### FC_COUNTER
+FC_COUNTER — Increments, decrements, or resets a counter.
+### FC_CHANGE_FORM_AVAILABILITY
+FC_CHANGE_FORM_AVAILABILITY — Sets the form online or offline.
+### CreateRecordNodePlugin (de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin)
+CreateRecordNodePlugin (de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin) — Creates a new form record (Vorgang) in another form.
+### FC_SHOW_TEMPLATE
+FC_SHOW_TEMPLATE — Renders an HTML template to the user.
+### FC_DELETE_ATTACHMENT
+FC_DELETE_ATTACHMENT — Deletes attachments from the specified upload fields.
+### FC_MOVE_FORM_RECORD_TO_INBOX
+FC_MOVE_FORM_RECORD_TO_INBOX — Moves the form record to a specified inbox.
+### FC_THROW_EXCEPTION
+FC_THROW_EXCEPTION — Throws/causes a workflow error/exception (caught by FC_CATCH_ERROR in another lane).
+### FC_EMPTY
+FC_EMPTY — No-op placeholder node (NEVER use to represent an action).
+### FC_BREAK
+FC_BREAK — Breaks out of a loop (FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, or FC_FOR_EACH_LOOP).
+### FC_CONTINUE
+FC_CONTINUE — Skips the rest of the current iteration and continues with the NEXT iteration of a loop.
+### FC_SET_FORM_RECORD_PASSWORD
+FC_SET_FORM_RECORD_PASSWORD — Sets a password on the form record (fixed or generated).
+### CheckTrustLevelPlugin (de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin)
+CheckTrustLevelPlugin (de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin) — Checks the user's authentication trust level (CONDITIONAL branching node).
+### FC_MULTIPLE_CONDITION
+FC_MULTIPLE_CONDITION — Checks whether a form field value meets a condition (CONDITIONAL branching node).
+### FC_SWITCH
+FC_SWITCH — Switches execution based on the value of a form field (switch/case, MULTI-BRANCH).
+### FC_EXPERIMENT
+FC_EXPERIMENT — Wraps an action with error handling (try-catch-finally pattern).
+### FC_FOR_EACH_LOOP
+FC_FOR_EACH_LOOP — Iterates over items and executes child nodes for each item.
+### FC_WHILE_LOOP
+FC_WHILE_LOOP — Repeatedly executes child actions WHILE a form field value meets a condition (PRE-CHECK loop).
+### FC_DO_UNTIL_LOOP
+FC_DO_UNTIL_LOOP — Executes child actions FIRST, then checks the condition (POST-CHECK loop).
+### FC_WITH_FORM_ELEMENT_CONTEXT
+FC_WITH_FORM_ELEMENT_CONTEXT — Scoping node that wraps child actions and provides form element context.

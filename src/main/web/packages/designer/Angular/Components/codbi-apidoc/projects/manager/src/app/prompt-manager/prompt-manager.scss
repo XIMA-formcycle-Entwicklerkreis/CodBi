@@ -195,6 +195,91 @@
   margin: 1px 0;
 }
 
+/* User-created prompts (added via the Prompt Manager) — blue frame */
+.cb-pm-tree-node--user-app {
+  background: #eaf2fb;
+  border: 1px solid #4a90d9;
+  border-radius: 8px;
+  padding: 2px 8px;
+  box-shadow: 0 1px 4px rgba(74, 144, 217, 0.35);
+  margin: 1px 0;
+}
+
+/* Legend under the toolbar — explains the tree node frame colors */
+.cb-pm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 6px 10px;
+  border-top: 1px solid #e0e0e0;
+  font-size: 0.78em;
+  color: #666;
+  background: #fafafa;
+}
+
+.cb-pm-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.cb-pm-legend-swatch {
+  display: inline-block;
+  width: 42px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.cb-pm-legend-swatch--user {
+  background: #eaf2fb;
+  border: 1px solid #4a90d9;
+}
+
+.cb-pm-legend-swatch--system {
+  background: #fff3e0;
+  border: 1px solid #ff9800;
+}
+
+.cb-pm-legend-swatch--abstract {
+  background: #f3f6f8;
+  border: 1px solid #c8d4da;
+}
+
+/* Token count badges (tree nodes + header) */
+.cb-pm-token-badge {
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 0.72em;
+  line-height: 1.5;
+  border-radius: 8px;
+  background: #eef2f5;
+  border: 1px solid #c8d4da;
+  color: #556;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.cb-pm-token-badge--group {
+  background: #ece9f7;
+  border-color: #b9b0e6;
+  color: #5b4fae;
+}
+
+/* Total token size for the current view, in the dialog header (left of the maximize button) */
+.cb-pm-view-total-badge {
+  margin-left: auto;
+  padding: 2px 10px;
+  font-size: 0.8em;
+  border-radius: 10px;
+  background: #fff3e0;
+  border: 1px solid #ff9800;
+  color: #8a5a00;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+
 /* Read-only prompt textarea for server-side system standard configurations */
 .cb-pm-textarea--readonly {
   background: #f5f5f5;

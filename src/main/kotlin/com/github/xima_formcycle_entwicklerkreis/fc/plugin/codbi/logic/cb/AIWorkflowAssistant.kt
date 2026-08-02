@@ -173,7 +173,12 @@ class AIWorkflowAssistant : IPluginServletAction {
         urlTemplatesJson ?: "null (no URL templates found or query failed)",
         inboxesJson ?: "null (no inboxes found or query failed)")
 
-    val systemPrompt =
+    // Two-pass workflow flow: pass-1 sends the condensed workflow-nodes reference; if the AI needs
+    // the exact triggerParams/nodeParams of specific triggers/nodes it intends to use, it responds
+    // with {"status":"need_workflow_node_details",...} and the server reruns with those details.
+    var requestedNodes = emptyList<String>()
+    var requestedTriggers = emptyList<String>()
+    var systemPrompt =
         buildSystemPrompt(
             formContext,
             workflowContext,
@@ -181,16 +186,18 @@ class AIWorkflowAssistant : IPluginServletAction {
             completionPages = completionPagesJson,
             htmlTemplates = htmlTemplatesJson,
             urlTemplates = urlTemplatesJson,
-            inboxes = inboxesJson)
+            inboxes = inboxesJson,
+            requestedNodes = requestedNodes,
+            requestedTriggers = requestedTriggers)
 
-    val messagesJson = buildString {
+    var messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
       append("""{"role":"user","content":${gson.toJson(prompt)}}""")
       append("]")
     }
 
-    val rawResponse =
+    var rawResponse =
         try {
           instance.performFormAssist(modelId, messagesJson)
         } catch (e: ExternalAiHttpException) {
@@ -202,8 +209,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
         }
 
-    val cleaned = extractJson(stripThinkTags(rawResponse))
-    val safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
+    var cleaned = extractJson(stripThinkTags(rawResponse))
     logger.info("[AIWorkflowAssistant] AI response (phase {}): {}", phase, cleaned)
 
     // Phase 1 only: check if the AI is signalling that it needs more context before answering.
@@ -215,6 +221,50 @@ class AIWorkflowAssistant : IPluginServletAction {
       }
     }
 
+    // Phase 2: if the AI requests workflow node details, rerun with those details appended.
+    if (phase != "1") {
+      val workflowDetails = extractWorkflowDetailsRequest(cleaned)
+      if (workflowDetails != null) {
+        requestedNodes = workflowDetails.nodes
+        requestedTriggers = workflowDetails.triggers
+        logger.info(
+            "[AIWorkflowAssistant] AI requested workflow node details — nodes: {}, triggers: {} — rerunning pass-2",
+            requestedNodes.joinToString(", ").ifEmpty { "<none>" },
+            requestedTriggers.joinToString(", ").ifEmpty { "<none>" })
+        systemPrompt =
+            buildSystemPrompt(
+                formContext,
+                workflowContext,
+                isPhase1 = false,
+                completionPages = completionPagesJson,
+                htmlTemplates = htmlTemplatesJson,
+                urlTemplates = urlTemplatesJson,
+                inboxes = inboxesJson,
+                requestedNodes = requestedNodes,
+                requestedTriggers = requestedTriggers)
+        messagesJson = buildString {
+          append("[")
+          append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
+          append("""{"role":"user","content":${gson.toJson(prompt)}}""")
+          append("]")
+        }
+        rawResponse =
+            try {
+              instance.performFormAssist(modelId, messagesJson)
+            } catch (e: ExternalAiHttpException) {
+              logger.warn(
+                  "[AIWorkflowAssistant] External AI returned HTTP {}: {}", e.httpStatus, e.body)
+              return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+            } catch (e: Exception) {
+              logger.error("[AIWorkflowAssistant] AI call failed", e)
+              return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
+            }
+        cleaned = extractJson(stripThinkTags(rawResponse))
+        logger.info("[AIWorkflowAssistant] AI pass-2 raw response: {}", cleaned)
+      }
+    }
+
+    val safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
     val taskSpec =
         try {
           gson.fromJson(safeCleaned, WorkflowTaskSpec::class.java).also { spec ->
@@ -257,10 +307,13 @@ class AIWorkflowAssistant : IPluginServletAction {
       completionPages: String? = null,
       htmlTemplates: String? = null,
       urlTemplates: String? = null,
-      inboxes: String? = null
+      inboxes: String? = null,
+      requestedNodes: List<String> = emptyList(),
+      requestedTriggers: List<String> = emptyList()
   ): String = buildString {
-    // Load static prompt sections from database
-    val dbPrompt = loadWorkflowPrompt()
+    // Load static prompt sections from database (condensed workflow nodes in pass-1, requested
+    // details in pass-2).
+    val dbPrompt = loadWorkflowPrompt(requestedNodes, requestedTriggers)
     append(dbPrompt)
 
     // Dynamic context (injected at runtime)
@@ -284,6 +337,15 @@ class AIWorkflowAssistant : IPluginServletAction {
               "  2. No form field is mentioned (not even vaguely â€” e.g. 'email field', 'name field', 'E-Mail-Adresse')\n" +
               "  3. All values needed for triggerParams and nodeParams are explicitly given as exact technical identifiers\n" +
               "If ANY of these conditions is NOT met, respond ONLY with: {\"need\":\"form_data\"}\n\n")
+    }
+    if (requestedNodes.isEmpty() && requestedTriggers.isEmpty() && !isPhase1) {
+      append(
+          "WORKFLOW DETAILS REQUEST â€” You receive ONLY the condensed workflow-trigger/node list above.\n" +
+              "Before you emit the final workflow task JSON, if you need the exact triggerParams/nodeParams of any " +
+              "trigger or node type you intend to use, respond ONLY with the following JSON (nothing else):\n" +
+              "{\"status\":\"need_workflow_node_details\",\"nodes\":[\"FC_EMAIL\",\"FC_POST_REQUEST\",...],\"triggers\":[\"FC_FORM_SUBMIT_BUTTON\",...]}\n" +
+              "List EVERY trigger and node you plan to use (including condition/loop/container nodes) so none is missing. " +
+              "The server then provides the exact JSON schemas for exactly those and you continue with the final task JSON.\n\n")
     }
     if (!completionPages.isNullOrBlank()) {
       append(
@@ -313,18 +375,26 @@ class AIWorkflowAssistant : IPluginServletAction {
   }
 
   /**
-   * Loads the workflow system prompt from the database (formcycle.general +
-   * formcycle.workflow_nodes). Falls back to a minimal prompt if the DB is unavailable.
+   * Loads the workflow system prompt from the database (formcycle.general + condensed workflow
+   * nodes in pass-1, or the requested node/trigger detail sections in pass-2). Falls back to a
+   * minimal prompt if the DB is unavailable.
    */
-  private fun loadWorkflowPrompt(): String {
+  private fun loadWorkflowPrompt(
+      requestedNodes: List<String> = emptyList(),
+      requestedTriggers: List<String> = emptyList()
+  ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return FALLBACK_WORKFLOW_PROMPT
     try {
       val categories = PromptLoader.loadCategory(em, "formcycle")
-      return PromptLoader.resolvePlaceholders(
-          (categories["formcycle.general"] ?: "") +
-              "\n" +
-              (categories["formcycle.workflow_nodes"] ?: ""))
+      val general = categories["formcycle.general"] ?: ""
+      val workflowRef =
+          if (requestedNodes.isNotEmpty() || requestedTriggers.isNotEmpty()) {
+            PromptLoader.buildWorkflowNodeDetails(em, requestedNodes, requestedTriggers)
+          } else {
+            PromptLoader.buildWorkflowNodesCondensed(em)
+          }
+      return PromptLoader.resolvePlaceholders(general + "\n" + workflowRef)
     } catch (e: Exception) {
       logger.warn("[AIWorkflowAssistant] Failed to load prompts from DB", e)
       return FALLBACK_WORKFLOW_PROMPT
@@ -347,6 +417,31 @@ class AIWorkflowAssistant : IPluginServletAction {
         "both" -> "need_both"
         else -> null
       }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private data class WorkflowDetailsSignal(val nodes: List<String>, val triggers: List<String>)
+
+  /**
+   * Parses a workflow-node details request from the AI's cleaned JSON response. The AI returns this
+   * signal in the FIRST pass (which only contains the condensed workflow-nodes reference) when it
+   * needs the exact triggerParams/nodeParams of specific triggers/nodes it intends to use:
+   * `{"status":"need_workflow_node_details","nodes":["FC_EMAIL",...],"triggers":["FC_FORM_SUBMIT_BUTTON",...]}`.
+   */
+  private fun extractWorkflowDetailsRequest(cleanedJson: String): WorkflowDetailsSignal? {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any>
+      if ((obj?.get("status") as? String) != "need_workflow_node_details") {
+        return null
+      }
+      val nodesArr = obj["nodes"] as? List<*> ?: emptyList<Any>()
+      val nodes = nodesArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+      val triggersArr = obj["triggers"] as? List<*> ?: emptyList<Any>()
+      val triggers = triggersArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+      WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
     } catch (_: Exception) {
       null
     }

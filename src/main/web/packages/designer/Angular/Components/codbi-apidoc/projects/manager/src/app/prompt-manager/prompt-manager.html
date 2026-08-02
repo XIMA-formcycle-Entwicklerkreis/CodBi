@@ -13,6 +13,10 @@
         <div class="cb-pm-dialog-header">
             <img class="cb-pm-logo" [src]="logoUrl" alt="CodBi" />
             <span class="cb-pm-title">{{ 'pm.title' | transloco }}</span>
+            <span class="cb-pm-view-total-badge" *ngIf="viewTotalTokens > 0"
+                [title]="'pm.viewTotal.tip' | transloco">
+                {{ viewTotalTokens }}
+            </span>
         </div>
     </ng-template>
 
@@ -69,6 +73,21 @@
                     {{ 'pm.filter.inactive' | transloco }}
                 </button>
             </div>
+            <!-- Legend: explains the tree node frame colors -->
+            <div class="cb-pm-legend">
+                <span class="cb-pm-legend-item">
+                    <span class="cb-pm-legend-swatch cb-pm-legend-swatch--user"></span>
+                    {{ 'pm.legend.user' | transloco }}
+                </span>
+                <span class="cb-pm-legend-item">
+                    <span class="cb-pm-legend-swatch cb-pm-legend-swatch--system"></span>
+                    {{ 'pm.legend.system' | transloco }}
+                </span>
+                <span class="cb-pm-legend-item">
+                    <span class="cb-pm-legend-swatch cb-pm-legend-swatch--abstract"></span>
+                    {{ 'pm.legend.abstract' | transloco }}
+                </span>
+            </div>
             <p-tree
                 [value]="treeNodes"
                 selectionMode="single"
@@ -79,10 +98,13 @@
                 <ng-template let-node pTemplate="item">
                     <span class="cb-pm-tree-node-label"
                         [class.cb-pm-tree-node--abstract]="node.isAbstract"
-                        [class.cb-pm-tree-node--system-app]="node.isSystemApp">
+                        [class.cb-pm-tree-node--system-app]="node.isSystemApp"
+                        [class.cb-pm-tree-node--user-app]="node.isUserApp">
                         <span class="cb-pm-tree-inactive-icon" *ngIf="isTreeNodeInactive(node)" [title]="'pm.tree.inactive.tip' | transloco">&#x2716;</span>
                         <span class="cb-pm-tree-partial-icon" *ngIf="isTreeNodePartiallyInactive(node)" [title]="'pm.tree.partial.tip' | transloco">&#x26A0;</span>
                         <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
+                        <span class="cb-pm-token-badge" *ngIf="!node.isSystemApp && node.tokens > 0"
+                            [title]="'pm.tokens.tip' | transloco">{{ node.tokens }}</span>
                     </span>
                 </ng-template>
                 <ng-template let-node pTemplate="category">
@@ -91,6 +113,8 @@
                             (click)="openAddItemDialog(node.data); $event.stopPropagation()"
                             [title]="'pm.tree.add.tip' | transloco">+</button>
                         <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
+                        <span class="cb-pm-token-badge cb-pm-token-badge--group" *ngIf="node.tokens > 0"
+                            [title]="'pm.tokens.tip.group' | transloco">{{ node.tokens }}</span>
                         <button type="button" class="cb-pm-tree-node-export-btn"
                             (click)="exportCategory(node.data); $event.stopPropagation()"
                             [title]="'pm.tree.export.tip' | transloco"><span class="pi pi-download"></span></button>
@@ -102,6 +126,8 @@
                             (click)="openAddItemDialog(node.data); $event.stopPropagation()"
                             [title]="'pm.tree.add.tip' | transloco">+</button>
                         <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
+                        <span class="cb-pm-token-badge cb-pm-token-badge--group" *ngIf="node.tokens > 0"
+                            [title]="'pm.tokens.tip.group' | transloco">{{ node.tokens }}</span>
                         <button type="button" class="cb-pm-tree-node-export-btn"
                             (click)="exportCategory(node.data); $event.stopPropagation()"
                             [title]="'pm.tree.export.tip' | transloco"><span class="pi pi-download"></span></button>
@@ -233,8 +259,6 @@
                             <p-button [label]="'pm.restore' | transloco" icon="pi pi-refresh" (onClick)="restoreOriginal()"
                                 [disabled]="loading" severity="secondary" [outlined]="true" />
                             <p-button [label]="'pm.export' | transloco" icon="pi pi-download" (onClick)="exportPrompt()"
-                                severity="secondary" [outlined]="true" />
-                            <p-button [label]="'pm.import' | transloco" icon="pi pi-upload" (onClick)="importPrompt()"
                                 severity="secondary" [outlined]="true" />
                             <span class="cb-pm-actions-sep"></span>
                             <p-button [label]="'pm.rename' | transloco" icon="pi pi-pencil" (onClick)="openRenameDialog()"

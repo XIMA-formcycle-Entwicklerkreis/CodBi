@@ -20,6 +20,19 @@ Return the form JSON normally. Include a top-level "_codbiApplicability" field w
 The server will handle functionality application in a second pass if candidates are found. This metadata field is removed server-side before the form is applied.
 For each listed element, use your judgment to decide if a functionality is useful for a field or if it applies standalone (no field needed). Consider BOTH whether it could benefit AND whether it would be inappropriate.
 
+## CodBi / Widget DETAILS REQUEST
+
+You initially receive a CONDENSED reference: the CodBi Core Elements list (names + purposes) and the FORMCYCLE Widgets list (names + purposes), NOT the full JSON structures. When you need the exact JSON template / properties of any CodBi element or formcycle widget before you can implement the request, STOP and return ONLY this JSON (nothing else, no prose):
+
+```json
+{"status":"need_codbi_details","elements":["CodBi.ID", ...],"widgets":["XWidget", ...]}
+```
+
+- "elements" — list EVERY CodBi functionality ID whose full parameter/TSDoc details you need (from the condensed Core Elements list).
+- "widgets" — list EVERY FORMCYCLE widget className (e.g. "XTextField", "XContainer", "XPage") whose detailed JSON structure you need. Include every widget you plan to create, including containers and pages.
+- Do not guess or invent property names/structure. The server provides the exact details for exactly the requested items, then you continue with the full form JSON.
+- Omit a field when you need nothing from it; if you need neither, return the normal form JSON instead of a details request.
+
 ## Critial — Form Chatbot Plugin vs CodBi AI Chat
 
 When the prompt says "XIMA Chatbot", "XIMA Chat-Assistent", or similar, use the Form Chatbot Plugin — NOT ai.llama.chat. This plugin adds form-level properties ("ChatbotEnabled":"true" at the FORM root), NOT individual elements.

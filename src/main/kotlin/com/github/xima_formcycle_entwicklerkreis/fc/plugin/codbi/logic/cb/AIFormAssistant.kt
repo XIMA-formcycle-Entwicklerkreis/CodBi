@@ -16,6 +16,7 @@ import de.xima.fc.mdl.fdv.EResponseType
 import de.xima.fc.mdl.response.ServletResponse
 import de.xima.fc.plugin.interfaces.servlet.IPluginServletAction
 import de.xima.fc.plugin.models.retval.servlet.PluginServletActionRetVal
+import javax.persistence.EntityManager
 import org.slf4j.LoggerFactory
 
 /**
@@ -110,18 +111,29 @@ class AIFormAssistant : IPluginServletAction {
     val withoutThinkTags = stripThinkTags(rawResponse)
     var cleaned = extractJson(withoutThinkTags)
 
-    fun rerunWithCodbiDetails(requested: List<String>): String {
+    fun rerunWithCodbiDetails(requested: List<String>, widgets: List<String>): String {
       val pass1Obj =
           try {
             JsonParser.parseString(cleaned).asJsonObject
           } catch (_: Exception) {
             null
           }
-      val allItems = pass1Obj?.getAsJsonArray("items") ?: JsonArray()
+      // Pass-1 may have returned a `need_codbi_details` request instead of the modified form —
+      // such a request JSON carries no "items". Base pass-2 on the ORIGINAL form so
+      // widgets/elements
+      // created in pass-2 are merged back into the real form instead of being lost.
+      val formBase = if (pass1Obj?.has("items") == true) cleaned else persistJson
+      val baseObj =
+          try {
+            JsonParser.parseString(formBase).asJsonObject
+          } catch (_: Exception) {
+            null
+          }
+      val allItems = baseObj?.getAsJsonArray("items") ?: JsonArray()
 
       val retryMessagesJson: String
 
-      if (requested.isEmpty()) {
+      if (requested.isEmpty() && widgets.isEmpty()) {
         // Blind rethink pass: AI previously concluded nothing applies — ask it to reconsider.
         // Use the full compact API reference (including parameter names) so the AI can
         // generate correct data-cb-* parameter attributes instead of inventing names.
@@ -247,9 +259,21 @@ class AIFormAssistant : IPluginServletAction {
               }
             }
 
-        val applySystemPrompt = loadCodbiApplyPrompt(requested)
+        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgets)
         val pass2UserContent =
-            "Original user request: ${gson.toJson(prompt)}\n\nApply CodBi functionalities ($candidateClause) to these form elements:\n${gson.toJson(targetItems)}"
+            "Original user request: ${gson.toJson(prompt)}\n\n" +
+                "Complete current form (IPersistJson):\n${slimPersistJson(formBase)}\n\n" +
+                (if (candidateClause.isNotBlank())
+                    "Apply these CodBi functionalities: $candidateClause\n"
+                else "") +
+                "Create/add any requested formcycle widgets using the EXACT JSON structures in the system prompt " +
+                "(property names like \"name\", \"id\", \"label\", \"datatype\", \"fullwidth\" — never invent properties " +
+                "such as \"displayText\" or \"technicalId\"), " +
+                "nesting them into the correct container's \"elements\" array (by element name) and listing every " +
+                "element as a separate item in the root \"items\" array.\n" +
+                "REBUILD any formcycle widgets you created in the previous step so they exactly match the JSON " +
+                "templates provided.\n" +
+                "Return the COMPLETE modified form JSON with ALL items — never drop existing elements."
 
         logger.info(
             "[AIFormAssistant] Pass-2 CodBi — candidates: {}, targetIds: {}, sending {} item(s)",
@@ -282,7 +306,9 @@ class AIFormAssistant : IPluginServletAction {
           }
       val pass2Cleaned = extractJson(stripThinkTags(retryRaw))
       logger.info("[AIFormAssistant] Pass-2 raw result: {}", pass2Cleaned)
-      return splicePass2IntoPass1(cleaned, pass2Cleaned)
+      // Splice into the form base (the original form when pass-1 was a details request) so new
+      // widgets created in pass-2 are preserved in the returned form.
+      return splicePass2IntoPass1(formBase, pass2Cleaned)
     }
 
     // Normalize _codbiApplicability before any extraction logic: the AI often puts
@@ -304,13 +330,22 @@ class AIFormAssistant : IPluginServletAction {
 
       cleaned =
           try {
-            rerunWithCodbiDetails(requestedDetails.elements)
+            rerunWithCodbiDetails(requestedDetails.elements, requestedDetails.widgets)
           } catch (e: ExternalAiHttpException) {
             return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
           } catch (e: Exception) {
             return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
           }
     } else {
+      // If the AI created formcycle widgets in pass-1 WITHOUT requesting their details first, their
+      // exact JSON templates were never provided and the AI hallucinated the persist structure.
+      // Force pass-2 to include those widget templates so the widgets are rebuilt correctly.
+      val createdWidgets = extractNewWidgetClassNames(cleaned, persistJson)
+      if (createdWidgets.isNotEmpty()) {
+        logger.info(
+            "[AIFormAssistant] Pass-1 created new formcycle widget(s) without details request — including templates in pass-2: {}",
+            createdWidgets.joinToString(", "))
+      }
       val appliedCodbi = extractAppliedCodbiIds(cleaned).filterNot { it == "Matomo.Tracking" }
       if (appliedCodbi.isNotEmpty()) {
         logger.warn(
@@ -318,7 +353,7 @@ class AIFormAssistant : IPluginServletAction {
             appliedCodbi.joinToString(", "))
         cleaned =
             try {
-              rerunWithCodbiDetails(appliedCodbi)
+              rerunWithCodbiDetails(appliedCodbi, createdWidgets)
             } catch (e: ExternalAiHttpException) {
               return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
             } catch (e: Exception) {
@@ -333,7 +368,7 @@ class AIFormAssistant : IPluginServletAction {
               consideredCodbi.joinToString(", "))
           cleaned =
               try {
-                rerunWithCodbiDetails(consideredCodbi)
+                rerunWithCodbiDetails(consideredCodbi, createdWidgets)
               } catch (e: ExternalAiHttpException) {
                 return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
               } catch (e: Exception) {
@@ -363,7 +398,7 @@ class AIFormAssistant : IPluginServletAction {
             logger.info("[AIFormAssistant] AI {} — triggering blind CodBi evaluation pass", reason)
             cleaned =
                 try {
-                  rerunWithCodbiDetails(emptyList())
+                  rerunWithCodbiDetails(emptyList(), createdWidgets)
                 } catch (e: ExternalAiHttpException) {
                   return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
                 } catch (e: Exception) {
@@ -445,6 +480,7 @@ class AIFormAssistant : IPluginServletAction {
 
   private data class CodbiDetailsSignal(
       val elements: List<String>,
+      val widgets: List<String>,
       val applicabilityReport: String?
   )
 
@@ -455,10 +491,12 @@ class AIFormAssistant : IPluginServletAction {
       if ((obj?.get("status") as? String) != "need_codbi_details") {
         return null
       }
-      val arr = obj["elements"] as? List<*> ?: return CodbiDetailsSignal(emptyList(), null)
+      val arr = obj["elements"] as? List<*> ?: emptyList<Any>()
       val elements = arr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+      val widgetsArr = obj["widgets"] as? List<*> ?: emptyList<Any>()
+      val widgets = widgetsArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
       val report = obj["codbiApplicability"]?.let { gson.toJson(it) }
-      CodbiDetailsSignal(elements = elements, applicabilityReport = report)
+      CodbiDetailsSignal(elements = elements, widgets = widgets, applicabilityReport = report)
     } catch (_: Exception) {
       null
     }
@@ -654,6 +692,37 @@ class AIFormAssistant : IPluginServletAction {
     } catch (_: Exception) {
       emptyList()
     }
+  }
+
+  /**
+   * Detects formcycle widget classNames the AI introduced in [formJson] (pass-1 output) that were
+   * NOT part of the [originalJson] form. Such widgets were created without their exact JSON
+   * template (the AI never requested widget details), so pass-2 must include their templates to
+   * stop the AI from hallucinating the Formcycle persist property names.
+   */
+  private fun extractNewWidgetClassNames(formJson: String, originalJson: String): List<String> {
+    val originalNames = mutableSetOf<String>()
+    try {
+      JsonParser.parseString(originalJson).asJsonObject.getAsJsonArray("items")?.forEach { el ->
+        if (el.isJsonObject) {
+          el.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString?.let {
+            originalNames.add(it)
+          }
+        }
+      }
+    } catch (_: Exception) {}
+    val classNames = linkedSetOf<String>()
+    try {
+      JsonParser.parseString(formJson).asJsonObject.getAsJsonArray("items")?.forEach { el ->
+        if (!el.isJsonObject) return@forEach
+        val obj = el.asJsonObject
+        val name = obj.getAsJsonObject("properties")?.get("name")?.asString
+        if (name == null || name in originalNames) return@forEach
+        val className = obj.get("className")?.asString
+        if (className != null && className.startsWith("X")) classNames.add(className)
+      }
+    } catch (_: Exception) {}
+    return classNames.toList()
   }
 
   /**
@@ -1224,6 +1293,24 @@ class AIFormAssistant : IPluginServletAction {
         modifiedById[id] = item.asJsonObject
       }
 
+      // A pass-2 that returns a single bare element (e.g. a newly created XContainer/XTextField)
+      // instead of a full form: append it to the form items and reference it from the first page
+      // so the created widget is preserved instead of being silently dropped.
+      if (!obj2.has("items") && obj2.has("className")) {
+        val items = obj1.getAsJsonArray("items") ?: JsonArray().also { obj1.add("items", it) }
+        val newName = obj2.getAsJsonObject("properties")?.get("name")?.asString
+        items.add(obj2)
+        if (newName != null) {
+          val firstPage =
+              items
+                  .firstOrNull { el ->
+                    el.isJsonObject && el.asJsonObject.get("className")?.asString == "XPage"
+                  }
+                  ?.asJsonObject
+          firstPage?.getAsJsonObject("properties")?.getAsJsonArray("elements")?.add(newName)
+        }
+      }
+
       val pass1Items = obj1.getAsJsonArray("items")
       if (pass1Items != null && modifiedById.isNotEmpty()) {
         val newItems = JsonArray()
@@ -1286,7 +1373,7 @@ class AIFormAssistant : IPluginServletAction {
           taskInstruction +
               (categories["formcycle.general"] ?: "") +
               "\n" +
-              (categories["formcycle.widgets"] ?: "") +
+              "{{FORMCYCLE_WIDGETS_SECTION}}" +
               "\n" +
               (categories["codbi.standard_configurations"] ?: "") +
               "\n" +
@@ -1311,6 +1398,7 @@ class AIFormAssistant : IPluginServletAction {
     if (em == null) return FALLBACK_RETHINK_PROMPT
     try {
       val categories = PromptLoader.loadCategory(em, "codbi")
+      val fc = PromptLoader.loadCategory(em, "formcycle")
       val taskInstruction =
           "You receive a form to review for CodBi applicability. " +
               "Review the form elements below and determine which CodBi functionalities apply. " +
@@ -1322,6 +1410,8 @@ class AIFormAssistant : IPluginServletAction {
               (categories["codbi.functionalities"] ?: "") +
               "\n" +
               (categories["codbi.general"] ?: "") +
+              "\n" +
+              (fc["formcycle.widgets"] ?: "") +
               "\n" +
               "{{CODBI_FULL_SECTION}}")
     } catch (e: Exception) {
@@ -1335,9 +1425,13 @@ class AIFormAssistant : IPluginServletAction {
   /**
    * Loads the CodBi apply (pass-2) prompt from the database. When [requestedIds] is non-empty, only
    * the details (parameters/TSDoc) of those specific elements are appended instead of the whole
-   * full API reference.
+   * full API reference. When [widgetIds] is non-empty, only the requested formcycle widget sections
+   * are appended instead of the full widget reference.
    */
-  private fun loadCodbiApplyPrompt(requestedIds: List<String> = emptyList()): String {
+  private fun loadCodbiApplyPrompt(
+      requestedIds: List<String> = emptyList(),
+      widgetIds: List<String> = emptyList()
+  ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return FALLBACK_APPLY_PROMPT
     try {
@@ -1350,21 +1444,52 @@ class AIFormAssistant : IPluginServletAction {
               (categories["codbi.element_placeholders"] ?: "") +
               "\n" +
               (categories["codbi.general"] ?: "")
-      if (requestedIds.isEmpty()) {
-        return PromptLoader.resolvePlaceholders(base + "\n{{CODBI_FULL_SECTION}}")
-      }
-      val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
-      // Fall back to the full reference when none of the requested IDs could be resolved.
-      if (details.isBlank()) {
-        return PromptLoader.resolvePlaceholders(base + "\n{{CODBI_FULL_SECTION}}")
-      }
-      return base + "\n\n" + details
+      val codbiPart =
+          if (requestedIds.isEmpty()) {
+            PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
+          } else {
+            val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
+            // Fall back to the full reference when none of the requested IDs could be resolved.
+            if (details.isBlank()) {
+              PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
+            } else {
+              details
+            }
+          }
+      val widgetPart = buildWidgetDetailsSection(em, widgetIds)
+      return base + "\n\n" + codbiPart + "\n\n" + widgetPart
     } catch (e: Exception) {
       logger.warn("[AIFormAssistant] Failed to load apply prompt", e)
       return FALLBACK_APPLY_PROMPT
     } finally {
       em?.close()
     }
+  }
+
+  /**
+   * Builds the formcycle widget details section for the pass-2 rerun. When [widgetIds] is
+   * non-empty, only the requested widgets' sections (from `formcycle.widgets.<name>`) are appended;
+   * otherwise the full widget reference is included as a fallback.
+   */
+  private fun buildWidgetDetailsSection(em: EntityManager, widgetIds: List<String>): String {
+    if (widgetIds.isEmpty()) {
+      return PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: ""
+    }
+    val all = PromptLoader.loadSectionMap(em, "formcycle.widgets.")
+    val sb = StringBuilder("\nFORMCYCLE WIDGET DETAILS (requested)\n")
+    for (id in widgetIds) {
+      val norm =
+          id.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").replace(Regex("_+"), "_").trim('_')
+      if (norm.isEmpty()) continue
+      val content =
+          all["formcycle.widgets.$norm"]
+              ?: all.entries
+                  .firstOrNull { (k, _) -> k.removePrefix("formcycle.widgets.").startsWith(norm) }
+                  ?.value
+              ?: continue
+      sb.append("\n## ").append(id.trim()).append("\n").append(content).append("\n")
+    }
+    return sb.toString().trimEnd()
   }
 
   companion object {

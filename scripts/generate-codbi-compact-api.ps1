@@ -241,6 +241,12 @@ function Build-ElementsOnlyMarkdown {
 
     # Keep only top-level element entries; drop parameter/class detail bullets.
     if ($trimmed -like "- *" -and -not $trimmed.StartsWith("- .") -and -not $trimmed.StartsWith("- Param[")) {
+      # In the Standard Configuration Classes section keep only the server-side Holistic.*
+      # configs. The other names (People, Financial, ...) are CSS-class groups that the server
+      # derives from concrete CSS classes — they are not actionable by the AI in this list.
+      if ($currentSection -eq "Classes" -and -not $trimmed.StartsWith("- Holistic")) {
+        continue
+      }
       if ($line.StartsWith("- ")) {
         [void]$out.AppendLine($line)
       }

@@ -77,7 +77,7 @@
   "pm.view.condensed.tip": "Kompakte/kurze Prompts bearbeiten",
   "pm.addCategory": "+ Kategorie hinzufügen",
   "pm.addCategory.tip": "Neue Kategorie auf oberster Ebene hinzufügen",
-  "pm.importAll": "Alle importieren",
+  "pm.importAll": "Importieren",
   "pm.importAll.tip": "Prompts aus JSON-Datei importieren",
   "pm.exportAll": "Alle exportieren",
   "pm.exportAll.tip": "Alle Prompts als JSON exportieren",
@@ -153,6 +153,15 @@
   "pm.hint.renamePreview": "Nur das letzte Segment ändert sich. Vorschau:",
   "pm.renameAction": "Umbenennen",
   "pm.descriptionLabel": "Beschreibung",
+
+  "pm.legend.user": "Benutzerdefiniert",
+  "pm.legend.system": "System-Anwendung",
+  "pm.legend.abstract": "Abstrakte Regel",
+
+  "pm.viewTotal": "Gesamt-Tokens",
+  "pm.viewTotal.tip": "Gesamte Token-Größe der aktuellen Ansicht",
+  "pm.tokens.tip": "Ungefähre Token-Anzahl für diesen Prompt",
+  "pm.tokens.tip.group": "Ungefähre Tokenanzahl für diese Kategorie",
 
   "pm.err.categoryKeyRequired": "Kategorie-Schlüssel ist erforderlich.",
   "pm.err.categoryKeyInvalid": "Kategorie-Schlüssel darf keine Punkte enthalten.",

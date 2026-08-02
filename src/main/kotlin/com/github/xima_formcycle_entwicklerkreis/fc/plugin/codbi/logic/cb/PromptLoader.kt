@@ -75,6 +75,13 @@ internal object PromptLoader {
   /** DB key for the codbi general category. */
   const val KEY_CODBI_GENERAL = "codbi.general"
 
+  /** DB key for the full CodBi API reference (parameter-complete), shown in the Detailed view. */
+  const val KEY_CODBI_API_REFERENCE = "codbi.api_reference"
+
+  /** Classpath resource for the full CodBi API reference (parameter-complete compact API). */
+  private const val API_REFERENCE_RESOURCE =
+      "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/codbi-core-api-compact.md"
+
   /**
    * Placeholder in resource files that gets replaced with the output of
    * [CodbiCapabilities.buildSection] (elements-only reference).
@@ -86,6 +93,12 @@ internal object PromptLoader {
    * [CodbiCapabilities.buildFullSection] (full compact API reference).
    */
   private const val PLACEHOLDER_FULL_SECTION = "{{CODBI_FULL_SECTION}}"
+
+  /**
+   * Placeholder in resource files that gets replaced with the output of
+   * [CodbiCapabilities.buildWidgetsSection] (condensed formcycle widgets reference).
+   */
+  private const val PLACEHOLDER_FORMCYCLE_WIDGETS_SECTION = "{{FORMCYCLE_WIDGETS_SECTION}}"
 
   /**
    * Seeds / updates all prompts from classpath resources into the database. Called from
@@ -146,6 +159,19 @@ internal object PromptLoader {
         } else {
           upsertPrompt(em, key, content, pluginVersion)
           logger.info("[PromptLoader] Upserted prompt '{}' from '{}'", key, file)
+        }
+      }
+
+      // Seed the full CodBi API reference into the detailed table (Detailed view). This is the
+      // parameter-complete reference the AI receives in the pass-2 prompts
+      // ({{CODBI_FULL_SECTION}} / CodbiCapabilities.buildFullSection()).
+      val apiContent = loadClasspathResource(API_REFERENCE_RESOURCE)
+      if (apiContent != null) {
+        if (apiContent.contains("\n## ")) {
+          seedSplitFile(
+              em, KEY_CODBI_API_REFERENCE, apiContent, pluginVersion, "codbi-core-api-compact.md")
+        } else {
+          upsertPrompt(em, KEY_CODBI_API_REFERENCE, apiContent, pluginVersion)
         }
       }
 
@@ -394,6 +420,9 @@ internal object PromptLoader {
     var result = text
     result = result.replace(PLACEHOLDER_ELEMENTS_SECTION, CodbiCapabilities.buildSection())
     result = result.replace(PLACEHOLDER_FULL_SECTION, CodbiCapabilities.buildFullSection())
+    result =
+        result.replace(
+            PLACEHOLDER_FORMCYCLE_WIDGETS_SECTION, CodbiCapabilities.buildWidgetsSection())
     for ((key, value) in extraReplacements) {
       result = result.replace("{{${key}}}", value)
     }
@@ -1151,6 +1180,139 @@ internal object PromptLoader {
       logger.warn("[PromptLoader] Failed to load resource '{}': {}", fileName, e.message)
       null
     }
+  }
+
+  /** Loads the content of a classpath resource by its full path (outside the prompts directory). */
+  private fun loadClasspathResource(path: String): String? {
+    return try {
+      val stream = PromptLoader::class.java.classLoader.getResourceAsStream(path) ?: return null
+      stream.bufferedReader(Charsets.UTF_8).use { it.readText() }.trim()
+    } catch (e: Exception) {
+      logger.warn("[PromptLoader] Failed to load classpath resource '{}': {}", path, e.message)
+      null
+    }
+  }
+
+  /**
+   * Loads individual prompt sections (key → text) whose key starts with [prefix], WITHOUT folding
+   * sub-items into parents. Used to fetch single component/widget sections on demand (e.g. the
+   * `formcycle.widgets.<name>` sections in the pass-2 detail rerun).
+   */
+  fun loadSectionMap(em: EntityManager, prefix: String): Map<String, String> {
+    return try {
+      val q =
+          em.createNativeQuery(
+              // language=H2
+              """SELECT prompt_key, prompt_text FROM codbi_ai_prompt
+                 WHERE prompt_key LIKE :prefix AND is_active = TRUE""")
+      q.setParameter("prefix", "$prefix%")
+      @Suppress("UNCHECKED_CAST")
+      (q.resultList as? List<Array<Any>>)
+          ?.mapNotNull { row ->
+            if (row.size < 2) return@mapNotNull null
+            val key = row[0]?.toString() ?: return@mapNotNull null
+            val text = resolveClob(row[1]) ?: return@mapNotNull null
+            key to text
+          }
+          ?.toMap() ?: emptyMap()
+    } catch (e: Exception) {
+      logger.warn("[PromptLoader] Failed to load section map '{}': {}", prefix, e.message)
+      emptyMap()
+    }
+  }
+
+  /**
+   * Builds the condensed workflow-nodes reference (trigger/node name + purpose) for the pass-1
+   * workflow prompt, loaded from the **compact** DB table (`compact.formcycle_workflow_nodes`).
+   * This keeps the AI's initial workflow reference fully DB-driven.
+   */
+  fun buildWorkflowNodesCondensed(em: EntityManager): String {
+    val map = CompactPromptLoader.loadCategory(em, "compact.formcycle_workflow_nodes")
+    if (map.isEmpty()) return ""
+    val sb = StringBuilder("FORMCYCLE WORKFLOW NODES (COMPACT)\n")
+    val header = map["compact.formcycle_workflow_nodes"] ?: ""
+    if (header.isNotBlank()) sb.append(header).append("\n")
+    val triggers =
+        map.entries
+            .filter { it.key.startsWith("compact.formcycle_workflow_nodes.trigger_types.") }
+            .sortedBy { it.key }
+    if (triggers.isNotEmpty()) {
+      sb.append("\n## Trigger Types\n")
+      for ((_, v) in triggers) sb.append(v).append("\n")
+    }
+    val nodes =
+        map.entries
+            .filter { it.key.startsWith("compact.formcycle_workflow_nodes.node_types.") }
+            .sortedBy { it.key }
+    if (nodes.isNotEmpty()) {
+      sb.append("\n## Node Types\n")
+      for ((_, v) in nodes) sb.append(v).append("\n")
+    }
+    return sb.toString().trimEnd()
+  }
+
+  /**
+   * Builds the workflow-node details section for the pass-2 rerun. When [nodeNames] (and optionally
+   * [triggerNames]) is non-empty, only the requested nodes'/triggers' sections from the detailed DB
+   * (`formcycle.workflow_nodes.node_types.<name>` / `...trigger_types.<name>`) are appended;
+   * otherwise the full `formcycle.workflow_nodes` category is included as a fallback.
+   */
+  fun buildWorkflowNodeDetails(
+      em: EntityManager,
+      nodeNames: List<String>,
+      triggerNames: List<String> = emptyList()
+  ): String {
+    val norm: (String) -> String = { s ->
+      s.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").replace(Regex("_+"), "_").trim('_')
+    }
+    // Prepend the general workflow rules (output format, taskName, placeholders, server variables,
+    // output rules) so the pass-2 prompt retains the context the AI needs.
+    val header = loadCategory(em, "formcycle.workflow_nodes")["formcycle.workflow_nodes"] ?: ""
+    val section = StringBuilder()
+    if (header.isNotBlank()) section.append(header).append("\n")
+    section.append("\nFORMCYCLE WORKFLOW NODE DETAILS (requested)\n")
+    var appended = 0
+
+    if (nodeNames.isNotEmpty()) {
+      val all = loadSectionMap(em, "formcycle.workflow_nodes.node_types.")
+      for (id in nodeNames) {
+        val n = norm(id)
+        if (n.isEmpty()) continue
+        val content =
+            all["formcycle.workflow_nodes.node_types.$n"]
+                ?: all.entries
+                    .firstOrNull { (k, _) ->
+                      k.removePrefix("formcycle.workflow_nodes.node_types.").startsWith(n)
+                    }
+                    ?.value
+                ?: continue
+        section.append("\n## ").append(id.trim()).append("\n").append(content).append("\n")
+        appended++
+      }
+    }
+    if (triggerNames.isNotEmpty()) {
+      val all = loadSectionMap(em, "formcycle.workflow_nodes.trigger_types.")
+      for (id in triggerNames) {
+        val n = norm(id)
+        if (n.isEmpty()) continue
+        val content =
+            all["formcycle.workflow_nodes.trigger_types.$n"]
+                ?: all.entries
+                    .firstOrNull { (k, _) ->
+                      k.removePrefix("formcycle.workflow_nodes.trigger_types.").startsWith(n)
+                    }
+                    ?.value
+                ?: continue
+        section.append("\n## ").append(id.trim()).append("\n").append(content).append("\n")
+        appended++
+      }
+    }
+
+    if (appended == 0) {
+      // Fallback: no requested section resolved — return the general header at minimum.
+      return if (header.isNotBlank()) header else ""
+    }
+    return section.toString().trimEnd()
   }
 
   /**

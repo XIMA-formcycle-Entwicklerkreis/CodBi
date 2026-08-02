@@ -62,16 +62,7 @@ Element-only reference: what each functionality, element placeholder, and standa
 - VP: This Element-Placeholder acquires a value from window.codbiSettings.gv.
 ## Standard Configuration Classes
 
-- AI: Registers standard configurations providing targets that're used with.
-- Appointments: Registers standard configurations specific to appointment arrangements.
-- BayVIS: Registers standard configurations specific to buildings registered in BayVIS.
-- Financial: Registers standard configurations specific to finances.
 - Holistic.CSS.Standard: Registers a standard configuration that applies a standard CSS onto the form.
 - Holistic.Matomo.Tracking: Registers a standard configurations using the functionality.
 - Holistic.Media.Input.Speech: Registers a standard configuration that applies Speech-to-Text onto every.
 - Holistic.Media.Input.Speech.Whisper: Registers a standard configuration that applies Whisper Speech-to-Text onto every.
-- LDAP.Autofill: Registers standard configurations specific to LDAP-Autocompletion in HTMLInputElement s.
-- OpenPLZ.AC.SET: Registers standard configurations that binds HTMLInputElements tagged with the.
-- People: Registers standard configurations specific to people characteristics.
-- Print.Removal: Registers standard configurations that remove HTMLElement s from the DOM.
-- UI.Panels: Registers standard configurations providing CodBi-"HTML.Panel"s.

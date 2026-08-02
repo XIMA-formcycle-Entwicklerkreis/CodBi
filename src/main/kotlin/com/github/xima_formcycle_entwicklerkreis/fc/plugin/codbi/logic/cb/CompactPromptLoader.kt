@@ -6,16 +6,21 @@ import javax.persistence.EntityManagerFactory
 import org.slf4j.LoggerFactory
 
 /**
- * Service that seeds/loads **compact** AI system prompts from the `codbi-core-elements-compact.md`
- * and `codbi-core-api-compact.md` classpath resources into the [codbi_compact_prompt] database
- * table. Mirrors the structure of [PromptLoader] but uses a separate table.
+ * Service that seeds/loads **compact** AI system prompts from the condensed classpath resources
+ * into the [codbi_compact_prompt] database table. Mirrors the structure of [PromptLoader] but uses
+ * a separate table.
+ *
+ * The Condensed view intentionally contains ONLY the condensed references (what the AI receives
+ * initially via `{{CODBI_ELEMENTS_SECTION}}` and `{{FORMCYCLE_WIDGETS_SECTION}}`). The
+ * parameter-complete API reference (`codbi-core-api-compact.md`) is seeded into the **detailed**
+ * table as `codbi.api_reference` (see [PromptLoader]).
  *
  * ## Seed sources
- * 1. `codbi-core-elements-compact.md` → base key `compact.elements` (3 `##` sections)
- * 2. `codbi-core-api-compact.md` → base key `compact.api` (5 `##` sections)
+ * 1. `codbi-core-elements-compact.md` → base key `compact.elements`
+ * 2. `formcycle-widgets-compact.md` → base key `compact.formcycle_widgets`
  *
  * Each `##` section becomes an individual prompt record with a key like
- * `compact.elements.functionalities` or `compact.api.workflow_nodes`.
+ * `compact.elements.functionalities`.
  */
 internal object CompactPromptLoader {
 
@@ -23,17 +28,22 @@ internal object CompactPromptLoader {
   private val gson = GsonBuilder().create()
   private var needsBulkSeedCheck = true
 
+  /** Keys seeded during the current seed run, used to clean up stale system prompts. */
+  private val seededKeys = mutableSetOf<String>()
+
   /** Set externally from plugin properties (e.g., `AI_Prompt_Reseed=true`) to force a re-seed. */
   @Volatile internal var forceReseed = false
 
   /** Base classpath resource directory. */
   private const val RESOURCE_BASE = "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
 
-  /** The two compact prompt source files (path → base key). */
+  /** The compact prompt source files (path → base key). */
   private val SEED_FILES =
       mapOf(
           "${RESOURCE_BASE}codbi-core-elements-compact.md" to "compact.elements",
-          "${RESOURCE_BASE}codbi-core-api-compact.md" to "compact.api")
+          "${RESOURCE_BASE}formcycle-widgets-compact.md" to "compact.formcycle_widgets",
+          "${RESOURCE_BASE}formcycle-workflow-nodes-compact.md" to
+              "compact.formcycle_workflow_nodes")
 
   /** DB table name. */
   private const val TABLE = "codbi_compact_prompt"
@@ -51,6 +61,7 @@ internal object CompactPromptLoader {
     val em = emf.createEntityManager()
     try {
       em.transaction.begin()
+      seededKeys.clear()
 
       // Check for force reseed flag (set from plugin property AI_Prompt_Reseed)
       if (forceReseed) {
@@ -87,6 +98,23 @@ internal object CompactPromptLoader {
           upsertPrompt(em, baseKey, content, pluginVersion)
           logger.info("[CompactPromptLoader] Upserted '{}' from '{}'", baseKey, resourcePath)
         }
+      }
+
+      // Clean up stale system prompts (e.g., compact.api.* that moved to the Detailed view).
+      val allSystemKeys =
+          em.createNativeQuery("SELECT prompt_key FROM $TABLE WHERE is_system = true")
+              .resultList
+              .mapNotNull { it?.toString() }
+      var staleDeleted = 0
+      for (key in allSystemKeys) {
+        if (key == SEED_VERSION_KEY || key in seededKeys) continue
+        em.createNativeQuery("DELETE FROM $TABLE WHERE prompt_key = :key")
+            .setParameter("key", key)
+            .executeUpdate()
+        staleDeleted++
+      }
+      if (staleDeleted > 0) {
+        logger.info("[CompactPromptLoader] Deleted {} stale compact prompt(s)", staleDeleted)
       }
 
       upsertSeedVersion(em, pluginVersion)
@@ -320,6 +348,7 @@ internal object CompactPromptLoader {
   }
 
   private fun upsertPrompt(em: EntityManager, key: String, text: String, version: String) {
+    seededKeys.add(key)
     // Check if prompt exists and whether user has modified it
     val existing =
         try {
@@ -505,6 +534,34 @@ internal object CompactPromptLoader {
     } catch (e: Exception) {
       logger.warn("[CompactPromptLoader] Failed to list: {}", e.message)
       emptyList()
+    }
+  }
+
+  /**
+   * Loads all active compact prompts whose key starts with [prefix] as a map of key → text. Used to
+   * read the condensed workflow-nodes reference (and any other compact category) from the database
+   * so the AI's pass-1 prompt is DB-driven.
+   */
+  internal fun loadCategory(em: EntityManager, prefix: String): Map<String, String> {
+    return try {
+      val q =
+          em.createNativeQuery(
+              "SELECT prompt_key, prompt_text FROM $TABLE " +
+                  "WHERE prompt_key LIKE :prefix AND is_active = TRUE ORDER BY prompt_key")
+      q.setParameter("prefix", "$prefix%")
+      @Suppress("UNCHECKED_CAST")
+      (q.resultList as? List<Array<Any>>)
+          ?.mapNotNull { row ->
+            if (row.size < 2) return@mapNotNull null
+            val key = row[0]?.toString() ?: return@mapNotNull null
+            val text = resolveClob(row[1]) ?: return@mapNotNull null
+            key to text
+          }
+          ?.toMap() ?: emptyMap()
+    } catch (e: Exception) {
+      logger.warn(
+          "[CompactPromptLoader] Failed to load compact category '{}': {}", prefix, e.message)
+      emptyMap()
     }
   }
 

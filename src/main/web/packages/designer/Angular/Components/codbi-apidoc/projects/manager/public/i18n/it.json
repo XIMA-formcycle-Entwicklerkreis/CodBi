@@ -77,7 +77,7 @@
   "pm.view.condensed.tip": "Modifica i prompt compatti/brevi",
   "pm.addCategory": "+ Aggiungi categoria",
   "pm.addCategory.tip": "Aggiungi una nuova categoria di livello superiore",
-  "pm.importAll": "Importa tutto",
+  "pm.importAll": "Importa",
   "pm.importAll.tip": "Importa i prompt da file JSON",
   "pm.exportAll": "Esporta tutto",
   "pm.exportAll.tip": "Esporta tutti i prompt come JSON",
@@ -153,6 +153,15 @@
   "pm.hint.renamePreview": "Cambierà solo l'ultimo segmento. Anteprima:",
   "pm.renameAction": "Rinomina",
   "pm.descriptionLabel": "Descrizione",
+
+  "pm.legend.user": "Creato dall'utente",
+  "pm.legend.system": "Applicazione di sistema",
+  "pm.legend.abstract": "Regola astratta",
+
+  "pm.viewTotal": "Token totali",
+  "pm.viewTotal.tip": "Dimensione totale in token della vista corrente",
+  "pm.tokens.tip": "Numero approssimativo di token per questo prompt",
+  "pm.tokens.tip.group": "Numero approssimativo di token per questa categoria",
 
   "pm.err.categoryKeyRequired": "La chiave della categoria è obbligatoria.",
   "pm.err.categoryKeyInvalid": "La chiave della categoria non deve contenere punti.",

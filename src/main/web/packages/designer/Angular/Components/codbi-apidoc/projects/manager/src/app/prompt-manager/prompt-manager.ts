@@ -383,13 +383,14 @@ export class PromptManager implements OnInit, OnDestroy {
     this.treeNodes = [];
     for (const [cat, subMap] of categories) {
       const catLabel = this.formatCategoryLabel(cat);
-      const catNode: TreeNode = {
+      const catNode = {
         label: catLabel,
         data: cat,
         type: "category",
         expanded: true,
-        children: [],
-      };
+        children: [] as TreeNode[],
+        tokens: 0,
+      } as TreeNode & { tokens: number };
 
       for (const [subKey, items] of subMap) {
         if (subKey === "") {
@@ -398,17 +399,23 @@ export class PromptManager implements OnInit, OnDestroy {
           }
         } else {
           const subLabel = subKey.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-          const subNode: TreeNode = {
+          const subTokens = items.reduce((sum, it) => sum + ((it as TreeNode & { tokens?: number }).tokens ?? 0), 0);
+          const subNode = {
             label: subLabel,
             data: `${cat}.${subKey}`,
             type: "subcategory",
             expanded: true,
             children: items,
-          };
+            tokens: subTokens,
+          } as TreeNode & { tokens: number };
           catNode.children!.push(subNode);
         }
       }
 
+      catNode.tokens = (catNode.children ?? []).reduce(
+        (sum, child) => sum + ((child as TreeNode & { tokens?: number }).tokens ?? 0),
+        0,
+      );
       this.treeNodes.push(catNode);
     }
   }
@@ -427,7 +434,11 @@ export class PromptManager implements OnInit, OnDestroy {
       isAbstract: this.isAbstractPrompt(p),
       // Server-side system standard configurations get a darkorange frame.
       isSystemApp: this.isSystemAppPrompt(p),
-    } as TreeNode & { isAbstract: boolean; isSystemApp: boolean };
+      // User-created prompts get a blue frame.
+      isUserApp: this.isUserAppPrompt(p),
+      // Token count of this prompt (pre + main + post).
+      tokens: this.recordTokens(p),
+    } as TreeNode & { isAbstract: boolean; isSystemApp: boolean; isUserApp: boolean; tokens: number };
     return node;
   }
 
@@ -442,6 +453,30 @@ export class PromptManager implements OnInit, OnDestroy {
   }
 
   /**
+   * Returns true for prompts created by the user in the Prompt Manager (is_system = false).
+   * These get a blue frame to distinguish them from seeded/system elements.
+   */
+  isUserAppPrompt(p: PromptRecord): boolean {
+    return !p.isSystem;
+  }
+
+  /** Rough token estimate for a text: ~4 characters per token. */
+  private estimateTokens(text: string | null | undefined): number {
+    if (!text) return 0;
+    return Math.max(0, Math.ceil(text.length / 4));
+  }
+
+  /** Token count of a prompt record (pre + main + post). */
+  private recordTokens(p: PromptRecord): number {
+    return this.estimateTokens(p.prePrompt) + this.estimateTokens(p.promptText) + this.estimateTokens(p.postPrompt);
+  }
+
+  /** Total token size of all prompts in the currently selected view. */
+  get viewTotalTokens(): number {
+    return this.allPrompts.reduce((sum, p) => sum + this.recordTokens(p), 0);
+  }
+
+  /**
    * Returns true for abstract prompts (e.g., "EP Chaining", "OpenPLZ EPs", "Form Structure Rules",
    * "Trigger Types") that describe general rules rather than a concrete element.
    *
@@ -452,16 +487,12 @@ export class PromptManager implements OnInit, OnDestroy {
    *   (`...fc_email`) and widgets are real elements.
    */
   isAbstractPrompt(p: PromptRecord): boolean {
+    // User-created prompts get their own blue frame (see isUserAppPrompt) — never the abstract one.
+    if (!p.isSystem) return false;
     const parts = p.promptKey.split(".");
     if (parts.length < 3) return false;
     const category = parts[0];
     if (category === "codbi") {
-      // User-created items added to Element Placeholders, Functionalities, or Standard
-      // Configurations always get a border so they stand out from seeded elements.
-      if (!p.isSystem) {
-        const sub = parts[1];
-        return sub === "element_placeholders" || sub === "functionalities" || sub === "standard_configurations";
-      }
       // Server-side system standard configurations (e.g. Holistic.Matomo.Tracking,
       // Holistic.Cleave.*) get their own darkorange frame (see isSystemAppPrompt) instead of
       // the generic abstract frame.
@@ -1295,56 +1326,5 @@ export class PromptManager implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  importPrompt(): void {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".json";
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const data = JSON.parse(reader.result as string) as PromptExport;
-          this.uploadImport(data);
-        } catch {
-          this.errorText = this.tr("pm.err.invalidJson");
-          this.cdr.markForCheck();
-        }
-      };
-      reader.readAsText(file);
-    };
-    input.click();
-  }
-
-  private uploadImport(data: PromptExport): void {
-    this.loading = true;
-    this.errorText = null;
-    this.successText = null;
-    const body = JSON.stringify({
-      prompt_key: data.prompt_key,
-      display_name: data.display_name,
-      prompt_text: data.prompt_text,
-      pre_prompt: data.pre_prompt,
-      post_prompt: data.post_prompt,
-    });
-    this.http
-      .post<{ status: string }>(this.servletUrl, `body=${encodeURIComponent(body)}`, {
-        headers: { "X-Action": "Import", "X-View": this.xView(), "Content-Type": "application/x-www-form-urlencoded" },
-      })
-      .subscribe({
-        next: () => {
-          this.loading = false;
-          this.successText = this.tr("pm.msg.promptImported", { key: data.prompt_key });
-          this.loadPrompts();
-          this.cdr.markForCheck();
-        },
-        error: (err) => {
-          this.loading = false;
-          this.errorText = this.tr("pm.err.importFailed", { error: err.message });
-          this.cdr.markForCheck();
-        },
-      });
-  }
   // #endregion
 }

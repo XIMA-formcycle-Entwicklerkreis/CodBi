@@ -15,6 +15,8 @@ internal object CodbiCapabilities {
       "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/codbi-core-api-compact.md"
   private const val DETAILS_INDEX_RESOURCE =
       "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/codbi-core-details-index.json"
+  private const val FORMCYCLE_WIDGETS_ONLY_RESOURCE =
+      "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/formcycle-widgets-compact.md"
 
   @Volatile private var cachedElements: String? = null
   @Volatile private var elementsBuiltAt: Long = 0L
@@ -59,6 +61,10 @@ internal object CodbiCapabilities {
           }
     }
   }
+
+  /** Returns the condensed formcycle widgets section (names + purpose, no JSON structure). */
+  fun buildWidgetsSection(): String =
+      load(FORMCYCLE_WIDGETS_ONLY_RESOURCE, "FORMCYCLE WIDGETS (COMPACT)")
 
   /** Returns full details for only the requested IDs (functionality/EP/standard/class alias). */
   fun buildFullSectionFor(requestedIds: List<String>): String {

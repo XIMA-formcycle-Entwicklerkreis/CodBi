@@ -65,6 +65,7 @@ class AICodBiAssistant : IPluginServletAction {
       "Models" -> handleModels()
       "Run" -> handleRun(params)
       "AppointmentPlan" -> handleAppointmentPlan(params)
+      "Status" -> handleStatus()
       else -> jsonResponse("""{"error":"Unknown action"}""")
     }
   }
@@ -95,6 +96,38 @@ class AICodBiAssistant : IPluginServletAction {
       return jsonResponse("""{"error":"AI service not available"}""")
     }
     return jsonResponse(gson.toJson(models))
+  }
+
+  /**
+   * Reports whether the CodBi prompt database is available. The frontend uses this to show an error
+   * and disable the assistant inputs when the DB (which holds all AI prompt content) is unreachable
+   * — without the prompts there is no point sending anything to the AI.
+   */
+  private fun handleStatus(): IPluginServletActionRetVal {
+    val emf = CodbiEntities.entityManagerFactory
+    if (emf == null) {
+      return jsonResponse(
+          gson.toJson(
+              mapOf(
+                  "status" to "error",
+                  "error" to "Database not available — AI prompts cannot be loaded.")))
+    }
+    return try {
+      val em = emf.createEntityManager()
+      try {
+        em.createNativeQuery("SELECT COUNT(*) FROM codbi_ai_prompt").singleResult
+        jsonResponse(gson.toJson(mapOf("status" to "ok")))
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Status check failed: {}", e.message)
+      jsonResponse(
+          gson.toJson(
+              mapOf(
+                  "status" to "error",
+                  "error" to "Database not available — AI prompts cannot be loaded.")))
+    }
   }
 
   /**

@@ -583,6 +583,20 @@ export class PromptManager implements OnInit, OnDestroy {
       if (className) return className.replace(/\./g, "_");
       return this.formatKeySegment(parts[parts.length - 1], "underscores");
     }
+    // Condensed (Kompakt view) workflow nodes: the compact seed uses the key
+    // "compact.formcycle_workflow_nodes.node_types.<name>" (or "...trigger_types.<name>"). Format
+    // the last segment with underscores, exactly like the Detailed view workflow nodes, so the
+    // condensed tree shows the same names (e.g. "FC_Break", "FC_Form_Submit_Button").
+    if (
+      category === "compact" &&
+      parts.length >= 4 &&
+      parts[1] === "formcycle_workflow_nodes" &&
+      (parts[2] === "node_types" || parts[2] === "trigger_types")
+    ) {
+      const className = this.extractClassName(p.displayName);
+      if (className) return className.replace(/\./g, "_");
+      return this.formatKeySegment(parts[parts.length - 1], "underscores");
+    }
     // Other formcycle items: spaces as separators
     const mode: "spaces" = "spaces";
     if (parts.length >= 4) {

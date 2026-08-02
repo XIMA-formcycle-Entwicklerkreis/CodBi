@@ -81,6 +81,9 @@ export class AiAssistant implements OnInit, OnDestroy {
   spinnerText = "Thinking\u2026";
   resultText: string | null = null;
   errorText: string | null = null;
+  /** Whether the CodBi prompt database is reachable. When false, the assistant inputs are
+   *  disabled (but still visible) because there are no DB prompts to send to the AI. */
+  dbAvailable = true;
   attachedFile: File | null = null;
   readonly speechSupported = "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
   isSpeechRecording = false;
@@ -161,6 +164,38 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.attachedFile = null;
     this.showHistory = false;
 
+    // First verify the CodBi prompt database is reachable. Without DB prompts there is no point
+    // sending anything to the AI — show an error and disable the inputs (still visible).
+    getJQuery().ajax({
+      url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
+      type: "GET",
+      headers: { "X-Action": "Status" },
+      success: (statusResponse: unknown) => {
+        const status = (statusResponse as { status?: string; error?: string } | null)?.status;
+        if (status !== "ok") {
+          this.dbAvailable = false;
+          this.errorText =
+            (statusResponse as { error?: string } | null)?.error ??
+            "Database not available — AI prompts cannot be loaded.";
+          this.visible = true;
+          this.cdr.markForCheck();
+          return;
+        }
+        this.dbAvailable = true;
+        this.loadModelsAndOpen();
+      },
+      error: (xhr: unknown) => {
+        const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
+        this.dbAvailable = false;
+        this.errorText =
+          jq.responseJSON?.error ?? jq.statusText ?? "Database not available — AI prompts cannot be loaded.";
+        this.visible = true;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  private loadModelsAndOpen(): void {
     if (this.models.length > 0) {
       this.selectedModel = this.loadModelCookie() ?? this.models[0]?.id ?? null;
       this.visible = true;
@@ -475,6 +510,10 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   // #region Run (phase 1 + phase 2)
   async run(): Promise<void> {
+    if (!this.dbAvailable) {
+      this.setError("Database not available — AI prompts cannot be loaded.");
+      return;
+    }
     const modelId = this.selectedModel;
     const prompt = this.promptText.trim();
 

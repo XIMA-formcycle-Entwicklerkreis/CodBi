@@ -575,6 +575,13 @@ export class AiAssistant implements OnInit, OnDestroy {
 
         const intent = p1["intent"] as "form" | "workflow" | "both";
 
+        // Count the intent-classification inference in the token counter as well.
+        const classTokens = typeof p1["tokens"] === "number" ? p1["tokens"] : 0;
+        if (classTokens > 0) {
+          this.lastTokens = classTokens;
+          this.sessionTokens += classTokens;
+        }
+
         this.spinnerText = "Collecting context\u2026";
         this.cdr.markForCheck();
         this.runPhase2(prompt, modelId, intent, imageParams);
@@ -702,9 +709,11 @@ export class AiAssistant implements OnInit, OnDestroy {
         const hasWorkflowMessage = "workflowMessage" in p2 && typeof p2["workflowMessage"] === "string";
 
         // Update the token counter from the backend's estimated token count for this run.
+        // lastTokens accumulates (classification + form passes) so it reflects the whole Run,
+        // while sessionTokens accumulates across runs for the page session.
         const tokens = typeof p2["tokens"] === "number" ? p2["tokens"] : 0;
         if (tokens > 0) {
-          this.lastTokens = tokens;
+          this.lastTokens += tokens;
           this.sessionTokens += tokens;
         }
 

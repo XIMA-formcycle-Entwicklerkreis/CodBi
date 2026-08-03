@@ -344,7 +344,7 @@ class AICodBiAssistant : IPluginServletAction {
 
     // Phase 1 â€” classify intent
     if (phase == "1") {
-      val intent =
+      val (intent, classifyTokens) =
           try {
             // imageParts intentionally omitted: intent classification only needs the text prompt;
             // sending vision-format array content to text-only models causes HTTP 400 errors.
@@ -358,7 +358,7 @@ class AICodBiAssistant : IPluginServletAction {
                 """{"error":${gson.toJson("Classification failed: ${e.message}")}}""")
           }
       logger.info("[AICodBiAssistant] Classified intent as: {}", intent)
-      return jsonResponse("""{"status":"need_data","intent":"$intent"}""")
+      return jsonResponse("""{"status":"need_data","intent":"$intent","tokens":$classifyTokens}""")
     }
 
     // Phase 2 â€” execute
@@ -479,7 +479,7 @@ class AICodBiAssistant : IPluginServletAction {
       modelId: String,
       instance: Standard,
       imageParts: List<String> = emptyList()
-  ): String {
+  ): Pair<String, Int> {
     val systemPrompt = loadClassifyIntentPrompt()
 
     val messagesJson = buildString {
@@ -492,6 +492,9 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] Phase-1 messages sent to AI (model={}): {}", modelId, messagesJson)
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
+    // Report the estimated tokens consumed by the classification call so the frontend token
+    // counter reflects every inference, not just the phase-2 modifications.
+    val tokens = estimateTokens(messagesJson) + estimateTokens(rawResponse)
     val cleaned = extractJson(stripThinkTags(rawResponse))
 
     return try {
@@ -501,19 +504,19 @@ class AICodBiAssistant : IPluginServletAction {
       when (intent) {
         "form",
         "workflow",
-        "both" -> intent
+        "both" -> intent to tokens
         else -> {
           logger.warn(
               "[AICodBiAssistant] Unexpected intent classification '{}' â€” defaulting to 'both'",
               intent)
-          "both"
+          "both" to tokens
         }
       }
     } catch (_: Exception) {
       logger.warn(
           "[AICodBiAssistant] Could not parse classification response '{}' â€” defaulting to 'both'",
           cleaned)
-      "both"
+      "both" to tokens
     }
   }
 
@@ -1525,8 +1528,67 @@ class AICodBiAssistant : IPluginServletAction {
     return gson.toJson(root)
   }
 
+  /**
+   * Promotes any child element that the AI embedded as a full JSON object inside a container's
+   * `properties.elements` array to the flat top-level `items` array, replacing the object with its
+   * `name` reference string. FORMCYCLE expects a flat `items` list where containers/fieldsets/pages
+   * reference their children by name; some models output children as nested objects, which the
+   * designer would otherwise silently drop.
+   */
+  private fun promoteNestedElementObjects(root: JsonObject) {
+    val items = root.getAsJsonArray("items") ?: return
+    val knownNames = mutableSetOf<String>()
+    for (el in items) {
+      if (el.isJsonObject) {
+        val name = el.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
+        if (name != null) knownNames.add(name)
+      }
+    }
+    val queue = ArrayDeque<JsonObject>()
+    for (el in items) {
+      if (el.isJsonObject) queue.addLast(el.asJsonObject)
+    }
+    while (queue.isNotEmpty()) {
+      val container = queue.removeFirst()
+      val containerProps = container.getAsJsonObject("properties") ?: continue
+      val elements = containerProps.getAsJsonArray("elements") ?: continue
+      val rebuilt = JsonArray()
+      var changed = false
+      for (ref in elements) {
+        if (ref.isJsonPrimitive) {
+          rebuilt.add(ref)
+          continue
+        }
+        if (!ref.isJsonObject) {
+          rebuilt.add(ref)
+          continue
+        }
+        // A full element object inside 'elements' — promote it to the flat items list.
+        val childObj = ref.asJsonObject
+        val childName = childObj.getAsJsonObject("properties")?.get("name")?.asString
+        changed = true
+        if (childName != null) {
+          if (childName !in knownNames) {
+            knownNames.add(childName)
+            items.add(childObj)
+            queue.addLast(childObj)
+          }
+          rebuilt.add(childName)
+        }
+        // A child without a name cannot be referenced — drop the reference to keep 'elements'
+        // valid.
+      }
+      if (changed) containerProps.add("elements", rebuilt)
+    }
+  }
+
   private fun restoreStrippedFields(aiResult: String, original: String): String {
     val aiObj = JsonParser.parseString(aiResult).asJsonObject
+    // Some models embed newly created child elements as full JSON objects inside a container's
+    // 'properties.elements' array instead of (a) adding them to the flat top-level 'items' array
+    // and (b) referencing them by 'name' string. FORMCYCLE expects the flat structure, so promote
+    // such nested objects before any further processing — otherwise the fields never render.
+    promoteNestedElementObjects(aiObj)
     val result = JsonParser.parseString(original).asJsonObject
     val originalItems = result.getAsJsonArray("items")
     for (entry in aiObj.entrySet()) {
@@ -6851,20 +6913,16 @@ class AICodBiAssistant : IPluginServletAction {
           "You receive a partial form JSON (IPersistJson) and a natural language instruction. " +
               "MODIFY the form according to the instruction and return the COMPLETE modified form JSON. " +
               "Do NOT ask for more details â€” the user's instruction and the form data below are sufficient.\n\n"
-      // CodBi prompts (functionalities, element placeholders, standard configurations, general
-      // rules and the condensed elements list) are only included when CodBi is enabled.
+      // Pass-1 uses ONLY the condensed references (element/widget names + purposes) plus the
+      // general rules. The parameter-complete sections (codbi.standard_configurations /
+      // codbi.functionalities / codbi.element_placeholders) are intentionally NOT included here:
+      // codbi-general.md tells the AI to request the exact JSON templates for exactly the
+      // elements/widgets it needs, and the server returns only those in pass-2. Sending the full
+      // detailed sections here would roughly double the token usage per request without changing
+      // the outcome (the AI requests details regardless).
       val codbiPart =
           if (useCodbi) {
-            "\n" +
-                (cb["codbi.standard_configurations"] ?: "") +
-                "\n" +
-                (cb["codbi.functionalities"] ?: "") +
-                "\n" +
-                (cb["codbi.element_placeholders"] ?: "") +
-                "\n" +
-                (cb["codbi.general"] ?: "") +
-                "\n" +
-                "{{CODBI_ELEMENTS_SECTION}}"
+            "\n" + (cb["codbi.general"] ?: "") + "\n" + "{{CODBI_ELEMENTS_SECTION}}"
           } else {
             ""
           }
@@ -6935,8 +6993,11 @@ class AICodBiAssistant : IPluginServletAction {
   /**
    * Loads the CodBi apply (pass-2) prompt from the database. When [requestedIds] is non-empty, only
    * the details (parameters/TSDoc) of those specific elements are appended instead of the whole
-   * full API reference. When [widgetIds] is non-empty, only the requested formcycle widget sections
-   * are appended instead of the full widget reference.
+   * full API reference. When [requestedIds] is empty but [widgetIds] is non-empty (the AI asked
+   * only for widget templates), the condensed elements list is appended instead of the full API
+   * reference; the full reference is only sent for a pure blind reconsideration (both lists empty).
+   * When [widgetIds] is non-empty, only the requested formcycle widget sections are appended
+   * instead of the full widget reference.
    */
   private fun loadCodbiApplyPrompt(
       requestedIds: List<String> = emptyList(),
@@ -6953,25 +7014,24 @@ class AICodBiAssistant : IPluginServletAction {
         return widgetPart
       }
       val categories = PromptLoader.loadCategory(em, "codbi")
-      val base =
-          (categories["codbi.standard_configurations"] ?: "") +
-              "\n" +
-              (categories["codbi.functionalities"] ?: "") +
-              "\n" +
-              (categories["codbi.element_placeholders"] ?: "") +
-              "\n" +
-              (categories["codbi.general"] ?: "")
+      // Only the cross-cutting general rules form the base — the detailed standard/functionality/
+      // EP sections are redundant with the targeted details below (or the full reference in the
+      // blind case) and would roughly double the token usage when duplicated here.
+      val base = categories["codbi.general"] ?: ""
       val codbiPart =
-          if (requestedIds.isEmpty()) {
-            PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
-          } else {
-            val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
-            // Fall back to the full reference when none of the requested IDs could be resolved.
-            if (details.isBlank()) {
-              PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
-            } else {
-              details
+          when {
+            requestedIds.isNotEmpty() -> {
+              val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
+              // Fall back to the full reference when none of the requested IDs could be resolved.
+              if (details.isBlank()) PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
+              else details
             }
+            // The AI asked ONLY for widget templates (elements list empty): give it the condensed
+            // element list (names + purposes) plus the widget templates — NOT the full API
+            // reference.
+            widgetIds.isNotEmpty() -> PromptLoader.resolvePlaceholders("{{CODBI_ELEMENTS_SECTION}}")
+            // Pure blind reconsideration: provide the complete reference.
+            else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
           }
       return base + "\n\n" + codbiPart + "\n\n" + widgetPart
     } catch (e: Exception) {
@@ -7012,7 +7072,9 @@ class AICodBiAssistant : IPluginServletAction {
     private const val FALLBACK_FORM_SYSTEM_PROMPT =
         "You are a FORMCYCLE form structure assistant. " +
             "You receive a partial IPersistJson object and a natural language instruction. " +
-            "Your ONLY output must be the modified IPersistJson as raw JSON."
+            "Your ONLY output must be the modified IPersistJson as raw JSON. " +
+            "Every generated element MUST carry a meaningful, human-readable 'label' describing its " +
+            "purpose in the language of the user's request — never the generic value \"Label\" or \"Example\"."
 
     private const val FALLBACK_CLASSIFY_INTENT_PROMPT =
         "You are a FORMCYCLE assistant router. Based on the user's request, " +

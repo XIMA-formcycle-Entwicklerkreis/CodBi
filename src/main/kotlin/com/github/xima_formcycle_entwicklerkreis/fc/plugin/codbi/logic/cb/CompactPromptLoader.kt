@@ -45,6 +45,15 @@ internal object CompactPromptLoader {
           "${RESOURCE_BASE}formcycle-workflow-nodes-compact.md" to
               "compact.formcycle_workflow_nodes")
 
+  /**
+   * Seed base keys used by earlier plugin versions that are no longer seeded. Records under these
+   * prefixes (e.g. the old `compact.api` seed, which moved to the Detailed view) are stale
+   * leftovers and are purged on every seed run so they no longer appear in the condensed Prompt
+   * Manager view. Legacy rows were inserted before the `is_system` flag existed and therefore carry
+   * `is_system = false`, so they are invisible to the stale-system-prompt cleanup below.
+   */
+  private val RETIRED_SEED_BASE_KEYS = setOf("compact.api")
+
   /** DB table name. */
   private const val TABLE = "codbi_compact_prompt"
 
@@ -101,12 +110,30 @@ internal object CompactPromptLoader {
       }
 
       // Clean up stale system prompts (e.g., compact.api.* that moved to the Detailed view).
+      // The is_system=true filter alone is not enough: records seeded before the is_system flag
+      // existed (e.g. the old `compact.api` seed) carry is_system=false and would never be removed.
+      // Purge those under retired seed base keys explicitly, in addition to stale system prompts.
+      val staleKeys = mutableSetOf<String>()
+
       val allSystemKeys =
           em.createNativeQuery("SELECT prompt_key FROM $TABLE WHERE is_system = true")
               .resultList
               .mapNotNull { it?.toString() }
+      staleKeys += allSystemKeys
+
+      if (RETIRED_SEED_BASE_KEYS.isNotEmpty()) {
+        val allKeys =
+            em.createNativeQuery("SELECT prompt_key FROM $TABLE").resultList.mapNotNull {
+              it?.toString()
+            }
+        staleKeys +=
+            allKeys.filter { key ->
+              RETIRED_SEED_BASE_KEYS.any { key == it || key.startsWith("$it.") }
+            }
+      }
+
       var staleDeleted = 0
-      for (key in allSystemKeys) {
+      for (key in staleKeys) {
         if (key == SEED_VERSION_KEY || key in seededKeys) continue
         em.createNativeQuery("DELETE FROM $TABLE WHERE prompt_key = :key")
             .setParameter("key", key)

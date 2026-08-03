@@ -1369,17 +1369,18 @@ class AIFormAssistant : IPluginServletAction {
           "You receive a partial form JSON (IPersistJson) and a natural language instruction. " +
               "MODIFY the form according to the instruction and return the COMPLETE modified form JSON. " +
               "Do NOT ask for more details — the user's instruction and the form data below are sufficient.\n\n"
+      // Pass-1 uses ONLY the condensed references (element/widget names + purposes) plus the
+      // general rules. The parameter-complete sections (codbi.standard_configurations /
+      // codbi.functionalities / codbi.element_placeholders) are intentionally NOT included here:
+      // codbi-general.md tells the AI to request the exact JSON templates for exactly the
+      // elements/widgets it needs, and the server returns only those in pass-2. Sending the full
+      // detailed sections here would roughly double the token usage per request without changing
+      // the outcome (the AI requests details regardless).
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
               (categories["formcycle.general"] ?: "") +
               "\n" +
               "{{FORMCYCLE_WIDGETS_SECTION}}" +
-              "\n" +
-              (categories["codbi.standard_configurations"] ?: "") +
-              "\n" +
-              (categories["codbi.functionalities"] ?: "") +
-              "\n" +
-              (categories["codbi.element_placeholders"] ?: "") +
               "\n" +
               (categories["codbi.general"] ?: "") +
               "\n" +
@@ -1424,8 +1425,11 @@ class AIFormAssistant : IPluginServletAction {
   /**
    * Loads the CodBi apply (pass-2) prompt from the database. When [requestedIds] is non-empty, only
    * the details (parameters/TSDoc) of those specific elements are appended instead of the whole
-   * full API reference. When [widgetIds] is non-empty, only the requested formcycle widget sections
-   * are appended instead of the full widget reference.
+   * full API reference. When [requestedIds] is empty but [widgetIds] is non-empty (the AI asked
+   * only for widget templates), the condensed elements list is appended instead of the full API
+   * reference; the full reference is only sent for a pure blind reconsideration (both lists empty).
+   * When [widgetIds] is non-empty, only the requested formcycle widget sections are appended
+   * instead of the full widget reference.
    */
   private fun loadCodbiApplyPrompt(
       requestedIds: List<String> = emptyList(),
@@ -1435,25 +1439,24 @@ class AIFormAssistant : IPluginServletAction {
     if (em == null) return FALLBACK_APPLY_PROMPT
     try {
       val categories = PromptLoader.loadCategory(em, "codbi")
-      val base =
-          (categories["codbi.standard_configurations"] ?: "") +
-              "\n" +
-              (categories["codbi.functionalities"] ?: "") +
-              "\n" +
-              (categories["codbi.element_placeholders"] ?: "") +
-              "\n" +
-              (categories["codbi.general"] ?: "")
+      // Only the cross-cutting general rules form the base — the detailed standard/functionality/
+      // EP sections are redundant with the targeted details below (or the full reference in the
+      // blind case) and would roughly double the token usage when duplicated here.
+      val base = categories["codbi.general"] ?: ""
       val codbiPart =
-          if (requestedIds.isEmpty()) {
-            PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
-          } else {
-            val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
-            // Fall back to the full reference when none of the requested IDs could be resolved.
-            if (details.isBlank()) {
-              PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
-            } else {
-              details
+          when {
+            requestedIds.isNotEmpty() -> {
+              val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
+              // Fall back to the full reference when none of the requested IDs could be resolved.
+              if (details.isBlank()) PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
+              else details
             }
+            // The AI asked ONLY for widget templates (elements list empty): give it the condensed
+            // element list (names + purposes) plus the widget templates — NOT the full API
+            // reference.
+            widgetIds.isNotEmpty() -> PromptLoader.resolvePlaceholders("{{CODBI_ELEMENTS_SECTION}}")
+            // Pure blind reconsideration: provide the complete reference.
+            else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
           }
       val widgetPart = buildWidgetDetailsSection(em, widgetIds)
       return base + "\n\n" + codbiPart + "\n\n" + widgetPart
@@ -1497,7 +1500,9 @@ class AIFormAssistant : IPluginServletAction {
         "You are a FORMCYCLE form structure assistant. " +
             "You receive a partial IPersistJson object and a natural language instruction. " +
             "Your ONLY output must be the same partial IPersistJson â€” modified according " +
-            "to the instruction â€” as a raw JSON object. No explanation, no markdown, no code fences."
+            "to the instruction â€” as a raw JSON object. No explanation, no markdown, no code fences. " +
+            "Every generated element MUST carry a meaningful, human-readable 'label' describing its " +
+            "purpose in the language of the user's request â€” never the generic value \"Label\" or \"Example\"."
 
     private const val FALLBACK_RETHINK_PROMPT =
         "You are a CodBi form element configurator. Review the form elements and apply " +

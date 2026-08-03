@@ -64,7 +64,8 @@ class CodbiEntities : IPluginEntities {
           "[[ CodBi / DB ] Failed to seed AI prompts: ${e.message} — continuing with fallbacks ]")
     }
 
-    // Seed compact AI system prompts (codbi-core-elements/api-compact.md)
+    // Seed compact AI system prompts (codbi-core-elements-compact.md + widget/workflow-nodes
+    // compact files; the parameter-complete API reference lives in the Detailed view).
     try {
       logger.info(
           "[[ CodBi / DB ] Calling CompactPromptLoader.seedIfNeeded with version={} ]", version)

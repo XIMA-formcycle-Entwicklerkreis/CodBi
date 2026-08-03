@@ -166,12 +166,28 @@ cb-ai-assistant {
     font-family: inherit;
     padding-bottom: 2.8rem;
     background: transparent !important;
+    background-color: transparent !important;
+    /* Neutralize the PrimeNG theme variable so the dialog watermark shows through. */
+    --p-textarea-background: transparent !important;
+}
+
+/* Keep the prompt textarea transparent in every state (hover, focus, filled variant, disabled)
+   so it always blends with the dialog background instead of showing an opaque white box. */
+.cb-ai-prompt.p-textarea,
+.cb-ai-prompt.p-component,
+.cb-ai-prompt:not(:disabled):hover,
+.cb-ai-prompt:not(:disabled):focus,
+.cb-ai-prompt:not(:disabled):active,
+.cb-ai-prompt:not(:disabled).p-filled,
+.cb-ai-prompt:disabled,
+.cb-ai-prompt::placeholder {
+    background: transparent !important;
+    background-color: transparent !important;
 }
 
 .cb-ai-prompt:disabled {
     opacity: 0.6;
     cursor: not-allowed;
-    background: #f5f5f5 !important;
 }
 
 .cb-ai-spinner-row {

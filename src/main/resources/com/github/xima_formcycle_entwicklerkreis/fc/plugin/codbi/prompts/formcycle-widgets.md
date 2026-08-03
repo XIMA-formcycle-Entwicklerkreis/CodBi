@@ -5,6 +5,7 @@ Valid FORMCYCLE element className values (use ONLY these exact strings — do NO
 CRITICAL — 'XButton' does NOT exist. Use XButtonList with a 'buttons' array for any button.
 CRITICAL — XTextField uses 'datatype' (not 'type') for input validation. The 'type' property does NOT exist on XTextField.
 CRITICAL — EVERY element needs a 'label' property (except containers/fieldsets which use 'legend'). Without a label, the element won't render in the designer.
+MANDATORY — Every 'label' must be a MEANINGFUL, descriptive, human-readable text that names the field's purpose, written in the SAME language as the user's request. Derive it from what the field captures (e.g. for an address form use "Straße", "Hausnummer", "Postleitzahl", "Ort", "Land"). NEVER use generic placeholders such as "Label", "Example", "Text", "Field" or "Eingabefeld". The 'Example' in the templates below is only a structural placeholder — always replace it with a real, descriptive label.
 
 ## XTextField
 

@@ -21,66 +21,188 @@ e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or other no
 f) REDUNDANCY RULE: When a field's datatype already triggers a Holistic.Cleave.* standard (datatype="phone" → Cleave.Phone, "plzDE" → Cleave.PLZ, "dateDE"/"time" → Cleave.Date/Time), do NOT apply the equivalent People CSS class.
 g) Street names and locality/city names have no dedicated People CSS class — leave them without a CSS class.
 
-## Available CSS Classes
+## People
 
-### People (person-related fields)
-- CodBi_People_Name: For a person's name (Vorname, Nachname). Do NOT apply to street names or localities.
-- CodBi_People_Alphanumeric: ONLY for alphanumeric codes/IDs. Do NOT apply to names, streets, localities, or postal codes.
-- CodBi_People_Mail: For email addresses.
-- CodBi_People_Phone: For phone numbers.
-- CodBi_People_PLZ: For German postal codes. Use ALONE — do not combine with other People classes.
-- CodBi_People_18plus: For date-of-birth fields (min age 18).
-- CodBi_People_16plus: For date fields (min age 16).
-- CodBi_People_BuildingNumber: For building/house numbers.
+### CodBi_People_Name
+For a person's name (Vorname, Nachname). Do NOT apply to street names or localities.
 
-### Fotocropper
-- CodBi_Fotocropper_Board, CodBi_Fotocropper_Uploader, CodBi_Fotocropper_Update, CodBi_Fotocropper_ImageURL, CodBi_Fotocropper_Foto
+### CodBi_People_Alphanumeric
+ONLY for alphanumeric codes/IDs. Do NOT apply to names, streets, localities, or postal codes.
 
-### OpenPLZ Select
-- CodBi_OpenPLZ_Select_*: For OpenPLZ address select dropdowns.
+### CodBi_People_Mail
+For email addresses.
 
-### Financial
-- CodBi_Currency: For money/currency fields.
+### CodBi_People_Phone
+For phone numbers.
 
-### Appointments
-- CodBi_NoFutureDate: For date fields that should not allow future dates.
-- CodBi_DateFrame_N_Begin/End: For date ranges (N=1-5).
-- CodBi_TimeFrame_N_Begin/End: For time ranges (N=1-5).
-- When using CodBi_TimeFrame_* or CodBi_DateFrame_* classes, do NOT also add data-cb-func=time.frame or data-cb-func=date.frame.
+### CodBi_People_PLZ
+For German postal codes. Use ALONE — do not combine with other People classes.
 
-### LDAP.Autofill
-- CodBi_LDAP_AC_*: For LDAP autocomplete fields.
+### CodBi_People_18plus
+For date-of-birth fields (min age 18).
 
-### AI
-- AI_LLAMA_CHAT_Input (textarea), AI_LLAMA_CHAT_Send (button), AI_LLAMA_CHAT_Stop (button), AI_LLAMA_CHAT_Upload (upload field), AI_LLAMA_CHAT_Thinking (checkbox), AI_LLAMA_CHAT_Internet (checkbox), AI_LLAMA_CHAT_Location (checkbox), AI_LLAMA_CHAT_MailForward (checkbox), AI_LLAMA_CHAT_MailAddress (email text field), AI_LLAMA_CHAT_AlertOnFinish (checkbox)
-- AI_LLAMA_STANDARD_QA_Question (FULL name — do NOT shorten)
-- AI_LLAMA_STANDARD_TXTQA_Question (FULL name — do NOT shorten to AI_LLAMA_TXTQA_Question)
-- AI_LLAMA_TXTQA_Source, AI_LLAMA_QA_Exclude, AI_OCR_Receiver
+### CodBi_People_16plus
+For date fields (min age 16).
 
-### UI.Panels
-- CodBi_HTML_Panel_Standard (default), CodBi_HTML_Panel_Flat, CodBi_HTML_Panel_Index, CodBi_HTML_Panel_Minimal for standalone panels
-- CodBi_Accordion_A/B/C/D for accordions
-- CodBi_HTML_Panel_NoCordion: marker class for panels inside an accordion that should NOT participate in the accordion behavior
+### CodBi_People_BuildingNumber
+For building/house numbers.
 
-Panel type mapping:
-- "Standard-Panel" or "einfaches Panel" → CodBi_HTML_Panel_Standard
-- "Flaches Panel" or "Flat Panel" → CodBi_HTML_Panel_Flat
-- "Minimales Panel" or "Minimal Panel" → CodBi_HTML_Panel_Minimal
-- "Index-Panel" or "Index Panel" → CodBi_HTML_Panel_Index
+## Fotocropper
 
-CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible.
+### CodBi_Fotocropper_Board
+CSS class for the Fotocropper image board.
 
-### Print.Removal
-- CodBi_Print_Remove_Tagged, CodBi_Print_Remove_Parent, CodBi_Print_Remove_PrintOnly
+### CodBi_Fotocropper_Uploader
+CSS class for the Fotocropper uploader.
 
-### BayVIS
-- CodBi_BayVIS_Behoerde, CodBi_BayVIS_BehoerdeUndAnsprechpartner, CodBi_BayVIS_Ansprechpartner, CodBi_BayVIS_Auswahl_Behoerden
+### CodBi_Fotocropper_Update
+CSS class for the Fotocropper update control.
 
-### OpenPLZ.AC.SET
-- CodBi_OpenPLZ_AC_SET_PLZ, CodBi_OpenPLZ_AC_SET_Locality, CodBi_OpenPLZ_AC_SET_Street, CodBi_OpenPLZ_AC_SET_BuildingNumber
+### CodBi_Fotocropper_ImageURL
+CSS class for the Fotocropper image URL input.
 
-### Holistic
-- CodBi_XCL_Speech, CodBi_XCL_Speech_Whisper
+### CodBi_Fotocropper_Foto
+CSS class for the Fotocropper photo display.
+
+## OpenPLZ Select
+
+### CodBi_OpenPLZ_Select_*
+For OpenPLZ address select dropdowns.
+
+## Financial
+
+### CodBi_Currency
+For money/currency fields.
+
+## Appointments
+
+### CodBi_NoFutureDate
+For date fields that should not allow future dates.
+
+### CodBi_DateFrame_N_Begin_End
+For date ranges (N=1-5). When using these classes, do NOT also add data-cb-func=date.frame.
+
+### CodBi_TimeFrame_N_Begin_End
+For time ranges (N=1-5). When using these classes, do NOT also add data-cb-func=time.frame.
+
+## LDAP.Autofill
+
+### CodBi_LDAP_AC_*
+For LDAP autocomplete fields.
+
+## AI
+
+### AI_LLAMA_CHAT_Input
+Textarea for the AI chat widget.
+
+### AI_LLAMA_CHAT_Send
+Send button for the AI chat widget.
+
+### AI_LLAMA_CHAT_Stop
+Stop button for the AI chat widget.
+
+### AI_LLAMA_CHAT_Upload
+Upload field for the AI chat widget.
+
+### AI_LLAMA_CHAT_Thinking
+Thinking checkbox for the AI chat widget.
+
+### AI_LLAMA_CHAT_Internet
+Internet checkbox for the AI chat widget.
+
+### AI_LLAMA_CHAT_Location
+Location checkbox for the AI chat widget.
+
+### AI_LLAMA_CHAT_MailForward
+Mail forward checkbox for the AI chat widget.
+
+### AI_LLAMA_CHAT_MailAddress
+Email address text field for the AI chat widget.
+
+### AI_LLAMA_CHAT_AlertOnFinish
+Alert-on-finish checkbox for the AI chat widget.
+
+### AI_LLAMA_STANDARD_QA_Question
+Question field for AI standard QA (FULL name — do NOT shorten).
+
+### AI_LLAMA_STANDARD_TXTQA_Question
+Question field for AI standard TXTQA (FULL name — do NOT shorten to AI_LLAMA_TXTQA_Question).
+
+### AI_LLAMA_TXTQA_Source
+Source field for AI TXTQA.
+
+### AI_LLAMA_QA_Exclude
+Exclusion marker for AI QA.
+
+### AI_OCR_Receiver
+Receiver field for AI OCR output.
+
+## UI.Panels
+
+### CodBi_HTML_Panel_Standard
+Default standalone panel. CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. Panel type mapping: "Standard-Panel" or "einfaches Panel" → CodBi_HTML_Panel_Standard.
+
+### CodBi_HTML_Panel_Flat
+"Flaches Panel" / "Flat Panel" standalone panel. Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible.
+
+### CodBi_HTML_Panel_Index
+"Index-Panel" / "Index Panel" standalone panel. Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible.
+
+### CodBi_HTML_Panel_Minimal
+"Minimales Panel" / "Minimal Panel" standalone panel. Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible.
+
+### CodBi_Accordion_A_B_C_D
+Accordion classes (CodBi_Accordion_A/B/C/D) for accordions.
+
+### CodBi_HTML_Panel_NoCordion
+Marker class for panels inside an accordion that should NOT participate in the accordion behavior.
+
+## Print.Removal
+
+### CodBi_Print_Remove_Tagged
+CSS class for tagged print removal.
+
+### CodBi_Print_Remove_Parent
+CSS class for parent print removal.
+
+### CodBi_Print_Remove_PrintOnly
+CSS class for print-only elements.
+
+## BayVIS
+
+### CodBi_BayVIS_Behoerde
+CSS class for BayVIS authority fields.
+
+### CodBi_BayVIS_BehoerdeUndAnsprechpartner
+CSS class for BayVIS authority + contact fields.
+
+### CodBi_BayVIS_Ansprechpartner
+CSS class for BayVIS contact fields.
+
+### CodBi_BayVIS_Auswahl_Behoerden
+CSS class for BayVIS authority selection.
+
+## OpenPLZ.AC.SET
+
+### CodBi_OpenPLZ_AC_SET_PLZ
+Apply to the POSTAL CODE field of an address group to enable OpenPLZ autocomplete (postal codes). The server configures OpenPLZ.Autocomplete + Cleave postal-code formatting automatically.
+
+### CodBi_OpenPLZ_AC_SET_Locality
+Apply to the LOCALITY/CITY field of an address group to enable OpenPLZ autocomplete (localities).
+
+### CodBi_OpenPLZ_AC_SET_Street
+Apply to the STREET field of an address group to enable OpenPLZ autocomplete (streets).
+
+### CodBi_OpenPLZ_AC_SET_BuildingNumber
+Apply to the BUILDING NUMBER field of an address group to enable OpenPLZ autocomplete (building numbers).
+
+## Holistic CSS Classes
+
+### CodBi_XCL_Speech
+CSS class for speech-to-text.
+
+### CodBi_XCL_Speech_Whisper
+CSS class for Whisper speech-to-text.
 
 ## Matomo Tracking Activation
 

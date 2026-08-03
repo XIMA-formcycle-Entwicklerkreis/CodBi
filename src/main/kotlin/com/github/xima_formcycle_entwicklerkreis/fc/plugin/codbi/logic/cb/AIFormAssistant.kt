@@ -1403,12 +1403,11 @@ class AIFormAssistant : IPluginServletAction {
           "You receive a form to review for CodBi applicability. " +
               "Review the form elements below and determine which CodBi functionalities apply. " +
               "Return the form JSON with a _codbiApplicability field listing considered/applied/skipped items.\n\n"
+      // The detailed standards/functionalities are included in the DB-driven
+      // {{CODBI_FULL_SECTION}},
+      // so only the general rules, the widgets reference, and the full section are sent here.
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
-              (categories["codbi.standard_configurations"] ?: "") +
-              "\n" +
-              (categories["codbi.functionalities"] ?: "") +
-              "\n" +
               (categories["codbi.general"] ?: "") +
               "\n" +
               (fc["formcycle.widgets"] ?: "") +

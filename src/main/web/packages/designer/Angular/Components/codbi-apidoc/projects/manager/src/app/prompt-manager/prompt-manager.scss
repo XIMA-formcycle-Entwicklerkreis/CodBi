@@ -92,7 +92,7 @@
 .cb-pm-tree-panel {
   width: auto;
   min-width: 200px;
-  max-width: 50%;
+  max-width: 75%;
   border-right: 1px solid #e0e0e0;
   display: flex;
   flex-direction: column;
@@ -101,9 +101,11 @@
   white-space: nowrap;
 }
 
-/* Toolbar + legend stay pinned; only the tree body scrolls */
+/* Toolbar + legend stay pinned; only the tree body scrolls. The button group wraps onto
+   additional rows when there is not enough width; button labels never wrap internally. */
 .cb-pm-tree-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   flex-shrink: 0;
   margin-bottom: 8px;
@@ -138,7 +140,9 @@
 }
 
 .cb-pm-filter-btn {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: max-content;
+  white-space: nowrap;
   padding: 4px 8px;
   border: 1px solid #d0d0d0;
   border-radius: 4px;
@@ -237,7 +241,6 @@
   flex-shrink: 0;
   gap: 14px;
   padding: 6px 10px;
-  border-top: 1px solid #e0e0e0;
   font-size: 0.78em;
   color: #666;
   background: #fafafa;

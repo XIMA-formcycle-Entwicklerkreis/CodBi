@@ -84,6 +84,14 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Whether the CodBi prompt database is reachable. When false, the assistant inputs are
    *  disabled (but still visible) because there are no DB prompts to send to the AI. */
   dbAvailable = true;
+  /** Whether CodBi prompts (functionalities, element placeholders, standard configurations) are
+   *  sent to the AI at all. Defaults to ON. When OFF, the AI only receives Formcycle widgets and
+   *  workflow nodes, and no CodBi is applied in any pass. */
+  useCodbi = true;
+  /** Estimated tokens used by the most recent inference (returned by the backend). */
+  lastTokens = 0;
+  /** Accumulated token total for the current session. */
+  sessionTokens = 0;
   attachedFile: File | null = null;
   readonly speechSupported = "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
   isSpeechRecording = false;
@@ -534,6 +542,7 @@ export class AiAssistant implements OnInit, OnDestroy {
 
     const phase1Form = new FormData();
     phase1Form.append("prompt", prompt);
+    phase1Form.append("useCodbi", String(this.useCodbi));
     for (const { name, dataUrl } of imageParams) {
       phase1Form.append(`codbi-base64:${name}`, dataUrl);
     }
@@ -584,7 +593,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     imageParams: Array<{ name: string; dataUrl: string }> = [],
   ): void {
     const designer = getDesignerInstance();
-    const data: Record<string, string> = { prompt, phase: "2", intent };
+    const data: Record<string, string> = { prompt, phase: "2", intent, useCodbi: String(this.useCodbi) };
 
     // Collect form persist JSON (needed for form and both)
     if (intent === "form" || intent === "both") {
@@ -691,6 +700,13 @@ export class AiAssistant implements OnInit, OnDestroy {
 
         const hasFormJson = "formJson" in p2 && p2["formJson"] != null;
         const hasWorkflowMessage = "workflowMessage" in p2 && typeof p2["workflowMessage"] === "string";
+
+        // Update the token counter from the backend's estimated token count for this run.
+        const tokens = typeof p2["tokens"] === "number" ? p2["tokens"] : 0;
+        if (tokens > 0) {
+          this.lastTokens = tokens;
+          this.sessionTokens += tokens;
+        }
 
         // Apply form changes if present
         if (hasFormJson) {

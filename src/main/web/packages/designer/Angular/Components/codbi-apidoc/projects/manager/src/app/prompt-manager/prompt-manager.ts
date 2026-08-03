@@ -398,14 +398,76 @@ export class PromptManager implements OnInit, OnDestroy {
             catNode.children!.push(item);
           }
         } else {
+          let children: TreeNode[] = items;
+          // Compact CodBi elements all live under the single "elements" subcategory with keys
+          // "compact.elements.<group>.<name>". Group them into Functionalities / Element
+          // Placeholders / Standard Configurations sub-nodes, mirroring the Detailed view.
+          if (cat === "compact" && subKey === "elements") {
+            const groups = new Map<string, TreeNode[]>();
+            for (const it of items) {
+              const itParts = (it.data as string).split(".");
+              const group = itParts[2] ?? "other";
+              if (!groups.has(group)) groups.set(group, []);
+              groups.get(group)!.push(it);
+            }
+            children = [];
+            for (const [group, groupItems] of groups) {
+              const groupLabel = group.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+              const groupTokens = groupItems.reduce(
+                (sum, it) => sum + ((it as TreeNode & { tokens?: number }).tokens ?? 0),
+                0,
+              );
+              children.push({
+                label: groupLabel,
+                data: `${cat}.${subKey}.${group}`,
+                type: "subcategory",
+                expanded: true,
+                children: groupItems,
+                tokens: groupTokens,
+              } as TreeNode & { tokens: number });
+            }
+          }
+          // Detailed CodBi standard configurations: 3-part items (e.g. "application_rules") are
+          // direct leaves; 4-part items (e.g. "people.codbi_people_name") are grouped by their
+          // category segment into sub-nodes, matching the condensed view.
+          if (cat === "codbi" && subKey === "standard_configurations") {
+            const direct: TreeNode[] = [];
+            const groups = new Map<string, TreeNode[]>();
+            for (const it of items) {
+              const itParts = (it.data as string).split(".");
+              if (itParts.length <= 3) {
+                direct.push(it);
+              } else {
+                const group = itParts[2] ?? "other";
+                if (!groups.has(group)) groups.set(group, []);
+                groups.get(group)!.push(it);
+              }
+            }
+            children = [...direct];
+            for (const [group, groupItems] of groups) {
+              const groupLabel = group.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+              const groupTokens = groupItems.reduce(
+                (sum, it) => sum + ((it as TreeNode & { tokens?: number }).tokens ?? 0),
+                0,
+              );
+              children.push({
+                label: groupLabel,
+                data: `${cat}.${subKey}.${group}`,
+                type: "subcategory",
+                expanded: true,
+                children: groupItems,
+                tokens: groupTokens,
+              } as TreeNode & { tokens: number });
+            }
+          }
           const subLabel = subKey.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-          const subTokens = items.reduce((sum, it) => sum + ((it as TreeNode & { tokens?: number }).tokens ?? 0), 0);
+          const subTokens = children.reduce((sum, it) => sum + ((it as TreeNode & { tokens?: number }).tokens ?? 0), 0);
           const subNode = {
             label: subLabel,
             data: `${cat}.${subKey}`,
             type: "subcategory",
             expanded: true,
-            children: items,
+            children,
             tokens: subTokens,
           } as TreeNode & { tokens: number };
           catNode.children!.push(subNode);
@@ -597,6 +659,15 @@ export class PromptManager implements OnInit, OnDestroy {
       if (className) return className.replace(/\./g, "_");
       return this.formatKeySegment(parts[parts.length - 1], "underscores");
     }
+    // Compact (Kompakt view) CodBi elements: keys are "compact.elements.<group>.<name>"
+    // (e.g. "compact.elements.functionalities.ai_llama_chat"). Prefer the stored display name
+    // (the original condensed element name, e.g. "AI.LLAMA.CHAT", "BayVIS.Behoerden.ID");
+    // otherwise fall back to the last key segment formatted with dots ("Ai.Llama.Chat").
+    if (category === "compact" && parts.length >= 4 && parts[1] === "elements") {
+      const last = parts[parts.length - 1];
+      if (p.displayName && p.displayName.trim()) return p.displayName;
+      return this.formatKeySegment(last, "dots");
+    }
     // Other formcycle items: spaces as separators
     const mode: "spaces" = "spaces";
     if (parts.length >= 4) {
@@ -695,7 +766,8 @@ export class PromptManager implements OnInit, OnDestroy {
 
     const onMove = (e: MouseEvent) => {
       const delta = e.clientX - this.splitterStartX;
-      const newWidth = Math.max(150, Math.min(600, this.splitterStartWidth + delta));
+      const maxWidth = Math.max(600, Math.floor(treePanel.parentElement?.clientWidth * 0.75) ?? 1000);
+      const newWidth = Math.max(150, Math.min(maxWidth, this.splitterStartWidth + delta));
       treePanel.style.width = `${newWidth}px`;
       treePanel.style.flex = "none";
       this.cdr.markForCheck();
@@ -719,6 +791,14 @@ export class PromptManager implements OnInit, OnDestroy {
   /** Returns true if the key represents a leaf item (editable card). Template-accessible. */
   isItemKey(key: string): boolean {
     const parts = key.split(".");
+    // Compact CodBi element groups ("compact.elements.functionalities") are grouping nodes,
+    // not editable leaf items — their editable leaves are the 4-part element keys.
+    if (parts.length === 3 && parts[0] === "compact" && parts[1] === "elements") return false;
+    // Detailed CodBi standard-configuration category nodes (e.g. "codbi.standard_configurations.people")
+    // are grouping nodes without their own record; only keys that actually exist are items.
+    if (parts.length === 3 && parts[0] === "codbi" && parts[1] === "standard_configurations") {
+      return this.allPrompts.some((p) => p.promptKey === key);
+    }
     // 3+ parts are always items
     if (parts.length >= 3) return true;
     // 2-part keys: check known system items OR any existing record (user-created categories)

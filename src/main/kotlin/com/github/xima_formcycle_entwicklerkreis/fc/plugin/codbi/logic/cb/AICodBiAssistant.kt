@@ -320,6 +320,11 @@ class AICodBiAssistant : IPluginServletAction {
 
     val phase = params.requestParameters["phase"]?.firstOrNull() ?: "1"
 
+    // When false, no CodBi prompts are sent to the AI in any pass — the AI only receives Formcycle
+    // widgets and workflow nodes. Also disables the server-side Holistic.* standard-config
+    // application (e.g. Holistic.Cleave.Date must not be applied when CodBi is off).
+    val useCodbi = params.requestParameters["useCodbi"]?.firstOrNull()?.toBoolean() ?: true
+
     // Collect image attachments sent as `codbi-base64:<name>` data-URL params (the same format
     // used by ai.llama.standard.qa). PDF pages are rendered to images client-side via PDF.js
     // before upload, so the backend only ever receives PNG/JPEG data URIs here.
@@ -363,6 +368,8 @@ class AICodBiAssistant : IPluginServletAction {
     // For "both" intent: form elements are updated after form modification so the workflow AI
     // sees buttons/fields that were just created by the form AI (not just the pre-existing ones).
     var latestFormElements: String? = params.requestParameters["formElements"]?.firstOrNull()
+    // Estimated tokens consumed by this run (returned to the frontend for the token counter).
+    var runTokens = 0
 
     if (intent == "form" || intent == "both") {
       val persistJson =
@@ -373,9 +380,9 @@ class AICodBiAssistant : IPluginServletAction {
       } catch (_: Exception) {
         return jsonResponse("""{"error":"Invalid persist JSON"}""")
       }
-      val (formJson, applicabilityReport) =
+      val (formJson, applicabilityReport, tokensUsed) =
           try {
-            runFormModification(prompt, persistJson, modelId, instance, imageParts)
+            runFormModification(prompt, persistJson, modelId, instance, imageParts, useCodbi)
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
             return jsonResponse("""{"error":${gson.toJson("Form AI error: ${e.message}")}}""")
@@ -384,6 +391,7 @@ class AICodBiAssistant : IPluginServletAction {
             return jsonResponse(
                 """{"error":${gson.toJson("Form modification failed: ${e.message}")}}""")
           }
+      runTokens = tokensUsed
       // Propagate a form-AI error response unchanged
       val formParsed = runCatching { JsonParser.parseString(formJson) }.getOrNull()
       if (formParsed?.isJsonObject == true && formParsed.asJsonObject.has("error")) {
@@ -392,12 +400,13 @@ class AICodBiAssistant : IPluginServletAction {
       // Auto-resolve appointment plan names to UUIDs for XAppointment elements.
       val resolvedFormJson = resolveAppointmentPlans(formJson)
       result.append(""","formJson":$resolvedFormJson""")
+      result.append(""","tokens":$runTokens""")
       // Auto-manage Holistic.Cleave.* standard configurations based on field types in the form.
       // Only performed when the frontend could read the current standards from the DOM
       // (key absent = standards editor not yet rendered; skip to avoid overwriting manual
       // settings).
       val currentStandardsParam = params.requestParameters["currentStandards"]
-      if (currentStandardsParam != null) {
+      if (useCodbi && currentStandardsParam != null) {
         val currentStandards = currentStandardsParam.firstOrNull() ?: ""
         // aiSetStandards is the full standards CSV the AI set on the previous run.
         // Absent = first run this session; the backend then treats all Cleave configs as
@@ -522,11 +531,15 @@ class AICodBiAssistant : IPluginServletAction {
       persistJson: String,
       modelId: String,
       instance: Standard,
-      imageParts: List<String> = emptyList()
-  ): Pair<String, String?> {
+      imageParts: List<String> = emptyList(),
+      useCodbi: Boolean = true
+  ): Triple<String, String?, Int> {
+    // Rough token estimate for this run (prompt + completion of every inference), returned to the
+    // frontend so the assistant can show the last inference and the current session total.
+    var tokensUsed = 0
     // Document-parsing rules are only included when the request references an attached document.
     val hasAttachedDocument = imageParts.isNotEmpty()
-    val baseSystemPrompt = buildFormSystemPrompt()
+    val baseSystemPrompt = buildFormSystemPrompt(useCodbi)
     val systemPrompt =
         if (hasAttachedDocument) {
           val em = CodbiEntities.entityManagerFactory?.createEntityManager()
@@ -574,9 +587,14 @@ class AICodBiAssistant : IPluginServletAction {
         modelId,
         slimPersistJson(persistJson))
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
+    tokensUsed += estimateTokens(messagesJson) + estimateTokens(rawResponse)
     var cleaned = extractJson(stripThinkTags(rawResponse))
 
-    fun rerunWithCodbiDetails(requested: List<String>, widgets: List<String>): String {
+    fun rerunWithCodbiDetails(
+        requested: List<String>,
+        widgets: List<String>,
+        useCodbi: Boolean = true
+    ): String {
       val pass1Obj =
           try {
             JsonParser.parseString(cleaned).asJsonObject
@@ -725,7 +743,7 @@ class AICodBiAssistant : IPluginServletAction {
               }
             }
 
-        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgets)
+        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgets, useCodbi)
 
         val pass2UserContent =
             "Original user request: $prompt\n\n" +
@@ -766,6 +784,7 @@ class AICodBiAssistant : IPluginServletAction {
       }
 
       val retryRaw = instance.performFormAssist(modelId, retryMessagesJson)
+      tokensUsed += estimateTokens(retryMessagesJson) + estimateTokens(retryRaw)
       val pass2Cleaned = extractJson(stripThinkTags(retryRaw))
       logger.info("[AICodBiAssistant] Pass-2 raw result: {}", pass2Cleaned)
       // Splice into the form base (the original form when pass-1 was a details request) so new
@@ -779,64 +798,78 @@ class AICodBiAssistant : IPluginServletAction {
     // all downstream extraction functions see the correct value.
     cleaned = normalizeMatomoTrackingInRawJson(cleaned)
 
-    val requestedDetails = extractCodbiDetailsRequest(cleaned)
-    if (requestedDetails != null) {
-      logger.info(
-          "[AICodBiAssistant] AI requested CodBi details for: {} â€” rerunning with full compact API",
-          requestedDetails.elements.ifEmpty { listOf("<unspecified>") }.joinToString(", "))
-      if (!requestedDetails.applicabilityReport.isNullOrBlank()) {
-        logger.info(
-            "[AICodBiAssistant] AI CodBi applicability report (detail request): {}",
-            requestedDetails.applicabilityReport)
-      }
-      cleaned = rerunWithCodbiDetails(requestedDetails.elements, requestedDetails.widgets)
-    } else {
-      // If the AI created formcycle widgets in pass-1 WITHOUT requesting their details first, their
-      // exact JSON templates were never provided and the AI hallucinated the persist structure.
-      // Force pass-2 to include those widget templates so the widgets are rebuilt correctly.
+    if (!useCodbi) {
+      // CodBi disabled: never send any CodBi reference/details in any pass. Only rebuild Formcycle
+      // widgets the AI created in pass-1 (their exact JSON templates were never requested), so they
+      // are not left in a hallucinated persist structure. Otherwise keep the pass-1 result as-is.
       val createdWidgets = extractNewWidgetClassNames(cleaned, persistJson)
       if (createdWidgets.isNotEmpty()) {
         logger.info(
-            "[AICodBiAssistant] Pass-1 created new formcycle widget(s) without details request â€” including templates in pass-2: {}",
+            "[AICodBiAssistant] CodBi disabled — pass-2 rebuilding Formcycle widgets: {}",
             createdWidgets.joinToString(", "))
+        cleaned = rerunWithCodbiDetails(emptyList(), createdWidgets, useCodbi = false)
       }
-      val appliedCodbi = extractAppliedCodbiIds(cleaned)
-      if (appliedCodbi.isNotEmpty()) {
-        logger.warn(
-            "[AICodBiAssistant] AI applied CodBi functionalities without requesting details first; forcing detail rerun for: {}",
-            appliedCodbi.joinToString(", "))
-        cleaned = rerunWithCodbiDetails(appliedCodbi, createdWidgets)
-      } else {
-        val consideredCodbi = extractConsideredCodbiIds(cleaned)
-        if (consideredCodbi.isNotEmpty()) {
+    } else {
+      val requestedDetails = extractCodbiDetailsRequest(cleaned)
+      if (requestedDetails != null) {
+        logger.info(
+            "[AICodBiAssistant] AI requested CodBi details for: {} â€” rerunning with full compact API",
+            requestedDetails.elements.ifEmpty { listOf("<unspecified>") }.joinToString(", "))
+        if (!requestedDetails.applicabilityReport.isNullOrBlank()) {
           logger.info(
-              "[AICodBiAssistant] AI identified CodBi candidates but did not escalate; forcing detail rerun for: {}",
-              consideredCodbi.joinToString(", "))
-          cleaned = rerunWithCodbiDetails(consideredCodbi, createdWidgets)
+              "[AICodBiAssistant] AI CodBi applicability report (detail request): {}",
+              requestedDetails.applicabilityReport)
+        }
+        cleaned = rerunWithCodbiDetails(requestedDetails.elements, requestedDetails.widgets)
+      } else {
+        // If the AI created formcycle widgets in pass-1 WITHOUT requesting their details first,
+        // their
+        // exact JSON templates were never provided and the AI hallucinated the persist structure.
+        // Force pass-2 to include those widget templates so the widgets are rebuilt correctly.
+        val createdWidgets = extractNewWidgetClassNames(cleaned, persistJson)
+        if (createdWidgets.isNotEmpty()) {
+          logger.info(
+              "[AICodBiAssistant] Pass-1 created new formcycle widget(s) without details request â€” including templates in pass-2: {}",
+              createdWidgets.joinToString(", "))
+        }
+        val appliedCodbi = extractAppliedCodbiIds(cleaned)
+        if (appliedCodbi.isNotEmpty()) {
+          logger.warn(
+              "[AICodBiAssistant] AI applied CodBi functionalities without requesting details first; forcing detail rerun for: {}",
+              appliedCodbi.joinToString(", "))
+          cleaned = rerunWithCodbiDetails(appliedCodbi, createdWidgets)
         } else {
-          // AI returned _codbiApplicability but with an empty considered list.
-          // This can happen non-deterministically even when candidates exist â€” the AI evaluates
-          // the list but wrongly decides nothing applies. Always run a blind pass-2 so CodBi
-          // is never silently skipped.
-          val hasApplicabilityField =
-              try {
-                @Suppress("UNCHECKED_CAST")
-                (gson.fromJson(cleaned, Map::class.java) as? Map<String, Any>)?.containsKey(
-                    "_codbiApplicability") == true
-              } catch (_: Exception) {
-                false
-              }
-          val reason =
-              if (!hasApplicabilityField) "omitted _codbiApplicability entirely"
-              else "evaluated CodBi list but found no candidates â€” forcing blind evaluation"
-          if (jsonDeclaresNothingApplies(cleaned) || rawClaimsNothingApplies(rawResponse)) {
+          val consideredCodbi = extractConsideredCodbiIds(cleaned)
+          if (consideredCodbi.isNotEmpty()) {
             logger.info(
-                "[AICodBiAssistant] AI declared/stated no CodBi element applies â€” skipping blind reconsideration ({})",
-                reason)
+                "[AICodBiAssistant] AI identified CodBi candidates but did not escalate; forcing detail rerun for: {}",
+                consideredCodbi.joinToString(", "))
+            cleaned = rerunWithCodbiDetails(consideredCodbi, createdWidgets)
           } else {
-            logger.info(
-                "[AICodBiAssistant] AI {} â€” triggering blind CodBi evaluation pass", reason)
-            cleaned = rerunWithCodbiDetails(emptyList(), createdWidgets)
+            // AI returned _codbiApplicability but with an empty considered list.
+            // This can happen non-deterministically even when candidates exist â€” the AI evaluates
+            // the list but wrongly decides nothing applies. Always run a blind pass-2 so CodBi
+            // is never silently skipped.
+            val hasApplicabilityField =
+                try {
+                  @Suppress("UNCHECKED_CAST")
+                  (gson.fromJson(cleaned, Map::class.java) as? Map<String, Any>)?.containsKey(
+                      "_codbiApplicability") == true
+                } catch (_: Exception) {
+                  false
+                }
+            val reason =
+                if (!hasApplicabilityField) "omitted _codbiApplicability entirely"
+                else "evaluated CodBi list but found no candidates â€” forcing blind evaluation"
+            if (jsonDeclaresNothingApplies(cleaned) || rawClaimsNothingApplies(rawResponse)) {
+              logger.info(
+                  "[AICodBiAssistant] AI declared/stated no CodBi element applies â€” skipping blind reconsideration ({})",
+                  reason)
+            } else {
+              logger.info(
+                  "[AICodBiAssistant] AI {} â€” triggering blind CodBi evaluation pass", reason)
+              cleaned = rerunWithCodbiDetails(emptyList(), createdWidgets)
+            }
           }
         }
       }
@@ -879,14 +912,22 @@ class AICodBiAssistant : IPluginServletAction {
         logger.info("[AICodBiAssistant] Final form item names ({}): {}", names.size, names)
         logger.info("[AICodBiAssistant] First page elements: {}", pageElements)
       } catch (_: Exception) {}
-      restored to applicabilityReport
+      Triple(restored, applicabilityReport, tokensUsed)
     } catch (_: Exception) {
       logger.warn("[AICodBiAssistant] Form AI returned unparseable response: {}", sanitizedCleaned)
-      ("""{"error":"AI returned invalid JSON","raw":${gson.toJson(sanitizedCleaned)}}""") to null
+      Triple(
+          """{"error":"AI returned invalid JSON","raw":${gson.toJson(sanitizedCleaned)}}""",
+          null,
+          tokensUsed)
     }
   }
 
-  private fun buildFormSystemPrompt(): String = buildCodbiFormSystemPrompt()
+  /** Rough token estimate for a text blob (chars / 4). Used for the assistant's token counter. */
+  private fun estimateTokens(text: String): Int =
+      if (text.isBlank()) 0 else (text.length / 4).coerceAtLeast(1)
+
+  private fun buildFormSystemPrompt(useCodbi: Boolean = true): String =
+      buildCodbiFormSystemPrompt(useCodbi)
 
   private data class CodbiDetailsSignal(
       val elements: List<String>,
@@ -1823,6 +1864,36 @@ class AICodBiAssistant : IPluginServletAction {
     // SERVER-SIDE CSS CLASS VALIDATION: Strip any CSS class names that the AI may have
     // invented (e.g. "CodBi_NavigationBar") â€” only classes matching known prefixes from
     // CSS_CLASS_TO_STANDARD are allowed. Non-matching classes are removed with a warning.
+    // Normalize the AI's cssclasses placement: the AI sometimes writes "cssclasses" (and
+    // "cssclasseswrapper") at the ITEM level (sibling of "properties") instead of inside
+    // "properties". FORMCYCLE only reads properties.cssclasses, so move them down (merging with
+    // any existing properties value — the AI's classes win) so they reach the designer.
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      val props = item.getAsJsonObject("properties") ?: continue
+      for (key in listOf("cssclasses", "cssclasseswrapper")) {
+        val topLevel = item.get(key)
+        if (topLevel == null || !topLevel.isJsonArray || topLevel.asJsonArray.size() == 0) continue
+        val existing = props.get(key)
+        if (existing != null && existing.isJsonArray && existing.asJsonArray.size() > 0) {
+          val aiSet =
+              topLevel.asJsonArray
+                  .mapNotNull { if (it.isJsonPrimitive) it.asString else null }
+                  .toSet()
+          val merged = JsonArray()
+          for (e in existing.asJsonArray) {
+            if (e.isJsonPrimitive && e.asString in aiSet) continue
+            merged.add(e)
+          }
+          for (e in topLevel.asJsonArray) merged.add(e)
+          props.add(key, merged)
+        } else {
+          props.add(key, topLevel)
+        }
+        item.remove(key)
+      }
+    }
     val validCssPrefixes = CSS_CLASS_TO_STANDARD.map { it.first }.toList()
     val STALE_PREFIXES = listOf("data-cb-")
     for (el in resultItems) {
@@ -6770,31 +6841,39 @@ class AICodBiAssistant : IPluginServletAction {
    * Loads the CodBi form system prompt from the database. Combines formcycle.general,
    * formcycle.widgets, and all codbi.* categories.
    */
-  private fun buildCodbiFormSystemPrompt(): String {
+  private fun buildCodbiFormSystemPrompt(useCodbi: Boolean = true): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return FALLBACK_FORM_SYSTEM_PROMPT
     try {
       val fc = PromptLoader.loadCategory(em, "formcycle")
-      val cb = PromptLoader.loadCategory(em, "codbi")
+      val cb = if (useCodbi) PromptLoader.loadCategory(em, "codbi") else emptyMap()
       val taskInstruction =
           "You receive a partial form JSON (IPersistJson) and a natural language instruction. " +
               "MODIFY the form according to the instruction and return the COMPLETE modified form JSON. " +
               "Do NOT ask for more details â€” the user's instruction and the form data below are sufficient.\n\n"
+      // CodBi prompts (functionalities, element placeholders, standard configurations, general
+      // rules and the condensed elements list) are only included when CodBi is enabled.
+      val codbiPart =
+          if (useCodbi) {
+            "\n" +
+                (cb["codbi.standard_configurations"] ?: "") +
+                "\n" +
+                (cb["codbi.functionalities"] ?: "") +
+                "\n" +
+                (cb["codbi.element_placeholders"] ?: "") +
+                "\n" +
+                (cb["codbi.general"] ?: "") +
+                "\n" +
+                "{{CODBI_ELEMENTS_SECTION}}"
+          } else {
+            ""
+          }
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
               (fc["formcycle.general"] ?: "") +
               "\n" +
               "{{FORMCYCLE_WIDGETS_SECTION}}" +
-              "\n" +
-              (cb["codbi.standard_configurations"] ?: "") +
-              "\n" +
-              (cb["codbi.functionalities"] ?: "") +
-              "\n" +
-              (cb["codbi.element_placeholders"] ?: "") +
-              "\n" +
-              (cb["codbi.general"] ?: "") +
-              "\n" +
-              "{{CODBI_ELEMENTS_SECTION}}")
+              codbiPart)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load form system prompt", e)
       return FALLBACK_FORM_SYSTEM_PROMPT
@@ -6835,12 +6914,11 @@ class AICodBiAssistant : IPluginServletAction {
           "You receive a form to review for CodBi applicability. " +
               "Review the form elements below and determine which CodBi functionalities apply. " +
               "Return the form JSON with a _codbiApplicability field listing considered/applied/skipped items.\n\n"
+      // The detailed standards/functionalities are included in the DB-driven
+      // {{CODBI_FULL_SECTION}},
+      // so only the general rules, the widgets reference, and the full section are sent here.
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
-              (categories["codbi.standard_configurations"] ?: "") +
-              "\n" +
-              (categories["codbi.functionalities"] ?: "") +
-              "\n" +
               (categories["codbi.general"] ?: "") +
               "\n" +
               (fc["formcycle.widgets"] ?: "") +
@@ -6862,11 +6940,18 @@ class AICodBiAssistant : IPluginServletAction {
    */
   private fun loadCodbiApplyPrompt(
       requestedIds: List<String> = emptyList(),
-      widgetIds: List<String> = emptyList()
+      widgetIds: List<String> = emptyList(),
+      useCodbi: Boolean = true
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return FALLBACK_APPLY_PROMPT
     try {
+      val widgetPart = buildWidgetDetailsSection(em, widgetIds)
+      if (!useCodbi) {
+        // CodBi disabled: the pass-2 prompt contains only the Formcycle widget templates so the AI
+        // can rebuild the widgets it created — no CodBi reference/details are sent at all.
+        return widgetPart
+      }
       val categories = PromptLoader.loadCategory(em, "codbi")
       val base =
           (categories["codbi.standard_configurations"] ?: "") +
@@ -6888,7 +6973,6 @@ class AICodBiAssistant : IPluginServletAction {
               details
             }
           }
-      val widgetPart = buildWidgetDetailsSection(em, widgetIds)
       return base + "\n\n" + codbiPart + "\n\n" + widgetPart
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load apply prompt", e)

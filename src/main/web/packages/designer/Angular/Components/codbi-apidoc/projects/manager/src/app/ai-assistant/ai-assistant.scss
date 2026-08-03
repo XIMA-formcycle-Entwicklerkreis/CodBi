@@ -67,6 +67,84 @@ cb-ai-assistant {
     cursor: not-allowed;
 }
 
+/* CodBi on/off switch — defaults to ON. When OFF, no CodBi prompts are sent to the AI in any
+   pass (only Formcycle widgets and workflow nodes), and no Holistic.* standard configuration is
+   applied. */
+.cb-ai-codbi-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cb-ai-codbi-switch {
+    position: relative;
+    display: inline-flex;
+    width: 38px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+.cb-ai-codbi-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.cb-ai-codbi-switch__slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: #ccc;
+    border-radius: 20px;
+    transition: background 0.2s;
+}
+
+.cb-ai-codbi-switch__slider::before {
+    content: "";
+    position: absolute;
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    top: 2px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.cb-ai-codbi-switch input:checked + .cb-ai-codbi-switch__slider {
+    background: #ff8c00;
+}
+
+.cb-ai-codbi-switch input:checked + .cb-ai-codbi-switch__slider::before {
+    transform: translateX(18px);
+}
+
+.cb-ai-codbi-switch input:disabled + .cb-ai-codbi-switch__slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.cb-ai-codbi-switch__label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #555;
+}
+
+/* Token counters — last inference + session total */
+.cb-ai-token-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 0.78em;
+    color: #777;
+}
+
+.cb-ai-token-item strong {
+    color: #333;
+    font-weight: 700;
+}
+
 /* Watermark faded behind the entire popup — two-layer gradient over SVG creates opacity effect. */
 .p-dialog.cb-ai-assistant-dialog {
     background-image: linear-gradient(rgba(255,255,255,0.91), rgba(255,255,255,0.91)),

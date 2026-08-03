@@ -347,7 +347,13 @@ internal object CompactPromptLoader {
     }
   }
 
-  private fun upsertPrompt(em: EntityManager, key: String, text: String, version: String) {
+  private fun upsertPrompt(
+      em: EntityManager,
+      key: String,
+      text: String,
+      version: String,
+      displayName: String? = null
+  ) {
     seededKeys.add(key)
     // Check if prompt exists and whether user has modified it
     val existing =
@@ -386,11 +392,12 @@ internal object CompactPromptLoader {
         return
       }
       em.createNativeQuery(
-              "UPDATE $TABLE SET prompt_text = :text, original_text = :orig, prompt_version = :ver, is_system = true, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
+              "UPDATE $TABLE SET prompt_text = :text, original_text = :orig, prompt_version = :ver, display_name = :dname, is_system = true, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
           .apply {
             setParameter("text", text)
             setParameter("orig", text)
             setParameter("ver", version)
+            setParameter("dname", displayName ?: deriveDisplayName(key))
             setParameter("key", key)
           }
           .executeUpdate()
@@ -400,7 +407,7 @@ internal object CompactPromptLoader {
 
     // New prompt — insert
     val cat = key.substringBefore(".", key)
-    val dname = deriveDisplayName(key)
+    val dname = displayName ?: deriveDisplayName(key)
     em.createNativeQuery(
             "INSERT INTO $TABLE (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name, pre_prompt_active, post_prompt_active, is_system, update_available) VALUES (:key, :cat, :text, :ver, :orig, :active, :dname, :preAct, :postAct, true, false)")
         .apply {
@@ -498,7 +505,9 @@ internal object CompactPromptLoader {
           if (subContent.isBlank()) continue
           val subKey =
               "$itemKey.${subName.lowercase().replace(Regex("[^a-z0-9_]"), "_").replace(Regex("_+"), "_").trim('_')}"
-          upsertPrompt(em, subKey, subContent, version)
+          // Preserve the original ### header as the display name so the tree shows the exact
+          // condensed element name (e.g. "AI.LLAMA.CHAT", "BayVIS.Behoerden.ID").
+          upsertPrompt(em, subKey, subContent, version, displayName = subName.trim())
           logger.info("[CompactPromptLoader] Upserted sub-item '{}'", subKey)
         }
       } else {
@@ -562,6 +571,43 @@ internal object CompactPromptLoader {
       logger.warn(
           "[CompactPromptLoader] Failed to load compact category '{}': {}", prefix, e.message)
       emptyMap()
+    }
+  }
+
+  /**
+   * Loads all active compact prompts whose key starts with [prefix] as [CompactRecord]s (including
+   * display names). Used to rebuild a condensed section (element names + descriptions) from the
+   * database so that deactivating a compact prompt removes it from the AI's pass-1 reference.
+   */
+  internal fun loadCategoryRecords(em: EntityManager, prefix: String): List<CompactRecord> {
+    return try {
+      val q =
+          em.createNativeQuery(
+              "SELECT prompt_key, display_name, category, prompt_text, original_text, pre_prompt, post_prompt, is_active, pre_prompt_active, post_prompt_active, is_system, update_available FROM $TABLE WHERE prompt_key LIKE :prefix AND is_active = TRUE ORDER BY prompt_key")
+      q.setParameter("prefix", "$prefix%")
+      @Suppress("UNCHECKED_CAST")
+      (q.resultList as? List<Array<Any>>)?.mapNotNull { row ->
+        if (row.size < 12) return@mapNotNull null
+        CompactRecord(
+            promptKey = row[0]?.toString() ?: return@mapNotNull null,
+            displayName = row[1]?.toString(),
+            category = row[2]?.toString(),
+            promptText = resolveClob(row[3]),
+            originalText = resolveClob(row[4]),
+            prePrompt = resolveClob(row[5]),
+            postPrompt = resolveClob(row[6]),
+            isActive = row[7]?.toString() == "true" || row[7]?.toString() == "1",
+            prePromptActive = row[8]?.toString() == "true" || row[8]?.toString() == "1",
+            postPromptActive = row[9]?.toString() == "true" || row[9]?.toString() == "1",
+            isSystem = row[10]?.toString() == "true" || row[10]?.toString() == "1",
+            updateAvailable = row[11]?.toString() == "true" || row[11]?.toString() == "1")
+      } ?: emptyList()
+    } catch (e: Exception) {
+      logger.warn(
+          "[CompactPromptLoader] Failed to load compact category records '{}': {}",
+          prefix,
+          e.message)
+      emptyList()
     }
   }
 

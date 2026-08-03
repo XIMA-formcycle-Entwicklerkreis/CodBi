@@ -228,27 +228,40 @@ function Build-ElementsOnlyMarkdown {
     }
     if ($trimmed -eq "## Element Placeholders (EPs)") {
       $currentSection = "EPs"
-      [void]$out.AppendLine("## Element Placeholders (EPs)")
+      # Emit a clean group header so the seeded key segment is "element_placeholders"
+      # (matches the Detailed view's "Element Placeholders" subcategory).
+      [void]$out.AppendLine("## Element Placeholders")
       [void]$out.AppendLine("")
       continue
     }
     if ($trimmed -eq "## Standard Configuration Classes") {
       $currentSection = "Classes"
-      [void]$out.AppendLine("## Standard Configuration Classes")
+      # Emit a clean group header so the seeded key segment is "standard_configurations"
+      # (matches the Detailed view's "Standard Configurations" subcategory).
+      [void]$out.AppendLine("## Standard Configurations")
       [void]$out.AppendLine("")
       continue
     }
 
     # Keep only top-level element entries; drop parameter/class detail bullets.
     if ($trimmed -like "- *" -and -not $trimmed.StartsWith("- .") -and -not $trimmed.StartsWith("- Param[")) {
-      # In the Standard Configuration Classes section keep only the server-side Holistic.*
-      # configs. The other names (People, Financial, ...) are CSS-class groups that the server
-      # derives from concrete CSS classes — they are not actionable by the AI in this list.
-      if ($currentSection -eq "Classes" -and -not $trimmed.StartsWith("- Holistic")) {
-        continue
-      }
+      # In the Standard Configuration Classes section keep every class group — the server-side
+      # Holistic.* configs AND the CSS-class groups (People, Financial, Appointments, ...) — so
+      # they all appear in the condensed Standard Configurations as their own sub-sections.
       if ($line.StartsWith("- ")) {
-        [void]$out.AppendLine($line)
+        # Convert "- <ID>: <desc>" into a "### <ID>" sub-section so every element becomes its
+        # own prompt key (compact.elements.<group>.<name>) and the original condensed name is
+        # preserved as the seed sub-header (e.g. "AI.LLAMA.CHAT").
+        $m = [regex]::Match($trimmed, "^- ([^:]+):\s*(.*)$")
+        if ($m.Success) {
+          $id = $m.Groups[1].Value.Trim()
+          $desc = $m.Groups[2].Value.Trim()
+          [void]$out.AppendLine("### $id")
+          if ($desc) { [void]$out.AppendLine($desc) }
+          [void]$out.AppendLine("")
+        } else {
+          [void]$out.AppendLine($line)
+        }
       }
     }
   }

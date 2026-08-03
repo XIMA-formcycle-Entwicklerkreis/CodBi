@@ -37,6 +37,24 @@
             </button>
         </div>
 
+        <div class="cb-ai-codbi-row">
+            <label
+                class="cb-ai-codbi-switch"
+                title="Send CodBi prompts (functionalities, element placeholders, standard configurations) to the AI. Off = only Formcycle widgets and workflow nodes are generated; no CodBi is applied in any pass.">
+                <input type="checkbox" [(ngModel)]="useCodbi" [disabled]="loading || !dbAvailable" />
+                <span class="cb-ai-codbi-switch__slider"></span>
+            </label>
+            <span class="cb-ai-codbi-switch__label">CodBi</span>
+        </div>
+
+        @if (lastTokens > 0 || sessionTokens > 0) {
+            <div class="cb-ai-token-row">
+                <span class="cb-ai-token-item">Last inference: <strong>{{ lastTokens }}</strong></span>
+                <span class="cb-ai-token-item">Session total: <strong>{{ sessionTokens }}</strong></span>
+                <span class="cb-ai-token-item">tokens</span>
+            </div>
+        }
+
         <div class="cb-ai-prompt-wrapper">
             <textarea
                 pTextarea

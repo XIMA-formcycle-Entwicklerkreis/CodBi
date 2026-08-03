@@ -127,11 +127,18 @@ Applicable on a text input field to enable speech-to-text dictation via the Web 
 
 ## OpenPLZ.Autocomplete
 
-Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). Tag EACH address field with this functionality and set its own parameters individually.
+Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number).
 
-For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ and DependentLocality. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field, set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.
+PREFERRED — apply the OpenPLZ standard-configuration CSS classes instead of data-cb-func:
+- CodBi_OpenPLZ_AC_SET_PLZ on the postal code field.
+- CodBi_OpenPLZ_AC_SET_Locality on the locality/city field.
+- CodBi_OpenPLZ_AC_SET_Street on the street field.
+- CodBi_OpenPLZ_AC_SET_BuildingNumber on the building number field.
+The server configures OpenPLZ.Autocomplete (TargetData, Country, Dependent, DependentPLZ, DependentLocality, FocusOnAutocomplete) automatically for each class.
 
-CRITICAL — OpenPLZ.Autocomplete via data-cb-func must be set on ALL address fields in EVERY address group, regardless of which plugin/system they come from. ALL required parameters (Country, TargetData, Dependent, FocusOnAutocomplete) MUST be set on each address field.
+FALLBACK (only when the CSS classes cannot be used): tag EACH address field with data-cb-func=openplz.autocomplete and set the parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ and DependentLocality. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field, set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.
+
+CRITICAL — OpenPLZ.Autocomplete must be applied to ALL address fields in EVERY address group, regardless of which plugin/system they come from. Either via the CodBi_OpenPLZ_AC_SET_* CSS classes (preferred) or via data-cb-func with ALL required parameters (Country, TargetData, Dependent, FocusOnAutocomplete) set on each address field.
 
 ## Print.Remove
 

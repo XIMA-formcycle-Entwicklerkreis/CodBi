@@ -1222,6 +1222,47 @@ internal object PromptLoader {
   }
 
   /**
+   * Loads all active detailed prompt records whose key starts with [prefix], including their
+   * display names. Used to rebuild the full CodBi reference from the DB so user edits and
+   * deactivations are reflected (instead of reading a stale bundled classpath resource).
+   */
+  fun loadCategoryRecords(em: EntityManager, prefix: String): List<PromptRecord> {
+    return try {
+      val query =
+          em.createNativeQuery(
+              // language=H2
+              """SELECT prompt_key, display_name, category, prompt_text, original_text,
+                        pre_prompt, post_prompt, is_active,
+                        pre_prompt_active, post_prompt_active, is_system, update_available
+                 FROM codbi_ai_prompt
+                 WHERE prompt_key LIKE :prefix AND is_active = TRUE
+                 ORDER BY prompt_key""")
+      query.setParameter("prefix", "$prefix%")
+      @Suppress("UNCHECKED_CAST")
+      val rows = query.resultList as? List<Array<Any>> ?: return emptyList()
+      rows.mapNotNull { row ->
+        if (row.size < 12) return@mapNotNull null
+        PromptRecord(
+            promptKey = row[0]?.toString() ?: return@mapNotNull null,
+            displayName = row[1]?.toString(),
+            category = row[2]?.toString(),
+            promptText = resolveClob(row[3]),
+            originalText = resolveClob(row[4]),
+            prePrompt = resolveClob(row[5]),
+            postPrompt = resolveClob(row[6]),
+            isActive = row[7]?.toString() == "true" || row[7]?.toString() == "1",
+            prePromptActive = row[8]?.toString() == "true" || row[8]?.toString() == "1",
+            postPromptActive = row[9]?.toString() == "true" || row[9]?.toString() == "1",
+            isSystem = row[10]?.toString() == "true" || row[10]?.toString() == "1",
+            updateAvailable = row[11]?.toString() == "true" || row[11]?.toString() == "1")
+      }
+    } catch (e: Exception) {
+      logger.warn("[PromptLoader] Failed to load category records '{}': {}", prefix, e.message)
+      emptyList()
+    }
+  }
+
+  /**
    * Builds the condensed workflow-nodes reference (trigger/node name + purpose) for the pass-1
    * workflow prompt, loaded from the **compact** DB table (`compact.formcycle_workflow_nodes`).
    * This keeps the AI's initial workflow reference fully DB-driven.

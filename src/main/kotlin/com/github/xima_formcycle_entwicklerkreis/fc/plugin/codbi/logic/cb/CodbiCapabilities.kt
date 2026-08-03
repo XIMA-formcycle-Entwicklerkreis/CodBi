@@ -1,5 +1,6 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.google.gson.GsonBuilder
 import org.slf4j.LoggerFactory
 
@@ -28,6 +29,10 @@ internal object CodbiCapabilities {
 
   /** Returns the default capabilities section (elements only). */
   fun buildSection(): String {
+    // Prefer the database so deactivated compact elements are excluded from the AI's pass-1
+    // reference; fall back to the bundled classpath resource when the DB is unavailable/empty.
+    val fromDb = buildElementsFromDb()
+    if (fromDb != null) return fromDb
     val now = System.currentTimeMillis()
     cachedElements
         ?.takeIf { now - elementsBuiltAt < CACHE_TTL_MS }
@@ -46,6 +51,10 @@ internal object CodbiCapabilities {
 
   /** Returns the full compact API section (elements + parameters + classes). */
   fun buildFullSection(): String {
+    // Prefer the DB so user edits/deactivations of the detailed prompts are reflected; fall back
+    // to the bundled classpath resource when the DB is unavailable or the category is empty.
+    val fromDb = buildFullFromDb()
+    if (fromDb != null) return fromDb
     val now = System.currentTimeMillis()
     cachedFull
         ?.takeIf { now - fullBuiltAt < CACHE_TTL_MS }
@@ -62,16 +71,202 @@ internal object CodbiCapabilities {
     }
   }
 
+  /**
+   * Rebuilds the full CodBi reference from the detailed DB prompts (codbi.functionalities.* /
+   * codbi.element_placeholders.* / codbi.standard_configurations.*) — active only — grouped by
+   * category, so user edits and deactivations are reflected. Returns `null` to fall back to the
+   * bundled resource when the DB is unavailable or the category has no active entries.
+   */
+  private fun buildFullFromDb(): String? {
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      val records =
+          PromptLoader.loadCategoryRecords(em, "codbi.").filter {
+            it.promptKey.startsWith("codbi.functionalities.") ||
+                it.promptKey.startsWith("codbi.element_placeholders.") ||
+                it.promptKey.startsWith("codbi.standard_configurations.")
+          }
+      if (records.isEmpty()) return null
+      val groups = LinkedHashMap<String, MutableList<PromptLoader.PromptRecord>>()
+      for (r in records) {
+        val cat = r.promptKey.removePrefix("codbi.").substringBefore('.')
+        groups.getOrPut(cat) { mutableListOf() }.add(r)
+      }
+      val sb = StringBuilder("\n\nCODBI CORE COMPONENTS API (COMPACT)\n")
+      for ((cat, items) in groups) {
+        val catLabel =
+            when (cat) {
+              "functionalities" -> "Functionalities"
+              "element_placeholders" -> "Element Placeholders"
+              "standard_configurations" -> "Standard Configurations"
+              else -> cat
+            }
+        sb.append("\n## ").append(catLabel).append("\n")
+        for (r in items.sortedBy { it.promptKey }) {
+          val name =
+              r.displayName?.takeIf { it.isNotBlank() } ?: r.promptKey.substringAfterLast('.')
+          sb.append("\n### ").append(name).append("\n")
+          if (!r.promptText.isNullOrBlank()) sb.append(r.promptText).append("\n")
+        }
+      }
+      return sb.toString().trimEnd()
+    } catch (e: Exception) {
+      logger.warn("[CodbiCapabilities] Failed to build full section from DB: {}", e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
   /** Returns the condensed formcycle widgets section (names + purpose, no JSON structure). */
-  fun buildWidgetsSection(): String =
-      load(FORMCYCLE_WIDGETS_ONLY_RESOURCE, "FORMCYCLE WIDGETS (COMPACT)")
+  fun buildWidgetsSection(): String {
+    // Prefer the database so deactivated widgets are excluded from the AI's pass-1 reference.
+    val fromDb = buildWidgetsFromDb()
+    if (fromDb != null) return fromDb
+    return load(FORMCYCLE_WIDGETS_ONLY_RESOURCE, "FORMCYCLE WIDGETS (COMPACT)")
+  }
+
+  /**
+   * Rebuilds the condensed CodBi elements section from the compact DB table (active prompts only),
+   * grouped by Functionalities / Element Placeholders / Standard Configurations, so deactivating an
+   * element removes it from the AI's pass-1 reference. Returns `null` to fall back to the bundled
+   * resource when the DB is unavailable or the category has no active entries.
+   */
+  private fun buildElementsFromDb(): String? {
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      val records = CompactPromptLoader.loadCategoryRecords(em, "compact.elements")
+      if (records.isEmpty()) return null
+      val sb = StringBuilder("\n\nCODBI CORE ELEMENTS (COMPACT)\n")
+      val header = records.firstOrNull { it.promptKey == "compact.elements" }?.promptText
+      if (!header.isNullOrBlank()) sb.append(header).append("\n")
+      val groups = LinkedHashMap<String, MutableList<CompactPromptLoader.CompactRecord>>()
+      for (r in records) {
+        if (r.promptKey == "compact.elements") continue
+        val parts = r.promptKey.split(".")
+        val group = if (parts.size >= 4) parts[2] else ""
+        groups.getOrPut(group) { mutableListOf() }.add(r)
+      }
+      for ((group, items) in groups) {
+        val groupLabel =
+            when (group) {
+              "functionalities" -> "Functionalities"
+              "element_placeholders" -> "Element Placeholders"
+              "standard_configurations" -> "Standard Configurations"
+              else -> group.replace('_', ' ').replaceFirstChar { it.uppercase() }
+            }
+        sb.append("\n## ").append(groupLabel).append("\n")
+        for (r in items.sortedBy { it.promptKey }) {
+          val name =
+              r.displayName?.takeIf { it.isNotBlank() } ?: r.promptKey.substringAfterLast('.')
+          sb.append("\n### ").append(name).append("\n")
+          if (!r.promptText.isNullOrBlank()) sb.append(r.promptText).append("\n")
+        }
+      }
+      return sb.toString().trimEnd()
+    } catch (e: Exception) {
+      logger.warn("[CodbiCapabilities] Failed to build elements section from DB: {}", e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Rebuilds the condensed formcycle widgets section from the compact DB table (active prompts
+   * only), so deactivating a widget removes it from the AI's pass-1 reference. Returns `null` to
+   * fall back to the bundled resource when the DB is unavailable or the category is empty.
+   */
+  private fun buildWidgetsFromDb(): String? {
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      val records = CompactPromptLoader.loadCategoryRecords(em, "compact.formcycle_widgets")
+      if (records.isEmpty()) return null
+      val sb = StringBuilder("\n\nFORMCYCLE WIDGETS (COMPACT)\n")
+      val header = records.firstOrNull { it.promptKey == "compact.formcycle_widgets" }?.promptText
+      if (!header.isNullOrBlank()) sb.append(header).append("\n")
+      for (r in records) {
+        if (r.promptKey == "compact.formcycle_widgets") continue
+        val name = r.displayName?.takeIf { it.isNotBlank() } ?: r.promptKey.substringAfterLast('.')
+        sb.append("\n### ").append(name).append("\n")
+        if (!r.promptText.isNullOrBlank()) sb.append(r.promptText).append("\n")
+      }
+      return sb.toString().trimEnd()
+    } catch (e: Exception) {
+      logger.warn("[CodbiCapabilities] Failed to build widgets section from DB: {}", e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
 
   /** Returns full details for only the requested IDs (functionality/EP/standard/class alias). */
   fun buildFullSectionFor(requestedIds: List<String>): String {
     if (requestedIds.isEmpty()) {
       return buildFullSection()
     }
+    // Prefer the DB: pass-2 details come from the detailed prompts in codbi_ai_prompt
+    // (codbi.functionalities.* / codbi.element_placeholders.* / codbi.standard_configurations.*),
+    // so Prompt-Manager edits and deactivations take effect on the pass-2 rerun.
+    val fromDb = buildRequestedDetailsFromDb(requestedIds)
+    if (fromDb != null) return fromDb
+    // Fallback: bundled details index (classpath).
+    return buildRequestedDetailsFromIndex(requestedIds)
+  }
 
+  /**
+   * Loads the requested element details from the detailed DB prompts (codbi.functionalities.* /
+   * codbi.element_placeholders.* / codbi.standard_configurations.*) — active only. Returns `null`
+   * to fall back to the bundled details index when the DB is unavailable or none of the requested
+   * IDs matched.
+   */
+  private fun buildRequestedDetailsFromDb(requestedIds: List<String>): String? {
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      val sections = PromptLoader.loadSectionMap(em, "codbi.")
+      if (sections.isEmpty()) return null
+      val wanted = linkedSetOf<String>()
+      for (raw in requestedIds) {
+        val norm = normalizeId(raw.trim())
+        if (norm.isNotEmpty()) wanted.add(norm)
+      }
+      if (wanted.isEmpty()) return null
+      val bySuffix = HashMap<String, String>()
+      for ((key, text) in sections) {
+        if (!key.startsWith("codbi.")) continue
+        val norm = normalizeId(key.substringAfterLast('.'))
+        if (norm.isNotEmpty() && text.isNotBlank()) bySuffix.getOrPut(norm) { text }
+      }
+      val sb = StringBuilder("\n\nCODBI REQUESTED DETAILS\n")
+      var added = false
+      for (norm in wanted) {
+        val text = bySuffix[norm] ?: continue
+        sb.append("\n## ").append(norm).append("\n")
+        sb.append(text).append("\n")
+        added = true
+      }
+      return if (added) sb.toString().trimEnd() else null
+    } catch (e: Exception) {
+      logger.warn("[CodbiCapabilities] Failed to build requested details from DB: {}", e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Normalizes an element id/name (e.g. "AI.LLAMA.CHAT", "Ai Llama Chat", "ai_llama_chat") to a
+   * stable key segment so it can be matched against the detailed prompt keys.
+   */
+  private fun normalizeId(raw: String): String =
+      raw.trim().lowercase().replace(Regex("[^a-z0-9_]"), "_").replace(Regex("_+"), "_").trim('_')
+
+  /** Resolves and renders the requested details from the bundled classpath details index. */
+  private fun buildRequestedDetailsFromIndex(requestedIds: List<String>): String {
     val index = loadDetailsIndex()
     if (index == null) {
       logger.warn("[CodbiCapabilities] Details index unavailable, falling back to full section")

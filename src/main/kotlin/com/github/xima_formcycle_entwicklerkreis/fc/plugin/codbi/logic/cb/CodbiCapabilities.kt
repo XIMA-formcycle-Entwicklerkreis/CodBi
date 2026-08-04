@@ -394,4 +394,35 @@ internal object CodbiCapabilities {
           }
     }
   }
+
+  /**
+   * Builds a functionality → parameter-name index from the bundled details index. Each value is the
+   * set of the functionality's parameter names lowercased (as they appear in the `data-cb-<param>`
+   * attributes, without the `data-cb-` prefix). Used by the change log to list each `data-cb-*`
+   * parameter only under the functionality(-ies) it belongs to.
+   */
+  fun functionalityParamsIndex(): Map<String, Set<String>> {
+    val index = loadDetailsIndex() ?: return emptyMap()
+    @Suppress("UNCHECKED_CAST")
+    val entries = index["entries"] as? Map<String, Any> ?: return emptyMap()
+    val result = HashMap<String, Set<String>>()
+    for ((id, raw) in entries) {
+      val entry = raw as? Map<String, Any> ?: continue
+      if (entry["type"] != "functionality") continue
+      @Suppress("UNCHECKED_CAST") val params = entry["parameters"] as? Map<String, Any> ?: continue
+      if (params.isEmpty()) continue
+      result[id] = params.keys.map { it.lowercase() }.toSet()
+    }
+    return result
+  }
+
+  /**
+   * Returns the lowercase-alias → canonical functionality-ID map from the bundled details index.
+   */
+  fun functionalityAliases(): Map<String, String> {
+    val index = loadDetailsIndex() ?: return emptyMap()
+    @Suppress("UNCHECKED_CAST")
+    val aliases = index["aliases"] as? Map<String, Any> ?: return emptyMap()
+    return aliases.mapNotNull { (k, v) -> (v as? String)?.let { k.lowercase() to it } }.toMap()
+  }
 }

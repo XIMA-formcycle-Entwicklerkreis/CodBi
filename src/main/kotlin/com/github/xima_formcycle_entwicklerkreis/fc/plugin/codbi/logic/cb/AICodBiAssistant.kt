@@ -515,7 +515,8 @@ class AICodBiAssistant : IPluginServletAction {
           formKey,
           workflowVersionId,
           formChanges,
-          workflowNodes)
+          workflowNodes,
+          runTokens.toLong())
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to record change log: {}", e.message)
     }
@@ -923,9 +924,19 @@ class AICodBiAssistant : IPluginServletAction {
                 if (!hasApplicabilityField) "omitted _codbiApplicability entirely"
                 else "evaluated CodBi list but found no candidates â€” forcing blind evaluation"
             if (jsonDeclaresNothingApplies(cleaned) || rawClaimsNothingApplies(rawResponse)) {
-              logger.info(
-                  "[AICodBiAssistant] AI declared/stated no CodBi element applies â€” skipping blind reconsideration ({})",
-                  reason)
+              if (createdWidgets.isNotEmpty()) {
+                // The AI declared no CodBi element applies, but it created new Formcycle widgets
+                // in pass-1 whose exact JSON templates were never provided. Rebuild them via
+                // pass-2 so they are not left in a hallucinated persist structure.
+                logger.info(
+                    "[AICodBiAssistant] AI declared nothing applies but created Formcycle widget(s) {} - rebuilding via pass-2 with templates",
+                    createdWidgets.joinToString(", "))
+                cleaned = rerunWithCodbiDetails(emptyList(), createdWidgets)
+              } else {
+                logger.info(
+                    "[AICodBiAssistant] AI declared/stated no CodBi element applies â€” skipping blind reconsideration ({})",
+                    reason)
+              }
             } else {
               logger.info(
                   "[AICodBiAssistant] AI {} â€” triggering blind CodBi evaluation pass", reason)
@@ -1298,6 +1309,57 @@ class AICodBiAssistant : IPluginServletAction {
       gson.toJson(pass1Obj)
     } catch (_: Exception) {
       pass2Json // fallback: return pass-2 as-is
+    }
+  }
+
+  /**
+   * Deterministic safety net for the OpenPLZ.AC.SET standard: ensures the matching
+   * `CodBi_OpenPLZ_AC_SET_*` CSS class is present on any XTextField that represents an address part
+   * (street, building number, postal code, locality). The AI is instructed to apply these classes
+   * but sometimes omits them (or pass-2 is skipped), so this guarantees they reach the designer.
+   * Existing classes (e.g. "Goon") are preserved - nothing is ever removed or overridden. The
+   * postal code field additionally gets the `plzDE` datatype (when none is set) so the
+   * Holistic.Cleave.PLZ standard stays active.
+   */
+  private fun applyOpenPlzAddressClasses(resultItems: JsonArray) {
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.asString != "XTextField") continue
+      val props = item.getAsJsonObject("properties") ?: continue
+      val name = props.get("name")?.asString ?: continue
+      // Split camelCase names into words (e.g. "tfPostalCode" -> [tf, postal, code]) and match the
+      // address-part tokens so unrelated names (e.g. "tfReport") never match by accident.
+      val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }
+      val cls =
+          when {
+            words.any { it in setOf("street", "strasse", "straße") } ->
+                "CodBi_OpenPLZ_AC_SET_Street"
+            words.any { it in setOf("building", "buildingnumber", "hausnummer", "hausnr") } ->
+                "CodBi_OpenPLZ_AC_SET_BuildingNumber"
+            words.any {
+              it in setOf("postal", "postalcode", "postleitzahl", "plz", "zip", "zipcode")
+            } -> "CodBi_OpenPLZ_AC_SET_PLZ"
+            words.any { it in setOf("locality", "city", "ort", "wohnort") } ->
+                "CodBi_OpenPLZ_AC_SET_Locality"
+            else -> null
+          }
+      if (cls == null) continue
+      val cssClasses =
+          if (props.has("cssclasses") && props.get("cssclasses").isJsonArray)
+              props.getAsJsonArray("cssclasses")
+          else JsonArray().also { props.add("cssclasses", it) }
+      if (cssClasses.none { it.isJsonPrimitive && it.asString == cls }) {
+        cssClasses.add(cls)
+        logger.info(
+            "[AICodBiAssistant] Applied OpenPLZ.AC.SET CSS class '{}' to address field '{}'",
+            cls,
+            name)
+      }
+      if (cls == "CodBi_OpenPLZ_AC_SET_PLZ" && props.get("datatype")?.asString.isNullOrBlank()) {
+        props.addProperty("datatype", "plzDE")
+        logger.info("[AICodBiAssistant] Set datatype 'plzDE' on postal code field '{}'", name)
+      }
     }
   }
 
@@ -1953,7 +2015,10 @@ class AICodBiAssistant : IPluginServletAction {
             baseObj?.getAsJsonObject(className)?.getAsJsonObject("properties") ?: continue
         val itemProps = item.getAsJsonObject("properties") ?: continue
         for (entry in baseProps.entrySet()) {
-          if (!itemProps.has(entry.key)) itemProps.add(entry.key, entry.value)
+          // Deep-copy base values so mutable arrays/objects (e.g. "cssclasses") are never shared
+          // by reference between every new item of the same class. Mutating a shared array would
+          // leak one item's classes (or other values) onto all the other items.
+          if (!itemProps.has(entry.key)) itemProps.add(entry.key, entry.value.deepCopy())
         }
         // For new XTextField date fields: always enable the datepicker calendar widget,
         // overriding any base-template default of "0".
@@ -1981,9 +2046,10 @@ class AICodBiAssistant : IPluginServletAction {
     // (e.g. "cssclasses":["CodBi_People_Name"]). The AI sets this directly as a property
     // and no conversion is needed.
     //
-    // SERVER-SIDE CSS CLASS VALIDATION: Strip any CSS class names that the AI may have
-    // invented (e.g. "CodBi_NavigationBar") â€” only classes matching known prefixes from
-    // CSS_CLASS_TO_STANDARD are allowed. Non-matching classes are removed with a warning.
+    // CSS classes are passed through WITHOUT any server-side validation: class names supplied by
+    // the AI (e.g. custom theme classes such as "Goon", or CodBi_* classes) reach the designer
+    // unchanged. AI-generated CSS *code* is never taken over â€” a "css" property / <style> content
+    // is removed via STRIPPED_FIELDS / STRIPPED_ITEM_PROPS.
     // Normalize the AI's cssclasses placement: the AI sometimes writes "cssclasses" (and
     // "cssclasseswrapper") at the ITEM level (sibling of "properties") instead of inside
     // "properties". FORMCYCLE only reads properties.cssclasses, so move them down (merging with
@@ -2014,41 +2080,85 @@ class AICodBiAssistant : IPluginServletAction {
         item.remove(key)
       }
     }
-    val validCssPrefixes = CSS_CLASS_TO_STANDARD.map { it.first }.toList()
+    // Normalize the AI's "class" property into the Formcycle "cssclasses" array. The AI often
+    // writes the HTML-style key "class" (a plain string, e.g. "CodBi_People_Name", possibly a
+    // space-separated list) — either inside "properties" or as a sibling of it, or as a "class"
+    // entry inside the attributes array — instead of the Formcycle "cssclasses" array. Without
+    // this conversion the classes never reach the designer's element properties (and never
+    // trigger standard auto-activation below).
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      val props = item.getAsJsonObject("properties") ?: continue
+      val classCandidates = mutableListOf<JsonElement>()
+      item.get("class")?.let { classCandidates.add(it) }
+      props.get("class")?.let { classCandidates.add(it) }
+      val attrsEl = props.get("attributes")
+      if (attrsEl != null && attrsEl.isJsonArray) {
+        for (attr in attrsEl.asJsonArray) {
+          if (attr.isJsonObject) {
+            val text =
+                attr.asJsonObject.get("text")?.asString ?: attr.asJsonObject.get("name")?.asString
+            if (text.equals("class", ignoreCase = true)) {
+              attr.asJsonObject.get("value")?.let { classCandidates.add(it) }
+            }
+          }
+        }
+      }
+      if (classCandidates.isEmpty()) continue
+      val existingClasses = props.get("cssclasses")
+      val cssClasses =
+          if (existingClasses != null && existingClasses.isJsonArray) {
+            // Copy instead of reusing the array so we never mutate a base-template array that may
+            // be shared across items (see base-props merge above).
+            JsonArray()
+                .also { copy -> existingClasses.asJsonArray.forEach { copy.add(it) } }
+                .also { props.add("cssclasses", it) }
+          } else {
+            JsonArray().also { props.add("cssclasses", it) }
+          }
+      var added = false
+      for (candidate in classCandidates) {
+        val names =
+            when {
+              candidate.isJsonArray ->
+                  candidate.asJsonArray.mapNotNull {
+                    it.takeIf { e -> e.isJsonPrimitive }?.asString
+                  }
+              candidate.isJsonPrimitive ->
+                  candidate.asString.split(Regex("\\s+")).filter { it.isNotBlank() }
+              else -> emptyList()
+            }
+        for (name in names) {
+          if (cssClasses.none { it.isJsonPrimitive && it.asString == name }) {
+            cssClasses.add(name)
+            added = true
+          }
+        }
+      }
+      if (added) {
+        logger.info(
+            "[AICodBiAssistant] Normalized 'class' to 'cssclasses' on item '{}': {}",
+            props.get("name")?.asString ?: "<unknown>",
+            cssClasses
+                .mapNotNull { it.takeIf { e -> e.isJsonPrimitive }?.asString }
+                .joinToString(", "))
+      }
+      item.remove("class")
+      props.remove("class")
+    }
+    // Deterministic safety net: ensure the CodBi OpenPLZ.AC.SET classes are present on any
+    // address-part field (street, building number, postal code, locality). The AI is instructed to
+    // apply these classes but may omit them; this guarantees they reach the designer. Existing
+    // classes (e.g. "Goon") are preserved — nothing is removed or overridden.
+    applyOpenPlzAddressClasses(resultItems)
+    // CSS class names from the AI are passed through unchanged (no whitelist/validation) — they
+    // reach the designer as-is. AI-generated CSS *code* is already removed via STRIPPED_FIELDS /
+    // STRIPPED_ITEM_PROPS, so only class names can ever be taken over, never code.
     val STALE_PREFIXES = listOf("data-cb-")
     for (el in resultItems) {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
-      val cssClasses = props.getAsJsonArray("cssclasses")
-      if (cssClasses != null && cssClasses.size() > 0) {
-        val filtered = JsonArray()
-        var stripped = false
-        for (cls in cssClasses) {
-          if (!cls.isJsonPrimitive) {
-            stripped = true
-            continue
-          }
-          val className = cls.asString
-          val isValid =
-              validCssPrefixes.any { prefix -> className == prefix || className.startsWith(prefix) }
-          if (isValid) {
-            filtered.add(cls)
-          } else {
-            stripped = true
-            logger.warn(
-                "[AICodBiAssistant] Stripped non-existent CSS class '{}' from item '{}'",
-                className,
-                props.get("name")?.asString ?: "<unknown>")
-          }
-        }
-        if (stripped) {
-          if (filtered.size() > 0) {
-            props.add("cssclasses", filtered)
-          } else {
-            props.remove("cssclasses")
-          }
-        }
-      }
       // --- Normalize Print.Remove: if the AI applied data-cb-func=print.remove instead of the
       // CSS class (per TWO-OPTION RULE, CSS classes should be preferred when available), convert
       // it to the CodBi_Print_Remove_Tagged CSS class and remove the data-cb-func entry.
@@ -3564,31 +3674,43 @@ class AICodBiAssistant : IPluginServletAction {
     // Replace symbolic "$ROOT" breakTarget with a safe UUID placeholder before JSON parsing
     val safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
 
-    // Parse the AI response: either a single task object or an array of task objects
+    // Parse the AI response into workflow task specs. The AI may return:
+    //   - a bare task object,
+    //   - an array of task objects, or
+    //   - a wrapper object carrying a "workflow" (or "tasks") array of task objects (the AI
+    //     sometimes echoes the form items alongside the workflow, so the actual tasks live inside
+    //     the wrapper — without unwrapping, all nodeParams/triggerParams would silently fall back
+    //     to the WorkflowTaskSpec defaults and the task would be created without its properties).
     val taskSpecs: List<WorkflowTaskSpec> =
         try {
-          if (safeCleaned.trimStart().startsWith("[")) {
-            // Array of task specs
-            val arr = gson.fromJson(safeCleaned, Array<WorkflowTaskSpec>::class.java)
-            logger.info("[AICodBiAssistant] Parsed {} workflow task specs from array", arr.size)
-            arr.forEachIndexed { i, spec ->
-              logger.info(
-                  "[AICodBiAssistant] Task #{}: nodeType={}, failurePage='{}'",
-                  i + 1,
-                  spec.nodeType,
-                  if (spec.nodeType == "FC_DOI_INIT") spec.nodeParams["failurePage"] ?: "<NOT SET>"
-                  else "N/A")
-            }
-            arr.toList()
-          } else {
-            // Single task spec
-            val spec = gson.fromJson(safeCleaned, WorkflowTaskSpec::class.java)
+          val parsed = JsonParser.parseString(safeCleaned)
+          val specs: List<WorkflowTaskSpec> =
+              when {
+                parsed.isJsonArray ->
+                    gson.fromJson(safeCleaned, Array<WorkflowTaskSpec>::class.java).toList()
+                parsed.isJsonObject -> {
+                  val obj = parsed.asJsonObject
+                  val tasksArray =
+                      obj.get("workflow")?.takeIf { it.isJsonArray }?.asJsonArray
+                          ?: obj.get("tasks")?.takeIf { it.isJsonArray }?.asJsonArray
+                  if (tasksArray != null) {
+                    gson.fromJson(tasksArray, Array<WorkflowTaskSpec>::class.java).toList()
+                  } else {
+                    listOf(gson.fromJson(safeCleaned, WorkflowTaskSpec::class.java))
+                  }
+                }
+                else -> emptyList()
+              }
+          logger.info("[AICodBiAssistant] Parsed {} workflow task spec(s)", specs.size)
+          specs.forEachIndexed { i, spec ->
             logger.info(
-                "[AICodBiAssistant] Workflow task spec: nodeType={}, nodeParams keys={}",
+                "[AICodBiAssistant] Task #{}: nodeType={}, nodeParams keys={}, triggerParams keys={}",
+                i + 1,
                 spec.nodeType,
-                spec.nodeParams.keys)
-            listOf(spec)
+                spec.nodeParams.keys,
+                spec.triggerParams.keys)
           }
+          specs
         } catch (e: Exception) {
           logger.warn("[AICodBiAssistant] Could not parse workflow AI response: {}", safeCleaned)
           throw Exception("AI returned invalid workflow JSON: ${e.message}")

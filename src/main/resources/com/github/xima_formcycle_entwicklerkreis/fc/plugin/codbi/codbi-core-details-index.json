@@ -95,7 +95,7 @@
     "HTML.Input.REGEX": {
       "id": "HTML.Input.REGEX",
       "type": "functionality",
-      "summary": "Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.",
+      "summary": "Applicable on a XTextField to validate, reformat, or RESTRICT input against a regular expression pattern. USE when the user asks to disallow/block certain characters (e.g. 'darf die Zeichen e$% nicht enthalten') - set data-cb-keyexpression to a negated character class like '[^e$%]' to block those keystrokes and data-cb-expression to '^[^e$%]*$' for whole-value validation.",
       "tsdoc": "Provides the {@link HTML_Input_REGEX.functionality }.",
       "parameters": {
         "ErrorPostfix": "The final part of the error message string displayed after to the \"expression\".",
@@ -140,7 +140,7 @@
     "HTML.SETAttribute": {
       "id": "HTML.SETAttribute",
       "type": "functionality",
-      "summary": "Applicable on any element to dynamically set one or more HTML attributes on it.",
+      "summary": "Applicable on any element to dynamically set one or more HTML attributes on it, including CSS styling via the 'style' attribute (e.g. opacity). USE when the user asks to set an attribute or visual/CSS style of an element (e.g. title, opacity) — set data-cb-name and data-cb-toset.",
       "tsdoc": "Provides the {@link HTML_SETAttribute.functionality }.",
       "parameters": {
         "Name": "The name of the attribute to set.",

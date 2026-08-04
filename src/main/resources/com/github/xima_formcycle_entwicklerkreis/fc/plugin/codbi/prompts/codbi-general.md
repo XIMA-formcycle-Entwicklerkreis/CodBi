@@ -51,8 +51,21 @@ All tfAntragsteller* fields are autofilled by the authentication system. Do NOT 
 
 Common Validation Rules (fc-plugin-common-validation-rules) are NOT CodBi functionalities. Do NOT add them as data-cb-func. These are validation-only plugins applied via data-vdt attribute — they validate input, they do NOT provide CodBi EP/functionality features. If an element already has a data-vdt attribute, leave it. Never add data-cb-func for a validation rule plugin class name.
 
+## CRITICAL — Combining multiple CodBi functionalities on one element
+
+When MORE THAN ONE CodBi functionality applies to the SAME element, put ALL of them in ONE `data-cb-func` value, comma-separated (e.g. `data-cb-func="HTML.Input.REGEX,HTML.SETAttribute"`), and set each functionality's parameters as separate `data-cb-*` attributes. Do NOT create several data-cb-func entries and do NOT create a duplicate element per functionality.
+
+Example — one input field that blocks the characters e, $ and % AND gets its title attribute set:
+"attributes": [
+  {"text":"data-cb-func","value":"HTML.Input.REGEX,HTML.SETAttribute"},
+  {"text":"data-cb-keyexpression","value":"[^e$%]"},
+  {"text":"data-cb-expression","value":"^[^e$%]*$"},
+  {"text":"data-cb-name","value":"title"},
+  {"text":"data-cb-toset","value":"Holla die Waldfee"}
+]
+
 ## CodBi CANDIDATE REVIEW
 
-Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; text field needing format validation → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; input auto-capitalize words → HTML.Input.Trans.Capital; set CSS property on element → HTML.SETAttribute; console output → Sys.Log.Console.
+Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; text field needing format validation → HTML.Input.REGEX; an input field that must NOT allow certain characters (character blacklist, e.g. "nicht erlaubt: e$%") → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; input auto-capitalize words → HTML.Input.Trans.Capital; set an attribute / visual style of an element (e.g. title, opacity) → HTML.SETAttribute; console output → Sys.Log.Console. When one request combines several of these on the same element, apply ALL matching functionalities in one comma-separated data-cb-func.
 
 CRITICAL — Sys.Log.Console is a STANDALONE functionality that does NOT need any existing form element. When the prompt asks to output/print/log/show anything to the browser console, ALWAYS include Sys.Log.Console in the considered/applied arrays.

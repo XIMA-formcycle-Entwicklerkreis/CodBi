@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
+import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import javax.persistence.EntityManagerFactory
@@ -52,7 +53,8 @@ object AiAssistantLog {
       formKey: String?,
       workflowVersionId: Long?,
       formChanges: JsonObject?,
-      workflowChanges: JsonArray?
+      workflowChanges: JsonArray?,
+      tokensUsed: Long? = null
   ): Boolean {
     if (emf == null) return false
     return try {
@@ -65,6 +67,7 @@ object AiAssistantLog {
                 prompt = prompt.take(1000),
                 intent = intent.take(20),
                 modelId = modelId.take(100),
+                tokens = tokensUsed,
                 workflowVersionId = workflowVersionId,
                 formChanges = formChanges?.toString(),
                 workflowChanges = workflowChanges?.toString()))
@@ -124,6 +127,7 @@ object AiAssistantLog {
           e.addProperty("prompt", entry.prompt ?: "")
           e.addProperty("intent", entry.intent ?: "")
           e.addProperty("modelId", entry.modelId ?: "")
+          e.addProperty("tokens", entry.tokens ?: 0)
           entry.formChanges
               ?.takeIf { it.isNotBlank() }
               ?.let { text ->
@@ -271,24 +275,39 @@ object AiAssistantLog {
         }
       }
 
+      val base = after.get("base")?.takeIf { it.isJsonObject }?.asJsonObject
       // Newly created widgets also contribute their classes and attributes so the log is complete.
       for (name in afterNames - beforeNames) {
         val afterItem = afterWidgets[name] ?: continue
         val afterProps = propsOf(afterItem)
+        val className = classNameOf(afterItem)
         val allClasses = cssClassesOf(afterProps)
         if (allClasses.isNotEmpty()) {
           val entry = JsonObject()
           entry.addProperty("widget", name)
-          entry.addProperty("className", classNameOf(afterItem))
+          entry.addProperty("className", className)
           entry.add("classes", gson.toJsonTree(allClasses.sorted()))
           classesSet.add(entry)
         }
-        val allKeys = afterProps.entrySet().map { it.key }.filter { it.lowercase() !in SKIP_ATTRS }
-        if (allKeys.isNotEmpty()) {
+        // Only report the attributes the AI actually set: compare every property against the
+        // widget class's base template defaults, so Formcycle's automatic defaults (maxwidth,
+        // computedwidth, viewstatus, ...) are not shown as if the AI had set them.
+        val baseTemplate = base?.get(className)?.takeIf { it.isJsonObject }?.asJsonObject
+        val baseProps = baseTemplate?.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject
+        val aiSetKeys =
+            afterProps
+                .entrySet()
+                .map { it.key }
+                .filter { key ->
+                  if (key.lowercase() in SKIP_ATTRS) return@filter false
+                  val baseVal = baseProps?.get(key)
+                  baseVal == null || baseVal != afterProps.get(key)
+                }
+        if (aiSetKeys.isNotEmpty()) {
           val entry = JsonObject()
           entry.addProperty("widget", name)
-          entry.addProperty("className", classNameOf(afterItem))
-          entry.add("attributes", buildAttributes(allKeys, afterProps))
+          entry.addProperty("className", className)
+          entry.add("attributes", buildAttributes(aiSetKeys, afterProps))
           attributesSet.add(entry)
         }
       }
@@ -368,42 +387,101 @@ object AiAssistantLog {
 
   /**
    * Builds the `attributes` array for one widget. The CodBi attributes `data-cb-func` (kind `func`)
-   * and `data-cb-*` (kind `param`) are flagged as special; the `data-cb-func` entry carries the
-   * list of CodBi parameters used by the functionality as its `params`.
+   * and `data-cb-*` (kind `param`) are flagged as special. Every functionality listed in
+   * `data-cb-func` becomes its own `func` entry whose `params` contain only the `data-cb-*`
+   * parameters that belong to that functionality (resolved via the CodBi details-index); a
+   * parameter that belongs to several functionalities is repeated under each of them.
+   *
+   * The data-cb attributes are read from BOTH the widget's direct `data-cb-*` property keys and its
+   * normalized `attributes` array (the `[{"text":"data-cb-*","value":"..."}]` form produced by
+   * `restoreStrippedFields`), so the raw "attributes" array is never shown as a single opaque
+   * entry.
    */
   private fun buildAttributes(changedKeys: List<String>, afterProps: JsonObject): JsonArray {
-    val attrs = JsonArray()
-    val funcKeys = changedKeys.filter { it.lowercase() == "data-cb-func" }
-    val paramKeys =
-        changedKeys.filter {
-          it.lowercase().startsWith("data-cb-") && it.lowercase() != "data-cb-func"
+    val funcValues = mutableListOf<String>()
+    val paramValues = LinkedHashMap<String, JsonElement>()
+    val regularValues = LinkedHashMap<String, JsonElement>()
+    val changed = changedKeys.map { it.lowercase() }.toSet()
+
+    for ((key, value) in afterProps.entrySet()) {
+      val lower = key.lowercase()
+      if (lower == "attributes") {
+        // The normalized data-cb attributes array: [{"text":"data-cb-*","value":"..."}, ...]
+        if (value.isJsonArray) {
+          for (el in value.asJsonArray) {
+            if (!el.isJsonObject) continue
+            val obj = el.asJsonObject
+            val text = obj.get("text")?.asString ?: obj.get("name")?.asString ?: continue
+            val v = obj.get("value") ?: JsonNull.INSTANCE
+            val tl = text.lowercase()
+            when {
+              tl == "data-cb-func" -> funcValues.add(valueToString(v))
+              tl.startsWith("data-cb-") -> paramValues.putIfAbsent(text, v)
+              else -> regularValues.putIfAbsent(text, v)
+            }
+          }
         }
-    val regularKeys = changedKeys.filter { !it.lowercase().startsWith("data-cb-") }
-
-    for (key in funcKeys) {
-      val entry = JsonObject()
-      entry.addProperty("name", key)
-      entry.addProperty("value", valueToString(afterProps.get(key)))
-      entry.addProperty("kind", "func")
-      entry.addProperty("codbi", true)
-      val params = collectCodbiParams(afterProps)
-      if (params.size() > 0) entry.add("params", params)
-      attrs.add(entry)
+        continue
+      }
+      if (lower !in changed) continue
+      if (lower == "data-cb-func") {
+        funcValues.add(valueToString(value))
+      } else if (lower.startsWith("data-cb-")) {
+        paramValues.putIfAbsent(key, value)
+      } else {
+        regularValues.putIfAbsent(key, value)
+      }
     }
 
-    for (key in paramKeys) {
-      val entry = JsonObject()
-      entry.addProperty("name", key)
-      entry.addProperty("value", valueToString(afterProps.get(key)))
-      entry.addProperty("kind", "param")
-      entry.addProperty("codbi", true)
-      attrs.add(entry)
+    val attrs = JsonArray()
+
+    // Functionality → allowed parameter-name index (from the CodBi details index). Each
+    // functionality node lists ONLY the data-cb-* parameters that belong to it; a parameter that
+    // belongs to several functionalities is repeated under each of them.
+    val paramIndex = CodbiCapabilities.functionalityParamsIndex()
+    val aliasIndex = CodbiCapabilities.functionalityAliases()
+
+    val funcNames =
+        funcValues.flatMap { it.split(",").map { it.trim() } }.filter { it.isNotEmpty() }.distinct()
+
+    if (funcNames.isNotEmpty()) {
+      // Resolve each applied functionality to its canonical parameter-name set (empty when the
+      // functionality is not known to the index — then no filtering is applied).
+      val funcAllowed = LinkedHashMap<String, Set<String>>()
+      for (funcName in funcNames) {
+        funcAllowed[funcName] =
+            canonicalFunctionalityId(funcName, paramIndex, aliasIndex)?.let { paramIndex[it] }
+                ?: emptySet()
+      }
+      val anyKnown = funcAllowed.values.any { it.isNotEmpty() }
+
+      for ((funcName, allowed) in funcAllowed) {
+        val entry = JsonObject()
+        entry.addProperty("name", funcName)
+        entry.addProperty("value", "")
+        entry.addProperty("kind", "func")
+        entry.addProperty("codbi", true)
+        val funcParams = JsonArray()
+        for ((name, value) in paramValues) {
+          val pkey = name.removePrefix("data-cb-").lowercase()
+          val owned = pkey in allowed
+          // A parameter that belongs to NO applied functionality is still listed (fallback) so no
+          // information is lost.
+          val orphan = !anyKnown || funcAllowed.values.none { pkey in it }
+          if (owned || orphan) funcParams.add(buildParamEntry(name, value))
+        }
+        if (funcParams.size() > 0) entry.add("params", funcParams)
+        attrs.add(entry)
+      }
+    } else if (paramValues.isNotEmpty()) {
+      // data-cb-* parameters without any data-cb-func — still show them.
+      for ((name, value) in paramValues) attrs.add(buildParamEntry(name, value))
     }
 
-    for (key in regularKeys.sorted()) {
+    for ((name, value) in regularValues.toSortedMap()) {
       val entry = JsonObject()
-      entry.addProperty("name", key)
-      entry.addProperty("value", valueToString(afterProps.get(key)))
+      entry.addProperty("name", name)
+      entry.addProperty("value", valueToString(value))
       entry.addProperty("kind", "attr")
       entry.addProperty("codbi", false)
       attrs.add(entry)
@@ -411,20 +489,27 @@ object AiAssistantLog {
     return attrs
   }
 
-  /** Collects all `data-cb-*` parameter attributes of a widget (excluding `data-cb-func`). */
-  private fun collectCodbiParams(props: JsonObject): JsonArray {
-    val params = JsonArray()
-    for ((key, value) in props.entrySet()) {
-      val lower = key.lowercase()
-      if (!lower.startsWith("data-cb-") || lower == "data-cb-func") continue
-      val entry = JsonObject()
-      entry.addProperty("name", key)
-      entry.addProperty("value", valueToString(value))
-      entry.addProperty("kind", "param")
-      entry.addProperty("codbi", true)
-      params.add(entry)
+  /** Resolves a `data-cb-func` value (case-insensitive, alias-aware) to its canonical CodBi ID. */
+  private fun canonicalFunctionalityId(
+      funcName: String,
+      paramIndex: Map<String, Set<String>>,
+      aliasIndex: Map<String, String>
+  ): String? {
+    if (funcName in paramIndex) return funcName
+    aliasIndex[funcName.lowercase()]?.let {
+      return it
     }
-    return params
+    return paramIndex.keys.firstOrNull { it.equals(funcName, ignoreCase = true) }
+  }
+
+  /** Builds a single `data-cb-*` parameter entry (kind `param`, CodBi). */
+  private fun buildParamEntry(name: String, value: JsonElement): JsonObject {
+    val entry = JsonObject()
+    entry.addProperty("name", name)
+    entry.addProperty("value", valueToString(value))
+    entry.addProperty("kind", "param")
+    entry.addProperty("codbi", true)
+    return entry
   }
 
   private fun valueToString(el: JsonElement?): String {

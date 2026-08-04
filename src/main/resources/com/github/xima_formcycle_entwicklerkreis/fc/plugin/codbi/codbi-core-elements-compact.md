@@ -29,13 +29,13 @@ Applicable on any element to inject custom CSS text into the page (with optional
 Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
 
 ### HTML.Input.REGEX
-Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.
+Applicable on a XTextField to validate, reformat, or RESTRICT input against a regular expression pattern. USE when the user asks to disallow/block certain characters (e.g. "darf die Zeichen e$% nicht enthalten") — apply data-cb-func="HTML.Input.REGEX" with the forbidden set as a negated character class (data-cb-keyexpression="[^e$%]" blocks the keystrokes, data-cb-expression="^[^e$%]*$" validates the whole value).
 
 ### HTML.Panel
 Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: "Standard-Panel" = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property.
 
 ### HTML.SETAttribute
-Applicable on any element to dynamically set one or more HTML attributes on it.
+Applicable on any element to dynamically set one or more HTML attributes on it, including CSS styling (opacity etc.) via the "style" attribute. USE when the user asks to set an attribute or visual/CSS style of an element (e.g. title, opacity) — set data-cb-name and data-cb-toset.
 
 ### HTML.Text.Injector
 Applicable on any element to inject a dynamic text value into a specific property of that element.

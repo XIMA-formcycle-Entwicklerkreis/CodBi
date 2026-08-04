@@ -81,7 +81,7 @@ when CodBi searches within the shared parent container.
   - DateMin: The CleaveOptions.dateMin .
   - DatePattern: The CleaveOptions.datePattern .
   - Delimiter: The CleaveOptions.delimiter .
-- HTML.Input.REGEX: Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.
+- HTML.Input.REGEX: Applicable on a XTextField to validate, reformat, or RESTRICT input against a regular expression pattern. USE when the user asks to disallow/block certain characters (e.g. "nicht erlaubt: e$%") — set data-cb-keyexpression to the negated character class "[^e$%]" to block those keystrokes and data-cb-expression to "^[^e$%]*$" for whole-value validation.
   - ErrorPostfix: The final part of the error message string displayed after to the "expression".
   - ErrorPrefix: The first part of the error message string displayed prior to the "expression".
   - ExposeExpression: Will expose the "expression" within the errormessage if set to TRUE (case insensitive).
@@ -114,9 +114,9 @@ when CodBi searches within the shared parent container.
   - Scroll: Configures 'Scroll' for this functionality.
   - ScrollBlock: Defines the logical position to scroll to when the panel.
   - ScrollToTop: Configures 'ScrollToTop' for this functionality.
-- HTML.SETAttribute: Applicable on any element to dynamically set one or more HTML attributes on it.
-  - Name: The name of the attribute to set.
-  - ToSet: The string to set the attribute to.
+- HTML.SETAttribute: Applicable on any element to dynamically set one or more HTML attributes on it, including CSS styling via the "style" attribute (e.g. opacity). USE when the user asks to set an attribute or visual/CSS style of an element (e.g. title, placeholder, opacity).
+  - Name: The name of the attribute to set (e.g. "title", "style" for CSS styling, "readonly", "disabled").
+  - ToSet: The string to set the attribute to (e.g. "Holla die Waldfee", "opacity: 0.5").
 - HTML.Text.Injector: Applicable on any element to inject a dynamic text value into a specific property of that element.
   - Placeholder: Specifies the string that shall be replaced within the.
   - Property: Specifies which property of the Element "toProcess" shall receive the "Replacement".

@@ -71,7 +71,20 @@ Applicable on a XTextField to apply input masking/formatting (credit card, phone
 
 ## HTML.Input.REGEX
 
-Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.
+Applicable on a XTextField to validate, reformat, or RESTRICT the typed value against a regular expression pattern.
+
+CRITICAL — USE THIS FUNCTIONALITY whenever the user asks to disallow/block/prevent certain characters from being typed into an input field (input restriction / character blacklist). Examples: "darf die Zeichen e$% nicht enthalten", "soll die Eingabe von e, $ und % verhindern", "does not allow the input of the characters e$%", "block the characters ...". This is the ONLY CodBi functionality for blocking characters — do NOT use HTML.Input.Cleave or any CSS class for this.
+
+To BLOCK characters, express the forbidden set as a NEGATED character class `[^…]` (matches any character EXCEPT the listed ones) and set the parameters on the XTextField via the attributes array:
+- data-cb-func = "HTML.Input.REGEX"
+- data-cb-keyexpression = the per-keystroke pattern every typed character must comply with → negated class, e.g. "[^e$%]" (prevents typing e, $ and %)
+- data-cb-expression = the whole-value pattern the final value must comply with → "^[^e$%]*$" (the complete value may contain any characters except e, $ and %)
+- data-cb-flags = (optional) regex flags, e.g. "g"
+
+Example — an input field that must not allow the characters e, $ and %:
+"attributes": [{"text":"data-cb-func","value":"HTML.Input.REGEX"},{"text":"data-cb-keyexpression","value":"[^e$%]"},{"text":"data-cb-expression","value":"^[^e$%]*$"}]
+
+CRITICAL — Inside a character class `$` is a LITERAL dollar sign (NOT the end-of-string anchor) and `.` is a literal dot, so `[^e$%]` really blocks e, $ and %. Regex metacharacters that must be blocked literally (e.g. `]`, `\`, `^` inside a class) still need to be escaped.
 
 ## HTML.Panel
 
@@ -87,7 +100,16 @@ ACCORDION BEHAVIOR — When the user asks for multiple collapsible sections wher
 
 ## HTML.SETAttribute
 
-Applicable on any element to dynamically set one or more HTML attributes on it.
+Applicable on any element to dynamically set one or more HTML attributes on it, including CSS styling via the "style" attribute.
+
+USE THIS FUNCTIONALITY whenever the user asks to set an attribute or a visual/CSS style of an element — e.g. "set the title attribute of that input field to 'Holla die Waldfee'", "set the opacity of that input field to .5", "set the element's background color", "make the field readonly/disabled". Parameters:
+- data-cb-name = the attribute to set (e.g. "title", "placeholder", "readonly", "disabled", or "style" for CSS styling)
+- data-cb-toset = the value to set the attribute to (e.g. "Holla die Waldfee", "opacity: 0.5")
+
+Example — an input field whose title attribute is set to "Holla die Waldfee":
+"attributes": [{"text":"data-cb-func","value":"HTML.SETAttribute"},{"text":"data-cb-name","value":"title"},{"text":"data-cb-toset","value":"Holla die Waldfee"}]
+
+CRITICAL — When MORE THAN ONE functionality applies to the SAME element (e.g. character blocking AND setting an attribute), combine them in ONE comma-separated data-cb-func value and set every parameter as its own data-cb-* attribute — do NOT create several data-cb-func entries or duplicate elements. Example: data-cb-func="HTML.Input.REGEX,HTML.SETAttribute" with data-cb-keyexpression, data-cb-expression, data-cb-name and data-cb-toset all set.
 
 ## HTML.Text.Injector
 

@@ -10,6 +10,9 @@ cb-ai-assistant-log {
     box-shadow: 0 0 0.25em darkorange;
     border: 2px solid darkorange !important;
     animation: cb-log-dialog-in 0.28s ease-out backwards;
+    /* Animate fullscreen maximize / restore (width/height change via .p-dialog-maximized) */
+    transition: width 0.35s ease, height 0.35s ease, max-width 0.35s ease,
+        max-height 0.35s ease, top 0.35s ease, left 0.35s ease, border-radius 0.35s ease;
 }
 
 @keyframes cb-log-dialog-in {
@@ -107,6 +110,30 @@ cb-ai-assistant-log {
     font-family: inherit;
 }
 
+/* Fullscreen maximized state — fill the entire viewport (mirrors the Prompt Manager dialog).
+   Overrides the inline max-width (94vw) that otherwise caps the maximized width. */
+.p-dialog.cb-log-dialog.p-dialog-maximized {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    top: 0 !important;
+    left: 0 !important;
+    border-radius: 0;
+}
+
+.p-dialog.cb-log-dialog.p-dialog-maximized .p-dialog-content {
+    height: calc(100vh - 110px) !important;
+    max-height: none !important;
+}
+
+/* When maximized, let the change-log tree use the freed vertical space. */
+.p-dialog.cb-log-dialog.p-dialog-maximized .cb-log-tree {
+    max-height: none;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
 /* --- Tree nodes --- */
 .cb-log-node {
     margin: 0;
@@ -175,6 +202,8 @@ cb-ai-assistant-log {
     border-radius: 4px;
     font-size: 0.72em;
     color: #fff;
+    /* Icons are not interactive — never show a hand cursor on hover. */
+    cursor: default;
 }
 
 .cb-log-node__icon i {
@@ -196,6 +225,43 @@ cb-ai-assistant-log {
     max-width: 340px;
 }
 
+/* Small badge next to a node label (e.g. the token count of an inference). */
+.cb-log-node__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: #eef1f6;
+    border: 1px solid #d8dde6;
+    color: #5b6472;
+    font-size: 0.72em;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Per-node expand/collapse-all button (shown for nodes that contain sub-nodes). */
+.cb-log-node__expand {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #5b6472;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.6em;
+    line-height: 1;
+}
+
+.cb-log-node__expand:hover {
+    background: #e3e6ea;
+}
+
 .cb-log-node__children {
     margin: 2px 0 2px 22px;
     border-left: 1px solid #e3e6ea;
@@ -204,6 +270,10 @@ cb-ai-assistant-log {
 
 /* --- Icon colors per node kind --- */
 .cb-log-node__icon--inference {
+    background: #5b6472;
+}
+
+.cb-log-node__icon--prompt {
     background: #5b6472;
 }
 
@@ -219,6 +289,12 @@ cb-ai-assistant-log {
 .cb-log-node__icon--class {
     background: #ffbb38;
     color: #4a2c00;
+}
+
+.cb-log-node__icon-img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
 }
 
 .cb-log-node__icon--attr {
@@ -240,6 +316,14 @@ cb-ai-assistant-log {
     background: #4169e1;
 }
 
+/* CodBi classes/functionalities get the CodBi logo as their icon so they are instantly
+   distinguishable — placed last so it overrides the per-kind background: no background or
+   border around the logo, even when combined with --func or --class. */
+.cb-log-node__icon--codbi {
+    background: transparent;
+    border-radius: 0;
+}
+
 /* Highlight the CodBi special attributes in the tree */
 .cb-log-node__icon--func + .cb-log-node__label {
     font-weight: 700;
@@ -248,4 +332,22 @@ cb-ai-assistant-log {
 .cb-log-node__icon--param + .cb-log-node__label,
 .cb-log-node__icon--param-item + .cb-log-node__label {
     color: #6a2fa8;
+}
+
+/* Full prompt text shown when the "Prompt" node is unfolded */
+.cb-log-node__prompt {
+    margin: 4px 0 4px 28px;
+    padding: 8px 10px;
+    background: #f6f8fb;
+    border: 1px solid #e3e6ea;
+    border-left: 3px solid #5b6472;
+    border-radius: 4px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.82em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #333;
+    max-height: 40vh;
+    overflow: auto;
 }

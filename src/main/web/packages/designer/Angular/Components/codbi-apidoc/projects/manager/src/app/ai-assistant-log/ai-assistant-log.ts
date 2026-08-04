@@ -1,10 +1,12 @@
 // #region Imports
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ViewEncapsulation } from "@angular/core";
 import type { OnDestroy, OnInit } from "@angular/core";
+import { CommonModule } from "@angular/common";
 import { Button } from "primeng/button";
 import { Dialog } from "primeng/dialog";
 import { Message } from "primeng/message";
 import { ProgressSpinner } from "primeng/progressspinner";
+import { PrimeTemplate } from "primeng/api";
 import { getJQuery } from "@de-xima/fc-form-designer";
 import { getCurrentFormKey } from "../ai-assistant/form-key";
 import { LogTreeNode } from "./log-tree-node";
@@ -24,16 +26,20 @@ import type { LogNode } from "./log-tree-node";
  * `X-Form-Key` header, and the backend filters the records accordingly.
  *
  * Tree layout per inference (top level = date + time of the inference):
+ * - **Prompt**: unfold to see the complete prompt text that produced the inference.
  * - **Form**: `Widgets created` / `Widgets removed`, then `Classes set` and `Attributes set`.
- *   The CodBi `data-cb-func` and `data-cb-*` attributes are marked with distinct icons; unfolding
- *   a `data-cb-func` node reveals the CodBi parameters used by the functionality.
+ *   Every widget unfolds into a `Classes` node (all CSS classes), a `Config` node (the regular
+ *   formcycle attributes the AI generated) and an `Attributes` node. The Attributes node contains
+ *   one node per CodBi functionality (`data-cb-func`); unfolding a functionality node reveals the
+ *   `data-cb-*` parameters used by it (a parameter shared by several functionalities is listed
+ *   under each of them).
  * - **Workflow**: one node per created workflow element; unfolding a node reveals the parameters
  *   defined for it.
  */
 @Component({
   selector: "cb-ai-assistant-log",
   standalone: true,
-  imports: [Dialog, Button, ProgressSpinner, Message, LogTreeNode],
+  imports: [CommonModule, PrimeTemplate, Dialog, Button, ProgressSpinner, Message, LogTreeNode],
   templateUrl: "./ai-assistant-log.html",
   styleUrl: "./ai-assistant-log.scss",
   encapsulation: ViewEncapsulation.None,
@@ -138,13 +144,58 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       second: "2-digit",
     });
   }
+
+  /** Formats a token count for display (e.g. "1,234 tokens"). Empty when there is no count. */
+  private formatTokens(tokens: number): string {
+    if (!tokens || tokens <= 0) return "";
+    return `${tokens.toLocaleString()} tokens`;
+  }
+
+  /** Formats a date-only string (e.g. "08/04/2026") from a backend timestamp. */
+  private formatShortDate(ts: string | undefined): string {
+    if (!ts) return "";
+    const normalized = ts.includes(" ") ? ts.replace(" ", "T") : ts;
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString([]);
+  }
+
+  /** The date range covered by the log: "(first inference – last inference)". */
+  get inferenceRange(): string {
+    if (this.logs.length === 0) return "";
+    // Logs are ordered newest-first, so the chronological first is the last array element.
+    const first = this.formatShortDate(this.logs[this.logs.length - 1].ts);
+    const last = this.formatShortDate(this.logs[0].ts);
+    if (!first || !last) return "";
+    return `(${first} \u2013 ${last})`;
+  }
+
+  /** Toolbar counter: "N Inferences" plus the covered date range. */
+  get countLabel(): string {
+    const range = this.inferenceRange;
+    return `${this.logs.length} Inferences${range ? ` ${range}` : ""}`;
+  }
   // #endregion Open / close / load
+
+  /** Track function for the `*ngFor` over the log entries. */
+  trackById(_index: number, node: LogNode): string {
+    return node.id;
+  }
 
   // #region Tree building
   private buildTree(logs: Array<Record<string, unknown>>): LogNode[] {
     return logs.map((entry, index) => {
       const entryId = `entry-${String(entry["id"] ?? index)}`;
-      const children: LogNode[] = [];
+      const prompt = String(entry["prompt"] ?? "");
+      const children: LogNode[] = [
+        {
+          id: `${entryId}-prompt`,
+          kind: "prompt",
+          label: "Prompt",
+          value: prompt,
+          expanded: false,
+        },
+      ];
       const form = entry["form"] as Record<string, unknown> | undefined;
       if (form) {
         children.push(this.buildFormNode(form, entryId));
@@ -157,7 +208,9 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         id: entryId,
         kind: "inference",
         label: this.formatTimestamp(String(entry["ts"] ?? "")),
-        value: String(entry["prompt"] ?? ""),
+        badge: this.formatTokens(Number(entry["tokens"] ?? 0)),
+        ts: String(entry["ts"] ?? ""),
+        value: prompt,
         children,
         expanded: false,
       };
@@ -249,7 +302,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     return { id, kind: "widget", label: name ? `${className} "${name}"` : className };
   }
 
-  /** A widget node whose Classes and Attributes are nested as its sub-elements. */
+  /** Whether a CSS class name belongs to a CodBi standard configuration. */
+  private isCodbiClass(name: string): boolean {
+    return name.startsWith("CodBi_") || name.startsWith("AI_");
+  }
+
+  /** A widget node whose Classes, Config and Attributes are nested as its sub-elements. */
   private widgetDetailsNode(
     widget: Record<string, unknown>,
     id: string,
@@ -257,20 +315,41 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     attributes: Array<Record<string, unknown>>,
   ): LogNode {
     const children: LogNode[] = [];
+    // Top-level "Classes" node holding all CSS classes that are set on the element.
     if (classes.length > 0) {
       children.push({
         id: `${id}-classes`,
-        kind: "class",
-        label: "Classes",
-        value: classes.join(", "),
+        kind: "section",
+        label: `Classes (${classes.length})`,
+        children: classes.map((cls, i) => ({
+          id: `${id}-classes-${i}`,
+          kind: "class",
+          label: cls,
+          // Flag CodBi classes so the tree can render a distinct (CodBi) icon for them.
+          codbi: this.isCodbiClass(cls),
+        })),
+        expanded: false,
       });
     }
-    if (attributes.length > 0) {
+    // "Config" — the regular formcycle configuration attributes the AI generated/changed.
+    const configAttributes = attributes.filter((a) => a["codbi"] !== true);
+    if (configAttributes.length > 0) {
+      children.push({
+        id: `${id}-config`,
+        kind: "section",
+        label: `Config (${configAttributes.length})`,
+        children: this.buildAttributeNodes(configAttributes, `${id}-config`),
+        expanded: false,
+      });
+    }
+    // "Attributes" — the CodBi attributes (data-cb-func / data-cb-*) the AI set on the element.
+    const codbiAttributes = attributes.filter((a) => a["codbi"] === true);
+    if (codbiAttributes.length > 0) {
       children.push({
         id: `${id}-attrs`,
         kind: "section",
-        label: "Attributes",
-        children: this.buildAttributeNodes(attributes, `${id}-attrs`),
+        label: `Attributes (${codbiAttributes.length})`,
+        children: this.buildAttributeNodes(codbiAttributes, `${id}-attrs`),
         expanded: false,
       });
     }
@@ -302,6 +381,8 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         kind,
         label: String(attribute["name"] ?? ""),
         value: String(attribute["value"] ?? ""),
+        // Propagate the CodBi flag so functionality (func) nodes render the CodBi logo icon.
+        codbi: attribute["codbi"] === true,
         children: childChildren,
         expanded: false,
       });

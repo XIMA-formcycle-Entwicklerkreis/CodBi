@@ -43,4 +43,16 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="codbi-ai-assistant-log-2" author="codbi">
+        <comment>
+            Add token count column so the change log can display the tokens used per inference.
+        </comment>
+        <addColumn tableName="codbi_ai_assistant_log">
+            <column name="tokens" type="BIGINT"/>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_ai_assistant_log" columnName="tokens"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

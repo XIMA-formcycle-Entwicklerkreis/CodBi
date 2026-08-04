@@ -32,6 +32,7 @@ class CodbiAiAssistantLog(
     @Column(name = "prompt", length = 1000) var prompt: String? = null,
     @Column(name = "intent", length = 20) var intent: String? = null,
     @Column(name = "model_id", length = 100) var modelId: String? = null,
+    @Column(name = "tokens") var tokens: Long? = null,
     @Column(name = "workflow_version_id") var workflowVersionId: Long? = null,
     @Lob @Column(name = "form_changes") var formChanges: String? = null,
     @Lob @Column(name = "workflow_changes") var workflowChanges: String? = null

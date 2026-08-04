@@ -66,6 +66,7 @@ class AICodBiAssistant : IPluginServletAction {
       "Run" -> handleRun(params)
       "AppointmentPlan" -> handleAppointmentPlan(params)
       "Status" -> handleStatus()
+      "Log" -> handleLog(params)
       else -> jsonResponse("""{"error":"Unknown action"}""")
     }
   }
@@ -128,6 +129,20 @@ class AICodBiAssistant : IPluginServletAction {
                   "status" to "error",
                   "error" to "Database not available — AI prompts cannot be loaded.")))
     }
+  }
+
+  /**
+   * Returns the change log of all previous AI assistant inferences (form + workflow), newest first.
+   * Each entry carries the timestamp, prompt, intent, model, and the structured JSON description of
+   * the applied form / workflow changes. Called with X-Action: Log.
+   */
+  private fun handleLog(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    val emf = CodbiEntities.entityManagerFactory
+    if (emf == null) return jsonResponse("""{"error":"Database not available"}""")
+    // Optional X-Form-Key header: when present, only the log entries of that form are returned.
+    val formKey =
+        params.headerMap.entries.find { it.key.equals("X-Form-Key", ignoreCase = true) }?.value
+    return jsonResponse(AiAssistantLog.loadLogs(emf, formKey = formKey))
   }
 
   /**
@@ -370,15 +385,27 @@ class AICodBiAssistant : IPluginServletAction {
     var latestFormElements: String? = params.requestParameters["formElements"]?.firstOrNull()
     // Estimated tokens consumed by this run (returned to the frontend for the token counter).
     var runTokens = 0
+    // Change-log capture: remember what was changed so the inference can be recorded in the DB.
+    var persistJson: String? = null
+    var resolvedFormJson: String? = null
+    var workflowVersionId: Long? = null
+    var workflowNodes: JsonArray? = null
+    // Technical name/key of the form being edited (explicit request param, or derived from the
+    // persist JSON metadata). Used to scope the change log to the currently edited form.
+    var formKey: String? =
+        params.requestParameters["formKey"]?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
 
     if (intent == "form" || intent == "both") {
-      val persistJson =
+      persistJson =
           params.requestParameters["persist"]?.firstOrNull()
               ?: return jsonResponse("""{"error":"Missing persist for form modification"}""")
       try {
         JsonParser.parseString(persistJson)
       } catch (_: Exception) {
         return jsonResponse("""{"error":"Invalid persist JSON"}""")
+      }
+      if (formKey == null) {
+        formKey = AiAssistantLog.extractFormKey(persistJson)
       }
       val (formJson, applicabilityReport, tokensUsed) =
           try {
@@ -398,7 +425,7 @@ class AICodBiAssistant : IPluginServletAction {
         return jsonResponse(formJson)
       }
       // Auto-resolve appointment plan names to UUIDs for XAppointment elements.
-      val resolvedFormJson = resolveAppointmentPlans(formJson)
+      resolvedFormJson = resolveAppointmentPlans(formJson)
       result.append(""","formJson":$resolvedFormJson""")
       result.append(""","tokens":$runTokens""")
       // Auto-manage Holistic.Cleave.* standard configurations based on field types in the form.
@@ -436,20 +463,23 @@ class AICodBiAssistant : IPluginServletAction {
           params.requestParameters["workflowVersionId"]?.firstOrNull()
               ?: return jsonResponse(
                   """{"error":"Missing workflowVersionId for workflow creation"}""")
-      val workflowVersionId =
+      workflowVersionId =
           workflowVersionIdStr.toLongOrNull()
               ?: return jsonResponse("""{"error":"Invalid workflowVersionId (must be a number)"}""")
 
       val workflowMessage =
           try {
-            runWorkflowCreation(
-                prompt,
-                latestFormElements,
-                workflowVersionId,
-                modelId,
-                params,
-                instance,
-                imageParts)
+            val (message, nodes) =
+                runWorkflowCreation(
+                    prompt,
+                    latestFormElements,
+                    workflowVersionId,
+                    modelId,
+                    params,
+                    instance,
+                    imageParts)
+            workflowNodes = nodes
+            message
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Workflow AI HTTP {}: {}", e.httpStatus, e.body)
             return jsonResponse("""{"error":${gson.toJson("Workflow AI error: ${e.message}")}}""")
@@ -462,6 +492,34 @@ class AICodBiAssistant : IPluginServletAction {
     }
 
     result.append("}")
+
+    // Record the inference in the change log — every successful run keeps a DB record.
+    try {
+      val formChanges =
+          if (intent == "form" || intent == "both") {
+            val before = persistJson
+            val after = resolvedFormJson
+            if (before != null && after != null) {
+              AiAssistantLog.computeFormChanges(before, after)
+            } else {
+              null
+            }
+          } else {
+            null
+          }
+      AiAssistantLog.recordInference(
+          CodbiEntities.entityManagerFactory,
+          prompt,
+          intent,
+          modelId,
+          formKey,
+          workflowVersionId,
+          formChanges,
+          workflowNodes)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Failed to record change log: {}", e.message)
+    }
+
     return jsonResponse(result.toString())
   }
 
@@ -2211,10 +2269,12 @@ class AICodBiAssistant : IPluginServletAction {
    */
   private val CSS_CLASS_TO_STANDARD: List<Pair<String, String>> =
       listOf(
-          // People standard (includes fotocropper and OpenPLZ address classes)
+          // People standard (includes fotocropper and OpenPLZ select dropdown classes)
           "CodBi_People_" to "People",
           "CodBi_Fotocropper" to "People",
-          "CodBi_OpenPLZ_" to "People",
+          "CodBi_OpenPLZ_Select_" to "People",
+          // OpenPLZ.AC.SET standard (plain OpenPLZ autocomplete-set classes)
+          "CodBi_OpenPLZ_AC_SET_" to "OpenPLZ.AC.SET",
           // Financial standard
           "CodBi_Currency" to "Financial",
           "CodBi_TRANS_" to "Financial",
@@ -3244,7 +3304,7 @@ class AICodBiAssistant : IPluginServletAction {
       params: IPluginServletActionParams,
       instance: Standard,
       imageParts: List<String> = emptyList()
-  ): String {
+  ): Pair<String, JsonArray> {
     val userContext = getUserContext(params)
     val completionPagesJson = fetchCompletionPages(userContext, workflowVersionId)
     logger.debug(
@@ -3536,9 +3596,31 @@ class AICodBiAssistant : IPluginServletAction {
 
     val results = taskSpecs.map { spec -> createWorkflowTask(workflowVersionId, spec, params) }
     val combinedResult = results.joinToString(" | ")
+
+    // Build the workflow-node change log (each task + its chained nodes with their parameters).
+    val nodeLog = JsonArray()
+    for (spec in taskSpecs) {
+      val node = JsonObject()
+      node.addProperty("name", deriveNodeName(spec))
+      node.addProperty("nodeType", spec.nodeType)
+      node.add("params", gson.toJsonTree(spec.nodeParams))
+      nodeLog.add(node)
+      spec.chainedNodes?.forEach { chainSpecMap ->
+        val chainNode = JsonObject()
+        val chainName =
+            (chainSpecMap["taskName"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (chainSpecMap["nodeType"] as? String)
+                ?: "chained"
+        chainNode.addProperty("name", chainName)
+        chainNode.addProperty("nodeType", (chainSpecMap["nodeType"] as? String) ?: "")
+        chainNode.add(
+            "params", gson.toJsonTree(chainSpecMap["nodeParams"] ?: emptyMap<String, Any>()))
+        nodeLog.add(chainNode)
+      }
+    }
     logger.info(
         "[AICodBiAssistant] Workflow created: {} task(s) â€” {}", results.size, combinedResult)
-    return combinedResult
+    return combinedResult to nodeLog
   }
 
   /**

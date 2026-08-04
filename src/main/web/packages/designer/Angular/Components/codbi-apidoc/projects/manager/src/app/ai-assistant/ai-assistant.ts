@@ -15,6 +15,7 @@ import { ProgressSpinner } from "primeng/progressspinner";
 import { Select } from "primeng/select";
 import { Textarea } from "primeng/textarea";
 import { Callbacks, getJQuery, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
+import { getCurrentFormKey } from "./form-key";
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFPageProxy } from "pdfjs-dist";
 // #endregion Imports
@@ -124,6 +125,17 @@ export class AiAssistant implements OnInit, OnDestroy {
     // Small delay to ensure the custom element is ready in the DOM
     setTimeout(() => {
       document.dispatchEvent(new CustomEvent("codbi:prompt-manager:open"));
+    }, 50);
+  }
+
+  /** Opens the change-log dialog showing every AI inference recorded in the database. */
+  openLog(): void {
+    if (!document.querySelector("cb-ai-assistant-log")) {
+      document.body.appendChild(document.createElement("cb-ai-assistant-log"));
+    }
+    // Small delay to ensure the custom element is ready in the DOM
+    setTimeout(() => {
+      document.dispatchEvent(new CustomEvent("codbi:ai-assistant-log:open"));
     }, 50);
   }
 
@@ -601,6 +613,11 @@ export class AiAssistant implements OnInit, OnDestroy {
   ): void {
     const designer = getDesignerInstance();
     const data: Record<string, string> = { prompt, phase: "2", intent, useCodbi: String(this.useCodbi) };
+    // Scope the change log to the form that is currently being edited.
+    const formKey = getCurrentFormKey();
+    if (formKey) {
+      data["formKey"] = formKey;
+    }
 
     // Collect form persist JSON (needed for form and both)
     if (intent === "form" || intent === "both") {

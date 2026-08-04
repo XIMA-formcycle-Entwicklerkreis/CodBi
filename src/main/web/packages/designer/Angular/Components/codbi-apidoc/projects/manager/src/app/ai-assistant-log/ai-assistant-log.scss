@@ -1,0 +1,251 @@
+cb-ai-assistant-log {
+    position: absolute;
+}
+
+.p-overlay-mask:has(.cb-log-dialog) {
+    z-index: 2100 !important;
+}
+
+.p-dialog.cb-log-dialog {
+    box-shadow: 0 0 0.25em darkorange;
+    border: 2px solid darkorange !important;
+    animation: cb-log-dialog-in 0.28s ease-out backwards;
+}
+
+@keyframes cb-log-dialog-in {
+    from {
+        transform: scale(1.1);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* Dialog header with the CodBi logo (same as the Prompt Manager). */
+.cb-log-dialog-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cb-log-logo {
+    height: 28px;
+    width: auto;
+}
+
+.cb-log-title {
+    font-size: 1.15em;
+    font-weight: 600;
+    color: #333;
+}
+
+.p-dialog.cb-log-dialog .p-dialog-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-height: 320px;
+}
+
+/* Toolbar — refresh / expand-all buttons + inference counter */
+.cb-log-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.cb-log-form {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8em;
+    font-weight: 600;
+    color: #1565c0;
+    background: #e3f2fd;
+    border: 1px solid #bbdefb;
+    border-radius: 4px;
+    padding: 2px 8px;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-log-count {
+    margin-left: auto;
+    font-size: 0.78em;
+    color: #777;
+}
+
+.cb-log-spinner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.88em;
+    color: #666;
+}
+
+.cb-log-empty {
+    padding: 1.2rem;
+    text-align: center;
+    font-size: 0.85em;
+    color: #888;
+    border: 1px dashed #d0d0d0;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+.cb-log-tree {
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    max-height: 60vh;
+    overflow: auto;
+    background: #fff;
+    font-family: inherit;
+}
+
+/* --- Tree nodes --- */
+.cb-log-node {
+    margin: 0;
+    padding: 0;
+}
+
+.cb-log-node > .cb-log-node__summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.85em;
+    color: #333;
+    list-style: none;
+}
+
+.cb-log-node > .cb-log-node__summary::-webkit-details-marker {
+    display: none;
+}
+
+.cb-log-node > .cb-log-node__summary:hover {
+    background: #f0f4ff;
+}
+
+/* Hide the disclosure marker for leaf nodes (no children). */
+.cb-log-node.cb-log-node--leaf > .cb-log-node__summary {
+    cursor: default;
+}
+
+.cb-log-node--leaf > .cb-log-node__summary:hover {
+    background: transparent;
+}
+
+/* A small chevron before expandable summaries */
+.cb-log-node:not(.cb-log-node--leaf) > .cb-log-node__summary::before {
+    content: "";
+    width: 0;
+    height: 0;
+    border-left: 5px solid #9aa0a6;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    transition: transform 0.12s ease;
+    flex-shrink: 0;
+}
+
+.cb-log-node:not(.cb-log-node--leaf)[open] > .cb-log-node__summary::before {
+    transform: rotate(90deg);
+}
+
+.cb-log-node--leaf > .cb-log-node__summary::before {
+    content: "";
+    width: 10px;
+    flex-shrink: 0;
+}
+
+.cb-log-node__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    font-size: 0.72em;
+    color: #fff;
+}
+
+.cb-log-node__icon i {
+    font-size: 0.82em;
+}
+
+.cb-log-node__label {
+    font-weight: 500;
+    min-width: 0;
+}
+
+.cb-log-node__value {
+    color: #777;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.82em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 340px;
+}
+
+.cb-log-node__children {
+    margin: 2px 0 2px 22px;
+    border-left: 1px solid #e3e6ea;
+    padding-left: 6px;
+}
+
+/* --- Icon colors per node kind --- */
+.cb-log-node__icon--inference {
+    background: #5b6472;
+}
+
+.cb-log-node__icon--section {
+    background: #7a8699;
+}
+
+.cb-log-node__icon--widget {
+    background: #39d088;
+    color: #0b3d22;
+}
+
+.cb-log-node__icon--class {
+    background: #ffbb38;
+    color: #4a2c00;
+}
+
+.cb-log-node__icon--attr {
+    background: #17baef;
+    color: #00364a;
+}
+
+.cb-log-node__icon--func {
+    background: #fc5100;
+}
+
+.cb-log-node__icon--param,
+.cb-log-node__icon--param-item {
+    background: #ba84ff;
+    color: #2b0a4a;
+}
+
+.cb-log-node__icon--node {
+    background: #4169e1;
+}
+
+/* Highlight the CodBi special attributes in the tree */
+.cb-log-node__icon--func + .cb-log-node__label {
+    font-weight: 700;
+}
+
+.cb-log-node__icon--param + .cb-log-node__label,
+.cb-log-node__icon--param-item + .cb-log-node__label {
+    color: #6a2fa8;
+}

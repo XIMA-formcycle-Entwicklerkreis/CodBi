@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+        http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-3.8.xsd">
+
+    <!--
+      NOTE: Formcycle's Liquibase validates this file against a strict schema that only allows
+      the standard changeSet children (comment, createTable, addColumn, rollback, ...). Do NOT
+      add preConditions or validCheckSum elements here — they cause a parse error that aborts the
+      whole plugin migration (leaving the database "not available").
+
+      This changelog intentionally keeps a single changeSet that creates the complete table
+      (including form_key). If an earlier, partially-applied state exists in your database, reset
+      it once via SQL (DROP TABLE codbi_ai_assistant_log; DELETE FROM DATABASECHANGELOG WHERE
+      ID='codbi-ai-assistant-log-1' AND AUTHOR='codbi';) so this changeSet runs cleanly.
+    -->
+    <changeSet id="codbi-ai-assistant-log-1" author="codbi">
+        <comment>
+            Create table storing the change log of every CodBi AI assistant inference.
+            Each successful Run of the form assistant records one row holding the timestamp,
+            the form key, the user's prompt, the classified intent, the used model, and a
+            structured JSON description of the changes applied to the form and/or the workflow.
+        </comment>
+        <createTable tableName="codbi_ai_assistant_log">
+            <column name="id" type="BIGINT" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="ts" type="TIMESTAMP" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="form_key" type="VARCHAR(200)"/>
+            <column name="prompt" type="VARCHAR(1000)"/>
+            <column name="intent" type="VARCHAR(20)"/>
+            <column name="model_id" type="VARCHAR(100)"/>
+            <column name="workflow_version_id" type="BIGINT"/>
+            <column name="form_changes" type="CLOB"/>
+            <column name="workflow_changes" type="CLOB"/>
+        </createTable>
+        <rollback>
+            <dropTable tableName="codbi_ai_assistant_log"/>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

@@ -157,6 +157,13 @@
             (onClick)="run()"
             [disabled]="loading || !dbAvailable || !selectedModel || !promptText.trim()" />
         <p-button
+            label="Change log"
+            icon="pi pi-list"
+            severity="secondary"
+            [outlined]="true"
+            (onClick)="openLog()"
+            title="Show a log of all changes made by the AI assistant" />
+        <p-button
             label="Close"
             icon="pi pi-times"
             severity="secondary"

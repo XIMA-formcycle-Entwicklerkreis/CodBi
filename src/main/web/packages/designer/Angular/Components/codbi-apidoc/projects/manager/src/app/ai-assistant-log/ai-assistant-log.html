@@ -1,0 +1,78 @@
+<p-dialog
+    [visible]="visible"
+    (visibleChange)="onVisibleChange($event)"
+    [modal]="true"
+    [draggable]="true"
+    [resizable]="false"
+    [style]="{ width: '760px', maxWidth: '94vw' }"
+    [closeOnEscape]="true"
+    [baseZIndex]="2100"
+    styleClass="cb-log-dialog">
+
+    <ng-template pTemplate="header">
+        <div class="cb-log-dialog-header">
+            <img class="cb-log-logo" [src]="logoUrl" alt="CodBi" />
+            <span class="cb-log-title">CodBi &#x2014; AI Assistant &#x2014; Change Log</span>
+        </div>
+    </ng-template>
+
+    <div class="cb-log-toolbar">
+        <p-button
+            label="Refresh"
+            icon="pi pi-refresh"
+            severity="secondary"
+            size="small"
+            [outlined]="true"
+            (onClick)="load()"
+            [disabled]="loading"
+            title="Reload the change log from the database" />
+        <p-button
+            [label]="expandedAll ? 'Collapse all' : 'Expand all'"
+            icon="pi pi-sitemap"
+            severity="secondary"
+            size="small"
+            [outlined]="true"
+            (onClick)="toggleAll()"
+            [disabled]="loading || logs.length === 0"
+            title="Expand or collapse the whole tree" />
+        @if (currentFormKey) {
+            <span class="cb-log-form" title="Showing the change log of this form only">
+                <i class="pi pi-file"></i>&nbsp;{{ currentFormKey }}
+            </span>
+        }
+        <span class="cb-log-count" title="Number of recorded AI inferences">
+            {{ logs.length }} inference{{ logs.length === 1 ? '' : 's' }}
+        </span>
+    </div>
+
+    @if (loading) {
+        <div class="cb-log-spinner">
+            <p-progressspinner [style]="{ width: '20px', height: '20px' }" strokeWidth="5" />
+            <span>Loading change log&#x2026;</span>
+        </div>
+    }
+
+    @if (errorText) {
+        <p-message severity="error" [text]="errorText" />
+    }
+
+    @if (!loading && !errorText && logs.length === 0) {
+        <div class="cb-log-empty">
+            No changes recorded yet. Run the AI assistant to create the first log entry.
+        </div>
+    }
+
+    <div class="cb-log-tree">
+        @for (node of logs; track node.id) {
+            <cb-log-node [node]="node" />
+        }
+    </div>
+
+    <ng-template #footer>
+        <p-button
+            label="Close"
+            icon="pi pi-times"
+            severity="secondary"
+            (onClick)="close()" />
+    </ng-template>
+</p-dialog>

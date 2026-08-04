@@ -43,7 +43,8 @@ class CodbiEntities : IPluginEntities {
           "db/changelog/codbi-ai-proxy-changelog.xml",
           "db/changelog/codbi-local-apidoc-changelog.xml",
           "db/changelog/codbi-ai-prompt-changelog.xml",
-          "db/changelog/codbi-compact-prompt-changelog.xml")
+          "db/changelog/codbi-compact-prompt-changelog.xml",
+          "db/changelog/codbi-ai-assistant-log-changelog.xml")
 
   @Throws(FCPluginException::class)
   override fun onDatabaseReady(params: IPluginEntitiesParams) {

@@ -153,6 +153,22 @@ cb-ai-assistant {
     background-size: cover, min(200px, 30%) auto !important;
     background-position: 0 0, center center !important;
     background-repeat: no-repeat, no-repeat !important;
+    /* Dark-orange glow around the dialog. */
+    box-shadow: 0 0 0.25em darkorange;
+    /* Gentle slide-in: grow from scale 1.1 → 1 while fading opacity 0 → 1. */
+    transform-origin: center;
+    animation: cb-ai-dialog-in 0.28s ease-out backwards;
+}
+
+@keyframes cb-ai-dialog-in {
+    from {
+        transform: scale(1.1);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
 }
 
 .p-dialog.cb-ai-assistant-dialog .p-dialog-header,

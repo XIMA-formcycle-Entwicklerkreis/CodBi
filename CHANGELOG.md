@@ -7,6 +7,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- The AI assistant dialog now has a **Change log** button that opens a per-form treeview of all AI
+  inferences recorded in the database (`codbi_ai_assistant_log`). Each inference is scoped to the
+  form's technical name/key (`form_key`) so the dialog opened in the designer shows only the
+  entries of the form that is currently being edited. Top-level nodes are the date/time of each
+  inference; below them the applied **Form** and **Workflow** changes are listed — widgets
+  created/removed, CSS classes set, attributes set (with distinct icons), special unfoldable
+  `data-cb-func` / `data-cb-*` elements showing the CodBi parameters used by a functionality, and
+  workflow nodes that unfold to reveal their defined parameters.
+
 ### Changed
 - Minimum supported FormCycle version raised from **8.3.3** to **8.5.3**. FormCycle 8.5.x extracted plugin-type interfaces (servlet actions, form resources, form render callbacks, entities, etc.) from `fc-plugin-common` into a new `fc-plugin-types` artifact. The compile dependency has been updated accordingly.
 - Kotlin upgraded from **1.9.22 → 2.2.0**; language and API version set to **2.1**. Obsolete `kotlin-stdlib-common`, `kotlin-stdlib-jdk7`, and `kotlin-stdlib-jdk8` dependency-management entries removed (merged into `kotlin-stdlib` in Kotlin 1.8+). `kotlinx-coroutines-core` pinned to **1.11.0** for Kotlin 2.x compatibility. `kotlin-reflect` scope left as compile (bundled); `jackson-module-kotlin` scope set to `provided` because FC 8.5.x already supplies it via `fc-security`.

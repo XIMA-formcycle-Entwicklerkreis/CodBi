@@ -243,8 +243,26 @@ class AIPromptManagerServletAction : IPluginServletAction {
     val em = emf.createEntityManager()
     val loader = resolveLoader(params)
     try {
+      val view =
+          params.headerMap.entries.find { it.key.equals("X-View", ignoreCase = true) }?.value
+              ?: "detailed"
       val prompts = loader.listAllPrompts(em)
-      val json = gson.toJson(mapOf("status" to "ok", "prompts" to prompts))
+      // Merge the prompts of the CodBi elements defined in the local API-Doc manager (read-only).
+      // The local API-Doc manager is the source of truth, so a local record replaces any DB row
+      // that carries the same prompt key (e.g. rows left over from an earlier sync).
+      val all: List<*> =
+          if (view.equals("condensed", ignoreCase = true)) {
+            val dbRecords = prompts.mapNotNull { it as? CompactPromptLoader.CompactRecord }
+            val local = LocalApiDocPrompts.listCompactRecords(em)
+            val localKeys = local.map { it.promptKey }.toSet()
+            dbRecords.filter { it.promptKey !in localKeys } + local
+          } else {
+            val dbRecords = prompts.mapNotNull { it as? PromptLoader.PromptRecord }
+            val local = LocalApiDocPrompts.listDetailedRecords(em)
+            val localKeys = local.map { it.promptKey }.toSet()
+            dbRecords.filter { it.promptKey !in localKeys } + local
+          }
+      val json = gson.toJson(mapOf("status" to "ok", "prompts" to all))
       return jsonResponse(json)
     } catch (e: Exception) {
       logger.warn("[AIPromptManager] ListAll failed", e)

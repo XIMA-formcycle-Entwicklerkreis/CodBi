@@ -29,6 +29,16 @@ internal object CodbiCapabilities {
 
   /** Returns the default capabilities section (elements only). */
   fun buildSection(): String {
+    return buildSectionBase() + localCondensedSection()
+  }
+
+  /** Returns the full compact API section (elements + parameters + classes). */
+  fun buildFullSection(): String {
+    return buildFullSectionBase() + localDetailedSection()
+  }
+
+  /** Builds the (cached) base elements section without the local API-Doc prompts. */
+  private fun buildSectionBase(): String {
     // Prefer the database so deactivated compact elements are excluded from the AI's pass-1
     // reference; fall back to the bundled classpath resource when the DB is unavailable/empty.
     val fromDb = buildElementsFromDb()
@@ -49,8 +59,8 @@ internal object CodbiCapabilities {
     }
   }
 
-  /** Returns the full compact API section (elements + parameters + classes). */
-  fun buildFullSection(): String {
+  /** Builds the (cached) base full section without the local API-Doc prompts. */
+  private fun buildFullSectionBase(): String {
     // Prefer the DB so user edits/deactivations of the detailed prompts are reflected; fall back
     // to the bundled classpath resource when the DB is unavailable or the category is empty.
     val fromDb = buildFullFromDb()
@@ -71,6 +81,50 @@ internal object CodbiCapabilities {
     }
   }
 
+  /** Loads the condensed section of the local API-Doc CodBi elements (AI-capable only). */
+  private fun localCondensedSection(): String {
+    val emf = CodbiEntities.entityManagerFactory ?: return ""
+    val em = emf.createEntityManager()
+    return try {
+      LocalApiDocPrompts.condensedSection(em)
+    } catch (e: Exception) {
+      logger.warn("[CodbiCapabilities] Failed to load local condensed section: {}", e.message)
+      ""
+    } finally {
+      em.close()
+    }
+  }
+
+  /** Loads the detailed section of the local API-Doc CodBi elements (AI-capable only). */
+  private fun localDetailedSection(): String {
+    val emf = CodbiEntities.entityManagerFactory ?: return ""
+    val em = emf.createEntityManager()
+    return try {
+      LocalApiDocPrompts.detailedSection(em)
+    } catch (e: Exception) {
+      logger.warn("[CodbiCapabilities] Failed to load local detailed section: {}", e.message)
+      ""
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Loads the detailed sections of the requested local API-Doc CodBi elements (AI-capable only).
+   */
+  private fun localRequestedDetails(requestedIds: List<String>): String {
+    val emf = CodbiEntities.entityManagerFactory ?: return ""
+    val em = emf.createEntityManager()
+    return try {
+      LocalApiDocPrompts.requestedDetails(em, requestedIds)
+    } catch (e: Exception) {
+      logger.warn("[CodbiCapabilities] Failed to load local requested details: {}", e.message)
+      ""
+    } finally {
+      em.close()
+    }
+  }
+
   /**
    * Rebuilds the full CodBi reference from the detailed DB prompts (codbi.functionalities.* /
    * codbi.element_placeholders.* / codbi.standard_configurations.*) — active only — grouped by
@@ -81,11 +135,16 @@ internal object CodbiCapabilities {
     val emf = CodbiEntities.entityManagerFactory ?: return null
     val em = emf.createEntityManager()
     try {
+      // The local API-Doc manager is the source of truth for its elements — exclude any prompt rows
+      // (e.g. leftovers from an earlier sync) that carry the same key as a local AI-capable
+      // element.
+      val localKeys = LocalApiDocPrompts.detailedPromptKeys(em)
       val records =
           PromptLoader.loadCategoryRecords(em, "codbi.").filter {
-            it.promptKey.startsWith("codbi.functionalities.") ||
-                it.promptKey.startsWith("codbi.element_placeholders.") ||
-                it.promptKey.startsWith("codbi.standard_configurations.")
+            it.promptKey !in localKeys &&
+                (it.promptKey.startsWith("codbi.functionalities.") ||
+                    it.promptKey.startsWith("codbi.element_placeholders.") ||
+                    it.promptKey.startsWith("codbi.standard_configurations."))
           }
       if (records.isEmpty()) return null
       val groups = LinkedHashMap<String, MutableList<PromptLoader.PromptRecord>>()
@@ -137,7 +196,14 @@ internal object CodbiCapabilities {
     val emf = CodbiEntities.entityManagerFactory ?: return null
     val em = emf.createEntityManager()
     try {
-      val records = CompactPromptLoader.loadCategoryRecords(em, "compact.elements")
+      // The local API-Doc manager is the source of truth for its elements — exclude any prompt rows
+      // (e.g. leftovers from an earlier sync) that carry the same key as a local AI-capable
+      // element.
+      val localKeys = LocalApiDocPrompts.compactPromptKeys(em)
+      val records =
+          CompactPromptLoader.loadCategoryRecords(em, "compact.elements").filter {
+            it.promptKey !in localKeys
+          }
       if (records.isEmpty()) return null
       val sb = StringBuilder("\n\nCODBI CORE ELEMENTS (COMPACT)\n")
       val header = records.firstOrNull { it.promptKey == "compact.elements" }?.promptText
@@ -212,9 +278,10 @@ internal object CodbiCapabilities {
     // (codbi.functionalities.* / codbi.element_placeholders.* / codbi.standard_configurations.*),
     // so Prompt-Manager edits and deactivations take effect on the pass-2 rerun.
     val fromDb = buildRequestedDetailsFromDb(requestedIds)
-    if (fromDb != null) return fromDb
     // Fallback: bundled details index (classpath).
-    return buildRequestedDetailsFromIndex(requestedIds)
+    val base = fromDb ?: buildRequestedDetailsFromIndex(requestedIds)
+    // Always append the requested local API-Doc elements' details.
+    return base + localRequestedDetails(requestedIds)
   }
 
   /**
@@ -229,6 +296,10 @@ internal object CodbiCapabilities {
     try {
       val sections = PromptLoader.loadSectionMap(em, "codbi.")
       if (sections.isEmpty()) return null
+      // The local API-Doc manager is the source of truth for its elements — exclude any prompt rows
+      // (e.g. leftovers from an earlier sync) that carry the same key as a local AI-capable
+      // element.
+      val localKeys = LocalApiDocPrompts.detailedPromptKeys(em)
       val wanted = linkedSetOf<String>()
       for (raw in requestedIds) {
         val norm = normalizeId(raw.trim())
@@ -237,7 +308,7 @@ internal object CodbiCapabilities {
       if (wanted.isEmpty()) return null
       val bySuffix = HashMap<String, String>()
       for ((key, text) in sections) {
-        if (!key.startsWith("codbi.")) continue
+        if (!key.startsWith("codbi.") || key in localKeys) continue
         val norm = normalizeId(key.substringAfterLast('.'))
         if (norm.isNotEmpty() && text.isNotBlank()) bySuffix.getOrPut(norm) { text }
       }

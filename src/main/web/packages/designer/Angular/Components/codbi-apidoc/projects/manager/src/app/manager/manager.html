@@ -32,6 +32,12 @@
 
                                         [attr.title] = "'TreeView.Label.Status.Imported' | transloco">&#x2B07;</div>
 
+                                <span   *ngIf   = "isAiCapable( node )"
+
+                                        class   = "CodBi_LocalAPIDoc_Tree_Label_AiCapable"
+
+                                        [attr.title] = "'TreeView.Label.Status.AICapable' | transloco"></span>
+
                                 <div id = "CodBi_LocalAPIDoc_Tree_Label">
                                     <p *ngIf = "currentlySelectedTreeNode !== node || !currentlySelectedTreeNodeEditing">{{ node.label }}</p>
 
@@ -221,7 +227,18 @@
                                                     min_height                  :   500,
                                                     paste_data_images           :   false,
                                                     base_url                    :   resourceurl,
-                                                    suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
+                                                    suffix                      :   '.min'}"></editor></div>
+                                    <div class = "CodBi_Prompt_Area">
+                                        <label for = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt">{{"RP.Prompts.Condensed" | transloco }}</label>
+                                        <textarea   id              = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt"
+                                                    [(ngModel)]     = "condensedPrompt"
+                                                    (input)         = "onInputPrompt( $event )"
+                                                    [attr.placeholder] = "'RP.phCondensedPrompt' | transloco"></textarea>
+                                        <label for = "CodBi_LocalAPIDoc_RightPanel_DetailedPrompt">{{"RP.Prompts.Detailed" | transloco }}</label>
+                                        <textarea   id              = "CodBi_LocalAPIDoc_RightPanel_DetailedPrompt"
+                                                    [(ngModel)]     = "detailedPrompt"
+                                                    (input)         = "onInputPrompt( $event )"
+                                                    [attr.placeholder] = "'RP.phDetailedPrompt' | transloco"></textarea></div></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value = "Parameter">
                                 <p-accordion-header>Parameter</p-accordion-header>
@@ -281,7 +298,18 @@
                                                     paste_data_images           :   false,
                                                     min_height                  :   500,
                                                     base_url                    :   resourceurl,
-                                                    suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
+                                                    suffix                      :   '.min'}"></editor></div>
+                                    <div class = "CodBi_Prompt_Area">
+                                        <label for = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt">{{"RP.Prompts.Condensed" | transloco }}</label>
+                                        <textarea   id              = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt"
+                                                    [(ngModel)]     = "condensedPrompt"
+                                                    (input)         = "onInputPrompt( $event )"
+                                                    [attr.placeholder] = "'RP.phCondensedPrompt' | transloco"></textarea>
+                                        <label for = "CodBi_LocalAPIDoc_RightPanel_DetailedPrompt">{{"RP.Prompts.Detailed" | transloco }}</label>
+                                        <textarea   id              = "CodBi_LocalAPIDoc_RightPanel_DetailedPrompt"
+                                                    [(ngModel)]     = "detailedPrompt"
+                                                    (input)         = "onInputPrompt( $event )"
+                                                    [attr.placeholder] = "'RP.phDetailedPrompt' | transloco"></textarea></div></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Parameter">
                                 <p-accordion-header>Parameter</p-accordion-header>
@@ -342,7 +370,18 @@
                                                     paste_data_images           :   false,
                                                     min_height                  :   500,
                                                     base_url                    :   resourceurl,
-                                                    suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
+                                                    suffix                      :   '.min'}"></editor></div>
+                                    <div class = "CodBi_Prompt_Area">
+                                        <label for = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt">{{"RP.Prompts.Condensed" | transloco }}</label>
+                                        <textarea   id              = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt"
+                                                    [(ngModel)]     = "condensedPrompt"
+                                                    (input)         = "onInputPrompt( $event )"
+                                                    [attr.placeholder] = "'RP.phCondensedPrompt' | transloco"></textarea>
+                                        <label for = "CodBi_LocalAPIDoc_RightPanel_DetailedPrompt">{{"RP.Prompts.Detailed" | transloco }}</label>
+                                        <textarea   id              = "CodBi_LocalAPIDoc_RightPanel_DetailedPrompt"
+                                                    [(ngModel)]     = "detailedPrompt"
+                                                    (input)         = "onInputPrompt( $event )"
+                                                    [attr.placeholder] = "'RP.phDetailedPrompt' | transloco"></textarea></div></p-accordion-content></p-accordion-panel>
 
                             <p-accordion-panel value="Globals">
                                 <p-accordion-header>{{"RP.Accordion.Captions.Globals" | transloco }}</p-accordion-header>
@@ -447,8 +486,9 @@
                 stripedRows >
         <ng-template #header >
             <tr>
-                <th style="width:50%">{{( isEP ? "Input.Parameter.Index" : "Input.Parameter.Name") | transloco }}</th>
-                <th style="width:50%">{{"Input.Parameter.Description" | transloco }}</th></tr></ng-template>
+                <th style="width:28%">{{( isEP ? "Input.Parameter.Index" : "Input.Parameter.Name") | transloco }}</th>
+                <th style="width:28%">{{"Input.Parameter.Description" | transloco }}</th>
+                <th style="width:44%">{{"Input.Parameter.Prompt" | transloco }}</th></tr></ng-template>
 
                 <ng-template   #body
 
@@ -494,6 +534,15 @@
                                                         required /></ng-template>
 
                                 <ng-template #output >{{ parameter.Description }}</ng-template></p-cellEditor></td>
+                                    <td>
+                                        <p-cellEditor>
+                                            <ng-template #input >
+                                                <textarea   class           = "CodBi_Parameter_Prompt_Input"
+                                                            [attr.placeholder] = "'Input.Parameter.phPrompt' | transloco"
+                                                            style           = "font-size : 1.2em ; width : 100% ; border-radius: .5em ; border : solid ; border-color: green ; color: darkorange ; box-shadow: 0 0 .5em green ;"
+                                                            [(ngModel)]     = "parameter.Prompt"></textarea></ng-template>
+
+                                <ng-template #output >{{ parameter.Prompt }}</ng-template></p-cellEditor></td>
                                     <td>
                                         <div class="flex items-center justify-center gap-2">
                                             <button *ngIf = "!editing"

@@ -768,7 +768,8 @@ internal object PromptLoader {
       val prePromptActive: Boolean = true,
       val postPromptActive: Boolean = true,
       val isSystem: Boolean = false,
-      val updateAvailable: Boolean = false
+      val updateAvailable: Boolean = false,
+      val readOnly: Boolean = false
   )
 
   /** Returns all prompt records for the Prompt Manager UI. Never returns `null`. */

@@ -212,6 +212,29 @@
     cursor: default;
   }
 
+  /* AI-Enabled logo badge shown to the left of the tree node label for AI-capable elements. */
+  .CodBi_LocalAPIDoc_Tree_Label_AiCapable {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6em;
+    height: 1.6em;
+    margin-right: .35em;
+    align-self: center;
+    flex-shrink: 0;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #22d3ee, #6366f1);
+    color: white;
+    font-size: .85em;
+    cursor: default;
+    box-shadow: 0 0 .25em black;
+  }
+
+  .CodBi_LocalAPIDoc_Tree_Label_AiCapable::before {
+      content: "\e9db";
+      font-family: 'primeicons';
+    }
+
   #CodBi_LocalAPIDoc_Tree_Label {
     .CodBi_LocalAPIDoc_Tree_Label_Status {
       height: .2em;
@@ -318,6 +341,43 @@
     color: blue;
     max-width: 100%;
     font-style: italic;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_CondensedPrompt,
+  #CodBi_LocalAPIDoc_RightPanel_DetailedPrompt {
+    width: 100%;
+    color: darkorange;
+    max-width: 100%;
+    font-size: 1.1em;
+    box-sizing: border-box;
+  }
+
+  .CodBi_Prompt_Area {
+    margin-top: 1em;
+    border: solid;
+    border-color: darkorange;
+    border-radius: .5em;
+    padding: .75em;
+    background-color: #ffffffaa;
+  }
+
+  .CodBi_Prompt_Area label {
+    display: block;
+    font-weight: bold;
+    color: #1e79ee;
+    margin: .5em 0 .25em 0;
+  }
+
+  .CodBi_Prompt_Area textarea {
+    width: 100%;
+    min-height: 6em;
+    box-sizing: border-box;
+  }
+
+  .CodBi_Parameter_Prompt_Input {
+    width: 100%;
+    min-height: 4em;
+    box-sizing: border-box;
   }
 
   p-tab,

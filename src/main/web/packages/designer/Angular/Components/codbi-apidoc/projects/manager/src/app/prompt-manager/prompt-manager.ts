@@ -39,6 +39,8 @@ interface PromptRecord {
   isSystem: boolean;
   /** True when a newer bundled .md version exists but the local copy was customized. */
   updateAvailable: boolean;
+  /** True for prompts managed by the local API-Doc manager (read-only here). */
+  readOnly?: boolean;
 }
 
 interface PromptExport {
@@ -172,6 +174,11 @@ export class PromptManager implements OnInit, OnDestroy {
   /** Returns true if the currently selected prompt was created by the user (not a built-in system prompt). */
   isUserCreated(): boolean {
     return this.activeRecord != null && !this.activeRecord.isSystem;
+  }
+
+  /** Returns true when the selected prompt is read-only (managed in the local API-Doc manager). */
+  isReadOnly(): boolean {
+    return this.activeRecord?.readOnly === true;
   }
 
   /** Returns true when a newer bundled version of the selected prompt is available for loading. */
@@ -498,9 +505,17 @@ export class PromptManager implements OnInit, OnDestroy {
       isSystemApp: this.isSystemAppPrompt(p),
       // User-created prompts get a blue frame.
       isUserApp: this.isUserAppPrompt(p),
+      // Local API-Doc prompts are read-only and get a distinct marker.
+      isReadOnly: p.readOnly === true,
       // Token count of this prompt (pre + main + post).
       tokens: this.recordTokens(p),
-    } as TreeNode & { isAbstract: boolean; isSystemApp: boolean; isUserApp: boolean; tokens: number };
+    } as TreeNode & {
+      isAbstract: boolean;
+      isSystemApp: boolean;
+      isUserApp: boolean;
+      isReadOnly: boolean;
+      tokens: number;
+    };
     return node;
   }
 

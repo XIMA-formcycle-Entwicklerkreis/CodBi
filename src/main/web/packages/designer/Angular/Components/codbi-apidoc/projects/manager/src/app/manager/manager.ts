@@ -63,6 +63,8 @@ interface ApiParameter {
   Description: string;
   /** The parameter's id. */
   id: number;
+  /** An optional detailed prompt describing how the AI should implement this parameter/global/class. */
+  Prompt?: string;
 }
 /** Defines a contract for an imported, or from the CodBi-Resourceservlet loaded, local API-Documentation. */
 interface ImportedApiDoc {
@@ -108,6 +110,16 @@ interface TreeNodeData {
   Notes: string;
   /** Whether this node was imported during the current session. */
   Imported?: boolean;
+  /** The element's condensed prompt (transmitted to the AI as a compact/condensed prompt). */
+  CondensedPrompt?: string;
+  /** The element's detailed prompt (transmitted to the AI as part of the detailed prompt). */
+  DetailedPrompt?: string;
+  /** The detailed prompts of the element's parameters (name → prompt). */
+  ParameterPrompts?: { [key: string]: string };
+  /** The detailed prompts of the element's global variables (name → prompt). */
+  GlobalPrompts?: { [key: string]: string };
+  /** The detailed prompts of the element's CSS classes (name → prompt). */
+  ClassPrompts?: { [key: string]: string };
 }
 /** Defines a contract for elements of the {@link APIDocJSON }s. */
 interface InputDataItem {
@@ -121,6 +133,16 @@ interface InputDataItem {
   Parameter?: { [name: string]: string } | SimplifiedNamedItem[];
   /** Stores the JS-Code for that CodBi-Element. */
   Code: string | undefined;
+  /** The element's condensed prompt (transmitted to the AI as a compact/condensed prompt). */
+  CondensedPrompt?: string;
+  /** The element's detailed prompt (transmitted to the AI as part of the detailed prompt). */
+  DetailedPrompt?: string;
+  /** The detailed prompts of the element's parameters (name → prompt). */
+  ParameterPrompts?: { [key: string]: string };
+  /** The detailed prompts of the element's global variables (name → prompt). */
+  GlobalPrompts?: { [key: string]: string };
+  /** The detailed prompts of the element's CSS classes (name → prompt). */
+  ClassPrompts?: { [key: string]: string };
 }
 /** Defines a contract for {@link object }s that represent local API Documentation to be merged to already existing one. */
 interface APIDocJSON {
@@ -206,17 +228,21 @@ class CommonApiParameter implements ApiParameter {
   Description: string = "";
   /** See {@link ApiParameter.id }. */
   id: number;
+  /** See {@link ApiParameter.Prompt }. */
+  Prompt: string = "";
   /**
    * Creates this {@link ApiParameter } by setting it's {@link ApiParameter.Name },
    * {@link ApiParameter.Description } and a {@link Math.random } id.
    *
    * @param name        The {@link ApiParameter.Name }.
    * @param description The {@link ApiParameter.Description }.
+   * @param prompt      The optional {@link ApiParameter.Prompt }.
    * @param id          The optional {@link ApiParameter.id } that will be generate {@link Math.random }ly,
    *                    if omitted. */
-  constructor(name: string, description: string, id: number = Math.random()) {
+  constructor(name: string, description: string, prompt: string = "", id: number = Math.random()) {
     this.Name = name;
     this.Description = description;
+    this.Prompt = prompt;
     this.id = id;
   }
 }
@@ -1254,22 +1280,27 @@ export class Manager implements AfterViewInit {
   convertSingleNode(node: TreeNode, type: "Functionality" | "Elementplaceholder" | "Standard"): any {
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     const result: any = {};
+    const nodeData: TreeNodeData = node.data ?? ({} as TreeNodeData);
 
     if (type === "Standard") {
-      result.Description = node.data ? node.data.Description : "";
-      result.globals =
-        node.data?.globals && node.data.globals.length !== 0 ? this.arrayToObject(node.data.globals) : [];
-      result.classes =
-        node.data?.classes && node.data.classes.length !== 0 ? this.arrayToObject(node.data.classes) : [];
+      result.Description = nodeData.Description ?? "";
+      result.globals = nodeData.globals && nodeData.globals.length !== 0 ? this.arrayToObject(nodeData.globals) : [];
+      result.classes = nodeData.classes && nodeData.classes.length !== 0 ? this.arrayToObject(nodeData.classes) : [];
+      result.GlobalPrompts = this.arrayToPromptObject(nodeData.globals);
+      result.ClassPrompts = this.arrayToPromptObject(nodeData.classes);
     } else {
-      result.Description = node.data ? node.data.Description : "";
+      result.Description = nodeData.Description ?? "";
       result.Parameter =
-        node.data?.Parameter && node.data.Parameter.length !== 0
-          ? this.arrayToObject(node.data.Parameter ? node.data.Parameter : [])
+        nodeData.Parameter && nodeData.Parameter.length !== 0
+          ? this.arrayToObject(nodeData.Parameter ? nodeData.Parameter : [])
           : [];
-      result.globals =
-        node.data?.globals && node.data.globals.length !== 0 ? this.arrayToObject(node.data.globals) : [];
+      result.globals = nodeData.globals && nodeData.globals.length !== 0 ? this.arrayToObject(nodeData.globals) : [];
+      result.ParameterPrompts = this.arrayToPromptObject(nodeData.Parameter);
+      result.GlobalPrompts = this.arrayToPromptObject(nodeData.globals);
     }
+
+    result.CondensedPrompt = nodeData.CondensedPrompt ?? "";
+    result.DetailedPrompt = nodeData.DetailedPrompt ?? "";
 
     return result;
   }
@@ -1625,11 +1656,31 @@ export class Manager implements AfterViewInit {
    * @param toConvert The {@link Array } of { Name: string; Description: string }s to convert.
    *
    * @returns The requested {@link object }. */
-  arrayToObject(toConvert: [{ Name: string; Description: string }]) {
+  arrayToObject(toConvert: ApiParameter[] | undefined) {
     const result = {};
 
-    for (const element of toConvert) {
+    for (const element of toConvert ?? []) {
       result[element.Name] = element.Description;
+    }
+
+    return result;
+  }
+  /**
+   * Converts an array of {@link ApiParameter }s into a map of **name → prompt**, skipping entries
+   * without a non-blank prompt. Used to persist the detailed prompts of parameters, global
+   * variables and CSS classes within the local API-Documentation.
+   *
+   * @param toConvert The {@link ApiParameter } array to convert.
+   *
+   * @returns The requested **name → prompt** map. */
+  arrayToPromptObject(toConvert: ApiParameter[] | undefined): { [key: string]: string } {
+    const result: { [key: string]: string } = {};
+
+    for (const element of toConvert ?? []) {
+      const prompt = element?.Prompt?.trim();
+      if (prompt) {
+        result[element.Name] = prompt;
+      }
     }
 
     return result;
@@ -1658,6 +1709,10 @@ export class Manager implements AfterViewInit {
         Description: node.data ? node.data.Description : "",
         globals: node.data ? this.arrayToObject(node.data.globals) : [],
         classes: node.data ? this.arrayToObject(node.data.classes) : [],
+        CondensedPrompt: node.data?.CondensedPrompt ?? "",
+        DetailedPrompt: node.data?.DetailedPrompt ?? "",
+        GlobalPrompts: node.data ? this.arrayToPromptObject(node.data.globals) : {},
+        ClassPrompts: node.data ? this.arrayToPromptObject(node.data.classes) : {},
       };
 
       if (node.children) {
@@ -1955,7 +2010,13 @@ export class Manager implements AfterViewInit {
         Description: node.data ? node.data.Description.replace(/'/g, "") : "",
         Parameter: node.data?.Parameter ? this.arrayToObject(node.data.Parameter) : [],
         globals: node.data?.globals ? this.arrayToObject(node.data.globals) : [],
+        classes: node.data?.classes ? this.arrayToObject(node.data.classes) : [],
         notes: node.data.Notes ? node.data.Notes : "",
+        CondensedPrompt: node.data?.CondensedPrompt ?? "",
+        DetailedPrompt: node.data?.DetailedPrompt ?? "",
+        ParameterPrompts: node.data ? this.arrayToPromptObject(node.data.Parameter) : {},
+        GlobalPrompts: node.data ? this.arrayToPromptObject(node.data.globals) : {},
+        ClassPrompts: node.data ? this.arrayToPromptObject(node.data.classes) : {},
       };
 
       if (node.children) {
@@ -2260,6 +2321,48 @@ export class Manager implements AfterViewInit {
 
     this._currentNodeData.Description = toSet;
   }
+  /**
+   * Gets the {@link Manager._currentNodeData }'s **CondensedPrompt** property.
+   *
+   * @returns The {@link _currentNodeData }'s **CondensedPrompt** (the compact prompt transmitted to
+   * the AI), or an empty {@link string } if not set. */
+  get condensedPrompt(): string {
+    return this._currentNodeData ? (this._currentNodeData.CondensedPrompt ?? "") : "";
+  }
+  /**
+   * Sets the {@link Manager._currentNodeData }'s **CondensedPrompt** property and marks this
+   * {@link Manager } as not synchronized.
+   *
+   * @param toSet The {@link Manager._currentNodeData }'s **CondensedPrompt**. */
+  set condensedPrompt(toSet: string) {
+    if (this._currentNodeData === undefined) {
+      return;
+    }
+
+    this._currentNodeData.CondensedPrompt = toSet;
+    this.synchronized = false;
+  }
+  /**
+   * Gets the {@link Manager._currentNodeData }'s **DetailedPrompt** property.
+   *
+   * @returns The {@link _currentNodeData }'s **DetailedPrompt** (the element's own detailed prompt),
+   * or an empty {@link string } if not set. */
+  get detailedPrompt(): string {
+    return this._currentNodeData ? (this._currentNodeData.DetailedPrompt ?? "") : "";
+  }
+  /**
+   * Sets the {@link Manager._currentNodeData }'s **DetailedPrompt** property and marks this
+   * {@link Manager } as not synchronized.
+   *
+   * @param toSet The {@link Manager._currentNodeData }'s **DetailedPrompt**. */
+  set detailedPrompt(toSet: string) {
+    if (this._currentNodeData === undefined) {
+      return;
+    }
+
+    this._currentNodeData.DetailedPrompt = toSet;
+    this.synchronized = false;
+  }
   // #endregion Data Management
   // #region Resources
   /** Stores the **URL** to resources. */
@@ -2295,6 +2398,31 @@ export class Manager implements AfterViewInit {
   protected onNodeSelect(event: TreeNodeSelectEvent) {
     this._currentNode = event.node;
     this._currentNodeData = event.node.data;
+  }
+  /**
+   * Determines whether the given {@link TreeNode } represents an AI-capable CodBi element, i.e. one
+   * that has a condensed prompt, a detailed prompt **and** code. Only such elements are written to
+   * the AI prompt tables and are transmitted to the AI.
+   *
+   * @param node The {@link TreeNode } to check.
+   * @returns **True** if the element is AI-capable, otherwise **false**. */
+  protected isAiCapable(node: TreeNode): boolean {
+    const data = node?.data as TreeNodeData | undefined;
+    if (!data) {
+      return false;
+    }
+
+    const condensed = (data.CondensedPrompt ?? "").trim();
+    const detailed = (data.DetailedPrompt ?? "").trim();
+    if (condensed.length === 0 || detailed.length === 0) {
+      return false;
+    }
+
+    const ref = this.activeTabDocRef as Record<string, { Code?: string } | undefined>;
+    const entry = ref[this.getFullNodePath(node)];
+    const code = entry?.Code?.trim() ?? "";
+
+    return code.length > 0;
   }
   // #region Management
   /** Stores an {@link ElementRef } to a {@link HTMLInputElement } used to rename a {@link TreeNode }. */
@@ -2904,6 +3032,19 @@ export class Manager implements AfterViewInit {
     textarea.style.height = "auto";
     textarea.style.height = `${textarea.scrollHeight}px`;
   }
+  /**
+   * Makes the {@link HTMLTextAreaElement } of a condensed/detailed prompt resize automatically on
+   * input and marks this {@link Manager } as not synchronized.
+   *
+   * @param event The {@link Event } received. */
+  protected onInputPrompt(event: Event) {
+    const textarea = INSTANCE.tsCheck<HTMLTextAreaElement>(event.target, HTMLTextAreaElement);
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+
+    this.synchronized = false;
+  }
   // #endregion Notes
   // #region Description
   /** Stores an {@link ElementRef } to the description {@link TinyMCE } fpr functionalities. */
@@ -2938,7 +3079,12 @@ export class Manager implements AfterViewInit {
    *
    * @param toEdit The current row's value. */
   onRowEditInit(toEdit: ApiParameter) {
-    this.bufferParameter[toEdit.id] = new CommonApiParameter(toEdit.Name, toEdit.Description, toEdit.id);
+    this.bufferParameter[toEdit.id] = new CommonApiParameter(
+      toEdit.Name,
+      toEdit.Description,
+      toEdit.Prompt ?? "",
+      toEdit.id,
+    );
   }
   /** States whether the parameter/class/global variable - name, that is currently being edited, is a valid one or not.*/
   protected currentNameValid = false;
@@ -3042,14 +3188,11 @@ export class Manager implements AfterViewInit {
    * @param toConvert The object to convert.
    * @returns An array of objects with 'Name' and 'Description' properties.
    */
-  protected toDescriptiveArray(toConvert: ApiParameter[]): {
-    Name: string;
-    Description: string;
-  }[] {
+  protected toDescriptiveArray(toConvert: ApiParameter[]): ApiParameter[] {
     if (this.activeTab !== "Elementplaceholder") {
-      return Object.values(toConvert) as { Name: string; Description: string }[];
+      return Object.values(toConvert) as ApiParameter[];
     }
-    const result: { Name: string; Description: string }[] = [];
+    const result: ApiParameter[] = [];
 
     for (const key in toConvert) {
       if (!/^([0-9_$][0-9_\-\,$]*\.)*[0-9_$][0-9\-\,_$]*(\.)?$/.test(toConvert[key].Name)) {
@@ -3057,7 +3200,7 @@ export class Manager implements AfterViewInit {
       }
     }
 
-    return Object.values(toConvert) as { Name: string; Description: string }[];
+    return Object.values(toConvert) as ApiParameter[];
   }
   // #endregion Description, Parameter, Classes, Globals & Notes
   // #endregion Right Panel
@@ -3070,9 +3213,53 @@ export class Manager implements AfterViewInit {
    * @param segmentToConvert  The data of the segment to convert.
    *
    * @returns A {@link TreeNode } reflecting the given **segmentToConvert**. */
+  /**
+   * Populates the given {@link TreeNodeData } **nodeData** with the condensed/detailed prompts and
+   * the per-item prompts stored in a local API-Doc segment (which may carry
+   * the CondensedPrompt / DetailedPrompt properties and the ParameterPrompts /
+   * GlobalPrompts / ClassPrompts name-to-prompt maps).
+   *
+   * @param nodeData The {@link TreeNodeData } to populate.
+   * @param segment  The local API-Doc segment to read the prompts from. */
+  protected populateNodePrompts(nodeData: TreeNodeData, segment: { [key: string]: unknown }): void {
+    nodeData.CondensedPrompt = (segment["CondensedPrompt"] as string) ?? "";
+    nodeData.DetailedPrompt = (segment["DetailedPrompt"] as string) ?? "";
+
+    const parameterPrompts = (segment["ParameterPrompts"] ?? {}) as { [name: string]: string };
+    for (const param of nodeData.Parameter ?? []) {
+      param.Prompt = parameterPrompts[param.Name] ?? "";
+    }
+    const globalPrompts = (segment["GlobalPrompts"] ?? {}) as { [name: string]: string };
+    for (const global of nodeData.globals ?? []) {
+      global.Prompt = globalPrompts[global.Name] ?? "";
+    }
+    const classPrompts = (segment["ClassPrompts"] ?? {}) as { [name: string]: string };
+    for (const cssClass of nodeData.classes ?? []) {
+      cssClass.Prompt = classPrompts[cssClass.Name] ?? "";
+    }
+  }
+  /**
+   * Turns a local API Doc segment, consisting of a **Description**, **Parameter**s and optional
+   * **globals** and **classes**, into a {@link TreeNode }.
+   *
+   * @param label             The {@link TreeNode }'s {@link TreeNode.label }.
+   * @param segmentToConvert  The data of the segment to convert.
+   *
+   * @returns A {@link TreeNode } reflecting the given **segmentToConvert**. */
   protected toTreeNode(
     label: string,
-    segmentToConvert: { Description: string; globals: object; classes: object; Parameter: object; code: string },
+    segmentToConvert: {
+      Description: string;
+      globals: object;
+      classes: object;
+      Parameter: object;
+      code: string;
+      CondensedPrompt?: string;
+      DetailedPrompt?: string;
+      ParameterPrompts?: { [key: string]: string };
+      GlobalPrompts?: { [key: string]: string };
+      ClassPrompts?: { [key: string]: string };
+    },
   ): TreeNode {
     return {
       label: label,
@@ -3082,6 +3269,8 @@ export class Manager implements AfterViewInit {
         classes: segmentToConvert.classes,
         Parameter: segmentToConvert.Parameter,
         code: segmentToConvert.code,
+        CondensedPrompt: segmentToConvert.CondensedPrompt ?? "",
+        DetailedPrompt: segmentToConvert.DetailedPrompt ?? "",
       },
     };
   }
@@ -3101,6 +3290,11 @@ export class Manager implements AfterViewInit {
       classes?: ApiParameter[];
       notes?: string;
       Code?: string;
+      CondensedPrompt?: string;
+      DetailedPrompt?: string;
+      ParameterPrompts?: { [key: string]: string };
+      GlobalPrompts?: { [key: string]: string };
+      ClassPrompts?: { [key: string]: string };
     };
   }): TreeNode[] {
     const root: TreeNode[] = [];
@@ -3152,6 +3346,8 @@ export class Manager implements AfterViewInit {
                 Description: toConvert[key].classes[cKey],
               });
             }
+
+            this.populateNodePrompts(existingNode.data, toConvert[key]);
           }
         } else {
           const newNode: TreeNode = {
@@ -3210,6 +3406,8 @@ export class Manager implements AfterViewInit {
                 Description: toConvert[key].classes[cKey],
               });
             }
+
+            this.populateNodePrompts(newNode.data, toConvert[key]);
           }
 
           currentLevel.push(newNode);
@@ -3460,6 +3658,7 @@ export class Manager implements AfterViewInit {
           processToArrayCollection(itemNode.data, "globals", item.globals);
           processToArrayCollection(itemNode.data, "classes", item.classes);
           processToArrayCollection(itemNode.data, "Parameter", item.Parameter);
+          this.populateNodePrompts(itemNode.data, item as unknown as { [key: string]: unknown });
         }
       }
     };

@@ -103,6 +103,7 @@
                         [class.cb-pm-tree-node--user-app]="node.isUserApp">
                         <span class="cb-pm-tree-inactive-icon" *ngIf="isTreeNodeInactive(node)" [title]="'pm.tree.inactive.tip' | transloco">&#x2716;</span>
                         <span class="cb-pm-tree-partial-icon" *ngIf="isTreeNodePartiallyInactive(node)" [title]="'pm.tree.partial.tip' | transloco">&#x26A0;</span>
+                        <span class="cb-pm-tree-local-badge" *ngIf="node.isReadOnly" [title]="'pm.localApiDoc.tip' | transloco">{{ 'pm.localApiDoc' | transloco }}</span>
                         <span [textContent]="node.label" class="cb-pm-tree-node-text"></span>
                         <span class="cb-pm-token-badge" *ngIf="!node.isSystemApp && node.tokens > 0"
                             [title]="'pm.tokens.tip' | transloco">{{ node.tokens }}</span>
@@ -154,7 +155,8 @@
                     class="cb-pm-card-indicator"
                     [class.cb-pm-card-indicator--active]="activeRecord.isActive"
                     [class.cb-pm-card-indicator--inactive]="!activeRecord.isActive"
-                    (click)="toggleActive()"
+                    (click)="isReadOnly() ? null : toggleActive()"
+                    [class.cb-pm-card-indicator--readonly]="isReadOnly()"
                     [title]="activeRecord.isActive ? ('pm.indicator.active.tip' | transloco) : ('pm.indicator.inactive.tip' | transloco)">
                 </div>
 
@@ -163,6 +165,8 @@
                     <div class="cb-pm-card-header">
                         <span class="cb-pm-card-category-badge">{{ cardTitlePath }}</span>
                         <span class="cb-pm-display-name">{{ cardTitleName }}</span>
+                        <span class="cb-pm-card-local-badge" *ngIf="isReadOnly()"
+                            [title]="'pm.localApiDoc.tip' | transloco">{{ 'pm.localApiDoc' | transloco }}</span>
                     </div>
 
                     <!-- Hint: a newer bundled version is available after a plugin update -->
@@ -196,6 +200,7 @@
                                     [class.cb-pm-toggle-btn--on]="editPrePromptActive"
                                     [class.cb-pm-toggle-btn--off]="!editPrePromptActive"
                                     (click)="togglePrePromptActive()"
+                                    [disabled]="isReadOnly()"
                                     [title]="(editPrePromptActive ? 'pm.prePrompt.active.tip' : 'pm.prePrompt.inactive.tip') | transloco">
                                     {{ (editPrePromptActive ? 'pm.on' : 'pm.off') | transloco }}
                                 </button>
@@ -208,6 +213,7 @@
                             rows="2"
                             class="cb-pm-textarea cb-pm-textarea--small"
                             [placeholder]="'pm.prePlaceholder' | transloco"
+                            [readonly]="isReadOnly()"
                             (input)="autoGrow($event)">
                         </textarea>
 
@@ -223,8 +229,8 @@
                             [(ngModel)]="editPromptText"
                             rows="6"
                             class="cb-pm-textarea"
-                            [class.cb-pm-textarea--readonly]="isSystemApp()"
-                            [readonly]="isSystemApp()"
+                            [class.cb-pm-textarea--readonly]="isSystemApp() || isReadOnly()"
+                            [readonly]="isSystemApp() || isReadOnly()"
                             [placeholder]="'pm.promptPlaceholder' | transloco"
                             (input)="autoGrow($event)">
                         </textarea>
@@ -239,6 +245,7 @@
                                     [class.cb-pm-toggle-btn--on]="editPostPromptActive"
                                     [class.cb-pm-toggle-btn--off]="!editPostPromptActive"
                                     (click)="togglePostPromptActive()"
+                                    [disabled]="isReadOnly()"
                                     [title]="(editPostPromptActive ? 'pm.postPrompt.active.tip' : 'pm.postPrompt.inactive.tip') | transloco">
                                     {{ (editPostPromptActive ? 'pm.on' : 'pm.off') | transloco }}
                                 </button>
@@ -251,23 +258,24 @@
                             rows="2"
                             class="cb-pm-textarea cb-pm-textarea--small"
                             [placeholder]="'pm.postPlaceholder' | transloco"
+                            [readonly]="isReadOnly()"
                             (input)="autoGrow($event)">
                         </textarea>
 
                         <div class="cb-pm-actions">
                             <p-button [label]="'pm.save' | transloco" icon="pi pi-check" (onClick)="save()"
-                                [disabled]="loading" severity="primary" />
+                                [disabled]="loading || isReadOnly()" severity="primary" />
                             <p-button [label]="'pm.restore' | transloco" icon="pi pi-refresh" (onClick)="restoreOriginal()"
-                                [disabled]="loading" severity="secondary" [outlined]="true" />
+                                [disabled]="loading || isReadOnly()" severity="secondary" [outlined]="true" />
                             <p-button [label]="'pm.export' | transloco" icon="pi pi-download" (onClick)="exportPrompt()"
-                                severity="secondary" [outlined]="true" />
+                                [disabled]="isReadOnly()" severity="secondary" [outlined]="true" />
                             <span class="cb-pm-actions-sep"></span>
                             <p-button [label]="'pm.rename' | transloco" icon="pi pi-pencil" (onClick)="openRenameDialog()"
                                 [disabled]="loading" severity="help" [outlined]="true"
-                                *ngIf="isUserCreated()" />
+                                *ngIf="isUserCreated() && !isReadOnly()" />
                             <p-button [label]="'pm.delete' | transloco" icon="pi pi-trash" (onClick)="deletePrompt()"
                                 [disabled]="loading" severity="danger" [outlined]="true"
-                                *ngIf="isUserCreated()" />
+                                *ngIf="isUserCreated() && !isReadOnly()" />
                         </div>
                     </div>
                 </div>

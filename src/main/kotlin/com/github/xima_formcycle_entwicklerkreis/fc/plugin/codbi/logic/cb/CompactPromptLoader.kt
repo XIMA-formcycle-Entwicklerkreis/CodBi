@@ -171,7 +171,8 @@ internal object CompactPromptLoader {
       val prePromptActive: Boolean = true,
       val postPromptActive: Boolean = true,
       val isSystem: Boolean = false,
-      val updateAvailable: Boolean = false
+      val updateAvailable: Boolean = false,
+      val readOnly: Boolean = false
   )
 
   fun listAllPrompts(em: EntityManager): List<CompactRecord> {

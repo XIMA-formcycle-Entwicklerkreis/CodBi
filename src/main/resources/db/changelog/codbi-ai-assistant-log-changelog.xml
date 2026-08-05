@@ -55,4 +55,19 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="codbi-ai-assistant-log-3" author="codbi">
+        <comment>
+            Add separate input/output token count columns so the change log can display the tokens
+            used per inference split into input (prompt) and output (completion).
+        </comment>
+        <addColumn tableName="codbi_ai_assistant_log">
+            <column name="tokens_in" type="BIGINT"/>
+            <column name="tokens_out" type="BIGINT"/>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_ai_assistant_log" columnName="tokens_in"/>
+            <dropColumn tableName="codbi_ai_assistant_log" columnName="tokens_out"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

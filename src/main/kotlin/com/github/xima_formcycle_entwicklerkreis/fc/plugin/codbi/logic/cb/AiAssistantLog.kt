@@ -43,7 +43,9 @@ object AiAssistantLog {
   /**
    * Inserts one inference record into `codbi_ai_assistant_log`. [formKey] is the technical name/key
    * of the form the inference was run on; [formChanges] and [workflowChanges] are stored as JSON
-   * text (CLOB). Returns `true` when the insert succeeded.
+   * text (CLOB). [tokensIn] and [tokensOut] are the estimated input (prompt) and output
+   * (completion) tokens; the total is stored in the `tokens` column. Returns `true` when the insert
+   * succeeded.
    */
   fun recordInference(
       emf: EntityManagerFactory?,
@@ -54,7 +56,8 @@ object AiAssistantLog {
       workflowVersionId: Long?,
       formChanges: JsonObject?,
       workflowChanges: JsonArray?,
-      tokensUsed: Long? = null
+      tokensIn: Long? = null,
+      tokensOut: Long? = null
   ): Boolean {
     if (emf == null) return false
     return try {
@@ -67,7 +70,9 @@ object AiAssistantLog {
                 prompt = prompt.take(1000),
                 intent = intent.take(20),
                 modelId = modelId.take(100),
-                tokens = tokensUsed,
+                tokens = (tokensIn ?: 0L) + (tokensOut ?: 0L),
+                tokensIn = tokensIn,
+                tokensOut = tokensOut,
                 workflowVersionId = workflowVersionId,
                 formChanges = formChanges?.toString(),
                 workflowChanges = workflowChanges?.toString()))
@@ -128,6 +133,8 @@ object AiAssistantLog {
           e.addProperty("intent", entry.intent ?: "")
           e.addProperty("modelId", entry.modelId ?: "")
           e.addProperty("tokens", entry.tokens ?: 0)
+          e.addProperty("tokensIn", entry.tokensIn ?: 0)
+          e.addProperty("tokensOut", entry.tokensOut ?: 0)
           entry.formChanges
               ?.takeIf { it.isNotBlank() }
               ?.let { text ->
@@ -168,7 +175,9 @@ object AiAssistantLog {
     return try {
       val root = JsonParser.parseString(persistJson).asJsonObject
       val candidates = mutableListOf<String>()
-      val meta = root.getAsJsonObject("metadata")
+      // Guard against a non-object "metadata" value (some AI-emitted persist JSONs write it as a
+      // plain string/primitive, which would make getAsJsonObject throw a ClassCastException).
+      val meta = root.get("metadata")?.takeIf { it.isJsonObject }?.asJsonObject
       if (meta != null) {
         for (key in listOf("name", "key", "formKey", "technicalName")) {
           meta

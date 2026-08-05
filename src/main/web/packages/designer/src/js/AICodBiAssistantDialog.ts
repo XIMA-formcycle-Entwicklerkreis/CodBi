@@ -1,8 +1,11 @@
-// (no imports needed — all logic lives in the AiAssistant Angular component)
+import { instance as getDesignerInstance } from "@de-xima/fc-form-designer";
 
 /**
  * Loads the `cb-manager.js` Angular bundle (which also defines `cb-ai-assistant`)
  * and wires the ALT+A hotkey to dispatch a `codbi:ai-assistant:open` event.
+ *
+ * The hotkey only opens the assistant when the "CodBi" checkbox (the
+ * `codbi-prop-enable` form property) is enabled for the currently edited form.
  *
  * All dialog logic has been moved to the `AiAssistant` Angular component inside
  * the `codbi-apidoc` Angular project.
@@ -39,10 +42,24 @@ export function enableAICodBiAssistantDialog(): void {
     document.body.appendChild(document.createElement("cb-prompt-manager"));
   }
 
-  // ALT+A => show the AI assistant
+  // ALT+A => show the AI assistant (only when CodBi is enabled for the current form)
   document.addEventListener("keyup", (event) => {
-    if (event.altKey && event.key.toLowerCase() === "a") {
+    if (event.altKey && event.key.toLowerCase() === "a" && isCodBiEnabled()) {
       document.dispatchEvent(new CustomEvent("codbi:ai-assistant:open"));
     }
   });
+}
+
+/** Whether the "CodBi" checkbox (`codbi-prop-enable`) is set for the currently edited form. */
+function isCodBiEnabled(): boolean {
+  const designer = getDesignerInstance();
+  if (!designer) {
+    return false;
+  }
+  try {
+    const value = designer.getFormPropertyValueForCurrentLang("codbi-prop-enable");
+    return value === "1" || value === 1 || value === true;
+  } catch {
+    return false;
+  }
 }

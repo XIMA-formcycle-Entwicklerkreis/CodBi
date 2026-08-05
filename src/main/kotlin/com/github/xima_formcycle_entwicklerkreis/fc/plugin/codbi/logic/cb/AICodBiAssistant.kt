@@ -10,6 +10,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
+import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
@@ -383,7 +384,10 @@ class AICodBiAssistant : IPluginServletAction {
     // For "both" intent: form elements are updated after form modification so the workflow AI
     // sees buttons/fields that were just created by the form AI (not just the pre-existing ones).
     var latestFormElements: String? = params.requestParameters["formElements"]?.firstOrNull()
-    // Estimated tokens consumed by this run (returned to the frontend for the token counter).
+    // Estimated tokens consumed by this run, split into input (prompts) and output (completions).
+    // runTokens keeps the combined total for the frontend token counter.
+    var tokensIn = 0
+    var tokensOut = 0
     var runTokens = 0
     // Change-log capture: remember what was changed so the inference can be recorded in the DB.
     var persistJson: String? = null
@@ -407,7 +411,7 @@ class AICodBiAssistant : IPluginServletAction {
       if (formKey == null) {
         formKey = AiAssistantLog.extractFormKey(persistJson)
       }
-      val (formJson, applicabilityReport, tokensUsed) =
+      val (formJson, applicabilityReport, formTokenUsage) =
           try {
             runFormModification(prompt, persistJson, modelId, instance, imageParts, useCodbi)
           } catch (e: ExternalAiHttpException) {
@@ -418,7 +422,9 @@ class AICodBiAssistant : IPluginServletAction {
             return jsonResponse(
                 """{"error":${gson.toJson("Form modification failed: ${e.message}")}}""")
           }
-      runTokens = tokensUsed
+      tokensIn += formTokenUsage.input
+      tokensOut += formTokenUsage.output
+      runTokens = tokensIn + tokensOut
       // Propagate a form-AI error response unchanged
       val formParsed = runCatching { JsonParser.parseString(formJson) }.getOrNull()
       if (formParsed?.isJsonObject == true && formParsed.asJsonObject.has("error")) {
@@ -469,7 +475,7 @@ class AICodBiAssistant : IPluginServletAction {
 
       val workflowMessage =
           try {
-            val (message, nodes) =
+            val (message, nodes, workflowTokenUsage) =
                 runWorkflowCreation(
                     prompt,
                     latestFormElements,
@@ -479,6 +485,9 @@ class AICodBiAssistant : IPluginServletAction {
                     instance,
                     imageParts)
             workflowNodes = nodes
+            tokensIn += workflowTokenUsage.input
+            tokensOut += workflowTokenUsage.output
+            runTokens = tokensIn + tokensOut
             message
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Workflow AI HTTP {}: {}", e.httpStatus, e.body)
@@ -516,7 +525,8 @@ class AICodBiAssistant : IPluginServletAction {
           workflowVersionId,
           formChanges,
           workflowNodes,
-          runTokens.toLong())
+          tokensIn.toLong(),
+          tokensOut.toLong())
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to record change log: {}", e.message)
     }
@@ -595,10 +605,11 @@ class AICodBiAssistant : IPluginServletAction {
       instance: Standard,
       imageParts: List<String> = emptyList(),
       useCodbi: Boolean = true
-  ): Triple<String, String?, Int> {
-    // Rough token estimate for this run (prompt + completion of every inference), returned to the
+  ): Triple<String, String?, TokenUsage> {
+    // Rough token estimate for this run (input = prompts, output = completions), returned to the
     // frontend so the assistant can show the last inference and the current session total.
-    var tokensUsed = 0
+    var tokensIn = 0
+    var tokensOut = 0
     // Document-parsing rules are only included when the request references an attached document.
     val hasAttachedDocument = imageParts.isNotEmpty()
     val baseSystemPrompt = buildFormSystemPrompt(useCodbi)
@@ -649,7 +660,8 @@ class AICodBiAssistant : IPluginServletAction {
         modelId,
         slimPersistJson(persistJson))
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
-    tokensUsed += estimateTokens(messagesJson) + estimateTokens(rawResponse)
+    tokensIn += estimateTokens(messagesJson)
+    tokensOut += estimateTokens(rawResponse)
     var cleaned = extractJson(stripThinkTags(rawResponse))
 
     fun rerunWithCodbiDetails(
@@ -846,7 +858,8 @@ class AICodBiAssistant : IPluginServletAction {
       }
 
       val retryRaw = instance.performFormAssist(modelId, retryMessagesJson)
-      tokensUsed += estimateTokens(retryMessagesJson) + estimateTokens(retryRaw)
+      tokensIn += estimateTokens(retryMessagesJson)
+      tokensOut += estimateTokens(retryRaw)
       val pass2Cleaned = extractJson(stripThinkTags(retryRaw))
       logger.info("[AICodBiAssistant] Pass-2 raw result: {}", pass2Cleaned)
       // Splice into the form base (the original form when pass-1 was a details request) so new
@@ -984,13 +997,13 @@ class AICodBiAssistant : IPluginServletAction {
         logger.info("[AICodBiAssistant] Final form item names ({}): {}", names.size, names)
         logger.info("[AICodBiAssistant] First page elements: {}", pageElements)
       } catch (_: Exception) {}
-      Triple(restored, applicabilityReport, tokensUsed)
+      Triple(restored, applicabilityReport, TokenUsage(tokensIn, tokensOut))
     } catch (_: Exception) {
       logger.warn("[AICodBiAssistant] Form AI returned unparseable response: {}", sanitizedCleaned)
       Triple(
           """{"error":"AI returned invalid JSON","raw":${gson.toJson(sanitizedCleaned)}}""",
           null,
-          tokensUsed)
+          TokenUsage(tokensIn, tokensOut))
     }
   }
 
@@ -1727,6 +1740,75 @@ class AICodBiAssistant : IPluginServletAction {
         item.add("className", classNameInProps)
         props.remove("className")
       }
+    }
+    // Normalize the AI's ITEM-level "attributes" (sibling of "properties") into
+    // "properties.attributes". FORMCYCLE only reads attributes from
+    // properties["attributes"] as [{text: "...", value: "..."}] objects — a top-level
+    // "attributes" key on an item is silently ignored by the designer (and the change
+    // log). The AI sometimes emits attributes at the ITEM level instead of inside
+    // "properties" (e.g. the TinyMCE functionality emits "attributes":
+    // [{"text":"data-cb-func","value":"HTML.Input.TinyMCE"}]). Move them down and merge
+    // with any existing properties.attributes — the AI's values win on duplicate keys.
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      val topAttrs = item.get("attributes") ?: continue
+      if (!topAttrs.isJsonObject && !topAttrs.isJsonArray) continue
+      val props = item.getAsJsonObject("properties") ?: continue
+
+      // Canonicalize the AI's item-level attributes into [{text, value}] objects.
+      val incoming = JsonArray()
+      if (topAttrs.isJsonObject) {
+        for ((key, value) in topAttrs.asJsonObject.entrySet()) {
+          val obj = JsonObject()
+          obj.addProperty("text", key)
+          obj.add("value", value)
+          incoming.add(obj)
+        }
+      } else {
+        for (attr in topAttrs.asJsonArray) {
+          if (!attr.isJsonObject) continue
+          val text =
+              attr.asJsonObject.get("text")?.asString
+                  ?: attr.asJsonObject.get("name")?.asString
+                  ?: continue
+          val entry = JsonObject()
+          entry.addProperty("text", text)
+          entry.add("value", attr.asJsonObject.get("value") ?: JsonNull.INSTANCE)
+          incoming.add(entry)
+        }
+      }
+      if (incoming.size() == 0) {
+        item.remove("attributes")
+        continue
+      }
+
+      val merged = JsonArray()
+      val existing = props.get("attributes")
+      if (existing != null && existing.isJsonArray) {
+        for (e in existing.asJsonArray) merged.add(e)
+      }
+      // AI values win for duplicate text keys; keep existing non-conflicting entries.
+      for (entry in incoming) {
+        if (!entry.isJsonObject) continue
+        val text = entry.asJsonObject.get("text")?.asString ?: continue
+        var replaced = false
+        for (i in 0 until merged.size()) {
+          val cur = merged.get(i)
+          if (cur.isJsonObject) {
+            val curText =
+                cur.asJsonObject.get("text")?.asString ?: cur.asJsonObject.get("name")?.asString
+            if (curText == text) {
+              merged.set(i, entry)
+              replaced = true
+              break
+            }
+          }
+        }
+        if (!replaced) merged.add(entry)
+      }
+      props.add("attributes", merged)
+      item.remove("attributes")
     }
     if (originalItems != null) {
       val originalByName =
@@ -3414,8 +3496,10 @@ class AICodBiAssistant : IPluginServletAction {
       params: IPluginServletActionParams,
       instance: Standard,
       imageParts: List<String> = emptyList()
-  ): Pair<String, JsonArray> {
+  ): Triple<String, JsonArray, TokenUsage> {
     val userContext = getUserContext(params)
+    var tokensIn = 0
+    var tokensOut = 0
     val completionPagesJson = fetchCompletionPages(userContext, workflowVersionId)
     logger.debug(
         "[AICodBiAssistant] runWorkflowCreation: completionPages={}",
@@ -3639,7 +3723,10 @@ class AICodBiAssistant : IPluginServletAction {
       append("]")
     }
 
-    var cleaned = extractJson(stripThinkTags(instance.performFormAssist(modelId, messagesJson)))
+    val pass1Raw = instance.performFormAssist(modelId, messagesJson)
+    tokensIn += estimateTokens(messagesJson)
+    tokensOut += estimateTokens(pass1Raw)
+    var cleaned = extractJson(stripThinkTags(pass1Raw))
     logger.info("[AICodBiAssistant] Workflow AI pass-1 raw response: {}", cleaned)
 
     val workflowDetails = extractWorkflowDetailsRequest(cleaned)
@@ -3667,7 +3754,10 @@ class AICodBiAssistant : IPluginServletAction {
         append("""{"role":"user","content":${buildUserContent(prompt, imageParts)}}""")
         append("]")
       }
-      cleaned = extractJson(stripThinkTags(instance.performFormAssist(modelId, messagesJson)))
+      val pass2Raw = instance.performFormAssist(modelId, messagesJson)
+      tokensIn += estimateTokens(messagesJson)
+      tokensOut += estimateTokens(pass2Raw)
+      cleaned = extractJson(stripThinkTags(pass2Raw))
       logger.info("[AICodBiAssistant] Workflow AI pass-2 raw response: {}", cleaned)
     }
 
@@ -3719,14 +3809,28 @@ class AICodBiAssistant : IPluginServletAction {
     val results = taskSpecs.map { spec -> createWorkflowTask(workflowVersionId, spec, params) }
     val combinedResult = results.joinToString(" | ")
 
-    // Build the workflow-node change log (each task + its chained nodes with their parameters).
+    // Build the workflow change log grouped per workflow path (task). Each path carries the
+    // trigger, the path elements (the generated node + its chained nodes), and the status
+    // (endpoint state + state properties) — all of which the AI generated.
     val nodeLog = JsonArray()
     for (spec in taskSpecs) {
-      val node = JsonObject()
-      node.addProperty("name", deriveNodeName(spec))
-      node.addProperty("nodeType", spec.nodeType)
-      node.add("params", gson.toJsonTree(spec.nodeParams))
-      nodeLog.add(node)
+      val path = JsonObject()
+      val pathName = spec.taskName.trim().takeIf { it.isNotEmpty() } ?: deriveNodeName(spec)
+      path.addProperty("name", pathName)
+
+      // Trigger — the workflow trigger the AI chose for this path.
+      val trigger = JsonObject()
+      trigger.addProperty("type", spec.triggerType)
+      trigger.add("params", gson.toJsonTree(spec.triggerParams))
+      path.add("trigger", trigger)
+
+      // Path elements — the action node the AI generated plus any chained nodes.
+      val elements = JsonArray()
+      val mainNode = JsonObject()
+      mainNode.addProperty("name", deriveNodeName(spec))
+      mainNode.addProperty("nodeType", spec.nodeType)
+      mainNode.add("params", gson.toJsonTree(spec.nodeParams))
+      elements.add(mainNode)
       spec.chainedNodes?.forEach { chainSpecMap ->
         val chainNode = JsonObject()
         val chainName =
@@ -3737,12 +3841,22 @@ class AICodBiAssistant : IPluginServletAction {
         chainNode.addProperty("nodeType", (chainSpecMap["nodeType"] as? String) ?: "")
         chainNode.add(
             "params", gson.toJsonTree(chainSpecMap["nodeParams"] ?: emptyMap<String, Any>()))
-        nodeLog.add(chainNode)
+        elements.add(chainNode)
       }
+      path.add("elements", elements)
+
+      // Status — the workflow state (endpoint) this path leads to, with its properties.
+      val status = JsonObject()
+      status.addProperty("endpointState", spec.endpointState)
+      status.addProperty("endpointType", spec.endpointType)
+      status.add("stateProperties", gson.toJsonTree(spec.stateProperties))
+      path.add("status", status)
+
+      nodeLog.add(path)
     }
     logger.info(
         "[AICodBiAssistant] Workflow created: {} task(s) â€” {}", results.size, combinedResult)
-    return combinedResult to nodeLog
+    return Triple(combinedResult, nodeLog, TokenUsage(tokensIn, tokensOut))
   }
 
   /**
@@ -7087,6 +7201,12 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   // region Data Classes
+
+  /** Estimated token usage of one or more AI calls: input (prompt) vs. output (completion). */
+  private data class TokenUsage(val input: Int, val output: Int) {
+    val total: Int
+      get() = input + output
+  }
 
   private data class WorkflowTaskSpec(
       val taskName: String = "",

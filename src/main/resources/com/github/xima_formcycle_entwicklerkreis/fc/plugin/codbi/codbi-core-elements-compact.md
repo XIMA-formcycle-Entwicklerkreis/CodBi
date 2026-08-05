@@ -31,6 +31,9 @@ Applicable on a XTextField to apply input masking/formatting (credit card, phone
 ### HTML.Input.REGEX
 Applicable on a XTextField to validate, reformat, or RESTRICT input against a regular expression pattern. USE when the user asks to disallow/block certain characters (e.g. "darf die Zeichen e$% nicht enthalten") — apply data-cb-func="HTML.Input.REGEX" with the forbidden set as a negated character class (data-cb-keyexpression="[^e$%]" blocks the keystrokes, data-cb-expression="^[^e$%]*$" validates the whole value).
 
+### HTML.Input.TinyMCE
+Applicable on a XTextArea to turn it into a TinyMCE rich-text (WYSIWYG) editor. USE whenever the user asks for a "rich text editor", "WYSIWYG", or rich/formatted text entry for a multi-line text field — apply data-cb-func="HTML.Input.TinyMCE" on the XTextArea (optionally with data-cb-plugins and data-cb-toolbar).
+
 ### HTML.Panel
 Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: "Standard-Panel" = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property.
 

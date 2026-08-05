@@ -86,6 +86,18 @@ Example — an input field that must not allow the characters e, $ and %:
 
 CRITICAL — Inside a character class `$` is a LITERAL dollar sign (NOT the end-of-string anchor) and `.` is a literal dot, so `[^e$%]` really blocks e, $ and %. Regex metacharacters that must be blocked literally (e.g. `]`, `\`, `^` inside a class) still need to be escaped.
 
+## HTML.Input.TinyMCE
+
+Applicable on a XTextArea to turn it into a TinyMCE rich-text (WYSIWYG) editor.
+
+CRITICAL — USE THIS FUNCTIONALITY whenever the user asks for a "rich text editor", "WYSIWYG editor", or rich/formatted text entry for a multi-line text field (e.g. "a field to write a story / message with a rich text editor"). Turn the XTextArea into a TinyMCE editor by setting these attributes on it:
+- data-cb-func = "HTML.Input.TinyMCE"
+- data-cb-plugins = (optional) CSV of TinyMCE plugins to load, e.g. "advlist, autolink, lists, link, image, table, code"
+- data-cb-toolbar = (optional) TinyMCE toolbar string, e.g. "undo redo | blocks | bold italic | bullist numlist | link image | code"
+
+Example — a "story" textarea that becomes a rich text editor:
+"attributes": [{"text":"data-cb-func","value":"HTML.Input.TinyMCE"},{"text":"data-cb-plugins","value":"advlist, autolink, lists, link, image, table, code"}]
+
 ## HTML.Panel
 
 Applicable on any element to wrap it in a collapsible accordion/panel widget.

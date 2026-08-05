@@ -2,6 +2,19 @@
 
 Cross-cutting CodBi rules that apply to multiple categories.
 
+## CSS Classes vs data-cb-func (TWO-OPTION RULE)
+
+For EVERY field you create or modify, apply CodBi behavior with EXACTLY ONE of two options:
+
+- OPTION A — a CSS class for the field's purpose is listed in the CodBi Core Elements list (the "Standard Configurations" CSS classes, e.g. CodBi_People_Name, CodBi_OpenPLZ_AC_SET_PLZ) → use it. Add the class name to the element's properties as `"cssclasses":["CodBi_..."]` (e.g. `"cssclasses":["CodBi_OpenPLZ_AC_SET_PLZ"]`).
+- OPTION B — no matching CSS class exists → use data-cb-func (e.g. Form.Navigator has NO CSS class → data-cb-func=form.navigator).
+
+CRITICAL:
+- NEVER invent CSS class names. If a class is not in the reference list, it does NOT exist — use data-cb-func instead.
+- Apply AT MOST ONE CSS class per field — do NOT stack multiple classes on the same element.
+- Only apply a CSS class when it EXACTLY matches the field's purpose. If no class matches, use data-cb-func.
+- ADDRESS GROUPS (postal code, locality/city, street, building number) MUST be tagged with the OpenPLZ classes: CodBi_OpenPLZ_AC_SET_PLZ on the postal code field, CodBi_OpenPLZ_AC_SET_Locality on the locality/city field, CodBi_OpenPLZ_AC_SET_Street on the street field, CodBi_OpenPLZ_AC_SET_BuildingNumber on the building number field — the server then configures OpenPLZ.Autocomplete automatically.
+
 ## _codbiApplicability Report
 
 When designing the form output, scan the CodBi Core Elements list at the end of this prompt.
@@ -66,6 +79,6 @@ Example — one input field that blocks the characters e, $ and % AND gets its t
 
 ## CodBi CANDIDATE REVIEW
 
-Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; text field needing format validation → HTML.Input.REGEX; an input field that must NOT allow certain characters (character blacklist, e.g. "nicht erlaubt: e$%") → HTML.Input.REGEX; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; input auto-capitalize words → HTML.Input.Trans.Capital; set an attribute / visual style of an element (e.g. title, opacity) → HTML.SETAttribute; console output → Sys.Log.Console. When one request combines several of these on the same element, apply ALL matching functionalities in one comma-separated data-cb-func.
+Examples: a begin/end time pair → Time.Frame; a begin/end date pair → Date.Frame; text field needing format validation → HTML.Input.REGEX; an input field that must NOT allow certain characters (character blacklist, e.g. "nicht erlaubt: e$%") → HTML.Input.REGEX; a multi-line text field that should be a rich text / WYSIWYG editor (e.g. "write a story with a rich text editor") → HTML.Input.TinyMCE; German address flow → OpenPLZ.Autocomplete; container/navigation bar → Form.Navigator; input auto-capitalize words → HTML.Input.Trans.Capital; set an attribute / visual style of an element (e.g. title, opacity) → HTML.SETAttribute; console output → Sys.Log.Console. When one request combines several of these on the same element, apply ALL matching functionalities in one comma-separated data-cb-func.
 
 CRITICAL — Sys.Log.Console is a STANDALONE functionality that does NOT need any existing form element. When the prompt asks to output/print/log/show anything to the browser console, ALWAYS include Sys.Log.Console in the considered/applied arrays.

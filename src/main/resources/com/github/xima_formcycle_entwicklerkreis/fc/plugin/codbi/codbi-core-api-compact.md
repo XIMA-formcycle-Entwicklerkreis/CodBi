@@ -89,6 +89,11 @@ when CodBi searches within the shared parent container.
   - Flags: The RegExp - flags string used to create the "expression" (defaults to "g").
   - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
   - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
+- HTML.Input.TinyMCE: Applicable on a XTextArea to turn it into a TinyMCE rich-text (WYSIWYG) editor. USE whenever the user asks for a "rich text editor", "WYSIWYG", or rich/formatted text entry for a multi-line text field — apply data-cb-func="HTML.Input.TinyMCE" on the XTextArea.
+  - Plugins: A CSV of TinyMCE plugin names to load (e.g. "advlist, autolink, lists, link, image, table, code").
+  - Toolbar: The TinyMCE toolbar string (e.g. "undo redo | blocks | bold italic | bullist numlist | link image | code").
+  - ResourceURL: Base URL of the TinyMCE distribution (optional; omit to use the bundled default).
+  - UploadURL / UploadImageURL / UploadFieldName: Server endpoints for file/image upload (optional).
 - HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: "Standard-Panel" means creating an XFieldSet (fieldset) with CSS class CodBi_HTML_Panel_Standard and a "legend" property for the title. Do NOT use XContainer for standard panels — panels on XFieldSet use CSS classes, panels on XContainer use data-cb-func=html.panel. For a plain "Standard-Panel" without a specific title: create XFieldSet with legend="Panel", cssclasses=["CodBi_HTML_Panel_Standard"].
   - Accordion: Configures 'Accordion' for this functionality.
   - AutoHeaderLevel: Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,.

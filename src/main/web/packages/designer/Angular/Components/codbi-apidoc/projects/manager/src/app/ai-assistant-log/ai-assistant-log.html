@@ -43,6 +43,9 @@
         <span class="cb-log-count" title="Number of recorded AI inferences and their date range">
             {{ countLabel }}
         </span>
+        <span *ngIf="totalTokens > 0" class="cb-log-tokens" title="Total input and output tokens used by all inferences for this form">
+            {{ totalTokensLabel }}
+        </span>
     </div>
 
     <div *ngIf="loading" class="cb-log-spinner">

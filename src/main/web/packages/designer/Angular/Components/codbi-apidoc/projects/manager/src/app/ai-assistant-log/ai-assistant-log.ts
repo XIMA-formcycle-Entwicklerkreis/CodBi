@@ -58,6 +58,10 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   expandedAll = false;
   /** Technical name/key of the form whose change log is currently shown. */
   currentFormKey = "";
+  /** Total tokens used by all recorded inferences of the current form (input / output / total). */
+  totalTokensIn = 0;
+  totalTokensOut = 0;
+  totalTokens = 0;
 
   private readonly openHandler = (): void => this.open();
 
@@ -112,6 +116,9 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       success: (response: unknown) => {
         this.loading = false;
         const raw = Array.isArray(response) ? (response as Array<Record<string, unknown>>) : [];
+        this.totalTokensIn = raw.reduce((sum, entry) => sum + (Number(entry["tokensIn"]) || 0), 0);
+        this.totalTokensOut = raw.reduce((sum, entry) => sum + (Number(entry["tokensOut"]) || 0), 0);
+        this.totalTokens = this.totalTokensIn + this.totalTokensOut;
         this.logs = this.buildTree(raw);
         this.cdr.markForCheck();
       },
@@ -151,6 +158,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     return `${tokens.toLocaleString()} tokens`;
   }
 
+  /** Formats an input/output token split (e.g. "In 1,200 / Out 340"). Empty when both are zero. */
+  private formatTokenSplit(tokensIn: number, tokensOut: number): string {
+    if (!tokensIn && !tokensOut) return "";
+    return `In ${tokensIn.toLocaleString()} / Out ${tokensOut.toLocaleString()}`;
+  }
+
   /** Formats a date-only string (e.g. "08/04/2026") from a backend timestamp. */
   private formatShortDate(ts: string | undefined): string {
     if (!ts) return "";
@@ -174,6 +187,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   get countLabel(): string {
     const range = this.inferenceRange;
     return `${this.logs.length} Inferences${range ? ` ${range}` : ""}`;
+  }
+
+  /** Total input/output tokens used by all recorded inferences of the current form. */
+  get totalTokensLabel(): string {
+    if (!this.totalTokensIn && !this.totalTokensOut) return "";
+    return `In ${this.totalTokensIn.toLocaleString()} / Out ${this.totalTokensOut.toLocaleString()} tokens`;
   }
   // #endregion Open / close / load
 
@@ -208,7 +227,9 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         id: entryId,
         kind: "inference",
         label: this.formatTimestamp(String(entry["ts"] ?? "")),
-        badge: this.formatTokens(Number(entry["tokens"] ?? 0)),
+        badge:
+          this.formatTokenSplit(Number(entry["tokensIn"] ?? 0), Number(entry["tokensOut"] ?? 0)) ||
+          this.formatTokens(Number(entry["tokens"] ?? 0)),
         ts: String(entry["ts"] ?? ""),
         value: prompt,
         children,
@@ -393,23 +414,126 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   private buildWorkflowNode(workflow: Array<Record<string, unknown>>, entryId: string): LogNode {
     const children: LogNode[] = [];
     workflow.forEach((element, i) => {
+      const baseId = `${entryId}-workflow-${i}`;
       const childChildren: LogNode[] = [];
-      const params = (element["params"] ?? {}) as Record<string, unknown>;
-      for (const [key, value] of Object.entries(params)) {
+
+      if (Array.isArray(element["elements"])) {
+        // New path-based format: { name, trigger, elements, status }.
+        // Trigger
+        const trigger = element["trigger"] as Record<string, unknown> | undefined;
+        const triggerChildren: LogNode[] = [];
+        if (trigger) {
+          const triggerType = String(trigger["type"] ?? "");
+          if (triggerType) {
+            triggerChildren.push({
+              id: `${baseId}-trigger-type`,
+              kind: "param-item",
+              label: "Type",
+              value: triggerType,
+            });
+          }
+          const triggerParams = (trigger["params"] ?? {}) as Record<string, unknown>;
+          for (const [key, value] of Object.entries(triggerParams)) {
+            triggerChildren.push({
+              id: `${baseId}-trigger-${key}`,
+              kind: "param-item",
+              label: key,
+              value: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value),
+            });
+          }
+        }
         childChildren.push({
-          id: `${entryId}-workflow-${i}-${key}`,
-          kind: "param-item",
-          label: key,
-          value: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value),
+          id: `${baseId}-trigger`,
+          kind: "section",
+          label: "Trigger",
+          children: triggerChildren,
+          expanded: false,
+        });
+
+        // Path elements
+        const elements = element["elements"] as Array<Record<string, unknown>>;
+        const elementChildren: LogNode[] = elements.map((el, ei) => {
+          const elChildren: LogNode[] = [];
+          const params = (el["params"] ?? {}) as Record<string, unknown>;
+          for (const [key, value] of Object.entries(params)) {
+            elChildren.push({
+              id: `${baseId}-elem-${ei}-${key}`,
+              kind: "param-item",
+              label: key,
+              value: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value),
+            });
+          }
+          return {
+            id: `${baseId}-elem-${ei}`,
+            kind: "node",
+            label: `${String(el["nodeType"] ?? "")} "${String(el["name"] ?? "")}"`,
+            children: elChildren,
+            expanded: false,
+          };
+        });
+        childChildren.push({
+          id: `${baseId}-elements`,
+          kind: "section",
+          label: `Path elements (${elementChildren.length})`,
+          children: elementChildren,
+          expanded: false,
+        });
+
+        // Status
+        const status = element["status"] as Record<string, unknown> | undefined;
+        const statusChildren: LogNode[] = [];
+        if (status) {
+          const stateName = String(status["endpointState"] ?? "");
+          const stateType = String(status["endpointType"] ?? "");
+          if (stateName)
+            statusChildren.push({ id: `${baseId}-status-state`, kind: "param-item", label: "State", value: stateName });
+          if (stateType)
+            statusChildren.push({ id: `${baseId}-status-type`, kind: "param-item", label: "Type", value: stateType });
+          const stateProps = (status["stateProperties"] ?? {}) as Record<string, unknown>;
+          for (const [key, value] of Object.entries(stateProps)) {
+            statusChildren.push({
+              id: `${baseId}-status-${key}`,
+              kind: "param-item",
+              label: key,
+              value: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value),
+            });
+          }
+        }
+        childChildren.push({
+          id: `${baseId}-status`,
+          kind: "section",
+          label: "Status",
+          children: statusChildren,
+          expanded: false,
+        });
+
+        children.push({
+          id: baseId,
+          kind: "node",
+          label: `Path "${String(element["name"] ?? "")}"`,
+          children: childChildren,
+          expanded: false,
+        });
+      } else {
+        // Legacy flat format: a single node with its parameters.
+        const params = (element["params"] ?? {}) as Record<string, unknown>;
+        const paramChildren: LogNode[] = [];
+        for (const [key, value] of Object.entries(params)) {
+          paramChildren.push({
+            id: `${baseId}-${key}`,
+            kind: "param-item",
+            label: key,
+            value: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value),
+          });
+        }
+        children.push({
+          id: baseId,
+          kind: "node",
+          label: `${String(element["nodeType"] ?? "")} "${String(element["name"] ?? "")}"`,
+          children: paramChildren,
+          expanded: false,
         });
       }
-      children.push({
-        id: `${entryId}-workflow-${i}`,
-        kind: "node",
-        label: `${String(element["nodeType"] ?? "")} "${String(element["name"] ?? "")}"`,
-        children: childChildren,
-        expanded: false,
-      });
     });
     return {
       id: `${entryId}-workflow`,

@@ -932,12 +932,15 @@ class AIFormAssistant : IPluginServletAction {
     val result = JsonParser.parseString(original).asJsonObject
     // Save reference to original items before they may be replaced by the AI's items
     val originalItems = result.getAsJsonArray("items")
-    // Overlay every non-stripped top-level field from the AI result
+    // Overlay every non-stripped top-level field from the AI result. Global variables are merged
+    // separately (by name) so pre-existing entries the AI did not touch are preserved.
     for (entry in aiObj.entrySet()) {
+      if (entry.key == "variables") continue
       if (entry.key !in STRIPPED_FIELDS) {
         result.add(entry.key, entry.value)
       }
     }
+    mergeFormVariables(result, aiObj)
     // result.items is now the AI's items array (if AI included it) or the original (if not)
     val resultItems: JsonArray =
         result.getAsJsonArray("items") ?: JsonArray().also { result.add("items", it) }
@@ -1265,6 +1268,43 @@ class AIFormAssistant : IPluginServletAction {
   }
 
   /**
+   * Merges the AI result's top-level `variables` array into [result] by **name**. Global variables
+   * are form-level entries of the form's `variables` array (each `{ "name": "...", "aliasname":
+   * "...", "serveronly": false, "value": "..." }`). Entries that already exist in [result] are
+   * updated in place (preserving their `id`/`idx`), new entries are appended, and entries the AI
+   * did not mention are left untouched — so setting one global variable never wipes the others.
+   *
+   * @param result The target form JSON object (starts from the original).
+   * @param aiObj The AI result object.
+   */
+  private fun mergeFormVariables(result: JsonObject, aiObj: JsonObject) {
+    val aiVars = aiObj.get("variables")?.takeIf { it.isJsonArray }?.asJsonArray ?: return
+    if (aiVars.size() == 0) return
+    val resultVars =
+        result.get("variables")?.takeIf { it.isJsonArray }?.asJsonArray
+            ?: JsonArray().also { result.add("variables", it) }
+    val byName = mutableMapOf<String, JsonObject>()
+    for (el in resultVars) {
+      if (!el.isJsonObject) continue
+      val name = el.asJsonObject.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      byName[name] = el.asJsonObject
+    }
+    for (el in aiVars) {
+      if (!el.isJsonObject) continue
+      val aiVar = el.asJsonObject
+      val name = aiVar.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      val existing = byName[name]
+      if (existing != null) {
+        // Update the existing entry in place — keep its id/idx, refresh name/aliasname/value.
+        for ((key, value) in aiVar.entrySet()) existing.add(key, value)
+      } else {
+        resultVars.add(aiVar)
+        byName[name] = aiVar
+      }
+    }
+  }
+
+  /**
    * Decodes common Unicode escape sequences that some AI models produce in JSON string values. For
    * example, `\u003e` (Unicode escape for `>`) is decoded to `>`.
    */
@@ -1345,6 +1385,9 @@ class AIFormAssistant : IPluginServletAction {
           obj1.add(key, value)
         }
       }
+      // Preserve global variables the AI set in pass-2 (e.g. standard-configuration globals such
+      // as USGrade) by merging the pass-2 `variables` array into the pass-1 base by name.
+      mergeFormVariables(obj1, obj2)
       return gson.toJson(obj1)
     } catch (e: Exception) {
       logger.warn("[AIFormAssistant] splicePass2IntoPass1 failed: {}", e.message)

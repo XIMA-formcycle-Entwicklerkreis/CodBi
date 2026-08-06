@@ -1,6 +1,8 @@
 <p-dialog
     [visible]="visible"
     (visibleChange)="onVisibleChange($event)"
+    (onShow)="onDialogShow()"
+    (onDragEnd)="onDialogDragEnd()"
     [modal]="true"
     [draggable]="true"
     [resizable]="false"
@@ -51,6 +53,12 @@
             <span class="cb-ai-token-item">This run (est.): <strong>{{ lastTokens }}</strong></span>
             <span class="cb-ai-token-item">Session total: <strong>{{ sessionTokens }}</strong></span>
             <span class="cb-ai-token-item">tokens</span>
+            @if (lastCostLabel) {
+                <span class="cb-ai-token-item cb-ai-token-item--cost" title="Estimated cost of this run (input + output tokens × configured price per 1M tokens)">Cost (run): <strong>{{ lastCostLabel }}</strong></span>
+            }
+            @if (sessionCostLabel) {
+                <span class="cb-ai-token-item cb-ai-token-item--cost" title="Estimated total cost of this session">Cost (session): <strong>{{ sessionCostLabel }}</strong></span>
+            }
         </div>
 
         <div class="cb-ai-prompt-wrapper">

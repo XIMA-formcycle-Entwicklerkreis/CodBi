@@ -29,12 +29,15 @@ class CodbiAiAssistantLog(
     @Column(name = "ts", nullable = false, insertable = false, updatable = false)
     var ts: Timestamp? = null,
     @Column(name = "form_key", length = 200) var formKey: String? = null,
+    @Column(name = "username", length = 200) var username: String? = null,
     @Column(name = "prompt", length = 1000) var prompt: String? = null,
     @Column(name = "intent", length = 20) var intent: String? = null,
     @Column(name = "model_id", length = 100) var modelId: String? = null,
     @Column(name = "tokens") var tokens: Long? = null,
     @Column(name = "tokens_in") var tokensIn: Long? = null,
     @Column(name = "tokens_out") var tokensOut: Long? = null,
+    @Column(name = "cost") var cost: Double? = null,
+    @Column(name = "currency", length = 10) var currency: String? = null,
     @Column(name = "workflow_version_id") var workflowVersionId: Long? = null,
     @Lob @Column(name = "form_changes") var formChanges: String? = null,
     @Lob @Column(name = "workflow_changes") var workflowChanges: String? = null

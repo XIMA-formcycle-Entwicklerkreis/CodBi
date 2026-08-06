@@ -18,6 +18,13 @@ import { TreeModule } from "primeng/tree";
 import type { TreeNode } from "primeng/api";
 import { Textarea } from "primeng/textarea";
 import { Tooltip } from "primeng/tooltip";
+import {
+  applyDialogPosition,
+  loadDialogPosition,
+  readDialogPosition,
+  saveDialogPosition,
+  type DialogPosition,
+} from "../dialog-position";
 // #endregion
 
 // #region Transloco
@@ -233,11 +240,29 @@ export class PromptManager implements OnInit, OnDestroy {
 
   private readonly openHandler = (): void => this.open();
 
+  /** Remembered dialog position, persisted across reloads so the browser keeps the location. */
+  private dialogPosition: DialogPosition | null = loadDialogPosition("codbi-dialog-prompt-manager-position");
+  private static readonly DIALOG_STYLE_CLASS = "cb-prompt-manager-dialog";
+
   constructor(
     private readonly http: HttpClient,
     private readonly cdr: ChangeDetectorRef,
     private readonly translocoService: TranslocoService,
   ) {}
+
+  /** Restores the remembered dialog position once the dialog has rendered. */
+  onDialogShow(): void {
+    setTimeout(() => applyDialogPosition(PromptManager.DIALOG_STYLE_CLASS, this.dialogPosition), 0);
+  }
+
+  /** Remembers the dialog position after the user dragged/resized it. */
+  onDialogDragEnd(): void {
+    const p = readDialogPosition(PromptManager.DIALOG_STYLE_CLASS);
+    if (p) {
+      this.dialogPosition = p;
+      saveDialogPosition("codbi-dialog-prompt-manager-position", p);
+    }
+  }
 
   /** Convenience wrapper around TranslocoService.translate. */
   private tr(key: string, params?: Record<string, unknown>): string {

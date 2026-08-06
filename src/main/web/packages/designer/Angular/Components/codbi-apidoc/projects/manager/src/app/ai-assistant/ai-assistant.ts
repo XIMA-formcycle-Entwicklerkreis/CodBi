@@ -18,6 +18,13 @@ import { Callbacks, getJQuery, instance as getDesignerInstance } from "@de-xima/
 import { getCurrentFormKey } from "./form-key";
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFPageProxy } from "pdfjs-dist";
+import {
+  applyDialogPosition,
+  loadDialogPosition,
+  readDialogPosition,
+  saveDialogPosition,
+  type DialogPosition,
+} from "../dialog-position";
 // #endregion Imports
 
 // #region Interfaces
@@ -93,6 +100,12 @@ export class AiAssistant implements OnInit, OnDestroy {
   lastTokens = 0;
   /** Accumulated token total for the current session. */
   sessionTokens = 0;
+  /** Estimated cost of the most recent inference (returned by the backend). */
+  lastCost = 0;
+  /** ISO 4217 currency code of the most recent run (e.g. "EUR"). Empty when no price is configured. */
+  lastCurrency = "";
+  /** Accumulated session cost per currency — models may be priced in different currencies. */
+  sessionCostByCurrency = new Map<string, number>();
   attachedFile: File | null = null;
   readonly speechSupported = "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
   isSpeechRecording = false;
@@ -114,6 +127,10 @@ export class AiAssistant implements OnInit, OnDestroy {
   // #endregion State
 
   private readonly openHandler = (): void => this.open();
+
+  /** Remembered dialog position, persisted across reloads so the browser keeps the location. */
+  private dialogPosition: DialogPosition | null = loadDialogPosition("codbi-dialog-assistant-position");
+  private static readonly DIALOG_STYLE_CLASS = "cb-ai-assistant-dialog";
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -147,6 +164,39 @@ export class AiAssistant implements OnInit, OnDestroy {
       "--cb-ai-watermark-url",
       `url('${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg')`,
     );
+    // Workflow-reload case: after a workflow is created the designer reloads the page. The sensitive
+    // elements used by that run were persisted to localStorage right before the reload (same pattern
+    // as the pending-standards value). The change-log component consumes them in its own ngOnInit;
+    // if it did not (e.g. it was not mounted in time), this fallback — on the always-mounted
+    // assistant element — still opens the change log with them highlighted.
+    const pendingSensitive = localStorage.getItem("codbi-log-sensitive-elements");
+    console.log("[AICodBiAssistant] ngOnInit: pending sensitive highlight =", pendingSensitive);
+    if (pendingSensitive) {
+      setTimeout(() => {
+        // Only act if the change-log component has not already consumed the pending highlight
+        // (it removes the storage when it opens), so the log is not opened twice.
+        const stillPending = localStorage.getItem("codbi-log-sensitive-elements");
+        console.log("[AICodBiAssistant] ngOnInit fallback: stillPending =", stillPending);
+        if (!stillPending) return;
+        localStorage.removeItem("codbi-log-sensitive-elements");
+        let elements: string[] = [];
+        try {
+          const parsed = JSON.parse(stillPending) as unknown;
+          elements = Array.isArray(parsed)
+            ? (parsed as string[]).filter((e): e is string => typeof e === "string")
+            : [];
+        } catch {
+          // ignore malformed payload
+        }
+        console.log("[AICodBiAssistant] ngOnInit fallback: dispatching open with", JSON.stringify(elements));
+        if (elements.length > 0) {
+          if (!document.querySelector("cb-ai-assistant-log")) {
+            document.body.appendChild(document.createElement("cb-ai-assistant-log"));
+          }
+          document.dispatchEvent(new CustomEvent("codbi:ai-assistant-log:open", { detail: { elements } }));
+        }
+      }, 800);
+    }
   }
 
   ngOnDestroy(): void {
@@ -159,6 +209,20 @@ export class AiAssistant implements OnInit, OnDestroy {
   onVisibleChange(v: boolean): void {
     this.visible = v;
     this.cdr.markForCheck();
+  }
+
+  /** Restores the remembered dialog position once the dialog has rendered. */
+  onDialogShow(): void {
+    setTimeout(() => applyDialogPosition(AiAssistant.DIALOG_STYLE_CLASS, this.dialogPosition), 0);
+  }
+
+  /** Remembers the dialog position after the user dragged it. */
+  onDialogDragEnd(): void {
+    const p = readDialogPosition(AiAssistant.DIALOG_STYLE_CLASS);
+    if (p) {
+      this.dialogPosition = p;
+      saveDialogPosition("codbi-dialog-assistant-position", p);
+    }
   }
 
   get resultHtml(): string | null {
@@ -593,6 +657,15 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.lastTokens = classTokens;
           this.sessionTokens += classTokens;
         }
+        // Count the cost of the classification inference (currency included when a price is set).
+        const classCost = typeof p1["cost"] === "number" ? p1["cost"] : 0;
+        if (classCost > 0) {
+          this.lastCost = classCost;
+          this.addSessionCost(String(p1["currency"] ?? ""), classCost);
+        }
+        if (typeof p1["currency"] === "string" && p1["currency"]) {
+          this.lastCurrency = p1["currency"] as string;
+        }
 
         this.spinnerText = "Collecting context\u2026";
         this.cdr.markForCheck();
@@ -603,6 +676,29 @@ export class AiAssistant implements OnInit, OnDestroy {
         this.setError(jq.responseJSON?.error ?? jq.statusText ?? "Request failed.");
       },
     });
+  }
+
+  /** Accumulates [cost] into the session total for the given [currency]. */
+  private addSessionCost(currency: string, cost: number): void {
+    if (!currency || cost <= 0) return;
+    this.sessionCostByCurrency.set(currency, (this.sessionCostByCurrency.get(currency) ?? 0) + cost);
+  }
+
+  /** Cost of the most recent run, formatted with its currency (e.g. "EUR 0.0005"). Empty when zero or no currency. */
+  get lastCostLabel(): string {
+    if (!this.lastCost || !this.lastCurrency) return "";
+    return `${this.lastCurrency} ${this.lastCost.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 })}`;
+  }
+
+  /** Accumulated session cost (grouped per currency), formatted for display. */
+  get sessionCostLabel(): string {
+    if (this.sessionCostByCurrency.size === 0) return "";
+    return [...this.sessionCostByCurrency.entries()]
+      .map(
+        ([currency, cost]) =>
+          `${currency} ${cost.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 })}`,
+      )
+      .join(" \u00B7 ");
   }
 
   private runPhase2(
@@ -722,6 +818,35 @@ export class AiAssistant implements OnInit, OnDestroy {
           return;
         }
 
+        // Sensitive CodBi elements (AI_Log_SensitiveElements) that were used by this inference.
+        // The change log is opened automatically with them highlighted.
+        //  - Form-only run: no page reload — the log is opened directly via the event below.
+        //  - Workflow / both run: the designer reloads the page (to store the workflow). The
+        //    sensitive elements are persisted to sessionStorage inside doReload() / the
+        //    workflow-only reload path, immediately before window.location.reload(), so no
+        //    intermediate async rendering (loadPersistJson / MultiSelect reconstruction) can consume
+        //    them. After the reload the change-log component reopens the log with them highlighted.
+        const sensitive = Array.isArray(p2["sensitiveElements"])
+          ? (p2["sensitiveElements"] as string[]).filter((e) => typeof e === "string" && e.length > 0)
+          : [];
+        const hasWorkflowReload =
+          typeof p2["workflowMessage"] === "string" && (p2["workflowMessage"] as string).length > 0;
+        console.log(
+          "[AICodBiAssistant] run: sensitiveElements =",
+          JSON.stringify(sensitive),
+          "| hasWorkflowReload =",
+          hasWorkflowReload,
+        );
+        if (sensitive.length > 0 && !hasWorkflowReload) {
+          // Form-only run (no page reload) — open the log directly now.
+          setTimeout(() => {
+            if (!document.querySelector("cb-ai-assistant-log")) {
+              document.body.appendChild(document.createElement("cb-ai-assistant-log"));
+            }
+            document.dispatchEvent(new CustomEvent("codbi:ai-assistant-log:open", { detail: { elements: sensitive } }));
+          }, 250);
+        }
+
         const hasFormJson = "formJson" in p2 && p2["formJson"] != null;
         const hasWorkflowMessage = "workflowMessage" in p2 && typeof p2["workflowMessage"] === "string";
 
@@ -732,6 +857,15 @@ export class AiAssistant implements OnInit, OnDestroy {
         if (tokens > 0) {
           this.lastTokens += tokens;
           this.sessionTokens += tokens;
+        }
+        // Update the cost counter the same way (input+output tokens × configured price).
+        const runCost = typeof p2["cost"] === "number" ? p2["cost"] : 0;
+        if (runCost > 0) {
+          this.lastCost += runCost;
+          this.addSessionCost(String(p2["currency"] ?? ""), runCost);
+        }
+        if (typeof p2["currency"] === "string" && p2["currency"]) {
+          this.lastCurrency = p2["currency"] as string;
         }
 
         // Apply form changes if present
@@ -869,6 +1003,18 @@ export class AiAssistant implements OnInit, OnDestroy {
             if (typeof standardsForReload === "string") {
               localStorage.setItem("codbi-pending-standards", standardsForReload);
             }
+            // Persist the sensitive elements (AI_Log_SensitiveElements) used by this run at the very
+            // last moment as well, so they survive the reload and the change-log component reopens
+            // with them highlighted after the page reload. localStorage (same as the standards
+            // value) so it survives any reload/navigation.
+            if (sensitive.length > 0) {
+              localStorage.setItem("codbi-log-sensitive-elements", JSON.stringify(sensitive));
+            }
+            console.log(
+              "[AICodBiAssistant] doReload: persisted sensitive elements =",
+              JSON.stringify(sensitive),
+              "| reloading now",
+            );
             window.location.reload();
           };
           const waitUntilReady = (): Promise<void> =>
@@ -939,9 +1085,15 @@ export class AiAssistant implements OnInit, OnDestroy {
             setTimeout(doReload, 2000);
           }
         } else if (hasWorkflowMessage) {
-          // Workflow only: show message and reload
+          // Workflow only: show message and reload. Persist the sensitive elements used by this run
+          // right before the reload so the change-log component reopens with them highlighted.
           this.resultText = `${String(p2["workflowMessage"])} Reloading designer\u2026`;
-          setTimeout(() => window.location.reload(), 1500);
+          setTimeout(() => {
+            if (sensitive.length > 0) {
+              localStorage.setItem("codbi-log-sensitive-elements", JSON.stringify(sensitive));
+            }
+            window.location.reload();
+          }, 1500);
         } else if (hasFormJson) {
           // Form only: wait for async rendering to complete (same as "both"), then patch
           // everything exactly as the "both" flow does to ensure standards stick.

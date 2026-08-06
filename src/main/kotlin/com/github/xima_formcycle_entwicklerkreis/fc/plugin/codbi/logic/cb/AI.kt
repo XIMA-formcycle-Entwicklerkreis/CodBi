@@ -42,9 +42,10 @@ import java.util.concurrent.TimeUnit
  * low-maintenance approach for high-speed, internalized workflows.
  *
  * ## Plugin Properties
- * |Property                  |Type|Default |Description                                                          |
- * |--------------------------|----|--------|---------------------------------------------------------------------|
- * |`AI_CachedImageExpiration`|Long|`600000`|Time in ms before a cached image expires and is purged by the janitor|
+ * |Property                  |Type|Default |Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+ * |--------------------------|----|--------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+ * |`AI_CachedImageExpiration`|Long|`600000`|Time in ms before a cached image expires and is purged by the janitor                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+ * |`AI_Log_SensitiveElements`|CSV |`(none)`|Comma-separated names of CodBi elements (functionalities, EPs, standard configurations/classes/globals) that are considered **sensitive**. Every occurrence of such an element in the AI change log is marked with an **always-on red border**; additionally, when the last inference used one of them, the change-log dialog opens automatically with those elements marked with a lightning icon (temporary). Re-read on every log load, so configuration changes take effect the next time the change log is opened.|
  */
 abstract class AI : CodBi(), IPluginServletAction {
   // region Shared Concurrency Control
@@ -60,6 +61,24 @@ abstract class AI : CodBi(), IPluginServletAction {
 
     /** Whether the queue-position badge is enabled globally. Configured via `AI_QueueBadge`. */
     @Volatile @JvmStatic var queueBadgeEnabled: Boolean = false
+
+    /**
+     * Lowercased names of CodBi elements (functionalities, element placeholders, standard
+     * configurations / CSS classes / global variables) that are considered **sensitive**.
+     * Configured via the plugin property `AI_Log_SensitiveElements` (comma-separated CSV).
+     *
+     * The list is:
+     * - used by the `Run` handler to detect which sensitive elements the last inference applied
+     *   (the change log dialog then opens automatically, highlighting those elements with a
+     *   lightning icon), and
+     * - returned with every `Log` response so the frontend marks **all** matching nodes with an
+     *   always-on red border.
+     *
+     * It is `@Volatile` and re-read whenever the plugin is re-initialized; because every log load
+     * reads the current value, configuration changes take effect the next time the change log is
+     * opened.
+     */
+    @Volatile @JvmStatic var logSensitiveElements: Set<String> = emptySet()
 
     /**
      * Tracks every request that is waiting for or currently holding the inference semaphore.
@@ -223,6 +242,11 @@ abstract class AI : CodBi(), IPluginServletAction {
 
     configData.properties.getProperty("AI_QueueBadge")?.trim()?.lowercase()?.let {
       queueBadgeEnabled = it == "true" || it == "1" || it == "yes"
+    }
+
+    configData.properties.getProperty("AI_Log_SensitiveElements")?.let { csv ->
+      logSensitiveElements =
+          csv.split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
     }
 
     if (!expirationValue.isNullOrBlank()) {

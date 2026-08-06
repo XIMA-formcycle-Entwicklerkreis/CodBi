@@ -48,6 +48,9 @@
   "RP.Tabs.Header.Functions.Import.Elementsuffix": "_codbi_import",
   "RP.Tabs.Header.Functions.Export": "Esporta in file...",
   "RP.Tabs.Header.Functions.Sync": "Carica sul server",
+  "RP.Tabs.Header.Functions.Maximize": "Massimizza",
+  "RP.Tabs.Header.Functions.Restore": "Ripristina dimensione",
+  "RP.Tabs.Header.Functions.Close": "Chiudi",
   "RP.phNotes": "Qui è possibile registrare note accessibili esclusivamente tramite questa interfaccia e che non verranno mai trasferite nella documentazione ufficiale...",
   "RP.Notes.NewCreation": "Nuova creazione",
   "TreeView.Label.Status.Description": "Descrizione disponibile",
@@ -70,6 +73,7 @@
   "CodeTemplate_EP_Extend_Placeholder": "Elementplaceholder.Da.Estendere",
   "CodeTemplate_Start": "Avvia CodBi",
 
+  "cb.log.attention": "Presta particolare attenzione agli elementi contrassegnati di seguito.",
   "pm.title": "Prompt Manager",
   "pm.view.detailed": "Dettagliato",
   "pm.view.detailed.tip": "Modifica i prompt dettagliati",

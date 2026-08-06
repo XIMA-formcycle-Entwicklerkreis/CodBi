@@ -2433,6 +2433,34 @@ export class Manager implements AfterViewInit {
   protected onClick_CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel() {
     window.CodbiPluginData.managerClosed();
   }
+  /** Whether the {@link Manager.CodBi_LocalAPIDoc } panel is currently maximized (fullscreen). */
+  protected maximized: boolean = false;
+  /** Maximizes/restores the {@link Manager.CodBi_LocalAPIDoc } panel by toggling the host container's fullscreen state. */
+  protected onClick_CodBi_LocalAPIDoc_RightPanel_Options_Maximize() {
+    const host = document.getElementById("cCodBi_LocalAPIDoc");
+    this.maximized = !this.maximized;
+    if (host) {
+      host.classList.toggle("--maximized", this.maximized);
+      // Belt-and-suspenders: apply the geometry inline as well, so the resize works even if
+      // the stylesheet rule is not (yet) loaded.
+      if (this.maximized) {
+        host.style.left = "0vw";
+        host.style.top = "0vh";
+        host.style.width = "100vw";
+        host.style.height = "100vh";
+        host.style.borderRadius = "0";
+      } else {
+        host.style.left = "";
+        host.style.top = "";
+        host.style.width = "";
+        host.style.height = "";
+        host.style.borderRadius = "";
+      }
+    }
+    // NOTE: Do NOT call window.CodbiPluginData.managerMaximize() here — the designer bridge
+    // toggles the same "--maximized" class, which would cancel this toggle (maximize would
+    // immediately restore and restore would re-maximize).
+  }
   /** The {@link ChangeDetectorRef } for this {@link Manager }.*/
   protected cdr: ChangeDetectorRef;
   /** The {@link TranslocoService } used by this {@link Manager }. */

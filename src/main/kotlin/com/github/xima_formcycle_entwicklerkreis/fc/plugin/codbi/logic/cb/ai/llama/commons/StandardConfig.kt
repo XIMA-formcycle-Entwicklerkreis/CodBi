@@ -40,6 +40,16 @@ import java.io.File
  * @param extraParamsJson Optional JSON object string of additional parameters to append to every
  *   API request body (e.g. `{"top_p":0.9,"seed":42}`). Blacklisted keys are silently removed during
  *   parsing. `null` means no extra params.
+ * @param priceCurrency ISO 4217 currency code (e.g. `EUR`, `USD`) of the **standard** model's
+ *   prices. `null` disables cost display for the standard model even when prices are configured.
+ * @param pricePerMInput Price per 1,000,000 **input** tokens for the standard model, or `null` when
+ *   the standard model has no configured price.
+ * @param pricePerMOutput Price per 1,000,000 **output** tokens for the standard model, or `null`.
+ * @param thinkingPriceCurrency ISO 4217 currency code of the **thinking** model's prices, or
+ *   `null`.
+ * @param thinkingPricePerMInput Price per 1,000,000 input tokens for the thinking model, or `null`.
+ * @param thinkingPricePerMOutput Price per 1,000,000 output tokens for the thinking model, or
+ *   `null`.
  */
 internal data class StandardConfig(
     val modelUrl: String,
@@ -72,7 +82,13 @@ internal data class StandardConfig(
     val specialists: Map<String, SpecialistEntry> = emptyMap(),
     val externalSpecialists: Map<String, ExternalSpecialistEntry> = emptyMap(),
     val maxConcurrent: Int = 3,
-    val extraParamsJson: String? = null
+    val extraParamsJson: String? = null,
+    val priceCurrency: String? = null,
+    val pricePerMInput: Double? = null,
+    val pricePerMOutput: Double? = null,
+    val thinkingPriceCurrency: String? = null,
+    val thinkingPricePerMInput: Double? = null,
+    val thinkingPricePerMOutput: Double? = null
 ) {
   /**
    * A local specialist model entry parsed from `AI_LLAMA_STD_SPECIALIST_XXX` plugin properties.
@@ -83,12 +99,18 @@ internal data class StandardConfig(
    * @param sha256 Optional SHA-256 digest (lowercase hex) to verify the GGUF after download.
    * @param mmprojSha256 Optional SHA-256 digest (lowercase hex) to verify the mmproj after
    *   download.
+   * @param currency ISO 4217 currency code of this specialist's prices, or `null`.
+   * @param pricePerMInput Price per 1,000,000 input tokens for this specialist, or `null`.
+   * @param pricePerMOutput Price per 1,000,000 output tokens for this specialist, or `null`.
    */
   data class SpecialistEntry(
       val modelUrl: String,
       val mmprojUrl: String?,
       val sha256: String? = null,
-      val mmprojSha256: String? = null
+      val mmprojSha256: String? = null,
+      val currency: String? = null,
+      val pricePerMInput: Double? = null,
+      val pricePerMOutput: Double? = null
   )
 
   /**
@@ -101,13 +123,19 @@ internal data class StandardConfig(
    *   back to the global [StandardConfig.maxTokens].
    * @param extraParams Extra JSON parameters injected into every request for this specialist (e.g.
    *   `{"temperature":0.0,"seed":42}`). Overrides the global [extraParamsJson].
+   * @param currency ISO 4217 currency code of this specialist's prices, or `null`.
+   * @param pricePerMInput Price per 1,000,000 input tokens for this specialist, or `null`.
+   * @param pricePerMOutput Price per 1,000,000 output tokens for this specialist, or `null`.
    */
   data class ExternalSpecialistEntry(
       val url: String,
       val apiKey: String?,
       val model: String?,
       val maxTokens: Int? = null,
-      val extraParams: String? = null
+      val extraParams: String? = null,
+      val currency: String? = null,
+      val pricePerMInput: Double? = null,
+      val pricePerMOutput: Double? = null
   )
 
   init {
@@ -135,6 +163,45 @@ internal data class StandardConfig(
   val hasSpecialists: Boolean
     get() = specialists.isNotEmpty() || externalSpecialists.isNotEmpty()
 
+  /**
+   * Resolves the configured price per 1,000,000 tokens for the given model id, or `null` when no
+   * price (input and output) is configured for that model. The returned [ModelPrice] carries the
+   * currency of the resolved model (which may differ between models).
+   *
+   * @param modelId One of `"standard"`, `"thinking"`, `"specialist:<name>"`,
+   *   `"ext-specialist:<name>"`.
+   */
+  fun priceForModel(modelId: String): ModelPrice? =
+      when {
+        modelId == "standard" -> buildPrice(priceCurrency, pricePerMInput, pricePerMOutput)
+        modelId == "thinking" ->
+            buildPrice(thinkingPriceCurrency, thinkingPricePerMInput, thinkingPricePerMOutput)
+        modelId.startsWith("specialist:") -> {
+          val name = modelId.removePrefix("specialist:")
+          val entry =
+              specialists.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+          if (entry == null) null
+          else buildPrice(entry.currency, entry.pricePerMInput, entry.pricePerMOutput)
+        }
+        modelId.startsWith("ext-specialist:") -> {
+          val name = modelId.removePrefix("ext-specialist:")
+          val entry =
+              externalSpecialists.entries
+                  .firstOrNull { it.key.equals(name, ignoreCase = true) }
+                  ?.value
+          if (entry == null) null
+          else buildPrice(entry.currency, entry.pricePerMInput, entry.pricePerMOutput)
+        }
+        else -> null
+      }
+
+  /** Builds a [ModelPrice] for the given currency/prices, or `null` when either price is unset. */
+  private fun buildPrice(currency: String?, priceIn: Double?, priceOut: Double?): ModelPrice? {
+    val input = priceIn ?: return null
+    val output = priceOut ?: return null
+    return ModelPrice(currency = currency, pricePerMInput = input, pricePerMOutput = output)
+  }
+
   /** Returns a summary string with the API key redacted. */
   override fun toString(): String =
       "StandardConfig(modelUrl=$modelUrl, externalUrl=$externalUrl, " +
@@ -142,4 +209,27 @@ internal data class StandardConfig(
           "externalModel=$externalModel, maxTokens=$maxTokens, " +
           "maxPixels=$maxPixels, maxRAMPercent=$maxRAMPercent, " +
           "maxComputePercent=$maxComputePercent, isExternalMode=$isExternalMode)"
+}
+
+/**
+ * Pricing information for an AI model: the cost per 1,000,000 input/output tokens and the currency
+ * the prices are denominated in.
+ *
+ * @param currency ISO 4217 currency code (e.g. `EUR`, `USD`), or `null` when not configured.
+ * @param pricePerMInput Price per 1,000,000 input tokens.
+ * @param pricePerMOutput Price per 1,000,000 output tokens.
+ */
+data class ModelPrice(
+    val currency: String?,
+    val pricePerMInput: Double,
+    val pricePerMOutput: Double
+) {
+  /**
+   * Computes the estimated cost for [tokensIn] input and [tokensOut] output tokens. Returns `null`
+   * when the token counts are both zero (nothing consumed).
+   */
+  fun costFor(tokensIn: Long, tokensOut: Long): Double? {
+    val cost = tokensIn / 1_000_000.0 * pricePerMInput + tokensOut / 1_000_000.0 * pricePerMOutput
+    return if (cost > 0.0) cost else null
+  }
 }

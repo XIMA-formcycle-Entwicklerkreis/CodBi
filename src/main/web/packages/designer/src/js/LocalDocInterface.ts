@@ -1084,8 +1084,9 @@ export function enableLocalDocInterface(): void {
             "beforeend",
             `
           <style>
-            #cCodBi_LocalAPIDoc { z-index: 100 ; position : absolute ; left : -100vw ; top : 20vh ; width : 70vw ; height : 50vh ; pointer-events : none ; opacity : 0 ; transition : 1s all ;}
+            #cCodBi_LocalAPIDoc { z-index: 100 ; position : absolute ; left : -100vw ; top : 20vh ; width : 70vw ; height : 50vh ; pointer-events : none ; opacity : 0 ; transition : .35s all ;}
             #cCodBi_LocalAPIDoc.--opened { left : 0vw ; opacity : .9 ; pointer-events : all !important ;}}
+            #cCodBi_LocalAPIDoc.--maximized { left : 0vw ; top : 0vh ; width : 100vw ; height : 100vh ; opacity : 1 ; border-radius : 0 ;}
             #cCodBi_LocalAPIDoc cb-manager { display : block ; height : 100% ;}</style>
           <div id = "cCodBi_LocalAPIDoc">
             <cb-manager apidoc      = '${JSON.stringify(response).replace(/&/g, "&amp;").replace(/'/g, "&#39;")}'
@@ -1186,6 +1187,10 @@ export function enableLocalDocInterface(): void {
 
           window.CodbiPluginData.managerClosed = () => {
             manager.classList.toggle("--opened");
+          };
+
+          window.CodbiPluginData.managerMaximize = () => {
+            manager.classList.toggle("--maximized");
           };
           // #endregion Register Hotkey ALT+C for displaying the manager and handle the manager's close button.
           // #endregion Load and inject Angular local API-Documentation-Manager web component

@@ -68,6 +68,7 @@ class AICodBiAssistant : IPluginServletAction {
       "AppointmentPlan" -> handleAppointmentPlan(params)
       "Status" -> handleStatus()
       "Log" -> handleLog(params)
+      "SensitiveCheck" -> handleSensitiveCheck(params)
       else -> jsonResponse("""{"error":"Unknown action"}""")
     }
   }
@@ -143,8 +144,45 @@ class AICodBiAssistant : IPluginServletAction {
     // Optional X-Form-Key header: when present, only the log entries of that form are returned.
     val formKey =
         params.headerMap.entries.find { it.key.equals("X-Form-Key", ignoreCase = true) }?.value
-    return jsonResponse(AiAssistantLog.loadLogs(emf, formKey = formKey))
+    return jsonResponse(
+        AiAssistantLog.loadLogs(emf, formKey = formKey, username = currentUsername(params)))
   }
+
+  /**
+   * Stores/removes a sensitive-element dismiss check for the current user. Called with X-Action:
+   * SensitiveCheck and form parameters `entryId`, `elementName` and `checked` ("true"/"false").
+   */
+  private fun handleSensitiveCheck(params: IPluginServletActionParams): IPluginServletActionRetVal {
+    val emf = CodbiEntities.entityManagerFactory
+    if (emf == null) return jsonResponse("""{"error":"Database not available"}""")
+    val entryId = params.requestParameters["entryId"]?.firstOrNull()?.toLongOrNull()
+    val elementName = params.requestParameters["elementName"]?.firstOrNull()
+    val checked = params.requestParameters["checked"]?.firstOrNull()?.toBoolean() ?: false
+    val username = currentUsername(params)
+    if (entryId == null || elementName.isNullOrBlank() || username.isNullOrBlank()) {
+      return jsonResponse("""{"ok":false}""")
+    }
+    val ok = AiAssistantLog.setSensitiveCheck(emf, entryId, elementName, username, checked)
+    return jsonResponse(if (ok) """{"ok":true}""" else """{"ok":false}""")
+  }
+
+  /** Resolves the login name of the authenticated user, or `null` when it cannot be determined. */
+  private fun currentUsername(params: IPluginServletActionParams): String? =
+      try {
+        // Same accessor as the Local API Doc store (StructuredDataStoreAction) — the one that
+        // reliably resolves the logged-in user in the servlet action context (params.benutzer is
+        // not always populated).
+        params.user.userName?.trim()?.takeIf { it.isNotBlank() }
+      } catch (e: Exception) {
+        logger.warn("[AICodBiAssistant] Could not resolve user via params.user: {}", e.message)
+        try {
+          params.benutzer?.loginName?.trim()?.takeIf { it.isNotBlank() }
+        } catch (e2: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] Could not resolve user via params.benutzer: {}", e2.message)
+          null
+        }
+      }
 
   /**
    * Looks up an appointment plan UUID by its human-readable name. Called with X-Action:
@@ -360,7 +398,7 @@ class AICodBiAssistant : IPluginServletAction {
 
     // Phase 1 â€” classify intent
     if (phase == "1") {
-      val (intent, classifyTokens) =
+      val (intent, classifyUsage) =
           try {
             // imageParts intentionally omitted: intent classification only needs the text prompt;
             // sending vision-format array content to text-only models causes HTTP 400 errors.
@@ -374,7 +412,13 @@ class AICodBiAssistant : IPluginServletAction {
                 """{"error":${gson.toJson("Classification failed: ${e.message}")}}""")
           }
       logger.info("[AICodBiAssistant] Classified intent as: {}", intent)
-      return jsonResponse("""{"status":"need_data","intent":"$intent","tokens":$classifyTokens}""")
+      // Report the estimated cost of the classification call (per input/output tokens) when a
+      // price is configured for the selected model.
+      val classifyPrice = instance.priceForModel(modelId)
+      val classifyCost =
+          classifyPrice?.costFor(classifyUsage.input.toLong(), classifyUsage.output.toLong())
+      return jsonResponse(
+          """{"status":"need_data","intent":${gson.toJson(intent)},"tokens":${classifyUsage.total},"tokensIn":${classifyUsage.input},"tokensOut":${classifyUsage.output},"cost":${classifyCost ?: "null"},"currency":${gson.toJson(classifyPrice?.currency)}}""")
     }
 
     // Phase 2 â€” execute
@@ -500,22 +544,39 @@ class AICodBiAssistant : IPluginServletAction {
       result.append(""","workflowMessage":${gson.toJson(workflowMessage)}""")
     }
 
+    // Resolve the selected model's pricing and compute the estimated cost of this run from the
+    // accumulated input/output tokens. `null` when no price is configured for the model.
+    val modelPrice = instance.priceForModel(modelId)
+    val runCost = modelPrice?.costFor(tokensIn.toLong(), tokensOut.toLong())
+    val runCurrency = modelPrice?.currency
+
+    // Compute the change description — used both for the change-log record and to detect whether
+    // any configured "sensitive" CodBi element (AI_Log_SensitiveElements) was used by this run.
+    var formChanges: JsonObject? = null
+    if (intent == "form" || intent == "both") {
+      val before = persistJson
+      val after = resolvedFormJson
+      if (before != null && after != null) {
+        formChanges = AiAssistantLog.computeFormChanges(before, after)
+      }
+    }
+    val sensitiveUsed =
+        formChanges?.let { AiAssistantLog.usedSensitiveElements(it, AI.logSensitiveElements) }
+            ?: emptyList()
+    logger.info(
+        "[AICodBiAssistant] Sensitive elements used: {} (configured: {})",
+        sensitiveUsed,
+        AI.logSensitiveElements)
+
+    result.append(
+        ""","tokensIn":$tokensIn,"tokensOut":$tokensOut,"cost":${runCost ?: "null"},"currency":${gson.toJson(runCurrency)}""")
+    if (sensitiveUsed.isNotEmpty()) {
+      result.append(""","sensitiveElements":${gson.toJson(sensitiveUsed)}""")
+    }
     result.append("}")
 
     // Record the inference in the change log — every successful run keeps a DB record.
     try {
-      val formChanges =
-          if (intent == "form" || intent == "both") {
-            val before = persistJson
-            val after = resolvedFormJson
-            if (before != null && after != null) {
-              AiAssistantLog.computeFormChanges(before, after)
-            } else {
-              null
-            }
-          } else {
-            null
-          }
       AiAssistantLog.recordInference(
           CodbiEntities.entityManagerFactory,
           prompt,
@@ -526,7 +587,10 @@ class AICodBiAssistant : IPluginServletAction {
           formChanges,
           workflowNodes,
           tokensIn.toLong(),
-          tokensOut.toLong())
+          tokensOut.toLong(),
+          cost = runCost,
+          currency = runCurrency,
+          username = currentUsername(params))
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to record change log: {}", e.message)
     }
@@ -548,7 +612,7 @@ class AICodBiAssistant : IPluginServletAction {
       modelId: String,
       instance: Standard,
       imageParts: List<String> = emptyList()
-  ): Pair<String, Int> {
+  ): Pair<String, TokenUsage> {
     val systemPrompt = loadClassifyIntentPrompt()
 
     val messagesJson = buildString {
@@ -563,7 +627,7 @@ class AICodBiAssistant : IPluginServletAction {
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
     // Report the estimated tokens consumed by the classification call so the frontend token
     // counter reflects every inference, not just the phase-2 modifications.
-    val tokens = estimateTokens(messagesJson) + estimateTokens(rawResponse)
+    val usage = TokenUsage(estimateTokens(messagesJson), estimateTokens(rawResponse))
     val cleaned = extractJson(stripThinkTags(rawResponse))
 
     return try {
@@ -573,19 +637,19 @@ class AICodBiAssistant : IPluginServletAction {
       when (intent) {
         "form",
         "workflow",
-        "both" -> intent to tokens
+        "both" -> intent to usage
         else -> {
           logger.warn(
               "[AICodBiAssistant] Unexpected intent classification '{}' â€” defaulting to 'both'",
               intent)
-          "both" to tokens
+          "both" to usage
         }
       }
     } catch (_: Exception) {
       logger.warn(
           "[AICodBiAssistant] Could not parse classification response '{}' â€” defaulting to 'both'",
           cleaned)
-      "both" to tokens
+      "both" to usage
     }
   }
 
@@ -667,7 +731,8 @@ class AICodBiAssistant : IPluginServletAction {
     fun rerunWithCodbiDetails(
         requested: List<String>,
         widgets: List<String>,
-        useCodbi: Boolean = true
+        useCodbi: Boolean = true,
+        rerunCount: Int = 0
     ): String {
       val pass1Obj =
           try {
@@ -861,7 +926,24 @@ class AICodBiAssistant : IPluginServletAction {
       tokensIn += estimateTokens(retryMessagesJson)
       tokensOut += estimateTokens(retryRaw)
       val pass2Cleaned = extractJson(stripThinkTags(retryRaw))
-      logger.info("[AICodBiAssistant] Pass-2 raw result: {}", pass2Cleaned)
+      logger.info("[AICodBiAssistant] Pass-{} raw result: {}", rerunCount + 2, pass2Cleaned)
+      // The AI may ask for even MORE details in the rerun (a second `need_codbi_details`, e.g. for
+      // widget types it only names in pass-2). Loop once more with the new request so the widgets
+      // the user asked for are not silently dropped. Bounded by [MAX_FORM_RERUNS] to avoid looping
+      // indefinitely when the model keeps requesting details.
+      if (rerunCount < MAX_FORM_RERUNS) {
+        val pass2Details = extractCodbiDetailsRequest(pass2Cleaned)
+        if (pass2Details != null) {
+          logger.info(
+              "[AICodBiAssistant] Pass-{} again requested details (elements={}, widgets={}) — rerunning (pass {})",
+              rerunCount + 2,
+              pass2Details.elements,
+              pass2Details.widgets,
+              rerunCount + 3)
+          return rerunWithCodbiDetails(
+              pass2Details.elements, pass2Details.widgets, useCodbi, rerunCount + 1)
+        }
+      }
       // Splice into the form base (the original form when pass-1 was a details request) so new
       // widgets created in pass-2 are preserved in the returned form.
       return splicePass2IntoPass1(formBase, pass2Cleaned)
@@ -1319,6 +1401,10 @@ class AICodBiAssistant : IPluginServletAction {
         pass1Obj.add("_codbiApplicability", pass2Obj.get("_codbiApplicability"))
       }
 
+      // Preserve global variables the AI set in pass-2 (e.g. standard-configuration globals such
+      // as USGrade) by merging the pass-2 `variables` array into the pass-1 base by name.
+      mergeFormVariables(pass1Obj, pass2Obj)
+
       gson.toJson(pass1Obj)
     } catch (_: Exception) {
       pass2Json // fallback: return pass-2 as-is
@@ -1725,10 +1811,12 @@ class AICodBiAssistant : IPluginServletAction {
     val result = JsonParser.parseString(original).asJsonObject
     val originalItems = result.getAsJsonArray("items")
     for (entry in aiObj.entrySet()) {
+      if (entry.key == "variables") continue
       if (entry.key !in STRIPPED_FIELDS) {
         result.add(entry.key, entry.value)
       }
     }
+    mergeFormVariables(result, aiObj)
     val resultItems: JsonArray =
         result.getAsJsonArray("items") ?: JsonArray().also { result.add("items", it) }
     for (el in resultItems) {
@@ -2401,6 +2489,43 @@ class AICodBiAssistant : IPluginServletAction {
       /* non-critical â€” skip normalization on error */
     }
     return gson.toJson(result)
+  }
+
+  /**
+   * Merges the AI result's top-level `variables` array into [result] by **name**. Global variables
+   * are form-level entries of the form's `variables` array (each `{ "name": "...", "aliasname":
+   * "...", "serveronly": false, "value": "..." }`). Entries that already exist in [result] are
+   * updated in place (preserving their `id`/`idx`), new entries are appended, and entries the AI
+   * did not mention are left untouched — so setting one global variable never wipes the others.
+   *
+   * @param result The target form JSON object (starts from the original).
+   * @param aiObj The AI result object.
+   */
+  private fun mergeFormVariables(result: JsonObject, aiObj: JsonObject) {
+    val aiVars = aiObj.get("variables")?.takeIf { it.isJsonArray }?.asJsonArray ?: return
+    if (aiVars.size() == 0) return
+    val resultVars =
+        result.get("variables")?.takeIf { it.isJsonArray }?.asJsonArray
+            ?: JsonArray().also { result.add("variables", it) }
+    val byName = mutableMapOf<String, JsonObject>()
+    for (el in resultVars) {
+      if (!el.isJsonObject) continue
+      val name = el.asJsonObject.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      byName[name] = el.asJsonObject
+    }
+    for (el in aiVars) {
+      if (!el.isJsonObject) continue
+      val aiVar = el.asJsonObject
+      val name = aiVar.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      val existing = byName[name]
+      if (existing != null) {
+        // Update the existing entry in place — keep its id/idx, refresh name/aliasname/value.
+        for ((key, value) in aiVar.entrySet()) existing.add(key, value)
+      } else {
+        resultVars.add(aiVar)
+        byName[name] = aiVar
+      }
+    }
   }
 
   /**
@@ -7393,6 +7518,15 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   companion object {
+    /**
+     * Maximum number of additional detail-reruns after the initial form pass. When the AI keeps
+     * answering `need_codbi_details` (e.g. a small model that first asks for CodBi details, then
+     * asks again for specific widget types), `rerunWithCodbiDetails` loops up to this many extra
+     * times with the newly requested elements/widgets before giving up and splicing the last
+     * result.
+     */
+    private const val MAX_FORM_RERUNS = 2
+
     private const val FALLBACK_FORM_SYSTEM_PROMPT =
         "You are a FORMCYCLE form structure assistant. " +
             "You receive a partial IPersistJson object and a natural language instruction. " +

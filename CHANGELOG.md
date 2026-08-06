@@ -8,6 +8,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **AI pricing**: new plugin properties let administrators configure the cost per 1,000,000 input
+  and output tokens **per model**, each with its own ISO 4217 currency (e.g. `EUR`/`USD`) so models
+  priced by different providers can use different currencies — `AI_LLAMA_STD_PriceCurrency` /
+  `AI_LLAMA_STD_PricePerMInput` / `AI_LLAMA_STD_PricePerMOutput` (standard model),
+  `AI_LLAMA_STD_ThinkingPriceCurrency` / `AI_LLAMA_STD_ThinkingPricePerMInput` /
+  `AI_LLAMA_STD_ThinkingPricePerMOutput` (thinking model), and per-specialist
+  `AI_LLAMA_STD_SPECIALIST_PriceCurrency_XXX` / `AI_LLAMA_STD_SPECIALIST_PricePerMInput_XXX` /
+  `AI_LLAMA_STD_SPECIALIST_PricePerMOutput_XXX` (local) and `AI_LLAMA_STD_EXT_SPECIALIST_PriceCurrency_XXX` /
+  `AI_LLAMA_STD_EXT_SPECIALIST_PricePerMInput_XXX` / `AI_LLAMA_STD_EXT_SPECIALIST_PricePerMOutput_XXX`
+  (external). The estimated cost (input + output tokens × price per 1M) is now shown with its
+  currency in the AI assistant dialog (this run + session total, grouped per currency) and persisted
+  in the change log (`cost`/`currency` columns), where it is displayed per inference; the per-form
+  total is derived server-side from the summed input/output tokens per model × the configured price,
+  grouped by currency.
 - The AI assistant dialog now has a **Change log** button that opens a per-form treeview of all AI
   inferences recorded in the database (`codbi_ai_assistant_log`). Each inference is scoped to the
   form's technical name/key (`form_key`) so the dialog opened in the designer shows only the
@@ -16,6 +30,87 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   created/removed, CSS classes set, attributes set (with distinct icons), special unfoldable
   `data-cb-func` / `data-cb-*` elements showing the CodBi parameters used by a functionality, and
   workflow nodes that unfold to reveal their defined parameters.
+- **Sensitive elements (`AI_Log_SensitiveElements`)**: the AI change log now marks every node whose
+  label/value matches a configured sensitive element with an **always-on red border**, on every log
+  load — independent of the temporary lightning-icon highlight that auto-opens the dialog after an
+  inference used one of the sensitive elements. The backend returns the current list with every log
+  request, so configuration changes take effect the next time the change log is opened.
+- **Dismiss checkboxes on sensitive nodes**: every sensitive-marked node in the change log now shows a
+  checkbox. Ticking it removes that node's marking (red border / bolt) and keeps it unmarked for the
+  rest of the page session; unticking re-marks it.
+- **Who ran the inference**: the change log top-level (inference) entries now show the login name of
+  the user who ran the inference as a distinct user badge (`username` column on
+  `codbi_ai_assistant_log`), so the timestamp stays readable and the author is clearly visible.
+- **Persistent, attributable sensitive checks**: ticking a sensitive node's dismiss checkbox is now
+  stored in the new `codbi_ai_log_sensitive_check` table as `(log entry id, element name, user login,
+  checked_at)`. The check is applied per user — the same user's checked entries stay unmarked on
+  every load / designer session; other users still see them marked. Unticking removes the stored row.
+- **"Checked by" badge**: every dismissed sensitive node shows a green badge on the right side of the
+  row (before the export/expand buttons) stating `checked by <user> on <date/time>`. The badge
+  appears immediately when the checkbox is ticked and is restored from the stored `checked_at`
+  timestamp on later loads.
+- **Dialogs remember their position**: the AI assistant, prompt manager and change-log dialogs restore
+  their last on-screen position (left/top) from `localStorage` when opened, and save it again whenever
+  the user drags or resizes them.
+
+### Fixed
+- **Sensitive-element detection missed functionality names**: `AiAssistantLog.usedSensitiveElements`
+  only scanned the **value** of each attribute, so a functionality used via `data-cb-func` (e.g.
+  `Sys.Log.Console`, whose name lives in the attribute `name` with an empty value) never matched a
+  configured sensitive element. Detection now also scans the attribute `name`/`kind` and the nested
+  `data-cb-*` parameters, so funcs, EPs and their payloads are all detected.
+- **Form widgets silently dropped when the AI requests details twice**: if the AI answered the
+  initial pass with `need_codbi_details` and the detail-rerun again answered `need_codbi_details`
+  (e.g. a small model first asking for CodBi details, then for specific widget types), the second
+  details request was spliced into the form as-is — no `items` — so every requested widget was lost.
+  `rerunWithCodbiDetails` now detects a second `need_codbi_details` and reruns (bounded by
+  `MAX_FORM_RERUNS`) with the newly requested elements/widgets, so the widgets the user asked for are
+  not silently dropped.
+- **Sensitive-element auto-open after workflow creation**: when the AI assistant also creates a
+  workflow, the designer reloads the page to store it. The change-log component was only mounted on
+  demand, so after the reload its `ngOnInit` never ran and the pending sensitive-element highlight
+  persisted in sessionStorage was never consumed — no popup appeared. The fix: `cb-ai-assistant-log`
+  is now mounted on every designer page load, the sensitive elements are written to sessionStorage
+  inside `doReload()`/the workflow-only reload path (immediately before `window.location.reload()`,
+  the same pattern as the standards write, so no intermediate async rendering can consume them), and
+  the always-mounted assistant element reopens the change log after the reload as a fallback — briefly
+  waiting for the designer to report the current form key so the log is scoped to the just-reloaded
+  form.
+- **Change-log author resolution**: the inference author was resolved via `params.benutzer?.loginName`,
+  which is empty in the plugin servlet-action context, so no user was recorded/displayed (the top-level
+  author badge was empty and the sensitive-check badge read "checked by ?"). `currentUsername` now uses
+  `params.user.userName` — the same accessor as the Local API Doc store, which reliably resolves the
+  logged-in user (e.g. `sadmin`).
+- **Change-log auto-open after reload made robust**: besides the sessionStorage/localStorage handoff,
+  the change log now also queries the database on every designer page load: the newest entry of the
+  current form is examined and, if it used sensitive elements within the last few minutes and not all
+  of them are acknowledged, the dialog auto-opens with those elements highlighted. `loadLogs` returns a
+  per-entry `sensitiveUsed` list (recomputed from the stored form changes against the current
+  `AI_Log_SensitiveElements`) so the check is driven by DB state rather than by fragile frontend
+  timing. A plain-JS poller in `enableAICodBiAssistantDialog` (runs on every designer page load)
+  additionally keeps dispatching the `codbi:ai-assistant-log:open` event while a pending sensitive
+  list exists and independently queries the newest log entry — covering any case where the Angular
+  component's `ngOnInit` timing is missed after the reload.
+- **Sensitive-check persistence failed**: ticking a sensitive node's dismiss checkbox logged
+  `org.hibernate.InstantiationException: No default constructor for entity ...
+  CodbiAiLogSensitiveCheck`, so the check was never stored. The entity's constructor parameters now
+  all have defaults, which makes Kotlin emit the public no-arg constructor JPA requires.
+
+### Changed
+- **Sys.Log.Console prompt behavior**: when the prompt asks to log something to the browser console,
+  the AI now creates a NEW **invisible XSpan** — the plain-text/HTML element of Formcycle (text goes
+  in `rtevalue`) — at the top of the first page with `data-cb-func="Sys.Log.Console"` and a
+  `data-cb-Data` value that starts with the literal prefix `"SYS.Log.Console > "` followed by the
+  descriptive log text (instead of an XContainerInvisible and an element-placeholder expression; and
+  instead of XTextField, which is an INPUT element, not plain text). The instruction includes an exact
+  JSON template and an explicit **"NEVER invent class names like 'XText' or 'XButton'"** warning —
+  those are not valid Formcycle widgets (the designer logs `XItem missing 'XText' using XDefault` and
+  drops them), so the AI emits `"className": "XSpan"` and the created element actually renders.
+  Updated in `codbi-general.md`, `codbi-functionalities.md`, `codbi-core-elements-compact.md` and
+  `codbi-core-api-compact.md` (requires re-seeding the AI prompt database).
+- **Inference author shown in the timestamp line**: the change-log top-level rows now render the
+  author as part of the timestamp label (`"<timestamp> · <username>"`) instead of a separate user
+  badge, so the two can never overlap.
 
 ### Changed
 - Minimum supported FormCycle version raised from **8.3.3** to **8.5.3**. FormCycle 8.5.x extracted plugin-type interfaces (servlet actions, form resources, form render callbacks, entities, etc.) from `fc-plugin-common` into a new `fc-plugin-types` artifact. The compile dependency has been updated accordingly.

@@ -44,6 +44,25 @@ cb-ai-assistant-log {
     color: #333;
 }
 
+/* Temporary attention banner shown when sensitive elements were used by the last inference. */
+.cb-log-attention {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #7a4a00;
+    background: #fff8e1;
+    border: 1px solid #ffd9a0;
+}
+
+.cb-log-attention i {
+    color: #e65100;
+}
+
 .p-dialog.cb-log-dialog .p-dialog-content {
     display: flex;
     flex-direction: column;
@@ -57,6 +76,75 @@ cb-ai-assistant-log {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+}
+
+/* Own line below the toolbar holding the search input. */
+.cb-log-search-row {
+    display: flex;
+    align-items: center;
+    margin: 6px 0 8px;
+    width: 100%;
+}
+
+/* Search input that filters the log entries by prompt / model / widget name. */
+.cb-log-search {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 2px 8px;
+    background: #fff;
+    color: #555;
+    width: 100%;
+}
+
+.cb-log-search i {
+    font-size: 0.85em;
+    pointer-events: none;
+}
+
+.cb-log-search input {
+    border: none;
+    outline: none;
+    font-size: 0.85em;
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    background: transparent;
+    color: inherit;
+    cursor: text;
+}
+
+.cb-log-search input::placeholder {
+    color: #aaa;
+}
+
+/* Clear (X) button inside the search box. */
+.cb-log-search-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    padding: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    font-size: 0.8em;
+    flex-shrink: 0;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.cb-log-search-clear:hover {
+    background-color: rgba(0, 0, 0, 0.08);
+    color: #333;
+}
+
+.cb-log-search-clear:active {
+    background-color: rgba(0, 0, 0, 0.14);
 }
 
 .cb-log-form {
@@ -74,6 +162,15 @@ cb-ai-assistant-log {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Own line below the toolbar holding the inference summary (count / tokens / cost). */
+.cb-log-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 4px 0 0;
 }
 
 .cb-log-count {
@@ -94,6 +191,13 @@ cb-ai-assistant-log {
     border-radius: 4px;
     padding: 2px 8px;
     white-space: nowrap;
+}
+
+/* Total-cost badge (only shown when a price is configured) — cool blue to stand out from tokens. */
+.cb-log-tokens--cost {
+    color: #1a56a8;
+    background: #e8f0fe;
+    border-color: #b8cff0;
 }
 
 .cb-log-spinner {
@@ -254,6 +358,27 @@ cb-ai-assistant-log {
     flex-shrink: 0;
 }
 
+/* "Checked by <user> on <date/time>" badge on dismissed sensitive nodes. */
+.cb-log-node__checked-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    background: #e8f5e9;
+    border: 1px solid #c8e6c9;
+    color: #2e7d32;
+    font-size: 0.72em;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.cb-log-node__checked-badge i {
+    font-size: 0.78em;
+}
+
 /* Per-node expand/collapse-all button (shown for nodes that contain sub-nodes). */
 .cb-log-node__expand {
     margin-left: auto;
@@ -274,6 +399,29 @@ cb-ai-assistant-log {
 
 .cb-log-node__expand:hover {
     background: #e3e6ea;
+}
+
+/* Per-entry export button (shown on top-level inference nodes). */
+.cb-log-node__export {
+    margin-left: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #5b6472;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.6em;
+    line-height: 1;
+}
+
+.cb-log-node__export:hover {
+    background: #e3e6ea;
+    color: #1b7a5e;
 }
 
 .cb-log-node__children {
@@ -336,6 +484,41 @@ cb-ai-assistant-log {
 .cb-log-node__icon--codbi {
     background: transparent;
     border-radius: 0;
+}
+
+/* Sensitive elements (AI_Log_SensitiveElements) — lightning bolt icon overrides everything,
+   even the CodBi logo, so the editor notices them at a glance. */
+.cb-log-node__icon--highlighted {
+    background: #f9a825;
+    border-radius: 4px;
+}
+
+.cb-log-node__highlight-icon {
+    color: #fff;
+    font-size: 0.95em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* Always-on red border for nodes that match a configured sensitive element (AI_Log_SensitiveElements).
+   Applied on every log load (independent of the transient bolt from auto-open), so sensitive elements
+   are recognizable even when the log was opened manually. An inset shadow avoids a layout shift. */
+.cb-log-node--sensitive > .cb-log-node__summary {
+    background: #fff1f0;
+    box-shadow: inset 3px 0 0 #d32f2f;
+}
+
+.cb-log-node--sensitive > .cb-log-node__summary:hover {
+    background: #ffe4e2;
+}
+
+/* Checkbox on sensitive nodes — lets the user dismiss a node's sensitive marking. */
+.cb-log-node__sensitive-check {
+    flex-shrink: 0;
+    margin: 0;
+    width: 14px;
+    height: 14px;
+    accent-color: #d32f2f;
+    cursor: pointer;
 }
 
 /* Highlight the CodBi special attributes in the tree */

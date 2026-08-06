@@ -2,6 +2,19 @@
 
 EP syntax and chaining rules, individual EP descriptions.
 
+## EP INVOCATION SYNTAX (CRITICAL)
+
+Every Element Placeholder (EP) — built-in or custom — is invoked by writing the EP placeholder itself as the value, in this exact form:
+
+{ EPName > Param1 ; Param2 ; Param3 ; ... }
+
+- EPName is the exact element placeholder name (dots, case-sensitive).
+- Parameters are separated by semicolons; use trailing semicolons for unused optional parameters.
+- Parameter values are RAW strings — never add quotes around them.
+- An EP placeholder IS the value. NEVER represent an EP's data as a JSON object or array literal. The first token inside the braces is the EP's NAME. `data.join` is ONLY an example — ANY EP id works (built-in like AI.LLAMA.STD.QA, OpenPLZ.Localities, or any custom EP defined in the local API doc manager). The pattern is always `{ <any EP id> > Param1 ; Param2 ; ... }`. For example `{"planet":"Pluto","saturation":0.5}` is WRONG; `{ data.join > Param1 ; Param2 }` is CORRECT.
+
+When you need the data an EP provides (e.g. in a Sys.Log.Console data-cb-Data parameter), write the EP placeholder with its parameters as the value. Do not invent JSON objects or arrays for EP results — the placeholder itself is the result.
+
 ## EP Chaining
 
 Element Placeholders (EPs) can be chained with > syntax to pass one EP's result as input to another EP. This works in ANY data-cb-* parameter that accepts EPs (e.g. data-cb-Data, data-cb-replacement, data-cb-Values, data-cb-replacements).

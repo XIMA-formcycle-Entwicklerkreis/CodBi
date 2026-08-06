@@ -30,7 +30,8 @@ internal object LocalApiDocPrompts {
       val detail: String,
       val condensed: String,
       val detailedPrompt: String,
-      val composedDetailed: String
+      val composedDetailed: String,
+      val usageHint: String = ""
   )
 
   // region Loading
@@ -74,7 +75,8 @@ internal object LocalApiDocPrompts {
                 detail = config.third,
                 condensed = condensed,
                 detailedPrompt = detailedPrompt,
-                composedDetailed = composeDetailedPrompt(element)))
+                composedDetailed = composeDetailedPrompt(element),
+                usageHint = buildUsageHint(element, name, config.second)))
       }
     }
     return result.sortedBy { it.name.lowercase() }
@@ -170,6 +172,71 @@ internal object LocalApiDocPrompts {
       jsonObject.get(key)?.takeIf { it.isJsonPrimitive }?.asString
 
   /**
+   * Builds an auto-generated usage hint for the given local element, depending on its group:
+   * - **element_placeholders**: the exact EP placeholder form (e.g. `{ pluto > Param1 ; Param2 }`),
+   *   derived from the number of its parameters. Tells the AI to write the placeholder itself as
+   *   the value with the exact id and NEVER invent a different id.
+   * - **standard_configurations**: tells the AI that a standard configuration is applied by adding
+   *   its CSS classes to the target element's `cssclasses` array and that the standard
+   *   configuration's name must NEVER be used as `data-cb-func`.
+   * - **functionalities**: no usage hint.
+   *
+   * @param element The element's JSON object.
+   * @param name The element's name.
+   * @param group The element's group (e.g. `element_placeholders`).
+   * @return The usage hint, or an empty string.
+   */
+  private fun buildUsageHint(element: JsonObject, name: String, group: String): String {
+    return when (group) {
+      "element_placeholders" -> buildEpUsageHint(element, name)
+      "standard_configurations" -> buildStandardConfigUsageHint(element, name)
+      else -> ""
+    }
+  }
+
+  /** Builds the EP placeholder usage hint (see [buildUsageHint]). */
+  private fun buildEpUsageHint(element: JsonObject, name: String): String {
+    val paramCount = element.get("Parameter")?.takeIf { it.isJsonObject }?.asJsonObject?.size() ?: 0
+    val form =
+        if (paramCount == 0) {
+          "{ $name }"
+        } else {
+          val params = (1..paramCount).joinToString(" ; ") { "Param$it" }
+          "{ $name > $params }"
+        }
+    return "This is an Element Placeholder (EP). Its ID is \"$name\". To obtain its data, write the placeholder with EXACTLY this id as the value (e.g. $form). NEVER invent a different EP id and NEVER expand it into a JSON object/array."
+  }
+
+  /** Builds the standard configuration usage hint (see [buildUsageHint]). */
+  private fun buildStandardConfigUsageHint(element: JsonObject, name: String): String {
+    val classes = element.get("classes")?.takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
+    val classNames = classes.entrySet().map { it.key }
+    val classPrompts =
+        element.get("ClassPrompts")?.takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
+    // List every class with its purpose so the AI can pick the one that matches the requested
+    // level.
+    val classList =
+        if (classNames.isEmpty()) ""
+        else
+            " It declares the CSS class(es): " +
+                classNames.joinToString("; ") { cls ->
+                  val purpose =
+                      getJsonString(classPrompts, cls)?.takeIf { it.isNotBlank() }
+                          ?: getJsonString(classes, cls)
+                          ?: ""
+                  if (purpose.isNotBlank()) "\"$cls\" ($purpose)" else "\"$cls\""
+                } +
+                ". Choose the class whose purpose matches the requested intensity — e.g. for an \"ultra shiny\" element use the ultra class (UltraShine_X), for a plain \"shiny\" element the regular class (RegularShine). Do NOT apply the same class to all elements when the prompt requests different levels."
+    val globals = element.get("globals")?.takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
+    val globalNames = globals.entrySet().map { it.key }
+    val globalNote =
+        if (globalNames.isEmpty()) ""
+        else
+            " It also declares global variable(s): ${globalNames.joinToString(", ")}. When the user sets a value for one of them, write it into the form's TOP-LEVEL \"variables\" array as {\"name\":\"<VarName>\",\"aliasname\":\"<VarName>\",\"serveronly\":false,\"value\":\"<value>\"} — never as a data-cb-* attribute."
+    return "This is a CodBi Standard Configuration. Apply it by adding its CSS classes to the target element's \"cssclasses\" array. NEVER set data-cb-func to the standard configuration's name \"$name\" — standard configurations are applied via their CSS classes, NOT via data-cb-func.$classList$globalNote"
+  }
+
+  /**
    * Normalizes a dotted element name to a stable prompt key segment (e.g. "AI.LLAMA.CHAT" →
    * "ai_llama_chat").
    *
@@ -193,6 +260,7 @@ internal object LocalApiDocPrompts {
       for (e in items) {
         sb.append("\n### ").append(e.name).append("\n")
         sb.append(e.condensed).append("\n")
+        if (e.usageHint.isNotEmpty()) sb.append(e.usageHint).append("\n")
       }
     }
     return sb.toString().trimEnd()
@@ -206,8 +274,15 @@ internal object LocalApiDocPrompts {
     for ((group, items) in elements.groupBy { it.group }) {
       sb.append("\n## ").append(groupLabel(group)).append("\n")
       for (e in items) {
-        sb.append("\n### ").append(e.name).append("\n")
+        val header =
+            when (e.group) {
+              "element_placeholders" -> "${e.name} (Element Placeholder)"
+              "standard_configurations" -> "${e.name} (Standard Configuration)"
+              else -> e.name
+            }
+        sb.append("\n### ").append(header).append("\n")
         sb.append(e.composedDetailed).append("\n")
+        if (e.usageHint.isNotEmpty()) sb.append(e.usageHint).append("\n")
       }
     }
     return sb.toString().trimEnd()
@@ -231,8 +306,15 @@ internal object LocalApiDocPrompts {
     var added = false
     for (norm in wanted) {
       val e = bySuffix[norm] ?: continue
-      sb.append("\n## ").append(e.name).append("\n")
+      val header =
+          when (e.group) {
+            "element_placeholders" -> "${e.name} (Element Placeholder)"
+            "standard_configurations" -> "${e.name} (Standard Configuration)"
+            else -> e.name
+          }
+      sb.append("\n## ").append(header).append("\n")
       sb.append(e.composedDetailed).append("\n")
+      if (e.usageHint.isNotEmpty()) sb.append(e.usageHint).append("\n")
       added = true
     }
     return if (added) sb.toString().trimEnd() else ""

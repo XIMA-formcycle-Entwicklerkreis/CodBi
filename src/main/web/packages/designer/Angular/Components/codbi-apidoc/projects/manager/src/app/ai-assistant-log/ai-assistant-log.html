@@ -1,6 +1,9 @@
 <p-dialog
     [visible]="visible"
     (visibleChange)="onVisibleChange($event)"
+    (onShow)="onDialogShow()"
+    (onDragEnd)="onDialogDragEnd()"
+    (onResizeEnd)="onDialogDragEnd()"
     [modal]="true"
     [draggable]="true"
     [resizable]="true"
@@ -15,6 +18,10 @@
         <div class="cb-log-dialog-header">
             <img class="cb-log-logo" [src]="logoUrl" alt="CodBi" />
             <span class="cb-log-title">CodBi AI Change Log</span>
+        </div>
+        <div *ngIf="highlightElements.length > 0" class="cb-log-attention">
+            <i class="pi pi-exclamation-triangle"></i>
+            <span>{{ 'cb.log.attention' | transloco }}</span>
         </div>
     </ng-template>
 
@@ -37,14 +44,50 @@
             (onClick)="toggleAll()"
             [disabled]="loading || logs.length === 0"
             title="Expand or collapse the whole tree" />
+        <p-button
+            label="Export"
+            icon="pi pi-download"
+            severity="secondary"
+            size="small"
+            [outlined]="true"
+            (onClick)="exportLog()"
+            [disabled]="loading || logs.length === 0"
+            title="Export the change-log entries as JSON" />
         <span *ngIf="currentFormKey" class="cb-log-form" title="Showing the change log of this form only">
             <i class="pi pi-file"></i>&nbsp;{{ currentFormKey }}
         </span>
+    </div>
+
+    <div class="cb-log-summary">
         <span class="cb-log-count" title="Number of recorded AI inferences and their date range">
             {{ countLabel }}
         </span>
         <span *ngIf="totalTokens > 0" class="cb-log-tokens" title="Total input and output tokens used by all inferences for this form">
             {{ totalTokensLabel }}
+        </span>
+        <span *ngIf="costByCurrency.size > 0" class="cb-log-tokens cb-log-tokens--cost" title="Total estimated cost of all inferences for this form (input + output tokens × configured price per 1M tokens), grouped by currency">
+            {{ totalCostLabel }}
+        </span>
+    </div>
+
+    <div class="cb-log-search-row">
+        <span class="cb-log-search" title="Filter the log entries by prompt, model or widget name"
+            (click)="searchInput.focus()">
+            <i class="pi pi-search"></i>
+            <input
+                #searchInput
+                type="text"
+                [value]="searchText"
+                (input)="onSearchInput($event)"
+                placeholder="Search log&#x2026;" />
+            <button
+                type="button"
+                class="cb-log-search-clear"
+                *ngIf="searchText"
+                title="Clear search"
+                (click)="clearSearch()">
+                <i class="pi pi-times"></i>
+            </button>
         </span>
     </div>
 
@@ -60,7 +103,10 @@
     </div>
 
     <div class="cb-log-tree">
-        <cb-log-node *ngFor="let node of logs; trackBy: trackById" [node]="node" />
+        <cb-log-node
+            *ngFor="let node of logs; trackBy: trackById"
+            [node]="node"
+            (sensitiveChecked)="onSensitiveChecked($event)" />
     </div>
 
     <ng-template pTemplate="footer">

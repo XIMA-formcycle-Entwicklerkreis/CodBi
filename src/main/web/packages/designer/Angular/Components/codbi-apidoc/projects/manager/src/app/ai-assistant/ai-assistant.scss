@@ -145,6 +145,15 @@ cb-ai-assistant {
     font-weight: 700;
 }
 
+/* Cost counters (only shown when a price is configured) — warm amber to stand out from tokens. */
+.cb-ai-token-item--cost {
+    color: #7a4a00;
+}
+
+.cb-ai-token-item--cost strong {
+    color: #b45309;
+}
+
 /* Watermark faded behind the entire popup — two-layer gradient over SVG creates opacity effect. */
 .p-dialog.cb-ai-assistant-dialog {
     background-image: linear-gradient(rgba(255,255,255,0.91), rgba(255,255,255,0.91)),

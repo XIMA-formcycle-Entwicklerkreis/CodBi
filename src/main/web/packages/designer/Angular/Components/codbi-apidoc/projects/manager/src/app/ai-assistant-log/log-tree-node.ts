@@ -1,4 +1,12 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Input, ViewEncapsulation } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  EventEmitter,
+  Input,
+  Output,
+  ViewEncapsulation,
+} from "@angular/core";
 
 /** One node of the change-log tree rendered by the log dialog. */
 export interface LogNode {
@@ -18,8 +26,28 @@ export interface LogNode {
   badge?: string;
   /** Raw timestamp of an inference node (used to compute the log's date range). */
   ts?: string;
+  /** Raw backend entry of an inference node, used for the per-entry JSON export. */
+  raw?: Record<string, unknown>;
   /** True for `class` nodes whose CSS class belongs to a CodBi standard configuration. */
   codbi?: boolean;
+  /** True for nodes marked as sensitive (from `AI_Log_SensitiveElements`) — rendered with a lightning icon. */
+  highlighted?: boolean;
+  /**
+   * True for nodes whose label/value matches a configured sensitive element (`AI_Log_SensitiveElements`).
+   * Unlike [highlighted] (transient, from the last inference's auto-open) this flag is **always**
+   * applied on every log load and rendered with a persistent red border.
+   */
+  sensitive?: boolean;
+  /** True when the user ticked the node's checkbox to dismiss its sensitive marking. */
+  checked?: boolean;
+  /** The id of the inference (log entry) this node belongs to — set while marking sensitive nodes. */
+  entryId?: string;
+  /** The sensitive element names (lowercased) this node's label/value matched — set while marking. */
+  sensitiveNames?: string[];
+  /** Login name of the user who checked this sensitive node (shown on the "checked by" badge). */
+  checkedBy?: string;
+  /** Formatted date/time when this sensitive node was checked (shown on the "checked by" badge). */
+  checkedAt?: string;
   children?: LogNode[];
   expanded?: boolean;
 }
@@ -38,12 +66,24 @@ export interface LogNode {
         class="cb-log-node"
         [open]="node.expanded ?? false"
         [class.cb-log-node--leaf]="!isExpandable(node)"
+        [class.cb-log-node--sensitive]="node.sensitive === true"
         (toggle)="onToggle($event)">
       <summary class="cb-log-node__summary">
+        @if (node.sensitive === true) {
+          <input
+              type="checkbox"
+              class="cb-log-node__sensitive-check"
+              [checked]="node.checked === true"
+              (change)="onSensitiveCheckedChange($event)"
+              title="Mark as checked — remove the sensitive marking" />
+        }
         <span
             class="cb-log-node__icon cb-log-node__icon--{{ node.kind }}"
-            [class.cb-log-node__icon--codbi]="isCodbiNode(node)">
-          @if (isCodbiNode(node)) {
+            [class.cb-log-node__icon--codbi]="isCodbiNode(node)"
+            [class.cb-log-node__icon--highlighted]="node.highlighted === true">
+          @if (node.highlighted === true) {
+            <i class="pi pi-bolt cb-log-node__highlight-icon" aria-hidden="true" title="Sensitive element"></i>
+          } @else if (isCodbiNode(node)) {
             <img
                 class="cb-log-node__icon-img"
                 [src]="codbiLogoUrl"
@@ -60,6 +100,12 @@ export interface LogNode {
         @if (node.value && node.kind !== 'prompt') {
           <span class="cb-log-node__value">{{ node.value }}</span>
         }
+        @if (node.checked === true && node.checkedBy) {
+          <span class="cb-log-node__checked-badge" [title]="'Checked by ' + node.checkedBy + ' on ' + (node.checkedAt ?? '')">
+            <i class="pi pi-check-circle" aria-hidden="true"></i>
+            <span class="cb-log-node__checked-text">checked by {{ node.checkedBy }} on {{ node.checkedAt }}</span>
+          </span>
+        }
         @if (node.children?.length) {
           <button
               type="button"
@@ -71,6 +117,15 @@ export interface LogNode {
                 aria-hidden="true"></i>
           </button>
         }
+        @if (node.kind === 'inference' && node.raw) {
+          <button
+              type="button"
+              class="cb-log-node__export"
+              title="Export this log entry as JSON"
+              (click)="exportEntry($event)">
+            <i class="pi pi-download" aria-hidden="true"></i>
+          </button>
+        }
       </summary>
       @if (node.kind === 'prompt' && node.value) {
         <div class="cb-log-node__prompt">{{ node.value }}</div>
@@ -78,7 +133,7 @@ export interface LogNode {
       @if (node.children?.length) {
         <div class="cb-log-node__children">
           @for (child of node.children; track child.id) {
-            <cb-log-node [node]="child" />
+            <cb-log-node [node]="child" (sensitiveChecked)="sensitiveChecked.emit($event)" />
           }
         </div>
       }
@@ -89,6 +144,8 @@ export interface LogNode {
 })
 export class LogTreeNode {
   @Input() node!: LogNode;
+  /** Emitted when the user ticks/untickes a sensitive node's dismiss checkbox. */
+  @Output() sensitiveChecked = new EventEmitter<LogNode>();
 
   private readonly baseUrl = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   /** CodBi logo used as the icon for CodBi CSS class nodes (same resource as the dialog header). */
@@ -104,6 +161,22 @@ export class LogTreeNode {
   onToggle(event: Event): void {
     const details = event.target as HTMLDetailsElement | null;
     this.node.expanded = details?.open ?? false;
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Toggles a sensitive node's dismiss checkbox. When ticked the node's sensitive marking (red
+   * border) and any transient bolt are removed locally and the change is emitted so the parent can
+   * remember the node as acknowledged (it stays unmarked on later loads). Unticking re-marks it.
+   */
+  onSensitiveCheckedChange(event: Event): void {
+    const checked = (event.target as HTMLInputElement | null)?.checked ?? false;
+    this.node.checked = checked;
+    this.node.sensitive = !checked;
+    if (checked) {
+      this.node.highlighted = false;
+    }
+    this.sensitiveChecked.emit(this.node);
     this.cdr.markForCheck();
   }
 
@@ -136,6 +209,25 @@ export class LogTreeNode {
     this.cdr.markForCheck();
   }
 
+  /** Downloads this inference entry's raw backend data as a JSON file. */
+  exportEntry(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    if (!this.node.raw) {
+      return;
+    }
+    const blob = new Blob([JSON.stringify(this.node.raw, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const ts = (this.node.ts ?? "").replace(/[^\d]/g, "");
+    a.download = ts ? `codbi-ai-log-entry-${ts}.json` : `codbi-ai-log-entry-${this.node.id}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   private withExpanded(node: LogNode, expanded: boolean): LogNode {
     return {
       ...node,
@@ -163,6 +255,8 @@ export class LogTreeNode {
       case "param":
       case "param-item":
         return "pi pi-cog";
+      case "var":
+        return "pi pi-globe";
       case "node":
         return "pi pi-sitemap";
       default:

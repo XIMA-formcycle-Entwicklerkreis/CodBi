@@ -1,3 +1,15 @@
+/* Maximized (fullscreen) state of the host container — filled by the designer.
+   Kept here as well so the Angular bundle is self-contained and the resize works
+   even when only cb-manager.css is loaded. */
+#cCodBi_LocalAPIDoc.--maximized {
+  left: 0vw !important;
+  top: 0vh !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  opacity: 1 !important;
+  border-radius: 0 !important;
+}
+
 #CodBi_LocalAPIDoc {
   margin-left: 2vw;
   border-bottom-right-radius: .5em;
@@ -7,7 +19,7 @@
   height: 100%;
   margin: 0;
   width: 100%;
-  transition: .5s all;
+  transition: .35s all;
   background-image: linear-gradient(90deg, #615b5bCC 0%, #FFFFFFFF 1%);
 
   .p-splitter.p-component.p-splitter-horizontal {
@@ -353,12 +365,7 @@
   }
 
   .CodBi_Prompt_Area {
-    margin-top: 1em;
-    border: solid;
-    border-color: darkorange;
-    border-radius: .5em;
-    padding: .75em;
-    background-color: #ffffffaa;
+    padding: .5em 0;
   }
 
   .CodBi_Prompt_Area label {
@@ -402,6 +409,10 @@
   }
 
   .p-tablist-active-bar {
+    /* The PrimeNG sliding active-tab bar is an absolutely positioned overlay that, when hidden
+       (opacity 0), still intercepts pointer events and blocks clicks on the tab-header buttons
+       (maximize / close). Disable pointer events on it entirely. */
+    pointer-events: none;
     transition: 1s cubic-bezier(0.35, 0, 0.25, 1);
     color: blue;
     box-shadow: 0 0 .5em green;
@@ -433,7 +444,7 @@
     }
 
     #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel {
-      border-radius: 1em;
+      border-radius: 50%;
     }
 
     .p-tablist-active-bar {
@@ -535,27 +546,61 @@
     scale: .9;
   }
 
+  #CodBi_LocalAPIDoc_RightPanel_Options_Maximize {
+    cursor: pointer;
+    font-size: 1.5em;
+    margin-top: auto;
+    margin-bottom: auto;
+    transition: .5s;
+    background-color: transparent;
+    border: none;
+    text-shadow: 0 0 .1em darkorange;
+    cursor: pointer;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Maximize i {
+    pointer-events: none;
+    font-style: normal;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Maximize:hover {
+    scale: 1.1;
+    text-shadow: 0 0 .5em darkorange;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_Maximize:active {
+    scale: .9;
+  }
+
   #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel {
     cursor: pointer;
-    transition: .5s;
+    transition: .25s;
     border: none;
-    border-bottom-left-radius: .5em;
-    background: #141414;
-    background: linear-gradient(148deg, #e11010, #ba3535 13%, #e67979 51%, #870808 87%, #660505);
-    text-shadow: 0 0 .1em black;
-    box-shadow: 0 0 .5em black;
-    color: white;
-    font-size: 1.5em;
+    border-radius: 50%;
+    width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    color: #6b7280;
+    font-size: 1.2em;
     margin-left: .5em;
+    line-height: 1;
+  }
+
+  #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel i {
+    pointer-events: none;
+    font-style: normal;
   }
 
   #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel:hover {
-    scale: 1.1;
-    color: darkorange;
+    background-color: rgba(0, 0, 0, .08);
+    color: #495057;
   }
 
   #CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel:active {
-    scale: .9;
+    background-color: rgba(0, 0, 0, .14);
   }
 
   @keyframes kfFadeIN_CodBi_LocalAPIDoc_Tree_Label_Rename_Hint_AlreadyExistent {

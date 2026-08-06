@@ -182,17 +182,29 @@ Applicable on any element that should be invisible when the form is printed.
 
 Applicable for debugging; logs CodBi runtime data to the browser developer console.
 
-Sys.Log.Console does NOT need an existing form element — it is a standalone functionality. When the user asks to output/print/log/show anything to the browser console (URL content, BayVIS data, CSV, global variables, DOM elements, etc.), you MUST create a NEW XContainerInvisible at the top of the first page's elements array. Set its "name" property (prefix "div"), an "id" property (prefix "xi-log-"), an empty "elements" array, and put data-cb-func and data-cb-Data in the "attributes" array.
+Sys.Log.Console does NOT need an existing form element — it is a standalone functionality. When the user asks to output/print/log/show anything to the browser console (URL content, BayVIS data, CSV, global variables, DOM elements, etc.), you MUST create a NEW **invisible XSpan** (the plain-text/HTML element of Formcycle — NEVER invent class names like "XText" or "XButton"; XTextField is an INPUT element, not plain text) and list it as a separate item in the root "items" array with EXACTLY this shape:
+
+```
+{
+  "className": "XSpan",
+  "properties": {
+    "name": "spLog<Name>",
+    "id": "xi-log-<name>",
+    "rtevalue": "<short label>",
+    "invisible": "1"
+  },
+  "attributes": [
+    { "text": "data-cb-func", "value": "Sys.Log.Console" },
+    { "text": "data-cb-Data", "value": "SYS.Log.Console > <what shall be logged>" }
+  ]
+}
+```
+
+Also add the element's name to the first page's "elements" array. The `data-cb-Data` value MUST start with the literal prefix **"SYS.Log.Console > "** followed by the text describing what shall be logged — e.g. `"SYS.Log.Console > Log the details of the planet Pluto with a saturation of .5"`. Do NOT use an element-placeholder expression as the whole value; write the descriptive log text.
 
 ## Time.Frame
 
 Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
-
-## EP Chaining
-
-Element Placeholders (EPs) can be chained with > syntax to pass one EP's result as input to another EP. This works in ANY data-cb-* parameter that accepts EPs (e.g. data-cb-Data, data-cb-replacement, data-cb-Values, data-cb-replacements). Example: "{ BayVIS.Ansprechpartner.Details > { V > VariableName } }" first resolves V to get an ID, then fetches the contact details. The inner EP is always resolved first and its result becomes the parameter for the outer EP.
-
-CRITICAL — EP parameter values are raw strings without quotes. Write { BayVIS.Ansprechpartner.ID > Salvatore Callari } NOT { BayVIS.Ansprechpartner.ID > "Salvatore Callari" }. Quotes are part of the EP syntax itself (the { } braces), do NOT add extra quotes around parameter values.
 
 ## AI DOCUMENT QA
 

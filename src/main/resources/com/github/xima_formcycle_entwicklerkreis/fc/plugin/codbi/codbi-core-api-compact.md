@@ -174,8 +174,26 @@ when CodBi searches within the shared parent container.
   - DocumentSelector: CSS-Class-Selector for the element to remove (e.g., '.divPrintSection'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Invert: Specifies whether this functionality shall be inverted, e.g.
   - ParentalLevel: The number of elements to climb up the HTMLElement.parentElement -Tree to get to.
-- Sys.Log.Console: Applicable for debugging; logs CodBi runtime data to the browser developer console.
-  - DATA: The data to log to the console.
+- Sys.Log.Console: Applicable for debugging; logs CodBi runtime data to the browser developer console. STANDALONE — when the prompt asks to log something to the console, create a NEW invisible XSpan (the plain-text/HTML element of Formcycle — NEVER invent class names like "XText" or "XButton"; XTextField is an INPUT element, not plain text; the log output "XItem missing 'XText' using XDefault" proves invented names do NOT render) at the top of the first page. List it as a separate item in the root "items" array with EXACTLY this shape:
+
+```
+{
+  "className": "XSpan",
+  "properties": {
+    "name": "spLog<Name>",
+    "id": "xi-log-<name>",
+    "rtevalue": "<short label>",
+    "invisible": "1"
+  },
+  "attributes": [
+    { "text": "data-cb-func", "value": "Sys.Log.Console" },
+    { "text": "data-cb-Data", "value": "SYS.Log.Console > <what shall be logged>" }
+  ]
+}
+```
+
+Set data-cb-func="Sys.Log.Console" on it.
+  - DATA: The data to log to the console. MUST start with the literal prefix "SYS.Log.Console > " followed by the text describing what shall be logged (e.g. "SYS.Log.Console > Log the details of the planet Pluto with a saturation of .5"). Do NOT use an element-placeholder expression as the whole value.
 - Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
   - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
   - MaxField: CSS-Class-Selector for the max time input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.

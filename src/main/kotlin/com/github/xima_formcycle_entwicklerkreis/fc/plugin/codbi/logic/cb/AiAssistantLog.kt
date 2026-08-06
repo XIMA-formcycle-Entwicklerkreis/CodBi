@@ -1,5 +1,6 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.Standard
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
@@ -7,6 +8,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import javax.persistence.EntityManager
 import javax.persistence.EntityManagerFactory
 import org.slf4j.LoggerFactory
 
@@ -38,6 +40,10 @@ object AiAssistantLog {
   /** Maximum number of log entries returned by [loadLogs]. */
   private const val DEFAULT_LIMIT = 200
 
+  /** Empty log response: no entries and zeroed totals (used when no DB / an error occurs). */
+  private const val EMPTY_LOG_RESPONSE =
+      """{"entries":[],"totals":{"tokensIn":0,"tokensOut":0,"costByCurrency":{}},"sensitiveElements":[],"sensitiveChecks":[]}"""
+
   // region Write
 
   /**
@@ -57,7 +63,10 @@ object AiAssistantLog {
       formChanges: JsonObject?,
       workflowChanges: JsonArray?,
       tokensIn: Long? = null,
-      tokensOut: Long? = null
+      tokensOut: Long? = null,
+      cost: Double? = null,
+      currency: String? = null,
+      username: String? = null
   ): Boolean {
     if (emf == null) return false
     return try {
@@ -67,12 +76,15 @@ object AiAssistantLog {
         em.persist(
             CodbiAiAssistantLog(
                 formKey = formKey?.take(200)?.takeIf { it.isNotBlank() },
+                username = username?.take(200)?.takeIf { it.isNotBlank() },
                 prompt = prompt.take(1000),
                 intent = intent.take(20),
                 modelId = modelId.take(100),
                 tokens = (tokensIn ?: 0L) + (tokensOut ?: 0L),
                 tokensIn = tokensIn,
                 tokensOut = tokensOut,
+                cost = cost,
+                currency = currency?.take(10)?.takeIf { it.isNotBlank() },
                 workflowVersionId = workflowVersionId,
                 formChanges = formChanges?.toString(),
                 workflowChanges = workflowChanges?.toString()))
@@ -93,6 +105,89 @@ object AiAssistantLog {
     }
   }
 
+  /**
+   * Inserts or removes the sensitive-element dismiss check for one log entry / element name / user.
+   * When [checked] is `true` a row is added (the user ticked the checkbox); when `false` the
+   * matching row is removed (the user unticked it). Returns `true` when the operation succeeded.
+   */
+  fun setSensitiveCheck(
+      emf: EntityManagerFactory?,
+      entryId: Long?,
+      elementName: String?,
+      username: String?,
+      checked: Boolean
+  ): Boolean {
+    if (emf == null || entryId == null || elementName.isNullOrBlank() || username.isNullOrBlank()) {
+      return false
+    }
+    return try {
+      val em = emf.createEntityManager()
+      try {
+        em.transaction.begin()
+        val q =
+            em.createQuery(
+                "SELECT c FROM CodbiAiLogSensitiveCheck c WHERE c.logEntryId = :id AND c.elementName = :name AND c.username = :user",
+                CodbiAiLogSensitiveCheck::class.java)
+        q.setParameter("id", entryId)
+        q.setParameter("name", elementName)
+        q.setParameter("user", username)
+        val existing = (q.resultList as List<CodbiAiLogSensitiveCheck>).firstOrNull()
+        if (checked) {
+          if (existing == null) {
+            em.persist(
+                CodbiAiLogSensitiveCheck(
+                    logEntryId = entryId, elementName = elementName, username = username))
+          }
+        } else if (existing != null) {
+          em.remove(existing)
+        }
+        em.transaction.commit()
+        true
+      } catch (e: Exception) {
+        if (em.transaction.isActive) {
+          runCatching { em.transaction.rollback() }
+        }
+        logger.warn("[AiAssistantLog] Failed to set sensitive check: {}", e.message)
+        false
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to set sensitive check: {}", e.message)
+      false
+    }
+  }
+
+  /** Loads the sensitive-check rows of [username] whose log entry is among [out]. */
+  private fun loadSensitiveChecks(em: EntityManager, out: JsonArray, username: String?): JsonArray {
+    val checks = JsonArray()
+    if (username.isNullOrBlank()) return checks
+    try {
+      val entryIds =
+          out.mapNotNull { el ->
+            el.takeIf { it.isJsonObject }?.asJsonObject?.get("id")?.asString?.toLongOrNull()
+          }
+      if (entryIds.isEmpty()) return checks
+      val q =
+          em.createQuery(
+              "SELECT c FROM CodbiAiLogSensitiveCheck c WHERE c.username = :username AND c.logEntryId IN :ids",
+              CodbiAiLogSensitiveCheck::class.java)
+      q.setParameter("username", username)
+      q.setParameter("ids", entryIds)
+      for (c in q.resultList as List<CodbiAiLogSensitiveCheck>) {
+        val o = JsonObject()
+        o.addProperty("entryId", c.logEntryId.toString())
+        o.addProperty("elementName", c.elementName)
+        o.addProperty("username", c.username ?: "")
+        o.addProperty("checkedAt", c.checkedAt?.toString() ?: "")
+        checks.add(o)
+      }
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to load sensitive checks: {}", e.message)
+    }
+    return checks
+  }
+
   // endregion Write
 
   // region Read
@@ -100,15 +195,20 @@ object AiAssistantLog {
   /**
    * Loads the most recent inference records ordered newest-first. When [formKey] is non-blank only
    * the entries of that form are returned (used by the designer change-log dialog to show the log
-   * of the form currently being edited). Returns a JSON array string; each entry has the shape `{
-   * "id", "ts", "formKey", "prompt", "intent", "modelId", "form": {...}, "workflow": [...] }`.
+   * of the form currently being edited). Returns a JSON object string `{ "entries": [...],
+   * "totals": { "tokensIn", "tokensOut", "costByCurrency": { "<currency>": cost } } }`. Each entry
+   * has the shape `{ "id", "ts", "formKey", "prompt", "intent", "modelId", "form": {...},
+   * "workflow": [...] }`. The totals are derived server-side from the summed input/output tokens
+   * per model × the configured price per 1,000,000 tokens (grouped by currency), so the total cost
+   * does not depend on summing stored per-entry costs.
    */
   fun loadLogs(
       emf: EntityManagerFactory?,
       formKey: String? = null,
-      limit: Int = DEFAULT_LIMIT
+      limit: Int = DEFAULT_LIMIT,
+      username: String? = null
   ): String {
-    if (emf == null) return "[]"
+    if (emf == null) return EMPTY_LOG_RESPONSE
     return try {
       val em = emf.createEntityManager()
       try {
@@ -124,7 +224,18 @@ object AiAssistantLog {
         query.maxResults = limit.coerceIn(1, 500)
         val rows = query.resultList as List<CodbiAiAssistantLog>
         val out = JsonArray()
+        var totalTokensIn = 0L
+        var totalTokensOut = 0L
+        // Summed tokens per model — used to derive the total cost from the configured price.
+        val tokensByModel = mutableMapOf<String, Pair<Long, Long>>()
         for (entry in rows) {
+          val tokensIn = entry.tokensIn ?: 0L
+          val tokensOut = entry.tokensOut ?: 0L
+          totalTokensIn += tokensIn
+          totalTokensOut += tokensOut
+          val model = entry.modelId ?: ""
+          val prev = tokensByModel[model]
+          tokensByModel[model] = (prev?.first ?: 0L) + tokensIn to (prev?.second ?: 0L) + tokensOut
           val e = JsonObject()
           e.addProperty("id", entry.id?.toString() ?: "")
           e.addProperty("ts", entry.ts?.toString() ?: "")
@@ -135,6 +246,28 @@ object AiAssistantLog {
           e.addProperty("tokens", entry.tokens ?: 0)
           e.addProperty("tokensIn", entry.tokensIn ?: 0)
           e.addProperty("tokensOut", entry.tokensOut ?: 0)
+          e.addProperty("cost", entry.cost ?: 0)
+          e.addProperty("currency", entry.currency ?: "")
+          e.addProperty("username", entry.username ?: "")
+          // Sensitive elements this entry actually used, recomputed from its stored form changes
+          // against the current AI_Log_SensitiveElements configuration. The frontend uses this to
+          // auto-open the change log after a workflow-triggered reload (see
+          // autoOpenIfRecentSensitive).
+          entry.formChanges
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                runCatching {
+                      val parsed = JsonParser.parseString(text)
+                      if (parsed.isJsonObject) {
+                        usedSensitiveElements(parsed.asJsonObject, AI.logSensitiveElements)
+                      } else {
+                        emptyList()
+                      }
+                    }
+                    .getOrNull()
+              }
+              ?.takeIf { it.isNotEmpty() }
+              ?.let { used -> e.add("sensitiveUsed", gson.toJsonTree(used)) }
           entry.formChanges
               ?.takeIf { it.isNotBlank() }
               ?.let { text ->
@@ -155,13 +288,48 @@ object AiAssistantLog {
               }
           out.add(e)
         }
-        gson.toJson(out)
+        // Total cost per currency derived from summed tokens per model × price per 1M (no per-entry
+        // cost sums). Entries whose model has no configured price contribute no cost.
+        val costByCurrency = linkedMapOf<String, Double>()
+        val standard = Standard.instance
+        for ((model, tokens) in tokensByModel) {
+          val price = standard?.priceForModel(model) ?: continue
+          val cost = price.costFor(tokens.first, tokens.second) ?: continue
+          val currency = price.currency ?: continue
+          costByCurrency[currency] = (costByCurrency[currency] ?: 0.0) + cost
+        }
+        val totals = JsonObject()
+        totals.addProperty("tokensIn", totalTokensIn)
+        totals.addProperty("tokensOut", totalTokensOut)
+        val costObj = JsonObject()
+        for ((currency, cost) in costByCurrency) {
+          costObj.addProperty(currency, cost)
+        }
+        totals.add("costByCurrency", costObj)
+        val root = JsonObject()
+        root.add("entries", out)
+        root.add("totals", totals)
+        // The current set of configured sensitive elements (AI_Log_SensitiveElements). The frontend
+        // uses this to mark every node that matches a sensitive element with an always-on red
+        // border.
+        // It is read fresh on every request so configuration changes take effect the next time the
+        // change log is opened (the set is re-read from the plugin properties on
+        // re-initialization).
+        root.add("sensitiveElements", gson.toJsonTree(AI.logSensitiveElements.sorted()))
+        // The sensitive-element dismiss checks made by the requesting user. The frontend uses them
+        // to keep already-checked nodes unmarked for this user.
+        root.add("sensitiveChecks", loadSensitiveChecks(em, out, username))
+        // The requesting user's login name, so the frontend can attribute a freshly-ticked
+        // sensitive
+        // check to the right user immediately (without waiting for a reload).
+        root.addProperty("currentUser", username ?: "")
+        gson.toJson(root)
       } finally {
         em.close()
       }
     } catch (e: Exception) {
       logger.warn("[AiAssistantLog] Failed to load inference log: {}", e.message)
-      "[]"
+      EMPTY_LOG_RESPONSE
     }
   }
 
@@ -327,6 +495,149 @@ object AiAssistantLog {
     result.add("widgetsRemoved", widgetsRemoved)
     result.add("classesSet", classesSet)
     result.add("attributesSet", attributesSet)
+    result.add("variablesSet", computeVariablesDiff(beforeJson, afterJson))
+    return result
+  }
+
+  /**
+   * Determines which of the configured **sensitive** CodBi element names ([sensitive], already
+   * lowercased) were actually used in the given change description ([formChanges]). Matching is
+   * case-insensitive and covers:
+   * - `widgetsCreated[].name` / `.className`
+   * - `classesSet[].classes[]` (standard-configuration CSS classes)
+   * - `attributesSet[].attributes[]` whose value contains the element name (e.g. a `data-cb-func`
+   *   value, or a `data-cb-*` parameter value holding an EP placeholder like `{ pluto > ... }`)
+   * - `variablesSet[].name` (global variables)
+   *
+   * @param formChanges The change description produced by [computeFormChanges].
+   * @param sensitive The lowercased set of sensitive element names (from
+   *   `AI.logSensitiveElements`).
+   * @return The matched sensitive element names, sorted for stable output.
+   */
+  fun usedSensitiveElements(formChanges: JsonObject, sensitive: Set<String>): List<String> {
+    if (sensitive.isEmpty()) return emptyList()
+    val found = mutableSetOf<String>()
+    try {
+      val haystack = StringBuilder()
+      formChanges.getAsJsonArray("widgetsCreated")?.forEach { el ->
+        if (el.isJsonObject) {
+          el.asJsonObject
+              .get("name")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { haystack.append(' ').append(it) }
+          el.asJsonObject
+              .get("className")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { haystack.append(' ').append(it) }
+        }
+      }
+      formChanges.getAsJsonArray("classesSet")?.forEach { el ->
+        if (el.isJsonObject) {
+          el.asJsonObject.getAsJsonArray("classes")?.forEach { c ->
+            if (c.isJsonPrimitive) haystack.append(' ').append(c.asString)
+          }
+        }
+      }
+      formChanges.getAsJsonArray("attributesSet")?.forEach { el ->
+        if (el.isJsonObject) {
+          el.asJsonObject.getAsJsonArray("attributes")?.forEach { a ->
+            if (a.isJsonObject) {
+              val attr = a.asJsonObject
+              // The attribute's NAME carries the functionality / EP id (e.g. "Sys.Log.Console"),
+              // while its VALUE carries the payload. Scan both (plus the kind), so a configured
+              // sensitive element matches even when only the name is present (empty value funcs).
+              for (key in listOf("name", "value", "kind")) {
+                attr
+                    .get(key)
+                    ?.takeIf { it.isJsonPrimitive }
+                    ?.asString
+                    ?.let { haystack.append(' ').append(it) }
+              }
+              // The CodBi parameters of a functionality (data-cb-*) may themselves reference a
+              // sensitive element (e.g. an EP id written into a param value).
+              attr.getAsJsonArray("params")?.forEach { p ->
+                if (p.isJsonObject) {
+                  for (key in listOf("name", "value")) {
+                    p.asJsonObject
+                        .get(key)
+                        ?.takeIf { it.isJsonPrimitive }
+                        ?.asString
+                        ?.let { haystack.append(' ').append(it) }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      formChanges.getAsJsonArray("variablesSet")?.forEach { el ->
+        if (el.isJsonObject) {
+          el.asJsonObject
+              .get("name")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { haystack.append(' ').append(it) }
+        }
+      }
+      val text = haystack.toString()
+      for (name in sensitive) {
+        // Token-based match (word boundaries), so "HTML" does not match inside "HTML.CSS".
+        if (Regex("(?i)(?<![A-Za-z0-9_.])${Regex.escape(name)}(?![A-Za-z0-9_.])")
+            .containsMatchIn(text)) {
+          found.add(name)
+        }
+      }
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to compute used sensitive elements: {}", e.message)
+    }
+    return found.sorted()
+  }
+
+  /**
+   * Computes the global-variable changes between [beforeJson] and [afterJson]. Global variables
+   * live in the form's top-level `variables` array. The result is a JSON array of entries, each
+   * either `{ "name": "...", "value": "..." }` for a set/updated variable, or `{ "name": "...",
+   * "removed": true }` for one that was removed.
+   */
+  private fun computeVariablesDiff(beforeJson: String, afterJson: String): JsonArray {
+    val result = JsonArray()
+    try {
+      val before = variablesByName(JsonParser.parseString(beforeJson).asJsonObject)
+      val after = variablesByName(JsonParser.parseString(afterJson).asJsonObject)
+      for ((name, value) in after) {
+        if (before[name] != value) {
+          val entry = JsonObject()
+          entry.addProperty("name", name)
+          entry.addProperty("value", value ?: "")
+          result.add(entry)
+        }
+      }
+      for (name in before.keys - after.keys) {
+        val entry = JsonObject()
+        entry.addProperty("name", name)
+        entry.addProperty("removed", true)
+        result.add(entry)
+      }
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to compute variables diff: {}", e.message)
+    }
+    return result
+  }
+
+  /** Returns a map of the form's global variable name → its `value` (may be null). */
+  private fun variablesByName(root: JsonObject): Map<String, String?> {
+    val variables =
+        root.get("variables")?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyMap()
+    val result = mutableMapOf<String, String?>()
+    for (el in variables) {
+      if (!el.isJsonObject) continue
+      val obj = el.asJsonObject
+      val name = obj.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      val value = obj.get("value")?.takeIf { it.isJsonPrimitive }?.asString
+      result[name] = value
+    }
     return result
   }
 

@@ -183,9 +183,23 @@
                                             accept  = ".json"
                                             style   = "display : none ;"/></button>
 
+                        <button id = "CodBi_LocalAPIDoc_RightPanel_Options_Maximize"
+
+                                [attr.title] = "(maximized ? 'RP.Tabs.Header.Functions.Restore' : 'RP.Tabs.Header.Functions.Maximize') | transloco"
+
+                                [ngClass] = "{ '--maximized' : maximized }"
+
+                                (click) = "onClick_CodBi_LocalAPIDoc_RightPanel_Options_Maximize()">
+                            <i class="pi" [ngClass]="maximized ? 'pi-window-minimize' : 'pi-window-maximize'"></i>
+                        </button>
+
                         <button id = "CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel"
 
-                                (click) = "onClick_CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel()">X</button></div></p-tablist>
+                                [attr.title] = "'RP.Tabs.Header.Functions.Close' | transloco"
+
+                                (click) = "onClick_CodBi_LocalAPIDoc_RightPanel_Options_ClosePanel()">
+                            <i class="pi pi-times"></i>
+                        </button></div></p-tablist>
 
                 <p-tabpanels>
                     <p-tabpanel value = "Functionality"
@@ -227,7 +241,12 @@
                                                     min_height                  :   500,
                                                     paste_data_images           :   false,
                                                     base_url                    :   resourceurl,
-                                                    suffix                      :   '.min'}"></editor></div>
+                                                    suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value = "AIPrompts">
+                                <p-accordion-header>{{"RP.Accordion.Captions.AIPrompts" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content>
                                     <div class = "CodBi_Prompt_Area">
                                         <label for = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt">{{"RP.Prompts.Condensed" | transloco }}</label>
                                         <textarea   id              = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt"
@@ -298,7 +317,12 @@
                                                     paste_data_images           :   false,
                                                     min_height                  :   500,
                                                     base_url                    :   resourceurl,
-                                                    suffix                      :   '.min'}"></editor></div>
+                                                    suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value = "AIPrompts">
+                                <p-accordion-header>{{"RP.Accordion.Captions.AIPrompts" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content>
                                     <div class = "CodBi_Prompt_Area">
                                         <label for = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt">{{"RP.Prompts.Condensed" | transloco }}</label>
                                         <textarea   id              = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt"
@@ -370,7 +394,12 @@
                                                     paste_data_images           :   false,
                                                     min_height                  :   500,
                                                     base_url                    :   resourceurl,
-                                                    suffix                      :   '.min'}"></editor></div>
+                                                    suffix                      :   '.min'}"></editor></div></p-accordion-content></p-accordion-panel>
+
+                            <p-accordion-panel value = "AIPrompts">
+                                <p-accordion-header>{{"RP.Accordion.Captions.AIPrompts" | transloco }}</p-accordion-header>
+
+                                <p-accordion-content>
                                     <div class = "CodBi_Prompt_Area">
                                         <label for = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt">{{"RP.Prompts.Condensed" | transloco }}</label>
                                         <textarea   id              = "CodBi_LocalAPIDoc_RightPanel_CondensedPrompt"

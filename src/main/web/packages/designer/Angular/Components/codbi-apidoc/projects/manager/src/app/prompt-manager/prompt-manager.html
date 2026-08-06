@@ -1,6 +1,9 @@
 <p-dialog
     [visible]="visible"
     (visibleChange)="close()"
+    (onShow)="onDialogShow()"
+    (onDragEnd)="onDialogDragEnd()"
+    (onResizeEnd)="onDialogDragEnd()"
     [modal]="true"
     [draggable]="true"
     [resizable]="true"

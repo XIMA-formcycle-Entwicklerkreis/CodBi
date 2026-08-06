@@ -78,6 +78,10 @@ interface Window {
     /**
      * Called whenever the API-Doc Manager's **Close**-{@link HTMLButtonElement } is clicked. */
     managerClosed: () => void;
+    /**
+     * Called whenever the API-Doc Manager's **Maximize**-{@link HTMLButtonElement } is clicked.
+     * Toggles the manager host container's fullscreen (`--maximized`) state. */
+    managerMaximize: () => void;
     /** Gets an API-Doc Manager translation resource.*/
     retrieveManagerTranslatedResource(id: string): string;
     /**

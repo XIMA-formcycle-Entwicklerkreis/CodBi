@@ -5,6 +5,7 @@ import {
   Component,
   OnDestroy,
   OnInit,
+  ViewChild,
   ViewEncapsulation,
 } from "@angular/core";
 import { FormsModule } from "@angular/forms";
@@ -16,10 +17,12 @@ import { Select } from "primeng/select";
 import { Textarea } from "primeng/textarea";
 import { Callbacks, getJQuery, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
 import { getCurrentFormKey } from "./form-key";
+import { AiAssistantLog } from "../ai-assistant-log/ai-assistant-log";
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFPageProxy } from "pdfjs-dist";
 import {
   applyDialogPosition,
+  enableDialogDrag,
   loadDialogPosition,
   readDialogPosition,
   saveDialogPosition,
@@ -71,7 +74,7 @@ interface IAiHistoryEntry {
 @Component({
   selector: "cb-ai-assistant",
   standalone: true,
-  imports: [FormsModule, Dialog, Select, Textarea, Button, ProgressSpinner, Message],
+  imports: [FormsModule, Dialog, Select, Textarea, Button, ProgressSpinner, Message, AiAssistantLog],
   templateUrl: "./ai-assistant.html",
   styleUrl: "./ai-assistant.scss",
   encapsulation: ViewEncapsulation.None,
@@ -120,22 +123,49 @@ export class AiAssistant implements OnInit, OnDestroy {
   history: IAiHistoryEntry[] = [];
   /** Whether the history/undo panel is currently expanded. */
   showHistory = false;
+  /** Whether the change-log side panel is unfolded to the right of the assistant content. */
+  showLog = false;
+  /** Width (px) of the unfolded change-log panel — adjustable via the draggable splitter. */
+  logPanelWidth = 560;
+  /** Whether the user is currently dragging the splitter between assistant content and change log. */
+  logResizing = false;
+  /** Current width (px) of the assistant dialog — widens to the right viewport edge when the
+   *  change-log panel is unfolded and returns to the folded width when it is folded. */
+  private dialogWidth = 620;
+  /** Width (px) of the assistant dialog while the change-log panel is folded. The user can resize
+   *  the dialog when it is not snapped; that width is remembered and restored when the log closes. */
+  private foldedDialogWidth = 620;
+  /** In-flight splitter-drag state (start mouse X + panel width at drag start). */
+  private logResizeState: { startX: number; startWidth: number } | null = null;
+  private static readonly LOG_PANEL_MIN_WIDTH = 320;
+  private static readonly LOG_PANEL_MAIN_MIN_WIDTH = 430;
+  private readonly LOG_PANEL_WIDTH_KEY = "codbi-ai-log-panel-width";
+  /** Whether the current user is allowed to sync the API-Documentation (Prompt Manager visibility). */
+  syncAllowed = false;
   private readonly HISTORY_KEY = "codbi-ai-undo-history";
   private readonly MAX_HISTORY = 10;
   /** Cookie name for persisting the selected AI model across page reloads. */
   private readonly MODEL_COOKIE = "codbi-ai-selected-model";
+  /** A log entry that used sensitive elements is auto-opened only if it is at most this old. */
+  private static readonly AUTO_OPEN_WINDOW_MINUTES = 10;
   // #endregion State
+
+  /** Reference to the embedded change-log panel (unfolds to the right of the assistant content). */
+  @ViewChild("logPanel") logPanel?: AiAssistantLog;
 
   private readonly openHandler = (): void => this.open();
 
   /** Remembered dialog position, persisted across reloads so the browser keeps the location. */
   private dialogPosition: DialogPosition | null = loadDialogPosition("codbi-dialog-assistant-position");
   private static readonly DIALOG_STYLE_CLASS = "cb-ai-assistant-dialog";
+  /** Cleanup for the custom header-drag handlers (re-enabled on every dialog show). */
+  private dragCleanup: (() => void) | null = null;
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
-  /** Opens the Prompt Manager dialog. */
+  /** Opens the Prompt Manager dialog (only available to users allowed to sync). */
   openPromptManager(): void {
+    if (!this.syncAllowed) return;
     if (!document.querySelector("cb-prompt-manager")) {
       document.body.appendChild(document.createElement("cb-prompt-manager"));
     }
@@ -145,74 +175,303 @@ export class AiAssistant implements OnInit, OnDestroy {
     }, 50);
   }
 
-  /** Opens the change-log dialog showing every AI inference recorded in the database. */
-  openLog(): void {
-    if (!document.querySelector("cb-ai-assistant-log")) {
-      document.body.appendChild(document.createElement("cb-ai-assistant-log"));
+  /**
+   * Queries the Local API-Doc servlet to determine whether the current user may sync the
+   * API-Documentation. The Prompt Manager button is only shown for sync-allowed users.
+   */
+  private checkSyncAllowed(): void {
+    getJQuery().ajax({
+      url: `${this.baseUrl}plugin?name=CodBi_LocalAPIDoc`,
+      type: "GET",
+      headers: { "X-Action": "Sync Allowed" },
+      success: (response: { message?: string } | null) => {
+        this.syncAllowed = response?.message !== "FALSE";
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.syncAllowed = false;
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  /**
+   * Unfolds the change-log side panel to the right of the assistant content and opens it.
+   * [elements] are names of sensitive CodBi elements that should be highlighted. Used both by the
+   * manual "Change log" toggle and by the automatic popup when the last inference used sensitive
+   * elements that are not marked as checked yet.
+   */
+  openLog(elements: string[] = []): void {
+    // The change-log panel unfolds inside the assistant dialog, so make sure the dialog is visible
+    // and the model list is populated (e.g. right after a workflow-triggered page reload).
+    if (this.models.length === 0) {
+      this.loadModelsAndOpen();
+    } else {
+      this.visible = true;
     }
-    // Small delay to ensure the custom element is ready in the DOM
-    setTimeout(() => {
-      document.dispatchEvent(new CustomEvent("codbi:ai-assistant-log:open"));
-    }, 50);
+    this.cdr.markForCheck();
+    this.expandAndUnfoldLog(elements);
+  }
+
+  /** Starts resizing the change-log panel via the draggable splitter. */
+  startLogResize(event: MouseEvent): void {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    this.logResizeState = { startX: event.clientX, startWidth: this.logPanelWidth };
+    this.logResizing = true;
+    this.cdr.markForCheck();
+    document.addEventListener("mousemove", this.onLogResizeMove);
+    document.addEventListener("mouseup", this.endLogResize);
+    document.body.style.userSelect = "none";
+  }
+
+  /** Moves the splitter. The change-log panel is anchored to the right edge of the dialog, so
+   *  dragging the splitter right makes it NARROWER (its left edge follows the mouse). Clamped to
+   *  keep the assistant content at a usable minimum width. */
+  private readonly onLogResizeMove = (event: MouseEvent): void => {
+    const state = this.logResizeState;
+    if (!state) return;
+    const next = state.startWidth - (event.clientX - state.startX);
+    const max = Math.max(
+      AiAssistant.LOG_PANEL_MIN_WIDTH,
+      Math.round(this.dialogWidth - AiAssistant.LOG_PANEL_MAIN_MIN_WIDTH),
+    );
+    this.logPanelWidth = Math.round(Math.min(Math.max(next, AiAssistant.LOG_PANEL_MIN_WIDTH), max));
+    // Keep the watermark centered over the left (assistant) content as the splitter moves.
+    this.applyWatermarkPosition();
+    this.cdr.markForCheck();
+  };
+
+  /** Ends the splitter drag and persists the chosen panel width. */
+  private readonly endLogResize = (): void => {
+    this.logResizeState = null;
+    this.logResizing = false;
+    document.removeEventListener("mousemove", this.onLogResizeMove);
+    document.removeEventListener("mouseup", this.endLogResize);
+    document.body.style.userSelect = "";
+    try {
+      localStorage.setItem(this.LOG_PANEL_WIDTH_KEY, String(this.logPanelWidth));
+    } catch {
+      // ignore storage errors
+    }
+    this.cdr.markForCheck();
+  };
+
+  /** Restores the previously chosen change-log panel width (if any). */
+  private loadLogPanelWidth(): void {
+    try {
+      const raw = localStorage.getItem(this.LOG_PANEL_WIDTH_KEY);
+      if (raw) {
+        const w = Number(raw);
+        if (Number.isFinite(w) && w >= AiAssistant.LOG_PANEL_MIN_WIDTH) {
+          this.logPanelWidth = w;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** Folds / unfolds the change-log side panel (the footer "Change log" toggle). */
+  toggleLog(): void {
+    if (this.showLog) {
+      this.showLog = false;
+      this.logPanel?.clearHighlights();
+      this.restoreDialogSize();
+    } else {
+      this.openLog();
+    }
+    this.cdr.markForCheck();
+  }
+
+  /** The embedded change-log panel auto-opened (e.g. from the `codbi:ai-assistant-log:open`
+   *  event) — make sure the assistant dialog is visible, widened to the right edge and the panel is
+   *  unfolded. The log data is already loaded by the opening component, so it is NOT re-opened. */
+  onLogOpened(): void {
+    this.visible = true;
+    this.cdr.markForCheck();
+    const show = (attempt: number): void => {
+      if (this.expandDialogForLog()) {
+        this.showLog = true;
+        this.cdr.markForCheck();
+      } else if (attempt < 30) {
+        setTimeout(() => show(attempt + 1), 100);
+      }
+    };
+    setTimeout(() => show(0), 100);
+  }
+
+  /** The user folded the change-log panel via its close button. */
+  onLogClosed(): void {
+    this.showLog = false;
+    this.logPanel?.clearHighlights();
+    this.restoreDialogSize();
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Widens the assistant dialog so its right edge reaches the right edge of the viewport, then
+   * unfolds the change-log panel. The panel only unfolds once the dialog is already wide, so the
+   * regular assistant content is never squeezed while the panel slides in. [elements] are the
+   * sensitive CodBi elements to highlight in the log.
+   */
+  private expandAndUnfoldLog(elements: string[]): void {
+    const expandAndShow = (attempt: number): void => {
+      if (this.expandDialogForLog()) {
+        // Never let the saved panel width exceed the dialog's available space.
+        this.logPanelWidth = Math.min(
+          this.logPanelWidth,
+          Math.max(
+            AiAssistant.LOG_PANEL_MIN_WIDTH,
+            Math.round(this.dialogWidth - AiAssistant.LOG_PANEL_MAIN_MIN_WIDTH),
+          ),
+        );
+        this.showLog = true;
+        this.cdr.markForCheck();
+        // The embedded change-log component is created together with the dialog content; retry for
+        // a few seconds until it is ready before asking it to open (with any sensitive highlights).
+        const tryOpen = (openAttempt: number): void => {
+          if (this.logPanel) {
+            this.logPanel.open(elements);
+          } else if (openAttempt < 40) {
+            setTimeout(() => tryOpen(openAttempt + 1), 100);
+          }
+        };
+        tryOpen(0);
+      } else if (attempt < 60) {
+        // The dialog is not rendered yet (model list may still be loading) — retry.
+        setTimeout(() => expandAndShow(attempt + 1), 100);
+      }
+    };
+    // Give the dialog a moment to render (and its open animation to settle) before measuring, so the
+    // left edge — and therefore the expanded width — is computed from the settled position.
+    setTimeout(() => expandAndShow(0), 400);
+  }
+
+  /**
+   * Widens the assistant dialog so its right edge reaches the right edge of the viewport. The left
+   * edge is pinned to its current position (the dialog grows to the right instead of re-centering),
+   * which gives the unfolded change-log panel the maximum available space. Returns true when the
+   * dialog element was measured and widened.
+   */
+  private expandDialogForLog(): boolean {
+    const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    // The dialog must be wide enough for both panes. If its current left edge leaves too little
+    // room to reach the right edge of the viewport, shift the left edge left so the dialog always
+    // expands and the change-log panel never overlaps the assistant content.
+    const minTotal = this.logPanelWidth + AiAssistant.LOG_PANEL_MAIN_MIN_WIDTH + 8;
+    const left = Math.min(rect.left, Math.max(0, Math.round(window.innerWidth - minTotal)));
+    el.style.position = "fixed";
+    el.style.transform = "none";
+    el.style.left = `${left}px`;
+    el.style.top = `${rect.top}px`;
+    this.dialogWidth = Math.max(620, Math.round(window.innerWidth - left));
+    // Apply the expanded width directly (no Angular style binding) so the resize handle and manual
+    // resize are never overwritten.
+    el.style.width = `${this.dialogWidth}px`;
+    el.style.maxWidth = "none";
+    this.applyWatermarkPosition();
+    this.cdr.markForCheck();
+    return true;
+  }
+
+  /** Centers the watermark over the left (assistant) content — not the whole widened dialog — and
+   *  recalculates it whenever the splitter moves / the areas are resized. The watermark is capped
+   *  at 200px, so its left edge sits ~100px left of the content center. */
+  private applyWatermarkPosition(): void {
+    if (!this.showLog) return;
+    const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+    if (!el) return;
+    const mainWidth = this.dialogWidth - 8 - this.logPanelWidth;
+    el.style.backgroundPosition = `0 0, ${Math.max(0, Math.round(mainWidth / 2) - 100)}px center`;
+  }
+
+  /** Restores the dialog to its folded width (the last width while the change-log panel was hidden). */
+  private restoreDialogSize(): void {
+    this.dialogWidth = this.foldedDialogWidth;
+    const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+    if (el) {
+      el.style.width = `${this.foldedDialogWidth}px`;
+      el.style.maxWidth = "";
+      el.style.backgroundPosition = "";
+    }
+    this.cdr.markForCheck();
   }
 
   // #region Lifecycle
   ngOnInit(): void {
     document.addEventListener("codbi:ai-assistant:open", this.openHandler);
     this.loadHistory();
+    this.checkSyncAllowed();
+    this.loadLogPanelWidth();
+    // Register the drag handle once. PrimeNG only emits (onShow) after the open animation, which is
+    // disabled in this app — so we must not depend on onShow for the drag registration.
+    this.dragCleanup?.();
+    this.dragCleanup = enableDialogDrag(
+      AiAssistant.DIALOG_STYLE_CLASS,
+      "codbi-dialog-assistant-position",
+      (p) => (this.dialogPosition = p),
+    );
     document.documentElement.style.setProperty(
       "--cb-ai-watermark-url",
       `url('${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg')`,
     );
-    // Workflow-reload case: after a workflow is created the designer reloads the page. The sensitive
-    // elements used by that run were persisted to localStorage right before the reload (same pattern
-    // as the pending-standards value). The change-log component consumes them in its own ngOnInit;
-    // if it did not (e.g. it was not mounted in time), this fallback — on the always-mounted
-    // assistant element — still opens the change log with them highlighted.
+    // Auto-open the change-log side panel when the last inference used sensitive elements that are
+    // not all marked as checked. Two independent triggers (so it works even if one is missed):
+    //  1. A pending localStorage value ("codbi-log-sensitive-elements") written by the assistant
+    //     right before a workflow-triggered page reload.
+    //  2. The database itself: the newest log entry of the current form used sensitive elements
+    //     within the last few minutes (see checkSensitiveAutoOpen).
     const pendingSensitive = localStorage.getItem("codbi-log-sensitive-elements");
     console.log("[AICodBiAssistant] ngOnInit: pending sensitive highlight =", pendingSensitive);
     if (pendingSensitive) {
-      setTimeout(() => {
-        // Only act if the change-log component has not already consumed the pending highlight
-        // (it removes the storage when it opens), so the log is not opened twice.
-        const stillPending = localStorage.getItem("codbi-log-sensitive-elements");
-        console.log("[AICodBiAssistant] ngOnInit fallback: stillPending =", stillPending);
-        if (!stillPending) return;
-        localStorage.removeItem("codbi-log-sensitive-elements");
-        let elements: string[] = [];
-        try {
-          const parsed = JSON.parse(stillPending) as unknown;
-          elements = Array.isArray(parsed)
-            ? (parsed as string[]).filter((e): e is string => typeof e === "string")
-            : [];
-        } catch {
-          // ignore malformed payload
-        }
-        console.log("[AICodBiAssistant] ngOnInit fallback: dispatching open with", JSON.stringify(elements));
-        if (elements.length > 0) {
-          if (!document.querySelector("cb-ai-assistant-log")) {
-            document.body.appendChild(document.createElement("cb-ai-assistant-log"));
-          }
-          document.dispatchEvent(new CustomEvent("codbi:ai-assistant-log:open", { detail: { elements } }));
-        }
-      }, 800);
+      localStorage.removeItem("codbi-log-sensitive-elements");
+      let elements: string[] = [];
+      try {
+        const parsed = JSON.parse(pendingSensitive) as unknown;
+        elements = Array.isArray(parsed) ? (parsed as string[]).filter((e): e is string => typeof e === "string") : [];
+      } catch {
+        // ignore malformed payload
+      }
+      console.log("[AICodBiAssistant] ngOnInit: opening change log with", JSON.stringify(elements));
+      if (elements.length > 0) {
+        this.openLog(elements);
+      }
+    } else {
+      this.checkSensitiveAutoOpen();
     }
   }
 
   ngOnDestroy(): void {
     document.removeEventListener("codbi:ai-assistant:open", this.openHandler);
     this.stopSpeech();
+    this.dragCleanup?.();
+    this.dragCleanup = null;
+    this.endLogResize();
   }
   // #endregion Lifecycle
 
   // #region Template helpers
   onVisibleChange(v: boolean): void {
     this.visible = v;
+    if (!v) {
+      // The change-log side panel starts folded whenever the dialog is (re)opened.
+      this.showLog = false;
+      this.dialogWidth = this.foldedDialogWidth;
+    }
     this.cdr.markForCheck();
   }
 
-  /** Restores the remembered dialog position once the dialog has rendered. */
+  /** Restores the remembered dialog position/size once it has rendered (best effort — see ngOnInit). */
   onDialogShow(): void {
+    const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+    if (el) {
+      el.style.width = `${this.foldedDialogWidth}px`;
+      el.style.maxWidth = "";
+      el.style.backgroundPosition = "";
+    }
     setTimeout(() => applyDialogPosition(AiAssistant.DIALOG_STYLE_CLASS, this.dialogPosition), 0);
   }
 
@@ -225,9 +484,80 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * The robust auto-open fallback: queries the newest log entry of the current form directly in the
+   * database. If it used sensitive elements within the last few minutes and not all of them are
+   * already acknowledged (per the persisted `sensitiveChecks`), the change-log side panel is
+   * unfolded automatically (opening the assistant dialog if it is not visible). Runs once on every
+   * page load, so it also works after the workflow-triggered form reload without relying on
+   * localStorage or event timing.
+   */
+  private checkSensitiveAutoOpen(): void {
+    const checkWhenReady = (attempt: number): void => {
+      if (!getCurrentFormKey() && attempt < 10) {
+        setTimeout(() => checkWhenReady(attempt + 1), 150);
+        return;
+      }
+      const headers: Record<string, string> = { "X-Action": "Log" };
+      const formKey = getCurrentFormKey();
+      if (formKey) {
+        headers["X-Form-Key"] = formKey;
+      }
+      getJQuery().ajax({
+        url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
+        type: "GET",
+        headers,
+        success: (response: unknown) => {
+          const payload = response as Record<string, unknown> | null;
+          const entries = (payload?.["entries"] as Array<Record<string, unknown>> | undefined) ?? [];
+          const newest = entries[0];
+          if (!newest) return;
+          const used = newest["sensitiveUsed"];
+          if (!Array.isArray(used) || used.length === 0) return;
+          const ageMin = this.ageMinutes(String(newest["ts"] ?? ""));
+          if (ageMin === null || ageMin > AiAssistant.AUTO_OPEN_WINDOW_MINUTES) return;
+          const entryId = String(newest["id"] ?? "");
+          // The (entry, element) dismiss checks already persisted for this user.
+          const checks = (payload?.["sensitiveChecks"] as unknown[] | undefined) ?? [];
+          const acknowledged = new Set<string>();
+          for (const check of checks) {
+            if (typeof check !== "object" || check === null) continue;
+            const c = check as Record<string, unknown>;
+            if (String(c["entryId"] ?? "") === entryId) {
+              acknowledged.add(String(c["elementName"] ?? "").toLowerCase());
+            }
+          }
+          const unacknowledged = (used as unknown[])
+            .map((name) => String(name))
+            .filter((name) => name && !acknowledged.has(name.toLowerCase()));
+          if (unacknowledged.length === 0) return;
+          console.log(
+            "[AICodBiAssistant] checkSensitiveAutoOpen: opening change log with",
+            JSON.stringify(unacknowledged),
+          );
+          this.openLog(unacknowledged);
+        },
+        error: () => {
+          // Ignore — the change log can still be opened manually.
+        },
+      });
+    };
+    checkWhenReady(0);
+  }
+
+  /** Minutes since a backend timestamp ("yyyy-MM-dd HH:mm:ss.SSS"); null when unparseable. */
+  private ageMinutes(ts: string): number | null {
+    if (!ts) return null;
+    const normalized = ts.includes(" ") ? ts.replace(" ", "T") : ts;
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) return null;
+    return (Date.now() - date.getTime()) / 60000;
+  }
+
   get resultHtml(): string | null {
     return this.resultText?.replace(/\n/g, "<br>") ?? null;
   }
+
   // #endregion Template helpers
 
   // #region Model cookie persistence
@@ -837,15 +1167,9 @@ export class AiAssistant implements OnInit, OnDestroy {
           "| hasWorkflowReload =",
           hasWorkflowReload,
         );
-        if (sensitive.length > 0 && !hasWorkflowReload) {
-          // Form-only run (no page reload) — open the log directly now.
-          setTimeout(() => {
-            if (!document.querySelector("cb-ai-assistant-log")) {
-              document.body.appendChild(document.createElement("cb-ai-assistant-log"));
-            }
-            document.dispatchEvent(new CustomEvent("codbi:ai-assistant-log:open", { detail: { elements: sensitive } }));
-          }, 250);
-        }
+        // Form-only run (no page reload) with sensitive elements: the change-log side panel is
+        // unfolded (automatic popup) inside the form-only branch below, AFTER the form changes have
+        // been applied and the assistant has been closed — otherwise the close would hide it.
 
         const hasFormJson = "formJson" in p2 && p2["formJson"] != null;
         const hasWorkflowMessage = "workflowMessage" in p2 && typeof p2["workflowMessage"] === "string";
@@ -1135,6 +1459,12 @@ export class AiAssistant implements OnInit, OnDestroy {
             }
             this.visible = false;
             this.cdr.markForCheck();
+            // Automatic popup: after the form changes are applied (assistant closed), unfold the
+            // change-log side panel again if the last inference used sensitive elements that are not
+            // marked as checked yet. openLog re-opens the dialog, so it stays visible with the log.
+            if (sensitive.length > 0) {
+              this.openLog(sensitive);
+            }
           };
           const waitUntilReady = (): Promise<void> =>
             new Promise<void>((resolve) => {

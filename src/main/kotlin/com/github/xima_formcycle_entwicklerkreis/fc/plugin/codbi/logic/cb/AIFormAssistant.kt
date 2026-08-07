@@ -10,6 +10,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
 import de.xima.fc.mdl.fdv.EResponseType
@@ -43,14 +44,40 @@ class AIFormAssistant : IPluginServletAction {
   override fun getName(): String = "CodBi_AIFormAssistant"
 
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    val action =
-        params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
-    return when (action) {
-      "Models" -> handleModels()
-      "Run" -> handleRun(params)
-      else -> jsonResponse("""{"error":"Unknown action"}""")
+    // Apply per-user CodBi element visibility for the whole request so every prompt transmitted to
+    // the AI omits the elements hidden for the current user.
+    return CodBiElementAccess.runForUser(resolveRequestUsername(params)) {
+      val action =
+          params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
+      when (action) {
+        "Models" -> handleModels()
+        "Run" -> handleRun(params)
+        else -> jsonResponse("""{"error":"Unknown action"}""")
+      }
     }
   }
+
+  /** Reads the CodBi element-access plugin properties (idempotent). */
+  override fun initialize(configData: IPluginInitializeData) {
+    CodBiElementAccess.initialize(configData.properties)
+  }
+
+  /** Resolves the login name of the authenticated user, or `null` when it cannot be determined. */
+  private fun resolveRequestUsername(params: IPluginServletActionParams): String? =
+      try {
+        // Same accessor as the Local API Doc store (StructuredDataStoreAction) — the one that
+        // reliably resolves the logged-in user in the servlet action context.
+        params.user.userName?.trim()?.takeIf { it.isNotBlank() }
+      } catch (e: Exception) {
+        logger.warn("[AIFormAssistant] Could not resolve user via params.user: {}", e.message)
+        try {
+          params.benutzer?.loginName?.trim()?.takeIf { it.isNotBlank() }
+        } catch (e2: Exception) {
+          logger.warn(
+              "[AIFormAssistant] Could not resolve user via params.benutzer: {}", e2.message)
+          null
+        }
+      }
 
   private fun handleModels(): IPluginServletActionRetVal {
     val models = Standard.availableModels
@@ -1485,7 +1512,7 @@ class AIFormAssistant : IPluginServletAction {
       // Only the cross-cutting general rules form the base — the detailed standard/functionality/
       // EP sections are redundant with the targeted details below (or the full reference in the
       // blind case) and would roughly double the token usage when duplicated here.
-      val base = categories["codbi.general"] ?: ""
+      val base = CodBiElementAccess.scrub(categories["codbi.general"] ?: "")
       val codbiPart =
           when {
             requestedIds.isNotEmpty() -> {

@@ -212,6 +212,8 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 | `LDAP_URL_BACKEND` | LDAP backend URL |
 | `Matomo_SiteID` / `Matomo_URL` | Matomo analytics tracking |
 | `APIDoc_UsersAllowedToSYNC` | Users allowed to sync the API-Documentation Manager |
+| `AI_FormAssistant_ForbiddenElements_NonSyncUsers` | CSV of CodBi elements whose prompts are never transmitted to the AI for any user NOT listed in `APIDoc_UsersAllowedToSYNC` (as if deactivated in the Prompt Manager) |
+| `AI_FormAssistant_ForbiddenElements_<username>` | CSV of CodBi elements whose prompts are never transmitted to the AI when the user `<username>` (the property-name suffix) runs an inference — e.g. `AI_FormAssistant_ForbiddenElements_john.doe` hides the listed elements for `john.doe` only |
 
 ---
 

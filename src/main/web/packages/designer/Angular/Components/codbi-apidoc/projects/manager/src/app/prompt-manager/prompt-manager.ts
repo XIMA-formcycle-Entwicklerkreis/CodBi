@@ -20,6 +20,7 @@ import { Textarea } from "primeng/textarea";
 import { Tooltip } from "primeng/tooltip";
 import {
   applyDialogPosition,
+  enableDialogDrag,
   loadDialogPosition,
   readDialogPosition,
   saveDialogPosition,
@@ -243,6 +244,10 @@ export class PromptManager implements OnInit, OnDestroy {
   /** Remembered dialog position, persisted across reloads so the browser keeps the location. */
   private dialogPosition: DialogPosition | null = loadDialogPosition("codbi-dialog-prompt-manager-position");
   private static readonly DIALOG_STYLE_CLASS = "cb-prompt-manager-dialog";
+  /** Cleanup for the custom header-drag handlers of the main dialog. */
+  private dragCleanup: (() => void) | null = null;
+  /** Cleanups for the custom header-drag handlers of the sub-dialogs. */
+  private subDialogDragCleanups: (() => void)[] = [];
 
   constructor(
     private readonly http: HttpClient,
@@ -250,7 +255,7 @@ export class PromptManager implements OnInit, OnDestroy {
     private readonly translocoService: TranslocoService,
   ) {}
 
-  /** Restores the remembered dialog position once the dialog has rendered. */
+  /** Restores the remembered dialog position once it has rendered (best effort — see ngOnInit). */
   onDialogShow(): void {
     setTimeout(() => applyDialogPosition(PromptManager.DIALOG_STYLE_CLASS, this.dialogPosition), 0);
   }
@@ -262,6 +267,20 @@ export class PromptManager implements OnInit, OnDestroy {
       this.dialogPosition = p;
       saveDialogPosition("codbi-dialog-prompt-manager-position", p);
     }
+  }
+
+  /**
+   * Restores the remembered position of a sub-dialog (add category / add item / rename) once it has
+   * rendered, so the browser recalls where the user last placed it.
+   */
+  onSubDialogShow(styleClass: string, storageKey: string): void {
+    setTimeout(() => applyDialogPosition(styleClass, loadDialogPosition(storageKey)), 0);
+  }
+
+  /** Remembers the position of a sub-dialog after the user dragged it. */
+  onSubDialogDragEnd(styleClass: string, storageKey: string): void {
+    const p = readDialogPosition(styleClass);
+    if (p) saveDialogPosition(storageKey, p);
   }
 
   /** Convenience wrapper around TranslocoService.translate. */
@@ -277,10 +296,28 @@ export class PromptManager implements OnInit, OnDestroy {
     if (lang && ["de", "en", "it"].includes(lang)) {
       this.translocoService.setActiveLang(lang);
     }
+    // Register drag handles once — PrimeNG's (onShow) never fires (animations are disabled), so we
+    // must not depend on onShow for the drag registration.
+    this.dragCleanup?.();
+    this.dragCleanup = enableDialogDrag(
+      PromptManager.DIALOG_STYLE_CLASS,
+      "codbi-dialog-prompt-manager-position",
+      (p) => (this.dialogPosition = p),
+    );
+    this.subDialogDragCleanups.forEach((c) => c());
+    this.subDialogDragCleanups = [
+      enableDialogDrag("cb-pm-add-category-dialog", "codbi-dialog-prompt-add-category-position"),
+      enableDialogDrag("cb-pm-add-item-dialog", "codbi-dialog-prompt-add-item-position"),
+      enableDialogDrag("cb-pm-rename-dialog", "codbi-dialog-prompt-rename-position"),
+    ];
   }
 
   ngOnDestroy(): void {
     document.removeEventListener("codbi:prompt-manager:open", this.openHandler);
+    this.dragCleanup?.();
+    this.dragCleanup = null;
+    this.subDialogDragCleanups.forEach((c) => c());
+    this.subDialogDragCleanups = [];
   }
   // #endregion
 

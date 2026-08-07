@@ -250,9 +250,16 @@ internal object LocalApiDocPrompts {
 
   // region AI sections
 
+  /**
+   * Returns `true` when the local element's prompts must be omitted from what is transmitted to the
+   * AI for the current user (per [CodBiElementAccess]).
+   */
+  private fun isHiddenElement(e: LocalElement): Boolean =
+      CodBiElementAccess.isHidden("codbi.${e.group}.${normalizePromptKey(e.name)}", e.name)
+
   /** Assembles the condensed (compact) section of the local AI-capable elements for the AI. */
   fun condensedSection(em: EntityManager): String {
-    val elements = loadAiCapableElements(em)
+    val elements = loadAiCapableElements(em).filterNot(::isHiddenElement)
     if (elements.isEmpty()) return ""
     val sb = StringBuilder("\n\nCODBI LOCAL ELEMENTS (COMPACT)\n")
     for ((group, items) in elements.groupBy { it.group }) {
@@ -268,7 +275,7 @@ internal object LocalApiDocPrompts {
 
   /** Assembles the detailed section of the local AI-capable elements for the AI. */
   fun detailedSection(em: EntityManager): String {
-    val elements = loadAiCapableElements(em)
+    val elements = loadAiCapableElements(em).filterNot(::isHiddenElement)
     if (elements.isEmpty()) return ""
     val sb = StringBuilder("\n\nCODBI LOCAL ELEMENTS (DETAILED)\n")
     for ((group, items) in elements.groupBy { it.group }) {
@@ -297,7 +304,7 @@ internal object LocalApiDocPrompts {
    */
   fun requestedDetails(em: EntityManager, requestedIds: List<String>): String {
     if (requestedIds.isEmpty()) return ""
-    val elements = loadAiCapableElements(em)
+    val elements = loadAiCapableElements(em).filterNot(::isHiddenElement)
     if (elements.isEmpty()) return ""
     val wanted = requestedIds.map { normalizePromptKey(it) }.filter { it.isNotEmpty() }.toSet()
     if (wanted.isEmpty()) return ""

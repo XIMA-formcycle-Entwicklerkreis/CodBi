@@ -426,7 +426,9 @@ internal object PromptLoader {
     for ((key, value) in extraReplacements) {
       result = result.replace("{{${key}}}", value)
     }
-    return result
+    // Remove any content dedicated to elements hidden for the current user (e.g. the hard-coded
+    // Sys.Log.Console section inside codbi.general) from what is transmitted to the AI.
+    return CodBiElementAccess.scrub(result)
   }
 
   // region Internal helpers

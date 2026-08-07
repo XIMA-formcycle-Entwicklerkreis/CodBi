@@ -118,7 +118,7 @@
   "pm.updateHint.load": "Load New Version",
   "pm.updateHint.load.tip": "Load the newest bundled version (replaces the current text — save your changes first if you want to keep them)",
   "pm.updateHint.tooltip": "A newer version of this prompt is available in the installed plugin.\nTo switch to it:\n1) Save your current changes or copy them somewhere safe.\n2) Click 'Load New Version' (Restore Original).\n3) Re-apply your changes on top of the new version.",
-  "pm.localApiDoc": "API-Doc",
+  "pm.localApiDoc": "LOCAL",
   "pm.localApiDoc.tip": "Managed in the local API documentation (read-only). Make changes in the local API-Doc manager.",
   "pm.prePrompt": "Pre-Prompt",
   "pm.prePrompt.active.tip": "Pre-Prompt is active — click to deactivate",

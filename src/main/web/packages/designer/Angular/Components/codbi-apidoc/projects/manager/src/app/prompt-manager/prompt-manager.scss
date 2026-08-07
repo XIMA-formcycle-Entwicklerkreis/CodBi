@@ -4,9 +4,16 @@
   box-shadow: 0 8px 32px rgba(255, 140, 0, 0.35);
   border: 2px solid darkorange !important;
   animation: cbPmDialogIn 0.5s ease-out;
+  /* Header + content stack in a column so the content fills the resized dialog height. */
+  display: flex;
+  flex-direction: column;
   /* Animate fullscreen maximize / restore (width/height change via .p-dialog-maximized) */
   transition: width 0.35s ease, height 0.35s ease, max-width 0.35s ease,
     max-height 0.35s ease, top 0.35s ease, left 0.35s ease, border-radius 0.35s ease;
+}
+
+.cb-prompt-manager-dialog .p-dialog-header {
+  flex-shrink: 0;
 }
 
 @keyframes cbPmDialogIn {
@@ -73,16 +80,37 @@
   z-index: 99998 !important;
 }
 
+/* The title bars are drag handles — show the move cursor (JS also sets it on show). */
+.cb-prompt-manager-dialog .p-dialog-header,
+.cb-pm-add-dialog .p-dialog-header {
+  cursor: move;
+}
+
+/* Make the top-right close (X) buttons red. */
+.cb-prompt-manager-dialog .p-dialog-close-button,
+.cb-pm-add-dialog .p-dialog-close-button,
+.cb-prompt-manager-dialog .p-dialog-close-button [data-p-icon="times"],
+.cb-pm-add-dialog .p-dialog-close-button [data-p-icon="times"] {
+  color: #d32f2f;
+}
+
+/* The dialog content fills the dialog height and stacks its children, so the prompt-manager layout
+   resizes with the height of the dialog (the inner tree/detail panels scroll internally). */
 .cb-prompt-manager-dialog .p-dialog-content {
   padding: 0 !important;
   overflow: hidden;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .cb-pm-layout {
   display: flex;
+  flex: 1 1 auto;
   height: 100%;
   min-height: 300px;
-  max-height: 75vh;
+  max-height: none;
   overflow: hidden;
   /* Animate the inner layout height when the dialog is maximized / restored */
   transition: height 0.35s ease, max-height 0.35s ease;

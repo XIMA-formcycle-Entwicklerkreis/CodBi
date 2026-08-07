@@ -13,6 +13,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
 import de.xima.fc.mdl.fdv.EResponseType
@@ -60,17 +61,26 @@ class AICodBiAssistant : IPluginServletAction {
   override fun getName(): String = "CodBi_AICodBiAssistant"
 
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    val action =
-        params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
-    return when (action) {
-      "Models" -> handleModels()
-      "Run" -> handleRun(params)
-      "AppointmentPlan" -> handleAppointmentPlan(params)
-      "Status" -> handleStatus()
-      "Log" -> handleLog(params)
-      "SensitiveCheck" -> handleSensitiveCheck(params)
-      else -> jsonResponse("""{"error":"Unknown action"}""")
+    // Apply per-user CodBi element visibility for the whole request so every prompt transmitted to
+    // the AI omits the elements hidden for the current user.
+    return CodBiElementAccess.runForUser(currentUsername(params)) {
+      val action =
+          params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
+      when (action) {
+        "Models" -> handleModels()
+        "Run" -> handleRun(params)
+        "AppointmentPlan" -> handleAppointmentPlan(params)
+        "Status" -> handleStatus()
+        "Log" -> handleLog(params)
+        "SensitiveCheck" -> handleSensitiveCheck(params)
+        else -> jsonResponse("""{"error":"Unknown action"}""")
+      }
     }
+  }
+
+  /** Reads the CodBi element-access plugin properties (idempotent). */
+  override fun initialize(configData: IPluginInitializeData) {
+    CodBiElementAccess.initialize(configData.properties)
   }
 
   /**
@@ -3821,6 +3831,12 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] runWorkflowCreation: triggers={}",
         triggersJson ?: "null (no triggers found or query failed)")
+    // Existing workflow nodes — lets the AI reference concrete nodes (by numeric id) for
+    // remove/replace operations instead of only creating new ones.
+    val existingWorkflowNodes = fetchExistingWorkflowNodes(workflowVersionId)
+    logger.info(
+        "[AICodBiAssistant] runWorkflowCreation: existingWorkflowNodes={}",
+        existingWorkflowNodes ?: "null (none found or query failed)")
     // Two-pass workflow flow:
     //   Pass-1 — the AI receives only the condensed workflow-nodes reference. If it needs the exact
     //            triggerParams/nodeParams of specific triggers/nodes it intends to use, it responds
@@ -3838,6 +3854,7 @@ class AICodBiAssistant : IPluginServletAction {
             inboxesJson,
             messageServicesJson,
             triggersJson,
+            existingWorkflowNodes,
             requestedNodes,
             requestedTriggers)
 
@@ -3871,6 +3888,7 @@ class AICodBiAssistant : IPluginServletAction {
               inboxesJson,
               messageServicesJson,
               triggersJson,
+              existingWorkflowNodes,
               requestedNodes,
               requestedTriggers)
       messagesJson = buildString {
@@ -3931,7 +3949,9 @@ class AICodBiAssistant : IPluginServletAction {
           throw Exception("AI returned invalid workflow JSON: ${e.message}")
         }
 
-    val results = taskSpecs.map { spec -> createWorkflowTask(workflowVersionId, spec, params) }
+    // Apply the delta operations: each spec may be a create, remove or replace (see
+    // WorkflowTaskSpec). createWorkflowTask is kept for backward compatibility.
+    val results = taskSpecs.map { spec -> applyWorkflowOperation(workflowVersionId, spec, params) }
     val combinedResult = results.joinToString(" | ")
 
     // Build the workflow change log grouped per workflow path (task). Each path carries the
@@ -4000,6 +4020,7 @@ class AICodBiAssistant : IPluginServletAction {
       inboxes: String? = null,
       messageServices: String? = null,
       triggers: String? = null,
+      existingWorkflowNodes: String? = null,
       requestedNodes: List<String> = emptyList(),
       requestedTriggers: List<String> = emptyList()
   ): String {
@@ -4096,6 +4117,21 @@ class AICodBiAssistant : IPluginServletAction {
                   workflowStates +
                   "\n\n")
         }
+        if (!existingWorkflowNodes.isNullOrBlank()) {
+          append(
+              "EXISTING WORKFLOW NODES (the workflow that already exists — reference them by their numeric 'id'):\n" +
+                  existingWorkflowNodes +
+                  "\n\n" +
+                  "OPERATIONS — you MAY return a JSON array of operations instead of a single new task. " +
+                  "Each operation is a task object with an extra \"operation\" field:\n" +
+                  "  - \"operation\":\"create\" (default) — create a new task/node as described above.\n" +
+                  "  - \"operation\":\"remove\" — delete an existing node and its whole subtree; MUST include " +
+                  "\"targetNodeId\":\"<numeric id of an existing node from EXISTING WORKFLOW NODES>\". " +
+                  "Other node/trigger fields are ignored.\n" +
+                  "  - \"operation\":\"replace\" — remove the existing node identified by \"targetNodeId\" " +
+                  "(and its subtree) and create the new task/node described by this object.\n" +
+                  "Never invent ids — only use the numeric 'id' values listed in EXISTING WORKFLOW NODES.\n\n")
+        }
         append("Output ONLY valid JSON. No trailing commas. No comments.")
       }
     } catch (e: Exception) {
@@ -4103,6 +4139,135 @@ class AICodBiAssistant : IPluginServletAction {
       return FALLBACK_WORKFLOW_PROMPT
     } finally {
       em?.close()
+    }
+  }
+
+  /**
+   * Compact JSON list of the existing workflow nodes (numeric id, type, name) of the current
+   * workflow version, so the AI can reference concrete nodes for remove/replace operations.
+   */
+  private fun fetchExistingWorkflowNodes(workflowVersionId: Long): String? {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager() ?: return null
+    try {
+      var results: List<*> = emptyList<Any?>()
+      try {
+        results =
+            em.createQuery(
+                    "SELECT n.id, n.type, n.name FROM de.xima.fc.entities.WorkflowNode n " +
+                        "WHERE n.task.process.workflowVersion.id = :vid ORDER BY n.id")
+                .setParameter("vid", workflowVersionId)
+                .resultList
+      } catch (_: Exception) {
+        // Version-scoping property path unavailable — list recent nodes as a best effort.
+        results =
+            em.createQuery(
+                    "SELECT n.id, n.type, n.name FROM de.xima.fc.entities.WorkflowNode n " +
+                        "ORDER BY n.id")
+                .setMaxResults(200)
+                .resultList
+      }
+      val arr = com.google.gson.JsonArray()
+      for (row in results) {
+        val cols = row as? Array<*> ?: continue
+        if (cols.size < 3) continue
+        val id = cols[0]?.toString()?.takeIf { it.isNotBlank() } ?: continue
+        val obj = com.google.gson.JsonObject()
+        obj.addProperty("id", id)
+        obj.addProperty("type", cols[1]?.toString() ?: "")
+        obj.addProperty("name", cols[2]?.toString() ?: "")
+        arr.add(obj)
+      }
+      return if (arr.size() > 0) gson.toJson(arr) else null
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] fetchExistingWorkflowNodes failed: ${e.message}")
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Deletes the workflow node with the given numeric [nodeId] together with its entire descendant
+   * subtree (children first, to satisfy foreign keys).
+   */
+  private fun removeWorkflowNode(nodeId: String): String {
+    val rootId = nodeId.trim().toLongOrNull() ?: return "Invalid target node id '$nodeId'."
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em == null) return "Database not available — cannot remove workflow node."
+    try {
+      // Collect the node and all descendants, then delete bottom-up.
+      val idsToDelete = mutableListOf<Long>()
+      val queue = ArrayDeque<Long>()
+      queue.add(rootId)
+      while (queue.isNotEmpty()) {
+        val id = queue.removeFirst()
+        idsToDelete.add(id)
+        try {
+          val children =
+              em.createQuery(
+                      "SELECT n.id FROM de.xima.fc.entities.WorkflowNode n WHERE n.parent.id = :pid")
+                  .setParameter("pid", id)
+                  .resultList
+          for (c in children) {
+            val childId = (c as? Array<*>)?.get(0)?.toString()?.toLongOrNull()
+            if (childId != null) queue.add(childId)
+          }
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] removeWorkflowNode: child query failed for id={}: {}",
+              id,
+              e.message)
+        }
+      }
+      var deleted = 0
+      for (id in idsToDelete.reversed()) {
+        try {
+          em.transaction.begin()
+          em.createQuery("DELETE FROM de.xima.fc.entities.WorkflowNode n WHERE n.id = :id")
+              .setParameter("id", id)
+              .executeUpdate()
+          em.transaction.commit()
+          deleted++
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] removeWorkflowNode: delete failed for id={}: {}", id, e.message)
+          try {
+            if (em.transaction.isActive) em.transaction.rollback()
+          } catch (_: Exception) {
+            // ignore
+          }
+        }
+      }
+      return if (deleted > 0)
+          "Removed workflow node #$rootId (${idsToDelete.size} node(s) incl. descendants)."
+      else "Could not remove workflow node #$rootId."
+    } finally {
+      em.close()
+    }
+  }
+
+  /** Dispatches a workflow delta operation: create (default), remove or replace. */
+  private fun applyWorkflowOperation(
+      workflowVersionId: Long,
+      spec: WorkflowTaskSpec,
+      params: IPluginServletActionParams
+  ): String {
+    return when (spec.operation.trim().lowercase()) {
+      "remove" -> {
+        val target = spec.targetNodeId
+        if (target.isNullOrBlank()) "Remove operation requires a 'targetNodeId'."
+        else removeWorkflowNode(target)
+      }
+      "replace" -> {
+        val target = spec.targetNodeId
+        if (target.isNullOrBlank()) "Replace operation requires a 'targetNodeId'."
+        else {
+          val removed = removeWorkflowNode(target)
+          val created = createWorkflowTask(workflowVersionId, spec, params)
+          "$removed | $created"
+        }
+      }
+      else -> createWorkflowTask(workflowVersionId, spec, params)
     }
   }
 
@@ -7343,7 +7508,12 @@ class AICodBiAssistant : IPluginServletAction {
       val chainedNodes: List<Map<String, Any>>? = null,
       val endpointState: String = "",
       val endpointType: String = "FC_CHANGE_STATE",
-      val stateProperties: Map<String, Any> = emptyMap()
+      val stateProperties: Map<String, Any> = emptyMap(),
+      // Delta-operation support: the AI returns a small array of operations instead of the whole
+      // workflow. Defaults to "create" so existing behaviour is unchanged when the field is absent.
+      val operation: String = "create",
+      /** For "remove"/"replace": numeric database id of the existing workflow node to act on. */
+      val targetNodeId: String? = null
   )
 
   // endregion Data Classes
@@ -7466,7 +7636,7 @@ class AICodBiAssistant : IPluginServletAction {
       // Only the cross-cutting general rules form the base — the detailed standard/functionality/
       // EP sections are redundant with the targeted details below (or the full reference in the
       // blind case) and would roughly double the token usage when duplicated here.
-      val base = categories["codbi.general"] ?: ""
+      val base = CodBiElementAccess.scrub(categories["codbi.general"] ?: "")
       val codbiPart =
           when {
             requestedIds.isNotEmpty() -> {

@@ -1,73 +1,57 @@
+/* The change log is now an inline panel embedded in the AI assistant dialog, so the host element
+   fills the side panel instead of being an absolutely-positioned top-level custom element. */
 cb-ai-assistant-log {
-    position: absolute;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
 }
 
-.p-overlay-mask:has(.cb-log-dialog) {
-    z-index: 2100 !important;
+/* --- Panel layout --- */
+.cb-ai-log {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    /* Keep the divider (the panel's left border) away from the log content. */
+    padding: 0.25rem 0 0.25rem 0.9rem;
 }
 
-.p-dialog.cb-log-dialog {
-    box-shadow: 0 0 0.25em darkorange;
-    border: 2px solid darkorange !important;
-    animation: cb-log-dialog-in 0.28s ease-out backwards;
-    /* Animate fullscreen maximize / restore (width/height change via .p-dialog-maximized) */
-    transition: width 0.35s ease, height 0.35s ease, max-width 0.35s ease,
-        max-height 0.35s ease, top 0.35s ease, left 0.35s ease, border-radius 0.35s ease;
-}
-
-@keyframes cb-log-dialog-in {
-    from {
-        transform: scale(1.1);
-        opacity: 0;
-    }
-    to {
-        transform: scale(1);
-        opacity: 1;
-    }
-}
-
-/* Dialog header with the CodBi logo (same as the Prompt Manager). */
-.cb-log-dialog-header {
+/* Panel header with the CodBi logo + title (compact, no modal chrome). */
+.cb-ai-log__header {
     display: flex;
     align-items: center;
-    gap: 10px;
-}
-
-.cb-log-logo {
-    height: 28px;
-    width: auto;
+    gap: 8px;
+    flex-wrap: wrap;
 }
 
 .cb-log-title {
-    font-size: 1.15em;
+    font-size: 1.05em;
     font-weight: 600;
     color: #333;
+    white-space: nowrap;
 }
 
 /* Temporary attention banner shown when sensitive elements were used by the last inference. */
 .cb-log-attention {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 6px;
-    margin-top: 6px;
-    padding: 6px 10px;
+    padding: 4px 8px;
     border-radius: 4px;
-    font-size: 0.85em;
+    font-size: 0.78em;
     font-weight: 600;
     color: #7a4a00;
     background: #fff8e1;
     border: 1px solid #ffd9a0;
+    white-space: nowrap;
 }
 
 .cb-log-attention i {
     color: #e65100;
-}
-
-.p-dialog.cb-log-dialog .p-dialog-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6rem;
-    min-height: 320px;
 }
 
 /* Toolbar — refresh / expand-all buttons + inference counter */
@@ -82,7 +66,7 @@ cb-ai-assistant-log {
 .cb-log-search-row {
     display: flex;
     align-items: center;
-    margin: 6px 0 8px;
+    margin: 2px 0 4px;
     width: 100%;
 }
 
@@ -158,7 +142,7 @@ cb-ai-assistant-log {
     border: 1px solid #bbdefb;
     border-radius: 4px;
     padding: 2px 8px;
-    max-width: 260px;
+    max-width: 220px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -170,7 +154,7 @@ cb-ai-assistant-log {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-    margin: 4px 0 0;
+    margin: 0;
 }
 
 .cb-log-count {
@@ -218,36 +202,14 @@ cb-ai-assistant-log {
     background: #fafafa;
 }
 
+/* The tree fills the panel and scrolls internally; it grows/shrinks with the dialog height. */
 .cb-log-tree {
     border: 1px solid #e0e0e0;
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
-    max-height: 60vh;
     overflow: auto;
     background: #fff;
     font-family: inherit;
-}
-
-/* Fullscreen maximized state — fill the entire viewport (mirrors the Prompt Manager dialog).
-   Overrides the inline max-width (94vw) that otherwise caps the maximized width. */
-.p-dialog.cb-log-dialog.p-dialog-maximized {
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: none !important;
-    max-height: none !important;
-    top: 0 !important;
-    left: 0 !important;
-    border-radius: 0;
-}
-
-.p-dialog.cb-log-dialog.p-dialog-maximized .p-dialog-content {
-    height: calc(100vh - 110px) !important;
-    max-height: none !important;
-}
-
-/* When maximized, let the change-log tree use the freed vertical space. */
-.p-dialog.cb-log-dialog.p-dialog-maximized .cb-log-tree {
-    max-height: none;
     flex: 1 1 auto;
     min-height: 0;
 }
@@ -331,6 +293,32 @@ cb-ai-assistant-log {
 .cb-log-node__label {
     font-weight: 500;
     min-width: 0;
+}
+
+/* Timestamp part of an inference label. */
+.cb-log-node__label-text {
+    font-weight: 500;
+}
+
+/* Inference labels stack the username BELOW the timestamp (own line), so it never wraps into the
+   token badge when the panel is narrow. */
+.cb-log-node__label--stacked {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    line-height: 1.25;
+}
+
+/* The user who ran an inference — darkorange so it stands out from the timestamp. */
+.cb-log-node__user {
+    color: #c96a00;
+    font-weight: 700;
+    white-space: nowrap;
+    border: 1px solid darkorange;
+    border-radius: 4px;
+    padding: 0 5px;
+    background: rgba(255, 140, 0, 0.1);
 }
 
 .cb-log-node__value {
@@ -545,6 +533,6 @@ cb-ai-assistant-log {
     white-space: pre-wrap;
     word-break: break-word;
     color: #333;
-    max-height: 40vh;
+    max-height: 30vh;
     overflow: auto;
 }

@@ -6,6 +6,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.lla
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
 import de.xima.fc.mdl.fdv.EResponseType
@@ -54,14 +55,40 @@ class AIWorkflowAssistant : IPluginServletAction {
   }
 
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
-    val action =
-        params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
-    return when (action) {
-      "Models" -> handleModels()
-      "Run" -> handleRun(params)
-      else -> jsonResponse("""{"error":"Unknown action"}""")
+    // Apply per-user CodBi element visibility for the whole request so every prompt transmitted to
+    // the AI omits the elements hidden for the current user.
+    return CodBiElementAccess.runForUser(resolveRequestUsername(params)) {
+      val action =
+          params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
+      when (action) {
+        "Models" -> handleModels()
+        "Run" -> handleRun(params)
+        else -> jsonResponse("""{"error":"Unknown action"}""")
+      }
     }
   }
+
+  /** Reads the CodBi element-access plugin properties (idempotent). */
+  override fun initialize(configData: IPluginInitializeData) {
+    CodBiElementAccess.initialize(configData.properties)
+  }
+
+  /** Resolves the login name of the authenticated user, or `null` when it cannot be determined. */
+  private fun resolveRequestUsername(params: IPluginServletActionParams): String? =
+      try {
+        // Same accessor as the Local API Doc store (StructuredDataStoreAction) — the one that
+        // reliably resolves the logged-in user in the servlet action context.
+        params.user.userName?.trim()?.takeIf { it.isNotBlank() }
+      } catch (e: Exception) {
+        logger.warn("[AIWorkflowAssistant] Could not resolve user via params.user: {}", e.message)
+        try {
+          params.benutzer?.loginName?.trim()?.takeIf { it.isNotBlank() }
+        } catch (e2: Exception) {
+          logger.warn(
+              "[AIWorkflowAssistant] Could not resolve user via params.benutzer: {}", e2.message)
+          null
+        }
+      }
 
   // region Handlers
 

@@ -1,35 +1,35 @@
 // #region Imports
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, ViewEncapsulation } from "@angular/core";
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  EventEmitter,
+  Output,
+  ViewEncapsulation,
+} from "@angular/core";
 import type { OnDestroy, OnInit } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { Button } from "primeng/button";
-import { Dialog } from "primeng/dialog";
 import { Message } from "primeng/message";
 import { ProgressSpinner } from "primeng/progressspinner";
-import { PrimeTemplate } from "primeng/api";
 import { TranslocoPipe } from "@ngneat/transloco";
 import { getJQuery } from "@de-xima/fc-form-designer";
 import { getCurrentFormKey } from "../ai-assistant/form-key";
 import { LogTreeNode } from "./log-tree-node";
 import type { LogNode } from "./log-tree-node";
-import {
-  applyDialogPosition,
-  loadDialogPosition,
-  readDialogPosition,
-  saveDialogPosition,
-  type DialogPosition,
-} from "../dialog-position";
 // #endregion Imports
 
 /**
- * Angular component that shows a treeview of every AI assistant inference recorded in the
- * `codbi_ai_assistant_log` database table.
+ * Angular component that renders the change-log treeview (every AI assistant inference recorded in
+ * the `codbi_ai_assistant_log` database table) as an inline panel.
  *
- * Registered as the `cb-ai-assistant-log` custom element by main.ts. Listens for the
- * `codbi:ai-assistant-log:open` custom event (dispatched by the AI assistant dialog) and shows a
- * PrimeNG dialog with a scrollable, collapsible tree.
+ * It is embedded inside the AI assistant dialog (see `AiAssistant`), where it unfolds to the right
+ * of the regular assistant content. It is also registered as the `cb-ai-assistant-log` custom
+ * element by main.ts for backward compatibility and still listens for the
+ * `codbi:ai-assistant-log:open` custom event; when the panel is shown it emits the `opened` output
+ * so the embedding dialog can make sure it is visible.
  *
- * The dialog shows only the entries of the form that is currently being edited in the designer:
+ * The panel shows only the entries of the form that is currently being edited in the designer:
  * the current form's technical name/key is resolved via [getCurrentFormKey] and sent as the
  * `X-Form-Key` header, and the backend filters the records accordingly.
  *
@@ -47,7 +47,7 @@ import {
 @Component({
   selector: "cb-ai-assistant-log",
   standalone: true,
-  imports: [CommonModule, PrimeTemplate, Dialog, Button, ProgressSpinner, Message, LogTreeNode, TranslocoPipe],
+  imports: [CommonModule, Button, ProgressSpinner, Message, LogTreeNode, TranslocoPipe],
   templateUrl: "./ai-assistant-log.html",
   styleUrl: "./ai-assistant-log.scss",
   encapsulation: ViewEncapsulation.None,
@@ -55,11 +55,7 @@ import {
 })
 export class AiAssistantLog implements OnInit, OnDestroy {
   private readonly baseUrl = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
-  /** CodBi logo shown in the dialog header (same resource as the Prompt Manager). */
-  readonly logoUrl =
-    `${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg`;
 
-  visible = false;
   loading = false;
   errorText: string | null = null;
   logs: LogNode[] = [];
@@ -91,9 +87,9 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   private readonly sensitiveCheckInfo = new Map<string, { username: string; checkedAt: string }>();
   /** Session-storage key used to survive a page reload (e.g. after a workflow is created). */
   private static readonly HIGHLIGHT_STORAGE_KEY = "codbi-log-sensitive-elements";
-  /** A log entry that used sensitive elements is auto-opened only if it is at most this old. */
-  private static readonly AUTO_OPEN_WINDOW_MINUTES = 10;
   expandedAll = false;
+  /** How often an empty load result has been retried (see load). */
+  private emptyLoadRetries = 0;
   /** Technical name/key of the form whose change log is currently shown. */
   currentFormKey = "";
   /** Total tokens used by all recorded inferences of the current form (input / output / total). */
@@ -102,6 +98,14 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   totalTokens = 0;
   /** Total estimated cost of all recorded inferences of the current form, per currency (models may be priced differently). */
   costByCurrency = new Map<string, number>();
+  /**
+   * Emitted whenever the change log is opened (either via [open], the `codbi:ai-assistant-log:open`
+   * custom event, or the parent dialog's "Change log" toggle). The embedding dialog listens to this
+   * to make sure it is visible and the log panel is unfolded (automatic popup for sensitive elements).
+   */
+  @Output() opened = new EventEmitter<void>();
+  /** Emitted when the user folds the log panel via its close button. */
+  @Output() closed = new EventEmitter<void>();
 
   private readonly openHandler = (event: Event): void => {
     const detail = (event as CustomEvent<{ elements?: string[] } | undefined>).detail;
@@ -111,57 +115,18 @@ export class AiAssistantLog implements OnInit, OnDestroy {
 
   private readonly cdr: ChangeDetectorRef;
 
-  /** Remembered dialog position, persisted across reloads so the browser keeps the location. */
-  private dialogPosition: DialogPosition | null = loadDialogPosition("codbi-dialog-log-position");
-  private static readonly DIALOG_STYLE_CLASS = "cb-log-dialog";
-
   constructor(cdr: ChangeDetectorRef) {
     this.cdr = cdr;
   }
 
   // #region Lifecycle
   ngOnInit(): void {
+    // The panel is embedded in the assistant dialog and only rendered while unfolded, so this
+    // component is created on every open. Load the entries right away so the change log is never
+    // empty on first display — even if the parent's open() call is delayed. load() also retries an
+    // empty result, so a transient wrong-scoped fetch does not leave the panel blank.
     document.addEventListener("codbi:ai-assistant-log:open", this.openHandler);
-    // The designer reloads the page after a workflow is created, which re-mounts this component.
-    // A pending highlight persisted in localStorage (same pattern as the pending-standards value)
-    // survives that reload, so reopen the log and consume it. The open is retried briefly until the
-    // designer reports the current form key so the change log is scoped to the just-reloaded form
-    // (and only falls back to all forms if the key never becomes available).
-    const pending = localStorage.getItem(AiAssistantLog.HIGHLIGHT_STORAGE_KEY);
-    console.log("[AIAssistantLog] ngOnInit: pending highlight =", pending);
-    if (pending) {
-      localStorage.removeItem(AiAssistantLog.HIGHLIGHT_STORAGE_KEY);
-      try {
-        const parsed = JSON.parse(pending) as unknown;
-        const elements = Array.isArray(parsed) ? (parsed as string[]) : [];
-        if (elements.length > 0) {
-          const openWhenReady = (attempt: number): void => {
-            if (!getCurrentFormKey() && attempt < 10) {
-              setTimeout(() => openWhenReady(attempt + 1), 150);
-              return;
-            }
-            console.log("[AIAssistantLog] ngOnInit: opening with", JSON.stringify(elements));
-            this.open(elements);
-          };
-          openWhenReady(0);
-        }
-      } catch {
-        // ignore malformed payload
-      }
-    }
-    // Robust fallback (the requested approach): as soon as the log can be accessed, check the newest
-    // entry of the current form directly in the database. If it used sensitive elements recently and
-    // they are not all acknowledged, auto-open the change log — this survives any localStorage or
-    // event-timing issue after the workflow-triggered form reload.
-    const checkWhenReady = (attempt: number): void => {
-      if (!getCurrentFormKey() && attempt < 10) {
-        setTimeout(() => checkWhenReady(attempt + 1), 150);
-        return;
-      }
-      console.log("[AIAssistantLog] ngOnInit: checking newest log entry for sensitive elements");
-      this.load(true);
-    };
-    checkWhenReady(0);
+    this.load();
   }
 
   ngOnDestroy(): void {
@@ -170,130 +135,134 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   // #endregion Lifecycle
 
   // #region Open / close / load
-  onVisibleChange(v: boolean): void {
-    this.visible = v;
-    this.cdr.markForCheck();
-  }
-
-  /** Restores the remembered dialog position once the dialog has rendered. */
-  onDialogShow(): void {
-    setTimeout(() => applyDialogPosition(AiAssistantLog.DIALOG_STYLE_CLASS, this.dialogPosition), 0);
-  }
-
-  /** Remembers the dialog position after the user dragged/resized it. */
-  onDialogDragEnd(): void {
-    const p = readDialogPosition(AiAssistantLog.DIALOG_STYLE_CLASS);
-    if (p) {
-      this.dialogPosition = p;
-      saveDialogPosition("codbi-dialog-log-position", p);
-    }
-  }
-
-  close(): void {
-    this.visible = false;
-    // The highlight is temporary — clear it once the dialog is dismissed.
-    this.highlightElements = [];
-    this.cdr.markForCheck();
-  }
-
-  /** Opens the change log. [elements] are names of sensitive CodBi elements to highlight. */
+  /**
+   * Opens the change log. [elements] are names of sensitive CodBi elements to highlight. Emits the
+   * `opened` output so the embedding dialog can unfold the panel / become visible if needed.
+   */
   open(elements: string[] = []): void {
     console.log("[AIAssistantLog] open() called with elements =", JSON.stringify(elements));
     // Consume any pending highlight so it does not auto-open again on a later page load.
     localStorage.removeItem(AiAssistantLog.HIGHLIGHT_STORAGE_KEY);
     this.highlightElements = elements ?? [];
-    this.visible = true;
     this.errorText = null;
     this.cdr.markForCheck();
     this.load();
+    this.opened.emit();
   }
 
-  load(autoOpenAfterLoad = false): void {
+  /** Removes the transient sensitive-element highlights without reloading from the backend. */
+  clearHighlights(): void {
+    if (this.highlightElements.length === 0) return;
+    this.highlightElements = [];
+    this.logs = this.buildTree(this.applyFilter(this.rawEntries));
+    this.expandSearchMatches();
+    this.markSensitiveNodes();
+    this.cdr.markForCheck();
+  }
+
+  load(): void {
     this.loading = true;
     this.errorText = null;
-    // Only show the change log of the form that is currently being edited in the designer.
-    this.currentFormKey = getCurrentFormKey();
     this.cdr.markForCheck();
-    const headers: Record<string, string> = { "X-Action": "Log" };
-    if (this.currentFormKey) {
-      headers["X-Form-Key"] = this.currentFormKey;
-    }
-    getJQuery().ajax({
-      url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
-      type: "GET",
-      headers,
-      success: (response: unknown) => {
-        this.loading = false;
-        const payload = response as Record<string, unknown> | Array<Record<string, unknown>> | null;
-        // Accept both the new `{ entries, totals }` shape and a bare array (backward compatible).
-        const raw = Array.isArray(payload)
-          ? payload
-          : ((payload?.["entries"] as Array<Record<string, unknown>> | undefined) ?? []);
-        const totals = !Array.isArray(payload)
-          ? ((payload?.["totals"] as Record<string, unknown> | undefined) ?? {})
-          : {};
-        // The currently configured sensitive elements — always applied as a red border on matching
-        // nodes, so the editor sees them even when the log was opened manually (not auto-opened).
-        const sensitive = !Array.isArray(payload)
-          ? ((payload?.["sensitiveElements"] as unknown[] | undefined) ?? [])
-          : [];
-        this.sensitiveElements = sensitive
-          .filter((el): el is string => typeof el === "string")
-          .map((el) => el.toLowerCase());
-        this.updateSensitivePatterns();
-        // The sensitive-element dismiss checks already persisted for this user. Nodes whose
-        // (entry, element) pair is in this set stay unmarked.
-        const checks = !Array.isArray(payload) ? ((payload?.["sensitiveChecks"] as unknown[] | undefined) ?? []) : [];
-        // The login name of the user viewing the log (used to attribute a freshly-ticked check).
-        this.currentUser = !Array.isArray(payload)
-          ? String((payload?.["currentUser"] as string | undefined) ?? "")
-          : "";
-        this.acknowledgedSensitive.clear();
-        this.sensitiveCheckInfo.clear();
-        for (const check of checks) {
-          if (typeof check !== "object" || check === null) continue;
-          const c = check as Record<string, unknown>;
-          const entryId = String(c["entryId"] ?? "");
-          const elementName = String(c["elementName"] ?? "").toLowerCase();
-          if (entryId && elementName) {
-            const key = this.sensitiveKey(entryId, elementName);
-            this.acknowledgedSensitive.add(key);
-            this.sensitiveCheckInfo.set(key, {
-              username: String(c["username"] ?? "") || "?",
-              checkedAt: String(c["checkedAt"] ?? ""),
-            });
+    // Only show the change log of the form that is currently being edited in the designer. After a
+    // page reload (e.g. workflow creation) the designer may not have reported the form key yet —
+    // wait briefly for it so the log is scoped correctly (falls back to all forms if it never
+    // becomes available).
+    const fetchWhenReady = (attempt: number): void => {
+      const formKey = getCurrentFormKey();
+      if (!formKey && attempt < 20) {
+        setTimeout(() => fetchWhenReady(attempt + 1), 150);
+        return;
+      }
+      this.currentFormKey = formKey;
+      const headers: Record<string, string> = { "X-Action": "Log" };
+      if (formKey) {
+        headers["X-Form-Key"] = formKey;
+      }
+      getJQuery().ajax({
+        url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
+        type: "GET",
+        headers,
+        success: (response: unknown) => {
+          this.loading = false;
+          const payload = response as Record<string, unknown> | Array<Record<string, unknown>> | null;
+          // Accept both the new `{ entries, totals }` shape and a bare array (backward compatible).
+          const raw = Array.isArray(payload)
+            ? payload
+            : ((payload?.["entries"] as Array<Record<string, unknown>> | undefined) ?? []);
+          const totals = !Array.isArray(payload)
+            ? ((payload?.["totals"] as Record<string, unknown> | undefined) ?? {})
+            : {};
+          // The currently configured sensitive elements — always applied as a red border on matching
+          // nodes, so the editor sees them even when the log was opened manually (not auto-opened).
+          const sensitive = !Array.isArray(payload)
+            ? ((payload?.["sensitiveElements"] as unknown[] | undefined) ?? [])
+            : [];
+          this.sensitiveElements = sensitive
+            .filter((el): el is string => typeof el === "string")
+            .map((el) => el.toLowerCase());
+          this.updateSensitivePatterns();
+          // The sensitive-element dismiss checks already persisted for this user. Nodes whose
+          // (entry, element) pair is in this set stay unmarked.
+          const checks = !Array.isArray(payload) ? ((payload?.["sensitiveChecks"] as unknown[] | undefined) ?? []) : [];
+          // The login name of the user viewing the log (used to attribute a freshly-ticked check).
+          this.currentUser = !Array.isArray(payload)
+            ? String((payload?.["currentUser"] as string | undefined) ?? "")
+            : "";
+          this.acknowledgedSensitive.clear();
+          this.sensitiveCheckInfo.clear();
+          for (const check of checks) {
+            if (typeof check !== "object" || check === null) continue;
+            const c = check as Record<string, unknown>;
+            const entryId = String(c["entryId"] ?? "");
+            const elementName = String(c["elementName"] ?? "").toLowerCase();
+            if (entryId && elementName) {
+              const key = this.sensitiveKey(entryId, elementName);
+              this.acknowledgedSensitive.add(key);
+              this.sensitiveCheckInfo.set(key, {
+                username: String(c["username"] ?? "") || "?",
+                checkedAt: String(c["checkedAt"] ?? ""),
+              });
+            }
           }
-        }
-        // The backend derives the totals from the summed tokens per model × configured price per 1M,
-        // so we prefer those over summing per-entry values.
-        this.totalTokensIn = Number(
-          totals["tokensIn"] ?? raw.reduce((sum, entry) => sum + (Number(entry["tokensIn"]) || 0), 0),
-        );
-        this.totalTokensOut = Number(
-          totals["tokensOut"] ?? raw.reduce((sum, entry) => sum + (Number(entry["tokensOut"]) || 0), 0),
-        );
-        this.totalTokens = this.totalTokensIn + this.totalTokensOut;
-        const costObj = (totals["costByCurrency"] as Record<string, unknown> | undefined) ?? {};
-        this.costByCurrency = new Map<string, number>(
-          Object.entries(costObj).map(([currency, cost]) => [currency, Number(cost) || 0]),
-        );
-        this.rawEntries = raw;
-        this.logs = this.buildTree(this.applyFilter(raw));
-        this.expandSearchMatches();
-        this.applyHighlights();
-        this.markSensitiveNodes();
-        if (autoOpenAfterLoad) {
-          this.autoOpenIfRecentSensitive();
-        }
-        this.cdr.markForCheck();
-      },
-      error: (xhr: unknown) => {
-        this.loading = false;
-        const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
-        this.errorText = jq.responseJSON?.error ?? jq.statusText ?? "Failed to load the change log.";
-        this.cdr.markForCheck();
-      },
-    });
+          // The backend derives the totals from the summed tokens per model × configured price per 1M,
+          // so we prefer those over summing per-entry values.
+          this.totalTokensIn = Number(
+            totals["tokensIn"] ?? raw.reduce((sum, entry) => sum + (Number(entry["tokensIn"]) || 0), 0),
+          );
+          this.totalTokensOut = Number(
+            totals["tokensOut"] ?? raw.reduce((sum, entry) => sum + (Number(entry["tokensOut"]) || 0), 0),
+          );
+          this.totalTokens = this.totalTokensIn + this.totalTokensOut;
+          const costObj = (totals["costByCurrency"] as Record<string, unknown> | undefined) ?? {};
+          this.costByCurrency = new Map<string, number>(
+            Object.entries(costObj).map(([currency, cost]) => [currency, Number(cost) || 0]),
+          );
+          this.rawEntries = raw;
+          this.logs = this.buildTree(this.applyFilter(raw));
+          this.expandSearchMatches();
+          this.applyHighlights();
+          this.markSensitiveNodes();
+          // On the very first display the form key may not be final yet (right after the designer /
+          // dialog opens), which can make a scoped query return zero entries. Retry a few times so
+          // the change log is not empty until the user hits Refresh.
+          if (raw.length === 0 && this.emptyLoadRetries < 3) {
+            this.emptyLoadRetries++;
+            setTimeout(() => this.load(), 500);
+          } else {
+            this.emptyLoadRetries = 0;
+          }
+          this.cdr.markForCheck();
+        },
+        error: (xhr: unknown) => {
+          this.loading = false;
+          const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
+          this.errorText = jq.responseJSON?.error ?? jq.statusText ?? "Failed to load the change log.";
+          this.cdr.markForCheck();
+        },
+      });
+    };
+    fetchWhenReady(0);
   }
 
   /** Re-applies the search filter to the already loaded entries and expands to the matches. */
@@ -423,39 +392,6 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     }
     node.checkedBy = undefined;
     node.checkedAt = undefined;
-  }
-
-  /**
-   * The requested robust auto-open: after the log is loaded, if the NEWEST entry of the current form
-   * used sensitive elements within [AUTO_OPEN_WINDOW_MINUTES] and not all of them are already
-   * acknowledged, auto-open the change log with those elements highlighted. Runs on every designer
-   * page load, so it also works after the workflow-triggered form reload without relying on
-   * localStorage or event timing.
-   */
-  private autoOpenIfRecentSensitive(): void {
-    if (this.visible) return;
-    const newest = this.rawEntries[0];
-    if (!newest) return;
-    const used = newest["sensitiveUsed"];
-    if (!Array.isArray(used) || used.length === 0) return;
-    const ageMin = this.ageMinutes(String(newest["ts"] ?? ""));
-    if (ageMin === null || ageMin > AiAssistantLog.AUTO_OPEN_WINDOW_MINUTES) return;
-    const entryId = String(newest["id"] ?? "");
-    const unacknowledged = (used as unknown[])
-      .map((name) => String(name).toLowerCase())
-      .filter((name) => name && !this.acknowledgedSensitive.has(this.sensitiveKey(entryId, name)));
-    if (unacknowledged.length === 0) return;
-    console.log("[AIAssistantLog] autoOpenIfRecentSensitive: opening with", JSON.stringify(unacknowledged));
-    this.open(unacknowledged);
-  }
-
-  /** Minutes since a backend timestamp ("yyyy-MM-dd HH:mm:ss.SSS"); null when unparseable. */
-  private ageMinutes(ts: string): number | null {
-    if (!ts) return null;
-    const normalized = ts.includes(" ") ? ts.replace(" ", "T") : ts;
-    const date = new Date(normalized);
-    if (Number.isNaN(date.getTime())) return null;
-    return (Date.now() - date.getTime()) / 60000;
   }
 
   /** Persists/removes one sensitive-element dismiss check for the current user on the backend. */
@@ -707,7 +643,8 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       return {
         id: entryId,
         kind: "inference",
-        label: inferenceUser ? `${inferenceTs} \u00B7 ${inferenceUser}` : inferenceTs,
+        label: inferenceTs,
+        userLabel: inferenceUser,
         badge: [
           this.formatTokenSplit(Number(entry["tokensIn"] ?? 0), Number(entry["tokensOut"] ?? 0)) ||
             this.formatTokens(Number(entry["tokens"] ?? 0)),
@@ -1065,11 +1002,17 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   // #endregion Tree building
 
   // #region Expand / collapse all
-  toggleAll(): void {
-    this.expandedAll = !this.expandedAll;
-    // Build new node objects (new references) so the OnPush recursive tree components re-render
-    // their `[open]` bindings when the expanded state changes.
-    this.logs = this.setAllExpanded(this.logs, this.expandedAll);
+  /** Expands the whole tree. */
+  expandAll(): void {
+    this.expandedAll = true;
+    this.logs = this.setAllExpanded(this.logs, true);
+    this.cdr.markForCheck();
+  }
+
+  /** Collapses the whole tree. */
+  collapseAll(): void {
+    this.expandedAll = false;
+    this.logs = this.setAllExpanded(this.logs, false);
     this.cdr.markForCheck();
   }
 
@@ -1080,6 +1023,32 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       children:
         node.children && node.children.length > 0 ? this.setAllExpanded(node.children, expanded) : node.children,
     }));
+  }
+
+  /**
+   * Expands every un-checked sensitive node and all of its ancestors (up to the top-level inference
+   * rows), so the elements that still need attention are revealed in the tree at a glance. New node
+   * objects are created so the OnPush recursive tree components re-render their `[open]` bindings.
+   */
+  expandSensitiveNodes(): void {
+    this.logs = this.expandMatchingNodes(this.logs, (n) => n.sensitive === true);
+    this.cdr.markForCheck();
+  }
+
+  /** Expands every checked (acknowledged) sensitive node and all of its ancestors. */
+  expandCheckedSensitiveNodes(): void {
+    this.logs = this.expandMatchingNodes(this.logs, (n) => n.checked === true);
+    this.cdr.markForCheck();
+  }
+
+  /** Returns a copy of [nodes] where every node matching [match] — or having a matching descendant —
+   *  is marked as expanded (recursively, so the whole path down to each matching node is opened). */
+  private expandMatchingNodes(nodes: LogNode[], match: (n: LogNode) => boolean): LogNode[] {
+    return nodes.map((node) => {
+      const children = node.children ? this.expandMatchingNodes(node.children, match) : node.children;
+      const childHasMatch = children?.some((c) => c.expanded === true) ?? false;
+      return { ...node, expanded: match(node) || childHasMatch, children };
+    });
   }
   // #endregion Expand / collapse all
 }

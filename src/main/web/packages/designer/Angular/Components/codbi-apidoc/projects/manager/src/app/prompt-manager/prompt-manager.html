@@ -5,7 +5,7 @@
     (onDragEnd)="onDialogDragEnd()"
     (onResizeEnd)="onDialogDragEnd()"
     [modal]="true"
-    [draggable]="true"
+    [draggable]="false"
     [resizable]="true"
     [maximizable]="true"
     [style]="{ width: '85vw', maxWidth: '1200px', maxHeight: '85vh' }"
@@ -313,13 +313,15 @@
 <p-dialog
     [visible]="showAddCategoryDialog"
     (visibleChange)="closeAddCategoryDialog()"
+    (onShow)="onSubDialogShow('cb-pm-add-category-dialog', 'codbi-dialog-prompt-add-category-position')"
+    (onDragEnd)="onSubDialogDragEnd('cb-pm-add-category-dialog', 'codbi-dialog-prompt-add-category-position')"
     [modal]="true"
-    [draggable]="true"
+    [draggable]="false"
     [resizable]="false"
     [style]="{ width: '450px' }"
     [closeOnEscape]="true"
     [baseZIndex]="2200"
-    styleClass="cb-pm-add-dialog">
+    styleClass="cb-pm-add-dialog cb-pm-add-category-dialog">
     <ng-template pTemplate="header">
         <span class="cb-pm-title">{{ 'pm.addCategory.title' | transloco }}</span>
     </ng-template>
@@ -373,13 +375,15 @@
 <p-dialog
     [visible]="showAddItemDialog"
     (visibleChange)="closeAddItemDialog()"
+    (onShow)="onSubDialogShow('cb-pm-add-item-dialog', 'codbi-dialog-prompt-add-item-position')"
+    (onDragEnd)="onSubDialogDragEnd('cb-pm-add-item-dialog', 'codbi-dialog-prompt-add-item-position')"
     [modal]="true"
-    [draggable]="true"
+    [draggable]="false"
     [resizable]="false"
     [style]="{ width: '500px' }"
     [closeOnEscape]="true"
     [baseZIndex]="2200"
-    styleClass="cb-pm-add-dialog">
+    styleClass="cb-pm-add-dialog cb-pm-add-item-dialog">
     <ng-template pTemplate="header">
         <span class="cb-pm-title">{{ 'pm.addItem.title' | transloco }}</span>
     </ng-template>
@@ -438,13 +442,15 @@
 <p-dialog
     [visible]="showRenameDialog"
     (visibleChange)="closeRenameDialog()"
+    (onShow)="onSubDialogShow('cb-pm-rename-dialog', 'codbi-dialog-prompt-rename-position')"
+    (onDragEnd)="onSubDialogDragEnd('cb-pm-rename-dialog', 'codbi-dialog-prompt-rename-position')"
     [modal]="true"
-    [draggable]="true"
+    [draggable]="false"
     [resizable]="false"
     [style]="{ width: '400px' }"
     [closeOnEscape]="true"
     [baseZIndex]="2200"
-    styleClass="cb-pm-add-dialog">
+    styleClass="cb-pm-add-dialog cb-pm-rename-dialog">
     <ng-template pTemplate="header">
         <span class="cb-pm-title">{{ 'pm.rename.title' | transloco }}</span>
     </ng-template>

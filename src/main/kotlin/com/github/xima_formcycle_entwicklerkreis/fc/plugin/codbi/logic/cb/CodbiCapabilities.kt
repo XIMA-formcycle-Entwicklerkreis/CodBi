@@ -142,6 +142,7 @@ internal object CodbiCapabilities {
       val records =
           PromptLoader.loadCategoryRecords(em, "codbi.").filter {
             it.promptKey !in localKeys &&
+                !CodBiElementAccess.isHidden(it.promptKey, it.displayName) &&
                 (it.promptKey.startsWith("codbi.functionalities.") ||
                     it.promptKey.startsWith("codbi.element_placeholders.") ||
                     it.promptKey.startsWith("codbi.standard_configurations."))
@@ -202,7 +203,7 @@ internal object CodbiCapabilities {
       val localKeys = LocalApiDocPrompts.compactPromptKeys(em)
       val records =
           CompactPromptLoader.loadCategoryRecords(em, "compact.elements").filter {
-            it.promptKey !in localKeys
+            it.promptKey !in localKeys && !CodBiElementAccess.isHidden(it.promptKey, it.displayName)
           }
       if (records.isEmpty()) return null
       val sb = StringBuilder("\n\nCODBI CORE ELEMENTS (COMPACT)\n")
@@ -309,6 +310,7 @@ internal object CodbiCapabilities {
       val bySuffix = HashMap<String, String>()
       for ((key, text) in sections) {
         if (!key.startsWith("codbi.") || key in localKeys) continue
+        if (CodBiElementAccess.isHidden(key, null)) continue
         val norm = normalizeId(key.substringAfterLast('.'))
         if (norm.isNotEmpty() && text.isNotBlank()) bySuffix.getOrPut(norm) { text }
       }
@@ -352,11 +354,14 @@ internal object CodbiCapabilities {
     for (raw in requestedIds) {
       val q = raw.trim()
       if (q.isEmpty()) continue
-      when {
-        entries.containsKey(q) -> resolved.add(q)
-        aliases[q] is String -> resolved.add(aliases[q] as String)
-        aliases[q.lowercase()] is String -> resolved.add(aliases[q.lowercase()] as String)
-      }
+      val match =
+          when {
+            entries.containsKey(q) -> q
+            aliases[q] is String -> aliases[q] as String
+            aliases[q.lowercase()] is String -> aliases[q.lowercase()] as String
+            else -> null
+          }
+      if (match != null && !CodBiElementAccess.isHidden(match, null)) resolved.add(match)
     }
 
     if (resolved.isEmpty()) {

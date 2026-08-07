@@ -1,1 +1,44 @@
 /* You can add global styles to this file, and also import other style files */
+
+/* Visible resize grip on the bottom-right corner of every resizable dialog, so the user knows the
+   dialog can be resized (and that the corner is draggable). */
+.p-dialog-resizer {
+  cursor: se-resize !important;
+  width: 18px !important;
+  height: 18px !important;
+  opacity: 0.9;
+}
+
+.p-dialog-resizer::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 11px;
+  height: 11px;
+  border-right: 2px solid #888;
+  border-bottom: 2px solid #888;
+  border-bottom-right-radius: 3px;
+}
+
+/* Docked (snapped) dialogs fill the viewport half and their content fills the dialog. */
+.p-dialog.cb-docked {
+  display: flex !important;
+  flex-direction: column !important;
+  /* Snapped dialogs are flush against the window edge and their corners are not rounded. The
+     max-width/max-height overrides clear the dialog's own inline caps (e.g. the prompt manager's
+     `maxWidth: 1200px`), so a docked dialog truly fills the half of the viewport instead of
+     stopping short of the window's right/bottom edge. */
+  border-radius: 0 !important;
+  max-width: none !important;
+  max-height: 100vh !important;
+}
+.p-dialog.cb-docked > .p-dialog-content {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+}
+.p-dialog.cb-docked .cb-pm-layout,
+.p-dialog.cb-docked .cb-log-tree {
+  height: 100%;
+}

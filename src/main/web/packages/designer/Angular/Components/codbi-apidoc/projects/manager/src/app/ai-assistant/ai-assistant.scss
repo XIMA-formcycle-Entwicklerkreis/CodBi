@@ -6,11 +6,133 @@ cb-ai-assistant {
     z-index: 2000 !important;
 }
 
+/* The dialog is a flex column (header + content) capped in height, so both panes (assistant
+   content + change log) fill the available height and scroll internally — their content therefore
+   resizes with the height of the dialog window. */
+.p-dialog.cb-ai-assistant-dialog {
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh;
+    /* Base (folded) size; the width is managed inline by JS (expand for the change log). */
+    width: 620px;
+    max-width: 92vw;
+}
+
+.p-dialog.cb-ai-assistant-dialog .p-dialog-header {
+    flex-shrink: 0;
+}
+
+.p-dialog.cb-ai-assistant-dialog .p-dialog-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Fullscreen maximized state — fill the entire viewport (mirrors the prompt manager dialog). */
+.p-dialog.cb-ai-assistant-dialog.p-dialog-maximized {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    max-height: none !important;
+    top: 0 !important;
+    left: 0 !important;
+    border-radius: 0;
+}
+
+.p-dialog.cb-ai-assistant-dialog.p-dialog-maximized .p-dialog-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+}
+
 .cb-ai-content {
     position: relative;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+/* Body row: the regular assistant content on the left, the change-log side panel on the right. */
+.cb-ai-body {
+    display: flex;
+    align-items: stretch;
+    gap: 0.75rem;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+/* Regular assistant content column — fills the height and scrolls internally. */
+.cb-ai-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+/* Change-log side panel — only present while unfolded (rendered via @if), so the log component is
+   freshly created and reloads its entries on every open. Its width is driven by the [logPanelWidth]
+   binding (draggable splitter). */
+.cb-ai-log-panel {
+    flex: 0 0 auto;
+    width: 560px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    animation: cb-ai-log-panel-in 0.2s ease-out;
+}
+
+@keyframes cb-ai-log-panel-in {
+    from {
+        opacity: 0;
+        transform: translateX(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Disable the slide-in animation while the user drags the splitter. */
+.cb-ai-log-panel--resizing {
+    animation: none;
+}
+
+/* Draggable splitter between the assistant content and the change-log panel. */
+.cb-ai-log-splitter {
+    flex: 0 0 8px;
+    width: 8px;
+    cursor: col-resize;
+    position: relative;
+    background: #ececec;
+    border-left: 1px solid #d8d8d8;
+    transition: background 0.15s;
+}
+
+.cb-ai-log-splitter:hover,
+.cb-ai-log-splitter--active {
+    background: #ffd9a0;
+}
+
+.cb-ai-log-splitter::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 48px;
+    border-radius: 3px;
+    background: #b8b8b8;
 }
 
 .p-component.p-overlay:has(.cb-ai-model-select-panel) {
@@ -160,13 +282,17 @@ cb-ai-assistant {
                       var(--cb-ai-watermark-url, none) !important;
     background-color: #fff !important;
     background-size: cover, min(200px, 30%) auto !important;
-    background-position: 0 0, center center !important;
+    /* NOT !important so JS can recenter the watermark over the left content when the change log is
+       open (it is reset to this centered position when the log is folded). */
+    background-position: 0 0, center center;
     background-repeat: no-repeat, no-repeat !important;
     /* Dark-orange glow around the dialog. */
     box-shadow: 0 0 0.25em darkorange;
     /* Gentle slide-in: grow from scale 1.1 → 1 while fading opacity 0 → 1. */
     transform-origin: center;
     animation: cb-ai-dialog-in 0.28s ease-out backwards;
+    /* Smoothly widen/narrow the dialog when the change-log side panel is unfolded/folded. */
+    transition: width 0.25s ease, height 0.25s ease;
 }
 
 @keyframes cb-ai-dialog-in {
@@ -183,6 +309,17 @@ cb-ai-assistant {
 .p-dialog.cb-ai-assistant-dialog .p-dialog-header,
 .p-dialog.cb-ai-assistant-dialog .p-dialog-content {
     background: transparent !important;
+}
+
+/* The title bar is a drag handle — show the move cursor (JS also sets it on show). */
+.p-dialog.cb-ai-assistant-dialog .p-dialog-header {
+    cursor: move;
+}
+
+/* Make the top-right close (X) button red. */
+.p-dialog.cb-ai-assistant-dialog .p-dialog-close-button,
+.p-dialog.cb-ai-assistant-dialog .p-dialog-close-button [data-p-icon="times"] {
+    color: #d32f2f;
 }
 
 .cb-ai-prompt {

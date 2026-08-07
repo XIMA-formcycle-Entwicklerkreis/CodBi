@@ -118,7 +118,7 @@
   "pm.updateHint.load": "Neue Version laden",
   "pm.updateHint.load.tip": "Die neueste gebündelte Version laden (ersetzt den aktuellen Text — speichern Sie zuerst Ihre Änderungen, falls Sie sie behalten möchten)",
   "pm.updateHint.tooltip": "Eine neuere Version dieses Prompts ist im installierten Plugin verfügbar.\nZum Wechseln:\n1) Speichern Sie Ihre aktuellen Änderungen oder kopieren Sie sie an einen sicheren Ort.\n2) Klicken Sie auf 'Neue Version laden' (Original wiederherstellen).\n3) Übernehmen Sie Ihre Änderungen auf Basis der neuen Version erneut.",
-  "pm.localApiDoc": "API-Doc",
+  "pm.localApiDoc": "LOKAL",
   "pm.localApiDoc.tip": "In der lokalen API-Dokumentation verwaltet (nur lesend). Änderungen bitte im lokalen API-Doc-Manager vornehmen.",
   "pm.prePrompt": "Pre-Prompt",
   "pm.prePrompt.active.tip": "Pre-Prompt ist aktiv — zum Deaktivieren klicken",

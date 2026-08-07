@@ -49,9 +49,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   row (before the export/expand buttons) stating `checked by <user> on <date/time>`. The badge
   appears immediately when the checkbox is ticked and is restored from the stored `checked_at`
   timestamp on later loads.
-- **Dialogs remember their position**: the AI assistant, prompt manager and change-log dialogs restore
-  their last on-screen position (left/top) from `localStorage` when opened, and save it again whenever
-  the user drags or resizes them.
+- **Dialogs remember their position**: the AI assistant, prompt manager, change-log and the prompt
+  manager's sub-dialogs (add category, add item, rename) restore their last on-screen position
+  (left/top) from `localStorage` when opened, and save it again whenever the user drags or resizes
+  them. Only the local API-Doc manager (the main window) is intentionally excluded.
+- **Per-user hidden CodBi elements**: new plugin properties let administrators suppress the prompts of
+  selected CodBi elements from what is transmitted to the AI, exactly as if the element had been
+  deactivated in the Prompt Manager. `AI_FormAssistant_ForbiddenElements_NonSyncUsers` (CSV of CodBi
+  elements) hides the listed elements for every user NOT listed in `APIDoc_UsersAllowedToSYNC`, while
+  any property named `AI_FormAssistant_ForbiddenElements_<username>` (CSV of CodBi elements) hides
+  them only for that exact user when that user runs an inference.
 
 ### Fixed
 - **Sensitive-element detection missed functionality names**: `AiAssistantLog.usedSensitiveElements`
@@ -110,7 +117,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `codbi-core-api-compact.md` (requires re-seeding the AI prompt database).
 - **Inference author shown in the timestamp line**: the change-log top-level rows now render the
   author as part of the timestamp label (`"<timestamp> · <username>"`) instead of a separate user
-  badge, so the two can never overlap.
+  badge, so the two can never overlap. The username is highlighted in **darkorange** (bold text on a
+  light-orange background with a darkorange frame) so it is clearly distinguishable from the
+  timestamp.
 
 ### Changed
 - Minimum supported FormCycle version raised from **8.3.3** to **8.5.3**. FormCycle 8.5.x extracted plugin-type interfaces (servlet actions, form resources, form render callbacks, entities, etc.) from `fc-plugin-common` into a new `fc-plugin-types` artifact. The compile dependency has been updated accordingly.

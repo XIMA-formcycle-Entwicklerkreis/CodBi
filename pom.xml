@@ -1479,6 +1479,17 @@
 					<artifactId>greenmail-standalone</artifactId>
 					<version>${greenmail.version}</version>
 				</dependency>
+				<!-- GreenMail's REST API uses Jackson, which auto-discovers jackson-module-kotlin (a
+				     direct compile dependency of this project). That module needs kotlin-stdlib at
+				     startup, but the project declares kotlin-stdlib as provided (formcycle provides
+				     it at runtime), so it is missing from the exec:java classpath and the API server
+				     crashes with NoClassDefFoundError: DefaultConstructorMarker. Adding kotlin-stdlib
+				     to this profile puts it on the dev mail-server classpath. -->
+				<dependency>
+					<groupId>org.jetbrains.kotlin</groupId>
+					<artifactId>kotlin-stdlib</artifactId>
+					<version>${kotlin.version}</version>
+				</dependency>
 			</dependencies>
 			<build>
 				<plugins>
@@ -1508,7 +1519,7 @@
 								</systemProperty>
 								<!-- REST API on port 8025 (avoids conflict with formcycle on 8080) -->
 								<systemProperty>
-									<key>greenmail.web.port</key>
+									<key>greenmail.api.port</key>
 									<value>8025</value>
 								</systemProperty>
 							</systemProperties>

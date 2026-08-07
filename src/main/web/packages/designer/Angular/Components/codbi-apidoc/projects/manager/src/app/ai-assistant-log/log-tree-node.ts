@@ -14,6 +14,8 @@ export interface LogNode {
   id: string;
   /** Human-readable label shown next to the icon (e.g. widget name, attribute name). */
   label: string;
+  /** Login name of the user who ran the inference (top-level rows) — rendered in darkorange. */
+  userLabel?: string;
   /**
    * Kind controls the icon and color:
    * `inference`, `prompt`, `section`, `widget`, `class`, `attr`, `func`, `param`, `node`,
@@ -93,7 +95,12 @@ export interface LogNode {
             <i [class]="iconClass(node.kind)" aria-hidden="true"></i>
           }
         </span>
-        <span class="cb-log-node__label">{{ node.label }}</span>
+        <span class="cb-log-node__label" [class.cb-log-node__label--stacked]="node.kind === 'inference' && !!node.userLabel">
+          <span class="cb-log-node__label-text">{{ node.label }}</span>
+          @if (node.userLabel) {
+            <span class="cb-log-node__user" title="User who ran this inference">{{ node.userLabel }}</span>
+          }
+        </span>
         @if (node.badge) {
           <span class="cb-log-node__badge" title="Tokens used">{{ node.badge }}</span>
         }

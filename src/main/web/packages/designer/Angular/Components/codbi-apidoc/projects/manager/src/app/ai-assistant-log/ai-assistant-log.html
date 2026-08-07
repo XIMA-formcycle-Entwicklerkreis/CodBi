@@ -1,29 +1,13 @@
-<p-dialog
-    [visible]="visible"
-    (visibleChange)="onVisibleChange($event)"
-    (onShow)="onDialogShow()"
-    (onDragEnd)="onDialogDragEnd()"
-    (onResizeEnd)="onDialogDragEnd()"
-    [modal]="true"
-    [draggable]="true"
-    [resizable]="true"
-    [maximizable]="true"
-    [style]="{ width: '760px', maxWidth: '94vw' }"
-    [closeOnEscape]="true"
-    [baseZIndex]="2100"
-    styleClass="cb-log-dialog"
-    header="CodBi AI Change Log">
-
-    <ng-template pTemplate="header">
-        <div class="cb-log-dialog-header">
-            <img class="cb-log-logo" [src]="logoUrl" alt="CodBi" />
-            <span class="cb-log-title">CodBi AI Change Log</span>
-        </div>
-        <div *ngIf="highlightElements.length > 0" class="cb-log-attention">
-            <i class="pi pi-exclamation-triangle"></i>
-            <span>{{ 'cb.log.attention' | transloco }}</span>
-        </div>
-    </ng-template>
+<div class="cb-ai-log">
+    <div class="cb-ai-log__header">
+        <span class="cb-log-title">Change Log</span>
+        @if (highlightElements.length > 0) {
+            <span class="cb-log-attention" title="The last inference used sensitive CodBi elements that are not marked as checked yet">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>{{ 'cb.log.attention' | transloco }}</span>
+            </span>
+        }
+    </div>
 
     <div class="cb-log-toolbar">
         <p-button
@@ -36,14 +20,41 @@
             [disabled]="loading"
             title="Reload the change log from the database" />
         <p-button
-            [label]="expandedAll ? 'Collapse all' : 'Expand all'"
-            icon="pi pi-sitemap"
+            label="Expand all"
+            icon="pi pi-angle-double-down"
             severity="secondary"
             size="small"
             [outlined]="true"
-            (onClick)="toggleAll()"
+            (onClick)="expandAll()"
             [disabled]="loading || logs.length === 0"
-            title="Expand or collapse the whole tree" />
+            title="Expand the whole tree" />
+        <p-button
+            label="Collapse all"
+            icon="pi pi-angle-double-up"
+            severity="secondary"
+            size="small"
+            [outlined]="true"
+            (onClick)="collapseAll()"
+            [disabled]="loading || logs.length === 0"
+            title="Collapse the whole tree" />
+        <p-button
+            label="Sensitive"
+            icon="pi pi-bolt"
+            severity="secondary"
+            size="small"
+            [outlined]="true"
+            (onClick)="expandSensitiveNodes()"
+            [disabled]="loading || logs.length === 0"
+            title="Expand all un-checked sensitive elements up to their top-level nodes" />
+        <p-button
+            label="Sensitive"
+            icon="pi pi-check-circle"
+            severity="secondary"
+            size="small"
+            [outlined]="true"
+            (onClick)="expandCheckedSensitiveNodes()"
+            [disabled]="loading || logs.length === 0"
+            title="Expand all checked (acknowledged) sensitive elements up to their top-level nodes" />
         <p-button
             label="Export"
             icon="pi pi-download"
@@ -53,21 +64,27 @@
             (onClick)="exportLog()"
             [disabled]="loading || logs.length === 0"
             title="Export the change-log entries as JSON" />
-        <span *ngIf="currentFormKey" class="cb-log-form" title="Showing the change log of this form only">
-            <i class="pi pi-file"></i>&nbsp;{{ currentFormKey }}
-        </span>
+        @if (currentFormKey) {
+            <span class="cb-log-form" title="Showing the change log of this form only">
+                <i class="pi pi-file"></i>&nbsp;{{ currentFormKey }}
+            </span>
+        }
     </div>
 
     <div class="cb-log-summary">
         <span class="cb-log-count" title="Number of recorded AI inferences and their date range">
             {{ countLabel }}
         </span>
-        <span *ngIf="totalTokens > 0" class="cb-log-tokens" title="Total input and output tokens used by all inferences for this form">
-            {{ totalTokensLabel }}
-        </span>
-        <span *ngIf="costByCurrency.size > 0" class="cb-log-tokens cb-log-tokens--cost" title="Total estimated cost of all inferences for this form (input + output tokens × configured price per 1M tokens), grouped by currency">
-            {{ totalCostLabel }}
-        </span>
+        @if (totalTokens > 0) {
+            <span class="cb-log-tokens" title="Total input and output tokens used by all inferences for this form">
+                {{ totalTokensLabel }}
+            </span>
+        }
+        @if (costByCurrency.size > 0) {
+            <span class="cb-log-tokens cb-log-tokens--cost" title="Total estimated cost of all inferences for this form (input + output tokens × configured price per 1M tokens), grouped by currency">
+                {{ totalCostLabel }}
+            </span>
+        }
     </div>
 
     <div class="cb-log-search-row">
@@ -80,40 +97,38 @@
                 [value]="searchText"
                 (input)="onSearchInput($event)"
                 placeholder="Search log&#x2026;" />
-            <button
-                type="button"
-                class="cb-log-search-clear"
-                *ngIf="searchText"
-                title="Clear search"
-                (click)="clearSearch()">
-                <i class="pi pi-times"></i>
-            </button>
+            @if (searchText) {
+                <button
+                    type="button"
+                    class="cb-log-search-clear"
+                    title="Clear search"
+                    (click)="clearSearch()">
+                    <i class="pi pi-times"></i>
+                </button>
+            }
         </span>
     </div>
 
-    <div *ngIf="loading" class="cb-log-spinner">
-        <p-progressspinner [style]="{ width: '20px', height: '20px' }" strokeWidth="5" />
-        <span>Loading change log&#x2026;</span>
-    </div>
+    @if (loading) {
+        <div class="cb-log-spinner">
+            <p-progressspinner [style]="{ width: '20px', height: '20px' }" strokeWidth="5" />
+            <span>Loading change log&#x2026;</span>
+        </div>
+    }
 
-    <p-message *ngIf="errorText" severity="error" [text]="errorText" />
+    @if (errorText) {
+        <p-message severity="error" [text]="errorText" />
+    }
 
-    <div *ngIf="!loading && !errorText && logs.length === 0" class="cb-log-empty">
-        No changes recorded yet. Run the AI assistant to create the first log entry.
-    </div>
+    @if (!loading && !errorText && logs.length === 0) {
+        <div class="cb-log-empty">
+            Click &ldquo;Refresh&rdquo; to reload the log. No changes recorded yet &mdash; run the AI assistant to create the first log entry.
+        </div>
+    }
 
     <div class="cb-log-tree">
-        <cb-log-node
-            *ngFor="let node of logs; trackBy: trackById"
-            [node]="node"
-            (sensitiveChecked)="onSensitiveChecked($event)" />
+        @for (node of logs; track trackById($index, node)) {
+            <cb-log-node [node]="node" (sensitiveChecked)="onSensitiveChecked($event)" />
+        }
     </div>
-
-    <ng-template pTemplate="footer">
-        <p-button
-            label="Close"
-            icon="pi pi-times"
-            severity="secondary"
-            (onClick)="close()" />
-    </ng-template>
-</p-dialog>
+</div>

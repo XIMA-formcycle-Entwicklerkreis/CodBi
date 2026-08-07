@@ -3,8 +3,9 @@
 # SMTP:     localhost:3025   (no authentication required)
 # IMAP:     localhost:3143   (connect your email client here to read captured mails)
 # POP3:     localhost:3110   (alternative to IMAP)
-# REST API: http://localhost:8025/api/service           (server status)
-#           http://localhost:8025/api/service/mailboxes (JSON mail list)
+# REST API: http://localhost:8025/api/service/readiness          (service status)
+#           http://localhost:8025/api/user/<login>/messages/INBOX (JSON mail list)
+#           http://localhost:8025/greenmail-openapi.yml           (OpenAPI spec)
 #
 # Email client setup (e.g. Thunderbird):
 #   Incoming:  IMAP, localhost:3143, no SSL, username: any (e.g. "test")
@@ -25,7 +26,7 @@ Write-Host ""
 Write-Host "=== GreenMail dev mail server ===" -ForegroundColor Cyan
 Write-Host "  SMTP:     localhost:3025 (no auth)" -ForegroundColor Green
 Write-Host "  IMAP:     localhost:3143 (read mails in Thunderbird/Outlook)" -ForegroundColor Green
-Write-Host "  REST API: http://localhost:8025/api/service/mailboxes" -ForegroundColor Green
+Write-Host "  REST API: http://localhost:8025/api/service/readiness" -ForegroundColor Green
 Write-Host ""
 Write-Host "Press Ctrl+C to stop." -ForegroundColor Yellow
 Write-Host ""

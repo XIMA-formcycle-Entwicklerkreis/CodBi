@@ -110,6 +110,8 @@
   "pm.updateHint.load": "Carica nuova versione",
   "pm.updateHint.load.tip": "Carica la versione più recente inclusa nel plugin (sostituisce il testo corrente — salva prima le modifiche se desideri conservarle)",
   "pm.updateHint.tooltip": "Nel plugin installato è disponibile una versione più recente di questo prompt.\nPer passare ad essa:\n1) Salva le modifiche correnti o copiale in un luogo sicuro.\n2) Fai clic su 'Carica nuova versione' (Ripristina originale).\n3) Riapplica le tue modifiche sulla base della nuova versione.",
+  "pm.localApiDoc": "LOCALE",
+  "pm.localApiDoc.tip": "Gestito nella documentazione API locale (sola lettura). Modifiche tramite il manager API-Doc locale.",
   "pm.prePrompt": "Pre-Prompt",
   "pm.prePrompt.active.tip": "Pre-Prompt attivo — fare clic per disattivare",
   "pm.prePrompt.inactive.tip": "Pre-Prompt inattivo — fare clic per attivare",

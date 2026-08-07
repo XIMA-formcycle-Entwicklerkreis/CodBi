@@ -980,7 +980,7 @@
                   <value>true</value>
                 </systemProperty>
                 <systemProperty>
-                  <key>greenmail.web.port</key>
+                  <key>greenmail.api.port</key>
                   <value>8025</value>
                 </systemProperty>
               </systemProperties>
@@ -993,6 +993,11 @@
           <groupId>com.icegreen</groupId>
           <artifactId>greenmail-standalone</artifactId>
           <version>${greenmail.version}</version>
+        </dependency>
+        <dependency>
+          <groupId>org.jetbrains.kotlin</groupId>
+          <artifactId>kotlin-stdlib</artifactId>
+          <version>${kotlin.version}</version>
         </dependency>
       </dependencies>
     </profile>

@@ -630,6 +630,11 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           expanded: false,
         },
       ];
+      // Show the clarifying questions the AI asked and the answers it received (if any).
+      const clarification = entry["clarification"];
+      if (Array.isArray(clarification) && clarification.length > 0) {
+        children.push(this.buildClarificationNode(clarification as Array<Record<string, unknown>>, entryId));
+      }
       const form = entry["form"] as Record<string, unknown> | undefined;
       if (form) {
         children.push(this.buildFormNode(form, entryId));
@@ -659,6 +664,42 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         expanded: false,
       };
     });
+  }
+
+  /** Builds the "Clarification" section: the questions the AI asked and the answers it got. */
+  private buildClarificationNode(clarification: Array<Record<string, unknown>>, entryId: string): LogNode {
+    const children: LogNode[] = clarification.map((turn, i) => {
+      const baseId = `${entryId}-clarification-${i}`;
+      const q = String(turn["question"] ?? "");
+      const a = String(turn["answer"] ?? "");
+      const attachment = turn["attachmentName"] ? String(turn["attachmentName"]) : "";
+      const turnChildren: LogNode[] = [
+        { id: `${baseId}-q`, kind: "param-item", label: "Question", value: q },
+        { id: `${baseId}-a`, kind: "param-item", label: "Answer", value: a },
+      ];
+      if (attachment) {
+        turnChildren.push({
+          id: `${baseId}-attachment`,
+          kind: "param-item",
+          label: "Attachment",
+          value: attachment,
+        });
+      }
+      return {
+        id: baseId,
+        kind: "node",
+        label: `Q${i + 1}: ${q || "(question)"}`,
+        children: turnChildren,
+        expanded: false,
+      };
+    });
+    return {
+      id: `${entryId}-clarification`,
+      kind: "section",
+      label: `Clarification (${clarification.length})`,
+      children,
+      expanded: false,
+    };
   }
 
   private buildFormNode(form: Record<string, unknown>, entryId: string): LogNode {

@@ -2,6 +2,8 @@
 
 Element-only reference: what each functionality, element placeholder, and standard class does.
 
+REQUIRED VALUES: Some elements need parameter values or global variables to be configured. Whenever a value is genuinely required and cannot be derived from the user's request, ASK the user for it instead of guessing or inventing one (e.g. the CSS text for HTML.CSS, the regex for HTML.Input.REGEX, the attribute + value for HTML.SETAttribute, the text for HTML.Text.Injector, the tracking ID for Matomo.Tracking, or the global variable value behind a standard configuration).
+
 ## Functionalities
 
 ### AI.LLAMA.CHAT
@@ -24,12 +26,14 @@ Applicable on forms with 2 or more pages (multi-step forms); adds a navigation p
 
 ### HTML.CSS
 Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
+REQUIRES: the CSS text to inject (ask the user if not provided).
 
 ### HTML.Input.Cleave
 Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
 
 ### HTML.Input.REGEX
 Applicable on a XTextField to validate, reformat, or RESTRICT input against a regular expression pattern. USE when the user asks to disallow/block certain characters (e.g. "darf die Zeichen e$% nicht enthalten") — apply data-cb-func="HTML.Input.REGEX" with the forbidden set as a negated character class (data-cb-keyexpression="[^e$%]" blocks the keystrokes, data-cb-expression="^[^e$%]*$" validates the whole value).
+REQUIRES: the regex pattern and the mode (validate / restrict / reformat) — ask the user when the pattern cannot be derived.
 
 ### HTML.Input.TinyMCE
 Applicable on a XTextArea to turn it into a TinyMCE rich-text (WYSIWYG) editor. USE whenever the user asks for a "rich text editor", "WYSIWYG", or rich/formatted text entry for a multi-line text field — apply data-cb-func="HTML.Input.TinyMCE" on the XTextArea (optionally with data-cb-plugins and data-cb-toolbar).
@@ -39,15 +43,19 @@ Applicable on any element to wrap it in a collapsible accordion/panel widget. CR
 
 ### HTML.SETAttribute
 Applicable on any element to dynamically set one or more HTML attributes on it, including CSS styling (opacity etc.) via the "style" attribute. USE when the user asks to set an attribute or visual/CSS style of an element (e.g. title, opacity) — set data-cb-name and data-cb-toset.
+REQUIRES: the target attribute name (data-cb-name) and the value to set (data-cb-toset) — ask the user when missing.
 
 ### HTML.Text.Injector
 Applicable on any element to inject a dynamic text value into a specific property of that element.
+REQUIRES: the text to inject and the target property — ask the user when missing.
 
 ### HTML.Text.Mapper
 Applicable on any element to map object properties to named placeholders in a text template.
+REQUIRES: the object source and the text template with placeholders — ask the user when missing.
 
 ### JSON.SET
 Applicable on a hidden field to store a JSON-serialized value derived from another element.
+REQUIRES: the JSON expression / derivation rule — ask the user when it cannot be derived.
 
 ### LDAP.Autocomplete.Set
 Applicable on form fields that should be auto-filled from a selected LDAP directory match.
@@ -57,6 +65,7 @@ Applicable on a text input that should autocomplete entries from an LDAP directo
 
 ### Matomo.Tracking
 Applicable on any form to add Matomo/Piwik analytics event tracking.
+REQUIRES: the Matomo site/tracking ID — ask the user when it is not derivable.
 
 ### Media.Image.Cropper
 Applicable on an XUpload field for images; adds an interactive crop dialog before upload.
@@ -196,6 +205,7 @@ Registers a standard configuration that applies a standard CSS onto the form.
 
 ### Holistic.Matomo.Tracking
 Registers a standard configurations using the functionality.
+REQUIRES: the Matomo tracking ID (global variable value) — ask the user when missing.
 
 ### Holistic.Media.Input.Speech
 Registers a standard configuration that applies Speech-to-Text onto every.
@@ -255,6 +265,7 @@ For OpenPLZ address select dropdowns.
 
 ### CodBi_Currency
 For money/currency fields.
+REQUIRES: which currency (e.g. EUR) / the currency global variable value — ask the user when not provided.
 
 ## Appointments
 

@@ -66,7 +66,8 @@ object AiAssistantLog {
       tokensOut: Long? = null,
       cost: Double? = null,
       currency: String? = null,
-      username: String? = null
+      username: String? = null,
+      clarification: JsonArray? = null
   ): Boolean {
     if (emf == null) return false
     return try {
@@ -87,7 +88,8 @@ object AiAssistantLog {
                 currency = currency?.take(10)?.takeIf { it.isNotBlank() },
                 workflowVersionId = workflowVersionId,
                 formChanges = formChanges?.toString(),
-                workflowChanges = workflowChanges?.toString()))
+                workflowChanges = workflowChanges?.toString(),
+                clarification = clarification?.takeIf { it.size() > 0 }?.toString()))
         em.transaction.commit()
         true
       } catch (e: Exception) {
@@ -284,6 +286,15 @@ object AiAssistantLog {
                   e.add("workflow", JsonParser.parseString(text))
                 } catch (_: Exception) {
                   e.addProperty("workflow", text)
+                }
+              }
+          entry.clarification
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                try {
+                  e.add("clarification", JsonParser.parseString(text))
+                } catch (_: Exception) {
+                  e.addProperty("clarification", text)
                 }
               }
           out.add(e)

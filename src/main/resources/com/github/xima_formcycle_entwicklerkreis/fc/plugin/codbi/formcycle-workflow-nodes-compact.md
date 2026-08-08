@@ -35,18 +35,24 @@ FC_USER_INVOCATION — Fires when a logged-in user manually triggers it from the
 
 ### FC_EMAIL
 FC_EMAIL — Sends an email.
+REQUIRED: sender address, subject, recipient (message service or direct address), message text. Ask for the sender and subject when the user only gives the recipient.
 ### FC_DOI_INIT
 FC_DOI_INIT — Sends a double opt-in invitation email with DOI confirmation link (CORRECT for DOI, not FC_EMAIL).
+REQUIRED: completion page (Abschlussseite) for success AND for failure, sender address, subject, recipient.
 ### FC_CHANGE_STATE
 FC_CHANGE_STATE — Changes the form record state.
+REQUIRED: the target state (status) the record should be set to.
 ### FC_POST_REQUEST
 FC_POST_REQUEST — Sends an HTTP request (webhook, REST API call).
+REQUIRED: URL and HTTP method (GET/POST/PUT/DELETE/...). Ask for them when not provided.
 ### FC_CHANGE_FORM_VALUE
 FC_CHANGE_FORM_VALUE — Sets the value of one or more form fields.
+REQUIRED: which field(s) (technicalId) and the value(s) to set.
 ### FC_LOG_ENTRY
 FC_LOG_ENTRY — Writes a log message to the process log.
 ### FC_REDIRECT
 FC_REDIRECT — Redirects the user's browser to a URL (manual URL or URL template).
+REQUIRED: the target URL or the URL template to use.
 ### FC_RETURN
 FC_RETURN — Simply ends/terminates the workflow process without changing the form record state.
 ### FC_SET_SAVED_FLAG
@@ -57,44 +63,61 @@ FC_DELETE_FORM_RECORD — Permanently deletes the current form record.
 FC_QUEUE_TASK — Queues an event/task for execution (terminal node).
 ### FC_SEND_FORM_RECORD_MESSAGE
 FC_SEND_FORM_RECORD_MESSAGE — Sends an internal message to the record's inbox.
+REQUIRED: the message text (and the recipient message service when recipientType=INBOX_ID).
 ### FC_CHANGE_FORM_RECORD_CHAT_ACTIVENESS
 FC_CHANGE_FORM_RECORD_CHAT_ACTIVENESS — Opens or closes a form record chat.
+REQUIRED: the chat reference and whether it should be opened or closed.
 ### FC_CREATE_TEXT_FILE
 FC_CREATE_TEXT_FILE — Creates a text/JSON/XML/HTML file as an attachment.
+REQUIRED: file name and the content to write.
 ### FC_WRITE_FORM_RECORD_ATTRIBUTES
 FC_WRITE_FORM_RECORD_ATTRIBUTES — Writes custom key-value attributes to the record.
+REQUIRED: the attribute key(s) and value(s) to write.
 ### FC_RETURN_FILE
 FC_RETURN_FILE — Returns a file to the user's browser for download.
+REQUIRED: the file source to return.
 ### FC_ENCODE_BASE64
 FC_ENCODE_BASE64 — Encodes a file or form upload to Base64.
+REQUIRED: the source file / upload field to encode.
 ### FC_DECODE_BASE64
 FC_DECODE_BASE64 — Decodes a Base64-encoded file back to its original format.
+REQUIRED: the source field containing the Base64 data.
 ### FC_PROCESS_LOG_PDF
 FC_PROCESS_LOG_PDF — Generates a PDF from the current process log messages.
 ### FC_EXPORT_FORM_RECORD_CHATS
 FC_EXPORT_FORM_RECORD_CHATS — Exports the form record chat/conversation as a PDF file.
 ### FC_FILL_PDF
 FC_FILL_PDF — Fills a PDF template with form data.
+REQUIRED: the PDF template to fill and the field/value mapping.
 ### FC_FILL_WORD
 FC_FILL_WORD — Fills a Word template with form data.
+REQUIRED: the Word template to fill and the field/value mapping.
 ### FC_COMPRESS_AS_ZIP
 FC_COMPRESS_AS_ZIP — Compresses one or more files into a ZIP archive.
+REQUIRED: the files to compress and the output archive name.
 ### FC_SAVE_TO_FILE_SYSTEM
 FC_SAVE_TO_FILE_SYSTEM — Saves a file to the server's file system.
+REQUIRED: the target directory/path on the server.
 ### FC_SAVE_TO_WEBDAV
 FC_SAVE_TO_WEBDAV — Saves a file to a WebDAV server.
+REQUIRED: the WebDAV connection and the target path.
 ### FC_COUNTER
 FC_COUNTER — Increments, decrements, or resets a counter.
 ### FC_CHANGE_FORM_AVAILABILITY
 FC_CHANGE_FORM_AVAILABILITY — Sets the form online or offline.
+REQUIRED: online or offline (and which page/field scope when applicable).
 ### CreateRecordNodePlugin (de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin)
 CreateRecordNodePlugin (de.xima.fc.plugin.fc_plugin_create_record.plugin.CreateRecordNodePlugin) — Creates a new form record (Vorgang) in another form.
+REQUIRED: the target form and the field mapping.
 ### FC_SHOW_TEMPLATE
 FC_SHOW_TEMPLATE — Renders an HTML template to the user.
+REQUIRED: the HTML template to render.
 ### FC_DELETE_ATTACHMENT
 FC_DELETE_ATTACHMENT — Deletes attachments from the specified upload fields.
+REQUIRED: the upload field(s) whose attachments should be deleted.
 ### FC_MOVE_FORM_RECORD_TO_INBOX
 FC_MOVE_FORM_RECORD_TO_INBOX — Moves the form record to a specified inbox.
+REQUIRED: the inbox name (or the instruction to search by name).
 ### FC_THROW_EXCEPTION
 FC_THROW_EXCEPTION — Throws/causes a workflow error/exception (caught by FC_CATCH_ERROR in another lane).
 ### FC_EMPTY
@@ -105,19 +128,25 @@ FC_BREAK — Breaks out of a loop (FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, or FC_FOR_EA
 FC_CONTINUE — Skips the rest of the current iteration and continues with the NEXT iteration of a loop.
 ### FC_SET_FORM_RECORD_PASSWORD
 FC_SET_FORM_RECORD_PASSWORD — Sets a password on the form record (fixed or generated).
+REQUIRED: the password value or the generation rule.
 ### CheckTrustLevelPlugin (de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin)
 CheckTrustLevelPlugin (de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin) — Checks the user's authentication trust level (CONDITIONAL branching node).
 ### FC_MULTIPLE_CONDITION
 FC_MULTIPLE_CONDITION — Checks whether a form field value meets a condition (CONDITIONAL branching node).
+REQUIRED: the field to check, the comparison and the value to compare against.
 ### FC_SWITCH
 FC_SWITCH — Switches execution based on the value of a form field (switch/case, MULTI-BRANCH).
+REQUIRED: the field to switch on and the case values/branches.
 ### FC_EXPERIMENT
 FC_EXPERIMENT — Wraps an action with error handling (try-catch-finally pattern).
 ### FC_FOR_EACH_LOOP
 FC_FOR_EACH_LOOP — Iterates over items and executes child nodes for each item.
+REQUIRED: the item source to iterate over.
 ### FC_WHILE_LOOP
 FC_WHILE_LOOP — Repeatedly executes child actions WHILE a form field value meets a condition (PRE-CHECK loop).
+REQUIRED: the field to check, the comparison and the value.
 ### FC_DO_UNTIL_LOOP
 FC_DO_UNTIL_LOOP — Executes child actions FIRST, then checks the condition (POST-CHECK loop).
+REQUIRED: the field to check, the comparison and the value.
 ### FC_WITH_FORM_ELEMENT_CONTEXT
 FC_WITH_FORM_ELEMENT_CONTEXT — Scoping node that wraps child actions and provides form element context.

@@ -63,7 +63,7 @@ export function applyDialogPosition(styleClass: string, position: DialogPosition
       const rect = el.getBoundingClientRect();
       if (rect.width > 0) {
         lastFloatingSizes.set(styleClass, {
-          width: Math.max(480, Math.round(rect.width)),
+          width: Math.max(minFloatingWidth(el), Math.round(rect.width)),
           height: Math.round(rect.height) > 0 ? Math.round(rect.height) : Math.round(window.innerHeight * 0.85),
         });
       }
@@ -148,6 +148,12 @@ const SNAP_THRESHOLD = 40;
 /** Last floating size of each dialog, so dragging a docked dialog un-docks it at its prior size. */
 const lastFloatingSizes = new Map<string, { width: number; height: number }>();
 
+/** Minimum floating width a dialog may restore to on un-snap. The prompt manager is much wider —
+ *  its minimum is triple the shared minimum. */
+function minFloatingWidth(dialog: HTMLElement): number {
+  return dialog.classList.contains("cb-prompt-manager-dialog") ? 1440 : 480;
+}
+
 /** The in-flight drag session, or `null`. */
 let dragSession: DragSession | null = null;
 
@@ -225,7 +231,7 @@ function onGlobalMouseDown(e: MouseEvent): void {
   if (hit.dialog.style.width === "50vw") {
     const last = lastFloatingSizes.get(hit.styleClass);
     if (last) {
-      const w = Math.min(window.innerWidth - 20, Math.max(480, last.width));
+      const w = Math.min(window.innerWidth - 20, Math.max(minFloatingWidth(hit.dialog), last.width));
       const h = Math.min(window.innerHeight - 60, Math.max(300, last.height));
       hit.dialog.style.width = `${w}px`;
       hit.dialog.style.height = `${h}px`;

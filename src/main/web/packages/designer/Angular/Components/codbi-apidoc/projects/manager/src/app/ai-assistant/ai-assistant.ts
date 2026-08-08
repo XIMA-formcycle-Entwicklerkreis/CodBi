@@ -59,6 +59,21 @@ interface IAiHistoryEntry {
   /** codbi-prop-standards CSV captured before AI changes were applied. */
   standards: string;
 }
+
+/** One clarifying question the AI asks the user (multiple-choice + optional free text). */
+interface ClarificationQuestion {
+  id: string;
+  question: string;
+  options?: string[];
+  allowFreeText?: boolean;
+}
+
+/** One answered clarification round (used for the change log and the re-run conversation). */
+interface ClarificationTurn {
+  question: string;
+  answer: string;
+  attachmentName?: string;
+}
 // #endregion Interfaces
 
 /**
@@ -83,6 +98,9 @@ interface IAiHistoryEntry {
 export class AiAssistant implements OnInit, OnDestroy {
   // #region State
   private readonly baseUrl = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
+  /** CodBi logo shown in the clarification popup header (same resource as the prompt manager). */
+  readonly codbiLogoUrl =
+    `${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg`;
 
   visible = false;
   models: AiModel[] = [];
@@ -110,6 +128,26 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Accumulated session cost per currency — models may be priced in different currencies. */
   sessionCostByCurrency = new Map<string, number>();
   attachedFile: File | null = null;
+  // Multi-round clarification: the questions the AI asked and the answers the user gave. The
+  // history is sent back to the backend on every phase-2 re-run so the AI can ask again or proceed.
+  clarificationHistory: ClarificationTurn[] = [];
+  /** Popup visibility for the AI's clarifying questions. */
+  clarificationVisible = false;
+  /** The clarification questions currently shown in the popup. */
+  pendingClarification: ClarificationQuestion[] = [];
+  /** Per-question selected option. */
+  clarificationOption: Record<string, string> = {};
+  /** Combined free-text/voice answer covering all questions (single textarea). */
+  clarificationAnswerText = "";
+  /** File attached to the current clarification answers (optional document). */
+  clarificationFile: File | null = null;
+  /** The phase-2 context needed to re-run after a clarification round (prompt/model/intent/images). */
+  private phase2Context: {
+    prompt: string;
+    modelId: string;
+    intent: "form" | "workflow" | "both";
+    imageParams: Array<{ name: string; dataUrl: string }>;
+  } | null = null;
   readonly speechSupported = "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
   isSpeechRecording = false;
   private pdfJsWorkerConfigured = false;
@@ -910,9 +948,8 @@ export class AiAssistant implements OnInit, OnDestroy {
     return results;
   }
 
-  /** Converts the attached file to a list of {name, dataUrl} entries ready for codbi-base64 params. */
-  private async buildImageParams(): Promise<Array<{ name: string; dataUrl: string }>> {
-    const file = this.attachedFile;
+  /** Converts a file to a list of {name, dataUrl} entries ready for codbi-base64 params. */
+  private async fileToImageParams(file: File | null): Promise<Array<{ name: string; dataUrl: string }>> {
     if (!file) return [];
     if (file.type === "application/pdf") {
       return this.processPdfFile(file);
@@ -920,6 +957,118 @@ export class AiAssistant implements OnInit, OnDestroy {
     const dataUrl = await this.blobToDataUrl(file);
     return [{ name: file.name, dataUrl }];
   }
+
+  /** Converts the attached file to a list of {name, dataUrl} entries ready for codbi-base64 params. */
+  private async buildImageParams(): Promise<Array<{ name: string; dataUrl: string }>> {
+    return this.fileToImageParams(this.attachedFile);
+  }
+
+  // #region Clarification popup
+
+  /** Opens the clarification popup for the given questions (animated fade in). */
+  private openClarification(questions: ClarificationQuestion[]): void {
+    this.pendingClarification = questions;
+    this.clarificationOption = {};
+    this.clarificationAnswerText = "";
+    this.clarificationFile = null;
+    this.loading = false;
+    this.clarificationVisible = true;
+    this.cdr.markForCheck();
+  }
+
+  /** Marks [questionId] as answered with the given [option] (quick multiple-choice answer). */
+  selectClarificationOption(questionId: string, option: string): void {
+    this.clarificationOption[questionId] = option;
+    this.cdr.markForCheck();
+  }
+
+  /** Stores the document the user attached to the clarification answers. */
+  onClarificationFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.clarificationFile = input?.files?.[0] ?? null;
+    this.cdr.markForCheck();
+  }
+
+  /** File-name label for the attachment button. */
+  get clarificationFileLabel(): string {
+    return this.clarificationFile ? this.clarificationFile.name : "Attach a document (optional)";
+  }
+
+  /** Whether the clarification can be submitted (a combined answer was typed/voiced, or every
+   *  question got a quick multiple-choice answer). */
+  get clarificationReady(): boolean {
+    if (this.pendingClarification.length === 0) return false;
+    const hasCombined = (this.clarificationAnswerText ?? "").trim().length > 0;
+    return (
+      hasCombined || this.pendingClarification.every((q) => (this.clarificationOption[q.id] ?? "").trim().length > 0)
+    );
+  }
+
+  /** Handles manual dismissal of the popup (X / Escape) without answering. */
+  onClarificationVisibleChange(visible: boolean): void {
+    if (!visible) this.closeClarification();
+  }
+
+  /** Called once PrimeNG requests to hide the popup — unmounts it. */
+  onClarificationHide(): void {
+    this.closeClarification();
+  }
+
+  /**
+   * Unmounts the popup. It is mounted/unmounted via `@if` (see the template), so a fresh dialog
+   * (and its modal mask) is created on every open and fully destroyed on close — the other dialogs
+   * stay reachable and the popup reliably reappears on the next run.
+   */
+  private closeClarification(): void {
+    this.clarificationVisible = false;
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Submits the clarification answers, hides the popup (animated fade out) and re-runs phase 2 with
+   * the accumulated history so the AI can ask again or finally execute.
+   */
+  submitClarification(): void {
+    const ctx = this.phase2Context;
+    if (!ctx || !this.clarificationReady) return;
+    // Combine all answers into ONE turn: the questions are listed with their number and, when a
+    // multiple-choice option was picked, its answer; the single textarea holds the free/voice text.
+    const questionText = this.pendingClarification.map((q, i) => `${i + 1}. ${q.question}`).join("\n");
+    const optionLines = this.pendingClarification
+      .map((q, i) => {
+        const opt = (this.clarificationOption[q.id] ?? "").trim();
+        return opt ? `${i + 1}. ${q.question} → ${opt}` : "";
+      })
+      .filter((s) => s.length > 0);
+    const free = (this.clarificationAnswerText ?? "").trim();
+    const answer = [...optionLines, free].filter((s) => s.length > 0).join("\n");
+    const turns: ClarificationTurn[] = [
+      {
+        question: questionText,
+        answer: answer || "(no answer)",
+        ...(this.clarificationFile ? { attachmentName: this.clarificationFile.name } : {}),
+      },
+    ];
+    this.clarificationHistory.push(...turns);
+    const file = this.clarificationFile;
+    this.clarificationVisible = false;
+    this.loading = true;
+    this.spinnerText = "Executing\u2026";
+    this.cdr.markForCheck();
+    void (async () => {
+      let extra: Array<{ name: string; dataUrl: string }> = [];
+      if (file) {
+        try {
+          extra = await this.fileToImageParams(file);
+        } catch {
+          extra = [];
+        }
+      }
+      this.runPhase2(ctx.prompt, ctx.modelId, ctx.intent, [...ctx.imageParams, ...extra]);
+    })();
+  }
+
+  // #endregion Clarification popup
   // #endregion PDF.js helpers
 
   // #region Run (phase 1 + phase 2)
@@ -935,6 +1084,10 @@ export class AiAssistant implements OnInit, OnDestroy {
       return;
     }
 
+    // Reset multi-round clarification state for a fresh run.
+    this.clarificationHistory = [];
+    this.clarificationVisible = false;
+    this.phase2Context = null;
     this.loading = true;
     this.spinnerText = "Classifying request\u2026";
     this.resultText = null;
@@ -1037,8 +1190,14 @@ export class AiAssistant implements OnInit, OnDestroy {
     intent: "form" | "workflow" | "both",
     imageParams: Array<{ name: string; dataUrl: string }> = [],
   ): void {
+    // Remember the context so a clarification round can re-run phase 2 with the same inputs.
+    this.phase2Context = { prompt, modelId, intent, imageParams };
     const designer = getDesignerInstance();
     const data: Record<string, string> = { prompt, phase: "2", intent, useCodbi: String(this.useCodbi) };
+    // Send the accumulated clarifying questions/answers so the AI keeps the full conversation.
+    if (this.clarificationHistory.length > 0) {
+      data["clarificationHistory"] = JSON.stringify(this.clarificationHistory);
+    }
     // Scope the change log to the form that is currently being edited.
     const formKey = getCurrentFormKey();
     if (formKey) {
@@ -1145,6 +1304,24 @@ export class AiAssistant implements OnInit, OnDestroy {
 
         if ("error" in p2) {
           this.setError(String(p2["error"]));
+          return;
+        }
+
+        // The AI needs more information from the user — show the clarification popup and stop.
+        // The popup collects the answers and re-runs phase 2 (multi-round) until the AI proceeds.
+        if (p2["clarification"] != null) {
+          const clar = p2["clarification"] as Record<string, unknown>;
+          const rawQuestions = Array.isArray(clar["questions"])
+            ? (clar["questions"] as Array<Record<string, unknown>>)
+            : [];
+          this.openClarification(
+            rawQuestions.map((q, i) => ({
+              id: String(q["id"] ?? `q${i + 1}`),
+              question: String(q["question"] ?? ""),
+              options: Array.isArray(q["options"]) ? (q["options"] as string[]).map(String) : [],
+              allowFreeText: q["allowFreeText"] !== false,
+            })),
+          );
           return;
         }
 

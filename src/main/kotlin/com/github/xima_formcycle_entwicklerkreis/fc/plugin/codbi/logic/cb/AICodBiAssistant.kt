@@ -453,6 +453,36 @@ class AICodBiAssistant : IPluginServletAction {
     var formKey: String? =
         params.requestParameters["formKey"]?.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() }
 
+    // Multi-round clarification: give the AI a chance to ask the user for missing information
+    // (multiple-choice options + free text + optional attached document). The frontend answers via
+    // a popup and re-runs phase 2 carrying `clarificationHistory`, so the AI may ask again until it
+    // has everything it needs. Attachments of clarification answers arrive as `codbi-base64:<name>`
+    // image params, exactly like the main prompt's attachment, and are part of [imageParts].
+    val clarificationHistory = parseClarificationHistory(params)
+    val clarificationContext = buildClarificationContext(clarificationHistory)
+    val clarification =
+        try {
+          tryClarification(
+              prompt,
+              modelId,
+              instance,
+              intent,
+              latestFormElements,
+              clarificationContext,
+              useCodbi,
+              imageParts)
+        } catch (e: Exception) {
+          logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
+          null
+        }
+    if (clarification != null) {
+      logger.info(
+          "[AICodBiAssistant] AI requested clarification with {} question(s)",
+          clarification.questions.size)
+      return jsonResponse(
+          """{"intent":${gson.toJson(intent)},"clarification":${gson.toJson(clarification)},"clarificationHistory":${gson.toJson(clarificationTurnsToJson(clarificationHistory))}}""")
+    }
+
     if (intent == "form" || intent == "both") {
       persistJson =
           params.requestParameters["persist"]?.firstOrNull()
@@ -467,7 +497,8 @@ class AICodBiAssistant : IPluginServletAction {
       }
       val (formJson, applicabilityReport, formTokenUsage) =
           try {
-            runFormModification(prompt, persistJson, modelId, instance, imageParts, useCodbi)
+            runFormModification(
+                prompt, persistJson, modelId, instance, imageParts, useCodbi, clarificationContext)
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
             return jsonResponse("""{"error":${gson.toJson("Form AI error: ${e.message}")}}""")
@@ -537,7 +568,8 @@ class AICodBiAssistant : IPluginServletAction {
                     modelId,
                     params,
                     instance,
-                    imageParts)
+                    imageParts,
+                    clarificationContext)
             workflowNodes = nodes
             tokensIn += workflowTokenUsage.input
             tokensOut += workflowTokenUsage.output
@@ -600,7 +632,8 @@ class AICodBiAssistant : IPluginServletAction {
           tokensOut.toLong(),
           cost = runCost,
           currency = runCurrency,
-          username = currentUsername(params))
+          username = currentUsername(params),
+          clarification = clarificationTurnsToJson(clarificationHistory))
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to record change log: {}", e.message)
     }
@@ -678,7 +711,8 @@ class AICodBiAssistant : IPluginServletAction {
       modelId: String,
       instance: Standard,
       imageParts: List<String> = emptyList(),
-      useCodbi: Boolean = true
+      useCodbi: Boolean = true,
+      clarificationContext: String? = null
   ): Triple<String, String?, TokenUsage> {
     // Rough token estimate for this run (input = prompts, output = completions), returned to the
     // frontend so the assistant can show the last inference and the current session total.
@@ -700,6 +734,12 @@ class AICodBiAssistant : IPluginServletAction {
             "$baseSystemPrompt\n\n## DOCUMENT PARSING RULES (attached document)\n\n$docRules"
           } else baseSystemPrompt
         } else baseSystemPrompt
+    // Inject the clarifying questions/answers the user already gave (multi-round clarification),
+    // so the form AI treats them as authoritative context instead of asking again.
+    val effectiveSystemPrompt =
+        if (clarificationContext.isNullOrBlank()) systemPrompt
+        else
+            "$systemPrompt\n\n## USER CLARIFICATION (authoritative answers the user already gave — use them as context)\n\n$clarificationContext"
     val imageHint =
         if (imageParts.isNotEmpty()) {
           val n = imageParts.size
@@ -724,7 +764,7 @@ class AICodBiAssistant : IPluginServletAction {
 
     val messagesJson = buildString {
       append("[")
-      append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
+      append("""{"role":"system","content":${gson.toJson(effectiveSystemPrompt)}},""")
       append("""{"role":"user","content":${buildUserContent(userContent, imageParts)}}""")
       append("]")
     }
@@ -3630,7 +3670,8 @@ class AICodBiAssistant : IPluginServletAction {
       modelId: String,
       params: IPluginServletActionParams,
       instance: Standard,
-      imageParts: List<String> = emptyList()
+      imageParts: List<String> = emptyList(),
+      clarificationContext: String? = null
   ): Triple<String, JsonArray, TokenUsage> {
     val userContext = getUserContext(params)
     var tokensIn = 0
@@ -3833,7 +3874,7 @@ class AICodBiAssistant : IPluginServletAction {
         triggersJson ?: "null (no triggers found or query failed)")
     // Existing workflow nodes — lets the AI reference concrete nodes (by numeric id) for
     // remove/replace operations instead of only creating new ones.
-    val existingWorkflowNodes = fetchExistingWorkflowNodes(workflowVersionId)
+    val existingWorkflowNodes = fetchExistingWorkflowNodes(userContext, workflowVersionId)
     logger.info(
         "[AICodBiAssistant] runWorkflowCreation: existingWorkflowNodes={}",
         existingWorkflowNodes ?: "null (none found or query failed)")
@@ -3856,7 +3897,8 @@ class AICodBiAssistant : IPluginServletAction {
             triggersJson,
             existingWorkflowNodes,
             requestedNodes,
-            requestedTriggers)
+            requestedTriggers,
+            clarificationContext)
 
     var messagesJson = buildString {
       append("[")
@@ -3890,7 +3932,8 @@ class AICodBiAssistant : IPluginServletAction {
               triggersJson,
               existingWorkflowNodes,
               requestedNodes,
-              requestedTriggers)
+              requestedTriggers,
+              clarificationContext)
       messagesJson = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -3953,13 +3996,56 @@ class AICodBiAssistant : IPluginServletAction {
     // WorkflowTaskSpec). createWorkflowTask is kept for backward compatibility.
     val results = taskSpecs.map { spec -> applyWorkflowOperation(workflowVersionId, spec, params) }
     val combinedResult = results.joinToString(" | ")
+    // Safety net: remove any workflow lane (task) that now has no nodes left, so no empty lanes
+    // remain after the AI removed paths.
+    val laneCleanup = cleanupEmptyWorkflowTasks(userContext, workflowVersionId)
+    val combinedResultFinal =
+        if (laneCleanup.isBlank()) combinedResult else "$combinedResult$laneCleanup"
 
-    // Build the workflow change log grouped per workflow path (task). Each path carries the
+    // Build the workflow change log grouped per workflow path (task). Create operations record the
     // trigger, the path elements (the generated node + its chained nodes), and the status
-    // (endpoint state + state properties) — all of which the AI generated.
+    // (endpoint state + state properties) — all of which the AI generated. Remove/replace
+    // operations record the target node (by name when known) and the server's removal result.
+    // Map of existing node id -> (type, name) so remove/replace entries can name the target path.
+    val existingNodeInfo: Map<String, Pair<String, String>> =
+        try {
+          val arr = JsonParser.parseString(existingWorkflowNodes ?: "[]").asJsonArray
+          buildMap {
+            for (el in arr) {
+              val obj = el.asJsonObject
+              val id = obj.get("id")?.asString ?: continue
+              val type = obj.get("type")?.asString ?: ""
+              val name = obj.get("name")?.asString ?: ""
+              put(id, type to name)
+            }
+          }
+        } catch (_: Exception) {
+          emptyMap()
+        }
     val nodeLog = JsonArray()
-    for (spec in taskSpecs) {
+    for ((index, spec) in taskSpecs.withIndex()) {
       val path = JsonObject()
+      val op = spec.operation.trim().lowercase()
+      val opResult = results.getOrNull(index) ?: ""
+      if (op == "remove" || op == "replace") {
+        val target = spec.targetNodeId
+        val targetName =
+            target?.let { id ->
+              existingNodeInfo[id]?.second?.trim()?.takeIf { n ->
+                n.isNotEmpty() && !n.equals("SEQUENCE", ignoreCase = true)
+              }
+            }
+        path.addProperty(
+            "name",
+            targetName ?: if (op == "remove") "Remove workflow path" else "Replace workflow path")
+        path.addProperty("nodeType", op.uppercase())
+        val params = JsonObject()
+        if (!target.isNullOrBlank()) params.addProperty("targetNodeId", target)
+        if (opResult.isNotBlank()) params.addProperty("result", opResult)
+        path.add("params", params)
+        nodeLog.add(path)
+        continue
+      }
       val pathName = spec.taskName.trim().takeIf { it.isNotEmpty() } ?: deriveNodeName(spec)
       path.addProperty("name", pathName)
 
@@ -4000,8 +4086,8 @@ class AICodBiAssistant : IPluginServletAction {
       nodeLog.add(path)
     }
     logger.info(
-        "[AICodBiAssistant] Workflow created: {} task(s) â€” {}", results.size, combinedResult)
-    return Triple(combinedResult, nodeLog, TokenUsage(tokensIn, tokensOut))
+        "[AICodBiAssistant] Workflow created: {} task(s) â€” {}", results.size, combinedResultFinal)
+    return Triple(combinedResultFinal, nodeLog, TokenUsage(tokensIn, tokensOut))
   }
 
   /**
@@ -4022,7 +4108,8 @@ class AICodBiAssistant : IPluginServletAction {
       triggers: String? = null,
       existingWorkflowNodes: String? = null,
       requestedNodes: List<String> = emptyList(),
-      requestedTriggers: List<String> = emptyList()
+      requestedTriggers: List<String> = emptyList(),
+      clarificationContext: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return FALLBACK_WORKFLOW_PROMPT
@@ -4119,7 +4206,8 @@ class AICodBiAssistant : IPluginServletAction {
         }
         if (!existingWorkflowNodes.isNullOrBlank()) {
           append(
-              "EXISTING WORKFLOW NODES (the workflow that already exists — reference them by their numeric 'id'):\n" +
+              "EXISTING WORKFLOW NODES (the workflow that already exists — reference them by their numeric 'id'; " +
+                  "nodes with an empty \"parentId\" are ROOT nodes, each representing one whole workflow path):\n" +
                   existingWorkflowNodes +
                   "\n\n" +
                   "OPERATIONS — you MAY return a JSON array of operations instead of a single new task. " +
@@ -4127,10 +4215,17 @@ class AICodBiAssistant : IPluginServletAction {
                   "  - \"operation\":\"create\" (default) — create a new task/node as described above.\n" +
                   "  - \"operation\":\"remove\" — delete an existing node and its whole subtree; MUST include " +
                   "\"targetNodeId\":\"<numeric id of an existing node from EXISTING WORKFLOW NODES>\". " +
-                  "Other node/trigger fields are ignored.\n" +
+                  "Targeting a ROOT node (empty \"parentId\") removes the ENTIRE workflow path including its trigger — " +
+                  "use this to remove whole paths. Other node/trigger fields are ignored.\n" +
                   "  - \"operation\":\"replace\" — remove the existing node identified by \"targetNodeId\" " +
                   "(and its subtree) and create the new task/node described by this object.\n" +
                   "Never invent ids — only use the numeric 'id' values listed in EXISTING WORKFLOW NODES.\n\n")
+        }
+        if (!clarificationContext.isNullOrBlank()) {
+          append(
+              "\nUSER CLARIFICATION (authoritative answers the user already gave — use them as context):\n" +
+                  clarificationContext +
+                  "\n\n")
         }
         append("Output ONLY valid JSON. No trailing commas. No comments.")
       }
@@ -4143,29 +4238,22 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
-   * Compact JSON list of the existing workflow nodes (numeric id, type, name) of the current
-   * workflow version, so the AI can reference concrete nodes for remove/replace operations.
+   * Compact JSON list of the existing workflow nodes (numeric id, type, name, parentId) of the
+   * given workflow version, so the AI can reference concrete nodes for remove/replace operations.
+   * Nodes with an empty `parentId` are root nodes — removing one removes the whole workflow path.
+   *
+   * Runs JPQL against FORMCYCLE's own persistence context (via EntityContext) — the CodBi plugin's
+   * EntityManagerFactory only knows CodBi's tables, not FormCycle's entities.
    */
-  private fun fetchExistingWorkflowNodes(workflowVersionId: Long): String? {
-    val em = CodbiEntities.entityManagerFactory?.createEntityManager() ?: return null
-    try {
-      var results: List<*> = emptyList<Any?>()
-      try {
-        results =
-            em.createQuery(
-                    "SELECT n.id, n.type, n.name FROM de.xima.fc.entities.WorkflowNode n " +
-                        "WHERE n.task.process.workflowVersion.id = :vid ORDER BY n.id")
-                .setParameter("vid", workflowVersionId)
-                .resultList
-      } catch (_: Exception) {
-        // Version-scoping property path unavailable — list recent nodes as a best effort.
-        results =
-            em.createQuery(
-                    "SELECT n.id, n.type, n.name FROM de.xima.fc.entities.WorkflowNode n " +
-                        "ORDER BY n.id")
-                .setMaxResults(200)
-                .resultList
-      }
+  private fun fetchExistingWorkflowNodes(userContext: Any, workflowVersionId: Long): String? {
+    val em = formcycleEntityManager(userContext) ?: return null
+    return try {
+      val jpql =
+          "SELECT n.id, n.type, n.name, n.parent.id FROM de.xima.fc.entities.WorkflowNode n " +
+              "JOIN n.task wta JOIN wta.process wp JOIN wp.version wv " +
+              "WHERE wv.id = :vid ORDER BY n.id"
+      val results = runJpqlOn(em, jpql, "vid", workflowVersionId)
+      if (results.isEmpty()) return null
       val arr = com.google.gson.JsonArray()
       for (row in results) {
         val cols = row as? Array<*> ?: continue
@@ -4175,74 +4263,363 @@ class AICodBiAssistant : IPluginServletAction {
         obj.addProperty("id", id)
         obj.addProperty("type", cols[1]?.toString() ?: "")
         obj.addProperty("name", cols[2]?.toString() ?: "")
+        if (cols.size >= 4) obj.addProperty("parentId", cols[3]?.toString() ?: "")
         arr.add(obj)
       }
-      return if (arr.size() > 0) gson.toJson(arr) else null
+      if (arr.size() == 0) null else gson.toJson(arr)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] fetchExistingWorkflowNodes failed: ${e.message}")
-      return null
-    } finally {
-      em.close()
+      null
     }
   }
 
   /**
    * Deletes the workflow node with the given numeric [nodeId] together with its entire descendant
-   * subtree (children first, to satisfy foreign keys).
+   * subtree, using FORMCYCLE's entity API via reflection (the same pattern as
+   * [createWorkflowTask]). When the deleted node is the root node of a WorkflowTask (i.e. the whole
+   * path is removed), the owning task and its trigger are deleted too, so no orphaned path remains.
    */
-  private fun removeWorkflowNode(nodeId: String): String {
+  private fun removeWorkflowNode(nodeId: String, params: IPluginServletActionParams): String {
     val rootId = nodeId.trim().toLongOrNull() ?: return "Invalid target node id '$nodeId'."
-    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
-    if (em == null) return "Database not available — cannot remove workflow node."
+    val userContext = getUserContext(params)
+    val em = formcycleEntityManager(userContext)
     try {
-      // Collect the node and all descendants, then delete bottom-up.
-      val idsToDelete = mutableListOf<Long>()
-      val queue = ArrayDeque<Long>()
-      queue.add(rootId)
-      while (queue.isNotEmpty()) {
-        val id = queue.removeFirst()
-        idsToDelete.add(id)
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
+      val workflowTaskApi = apiProviderClass.getField("WORKFLOW_TASK_API").get(null)
+      val workflowTriggerApi = apiProviderClass.getField("WORKFLOW_TRIGGER_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val iTransferableEntityClass =
+          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+      val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
+      val workflowTaskClass = Class.forName("de.xima.fc.entities.WorkflowTask")
+      val workflowTriggerClass = Class.forName("de.xima.fc.entities.WorkflowTrigger")
+
+      // Load the target node and its owning task. task/rootNode/trigger are @ManyToOne => EAGER,
+      // so navigating them on the returned entity is safe (no lazy-loading).
+      val getByIdNodeMethod =
+          workflowNodeApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      val node =
+          getByIdNodeMethod.invoke(workflowNodeApi, userContext, rootId)
+              ?: return "WorkflowNode $rootId not found — nothing to remove."
+
+      val getTaskMethod = workflowNodeClass.getMethod("getTask")
+      val task =
+          try {
+            getTaskMethod.invoke(node)
+          } catch (_: Exception) {
+            null
+          }
+      var taskId: Long? = null
+      try {
+        taskId = (task?.javaClass?.getMethod("getId")?.invoke(task) as? Number)?.toLong()
+      } catch (_: Exception) {}
+      // Fallback to the scalar JPQL lookup when entity navigation fails.
+      if (taskId == null) taskId = workflowTaskIdOfNode(em, rootId)
+
+      // Detect whether this node is the root node of its task (i.e. the whole path is removed)
+      // and remember the trigger id for cleanup. Entity navigation first, scalar JPQL fallback.
+      var wholePath = false
+      var triggerId: Long? = null
+      if (taskId != null) {
         try {
-          val children =
-              em.createQuery(
-                      "SELECT n.id FROM de.xima.fc.entities.WorkflowNode n WHERE n.parent.id = :pid")
-                  .setParameter("pid", id)
-                  .resultList
-          for (c in children) {
-            val childId = (c as? Array<*>)?.get(0)?.toString()?.toLongOrNull()
-            if (childId != null) queue.add(childId)
+          val taskRootNode = task?.javaClass?.getMethod("getRootNode")?.invoke(task)
+          val taskRootId =
+              (taskRootNode?.javaClass?.getMethod("getId")?.invoke(taskRootNode) as? Number)
+                  ?.toLong()
+          wholePath = taskRootId == rootId
+          val trigger = task?.javaClass?.getMethod("getTrigger")?.invoke(task)
+          triggerId = (trigger?.javaClass?.getMethod("getId")?.invoke(trigger) as? Number)?.toLong()
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] removeWorkflowNode: could not resolve task root/trigger: {}",
+              e.message)
+          try {
+            wholePath = workflowTaskRootNodeId(em, taskId) == rootId
+          } catch (_: Exception) {}
+          try {
+            triggerId = workflowTaskTriggerId(em, taskId)
+          } catch (_: Exception) {}
+        }
+      }
+
+      // Collect the node and all descendants (children first) as (id, type, name) refs so the
+      // removed path can be described by name in the result message / change log.
+      val getNodeTypeMethod = workflowNodeClass.getMethod("getType")
+      val getNodeNameMethod = workflowNodeClass.getMethod("getName")
+      val rootType =
+          try {
+            getNodeTypeMethod.invoke(node) as? String
+          } catch (_: Exception) {
+            ""
+          }
+      val rootName =
+          try {
+            getNodeNameMethod.invoke(node) as? String
+          } catch (_: Exception) {
+            ""
+          }
+      val refsToDelete = mutableListOf<Array<Any>>()
+      val refQueue = ArrayDeque<Array<Any>>()
+      refQueue.add(arrayOf(rootId, rootType ?: "", rootName ?: ""))
+      while (refQueue.isNotEmpty()) {
+        val ref = refQueue.removeFirst()
+        refsToDelete.add(ref)
+        val pid = (ref[0] as? Number)?.toLong() ?: continue
+        for (childRef in childWorkflowNodeRefs(em, pid)) refQueue.add(childRef)
+      }
+      val idsToDelete = refsToDelete.map { (it[0] as Number).toLong() }
+
+      // For a whole-path removal, detach the task from its root node and trigger first so the
+      // node deletion is not blocked by the task's foreign keys.
+      if (wholePath && taskId != null) {
+        try {
+          val getByIdTaskMethod =
+              workflowTaskApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+          val taskEntity = getByIdTaskMethod.invoke(workflowTaskApi, userContext, taskId)
+          if (taskEntity != null) {
+            workflowTaskClass
+                .getMethod("setRootNode", workflowNodeClass)
+                .invoke(taskEntity, *arrayOfNulls<Any>(1))
+            workflowTaskClass
+                .getMethod("setTrigger", workflowTriggerClass)
+                .invoke(taskEntity, *arrayOfNulls<Any>(1))
+            val updateMethod =
+                workflowTaskApi.javaClass.getMethod("update", ucClass, iTransferableEntityClass)
+            updateMethod.invoke(workflowTaskApi, userContext, taskEntity)
           }
         } catch (e: Exception) {
           logger.warn(
-              "[AICodBiAssistant] removeWorkflowNode: child query failed for id={}: {}",
-              id,
+              "[AICodBiAssistant] removeWorkflowNode: could not detach task root/trigger: {}",
               e.message)
         }
       }
+
+      // Delete the nodes bottom-up through the entity API (handles @OrderColumn cleanup).
+      val deleteByIdMethod =
+          workflowNodeApi.javaClass.getMethod("deleteById", ucClass, Long::class.javaObjectType)
       var deleted = 0
       for (id in idsToDelete.reversed()) {
         try {
-          em.transaction.begin()
-          em.createQuery("DELETE FROM de.xima.fc.entities.WorkflowNode n WHERE n.id = :id")
-              .setParameter("id", id)
-              .executeUpdate()
-          em.transaction.commit()
+          deleteByIdMethod.invoke(workflowNodeApi, userContext, id)
           deleted++
         } catch (e: Exception) {
           logger.warn(
-              "[AICodBiAssistant] removeWorkflowNode: delete failed for id={}: {}", id, e.message)
-          try {
-            if (em.transaction.isActive) em.transaction.rollback()
-          } catch (_: Exception) {
-            // ignore
-          }
+              "[AICodBiAssistant] removeWorkflowNode: delete failed for id={}: {}",
+              id,
+              e.cause?.message ?: e.message)
         }
       }
+
+      // Clean up the now-empty path: delete the trigger and then the task.
+      var cleanup = ""
+      if (wholePath && taskId != null && deleted > 0) {
+        try {
+          if (triggerId != null) {
+            val deleteTriggerMethod =
+                workflowTriggerApi.javaClass.getMethod(
+                    "deleteById", ucClass, Long::class.javaObjectType)
+            deleteTriggerMethod.invoke(workflowTriggerApi, userContext, triggerId)
+          }
+          val deleteTaskMethod =
+              workflowTaskApi.javaClass.getMethod("deleteById", ucClass, Long::class.javaObjectType)
+          deleteTaskMethod.invoke(workflowTaskApi, userContext, taskId)
+          cleanup = " Removed the workflow path (task + trigger)."
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] removeWorkflowNode: task/trigger cleanup failed: {}", e.message)
+        }
+      }
+
+      // Describe the removed path by its non-SEQUENCE node names (e.g. the action nodes).
+      val pathLabel =
+          refsToDelete
+              .mapNotNull { ref ->
+                val type = (ref[1] as? String) ?: ""
+                val name = (ref[2] as? String)?.trim()?.takeIf { it.isNotEmpty() }
+                when {
+                  type == "SEQUENCE" -> null
+                  name != null -> "$name ($type)"
+                  else -> null
+                }
+              }
+              .takeIf { it.isNotEmpty() }
+              ?.joinToString(" → ") ?: "path #$rootId"
       return if (deleted > 0)
-          "Removed workflow node #$rootId (${idsToDelete.size} node(s) incl. descendants)."
+          "Removed workflow path #$rootId: $pathLabel — ${idsToDelete.size} node(s) incl. descendants.$cleanup"
       else "Could not remove workflow node #$rootId."
-    } finally {
-      em.close()
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] removeWorkflowNode failed: {}", e.message)
+      return "Could not remove workflow node #$rootId: ${e.message}"
+    }
+  }
+
+  /**
+   * Obtains a FORMCYCLE-managed EntityManager (via EntityContextFactory) that has all FormCycle
+   * entities registered — the CodBi plugin's own EntityManagerFactory does NOT know them.
+   */
+  private fun formcycleEntityManager(userContext: Any): Any? {
+    return try {
+      val entityContextFactoryClass = Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val entityContext =
+          entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
+      entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] formcycleEntityManager failed: {}", e.message)
+      null
+    }
+  }
+
+  /** Runs a JPQL query on a FORMCYCLE-managed EntityManager and returns the raw result list. */
+  private fun runJpqlOn(em: Any?, jpql: String, paramName: String?, paramValue: Any?): List<*> {
+    if (em == null) return emptyList<Any>()
+    return try {
+      val query = em.javaClass.getMethod("createQuery", String::class.java).invoke(em, jpql)
+      if (paramName != null) {
+        query.javaClass
+            .getMethod("setParameter", String::class.java, Any::class.java)
+            .invoke(query, paramName, paramValue)
+      }
+      @Suppress("UNCHECKED_CAST")
+      (query.javaClass.getMethod("getResultList").invoke(query) as? List<*>) ?: emptyList<Any>()
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] runJpqlOn failed: {}", e.message)
+      emptyList<Any>()
+    }
+  }
+
+  /** Returns the (id, type, name) triples of the direct child nodes of the given workflow node. */
+  private fun childWorkflowNodeRefs(em: Any?, parentId: Long): List<Array<Any>> {
+    val rows =
+        runJpqlOn(
+            em,
+            "SELECT n.id, n.type, n.name FROM de.xima.fc.entities.WorkflowNode n " +
+                "WHERE n.parent.id = :pid",
+            "pid",
+            parentId)
+    val result = mutableListOf<Array<Any>>()
+    for (row in rows) {
+      val cols = row as? Array<*> ?: continue
+      if (cols.size < 3) continue
+      val id = (cols[0] as? Number)?.toLong() ?: continue
+      result.add(arrayOf(id, cols[1]?.toString() ?: "", cols[2]?.toString() ?: ""))
+    }
+    return result
+  }
+
+  /** Returns the owning WorkflowTask id of a node, or null when the node has no task. */
+  private fun workflowTaskIdOfNode(em: Any?, nodeId: Long): Long? {
+    val rows =
+        runJpqlOn(
+            em,
+            "SELECT n.task.id FROM de.xima.fc.entities.WorkflowNode n WHERE n.id = :nid",
+            "nid",
+            nodeId)
+    return (rows.firstOrNull() as? Number)?.toLong()
+  }
+
+  /** Returns the root node id of a workflow task, or null when the task has no root node. */
+  private fun workflowTaskRootNodeId(em: Any?, taskId: Long): Long? {
+    val rows =
+        runJpqlOn(
+            em,
+            "SELECT t.rootNode.id FROM de.xima.fc.entities.WorkflowTask t WHERE t.id = :tid",
+            "tid",
+            taskId)
+    return (rows.firstOrNull() as? Number)?.toLong()
+  }
+
+  /** Returns the trigger id of a workflow task, or null when the task has no trigger. */
+  private fun workflowTaskTriggerId(em: Any?, taskId: Long): Long? {
+    val rows =
+        runJpqlOn(
+            em,
+            "SELECT t.trigger.id FROM de.xima.fc.entities.WorkflowTask t WHERE t.id = :tid",
+            "tid",
+            taskId)
+    return (rows.firstOrNull() as? Number)?.toLong()
+  }
+
+  /**
+   * Safety net: deletes every workflow task (lane) in the given workflow version that no longer has
+   * any workflow nodes, together with its trigger. Guarantees that removing paths never leaves
+   * empty lanes behind, even when the AI targeted individual nodes instead of root nodes.
+   */
+  private fun cleanupEmptyWorkflowTasks(userContext: Any, workflowVersionId: Long): String {
+    val em = formcycleEntityManager(userContext) ?: return ""
+    val rows =
+        runJpqlOn(
+            em,
+            "SELECT t.id FROM de.xima.fc.entities.WorkflowTask t " +
+                "JOIN t.process wp JOIN wp.version wv " +
+                "WHERE wv.id = :vid AND NOT EXISTS " +
+                "(SELECT n FROM de.xima.fc.entities.WorkflowNode n WHERE n.task.id = t.id)",
+            "vid",
+            workflowVersionId)
+    if (rows.isEmpty()) return ""
+    val taskIds = rows.mapNotNull { (it as? Number)?.toLong() }
+    if (taskIds.isEmpty()) return ""
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowTaskApi = apiProviderClass.getField("WORKFLOW_TASK_API").get(null)
+      val workflowTriggerApi = apiProviderClass.getField("WORKFLOW_TRIGGER_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val iTransferableEntityClass =
+          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+      val workflowTaskClass = Class.forName("de.xima.fc.entities.WorkflowTask")
+      val workflowTriggerClass = Class.forName("de.xima.fc.entities.WorkflowTrigger")
+      val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
+
+      var removed = 0
+      for (taskId in taskIds) {
+        try {
+          val getByIdTaskMethod =
+              workflowTaskApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+          val task = getByIdTaskMethod.invoke(workflowTaskApi, userContext, taskId) ?: continue
+          var triggerId: Long? = null
+          try {
+            val trigger = task.javaClass.getMethod("getTrigger").invoke(task)
+            triggerId =
+                (trigger?.javaClass?.getMethod("getId")?.invoke(trigger) as? Number)?.toLong()
+          } catch (_: Exception) {}
+          workflowTaskClass
+              .getMethod("setRootNode", workflowNodeClass)
+              .invoke(task, *arrayOfNulls<Any>(1))
+          workflowTaskClass
+              .getMethod("setTrigger", workflowTriggerClass)
+              .invoke(task, *arrayOfNulls<Any>(1))
+          workflowTaskApi.javaClass
+              .getMethod("update", ucClass, iTransferableEntityClass)
+              .invoke(workflowTaskApi, userContext, task)
+          if (triggerId != null) {
+            workflowTriggerApi.javaClass
+                .getMethod("deleteById", ucClass, Long::class.javaObjectType)
+                .invoke(workflowTriggerApi, userContext, triggerId)
+          }
+          workflowTaskApi.javaClass
+              .getMethod("deleteById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowTaskApi, userContext, taskId)
+          removed++
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] cleanupEmptyWorkflowTasks: failed for taskId={}: {}",
+              taskId,
+              e.cause?.message ?: e.message)
+        }
+      }
+      if (removed > 0) {
+        logger.info(
+            "[AICodBiAssistant] cleanupEmptyWorkflowTasks: removed {} empty lane(s): {}",
+            removed,
+            taskIds)
+        " Removed $removed empty workflow lane(s)."
+      } else {
+        ""
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] cleanupEmptyWorkflowTasks failed: {}", e.message)
+      ""
     }
   }
 
@@ -4252,17 +4629,22 @@ class AICodBiAssistant : IPluginServletAction {
       spec: WorkflowTaskSpec,
       params: IPluginServletActionParams
   ): String {
+    logger.info(
+        "[AICodBiAssistant] applyWorkflowOperation: operation={}, nodeType={}, targetNodeId={}",
+        spec.operation,
+        spec.nodeType,
+        spec.targetNodeId)
     return when (spec.operation.trim().lowercase()) {
       "remove" -> {
         val target = spec.targetNodeId
         if (target.isNullOrBlank()) "Remove operation requires a 'targetNodeId'."
-        else removeWorkflowNode(target)
+        else removeWorkflowNode(target, params)
       }
       "replace" -> {
         val target = spec.targetNodeId
         if (target.isNullOrBlank()) "Replace operation requires a 'targetNodeId'."
         else {
-          val removed = removeWorkflowNode(target)
+          val removed = removeWorkflowNode(target, params)
           val created = createWorkflowTask(workflowVersionId, spec, params)
           "$removed | $created"
         }
@@ -7686,6 +8068,198 @@ class AICodBiAssistant : IPluginServletAction {
     }
     return sb.toString().trimEnd()
   }
+
+  // region Clarification
+
+  /** One clarifying question the AI asks the user (multiple-choice + optional free text). */
+  private data class ClarificationQuestion(
+      val id: String = "",
+      val question: String = "",
+      val options: List<String> = emptyList(),
+      val allowFreeText: Boolean = true
+  )
+
+  /**
+   * One answered clarification round: the question, the user's answer and an optional attachment.
+   */
+  private data class ClarificationTurn(
+      val question: String = "",
+      val answer: String = "",
+      val attachmentName: String? = null
+  )
+
+  /** A `need_clarification` request produced by the AI. */
+  private data class ClarificationRequest(val questions: List<ClarificationQuestion> = emptyList())
+
+  /**
+   * Reads the `clarificationHistory` request param (JSON array of {question, answer,
+   * attachmentName}).
+   */
+  private fun parseClarificationHistory(
+      params: IPluginServletActionParams
+  ): List<ClarificationTurn> {
+    val raw = params.requestParameters["clarificationHistory"]?.firstOrNull() ?: return emptyList()
+    return try {
+      val arr = JsonParser.parseString(raw).asJsonArray
+      val turns = mutableListOf<ClarificationTurn>()
+      for (el in arr) {
+        if (!el.isJsonObject) continue
+        val o = el.asJsonObject
+        val question = o.get("question")?.asString ?: ""
+        val answer = o.get("answer")?.asString ?: ""
+        val attachment = o.get("attachmentName")?.asString
+        turns.add(ClarificationTurn(question, answer, attachment))
+      }
+      turns
+    } catch (_: Exception) {
+      emptyList()
+    }
+  }
+
+  /** Parses a `need_clarification` JSON response into a [ClarificationRequest], or null. */
+  private fun parseClarificationRequest(cleaned: String): ClarificationRequest? {
+    return try {
+      val obj = JsonParser.parseString(cleaned).asJsonObject
+      if (obj.get("status")?.asString != "need_clarification") return null
+      val qs = obj.getAsJsonArray("questions") ?: return null
+      if (qs.size() == 0) return null
+      val questions = mutableListOf<ClarificationQuestion>()
+      for (el in qs) {
+        if (!el.isJsonObject) continue
+        val q = el.asJsonObject
+        val question = q.get("question")?.asString?.takeIf { it.isNotBlank() } ?: continue
+        val id = q.get("id")?.asString?.takeIf { it.isNotBlank() } ?: "q${questions.size + 1}"
+        val options =
+            q.getAsJsonArray("options")?.mapNotNull {
+              it.takeIf { x -> x.isJsonPrimitive }?.asString?.takeIf { s -> s.isNotBlank() }
+            } ?: emptyList()
+        val allowFree = q.get("allowFreeText")?.asBoolean ?: true
+        questions.add(ClarificationQuestion(id, question, options, allowFree))
+      }
+      if (questions.isEmpty()) null else ClarificationRequest(questions)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  /** Formats the answered clarification turns as readable text for the AI system prompts. */
+  private fun buildClarificationContext(history: List<ClarificationTurn>): String {
+    if (history.isEmpty()) return ""
+    val sb = StringBuilder()
+    for ((i, turn) in history.withIndex()) {
+      sb.append("${i + 1}. Question: ").append(turn.question).append("\n")
+      sb.append("   Answer: ").append(turn.answer.ifBlank { "(no text)" })
+      if (!turn.attachmentName.isNullOrBlank()) {
+        sb.append(" (attached document: ").append(turn.attachmentName).append(")")
+      }
+      sb.append("\n")
+    }
+    return sb.toString().trim()
+  }
+
+  /** Converts the answered clarification turns into a JSON array for the change log. */
+  private fun clarificationTurnsToJson(turns: List<ClarificationTurn>): JsonArray {
+    val arr = JsonArray()
+    for (t in turns) {
+      val o = JsonObject()
+      o.addProperty("question", t.question)
+      o.addProperty("answer", t.answer)
+      if (!t.attachmentName.isNullOrBlank()) o.addProperty("attachmentName", t.attachmentName)
+      arr.add(o)
+    }
+    return arr
+  }
+
+  /** Builds the system prompt for the dedicated clarification check. */
+  private fun buildClarificationSystemPrompt(
+      prompt: String,
+      intent: String,
+      formElements: String?,
+      clarificationContext: String,
+      useCodbi: Boolean
+  ): String {
+    val action =
+        when (intent) {
+          "form" -> "modify the form"
+          "workflow" -> "create or modify a workflow"
+          else -> "modify the form and create/modify a workflow"
+        }
+    return buildString {
+      append(
+          "You are a FORMCYCLE assistant. You are about to $action for the user.\n" +
+              "USER REQUEST: ${gson.toJson(prompt)}\n")
+      if (!formElements.isNullOrBlank()) {
+        append("\nFORM ELEMENTS available: $formElements\n")
+      }
+      if (clarificationContext.isNotBlank()) {
+        append(
+            "\nQUESTIONS THE USER ALREADY ANSWERED (treat these as authoritative):\n" +
+                clarificationContext +
+                "\n")
+      }
+      append(
+          "\nDecide whether you still need information from the user before you can carry out the request correctly.\n" +
+              "Ask ONLY when a detail is genuinely missing and you cannot determine it yourself.\n" +
+              "If you need clarification, respond ONLY with this JSON (nothing else):\n" +
+              "{\"status\":\"need_clarification\",\"questions\":[" +
+              "{\"id\":\"q1\",\"question\":\"<your question>\",\"options\":[\"<option>\",\"<option>\"],\"allowFreeText\":true}" +
+              "]}\n" +
+              "Rules:\n" +
+              "- Ask at most 3 questions per round; each question needs a unique \"id\".\n" +
+              "- \"options\" is an optional list of multiple-choice answers (may be empty).\n" +
+              "- \"allowFreeText\" true means the user may type a free answer and/or attach a document.\n" +
+              "- Build on previous answers; only ask what is still missing.\n" +
+              "- MANDATORY VALUES: formcycle widgets, workflow nodes, CodBi functionalities, element\n" +
+              "  placeholders and standard configurations all have required parameters and/or global\n" +
+              "  variables. Whenever the user's request implies such an element but does NOT provide a\n" +
+              "  value that is genuinely required and cannot be derived from the request, ASK for it\n" +
+              "  instead of guessing or inventing one.\n" +
+              "  Examples of required values to ask about:\n" +
+              "    - Email (FC_EMAIL / sending an email): sender address and subject are mandatory even\n" +
+              "      when the recipient is given; ask for them if not provided.\n" +
+              "    - FC_REDIRECT: target URL or URL template.\n" +
+              "    - FC_SHOW_TEMPLATE / FC_DOI_INIT / Abschlussseite: which completion page or template.\n" +
+              "    - FC_POST_REQUEST: URL and HTTP method.\n" +
+              "    - FC_MOVE_FORM_RECORD_TO_INBOX: inbox name.\n" +
+              "    - FC_CHANGE_FORM_VALUE / FC_WRITE_FORM_RECORD_ATTRIBUTES: which field/attribute and its value.\n" +
+              "    - Standard configurations that rely on a global variable (tracking ID, currency,\n" +
+              "      threshold, ...): ask which value to set when it cannot be derived.\n" +
+              "    - Functionalities / element placeholders that need a parameter value (regex pattern,\n" +
+              "      target attribute, injected text, template): ask for it when missing.\n" +
+              "If you have everything you need, respond with exactly the single word: NO_CLARIFICATION\n")
+    }
+  }
+
+  /**
+   * Makes a dedicated AI call asking whether it needs more information from the user. Returns the
+   * parsed [ClarificationRequest] when the AI asks questions, or null when it is ready to proceed.
+   */
+  private fun tryClarification(
+      prompt: String,
+      modelId: String,
+      instance: Standard,
+      intent: String,
+      formElements: String?,
+      clarificationContext: String,
+      useCodbi: Boolean,
+      imageParts: List<String>
+  ): ClarificationRequest? {
+    val system =
+        buildClarificationSystemPrompt(prompt, intent, formElements, clarificationContext, useCodbi)
+    val messagesJson = buildString {
+      append("[")
+      append("""{"role":"system","content":${gson.toJson(system)}},""")
+      append("""{"role":"user","content":${buildUserContent(prompt, imageParts)}}""")
+      append("]")
+    }
+    val raw = instance.performFormAssist(modelId, messagesJson)
+    val cleaned = extractJson(stripThinkTags(raw)).trim()
+    logger.info("[AICodBiAssistant] Clarification check response: {}", cleaned)
+    if (cleaned.isBlank() || cleaned.equals("NO_CLARIFICATION", ignoreCase = true)) return null
+    return parseClarificationRequest(cleaned)
+  }
+
+  // endregion Clarification
 
   companion object {
     /**

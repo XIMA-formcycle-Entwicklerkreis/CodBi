@@ -163,39 +163,14 @@ cb-ai-assistant {
     flex: 1;
 }
 
-.cb-ai-pm-btn {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 6px 10px;
-    border: 1px solid #d0d0d0;
-    border-radius: 6px;
-    background: #f8f8f8;
-    cursor: pointer;
-    font-size: 0.82em;
-    color: #555;
-    white-space: nowrap;
-    transition: all 0.15s;
-}
-
-.cb-ai-pm-btn:hover {
-    background: #e8f5e9;
-    border-color: #39d088;
-    color: #2e7d32;
-}
-
-.cb-ai-pm-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
 /* CodBi on/off switch — defaults to ON. When OFF, no CodBi prompts are sent to the AI in any
    pass (only Formcycle widgets and workflow nodes), and no Holistic.* standard configuration is
-   applied. */
-.cb-ai-codbi-row {
-    display: flex;
+   applied. Lives in the dialog footer, same row as Run, aligned left. */
+.cb-ai-footer-codbi {
+    display: inline-flex;
     align-items: center;
     gap: 8px;
+    margin-right: auto;
 }
 
 .cb-ai-codbi-switch {
@@ -463,74 +438,6 @@ cb-ai-assistant {
     word-break: break-word;
 }
 
-.cb-ai-history {
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    overflow: hidden;
-
-    &__header {
-        padding: 0.45rem 0.75rem;
-        font-size: 0.78em;
-        font-weight: 600;
-        color: #555;
-        background: #f5f5f5;
-        border-bottom: 1px solid #e0e0e0;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-    }
-
-    &__list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        max-height: 200px;
-        overflow-y: auto;
-    }
-
-    &__entry {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.38rem 0.75rem;
-        cursor: pointer;
-        border-bottom: 1px solid #f0f0f0;
-        transition: background 0.1s;
-
-        &:last-child { border-bottom: none; }
-        &:hover { background: #eef2ff; }
-    }
-
-    &__time {
-        flex-shrink: 0;
-        font-size: 0.78em;
-        font-family: monospace;
-        color: #888;
-    }
-
-    &__badge {
-        flex-shrink: 0;
-        font-size: 0.72em;
-        padding: 1px 5px;
-        border-radius: 3px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.03em;
-
-        &--form     { background: #e8f5e9; color: #2e7d32; }
-        &--workflow { background: #e3f2fd; color: #1565c0; }
-        &--both     { background: #f3e5f5; color: #6a1b9a; }
-    }
-
-    &__prompt {
-        font-size: 0.83em;
-        color: #333;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        min-width: 0;
-    }
-}
-
 /* ---------------------------------------------------------------------------
  * Clarification popup — the AI asks the user for missing information. The
  * p-dialog transitionOptions already animates the fade in/out of the overlay;
@@ -551,14 +458,6 @@ cb-ai-assistant {
 
     .cb-ai-clarification-header {
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-        text-align: center;
-    }
-
-    .cb-ai-clarification-header-row {
-        display: flex;
         align-items: center;
         gap: 0.6rem;
     }
@@ -571,23 +470,11 @@ cb-ai-assistant {
     }
 
     .cb-ai-clarification-logo {
-        height: 56px;
+        height: 40px;
         width: auto;
         display: block;
-        opacity: 0.92;
-    }
-
-    .cb-ai-clarification-icon {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
         flex-shrink: 0;
-        line-height: 0;
-        filter: drop-shadow(0 2px 4px rgba(230, 126, 34, 0.4));
-
-        svg {
-            display: block;
-        }
+        opacity: 0.92;
     }
 
     .cb-ai-clarification-title {

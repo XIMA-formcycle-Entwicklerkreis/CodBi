@@ -460,21 +460,88 @@ class AICodBiAssistant : IPluginServletAction {
     // image params, exactly like the main prompt's attachment, and are part of [imageParts].
     val clarificationHistory = parseClarificationHistory(params)
     val clarificationContext = buildClarificationContext(clarificationHistory)
-    val clarification =
-        try {
-          tryClarification(
-              prompt,
-              modelId,
-              instance,
-              intent,
-              latestFormElements,
-              clarificationContext,
-              useCodbi,
-              imageParts)
-        } catch (e: Exception) {
-          logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
-          null
+    // The prior change history is NOT sent to the AI by default — it is fetched from the change log
+    // only when the AI explicitly requests it (the prompt refers to earlier work, e.g. "apply the
+    // same as last week" or "what another user configured"). The AI may also request the history of
+    // ANOTHER form (e.g. "do the same as on form X"): it first fetches the list of all forms via
+    // need_form_list, picks the best match, and then requests that form's history via
+    // need_chat_history with a formKey — or asks the user which form it meant (clarification
+    // popup).
+    // Identify the currently open form (title + key) so the AI can tell "this form" apart from
+    // ANOTHER form the user might name by title (e.g. "do the same as on form 'New Form'").
+    val currentFormTitle =
+        if (formKey.isNullOrBlank()) null
+        else resolveCurrentFormTitle(getUserContext(params), formKey)
+    var changeHistoryContext: String? = null
+    var formListContext: String? = null
+    var formListAttempted = false
+    val historyLoadedFormKeys = mutableSetOf<String>()
+    var clarification: ClarificationRequest? = null
+    for (round in 0 until 5) {
+      val check =
+          try {
+            tryClarification(
+                prompt,
+                modelId,
+                instance,
+                intent,
+                latestFormElements,
+                clarificationContext,
+                changeHistoryContext,
+                formListContext,
+                formKey,
+                currentFormTitle,
+                useCodbi,
+                imageParts)
+          } catch (e: Exception) {
+            logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
+            null
+          }
+      if (check == null) {
+        clarification = null
+        break
+      }
+      if (check.needsFormList) {
+        if (!formListAttempted) {
+          formListAttempted = true
+          formListContext = loadFormListContext(getUserContext(params), formKey)
+          logger.info(
+              "[AICodBiAssistant] AI requested the form list; loaded {} chars",
+              formListContext?.length ?: 0)
+          continue
         }
+        // The AI already received the form list but still asks for it again — it could not match
+        // the
+        // form the user mentioned (or found no reasonable one). Fall back to asking the user which
+        // form they meant, offering the known forms by title as options.
+        val choice = buildFormChoiceClarification(formListContext)
+        if (choice != null) {
+          clarification = ClarificationRequest(listOf(choice))
+          logger.info("[AICodBiAssistant] AI could not match a form; asking the user to choose")
+        }
+        break
+      }
+      if (check.needsHistory) {
+        val targetKey = check.historyFormKey?.trim()?.takeIf { it.isNotEmpty() } ?: formKey
+        if (targetKey.isNullOrBlank()) {
+          logger.warn("[AICodBiAssistant] AI requested history but no form key is available")
+          break
+        }
+        if (historyLoadedFormKeys.add(targetKey)) {
+          val loaded = loadChangeHistoryContext(targetKey)
+          logger.info(
+              "[AICodBiAssistant] AI requested change history of form {}; loaded {} chars",
+              targetKey,
+              loaded?.length ?: 0)
+          changeHistoryContext =
+              if (changeHistoryContext.isNullOrBlank()) loaded
+              else changeHistoryContext + "\n" + (loaded ?: "")
+          continue
+        }
+      }
+      clarification = check.questions
+      break
+    }
     if (clarification != null) {
       logger.info(
           "[AICodBiAssistant] AI requested clarification with {} question(s)",
@@ -498,7 +565,14 @@ class AICodBiAssistant : IPluginServletAction {
       val (formJson, applicabilityReport, formTokenUsage) =
           try {
             runFormModification(
-                prompt, persistJson, modelId, instance, imageParts, useCodbi, clarificationContext)
+                prompt,
+                persistJson,
+                modelId,
+                instance,
+                imageParts,
+                useCodbi,
+                clarificationContext,
+                changeHistoryContext)
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
             return jsonResponse("""{"error":${gson.toJson("Form AI error: ${e.message}")}}""")
@@ -514,6 +588,13 @@ class AICodBiAssistant : IPluginServletAction {
       val formParsed = runCatching { JsonParser.parseString(formJson) }.getOrNull()
       if (formParsed?.isJsonObject == true && formParsed.asJsonObject.has("error")) {
         return jsonResponse(formJson)
+      }
+      // If the AI answered with prose instead of form JSON, stop with a clean error instead of
+      // embedding the prose into the response (which the frontend would then fail to parse).
+      if (formParsed == null) {
+        logger.warn("[AICodBiAssistant] Form AI returned non-JSON; aborting run")
+        return jsonResponse(
+            """{"error":${gson.toJson("The AI did not return a valid form JSON: ${formJson.take(300)}")}}""")
       }
       // Auto-resolve appointment plan names to UUIDs for XAppointment elements.
       resolvedFormJson = resolveAppointmentPlans(formJson)
@@ -569,7 +650,8 @@ class AICodBiAssistant : IPluginServletAction {
                     params,
                     instance,
                     imageParts,
-                    clarificationContext)
+                    clarificationContext,
+                    changeHistoryContext)
             workflowNodes = nodes
             tokensIn += workflowTokenUsage.input
             tokensOut += workflowTokenUsage.output
@@ -712,7 +794,8 @@ class AICodBiAssistant : IPluginServletAction {
       instance: Standard,
       imageParts: List<String> = emptyList(),
       useCodbi: Boolean = true,
-      clarificationContext: String? = null
+      clarificationContext: String? = null,
+      changeHistoryContext: String? = null
   ): Triple<String, String?, TokenUsage> {
     // Rough token estimate for this run (input = prompts, output = completions), returned to the
     // frontend so the assistant can show the last inference and the current session total.
@@ -736,10 +819,30 @@ class AICodBiAssistant : IPluginServletAction {
         } else baseSystemPrompt
     // Inject the clarifying questions/answers the user already gave (multi-round clarification),
     // so the form AI treats them as authoritative context instead of asking again.
-    val effectiveSystemPrompt =
-        if (clarificationContext.isNullOrBlank()) systemPrompt
-        else
-            "$systemPrompt\n\n## USER CLARIFICATION (authoritative answers the user already gave — use them as context)\n\n$clarificationContext"
+    var effectiveSystemPrompt = systemPrompt
+    if (!clarificationContext.isNullOrBlank()) {
+      effectiveSystemPrompt +=
+          "\n\n## USER CLARIFICATION (authoritative answers the user already gave — use them as context)\n\n$clarificationContext"
+    }
+    // When the user's request refers to earlier AI runs (on this form or another), the change log
+    // is delivered as raw JSON together with a schema description. The AI interprets the entries
+    // itself — prompts can reference history in countless ways (time, username, form title, or
+    // combined with fresh instructions), so the backend does not try to decode them in advance.
+    if (!changeHistoryContext.isNullOrBlank()) {
+      effectiveSystemPrompt +=
+          "\n\n## PRIOR CHANGE HISTORY (JSON — interpret it using the schema below)\n\n" +
+              "The user's request refers to earlier AI runs. Below is the raw change log of the " +
+              "relevant form as a JSON array; each entry describes ONE earlier AI run.\n\n" +
+              "CHANGE LOG SCHEMA — what each property means:\n" +
+              CHANGE_LOG_SCHEMA +
+              "\n\n" +
+              "CHANGE LOG:\n" +
+              changeHistoryContext +
+              "\n\nIdentify the entries the user is referring to (match by prompt text, timestamp " +
+              "\"ts\", username, or the listed form/workflow changes) and APPLY the same changes to " +
+              "the CURRENT form, adapting names as needed. Do NOT ask the user which changes were " +
+              "requested — the change log is authoritative."
+    }
     val imageHint =
         if (imageParts.isNotEmpty()) {
           val n = imageParts.size
@@ -3671,7 +3774,8 @@ class AICodBiAssistant : IPluginServletAction {
       params: IPluginServletActionParams,
       instance: Standard,
       imageParts: List<String> = emptyList(),
-      clarificationContext: String? = null
+      clarificationContext: String? = null,
+      changeHistoryContext: String? = null
   ): Triple<String, JsonArray, TokenUsage> {
     val userContext = getUserContext(params)
     var tokensIn = 0
@@ -3898,7 +4002,8 @@ class AICodBiAssistant : IPluginServletAction {
             existingWorkflowNodes,
             requestedNodes,
             requestedTriggers,
-            clarificationContext)
+            clarificationContext,
+            changeHistoryContext)
 
     var messagesJson = buildString {
       append("[")
@@ -3933,7 +4038,8 @@ class AICodBiAssistant : IPluginServletAction {
               existingWorkflowNodes,
               requestedNodes,
               requestedTriggers,
-              clarificationContext)
+              clarificationContext,
+              changeHistoryContext)
       messagesJson = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -3949,6 +4055,32 @@ class AICodBiAssistant : IPluginServletAction {
 
     // Replace symbolic "$ROOT" breakTarget with a safe UUID placeholder before JSON parsing
     val safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
+
+    // When the AI answered with prose instead of a JSON workflow spec (e.g. it is unsure what to
+    // change because it has no context), surface a readable message instead of a
+    // MalformedJsonException.
+    val trimmedCleaned = safeCleaned.trim()
+    if (!trimmedCleaned.startsWith("{") && !trimmedCleaned.startsWith("[")) {
+      throw Exception("The AI did not return a workflow specification: " + trimmedCleaned.take(300))
+    }
+
+    // When the AI responds with an explicit error/refusal object (e.g. "Unable to repeat the last
+    // changes because no previous changes were provided"), surface that message instead of turning
+    // the empty object into a fabricated default workflow task.
+    val aiWorkflowError =
+        runCatching {
+              val probe = JsonParser.parseString(safeCleaned)
+              if (probe.isJsonObject) {
+                val o = probe.asJsonObject
+                o.get("error")?.takeIf { it.isJsonPrimitive }?.asString
+              } else {
+                null
+              }
+            }
+            .getOrNull()
+    if (!aiWorkflowError.isNullOrBlank()) {
+      throw Exception("AI could not create the workflow: $aiWorkflowError")
+    }
 
     // Parse the AI response into workflow task specs. The AI may return:
     //   - a bare task object,
@@ -3972,7 +4104,30 @@ class AICodBiAssistant : IPluginServletAction {
                   if (tasksArray != null) {
                     gson.fromJson(tasksArray, Array<WorkflowTaskSpec>::class.java).toList()
                   } else {
-                    listOf(gson.fromJson(safeCleaned, WorkflowTaskSpec::class.java))
+                    // A bare object is only treated as a task spec when it actually describes one
+                    // (nodeType/triggerType/taskName/...). An object without any workflow content
+                    // (e.g. the AI echoing the form, or deciding no workflow change is needed) must
+                    // NOT be turned into a fabricated default FC_EMAIL task.
+                    val workflowFields =
+                        listOf(
+                            "nodeType",
+                            "nodeParams",
+                            "triggerType",
+                            "triggerParams",
+                            "taskName",
+                            "taskDescription",
+                            "operation",
+                            "targetNodeId",
+                            "chainedNodes",
+                            "endpointState",
+                            "endpointType",
+                            "stateProperties")
+                    val describesTask = workflowFields.any { obj.has(it) }
+                    if (!describesTask) {
+                      emptyList()
+                    } else {
+                      listOf(gson.fromJson(safeCleaned, WorkflowTaskSpec::class.java))
+                    }
                   }
                 }
                 else -> emptyList()
@@ -4109,7 +4264,8 @@ class AICodBiAssistant : IPluginServletAction {
       existingWorkflowNodes: String? = null,
       requestedNodes: List<String> = emptyList(),
       requestedTriggers: List<String> = emptyList(),
-      clarificationContext: String? = null
+      clarificationContext: String? = null,
+      changeHistoryContext: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return FALLBACK_WORKFLOW_PROMPT
@@ -4226,6 +4382,21 @@ class AICodBiAssistant : IPluginServletAction {
               "\nUSER CLARIFICATION (authoritative answers the user already gave — use them as context):\n" +
                   clarificationContext +
                   "\n\n")
+        }
+        if (!changeHistoryContext.isNullOrBlank()) {
+          append(
+              "\nPRIOR CHANGE HISTORY (JSON — interpret it using the schema below)\n" +
+                  "The user's request refers to earlier AI runs. The change log below is a JSON " +
+                  "array; each entry describes ONE earlier AI run.\n\n" +
+                  "CHANGE LOG SCHEMA — what each property means:\n" +
+                  CHANGE_LOG_SCHEMA +
+                  "\n\n" +
+                  "CHANGE LOG:\n" +
+                  changeHistoryContext +
+                  "\n\nIdentify the entries the user is referring to (match by prompt text, " +
+                  "timestamp \"ts\", username, or the listed form/workflow changes) and APPLY the " +
+                  "same changes to the CURRENT form, adapting names as needed. Do NOT ask the user " +
+                  "which changes were requested — the change log is authoritative.\n\n")
         }
         append("Output ONLY valid JSON. No trailing commas. No comments.")
       }
@@ -8170,12 +8341,25 @@ class AICodBiAssistant : IPluginServletAction {
     return arr
   }
 
-  /** Builds the system prompt for the dedicated clarification check. */
+  /** Result of one clarification/history check round. */
+  private data class ClarificationCheck(
+      val questions: ClarificationRequest? = null,
+      val needsHistory: Boolean = false,
+      val needsFormList: Boolean = false,
+      /** Form key the AI asked to load the change history for (null/blank = the current form). */
+      val historyFormKey: String? = null
+  )
+
+  /** Builds the system prompt for the dedicated clarification/history check. */
   private fun buildClarificationSystemPrompt(
       prompt: String,
       intent: String,
       formElements: String?,
       clarificationContext: String,
+      changeHistoryContext: String?,
+      formListContext: String?,
+      currentFormKey: String?,
+      currentFormTitle: String?,
       useCodbi: Boolean
   ): String {
     val action =
@@ -8188,6 +8372,12 @@ class AICodBiAssistant : IPluginServletAction {
       append(
           "You are a FORMCYCLE assistant. You are about to $action for the user.\n" +
               "USER REQUEST: ${gson.toJson(prompt)}\n")
+      if (!currentFormKey.isNullOrBlank() || !currentFormTitle.isNullOrBlank()) {
+        append(
+            "\nCURRENTLY OPEN FORM: title=${gson.toJson(currentFormTitle ?: "")}, " +
+                "key=${gson.toJson(currentFormKey ?: "")} — this is the form the user is editing " +
+                "right now. When the user names a DIFFERENT form by its title, treat it as another form.\n")
+      }
       if (!formElements.isNullOrBlank()) {
         append("\nFORM ELEMENTS available: $formElements\n")
       }
@@ -8197,8 +8387,50 @@ class AICodBiAssistant : IPluginServletAction {
                 clarificationContext +
                 "\n")
       }
+      if (!changeHistoryContext.isNullOrBlank()) {
+        append(
+            "\nPRIOR CHANGE HISTORY (JSON — interpret it using the schema below)\n" +
+                "The change log below is a JSON array of earlier AI runs; each entry describes ONE " +
+                "earlier run.\n\n" +
+                "CHANGE LOG SCHEMA — what each property means:\n" +
+                CHANGE_LOG_SCHEMA +
+                "\n\n" +
+                "CHANGE LOG:\n" +
+                changeHistoryContext +
+                "\n\nIdentify the entry/entries the user's request refers to and determine whether " +
+                "you still need information from the user.\n")
+      }
+      if (!formListContext.isNullOrBlank()) {
+        append(
+            "\nAVAILABLE FORMS ON THE SERVER (each entry has \"id\", \"key\" = the technical " +
+                "identifier to pass in need_chat_history, \"name\"/\"title\" = the form's TITLE as " +
+                "users refer to it, and \"current\": true marks the form being edited right now):\n" +
+                formListContext +
+                "\n" +
+                "You now HAVE the form list — never respond {\"status\":\"need_form_list\"} again. " +
+                "Pick the form whose title best matches the user's request and respond ONLY with " +
+                "{\"status\":\"need_chat_history\",\"formKey\":\"<that form's key>\"} — or, if no " +
+                "form reasonably matches, ask the user which form they meant via need_clarification.\n")
+      }
       append(
-          "\nDecide whether you still need information from the user before you can carry out the request correctly.\n" +
+          "\nThe change history is NOT shown by default. If the user's request refers to earlier AI " +
+              "runs / prior work on THIS form (e.g. \"apply the same functionalities as a week ago\", " +
+              "\"like before\", \"what was configured earlier\", \"what another user prompted\"), fetch " +
+              "it first: respond ONLY with {\"status\":\"need_chat_history\"} (current form) or " +
+              "{\"status\":\"need_chat_history\",\"formKey\":\"<key>\"} (another form).\n" +
+              "If the user's request refers to actions on ANOTHER form (any title that is NOT the " +
+              "currently open form, e.g. \"do the same as on form 'Rechnung'\" or \"like on the " +
+              "contact form\"), you MUST first fetch the list of all forms: respond ONLY with " +
+              "{\"status\":\"need_form_list\"}.\n" +
+              "After you receive the form list, pick the form whose TITLE (the \"name\" field) best " +
+              "matches what the user described — users refer to forms by their TITLE, never by id or " +
+              "key. The match need NOT be exact; use your judgment for the most reasonable one. Then " +
+              "fetch its change history: respond ONLY with {\"status\":\"need_chat_history\",\"formKey\":\"<key>\"}.\n" +
+              "If NO form in the list reasonably matches, ask the user which form they meant via " +
+              "need_clarification and list the most plausible candidates BY TITLE as options.\n" +
+              "If the form list is not provided after you request it, ask the user which form they " +
+              "mean instead of repeating the request.\n" +
+              "After you have the history, decide whether you still need information from the user.\n" +
               "Ask ONLY when a detail is genuinely missing and you cannot determine it yourself.\n" +
               "If you need clarification, respond ONLY with this JSON (nothing else):\n" +
               "{\"status\":\"need_clarification\",\"questions\":[" +
@@ -8230,9 +8462,186 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  /** Parses a `need_chat_history` response into (wanted, optional form key for another form). */
+  private fun parseHistoryRequest(cleaned: String): Pair<Boolean, String?> {
+    return try {
+      val obj = JsonParser.parseString(cleaned).asJsonObject
+      val status = obj.get("status")?.asString
+      val formKey = obj.get("formKey")?.takeIf { it.isJsonPrimitive }?.asString
+      Pair(status == "need_chat_history", formKey)
+    } catch (_: Exception) {
+      Pair(false, null)
+    }
+  }
+
+  private fun isNeedFormListRequest(cleaned: String): Boolean {
+    return try {
+      JsonParser.parseString(cleaned).asJsonObject.get("status")?.asString == "need_form_list"
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  /** Loads the prior change history for the given form for AI context injection. */
+  private fun loadChangeHistoryContext(formKey: String?): String? {
+    if (formKey.isNullOrBlank()) return null
+    return AiAssistantLog.loadChangeHistoryForAi(CodbiEntities.entityManagerFactory, formKey)
+  }
+
+  /** Loads the list of all forms (projects) on the server as JSON for AI context injection. */
+  private fun loadFormListContext(userContext: Any, formKey: String?): String? =
+      fetchAllForms(userContext, formKey)
+
   /**
-   * Makes a dedicated AI call asking whether it needs more information from the user. Returns the
-   * parsed [ClarificationRequest] when the AI asks questions, or null when it is ready to proceed.
+   * Builds a "which form did you mean?" clarification from the loaded form list, used as a safety
+   * net when the AI cannot match the form the user mentioned. Offers the forms by TITLE as
+   * multiple-choice options (free text still allowed).
+   */
+  private fun buildFormChoiceClarification(formListJson: String?): ClarificationQuestion? {
+    if (formListJson.isNullOrBlank()) return null
+    return try {
+      val arr = JsonParser.parseString(formListJson).asJsonArray
+      val options =
+          arr.mapNotNull { el ->
+            if (!el.isJsonObject) return@mapNotNull null
+            val name = el.asJsonObject.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+            name?.trim()?.takeIf { it.isNotBlank() }?.take(80)
+          }
+      if (options.isEmpty()) return null
+      ClarificationQuestion(
+          id = "form-choice",
+          question =
+              "Which form did you mean? The assistant could not clearly identify the form you " +
+                  "mentioned. Choose the form whose earlier changes should be applied here, or type " +
+                  "its name.",
+          options = options,
+          allowFreeText = true)
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  /**
+   * Resolves the TITLE of the currently open form (from its `project-<id>` key) so the AI can tell
+   * "this form" apart from other forms the user might name.
+   */
+  private fun resolveCurrentFormTitle(userContext: Any, formKey: String?): String? {
+    val id = formKey?.trim()?.removePrefix("project-")?.toLongOrNull() ?: return null
+    return try {
+      val entityContextFactoryClass = Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val entityContext =
+          entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
+      try {
+        val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+        val q =
+            em.javaClass
+                .getMethod("createQuery", String::class.java)
+                .invoke(em, "SELECT p FROM de.xima.fc.entities.Projekt p WHERE p.id = :pid")
+        q.javaClass
+            .getMethod("setParameter", String::class.java, Any::class.java)
+            .invoke(q, "pid", id)
+        @Suppress("UNCHECKED_CAST")
+        val rows = q.javaClass.getMethod("getResultList").invoke(q) as? List<*> ?: emptyList<Any>()
+        rows.firstOrNull()?.let { extractProjectName(it) }
+      } finally {
+        runCatching { entityContext.javaClass.getMethod("close").invoke(entityContext) }
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] resolveCurrentFormTitle failed: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Enumerates all FORMCYCLE forms (projects) of the current client via JPQL on the
+   * FormCycle-managed EntityManager, returning
+   * `[{"id":<id>,"key":"project-<id>","name":"<name>","current":bool}]`. The Hibernate mandant
+   * filter of the user's session scopes the query to the current client.
+   */
+  private fun fetchAllForms(userContext: Any, formKey: String? = null): String? {
+    return try {
+      val entityContextFactoryClass = Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val entityContext =
+          entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
+      try {
+        val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+        // Formcycle's project entity is the German "Projekt" (table PROJEKT), not "Project".
+        val jpql = "SELECT p FROM de.xima.fc.entities.Projekt p ORDER BY p.id"
+        val query = em.javaClass.getMethod("createQuery", String::class.java).invoke(em, jpql)
+        @Suppress("UNCHECKED_CAST")
+        val rows =
+            query.javaClass.getMethod("getResultList").invoke(query) as? List<*> ?: emptyList<Any>()
+        val arr = JsonArray()
+        for (row in rows) {
+          if (row == null) continue
+          try {
+            val idNumber = row.javaClass.getMethod("getId").invoke(row) as? Number ?: continue
+            val id = idNumber.toLong()
+            val title = extractProjectName(row) ?: "Form $id"
+            val o = JsonObject()
+            o.addProperty("id", id)
+            o.addProperty("key", "project-$id")
+            // "name" and "title" both carry the form's TITLE — users refer to forms by title.
+            o.addProperty("name", title)
+            o.addProperty("title", title)
+            o.addProperty("current", "project-$id" == formKey)
+            arr.add(o)
+          } catch (_: Exception) {
+            // skip unreadable row
+          }
+        }
+        logger.info("[AICodBiAssistant] fetchAllForms: found {} form(s)", arr.size())
+        if (arr.size() == 0) null else gson.toJson(arr)
+      } finally {
+        runCatching { entityContext.javaClass.getMethod("close").invoke(entityContext) }
+      }
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] fetchAllForms failed: msg='${e.message}' cause='${e.cause?.message}'")
+      null
+    }
+  }
+
+  /**
+   * Best-effort extraction of a project's human-readable TITLE via reflection. Formcycle's
+   * `Projekt` entity exposes the title as `getTitel()` (German) — the same value that appears as
+   * `XFC_METADATA.currentProject.title` in the designer — with `getName()` and the localized
+   * `getDisplayName(Locale)` as fallbacks.
+   */
+  private fun extractProjectName(project: Any): String? {
+    // 1) getTitel() — the form title users see in the designer (maps to XFC_METADATA.title).
+    for (getter in listOf("getTitel", "getName")) {
+      try {
+        val v = project.javaClass.getMethod(getter).invoke(project) as? String
+        if (!v.isNullOrBlank()) return v
+      } catch (_: Exception) {}
+    }
+    // 2) getDisplayName(Locale) — localized display name.
+    try {
+      val v =
+          project.javaClass
+              .getMethod("getDisplayName", java.util.Locale::class.java)
+              .invoke(project, java.util.Locale.getDefault()) as? String
+      if (!v.isNullOrBlank()) return v
+    } catch (_: Exception) {}
+    // 3) Fallback: any String-returning no-arg getter whose name contains "name"/"titel".
+    return project.javaClass.methods
+        .firstOrNull {
+          it.parameterCount == 0 &&
+              it.returnType == String::class.java &&
+              (it.name.contains("Name", ignoreCase = true) ||
+                  it.name.contains("Titel", ignoreCase = true))
+        }
+        ?.let { m -> runCatching { m.invoke(project) as? String }.getOrNull() }
+        ?.takeIf { it.isNotBlank() }
+  }
+
+  /**
+   * Makes a dedicated AI call asking whether it needs more information from the user and/or the
+   * prior change history. Returns questions when the AI asks, a [ClarificationCheck] with
+   * [ClarificationCheck.needsHistory] when it wants the change history, or null when it is ready.
    */
   private fun tryClarification(
       prompt: String,
@@ -8241,11 +8650,24 @@ class AICodBiAssistant : IPluginServletAction {
       intent: String,
       formElements: String?,
       clarificationContext: String,
+      changeHistoryContext: String?,
+      formListContext: String?,
+      formKey: String?,
+      currentFormTitle: String?,
       useCodbi: Boolean,
       imageParts: List<String>
-  ): ClarificationRequest? {
+  ): ClarificationCheck? {
     val system =
-        buildClarificationSystemPrompt(prompt, intent, formElements, clarificationContext, useCodbi)
+        buildClarificationSystemPrompt(
+            prompt,
+            intent,
+            formElements,
+            clarificationContext,
+            changeHistoryContext,
+            formListContext,
+            formKey,
+            currentFormTitle,
+            useCodbi)
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(system)}},""")
@@ -8256,7 +8678,12 @@ class AICodBiAssistant : IPluginServletAction {
     val cleaned = extractJson(stripThinkTags(raw)).trim()
     logger.info("[AICodBiAssistant] Clarification check response: {}", cleaned)
     if (cleaned.isBlank() || cleaned.equals("NO_CLARIFICATION", ignoreCase = true)) return null
-    return parseClarificationRequest(cleaned)
+    if (isNeedFormListRequest(cleaned)) return ClarificationCheck(needsFormList = true)
+    val (wantsHistory, historyFormKey) = parseHistoryRequest(cleaned)
+    if (wantsHistory) {
+      return ClarificationCheck(needsHistory = true, historyFormKey = historyFormKey)
+    }
+    return ClarificationCheck(questions = parseClarificationRequest(cleaned))
   }
 
   // endregion Clarification
@@ -8270,6 +8697,38 @@ class AICodBiAssistant : IPluginServletAction {
      * result.
      */
     private const val MAX_FORM_RERUNS = 2
+
+    /**
+     * Describes the structure of the change log that is delivered to the AI as JSON (see
+     * [AiAssistantLog.loadChangeHistoryForAi]). Each array entry represents ONE earlier AI run. The
+     * AI uses this schema to decode the change log whenever the user's prompt refers to earlier
+     * work (e.g. "apply the same changes as a week ago", "what salva made on form XY"). Prompts can
+     * reference history in countless ways, so the AI decides which entries apply — the backend does
+     * not pre-resolve them.
+     */
+    private val CHANGE_LOG_SCHEMA =
+        """
+        "ts"        - ISO timestamp of when the earlier run happened (match "yesterday", "20:49", "last week", ...)
+        "username"  - the user who triggered that run (match a named user, or "I" = the current user)
+        "intent"    - "form" | "workflow" | "both" — what that run changed
+        "modelId"   - the AI model used (informational)
+        "prompt"    - the ORIGINAL natural-language request the user typed for that run; the most
+                      important field to understand what was done
+        "form"      - object describing the form changes of that run:
+            "widgetsCreated" - [ { "name", "className" } ] widgets added to the form
+            "widgetsRemoved" - [ { "name", "className" } ] widgets removed
+            "classesSet"     - [ { "widget", "className", "classes": [...] } ] CSS classes (e.g.
+                               CodBi_*) added to widgets
+            "attributesSet"  - [ { "widget", "className", "attributes": [ { "name", "value",
+                               "kind" (attr|func|param), "codbi" (bool), "params": [...] } ] } ]
+                               properties/functions set on widgets ("kind":"func" = a data-cb-func
+                               functionality; "kind":"param" = a data-cb-* parameter of it)
+        "workflow"  - array describing the workflow changes of that run (e.g. nodes created, their
+                      type and parameters)
+        "clarification" - array of { "question", "answer" } turns if the user was asked and
+                          answered clarifying questions during that run
+        """
+            .trimIndent()
 
     private const val FALLBACK_FORM_SYSTEM_PROMPT =
         "You are a FORMCYCLE form structure assistant. " +

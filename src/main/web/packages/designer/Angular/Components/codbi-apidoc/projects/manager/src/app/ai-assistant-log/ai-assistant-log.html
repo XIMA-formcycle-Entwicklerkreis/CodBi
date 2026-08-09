@@ -64,11 +64,6 @@
             (onClick)="exportLog()"
             [disabled]="loading || logs.length === 0"
             title="Export the change-log entries as JSON" />
-        @if (currentFormKey) {
-            <span class="cb-log-form" title="Showing the change log of this form only">
-                <i class="pi pi-file"></i>&nbsp;{{ currentFormKey }}
-            </span>
-        }
     </div>
 
     <div class="cb-log-summary">

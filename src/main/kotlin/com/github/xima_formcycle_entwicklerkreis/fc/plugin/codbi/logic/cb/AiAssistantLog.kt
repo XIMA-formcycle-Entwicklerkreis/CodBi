@@ -345,6 +345,81 @@ object AiAssistantLog {
   }
 
   /**
+   * Loads the recent change-log entries of the given form (across ALL users) as a compact JSON
+   * array for AI context injection. Used only when the AI explicitly asks for the change history
+   * because the user's request refers to earlier work (e.g. "apply the same as last week").
+   */
+  fun loadChangeHistoryForAi(
+      emf: EntityManagerFactory?,
+      formKey: String?,
+      limit: Int = 20
+  ): String? {
+    // Only the entries of the current form are loaded. The frontend always resolves a non-empty
+    // form key (from XFC_METADATA.currentProject.id), so a blank key means "no form context" and
+    // the history is intentionally not returned (never fall back to other forms' entries).
+    if (emf == null || formKey.isNullOrBlank()) return null
+    return try {
+      val em = emf.createEntityManager()
+      try {
+        val q =
+            em.createQuery(
+                "SELECT l FROM CodbiAiAssistantLog l WHERE l.formKey = :formKey ORDER BY l.id DESC",
+                CodbiAiAssistantLog::class.java)
+        q.setParameter("formKey", formKey.trim())
+        q.maxResults = limit.coerceIn(1, 100)
+        val rows = q.resultList as List<CodbiAiAssistantLog>
+        if (rows.isEmpty()) return null
+        // Deliver the change log as JSON — the AI interprets it itself, guided by a schema
+        // description that is injected alongside it
+        // (ts/username/prompt/form/workflow/clarification).
+        val arr = JsonArray()
+        for (entry in rows) {
+          val o = JsonObject()
+          o.addProperty("ts", entry.ts?.toString() ?: "")
+          o.addProperty("username", entry.username ?: "")
+          o.addProperty("intent", entry.intent ?: "")
+          o.addProperty("modelId", entry.modelId ?: "")
+          o.addProperty("prompt", (entry.prompt ?: "").take(600))
+          entry.formChanges
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                try {
+                  o.add("form", JsonParser.parseString(text))
+                } catch (_: Exception) {
+                  o.addProperty("form", text.take(800))
+                }
+              }
+          entry.workflowChanges
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                try {
+                  o.add("workflow", JsonParser.parseString(text))
+                } catch (_: Exception) {
+                  o.addProperty("workflow", text.take(800))
+                }
+              }
+          entry.clarification
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                try {
+                  o.add("clarification", JsonParser.parseString(text))
+                } catch (_: Exception) {
+                  o.addProperty("clarification", text.take(400))
+                }
+              }
+          arr.add(o)
+        }
+        gson.toJson(arr)
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to load change history for AI: {}", e.message)
+      null
+    }
+  }
+
+  /**
    * Best-effort extraction of the form's technical name/key from a form persist JSON. Checks the
    * `metadata` object first (Formcycle stores the form identity there), then a few root-level
    * candidates. Returns `null` when nothing is found or the JSON cannot be parsed.

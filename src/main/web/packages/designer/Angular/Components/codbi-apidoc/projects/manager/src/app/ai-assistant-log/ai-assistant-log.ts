@@ -673,10 +673,9 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       const q = String(turn["question"] ?? "");
       const a = String(turn["answer"] ?? "");
       const attachment = turn["attachmentName"] ? String(turn["attachmentName"]) : "";
-      const turnChildren: LogNode[] = [
-        { id: `${baseId}-q`, kind: "param-item", label: "Question", value: q },
-        { id: `${baseId}-a`, kind: "param-item", label: "Answer", value: a },
-      ];
+      // The question is already shown in the parent node's label (`Q{n}: <question>`), so it is
+      // NOT repeated as a separate child — only the answer (and an optional attachment) go below.
+      const turnChildren: LogNode[] = [{ id: `${baseId}-a`, kind: "param-item", label: "Answer", value: a }];
       if (attachment) {
         turnChildren.push({
           id: `${baseId}-attachment`,

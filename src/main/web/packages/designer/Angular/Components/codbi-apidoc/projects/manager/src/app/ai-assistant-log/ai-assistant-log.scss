@@ -131,23 +131,6 @@ cb-ai-assistant-log {
     background-color: rgba(0, 0, 0, 0.14);
 }
 
-.cb-log-form {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.8em;
-    font-weight: 600;
-    color: #1565c0;
-    background: #e3f2fd;
-    border: 1px solid #bbdefb;
-    border-radius: 4px;
-    padding: 2px 8px;
-    max-width: 220px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 /* Own line below the toolbar holding the inference summary (count / tokens / cost). */
 .cb-log-summary {
     display: flex;

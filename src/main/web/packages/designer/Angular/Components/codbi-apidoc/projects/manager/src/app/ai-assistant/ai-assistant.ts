@@ -46,20 +46,6 @@ interface FormElement {
   actionPage?: string;
 }
 
-/** A snapshot of the designer state captured just before an AI change was applied. */
-interface IAiHistoryEntry {
-  /** ISO timestamp of when the AI was invoked. */
-  timestamp: string;
-  /** The user's prompt text. */
-  prompt: string;
-  /** The intent classified by phase 1. */
-  intent: "form" | "workflow" | "both";
-  /** Persist JSON captured before AI changes were applied (passed to loadPersistJson to restore). */
-  persistJson: unknown;
-  /** codbi-prop-standards CSV captured before AI changes were applied. */
-  standards: string;
-}
-
 /** One clarifying question the AI asks the user (multiple-choice + optional free text). */
 interface ClarificationQuestion {
   id: string;
@@ -157,10 +143,6 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** The full `codbi-prop-standards` CSV that the AI set on its most recent run.
    *  `null` means the AI has never run yet this session (first-run mode). */
   private prevAiStandards: string | null = null;
-  /** Snapshots taken before each AI change — drives the undo history panel. */
-  history: IAiHistoryEntry[] = [];
-  /** Whether the history/undo panel is currently expanded. */
-  showHistory = false;
   /** Whether the change-log side panel is unfolded to the right of the assistant content. */
   showLog = false;
   /** Width (px) of the unfolded change-log panel — adjustable via the draggable splitter. */
@@ -180,8 +162,6 @@ export class AiAssistant implements OnInit, OnDestroy {
   private readonly LOG_PANEL_WIDTH_KEY = "codbi-ai-log-panel-width";
   /** Whether the current user is allowed to sync the API-Documentation (Prompt Manager visibility). */
   syncAllowed = false;
-  private readonly HISTORY_KEY = "codbi-ai-undo-history";
-  private readonly MAX_HISTORY = 10;
   /** Cookie name for persisting the selected AI model across page reloads. */
   private readonly MODEL_COOKIE = "codbi-ai-selected-model";
   /** A log entry that used sensitive elements is auto-opened only if it is at most this old. */
@@ -441,7 +421,6 @@ export class AiAssistant implements OnInit, OnDestroy {
   // #region Lifecycle
   ngOnInit(): void {
     document.addEventListener("codbi:ai-assistant:open", this.openHandler);
-    this.loadHistory();
     this.checkSyncAllowed();
     this.loadLogPanelWidth();
     // Register the drag handle once. PrimeNG only emits (onShow) after the open animation, which is
@@ -614,7 +593,6 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.resultText = null;
     this.errorText = null;
     this.attachedFile = null;
-    this.showHistory = false;
 
     // First verify the CodBi prompt database is reachable. Without DB prompts there is no point
     // sending anything to the AI — show an error and disable the inputs (still visible).
@@ -692,110 +670,6 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
   // #endregion Open / close
-
-  // #region History (undo)
-  toggleHistory(): void {
-    this.showHistory = !this.showHistory;
-    this.cdr.markForCheck();
-  }
-
-  formatHistoryTime(isoString: string): string {
-    return new Date(isoString).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  }
-
-  private loadHistory(): void {
-    try {
-      const raw = sessionStorage.getItem(this.HISTORY_KEY);
-      this.history = raw ? (JSON.parse(raw) as IAiHistoryEntry[]) : [];
-    } catch {
-      this.history = [];
-    }
-  }
-
-  private saveHistory(): void {
-    try {
-      sessionStorage.setItem(this.HISTORY_KEY, JSON.stringify(this.history));
-    } catch {
-      // SessionStorage full or unavailable — history lives in memory only this session.
-    }
-  }
-
-  private addSnapshot(
-    prompt: string,
-    intent: "form" | "workflow" | "both",
-    persistJson: unknown,
-    standards: string,
-  ): void {
-    const entry: IAiHistoryEntry = { timestamp: new Date().toISOString(), prompt, intent, persistJson, standards };
-    this.history = [entry, ...this.history].slice(0, this.MAX_HISTORY);
-    this.saveHistory();
-  }
-
-  restoreSnapshot(entry: IAiHistoryEntry): void {
-    const designer = getDesignerInstance();
-    if (!designer) {
-      this.setError("Designer is not available.");
-      return;
-    }
-    try {
-      const d = designer as unknown as Record<string, unknown>;
-      if (typeof d["loadPersistJson"] === "function") {
-        (d["loadPersistJson"] as (...args: unknown[]) => void).call(designer, entry.persistJson);
-      } else if (typeof d["loadPersist"] === "function") {
-        (d["loadPersist"] as (...args: unknown[]) => void).call(
-          designer,
-          JSON.stringify(entry.persistJson),
-          "undo.json",
-          false,
-        );
-      } else {
-        throw new Error("Designer has no load method available.");
-      }
-      Callbacks["persist-changed"].fire();
-      // Restore standards
-      const cpd = (window as any).CodbiPluginData as typeof window.CodbiPluginData | undefined;
-      if (typeof cpd?.setStandardsValue === "function") {
-        cpd.setStandardsValue(entry.standards);
-      } else {
-        const jq = getJQuery();
-        const fakeEditor = {
-          config: { property: "codbi-prop-standards", base: jq(), id: "codbi-ai-undo-editor", designer },
-          className: "MultiSelect",
-          property: "codbi-prop-standards",
-          getPropertyType: () => "form",
-          getPropertyRow: () => jq(),
-          getPanelBox: () => jq(),
-          getEditorPanel: () => jq(),
-          getElement: () => jq(),
-          getValue: () => entry.standards,
-          setValue: () => undefined,
-          setValueTo: () => undefined,
-          hide: () => undefined,
-          show: () => undefined,
-        } as any;
-        Callbacks["set-property"].fire("codbi-prop-standards", entry.standards, fakeEditor);
-        // Also directly patch the cached persist model so save() serialises the value
-        // correctly even if the fake-editor callback is swallowed (e.g. panel closed).
-        {
-          const persist = designer.getPersist?.();
-          const lang = designer.getFormEditLanguage?.();
-          if (persist?.formI18n != null && lang != null) {
-            (persist.formI18n[lang] as Record<string, unknown>) ??= {};
-            (persist.formI18n[lang] as Record<string, unknown>)["codbi-prop-standards"] = entry.standards;
-          }
-        }
-        if (cpd) cpd.pendingStandards = entry.standards;
-      }
-      this.prevAiStandards = null;
-      this.showHistory = false;
-      this.resultText = `Restored to state from ${this.formatHistoryTime(entry.timestamp)}. Save the form to keep this change.`;
-      this.errorText = null;
-    } catch (err) {
-      this.setError(err instanceof Error ? err.message : "Failed to restore snapshot.");
-    }
-    this.cdr.markForCheck();
-  }
-  // #endregion History (undo)
 
   // #region Attachment
   triggerFileInput(): void {
@@ -1068,10 +942,28 @@ export class AiAssistant implements OnInit, OnDestroy {
     })();
   }
 
+  /** Ctrl+Enter in the clarification textarea submits the answers. */
+  onClarificationKeydown(event: Event): void {
+    const e = event as KeyboardEvent;
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      this.submitClarification();
+    }
+  }
+
   // #endregion Clarification popup
   // #endregion PDF.js helpers
 
   // #region Run (phase 1 + phase 2)
+  /** Ctrl+Enter in the prompt textarea submits the request. */
+  onPromptKeydown(event: Event): void {
+    const e = event as KeyboardEvent;
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      void this.run();
+    }
+  }
+
   async run(): Promise<void> {
     if (!this.dbAvailable) {
       this.setError("Database not available — AI prompts cannot be loaded.");
@@ -1371,26 +1263,6 @@ export class AiAssistant implements OnInit, OnDestroy {
 
         // Apply form changes if present
         if (hasFormJson) {
-          // Snapshot current state before applying so the user can undo.
-          const prePersist = designer?.getPersist?.() as unknown as Record<string, unknown> | undefined;
-          let snapPersist: unknown;
-          if (typeof prePersist?.["persist"] === "string") {
-            try {
-              snapPersist = JSON.parse(prePersist["persist"] as string);
-            } catch {
-              snapPersist = prePersist;
-            }
-          } else {
-            snapPersist = prePersist;
-          }
-          const snapContainer = document.getElementById("CodBi_Standardslisting");
-          const snapStandards = snapContainer
-            ? Array.from(snapContainer.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked"))
-                .map((cb) => cb.value)
-                .join(",")
-            : ((designer?.getFormPropertyValueForCurrentLang("codbi-prop-standards") as string) ?? "");
-          this.addSnapshot(prompt, intent, snapPersist, snapStandards);
-
           try {
             const d = designer as unknown as Record<string, unknown>;
             // Embed standards into the form JSON before loading so FORMCYCLE parses

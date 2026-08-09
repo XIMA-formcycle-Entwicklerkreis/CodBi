@@ -108,7 +108,23 @@ class AICodBiAssistant : IPluginServletAction {
     if (models.isEmpty()) {
       return jsonResponse("""{"error":"AI service not available"}""")
     }
-    return jsonResponse(gson.toJson(models))
+    // Include the configured price (per 1M input/output tokens + currency) for each model so the
+    // frontend can show it next to the model name in the assistant's model dropdown. Models
+    // without a configured price omit these fields.
+    val arr = JsonArray()
+    for (m in models) {
+      val o = JsonObject()
+      o.addProperty("id", m.id)
+      o.addProperty("label", m.label)
+      val price = Standard.instance?.priceForModel(m.id)
+      if (price != null) {
+        price.currency?.let { o.addProperty("currency", it) }
+        o.addProperty("pricePerMInput", price.pricePerMInput)
+        o.addProperty("pricePerMOutput", price.pricePerMOutput)
+      }
+      arr.add(o)
+    }
+    return jsonResponse(gson.toJson(arr))
   }
 
   /**
@@ -887,6 +903,22 @@ class AICodBiAssistant : IPluginServletAction {
         useCodbi: Boolean = true,
         rerunCount: Int = 0
     ): String {
+      // The change history (with its schema) must be carried into EVERY pass — pass-1 may only
+      // answer with a need_codbi_details meta-request, and the actual form modification happens in
+      // pass-2. Without it the model cannot know which changes to apply.
+      val historySection =
+          if (changeHistoryContext.isNullOrBlank()) ""
+          else
+              "\n\n## PRIOR CHANGE HISTORY (JSON — interpret it using the schema below)\n\n" +
+                  "CHANGE LOG SCHEMA — what each property means:\n" +
+                  CHANGE_LOG_SCHEMA +
+                  "\n\n" +
+                  "CHANGE LOG:\n" +
+                  changeHistoryContext +
+                  "\n\nThis change log IS the answer to the user's request — find the matching " +
+                  "entry (by prompt text, timestamp \"ts\", username, or the listed changes) and " +
+                  "APPLY its changes to the current form, adapting names as needed. Never say you " +
+                  "do not know which changes were requested."
       val pass1Obj =
           try {
             JsonParser.parseString(cleaned).asJsonObject
@@ -912,7 +944,7 @@ class AICodBiAssistant : IPluginServletAction {
         // Blind rethink pass: AI previously concluded nothing applies â€” ask it to reconsider.
         // Use the full compact API reference (including parameter names) so the AI can
         // generate correct data-cb-* parameter attributes instead of inventing names.
-        val rethinkSystemPrompt = loadCodbiRethinkPrompt()
+        val rethinkSystemPrompt = loadCodbiRethinkPrompt() + historySection
 
         logger.info(
             "[AICodBiAssistant] Blind rethink pass â€” sending {} item(s) with compact CodBi reference (system-only)",
@@ -1035,7 +1067,7 @@ class AICodBiAssistant : IPluginServletAction {
               }
             }
 
-        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgets, useCodbi)
+        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgets, useCodbi) + historySection
 
         val pass2UserContent =
             "Original user request: $prompt\n\n" +
@@ -1207,7 +1239,12 @@ class AICodBiAssistant : IPluginServletAction {
     return try {
       val parsed = JsonParser.parseString(sanitizedCleaned)
       warnUnknownClassNames(parsed)
-      val restored = restoreStrippedFields(sanitizedCleaned, persistJson)
+      // Sanitize the AI output before it reaches the designer: fold invented standalone buttons
+      // into an XButtonList and drop any item with an unknown className or missing id (such items
+      // would otherwise break the designer's persist patch and never render).
+      if (parsed.isJsonObject) sanitizeAiFormItems(parsed.asJsonObject)
+      val sanitizedFormJson = gson.toJson(parsed)
+      val restored = restoreStrippedFields(sanitizedFormJson, persistJson)
       // Log item names in the final form JSON to debug missing elements
       try {
         val root = JsonParser.parseString(restored).asJsonObject
@@ -1865,6 +1902,134 @@ class AICodBiAssistant : IPluginServletAction {
             "[AICodBiAssistant] AI used unknown className '{}' â€” item will not render correctly",
             className)
       }
+    }
+  }
+
+  /**
+   * Sanitizes the AI's final form JSON before it is returned to the designer:
+   * - Standalone button-like items (the AI invents classNames such as `BUTTON`) are folded into a
+   *   matching `XButtonList`'s "buttons" array, so the button actually renders and workflow
+   *   triggers (FC_FORM_SUBMIT_BUTTON) can reference it by name. Without this the item has no id
+   *   and no valid renderer, which breaks the designer's persist patch.
+   * - Any remaining item with an unknown className or a missing/blank id is dropped (the designer
+   *   would otherwise fail on it), and dangling references in container "elements" arrays are
+   *   cleaned up.
+   */
+  private fun sanitizeAiFormItems(root: JsonObject) {
+    val items = root.getAsJsonArray("items") ?: return
+    // 1) Fold standalone button-like items into XButtonLists.
+    val buttonLike = setOf("BUTTON", "BUTTONS", "XSUBMITBUTTON", "SUBMITBUTTON", "SUBMIT_BUTTON")
+    val listItems =
+        items.filter {
+          it.isJsonObject && it.asJsonObject.get("className")?.asString == "XButtonList"
+        }
+    val toRemove = mutableListOf<JsonElement>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val o = el.asJsonObject
+      val cls = o.get("className")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      if (cls.uppercase() !in buttonLike) continue
+      val props = o.getAsJsonObject("properties")
+      val name = props?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+      if (name.isNullOrBlank()) {
+        toRemove.add(o)
+        continue
+      }
+      val parentId = props?.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+      val list =
+          listItems.firstOrNull { l ->
+            val lp = l.asJsonObject.getAsJsonObject("properties")
+            val lName = lp?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+            val lParent = lp?.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+            lName != null && name.startsWith(lName) && parentId != null && lParent == parentId
+          }
+              ?: listItems.firstOrNull { l ->
+                val lName =
+                    l.asJsonObject
+                        .getAsJsonObject("properties")
+                        ?.get("name")
+                        ?.takeIf { it.isJsonPrimitive }
+                        ?.asString
+                lName != null && name.startsWith(lName)
+              }
+              ?: listItems.firstOrNull()
+      if (list == null) {
+        toRemove.add(o)
+        logger.warn(
+            "[AICodBiAssistant] Dropping standalone button '{}' â€” no XButtonList to fold it into",
+            name)
+        continue
+      }
+      val listProps = list.asJsonObject.getAsJsonObject("properties")
+      val value = props?.get("value")?.takeIf { it.isJsonPrimitive }?.asString
+      val buttons =
+          listProps.getAsJsonArray("buttons") ?: JsonArray().also { listProps.add("buttons", it) }
+      if (buttons.none { it.isJsonObject && it.asJsonObject.get("name")?.asString == name }) {
+        val btn = JsonObject()
+        btn.addProperty("name", name)
+        btn.addProperty("title", "")
+        btn.addProperty("value", value ?: name)
+        val action = JsonObject()
+        action.addProperty("customAction", "")
+        action.addProperty("customClassNames", "")
+        action.addProperty("displayName", value ?: name)
+        action.addProperty("optionId", "")
+        action.addProperty("check", false)
+        action.addProperty("page", "")
+        action.addProperty("value", value ?: name)
+        btn.add("action", action)
+        buttons.add(btn)
+        logger.info(
+            "[AICodBiAssistant] Folded standalone button '{}' into XButtonList '{}'",
+            name,
+            listProps.get("name")?.takeIf { it.isJsonPrimitive }?.asString)
+      }
+      toRemove.add(o)
+    }
+    for (el in toRemove) items.remove(el)
+
+    // 2) Drop any remaining item with an unknown className or a missing/blank id.
+    val invalid = mutableListOf<JsonElement>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val o = el.asJsonObject
+      val cls = o.get("className")?.takeIf { it.isJsonPrimitive }?.asString
+      if (cls.isNullOrBlank() || cls !in KNOWN_CLASS_NAMES) {
+        invalid.add(o)
+        logger.warn("[AICodBiAssistant] Dropping item with unknown className '{}'", cls)
+        continue
+      }
+      val id = o.getAsJsonObject("properties")?.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+      if (id.isNullOrBlank()) {
+        invalid.add(o)
+        logger.warn(
+            "[AICodBiAssistant] Dropping item '{}' with missing id",
+            o.getAsJsonObject("properties")?.get("name")?.takeIf { it.isJsonPrimitive }?.asString)
+      }
+    }
+    for (el in invalid) items.remove(el)
+
+    // 3) Remove dangling references to dropped items from container "elements" arrays.
+    val names =
+        items
+            .mapNotNull {
+              it.takeIf { e -> e.isJsonObject }
+                  ?.asJsonObject
+                  ?.getAsJsonObject("properties")
+                  ?.get("name")
+                  ?.takeIf { p -> p.isJsonPrimitive }
+                  ?.asString
+            }
+            .toSet()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val elements = props.getAsJsonArray("elements") ?: continue
+      val clean = JsonArray()
+      for (e in elements) {
+        if (e.isJsonPrimitive && e.asString in names) clean.add(e)
+      }
+      props.add("elements", clean)
     }
   }
 
@@ -8100,6 +8265,7 @@ class AICodBiAssistant : IPluginServletAction {
           }
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
+              WIDGET_STRUCTURE_RULES +
               (fc["formcycle.general"] ?: "") +
               "\n" +
               "{{FORMCYCLE_WIDGETS_SECTION}}" +
@@ -8205,7 +8371,7 @@ class AICodBiAssistant : IPluginServletAction {
             // Pure blind reconsideration: provide the complete reference.
             else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
           }
-      return base + "\n\n" + codbiPart + "\n\n" + widgetPart
+      return WIDGET_STRUCTURE_RULES + "\n" + base + "\n\n" + codbiPart + "\n\n" + widgetPart
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load apply prompt", e)
       return FALLBACK_APPLY_PROMPT
@@ -8412,13 +8578,21 @@ class AICodBiAssistant : IPluginServletAction {
                 "{\"status\":\"need_chat_history\",\"formKey\":\"<that form's key>\"} — or, if no " +
                 "form reasonably matches, ask the user which form they meant via need_clarification.\n")
       }
+      if (changeHistoryContext.isNullOrBlank()) {
+        append(
+            "\nThe change history is NOT shown by default. If the user's request refers to earlier AI " +
+                "runs / prior work on THIS form (e.g. \"apply the same functionalities as a week ago\", " +
+                "\"like before\", \"what was configured earlier\", \"what another user prompted\"), fetch " +
+                "it first: respond ONLY with {\"status\":\"need_chat_history\"} (current form) or " +
+                "{\"status\":\"need_chat_history\",\"formKey\":\"<key>\"} (another form).\n")
+      } else {
+        append(
+            "\nYou ALREADY have the PRIOR CHANGE HISTORY above (with the schema). Do NOT request " +
+                "the change history again — interpret it and decide whether you still need " +
+                "information from the user.\n")
+      }
       append(
-          "\nThe change history is NOT shown by default. If the user's request refers to earlier AI " +
-              "runs / prior work on THIS form (e.g. \"apply the same functionalities as a week ago\", " +
-              "\"like before\", \"what was configured earlier\", \"what another user prompted\"), fetch " +
-              "it first: respond ONLY with {\"status\":\"need_chat_history\"} (current form) or " +
-              "{\"status\":\"need_chat_history\",\"formKey\":\"<key>\"} (another form).\n" +
-              "If the user's request refers to actions on ANOTHER form (any title that is NOT the " +
+          "If the user's request refers to actions on ANOTHER form (any title that is NOT the " +
               "currently open form, e.g. \"do the same as on form 'Rechnung'\" or \"like on the " +
               "contact form\"), you MUST first fetch the list of all forms: respond ONLY with " +
               "{\"status\":\"need_form_list\"}.\n" +
@@ -8697,6 +8871,22 @@ class AICodBiAssistant : IPluginServletAction {
      * result.
      */
     private const val MAX_FORM_RERUNS = 2
+
+    /**
+     * Hard rules injected into the form AI prompts so the model does not invent Formcycle widget
+     * classNames (e.g. a standalone "BUTTON"). The server only accepts the X-* classes listed in
+     * the Formcycle widget reference, so the model must never guess one.
+     */
+    private val WIDGET_STRUCTURE_RULES =
+        "\nWIDGET STRUCTURE RULES:\n" +
+            "- Only the widget classNames listed in the Formcycle widget reference below are valid " +
+            "(they all start with 'X', e.g. XButtonList, XTextField, XSelect, XPage). NEVER invent a " +
+            "className — there is NO standalone 'BUTTON' widget class.\n" +
+            "- Buttons (submit, back, next) are NOT standalone widgets: define each button as an entry " +
+            "inside an XButtonList item's 'buttons' array (name, title, value, action). A workflow " +
+            "submit trigger (FC_FORM_SUBMIT_BUTTON) references that button by its 'name'.\n" +
+            "- Every created widget MUST have a unique 'id' (e.g. 'xi-...') and a className from the " +
+            "reference list.\n\n"
 
     /**
      * Describes the structure of the change log that is delivered to the AI as JSON (see

@@ -40,6 +40,12 @@ internal class ExternalAiClient(
 
     /** Delay before a single retry on transient network failures. */
     private const val RETRY_DELAY_MS = 1_000L
+
+    /** Number of retries (in addition to the first attempt) for HTTP 429 rate limits. */
+    private const val RATE_LIMIT_RETRIES = 2
+
+    /** Base backoff for 429 retries — grows linearly (3 s, then 6 s). */
+    private const val RATE_LIMIT_BACKOFF_MS = 3_000L
   }
 
   /**
@@ -166,20 +172,35 @@ internal class ExternalAiClient(
   private fun resolveUrl(endpoint: String): String = "$baseUrl$endpoint"
 
   /**
-   * Retries [action] once after a 1-second delay when it fails with a transient network exception
-   * ([ConnectException] or [SocketTimeoutException]).
+   * Retries [action] on transient failures:
+   * - a single 1-second retry for network errors ([ConnectException], [SocketTimeoutException]);
+   * - a few retries with increasing backoff for HTTP 429 rate limits from the external provider
+   *   (bounded, so the request never hangs forever — after the retries are exhausted the 429 is
+   *   rethrown and surfaced to the caller).
    */
   private fun <T> retryOnTransientFailure(action: () -> T): T {
-    return try {
-      action()
-    } catch (e: ConnectException) {
-      log(LogLevel.WARNING, "Connection refused, retrying in 1 s: ${e.message}")
-      Thread.sleep(RETRY_DELAY_MS)
-      action()
-    } catch (e: SocketTimeoutException) {
-      log(LogLevel.WARNING, "Connection timed out, retrying in 1 s: ${e.message}")
-      Thread.sleep(RETRY_DELAY_MS)
-      action()
+    var rateLimitAttempts = 0
+    while (true) {
+      try {
+        return action()
+      } catch (e: ConnectException) {
+        log(LogLevel.WARNING, "Connection refused, retrying in 1 s: ${e.message}")
+        Thread.sleep(RETRY_DELAY_MS)
+        return action()
+      } catch (e: SocketTimeoutException) {
+        log(LogLevel.WARNING, "Connection timed out, retrying in 1 s: ${e.message}")
+        Thread.sleep(RETRY_DELAY_MS)
+        return action()
+      } catch (e: ExternalAiHttpException) {
+        if (e.httpStatus == 429 && rateLimitAttempts < RATE_LIMIT_RETRIES) {
+          rateLimitAttempts++
+          val wait = RATE_LIMIT_BACKOFF_MS * rateLimitAttempts
+          log(LogLevel.WARNING, "External AI rate limited (HTTP 429), retrying in ${wait / 1000} s")
+          Thread.sleep(wait)
+          continue
+        }
+        throw e
+      }
     }
   }
 

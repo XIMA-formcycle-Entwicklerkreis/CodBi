@@ -10,6 +10,7 @@
     header="AI Form Assistant"
     [closeOnEscape]="true"
     [baseZIndex]="2000"
+    maskStyleClass="cb-ai-assistant-mask"
     styleClass="cb-ai-assistant-dialog">
 
     <div class="cb-ai-content" #contentContainer>
@@ -27,7 +28,32 @@
                         panelStyleClass="cb-ai-model-select-panel"
                         placeholder="Select a model"
                         [disabled]="loading || !dbAvailable"
-                        fluid />
+                        fluid>
+                        <ng-template #selectedItem let-model>
+                            <div class="cb-ai-model-option">
+                                <span class="cb-ai-model-option__name">{{ model.label }}</span>
+                                @if (model.currency && model.pricePerMInput != null && model.pricePerMOutput != null) {
+                                    <span
+                                        class="cb-ai-model-badge"
+                                        title="{{ model.currency }} {{ formatModelPrice(model.pricePerMInput) }} / {{ formatModelPrice(model.pricePerMOutput) }} per 1M tokens (input / output)">
+                                        {{ model.currency }} {{ formatModelPrice(model.pricePerMInput) }} / {{ formatModelPrice(model.pricePerMOutput) }}
+                                    </span>
+                                }
+                            </div>
+                        </ng-template>
+                        <ng-template #item let-model>
+                            <div class="cb-ai-model-option">
+                                <span class="cb-ai-model-option__name">{{ model.label }}</span>
+                                @if (model.currency && model.pricePerMInput != null && model.pricePerMOutput != null) {
+                                    <span
+                                        class="cb-ai-model-badge"
+                                        title="{{ model.currency }} {{ formatModelPrice(model.pricePerMInput) }} / {{ formatModelPrice(model.pricePerMOutput) }} per 1M tokens (input / output)">
+                                        {{ model.currency }} {{ formatModelPrice(model.pricePerMInput) }} / {{ formatModelPrice(model.pricePerMOutput) }}
+                                    </span>
+                                }
+                            </div>
+                        </ng-template>
+                    </p-select>
                 </div>
 
                 <div class="cb-ai-token-row" title="Estimated tokens (characters ÷ 4). This run sums all AI calls made for one Run action (e.g. form pass + CodBi pass), so it is not a single inference.">
@@ -167,6 +193,14 @@
             title="Show a log of all changes made by the AI assistant" />
     </ng-template>
 </p-dialog>
+
+<!-- Transient Formcycle-style toast — top-right, auto-vanishing. Shown for AI errors via setError. -->
+@if (toastMessage) {
+    <div class="cb-ai-toast" role="status" aria-live="polite" (click)="dismissToast()">
+        <i class="pi pi-exclamation-triangle"></i>
+        <span class="cb-ai-toast__text">{{ toastMessage }}</span>
+    </div>
+}
 
 <!-- Clarification popup: the AI asks the user for missing information. Shows multiple-choice
      options, a free-text field, and an optional document attachment. Fades in/out and vanishes

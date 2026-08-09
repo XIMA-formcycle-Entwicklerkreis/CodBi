@@ -304,6 +304,18 @@ cb-ai-assistant-log {
     background: rgba(255, 140, 0, 0.1);
 }
 
+/* The AI model used for an inference — small badge shown under the user badge. */
+.cb-log-node__model {
+    color: #1d4ed8;
+    font-weight: 600;
+    font-size: 0.78em;
+    white-space: nowrap;
+    border: 1px solid #93c5fd;
+    border-radius: 4px;
+    padding: 0 5px;
+    background: rgba(59, 130, 246, 0.12);
+}
+
 .cb-log-node__value {
     color: #777;
     font-family: ui-monospace, "Cascadia Code", Consolas, monospace;

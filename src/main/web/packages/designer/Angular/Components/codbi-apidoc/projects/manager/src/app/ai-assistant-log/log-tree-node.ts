@@ -16,6 +16,8 @@ export interface LogNode {
   label: string;
   /** Login name of the user who ran the inference (top-level rows) — rendered in darkorange. */
   userLabel?: string;
+  /** Readable name of the AI model used for this inference (top-level rows) — shown under the user. */
+  modelLabel?: string;
   /**
    * Kind controls the icon and color:
    * `inference`, `prompt`, `section`, `widget`, `class`, `attr`, `func`, `param`, `node`,
@@ -99,6 +101,9 @@ export interface LogNode {
           <span class="cb-log-node__label-text">{{ node.label }}</span>
           @if (node.userLabel) {
             <span class="cb-log-node__user" title="User who ran this inference">{{ node.userLabel }}</span>
+          }
+          @if (node.modelLabel) {
+            <span class="cb-log-node__model" title="Model used for this inference">{{ node.modelLabel }}</span>
           }
         </span>
         @if (node.badge) {

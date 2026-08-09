@@ -74,7 +74,7 @@ cb-ai-assistant {
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
-    overflow-y: auto;
+    overflow-y: hidden;
     padding-right: 2px;
 }
 
@@ -161,6 +161,37 @@ cb-ai-assistant {
 
 .cb-ai-toolbar .cb-ai-model-select {
     flex: 1;
+}
+
+/* Model dropdown option: model name + price badge (badge only shown when pricing is configured). */
+.cb-ai-model-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+}
+
+.cb-ai-model-option__name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Price pill — warm amber like the cost counters, shown only when a price is configured. */
+.cb-ai-model-badge {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 1px 8px;
+    border: 1px solid #e5b455;
+    border-radius: 999px;
+    background: #fdf3dd;
+    color: #7a4a00;
+    font-size: 0.72em;
+    line-height: 1.5;
+    white-space: nowrap;
 }
 
 /* CodBi on/off switch — defaults to ON. When OFF, no CodBi prompts are sent to the AI in any
@@ -299,6 +330,10 @@ cb-ai-assistant {
 
 .cb-ai-prompt {
     width: 100%;
+    /* Grow/shrink with the available dialog height (flex column via the wrapper) while keeping a
+       usable minimum. The manual vertical resize handle still works on top of that. */
+    flex: 1 1 auto;
+    min-height: 7rem;
     resize: vertical;
     font-family: inherit;
     padding-bottom: 2.8rem;
@@ -356,6 +391,12 @@ cb-ai-assistant {
 .cb-ai-prompt-wrapper {
     position: relative;
     width: 100%;
+    /* Fill the remaining height of the assistant column so the textarea can grow with the dialog
+       (e.g. when the dialog is maximized). Shrinks to the textarea's min-height when space is low. */
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .cb-ai-mic-btn {
@@ -650,4 +691,48 @@ cb-ai-assistant {
 
 .cb-ai-clarification-dialog {
     z-index: 1000001 !important;
+}
+
+/* Transient AI error toast — fixed top-right, Formcycle-style, auto-vanishes. */
+.cb-ai-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000002;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    max-width: 420px;
+    padding: 0.8rem 1rem;
+    background: #323130;
+    color: #fff;
+    border-left: 4px solid #e53e3e;
+    border-radius: 6px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    font-size: 0.88rem;
+    line-height: 1.4;
+    cursor: pointer;
+    animation: cb-ai-toast-in 0.2s ease-out;
+}
+
+.cb-ai-toast i {
+    margin-top: 1px;
+    color: #ffb3b3;
+}
+
+.cb-ai-toast__text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+@keyframes cb-ai-toast-in {
+    from {
+        opacity: 0;
+        transform: translateX(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
 }

@@ -34,6 +34,12 @@ import {
 interface AiModel {
   id: string;
   label: string;
+  /** ISO 4217 currency of the configured price (present when pricing is configured). */
+  currency?: string;
+  /** Price per 1,000,000 input tokens, when configured in the plugin properties. */
+  pricePerMInput?: number;
+  /** Price per 1,000,000 output tokens, when configured in the plugin properties. */
+  pricePerMOutput?: number;
 }
 
 interface FormElement {
@@ -96,6 +102,9 @@ export class AiAssistant implements OnInit, OnDestroy {
   spinnerText = "Thinking\u2026";
   resultText: string | null = null;
   errorText: string | null = null;
+  /** Transient Formcycle-style toast message (top-right, auto-vanishing). */
+  toastMessage: string | null = null;
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
   /** Whether the CodBi prompt database is reachable. When false, the assistant inputs are
    *  disabled (but still visible) because there are no DB prompts to send to the AI. */
   dbAvailable = true;
@@ -134,7 +143,10 @@ export class AiAssistant implements OnInit, OnDestroy {
     intent: "form" | "workflow" | "both";
     imageParams: Array<{ name: string; dataUrl: string }>;
   } | null = null;
-  readonly speechSupported = "SpeechRecognition" in window || "webkitSpeechRecognition" in window;
+  // The Web Speech API only works in a secure context (HTTPS); on plain HTTP the mic would show a
+  // brief gauge and never transcribe, so the mic icon is only offered over HTTPS.
+  readonly speechSupported =
+    window.location.protocol === "https:" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
   isSpeechRecording = false;
   private pdfJsWorkerConfigured = false;
   private speechRecognition: any = null;
@@ -160,6 +172,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   private static readonly LOG_PANEL_MIN_WIDTH = 320;
   private static readonly LOG_PANEL_MAIN_MIN_WIDTH = 430;
   private readonly LOG_PANEL_WIDTH_KEY = "codbi-ai-log-panel-width";
+  /** localStorage key remembering the open/closed state of the change-log panel. */
+  private readonly LOG_PANEL_OPEN_KEY = "codbi-ai-log-panel-open";
   /** Whether the current user is allowed to sync the API-Documentation (Prompt Manager visibility). */
   syncAllowed = false;
   /** Cookie name for persisting the selected AI model across page reloads. */
@@ -290,14 +304,36 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
+  /** Persists the open/closed state of the change-log panel across reloads. */
+  private setLogOpenState(open: boolean): void {
+    try {
+      localStorage.setItem(this.LOG_PANEL_OPEN_KEY, open ? "open" : "closed");
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** Re-opens the change-log panel when the user left it open the last time. */
+  private restoreLogOpenState(): void {
+    try {
+      if (localStorage.getItem(this.LOG_PANEL_OPEN_KEY) === "open") {
+        this.openLog();
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   /** Folds / unfolds the change-log side panel (the footer "Change log" toggle). */
   toggleLog(): void {
     if (this.showLog) {
       this.showLog = false;
       this.logPanel?.clearHighlights();
       this.restoreDialogSize();
+      this.setLogOpenState(false);
     } else {
       this.openLog();
+      this.setLogOpenState(true);
     }
     this.cdr.markForCheck();
   }
@@ -324,6 +360,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.showLog = false;
     this.logPanel?.clearHighlights();
     this.restoreDialogSize();
+    this.setLogOpenState(false);
     this.cdr.markForCheck();
   }
 
@@ -477,6 +514,9 @@ export class AiAssistant implements OnInit, OnDestroy {
       // The change-log side panel starts folded whenever the dialog is (re)opened.
       this.showLog = false;
       this.dialogWidth = this.foldedDialogWidth;
+      // Ensure PrimeNG's modal mask is removed when the dialog closes (it can otherwise linger and
+      // leave the background darkened).
+      setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
     }
     this.cdr.markForCheck();
   }
@@ -625,11 +665,18 @@ export class AiAssistant implements OnInit, OnDestroy {
     });
   }
 
+  /** Formats a per-1M-token price for the model dropdown (e.g. "3.00"). */
+  formatModelPrice(value: number): string {
+    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+  }
+
   private loadModelsAndOpen(): void {
     if (this.models.length > 0) {
       this.selectedModel = this.loadModelCookie() ?? this.models[0]?.id ?? null;
       this.visible = true;
       this.cdr.markForCheck();
+      // Re-open the change-log panel if the user left it open the last time (persisted).
+      this.restoreLogOpenState();
       return;
     }
 
@@ -648,6 +695,8 @@ export class AiAssistant implements OnInit, OnDestroy {
         }
         this.visible = true;
         this.cdr.markForCheck();
+        // Re-open the change-log panel if the user left it open the last time (persisted).
+        this.restoreLogOpenState();
       },
       error: (xhr: unknown) => {
         const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
@@ -895,6 +944,9 @@ export class AiAssistant implements OnInit, OnDestroy {
    */
   private closeClarification(): void {
     this.clarificationVisible = false;
+    // Remove any lingering clarification overlay mask (PrimeNG can leave it behind when the modal
+    // is destroyed via @if), which would otherwise keep the background darkened.
+    setTimeout(() => this.removeOverlayMask(".cb-ai-clarification-mask"), 0);
     this.cdr.markForCheck();
   }
 
@@ -926,6 +978,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.clarificationHistory.push(...turns);
     const file = this.clarificationFile;
     this.clarificationVisible = false;
+    setTimeout(() => this.removeOverlayMask(".cb-ai-clarification-mask"), 0);
     this.loading = true;
     this.spinnerText = "Executing\u2026";
     this.cdr.markForCheck();
@@ -979,6 +1032,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     // Reset multi-round clarification state for a fresh run.
     this.clarificationHistory = [];
     this.clarificationVisible = false;
+    setTimeout(() => this.removeOverlayMask(".cb-ai-clarification-mask"), 0);
     this.phase2Context = null;
     this.loading = true;
     this.spinnerText = "Classifying request\u2026";
@@ -1627,7 +1681,34 @@ export class AiAssistant implements OnInit, OnDestroy {
   private setError(message: string): void {
     this.loading = false;
     this.errorText = message;
+    this.showToast(message);
     this.cdr.markForCheck();
+  }
+
+  /** Shows a transient Formcycle-style toast (top-right, auto-vanishing after ~6 s). */
+  private showToast(message: string): void {
+    this.toastMessage = message;
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => {
+      this.toastMessage = null;
+      this.cdr.markForCheck();
+    }, 6000);
+    this.cdr.markForCheck();
+  }
+
+  /** Dismisses the toast immediately (e.g. on click). */
+  dismissToast(): void {
+    this.toastMessage = null;
+    if (this.toastTimer) {
+      clearTimeout(this.toastTimer);
+      this.toastTimer = null;
+    }
+    this.cdr.markForCheck();
+  }
+
+  /** Defensively removes any leftover PrimeNG overlay mask (keeps the background from staying dark). */
+  private removeOverlayMask(selector: string): void {
+    document.querySelectorAll<HTMLElement>(selector).forEach((el) => el.remove());
   }
   // #endregion Run
 }

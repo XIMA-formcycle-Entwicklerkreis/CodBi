@@ -645,11 +645,13 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       }
       const inferenceTs = this.formatTimestamp(String(entry["ts"] ?? ""));
       const inferenceUser = String(entry["username"] ?? "");
+      const modelLabel = this.formatModelName(String(entry["modelId"] ?? ""));
       return {
         id: entryId,
         kind: "inference",
         label: inferenceTs,
         userLabel: inferenceUser,
+        modelLabel,
         badge: [
           this.formatTokenSplit(Number(entry["tokensIn"] ?? 0), Number(entry["tokensOut"] ?? 0)) ||
             this.formatTokens(Number(entry["tokens"] ?? 0)),
@@ -664,6 +666,24 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         expanded: false,
       };
     });
+  }
+
+  /** Turns a stored model id (e.g. "ext-specialist:cerebras") into a readable model name. */
+  private formatModelName(modelId: string): string {
+    const m = (modelId ?? "").trim();
+    if (!m) return "";
+    const lower = m.toLowerCase();
+    if (lower === "standard") return "Standard";
+    if (lower === "thinking") return "Thinking";
+    const ext = m.match(/^ext-specialist:(.+)$/i);
+    if (ext) return `External: ${this.capitalize(ext[1])}`;
+    const spec = m.match(/^specialist:(.+)$/i);
+    if (spec) return `Specialist: ${this.capitalize(spec[1])}`;
+    return m;
+  }
+
+  private capitalize(s: string): string {
+    return s.length > 0 ? s.charAt(0).toUpperCase() + s.slice(1) : s;
   }
 
   /** Builds the "Clarification" section: the questions the AI asked and the answers it got. */

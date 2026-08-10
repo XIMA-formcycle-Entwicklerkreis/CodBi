@@ -398,6 +398,12 @@ class AIWorkflowAssistant : IPluginServletAction {
               inboxes +
               "\n\n")
     }
+    append(
+        "PDF GENERATION IS AUTOMATIC: nodes like FC_FILL_PDF (and PDF exports such as " +
+            "FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF) render a pre-configured template " +
+            "with the form data at runtime — Formcycle creates the PDF, not you. NEVER ask the user " +
+            "to describe the PDF text/layout/content, and do not invent that text. Only provide the " +
+            "template/file name the user mentioned (or a sensible default like \"filled.pdf\").\n\n")
     append("Output ONLY valid JSON. No trailing commas. No comments.")
   }
 

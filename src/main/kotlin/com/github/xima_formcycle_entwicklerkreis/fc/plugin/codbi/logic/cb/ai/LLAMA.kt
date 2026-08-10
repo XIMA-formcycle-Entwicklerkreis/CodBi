@@ -32,7 +32,7 @@ import java.io.File
  * ## Plugin properties
  * |Property                       |Default       |Description                                                                           |
  * |-------------------------------|--------------|--------------------------------------------------------------------------------------|
- * |`Active_AI`                    |—             |Must contain `llama_engine`                                                           |
+ * |`Active_AI`                    |—             |Must contain `llama_engine` (local) or `external` (external-only)                     |
  * |`AI_Remove`                    |—             |If contains `llama_engine`, clean up all                                              |
  * |`AI_LLAMA_ENGINE_Port`         |`8392`        |Local port for LLAMA-Server                                                           |
  * |`AI_LLAMA_ENGINE_Threads`      |physical cores|Number of CPU threads                                                                 |
@@ -573,8 +573,13 @@ abstract class LLAMA : AI() {
 
     val activeAI = configData.properties.getProperty("Active_AI")?.lowercase() ?: ""
 
-    if (!activeAI.contains("llama_engine")) {
-      log(LogLevel.INFO, "LLAMA not activated (Active_AI does not contain 'llama_engine')")
+    // "llama_engine" starts the local engine; "external" is the external-only mode that still
+    // sets up the shared directories (so subclasses like Standard do not hit a null directory
+    // NPE) but never starts a local server.
+    if (!activeAI.contains("llama_engine") && !activeAI.contains("external")) {
+      log(
+          LogLevel.INFO,
+          "LLAMA not activated (Active_AI does not contain 'llama_engine' or 'external')")
 
       return
     }

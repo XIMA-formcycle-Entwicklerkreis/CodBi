@@ -693,7 +693,7 @@ cb-ai-assistant {
     z-index: 1000001 !important;
 }
 
-/* Transient AI error toast — fixed top-right, Formcycle-style, auto-vanishes. */
+/* Persistent AI error toast — fixed top-right of the whole window, stays until dismissed via X. */
 .cb-ai-toast {
     position: fixed;
     top: 20px;
@@ -711,11 +711,10 @@ cb-ai-assistant {
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
     font-size: 0.88rem;
     line-height: 1.4;
-    cursor: pointer;
     animation: cb-ai-toast-in 0.2s ease-out;
 }
 
-.cb-ai-toast i {
+.cb-ai-toast > i {
     margin-top: 1px;
     color: #ffb3b3;
 }
@@ -724,6 +723,31 @@ cb-ai-assistant {
     flex: 1;
     min-width: 0;
     overflow-wrap: anywhere;
+}
+
+.cb-ai-toast__close {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    margin: -2px -2px 0 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #d9d9d9;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        color 0.15s ease;
+
+    &:hover {
+        background: rgba(255, 255, 255, 0.15);
+        color: #fff;
+    }
 }
 
 @keyframes cb-ai-toast-in {

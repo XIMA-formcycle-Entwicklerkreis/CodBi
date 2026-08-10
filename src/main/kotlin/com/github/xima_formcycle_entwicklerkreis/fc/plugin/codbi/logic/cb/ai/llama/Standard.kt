@@ -34,7 +34,7 @@ import org.slf4j.MDC
  * ## Plugin Properties
  * |Property                                         |Type   |Default                                      |Description                                                                                                                                                                 |
  * |-------------------------------------------------|-------|---------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
- * |`Active_AI`                                      |String |—                                            |Must contain `llama_std` to activate this model                                                                                                                             |
+ * |`Active_AI`                                      |String |—                                            |Must contain `llama_std` (local) or `external` (external-only) to activate this component                                                                                   |
  * |`AI_LLAMA_STD_ModelUrl`                          |URL    |Qwen3-VL-2B Q4_K_M HuggingFace               |Download URL for the GGUF model file                                                                                                                                        |
  * |`AI_LLAMA_STD_MmprojUrl`                         |URL    |Qwen3-VL-2B mmproj (when using default model)|Download URL for the vision projector (mmproj) file. Omit for text-only models (vision features disabled). Auto-set when using the default VL model                         |
  * |`AI_LLAMA_STD_MaxPixels`                         |Long   |`3211264`                                    |Max pixel budget for image downscaling (min 3136)                                                                                                                           |
@@ -139,6 +139,12 @@ class Standard : LLAMA() {
   // region Fields
   /** Immutable configuration parsed from plugin properties. */
   private lateinit var config: StandardConfig
+  /**
+   * Whether this component runs in external-only mode (the `external` keyword in `Active_AI`). In
+   * this mode no local engine/server is started — only external standard models and external
+   * specialists are usable. Set during [initialize].
+   */
+  @Volatile private var externalOnly = false
   // region Thinking model state
   private var thinkingModelFile: File? = null
   /** The multimodal vision projector file for the thinking model. */
@@ -531,11 +537,12 @@ class Standard : LLAMA() {
    */
   override fun initialize(configData: IPluginInitializeData) {
     idLogMessages = "LlamaSrv"
-    // Check activation: must contain "llama_std" (case-insensitive)
+    // Check activation: "llama_std" (local) or "external" (external-only), case-insensitive.
     val activeAiRaw = configData.properties.getProperty("Active_AI") ?: ""
     val activeAi = activeAiRaw.lowercase()
+    externalOnly = activeAi.contains("external")
 
-    if (!activeAi.contains("llama_std")) {
+    if (!activeAi.contains("llama_std") && !externalOnly) {
       log(LogLevel.INFO, "Standard initialization skipped because Active_AI='$activeAiRaw'")
 
       return
@@ -711,25 +718,34 @@ class Standard : LLAMA() {
     availableModels = buildList {
       if (config.isExternalMode) {
         add(ModelEntry("standard", "External (${config.externalModel ?: "default"})"))
-      } else {
+      } else if (!externalOnly) {
+        // Local mode: standard + optional thinking + local specialists
         add(ModelEntry("standard", "Standard (local)"))
       }
-      if (config.hasThinkingModel) add(ModelEntry("thinking", "Thinking (local)"))
+      // externalOnly without AI_LLAMA_STD_ExternalUrl: no local standard/thinking model is
+      // usable, so only the (external) specialists are registered below.
+      if (config.hasThinkingModel && !externalOnly) add(ModelEntry("thinking", "Thinking (local)"))
       for (name in config.specialists.keys) add(
           ModelEntry("specialist:${name.lowercase()}", "Specialist: $name"))
       for (name in config.externalSpecialists.keys) add(
           ModelEntry("ext-specialist:${name.lowercase()}", "External: $name"))
     }
 
-    if (config.isExternalMode) {
-      log(LogLevel.INFO, "External AI mode — skipping local model download and server startup")
-      log(LogLevel.INFO, "  URL:   ${config.externalUrl}")
-      log(
-          LogLevel.INFO,
-          "  Model: ${config.externalModel ?: "(not set — WARNING: most APIs require a model name)"}")
-      log(
-          LogLevel.INFO,
-          "  Key:   ${if (config.externalApiKey != null) "(set, ${config.externalApiKey!!.length} chars)" else "(not set)"}")
+    if (config.isExternalMode || externalOnly) {
+      if (config.isExternalMode) {
+        log(LogLevel.INFO, "External AI mode — skipping local model download and server startup")
+        log(LogLevel.INFO, "  URL:   ${config.externalUrl}")
+        log(
+            LogLevel.INFO,
+            "  Model: ${config.externalModel ?: "(not set — WARNING: most APIs require a model name)"}")
+        log(
+            LogLevel.INFO,
+            "  Key:   ${if (config.externalApiKey != null) "(set, ${config.externalApiKey!!.length} chars)" else "(not set)"}")
+      } else {
+        log(
+            LogLevel.INFO,
+            "External-only mode (external) — no local engine started; external specialists only")
+      }
 
       isActive = true
       serverReady = true
@@ -985,8 +1001,10 @@ class Standard : LLAMA() {
    */
   internal fun performFormAssist(modelId: String, messagesJson: String): String {
     val svc = chatCompletionService ?: error("AI service not ready")
-    // ext-specialist uses its own external client — skip local server readiness check
-    val usesLocalServer = !config.isExternalMode && !modelId.startsWith("ext-specialist:")
+    // ext-specialist uses its own external client — skip local server readiness check.
+    // In external-only mode (externalOnly) there is no local server at all.
+    val usesLocalServer =
+        !config.isExternalMode && !externalOnly && !modelId.startsWith("ext-specialist:")
     if (usesLocalServer) {
       if (!serverReady || !isServerAlive()) {
         error(
@@ -1203,7 +1221,7 @@ class Standard : LLAMA() {
 
     // ...existing code...
 
-    if (!config.isExternalMode && !serverReady) {
+    if (!config.isExternalMode && !externalOnly && !serverReady) {
       return gsonResponse(
           ErrorResponse("Model is not ready yet. It may still be downloading or loading."))
     }
@@ -1656,7 +1674,7 @@ class Standard : LLAMA() {
     if (loadError != null) {
       return gsonResponse(ErrorResponse("Failed to initialize: ${loadError?.message ?: "unknown"}"))
     }
-    if (!config.isExternalMode && (!serverReady || !isServerAlive())) {
+    if (!config.isExternalMode && !externalOnly && (!serverReady || !isServerAlive())) {
       if (serverReady && !isServerAlive()) {
         log(LogLevel.WARNING, "LLAMA-Server process died — attempting restart")
         serverReady = false

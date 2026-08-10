@@ -4219,11 +4219,35 @@ class AICodBiAssistant : IPluginServletAction {
     }
 
     // Replace symbolic "$ROOT" breakTarget with a safe UUID placeholder before JSON parsing
-    val safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
+    var safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
 
     // When the AI answered with prose instead of a JSON workflow spec (e.g. it is unsure what to
-    // change because it has no context), surface a readable message instead of a
-    // MalformedJsonException.
+    // change because it has no context, or it keeps asking clarifying questions after the
+    // clarification rounds), retry ONCE with a strict corrective instruction before surfacing a
+    // readable error. This avoids the "did not return a workflow specification" failure that
+    // previously aborted the run after several clarification loops.
+    if (!safeCleaned.trim().startsWith("{") && !safeCleaned.trim().startsWith("[")) {
+      logger.warn(
+          "[AICodBiAssistant] Workflow AI returned prose — retrying once with strict JSON instruction: {}",
+          safeCleaned.take(300))
+      val retryMessagesJson = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
+        append("""{"role":"user","content":${buildUserContent(prompt, imageParts)}},""")
+        append("""{"role":"assistant","content":${gson.toJson(cleaned)}},""")
+        append(
+            """{"role":"user","content":${gson.toJson("Your previous response was NOT valid JSON workflow specification. It contained prose or clarifying questions. Do NOT ask any questions and do NOT explain. The user has already answered everything that is needed (use the USER CLARIFICATION context). Output ONLY the workflow task JSON now (a task object, an array of task objects, or {\"workflow\":[...]}/{\"tasks\":[...]}).")}}""")
+        append("]")
+      }
+      val retryRaw = instance.performFormAssist(modelId, retryMessagesJson)
+      tokensIn += estimateTokens(retryMessagesJson)
+      tokensOut += estimateTokens(retryRaw)
+      val retryCleaned = extractJson(stripThinkTags(retryRaw))
+      logger.info("[AICodBiAssistant] Workflow AI retry raw response: {}", retryCleaned.take(300))
+      cleaned = retryCleaned
+      safeCleaned = retryCleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
+    }
+
     val trimmedCleaned = safeCleaned.trim()
     if (!trimmedCleaned.startsWith("{") && !trimmedCleaned.startsWith("[")) {
       throw Exception("The AI did not return a workflow specification: " + trimmedCleaned.take(300))
@@ -4495,6 +4519,13 @@ class AICodBiAssistant : IPluginServletAction {
                   "(e.g. \"Bei Klick auf submit, an die URL-Template X2 umleiten\"). " +
                   "NEVER create a new template â€” always pick from the list above.\n\n")
         }
+        append(
+            "PDF GENERATION IS AUTOMATIC: nodes like FC_FILL_PDF (and PDF exports such as " +
+                "FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF) render a pre-configured template " +
+                "with the form data at runtime — Formcycle creates the PDF, not you. NEVER ask the " +
+                "user to describe the PDF text/layout/content, and do not invent that text. Only " +
+                "provide the template/file name the user mentioned (or a sensible default like " +
+                "\"filled.pdf\"), and rely on the existing template.\n\n")
         if (!inboxes.isNullOrBlank()) {
           append(
               "AVAILABLE INBOXES (for inboxName when creating a FC_MOVE_FORM_RECORD_TO_INBOX node â€” pick the EXACT match to the user's request):\n" +
@@ -4544,7 +4575,8 @@ class AICodBiAssistant : IPluginServletAction {
         }
         if (!clarificationContext.isNullOrBlank()) {
           append(
-              "\nUSER CLARIFICATION (authoritative answers the user already gave — use them as context):\n" +
+              "\nUSER CLARIFICATION (authoritative answers the user already gave — use them as context; " +
+                  "do NOT ask the user any of these questions again):\n" +
                   clarificationContext +
                   "\n\n")
         }
@@ -4563,7 +4595,18 @@ class AICodBiAssistant : IPluginServletAction {
                   "same changes to the CURRENT form, adapting names as needed. Do NOT ask the user " +
                   "which changes were requested — the change log is authoritative.\n\n")
         }
-        append("Output ONLY valid JSON. No trailing commas. No comments.")
+        append(
+            "OUTPUT CONTRACT — STRICTLY ENFORCED:\n" +
+                "- Output ONLY valid JSON (a task object, an array of task objects, or " +
+                "{\"workflow\":[...]}/{\"tasks\":[...]}). No prose, no explanation, no Markdown.\n" +
+                "- NEVER ask the user clarifying questions inside this response. All missing details " +
+                "that the user did not specify (and did NOT delegate to you) are to be derived from " +
+                "the form elements and available context above; if a value is still genuinely " +
+                "unknown, choose a sensible default (e.g. a reasonable sender address/subject) " +
+                "instead of asking. Do NOT output numbered question lists or \"I'm happy to help\" text.\n" +
+                "- The USER CLARIFICATION section above is authoritative: every answered or " +
+                "delegated question is considered resolved. Never re-ask an answered question.\n" +
+                "No trailing commas. No comments.")
       }
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to build workflow system prompt", e)
@@ -8479,19 +8522,77 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
-  /** Formats the answered clarification turns as readable text for the AI system prompts. */
+  /**
+   * Formats the answered clarification turns as readable text for the AI system prompts. When an
+   * answer delegates the decision to the AI or declines to answer, it is explicitly marked as
+   * RESOLVED so downstream prompts treat it as answered and never re-ask.
+   */
   private fun buildClarificationContext(history: List<ClarificationTurn>): String {
     if (history.isEmpty()) return ""
     val sb = StringBuilder()
     for ((i, turn) in history.withIndex()) {
+      val answer = turn.answer.trim()
       sb.append("${i + 1}. Question: ").append(turn.question).append("\n")
-      sb.append("   Answer: ").append(turn.answer.ifBlank { "(no text)" })
+      if (answer.isBlank()) {
+        sb.append("   Answer: (no text given by user)")
+      } else if (isDelegatedOrRefusedAnswer(answer)) {
+        sb.append("   Answer: ").append(answer)
+        sb.append(
+            "\n   → USER DELEGATED/DECLINED — treat this question as RESOLVED; you decide a sensible default and never ask it again.")
+      } else {
+        sb.append("   Answer: ").append(answer)
+      }
       if (!turn.attachmentName.isNullOrBlank()) {
         sb.append(" (attached document: ").append(turn.attachmentName).append(")")
       }
       sb.append("\n")
     }
     return sb.toString().trim()
+  }
+
+  /** True when a clarification answer delegates the decision or declines to answer. */
+  private fun isDelegatedOrRefusedAnswer(answer: String): Boolean {
+    val lower = answer.lowercase()
+    val delegates =
+        listOf(
+            "you decide",
+            "you can decide",
+            "your choice",
+            "your decision",
+            "you choose",
+            "whatever you think",
+            "whatever you find best",
+            "up to you",
+            "as you see fit",
+            "entscheide du",
+            "du entscheidest",
+            "egal",
+            "wie du willst",
+            "ihnen überlassen",
+            "their choice",
+            "does not matter",
+            "do not care",
+            "don't care",
+            "kannst du entscheiden")
+    val refuses =
+        listOf(
+            "i don't want to answer",
+            "i dont want to answer",
+            "no answer",
+            "not answering",
+            "skip it",
+            "skip this",
+            "keine angabe",
+            "will ich nicht beantworten",
+            "übergehe",
+            "don't want to answer",
+            "nicht beantworten",
+            "lasse ich offen",
+            "leave it open",
+            "sonstiges",
+            "keine ahnung",
+            "i don't know")
+    return delegates.any { lower.contains(it) } || refuses.any { lower.contains(it) }
   }
 
   /** Converts the answered clarification turns into a JSON array for the change log. */
@@ -8614,7 +8715,19 @@ class AICodBiAssistant : IPluginServletAction {
               "- Ask at most 3 questions per round; each question needs a unique \"id\".\n" +
               "- \"options\" is an optional list of multiple-choice answers (may be empty).\n" +
               "- \"allowFreeText\" true means the user may type a free answer and/or attach a document.\n" +
-              "- Build on previous answers; only ask what is still missing.\n" +
+              "- Build on previous answers; only ask what is still missing. NEVER ask a question whose\n" +
+              "  answer the user already gave in the clarification history above.\n" +
+              "- When the user's answer names a form field (e.g. \"take it from the email field\", \"use\n" +
+              "  the value of the first-name field\", \"the field 'Vorname'\"), this refers to the FIELD\n" +
+              "  ITSELF / its value at runtime — do NOT ask for the literal text to insert. Use the\n" +
+              "  field's technicalId / placeholder. Do NOT ask for the exact wording.\n" +
+              "- When the user answers a question with a statement that delegates the decision to you\n" +
+              "  (\"you decide\", \"entscheide du\", \"egal\", \"whatever you think is best\", \"I don't\n" +
+              "  care\") or declines to answer (\"does not matter\", \"keine Angabe\", \"skip it\", \"I\n" +
+              "  don't want to answer\"), treat that question as ANSWERED — choose a sensible default\n" +
+              "  yourself and NEVER ask that question (or a variant of it) again in a later round.\n" +
+              "- Do not insist on a specific format of an answer (e.g. repeatedly asking for the exact\n" +
+              "  e-mail body text). Once the user provided content, data or a decision, proceed with it.\n" +
               "- MANDATORY VALUES: formcycle widgets, workflow nodes, CodBi functionalities, element\n" +
               "  placeholders and standard configurations all have required parameters and/or global\n" +
               "  variables. Whenever the user's request implies such an element but does NOT provide a\n" +
@@ -8632,6 +8745,12 @@ class AICodBiAssistant : IPluginServletAction {
               "      threshold, ...): ask which value to set when it cannot be derived.\n" +
               "    - Functionalities / element placeholders that need a parameter value (regex pattern,\n" +
               "      target attribute, injected text, template): ask for it when missing.\n" +
+              "- PDF generation is AUTOMATIC in Formcycle: nodes like FC_FILL_PDF (and PDF exports such\n" +
+              "  as FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF) render a pre-configured template\n" +
+              "  with the form data at runtime. NEVER ask the user to describe the PDF text/layout/content\n" +
+              "  or to provide the exact wording of the PDF. At most ask WHICH PDF template or file to use\n" +
+              "  (e.g. the template the user uploaded) when it cannot be derived; the PDF body itself is\n" +
+              "  produced by Formcycle, not by you.\n" +
               "If you have everything you need, respond with exactly the single word: NO_CLARIFICATION\n")
     }
   }

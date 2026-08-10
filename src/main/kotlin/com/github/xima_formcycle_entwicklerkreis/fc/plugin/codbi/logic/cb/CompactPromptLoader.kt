@@ -116,7 +116,7 @@ internal object CompactPromptLoader {
       val staleKeys = mutableSetOf<String>()
 
       val allSystemKeys =
-          em.createNativeQuery("SELECT prompt_key FROM $TABLE WHERE is_system = true")
+          em.createNativeQuery("SELECT prompt_key FROM $TABLE WHERE is_system = 1")
               .resultList
               .mapNotNull { it?.toString() }
       staleKeys += allSystemKeys
@@ -226,7 +226,7 @@ internal object CompactPromptLoader {
                (prompt_key, category, prompt_text, original_text,
                 display_name, is_active, pre_prompt_active, post_prompt_active,
                 prompt_version, updated_at)
-             VALUES (:key, :cat, :txt, :txt, :dn, true, true, true, :ver, CURRENT_TIMESTAMP)""")
+             VALUES (:key, :cat, :txt, :txt, :dn, 1, 1, 1, :ver, CURRENT_TIMESTAMP)""")
           .setParameter("key", key)
           .setParameter("cat", cat)
           .setParameter("txt", promptText)
@@ -420,7 +420,7 @@ internal object CompactPromptLoader {
         return
       }
       em.createNativeQuery(
-              "UPDATE $TABLE SET prompt_text = :text, original_text = :orig, prompt_version = :ver, display_name = :dname, is_system = true, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
+              "UPDATE $TABLE SET prompt_text = :text, original_text = :orig, prompt_version = :ver, display_name = :dname, is_system = 1, update_available = 0, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
           .apply {
             setParameter("text", text)
             setParameter("orig", text)
@@ -437,7 +437,7 @@ internal object CompactPromptLoader {
     val cat = key.substringBefore(".", key)
     val dname = displayName ?: deriveDisplayName(key)
     em.createNativeQuery(
-            "INSERT INTO $TABLE (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name, pre_prompt_active, post_prompt_active, is_system, update_available) VALUES (:key, :cat, :text, :ver, :orig, :active, :dname, :preAct, :postAct, true, false)")
+            "INSERT INTO $TABLE (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name, pre_prompt_active, post_prompt_active, is_system, update_available) VALUES (:key, :cat, :text, :ver, :orig, :active, :dname, :preAct, :postAct, 1, 0)")
         .apply {
           setParameter("key", key)
           setParameter("cat", cat)
@@ -584,7 +584,7 @@ internal object CompactPromptLoader {
       val q =
           em.createNativeQuery(
               "SELECT prompt_key, prompt_text FROM $TABLE " +
-                  "WHERE prompt_key LIKE :prefix AND is_active = TRUE ORDER BY prompt_key")
+                  "WHERE prompt_key LIKE :prefix AND is_active = 1 ORDER BY prompt_key")
       q.setParameter("prefix", "$prefix%")
       @Suppress("UNCHECKED_CAST")
       (q.resultList as? List<Array<Any>>)
@@ -611,7 +611,7 @@ internal object CompactPromptLoader {
     return try {
       val q =
           em.createNativeQuery(
-              "SELECT prompt_key, display_name, category, prompt_text, original_text, pre_prompt, post_prompt, is_active, pre_prompt_active, post_prompt_active, is_system, update_available FROM $TABLE WHERE prompt_key LIKE :prefix AND is_active = TRUE ORDER BY prompt_key")
+              "SELECT prompt_key, display_name, category, prompt_text, original_text, pre_prompt, post_prompt, is_active, pre_prompt_active, post_prompt_active, is_system, update_available FROM $TABLE WHERE prompt_key LIKE :prefix AND is_active = 1 ORDER BY prompt_key")
       q.setParameter("prefix", "$prefix%")
       @Suppress("UNCHECKED_CAST")
       (q.resultList as? List<Array<Any>>)?.mapNotNull { row ->
@@ -655,9 +655,9 @@ internal object CompactPromptLoader {
       em.transaction.begin()
       val sql =
           if (promptText != null)
-              "UPDATE $TABLE SET prompt_text = :text, pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
+              "UPDATE $TABLE SET prompt_text = :text, pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, update_available = 0, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
           else
-              "UPDATE $TABLE SET pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
+              "UPDATE $TABLE SET pre_prompt = :pre, post_prompt = :post, is_active = :active, display_name = :dname, prompt_version = :ver, pre_prompt_active = :preAct, post_prompt_active = :postAct, update_available = 0, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key"
       val u = em.createNativeQuery(sql)
       if (promptText != null) u.setParameter("text", promptText)
       u.setParameter("pre", prePrompt)
@@ -685,7 +685,7 @@ internal object CompactPromptLoader {
       val newest = resolveNewestSeedContent(key)
       if (newest != null) {
         em.createNativeQuery(
-                "UPDATE $TABLE SET prompt_text = :text, original_text = :text, prompt_version = :ver, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
+                "UPDATE $TABLE SET prompt_text = :text, original_text = :text, prompt_version = :ver, update_available = 0, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key")
             .setParameter("text", newest)
             .setParameter("ver", System.currentTimeMillis().toString())
             .setParameter("key", key)
@@ -696,7 +696,7 @@ internal object CompactPromptLoader {
             newest.length)
       } else {
         em.createNativeQuery(
-                "UPDATE $TABLE SET prompt_text = original_text, prompt_version = :ver, update_available = false, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key AND original_text IS NOT NULL")
+                "UPDATE $TABLE SET prompt_text = original_text, prompt_version = :ver, update_available = 0, updated_at = CURRENT_TIMESTAMP WHERE prompt_key = :key AND original_text IS NOT NULL")
             .setParameter("ver", System.currentTimeMillis().toString())
             .setParameter("key", key)
             .executeUpdate()

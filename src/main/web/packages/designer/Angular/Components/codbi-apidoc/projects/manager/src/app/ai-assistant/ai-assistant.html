@@ -194,11 +194,19 @@
     </ng-template>
 </p-dialog>
 
-<!-- Transient Formcycle-style toast — top-right, auto-vanishing. Shown for AI errors via setError. -->
+<!-- Error toast — fixed top-right of the whole window, stays until the user dismisses it (X). -->
 @if (toastMessage) {
-    <div class="cb-ai-toast" role="status" aria-live="polite" (click)="dismissToast()">
+    <div class="cb-ai-toast" role="alert" aria-live="assertive">
         <i class="pi pi-exclamation-triangle"></i>
         <span class="cb-ai-toast__text">{{ toastMessage }}</span>
+        <button
+            type="button"
+            class="cb-ai-toast__close"
+            (click)="dismissToast()"
+            title="Close"
+            aria-label="Close error message">
+            <i class="pi pi-times"></i>
+        </button>
     </div>
 }
 

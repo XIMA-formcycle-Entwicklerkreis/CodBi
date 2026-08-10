@@ -93,11 +93,37 @@
         </rollback>
     </changeSet>
 
-    <changeSet id="codbi-ai-prompt-5" author="codbi">
+    <changeSet id="codbi-ai-prompt-5" author="codbi" dbms="mssql">
         <comment>
-          Increase prompt_key column size from VARCHAR(100) to VARCHAR(200) to
-          accommodate longer derived keys from deep ### sub-header nesting
-          (e.g., workflow node type names with fully qualified class names).
+          Widen prompt_key from VARCHAR(100) to VARCHAR(200) on SQL Server. SQL Server
+          (error 5074) does not allow ALTER COLUMN on a key column, so the primary key
+          is temporarily dropped. Dropping the PK also removes the implicit NOT NULL of
+          the key column, so NOT NULL is explicitly re-applied (error 8111). The SQL is
+          idempotent and also heals an interrupted earlier migration where the PK was
+          already dropped and/or the column already widened.
+        </comment>
+        <sql splitStatements="false">
+            IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE type = 'PK' AND name = 'PK_CODBI_AI_PROMPT' AND parent_object_id = OBJECT_ID(N'codbi_ai_prompt'))
+                ALTER TABLE codbi_ai_prompt DROP CONSTRAINT PK_CODBI_AI_PROMPT;
+            ALTER TABLE codbi_ai_prompt ALTER COLUMN prompt_key VARCHAR(200) NOT NULL;
+            IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE type = 'PK' AND name = 'PK_CODBI_AI_PROMPT' AND parent_object_id = OBJECT_ID(N'codbi_ai_prompt'))
+                ALTER TABLE codbi_ai_prompt ADD CONSTRAINT PK_CODBI_AI_PROMPT PRIMARY KEY (prompt_key);
+        </sql>
+        <rollback>
+            <sql splitStatements="false">
+                IF EXISTS (SELECT 1 FROM sys.key_constraints WHERE type = 'PK' AND name = 'PK_CODBI_AI_PROMPT' AND parent_object_id = OBJECT_ID(N'codbi_ai_prompt'))
+                    ALTER TABLE codbi_ai_prompt DROP CONSTRAINT PK_CODBI_AI_PROMPT;
+                ALTER TABLE codbi_ai_prompt ALTER COLUMN prompt_key VARCHAR(100) NOT NULL;
+                IF NOT EXISTS (SELECT 1 FROM sys.key_constraints WHERE type = 'PK' AND name = 'PK_CODBI_AI_PROMPT' AND parent_object_id = OBJECT_ID(N'codbi_ai_prompt'))
+                    ALTER TABLE codbi_ai_prompt ADD CONSTRAINT PK_CODBI_AI_PROMPT PRIMARY KEY (prompt_key);
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="codbi-ai-prompt-5-non-mssql" author="codbi" dbms="!mssql">
+        <comment>
+          Widen prompt_key from VARCHAR(100) to VARCHAR(200) on databases that allow
+          ALTER COLUMN on a key column (all except SQL Server).
         </comment>
         <modifyDataType tableName="codbi_ai_prompt" columnName="prompt_key" newDataType="VARCHAR(200)"/>
         <rollback>

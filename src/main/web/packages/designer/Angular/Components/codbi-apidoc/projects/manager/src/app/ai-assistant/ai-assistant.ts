@@ -102,9 +102,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   spinnerText = "Thinking\u2026";
   resultText: string | null = null;
   errorText: string | null = null;
-  /** Transient Formcycle-style toast message (top-right, auto-vanishing). */
+  /** Error toast message (top-right of the whole window, stays until dismissed via X). */
   toastMessage: string | null = null;
-  private toastTimer: ReturnType<typeof setTimeout> | null = null;
   /** Whether the CodBi prompt database is reachable. When false, the assistant inputs are
    *  disabled (but still visible) because there are no DB prompts to send to the AI. */
   dbAvailable = true;
@@ -192,6 +191,11 @@ export class AiAssistant implements OnInit, OnDestroy {
   private static readonly DIALOG_STYLE_CLASS = "cb-ai-assistant-dialog";
   /** Cleanup for the custom header-drag handlers (re-enabled on every dialog show). */
   private dragCleanup: (() => void) | null = null;
+  /** Remembered clarification popup position, persisted across reloads. */
+  private clarificationPosition: DialogPosition | null = loadDialogPosition("codbi-dialog-clarification-position");
+  private static readonly CLARIFICATION_DIALOG_STYLE_CLASS = "cb-ai-clarification-dialog";
+  /** Cleanup for the clarification popup's custom drag handlers (registered on each open). */
+  private clarificationDragCleanup: (() => void) | null = null;
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -896,6 +900,17 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.clarificationFile = null;
     this.loading = false;
     this.clarificationVisible = true;
+    // Register the popup as draggable/snappable like the main assistant dialog, and restore its
+    // last remembered position once it has rendered.
+    this.clarificationDragCleanup?.();
+    this.clarificationDragCleanup = enableDialogDrag(
+      AiAssistant.CLARIFICATION_DIALOG_STYLE_CLASS,
+      "codbi-dialog-clarification-position",
+      (p) => {
+        this.clarificationPosition = p;
+      },
+    );
+    setTimeout(() => applyDialogPosition(AiAssistant.CLARIFICATION_DIALOG_STYLE_CLASS, this.clarificationPosition), 0);
     this.cdr.markForCheck();
   }
 
@@ -944,6 +959,9 @@ export class AiAssistant implements OnInit, OnDestroy {
    */
   private closeClarification(): void {
     this.clarificationVisible = false;
+    // Unregister the popup's drag handler — it is re-registered on every open.
+    this.clarificationDragCleanup?.();
+    this.clarificationDragCleanup = null;
     // Remove any lingering clarification overlay mask (PrimeNG can leave it behind when the modal
     // is destroyed via @if), which would otherwise keep the background darkened.
     setTimeout(() => this.removeOverlayMask(".cb-ai-clarification-mask"), 0);
@@ -1685,24 +1703,15 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  /** Shows a transient Formcycle-style toast (top-right, auto-vanishing after ~6 s). */
+  /** Shows a persistent error toast (top-right, stays until the user dismisses it via X). */
   private showToast(message: string): void {
     this.toastMessage = message;
-    if (this.toastTimer) clearTimeout(this.toastTimer);
-    this.toastTimer = setTimeout(() => {
-      this.toastMessage = null;
-      this.cdr.markForCheck();
-    }, 6000);
     this.cdr.markForCheck();
   }
 
-  /** Dismisses the toast immediately (e.g. on click). */
+  /** Dismisses the error toast (X button). */
   dismissToast(): void {
     this.toastMessage = null;
-    if (this.toastTimer) {
-      clearTimeout(this.toastTimer);
-      this.toastTimer = null;
-    }
     this.cdr.markForCheck();
   }
 

@@ -178,7 +178,7 @@ internal object PromptLoader {
       // Clean up stale system prompts (e.g., keys that changed due to seed logic updates).
       // Only removes system prompts (is_system = true); user-created prompts are preserved.
       val allSystemKeys =
-          em.createNativeQuery("SELECT prompt_key FROM codbi_ai_prompt WHERE is_system = true")
+          em.createNativeQuery("SELECT prompt_key FROM codbi_ai_prompt WHERE is_system = 1")
               .resultList
               .mapNotNull { it?.toString() }
       var staleDeleted = 0
@@ -223,12 +223,12 @@ internal object PromptLoader {
           val query =
               em.createNativeQuery(
                   // language=H2
-                  """SELECT
-                        CASE WHEN COALESCE(pre_prompt_active, TRUE) THEN COALESCE(pre_prompt, '') ELSE '' END
-                        || prompt_text ||
-                        CASE WHEN COALESCE(post_prompt_active, TRUE) THEN COALESCE(post_prompt, '') ELSE '' END
+                  """SELECT CONCAT(
+                        CASE WHEN COALESCE(pre_prompt_active, 1) = 1 THEN COALESCE(pre_prompt, '') ELSE '' END,
+                        prompt_text,
+                        CASE WHEN COALESCE(post_prompt_active, 1) = 1 THEN COALESCE(post_prompt, '') ELSE '' END)
                      FROM codbi_ai_prompt
-                     WHERE prompt_key = :key AND is_active = TRUE""")
+                     WHERE prompt_key = :key AND is_active = 1""")
           query.setParameter("key", key)
           val result = query.resultList
           if (result.isEmpty()) null else resolveClob(result[0])
@@ -340,11 +340,12 @@ internal object PromptLoader {
           em.createNativeQuery(
               // language=H2
               """SELECT prompt_key,
-                        CASE WHEN COALESCE(pre_prompt_active, TRUE) THEN COALESCE(pre_prompt, '') ELSE '' END
-                        || prompt_text ||
-                        CASE WHEN COALESCE(post_prompt_active, TRUE) THEN COALESCE(post_prompt, '') ELSE '' END
+                        CONCAT(
+                        CASE WHEN COALESCE(pre_prompt_active, 1) = 1 THEN COALESCE(pre_prompt, '') ELSE '' END,
+                        prompt_text,
+                        CASE WHEN COALESCE(post_prompt_active, 1) = 1 THEN COALESCE(post_prompt, '') ELSE '' END)
                  FROM codbi_ai_prompt
-                 WHERE prompt_key LIKE :prefix AND is_active = TRUE
+                 WHERE prompt_key LIKE :prefix AND is_active = 1
                  ORDER BY prompt_key""")
       query.setParameter("prefix", "$prefix%")
       @Suppress("UNCHECKED_CAST")
@@ -553,7 +554,7 @@ internal object PromptLoader {
           em.createNativeQuery(
               """UPDATE codbi_ai_prompt
              SET prompt_text = :text, original_text = :orig, prompt_version = :ver,
-                 display_name = :dname, is_system = true, update_available = false,
+                 display_name = :dname, is_system = 1, update_available = 0,
                  updated_at = CURRENT_TIMESTAMP
              WHERE prompt_key = :key""")
       update.setParameter("text", text)
@@ -574,7 +575,7 @@ internal object PromptLoader {
             """INSERT INTO codbi_ai_prompt
                (prompt_key, category, prompt_text, prompt_version, original_text, is_active, display_name,
                 pre_prompt_active, post_prompt_active, is_system, update_available)
-               VALUES (:key, :cat, :text, :ver, :orig, :active, :dname, :preAct, :postAct, true, false)""")
+               VALUES (:key, :cat, :text, :ver, :orig, :active, :dname, :preAct, :postAct, 1, 0)""")
     insert.setParameter("key", key)
     insert.setParameter("cat", category)
     insert.setParameter("text", text)
@@ -838,7 +839,7 @@ internal object PromptLoader {
                    SET prompt_text = :text, pre_prompt = :pre, post_prompt = :post,
                        is_active = :active, display_name = :dname, prompt_version = :ver,
                        pre_prompt_active = :preAct, post_prompt_active = :postAct,
-                       update_available = false, updated_at = CURRENT_TIMESTAMP
+                       update_available = 0, updated_at = CURRENT_TIMESTAMP
                    WHERE prompt_key = :key""")
         update.setParameter("text", promptText)
         update.setParameter("pre", prePrompt)
@@ -858,7 +859,7 @@ internal object PromptLoader {
                    SET pre_prompt = :pre, post_prompt = :post,
                        is_active = :active, display_name = :dname, prompt_version = :ver,
                        pre_prompt_active = :preAct, post_prompt_active = :postAct,
-                       update_available = false, updated_at = CURRENT_TIMESTAMP
+                       update_available = 0, updated_at = CURRENT_TIMESTAMP
                    WHERE prompt_key = :key""")
         update.setParameter("pre", prePrompt)
         update.setParameter("post", postPrompt)
@@ -903,7 +904,7 @@ internal object PromptLoader {
                 // language=H2
                 """UPDATE codbi_ai_prompt
                    SET prompt_text = :text, original_text = :text,
-                       prompt_version = :ver, update_available = false,
+                       prompt_version = :ver, update_available = 0,
                        updated_at = CURRENT_TIMESTAMP
                    WHERE prompt_key = :key""")
             .setParameter("text", newest)
@@ -917,7 +918,7 @@ internal object PromptLoader {
                 // language=H2
                 """UPDATE codbi_ai_prompt
                    SET prompt_text = original_text,
-                       prompt_version = :ver, update_available = false,
+                       prompt_version = :ver, update_available = 0,
                        updated_at = CURRENT_TIMESTAMP
                    WHERE prompt_key = :key AND original_text IS NOT NULL""")
             .setParameter("ver", version)
@@ -991,7 +992,7 @@ internal object PromptLoader {
                (prompt_key, category, prompt_text, original_text,
                 display_name, is_active, pre_prompt_active, post_prompt_active,
                 prompt_version, updated_at)
-             VALUES (:key, :cat, :txt, :txt, :dn, true, true, true, :ver, CURRENT_TIMESTAMP)""")
+             VALUES (:key, :cat, :txt, :txt, :dn, 1, 1, 1, :ver, CURRENT_TIMESTAMP)""")
           .setParameter("key", key)
           .setParameter("cat", cat)
           .setParameter("txt", promptText)
@@ -1207,7 +1208,7 @@ internal object PromptLoader {
           em.createNativeQuery(
               // language=H2
               """SELECT prompt_key, prompt_text FROM codbi_ai_prompt
-                 WHERE prompt_key LIKE :prefix AND is_active = TRUE""")
+                 WHERE prompt_key LIKE :prefix AND is_active = 1""")
       q.setParameter("prefix", "$prefix%")
       @Suppress("UNCHECKED_CAST")
       (q.resultList as? List<Array<Any>>)
@@ -1238,7 +1239,7 @@ internal object PromptLoader {
                         pre_prompt, post_prompt, is_active,
                         pre_prompt_active, post_prompt_active, is_system, update_available
                  FROM codbi_ai_prompt
-                 WHERE prompt_key LIKE :prefix AND is_active = TRUE
+                 WHERE prompt_key LIKE :prefix AND is_active = 1
                  ORDER BY prompt_key""")
       query.setParameter("prefix", "$prefix%")
       @Suppress("UNCHECKED_CAST")

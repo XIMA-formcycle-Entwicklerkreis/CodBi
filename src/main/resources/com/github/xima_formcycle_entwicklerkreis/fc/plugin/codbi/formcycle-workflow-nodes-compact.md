@@ -86,9 +86,11 @@ REQUIRED: the source field containing the Base64 data.
 FC_PROCESS_LOG_PDF — Generates a PDF from the current process log messages.
 ### FC_EXPORT_FORM_RECORD_CHATS
 FC_EXPORT_FORM_RECORD_CHATS — Exports the form record chat/conversation as a PDF file.
+### RemotePrintService
+RemotePrintService — Renders the filled form itself as a PDF (form-to-PDF / print service). Use when the user wants the submitted/current form as a PDF (e.g. "die Anmeldung als PDF zusenden"). This is the CORRECT node for "form as PDF" — NOT FC_FILL_PDF. No PDF template needed; chain an FC_EMAIL after it to send the PDF.
 ### FC_FILL_PDF
-FC_FILL_PDF — Fills a PDF template with form data.
-REQUIRED: the PDF template to fill and the field/value mapping.
+FC_FILL_PDF — Fills a PDF template with form data at runtime.
+REQUIRED: the PDF template to fill ("Details für die PDF-Befüllung > Datei" — the template file must be set) and the field/value mapping. Use ONLY for filling an existing PDF template, NOT for rendering the form itself as PDF (use RemotePrintService for that).
 ### FC_FILL_WORD
 FC_FILL_WORD — Fills a Word template with form data.
 REQUIRED: the Word template to fill and the field/value mapping.

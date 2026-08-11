@@ -48,10 +48,19 @@ export function enableAICodBiAssistantDialog(): void {
     document.body.appendChild(document.createElement("cb-prompt-manager"));
   }
 
-  // ALT+A => show the AI assistant (only when CodBi is enabled for the current form)
+  // ALT+A => show the AI assistant (only when CodBi is enabled for the current form). The
+  // assistant focuses the prompt textarea automatically on open.
   document.addEventListener("keyup", (event) => {
     if (event.altKey && event.key.toLowerCase() === "a" && isCodBiEnabled()) {
       document.dispatchEvent(new CustomEvent("codbi:ai-assistant:open"));
+    }
+  });
+  // ALT+S (while ALT is still held, e.g. right after ALT+A) => activate the assistant's speech
+  // input (only when CodBi is enabled for the current form).
+  document.addEventListener("keydown", (event) => {
+    if (event.altKey && event.key.toLowerCase() === "s" && isCodBiEnabled()) {
+      event.preventDefault();
+      document.dispatchEvent(new CustomEvent("codbi:ai-assistant:speech"));
     }
   });
 }

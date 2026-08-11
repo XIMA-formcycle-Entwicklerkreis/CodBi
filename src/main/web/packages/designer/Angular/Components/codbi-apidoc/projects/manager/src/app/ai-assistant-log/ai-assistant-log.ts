@@ -117,6 +117,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
 
   constructor(cdr: ChangeDetectorRef) {
     this.cdr = cdr;
+    console.log("[AIAssistantLog] constructor");
   }
 
   // #region Lifecycle
@@ -125,6 +126,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     // component is created on every open. Load the entries right away so the change log is never
     // empty on first display — even if the parent's open() call is delayed. load() also retries an
     // empty result, so a transient wrong-scoped fetch does not leave the panel blank.
+    console.log("[AIAssistantLog] ngOnInit: component created");
     document.addEventListener("codbi:ai-assistant-log:open", this.openHandler);
     this.load();
   }
@@ -161,6 +163,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   }
 
   load(): void {
+    console.log("[AIAssistantLog] load() called", { currentFormKey: this.currentFormKey, logs: this.logs.length });
     this.loading = true;
     this.errorText = null;
     this.cdr.markForCheck();
@@ -171,10 +174,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     const fetchWhenReady = (attempt: number): void => {
       const formKey = getCurrentFormKey();
       if (!formKey && attempt < 20) {
+        console.log(`[AIAssistantLog] load: waiting for form key (attempt ${attempt})`);
         setTimeout(() => fetchWhenReady(attempt + 1), 150);
         return;
       }
       this.currentFormKey = formKey;
+      console.log("[AIAssistantLog] load: fetching log for formKey =", formKey);
       const headers: Record<string, string> = { "X-Action": "Log" };
       if (formKey) {
         headers["X-Form-Key"] = formKey;
@@ -190,6 +195,32 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           const raw = Array.isArray(payload)
             ? payload
             : ((payload?.["entries"] as Array<Record<string, unknown>> | undefined) ?? []);
+          console.log("[AIAssistantLog] load success: entries =", raw.length, "formKey =", this.currentFormKey);
+          setTimeout(() => {
+            const panel = document.querySelector(".cb-ai-log-panel") as HTMLElement | null;
+            const hosts = Array.from(document.querySelectorAll("cb-ai-assistant-log"));
+            const host = hosts[0] as HTMLElement | undefined;
+            const rect = panel?.getBoundingClientRect();
+            console.log("[AIAssistantLog] DOM debug:", {
+              windowInnerWidth: window.innerWidth,
+              panelExists: !!panel,
+              panelChildren: panel ? panel.childElementCount : -1,
+              panelHtmlLen: panel ? panel.innerHTML.length : -1,
+              hostCount: hosts.length,
+              hostChildren: host ? host.childElementCount : -1,
+              hostHtmlLen: host ? host.innerHTML.length : -1,
+              logRoots: document.querySelectorAll(".cb-ai-log").length,
+              panelRectW: rect ? Math.round(rect.width) : -1,
+              panelRectH: rect ? Math.round(rect.height) : -1,
+              panelRectL: rect ? Math.round(rect.left) : -1,
+              panelRectT: rect ? Math.round(rect.top) : -1,
+              panelRectR: rect ? Math.round(rect.right) : -1,
+              panelRectB: rect ? Math.round(rect.bottom) : -1,
+              logs: this.logs.length,
+              loading: this.loading,
+              errorText: this.errorText,
+            });
+          }, 300);
           const totals = !Array.isArray(payload)
             ? ((payload?.["totals"] as Record<string, unknown> | undefined) ?? {})
             : {};
@@ -257,6 +288,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         error: (xhr: unknown) => {
           this.loading = false;
           const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
+          console.log("[AIAssistantLog] load ERROR:", jq.responseJSON?.error ?? jq.statusText ?? xhr);
           this.errorText = jq.responseJSON?.error ?? jq.statusText ?? "Failed to load the change log.";
           this.cdr.markForCheck();
         },

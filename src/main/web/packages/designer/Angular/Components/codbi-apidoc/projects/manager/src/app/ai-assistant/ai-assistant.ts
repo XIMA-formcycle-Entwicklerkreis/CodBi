@@ -111,6 +111,9 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  sent to the AI at all. Defaults to ON. When OFF, the AI only receives Formcycle widgets and
    *  workflow nodes, and no CodBi is applied in any pass. */
   useCodbi = true;
+  /** When true, the AI asks ALL clarification questions at once in a single round instead of at
+   *  most 3 per round. Defaults to OFF. */
+  askAllQuestions = false;
   /** Estimated tokens used by the most recent inference (returned by the backend). */
   lastTokens = 0;
   /** Accumulated token total for the current session. */
@@ -184,7 +187,44 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Reference to the embedded change-log panel (unfolds to the right of the assistant content). */
   @ViewChild("logPanel") logPanel?: AiAssistantLog;
 
-  private readonly openHandler = (): void => this.open();
+  private readonly openHandler = (): void => {
+    this.open();
+    this.focusPrompt();
+  };
+
+  /** ALT+A+S hotkey (speech): open the assistant and start voice input when speech is available. */
+  private readonly speechHandler = (): void => {
+    this.open();
+    this.focusPrompt();
+    this.startSpeechWhenReady();
+  };
+
+  /** Focuses the prompt textarea once the dialog is visible (dialog opening is async). */
+  private focusPrompt(): void {
+    const tryFocus = (attempt: number): void => {
+      if (!this.visible) return;
+      const el = document.querySelector<HTMLElement>(".cb-ai-prompt");
+      if (el) {
+        el.focus();
+        return;
+      }
+      if (attempt < 20) setTimeout(() => tryFocus(attempt + 1), 100);
+    };
+    setTimeout(() => tryFocus(0), 200);
+  }
+
+  /** Starts speech recognition once the assistant is visible; no-op when speech is unsupported or already recording. */
+  private startSpeechWhenReady(): void {
+    if (!this.speechSupported) return;
+    const tryStart = (attempt: number): void => {
+      if (this.visible) {
+        if (!this.isSpeechRecording) this.toggleSpeech();
+        return;
+      }
+      if (attempt < 30) setTimeout(() => tryStart(attempt + 1), 100);
+    };
+    setTimeout(() => tryStart(0), 200);
+  }
 
   /** Remembered dialog position, persisted across reloads so the browser keeps the location. */
   private dialogPosition: DialogPosition | null = loadDialogPosition("codbi-dialog-assistant-position");
@@ -238,6 +278,7 @@ export class AiAssistant implements OnInit, OnDestroy {
    * elements that are not marked as checked yet.
    */
   openLog(elements: string[] = []): void {
+    console.log("[AICodBiAssistant] openLog called", { models: this.models.length, visible: this.visible, elements });
     // The change-log panel unfolds inside the assistant dialog, so make sure the dialog is visible
     // and the model list is populated (e.g. right after a workflow-triggered page reload).
     if (this.models.length === 0) {
@@ -319,8 +360,10 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   /** Re-opens the change-log panel when the user left it open the last time. */
   private restoreLogOpenState(): void {
+    const stored = localStorage.getItem(this.LOG_PANEL_OPEN_KEY);
+    console.log("[AICodBiAssistant] restoreLogOpenState: stored =", stored, "models =", this.models.length);
     try {
-      if (localStorage.getItem(this.LOG_PANEL_OPEN_KEY) === "open") {
+      if (stored === "open") {
         this.openLog();
       }
     } catch {
@@ -346,6 +389,7 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  event) — make sure the assistant dialog is visible, widened to the right edge and the panel is
    *  unfolded. The log data is already loaded by the opening component, so it is NOT re-opened. */
   onLogOpened(): void {
+    console.log("[AICodBiAssistant] onLogOpened fired (log panel emitted opened)", { showLog: this.showLog });
     this.visible = true;
     this.cdr.markForCheck();
     const show = (attempt: number): void => {
@@ -376,6 +420,9 @@ export class AiAssistant implements OnInit, OnDestroy {
    */
   private expandAndUnfoldLog(elements: string[]): void {
     const expandAndShow = (attempt: number): void => {
+      console.log(
+        `[AICodBiAssistant] expandAndShow attempt=${attempt} visible=${this.visible} showLog=${this.showLog} models=${this.models.length}`,
+      );
       if (this.expandDialogForLog()) {
         // Never let the saved panel width exceed the dialog's available space.
         this.logPanelWidth = Math.min(
@@ -415,18 +462,49 @@ export class AiAssistant implements OnInit, OnDestroy {
    */
   private expandDialogForLog(): boolean {
     const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
-    if (!el) return false;
+    if (!el) {
+      console.log("[AICodBiAssistant] expandDialogForLog: dialog element NOT found");
+      return false;
+    }
+    // Only measure/widen a dialog that is actually visible. When the assistant auto-opens right
+    // after a code-triggered form reload, it can be asked to unfold the change log before the
+    // model list has loaded and the dialog is still hidden (display:none). getBoundingClientRect on
+    // a hidden dialog returns all zeros, which would pin the dialog full-viewport at (0,0) and
+    // render the change-log panel before it is ready — leaving an empty right side. Return false so
+    // the caller retries once the dialog is really on screen.
+    const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
+    const maskDisplay = mask ? getComputedStyle(mask).display : "no-mask";
+    const visible = mask ? getComputedStyle(mask).display !== "none" : el.offsetParent !== null;
     const rect = el.getBoundingClientRect();
+    console.log("[AICodBiAssistant] expandDialogForLog:", {
+      maskDisplay,
+      visible,
+      rectW: Math.round(rect.width),
+      rectH: Math.round(rect.height),
+      rectL: Math.round(rect.left),
+      rectT: Math.round(rect.top),
+      showLog: this.showLog,
+    });
+    if (!visible) return false;
+    if (rect.width < 50 || rect.height < 50) return false;
     // The dialog must be wide enough for both panes. If its current left edge leaves too little
     // room to reach the right edge of the viewport, shift the left edge left so the dialog always
     // expands and the change-log panel never overlaps the assistant content.
     const minTotal = this.logPanelWidth + AiAssistant.LOG_PANEL_MAIN_MIN_WIDTH + 8;
     const left = Math.min(rect.left, Math.max(0, Math.round(window.innerWidth - minTotal)));
+    const dialogWidth = Math.max(620, Math.round(window.innerWidth - left));
+    console.log("[AICodBiAssistant] expandDialogForLog computed:", {
+      windowInnerWidth: window.innerWidth,
+      minTotal,
+      left,
+      dialogWidth,
+      logPanelWidth: this.logPanelWidth,
+    });
     el.style.position = "fixed";
     el.style.transform = "none";
     el.style.left = `${left}px`;
     el.style.top = `${rect.top}px`;
-    this.dialogWidth = Math.max(620, Math.round(window.innerWidth - left));
+    this.dialogWidth = dialogWidth;
     // Apply the expanded width directly (no Angular style binding) so the resize handle and manual
     // resize are never overwritten.
     el.style.width = `${this.dialogWidth}px`;
@@ -462,6 +540,7 @@ export class AiAssistant implements OnInit, OnDestroy {
   // #region Lifecycle
   ngOnInit(): void {
     document.addEventListener("codbi:ai-assistant:open", this.openHandler);
+    document.addEventListener("codbi:ai-assistant:speech", this.speechHandler);
     this.checkSyncAllowed();
     this.loadLogPanelWidth();
     // Register the drag handle once. PrimeNG only emits (onShow) after the open animation, which is
@@ -504,6 +583,7 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     document.removeEventListener("codbi:ai-assistant:open", this.openHandler);
+    document.removeEventListener("codbi:ai-assistant:speech", this.speechHandler);
     this.stopSpeech();
     this.dragCleanup?.();
     this.dragCleanup = null;
@@ -527,6 +607,7 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   /** Restores the remembered dialog position/size once it has rendered (best effort — see ngOnInit). */
   onDialogShow(): void {
+    console.log("[AICodBiAssistant] onDialogShow fired", { showLog: this.showLog, dialogWidth: this.dialogWidth });
     const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
     if (el) {
       el.style.width = `${this.foldedDialogWidth}px`;
@@ -714,6 +795,9 @@ export class AiAssistant implements OnInit, OnDestroy {
   close(): void {
     this.visible = false;
     this.cdr.markForCheck();
+    // Ensure PrimeNG's modal mask is removed when the dialog closes (it can otherwise linger and
+    // leave the background darkened, even though the page underneath is clickable).
+    setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
   }
 
   onModelChange(modelId: string): void {
@@ -920,6 +1004,91 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  /**
+   * Builds the email-friendly text for a clarification question: a leading carriage return, then
+   * "- " + the question, then each option on its own line prefixed with a tab and a dash ("\t- ").
+   * Only the inserted text is affected — the question is displayed in the popup exactly as it is.
+   */
+  private formatQuestionForEmail(q: ClarificationQuestion): string {
+    const optionLines = (q.options ?? []).filter((o) => o.trim().length > 0).map((o) => `\t- ${o}`);
+    return ["", `- ${q.question}`, ...optionLines].join("\n");
+  }
+
+  /**
+   * Builds the email-friendly text for ALL pending clarification questions at once (each formatted
+   * by [formatQuestionForEmail], joined with a blank line between them).
+   */
+  private formatAllQuestionsForEmail(): string {
+    return this.pendingClarification.map((q) => this.formatQuestionForEmail(q)).join("\n\n");
+  }
+
+  /**
+   * Copies a clarification question (with its options) to the clipboard so it can be pasted into an
+   * email to the person who requested the form. Falls back to showing the text in a prompt if the
+   * Clipboard API is unavailable.
+   */
+  copyClarificationQuestion(q: ClarificationQuestion): void {
+    const text = this.formatQuestionForEmail(q);
+    const done = (): void => {
+      this.showToast("Question copied to clipboard");
+      this.cdr.markForCheck();
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard
+        .writeText(text)
+        .then(done)
+        .catch(() => {
+          window.prompt("Copy this question", text);
+        });
+    } else {
+      window.prompt("Copy this question", text);
+    }
+  }
+
+  /**
+   * Starts an HTML5 drag of the whole question container so it can be dropped into a mail draft
+   * (e.g. Outlook) WITHOUT having to highlight the text first. Setting `text/plain` in `dragstart`
+   * makes the browser synthesize a native text drop, which email clients accept as pasted text.
+   */
+  onClarificationQuestionDragStart(event: Event, q: ClarificationQuestion): void {
+    const e = event as DragEvent;
+    if (!e.dataTransfer) {
+      return;
+    }
+    const text = this.formatQuestionForEmail(q);
+    const htmlOptions =
+      q.options && q.options.length > 0
+        ? `<p>&nbsp;&nbsp;&nbsp;&nbsp;- ${q.options.join("</p><p>&nbsp;&nbsp;&nbsp;&nbsp;- ")}</p>`
+        : "";
+    e.dataTransfer.setData("text/plain", text);
+    e.dataTransfer.setData("text/html", `<p>&nbsp;</p><p>- ${q.question}</p>${htmlOptions}`);
+    e.dataTransfer.effectAllowed = "copy";
+  }
+
+  /**
+   * Starts an HTML5 drag of the WHOLE question list so all pending questions (each formatted like a
+   * single question) are dropped into the mail draft at once.
+   */
+  onAllClarificationQuestionsDragStart(event: Event): void {
+    const e = event as DragEvent;
+    if (!e.dataTransfer || this.pendingClarification.length === 0) {
+      return;
+    }
+    const text = this.formatAllQuestionsForEmail();
+    const html = this.pendingClarification
+      .map((q) => {
+        const options =
+          q.options && q.options.length > 0
+            ? `<p>&nbsp;&nbsp;&nbsp;&nbsp;- ${q.options.join("</p><p>&nbsp;&nbsp;&nbsp;&nbsp;- ")}</p>`
+            : "";
+        return `<p>- ${q.question}</p>${options}`;
+      })
+      .join("<p>&nbsp;</p>");
+    e.dataTransfer.setData("text/plain", text);
+    e.dataTransfer.setData("text/html", `<p>&nbsp;</p>${html}`);
+    e.dataTransfer.effectAllowed = "copy";
+  }
+
   /** Stores the document the user attached to the clarification answers. */
   onClarificationFileSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -1066,6 +1235,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     const phase1Form = new FormData();
     phase1Form.append("prompt", prompt);
     phase1Form.append("useCodbi", String(this.useCodbi));
+    phase1Form.append("askAllQuestions", String(this.askAllQuestions));
     for (const { name, dataUrl } of imageParams) {
       phase1Form.append(`codbi-base64:${name}`, dataUrl);
     }
@@ -1157,7 +1327,13 @@ export class AiAssistant implements OnInit, OnDestroy {
     // Remember the context so a clarification round can re-run phase 2 with the same inputs.
     this.phase2Context = { prompt, modelId, intent, imageParams };
     const designer = getDesignerInstance();
-    const data: Record<string, string> = { prompt, phase: "2", intent, useCodbi: String(this.useCodbi) };
+    const data: Record<string, string> = {
+      prompt,
+      phase: "2",
+      intent,
+      useCodbi: String(this.useCodbi),
+      askAllQuestions: String(this.askAllQuestions),
+    };
     // Send the accumulated clarifying questions/answers so the AI keeps the full conversation.
     if (this.clarificationHistory.length > 0) {
       data["clarificationHistory"] = JSON.stringify(this.clarificationHistory);
@@ -1349,6 +1525,20 @@ export class AiAssistant implements OnInit, OnDestroy {
               existingI18n[lang]["codbi-prop-standards"] = p2["standards"];
               formJsonToLoad["formI18n"] = existingI18n;
             }
+            // Preserve the "CodBi" enable checkbox across the inference-driven form load.
+            // Formcycle reads form properties (codbi-prop-enable) from formI18n[lang] for the
+            // current edit language, but the AI's returned form JSON carries the value at the top
+            // level. Copy it into formI18n[lang] so the checkbox stays checked after the load
+            // (mirrors the codbi-prop-standards handling above).
+            {
+              const lang: string = d["getFormEditLanguage"] ? (d["getFormEditLanguage"] as () => string)() : "default";
+              const existingI18n =
+                (formJsonToLoad["formI18n"] as Record<string, Record<string, unknown>> | undefined) ?? {};
+              existingI18n[lang] = existingI18n[lang] ?? {};
+              const topEnable = formJsonToLoad["codbi-prop-enable"];
+              existingI18n[lang]["codbi-prop-enable"] = topEnable === undefined || topEnable === null ? "0" : topEnable;
+              formJsonToLoad["formI18n"] = existingI18n;
+            }
             if (typeof d["loadPersistJson"] === "function") {
               (d["loadPersistJson"] as (...args: unknown[]) => void).call(designer, formJsonToLoad);
             } else if (typeof d["loadPersist"] === "function") {
@@ -1364,6 +1554,83 @@ export class AiAssistant implements OnInit, OnDestroy {
             // Notify the workflow UI that the form changed so its trigger button dropdown
             // refreshes immediately (same event the designer fires on manual property edits).
             Callbacks["persist-changed"].fire();
+            // --- DIAGNOSTIC: codbi-prop-enable persistence after inference-driven form load ---
+            console.log(
+              "[AICodBiAssistant] formJsonToLoad codbi-prop-enable =",
+              formJsonToLoad["codbi-prop-enable"],
+              "| has formI18n =",
+              formJsonToLoad["formI18n"] != null,
+            );
+            // Patch the LIVE designer model so Formcycle reads the "CodBi" enable checkbox
+            // correctly after the inference-driven form load. loadPersistJson drops the
+            // top-level codbi-prop-enable from the live model; getFormPropertyValueForCurrentLang
+            // reads the form property from there (and formI18n[lang]). Write BOTH locations and
+            // also flip the visible CheckboxEditor input directly (it may already be rendered
+            // unchecked).
+            {
+              const livePersist = designer.getPersist?.() as unknown as Record<string, unknown> | undefined;
+              const liveLang = designer.getFormEditLanguage?.();
+              const topEnable = formJsonToLoad["codbi-prop-enable"];
+              const enableValue = topEnable === undefined || topEnable === null ? "0" : topEnable;
+              if (livePersist != null) {
+                livePersist["codbi-prop-enable"] = enableValue;
+              }
+              if (livePersist?.["formI18n"] != null && liveLang != null) {
+                const liveI18n = livePersist["formI18n"] as Record<string, Record<string, unknown>>;
+                liveI18n[liveLang] = liveI18n[liveLang] ?? {};
+                liveI18n[liveLang]["codbi-prop-enable"] = enableValue;
+              }
+              console.log(
+                "[AICodBiAssistant] live persist codbi-prop-enable =",
+                enableValue,
+                "| liveLang =",
+                String(liveLang ?? "n/a"),
+              );
+              setTimeout(() => {
+                const cb = document.querySelector("#form-codbi-prop-enable-input") as HTMLInputElement | null;
+                if (cb) {
+                  const shouldCheck = enableValue === "1" || enableValue === 1 || enableValue === true;
+                  if (cb.checked !== shouldCheck) {
+                    cb.checked = shouldCheck;
+                    cb.dispatchEvent(new Event("change", { bubbles: true }));
+                    console.log("[AICodBiAssistant] set #form-codbi-prop-enable-input checked =", shouldCheck);
+                  }
+                } else {
+                  console.log(
+                    "[AICodBiAssistant] #form-codbi-prop-enable-input NOT found (CheckboxEditor not rendered)",
+                  );
+                }
+              }, 400);
+            }
+            setTimeout(() => {
+              const dg = getDesignerInstance();
+              let readBack: unknown = "n/a";
+              try {
+                const api = (dg as unknown as Record<string, unknown> | null)?.["getFormPropertyValueForCurrentLang"];
+                readBack =
+                  typeof api === "function"
+                    ? (api as (...args: unknown[]) => unknown).call(dg, "codbi-prop-enable")
+                    : "no-api";
+              } catch (err) {
+                readBack = "err:" + String(err);
+              }
+              const lp = getDesignerInstance()?.getPersist?.() as unknown as Record<string, unknown> | undefined;
+              const ll = getDesignerInstance()?.getFormEditLanguage?.();
+              const liveI18n = (lp?.["formI18n"] as Record<string, Record<string, unknown>> | undefined)?.[
+                String(ll ?? "default")
+              ];
+              const cb = document.querySelector("#form-codbi-prop-enable-input") as HTMLInputElement | null;
+              console.log(
+                "[AICodBiAssistant] after loadPersistJson: readBack =",
+                readBack,
+                "| liveTopEnable =",
+                lp?.["codbi-prop-enable"],
+                "| liveI18nEnable =",
+                liveI18n?.["codbi-prop-enable"],
+                "| checkboxDomChecked =",
+                cb ? cb.checked : "no-el",
+              );
+            }, 900);
             // Apply updated CodBi standard configurations if returned by the backend
             if (typeof p2["standards"] === "string") {
               const newStandards = p2["standards"] as string;
@@ -1524,8 +1791,12 @@ export class AiAssistant implements OnInit, OnDestroy {
                 }
                 return (dSave["publish"] as () => Promise<void>).call(designer);
               })
-              .then(doReload)
-              .catch(doReload);
+              // Delay the reload (same as the workflow-only branch) so the workflow editor has
+              // finished refreshing its model from the server. Reloading immediately after
+              // publish() could otherwise leave the workflow paths of the previous version on
+              // screen until a second manual reload.
+              .then(() => setTimeout(doReload, 1500))
+              .catch(() => setTimeout(doReload, 1500));
           } else {
             setTimeout(doReload, 2000);
           }
@@ -1580,6 +1851,10 @@ export class AiAssistant implements OnInit, OnDestroy {
             }
             this.visible = false;
             this.cdr.markForCheck();
+            // Form-only flow has no page reload, so PrimeNG's modal mask would otherwise linger and
+            // keep the background darkened. Remove it right after the dialog hides (the log popup
+            // below re-opens the dialog with its own mask when sensitive elements were used).
+            setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
             // Automatic popup: after the form changes are applied (assistant closed), unfold the
             // change-log side panel again if the last inference used sensitive elements that are not
             // marked as checked yet. openLog re-opens the dialog, so it stays visible with the log.

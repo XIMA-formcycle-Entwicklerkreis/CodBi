@@ -405,6 +405,11 @@ class AICodBiAssistant : IPluginServletAction {
     // application (e.g. Holistic.Cleave.Date must not be applied when CodBi is off).
     val useCodbi = params.requestParameters["useCodbi"]?.firstOrNull()?.toBoolean() ?: true
 
+    // When true, the AI asks ALL clarification questions in a single round instead of limiting
+    // itself to at most 3 per round (see buildClarificationSystemPrompt).
+    val askAllQuestions =
+        params.requestParameters["askAllQuestions"]?.firstOrNull()?.toBoolean() ?: false
+
     // Collect image attachments sent as `codbi-base64:<name>` data-URL params (the same format
     // used by ai.llama.standard.qa). PDF pages are rendered to images client-side via PDF.js
     // before upload, so the backend only ever receives PNG/JPEG data URIs here.
@@ -508,6 +513,7 @@ class AICodBiAssistant : IPluginServletAction {
                 formKey,
                 currentFormTitle,
                 useCodbi,
+                askAllQuestions,
                 imageParts)
           } catch (e: Exception) {
             logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
@@ -959,7 +965,11 @@ class AICodBiAssistant : IPluginServletAction {
           append("""{"role":"system","content":${gson.toJson(rethinkSystemPrompt)}},""")
           val formJson = gson.toJson(mapOf("items" to allItems))
           val userContent =
-              "Modify the form below according to the user request. Form data: $formJson"
+              "Original user request: $prompt\n\n" +
+                  "Modify the form below according to that request. If the user asked to REMOVE or " +
+                  "DELETE fields/elements, honor it: drop those items from the root \"items\" array AND " +
+                  "from their parent container's \"elements\" array (clear to [] for \"remove all " +
+                  "fields\"). Form data: $formJson"
           append("""{"role":"user","content":${gson.toJson(userContent)}}""")
           append("]")
         }
@@ -1082,7 +1092,10 @@ class AICodBiAssistant : IPluginServletAction {
                 "element as a separate item in the root \"items\" array.\n" +
                 "REBUILD any formcycle widgets you created in the previous step so they exactly match the JSON " +
                 "templates provided.\n" +
-                "Return the COMPLETE modified form JSON with ALL items â€” never drop existing elements."
+                "Return the COMPLETE modified form JSON with ALL items. When the user EXPLICITLY asked to remove or " +
+                "delete certain fields/elements, honor that: remove those items from the root \"items\" array AND from " +
+                "their parent container's \"elements\" array (e.g. clearing it to [] when the user said \"remove all " +
+                "fields\"). Only keep existing elements when the user did NOT ask to remove them."
 
         logger.info(
             "[AICodBiAssistant] Pass-2 CodBi â€” candidates: {}, targetIds: {}, sending {} item(s)",
@@ -1128,6 +1141,38 @@ class AICodBiAssistant : IPluginServletAction {
           return rerunWithCodbiDetails(
               pass2Details.elements, pass2Details.widgets, useCodbi, rerunCount + 1)
         }
+      }
+      // If the AI is STILL asking for details after the rerun budget is exhausted, the last
+      // response carries no "items" and the form would be left unchanged/empty - while a workflow
+      // could still be created from it. Force ONE final pass that forbids a details request and
+      // requires the complete form JSON.
+      if (extractCodbiDetailsRequest(pass2Cleaned) != null) {
+        logger.info(
+            "[AICodBiAssistant] Rerun budget exhausted but AI still requests details - forcing final complete-form pass")
+        val finalSystemPrompt =
+            loadCodbiApplyPrompt(emptyList(), emptyList(), useCodbi) +
+                "\n\nYou MUST now return the COMPLETE modified form JSON with ALL items. " +
+                "Do NOT return a need_codbi_details request - you already received every reference " +
+                "you need. Build every field/element the user asked for using the widget templates above."
+        val finalUserContent =
+            "Original user request: $prompt\n\n" +
+                "Complete current form (IPersistJson):\n${slimPersistJson(formBase)}\n\n" +
+                "Return the COMPLETE modified form JSON with ALL items now."
+        val finalMessagesJson =
+            "[{\"role\":\"system\",\"content\":${gson.toJson(finalSystemPrompt)}}," +
+                "{\"role\":\"user\",\"content\":${gson.toJson(finalUserContent)}}]"
+        val finalRaw = instance.performFormAssist(modelId, finalMessagesJson)
+        tokensIn += estimateTokens(finalMessagesJson)
+        tokensOut += estimateTokens(finalRaw)
+        val finalCleaned = extractJson(stripThinkTags(finalRaw))
+        logger.info("[AICodBiAssistant] Final forced pass raw result: {}", finalCleaned)
+        // Only use the final result if it actually produced a form; otherwise keep the previous
+        // spliced result so a bare details request is never substituted for the form.
+        if (extractCodbiDetailsRequest(finalCleaned) == null) {
+          return splicePass2IntoPass1(formBase, finalCleaned)
+        }
+        logger.warn(
+            "[AICodBiAssistant] Final forced pass still returned a details request - keeping previous result")
       }
       // Splice into the form base (the original form when pass-1 was a details request) so new
       // widgets created in pass-2 are preserved in the returned form.
@@ -1587,6 +1632,80 @@ class AICodBiAssistant : IPluginServletAction {
         pass1Obj.add("items", newItems)
       }
 
+      // Honor element REMOVALS from pass-2: pass-2's container "elements" arrays are
+      // authoritative. When pass-2 removed an element from a container (e.g. the user asked to
+      // "remove all fields" and the page's "elements" became []), drop the now-orphaned items
+      // from the merged result so removed fields are not silently re-added. Only applies when
+      // pass-2 actually returned at least one container with an "elements" array (i.e. it made a
+      // definitive statement about the form structure).
+      val pass2ContainersWithElements = mutableSetOf<String>()
+      pass2Obj.getAsJsonArray("items")?.forEach { item ->
+        if (!item.isJsonObject) return@forEach
+        val obj = item.asJsonObject
+        val props = obj.getAsJsonObject("properties") ?: return@forEach
+        val containerName = props.get("name")?.asString ?: return@forEach
+        val elements = props.getAsJsonArray("elements") ?: return@forEach
+        pass2ContainersWithElements.add(containerName)
+      }
+      if (pass2ContainersWithElements.isNotEmpty()) {
+        val finalItems = pass1Obj.getAsJsonArray("items") ?: JsonArray()
+        // Names that were children of a container in the ORIGINAL pass-1 form (candidates for
+        // removal). Computed from the untouched pass-1 JSON, NOT the merged result — the merged
+        // containers may already have had their "elements" emptied by pass-2, which would wrongly
+        // make every field look like a "standalone" item that must be kept.
+        val pass1ChildNames = mutableSetOf<String>()
+        try {
+          JsonParser.parseString(pass1Json).asJsonObject.getAsJsonArray("items")?.forEach { item ->
+            if (item.isJsonObject) {
+              item.asJsonObject
+                  .getAsJsonObject("properties")
+                  ?.getAsJsonArray("elements")
+                  ?.forEach { ref -> if (ref.isJsonPrimitive) pass1ChildNames.add(ref.asString) }
+            }
+          }
+        } catch (_: Exception) {}
+        // Names still referenced by ANY container in the merged result.
+        val referenced = mutableSetOf<String>()
+        finalItems.forEach { item ->
+          if (item.isJsonObject) {
+            item.asJsonObject.getAsJsonObject("properties")?.getAsJsonArray("elements")?.forEach {
+                ref ->
+              if (ref.isJsonPrimitive) referenced.add(ref.asString)
+            }
+          }
+        }
+        // Items explicitly present in pass-2 as standalone items are always kept.
+        val pass2StandaloneNames = mutableSetOf<String>()
+        pass2Obj.getAsJsonArray("items")?.forEach { item ->
+          if (item.isJsonObject) {
+            item.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString?.let {
+              pass2StandaloneNames.add(it)
+            }
+          }
+        }
+        // Keep containers, and items that are still referenced OR were never children OR are
+        // standalone in pass-2. Drop only items that pass-1 listed as children but pass-2
+        // removed (orphaned fields), so header/footer/standalone items are preserved.
+        val filtered = JsonArray()
+        finalItems.forEach { item ->
+          if (item.isJsonObject) {
+            val props = item.asJsonObject.getAsJsonObject("properties")
+            val name = props?.get("name")?.asString
+            val isContainer = props?.has("elements") == true
+            val keep =
+                isContainer ||
+                    name == null ||
+                    name !in pass1ChildNames ||
+                    name in referenced ||
+                    name in pass2StandaloneNames
+            if (keep) filtered.add(item)
+          } else {
+            filtered.add(item)
+          }
+        }
+        pass1Obj.add("items", filtered)
+      }
+
       if (pass2Obj.has("_codbiApplicability")) {
         pass1Obj.add("_codbiApplicability", pass2Obj.get("_codbiApplicability"))
       }
@@ -2031,6 +2150,31 @@ class AICodBiAssistant : IPluginServletAction {
       }
       props.add("elements", clean)
     }
+
+    // 4) Normalize XSelect options: the visible dropdown text ("Auswahl") must be in the "text"
+    // key. The AI sometimes emits {"value":..,"label":..} instead — copy "label" into "text" when
+    // "text" is missing so the options actually display (an option without "text" renders empty).
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val o = el.asJsonObject
+      if (o.get("className")?.asString != "XSelect") continue
+      val props = o.getAsJsonObject("properties") ?: continue
+      val options = props.getAsJsonArray("options") ?: continue
+      var changed = false
+      for (opt in options) {
+        if (!opt.isJsonObject) continue
+        val obj = opt.asJsonObject
+        if (!obj.has("text") && obj.has("label")) {
+          obj.add("text", obj.get("label"))
+          changed = true
+        }
+      }
+      if (changed) {
+        logger.info(
+            "[AICodBiAssistant] Normalized XSelect '{}': copied label->text for options",
+            props.get("name")?.asString)
+      }
+    }
   }
 
   private fun slimPersistJson(json: String): String {
@@ -2380,6 +2524,21 @@ class AICodBiAssistant : IPluginServletAction {
                 ?: continue
         resultItemNames.add(n)
       }
+      // Trust the AI's structural output instead of guessing intent with keyword heuristics:
+      // the AI understands the user's intent (in any language) from the prompt and expresses
+      // removals structurally. Only restore an original item the AI dropped when the result
+      // still clearly expects it:
+      //   - children: their parent container is present in the result AND still references the
+      //     item in its "elements" array (an accidental omission, not a removal);
+      //   - top-level scaffolding (header/footer/page): only when the AI kept at least one
+      //     container, i.e. it is performing an ordinary structural edit rather than emptying
+      //     the form.
+      // When the AI emptied/removed an element, honor it and do NOT re-add.
+      val aiKeptContainers =
+          resultItems.any { candidate ->
+            candidate.isJsonObject &&
+                candidate.asJsonObject.getAsJsonObject("properties")?.has("elements") == true
+          }
       for (el in originalItems) {
         if (!el.isJsonObject) continue
         val item = el.asJsonObject
@@ -2387,28 +2546,29 @@ class AICodBiAssistant : IPluginServletAction {
             item.getAsJsonObject("properties")?.get("name")?.asString
                 ?: item.get("name")?.asString
                 ?: continue
-        if (name !in resultItemNames) {
+        if (name in resultItemNames) continue
+        val containerName = originalContainerOfItem[name]
+        val restore =
+            if (containerName != null) {
+              resultItems.any { candidate ->
+                candidate.isJsonObject &&
+                    candidate.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString ==
+                        containerName &&
+                    candidate.asJsonObject
+                        .getAsJsonObject("properties")
+                        ?.getAsJsonArray("elements")
+                        ?.any { ref -> ref.isJsonPrimitive && ref.asString == name } == true
+              }
+            } else {
+              aiKeptContainers
+            }
+        if (restore) {
           resultItems.add(el)
           logger.debug("[AICodBiAssistant] Restored original item '{}' dropped by AI", name)
-          val containerName = originalContainerOfItem[name]
-          if (containerName != null) {
-            val containerItem =
-                resultItems
-                    .firstOrNull {
-                      it.isJsonObject &&
-                          (it.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString ==
-                              containerName)
-                    }
-                    ?.asJsonObject
-            val elements = containerItem?.getAsJsonObject("properties")?.getAsJsonArray("elements")
-            if (elements != null && elements.none { it.isJsonPrimitive && it.asString == name }) {
-              elements.add(name)
-              logger.debug(
-                  "[AICodBiAssistant] Restored element ref '{}' in container '{}'",
-                  name,
-                  containerName)
-            }
-          }
+        } else {
+          logger.info(
+              "[AICodBiAssistant] Honoring removal of '{}' - not restoring (AI interpreted the prompt as a removal)",
+              name)
         }
       }
       val baseObj = result.getAsJsonObject("base")
@@ -4336,6 +4496,15 @@ class AICodBiAssistant : IPluginServletAction {
           throw Exception("AI returned invalid workflow JSON: ${e.message}")
         }
 
+    if (taskSpecs.isEmpty()) {
+      logger.warn(
+          "[AICodBiAssistant] Workflow AI returned no task spec ({} chars) - aborting workflow creation",
+          safeCleaned.length)
+      throw Exception(
+          "The AI did not return a workflow specification - it described form elements instead of a " +
+              "workflow task. Please rephrase the request or try again.")
+    }
+
     // Apply the delta operations: each spec may be a create, remove or replace (see
     // WorkflowTaskSpec). createWorkflowTask is kept for backward compatibility.
     val results = taskSpecs.map { spec -> applyWorkflowOperation(workflowVersionId, spec, params) }
@@ -4470,6 +4639,13 @@ class AICodBiAssistant : IPluginServletAction {
           }
       return buildString {
         append(general).append("\n\n")
+        append(
+            "SCOPE: You operate ONLY on the currently open form. You CANNOT create, rename, duplicate or " +
+                "open a NEW or SEPARATE form, nor a second/admin/dashboard/overview form, on the server. If the " +
+                "user asks for a separate form or an admin/overview/dashboard form, do NOT promise to create one " +
+                "and do NOT ask for its title - instead explain that a separate form cannot be created here and " +
+                "offer to implement the requested capability (e.g. an overview / Excel export) as a workflow " +
+                "action on the CURRENT form.\n\n")
         append(workflowReference).append("\n\n")
         if (!pass2) {
           append(
@@ -4520,12 +4696,24 @@ class AICodBiAssistant : IPluginServletAction {
                   "NEVER create a new template â€” always pick from the list above.\n\n")
         }
         append(
-            "PDF GENERATION IS AUTOMATIC: nodes like FC_FILL_PDF (and PDF exports such as " +
-                "FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF) render a pre-configured template " +
-                "with the form data at runtime — Formcycle creates the PDF, not you. NEVER ask the " +
-                "user to describe the PDF text/layout/content, and do not invent that text. Only " +
-                "provide the template/file name the user mentioned (or a sensible default like " +
-                "\"filled.pdf\"), and rely on the existing template.\n\n")
+            "PDF GENERATION IS AUTOMATIC: Formcycle creates the PDF at runtime — you do NOT invent " +
+                "the template/layout/text. Choose the PDF node by INTENT:\n" +
+                "- FORM AS PDF (the user wants the filled/submitted FORM ITSELF as a PDF, e.g. " +
+                "\"die Anmeldung als PDF zusenden\", \"das Formular als PDF verschicken\", \"send the " +
+                "form as a PDF\") → use RemotePrintService (print service). It needs NO template and " +
+                "NO \"file\" param. NEVER use FC_FILL_PDF for this.\n" +
+                "- FILL AN EXISTING PDF TEMPLATE with data collected at runtime (e.g. a vorlage.pdf " +
+                "whose fields are mapped to form values) → use FC_FILL_PDF, and the mandatory " +
+                "\"Details für die PDF-Befüllung > Datei\" field MUST be set (provide the template " +
+                "file via \"file\", e.g. \"vorlage.pdf\" — never omit it).\n" +
+                "- Other PDF exports: FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF.\n" +
+                "CREATING AND SENDING A PDF IS A TWO-NODE OPERATION: first create the PDF-generation " +
+                "node (RemotePrintService / FC_FILL_PDF / FC_PROCESS_LOG_PDF / " +
+                "FC_EXPORT_FORM_RECORD_CHATS) that produces the PDF, then create an FC_EMAIL node " +
+                "that sends that PDF as an attachment, chained after the PDF node (via chainedNodes). " +
+                "NEVER put the PDF in an email as if it were a plain uploaded file with no producing " +
+                "node — the email's attachment must reference the output of the PDF node created in " +
+                "the same workflow path.\n\n")
         if (!inboxes.isNullOrBlank()) {
           append(
               "AVAILABLE INBOXES (for inboxName when creating a FC_MOVE_FORM_RECORD_TO_INBOX node â€” pick the EXACT match to the user's request):\n" +
@@ -4599,6 +4787,10 @@ class AICodBiAssistant : IPluginServletAction {
             "OUTPUT CONTRACT — STRICTLY ENFORCED:\n" +
                 "- Output ONLY valid JSON (a task object, an array of task objects, or " +
                 "{\"workflow\":[...]}/{\"tasks\":[...]}). No prose, no explanation, no Markdown.\n" +
+                "- This is a WORKFLOW TASK response, NOT a form: NEVER output form fields, form " +
+                "elements, or an \"items\" array. Your response must describe the workflow task(s) " +
+                "(trigger + nodes), not rebuild the form - the form has already been handled " +
+                "separately.\n" +
                 "- NEVER ask the user clarifying questions inside this response. All missing details " +
                 "that the user did not specify (and did NOT delegate to you) are to be derived from " +
                 "the form elements and available context above; if a value is still genuinely " +
@@ -8292,7 +8484,49 @@ class AICodBiAssistant : IPluginServletAction {
       val taskInstruction =
           "You receive a partial form JSON (IPersistJson) and a natural language instruction. " +
               "MODIFY the form according to the instruction and return the COMPLETE modified form JSON. " +
-              "Do NOT ask for more details â€” the user's instruction and the form data below are sufficient.\n\n"
+              "REMOVALS: If the user asks to REMOVE or DELETE fields/elements/buttons/widgets, honor it: drop those items " +
+              "from the root \"items\" array AND from their parent container's \"elements\" array. For " +
+              "\"remove all fields\" / \"delete all fields\" clear the page/fieldset \"elements\" arrays to [] and " +
+              "drop the corresponding items. For \"remove all buttons\" drop every XButtonList item and its reference " +
+              "in the page \"elements\" array. Keep structural items (page, header, footer) unless the user asks to " +
+              "remove them too. For \"remove everything\" / \"remove all\" / \"alles entfernen\" / \"rimuovi tutto\" return an empty " +
+              "\"items\" array (drop every item including the page, header and footer). " +
+              "A removal request is a valid form modification: do NOT return the form unchanged and do NOT " +
+              "report _codbiApplicability codbiVerdict \"none\" merely because no CodBi functionality applies.\n\n" +
+              "SCOPE: You operate ONLY on the currently open form. You CANNOT create, rename, duplicate or " +
+              "open a NEW or SEPARATE form, nor a second/admin/dashboard/overview form, on the server. If the " +
+              "user asks for a separate form or an admin/overview/dashboard form, do NOT promise to create one " +
+              "and do NOT ask for its title - instead explain that a separate form cannot be created here and " +
+              "offer to implement the requested capability (e.g. an overview / Excel export) as a workflow action " +
+              "or a section on the CURRENT form.\n" +
+              "COMPLETE OUTPUT: You MUST eventually return the COMPLETE modified form JSON containing ALL field items " +
+              "in the root \"items\" array and their references in the parent container's \"elements\" array. " +
+              "The widget and CodBi references above are CONDENSED (names + purpose only, no property structure). " +
+              "To emit correct widget properties, request the FULL details ONLY for the specific widget classes and " +
+              "CodBi functionalities you will ACTUALLY create - never for the whole catalog. Request all the details " +
+              "you need IN A SINGLE request: {\"status\":\"need_codbi_details\",\"elements\":[...],\"widgets\":[...]}. " +
+              "After receiving those details, build the complete form in the VERY NEXT response - never answer with " +
+              "a details request more than once.\n" +
+              "REPEATABLE FIELDS: Whenever the user's INTENT is that certain fields can be added/duplicated " +
+              "repeatedly (a '+' to add another topic/entry/row - in ANY language), you MUST wrap those fields " +
+              "in a DYNAMIC CONTAINER (XContainer or XContainerInvisible) that is itself an item in the root " +
+              "\"items\" array. The container MUST have dynamic:\"1\" (this is what makes it repeatable - " +
+              "without dynamic:\"1\" the container is NOT repeatable), plus dynamicMinSize:\"1\", " +
+              "dynamicMaxSize:\"10\", dynamicAddText (the '+' button label, e.g. '+ Thema hinzufügen') and " +
+              "dynamicDeleteText. The container's \"elements\" array holds the inner field names. The page's " +
+              "\"elements\" array references the CONTAINER name only - do NOT list the inner fields directly on " +
+              "the page. CRITICAL - Do NOT add ANY extra element (button, text, span or label such as " +
+              "'Thema hinzufügen') inside the container: the dynamic container renders its own add/delete " +
+              "buttons automatically via dynamicAddText/dynamicDeleteText. A missing dynamic:\"1\" or an extra " +
+              "add-label element is WRONG. Decide from intent, not from specific keywords. Do NOT leave such " +
+              "fields as plain non-repeating fields on the page.\n" +
+              "EXAMPLE (repeatable topic fields on page 'p1'): items = [ ..., {\"className\":\"XPage\",\"properties\":{\"name\":\"p1\",\"elements\":[\"coTopics\"]}}, {\"className\":\"XContainer\",\"properties\":{\"name\":\"coTopics\",\"id\":\"xi-co-topics\",\"dynamic\":\"1\",\"dynamicMinSize\":\"1\",\"dynamicMaxSize\":\"10\",\"dynamicAddText\":\"+ Thema hinzufügen\",\"dynamicDeleteText\":\"Thema entfernen\",\"elements\":[\"tfTopicTitle\",\"taTopicDesc\"]}}, {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfTopicTitle\",...}}, {\"className\":\"XTextArea\",\"properties\":{\"name\":\"taTopicDesc\",...}}, ... ]. The page references ONLY \"coTopics\"; the two fields live in coTopics' elements.\n" +
+              "CONTROL TYPES: Honor the USER CLARIFICATION answer about the input control type. \"Radio-Button\" / \"radio\" " +
+              "→ create an XSelect with selectlayout:\"radio\" (options with text+value). \"Checkbox\" → a single XCheckbox " +
+              "for a yes/no question, or XSelect with selectlayout:\"checkbox\" for a multi-select option list. " +
+              "\"Dropdown\" / not specified → XSelect without selectlayout (default dropdown). NEVER generate a plain " +
+              "dropdown when the user explicitly chose radio buttons or a checkbox.\n\n"
+      "Do NOT ask for more details â€” the user's instruction and the form data below are sufficient.\n\n"
       // Pass-1 uses ONLY the condensed references (element/widget names + purposes) plus the
       // general rules. The parameter-complete sections (codbi.standard_configurations /
       // codbi.functionalities / codbi.element_placeholders) are intentionally NOT included here:
@@ -8399,6 +8633,12 @@ class AICodBiAssistant : IPluginServletAction {
       // EP sections are redundant with the targeted details below (or the full reference in the
       // blind case) and would roughly double the token usage when duplicated here.
       val base = CodBiElementAccess.scrub(categories["codbi.general"] ?: "")
+      // Cross-cutting Formcycle rules (form structure, repeatable containers, server variables,
+      // element identifiers) MUST be carried into every rerun — the AI drops a repeatable
+      // container otherwise, because the REPEATABLE CONTAINERS rule lives in formcycle.general and
+      // this apply prompt is what replaces the full system prompt on pass-2/3/4 reruns.
+      val fc = PromptLoader.loadCategory(em, "formcycle")
+      val formcycleGeneral = fc["formcycle.general"] ?: ""
       val codbiPart =
           when {
             requestedIds.isNotEmpty() -> {
@@ -8414,7 +8654,15 @@ class AICodBiAssistant : IPluginServletAction {
             // Pure blind reconsideration: provide the complete reference.
             else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
           }
-      return WIDGET_STRUCTURE_RULES + "\n" + base + "\n\n" + codbiPart + "\n\n" + widgetPart
+      return WIDGET_STRUCTURE_RULES +
+          "\n" +
+          formcycleGeneral +
+          "\n\n" +
+          base +
+          "\n\n" +
+          codbiPart +
+          "\n\n" +
+          widgetPart
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load apply prompt", e)
       return FALLBACK_APPLY_PROMPT
@@ -8627,7 +8875,8 @@ class AICodBiAssistant : IPluginServletAction {
       formListContext: String?,
       currentFormKey: String?,
       currentFormTitle: String?,
-      useCodbi: Boolean
+      useCodbi: Boolean,
+      askAllQuestions: Boolean
   ): String {
     val action =
         when (intent) {
@@ -8635,10 +8884,31 @@ class AICodBiAssistant : IPluginServletAction {
           "workflow" -> "create or modify a workflow"
           else -> "modify the form and create/modify a workflow"
         }
+    // When "ask all at once" is enabled, the AI gathers EVERY clarification question it has in a
+    // single round instead of limiting itself to at most 3 questions per round.
+    val questionCountRule =
+        if (askAllQuestions) {
+          "- Ask ALL questions you have at once in this single round — do not split them across " +
+              "rounds and do not hold any back. Only ask what is genuinely missing. Each question " +
+              "needs a unique \"id\".\n"
+        } else {
+          "- Ask at most 3 questions per round; each question needs a unique \"id\".\n"
+        }
     return buildString {
       append(
           "You are a FORMCYCLE assistant. You are about to $action for the user.\n" +
               "USER REQUEST: ${gson.toJson(prompt)}\n")
+      append(
+          "LIMITATION: You CANNOT create, rename, duplicate or open a NEW or SEPARATE form, nor a " +
+              "second/admin/dashboard/overview form, on the server. If the user wants a separate form " +
+              "or an admin/overview/dashboard form, do NOT promise it and do NOT ask for its title; " +
+              "instead note that it cannot be created and propose an alternative on the current form " +
+              "(e.g. a workflow action or a section).\n")
+      append(
+          "CONTROL TYPES: Whenever the request involves options/choices and you cannot determine whether they are " +
+              "mutually exclusive (single-select: radio button or dropdown) or non-exclusive (multi-select: checkbox), " +
+              "clarify the control type by offering the plausible options (e.g. checkbox vs radio button for 'Ja/Nein') " +
+              "in ANY language - unless the control type is already clear from the request.\n")
       if (!currentFormKey.isNullOrBlank() || !currentFormTitle.isNullOrBlank()) {
         append(
             "\nCURRENTLY OPEN FORM: title=${gson.toJson(currentFormTitle ?: "")}, " +
@@ -8712,7 +8982,7 @@ class AICodBiAssistant : IPluginServletAction {
               "{\"id\":\"q1\",\"question\":\"<your question>\",\"options\":[\"<option>\",\"<option>\"],\"allowFreeText\":true}" +
               "]}\n" +
               "Rules:\n" +
-              "- Ask at most 3 questions per round; each question needs a unique \"id\".\n" +
+              questionCountRule +
               "- \"options\" is an optional list of multiple-choice answers (may be empty).\n" +
               "- \"allowFreeText\" true means the user may type a free answer and/or attach a document.\n" +
               "- Build on previous answers; only ask what is still missing. NEVER ask a question whose\n" +
@@ -8747,10 +9017,15 @@ class AICodBiAssistant : IPluginServletAction {
               "      target attribute, injected text, template): ask for it when missing.\n" +
               "- PDF generation is AUTOMATIC in Formcycle: nodes like FC_FILL_PDF (and PDF exports such\n" +
               "  as FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF) render a pre-configured template\n" +
-              "  with the form data at runtime. NEVER ask the user to describe the PDF text/layout/content\n" +
-              "  or to provide the exact wording of the PDF. At most ask WHICH PDF template or file to use\n" +
-              "  (e.g. the template the user uploaded) when it cannot be derived; the PDF body itself is\n" +
-              "  produced by Formcycle, not by you.\n" +
+              "  with the form data at runtime. The PDF template is ALREADY configured in Formcycle.\n" +
+              "  NEVER ask the user for a PDF template name, layout, text or content — that is never a\n" +
+              "  required value. Only use a template/file name if the user explicitly mentioned one;\n" +
+              "  otherwise use the default configured template.\n" +
+              "- Creating AND sending a PDF is a TWO-NODE operation: first a PDF-generation node\n" +
+              "  (FC_FILL_PDF / FC_PROCESS_LOG_PDF / FC_EXPORT_FORM_RECORD_CHATS) that produces the PDF,\n" +
+              "  then an FC_EMAIL node that sends that PDF as an attachment (chained after the PDF node).\n" +
+              "  Never treat the PDF as a plain uploaded file in an email — always create the PDF node\n" +
+              "  and chain the email to it. Do NOT ask the user about this; build both nodes automatically.\n" +
               "If you have everything you need, respond with exactly the single word: NO_CLARIFICATION\n")
     }
   }
@@ -8948,6 +9223,7 @@ class AICodBiAssistant : IPluginServletAction {
       formKey: String?,
       currentFormTitle: String?,
       useCodbi: Boolean,
+      askAllQuestions: Boolean,
       imageParts: List<String>
   ): ClarificationCheck? {
     val system =
@@ -8960,7 +9236,8 @@ class AICodBiAssistant : IPluginServletAction {
             formListContext,
             formKey,
             currentFormTitle,
-            useCodbi)
+            useCodbi,
+            askAllQuestions)
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(system)}},""")

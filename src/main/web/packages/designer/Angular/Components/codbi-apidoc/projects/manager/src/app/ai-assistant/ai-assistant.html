@@ -167,6 +167,13 @@
                 <span class="cb-ai-codbi-switch__slider"></span>
             </label>
             <span class="cb-ai-codbi-switch__label">CodBi</span>
+            <label
+                class="cb-ai-askall-switch"
+                title="Ask ALL clarification questions in one single round. Off (default) = the AI asks at most 3 questions per round and may ask further questions in later rounds.">
+                <input type="checkbox" [(ngModel)]="askAllQuestions" [disabled]="loading || !dbAvailable" />
+                <span class="cb-ai-askall-switch__slider"></span>
+            </label>
+            <span class="cb-ai-askall-switch__label">Ask all</span>
         </span>
         <p-button
             label="Run"
@@ -229,7 +236,11 @@
     styleClass="cb-ai-clarification-dialog">
 
     <div class="cb-ai-clarification-body">
-        <div class="cb-ai-clarification-header">
+        <div
+            class="cb-ai-clarification-header"
+            draggable="true"
+            (dragstart)="onAllClarificationQuestionsDragStart($event)"
+            title="Drag the header into an email draft (e.g. Outlook) to insert ALL questions">
             <img class="cb-ai-clarification-logo" [src]="codbiLogoUrl" alt="CodBi" />
             <span class="cb-ai-clarification-title">The AI needs some information</span>
         </div>
@@ -238,8 +249,21 @@
         </p>
         <ol class="cb-ai-clarification-list">
             @for (q of pendingClarification; track q.id) {
-                <li class="cb-ai-clarification-question">
-                    <span class="cb-ai-clarification-q">{{ q.question }}</span>
+                <li
+                    class="cb-ai-clarification-question"
+                    draggable="true"
+                    (dragstart)="onClarificationQuestionDragStart($event, q)"
+                    title="Drag this question into an email draft (e.g. Outlook) to insert the question text">
+                    <div class="cb-ai-clarification-q-row">
+                        <span class="cb-ai-clarification-q">{{ q.question }}</span>
+                        <button
+                            type="button"
+                            class="cb-ai-clarification-copy"
+                            (click)="copyClarificationQuestion(q)"
+                            title="Copy this question (with its options) so you can paste it into an email">
+                            <i class="pi pi-copy"></i>
+                        </button>
+                    </div>
                     @if (q.options && q.options.length > 0) {
                         <div class="cb-ai-clarification-options">
                             @for (opt of q.options; track opt) {

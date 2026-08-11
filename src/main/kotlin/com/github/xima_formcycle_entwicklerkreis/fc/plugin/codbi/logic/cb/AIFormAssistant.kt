@@ -1131,6 +1131,21 @@ class AIFormAssistant : IPluginServletAction {
                 ?: continue
         resultItemNames.add(n)
       }
+      // Trust the AI's structural output instead of guessing intent with keyword heuristics:
+      // the AI understands the user's intent (in any language) from the prompt and expresses
+      // removals structurally. Only restore an original item the AI dropped when the result
+      // still clearly expects it:
+      //   - children: their parent container is present in the result AND still references the
+      //     item in its "elements" array (an accidental omission, not a removal);
+      //   - top-level scaffolding (header/footer/page): only when the AI kept at least one
+      //     container, i.e. it is performing an ordinary structural edit rather than emptying
+      //     the form.
+      // When the AI emptied/removed an element, honor it and do NOT re-add.
+      val aiKeptContainers =
+          resultItems.any { candidate ->
+            candidate.isJsonObject &&
+                candidate.asJsonObject.getAsJsonObject("properties")?.has("elements") == true
+          }
       for (el in originalItems) {
         if (!el.isJsonObject) continue
         val item = el.asJsonObject
@@ -1138,29 +1153,29 @@ class AIFormAssistant : IPluginServletAction {
             item.getAsJsonObject("properties")?.get("name")?.asString
                 ?: item.get("name")?.asString
                 ?: continue
-        if (name !in resultItemNames) {
+        if (name in resultItemNames) continue
+        val containerName = originalContainerOfItem[name]
+        val restore =
+            if (containerName != null) {
+              resultItems.any { candidate ->
+                candidate.isJsonObject &&
+                    candidate.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString ==
+                        containerName &&
+                    candidate.asJsonObject
+                        .getAsJsonObject("properties")
+                        ?.getAsJsonArray("elements")
+                        ?.any { ref -> ref.isJsonPrimitive && ref.asString == name } == true
+              }
+            } else {
+              aiKeptContainers
+            }
+        if (restore) {
           resultItems.add(el)
           logger.debug("[AIFormAssistant] Restored original item '{}' dropped by AI", name)
-          // Also restore the element reference in its original container
-          val containerName = originalContainerOfItem[name]
-          if (containerName != null) {
-            val containerItem =
-                resultItems
-                    .firstOrNull {
-                      it.isJsonObject &&
-                          (it.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString ==
-                              containerName)
-                    }
-                    ?.asJsonObject
-            val elements = containerItem?.getAsJsonObject("properties")?.getAsJsonArray("elements")
-            if (elements != null && elements.none { it.isJsonPrimitive && it.asString == name }) {
-              elements.add(name)
-              logger.debug(
-                  "[AIFormAssistant] Restored element ref '{}' in container '{}'",
-                  name,
-                  containerName)
-            }
-          }
+        } else {
+          logger.info(
+              "[AIFormAssistant] Honoring removal of '{}' - not restoring (AI interpreted the prompt as a removal)",
+              name)
         }
       }
       // Fill in base template properties for NEW items (not in original) and set parentid.

@@ -41,14 +41,14 @@ EXCEPTION — BundID fsBKAllDaten: When the prompt asks to show/hide BundID/Bür
 
 ## REPEATABLE CONTAINERS
 
-To make an XContainer or XContainerInvisible repeatable (add dynamic rows), set "dynamic":"1" in its properties. Also set "dynamicMinSize" (min rows, default 1), "dynamicMaxSize" (max rows, default 10), "dynamicAddText" (add button label), "dynamicDeleteText" (delete button label) as needed.
+To make a field group repeatable (the user can add/duplicate rows via a '+' button - in ANY language), wrap the fields in an XContainer or XContainerInvisible with "dynamic":"1" (REQUIRED — this is what makes the container repeatable; without it the container is NOT repeatable) plus "dynamicMinSize" (min rows, default 1), "dynamicMaxSize" (max rows, default 10), "dynamicAddText" (the '+' button label, e.g. '+ Thema hinzufügen'), "dynamicDeleteText" (delete button label). The container is itself an item in the root 'items' array; its 'elements' array lists the inner field names; the page's 'elements' array references ONLY the container's name (do NOT list the inner fields directly on the page). CRITICAL - Do NOT add ANY extra element (button, text, span or label such as 'Thema hinzufügen') inside the container to represent the add action: the dynamic container renders its own add/delete buttons via dynamicAddText/dynamicDeleteText. A missing dynamic:"1" or a manual add-button without a dynamic container is WRONG.
 
 ## Server Variables (Placeholders)
 
 AVAILABLE SERVER VARIABLES (system placeholders — use [%\$NAME%] syntax):
 
 FORM RECORD:
-- [%\$PROCESS_ID%] or [%\$PROZESS_ID%] — form record process ID (string)
+- [%\$PROCESS_ID%] — form record process ID (string)
 - [%\$RECORD_ID%] — form record database ID (numeric)
 - [%\$RECORD_SUBJECT%] — form record subject/title
 - [%\$RECORD_READ%] — true/false whether record has been read
@@ -63,14 +63,14 @@ WORKFLOW STATUS:
 - [%\$STATUS_NAME%] — current workflow status name
 
 PROJECT:
-- [%\$PROJECT_ID%] or [%\$PROJEKT_ID%] — project ID
+- [%\$PROJECT_ID%] — project ID
 - [%\$PROJECT_ALIAS%] — project alias
 - [%\$PROJECT_NAME%] — project name
 - [%\$PROJECT_TITLE%] — project title
 - [%\$PROJECT_DESCRIPTION%] — project description
 
 CLIENT:
-- [%\$MANDANT_ID%] or [%\$CLIENT_ID%] — client/mandant ID
+- [%\$CLIENT_ID%] — client/mandant ID
 - [%\$COUNTER_CLIENT%] or [%\$COUNTER_CLIENT.someKey%] — client counter
 - [%\$DEFAULT_MAIL_SENDER%] — system default mail sender address
 - [%\$CLIENT_MAIL_SENDER%] — client mail sender address
@@ -85,7 +85,7 @@ USER DATA (supports JSONPath, e.g. [%\$USER.firstName%]):
 LINKS:
 - [%\$FORM_LINK%] — link to the form
 - [%\$FORM_REVIEW_LINK%] — link to review the form record
-- [%\$FORM_PROCESS_LINK%] or [%\$FORM_PROZESS_LINK%] — link to the process view
+- [%\$FORM_PROCESS_LINK%] — link to the process view
 - [%\$FORM_INVITE_LINK%] — invitation link
 - [%\$FORM_VERIFY_LINK%] — DOI email verification link
 - [%\$FORM_VERIFY_PAGE_LINK%] — DOI verification page link

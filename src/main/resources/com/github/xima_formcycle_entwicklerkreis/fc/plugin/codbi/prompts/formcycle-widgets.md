@@ -74,11 +74,29 @@ Template:
 
 ## XSelect
 
-Dropdown / select list. Use 'options' array for static items.
+Dropdown / select list. Use 'options' array for static items. CRITICAL — each option MUST be an object with BOTH a 'text' (the visible display text, shown in the dropdown / "Auswahl") AND a 'value' (the submitted value): {"text":"<display text>","value":"<value>"}. An option with only "value" (and no "text") will render an EMPTY dropdown entry. Do NOT use a "label" key — the display key is "text".
 
-Template:
+PRESENTATION ("selectlayout" property) — by default an XSelect renders as a dropdown. Set the "selectlayout" property to change the presentation:
+- Omit it (or "select") — dropdown (default).
+- "radio" (or "radio1") — render the options as RADIO BUTTONS (single choice, all options visible). Use this when the user asked for radio buttons / "Radio-Button" / "Radiobuttons".
+- "checkbox" (or "checkbox1") — render the options as a checkbox group (multi choice). For a single yes/no as a checkbox, use XCheckbox instead.
+- "list" — list box.
+- "table" / "table1" — question table layout.
+CONTROL TYPES — honor the USER CLARIFICATION when it says which control type the user wants: "Radio-Button"/"radio" → XSelect with selectlayout "radio"; "Checkbox" → XCheckbox (a single yes/no checkbox) or XSelect selectlayout "checkbox"; "Dropdown" / not specified → XSelect default (dropdown). Never generate a dropdown when the user explicitly chose radio buttons.
+
+Template (dropdown):
 ```json
-{"className":"XSelect","properties":{"name":"selExample","id":"xi-sel-example","label":"Example","required":"0","fullwidth":"0","options":[]}}
+{"className":"XSelect","properties":{"name":"selExample","id":"xi-sel-example","label":"Example","required":"0","fullwidth":"0","options":[{"text":"Option 1","value":"option1"},{"text":"Option 2","value":"option2"}]}}
+```
+
+Example for a Ja/Nein dropdown:
+```json
+{"className":"XSelect","properties":{"name":"selJaNein","id":"xi-sel-janein","label":"Ja/Nein","required":"0","fullwidth":"0","options":[{"text":"Ja","value":"Ja"},{"text":"Nein","value":"Nein"}]}}
+```
+
+Example for Ja/Nein as RADIO BUTTONS (honor the clarified control type):
+```json
+{"className":"XSelect","properties":{"name":"selJaNein","id":"xi-sel-janein","label":"Ja/Nein","required":"0","fullwidth":"0","selectlayout":"radio","options":[{"text":"Ja","value":"Ja"},{"text":"Nein","value":"Nein"}]}}
 ```
 
 ## XCheckbox
@@ -133,18 +151,23 @@ Template:
 
 ## XContainer
 
-Generic layout container. Has no 'label' property.
+Generic layout container. Has no 'label' property. To make a group of fields repeatable (the user can add/duplicate rows via a '+' button — see REPEATABLE CONTAINERS in the general rules), use this container with dynamic properties:
 
-Template:
+Repeatable container template:
+```json
+{"className":"XContainer","properties":{"name":"coTopics","id":"xi-co-topics","dynamic":"1","dynamicMinSize":"1","dynamicMaxSize":"10","dynamicAddText":"+ Thema hinzufügen","dynamicDeleteText":"Thema entfernen","elements":["tfTopicTitle","taTopicDesc"],"fullwidth":"0"}}
+```
+
+Plain (non-repeatable) container template:
 ```json
 {"className":"XContainer","properties":{"name":"coExample","id":"xi-co-example","elements":[],"fullwidth":"0"}}
 ```
 
 ## XContainerInvisible
 
-Invisible/hidden layout container. Same as XContainer but not rendered. Has no 'label' property.
+Invisible/hidden layout container. Same as XContainer but not rendered. Has no 'label' property. For a repeatable group, use the same dynamic properties as XContainer.
 
-Template:
+Plain (non-repeatable) container template:
 ```json
 {"className":"XContainerInvisible","properties":{"name":"divExample","id":"xi-div-example","elements":[],"fullwidth":"0"}}
 ```

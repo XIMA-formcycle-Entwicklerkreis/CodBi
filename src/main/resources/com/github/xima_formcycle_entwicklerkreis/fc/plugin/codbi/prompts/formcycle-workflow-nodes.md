@@ -32,7 +32,7 @@ PLACEHOLDERS: To include a form field value in email body/subject/recipient use 
 
 AVAILABLE SERVER VARIABLES (system placeholders — use [%\$NAME%] syntax, no curly braces):
   FORM RECORD:
-    [%\$PROCESS_ID%] or [%\$PROZESS_ID%] — form record process ID (string)
+    [%\$PROCESS_ID%] — form record process ID (string)
     [%\$RECORD_ID%] — form record database ID (numeric)
     [%\$RECORD_SUBJECT%] — form record subject/title
     [%\$RECORD_READ%] — true/false whether record has been read
@@ -45,13 +45,13 @@ AVAILABLE SERVER VARIABLES (system placeholders — use [%\$NAME%] syntax, no cu
     [%\$STATUS_TYPE%] — current workflow status type
     [%\$STATUS_NAME%] — current workflow status name
   PROJECT:
-    [%\$PROJECT_ID%] or [%\$PROJEKT_ID%] — project ID
+    [%\$PROJECT_ID%] — project ID
     [%\$PROJECT_ALIAS%] — project alias
     [%\$PROJECT_NAME%] — project name
     [%\$PROJECT_TITLE%] — project title
     [%\$PROJECT_DESCRIPTION%] — project description
   CLIENT:
-    [%\$MANDANT_ID%] or [%\$CLIENT_ID%] — client/mandant ID
+    [%\$CLIENT_ID%] — client/mandant ID
     [%\$COUNTER_CLIENT%] or [%\$COUNTER_CLIENT.someKey%] — client counter
     [%\$DEFAULT_MAIL_SENDER%] — system default mail sender address
     [%\$CLIENT_MAIL_SENDER%] — client mail sender address
@@ -64,7 +64,7 @@ AVAILABLE SERVER VARIABLES (system placeholders — use [%\$NAME%] syntax, no cu
   LINKS:
     [%\$FORM_LINK%] — link to the form
     [%\$FORM_REVIEW_LINK%] — link to review the form record
-    [%\$FORM_PROCESS_LINK%] or [%\$FORM_PROZESS_LINK%] — link to the process view
+    [%\$FORM_PROCESS_LINK%] — link to the process view
     [%\$FORM_INVITE_LINK%] — invitation link
     [%\$FORM_VERIFY_LINK%] — DOI email verification link
     [%\$FORM_VERIFY_PAGE_LINK%] — DOI verification page link
@@ -137,7 +137,7 @@ Fires at a specific date/time. Has TWO modes:
 - Mode 2 — EXPRESSION_WITH_FORMAT: fires at a date/time computed from a form field value, optionally with an offset. Use when the user says "X days|hours|weeks|months|years after field Y", "one day after the date in Start", "zwei Wochen nach Start", etc.
 - The dateTimeTemplate uses [%technicalId%] to reference a form field. The dateTimeFormat is a Java DateTimeFormatter pattern matching the field's date format (typically "dd.MM.yyyy" for German date fields).
 - triggerParams: {"timePointType":"EXPRESSION_WITH_FORMAT","dateTimeTemplate":"[%technicalId%]","dateTimeFormat":"<pattern>","operation":"PLUS|MINUS","offsetDuration":"<number>","durationUnit":"DAYS|HOURS|MINUTES|SECONDS|WEEKS|MONTHS|YEARS","fireWhenInPast":<true|false>}
-- CRITICAL — Map German time units EXACTLY to durationUnit: "Sekunde"/"Sekunden" → SECONDS; "Minute"/"Minuten" → MINUTES; "Stunde"/"Stunden" → HOURS; "Tag"/"Tage" → DAYS; "Woche"/"Wochen" → WEEKS; "Monat"/"Monate" → MONTHS; "Jahr"/"Jahre" → YEARS.
+- CRITICAL — Map the time units EXACTLY to durationUnit in ANY language (German: "Sekunde"/"Sekunden" → SECONDS; "Minute"/"Minuten" → MINUTES; "Stunde"/"Stunden" → HOURS; "Tag"/"Tage" → DAYS; "Woche"/"Wochen" → WEEKS; "Monat"/"Monate" → MONTHS; "Jahr"/"Jahre" → YEARS. English: "second(s)" → SECONDS; "minute(s)" → MINUTES; "hour(s)" → HOURS; "day(s)" → DAYS; "week(s)" → WEEKS; "month(s)" → MONTHS; "year(s)" → YEARS. Apply the same mapping for any other language by meaning, not by word list.)
 - Examples:
   "Ein Tag nach Start"        → {"timePointType":"EXPRESSION_WITH_FORMAT","dateTimeTemplate":"[%tfStart%]","dateTimeFormat":"dd.MM.yyyy","operation":"PLUS","offsetDuration":"1","durationUnit":"DAYS","fireWhenInPast":false}
   "Zwei Wochen nach Start"    → {"timePointType":"EXPRESSION_WITH_FORMAT","dateTimeTemplate":"[%tfStart%]","dateTimeFormat":"dd.MM.yyyy","operation":"PLUS","offsetDuration":"2","durationUnit":"WEEKS","fireWhenInPast":false}
@@ -186,7 +186,8 @@ IMPORTANT — There is NO "after state change" trigger type in FORMCYCLE. The cl
 
 ### FC_EMAIL
 Sends an email.
-- nodeParams: {"to":"<recipient address, [%fieldname%] placeholder, or empty string \"\" if no recipient is known — NEVER substitute FC_EMPTY for a missing address>","subject":"<subject text>","body":"<email body in HTML format — ALWAYS use HTML markup: use <br> for line breaks (NOT \n), <p>…</p> for paragraphs, <b>…</b> for bold, <ul>/<li> for lists; use [%fieldname%] placeholders to include form field values>","from":"<sender address, empty if not specified>","senderName":"<sender display name, empty if not specified>"}
+- nodeParams: {"to":"<recipient address, [%fieldname%] placeholder, or empty string \"\" if no recipient is known — NEVER substitute FC_EMPTY for a missing address>","subject":"<subject text>","body":"<email body in HTML format — ALWAYS use HTML markup: use <br> for line breaks (NOT \n), <p>…</p> for paragraphs, <b>…</b> for bold, <ul>/<li> for lists; use [%fieldname%] placeholders to include form field values>","from":"<sender address — REQUIRED: never empty; use the sender the user specified, or [%\$DEFAULT_MAIL_SENDER%] if none was given>","senderName":"<sender display name, optional>"}
+- CRITICAL — "from" (the sender address) is REQUIRED for every FC_EMAIL node. NEVER output "from":"" — if the user did not specify a sender, use [%\$DEFAULT_MAIL_SENDER%] (or ask via clarification before generating the email node). An FC_EMAIL without a sender is invalid.
 - Do NOT include bodyFormatType — it is always set to HTML automatically.
 - CRITICAL — Do NOT include "files", "attachments", or any file-related fields in FC_EMAIL nodeParams unless the user explicitly specified files to attach. Empty arrays cause validation errors.
 
@@ -301,10 +302,18 @@ Exports the form record chat/conversation as a PDF file.
 - nodeParams: {"fileName":"<output PDF filename, e.g. 'Konversation.pdf'>","attachToFormRecord":<true|false> (optional, default true — attach the PDF to the form record)}.
 - Use this when the user says the chat/conversation should be exported or saved as PDF.
 
+### RemotePrintService
+Renders the FILLED FORM ITSELF as a PDF (a "print service" / form-to-PDF export). Use this when the user wants the submitted/current form rendered as a PDF and sent (e.g. "die Anmeldung als PDF zusenden", "das Formular als PDF verschicken", "send the form as a PDF").
+- This is the CORRECT node for "form as PDF" intent — NOT FC_FILL_PDF.
+- nodeParams: {}. The print service renders the current form; it needs no PDF template.
+- To send the resulting PDF by email, chain an FC_EMAIL node after it (via chainedNodes) whose attachments reference the RemotePrintService output.
+
 ### FC_FILL_PDF
 Fills a PDF template with form data and produces a filled PDF.
 - nodeParams: {"file":"<template filename from form resources, e.g. 'vorlage.pdf'>","exportName":"<output filename, e.g. 'ausgefuellt.pdf'>","flatten":<true|false> (optional, default true)}.
 - When used as a chained node, the template file is taken from the preceding node's output.
+- USE ONLY when the intent is to FILL AN EXISTING PDF TEMPLATE with data collected by the form at runtime (e.g. a vorlage.pdf whose fields get mapped to form values). For rendering the form itself as a PDF, use RemotePrintService instead.
+- CRITICAL — the mandatory "Details für die PDF-Befüllung > Datei" field MUST be set: provide the template file via "file" (the template's filename from the form's resources). Never omit it.
 
 ### FC_FILL_WORD
 Fills a Word template with form data and produces a filled document.

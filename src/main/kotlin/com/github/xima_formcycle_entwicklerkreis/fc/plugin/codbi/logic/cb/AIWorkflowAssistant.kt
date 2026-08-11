@@ -342,6 +342,13 @@ class AIWorkflowAssistant : IPluginServletAction {
     // details in pass-2).
     val dbPrompt = loadWorkflowPrompt(requestedNodes, requestedTriggers)
     append(dbPrompt)
+    append(
+        "SCOPE: You operate ONLY on the currently open form. You CANNOT create, rename, duplicate or " +
+            "open a NEW or SEPARATE form, nor a second/admin/dashboard/overview form, on the server. If the " +
+            "user asks for a separate form or an admin/overview/dashboard form, do NOT promise to create one " +
+            "and do NOT ask for its title - instead explain that a separate form cannot be created here and " +
+            "offer to implement the requested capability (e.g. an overview / Excel export) as a workflow " +
+            "action on the CURRENT form.\n\n")
 
     // Dynamic context (injected at runtime)
     if (formContext != null) {
@@ -401,9 +408,15 @@ class AIWorkflowAssistant : IPluginServletAction {
     append(
         "PDF GENERATION IS AUTOMATIC: nodes like FC_FILL_PDF (and PDF exports such as " +
             "FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF) render a pre-configured template " +
-            "with the form data at runtime — Formcycle creates the PDF, not you. NEVER ask the user " +
-            "to describe the PDF text/layout/content, and do not invent that text. Only provide the " +
-            "template/file name the user mentioned (or a sensible default like \"filled.pdf\").\n\n")
+            "with the form data at runtime — Formcycle creates the PDF, not you. The PDF template " +
+            "is ALREADY configured in Formcycle; do NOT require a PDF template name, layout, text " +
+            "or content from the user and do not invent that text. Only use a template/file name the " +
+            "user explicitly mentioned (or a sensible default like \"filled.pdf\").\n" +
+            "CREATING AND SENDING A PDF IS A TWO-NODE OPERATION: first create a PDF-generation node " +
+            "(FC_FILL_PDF / FC_PROCESS_LOG_PDF / FC_EXPORT_FORM_RECORD_CHATS) that produces the PDF, " +
+            "then create an FC_EMAIL node that sends that PDF as an attachment, chained after the " +
+            "PDF node (via chainedNodes). NEVER put the PDF in an email as if it were a plain " +
+            "uploaded file with no producing node.\n\n")
     append("Output ONLY valid JSON. No trailing commas. No comments.")
   }
 

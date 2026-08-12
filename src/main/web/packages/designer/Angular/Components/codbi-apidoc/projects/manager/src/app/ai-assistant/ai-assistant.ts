@@ -11,7 +11,6 @@ import {
 import { FormsModule } from "@angular/forms";
 import { Button } from "primeng/button";
 import { Dialog } from "primeng/dialog";
-import { Message } from "primeng/message";
 import { ProgressSpinner } from "primeng/progressspinner";
 import { Select } from "primeng/select";
 import { Textarea } from "primeng/textarea";
@@ -81,7 +80,7 @@ interface ClarificationTurn {
 @Component({
   selector: "cb-ai-assistant",
   standalone: true,
-  imports: [FormsModule, Dialog, Select, Textarea, Button, ProgressSpinner, Message, AiAssistantLog],
+  imports: [FormsModule, Dialog, Select, Textarea, Button, ProgressSpinner, AiAssistantLog],
   templateUrl: "./ai-assistant.html",
   styleUrl: "./ai-assistant.scss",
   encapsulation: ViewEncapsulation.None,
@@ -102,8 +101,10 @@ export class AiAssistant implements OnInit, OnDestroy {
   spinnerText = "Thinking\u2026";
   resultText: string | null = null;
   errorText: string | null = null;
-  /** Error toast message (top-right of the whole window, stays until dismissed via X). */
+  /** Toast message (top-right of the whole window, stays until dismissed via X). */
   toastMessage: string | null = null;
+  /** Severity of the current toast — controls the icon and accent color. */
+  toastSeverity: "error" | "success" | "info" = "error";
   /** Whether the CodBi prompt database is reachable. When false, the assistant inputs are
    *  disabled (but still visible) because there are no DB prompts to send to the AI. */
   dbAvailable = true;
@@ -176,6 +177,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   private readonly LOG_PANEL_WIDTH_KEY = "codbi-ai-log-panel-width";
   /** localStorage key remembering the open/closed state of the change-log panel. */
   private readonly LOG_PANEL_OPEN_KEY = "codbi-ai-log-panel-open";
+  /** localStorage key remembering the CodBi on/off switch state. */
+  private readonly USE_CODBI_KEY = "codbi-ai-use-codbi";
   /** Whether the current user is allowed to sync the API-Documentation (Prompt Manager visibility). */
   syncAllowed = false;
   /** Cookie name for persisting the selected AI model across page reloads. */
@@ -539,6 +542,15 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   // #region Lifecycle
   ngOnInit(): void {
+    // Restore the persisted CodBi on/off switch state.
+    try {
+      const saved = localStorage.getItem(this.USE_CODBI_KEY);
+      if (saved !== null) {
+        this.useCodbi = saved === "1" || saved === "true";
+      }
+    } catch {
+      // ignore storage errors
+    }
     document.addEventListener("codbi:ai-assistant:open", this.openHandler);
     document.addEventListener("codbi:ai-assistant:speech", this.speechHandler);
     this.checkSyncAllowed();
@@ -718,6 +730,9 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.resultText = null;
     this.errorText = null;
     this.attachedFile = null;
+    // Always recover from a stuck busy state so the ALT+A hotkey can reopen the dialog even after
+    // an inference that closed it without a page reload.
+    this.loading = false;
 
     // First verify the CodBi prompt database is reachable. Without DB prompts there is no point
     // sending anything to the AI — show an error and disable the inputs (still visible).
@@ -733,6 +748,7 @@ export class AiAssistant implements OnInit, OnDestroy {
             (statusResponse as { error?: string } | null)?.error ??
             "Database not available — AI prompts cannot be loaded.";
           this.visible = true;
+          this.showToast(this.errorText);
           this.cdr.markForCheck();
           return;
         }
@@ -745,6 +761,7 @@ export class AiAssistant implements OnInit, OnDestroy {
         this.errorText =
           jq.responseJSON?.error ?? jq.statusText ?? "Database not available — AI prompts cannot be loaded.";
         this.visible = true;
+        this.showToast(this.errorText);
         this.cdr.markForCheck();
       },
     });
@@ -753,6 +770,16 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Formats a per-1M-token price for the model dropdown (e.g. "3.00"). */
   formatModelPrice(value: number): string {
     return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+  }
+
+  /** Persists the CodBi on/off switch state when the user toggles it. */
+  onUseCodbiChange(use: boolean): void {
+    this.useCodbi = use;
+    try {
+      localStorage.setItem(this.USE_CODBI_KEY, use ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
   }
 
   private loadModelsAndOpen(): void {
@@ -779,6 +806,7 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.selectedModel = saved && list.some((m) => m.id === saved) ? saved : (list[0]?.id ?? null);
         }
         this.visible = true;
+        if (this.errorText) this.showToast(this.errorText);
         this.cdr.markForCheck();
         // Re-open the change-log panel if the user left it open the last time (persisted).
         this.restoreLogOpenState();
@@ -787,6 +815,7 @@ export class AiAssistant implements OnInit, OnDestroy {
         const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
         this.errorText = jq.responseJSON?.error ?? jq.statusText ?? "AI service not available.";
         this.visible = true;
+        this.showToast(this.errorText);
         this.cdr.markForCheck();
       },
     });
@@ -1045,6 +1074,27 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
+  /** Copies ALL pending clarification questions (formatted like the header drag & drop) to the
+   *  clipboard, so they can be pasted into an email without dragging. */
+  copyAllClarificationQuestions(): void {
+    const text = this.formatAllQuestionsForEmail();
+    if (!text) return;
+    const done = (): void => {
+      this.showToast("All questions copied to clipboard", "success");
+      this.cdr.markForCheck();
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard
+        .writeText(text)
+        .then(done)
+        .catch(() => {
+          window.prompt("Copy the questions", text);
+        });
+    } else {
+      window.prompt("Copy the questions", text);
+    }
+  }
+
   /**
    * Starts an HTML5 drag of the whole question container so it can be dropped into a mail draft
    * (e.g. Outlook) WITHOUT having to highlight the text first. Setting `text/plain` in `dragstart`
@@ -1146,11 +1196,22 @@ export class AiAssistant implements OnInit, OnDestroy {
     if (!ctx || !this.clarificationReady) return;
     // Combine all answers into ONE turn: the questions are listed with their number and, when a
     // multiple-choice option was picked, its answer; the single textarea holds the free/voice text.
-    const questionText = this.pendingClarification.map((q, i) => `${i + 1}. ${q.question}`).join("\n");
+    // Each question is followed by its available options ("- option" on its own line) so the change
+    // log can display them clearly.
+    const questionText = this.pendingClarification
+      .map((q, i) => {
+        const head = `${i + 1}. ${q.question}`;
+        const opts = (q.options ?? []).filter((o) => o).map((o) => `- ${o}`);
+        return opts.length > 0 ? [head, ...opts].join("\n") : head;
+      })
+      .join("\n");
     const optionLines = this.pendingClarification
       .map((q, i) => {
         const opt = (this.clarificationOption[q.id] ?? "").trim();
-        return opt ? `${i + 1}. ${q.question} → ${opt}` : "";
+        // Keep only the question number + the chosen answer: the question text itself is already
+        // shown in the change log's parent question node (and in the AI's "Question:" line), so
+        // repeating it here is redundant. The number maps the answer back to its question.
+        return opt ? `${i + 1}. ${opt}` : "";
       })
       .filter((s) => s.length > 0);
     const free = (this.clarificationAnswerText ?? "").trim();
@@ -1535,8 +1596,28 @@ export class AiAssistant implements OnInit, OnDestroy {
               const existingI18n =
                 (formJsonToLoad["formI18n"] as Record<string, Record<string, unknown>> | undefined) ?? {};
               existingI18n[lang] = existingI18n[lang] ?? {};
-              const topEnable = formJsonToLoad["codbi-prop-enable"];
-              existingI18n[lang]["codbi-prop-enable"] = topEnable === undefined || topEnable === null ? "0" : topEnable;
+              let topEnable = formJsonToLoad["codbi-prop-enable"];
+              // If the AI's returned form JSON does not carry codbi-prop-enable (models usually only
+              // echo the form items), PRESERVE the currently enabled value instead of defaulting to
+              // "0" — otherwise every inference-driven form load (which does not reload the page)
+              // would uncheck the "CodBi" checkbox, making isCodBiEnabled() return false so that the
+              // ALT+A hotkey stops opening the assistant.
+              if (topEnable === undefined || topEnable === null) {
+                const currentEnable =
+                  typeof d["getFormPropertyValueForCurrentLang"] === "function"
+                    ? (d["getFormPropertyValueForCurrentLang"] as (name: string) => unknown).call(
+                        designer,
+                        "codbi-prop-enable",
+                      )
+                    : undefined;
+                topEnable = currentEnable === undefined || currentEnable === null ? "0" : currentEnable;
+              }
+              // Normalize to the canonical truthy "1" / falsy "0" so every downstream read
+              // (enableValue below, isCodBiEnabled) sees the same value.
+              topEnable = topEnable === "1" || topEnable === 1 || topEnable === true ? "1" : String(topEnable);
+              existingI18n[lang]["codbi-prop-enable"] = topEnable;
+              // Also write it to the top level so all subsequent reads in this handler see it.
+              formJsonToLoad["codbi-prop-enable"] = topEnable;
               formJsonToLoad["formI18n"] = existingI18n;
             }
             if (typeof d["loadPersistJson"] === "function") {
@@ -1701,6 +1782,11 @@ export class AiAssistant implements OnInit, OnDestroy {
           // loadPersistJson() is synchronous but triggers async internal rendering; poll _isLoading
           // before calling publish() to avoid the "please wait until loading is finished" warning.
           this.resultText = `Workflow created: ${String(p2["workflowMessage"])} Saving form and reloading designer\u2026`;
+          this.showToast(this.resultText, "success");
+          // Keep the dialog busy (inputs/buttons disabled) until the reload happens, so the user
+          // cannot click on it while the form is being saved/reloaded.
+          this.loading = true;
+          this.spinnerText = "Reloading designer\u2026";
           const dSave = designer as unknown as Record<string, unknown>;
           // Capture the AI-computed standards value now, before anything can consume it.
           // We do NOT write sessionStorage here — an earlier write may be consumed by a
@@ -1804,6 +1890,10 @@ export class AiAssistant implements OnInit, OnDestroy {
           // Workflow only: show message and reload. Persist the sensitive elements used by this run
           // right before the reload so the change-log component reopens with them highlighted.
           this.resultText = `${String(p2["workflowMessage"])} Reloading designer\u2026`;
+          this.showToast(this.resultText, "success");
+          // Keep the dialog busy (inputs/buttons disabled) until the reload happens.
+          this.loading = true;
+          this.spinnerText = "Reloading designer\u2026";
           setTimeout(() => {
             if (sensitive.length > 0) {
               localStorage.setItem("codbi-log-sensitive-elements", JSON.stringify(sensitive));
@@ -1978,10 +2068,23 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  /** Shows a persistent error toast (top-right, stays until the user dismisses it via X). */
-  private showToast(message: string): void {
+  /** Shows a persistent toast (top-right, stays until the user dismisses it via X). */
+  private showToast(message: string, severity: "error" | "success" | "info" = "error"): void {
     this.toastMessage = message;
+    this.toastSeverity = severity;
     this.cdr.markForCheck();
+  }
+
+  /** PrimeNG icon shown on the toast, depending on its severity. */
+  get toastIconClass(): string {
+    switch (this.toastSeverity) {
+      case "success":
+        return "pi pi-check-circle";
+      case "info":
+        return "pi pi-info-circle";
+      default:
+        return "pi pi-exclamation-triangle";
+    }
   }
 
   /** Dismisses the error toast (X button). */

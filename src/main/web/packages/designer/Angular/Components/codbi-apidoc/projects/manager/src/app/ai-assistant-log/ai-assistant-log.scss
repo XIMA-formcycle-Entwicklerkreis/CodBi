@@ -283,6 +283,11 @@ cb-ai-assistant-log {
     font-weight: 500;
 }
 
+/* Clarification question labels keep their line breaks (questions + "- option" lines). */
+.cb-log-node__label-text--pre {
+    white-space: pre-line;
+}
+
 /* Inference labels stack the username BELOW the timestamp (own line), so it never wraps into the
    token badge when the panel is narrow. */
 .cb-log-node__label--stacked {
@@ -324,6 +329,47 @@ cb-ai-assistant-log {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 340px;
+}
+
+/* Toggle button that expands/collapses a long node value (e.g. a clarification answer). */
+.cb-log-node__value-toggle {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: 4px;
+    border: none;
+    background: transparent;
+    color: #5b6472;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.6em;
+    line-height: 1;
+}
+
+.cb-log-node__value-toggle:hover {
+    background: #e3e6ea;
+    color: #1b7a5e;
+}
+
+/* Complete (untruncated) value revealed when a long value is expanded. */
+.cb-log-node__value-full {
+    margin: 4px 0 4px 28px;
+    padding: 8px 10px;
+    background: #f6f8fb;
+    border: 1px solid #e3e6ea;
+    border-left: 3px solid #5b6472;
+    border-radius: 4px;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.82em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #333;
+    max-height: 40vh;
+    overflow: auto;
 }
 
 /* Small badge next to a node label (e.g. the token count of an inference). */
@@ -516,8 +562,11 @@ cb-ai-assistant-log {
 
 /* Full prompt text shown when the "Prompt" node is unfolded */
 .cb-log-node__prompt {
+    position: relative;
     margin: 4px 0 4px 28px;
     padding: 8px 10px;
+    /* Right padding keeps the text clear of the absolute copy button in the top-right corner. */
+    padding-right: 28px;
     background: #f6f8fb;
     border: 1px solid #e3e6ea;
     border-left: 3px solid #5b6472;
@@ -530,4 +579,29 @@ cb-ai-assistant-log {
     color: #333;
     max-height: 30vh;
     overflow: auto;
+}
+
+/* Copy button on the top-right corner of the unfolded prompt body. */
+.cb-log-node__prompt-copy {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    border: none;
+    background: transparent;
+    color: #5b6472;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.7em;
+    line-height: 1;
+}
+
+.cb-log-node__prompt-copy:hover {
+    background: #e3e6ea;
+    color: #1b7a5e;
 }

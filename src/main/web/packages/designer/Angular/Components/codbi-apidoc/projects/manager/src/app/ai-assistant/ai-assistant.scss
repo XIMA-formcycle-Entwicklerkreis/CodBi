@@ -512,6 +512,38 @@ cb-ai-assistant {
         display: flex;
         align-items: center;
         gap: 0.6rem;
+        /* The header both moves the dialog (custom drag) and is an HTML5 drag source for copying
+           the questions — signal that it is movable/draggable. */
+        cursor: move;
+        user-select: none;
+    }
+
+    .cb-ai-clarification-header:active {
+        cursor: grabbing;
+    }
+
+    /* Button that copies ALL questions to the clipboard (same text as the header drag & drop). */
+    .cb-ai-clarification-copy {
+        margin-left: auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: #475569;
+        cursor: pointer;
+        transition:
+            color 0.15s ease,
+            background 0.15s ease;
+
+        &:hover {
+            background: #eef2f7;
+            color: #1d4ed8;
+        }
     }
 
     /* The visual header lives inside the dialog body (PrimeNG's header template is not used) —
@@ -767,6 +799,23 @@ cb-ai-assistant {
 .cb-ai-toast > i {
     margin-top: 1px;
     color: #ffb3b3;
+}
+
+/* Severity accents: the left border + icon tint differ per message kind (error is the default base). */
+.cb-ai-toast--success {
+    border-left-color: #2f9e44;
+}
+
+.cb-ai-toast--success > i {
+    color: #8ce99a;
+}
+
+.cb-ai-toast--info {
+    border-left-color: #3b82f6;
+}
+
+.cb-ai-toast--info > i {
+    color: #93c5fd;
 }
 
 .cb-ai-toast__text {

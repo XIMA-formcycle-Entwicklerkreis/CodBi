@@ -274,6 +274,21 @@
       },
       "classDescriptions": {}
     },
+    "DQ.Table.View": {
+      "id": "DQ.Table.View",
+      "type": "functionality",
+      "summary": "Applicable on a container element to display the result of a Formcycle DataQuery in an injected HTML table and enable exporting it to Excel (.xlsx).",
+      "tsdoc": "Provides the {@link DQ_Table_View.functionality }.",
+      "parameters": {
+        "CSS": "An optional string of one or more (space separated) CSS classes applied to BOTH the tagged container and the injected table.",
+        "Columns": "REQUIRED - A CSV defining the columns to show, each column is label;datacolumn with an optional third entry ;width (e.g. Anrede;Anrede;15,Unternehmen;Unternehmen;25).",
+        "DataQuery": "REQUIRED - The name of the Formcycle DataQuery on the server whose result shall be shown (e.g. INHALT.Eigentuemerdialog_Dezember_2025). Executed via $.xutil.getDataQuery.",
+        "ExportButton": "An optional CSS selector of an existing button that shall trigger the export. If omitted (or no matching element is found) the table is rendered WITHOUT any export button - the Excel export is then simply not available.",
+        "FileName": "The name of the exported Excel file WITHOUT extension (the extension is always .xlsx). Defaults to Export.",
+        "SheetName": "The name of the worksheet within the exported Excel file. Defaults to sheet1."
+      },
+      "classDescriptions": {}
+    },
     "Time.Frame": {
       "id": "Time.Frame",
       "type": "functionality",
@@ -801,6 +816,7 @@
     "openplz.autocomplete": "OpenPLZ.Autocomplete",
     "print.remove": "Print.Remove",
     "sys.log.console": "Sys.Log.Console",
+    "dq.table.view": "DQ.Table.View",
     "time.frame": "Time.Frame",
     "ai.llama.std.qa": "AI.LLAMA.STD.QA",
     "bayvis.ansprechpartner.details": "BayVIS.Ansprechpartner.Details",

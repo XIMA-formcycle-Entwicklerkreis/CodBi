@@ -52,7 +52,7 @@ export function enableAICodBiAssistantDialog(): void {
   // assistant focuses the prompt textarea automatically on open.
   document.addEventListener("keyup", (event) => {
     if (event.altKey && event.key.toLowerCase() === "a" && isCodBiEnabled()) {
-      document.dispatchEvent(new CustomEvent("codbi:ai-assistant:open"));
+      openAssistant();
     }
   });
   // ALT+S (while ALT is still held, e.g. right after ALT+A) => activate the assistant's speech
@@ -65,6 +65,54 @@ export function enableAICodBiAssistantDialog(): void {
   });
 }
 
+/**
+ * Opens the AI assistant.
+ *
+ * The designer re-renders its DOM when a form is loaded in-place (inference-driven form load
+ * without a page reload) and can tear down the body-level `<cb-ai-assistant>` element. When it is
+ * missing, a fresh element is mounted and the `codbi:ai-assistant:open` event is dispatched until
+ * the PrimeNG dialog actually becomes visible — Angular's custom-element bootstrap is asynchronous,
+ * so a single fixed-delay dispatch can be lost right after such a run.
+ *
+ * Also remembers the manual open so {@link isCodBiEnabled} can fall back to it while the
+ * form-property model is stale (see below). */
+function openAssistant(): void {
+  // Remember this manual open — a strong signal that CodBi is enabled for the current form, used
+  // by isCodBiEnabled() while the form-property model is stale right after an inference-driven
+  // in-place form load.
+  try {
+    localStorage.setItem("codbi-assistant-last-opened", String(Date.now()));
+  } catch {
+    // ignore storage errors
+  }
+
+  const existing = document.querySelector("cb-ai-assistant");
+  if (existing) {
+    document.dispatchEvent(new CustomEvent("codbi:ai-assistant:open"));
+    return;
+  }
+
+  document.body.appendChild(document.createElement("cb-ai-assistant"));
+  // Poll until the dialog is visible (capped at 4s), dispatching the open event only while it is
+  // not. Rate-limited to ~700ms to avoid hammering open() while its initial AJAX (DB status +
+  // model list) is still running.
+  const startedAt = Date.now();
+  let lastDispatch = 0;
+
+  const tryOpen = (): void => {
+    if (document.querySelector(".cb-ai-assistant-dialog") || Date.now() - startedAt > 4000) {
+      return;
+    }
+    if (document.querySelector("cb-ai-assistant") && Date.now() - lastDispatch > 700) {
+      lastDispatch = Date.now();
+      document.dispatchEvent(new CustomEvent("codbi:ai-assistant:open"));
+    }
+    setTimeout(tryOpen, 250);
+  };
+
+  setTimeout(tryOpen, 150);
+}
+
 /** Whether the "CodBi" checkbox (`codbi-prop-enable`) is set for the currently edited form. */
 function isCodBiEnabled(): boolean {
   const designer = getDesignerInstance();
@@ -73,7 +121,24 @@ function isCodBiEnabled(): boolean {
   }
   try {
     const value = designer.getFormPropertyValueForCurrentLang("codbi-prop-enable");
-    return value === "1" || value === 1 || value === true;
+    if (value === "1" || value === 1 || value === true) {
+      return true;
+    }
+  } catch {
+    // fall through to the DOM checkbox check below
+  }
+  // After an inference-driven form load (no page reload) the property model can be stale even
+  // though the live "CodBi" checkbox is still checked — trust the checkbox in that case.
+  const checkbox = document.querySelector<HTMLInputElement>("#form-codbi-prop-enable-input");
+  if (checkbox) {
+    return checkbox.checked === true;
+  }
+  // Neither the (possibly stale) property model nor the live checkbox could be determined — e.g.
+  // right after the form-properties panel was re-rendered in place. A manual ALT+A open within the
+  // last few minutes is a strong signal that CodBi is enabled for the currently edited form.
+  try {
+    const lastOpened = Number(localStorage.getItem("codbi-assistant-last-opened") ?? "0");
+    return lastOpened > 0 && Date.now() - lastOpened < 10 * 60 * 1000;
   } catch {
     return false;
   }

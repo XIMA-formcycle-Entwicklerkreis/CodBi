@@ -26,6 +26,10 @@ export interface LogNode {
   kind: string;
   /** Optional secondary value shown after the label (e.g. the attribute value). */
   value?: string;
+  /** True when the label contains line breaks that must be preserved (e.g. clarification questions). */
+  multiline?: boolean;
+  /** True when a long value (e.g. a clarification answer) is expanded to show the complete text. */
+  valueExpanded?: boolean;
   /** Optional small badge shown next to the label (e.g. the token count). */
   badge?: string;
   /** Raw timestamp of an inference node (used to compute the log's date range). */
@@ -98,7 +102,9 @@ export interface LogNode {
           }
         </span>
         <span class="cb-log-node__label" [class.cb-log-node__label--stacked]="node.kind === 'inference' && !!node.userLabel">
-          <span class="cb-log-node__label-text">{{ node.label }}</span>
+          <span
+              class="cb-log-node__label-text"
+              [class.cb-log-node__label-text--pre]="node.multiline === true">{{ node.label }}</span>
           @if (node.userLabel) {
             <span class="cb-log-node__user" title="User who ran this inference">{{ node.userLabel }}</span>
           }
@@ -110,7 +116,19 @@ export interface LogNode {
           <span class="cb-log-node__badge" title="Tokens used">{{ node.badge }}</span>
         }
         @if (node.value && node.kind !== 'prompt') {
-          <span class="cb-log-node__value">{{ node.value }}</span>
+          @if (node.valueExpanded !== true) {
+            <span class="cb-log-node__value">{{ node.value }}</span>
+          }
+          @if (node.kind !== 'inference' && valueIsLong(node)) {
+            <button
+                type="button"
+                class="cb-log-node__value-toggle"
+                [attr.title]="node.valueExpanded === true ? 'Hide full value' : 'Show full value'"
+                aria-label="Toggle full value"
+                (click)="toggleValue($event)">
+              <i [class]="node.valueExpanded === true ? 'pi pi-chevron-up' : 'pi pi-chevron-down'" aria-hidden="true"></i>
+            </button>
+          }
         }
         @if (node.checked === true && node.checkedBy) {
           <span class="cb-log-node__checked-badge" [title]="'Checked by ' + node.checkedBy + ' on ' + (node.checkedAt ?? '')">
@@ -140,7 +158,17 @@ export interface LogNode {
         }
       </summary>
       @if (node.kind === 'prompt' && node.value) {
-        <div class="cb-log-node__prompt">{{ node.value }}</div>
+        <div class="cb-log-node__prompt">
+          <button
+              type="button"
+              class="cb-log-node__prompt-copy"
+              [attr.title]="promptCopied ? 'Copied' : 'Copy this prompt to the clipboard'"
+              aria-label="Copy prompt"
+              (click)="copyPrompt($event)">
+            <i [class]="promptCopied ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
+          </button>
+          <span class="cb-log-node__prompt-text">{{ node.value }}</span>
+        </div>
       }
       @if (node.children?.length) {
         <div class="cb-log-node__children">
@@ -150,6 +178,9 @@ export interface LogNode {
         </div>
       }
     </details>
+    @if (node.valueExpanded === true && node.value && node.kind !== 'prompt') {
+      <div class="cb-log-node__value-full">{{ node.value }}</div>
+    }
   `,
   encapsulation: ViewEncapsulation.None,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -169,6 +200,10 @@ export class LogTreeNode {
   constructor(cdr: ChangeDetectorRef) {
     this.cdr = cdr;
   }
+
+  /** True for a short moment after the prompt was copied (shows a check icon on the copy button). */
+  promptCopied = false;
+  private promptCopyTimer: number | null = null;
 
   onToggle(event: Event): void {
     const details = event.target as HTMLDetailsElement | null;
@@ -195,6 +230,19 @@ export class LogTreeNode {
   /** A node is expandable when it has children or renders a prompt body. */
   isExpandable(node: LogNode): boolean {
     return !!node.children?.length || (node.kind === "prompt" && !!node.value);
+  }
+
+  /** True when the node's value is long enough to warrant an expand/collapse toggle. */
+  valueIsLong(node: LogNode): boolean {
+    return typeof node.value === "string" && node.value.length > 60;
+  }
+
+  /** Expands/collapses a long node value, revealing the complete text in a body below the row. */
+  toggleValue(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    this.node = { ...this.node, valueExpanded: this.node.valueExpanded !== true };
+    this.cdr.markForCheck();
   }
 
   /** True for nodes that belong to a CodBi functionality or CSS class (rendered with the CodBi logo). */
@@ -238,6 +286,33 @@ export class LogTreeNode {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  /** Copies the unfolded prompt body to the clipboard (with fallback + brief check feedback). */
+  copyPrompt(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    const text = this.node.value ?? "";
+    if (!text) return;
+    const done = (): void => {
+      this.promptCopied = true;
+      this.cdr.markForCheck();
+      if (this.promptCopyTimer !== null) window.clearTimeout(this.promptCopyTimer);
+      this.promptCopyTimer = window.setTimeout(() => {
+        this.promptCopied = false;
+        this.cdr.markForCheck();
+      }, 1500);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard
+        .writeText(text)
+        .then(done)
+        .catch(() => {
+          window.prompt("Copy this prompt", text);
+        });
+    } else {
+      window.prompt("Copy this prompt", text);
+    }
   }
 
   private withExpanded(node: LogNode, expanded: boolean): LogNode {

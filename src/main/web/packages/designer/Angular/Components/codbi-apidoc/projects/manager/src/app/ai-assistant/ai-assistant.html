@@ -130,13 +130,6 @@
                     </div>
                 }
 
-                @if (resultHtml) {
-                    <p-message severity="success" [text]="resultHtml" [escape]="false" />
-                }
-
-                @if (errorText) {
-                    <p-message severity="error" [text]="errorText" />
-                }
             </div>
 
             <!-- Draggable splitter + change-log side panel: only rendered while unfolded, so the
@@ -163,7 +156,11 @@
             <label
                 class="cb-ai-codbi-switch"
                 title="Send CodBi prompts (functionalities, element placeholders, standard configurations) to the AI. Off = only Formcycle widgets and workflow nodes are generated; no CodBi is applied in any pass.">
-                <input type="checkbox" [(ngModel)]="useCodbi" [disabled]="loading || !dbAvailable" />
+                <input
+                    type="checkbox"
+                    [(ngModel)]="useCodbi"
+                    (ngModelChange)="onUseCodbiChange($event)"
+                    [disabled]="loading || !dbAvailable" />
                 <span class="cb-ai-codbi-switch__slider"></span>
             </label>
             <span class="cb-ai-codbi-switch__label">CodBi</span>
@@ -201,17 +198,17 @@
     </ng-template>
 </p-dialog>
 
-<!-- Error toast — fixed top-right of the whole window, stays until the user dismisses it (X). -->
+<!-- Toast — fixed top-right of the whole window, stays until the user dismisses it (X). -->
 @if (toastMessage) {
-    <div class="cb-ai-toast" role="alert" aria-live="assertive">
-        <i class="pi pi-exclamation-triangle"></i>
+    <div class="cb-ai-toast cb-ai-toast--{{ toastSeverity }}" role="alert" aria-live="assertive">
+        <i [class]="toastIconClass" aria-hidden="true"></i>
         <span class="cb-ai-toast__text">{{ toastMessage }}</span>
         <button
             type="button"
             class="cb-ai-toast__close"
             (click)="dismissToast()"
             title="Close"
-            aria-label="Close error message">
+            aria-label="Close message">
             <i class="pi pi-times"></i>
         </button>
     </div>
@@ -243,6 +240,14 @@
             title="Drag the header into an email draft (e.g. Outlook) to insert ALL questions">
             <img class="cb-ai-clarification-logo" [src]="codbiLogoUrl" alt="CodBi" />
             <span class="cb-ai-clarification-title">The AI needs some information</span>
+            <button
+                type="button"
+                class="cb-ai-clarification-copy"
+                title="Copy ALL questions to the clipboard (like the drag & drop)"
+                aria-label="Copy all questions"
+                (click)="copyAllClarificationQuestions()">
+                <i class="pi pi-copy"></i>
+            </button>
         </div>
         <p class="cb-ai-clarification-intro">
             Please answer the following questions so the AI assistant can continue your request.

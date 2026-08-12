@@ -206,6 +206,36 @@ Also add the element's name to the first page's "elements" array. The `data-cb-D
 
 Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
 
+## DQ.Table.View
+
+Applicable on a container element (e.g. an XContainer/XContainerInvisible) to display the result of a Formcycle DataQuery in an injected HTML table and to enable exporting that table to an Excel file (.xlsx). USE whenever the user asks to show/display/view the data or the columns of a DataQuery/datasource/query as a table and/or to export it to Excel.
+
+CRITICAL — TRIGGER PHRASES that MUST be mapped to DQ.Table.View (do NOT ask clarifying questions):
+- "add a table that views/shows/displays the columns <X>, <Y> of <Query>" (e.g. "add a table that views the columns Alter, Name of HolaQuery")
+- "zeige die Spalten <X>, <Y> der Abfrage <Query> als Tabelle"
+- "show/table the data of the query <Query>", "Tabelle mit den Spalten ... der Abfrage ..."
+Use the DataQuery name given by the user AS-IS for data-cb-dataquery — do NOT ask whether the query exists or for its technical ID; the DataQuery is a server-side datasource configured in the Formcycle backend.
+- Placement: if the user does NOT specify where to put the table, create a NEW XContainer/XContainerInvisible and append it to the first page — do NOT ask where to place it.
+- Sorting/filtering: NOT applied by default — display the columns as-is. Only add sorting or filtering when the user explicitly requests it.
+
+Create an XContainer/XContainerInvisible and set on it (via the attributes array):
+- data-cb-func = "DQ.Table.View"
+- data-cb-columns = **REQUIRED** — a CSV defining the columns to show, each column is `label;datacolumn` with an optional `;width`: e.g. `Anrede;Anrede;15,Unternehmen;Unternehmen;25,Vorname;Vorname;18`. `label` is the displayed header, `datacolumn` is the exact column name in the DataQuery result, `width` (optional) sets the column width (characters in Excel, pixels on screen).
+- data-cb-dataquery = **REQUIRED** — the name of the Formcycle DataQuery on the server whose result shall be shown (e.g. `HolaQuery` or `INHALT.Eigentuemerdialog_Dezember_2025`).
+- data-cb-css = (optional) one or more (space separated) CSS classes to apply to BOTH the tagged container and the injected table.
+- data-cb-filename = (optional) the name of the exported Excel file WITHOUT extension (the extension is always `.xlsx`). Defaults to `Export`.
+- data-cb-sheetname = (optional) the worksheet name in the exported Excel file. Defaults to `sheet1`.
+- data-cb-exportbutton = (optional) a CSS selector of an existing button that shall trigger the export. If omitted (or no matching element is found) the table is rendered WITHOUT any export button — the Excel export is then simply not available.
+
+Example — a table that views the columns "Alter" and "Name" of the DataQuery "HolaQuery":
+"attributes": [
+  {"text":"data-cb-func","value":"DQ.Table.View"},
+  {"text":"data-cb-dataquery","value":"HolaQuery"},
+  {"text":"data-cb-columns","value":"Alter;Alter,Name;Name"}
+]
+
+The Excel export uses the SheetJS library that is bundled with the CodBi plugin and served from the plugin's Resource servlet (loaded on demand, like TinyMCE).
+
 ## AI DOCUMENT QA
 
 When the user asks to upload a document and answer specific questions about its content, create an XUpload with data-cb-func="ai.llama.standard.qa" and data-cb-MaxPixelSize="180000" in its attributes. Then create one XTextField (or XTextArea for long answers) per question, each with cssclasses=["AI_LLAMA_STANDARD_QA_Question"] and a data-cb-Question attribute.

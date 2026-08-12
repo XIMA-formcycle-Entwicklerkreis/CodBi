@@ -885,7 +885,10 @@ class AICodBiAssistant : IPluginServletAction {
         } else ""
     val userContent =
         "Instruction: $prompt$imageHint\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
-            "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt."
+            "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt.\n" +
+            "If the user asks to REMOVE/DELETE elements, OMIT them from \"items\" AND list their names in a " +
+            "top-level \"_removedItems\": [\"elementName\", ...] array so the server removes them completely " +
+            "(including any references in container \"elements\" arrays)."
 
     val messagesJson = buildString {
       append("[")
@@ -925,6 +928,15 @@ class AICodBiAssistant : IPluginServletAction {
                   "entry (by prompt text, timestamp \"ts\", username, or the listed changes) and " +
                   "APPLY its changes to the current form, adapting names as needed. Never say you " +
                   "do not know which changes were requested."
+      // The USER CLARIFICATION answers (e.g. "use radio buttons") and the CONTROL TYPES rule must
+      // also reach pass-2 — pass-1 may only answer with a details request, while the actual widgets
+      // are created here. Without them the model ignores the user's control-type choice.
+      val clarificationSection =
+          if (clarificationContext.isNullOrBlank()) ""
+          else
+              "\n\n## USER CLARIFICATION (authoritative answers the user already gave — use them as context)\n\n" +
+                  clarificationContext
+      val controlTypesSection = CONTROL_TYPES_RULES
       val pass1Obj =
           try {
             JsonParser.parseString(cleaned).asJsonObject
@@ -950,7 +962,8 @@ class AICodBiAssistant : IPluginServletAction {
         // Blind rethink pass: AI previously concluded nothing applies â€” ask it to reconsider.
         // Use the full compact API reference (including parameter names) so the AI can
         // generate correct data-cb-* parameter attributes instead of inventing names.
-        val rethinkSystemPrompt = loadCodbiRethinkPrompt() + historySection
+        val rethinkSystemPrompt =
+            loadCodbiRethinkPrompt() + historySection + clarificationSection + controlTypesSection
 
         logger.info(
             "[AICodBiAssistant] Blind rethink pass â€” sending {} item(s) with compact CodBi reference (system-only)",
@@ -1077,7 +1090,11 @@ class AICodBiAssistant : IPluginServletAction {
               }
             }
 
-        val applySystemPrompt = loadCodbiApplyPrompt(requested, widgets, useCodbi) + historySection
+        val applySystemPrompt =
+            loadCodbiApplyPrompt(requested, widgets, useCodbi) +
+                historySection +
+                clarificationSection +
+                controlTypesSection
 
         val pass2UserContent =
             "Original user request: $prompt\n\n" +
@@ -1092,10 +1109,12 @@ class AICodBiAssistant : IPluginServletAction {
                 "element as a separate item in the root \"items\" array.\n" +
                 "REBUILD any formcycle widgets you created in the previous step so they exactly match the JSON " +
                 "templates provided.\n" +
-                "Return the COMPLETE modified form JSON with ALL items. When the user EXPLICITLY asked to remove or " +
-                "delete certain fields/elements, honor that: remove those items from the root \"items\" array AND from " +
-                "their parent container's \"elements\" array (e.g. clearing it to [] when the user said \"remove all " +
-                "fields\"). Only keep existing elements when the user did NOT ask to remove them."
+                "Return the COMPLETE modified form JSON with ALL items. Keep every element UNLESS the user " +
+                "explicitly asked to remove/delete it. When a removal is requested, honor it fully: OMIT those " +
+                "items from the root \"items\" array AND remove their names from their parent container's " +
+                "\"elements\" array (e.g. clearing it to [] when the user said \"remove all fields\"). Also list " +
+                "every removed element's name in a top-level \"_removedItems\": [\"elementName\", ...] array so " +
+                "the server drops it completely (including any remaining references)."
 
         logger.info(
             "[AICodBiAssistant] Pass-2 CodBi â€” candidates: {}, targetIds: {}, sending {} item(s)",
@@ -1290,9 +1309,19 @@ class AICodBiAssistant : IPluginServletAction {
       if (parsed.isJsonObject) sanitizeAiFormItems(parsed.asJsonObject)
       val sanitizedFormJson = gson.toJson(parsed)
       val restored = restoreStrippedFields(sanitizedFormJson, persistJson)
+      // Apply any explicit removals the AI requested (top-level "_removedItems" names) — the AI
+      // omits
+      // removed elements AND lists them here so the server drops them completely.
+      val finalForm =
+          runCatching {
+                val obj = JsonParser.parseString(restored).asJsonObject
+                applyRemovedItems(obj)
+                gson.toJson(obj)
+              }
+              .getOrDefault(restored)
       // Log item names in the final form JSON to debug missing elements
       try {
-        val root = JsonParser.parseString(restored).asJsonObject
+        val root = JsonParser.parseString(finalForm).asJsonObject
         val names =
             root.getAsJsonArray("items")?.mapNotNull { el ->
               el.takeIf { it.isJsonObject }
@@ -1314,7 +1343,7 @@ class AICodBiAssistant : IPluginServletAction {
         logger.info("[AICodBiAssistant] Final form item names ({}): {}", names.size, names)
         logger.info("[AICodBiAssistant] First page elements: {}", pageElements)
       } catch (_: Exception) {}
-      Triple(restored, applicabilityReport, TokenUsage(tokensIn, tokensOut))
+      Triple(finalForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
     } catch (_: Exception) {
       logger.warn("[AICodBiAssistant] Form AI returned unparseable response: {}", sanitizedCleaned)
       Triple(
@@ -1709,6 +1738,11 @@ class AICodBiAssistant : IPluginServletAction {
       if (pass2Obj.has("_codbiApplicability")) {
         pass1Obj.add("_codbiApplicability", pass2Obj.get("_codbiApplicability"))
       }
+      // Carry pass-2's explicit removal list so the final form drops those items — without it the
+      // splice would re-add any pass-1 item that pass-2 omitted.
+      if (pass2Obj.has("_removedItems")) {
+        pass1Obj.add("_removedItems", pass2Obj.get("_removedItems"))
+      }
 
       // Preserve global variables the AI set in pass-2 (e.g. standard-configuration globals such
       // as USGrade) by merging the pass-2 `variables` array into the pass-1 base by name.
@@ -1891,7 +1925,10 @@ class AICodBiAssistant : IPluginServletAction {
           "helptext",
           "comment",
           "pdfImporterId",
-          "rowid",
+          // "rowid" is intentionally NOT stripped: it groups sibling fields into ONE row
+          // (Formcycle renders a "xm-form-row" div for every distinct non-empty rowid). The AI
+          // sets it on new fields to place them side by side, and existing row groupings are
+          // shown to the AI as examples in the slim JSON.
           "computedwidth",
           "maxwidth",
           "minwidth",
@@ -2174,6 +2211,48 @@ class AICodBiAssistant : IPluginServletAction {
             "[AICodBiAssistant] Normalized XSelect '{}': copied label->text for options",
             props.get("name")?.asString)
       }
+    }
+  }
+
+  /**
+   * Applies the AI's explicit removal list (top-level `_removedItems`: array of element names) to
+   * the final form JSON: drops the named items from "items" and removes every reference to them
+   * from container "elements" arrays, then strips the "_removedItems" marker from the output.
+   */
+  private fun applyRemovedItems(root: JsonObject) {
+    val removedEl = root.remove("_removedItems") ?: return
+    if (!removedEl.isJsonArray) return
+    val removed = mutableSetOf<String>()
+    for (el in removedEl.asJsonArray) {
+      if (el.isJsonPrimitive) removed.add(el.asString)
+    }
+    if (removed.isEmpty()) return
+    val items = root.getAsJsonArray("items") ?: return
+    val keep = JsonArray()
+    for (item in items) {
+      if (!item.isJsonObject) {
+        keep.add(item)
+        continue
+      }
+      val name = item.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
+      if (name != null && name in removed) {
+        logger.info("[AICodBiAssistant] Removing requested element '{}'", name)
+        continue
+      }
+      keep.add(item)
+    }
+    root.add("items", keep)
+    // Remove dangling references to the removed elements from every container's "elements" array.
+    for (item in keep) {
+      if (!item.isJsonObject) continue
+      val props = item.asJsonObject.getAsJsonObject("properties") ?: continue
+      val elements = props.getAsJsonArray("elements") ?: continue
+      val clean = JsonArray()
+      for (e in elements) {
+        if (e.isJsonPrimitive && e.asString in removed) continue
+        clean.add(e)
+      }
+      props.add("elements", clean)
     }
   }
 
@@ -8543,6 +8622,8 @@ class AICodBiAssistant : IPluginServletAction {
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
               WIDGET_STRUCTURE_RULES +
+              ROW_PAIRING_RULES +
+              COMPLETE_FORM_RULES +
               (fc["formcycle.general"] ?: "") +
               "\n" +
               "{{FORMCYCLE_WIDGETS_SECTION}}" +
@@ -8655,6 +8736,8 @@ class AICodBiAssistant : IPluginServletAction {
             else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
           }
       return WIDGET_STRUCTURE_RULES +
+          ROW_PAIRING_RULES +
+          COMPLETE_FORM_RULES +
           "\n" +
           formcycleGeneral +
           "\n\n" +
@@ -9015,6 +9098,17 @@ class AICodBiAssistant : IPluginServletAction {
               "      threshold, ...): ask which value to set when it cannot be derived.\n" +
               "    - Functionalities / element placeholders that need a parameter value (regex pattern,\n" +
               "      target attribute, injected text, template): ask for it when missing.\n" +
+              "- Data tables (DQ.Table.View): when the user asks to show/view/display the columns of a\n" +
+              "  DataQuery/datasource as a table (e.g. \"add a table that views the columns Alter, Name of\n" +
+              "  HolaQuery\", \"zeige die Spalten ... der Abfrage ... als Tabelle\"), the DataQuery name the\n" +
+              "  user gives IS the value for data-cb-dataquery — NEVER ask whether the query exists or for\n" +
+              "  its technical ID (DataQueries are server-side datasources configured in the Formcycle\n" +
+              "  backend). Do NOT ask where to place the table: create a new XContainer/XContainerInvisible\n" +
+              "  tagged with data-cb-func=\"DQ.Table.View\" and append it to the first/current page. Do NOT\n" +
+              "  ask about sorting or filtering — show the columns as-is by default (only add sorting or\n" +
+              "  filtering when the user explicitly asks for it). The only genuinely required values are\n" +
+              "  the columns (data-cb-columns, CSV label;datacolumn[;width]) and the DataQuery name\n" +
+              "  (data-cb-dataquery).\n" +
               "- PDF generation is AUTOMATIC in Formcycle: nodes like FC_FILL_PDF (and PDF exports such\n" +
               "  as FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF) render a pre-configured template\n" +
               "  with the form data at runtime. The PDF template is ALREADY configured in Formcycle.\n" +
@@ -9282,7 +9376,69 @@ class AICodBiAssistant : IPluginServletAction {
             "inside an XButtonList item's 'buttons' array (name, title, value, action). A workflow " +
             "submit trigger (FC_FORM_SUBMIT_BUTTON) references that button by its 'name'.\n" +
             "- Every created widget MUST have a unique 'id' (e.g. 'xi-...') and a className from the " +
-            "reference list.\n\n"
+            "reference list.\n" +
+            "- There is NO 'row' className — never use 'xm-form-row' (or any similar name) as a " +
+            "className. To place fields side by side in one row, give them the same 'rowid' property " +
+            "(see ROW PAIRING RULES).\n\n"
+
+    /**
+     * Teaches the form AI which fields belong on the SAME row because they form one composite
+     * value. Written semantically (language-agnostic) so it applies in any user language.
+     */
+    private val ROW_PAIRING_RULES =
+        "\nROW PAIRING RULES (fields that belong on the SAME row):\n" +
+            "Some fields describe one logical value together and must appear SIDE BY SIDE in the SAME row " +
+            "of the form (not stacked one per line, not wrapped in a nested container). Identify these " +
+            "pairs by what they mean, in ANY language:\n" +
+            "- A person's GIVEN/FIRST name + FAMILY/LAST name (e.g. Max + Mustermann).\n" +
+            "- A STREET/ROAD name + HOUSE/BUILDING number (e.g. Main Street + 12).\n" +
+            "- A POSTAL CODE + LOCALITY/CITY (e.g. 12345 + Berlin).\n" +
+            "HOW Formcycle renders a row (there is NO 'row' widget/className — 'xm-form-row' is only the " +
+            "CSS class the renderer adds automatically, never a className you should write):\n" +
+            "- Keep the two fields as DIRECT SIBLINGS inside the same parent container (e.g. in the " +
+            "XPage/container's 'elements' array) — do NOT wrap them in an extra XContainer/XFieldSet.\n" +
+            "- Give BOTH fields the SAME string value for the 'rowid' property in their 'properties' " +
+            "object (e.g. \"rowid\": \"row-1\"). Formcycle renders all sibling fields with an identical " +
+            "'rowid' next to each other in one row.\n" +
+            "- Use a DIFFERENT 'rowid' value for each separate row (\"row-1\", \"row-2\", ...) so every " +
+            "pair stays on its own line; omit 'rowid' (or leave it empty) for fields that should span the " +
+            "full width on their own line.\n" +
+            "- Size the two fields sensibly so they share the line (e.g. roughly half the row width each).\n\n"
+
+    /**
+     * Teaches the form AI how to map the user's chosen input control type to a Formcycle widget.
+     * Injected into BOTH the pass-1 form prompt and the pass-2 (widget-creating) prompts so the
+     * choice (e.g. "radio buttons") is honored regardless of which pass builds the fields.
+     */
+    private val CONTROL_TYPES_RULES =
+        "\nCONTROL TYPES: Honor the user's choice of input control type (from the request or the USER " +
+            "CLARIFICATION). \"Radio-Button\" / \"radio\" → create an XSelect with selectlayout:\"radio\" " +
+            "(options with text+value). \"Checkbox\" → a single XCheckbox for a yes/no question, or an XSelect " +
+            "with selectlayout:\"checkbox\" for a multi-select option list. \"Dropdown\" / not specified → XSelect " +
+            "without selectlayout (default dropdown). NEVER generate a plain dropdown when the user explicitly " +
+            "chose radio buttons or a checkbox.\n\n"
+
+    /**
+     * Teaches the form AI to build the ENTIRE requested form instead of only the last/clarified
+     * subset. Addresses under-delivery where a request with many fields (e.g. an email) results in
+     * only the most-emphasized group being created.
+     */
+    private val COMPLETE_FORM_RULES =
+        "\nCOMPLETE FORM RULES (build the ENTIRE requested form):\n" +
+            "A request (email, list, description, mail thread, ...) can contain MANY fields. Create " +
+            "EVERY field the user asked for in ONE output — never create only the most recent / most " +
+            "emphasized / clarified subset and never drop fields mentioned earlier.\n" +
+            "- \"Make this group repeatable\" (e.g. \"+ to add more\", \"the answer fields can be " +
+            "duplicated\") applies ONLY to that one group — all OTHER requested fields must still be " +
+            "created.\n" +
+            "- Map each requested input to the matching widget: single-line text → XTextField, " +
+            "multi-line text → XTextArea, yes/no or a choice → XCheckbox / XSelect (see CONTROL " +
+            "TYPES), etc.\n" +
+            "- A given/family name pair (\"Name, Vorname\") → two XTextFields on the SAME row (same " +
+            "'rowid', see ROW PAIRING RULES).\n" +
+            "- Add every created field to its page's/container's 'elements' array so it actually " +
+            "appears on the form.\n" +
+            "- When in doubt, CREATE the field — a missing requested field is a failed request.\n\n"
 
     /**
      * Describes the structure of the change log that is delivered to the AI as JSON (see

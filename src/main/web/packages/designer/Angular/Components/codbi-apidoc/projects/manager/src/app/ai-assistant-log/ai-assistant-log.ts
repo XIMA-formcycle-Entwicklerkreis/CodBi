@@ -740,6 +740,9 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         id: baseId,
         kind: "node",
         label: `Q${i + 1}: ${q || "(question)"}`,
+        // The question text may contain multiple questions and "- option" lines (separated by
+        // newlines) — keep those line breaks visible in the label.
+        multiline: true,
         children: turnChildren,
         expanded: false,
       };

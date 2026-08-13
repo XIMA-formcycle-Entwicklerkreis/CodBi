@@ -662,34 +662,53 @@ export class DQ_Table_View {
           .then(() => {
             // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
             const XLSX = (window as any).XLSX;
-            // Build the worksheet from the stored rows as an array-of-arrays.
-            const aoa: Array<Array<string | number>> = [columns.map((column) => column.label)];
+            // Build a clean temporary table from the stored result rows (the on-screen cells contain the foldable
+            // JSON-viewer markup, so the sheet is NOT read from the DOM table). JSON columns export their
+            // (pretty-printed) JSON content as text; every other value is coerced to a string/number.
+            const exportTable = document.createElement("table");
+            const thead = document.createElement("thead");
+            const headRow = document.createElement("tr");
 
-            for (const row of dataRows) {
-              aoa.push(
-                columns.map((column) => {
-                  const raw = row[column.dataColumn] ?? "";
+            for (const column of columns) {
+              const th = document.createElement("th");
 
-                  // JSON columns export their (pretty-printed) JSON content as text; every other value is
-                  // coerced to a string/number so no non-serializable value can corrupt the workbook.
-                  if (column.isJson) {
-                    return DQ_Table_View.prettyPrintJson(raw);
-                  }
-                  return typeof raw === "string" || typeof raw === "number" ? raw : String(raw);
-                }),
-              );
+              th.textContent = column.label;
+              headRow.appendChild(th);
             }
 
-            // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
-            const ws: any = XLSX.utils.aoa_to_sheet(aoa);
-            // Apply the defined column widths to the exported sheet (undefined entries keep the column positions).
-            ws["!cols"] = columns.map((column) => (column.width !== undefined ? { wch: column.width } : undefined));
-            // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
-            const wb: any = XLSX.utils.book_new();
+            thead.appendChild(headRow);
+            exportTable.appendChild(thead);
 
-            XLSX.utils.book_append_sheet(wb, ws, sheetName);
-            // Use the proven SheetJS 0.15.1 export pattern (bookSST + writeFile) — the Blob-based download
-            // approaches produced files MS Excel could not open in this environment.
+            const tbody = document.createElement("tbody");
+
+            for (const row of dataRows) {
+              const tr = document.createElement("tr");
+
+              for (const column of columns) {
+                const td = document.createElement("td");
+                const raw = row[column.dataColumn] ?? "";
+
+                if (column.isJson) {
+                  td.textContent = DQ_Table_View.prettyPrintJson(raw);
+                } else {
+                  td.textContent = typeof raw === "string" || typeof raw === "number" ? raw : String(raw);
+                }
+
+                tr.appendChild(td);
+              }
+
+              tbody.appendChild(tr);
+            }
+
+            exportTable.appendChild(tbody);
+            // Build the workbook from the table exactly like the proven export snippet.
+            // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
+            const wb: any = XLSX.utils.table_to_book(exportTable, { sheet: sheetName });
+            // Apply the defined column widths (undefined entries keep the column positions).
+            wb.Sheets[sheetName]["!cols"] = columns.map((column) =>
+              column.width !== undefined ? { wch: column.width } : undefined,
+            );
+            // Use the proven SheetJS 0.15.1 export pattern (bookSST + writeFile).
             XLSX.write(wb, { bookType: "xlsx", bookSST: true, type: "base64" });
             XLSX.writeFile(wb, `${fileName}.xlsx`);
           })

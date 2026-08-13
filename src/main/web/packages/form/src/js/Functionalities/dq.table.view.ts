@@ -23,7 +23,7 @@ interface TableViewColumn {
   /** Whether the column contains **JSON** data. When `true`, cells render a compact JSON-viewer that can be
    *  maximized into a full modal viewer; the Excel-export writes the (pretty-printed) JSON as text. */
   isJson: boolean;
-  /** The optional column **width**. Applied as `width` on the `<th>` and as `wch` in the exported Excel-sheet. */
+  /** The optional column **width**. Applied as `width` on the `<th>` and as `width` in the exported Excel-sheet. */
   width?: number;
 }
 
@@ -704,10 +704,10 @@ export class DQ_Table_View {
             // Build the workbook from the table exactly like the proven export snippet.
             // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
             const wb: any = XLSX.utils.table_to_book(exportTable, { sheet: sheetName });
-            // Apply the defined column widths (undefined entries keep the column positions).
-            wb.Sheets[sheetName]["!cols"] = columns.map((column) =>
-              column.width !== undefined ? { wch: column.width } : undefined,
-            );
+            // Apply the defined column widths; columns without an explicit width get a standard default width
+            // (a plain `undefined` entry would make SheetJS fall back to a very narrow column).
+            const defaultColumnWidth = 12;
+            wb.Sheets[sheetName]["!cols"] = columns.map((column) => ({ width: column.width ?? defaultColumnWidth }));
             // Use the proven SheetJS 0.15.1 export pattern (bookSST + writeFile).
             XLSX.write(wb, { bookType: "xlsx", bookSST: true, type: "base64" });
             XLSX.writeFile(wb, `${fileName}.xlsx`);

@@ -134,13 +134,28 @@ export class DQ_Table_View {
       });
   }
   /**
+   * Normalizes a raw cell {@link string } prior to JSON-parsing.
+   *
+   * A DataQuery-JSON-column may deliver a JSON-array with a **leading comma** right after the opening bracket
+   * (e.g. `[,{...},{...}]`) which is not valid JSON. Such a leading `[,` is replaced with `[` so the value can be
+   * parsed (and rendered/exported) correctly.
+   *
+   * @param raw The raw cell {@link string }.
+   *
+   * @returns The normalized {@link string }. */
+  protected static normalizeJson(raw: string): string {
+    const trimmed = raw.trim();
+
+    return trimmed.startsWith("[,") ? `[${trimmed.substring(2)}` : trimmed;
+  }
+  /**
    * Attempts to parse the given {@link string } as JSON.
    *
    * @param raw The raw cell {@link string }.
    *
    * @returns The parsed value, or `undefined` when it is not valid JSON. */
   protected static tryParseJson(raw: string): unknown | undefined {
-    const trimmed = raw.trim();
+    const trimmed = DQ_Table_View.normalizeJson(raw);
 
     if (trimmed.length === 0) {
       return undefined;

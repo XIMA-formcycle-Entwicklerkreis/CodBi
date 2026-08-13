@@ -734,6 +734,7 @@ export class DQ_Table_View {
             }
 
             exportTable.appendChild(tbody);
+            console.log(exportTable.innerHTML);
             // Build the workbook from the table exactly like the proven export snippet.
             // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
             const wb: any = XLSX.utils.table_to_book(exportTable, { sheet: sheetName });

@@ -411,7 +411,7 @@ export class DQ_Table_View {
       pre.className = "CodBi_Table_View_JsonPreview";
       pre.textContent = pretty;
       pre.title = "Click to open the JSON viewer";
-      pre.addEventListener("click", () => DQ_Table_View.openJsonModal(label, pretty, false));
+      pre.addEventListener("click", () => DQ_Table_View.openJsonModal(label, pretty, false, parsed));
       preview = pre;
     }
 
@@ -423,7 +423,7 @@ export class DQ_Table_View {
     maximize.textContent = "⛶";
     maximize.addEventListener("click", (event) => {
       event.stopPropagation();
-      DQ_Table_View.openJsonModal(label, pretty, true);
+      DQ_Table_View.openJsonModal(label, pretty, true, parsed);
     });
 
     container.appendChild(preview);
@@ -431,12 +431,14 @@ export class DQ_Table_View {
     td.appendChild(container);
   }
   /**
-   * Opens a maximizable modal JSON-viewer overlay for the given pretty-printed JSON.
+   * Opens a maximizable modal JSON-viewer overlay for the given pretty-printed JSON. When the parsed value is a
+   * structured JSON array/object the modal shows the foldable viewer instead of the plain pretty-printed text.
    *
    * @param title     The title (usually the column label).
-   * @param pretty    The pretty-printed JSON to display.
-   * @param maximized Whether to start the viewer maximized (full screen). */
-  protected static openJsonModal(title: string, pretty: string, maximized: boolean): void {
+   * @param pretty    The pretty-printed JSON to display (fallback for non-structured values).
+   * @param maximized Whether to start the viewer maximized (full screen).
+   * @param parsed    The parsed JSON value (optional) — when structured, its elements render as foldable nodes. */
+  protected static openJsonModal(title: string, pretty: string, maximized: boolean, parsed?: unknown): void {
     // Remove any previously open viewer to avoid stacked overlays.
     document.querySelector(".CodBi_Table_View_JsonModal")?.remove();
 
@@ -487,11 +489,19 @@ export class DQ_Table_View {
 
     body.className = "CodBi_Table_View_JsonModalBody";
 
-    const pre = document.createElement("pre");
+    if (parsed !== undefined && parsed !== null && typeof parsed === "object") {
+      body.appendChild(
+        Array.isArray(parsed)
+          ? DQ_Table_View.buildArrayViewer(parsed)
+          : DQ_Table_View.buildObjectViewer(parsed as Record<string, unknown>),
+      );
+    } else {
+      const pre = document.createElement("pre");
 
-    pre.className = "CodBi_Table_View_JsonModalContent";
-    pre.textContent = pretty;
-    body.appendChild(pre);
+      pre.className = "CodBi_Table_View_JsonModalContent";
+      pre.textContent = pretty;
+      body.appendChild(pre);
+    }
 
     dialog.appendChild(header);
     dialog.appendChild(body);
@@ -678,10 +688,15 @@ export class DQ_Table_View {
             const wb: any = XLSX.utils.book_new();
 
             XLSX.utils.book_append_sheet(wb, ws, sheetName);
-            // Write the workbook as a binary array and download it via a Blob — more reliable than
-            // XLSX.writeFile in restricted (CSP/iframe) plugin environments and guarantees a valid .xlsx.
-            const binary = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
-            const blob = new Blob([binary], {
+            // The bundled SheetJS is 0.15.1, which does NOT support `type: "array"` (ArrayBuffer) — that would
+            // return a base64 string and produce a file Excel cannot open. Use the canonical browser pattern:
+            // write as a binary string, convert it to bytes, and download it as a Blob.
+            const binary = XLSX.write(wb, { bookType: "xlsx", type: "binary" }) as string;
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+              bytes[i] = binary.charCodeAt(i) & 0xff;
+            }
+            const blob = new Blob([bytes], {
               type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             });
             const url = URL.createObjectURL(blob);
@@ -710,7 +725,7 @@ export class DQ_Table_View {
         .CodBi_Table_View th, .CodBi_Table_View td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; vertical-align: top; }
         .CodBi_Table_View thead th { position: sticky; top: 0; z-index: 10; background: #f0f0f0; }
         .CodBi_Table_View .CodBi_Table_View_NoData { font-style: italic; color: #666; }
-        .CodBi_Table_View .CodBi_Table_View_JsonCell { position: relative; }
+        .CodBi_Table_View .CodBi_Table_View_JsonCell { position: relative; text-align: left; }
         .CodBi_Table_View .CodBi_Table_View_JsonPreview { margin: 0; padding: 4px 6px; background: #f7f7f9; border: 1px solid #e3e3e8; border-radius: 3px; font-family: Consolas, Menlo, monospace; font-size: 11px; line-height: 1.4; max-height: 140px; overflow: auto; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
         .CodBi_Table_View .CodBi_Table_View_JsonMaximize { position: absolute; top: 4px; right: 4px; border: none; background: rgba(0,0,0,0.55); color: #fff; border-radius: 3px; cursor: pointer; font-size: 12px; line-height: 1; padding: 3px 6px; }
         .CodBi_Table_View .CodBi_Table_View_JsonArray { display: flex; flex-direction: column; gap: 2px; max-height: 140px; overflow: auto; }
@@ -731,8 +746,9 @@ export class DQ_Table_View {
         .CodBi_Table_View_JsonModalControls { display: flex; gap: 6px; flex-shrink: 0; }
         .CodBi_Table_View_JsonModalControls button { border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer; background: #57606f; color: #fff; }
         .CodBi_Table_View_JsonModalControls button:hover { background: #6b7686; }
-        .CodBi_Table_View_JsonModalBody { background: #fff; overflow: auto; width: min(80vw, 800px); height: 70vh; }
+        .CodBi_Table_View_JsonModalBody { background: #fff; overflow: auto; width: min(80vw, 800px); height: 70vh; text-align: left; }
         .CodBi_Table_View_JsonModalContent { margin: 0; padding: 14px; font-family: Consolas, Menlo, monospace; font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto; }
+        .CodBi_Table_View_JsonModalBody .CodBi_Table_View_JsonArray { max-height: none; }
         .CodBi_Table_View_JsonModal.--maximized .CodBi_Table_View_JsonModalBody { width: 96vw; height: 94vh; }
       `;
       document.head.appendChild(style);

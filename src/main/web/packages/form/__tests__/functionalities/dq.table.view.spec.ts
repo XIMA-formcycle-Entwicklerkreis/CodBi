@@ -10,6 +10,8 @@ interface JsonHelpers {
   parseBooleanFlag(value: unknown, defaultValue: boolean): boolean;
   compactValue(value: unknown): string;
   summarizeObject(value: unknown): string;
+  parseExcludedColumns(value: unknown): Set<string>;
+  isColumnExcluded(column: { label: string; dataColumn: string }, excluded: Set<string>): boolean;
 }
 
 const helpers = DQ_Table_View as unknown as JsonHelpers;
@@ -163,6 +165,49 @@ describe("DQ_Table_View JSON-column handling", () => {
 
     it("summarizes the first property even when it is an object", () => {
       expect(helpers.summarizeObject({ meta: { x: 1 }, name: "Max" })).toBe("{ meta: {...}, ... }");
+    });
+  });
+
+  describe("parseExcludedColumns", () => {
+    it("returns an empty set for an absent/empty value", () => {
+      expect(helpers.parseExcludedColumns(undefined).size).toBe(0);
+      expect(helpers.parseExcludedColumns("").size).toBe(0);
+    });
+
+    it("splits a CSV and trims each name", () => {
+      expect([...helpers.parseExcludedColumns("Nachricht, Wichtige_Hinweise ,Note")]).toEqual([
+        "nachricht",
+        "wichtige_hinweise",
+        "note",
+      ]);
+    });
+
+    it("lowercases the names for case-insensitive matching", () => {
+      expect(helpers.parseExcludedColumns("Nachricht").has("nachricht")).toBe(true);
+    });
+
+    it("ignores empty entries", () => {
+      expect([...helpers.parseExcludedColumns("A,,B")]).toEqual(["a", "b"]);
+    });
+  });
+
+  describe("isColumnExcluded", () => {
+    const excluded = helpers.parseExcludedColumns("Nachricht, Wichtige_Hinweise");
+
+    it("matches by datacolumn case-insensitively", () => {
+      expect(helpers.isColumnExcluded({ label: "Message", dataColumn: "Nachricht" }, excluded)).toBe(true);
+    });
+
+    it("matches by label case-insensitively", () => {
+      expect(helpers.isColumnExcluded({ label: "Wichtige_Hinweise", dataColumn: "WH" }, excluded)).toBe(true);
+    });
+
+    it("trims whitespace around the names", () => {
+      expect(helpers.isColumnExcluded({ label: "  Nachricht  ", dataColumn: "x" }, excluded)).toBe(true);
+    });
+
+    it("returns false for columns not excluded", () => {
+      expect(helpers.isColumnExcluded({ label: "Name", dataColumn: "Name" }, excluded)).toBe(false);
     });
   });
 });

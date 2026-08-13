@@ -536,6 +536,31 @@ export class DQ_Table_View {
     return ["false", "0", "no"].includes(normalized) ? false : defaultValue;
   }
   /**
+   * Parses the `ExcludeColumns`-parameter (a CSV of column names) into a case-insensitive {@link Set } of names.
+   *
+   * @param value The raw CSV value.
+   *
+   * @returns A {@link Set } of lowercased column names. */
+  protected static parseExcludedColumns(value: unknown): Set<string> {
+    return new Set(
+      String(value ?? "")
+        .split(",")
+        .map((name) => name.trim().toLowerCase())
+        .filter((name) => name.length > 0),
+    );
+  }
+  /**
+   * Whether the given {@link TableViewColumn } is part of the excluded columns (matched against its `label` or
+   * `datacolumn`, case-insensitively).
+   *
+   * @param column   The column to check.
+   * @param excluded The {@link Set } of lowercased excluded column names.
+   *
+   * @returns `true` when the column shall be excluded from the Excel-export. */
+  protected static isColumnExcluded(column: TableViewColumn, excluded: Set<string>): boolean {
+    return excluded.has(column.label.trim().toLowerCase()) || excluded.has(column.dataColumn.trim().toLowerCase());
+  }
+  /**
    * Registers the "DQ.Table.View"-Functionality which injects a table showing the result of a Formcycle-DataQuery into
    * the tagged {@link HTMLElement } and enables exporting that table to an **Excel**-file (`.xlsx`) via a button.
    *
@@ -562,12 +587,15 @@ export class DQ_Table_View {
    *                     export-button — the Excel-export is then simply not available.
    *  - ```Centered```:   Whether the content of the table-cells (```<td>```s) is centered. Defaults to ```true```;
    *                     set to ```false``` / ```0``` / ```no``` to keep the cells left-aligned.
+   *  - ```ExcludeColumns```: An **optional** CSV of column names (matched against the column's `label` or
+   *                     `datacolumn`) that shall be **excluded from the Excel-export** (they remain visible in the
+   *                     table). E.g. `Nachricht,Wichtige_Hinweise`.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi - the container the table shall be injected into. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE("string", "dataquery :: css :: filename :: sheetname :: exportbutton :: centered")
+    @TYPE.PRE("string", "dataquery :: css :: filename :: sheetname :: exportbutton :: centered :: excludecolumns")
     @TYPE.PRE("string | object", "columns")
     toLoad: { [key: string]: unknown },
 
@@ -608,6 +636,9 @@ export class DQ_Table_View {
 
     // Whether the content of the table-cells (<td>s) shall be centered. Defaults to true.
     const centered: boolean = DQ_Table_View.parseBooleanFlag(toLoad.centered, true);
+
+    // Columns to exclude from the Excel-export (CSV of column names, matched against label or datacolumn).
+    const excludedColumns: Set<string> = DQ_Table_View.parseExcludedColumns(toLoad.excludecolumns);
     // #endregion Normalize parameters.
     // #region Generate a unique id for this table-view instance.
     const instanceId = `codbi-table-view-${Math.random().toString(36).substring(2, 11)}`;
@@ -665,11 +696,13 @@ export class DQ_Table_View {
             // Build a clean temporary table from the stored result rows (the on-screen cells contain the foldable
             // JSON-viewer markup, so the sheet is NOT read from the DOM table). JSON columns export their
             // (pretty-printed) JSON content as text; every other value is coerced to a string/number.
+            // Columns listed in ExcludeColumns are left out of the export (they remain visible in the table).
+            const exportColumns = columns.filter((column) => !DQ_Table_View.isColumnExcluded(column, excludedColumns));
             const exportTable = document.createElement("table");
             const thead = document.createElement("thead");
             const headRow = document.createElement("tr");
 
-            for (const column of columns) {
+            for (const column of exportColumns) {
               const th = document.createElement("th");
 
               th.textContent = column.label;
@@ -684,7 +717,7 @@ export class DQ_Table_View {
             for (const row of dataRows) {
               const tr = document.createElement("tr");
 
-              for (const column of columns) {
+              for (const column of exportColumns) {
                 const td = document.createElement("td");
                 const raw = row[column.dataColumn] ?? "";
 
@@ -707,7 +740,9 @@ export class DQ_Table_View {
             // Apply the defined column widths; columns without an explicit width get a standard default width
             // (a plain `undefined` entry would make SheetJS fall back to a very narrow column).
             const defaultColumnWidth = 12;
-            wb.Sheets[sheetName]["!cols"] = columns.map((column) => ({ width: column.width ?? defaultColumnWidth }));
+            wb.Sheets[sheetName]["!cols"] = exportColumns.map((column) => ({
+              width: column.width ?? defaultColumnWidth,
+            }));
             // Use the proven SheetJS 0.15.1 export pattern (bookSST + writeFile).
             XLSX.write(wb, { bookType: "xlsx", bookSST: true, type: "base64" });
             XLSX.writeFile(wb, `${fileName}.xlsx`);

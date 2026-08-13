@@ -227,6 +227,7 @@ Create an XContainer/XContainerInvisible and set on it (via the attributes array
 - data-cb-sheetname = (optional) the worksheet name in the exported Excel file. Defaults to `sheet1`.
 - data-cb-exportbutton = (optional) a CSS selector of an existing button that shall trigger the export. If omitted (or no matching element is found) the table is rendered WITHOUT any export button — the Excel export is then simply not available.
 - data-cb-centered = (optional) whether the content of the table cells is centered. Defaults to `true`; set to `false`/`0`/`no` to keep the cells left-aligned.
+- data-cb-excludecolumns = (optional) a CSV of column names (matched against the column's `label` or `datacolumn`) to EXCLUDE from the Excel-export — those columns stay visible in the table but are omitted from the exported `.xlsx`. E.g. `Nachricht,Wichtige_Hinweise`.
 
 Example — a table that views the columns "Alter" and "Name" of the DataQuery "HolaQuery":
 "attributes": [

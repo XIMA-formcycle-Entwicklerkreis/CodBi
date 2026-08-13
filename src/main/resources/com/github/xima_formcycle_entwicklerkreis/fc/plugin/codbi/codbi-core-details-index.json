@@ -281,7 +281,7 @@
       "tsdoc": "Provides the {@link DQ_Table_View.functionality }.",
       "parameters": {
         "CSS": "An optional string of one or more (space separated) CSS classes applied to BOTH the tagged container and the injected table.",
-        "Columns": "REQUIRED - A CSV defining the columns to show, each column is label;datacolumn with an optional third entry ;width (e.g. Anrede;Anrede;15,Unternehmen;Unternehmen;25).",
+        "Columns": "REQUIRED - A CSV defining the columns to show, each column is label;datacolumn;jsonFlag with an optional fourth entry ;width (e.g. Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30). jsonFlag true/1/yes marks a column as containing JSON so its cells show a maximizable JSON viewer (false/0/no for plain columns; a plain number in this position is treated as the legacy width).",
         "DataQuery": "REQUIRED - The name of the Formcycle DataQuery on the server whose result shall be shown (e.g. INHALT.Eigentuemerdialog_Dezember_2025). Executed via $.xutil.getDataQuery.",
         "ExportButton": "An optional CSS selector of an existing button that shall trigger the export. If omitted (or no matching element is found) the table is rendered WITHOUT any export button - the Excel export is then simply not available.",
         "FileName": "The name of the exported Excel file WITHOUT extension (the extension is always .xlsx). Defaults to Export.",

@@ -86,18 +86,19 @@ function openAssistant(): void {
     // ignore storage errors
   }
 
-  const existing = document.querySelector("cb-ai-assistant");
-  if (existing) {
+  // Already visible — just (re)dispatch so the prompt gets focus; never touch the mounted element
+  // while the dialog is open.
+  if (document.querySelector(".cb-ai-assistant-dialog")) {
     document.dispatchEvent(new CustomEvent("codbi:ai-assistant:open"));
     return;
   }
 
-  document.body.appendChild(document.createElement("cb-ai-assistant"));
-  // Poll until the dialog is visible (capped at 4s), dispatching the open event only while it is
-  // not. Rate-limited to ~700ms to avoid hammering open() while its initial AJAX (DB status +
-  // model list) is still running.
+  // Angular's custom-element bootstrap is asynchronous — poll until the dialog is visible (capped
+  // at 4s), dispatching the open event only while it is not. Rate-limited to ~700ms to avoid
+  // hammering open() while its initial AJAX (DB status + model list) is still running.
   const startedAt = Date.now();
   let lastDispatch = 0;
+  let freshMounted = false;
 
   const tryOpen = (): void => {
     if (document.querySelector(".cb-ai-assistant-dialog") || Date.now() - startedAt > 4000) {
@@ -107,35 +108,56 @@ function openAssistant(): void {
       lastDispatch = Date.now();
       document.dispatchEvent(new CustomEvent("codbi:ai-assistant:open"));
     }
+    // A stale host (its Angular component was destroyed by an inference-driven in-place form load)
+    // silently swallows the open event. Give it a short window to respond; only if the dialog is
+    // still not visible, re-mount a fresh element ONCE. Preferring the existing host avoids
+    // destroying a healthy component on every reopen — that teardown/reboot cycle used to race the
+    // drag coordinator's global registry and leave the dialog undraggable (see the generation guard
+    // in dialog-position.ts).
+    if (!freshMounted && Date.now() - startedAt > 2000) {
+      freshMounted = true;
+      const stale = document.querySelector("cb-ai-assistant");
+
+      if (stale) {
+        stale.remove();
+      }
+      document.body.appendChild(document.createElement("cb-ai-assistant"));
+    }
     setTimeout(tryOpen, 250);
   };
 
+  // Try the existing (possibly live) host first; only create one when none is mounted.
+  if (!document.querySelector("cb-ai-assistant")) {
+    document.body.appendChild(document.createElement("cb-ai-assistant"));
+  }
   setTimeout(tryOpen, 150);
 }
 
 /** Whether the "CodBi" checkbox (`codbi-prop-enable`) is set for the currently edited form. */
 function isCodBiEnabled(): boolean {
   const designer = getDesignerInstance();
-  if (!designer) {
-    return false;
-  }
-  try {
-    const value = designer.getFormPropertyValueForCurrentLang("codbi-prop-enable");
-    if (value === "1" || value === 1 || value === true) {
-      return true;
+
+  if (designer) {
+    try {
+      const value = designer.getFormPropertyValueForCurrentLang("codbi-prop-enable");
+      if (value === "1" || value === 1 || value === true) {
+        return true;
+      }
+    } catch {
+      // fall through to the DOM checkbox check below
     }
-  } catch {
-    // fall through to the DOM checkbox check below
   }
   // After an inference-driven form load (no page reload) the property model can be stale even
   // though the live "CodBi" checkbox is still checked — trust the checkbox in that case.
   const checkbox = document.querySelector<HTMLInputElement>("#form-codbi-prop-enable-input");
-  if (checkbox) {
-    return checkbox.checked === true;
+
+  if (checkbox && checkbox.checked === true) {
+    return true;
   }
-  // Neither the (possibly stale) property model nor the live checkbox could be determined — e.g.
-  // right after the form-properties panel was re-rendered in place. A manual ALT+A open within the
-  // last few minutes is a strong signal that CodBi is enabled for the currently edited form.
+  // Neither the (possibly stale) property model nor a checked live checkbox confirm it — e.g. right
+  // after an inference-driven in-place form load, when the checkbox may still show the pre-load
+  // state. A manual ALT+A open within the last few minutes is a strong signal that CodBi is enabled
+  // for the currently edited form.
   try {
     const lastOpened = Number(localStorage.getItem("codbi-assistant-last-opened") ?? "0");
     return lastOpened > 0 && Date.now() - lastOpened < 10 * 60 * 1000;

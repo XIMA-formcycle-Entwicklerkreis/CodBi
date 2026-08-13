@@ -5917,6 +5917,45 @@ class AICodBiAssistant : IPluginServletAction {
         workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(chainNode, savedRootNode)
         val savedChainNode = createNodeMethod.invoke(workflowNodeApi, userContext, chainNode)
         fixParentOrderIndex(savedChainNode, savedRootNode, userContext)
+        // Recursively create child nodes for chained conditional/loop nodes that have
+        // _childNodes (e.g. an FC_FOR_EACH_LOOP in the JSON-build pattern). Without this,
+        // the chained loop node would be created EMPTY and its per-iteration children would
+        // be silently dropped, so the loop would do nothing.
+        @Suppress("UNCHECKED_CAST")
+        val chainChildNodes =
+            (chainSpec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+        if (chainChildNodes != null &&
+            (chainSpec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
+                chainSpec.nodeType == "FC_MULTIPLE_CONDITION" ||
+                chainSpec.nodeType == "FC_FOR_EACH_LOOP" ||
+                chainSpec.nodeType == "FC_WHILE_LOOP" ||
+                chainSpec.nodeType == "FC_DO_UNTIL_LOOP" ||
+                chainSpec.nodeType == "FC_WITH_FORM_ELEMENT_CONTEXT")) {
+          logger.info(
+              "[AICodBiAssistant] Creating SEQUENCE wrapper for chained nodeType={}",
+              chainSpec.nodeType)
+          val chainSeq = workflowNodeClass.getDeclaredConstructor().newInstance()
+          workflowNodeClass
+              .getMethod("setName", String::class.java)
+              .invoke(chainSeq, "FcSequenceHandler")
+          workflowNodeClass.getMethod("setType", String::class.java).invoke(chainSeq, "SEQUENCE")
+          workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(chainSeq, true)
+          workflowNodeClass
+              .getMethod("setUUIDObject", UUID::class.java)
+              .invoke(chainSeq, UUID.randomUUID())
+          workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(chainSeq, savedTask)
+          workflowNodeClass
+              .getMethod("setParent", workflowNodeClass)
+              .invoke(chainSeq, savedChainNode)
+          trySetParentOrderIndex(workflowNodeClass, chainSeq, 0)
+          val savedChainSeq = createNodeMethod.invoke(workflowNodeApi, userContext, chainSeq)
+          verifyChildIndex(savedChainSeq, savedChainNode, 0, userContext)
+          logger.info(
+              "[AICodBiAssistant] Created SEQUENCE id={} for chained nodeType={}",
+              savedChainSeq.javaClass.getMethod("getId").invoke(savedChainSeq),
+              chainSpec.nodeType)
+          processBranchChildren(chainSpec, savedChainSeq, chainChildNodes, 1)
+        }
         prevNodeUuid = chainNodeUuidVal
       }
     }
@@ -7707,6 +7746,32 @@ class AICodBiAssistant : IPluginServletAction {
         // The property trustLevels is List<ETrustLevel>, so we need a JSON array of enum names.
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"trustLevels":[${gson.toJson(mappedLevel)}],"dataSuffix":""}"""
       }
+      "FC_SQL_STATEMENT" -> {
+        // FC_SQL_STATEMENT runs a SQL statement against a configured database connection.
+        // CUSTOM_PARAMS stores FcSqlStatementProps:
+        //   databaseConnection: UuidEntityRef ->
+        // {"uuid":"<uuid>","entityClass":"de.xima.fc.entities.DatenbankZugriff"}
+        //   query: String (the SQL text — the property shown in the node editor)
+        //   queryParameters: List<Setting<String>>
+        //   useClientDatabaseQuery: boolean
+        // The AI provides nodeParams: {"connection":"<connection name>","sql":"<SQL text>"}.
+        val connectionName = spec.nodeParams["connection"] as? String ?: ""
+        val query = spec.nodeParams["sql"] as? String ?: spec.nodeParams["query"] as? String ?: ""
+        val connectionUuid =
+            if (connectionName.isNotBlank() && workflowVersion != null)
+                resolveDatabaseConnectionUuid(workflowVersion, connectionName)
+            else null
+        val connectionJson =
+            if (connectionUuid != null) {
+              """{"uuid":${gson.toJson(connectionUuid.toString())},"entityClass":"de.xima.fc.entities.DatenbankZugriff"}"""
+            } else "null"
+        logger.info(
+            "[AICodBiAssistant] buildNodeParams FC_SQL_STATEMENT: connection='{}' resolved={} query='{}'",
+            connectionName,
+            connectionUuid != null,
+            query)
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"databaseConnection":$connectionJson,"query":${gson.toJson(query)},"queryParameters":[],"useClientDatabaseQuery":false}"""
+      }
       else -> """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)}}"""
     }
   }
@@ -8264,6 +8329,102 @@ class AICodBiAssistant : IPluginServletAction {
       PluginServletActionRetVal(ServletResponse(EResponseType.JSON, json))
 
   // endregion JSON Utilities
+
+  /**
+   * Resolves a database connection (DatenbankZugriff / ZUGRIFF_DB) by its display name to its UUID.
+   * Used to populate FcSqlStatementProps.databaseConnection (a UuidEntityRef) for FC_SQL_STATEMENT.
+   * The lookup is scoped to the workflow version's client/mandant when determinable. Returns null
+   * if the connection cannot be found.
+   */
+  private fun resolveDatabaseConnectionUuid(workflowVersion: Any?, connectionName: String): UUID? {
+    if (connectionName.isBlank()) return null
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      var mandantId: Long? = null
+      try {
+        val project = workflowVersion?.javaClass?.getMethod("getProject")?.invoke(workflowVersion)
+        val mandant = project?.javaClass?.getMethod("getMandant")?.invoke(project)
+        mandantId = mandant?.javaClass?.getMethod("getId")?.invoke(mandant) as? Long
+      } catch (_: Exception) {
+        mandantId = null
+      }
+      // Strategy 1: JPQL against the DatenbankZugriff entity (scoped to the client when known)
+      try {
+        val jpql =
+            if (mandantId != null)
+                "SELECT c FROM de.xima.fc.entities.DatenbankZugriff c WHERE c.name = :name AND c.mandant.id = :mid"
+            else "SELECT c FROM de.xima.fc.entities.DatenbankZugriff c WHERE c.name = :name"
+        val query = em.createQuery(jpql)
+        query.setParameter("name", connectionName)
+        if (mandantId != null) query.setParameter("mid", mandantId)
+        val results = query.resultList
+        if (results.isNotEmpty()) {
+          val conn = results[0] ?: return null
+          val uuid = conn.javaClass.getMethod("getUUIDObject").invoke(conn) as? UUID
+          if (uuid != null) {
+            logger.info(
+                "[AICodBiAssistant] Resolved database connection '{}' to UUID {} via JPQL",
+                connectionName,
+                uuid)
+            return uuid
+          }
+        }
+      } catch (_: Exception) {
+        // fall through to native SQL
+      }
+      // Strategy 2: Native SQL against ZUGRIFF_DB with schema discovery
+      try {
+        val nameColQuery =
+            em.createNativeQuery(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'ZUGRIFF_DB' AND (column_name IN ('NAME', 'BEZEICHNUNG')) ORDER BY ordinal_position")
+        val cols = nameColQuery.resultList.map { it.toString().uppercase() }
+        val nameCol =
+            when {
+              "NAME" in cols -> "NAME"
+              "BEZEICHNUNG" in cols -> "BEZEICHNUNG"
+              else -> return null
+            }
+        val clientColQuery =
+            em.createNativeQuery(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'ZUGRIFF_DB' AND (column_name IN ('CLIENT_ID', 'MANDANT_ID', 'MANDANTID', 'FK_MANDANT')) ORDER BY ordinal_position")
+        val ccols = clientColQuery.resultList
+        val clientCol = if (ccols.isNotEmpty()) ccols[0].toString() else null
+        val sql =
+            if (clientCol != null && mandantId != null)
+                "SELECT UUID FROM ZUGRIFF_DB WHERE $nameCol = :name AND $clientCol = :mid"
+            else "SELECT UUID FROM ZUGRIFF_DB WHERE $nameCol = :name"
+        val query = em.createNativeQuery(sql)
+        query.setParameter("name", connectionName)
+        if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+        val results = query.resultList
+        if (results.isNotEmpty()) {
+          val raw = results[0].toString()
+          val uuid =
+              try {
+                UUID.fromString(raw)
+              } catch (_: Exception) {
+                null
+              }
+          if (uuid != null) {
+            logger.info(
+                "[AICodBiAssistant] Resolved database connection '{}' to UUID {} via native SQL",
+                connectionName,
+                uuid)
+            return uuid
+          }
+        }
+      } catch (_: Exception) {
+        logger.warn(
+            "[AICodBiAssistant] Could not resolve database connection '{}' (native SQL failed)",
+            connectionName)
+      }
+    } finally {
+      em.close()
+    }
+    logger.warn("[AICodBiAssistant] Database connection '{}' not found", connectionName)
+    return null
+  }
 
   /**
    * Resolves the UUID of a project-level file resource by its filename. Queries the

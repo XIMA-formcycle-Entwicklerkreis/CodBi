@@ -71,8 +71,13 @@ REQUIRED: the chat reference and whether it should be opened or closed.
 FC_CREATE_TEXT_FILE — Creates a text/JSON/XML/HTML file as an attachment.
 REQUIRED: file name and the content to write.
 ### FC_WRITE_FORM_RECORD_ATTRIBUTES
-FC_WRITE_FORM_RECORD_ATTRIBUTES — Writes custom key-value attributes to the record.
+FC_WRITE_FORM_RECORD_ATTRIBUTES — Writes custom key-value SERVER attributes to the record (server-side only, read back via [%\$RECORD_ATTR.key%]). It does NOT write to a database table — when the user asks to write into a database/table/column, use FC_SQL_STATEMENT instead.
 REQUIRED: the attribute key(s) and value(s) to write.
+### FC_SQL_STATEMENT
+FC_SQL_STATEMENT — Runs a SQL statement (INSERT/UPDATE/DELETE/SELECT) against a database connection; the ONLY node that writes to or reads from an external database table. USE whenever the user asks to write/save/persist form data into a database/table/column.
+REQUIRED: the database connection/datasource and the SQL text (with [%fieldName%] placeholders).
+For a REPEATABLE container, never hardcode a JSON literal with placeholders — you ALSO need FC_WRITE_FORM_RECORD_ATTRIBUTES (accumulate the JSON in a server attribute) and FC_FOR_EACH_LOOP (iterate the rows) BEFORE the single FC_SQL_STATEMENT. REQUEST those node details too (list them in need_workflow_node_details) so you get their exact parameters.
+NESTING: the per-row append FC_WRITE_FORM_RECORD_ATTRIBUTES goes INSIDE the FC_FOR_EACH_LOOP's nodeParams._childNodes (runs once per row). The seed "[" (before the loop), the close "]" and this FC_SQL_STATEMENT (both after the loop) are chain nodes — NEVER put them inside _childNodes, and NEVER put the per-row append after the loop.
 ### FC_RETURN_FILE
 FC_RETURN_FILE — Returns a file to the user's browser for download.
 REQUIRED: the file source to return.
@@ -144,6 +149,8 @@ FC_EXPERIMENT — Wraps an action with error handling (try-catch-finally pattern
 ### FC_FOR_EACH_LOOP
 FC_FOR_EACH_LOOP — Iterates over items and executes child nodes for each item.
 REQUIRED: the item source to iterate over.
+When the data comes from a REPEATABLE (dynamic) container and must be persisted as ONE combined value (e.g. a JSON array), use sourceType FORM_FIELD_REPETITIONS. The loop has no variable, so build the JSON by string-concatenation on a server attribute: FC_WRITE_FORM_RECORD_ATTRIBUTES seeds the key with "[" before the loop; INSIDE each iteration FC_WRITE_FORM_RECORD_ATTRIBUTES sets the value to the current [%\$RECORD_ATTR.<key>%] plus this row's object (e.g. [%\$RECORD_ATTR.<key>%],{...} — do NOT merely echo the current value back, each write appends one row); after the loop FC_WRITE_FORM_RECORD_ATTRIBUTES appends "]". Then store the accumulated [%\$RECORD_ATTR.<key>%] ONCE with the node matching the target the prompt names: a database/table/column → FC_SQL_STATEMENT; a CMIS node/document → the CMIS write node; a file → FC_CREATE_TEXT_FILE; a specific form field → FC_CHANGE_FORM_VALUE; no specific target named → the server attribute itself is the result.
+CRITICAL NESTING: the per-iteration node (the per-row append) MUST be placed INSIDE the loop's nodeParams._childNodes as {"nodeType":"FC_WRITE_FORM_RECORD_ATTRIBUTES","nodeParams":{...}} — that is what makes it run ONCE PER ROW. NEVER place it in "chainedNodes" or as a node listed after the loop (such nodes run exactly ONCE, so the JSON would never grow). Only the post-loop nodes (close "]" and the single final write) go after the loop.
 ### FC_WHILE_LOOP
 FC_WHILE_LOOP — Repeatedly executes child actions WHILE a form field value meets a condition (PRE-CHECK loop).
 REQUIRED: the field to check, the comparison and the value.

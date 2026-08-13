@@ -220,7 +220,7 @@ Use the DataQuery name given by the user AS-IS for data-cb-dataquery — do NOT 
 
 Create an XContainer/XContainerInvisible and set on it (via the attributes array):
 - data-cb-func = "DQ.Table.View"
-- data-cb-columns = **REQUIRED** — a CSV defining the columns to show, each column is `label;datacolumn` with an optional `;width`: e.g. `Anrede;Anrede;15,Unternehmen;Unternehmen;25,Vorname;Vorname;18`. `label` is the displayed header, `datacolumn` is the exact column name in the DataQuery result, `width` (optional) sets the column width (characters in Excel, pixels on screen).
+- data-cb-columns = **REQUIRED** — a CSV defining the columns to show, each column is `label;datacolumn;jsonFlag` with an optional fourth entry `;width`: e.g. `Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30`. `label` is the displayed header, `datacolumn` is the exact column name in the DataQuery result, `jsonFlag` (`true`/`1`/`yes`) marks a column as containing JSON so its cells show a maximizable JSON viewer (use `false`/`0`/`no` for plain columns; a plain number in this position is treated as the legacy width), `width` (optional) sets the column width (characters in Excel, pixels on screen).
 - data-cb-dataquery = **REQUIRED** — the name of the Formcycle DataQuery on the server whose result shall be shown (e.g. `HolaQuery` or `INHALT.Eigentuemerdialog_Dezember_2025`).
 - data-cb-css = (optional) one or more (space separated) CSS classes to apply to BOTH the tagged container and the injected table.
 - data-cb-filename = (optional) the name of the exported Excel file WITHOUT extension (the extension is always `.xlsx`). Defaults to `Export`.
@@ -232,6 +232,13 @@ Example — a table that views the columns "Alter" and "Name" of the DataQuery "
   {"text":"data-cb-func","value":"DQ.Table.View"},
   {"text":"data-cb-dataquery","value":"HolaQuery"},
   {"text":"data-cb-columns","value":"Alter;Alter,Name;Name"}
+]
+
+Example with a JSON column — "Details" holds JSON and its cells show a maximizable JSON viewer (no width):
+"attributes": [
+  {"text":"data-cb-func","value":"DQ.Table.View"},
+  {"text":"data-cb-dataquery","value":"HolaQuery"},
+  {"text":"data-cb-columns","value":"Alter;Alter,Name;Name,Details;Details;true"}
 ]
 
 The Excel export uses the SheetJS library that is bundled with the CodBi plugin and served from the plugin's Resource servlet (loaded on demand, like TinyMCE).

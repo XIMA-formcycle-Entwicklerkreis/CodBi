@@ -111,17 +111,36 @@ export function enableDialogDrag(
   console.log(`[CodBiDrag] enableDialogDrag('${styleClass}', '${storageKey}')`);
   installGlobalDragCoordinator();
   installGlobalPositionRestore();
-  dialogDragRegistry.set(styleClass, { storageKey, onMoved });
-  console.log(`[CodBiDrag] registered '${styleClass}' -> '${storageKey}' (total ${dialogDragRegistry.size})`);
+  // The registry is shared globally and keyed only by styleClass, but the <cb-ai-assistant> /
+  // <cb-prompt-manager> hosts can be destroyed and re-bootstrapped in place (e.g. the ALT+A
+  // re-mount). Angular may run the OLD host's ngOnDestroy cleanup AFTER the NEW host's ngOnInit
+  // re-registered — a bare delete() would then remove the NEW registration and leave the registry
+  // empty, so the header still shows the move cursor but no drag session starts. Guarding by an
+  // incrementing generation makes the cleanup a no-op once a newer registration exists.
+  const generation = (dialogDragRegistry.get(styleClass)?.generation ?? 0) + 1;
+  dialogDragRegistry.set(styleClass, { storageKey, onMoved, generation });
+  console.log(
+    `[CodBiDrag] registered '${styleClass}' -> '${storageKey}' (gen ${generation}, total ${dialogDragRegistry.size})`,
+  );
   return () => {
-    console.log(`[CodBiDrag] unregister '${styleClass}'`);
-    dialogDragRegistry.delete(styleClass);
+    const current = dialogDragRegistry.get(styleClass);
+    if (current && current.generation === generation) {
+      console.log(`[CodBiDrag] unregister '${styleClass}' (gen ${generation})`);
+      dialogDragRegistry.delete(styleClass);
+    } else {
+      console.log(
+        `[CodBiDrag] skip unregister '${styleClass}': superseded by newer registration (current gen ${current?.generation}, own ${generation})`,
+      );
+    }
   };
 }
 
 interface DialogDragRegistration {
   storageKey: string;
   onMoved?: (position: DialogPosition) => void;
+  /** Monotonic id so a re-created dialog's registration is never removed by a stale cleanup of a
+   *  destroyed host (see the generation guard in enableDialogDrag). */
+  generation: number;
 }
 
 interface DragSession {

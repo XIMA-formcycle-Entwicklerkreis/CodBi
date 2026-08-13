@@ -134,27 +134,40 @@ export class DQ_Table_View {
       });
   }
   /**
-   * Normalizes a raw cell {@link string } prior to JSON-parsing.
+   * Normalizes a raw cell value prior to JSON-parsing.
    *
    * A DataQuery-JSON-column may deliver a JSON-array with a **leading comma** right after the opening bracket
-   * (e.g. `[,{...},{...}]`) which is not valid JSON. Such a leading `[,` is replaced with `[` so the value can be
-   * parsed (and rendered/exported) correctly.
+   * (e.g. `[,{...},{...}]`, `[ ,{...}]` or `[,,{...}]`) which is not valid JSON. Such leading commas are removed
+   * (the first is replaced with `[`, further ones simply dropped). A UTF-8 BOM that some DataQuery-results prefix
+   * is stripped as well so the value can be parsed (and rendered/exported) correctly.
    *
-   * @param raw The raw cell {@link string }.
+   * @param raw The raw cell value.
    *
    * @returns The normalized {@link string }. */
-  protected static normalizeJson(raw: string): string {
-    const trimmed = raw.trim();
+  protected static normalizeJson(raw: unknown): string {
+    let value = (typeof raw === "string" ? raw : String(raw ?? "")).trim();
 
-    return trimmed.startsWith("[,") ? `[${trimmed.substring(2)}` : trimmed;
+    // Strip a UTF-8 BOM that some DataQuery-results prefix.
+    if (value.charCodeAt(0) === 0xfeff) {
+      value = value.substring(1);
+    }
+    // Remove a leading comma (or commas) right after the opening "[" — optionally separated by whitespace,
+    // e.g. "[,...]" → "[...]", "[ ,{...}]" → "[{...}]", "[,,{...}]" → "[{...}]". Valid JSON is left untouched.
+    value = value.replace(/^\[\s*,+/, "[");
+
+    return value;
   }
   /**
-   * Attempts to parse the given {@link string } as JSON.
+   * Attempts to parse the given cell value as JSON.
    *
-   * @param raw The raw cell {@link string }.
+   * @param raw The raw cell value.
    *
    * @returns The parsed value, or `undefined` when it is not valid JSON. */
-  protected static tryParseJson(raw: string): unknown | undefined {
+  protected static tryParseJson(raw: unknown): unknown | undefined {
+    // When the DataQuery already delivered the value as a structured array/object, accept it directly.
+    if (raw !== null && typeof raw === "object") {
+      return raw;
+    }
     const trimmed = DQ_Table_View.normalizeJson(raw);
 
     if (trimmed.length === 0) {
@@ -188,14 +201,194 @@ export class DQ_Table_View {
     }
   }
   /**
+   * Returns a compact single-line representation of a JSON value.
+   *
+   * @param value The JSON value.
+   *
+   * @returns A short human-readable {@link string }. */
+  protected static compactValue(value: unknown): string {
+    if (value === null) {
+      return "null";
+    }
+    if (Array.isArray(value)) {
+      const length = value.length;
+
+      return `[${length} item${length === 1 ? "" : "s"}]`;
+    }
+    if (typeof value === "object") {
+      return "{...}";
+    }
+    if (typeof value === "string") {
+      return JSON.stringify(value);
+    }
+
+    return String(value);
+  }
+  /**
+   * Returns the folded summary of an object/array showing only its FIRST property.
+   *
+   * @param value The JSON object/array.
+   *
+   * @returns A short summary {@link string }. */
+  protected static summarizeObject(value: unknown): string {
+    if (Array.isArray(value)) {
+      const length = value.length;
+
+      return `[${length} item${length === 1 ? "" : "s"}]`;
+    }
+    const entries = Object.entries(value as Record<string, unknown>);
+
+    if (entries.length === 0) {
+      return "{}";
+    }
+    const [firstKey, firstValue] = entries[0];
+
+    return `{ ${firstKey}: ${DQ_Table_View.compactValue(firstValue)}, ... }`;
+  }
+  /**
+   * Builds a foldable item for a single array element. Object/array elements render a header that is folded by
+   * default (showing only their first property) and expand on click to list all entries; primitive elements render
+   * as a plain line.
+   *
+   * @param value The array element.
+   *
+   * @returns The foldable {@link HTMLElement }. */
+  protected static buildJsonItem(value: unknown, label?: string): HTMLElement {
+    const item = document.createElement("div");
+
+    if (value === null || typeof value !== "object") {
+      item.className = "CodBi_Table_View_JsonItem CodBi_Table_View_JsonPrimitive";
+      item.textContent =
+        label !== undefined ? `${label}: ${DQ_Table_View.compactValue(value)}` : DQ_Table_View.compactValue(value);
+
+      return item;
+    }
+    const entries: Array<[string, unknown]> = Array.isArray(value)
+      ? (value as unknown[]).map((entry, index) => [`${index}`, entry] as [string, unknown])
+      : Object.entries(value as Record<string, unknown>);
+
+    item.className = "CodBi_Table_View_JsonItem";
+
+    const header = document.createElement("div");
+
+    header.className = "CodBi_Table_View_JsonItemHeader";
+    header.setAttribute("role", "button");
+    header.tabIndex = 0;
+    header.title = "Click to expand/collapse";
+
+    const toggle = document.createElement("span");
+
+    toggle.className = "CodBi_Table_View_JsonItemToggle";
+    toggle.textContent = "▶";
+
+    const summary = document.createElement("span");
+
+    summary.className = "CodBi_Table_View_JsonItemSummary";
+    summary.textContent = DQ_Table_View.summarizeObject(value);
+
+    header.appendChild(toggle);
+
+    if (label !== undefined) {
+      const labelEl = document.createElement("span");
+
+      labelEl.className = "CodBi_Table_View_JsonItemLabel";
+      labelEl.textContent = `${label}:`;
+      header.appendChild(labelEl);
+    }
+
+    header.appendChild(summary);
+
+    const body = document.createElement("div");
+
+    body.className = "CodBi_Table_View_JsonItemBody";
+    body.style.display = "none";
+
+    for (const [key, entry] of entries) {
+      const row = document.createElement("div");
+
+      row.className = "CodBi_Table_View_JsonItemRow";
+
+      const keyEl = document.createElement("span");
+
+      keyEl.className = "CodBi_Table_View_JsonItemKey";
+      keyEl.textContent = `${key}: `;
+
+      const valueEl = document.createElement("span");
+
+      valueEl.className = "CodBi_Table_View_JsonItemValue";
+      valueEl.textContent = DQ_Table_View.compactValue(entry);
+
+      row.appendChild(keyEl);
+      row.appendChild(valueEl);
+      body.appendChild(row);
+    }
+
+    let expanded = false;
+    const toggleVisibility = (): void => {
+      expanded = !expanded;
+      toggle.textContent = expanded ? "▼" : "▶";
+      body.style.display = expanded ? "block" : "none";
+    };
+
+    header.addEventListener("click", toggleVisibility);
+    header.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleVisibility();
+      }
+    });
+
+    item.appendChild(header);
+    item.appendChild(body);
+
+    return item;
+  }
+  /**
+   * Builds the foldable viewer for a JSON array: one foldable item per array element, each collapsed by default.
+   *
+   * @param array The parsed JSON array.
+   *
+   * @returns The viewer {@link HTMLElement }. */
+  protected static buildArrayViewer(array: unknown[]): HTMLElement {
+    const list = document.createElement("div");
+
+    list.className = "CodBi_Table_View_JsonArray";
+    array.forEach((entry, index) => {
+      list.appendChild(DQ_Table_View.buildJsonItem(entry, `${index}`));
+    });
+
+    return list;
+  }
+  /**
+   * Builds a foldable viewer for a top-level JSON object: each entry is rendered as a foldable item labelled with
+   * its key. This also covers array-like objects (e.g. `{"0":{...},"1":{...}}`) that some DataQuery-results return
+   * instead of a plain JSON array.
+   *
+   * @param object The parsed JSON object.
+   *
+   * @returns The viewer {@link HTMLElement }. */
+  protected static buildObjectViewer(object: Record<string, unknown>): HTMLElement {
+    const list = document.createElement("div");
+
+    list.className = "CodBi_Table_View_JsonArray";
+    for (const [key, value] of Object.entries(object)) {
+      list.appendChild(DQ_Table_View.buildJsonItem(value, key));
+    }
+
+    return list;
+  }
+  /**
    * Renders a single JSON-cell: a compact pretty-printed preview with a maximize button that opens the
-   * modal {@link openJsonModal }. Non-JSON (or unparseable) values are shown as plain text.
+   * modal {@link openJsonModal }. JSON arrays render a foldable viewer (each element collapsed by default,
+   * showing only its first property). Non-JSON (or unparseable) values are shown as plain text.
    *
    * @param td    The {@link HTMLTableCellElement } to fill.
    * @param raw   The raw cell value.
    * @param label The column's label (used as the modal's title). */
   protected static renderJsonCell(td: HTMLTableCellElement, raw: string, label: string): void {
-    if (DQ_Table_View.tryParseJson(raw) === undefined) {
+    const parsed = DQ_Table_View.tryParseJson(raw);
+
+    if (parsed === undefined) {
       td.textContent = raw;
       return;
     }
@@ -204,12 +397,23 @@ export class DQ_Table_View {
 
     container.className = "CodBi_Table_View_JsonCell";
 
-    const preview = document.createElement("pre");
+    // JSON arrays render a foldable viewer — each array element is a collapsed item (showing only its first
+    // property) that expands on click. Any other JSON value keeps the compact pretty-printed preview.
+    let preview: HTMLElement;
 
-    preview.className = "CodBi_Table_View_JsonPreview";
-    preview.textContent = pretty;
-    preview.title = "Click to open the JSON viewer";
-    preview.addEventListener("click", () => DQ_Table_View.openJsonModal(label, pretty, false));
+    if (Array.isArray(parsed)) {
+      preview = DQ_Table_View.buildArrayViewer(parsed);
+    } else if (parsed !== null && typeof parsed === "object") {
+      preview = DQ_Table_View.buildObjectViewer(parsed as Record<string, unknown>);
+    } else {
+      const pre = document.createElement("pre");
+
+      pre.className = "CodBi_Table_View_JsonPreview";
+      pre.textContent = pretty;
+      pre.title = "Click to open the JSON viewer";
+      pre.addEventListener("click", () => DQ_Table_View.openJsonModal(label, pretty, false));
+      preview = pre;
+    }
 
     const maximize = document.createElement("button");
 
@@ -304,6 +508,24 @@ export class DQ_Table_View {
     document.addEventListener("keydown", onKeyDown);
   }
   /**
+   * Parses a boolean-style config value with a fallback default.
+   *
+   * Explicit `false`-values (`false`, `0`, `no`, case-insensitive) yield `false`. Any other value — including an
+   * absent/empty one — yields the provided {@link defaultValue }. This makes it safe for parameters whose default
+   * is `true`.
+   *
+   * @param value        The raw config value.
+   * @param defaultValue The fallback when the value is not an explicit `false`.
+   *
+   * @returns The parsed {@link boolean }. */
+  protected static parseBooleanFlag(value: unknown, defaultValue: boolean): boolean {
+    const normalized = String(value ?? "")
+      .trim()
+      .toLowerCase();
+
+    return ["false", "0", "no"].includes(normalized) ? false : defaultValue;
+  }
+  /**
    * Registers the "DQ.Table.View"-Functionality which injects a table showing the result of a Formcycle-DataQuery into
    * the tagged {@link HTMLElement } and enables exporting that table to an **Excel**-file (`.xlsx`) via a button.
    *
@@ -328,12 +550,14 @@ export class DQ_Table_View {
    *  - ```ExportButton```: An **optional** CSS-Selector of an existing `<button>`/`<a>` that shall trigger the
    *                     export. When omitted (or no matching element is found) the table is rendered **without** any
    *                     export-button — the Excel-export is then simply not available.
+   *  - ```Centered```:   Whether the content of the table-cells (```<td>```s) is centered. Defaults to ```true```;
+   *                     set to ```false``` / ```0``` / ```no``` to keep the cells left-aligned.
    *
    * @param toLoad    Provided by the CodBi.
    * @param toProcess Provided by the CodBi - the container the table shall be injected into. */
   @DBC.ParamvalueProvider
   public static functionality(
-    @TYPE.PRE("string", "dataquery :: css :: filename :: sheetname :: exportbutton")
+    @TYPE.PRE("string", "dataquery :: css :: filename :: sheetname :: exportbutton :: centered")
     @TYPE.PRE("string | object", "columns")
     toLoad: { [key: string]: unknown },
 
@@ -371,6 +595,9 @@ export class DQ_Table_View {
       toLoad.exportbutton && String(toLoad.exportbutton).trim().length > 0
         ? String(toLoad.exportbutton).trim()
         : undefined;
+
+    // Whether the content of the table-cells (<td>s) shall be centered. Defaults to true.
+    const centered: boolean = DQ_Table_View.parseBooleanFlag(toLoad.centered, true);
     // #endregion Normalize parameters.
     // #region Generate a unique id for this table-view instance.
     const instanceId = `codbi-table-view-${Math.random().toString(36).substring(2, 11)}`;
@@ -433,20 +660,39 @@ export class DQ_Table_View {
                 columns.map((column) => {
                   const raw = row[column.dataColumn] ?? "";
 
-                  return column.isJson ? DQ_Table_View.prettyPrintJson(raw) : raw;
+                  // JSON columns export their (pretty-printed) JSON content as text; every other value is
+                  // coerced to a string/number so no non-serializable value can corrupt the workbook.
+                  if (column.isJson) {
+                    return DQ_Table_View.prettyPrintJson(raw);
+                  }
+                  return typeof raw === "string" || typeof raw === "number" ? raw : String(raw);
                 }),
               );
             }
 
             // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
             const ws: any = XLSX.utils.aoa_to_sheet(aoa);
-            // Apply the defined column widths to the exported sheet.
+            // Apply the defined column widths to the exported sheet (undefined entries keep the column positions).
             ws["!cols"] = columns.map((column) => (column.width !== undefined ? { wch: column.width } : undefined));
             // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
             const wb: any = XLSX.utils.book_new();
 
             XLSX.utils.book_append_sheet(wb, ws, sheetName);
-            XLSX.writeFile(wb, `${fileName}.xlsx`);
+            // Write the workbook as a binary array and download it via a Blob — more reliable than
+            // XLSX.writeFile in restricted (CSP/iframe) plugin environments and guarantees a valid .xlsx.
+            const binary = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+            const blob = new Blob([binary], {
+              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            });
+            const url = URL.createObjectURL(blob);
+            const anchor = document.createElement("a");
+
+            anchor.href = url;
+            anchor.download = `${fileName}.xlsx`;
+            document.body.appendChild(anchor);
+            anchor.click();
+            document.body.removeChild(anchor);
+            URL.revokeObjectURL(url);
           })
           .catch((error: unknown) => {
             console.error(`[DQ.Table.View] Failed to export "${fileName}.xlsx":`, error);
@@ -467,6 +713,17 @@ export class DQ_Table_View {
         .CodBi_Table_View .CodBi_Table_View_JsonCell { position: relative; }
         .CodBi_Table_View .CodBi_Table_View_JsonPreview { margin: 0; padding: 4px 6px; background: #f7f7f9; border: 1px solid #e3e3e8; border-radius: 3px; font-family: Consolas, Menlo, monospace; font-size: 11px; line-height: 1.4; max-height: 140px; overflow: auto; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
         .CodBi_Table_View .CodBi_Table_View_JsonMaximize { position: absolute; top: 4px; right: 4px; border: none; background: rgba(0,0,0,0.55); color: #fff; border-radius: 3px; cursor: pointer; font-size: 12px; line-height: 1; padding: 3px 6px; }
+        .CodBi_Table_View .CodBi_Table_View_JsonArray { display: flex; flex-direction: column; gap: 2px; max-height: 140px; overflow: auto; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItem { border: 1px solid #e3e3e8; border-radius: 3px; background: #f7f7f9; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItemHeader { display: flex; align-items: center; gap: 6px; padding: 2px 6px; cursor: pointer; user-select: none; font-family: Consolas, Menlo, monospace; font-size: 11px; line-height: 1.4; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItemHeader:hover { background: #ececf2; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItemToggle { color: #57606f; font-size: 9px; flex-shrink: 0; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItemLabel { font-weight: 600; flex-shrink: 0; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItemSummary { word-break: break-word; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItemBody { border-top: 1px dashed #d5d5dd; margin: 0 6px 4px 14px; padding: 4px 0 2px; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItemRow { font-family: Consolas, Menlo, monospace; font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItemKey { font-weight: 600; }
+        .CodBi_Table_View .CodBi_Table_View_JsonPrimitive { padding: 2px 6px; font-family: Consolas, Menlo, monospace; font-size: 11px; }
         .CodBi_Table_View_JsonModal { position: fixed; inset: 0; z-index: 10000; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
         .CodBi_Table_View_JsonModalDialog { display: flex; flex-direction: column; min-width: 320px; max-width: 90vw; max-height: 90vh; box-shadow: 0 8px 40px rgba(0,0,0,0.35); border-radius: 8px; overflow: hidden; }
         .CodBi_Table_View_JsonModalHeader { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: #2f3542; color: #fff; gap: 12px; }
@@ -498,6 +755,11 @@ export class DQ_Table_View {
 
             for (const column of columns) {
               const td = document.createElement("td");
+
+              if (centered) {
+                td.style.textAlign = "center";
+              }
+
               const raw = row[column.dataColumn] ?? "";
 
               if (column.isJson) {
@@ -517,6 +779,7 @@ export class DQ_Table_View {
 
           td.colSpan = columns.length;
           td.className = "CodBi_Table_View_NoData";
+          td.style.textAlign = centered ? "center" : "left";
           td.textContent = "No data found.";
 
           tr.appendChild(td);

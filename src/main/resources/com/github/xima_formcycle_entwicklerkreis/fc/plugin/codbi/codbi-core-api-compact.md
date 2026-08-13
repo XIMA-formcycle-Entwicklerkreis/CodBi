@@ -201,6 +201,7 @@ Set data-cb-func="Sys.Log.Console" on it.
   - FileName: The name of the exported Excel file WITHOUT extension (the extension is always `.xlsx`). Defaults to `Export`.
   - SheetName: The name of the worksheet within the exported Excel file. Defaults to `sheet1`.
   - ExportButton: An optional CSS selector of an existing `<button>`/`<a>` that shall trigger the export. If omitted (or no matching element is found) the table is rendered WITHOUT any export button — the Excel export is then simply not available.
+  - Centered: Whether the content of the table cells (`<td>`s) is centered. Defaults to `true`; set to `false`/`0`/`no` to keep the cells left-aligned.
 - Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
   - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
   - MaxField: CSS-Class-Selector for the max time input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.

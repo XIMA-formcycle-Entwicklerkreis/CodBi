@@ -688,26 +688,10 @@ export class DQ_Table_View {
             const wb: any = XLSX.utils.book_new();
 
             XLSX.utils.book_append_sheet(wb, ws, sheetName);
-            // The bundled SheetJS is 0.15.1, which does NOT support `type: "array"` (ArrayBuffer) — that would
-            // return a base64 string and produce a file Excel cannot open. Use the canonical browser pattern:
-            // write as a binary string, convert it to bytes, and download it as a Blob.
-            const binary = XLSX.write(wb, { bookType: "xlsx", type: "binary" }) as string;
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) {
-              bytes[i] = binary.charCodeAt(i) & 0xff;
-            }
-            const blob = new Blob([bytes], {
-              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            });
-            const url = URL.createObjectURL(blob);
-            const anchor = document.createElement("a");
-
-            anchor.href = url;
-            anchor.download = `${fileName}.xlsx`;
-            document.body.appendChild(anchor);
-            anchor.click();
-            document.body.removeChild(anchor);
-            URL.revokeObjectURL(url);
+            // Use the proven SheetJS 0.15.1 export pattern (bookSST + writeFile) — the Blob-based download
+            // approaches produced files MS Excel could not open in this environment.
+            XLSX.write(wb, { bookType: "xlsx", bookSST: true, type: "base64" });
+            XLSX.writeFile(wb, `${fileName}.xlsx`);
           })
           .catch((error: unknown) => {
             console.error(`[DQ.Table.View] Failed to export "${fileName}.xlsx":`, error);
@@ -732,7 +716,7 @@ export class DQ_Table_View {
         .CodBi_Table_View .CodBi_Table_View_JsonItem { border: 1px solid #e3e3e8; border-radius: 3px; background: #f7f7f9; }
         .CodBi_Table_View .CodBi_Table_View_JsonItemHeader { display: flex; align-items: center; gap: 6px; padding: 2px 6px; cursor: pointer; user-select: none; font-family: Consolas, Menlo, monospace; font-size: 11px; line-height: 1.4; }
         .CodBi_Table_View .CodBi_Table_View_JsonItemHeader:hover { background: #ececf2; }
-        .CodBi_Table_View .CodBi_Table_View_JsonItemToggle { color: #57606f; font-size: 9px; flex-shrink: 0; }
+        .CodBi_Table_View .CodBi_Table_View_JsonItemToggle { color: #57606f; font-size: 9px; flex-shrink: 0; cursor: pointer; }
         .CodBi_Table_View .CodBi_Table_View_JsonItemLabel { font-weight: 600; flex-shrink: 0; }
         .CodBi_Table_View .CodBi_Table_View_JsonItemSummary { word-break: break-word; }
         .CodBi_Table_View .CodBi_Table_View_JsonItemBody { border-top: 1px dashed #d5d5dd; margin: 0 6px 4px 14px; padding: 4px 0 2px; }
@@ -748,7 +732,7 @@ export class DQ_Table_View {
         .CodBi_Table_View_JsonModalControls button:hover { background: #6b7686; }
         .CodBi_Table_View_JsonModalBody { background: #fff; overflow: auto; width: min(80vw, 800px); height: 70vh; text-align: left; }
         .CodBi_Table_View_JsonModalContent { margin: 0; padding: 14px; font-family: Consolas, Menlo, monospace; font-size: 12px; line-height: 1.5; white-space: pre; overflow: auto; }
-        .CodBi_Table_View_JsonModalBody .CodBi_Table_View_JsonArray { max-height: none; }
+        .CodBi_Table_View_JsonModalBody .CodBi_Table_View_JsonArray { max-height: none; padding: 10px 14px; }
         .CodBi_Table_View_JsonModal.--maximized .CodBi_Table_View_JsonModalBody { width: 96vw; height: 94vh; }
       `;
       document.head.appendChild(style);

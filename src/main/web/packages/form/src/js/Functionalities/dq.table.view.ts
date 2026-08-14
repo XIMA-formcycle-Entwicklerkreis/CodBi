@@ -7,6 +7,9 @@ import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
 // #region XIMA
 import { getJQuery } from "@de-xima/fc-form-renderer";
 // #endregion XIMA
+// #region SheetJS
+import * as XLSX from "xlsx";
+// #endregion SheetJS
 // #endregion Imports
 
 /**
@@ -35,47 +38,6 @@ interface TableViewColumn {
  * Maintainer: Callari, Salvatore (Callari@WaXCode.net) */
 // biome-ignore lint/complexity/noStaticOnlyClass: Proactive Design.
 export class DQ_Table_View {
-  /** Stores the {@link Promise } that resolves once SheetJS has been loaded. */
-  protected static loadPromise: Promise<void> | null = null;
-  /** The resource-servlet path serving the bundled SheetJS-library. */
-  protected static readonly SHEETJS_RESOURCE_PATH =
-    "/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/SheetJS/Main.js";
-  /**
-   * Ensures the SheetJS-library is loaded on the page.
-   *
-   * The library is served by the CodBi-Plugin's Resource-servlet (the same way TinyMCE is served) so it can be
-   * updated at runtime without redeploying the JAR.
-   *
-   * @returns A {@link Promise } that resolves once `window.XLSX` is available. */
-  protected static ensureSheetJS(): Promise<void> {
-    // #region Already loaded.
-    if (typeof (window as unknown as { XLSX?: unknown }).XLSX !== "undefined") {
-      return Promise.resolve();
-    }
-    // #endregion Already loaded.
-    // #region Deduplicate concurrent load requests.
-    if (DQ_Table_View.loadPromise) {
-      return DQ_Table_View.loadPromise;
-    }
-    // #endregion Deduplicate concurrent load requests.
-    DQ_Table_View.loadPromise = new Promise<void>((resolve, reject) => {
-      const script = document.createElement("script");
-
-      script.src = `${window.codbi.baseURL}plugin?name=Resource&Path=${DQ_Table_View.SHEETJS_RESOURCE_PATH}`;
-      script.onload = () => {
-        resolve();
-      };
-      script.onerror = () => {
-        DQ_Table_View.loadPromise = null;
-
-        reject(new Error(`Failed to load SheetJS from ${script.src}`));
-      };
-
-      document.head.appendChild(script);
-    });
-
-    return DQ_Table_View.loadPromise;
-  }
   /**
    * Parses the `Columns`-parameter into an array of {@link TableViewColumn }s.
    *
@@ -689,68 +651,65 @@ export class DQ_Table_View {
 
     if (exportButton) {
       exportButton.addEventListener("click", () => {
-        DQ_Table_View.ensureSheetJS()
-          .then(() => {
-            // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
-            const XLSX = (window as any).XLSX;
-            // Build a clean temporary table from the stored result rows (the on-screen cells contain the foldable
-            // JSON-viewer markup, so the sheet is NOT read from the DOM table). JSON columns export their
-            // (pretty-printed) JSON content as text; every other value is coerced to a string/number.
-            // Columns listed in ExcludeColumns are left out of the export (they remain visible in the table).
-            const exportColumns = columns.filter((column) => !DQ_Table_View.isColumnExcluded(column, excludedColumns));
-            const exportTable = document.createElement("table");
-            const thead = document.createElement("thead");
-            const headRow = document.createElement("tr");
+        try {
+          // Build a clean temporary table from the stored result rows (the on-screen cells contain the foldable
+          // JSON-viewer markup, so the sheet is NOT read from the DOM table). JSON columns export their
+          // (pretty-printed) JSON content as text; every other value is coerced to a string/number.
+          // Columns listed in ExcludeColumns are left out of the export (they remain visible in the table).
+          // SheetJS is bundled via the npm package "xlsx" (see the import at the top of this file).
+          const exportColumns = columns.filter((column) => !DQ_Table_View.isColumnExcluded(column, excludedColumns));
+          const exportTable = document.createElement("table");
+          const thead = document.createElement("thead");
+          const headRow = document.createElement("tr");
+
+          for (const column of exportColumns) {
+            const th = document.createElement("th");
+
+            th.textContent = column.label;
+            headRow.appendChild(th);
+          }
+
+          thead.appendChild(headRow);
+          exportTable.appendChild(thead);
+
+          const tbody = document.createElement("tbody");
+
+          for (const row of dataRows) {
+            const tr = document.createElement("tr");
 
             for (const column of exportColumns) {
-              const th = document.createElement("th");
+              const td = document.createElement("td");
+              const raw = row[column.dataColumn] ?? "";
 
-              th.textContent = column.label;
-              headRow.appendChild(th);
-            }
-
-            thead.appendChild(headRow);
-            exportTable.appendChild(thead);
-
-            const tbody = document.createElement("tbody");
-
-            for (const row of dataRows) {
-              const tr = document.createElement("tr");
-
-              for (const column of exportColumns) {
-                const td = document.createElement("td");
-                const raw = row[column.dataColumn] ?? "";
-
-                if (column.isJson) {
-                  td.textContent = DQ_Table_View.prettyPrintJson(raw);
-                } else {
-                  td.textContent = typeof raw === "string" || typeof raw === "number" ? raw : String(raw);
-                }
-
-                tr.appendChild(td);
+              if (column.isJson) {
+                td.textContent = DQ_Table_View.prettyPrintJson(raw);
+              } else {
+                td.textContent = typeof raw === "string" || typeof raw === "number" ? raw : String(raw);
               }
 
-              tbody.appendChild(tr);
+              tr.appendChild(td);
             }
 
-            exportTable.appendChild(tbody);
-            console.log(exportTable.innerHTML);
-            // Build the workbook from the table exactly like the proven export snippet.
-            // biome-ignore lint/suspicious/noExplicitAny: SheetJS types not available without bundling.
-            const wb: any = XLSX.utils.table_to_book(exportTable, { sheet: sheetName });
-            // Apply the defined column widths; columns without an explicit width get a standard default width
-            // (a plain `undefined` entry would make SheetJS fall back to a very narrow column).
-            const defaultColumnWidth = 12;
-            wb.Sheets[sheetName]["!cols"] = exportColumns.map((column) => ({
+            tbody.appendChild(tr);
+          }
+
+          exportTable.appendChild(tbody);
+          // Build the workbook from the table.
+          const wb = XLSX.utils.table_to_book(exportTable, { sheet: sheetName });
+          // Apply the defined column widths; columns without an explicit width get a standard default width
+          // (a plain `undefined` entry would make SheetJS fall back to a very narrow column).
+          const defaultColumnWidth = 12;
+          const sheet = wb.Sheets[sheetName];
+
+          if (sheet) {
+            sheet["!cols"] = exportColumns.map((column) => ({
               width: column.width ?? defaultColumnWidth,
             }));
-            // Use the proven SheetJS 0.15.1 export pattern (bookSST + writeFile).
-            XLSX.write(wb, { bookType: "xlsx", bookSST: true, type: "base64" });
-            XLSX.writeFile(wb, `${fileName}.xlsx`);
-          })
-          .catch((error: unknown) => {
-            console.error(`[DQ.Table.View] Failed to export "${fileName}.xlsx":`, error);
-          });
+          }
+          XLSX.writeFile(wb, `${fileName}.xlsx`);
+        } catch (error: unknown) {
+          console.error(`[DQ.Table.View] Failed to export "${fileName}.xlsx":`, error);
+        }
       });
     }
     // #endregion Attach the export handler to an existing export-button (optional).

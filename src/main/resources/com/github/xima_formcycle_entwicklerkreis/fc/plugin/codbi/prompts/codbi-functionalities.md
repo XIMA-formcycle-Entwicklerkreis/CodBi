@@ -243,7 +243,7 @@ Example with a JSON column — "Details" holds JSON and its cells show a maximiz
   {"text":"data-cb-columns","value":"Alter;Alter,Name;Name,Details;Details;true"}
 ]
 
-The Excel export uses the SheetJS library that is bundled with the CodBi plugin and served from the plugin's Resource servlet (loaded on demand, like TinyMCE).
+The Excel export uses the SheetJS library (npm package "xlsx") which is bundled into the form script at build time (esbuild) — no runtime loading is needed.
 
 ## AI DOCUMENT QA
 

@@ -4885,6 +4885,7 @@ __metadata:
     typedoc: "npm:^0.28.4"
     typescript: "npm:~5.7.3"
     xdbc: "npm:^1.0.211"
+    xlsx: "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
     xml2js: "npm:^0.6.2"
   languageName: unknown
   linkType: soft
@@ -11011,6 +11012,15 @@ __metadata:
     reflect-metadata: "npm:^0.2.2"
     zod: "npm:^3.25.0"
   checksum: 10c0/72f93d2b911e2754a58ab648149f4fa300a289f597f260928097493eb092098abe97e949e475bd45c70365777dac5717928e875e43318930cf16da68ef950fee
+  languageName: node
+  linkType: hard
+
+"xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz":
+  version: 0.20.3
+  resolution: "xlsx@https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  bin:
+    xlsx: ./bin/xlsx.njs
+  checksum: 10c0/eb20749e56ffa23ffc4a5a6fd983524e0406308e53992e24112424de9f30ec64d7dd80e8e56363e39c3853687f7b4151f97a6f5373050b23c0c2758796803b6b
   languageName: node
   linkType: hard
 

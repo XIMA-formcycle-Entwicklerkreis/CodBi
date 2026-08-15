@@ -21,6 +21,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import type { PDFPageProxy } from "pdfjs-dist";
 import {
   applyDialogPosition,
+  clampRenderedToViewport,
   enableDialogDrag,
   loadDialogPosition,
   readDialogPosition,
@@ -57,6 +58,8 @@ interface ClarificationQuestion {
   question: string;
   options?: string[];
   allowFreeText?: boolean;
+  /** True when the user may pick MORE THAN ONE option (checkboxes); false = exactly one (radio). */
+  multiSelect?: boolean;
 }
 
 /** One answered clarification round (used for the change log and the re-run conversation). */
@@ -64,6 +67,12 @@ interface ClarificationTurn {
   question: string;
   answer: string;
   attachmentName?: string;
+}
+
+/** Options that mark a phase-2 run as coming from the chat popup (chat about the form). */
+interface ChatRunOptions {
+  chatMode: boolean;
+  chatHistory: Array<{ user: string; assistant: string }>;
 }
 // #endregion Interfaces
 
@@ -115,6 +124,9 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** When true, the AI asks ALL clarification questions at once in a single round instead of at
    *  most 3 per round. Defaults to OFF. */
   askAllQuestions = false;
+  /** When true, the AI names generated form fields with the Bürgerservice technical IDs
+   *  (BundID/BayernID auto-fill compatible) instead of freely-chosen names. Defaults to OFF. */
+  useBuergerserviceNaming = false;
   /** Estimated tokens used by the most recent inference (returned by the backend). */
   lastTokens = 0;
   /** Accumulated token total for the current session. */
@@ -133,8 +145,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   clarificationVisible = false;
   /** The clarification questions currently shown in the popup. */
   pendingClarification: ClarificationQuestion[] = [];
-  /** Per-question selected option. */
-  clarificationOption: Record<string, string> = {};
+  /** Per-question selected options (multi-select — the user may pick several answers). */
+  clarificationOption: Record<string, string[]> = {};
   /** Combined free-text/voice answer covering all questions (single textarea). */
   clarificationAnswerText = "";
   /** File attached to the current clarification answers (optional document). */
@@ -145,6 +157,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     modelId: string;
     intent: "form" | "workflow" | "both";
     imageParams: Array<{ name: string; dataUrl: string }>;
+    chatOptions?: ChatRunOptions;
   } | null = null;
   // The Web Speech API only works in a secure context (HTTPS); on plain HTTP the mic would show a
   // brief gauge and never transcribe, so the mic icon is only offered over HTTPS.
@@ -179,6 +192,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   private readonly LOG_PANEL_OPEN_KEY = "codbi-ai-log-panel-open";
   /** localStorage key remembering the CodBi on/off switch state. */
   private readonly USE_CODBI_KEY = "codbi-ai-use-codbi";
+  /** localStorage key remembering the Bürgerservice field-naming switch state. */
+  private readonly USE_BUERGERSERVICE_NAMING_KEY = "codbi-ai-use-buergerservice-naming";
   /** Whether the current user is allowed to sync the API-Documentation (Prompt Manager visibility). */
   syncAllowed = false;
   /** Cookie name for persisting the selected AI model across page reloads. */
@@ -200,6 +215,13 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.open();
     this.focusPrompt();
     this.startSpeechWhenReady();
+  };
+
+  /** Persists the chat conversation on ANY page unload, so it survives a reload that is not routed
+   *  through the explicit persistPendingChat() calls in the reload paths (e.g. Formcycle's own
+   *  publish-reload). */
+  private readonly beforeUnloadHandler = (): void => {
+    this.persistPendingChat();
   };
 
   /** Focuses the prompt textarea once the dialog is visible (dialog opening is async). */
@@ -239,6 +261,23 @@ export class AiAssistant implements OnInit, OnDestroy {
   private static readonly CLARIFICATION_DIALOG_STYLE_CLASS = "cb-ai-clarification-dialog";
   /** Cleanup for the clarification popup's custom drag handlers (registered on each open). */
   private clarificationDragCleanup: (() => void) | null = null;
+  // #region Form chat popup
+  /** Popup visibility for the AI chat (answer + continued conversation about the form). */
+  chatVisible = false;
+  /** The conversation shown in the chat popup (user + assistant messages). */
+  chatMessages: Array<{ role: "user" | "assistant"; text: string }> = [];
+  /** Current chat input text. */
+  chatInput = "";
+  /** True while a chat turn is being processed. */
+  chatLoading = false;
+  /** Remembered chat popup position, persisted across reloads. */
+  private chatPosition: DialogPosition | null = loadDialogPosition("codbi-dialog-chat-position");
+  /** Cleanup for the chat popup's custom drag handlers (registered on each open). */
+  private chatDragCleanup: (() => void) | null = null;
+  private static readonly CHAT_DIALOG_STYLE_CLASS = "cb-ai-chat-dialog";
+  /** localStorage key used to re-open the chat popup after a workflow-triggered reload. */
+  private static readonly PENDING_CHAT_KEY = "codbi-pending-chat";
+  // #endregion Form chat popup
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
 
@@ -551,10 +590,33 @@ export class AiAssistant implements OnInit, OnDestroy {
     } catch {
       // ignore storage errors
     }
+    // Restore the persisted Bürgerservice field-naming switch state.
+    try {
+      const savedNaming = localStorage.getItem(this.USE_BUERGERSERVICE_NAMING_KEY);
+      if (savedNaming !== null) {
+        this.useBuergerserviceNaming = savedNaming === "1" || savedNaming === "true";
+      }
+    } catch {
+      // ignore storage errors
+    }
     document.addEventListener("codbi:ai-assistant:open", this.openHandler);
     document.addEventListener("codbi:ai-assistant:speech", this.speechHandler);
-    this.checkSyncAllowed();
-    this.loadLogPanelWidth();
+    // Persist the chat before ANY reload so it re-opens afterwards (our own reload or Formcycle's).
+    window.addEventListener("beforeunload", this.beforeUnloadHandler);
+    // Re-open the chat popup with a persisted conversation after a workflow-triggered reload. This
+    // MUST run before the steps below: checkSensitiveAutoOpen() can throw "Designer instance was
+    // not created yet" when the Formcycle designer is not ready on first paint, and an uncaught
+    // error in ngOnInit would otherwise prevent the chat from ever being restored.
+    this.restorePendingChat();
+    // Pre-load the AI models so a restored chat can continue immediately without waiting for the
+    // assistant dialog to be opened (selectedModel is otherwise null on a fresh page).
+    this.ensureModelLoaded();
+    try {
+      this.checkSyncAllowed();
+      this.loadLogPanelWidth();
+    } catch {
+      // ignore designer-not-ready errors at bootstrap time
+    }
     // Register the drag handle once. PrimeNG only emits (onShow) after the open animation, which is
     // disabled in this app — so we must not depend on onShow for the drag registration.
     this.dragCleanup?.();
@@ -573,32 +635,42 @@ export class AiAssistant implements OnInit, OnDestroy {
     //     right before a workflow-triggered page reload.
     //  2. The database itself: the newest log entry of the current form used sensitive elements
     //     within the last few minutes (see checkSensitiveAutoOpen).
-    const pendingSensitive = localStorage.getItem("codbi-log-sensitive-elements");
-    console.log("[AICodBiAssistant] ngOnInit: pending sensitive highlight =", pendingSensitive);
-    if (pendingSensitive) {
-      localStorage.removeItem("codbi-log-sensitive-elements");
-      let elements: string[] = [];
-      try {
-        const parsed = JSON.parse(pendingSensitive) as unknown;
-        elements = Array.isArray(parsed) ? (parsed as string[]).filter((e): e is string => typeof e === "string") : [];
-      } catch {
-        // ignore malformed payload
+    try {
+      const pendingSensitive = localStorage.getItem("codbi-log-sensitive-elements");
+      console.log("[AICodBiAssistant] ngOnInit: pending sensitive highlight =", pendingSensitive);
+      if (pendingSensitive) {
+        localStorage.removeItem("codbi-log-sensitive-elements");
+        let elements: string[] = [];
+        try {
+          const parsed = JSON.parse(pendingSensitive) as unknown;
+          elements = Array.isArray(parsed)
+            ? (parsed as string[]).filter((e): e is string => typeof e === "string")
+            : [];
+        } catch {
+          // ignore malformed payload
+        }
+        console.log("[AICodBiAssistant] ngOnInit: opening change log with", JSON.stringify(elements));
+        if (elements.length > 0) {
+          this.openLog(elements);
+        }
+      } else {
+        this.checkSensitiveAutoOpen();
       }
-      console.log("[AICodBiAssistant] ngOnInit: opening change log with", JSON.stringify(elements));
-      if (elements.length > 0) {
-        this.openLog(elements);
-      }
-    } else {
-      this.checkSensitiveAutoOpen();
+    } catch (err) {
+      // A designer-not-ready error here must never prevent the rest of the initialisation.
+      console.warn("[AICodBiAssistant] ngOnInit: sensitive auto-open skipped", err);
     }
   }
 
   ngOnDestroy(): void {
     document.removeEventListener("codbi:ai-assistant:open", this.openHandler);
     document.removeEventListener("codbi:ai-assistant:speech", this.speechHandler);
+    window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     this.stopSpeech();
     this.dragCleanup?.();
     this.dragCleanup = null;
+    this.chatDragCleanup?.();
+    this.chatDragCleanup = null;
     this.endLogResize();
   }
   // #endregion Lifecycle
@@ -648,12 +720,22 @@ export class AiAssistant implements OnInit, OnDestroy {
    */
   private checkSensitiveAutoOpen(): void {
     const checkWhenReady = (attempt: number): void => {
-      if (!getCurrentFormKey() && attempt < 10) {
+      let formKey: string | null = null;
+      try {
+        formKey = getCurrentFormKey();
+      } catch {
+        // Designer not ready yet (e.g. right after a workflow-triggered reload) — retry briefly
+        // instead of throwing out of ngOnInit.
+        if (attempt < 10) {
+          setTimeout(() => checkWhenReady(attempt + 1), 150);
+          return;
+        }
+      }
+      if (!formKey && attempt < 10) {
         setTimeout(() => checkWhenReady(attempt + 1), 150);
         return;
       }
       const headers: Record<string, string> = { "X-Action": "Log" };
-      const formKey = getCurrentFormKey();
       if (formKey) {
         headers["X-Form-Key"] = formKey;
       }
@@ -733,6 +815,9 @@ export class AiAssistant implements OnInit, OnDestroy {
     // Always recover from a stuck busy state so the ALT+A hotkey can reopen the dialog even after
     // an inference that closed it without a page reload.
     this.loading = false;
+    // Remove any lingering modal mask from a previous close so the reopened dialog is never hidden
+    // behind it (this could make the first ALT+A appear to do nothing).
+    setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
 
     // First verify the CodBi prompt database is reachable. Without DB prompts there is no point
     // sending anything to the AI — show an error and disable the inputs (still visible).
@@ -782,10 +867,36 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
+  /** Persists the Bürgerservice field-naming switch state when the user toggles it. */
+  onUseBuergerserviceNamingChange(use: boolean): void {
+    this.useBuergerserviceNaming = use;
+    try {
+      localStorage.setItem(this.USE_BUERGERSERVICE_NAMING_KEY, use ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** Localized label for the Bürgerservice-naming switch, following the Formcycle UI language. */
+  get buergerserviceSwitchLabel(): string {
+    const lang = (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage;
+    switch (lang) {
+      case "de":
+        return "Bürgerservice-Benennung";
+      case "it":
+        return "Denominazione Bürgerservice";
+      case "nl":
+        return "Bürgerservice-naamgeving";
+      default:
+        return "Bürgerservice naming";
+    }
+  }
+
   private loadModelsAndOpen(): void {
     if (this.models.length > 0) {
       this.selectedModel = this.loadModelCookie() ?? this.models[0]?.id ?? null;
       this.visible = true;
+      this.forceAssistantOnScreen();
       this.cdr.markForCheck();
       // Re-open the change-log panel if the user left it open the last time (persisted).
       this.restoreLogOpenState();
@@ -806,6 +917,7 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.selectedModel = saved && list.some((m) => m.id === saved) ? saved : (list[0]?.id ?? null);
         }
         this.visible = true;
+        this.forceAssistantOnScreen();
         if (this.errorText) this.showToast(this.errorText);
         this.cdr.markForCheck();
         // Re-open the change-log panel if the user left it open the last time (persisted).
@@ -815,8 +927,42 @@ export class AiAssistant implements OnInit, OnDestroy {
         const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
         this.errorText = jq.responseJSON?.error ?? jq.statusText ?? "AI service not available.";
         this.visible = true;
+        this.forceAssistantOnScreen();
         this.showToast(this.errorText);
         this.cdr.markForCheck();
+      },
+    });
+  }
+
+  /** Ensures the AI models are loaded and a model is selected, WITHOUT opening the assistant dialog
+   *  (used on page load / after a workflow-triggered reload so the restored chat can continue
+   *  immediately). Invokes [onLoaded] once the models are available (or the load failed). */
+  private ensureModelLoaded(onLoaded?: () => void): void {
+    if (this.selectedModel) {
+      onLoaded?.();
+      return;
+    }
+    if (this.models.length > 0) {
+      this.selectedModel = this.loadModelCookie() ?? this.models[0]?.id ?? null;
+      onLoaded?.();
+      return;
+    }
+    getJQuery().ajax({
+      url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
+      type: "GET",
+      headers: { "X-Action": "Models" },
+      success: (response: unknown) => {
+        if (Array.isArray(response)) {
+          const list = response as AiModel[];
+          this.models = list;
+          const saved = this.loadModelCookie();
+          this.selectedModel = saved && list.some((m) => m.id === saved) ? saved : (list[0]?.id ?? null);
+        }
+        this.cdr.markForCheck();
+        onLoaded?.();
+      },
+      error: () => {
+        onLoaded?.();
       },
     });
   }
@@ -827,6 +973,28 @@ export class AiAssistant implements OnInit, OnDestroy {
     // Ensure PrimeNG's modal mask is removed when the dialog closes (it can otherwise linger and
     // leave the background darkened, even though the page underneath is clickable).
     setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
+  }
+
+  /** Forces the assistant dialog back fully inside the viewport shortly after it opens (guards
+   *  against a stale/off-screen saved position leaving the header unreachable). Re-checks a few
+   *  times until the dialog has actually rendered (a clamp before layout measures a 0×0 rect and
+   *  does nothing), and once more shortly after so a late position restore is corrected too. */
+  private forceAssistantOnScreen(): void {
+    let attempts = 0;
+    const tryClamp = (): void => {
+      attempts++;
+      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          clampRenderedToViewport(AiAssistant.DIALOG_STYLE_CLASS);
+          if (attempts === 1) setTimeout(tryClamp, 200);
+          return;
+        }
+      }
+      if (attempts < 10) setTimeout(tryClamp, 80);
+    };
+    setTimeout(tryClamp, 0);
   }
 
   onModelChange(modelId: string): void {
@@ -1027,10 +1195,26 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  /** Marks [questionId] as answered with the given [option] (quick multiple-choice answer). */
+  /** Handles an option click for [questionId] (quick multiple-choice answer). For multi-select
+   *  questions ("multiSelect":true) the option is TOGGLED so the user may pick several (e.g. "which
+   *  personal data?"). For single-select questions exactly one option is kept (radio behavior). */
   selectClarificationOption(questionId: string, option: string): void {
-    this.clarificationOption[questionId] = option;
+    const question = this.pendingClarification.find((q) => q.id === questionId);
+    const multiSelect = question?.multiSelect === true;
+    const current = this.clarificationOption[questionId] ?? [];
+    if (multiSelect) {
+      this.clarificationOption[questionId] = current.includes(option)
+        ? current.filter((o) => o !== option)
+        : [...current, option];
+    } else {
+      this.clarificationOption[questionId] = [option];
+    }
     this.cdr.markForCheck();
+  }
+
+  /** Whether [option] is currently selected for [questionId] (multi-select). */
+  isClarificationOptionSelected(questionId: string, option: string): boolean {
+    return (this.clarificationOption[questionId] ?? []).includes(option);
   }
 
   /**
@@ -1156,9 +1340,7 @@ export class AiAssistant implements OnInit, OnDestroy {
   get clarificationReady(): boolean {
     if (this.pendingClarification.length === 0) return false;
     const hasCombined = (this.clarificationAnswerText ?? "").trim().length > 0;
-    return (
-      hasCombined || this.pendingClarification.every((q) => (this.clarificationOption[q.id] ?? "").trim().length > 0)
-    );
+    return hasCombined || this.pendingClarification.every((q) => (this.clarificationOption[q.id] ?? []).length > 0);
   }
 
   /** Handles manual dismissal of the popup (X / Escape) without answering. */
@@ -1207,11 +1389,11 @@ export class AiAssistant implements OnInit, OnDestroy {
       .join("\n");
     const optionLines = this.pendingClarification
       .map((q, i) => {
-        const opt = (this.clarificationOption[q.id] ?? "").trim();
-        // Keep only the question number + the chosen answer: the question text itself is already
+        const opts = (this.clarificationOption[q.id] ?? []).filter((o) => (o ?? "").trim().length > 0);
+        // Keep only the question number + the chosen answer(s): the question text itself is already
         // shown in the change log's parent question node (and in the AI's "Question:" line), so
-        // repeating it here is redundant. The number maps the answer back to its question.
-        return opt ? `${i + 1}. ${opt}` : "";
+        // repeating it here is redundant. The number maps the answer(s) back to its question.
+        return opts.length > 0 ? `${i + 1}. ${opts.join(", ")}` : "";
       })
       .filter((s) => s.length > 0);
     const free = (this.clarificationAnswerText ?? "").trim();
@@ -1239,7 +1421,7 @@ export class AiAssistant implements OnInit, OnDestroy {
           extra = [];
         }
       }
-      this.runPhase2(ctx.prompt, ctx.modelId, ctx.intent, [...ctx.imageParams, ...extra]);
+      this.runPhase2(ctx.prompt, ctx.modelId, ctx.intent, [...ctx.imageParams, ...extra], ctx.chatOptions);
     })();
   }
 
@@ -1254,6 +1436,237 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   // #endregion Clarification popup
   // #endregion PDF.js helpers
+
+  // #region Form chat popup
+
+  /** Shows a run/chat error in the right surface: an error bubble in the chat popup, or a toast. */
+  private failRun(msg: string, chatOptions?: ChatRunOptions): void {
+    if (chatOptions?.chatMode) {
+      this.chatLoading = false;
+      this.chatMessages.push({ role: "assistant", text: `! ${msg}` });
+      this.cdr.markForCheck();
+    } else {
+      this.setError(msg);
+    }
+  }
+
+  /**
+   * Returns a short acknowledgment bubble text for pure instruction chat turns, in the UI language.
+   * This keeps the conversation coherent: a later question typed into the form assistant must not
+   * appear to be answering this instruction turn.
+   */
+  private chatAckText(): string {
+    // Prefer the plugin's own translation bundle (served through the manager's TranslocoService) so
+    // the text matches the Formcycle/plugin UI language exactly. Fall back to the language switch
+    // when the manager global is not available yet or the key is missing.
+    const key = "codbi.chat.ack";
+    try {
+      const tr = (
+        window as unknown as {
+          CodbiPluginData?: { retrieveManagerTranslatedResource?: (id: string) => string };
+        }
+      )?.CodbiPluginData?.retrieveManagerTranslatedResource;
+      if (tr) {
+        const value = tr(key);
+        if (value && value !== key) return value;
+      }
+    } catch {
+      // ignore lookup errors and fall back to the switch below
+    }
+    const lang = (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage;
+    switch (lang) {
+      case "de":
+        return "✅ Anweisung ausgeführt.";
+      case "it":
+        return "✅ Istruzione eseguita.";
+      case "nl":
+        return "✅ Instructie uitgevoerd.";
+      default:
+        return "✅ Instruction applied.";
+    }
+  }
+
+  /** Opens the chat popup, optionally appending an assistant answer to the conversation. */
+  openChat(answer?: string): void {
+    if (answer && answer.trim()) {
+      const last = this.chatMessages[this.chatMessages.length - 1];
+      if (!(last && last.role === "assistant" && last.text === answer)) {
+        this.chatMessages.push({ role: "assistant", text: answer });
+      }
+    }
+    this.chatVisible = true;
+    this.chatLoading = false;
+    // Register the popup as draggable/snappable like the other CodBi dialogs, and restore its last
+    // remembered position once it has rendered.
+    this.chatDragCleanup?.();
+    this.chatDragCleanup = enableDialogDrag(
+      AiAssistant.CHAT_DIALOG_STYLE_CLASS,
+      "codbi-dialog-chat-position",
+      (p) => (this.chatPosition = p),
+    );
+    setTimeout(() => applyDialogPosition(AiAssistant.CHAT_DIALOG_STYLE_CLASS, this.chatPosition), 0);
+    // Force the chat dialog (and its mask) above the Formcycle designer: the designer's own
+    // overlays use very high z-index values and PrimeNG's z-index manager may not assign a high
+    // enough one for this dynamically created modal dialog.
+    setTimeout(() => {
+      const el = document.querySelector(`.${AiAssistant.CHAT_DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (el) el.style.zIndex = "2147483000";
+      const mask = document.querySelector(".cb-ai-chat-mask") as HTMLElement | null;
+      if (mask) mask.style.zIndex = "2147482000";
+    }, 0);
+    this.scrollChatToBottom();
+    this.cdr.markForCheck();
+  }
+
+  /** Closes the chat popup and unregisters its drag handler. */
+  closeChat(): void {
+    this.chatVisible = false;
+    this.chatDragCleanup?.();
+    this.chatDragCleanup = null;
+    // A chat the user explicitly closed must not reappear on the next reload.
+    try {
+      localStorage.removeItem(AiAssistant.PENDING_CHAT_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    this.cdr.markForCheck();
+  }
+
+  /** Handles manual dismissal of the chat popup (X / Escape). */
+  onChatVisibleChange(visible: boolean): void {
+    if (!visible) this.closeChat();
+  }
+
+  /** Sends the current chat input as a new chat turn (question or instruction). */
+  sendChatMessage(): void {
+    const text = (this.chatInput ?? "").trim();
+    if (!text || this.chatLoading) return;
+    const history = this.chatHistoryPayload();
+    this.chatInput = "";
+    this.chatMessages.push({ role: "user", text });
+    this.chatLoading = true;
+    this.scrollChatToBottom();
+    this.cdr.markForCheck();
+    this.runChatTurn(text, history);
+  }
+
+  /** Builds the completed user/assistant turn pairs of the current conversation. */
+  private chatHistoryPayload(): Array<{ user: string; assistant: string }> {
+    const turns: Array<{ user: string; assistant: string }> = [];
+    const msgs = this.chatMessages;
+    for (let i = 0; i < msgs.length; i++) {
+      if (msgs[i].role !== "user") continue;
+      const assistant = msgs[i + 1]?.role === "assistant" ? msgs[i + 1].text : "";
+      turns.push({ user: msgs[i].text, assistant });
+      i++; // the next message is this turn's assistant reply
+    }
+    return turns;
+  }
+
+  /**
+   * Runs a chat turn as a normal phase-2 run flagged with chatMode + chatHistory. The backend
+   * decides whether the message is answer-only or also contains instructions (which then modify the
+   * form/workflow exactly like a regular prompt). The response is handled by the shared phase-2
+   * handler (form apply / workflow reload / clarification / chat answer).
+   */
+  private runChatTurn(message: string, history: Array<{ user: string; assistant: string }>): void {
+    const modelId = this.selectedModel;
+    if (!modelId) {
+      // After a workflow-triggered reload the models may not be loaded yet (the assistant dialog
+      // was never opened). Load them first, then re-run the turn once a model is available.
+      const retry = (): void => {
+        if (this.selectedModel) {
+          this.runChatTurn(message, history);
+        } else {
+          this.failRun("No AI model selected.", { chatMode: true, chatHistory: [] });
+        }
+      };
+      this.ensureModelLoaded(retry);
+      return;
+    }
+    this.runPhase2(message, modelId, "both", [], { chatMode: true, chatHistory: history });
+  }
+
+  /** Persists the chat conversation so the chat popup re-opens after a workflow-triggered reload.
+   *  Only persists while the chat is actually open — a chat the user closed must NOT reappear on
+   *  the next reload. */
+  private persistPendingChat(): void {
+    if (this.chatMessages.length === 0) return;
+    if (!this.chatVisible) return;
+    try {
+      localStorage.setItem(
+        AiAssistant.PENDING_CHAT_KEY,
+        JSON.stringify({
+          messages: this.chatMessages,
+          clarificationHistory: this.clarificationHistory,
+        }),
+      );
+      console.log("[AICodBiAssistant] persistPendingChat: saved", this.chatMessages.length, "message(s)");
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** Restores a persisted chat conversation (from a workflow-triggered reload) and re-opens the popup. */
+  private restorePendingChat(): void {
+    try {
+      const raw = localStorage.getItem(AiAssistant.PENDING_CHAT_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as {
+        messages?: Array<{ role: "user" | "assistant"; text: string }>;
+        clarificationHistory?: Array<ClarificationTurn>;
+      };
+      if (!Array.isArray(parsed?.messages) || parsed.messages.length === 0) return;
+      const messages = parsed.messages.filter(
+        (m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string",
+      );
+      if (messages.length === 0) return;
+      this.chatMessages = messages;
+      // Also restore the clarification answers (e.g. email sender/subject) so a new instruction
+      // after a reload does not re-ask questions that were already answered.
+      if (Array.isArray(parsed.clarificationHistory)) {
+        this.clarificationHistory = parsed.clarificationHistory.filter(
+          (t) => t && typeof t.question === "string" && typeof t.answer === "string",
+        );
+      }
+      console.log(
+        "[AICodBiAssistant] restorePendingChat: restoring",
+        messages.length,
+        "message(s) and reopening the chat",
+      );
+      // Keep the pending key until the chat dialog has actually been rendered — if the component is
+      // (re)created or the view renders late, a later attempt must still be able to restore it.
+      // Once on screen, the key is cleared so a normal next page load does not re-open a stale chat.
+      let attempts = 0;
+      const tryOpen = (): void => {
+        attempts++;
+        this.openChat();
+        const el = document.querySelector(`.${AiAssistant.CHAT_DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+        if (el && this.chatVisible) {
+          try {
+            localStorage.removeItem(AiAssistant.PENDING_CHAT_KEY);
+          } catch {
+            // ignore storage errors
+          }
+          return;
+        }
+        if (attempts < 10) setTimeout(tryOpen, 150);
+      };
+      setTimeout(tryOpen, 0);
+    } catch {
+      // ignore malformed payload
+    }
+  }
+
+  /** Scrolls the chat message list to the newest message. */
+  private scrollChatToBottom(): void {
+    setTimeout(() => {
+      const el = document.querySelector(".cb-ai-chat-dialog .cb-ai-chat-messages") as HTMLElement | null;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 0);
+  }
+
+  // #endregion Form chat popup
 
   // #region Run (phase 1 + phase 2)
   /** Ctrl+Enter in the prompt textarea submits the request. */
@@ -1297,6 +1710,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     phase1Form.append("prompt", prompt);
     phase1Form.append("useCodbi", String(this.useCodbi));
     phase1Form.append("askAllQuestions", String(this.askAllQuestions));
+    phase1Form.append("useBuergerserviceNaming", String(this.useBuergerserviceNaming));
     for (const { name, dataUrl } of imageParams) {
       phase1Form.append(`codbi-base64:${name}`, dataUrl);
     }
@@ -1384,9 +1798,10 @@ export class AiAssistant implements OnInit, OnDestroy {
     modelId: string,
     intent: "form" | "workflow" | "both",
     imageParams: Array<{ name: string; dataUrl: string }> = [],
+    chatOptions?: ChatRunOptions,
   ): void {
     // Remember the context so a clarification round can re-run phase 2 with the same inputs.
-    this.phase2Context = { prompt, modelId, intent, imageParams };
+    this.phase2Context = { prompt, modelId, intent, imageParams, ...(chatOptions ? { chatOptions } : {}) };
     const designer = getDesignerInstance();
     const data: Record<string, string> = {
       prompt,
@@ -1394,7 +1809,17 @@ export class AiAssistant implements OnInit, OnDestroy {
       intent,
       useCodbi: String(this.useCodbi),
       askAllQuestions: String(this.askAllQuestions),
+      useBuergerserviceNaming: String(this.useBuergerserviceNaming),
+      // Formcycle UI language, so the backend can localize stored change-log text (e.g. the
+      // "earlier chat turns" context label) to match the UI.
+      lang: (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage ?? "",
     };
+    // Chat popup turns are sent as a normal phase-2 run flagged with chatMode + the conversation
+    // history; the backend decides whether to answer only or also execute instructions.
+    if (chatOptions?.chatMode) {
+      data["chatMode"] = "true";
+      data["chatHistory"] = JSON.stringify(chatOptions.chatHistory ?? []);
+    }
     // Send the accumulated clarifying questions/answers so the AI keeps the full conversation.
     if (this.clarificationHistory.length > 0) {
       data["clarificationHistory"] = JSON.stringify(this.clarificationHistory);
@@ -1467,6 +1892,9 @@ export class AiAssistant implements OnInit, OnDestroy {
         if (innerJson) {
           const formJson = JSON.parse(innerJson) as { items?: Array<Record<string, unknown>> };
           data["formElements"] = JSON.stringify(this.extractFormElements(formJson.items ?? []));
+          // Also send the full persist so the backend can derive the repeatable-container structure
+          // (which fields belong to a dynamic container) and pass it to the workflow AI.
+          data["persist"] = innerJson;
         }
       } catch {
         // formElements will be absent; backend will proceed without them
@@ -1495,16 +1923,19 @@ export class AiAssistant implements OnInit, OnDestroy {
       dataType: "json",
       success: (phase2Response: unknown) => {
         this.loading = false;
+        if (chatOptions?.chatMode) {
+          this.chatLoading = false;
+        }
         const p2 = phase2Response as Record<string, unknown> | null;
         console.log("[AICodBiAssistant] Phase 2 response:", JSON.stringify(p2));
 
         if (!p2 || typeof p2 !== "object") {
-          this.setError("Unexpected response from server.");
+          this.failRun("Unexpected response from server.", chatOptions);
           return;
         }
 
         if ("error" in p2) {
-          this.setError(String(p2["error"]));
+          this.failRun(String(p2["error"]), chatOptions);
           return;
         }
 
@@ -1521,6 +1952,7 @@ export class AiAssistant implements OnInit, OnDestroy {
               question: String(q["question"] ?? ""),
               options: Array.isArray(q["options"]) ? (q["options"] as string[]).map(String) : [],
               allowFreeText: q["allowFreeText"] !== false,
+              multiSelect: q["multiSelect"] === true,
             })),
           );
           return;
@@ -1568,6 +2000,30 @@ export class AiAssistant implements OnInit, OnDestroy {
         }
         if (typeof p2["currency"] === "string" && p2["currency"]) {
           this.lastCurrency = p2["currency"] as string;
+        }
+
+        // Form chat: if the prompt contained a question, open the chat popup with the AI's answer.
+        // This runs for ALL branches — the popup stays open while the form changes are applied, or
+        // the conversation is persisted and the popup re-opens after a workflow-triggered reload.
+        const chatAnswer = typeof p2["chatAnswer"] === "string" ? (p2["chatAnswer"] as string) : null;
+        const hasChat = chatAnswer !== null && chatAnswer.trim().length > 0;
+        if (hasChat) {
+          // A question typed into the FORM ASSISTANT prompt (non-chat mode) must appear as a user
+          // bubble in the chat conversation, otherwise the answer seems to reply to the previous
+          // chat message. In chat mode the user bubble was already pushed by sendChatMessage().
+          if (!chatOptions?.chatMode) {
+            const currentPrompt = (this.promptText ?? "").trim();
+            const lastMsg = this.chatMessages[this.chatMessages.length - 1];
+            if (currentPrompt && !(lastMsg && lastMsg.role === "user" && lastMsg.text === currentPrompt)) {
+              this.chatMessages.push({ role: "user", text: currentPrompt });
+            }
+          }
+          this.openChat(chatAnswer as string);
+        } else if (chatOptions?.chatMode) {
+          // A pure instruction chat turn gets an acknowledgment bubble so the conversation stays
+          // coherent (see chatAckText). This bubble is also persisted across workflow reloads.
+          this.chatMessages.push({ role: "assistant", text: this.chatAckText() });
+          this.cdr.markForCheck();
         }
 
         // Apply form changes if present
@@ -1813,6 +2269,8 @@ export class AiAssistant implements OnInit, OnDestroy {
               JSON.stringify(sensitive),
               "| reloading now",
             );
+            // Persist the chat conversation so the chat popup re-opens after the reload.
+            this.persistPendingChat();
             window.location.reload();
           };
           const waitUntilReady = (): Promise<void> =>
@@ -1898,6 +2356,8 @@ export class AiAssistant implements OnInit, OnDestroy {
             if (sensitive.length > 0) {
               localStorage.setItem("codbi-log-sensitive-elements", JSON.stringify(sensitive));
             }
+            // Persist the chat conversation so the chat popup re-opens after the reload.
+            this.persistPendingChat();
             window.location.reload();
           }, 1500);
         } else if (hasFormJson) {
@@ -1966,6 +2426,11 @@ export class AiAssistant implements OnInit, OnDestroy {
               poll();
             });
           waitUntilReady().then(doPatch).catch(doPatch);
+        } else if (hasChat) {
+          // Answer-only run: close the main assistant dialog so the chat popup with the answer is
+          // clearly visible and becomes the focus (the popup was opened above).
+          this.visible = false;
+          setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
         } else {
           this.setError("Unexpected response format.");
         }
@@ -1973,7 +2438,14 @@ export class AiAssistant implements OnInit, OnDestroy {
       },
       error: (xhr: unknown) => {
         const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
-        this.setError(jq.responseJSON?.error ?? jq.statusText ?? "Request failed.");
+        const msg = jq.responseJSON?.error ?? jq.statusText ?? "Request failed.";
+        if (chatOptions?.chatMode) {
+          this.chatLoading = false;
+          this.chatMessages.push({ role: "assistant", text: `! ${msg}` });
+          this.cdr.markForCheck();
+          return;
+        }
+        this.setError(msg);
       },
     });
   }

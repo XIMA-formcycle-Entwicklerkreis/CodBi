@@ -786,7 +786,7 @@ class AIWorkflowAssistant : IPluginServletAction {
         val nestedChildNodes =
             (childSpec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
         if (nestedChildNodes != null &&
-            (childSpec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
+            (childSpec.nodeType == "de.xima.fc.plugin.bs.auth.plugin.node.CheckTrustLevelPlugin" ||
                 childSpec.nodeType == "FC_MULTIPLE_CONDITION" ||
                 childSpec.nodeType == "FC_FOR_EACH_LOOP" ||
                 childSpec.nodeType == "FC_WHILE_LOOP" ||
@@ -824,7 +824,7 @@ class AIWorkflowAssistant : IPluginServletAction {
     val topLevelChildNodes =
         (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
     if (topLevelChildNodes != null &&
-        (spec.nodeType == "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ||
+        (spec.nodeType == "de.xima.fc.plugin.bs.auth.plugin.node.CheckTrustLevelPlugin" ||
             spec.nodeType == "FC_MULTIPLE_CONDITION" ||
             spec.nodeType == "FC_FOR_EACH_LOOP" ||
             spec.nodeType == "FC_WHILE_LOOP" ||
@@ -3997,7 +3997,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           "FC_SET_SAVED_FLAG" -> "Mark record as saved"
           "FC_DELETE_FORM_RECORD" -> "Delete form record"
           "FC_DELETE_ATTACHMENT" -> "Delete attachment"
-          "de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin" ->
+          "de.xima.fc.plugin.bs.auth.plugin.node.CheckTrustLevelPlugin" ->
               "Check authentication trust level"
           "FC_COUNTER" -> "Increment counter"
           "FC_PROMPT_QUERY" -> "Prompt user query"

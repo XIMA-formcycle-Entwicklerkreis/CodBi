@@ -30,7 +30,7 @@ class CodbiAiAssistantLog(
     var ts: Timestamp? = null,
     @Column(name = "form_key", length = 200) var formKey: String? = null,
     @Column(name = "username", length = 200) var username: String? = null,
-    @Column(name = "prompt", length = 1000) var prompt: String? = null,
+    @Column(name = "prompt", length = 4000) var prompt: String? = null,
     @Column(name = "intent", length = 20) var intent: String? = null,
     @Column(name = "model_id", length = 100) var modelId: String? = null,
     @Column(name = "tokens") var tokens: Long? = null,

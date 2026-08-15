@@ -140,4 +140,16 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="codbi-ai-assistant-log-8" author="codbi">
+        <comment>
+            Widen the prompt column so the change log can store a chat turn together with the chat
+            history it refers to (numbered options the user picks may be several turns back) instead
+            of truncating it at 1000 characters — otherwise the referenced options could be cut off.
+        </comment>
+        <modifyDataType columnName="prompt" newDataType="VARCHAR(4000)" tableName="codbi_ai_assistant_log"/>
+        <rollback>
+            <modifyDataType columnName="prompt" newDataType="VARCHAR(1000)" tableName="codbi_ai_assistant_log"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

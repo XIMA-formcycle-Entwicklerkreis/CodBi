@@ -78,7 +78,7 @@ object AiAssistantLog {
             CodbiAiAssistantLog(
                 formKey = formKey?.take(200)?.takeIf { it.isNotBlank() },
                 username = username?.take(200)?.takeIf { it.isNotBlank() },
-                prompt = prompt.take(1000),
+                prompt = prompt.take(4000),
                 intent = intent.take(20),
                 modelId = modelId.take(100),
                 tokens = (tokensIn ?: 0L) + (tokensOut ?: 0L),
@@ -379,7 +379,7 @@ object AiAssistantLog {
           o.addProperty("username", entry.username ?: "")
           o.addProperty("intent", entry.intent ?: "")
           o.addProperty("modelId", entry.modelId ?: "")
-          o.addProperty("prompt", (entry.prompt ?: "").take(600))
+          o.addProperty("prompt", (entry.prompt ?: "").take(2000))
           entry.formChanges
               ?.takeIf { it.isNotBlank() }
               ?.let { text ->

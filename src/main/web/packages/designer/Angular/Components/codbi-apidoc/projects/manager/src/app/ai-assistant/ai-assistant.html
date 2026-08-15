@@ -171,6 +171,17 @@
                 <span class="cb-ai-askall-switch__slider"></span>
             </label>
             <span class="cb-ai-askall-switch__label">Ask all</span>
+            <label
+                class="cb-ai-askall-switch"
+                title="Use the Bürgerservice field names (technical IDs from the BundID/BayernID/ELSTER element catalog) so auto-fill works without renaming. Off (default) = the AI names fields freely.">
+                <input
+                    type="checkbox"
+                    [(ngModel)]="useBuergerserviceNaming"
+                    (ngModelChange)="onUseBuergerserviceNamingChange($event)"
+                    [disabled]="loading || !dbAvailable" />
+                <span class="cb-ai-askall-switch__slider"></span>
+            </label>
+            <span class="cb-ai-askall-switch__label">{{ buergerserviceSwitchLabel }}</span>
         </span>
         <p-button
             label="Run"
@@ -275,8 +286,14 @@
                                 <button
                                     type="button"
                                     class="cb-ai-clarification-option"
-                                    [class.cb-ai-clarification-option--selected]="clarificationOption[q.id] === opt"
+                                    [class.cb-ai-clarification-option--selected]="isClarificationOptionSelected(q.id, opt)"
+                                    [attr.title]="q.multiSelect ? 'Select all that apply — click again to deselect' : 'Select one option'"
                                     (click)="selectClarificationOption(q.id, opt)">
+                                    @if (q.multiSelect) {
+                                        <span class="cb-ai-clarification-option__check" aria-hidden="true"></span>
+                                    } @else {
+                                        <span class="cb-ai-clarification-option__radio" aria-hidden="true"></span>
+                                    }
                                     {{ opt }}
                                 </button>
                             }
@@ -312,6 +329,64 @@
                 icon="pi pi-send"
                 (onClick)="submitClarification()"
                 [disabled]="!clarificationReady" />
+        </div>
+    </div>
+</p-dialog>
+}
+
+<!-- Chat popup: the AI answers questions about the current form and lets you keep chatting or give
+     further instructions. Opens automatically after a run when the prompt contained a question. -->
+@if (chatVisible) {
+<p-dialog
+    [visible]="true"
+    (visibleChange)="onChatVisibleChange($event)"
+    [modal]="true"
+    [draggable]="false"
+    [resizable]="true"
+    [closeOnEscape]="true"
+    appendTo="body"
+    [baseZIndex]="999999"
+    maskStyleClass="cb-ai-chat-mask"
+    styleClass="cb-ai-chat-dialog">
+
+    <!-- The header template lives in PrimeNG's .p-dialog-header, so the whole bar (logo + title)
+         is draggable and shows the move cursor, exactly like the prompt-assistant dialog. -->
+    <ng-template #header>
+        <div class="cb-ai-chat-header">
+            <img class="cb-ai-chat-logo" [src]="codbiLogoUrl" alt="CodBi" />
+            <span class="cb-ai-chat-title">AI Form Assistant Chat</span>
+        </div>
+    </ng-template>
+
+    <div class="cb-ai-chat-body">
+        <div class="cb-ai-chat-messages">
+            @for (m of chatMessages; track $index) {
+                <div class="cb-ai-chat-msg" [class.cb-ai-chat-msg--user]="m.role === 'user'">
+                    <div class="cb-ai-chat-bubble">{{ m.text }}</div>
+                </div>
+            }
+            @if (chatLoading) {
+                <div class="cb-ai-chat-msg">
+                    <div class="cb-ai-chat-bubble cb-ai-chat-bubble--typing">Thinking…</div>
+                </div>
+            }
+        </div>
+        <div class="cb-ai-chat-input-row">
+            <textarea
+                pTextarea
+                rows="2"
+                class="cb-ai-chat-input"
+                placeholder="Ask about the form or give an instruction…"
+                title="Ctrl + Enter to send"
+                [(ngModel)]="chatInput"
+                (keydown.control.enter)="sendChatMessage()"
+                [disabled]="chatLoading">
+            </textarea>
+            <p-button
+                label="Send"
+                icon="pi pi-send"
+                (onClick)="sendChatMessage()"
+                [disabled]="chatLoading || !chatInput.trim()" />
         </div>
     </div>
 </p-dialog>

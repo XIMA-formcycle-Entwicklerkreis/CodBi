@@ -77,19 +77,112 @@ export function applyDialogPosition(styleClass: string, position: DialogPosition
     el.style.maxHeight = "100vh";
   } else {
     el.classList.remove("cb-docked");
-    el.style.left = `${position.left}px`;
-    el.style.top = `${position.top}px`;
-    if (typeof position.width === "number") el.style.width = `${position.width}px`;
-    if (typeof position.height === "number") el.style.height = `${position.height}px`;
+    const clamped = clampFloatingPosition(position);
+    if (typeof clamped.width === "number") el.style.width = `${clamped.width}px`;
+    if (typeof clamped.height === "number") el.style.height = `${clamped.height}px`;
+    // Cap a CSS-driven size that still exceeds the usable viewport. The inline max-* overrides the
+    // stylesheet's max-width/max-height (e.g. a JS-expanded assistant dialog on a small window).
+    const rect = el.getBoundingClientRect();
+    const maxW = Math.max(0, window.innerWidth - 2 * VIEWPORT_MARGIN);
+    const maxH = Math.max(0, window.innerHeight - 2 * VIEWPORT_MARGIN);
+    if (rect.width > maxW) {
+      el.style.width = `${maxW}px`;
+      el.style.maxWidth = `${maxW}px`;
+    }
+    if (rect.height > maxH) {
+      el.style.height = `${maxH}px`;
+      el.style.maxHeight = `${maxH}px`;
+    }
+    const finalRect = el.getBoundingClientRect();
+    const left = Math.max(
+      VIEWPORT_MARGIN,
+      Math.min(clamped.left, window.innerWidth - finalRect.width - VIEWPORT_MARGIN),
+    );
+    const top = Math.max(
+      VIEWPORT_MARGIN,
+      Math.min(clamped.top, window.innerHeight - finalRect.height - VIEWPORT_MARGIN),
+    );
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
   }
+  // Re-check shortly after so the FINAL laid-out dialog is never off-screen: a stale/off-screen
+  // saved position, a window resize, or a size change that happens between this apply and the actual
+  // render could otherwise leave the header above the viewport or the right edge cut off.
+  setTimeout(() => clampRenderedToViewport(styleClass), 80);
 }
 
-/** Reads the current viewport position of the `.p-dialog` element identified by its `styleClass`. */
+/** Ensures a rendered dialog stays fully inside the viewport (skips docked dialogs). Re-measures
+ *  the final laid-out rect, so it works even when the apply ran before the dialog was rendered. */
+export function clampRenderedToViewport(styleClass: string): void {
+  const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
+  if (!el) return;
+  if (el.classList.contains("cb-docked")) return; // docked dialogs intentionally fill a half / full viewport
+  if (el.classList.contains("p-dialog-maximized")) return; // maximized dialogs fill the viewport on purpose
+  const rect = el.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return; // not rendered yet
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const maxW = Math.max(0, vw - 2 * VIEWPORT_MARGIN);
+  const maxH = Math.max(0, vh - 2 * VIEWPORT_MARGIN);
+  if (rect.width > maxW) {
+    el.style.width = `${maxW}px`;
+    el.style.maxWidth = `${maxW}px`;
+  }
+  if (rect.height > maxH) {
+    el.style.height = `${maxH}px`;
+    el.style.maxHeight = `${maxH}px`;
+  }
+  const finalRect = el.getBoundingClientRect();
+  const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, vw - finalRect.width - VIEWPORT_MARGIN));
+  const top = Math.max(VIEWPORT_MARGIN, Math.min(rect.top, vh - finalRect.height - VIEWPORT_MARGIN));
+  el.style.position = "fixed";
+  el.style.transform = "none";
+  el.style.left = `${Math.round(left)}px`;
+  el.style.top = `${Math.round(top)}px`;
+}
+
+/** Reads the current viewport position of the `.p-dialog` element identified by its `styleClass`.
+ *  Includes the rendered size so a saved position always has width/height — a saved position
+ *  without dimensions would make `clampFloatingPosition` treat the size as 0 and misplace the
+ *  dialog past the viewport edge on restore. */
 export function readDialogPosition(styleClass: string): DialogPosition | null {
   const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
   if (!el) return null;
   const rect = el.getBoundingClientRect();
-  return { left: Math.round(rect.left), top: Math.round(rect.top) };
+  return {
+    left: Math.round(rect.left),
+    top: Math.round(rect.top),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+  };
+}
+
+/** Small margin kept between a floating dialog and the viewport edges (px). */
+const VIEWPORT_MARGIN = 8;
+
+/**
+ * Clamps a FLOATING (un-docked) dialog position so the dialog stays fully inside the viewport:
+ * `left`/`top` never push it off screen and `width`/`height` never exceed the usable viewport.
+ * Docked positions (`docked: "left" | "right"`) are intentionally returned unchanged — a docked
+ * dialog fills half the window / full height by design.
+ */
+function clampFloatingPosition(position: DialogPosition): DialogPosition {
+  const usableW = Math.max(0, window.innerWidth - 2 * VIEWPORT_MARGIN);
+  const usableH = Math.max(0, window.innerHeight - 2 * VIEWPORT_MARGIN);
+  let { left, top, width, height } = position;
+  if (typeof width === "number") width = Math.min(width, usableW);
+  if (typeof height === "number") height = Math.min(height, usableH);
+  const w = typeof width === "number" ? width : 0;
+  const h = typeof height === "number" ? height : 0;
+  left = Math.max(VIEWPORT_MARGIN, Math.min(left, window.innerWidth - w - VIEWPORT_MARGIN));
+  top = Math.max(VIEWPORT_MARGIN, Math.min(top, window.innerHeight - h - VIEWPORT_MARGIN));
+  return {
+    left,
+    top,
+    ...(typeof width === "number" ? { width } : {}),
+    ...(typeof height === "number" ? { height } : {}),
+    docked: position.docked,
+  };
 }
 
 /**
@@ -282,13 +375,18 @@ function onGlobalMouseMove(e: MouseEvent): void {
   const s = dragSession;
   if (!s) return;
   const viewportWidth = window.innerWidth;
-  const left = s.originLeft + (e.clientX - s.startX);
-  const top = s.originTop + (e.clientY - s.startY);
+  const viewportHeight = window.innerHeight;
+  const rect = s.dialog.getBoundingClientRect();
+  // Keep the dialog fully inside the viewport while dragging: never let left/top push it off screen.
+  let left = s.originLeft + (e.clientX - s.startX);
+  let top = s.originTop + (e.clientY - s.startY);
+  left = Math.max(VIEWPORT_MARGIN, Math.min(left, viewportWidth - rect.width - VIEWPORT_MARGIN));
+  top = Math.max(VIEWPORT_MARGIN, Math.min(top, viewportHeight - rect.height - VIEWPORT_MARGIN));
 
   // Dock to the left / right half of the window when the dialog is dragged onto an edge.
   let nextSnap: "left" | "right" | null = null;
   if (left <= SNAP_THRESHOLD) nextSnap = "left";
-  else if (left + s.floatingWidth >= viewportWidth - SNAP_THRESHOLD) nextSnap = "right";
+  else if (left + rect.width >= viewportWidth - SNAP_THRESHOLD) nextSnap = "right";
 
   s.dialog.style.position = "fixed";
   s.dialog.style.transform = "none";
@@ -330,13 +428,15 @@ function onGlobalMouseUp(): void {
   if (!s) return;
   dragSession = null;
   const rect = s.dialog.getBoundingClientRect();
-  const position: DialogPosition = {
+  const raw: DialogPosition = {
     left: Math.round(rect.left),
     top: Math.round(rect.top),
     width: Math.round(rect.width),
     height: Math.round(rect.height),
     docked: s.snapped,
   };
+  // Only clamp floating positions — a docked dialog intentionally sits at the edge / fills the half.
+  const position = s.snapped ? raw : clampFloatingPosition(raw);
   if (!s.snapped) {
     lastFloatingSizes.set(s.styleClass, { width: position.width, height: position.height });
   }
@@ -354,8 +454,13 @@ function onGlobalMouseUp(): void {
 // animation — animations are not enabled in this app, so (onShow) never runs).
 
 let restoreObserverInstalled = false;
-/** styleClasses for which the saved position has already been applied while visible. */
-const restoredStyleClasses = new Set<string>();
+/** Last observed visibility of each registered dialog, so a saved position is restored only on a
+ *  real hidden→visible transition (once per open) instead of on every DOM mutation while open. The
+ *  old "restored set" approach cleared on every MutationObserver callback, so a transient "not yet
+ *  visible" frame could re-apply a stale/off-screen saved position right after the dialog had been
+ *  clamped back into the viewport — leaving the dialog out of view (and making ALT+A look like it
+ *  needs two presses). */
+const lastVisibleState = new Map<string, boolean>();
 
 /** Installs a MutationObserver that applies each registered dialog's saved position when it opens. */
 function installGlobalPositionRestore(): void {
@@ -367,29 +472,24 @@ function installGlobalPositionRestore(): void {
   restoreVisibleDialogPositions();
 }
 
-/** Applies the saved position to every registered dialog that is currently visible (once per open). */
+/** Applies the saved position to every registered dialog that just became visible (once per open). */
 function restoreVisibleDialogPositions(): void {
   if (dragSession) return; // never fight an active drag
-  const visibleNow = new Set<string>();
   for (const styleClass of dialogDragRegistry.keys()) {
     const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
     if (!el) continue;
     const mask = el.closest(".p-dialog-mask");
     const visible = mask ? getComputedStyle(mask).display !== "none" : false;
-    if (!visible) continue;
-    visibleNow.add(styleClass);
-    if (!restoredStyleClasses.has(styleClass)) {
+    const wasVisible = lastVisibleState.get(styleClass) ?? false;
+    lastVisibleState.set(styleClass, visible);
+    if (visible && !wasVisible) {
       const reg = dialogDragRegistry.get(styleClass);
       const pos = reg ? loadDialogPosition(reg.storageKey) : null;
       if (pos) {
         applyDialogPosition(styleClass, pos);
       }
-      restoredStyleClasses.add(styleClass);
     }
   }
-  // Keep the flag only for dialogs that are still visible, so a reopened dialog restores again.
-  restoredStyleClasses.clear();
-  for (const s of visibleNow) restoredStyleClasses.add(s);
 }
 
 // #endregion

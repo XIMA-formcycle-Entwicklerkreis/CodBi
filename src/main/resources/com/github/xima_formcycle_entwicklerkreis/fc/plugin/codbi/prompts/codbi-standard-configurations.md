@@ -139,20 +139,33 @@ Receiver field for AI OCR output.
 
 ## UI.Panels
 
+Registers the standard CodBi panel/accordion configurations. PREFER these classes for every panel/accordion request — they need no data-cb-* parameters. Choose the class by what the prompt says about the panel:
+- One standalone collapsible panel → CodBi_HTML_Panel_Standard (the XFieldSet's legend is the title).
+- Several collapsible sections where ONLY ONE may be open at a time (accordion / mutually exclusive) → apply CodBi_Accordion_A (or B/C/D, the SAME letter on every member) to EACH collapsible fieldset. EVERY member ALSO needs a panel type class (CodBi_HTML_Panel_Standard/Flat/Index/Minimal) — the accordion class alone only defines the group and does NOT make the fieldset collapsible. The accordion keeps only one member open. Panels default to unfolded (open), so the member the prompt wants open at the start needs no data-cb-folded; set data-cb-folded="true" on every member that shall start folded/closed. NEVER use data-cb-open.
+- A panel inside an accordion that must stay independent → CodBi_HTML_Panel_NoCordion on that panel.
+- Panels by NESTING DEPTH → CodBi_HTML_Panel_Standard at the top (1st level), CodBi_HTML_Panel_Flat for a panel nested inside a panel (2nd level), CodBi_HTML_Panel_Minimal for a panel two levels deep (3rd level); deeper levels repeat Standard → Flat → Minimal.
+- An index-like panel (like a book index / table of contents with numbered, unfoldable sections) → CodBi_HTML_Panel_Index.
+
+Only when NO standard class matches the requirement (e.g. a collapsible panel on a container, or a non-standard header/custom CSS/animation) use data-cb-func=html.panel with the MANDATORY data-cb-generateheader="true" and data-cb-autoheadertitle="<title>" (plus data-cb-accordion="true" and data-cb-folded for a manually built accordion).
+
+MUTUALLY EXCLUSIVE — NEVER combine a UI.Panels class (CodBi_HTML_Panel_Standard/Flat/Index/Minimal, CodBi_Accordion_A/B/C/D, CodBi_HTML_Panel_NoCordion) with data-cb-func=html.panel on the same element. The classes already apply HTML.Panel internally, so an element uses exactly ONE of the two — never both.
+
+CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible.
+
 ### CodBi_HTML_Panel_Standard
-Default standalone panel. CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. Panel type mapping: "Standard-Panel" or "einfaches Panel" → CodBi_HTML_Panel_Standard.
+Default standalone panel — the normal TOP-LEVEL collapsible panel. Panel type mapping: "Standard-Panel" or "einfaches Panel" → CodBi_HTML_Panel_Standard. Use at the FIRST (top) nesting level; nested panels switch to Flat (2nd level) and Minimal (3rd level).
 
 ### CodBi_HTML_Panel_Flat
-"Flaches Panel" / "Flat Panel" standalone panel. Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible.
+"Flaches Panel" / "Flat Panel" — a visually flat panel, good for NESTED panels (2nd nesting level, i.e. a panel inside a Standard panel).
 
 ### CodBi_HTML_Panel_Index
-"Index-Panel" / "Index Panel" standalone panel. Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible.
+"Index-Panel" / "Index Panel" — a panel that presents itself like a book index / table of contents: the logical sections are listed (e.g. numbered "1. Your Info", "2. Describe Your Issue", "3. Upload Files") and each point is unfoldable. USE when the page/form shall be separated into logical sections forming such an index.
 
 ### CodBi_HTML_Panel_Minimal
-"Minimales Panel" / "Minimal Panel" standalone panel. Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible.
+"Minimales Panel" / "Minimal Panel" — a minimal panel, good for NESTED panels on the THIRD nesting level (a panel inside a Flat panel inside a Standard panel).
 
 ### CodBi_Accordion_A_B_C_D
-Accordion classes (CodBi_Accordion_A/B/C/D) for accordions.
+Accordion classes (CodBi_Accordion_A/B/C/D) — these only define WHICH group a panel belongs to; they do NOT make a fieldset collapsible on their own. Every member fieldset ALSO needs a panel type class (CodBi_HTML_Panel_Standard/Flat/Index/Minimal) to be collapsible. Multiple collapsible fieldsets where ONLY ONE member is open at a time; use the SAME letter on every member. Panels default to unfolded (open), so the member open at the start needs no data-cb-folded; set data-cb-folded="true" on every member that shall start folded/closed. NEVER use data-cb-open — that parameter does not exist.
 
 ### CodBi_HTML_Panel_NoCordion
 Marker class for panels inside an accordion that should NOT participate in the accordion behavior.

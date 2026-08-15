@@ -7,5 +7,6 @@
   { "file": "codbi-standard-configurations.md", "key": "codbi.standard_configurations" },
   { "file": "codbi-general.md", "key": "codbi.general" },
   { "file": "codbi-document-parsing.md", "key": "codbi.document_parsing" },
-  { "file": "codbi-classify-intent.md", "key": "codbi.classify_intent" }
+  { "file": "codbi-classify-intent.md", "key": "codbi.classify_intent" },
+  { "file": "codbi-buergerservice-naming.md", "key": "codbi.buergerservice_naming" }
 ]

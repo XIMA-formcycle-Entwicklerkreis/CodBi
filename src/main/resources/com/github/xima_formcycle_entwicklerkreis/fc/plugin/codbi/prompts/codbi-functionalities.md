@@ -6,6 +6,10 @@ Rules for each CodBi functionality (data-cb-func), their parameters, and applica
 
 When a parameter requires a CSS-Selector referencing another form element, ALWAYS use the target element's properties.name value prefixed with a dot '.' (e.g., '.tfInterviewBis' or '.taAddress'). NEVER use an ID selector (# prefix, e.g., '#xi-tf-interviewbis'), because element IDs are mangled in repeatable containers; only properties.name-based selectors work reliably when CodBi searches within the shared parent container.
 
+## GENERIC REQUIRED-PARAM RULE
+
+Parameters explicitly marked **REQUIRED** below MUST be present on the element (as data-cb-* attributes); parameters marked (optional) may be omitted. Whenever a REQUIRED value is missing from the user's request and cannot be derived, ASK the user for it (clarification) instead of inventing one.
+
 ## AI.LLAMA.CHAT
 
 Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).
@@ -30,16 +34,19 @@ CRITICAL — Distinguish from Form Chatbot Plugin (XIMA Chatbot): Use XNavigatio
 ## AI.OCR
 
 Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
+- **REQUIRED**: Mode ("print" or "verify").
 - Mode="print": do NOT set data-cb-Field on the upload. The receiver text field is identified by its CodBi_AI_OCR_Receiver CSS class.
-- Mode="verify": set Pattern, RegExFlags, WrongFileMessage, InvalidImageText (ALL five for verify).
+- Mode="verify": **REQUIRED** to set Pattern, RegExFlags, WrongFileMessage, InvalidImageText (ALL five for verify).
 
 ## Date.Frame
 
 Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.
+**REQUIRED**: data-cb-maxfield = the END (maximum) date field's name. The begin field is the tagged element.
 
 ## Date.Min
 
 Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates).
+**REQUIRES**: the minimum allowed date — ask the user when not specified.
 
 ## Date.NoWeekends
 
@@ -64,10 +71,12 @@ CRITICAL — Distinguish from XNavigationBar plugin: Use data-cb-func=form.navig
 ## HTML.CSS
 
 Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
+**REQUIRES**: the CSS text to inject (data-cb-css) — ask the user when not provided.
 
 ## HTML.Input.Cleave
 
 Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
+**REQUIRES**: the mask/format to apply (credit card, phone, IBAN, date, …) — ask the user when not specified.
 
 ## HTML.Input.REGEX
 
@@ -77,8 +86,8 @@ CRITICAL — USE THIS FUNCTIONALITY whenever the user asks to disallow/block/pre
 
 To BLOCK characters, express the forbidden set as a NEGATED character class `[^…]` (matches any character EXCEPT the listed ones) and set the parameters on the XTextField via the attributes array:
 - data-cb-func = "HTML.Input.REGEX"
-- data-cb-keyexpression = the per-keystroke pattern every typed character must comply with → negated class, e.g. "[^e$%]" (prevents typing e, $ and %)
-- data-cb-expression = the whole-value pattern the final value must comply with → "^[^e$%]*$" (the complete value may contain any characters except e, $ and %)
+- data-cb-keyexpression = **REQUIRED** — the per-keystroke pattern every typed character must comply with → negated class, e.g. "[^e$%]" (prevents typing e, $ and %)
+- data-cb-expression = **REQUIRED** — the whole-value pattern the final value must comply with → "^[^e$%]*$" (the complete value may contain any characters except e, $ and %)
 - data-cb-flags = (optional) regex flags, e.g. "g"
 
 Example — an input field that must not allow the characters e, $ and %:
@@ -102,21 +111,29 @@ Example — a "story" textarea that becomes a rich text editor:
 
 Applicable on any element to wrap it in a collapsible accordion/panel widget.
 
+PREFER THE STANDARD CSS CLASSES (see UI.Panels) — they need NO data-cb-* parameters and cover the common panel/accordion cases. Choose the class by what the prompt says about the panel:
+- A single standalone collapsible panel → CSS class CodBi_HTML_Panel_Standard on the XFieldSet; the fieldset's 'legend' becomes the panel title.
+- Multiple collapsible sections where ONLY ONE may be open at a time (accordion / mutually exclusive) → give EACH collapsible fieldset BOTH classes: the accordion membership class CodBi_Accordion_A (or B/C/D — use the SAME letter on every member) AND a panel type class (CodBi_HTML_Panel_Standard for top-level panels, Flat/Minimal for nested levels). The accordion class alone only says which group a panel belongs to — it does NOT make the fieldset collapsible, so the panel type class is REQUIRED on every member. The accordion keeps exactly one member open. Panels default to UNFOLDED (open), so the member that must be open at the start (e.g. "am Anfang ... aufgeklappt") needs NO data-cb-folded; set data-cb-folded="true" on every OTHER member that shall start folded/closed. NEVER use data-cb-open — that parameter does not exist.
+- A panel that must NOT join the accordion behavior → CSS class CodBi_HTML_Panel_NoCordion on that panel.
+- Panels by NESTING DEPTH → CodBi_HTML_Panel_Standard at the top (1st level), CodBi_HTML_Panel_Flat for a panel nested inside a panel (2nd level), CodBi_HTML_Panel_Minimal for a panel two levels deep (3rd level); deeper levels repeat Standard → Flat → Minimal.
+- An index-like panel (like a book index / table of contents, numbered unfoldable sections e.g. "1. Your Info, 2. Describe Your Issue, 3. Upload Files") → CodBi_HTML_Panel_Index.
+
+MUTUALLY EXCLUSIVE — NEVER put BOTH a UI.Panels standard class (CodBi_HTML_Panel_Standard/Flat/Index/Minimal, CodBi_Accordion_A/B/C/D, CodBi_HTML_Panel_NoCordion) AND data-cb-func=html.panel on the SAME element. The standard classes already apply HTML.Panel internally, so an element uses exactly ONE of the two: the standard class (preferred) OR data-cb-func=html.panel (only for container panels / non-standard panels).
+
 CRITICAL — Panel CSS classes ONLY work on XFieldSet (fieldset), NOT on XContainer or XContainerInvisible. A fieldset has a 'legend' property that becomes the panel header. A container has NO legend — applying a panel CSS class to a container produces a panel WITHOUT a visible title.
 
-For containers (XContainer, XContainerInvisible) that need to be a panel, ALWAYS use data-cb-func=html.panel via the attributes array with data-cb-generateheader="true" and a data-cb-autoheadertitle.
-
-For fieldsets, use the CSS class CodBi_HTML_Panel_Standard instead — the legend provides the title.
-
-ACCORDION BEHAVIOR — When the user asks for multiple collapsible sections where only ONE should be open at a time, create a wrapper XContainer around ALL the panels. Apply data-cb-func="html.panel.accordion" and data-cb-Accordion="<uniqueGroupName>" to the wrapper. Each inner panel gets data-cb-folded — first panel "false", all subsequent "true".
+Use data-cb-func=html.panel ONLY when no standard class matches the requirement (e.g. a collapsible panel on an XContainer/XContainerInvisible, or a non-standard header/custom CSS/animation). Then these parameters are MANDATORY — never emit data-cb-func=html.panel without them:
+- data-cb-generateheader="true" — the clickable panel header must be generated.
+- data-cb-autoheadertitle="<title>" — the header text (use the panel/group title from the prompt).
+- For an accordion built manually: data-cb-accordion="true" on every member plus data-cb-folded (false = open initially, true = folded). Exactly one member may be open initially.
 
 ## HTML.SETAttribute
 
 Applicable on any element to dynamically set one or more HTML attributes on it, including CSS styling via the "style" attribute.
 
 USE THIS FUNCTIONALITY whenever the user asks to set an attribute or a visual/CSS style of an element — e.g. "set the title attribute of that input field to 'Holla die Waldfee'", "set the opacity of that input field to .5", "set the element's background color", "make the field readonly/disabled". Parameters:
-- data-cb-name = the attribute to set (e.g. "title", "placeholder", "readonly", "disabled", or "style" for CSS styling)
-- data-cb-toset = the value to set the attribute to (e.g. "Holla die Waldfee", "opacity: 0.5")
+- data-cb-name = **REQUIRED** — the attribute to set (e.g. "title", "placeholder", "readonly", "disabled", or "style" for CSS styling)
+- data-cb-toset = **REQUIRED** — the value to set the attribute to (e.g. "Holla die Waldfee", "opacity: 0.5")
 
 Example — an input field whose title attribute is set to "Holla die Waldfee":
 "attributes": [{"text":"data-cb-func","value":"HTML.SETAttribute"},{"text":"data-cb-name","value":"title"},{"text":"data-cb-toset","value":"Holla die Waldfee"}]
@@ -125,11 +142,12 @@ CRITICAL — When MORE THAN ONE functionality applies to the SAME element (e.g. 
 
 ## HTML.Text.Injector
 
-Applicable on any element to inject a dynamic text value into a specific property of that element. Set data-cb-replacement to the EP expression AS-IS (do NOT resolve it), data-cb-placeholder to the placeholder string verbatim, data-cb-property="innerHTML". Keep the element's rtevalue unchanged.
+Applicable on any element to inject a dynamic text value into a specific property of that element. **REQUIRED**: data-cb-replacement (the EP expression AS-IS — do NOT resolve it), data-cb-placeholder (the placeholder string verbatim), and data-cb-property (default "innerHTML"). Keep the element's rtevalue unchanged.
 
 ## HTML.Text.Mapper
 
 Applicable on any element to map object properties to named placeholders in a text template.
+**REQUIRES**: the object source and the text template with placeholders — ask the user when missing.
 
 ## HTML.Select.Favorites
 
@@ -138,6 +156,7 @@ CRITICAL — When applying this functionality you MUST also add a data-cb-initia
 ## JSON.SET
 
 Applicable on a hidden field to store a JSON-serialized value derived from another element. JSON.SET fallback only on explicit user request.
+**REQUIRES**: the JSON expression / derivation rule — ask the user when it cannot be derived.
 
 ## LDAP.Autocomplete.Set
 
@@ -149,7 +168,7 @@ Applicable on a text input that should autocomplete entries from an LDAP directo
 
 ## Matomo.Tracking
 
-Applicable on any form to add Matomo/Piwik analytics event tracking. When the prompt says "Matomo-Tracking aktivieren" or "activate Matomo tracking" without specifying a SiteID, do NOT add Matomo.Tracking functionality via data-cb-func on any element. Instead, include {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied — the server reads this and activates the standard configuration.
+Applicable on any form to add Matomo/Piwik analytics event tracking. **REQUIRES**: the Matomo site/tracking ID (SiteID) — ask the user when not provided. When the prompt says "Matomo-Tracking aktivieren" or "activate Matomo tracking" without specifying a SiteID, do NOT add Matomo.Tracking functionality via data-cb-func on any element. Instead, include {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied — the server reads this and activates the standard configuration.
 
 ## Media.Image.Cropper
 
@@ -170,7 +189,7 @@ PREFERRED — apply the OpenPLZ standard-configuration CSS classes instead of da
 - CodBi_OpenPLZ_AC_SET_BuildingNumber on the building number field.
 The server configures OpenPLZ.Autocomplete (TargetData, Country, Dependent, DependentPLZ, DependentLocality, FocusOnAutocomplete) automatically for each class.
 
-FALLBACK (only when the CSS classes cannot be used): tag EACH address field with data-cb-func=openplz.autocomplete and set the parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ and DependentLocality. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field, set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.
+FALLBACK (only when the CSS classes cannot be used): tag EACH address field with data-cb-func=openplz.autocomplete and set the parameters individually. **REQUIRED for every tagged field**: TargetData (Localities, PostalCodes, or Streets — matching the field's type) and Country. On the STREET field only: set DependentPLZ and DependentLocality. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field, set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.
 
 CRITICAL — OpenPLZ.Autocomplete must be applied to ALL address fields in EVERY address group, regardless of which plugin/system they come from. Either via the CodBi_OpenPLZ_AC_SET_* CSS classes (preferred) or via data-cb-func with ALL required parameters (Country, TargetData, Dependent, FocusOnAutocomplete) set on each address field.
 
@@ -205,6 +224,7 @@ Also add the element's name to the first page's "elements" array. The `data-cb-D
 ## Time.Frame
 
 Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
+**REQUIRED**: data-cb-maxfield = the END (maximum) time field's name. The begin field is the tagged element.
 
 ## DQ.Table.View
 

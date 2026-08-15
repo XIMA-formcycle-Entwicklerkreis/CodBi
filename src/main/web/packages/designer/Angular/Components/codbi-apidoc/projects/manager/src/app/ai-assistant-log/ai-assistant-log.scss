@@ -565,8 +565,8 @@ cb-ai-assistant-log {
     position: relative;
     margin: 4px 0 4px 28px;
     padding: 8px 10px;
-    /* Right padding keeps the text clear of the absolute copy button in the top-right corner. */
-    padding-right: 28px;
+    /* Right padding keeps the text clear of the absolute copy/maximize buttons in the top-right. */
+    padding-right: 52px;
     background: #f6f8fb;
     border: 1px solid #e3e6ea;
     border-left: 3px solid #5b6472;
@@ -582,10 +582,10 @@ cb-ai-assistant-log {
 }
 
 /* Copy button on the top-right corner of the unfolded prompt body. */
-.cb-log-node__prompt-copy {
+.cb-log-node__prompt-copy,
+.cb-log-node__prompt-max {
     position: absolute;
     top: 4px;
-    right: 4px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -601,7 +601,84 @@ cb-ai-assistant-log {
     line-height: 1;
 }
 
-.cb-log-node__prompt-copy:hover {
+.cb-log-node__prompt-copy {
+    right: 4px;
+}
+
+.cb-log-node__prompt-max {
+    right: 26px;
+}
+
+.cb-log-node__prompt-copy:hover,
+.cb-log-node__prompt-max:hover {
     background: #e3e6ea;
     color: #1b7a5e;
+}
+
+/* Full-prompt viewer dialog — forced above the Formcycle designer like the chat/clarification
+   dialogs (a plain PrimeNG dialog can otherwise render below the designer's windows). */
+.cb-log-prompt-mask {
+    z-index: 2147482000 !important;
+}
+
+.cb-log-prompt-dialog {
+    z-index: 2147483000 !important;
+    width: min(720px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    border: 2px solid #e67e22 !important;
+    box-shadow:
+        0 8px 32px rgba(230, 126, 34, 0.45),
+        0 2px 8px rgba(230, 126, 34, 0.25) !important;
+}
+
+.cb-log-prompt-dialog .p-dialog-header {
+    flex-shrink: 0;
+}
+
+.cb-log-prompt-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    user-select: none;
+}
+
+.cb-log-prompt-logo {
+    height: 32px;
+    width: auto;
+    display: block;
+    flex-shrink: 0;
+    opacity: 0.92;
+}
+
+.cb-log-prompt-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #1e293b;
+}
+
+/* Only the prompt text scrolls; the header stays fixed. */
+.cb-log-prompt-dialog .p-dialog-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+}
+
+.cb-log-prompt-text {
+    margin: 0;
+    padding: 0.9rem 1rem;
+    flex: 1 1 auto;
+    min-height: 40vh;
+    overflow: auto;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 0.82em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #333;
+    background: #f6f8fb;
 }

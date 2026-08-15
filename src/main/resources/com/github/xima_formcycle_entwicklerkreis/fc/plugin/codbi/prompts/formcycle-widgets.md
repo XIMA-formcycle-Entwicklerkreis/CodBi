@@ -292,6 +292,13 @@ Bürger-Services login button. When the prompt asks for a "BundID Login-Button",
 
 Properties: name, id, bs_btn_text (button label), bs_auth_ref (authenticator reference, e.g. "BUND_ID::https://idp.bundid.de"), bs_show_in_popup ("true" for popup login), bs_page_name (page after login), bs_cancel_page_name (page on cancel), bs_check_page ("true" to validate), bs_postbox_mandatory ("true" if postbox required), bs_trust_level (trust level: "m|0"=no restriction, "e|3"=certificate, "m|3"=certificate or ID, "e|4"=ID card), bs_login_method (restrict login method), bs_requested_attributes (requested SAML attributes), bs_suffix (auth data suffix), bs_hide_if_userprofile_exists ("true" to hide if already logged in), bs_ui_info_display_name (display name for the authenticator).
 
+## XOrderItem / XOrderButton (AKDB ePayBL)
+
+Order widgets of the AKDB E-Payment plugin (plugin-bundle-epaybl). Use them when the prompt asks for an order/payment form ("Bestellung", "Ware bestellen", "Bezahlformular", "Bestellartikel", "in den Warenkorb").
+- XOrderItem — one orderable item. Properties (xorderitem_* prefix): xorderitem_number (item number), xorderitem_description, xorderitem_price (single price), xorderitem_tax (tax rate %), xorderitem_count / xorderitem_start_count / xorderitem_max_count (quantity), xorderitem_required ("true" forces the item), xorderitem_beleg_number (document/receipt number), xorderitem_hst (Haushaltsstelle), xorderitem_object_number, xorderitem_to_order ("true" to include in the order), xorderitem_booking_text, xorderitem_href.
+- XOrderButton — submits the order to ePayBL. Properties (xorderbutton_* prefix): xorderbutton_text (button label), xorderbutton_validate_page ("true" to validate the page before ordering).
+- CRITICAL — These widgets require the AKDB E-Payment plugin to be installed AND configured; the PaymentInitPlugin workflow node turns the order into the actual payment. REQUEST the exact property keys via the widget-details mechanism before emitting them.
+
 ## Bürger-Services / BundID form fields
 
 When the prompt asks for "Bürger-Services", "Bürgerkonto", "BundID", or citizen eID form fields, use these pre-configured element names:

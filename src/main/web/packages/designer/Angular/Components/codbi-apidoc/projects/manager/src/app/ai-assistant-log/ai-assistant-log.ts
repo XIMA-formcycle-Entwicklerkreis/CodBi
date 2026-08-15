@@ -1007,12 +1007,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           const elChildren: LogNode[] = [];
           const params = (el["params"] ?? {}) as Record<string, unknown>;
           for (const [key, value] of Object.entries(params)) {
-            elChildren.push({
-              id: `${baseId}-elem-${ei}-${key}`,
-              kind: "param-item",
-              label: key,
-              value: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value),
-            });
+            elChildren.push(...this.workflowParamNodes(key, value, `${baseId}-elem-${ei}-${key}`, 0));
           }
           return {
             id: `${baseId}-elem-${ei}`,
@@ -1070,12 +1065,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         const params = (element["params"] ?? {}) as Record<string, unknown>;
         const paramChildren: LogNode[] = [];
         for (const [key, value] of Object.entries(params)) {
-          paramChildren.push({
-            id: `${baseId}-${key}`,
-            kind: "param-item",
-            label: key,
-            value: typeof value === "object" && value !== null ? JSON.stringify(value) : String(value),
-          });
+          paramChildren.push(...this.workflowParamNodes(key, value, `${baseId}-${key}`, 0));
         }
         children.push({
           id: baseId,
@@ -1093,6 +1083,56 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       children,
       expanded: false,
     };
+  }
+
+  /**
+   * Recursively converts a workflow parameter value into readable tree nodes ("one property under
+   * another"), so nested structures like `_childNodes` / `nodeParams` / `attributes` render as
+   * expandable nodes instead of one dense JSON string.
+   *
+   * @param depth 0 for the parameters of a workflow node; increases with each nesting level. The
+   *   first few levels are auto-expanded so the structure is immediately readable.
+   */
+  private workflowParamNodes(key: string, value: unknown, baseId: string, depth: number): LogNode[] {
+    if (value === null || typeof value !== "object") {
+      return [{ id: baseId, kind: "param-item", label: key, value: String(value) }];
+    }
+    if (Array.isArray(value)) {
+      if (value.length === 0) return [{ id: baseId, kind: "param-item", label: key, value: "[]" }];
+      return value.map((item, i) => {
+        const itemBase = `${baseId}-${i}`;
+        if (item !== null && typeof item === "object") {
+          const itemObj = item as Record<string, unknown>;
+          const childLabel = String(itemObj["nodeType"] ?? itemObj["name"] ?? itemObj["key"] ?? `${key}[${i}]`);
+          return {
+            id: itemBase,
+            kind: "node",
+            label: childLabel,
+            children: this.objectParamNodes(itemObj, itemBase, depth + 1),
+            expanded: depth <= 2,
+          };
+        }
+        return { id: itemBase, kind: "param-item", label: `${key}[${i}]`, value: String(item) };
+      });
+    }
+    return [
+      {
+        id: baseId,
+        kind: "section",
+        label: key,
+        children: this.objectParamNodes(value as Record<string, unknown>, baseId, depth + 1),
+        expanded: depth <= 2,
+      },
+    ];
+  }
+
+  /** Converts each key of an object into tree nodes (used for `nodeParams`, `attributes`, ...). */
+  private objectParamNodes(obj: Record<string, unknown>, baseId: string, depth: number): LogNode[] {
+    const nodes: LogNode[] = [];
+    for (const [k, v] of Object.entries(obj)) {
+      nodes.push(...this.workflowParamNodes(k, v, `${baseId}-${k}`, depth));
+    }
+    return nodes;
   }
   // #endregion Tree building
 

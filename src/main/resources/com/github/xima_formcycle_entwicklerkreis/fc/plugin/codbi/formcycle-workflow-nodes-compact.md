@@ -4,6 +4,8 @@ Condensed reference: the FORMCYCLE workflow triggers and node types and what eac
 
 Output format: Output EITHER a single JSON object (for ONE workflow lane) OR an array of JSON objects (for MULTIPLE independent lanes). Each object has exactly these keys: taskName, taskDescription, triggerType, triggerParams, nodeType, nodeParams, endpointState, endpointType.
 
+LANGUAGE — write taskName, ALL node names/labels, and the endpointState label in the SAME language as the user's request (a German prompt → German labels, e.g. "Zeilen als JSON in Hulu schreiben", and the endpoint "Empfangen" instead of "Received"; an English prompt → English). Never fall back to a default language.
+
 ## Trigger Types
 
 ### FC_FORM_SUBMIT_BUTTON
@@ -36,6 +38,8 @@ FC_USER_INVOCATION — Fires when a logged-in user manually triggers it from the
 ### FC_EMAIL
 FC_EMAIL — Sends an email.
 REQUIRED: sender address, subject, recipient (message service or direct address), message text. Ask for the sender and subject when the user only gives the recipient.
+SENDER: if the user provided or clarified a sender address, put that EXACT literal address in "from". NEVER replace a user-provided sender with [%\$DEFAULT_MAIL_SENDER%] / [%\$CLIENT_MAIL_SENDER%] — those defaults are only for when no sender was ever named.
+REPEATABLE CONTAINERS IN TEXT / EMAIL — a plain [%fieldName%] placeholder in an email body (or any text) returns only the FIRST row of a repeatable (dynamic) container. When the content must include ALL rows — which a general description like "die Zeiten" / "die Öffnungszeiten" / "the times" implies, covering regular AND special entries — iterate the container: FC_FOR_EACH_LOOP (sourceType FORM_FIELD_REPETITIONS) with per-row FC_WRITE_FORM_RECORD_ATTRIBUTES appending each row's text to a server attribute inside the loop's _childNodes, then reference that server attribute ([%\$RECORD_ATTR.key%]) in the FC_EMAIL body after the loop. REQUEST those node details too. ACCUMULATE THE ROWS AS READABLE TEXT — one line per row (e.g. "Mo: 09:00 - 17:00") or a bulleted list — NOT a JSON array: the email receiver reads this text. Only build a JSON array when the user explicitly asked to store the rows as JSON (e.g. into a database field).
 ### FC_DOI_INIT
 FC_DOI_INIT — Sends a double opt-in invitation email with DOI confirmation link (CORRECT for DOI, not FC_EMAIL).
 REQUIRED: completion page (Abschlussseite) for success AND for failure, sender address, subject, recipient.
@@ -76,6 +80,7 @@ REQUIRED: the attribute key(s) and value(s) to write.
 ### FC_SQL_STATEMENT
 FC_SQL_STATEMENT — Runs a SQL statement (INSERT/UPDATE/DELETE/SELECT) against a database connection; the ONLY node that writes to or reads from an external database table. USE whenever the user asks to write/save/persist form data into a database/table/column.
 REQUIRED: the database connection/datasource and the SQL text (with [%fieldName%] placeholders).
+QUOTING: NEVER wrap [%...%] placeholders in quotes in the SQL — VALUES ('[%tfTest%]') causes an error; always emit them unquoted: VALUES ([%tfTest%], ...). Only literal string constants that are NOT placeholders may be quoted.
 For a REPEATABLE container, never hardcode a JSON literal with placeholders — you ALSO need FC_WRITE_FORM_RECORD_ATTRIBUTES (accumulate the JSON in a server attribute) and FC_FOR_EACH_LOOP (iterate the rows) BEFORE the single FC_SQL_STATEMENT. REQUEST those node details too (list them in need_workflow_node_details) so you get their exact parameters.
 NESTING: the per-row append FC_WRITE_FORM_RECORD_ATTRIBUTES goes INSIDE the FC_FOR_EACH_LOOP's nodeParams._childNodes (runs once per row). The seed "[" (before the loop), the close "]" and this FC_SQL_STATEMENT (both after the loop) are chain nodes — NEVER put them inside _childNodes, and NEVER put the per-row append after the loop.
 ### FC_RETURN_FILE
@@ -136,8 +141,29 @@ FC_CONTINUE — Skips the rest of the current iteration and continues with the N
 ### FC_SET_FORM_RECORD_PASSWORD
 FC_SET_FORM_RECORD_PASSWORD — Sets a password on the form record (fixed or generated).
 REQUIRED: the password value or the generation rule.
-### CheckTrustLevelPlugin (de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin)
-CheckTrustLevelPlugin (de.xima.fc.plugin.bs.authn.plugin.node.CheckTrustLevelPlugin) — Checks the user's authentication trust level (CONDITIONAL branching node).
+### CheckTrustLevelPlugin (de.xima.fc.plugin.bs.auth.plugin.node.CheckTrustLevelPlugin)
+CheckTrustLevelPlugin (de.xima.fc.plugin.bs.auth.plugin.node.CheckTrustLevelPlugin) — Checks the user's authentication trust level (CONDITIONAL branching node).
+### AKDB E-Payment: Zahlung initialisieren (de.xima.akdb.epay.logic.plugin.node.PaymentInitPlugin)
+AKDB E-Payment (de.xima.akdb.epay.logic.plugin.node.PaymentInitPlugin) — Initializes an AKDB ePayBL payment and redirects to the PayPage (use for "bezahlen", "Zahlung", "Gebühr bezahlen", "ePayment").
+REQUIRED: the payment amount/item(s) and the payer data; paymentClient only when the prompt provides it.
+nodeParams: {"paymentClient":{...},"customerData":{"firstname","lastname","email",...},"address":{"useAddress","zipCode","location","street","houseNumber","country"},"bankAccount":{"useBankAccount","bic","iban","owner"},"orderConfig":{"orderItemDefs":[{...}]},"dueDate","payPageBookingText","baseUrl","preventPayPageRedirect"}. REQUEST the details for this node type to get the exact sub-object schemas.
+### AKDB BayernID Postkorb senden (de.xima.akdb.postbox.plugin.node.PostboxPlugin)
+AKDB BayernID Postkorb (de.xima.akdb.postbox.plugin.node.PostboxPlugin) — Sends a message (with optional attachments) to the citizen's BayernID Postbox (use for "Postkorb", "Postfach", "BayernID Postkorb", "Bürgerpostfach"). NOT for regular e-mail (that is FC_EMAIL).
+REQUIRED: the message subject/body and the recipient Postbox id (usually a [%…%] placeholder of the authenticated user's data).
+nodeParams: {"message":{"subject","body"},"akdbClient":{"service","client"},"id","idFromFormRecordAttr","link","suffixBkData","trustLevelAccess","attachments"}. REQUEST the details for this node type to get the exact sub-object schemas.
+### CMIS: Objekt anlegen/hochladen (de.xima.fc.fc_plugin_cmis.plugin.CmisActionPlugin)
+CMIS: Objekt anlegen/hochladen (de.xima.fc.fc_plugin_cmis.plugin.CmisActionPlugin) — Creates/updates an object (document/folder) in a CMIS repository (use for "CMIS", "Alfresco", "DMS", "im CMIS ablegen").
+REQUIRED: the CMIS connection and the file(s)/object to create.
+nodeParams: {"connection","multiFile","objectName","objectType","objectTypeId","properties","folderPath","useExistingFolder","createUnfilingObject","addVersionNumber","activateVersioning","updateProperties","findObjectsById","useNoFileExtension","dateTimeFormat"}. REQUEST the details for this node type.
+### CMIS: Query ausführen (de.xima.fc.fc_plugin_cmis.plugin.CmisQueryActionPlugin)
+CMIS: Query ausführen (de.xima.fc.fc_plugin_cmis.plugin.CmisQueryActionPlugin) — Runs a CMISQL query against a CMIS repository (use to read/search documents in a CMIS/DMS).
+REQUIRED: the CMIS connection and the CMISQL query.
+nodeParams: {"connection","query","maxHits","includeAllVersions"}. REQUEST the details for this node type.
+### RegiSafe: Dokument hochladen (de.xima.regisafe.plugin.node.UploadDocumentPlugin)
+RegiSafe: Dokument hochladen (de.xima.regisafe.plugin.node.UploadDocumentPlugin) — Uploads files as a document into the RegiSafe DMS (use for "RegiSafe", "in RegiSafe archivieren").
+REQUIRED: the file(s) to upload and (if named) the RegiSafe metadata; NEVER invent service credentials.
+nodeParams: {"files","metadata","serviceConfig","documentId"}. REQUEST the details for this node type.
+NOTE — Upload malware scanning (fc-plugin-malware-scanner-ms-def) runs AUTOMATICALLY on uploads when configured; it has NO workflow node to emit.
 ### FC_MULTIPLE_CONDITION
 FC_MULTIPLE_CONDITION — Checks whether a form field value meets a condition (CONDITIONAL branching node).
 REQUIRED: the field to check, the comparison and the value to compare against.
@@ -149,7 +175,7 @@ FC_EXPERIMENT — Wraps an action with error handling (try-catch-finally pattern
 ### FC_FOR_EACH_LOOP
 FC_FOR_EACH_LOOP — Iterates over items and executes child nodes for each item.
 REQUIRED: the item source to iterate over.
-When the data comes from a REPEATABLE (dynamic) container and must be persisted as ONE combined value (e.g. a JSON array), use sourceType FORM_FIELD_REPETITIONS. The loop has no variable, so build the JSON by string-concatenation on a server attribute: FC_WRITE_FORM_RECORD_ATTRIBUTES seeds the key with "[" before the loop; INSIDE each iteration FC_WRITE_FORM_RECORD_ATTRIBUTES sets the value to the current [%\$RECORD_ATTR.<key>%] plus this row's object (e.g. [%\$RECORD_ATTR.<key>%],{...} — do NOT merely echo the current value back, each write appends one row); after the loop FC_WRITE_FORM_RECORD_ATTRIBUTES appends "]". Then store the accumulated [%\$RECORD_ATTR.<key>%] ONCE with the node matching the target the prompt names: a database/table/column → FC_SQL_STATEMENT; a CMIS node/document → the CMIS write node; a file → FC_CREATE_TEXT_FILE; a specific form field → FC_CHANGE_FORM_VALUE; no specific target named → the server attribute itself is the result.
+Build a JSON array ONLY when the user explicitly wants the rows stored/persisted as JSON (e.g. into a database field, CMIS, file, or form field). For HUMAN-READABLE content (e.g. an email body, a chat/message, a text display) accumulate READABLE LINES instead of JSON — one line per row (e.g. "Mo: 09:00 - 17:00") or a bulleted list. When the data comes from a REPEATABLE (dynamic) container and must be persisted as ONE combined value (e.g. a JSON array), use sourceType FORM_FIELD_REPETITIONS. The loop has no variable, so build the JSON by string-concatenation on a server attribute: FC_WRITE_FORM_RECORD_ATTRIBUTES seeds the key with "[" before the loop; INSIDE each iteration FC_WRITE_FORM_RECORD_ATTRIBUTES sets the value to the current [%\$RECORD_ATTR.<key>%] plus this row's object (e.g. [%\$RECORD_ATTR.<key>%],{...} — do NOT merely echo the current value back, each write appends one row); after the loop FC_WRITE_FORM_RECORD_ATTRIBUTES appends "]". Then store the accumulated [%\$RECORD_ATTR.<key>%] ONCE with the node matching the target the prompt names: a database/table/column → FC_SQL_STATEMENT; a CMIS node/document → the CMIS write node; a file → FC_CREATE_TEXT_FILE; a specific form field → FC_CHANGE_FORM_VALUE; no specific target named → the server attribute itself is the result.
 CRITICAL NESTING: the per-iteration node (the per-row append) MUST be placed INSIDE the loop's nodeParams._childNodes as {"nodeType":"FC_WRITE_FORM_RECORD_ATTRIBUTES","nodeParams":{...}} — that is what makes it run ONCE PER ROW. NEVER place it in "chainedNodes" or as a node listed after the loop (such nodes run exactly ONCE, so the JSON would never grow). Only the post-loop nodes (close "]" and the single final write) go after the loop.
 ### FC_WHILE_LOOP
 FC_WHILE_LOOP — Repeatedly executes child actions WHILE a form field value meets a condition (PRE-CHECK loop).

@@ -7,6 +7,7 @@ import {
   Output,
   ViewEncapsulation,
 } from "@angular/core";
+import { Dialog } from "primeng/dialog";
 
 /** One node of the change-log tree rendered by the log dialog. */
 export interface LogNode {
@@ -68,7 +69,7 @@ export interface LogNode {
 @Component({
   selector: "cb-log-node",
   standalone: true,
-  imports: [LogTreeNode],
+  imports: [LogTreeNode, Dialog],
   template: `
     <details
         class="cb-log-node"
@@ -167,6 +168,14 @@ export interface LogNode {
               (click)="copyPrompt($event)">
             <i [class]="promptCopied ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
           </button>
+          <button
+              type="button"
+              class="cb-log-node__prompt-max"
+              title="Open the full prompt text in a dialog"
+              aria-label="Open the full prompt in a dialog"
+              (click)="openPromptDialog($event)">
+            <i class="pi pi-window-maximize" aria-hidden="true"></i>
+          </button>
           <span class="cb-log-node__prompt-text">{{ node.value }}</span>
         </div>
       }
@@ -180,6 +189,27 @@ export interface LogNode {
     </details>
     @if (node.valueExpanded === true && node.value && node.kind !== 'prompt') {
       <div class="cb-log-node__value-full">{{ node.value }}</div>
+    }
+    @if (promptDialogVisible && node.value) {
+      <p-dialog
+          [visible]="true"
+          (visibleChange)="onPromptDialogVisibleChange($event)"
+          [modal]="true"
+          [draggable]="false"
+          [resizable]="true"
+          [closeOnEscape]="true"
+          appendTo="body"
+          [baseZIndex]="999999"
+          maskStyleClass="cb-log-prompt-mask"
+          styleClass="cb-log-prompt-dialog">
+        <ng-template #header>
+          <div class="cb-log-prompt-header">
+            <img class="cb-log-prompt-logo" [src]="codbiLogoUrl" alt="CodBi" />
+            <span class="cb-log-prompt-title">Full prompt</span>
+          </div>
+        </ng-template>
+        <pre class="cb-log-prompt-text">{{ node.value }}</pre>
+      </p-dialog>
     }
   `,
   encapsulation: ViewEncapsulation.None,
@@ -286,6 +316,30 @@ export class LogTreeNode {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  /** True while the full-prompt viewer dialog is open for this node. */
+  promptDialogVisible = false;
+
+  /** Opens the full-prompt dialog. Forces it (and its mask) above the Formcycle designer like the
+   *  other CodBi dialogs — a plain PrimeNG dialog can otherwise render below the designer's
+   *  windows. */
+  openPromptDialog(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    this.promptDialogVisible = true;
+    this.cdr.markForCheck();
+    setTimeout(() => {
+      const el = document.querySelector(".cb-log-prompt-dialog") as HTMLElement | null;
+      if (el) el.style.zIndex = "2147483000";
+      const mask = document.querySelector(".cb-log-prompt-mask") as HTMLElement | null;
+      if (mask) mask.style.zIndex = "2147482000";
+    }, 0);
+  }
+
+  onPromptDialogVisibleChange(visible: boolean): void {
+    this.promptDialogVisible = visible;
+    this.cdr.markForCheck();
   }
 
   /** Copies the unfolded prompt body to the clipboard (with fallback + brief check feedback). */

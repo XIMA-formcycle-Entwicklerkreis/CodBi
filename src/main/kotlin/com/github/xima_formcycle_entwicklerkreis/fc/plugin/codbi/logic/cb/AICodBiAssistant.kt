@@ -455,13 +455,20 @@ class AICodBiAssistant : IPluginServletAction {
                 """{"error":${gson.toJson("Classification failed: ${e.message}")}}""")
           }
       logger.info("[AICodBiAssistant] Classified intent as: {}", intent)
+      val effectiveIntent = upgradeWorkflowIntentToBothIfAddingFormElement(prompt, intent)
+      if (effectiveIntent != intent) {
+        logger.info(
+            "[AICodBiAssistant] Intent '{}' upgraded to '{}' — prompt asks to add a form element (e.g. a submit button) that triggers a workflow",
+            intent,
+            effectiveIntent)
+      }
       // Report the estimated cost of the classification call (per input/output tokens) when a
       // price is configured for the selected model.
       val classifyPrice = instance.priceForModel(modelId)
       val classifyCost =
           classifyPrice?.costFor(classifyUsage.input.toLong(), classifyUsage.output.toLong())
       return jsonResponse(
-          """{"status":"need_data","intent":${gson.toJson(intent)},"tokens":${classifyUsage.total},"tokensIn":${classifyUsage.input},"tokensOut":${classifyUsage.output},"cost":${classifyCost ?: "null"},"currency":${gson.toJson(classifyPrice?.currency)}}""")
+          """{"status":"need_data","intent":${gson.toJson(effectiveIntent)},"tokens":${classifyUsage.total},"tokensIn":${classifyUsage.input},"tokensOut":${classifyUsage.output},"cost":${classifyCost ?: "null"},"currency":${gson.toJson(classifyPrice?.currency)}}""")
     }
 
     // Phase 2 â€” execute
@@ -552,7 +559,9 @@ class AICodBiAssistant : IPluginServletAction {
                 chatContext,
                 formStructureContext,
                 clarificationContext)
-        intent = reclassifiedIntent
+        val effectiveReclassified =
+            upgradeWorkflowIntentToBothIfAddingFormElement(prompt, reclassifiedIntent)
+        intent = effectiveReclassified
         tokensIn += usage.input
         tokensOut += usage.output
         logger.info("[AICodBiAssistant] chatMode re-classified intent as: {}", intent)
@@ -711,8 +720,22 @@ class AICodBiAssistant : IPluginServletAction {
         return jsonResponse(
             """{"error":${gson.toJson("The AI did not return a valid form JSON: ${formJson.take(300)}")}}""")
       }
-      // Auto-resolve appointment plan names to UUIDs for XAppointment elements.
-      resolvedFormJson = resolveAppointmentPlans(formJson)
+      // Auto-resolve appointment plan names to UUIDs for XAppointment elements, neutralize
+      // destructive SQL the AI may have placed into a button's customAction (form-level injection),
+      // and keep the form's pages when the AI was asked to remove widgets/workflows (not pages).
+      val appointmentResolved = resolveAppointmentPlans(formJson)
+      val restoredJson =
+          restorePagesUnlessRequested(
+              sanitizeFormCustomActions(appointmentResolved), persistJson, prompt)
+      // Final structural normalization: move any page the merge/restore steps appended AFTER the
+      // footer back in front of it (otherwise pages 2 & 3 render below the footer), and copy page
+      // labels from the Form.Navigator onto empty XPage headers.
+      resolvedFormJson =
+          runCatching {
+                val obj = JsonParser.parseString(restoredJson).asJsonObject
+                if (normalizeFinalFormStructure(obj)) gson.toJson(obj) else restoredJson
+              }
+              .getOrDefault(restoredJson)
       result.append(""","formJson":$resolvedFormJson""")
       result.append(""","tokens":$runTokens""")
       // Auto-manage Holistic.Cleave.* standard configurations based on field types in the form.
@@ -807,11 +830,20 @@ class AICodBiAssistant : IPluginServletAction {
         "[AICodBiAssistant] Sensitive elements used: {} (configured: {})",
         sensitiveUsed,
         AI.logSensitiveElements)
+    // Destructive SQL statements the AI generated that were blocked by the backend sanitizer. Like
+    // sensitive elements, these make the frontend auto-open the change log (with an error icon) so
+    // the user sees that the destructive statement was NOT persisted.
+    val blockedSqlUsed =
+        workflowNodes?.let { AiAssistantLog.blockedSqlNodeLabels(it) } ?: emptyList()
+    logger.info("[AICodBiAssistant] Blocked SQL statements: {}", blockedSqlUsed)
 
     result.append(
         ""","tokensIn":$tokensIn,"tokensOut":$tokensOut,"cost":${runCost ?: "null"},"currency":${gson.toJson(runCurrency)}""")
     if (sensitiveUsed.isNotEmpty()) {
       result.append(""","sensitiveElements":${gson.toJson(sensitiveUsed)}""")
+    }
+    if (blockedSqlUsed.isNotEmpty()) {
+      result.append(""","blockedSqlElements":${gson.toJson(blockedSqlUsed)}""")
     }
     if (pendingChatAnswer != null) {
       result.append(""","hasQuestion":true,"chatAnswer":${gson.toJson(pendingChatAnswer)}""")
@@ -855,6 +887,38 @@ class AICodBiAssistant : IPluginServletAction {
   // endregion Handlers
 
   // region Intent Classification
+
+  /**
+   * Guardrail for the intent router: when the AI classified the request as "workflow" only, but the
+   * prompt explicitly asks to ADD/CREATE a form element (submit button, input field, …) that then
+   * triggers a workflow automation, the change is really a "both" change — the element is a FORM
+   * structure change, the automation is a WORKFLOW change. Upgrading here (phase 1) matters because
+   * the frontend only sends the `persist` form data when the intent is "form"/"both"; without it
+   * the button/field the user asked for would never be created.
+   */
+  private fun upgradeWorkflowIntentToBothIfAddingFormElement(
+      prompt: String,
+      intent: String
+  ): String {
+    if (intent != "workflow") return intent
+    val match =
+        Regex(
+                "\\b(add|create|insert|generate|place|put)\\b.{0,40}" +
+                    "\\b(submit\\s*button|button|radio\\s*button|checkbox|input\\s*field|text\\s*field|" +
+                    "upload\\s*field|file\\s*upload|dropdown|select\\s*field)\\b",
+                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .find(prompt) ?: return intent
+    // Ignore referential mentions of an existing element ("...the add button...") — only upgrade
+    // when the user imperatively asks to create the element.
+    val beforeVerb = prompt.substring(0, match.range.first)
+    if (Regex("\\b(the|this|that|a|an)\\s+$", RegexOption.IGNORE_CASE)
+        .containsMatchIn(beforeVerb)) {
+      return intent
+    }
+    logger.info(
+        "[AICodBiAssistant] Upgrading intent 'workflow' to 'both' — prompt asks to add a form element that triggers a workflow")
+    return "both"
+  }
 
   /**
    * Makes a short AI call to classify whether the user's [prompt] targets the form structure,
@@ -5315,7 +5379,7 @@ class AICodBiAssistant : IPluginServletAction {
       val mainNode = JsonObject()
       mainNode.addProperty("name", deriveNodeName(spec))
       mainNode.addProperty("nodeType", spec.nodeType)
-      mainNode.add("params", gson.toJsonTree(spec.nodeParams))
+      mainNode.add("params", workflowLogParams(spec.nodeType, spec.nodeParams))
       elements.add(mainNode)
       spec.chainedNodes?.forEach { chainSpecMap ->
         val chainNode = JsonObject()
@@ -5324,9 +5388,9 @@ class AICodBiAssistant : IPluginServletAction {
                 ?: (chainSpecMap["nodeType"] as? String)
                 ?: "chained"
         chainNode.addProperty("name", chainName)
-        chainNode.addProperty("nodeType", (chainSpecMap["nodeType"] as? String) ?: "")
-        chainNode.add(
-            "params", gson.toJsonTree(chainSpecMap["nodeParams"] ?: emptyMap<String, Any>()))
+        val chainNodeType = (chainSpecMap["nodeType"] as? String) ?: ""
+        chainNode.addProperty("nodeType", chainNodeType)
+        chainNode.add("params", workflowLogParams(chainNodeType, chainSpecMap["nodeParams"]))
         elements.add(chainNode)
       }
       path.add("elements", elements)
@@ -7609,6 +7673,452 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  /** Result of sanitizing an AI-generated SQL statement. */
+  private data class SqlSanitizeResult(
+      val blocked: Boolean,
+      val blockedReasons: List<String>,
+      val sanitized: String
+  )
+
+  /**
+   * Destructive DDL keywords that are blocked in AI-generated FC_SQL_STATEMENT queries. Matching is
+   * case-insensitive and word-boundary based, so e.g. "DROP" matches but a word like "droppable"
+   * does not.
+   */
+  private val DESTRUCTIVE_SQL_KEYWORDS =
+      listOf("DROP", "TRUNCATE", "ALTER", "CREATE", "RENAME", "GRANT", "REVOKE")
+
+  /**
+   * Sanitizes an AI-generated SQL statement before it is persisted into an FC_SQL_STATEMENT node.
+   *
+   * Destructive DDL (see [DESTRUCTIVE_SQL_KEYWORDS]) and multi-statement batches (semicolon
+   * separated statements — a classic injection vector) are **blocked**: the returned
+   * [SqlSanitizeResult.sanitized] then carries a placeholder text instead of the original
+   * statement, so no destructive SQL ever reaches the database. Non-destructive single statements
+   * pass through unchanged. Comments are stripped before analysis so keywords cannot be smuggled
+   * past the check.
+   */
+  private fun sanitizeSqlQuery(sql: String): SqlSanitizeResult {
+    val original = sql.trim()
+    if (original.isBlank()) {
+      return SqlSanitizeResult(blocked = false, blockedReasons = emptyList(), sanitized = sql)
+    }
+    // Normalize for analysis: strip line/block comments and collapse whitespace.
+    val normalized =
+        original
+            .replace(Regex("--[^\n]*"), " ")
+            .replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    val lower = normalized.lowercase()
+    val foundKeywords =
+        DESTRUCTIVE_SQL_KEYWORDS.filter { kw ->
+          Regex("\\b${kw.lowercase()}\\b").containsMatchIn(lower)
+        }
+    // Multi-statement batches: a ';' followed by more content (a single trailing ';' is harmless).
+    val body = normalized.removeSuffix(";").trim()
+    val multiStatement = body.contains(';') && body.substringAfterLast(';').trim().isNotEmpty()
+    if (foundKeywords.isEmpty() && !multiStatement) {
+      return SqlSanitizeResult(blocked = false, blockedReasons = emptyList(), sanitized = original)
+    }
+    val reasons = foundKeywords + if (multiStatement) listOf("MULTI-STATEMENT") else emptyList()
+    val placeholder =
+        "< DESTRUCTIVE SQL STATEMENT BLOCKED BY CODBI (NO ${reasons.joinToString(", ")} allowed)>"
+    return SqlSanitizeResult(blocked = true, blockedReasons = reasons, sanitized = placeholder)
+  }
+
+  /**
+   * Walks the AI-produced form JSON and neutralizes destructive SQL the AI may have placed into a
+   * button's `action.customAction` (e.g. an XButtonList submit button whose custom action is "DROP
+   * TABLE ..."). The FC_SQL_STATEMENT sanitizer only covers workflow nodes; form-level injection
+   * via a button custom action must be caught here too. Blocked custom actions are emptied so the
+   * button stays valid and renders.
+   */
+  private fun sanitizeFormCustomActions(formJson: String): String {
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.get("items")?.takeIf { it.isJsonArray }?.asJsonArray ?: return formJson
+      var changed = false
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val props =
+            item.asJsonObject.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject
+                ?: continue
+        val buttons = props.get("buttons")?.takeIf { it.isJsonArray }?.asJsonArray ?: continue
+        for (btn in buttons) {
+          if (!btn.isJsonObject) continue
+          val action =
+              btn.asJsonObject.get("action")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+          val customAction =
+              action.get("customAction")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+          if (customAction.isBlank()) continue
+          val result = sanitizeSqlQuery(customAction)
+          if (result.blocked) {
+            action.addProperty("customAction", "")
+            changed = true
+            logger.warn(
+                "[AICodBiAssistant] Blocked destructive SQL in form button customAction: '{}'",
+                customAction)
+          }
+        }
+      }
+      if (changed) root.toString() else formJson
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] sanitizeFormCustomActions failed: {}", e.message)
+      formJson
+    }
+  }
+
+  /**
+   * Guardrail for the form AI: when the AI was asked to REMOVE widgets/workflows (not pages), it
+   * must not delete the form's pages (XPage elements). The model occasionally drops all pages but
+   * the first while removing widgets. This re-inserts any XPage that existed before but is missing
+   * from the AI's output — as an empty page (its widgets were removed) — UNLESS the prompt
+   * explicitly asks to remove/delete pages.
+   */
+  private fun restorePagesUnlessRequested(
+      formJson: String,
+      beforeJson: String?,
+      prompt: String
+  ): String {
+    if (beforeJson.isNullOrBlank()) return formJson
+    val wantsPageRemoval =
+        Regex(
+                "\\b(remove|delete|entfernen|loeschen|löschen)\\b[^.!?]{0,40}\\b(page|seiten?)\\b",
+                RegexOption.IGNORE_CASE)
+            .containsMatchIn(prompt) ||
+            Regex(
+                    "\\b(page|seiten?)\\b[^.!?]{0,40}\\b(remove|delete|entfernen|loeschen|löschen)\\b",
+                    RegexOption.IGNORE_CASE)
+                .containsMatchIn(prompt)
+    if (wantsPageRemoval) return formJson
+    return try {
+      val before = JsonParser.parseString(beforeJson).asJsonObject
+      val after = JsonParser.parseString(formJson).asJsonObject
+      val beforeItems =
+          before.get("items")?.takeIf { it.isJsonArray }?.asJsonArray ?: return formJson
+      val afterItems = after.get("items")?.takeIf { it.isJsonArray }?.asJsonArray ?: return formJson
+      val afterPageNames = mutableSetOf<String>()
+      for (el in afterItems) {
+        if (el.isJsonObject && el.asJsonObject.get("className")?.asString == "XPage") {
+          el.asJsonObject.get("properties")?.asJsonObject?.get("name")?.asString?.let {
+            afterPageNames.add(it)
+          }
+        }
+      }
+      var changed = false
+      for (page in beforeItems) {
+        if (!page.isJsonObject || page.asJsonObject.get("className")?.asString != "XPage") continue
+        val props =
+            page.asJsonObject.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject
+                ?: continue
+        val pageName = props.get("name")?.asString ?: continue
+        if (pageName in afterPageNames) continue
+        val restored = page.asJsonObject.deepCopy()
+        restored.get("properties")?.asJsonObject?.remove("elements")
+        restored.get("properties")?.asJsonObject?.add("elements", JsonArray())
+        afterItems.add(restored)
+        changed = true
+        logger.info(
+            "[AICodBiAssistant] Restored page '{}' the AI dropped (prompt did not ask to remove pages)",
+            pageName)
+      }
+      if (changed) after.toString() else formJson
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] restorePagesUnlessRequested failed: {}", e.message)
+      formJson
+    }
+  }
+
+  /**
+   * Final structural normalization applied to the form JSON right before it is returned to the
+   * designer (both the plain form and the "both" intents):
+   * 1. Page ordering — Formcycle renders the pages in `items` order and the footer after all pages.
+   *    The pass-2 splice / field-restore steps append newly created pages AFTER the restored
+   *    XFooter (e.g. `[header, page1, footer, page2, page3, ...]`), which makes the designer render
+   *    pages 2 & 3 below the footer. All XPage items are moved back in front of the XFooter,
+   *    preserving their relative order.
+   * 2. Page labels — when a page has no header/title but the XNavigationBar ("Form.Navigator")
+   *    lists that page with a text label, the label is copied onto the XPage's `header` so every
+   *    page is titled in the designer even when the model forgot to set it.
+   *
+   * @return true when the JSON was modified (so the caller re-serializes it).
+   */
+  private fun normalizeFinalFormStructure(root: JsonObject): Boolean {
+    val reordered = movePagesBeforeFooter(root)
+    val labeled = applyPageLabelsFromNavigator(root)
+    val checked = ensureNextPageValidation(root)
+    return reordered || labeled || checked
+  }
+
+  /**
+   * Moves every XPage item in front of the XFooter. Returns true when the `items` array changed.
+   */
+  private fun movePagesBeforeFooter(root: JsonObject): Boolean {
+    val items = root.getAsJsonArray("items") ?: return false
+    var firstFooter = -1
+    var lastPage = -1
+    for (i in 0 until items.size()) {
+      if (!items.get(i).isJsonObject) continue
+      when (items.get(i).asJsonObject.get("className")?.asString) {
+        "XFooter" -> if (firstFooter < 0) firstFooter = i
+        "XPage" -> lastPage = i
+      }
+    }
+    // No footer, or no page is placed after a footer — the order is already correct.
+    if (firstFooter < 0 || lastPage <= firstFooter) return false
+    val reordered = JsonArray()
+    var footersInserted = false
+    for (i in 0 until items.size()) {
+      val el = items.get(i)
+      if (el.isJsonObject &&
+          el.asJsonObject.get("className")?.asString == "XFooter" &&
+          i <= lastPage) {
+        // This footer sits before/among the pages — drop it here, re-insert after the last page.
+        continue
+      }
+      reordered.add(el)
+      if (i == lastPage && !footersInserted) {
+        footersInserted = true
+        for (j in 0 until items.size()) {
+          val f = items.get(j)
+          if (j <= lastPage &&
+              f.isJsonObject &&
+              f.asJsonObject.get("className")?.asString == "XFooter") {
+            reordered.add(f)
+          }
+        }
+      }
+    }
+    root.add("items", reordered)
+    logger.info("[AICodBiAssistant] Reordered items so all pages render in front of the footer")
+    return true
+  }
+
+  /**
+   * Copies page labels from the XNavigationBar ("Form.Navigator") options onto XPage items whose
+   * `header` is empty, so multi-page forms created by the AI are titled. Returns true when any page
+   * header was set.
+   */
+  private fun applyPageLabelsFromNavigator(root: JsonObject): Boolean {
+    val items = root.getAsJsonArray("items") ?: return false
+    val navLabels = mutableMapOf<String, String>() // page name -> label
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      if (el.asJsonObject.get("className")?.asString != "XNavigationBar") continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val options = props.getAsJsonArray("options") ?: continue
+      for (opt in options) {
+        if (!opt.isJsonObject) continue
+        val text = opt.asJsonObject.get("text")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+        val value = opt.asJsonObject.get("value")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+        if (!text.isNullOrEmpty() && !value.isNullOrEmpty()) navLabels[value] = text
+      }
+    }
+    if (navLabels.isEmpty()) return false
+    var changed = false
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      if (el.asJsonObject.get("className")?.asString != "XPage") continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+      val label = navLabels[name] ?: continue
+      val current = props.get("header")?.takeIf { it.isJsonPrimitive }?.asString?.trim().orEmpty()
+      if (current.isEmpty()) {
+        props.addProperty("header", label)
+        changed = true
+      }
+    }
+    if (changed) {
+      logger.info(
+          "[AICodBiAssistant] Applied page label(s) from the Form.Navigator to empty page headers")
+    }
+    return changed
+  }
+
+  /**
+   * Safety net for multi-page forms: a "Weiter" / next-page button (action.page="next") must
+   * validate the current page's fields before navigating (action.check=true) when that page
+   * contains a field that can be invalid — a REQUIRED field, a datatype-validated field, or a field
+   * tagged with a CodBi functionality/class that validates input (e.g. a CSS class starting with
+   * "CodBi_", such as CodBi_People_Name, or a data-cb-func attribute). The AI sometimes generates a
+   * plain "next page" without the check; this upgrades it to "next page + check" so the user cannot
+   * advance with invalid input (e.g. a CodBi_People_Name field holding "Hans-"). Returns true when
+   * any button action was changed.
+   */
+  private fun ensureNextPageValidation(root: JsonObject): Boolean {
+    val items = root.getAsJsonArray("items") ?: return false
+    val itemByName = mutableMapOf<String, JsonObject>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val name = el.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString ?: continue
+      itemByName[name] = el.asJsonObject
+    }
+    val nestedContainers = setOf("XFieldSet", "XContainer", "XContainerInvisible")
+    // For every page, collect the transitive set of element names on it (children of nested
+    // containers included), and map each element back to its page.
+    val pageElements = mutableMapOf<String, MutableSet<String>>()
+    val pageOfItem = mutableMapOf<String, String>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.asString != "XPage") continue
+      val props = item.getAsJsonObject("properties") ?: continue
+      val pageName = props.get("name")?.asString ?: continue
+      val names = mutableSetOf<String>()
+      val queue = ArrayDeque<String>()
+      props.getAsJsonArray("elements")?.forEach { ref ->
+        if (ref.isJsonPrimitive) queue.addLast(ref.asString)
+      }
+      while (queue.isNotEmpty()) {
+        val childName = queue.removeFirst()
+        if (!names.add(childName)) continue
+        val child = itemByName[childName] ?: continue
+        if (child.get("className")?.asString in nestedContainers) {
+          child.getAsJsonObject("properties")?.getAsJsonArray("elements")?.forEach { ref ->
+            if (ref.isJsonPrimitive) queue.addLast(ref.asString)
+          }
+        }
+      }
+      pageElements[pageName] = names
+      for (n in names) pageOfItem[n] = pageName
+    }
+    var changed = false
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.asString != "XButtonList") continue
+      val props = item.getAsJsonObject("properties") ?: continue
+      val buttons = props.getAsJsonArray("buttons") ?: continue
+      val buttonListName = props.get("name")?.asString ?: continue
+      val pageName = pageOfItem[buttonListName] ?: continue
+      val pageFields = pageElements[pageName] ?: continue
+      for (btn in buttons) {
+        if (!btn.isJsonObject) continue
+        val btnObj = btn.asJsonObject
+        val action = btnObj.getAsJsonObject("action") ?: continue
+        if (action.get("page")?.asString != "next") continue
+        val check = action.get("check")?.takeIf { it.isJsonPrimitive }?.asString
+        if (check == "true" || check == "1") continue
+        if (!pageCanInvalidate(pageFields, itemByName)) continue
+        action.addProperty("check", true)
+        changed = true
+        logger.info(
+            "[AICodBiAssistant] Upgraded 'Weiter' button '{}' to next page + check (page '{}' contains fields that can invalidate)",
+            btnObj.get("name")?.asString ?: buttonListName,
+            pageName)
+      }
+    }
+    return changed
+  }
+
+  /**
+   * Whether any input field in [elementNames] can invalidate: it is required, has a datatype, is
+   * tagged with a CodBi validation class, or carries a Date.* data-cb-func functionality. Layout
+   * containers/chrome are ignored.
+   */
+  private fun pageCanInvalidate(
+      elementNames: Set<String>,
+      itemByName: Map<String, JsonObject>
+  ): Boolean {
+    val layoutClassNames =
+        setOf(
+            "XPage",
+            "XHeader",
+            "XFooter",
+            "XFieldSet",
+            "XContainer",
+            "XContainerInvisible",
+            "XSpan",
+            "XLine",
+            "XButtonList",
+            "XNavigationBar",
+            "XAppointment",
+            "XImage",
+            "XFormula",
+            "XHtml")
+    // CodBi classes that are purely layout/display/print/autocomplete and never invalidate input.
+    val nonValidatingCodbiPrefixes =
+        listOf(
+            "CodBi_Print_",
+            "CodBi_HTML_",
+            "CodBi_Accordion_",
+            "CodBi_OpenPLZ_",
+            "CodBi_DQ_",
+            "CodBi_Table_",
+            "CodBi_AI_",
+            "CodBi_Style_",
+            "CodBi_Map_",
+            "CodBi_OpenStreetMap_",
+            "CodBi_Tagging_",
+            "CodBi_Calendar_",
+            "CodBi_Flex_")
+    for (name in elementNames) {
+      val item = itemByName[name] ?: continue
+      val className = item.get("className")?.asString
+      if (className in layoutClassNames) continue
+      val props = item.getAsJsonObject("properties") ?: continue
+      // Required field.
+      if (isTruthy(props.get("required"))) return true
+      // Datatype-validated field (dateDE, email, ...).
+      val datatype = props.get("datatype")?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
+      if (datatype.isNotBlank()) return true
+      // CodBi validation class (e.g. CodBi_People_Name).
+      val cssClasses = props.getAsJsonArray("cssclasses")
+      if (cssClasses != null) {
+        for (c in cssClasses) {
+          if (!c.isJsonPrimitive) continue
+          val cls = c.asString
+          if (cls.startsWith("CodBi_") && nonValidatingCodbiPrefixes.none { cls.startsWith(it) }) {
+            return true
+          }
+        }
+      }
+      // data-cb-func date validation functionality (Date.Min, Date.NoWeekends, Date.Frame, ...).
+      val attrs = props.getAsJsonArray("attributes")
+      if (attrs != null) {
+        for (a in attrs) {
+          if (!a.isJsonObject) continue
+          val text = a.asJsonObject.get("text")?.asString ?: continue
+          val value = a.asJsonObject.get("value")?.asString.orEmpty()
+          if (text.startsWith("data-cb-func") && value.startsWith("Date.")) return true
+        }
+      }
+    }
+    return false
+  }
+
+  /** True for "1"/"true"/"yes" JSON primitives. */
+  private fun isTruthy(el: JsonElement?): Boolean =
+      el != null &&
+          !el.isJsonNull &&
+          el.isJsonPrimitive &&
+          (el.asString == "1" || el.asString == "true" || el.asString == "yes")
+
+  /**
+   * Builds the workflow-change-log params object for one node, adding a `blockedSql` flag (+ the
+   * blocking reasons and the sanitized query) when the node is an FC_SQL_STATEMENT whose statement
+   * was blocked by [sanitizeSqlQuery]. The change-log frontend uses these flags to render an error
+   * icon/message and to auto-open the log.
+   */
+  private fun workflowLogParams(nodeType: String?, nodeParams: Any?): JsonObject {
+    val obj =
+        (gson
+            .toJsonTree(nodeParams ?: emptyMap<String, Any>())
+            .takeIf { it.isJsonObject }
+            ?.asJsonObject) ?: JsonObject()
+    if (nodeType != "FC_SQL_STATEMENT") return obj
+    val rawMap = nodeParams as? Map<*, *>
+    val sql = rawMap?.get("sql") as? String ?: rawMap?.get("query") as? String ?: ""
+    val result = sanitizeSqlQuery(sql)
+    if (result.blocked) {
+      obj.addProperty("blockedSql", true)
+      obj.add("blockedSqlReasons", gson.toJsonTree(result.blockedReasons))
+      obj.addProperty("sql", result.sanitized)
+    }
+    return obj
+  }
+
   private fun buildNodeParamsJson(
       spec: WorkflowTaskSpec,
       workflowVersion: Any? = null,
@@ -8702,7 +9212,13 @@ class AICodBiAssistant : IPluginServletAction {
         //   useClientDatabaseQuery: boolean
         // The AI provides nodeParams: {"connection":"<connection name>","sql":"<SQL text>"}.
         val connectionName = spec.nodeParams["connection"] as? String ?: ""
-        val query = spec.nodeParams["sql"] as? String ?: spec.nodeParams["query"] as? String ?: ""
+        val rawQuery =
+            spec.nodeParams["sql"] as? String ?: spec.nodeParams["query"] as? String ?: ""
+        // Block destructive DDL / multi-statement SQL before it is persisted: the effective query
+        // becomes a placeholder and the node is flagged, so no destructive statement reaches the
+        // DB.
+        val sanitizedSql = sanitizeSqlQuery(rawQuery)
+        val query = sanitizedSql.sanitized
         val connectionUuid =
             if (connectionName.isNotBlank() && workflowVersion != null)
                 resolveDatabaseConnectionUuid(workflowVersion, connectionName)
@@ -8711,12 +9227,17 @@ class AICodBiAssistant : IPluginServletAction {
             if (connectionUuid != null) {
               """{"uuid":${gson.toJson(connectionUuid.toString())},"entityClass":"de.xima.fc.entities.DatenbankZugriff"}"""
             } else "null"
+        val blockedJson =
+            if (sanitizedSql.blocked) {
+              ""","codbiSqlBlocked":true,"codbiSqlBlockedReasons":${gson.toJson(sanitizedSql.blockedReasons)}"""
+            } else ""
         logger.info(
-            "[AICodBiAssistant] buildNodeParams FC_SQL_STATEMENT: connection='{}' resolved={} query='{}'",
+            "[AICodBiAssistant] buildNodeParams FC_SQL_STATEMENT: connection='{}' resolved={} query='{}' blocked={}",
             connectionName,
             connectionUuid != null,
-            query)
-        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"databaseConnection":$connectionJson,"query":${gson.toJson(query)},"queryParameters":[],"useClientDatabaseQuery":false}"""
+            query,
+            sanitizedSql.blocked)
+        """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"databaseConnection":$connectionJson,"query":${gson.toJson(query)},"queryParameters":[],"useClientDatabaseQuery":false$blockedJson}"""
       }
       "de.xima.akdb.epay.logic.plugin.node.PaymentInitPlugin" -> {
         // AKDB E-Payment (ePayBL) — initializes a payment for the current form record and
@@ -9804,7 +10325,12 @@ class AICodBiAssistant : IPluginServletAction {
               "→ create an XSelect with selectlayout:\"radio\" (options with text+value). \"Checkbox\" → a single XCheckbox " +
               "for a yes/no question, or XSelect with selectlayout:\"checkbox\" for a multi-select option list. " +
               "\"Dropdown\" / not specified → XSelect without selectlayout (default dropdown). NEVER generate a plain " +
-              "dropdown when the user explicitly chose radio buttons or a checkbox.\n\n"
+              "dropdown when the user explicitly chose radio buttons or a checkbox.\n" +
+              "MULTI-PAGE LABELS: when the form has several pages (XPage elements), set each XPage's \"header\" " +
+              "property to that page's label/title — use the labels from the user's request or the clarification " +
+              "answers (e.g. \"Personendaten\", \"Kurs & Termin\", \"Nachricht\"); never leave a page header empty. " +
+              "The Form.Navigator (XNavigationBar) options must reference the page names in \"value\" and show the " +
+              "same label in \"text\".\n\n"
       "Do NOT ask for more details â€” the user's instruction and the form data below are sufficient.\n\n"
       // Pass-1 uses ONLY the condensed references (element/widget names + purposes) plus the
       // general rules. The parameter-complete sections (codbi.standard_configurations /
@@ -10326,6 +10852,8 @@ class AICodBiAssistant : IPluginServletAction {
               "    - FC_POST_REQUEST: URL and HTTP method.\n" +
               "    - FC_MOVE_FORM_RECORD_TO_INBOX: inbox name.\n" +
               "    - FC_CHANGE_FORM_VALUE / FC_WRITE_FORM_RECORD_ATTRIBUTES: which field/attribute and its value.\n" +
+              "    - Date.Min (minimum date, e.g. 'Kursbeginn darf nicht in der Vergangenheit liegen'): the minimum — ask whether it is a PAST minimum (age, e.g. 'at least 18 years') or a FUTURE minimum (e.g. 'at least tomorrow', 'ab morgen'); then encode it as data-cb-minimum + data-cb-unit (+ data-cb-reverse=true for a future minimum).\n" +
+              "    - BIRTH-DATE FIELDS (labels 'Geburtsdatum', 'Geburtstag', 'birth date', 'date of birth', 'birthday'): a birth date ALWAYS lies in the PAST. NEVER apply a FUTURE minimum (today/tomorrow, data-cb-reverse=true) to it and NEVER ask 'Mindestdatum heute oder morgen?' for it. A constraint like 'keine Vergangenheitsdaten'/'no past dates' on a birth date is contradictory — interpret it as the OPPOSITE: only PAST dates are valid, i.e. NO FUTURE dates (maximum = today). Only a PAST minimum (e.g. 'mindestens 18 Jahre' → data-cb-minimum=18, unit=y, no reverse) is meaningful for a birth date, and only when an age requirement is stated. Ask the 'heute oder morgen' minimum question ONLY for genuinely future-dated fields (e.g. a course start 'Kursbeginn').\n" +
               "    - Standard configurations that rely on a global variable (tracking ID, currency,\n" +
               "      threshold, ...): ask which value to set when it cannot be derived.\n" +
               "    - Functionalities / element placeholders that need a parameter value (regex pattern,\n" +
@@ -10352,6 +10880,11 @@ class AICodBiAssistant : IPluginServletAction {
               "  then an FC_EMAIL node that sends that PDF as an attachment (chained after the PDF node).\n" +
               "  Never treat the PDF as a plain uploaded file in an email — always create the PDF node\n" +
               "  and chain the email to it. Do NOT ask the user about this; build both nodes automatically.\n" +
+              "- MULTI-PAGE FORMS: when the request creates or restructures the form into multiple pages\n" +
+              "  (XPage elements) and the user has NOT already provided the page labels/titles, ASK for the\n" +
+              "  label/title of EVERY page (e.g. \"Personendaten\", \"Kurs & Termin\", \"Nachricht\") instead of\n" +
+              "  inventing them. When the user DID name the pages (directly or in the chat history), use those\n" +
+              "  exact labels and do NOT ask again.\n" +
               "If you have everything you need, respond with exactly the single word: NO_CLARIFICATION\n")
     }
   }

@@ -46,7 +46,14 @@ Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a
 ## Date.Min
 
 Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates).
-**REQUIRES**: the minimum allowed date — ask the user when not specified.
+**REQUIRED — data-cb-minimum (MANDATORY, never emit Date.Min without it):** the minimum value as a digit string, plus data-cb-unit (d/w/m/y, default y).
+- PAST minimum (e.g. "at least 18 years old", "mindestens 18 Jahre"): data-cb-minimum="<N>" + data-cb-unit="y" (or d/w/m). Do NOT set data-cb-reverse (defaults to past).
+- FUTURE minimum (e.g. "at least tomorrow", "ab morgen", "from tomorrow on", "no past dates"): data-cb-minimum="<N>" + data-cb-unit="d" (or w/m/y) + data-cb-reverse="true".
+  - "at least tomorrow" / "ab morgen" → data-cb-minimum="1", data-cb-unit="d", data-cb-reverse="true".
+  - "today or later" / "no past dates" / "not in the past" → data-cb-minimum="0", data-cb-unit="d", data-cb-reverse="true".
+- BIRTH-DATE FIELDS (labels "Geburtsdatum", "Geburtstag", "birth date", "date of birth", "birthday"): a birth date ALWAYS lies in the PAST. NEVER apply a FUTURE minimum (data-cb-reverse=true, "heute"/"morgen", "no past dates") to a birth-date field — the constraint "keine Vergangenheitsdaten" is contradictory for it and means the OPPOSITE: only PAST dates are valid, i.e. NO FUTURE dates (maximum = today). Do NOT ask "Mindestdatum heute oder morgen?" for a birth-date field; only a PAST minimum (e.g. "mindestens 18 Jahre" → data-cb-minimum="18", data-cb-unit="y", no data-cb-reverse) is legitimate, and only when an age limit is requested. Ask the future-minimum question ONLY for genuinely future-dated fields (e.g. a course start "Kursbeginn").
+
+Ask the user for the minimum when not specified, then encode it EXACTLY as above (example: {"text":"data-cb-func","value":"Date.Min"}, {"text":"data-cb-minimum","value":"1"}, {"text":"data-cb-unit","value":"d"}, {"text":"data-cb-reverse","value":"true"}).
 
 ## Date.NoWeekends
 

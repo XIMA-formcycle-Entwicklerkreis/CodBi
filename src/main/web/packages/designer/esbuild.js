@@ -119,6 +119,28 @@ async function copyAngularWebComponentSvgAssets() {
   }
 }
 
+/** Copies the pdf.js main library (UMD build exposing window.pdfjsLib) next to cb-manager.js so the
+ *  AI assistant can load it lazily (only when a PDF is attached) without shipping it in the initial
+ *  bundle. Mirrors the form package's pdf.worker.min.js copy. */
+async function copyPdfJsMain() {
+  const pdfJsSourceFile = path.resolve(currentScriptDir, "../../node_modules/pdfjs-dist/build/pdf.min.js");
+  const pdfJsOutputFile = path.join(outputDir, "pdf.min.js");
+  try {
+    await fs.mkdir(outputDir, { recursive: true });
+    await fs.copyFile(pdfJsSourceFile, pdfJsOutputFile);
+    console.log("PDF.js main library copied successfully.");
+  } catch (X) {
+    if (X.code === "ENOENT") {
+      console.warn(
+        `Warning: pdfjs-dist not found at ${pdfJsSourceFile}. PDF attachments in the AI assistant will not work.`,
+      );
+    } else {
+      console.error("Error copying PDF.js main library:", X.message);
+      process.exit(1);
+    }
+  }
+}
+
 (async () => {
   console.log(`Cleaning designer output files in: ${outputDir}...`);
 
@@ -129,6 +151,8 @@ async function copyAngularWebComponentSvgAssets() {
     path.join(outputDir, "designer-frame.css"),
     path.join(outputDir, "cb-manager.js"),
     path.join(outputDir, "cb-manager.css"),
+    // Clean stale code-splitting output from an earlier build so it is never deployed unused.
+    path.join(outputDir, "chunks"),
     tinymceOutputDir,
     i18nOutputDir,
     angularWebComponentSvgOutputDir,
@@ -142,6 +166,7 @@ async function copyAngularWebComponentSvgAssets() {
   await copyTinyMCEAssets();
   await copyI18nAssets();
   await copyAngularWebComponentSvgAssets();
+  await copyPdfJsMain();
 
   await Promise.all([
     esbuild.build({
@@ -182,6 +207,10 @@ async function copyAngularWebComponentSvgAssets() {
       publicPath: "plugin-resource:",
     }),
 
+    // Single, self-contained classic bundle: cb-manager.js must load as a plain <script> (the
+    // Resource servlet serves it via a query-string path, so ESM code-splitting chunks would 404).
+    // pdf.js is intentionally NOT imported here anymore — the assistant loads the UMD pdf.min.js
+    // copy on demand, keeping the initial bundle small so the dialog appears immediately.
     esbuild.build({
       bundle: true,
       drop: mode === "production" ? ["debugger"] : [],

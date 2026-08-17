@@ -57,6 +57,10 @@ export interface LogNode {
   checkedBy?: string;
   /** Formatted date/time when this sensitive node was checked (shown on the "checked by" badge). */
   checkedAt?: string;
+  /** True for workflow SQL nodes whose destructive statement was blocked by CodBi. */
+  blockedSql?: boolean;
+  /** The statement/DDL reasons that triggered the block (e.g. ["DROP", "TRUNCATE"]). */
+  blockedSqlReasons?: string[];
   children?: LogNode[];
   expanded?: boolean;
 }
@@ -76,6 +80,7 @@ export interface LogNode {
         [open]="node.expanded ?? false"
         [class.cb-log-node--leaf]="!isExpandable(node)"
         [class.cb-log-node--sensitive]="node.sensitive === true"
+        [class.cb-log-node--blocked]="node.blockedSql === true"
         (toggle)="onToggle($event)">
       <summary class="cb-log-node__summary">
         @if (node.sensitive === true) {
@@ -89,8 +94,11 @@ export interface LogNode {
         <span
             class="cb-log-node__icon cb-log-node__icon--{{ node.kind }}"
             [class.cb-log-node__icon--codbi]="isCodbiNode(node)"
-            [class.cb-log-node__icon--highlighted]="node.highlighted === true">
-          @if (node.highlighted === true) {
+            [class.cb-log-node__icon--highlighted]="node.highlighted === true"
+            [class.cb-log-node__icon--blocked]="node.blockedSql === true">
+          @if (node.blockedSql === true) {
+            <i class="pi pi-exclamation-triangle cb-log-node__blocked-icon" aria-hidden="true" title="Destructive SQL statement blocked by CodBi"></i>
+          } @else if (node.highlighted === true) {
             <i class="pi pi-bolt cb-log-node__highlight-icon" aria-hidden="true" title="Sensitive element"></i>
           } @else if (isCodbiNode(node)) {
             <img
@@ -113,6 +121,12 @@ export interface LogNode {
             <span class="cb-log-node__model" title="Model used for this inference">{{ node.modelLabel }}</span>
           }
         </span>
+        @if (node.blockedSql === true) {
+          <span class="cb-log-node__blocked-badge" [title]="blockedSqlTitle(node)">
+            <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+            {{ blockedSqlTitle(node) }}
+          </span>
+        }
         @if (node.badge) {
           <span class="cb-log-node__badge" title="Tokens used">{{ node.badge }}</span>
         }
@@ -278,6 +292,13 @@ export class LogTreeNode {
   /** True for nodes that belong to a CodBi functionality or CSS class (rendered with the CodBi logo). */
   isCodbiNode(node: LogNode): boolean {
     return node.codbi === true && (node.kind === "class" || node.kind === "func");
+  }
+
+  /** Human-readable message shown on a blocked SQL node (destructive statement replaced by CodBi). */
+  blockedSqlTitle(node: LogNode): string {
+    const reasons = (node.blockedSqlReasons ?? []).filter((r) => r && r.length > 0);
+    const suffix = reasons.length > 0 ? ` (NO ${reasons.join(", ")} allowed)` : "";
+    return `Destructive SQL statement blocked by CodBi${suffix}`;
   }
 
   /** True when this node and all of its descendants are expanded. */

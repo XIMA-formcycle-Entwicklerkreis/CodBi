@@ -17,6 +17,12 @@ Cross-cutting Formcycle rules that apply across widgets and workflow nodes.
 - Do NOT include 'css', 'script', 'image', 'images', 'pagePreview', 'rendered', 'formI18n', or 'metadata' fields — they are handled separately and will be merged back. Also do NOT include any XFooter item in the items array.
 - Output ONLY valid JSON. No trailing commas. No comments.
 
+## Button Actions (XButtonList)
+
+action.page is a FORMCYCLE keyword, NOT a page name: "" (none/custom), "next" (next page), "previous" (previous page), a page name (navigate to it), or a submit command ("submit", "submitNoCheck", "submitSave", "submitSaveNoCheck", "submitPreview", "submitPreviewWindowed").
+
+action.check=true validates the CURRENT page's fields before the action runs; action.check=false skips validation. A "next" / 'Weiter' button MUST use check=true ("next page + check") whenever the current page contains a field that can be invalid — a required field, a datatype-validated field, or a field tagged with a CodBi functionality/class (CSS class starting with "CodBi_", e.g. CodBi_People_Name, or a data-cb-func attribute). Only use check=false when the page has no such field. Submit buttons (page="submit") ALWAYS use check=true.
+
 ## Conditional Visibility (hiddenif) and Locking (readonlyif)
 
 These control when a field is hidden or locked based on another field's value. Set these as DIRECT properties on the element (NOT inside the attributes array). Formcycle uses the component's ID to reference the controlling field.

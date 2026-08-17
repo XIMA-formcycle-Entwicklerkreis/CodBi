@@ -270,6 +270,25 @@ object AiAssistantLog {
               }
               ?.takeIf { it.isNotEmpty() }
               ?.let { used -> e.add("sensitiveUsed", gson.toJsonTree(used)) }
+          // Destructive SQL statements blocked by the backend sanitizer in this entry's workflow
+          // changes. The frontend uses this to auto-open the change log (with an error icon) after
+          // a
+          // workflow-triggered reload, exactly like sensitiveUsed does for sensitive elements.
+          entry.workflowChanges
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                runCatching {
+                      val parsed = JsonParser.parseString(text)
+                      if (parsed.isJsonArray) {
+                        blockedSqlNodeLabels(parsed.asJsonArray)
+                      } else {
+                        emptyList()
+                      }
+                    }
+                    .getOrNull()
+              }
+              ?.takeIf { it.isNotEmpty() }
+              ?.let { used -> e.add("blockedSqlUsed", gson.toJsonTree(used)) }
           entry.formChanges
               ?.takeIf { it.isNotBlank() }
               ?.let { text ->
@@ -583,6 +602,39 @@ object AiAssistantLog {
     result.add("attributesSet", attributesSet)
     result.add("variablesSet", computeVariablesDiff(beforeJson, afterJson))
     return result
+  }
+
+  /**
+   * Extracts the labels of all workflow nodes whose change-log entry was flagged as a blocked
+   * destructive SQL statement (`params.blockedSql == true`). Used by the frontend to render an
+   * error icon/message and to auto-open the change log after a run generated destructive SQL.
+   *
+   * @param workflowChanges The workflow change description (the `nodeLog` array produced by
+   *   `AICodBiAssistant.runWorkflowCreation`), each entry `{ name, trigger, elements, status }`.
+   * @return The node labels (`FC_SQL_STATEMENT "<name>"`), distinct and sorted.
+   */
+  fun blockedSqlNodeLabels(workflowChanges: JsonArray?): List<String> {
+    if (workflowChanges == null) return emptyList()
+    val out = mutableSetOf<String>()
+    try {
+      for (path in workflowChanges) {
+        if (!path.isJsonObject) continue
+        val elements =
+            path.asJsonObject.get("elements")?.takeIf { it.isJsonArray }?.asJsonArray ?: continue
+        for (el in elements) {
+          if (!el.isJsonObject) continue
+          val obj = el.asJsonObject
+          val params = obj.get("params")?.takeIf { it.isJsonObject }?.asJsonObject ?: continue
+          if (params.get("blockedSql")?.asBoolean != true) continue
+          val type = obj.get("nodeType")?.asString ?: ""
+          val name = obj.get("name")?.asString ?: ""
+          out.add(if (name.isBlank()) type else "$type \"$name\"")
+        }
+      }
+    } catch (e: Exception) {
+      logger.warn("[AiAssistantLog] Failed to extract blocked SQL nodes: {}", e.message)
+    }
+    return out.sorted()
   }
 
   /**

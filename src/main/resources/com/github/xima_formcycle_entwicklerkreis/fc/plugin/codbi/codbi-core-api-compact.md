@@ -56,9 +56,9 @@ when CodBi searches within the shared parent container.
   - MaxField: CSS-Class-Selector for the max date input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
   - MsgMaxInvalid: The string to show as the error message when the maximumHTMLInputElement 's value is before.
   - MsgMinInvalid: The string to show as the error message when the minimum-HTMLInputElement 's value is after.
-- Date.Min: Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates).
+- Date.Min: Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates). REQUIRED Minimum — never emit Date.Min without it.
+  - REQUIRED Minimum: The amount of years/months/weeks/days (depending on the Unit set) relative to today, as a digit string. For a FUTURE minimum ("at least tomorrow", "from tomorrow on", "no past dates") set Reverse=TRUE, e.g. Minimum=1, Unit=d, Reverse=true = tomorrow or later; Minimum=0, Unit=d, Reverse=true = today or later.
   - Delimiter: The string separating the day, month & year.
-  - Minimum: The amount of years/months/weeks (depending on the Unit set) in the past the tagged.
   - MsgHigher: The error message to show if the "minimum" is not enough years in the past or the corresponding.
   - Reverse: Reverse the logic of this functionality in order to permit Date s up to a certain one (defaults to: FALSE).
   - Unit: A string -character specifying what unit Minimum is of.

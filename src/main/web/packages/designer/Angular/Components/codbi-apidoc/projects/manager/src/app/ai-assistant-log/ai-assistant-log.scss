@@ -550,6 +550,45 @@ cb-ai-assistant-log {
     cursor: pointer;
 }
 
+/* Blocked destructive SQL statements (FC_SQL_STATEMENT) — the statement was replaced by CodBi. The
+   error icon overrides every other icon, so blocked nodes are unmistakable. */
+.cb-log-node__icon--blocked {
+    background: #d32f2f;
+    border-radius: 4px;
+}
+
+.cb-log-node__blocked-icon {
+    color: #fff;
+    font-size: 0.95em;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+/* Red border + tinted background on blocked SQL nodes so they stand out on every load. */
+.cb-log-node--blocked > .cb-log-node__summary {
+    background: #fff1f0;
+    box-shadow: inset 3px 0 0 #d32f2f;
+}
+
+.cb-log-node--blocked > .cb-log-node__summary:hover {
+    background: #ffe4e2;
+}
+
+/* Inline message shown next to a blocked SQL node's label. */
+.cb-log-node__blocked-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    flex-shrink: 0;
+    margin-left: 0.5em;
+    padding: 0.1em 0.5em;
+    border-radius: 10px;
+    background: #fdecea;
+    color: #b71c1c;
+    border: 1px solid #f5c6c4;
+    font-size: 0.78em;
+    font-weight: 600;
+}
+
 /* Highlight the CodBi special attributes in the tree */
 .cb-log-node__icon--func + .cb-log-node__label {
     font-weight: 700;

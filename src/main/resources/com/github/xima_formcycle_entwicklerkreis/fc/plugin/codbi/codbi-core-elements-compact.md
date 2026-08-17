@@ -17,6 +17,7 @@ Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a
 
 ### Date.Min
 Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates).
+REQUIRES: data-cb-minimum (digit string) + data-cb-unit (d/w/m/y, default y). For a FUTURE minimum ("at least tomorrow", "no past dates") also set data-cb-reverse=true (e.g. minimum=1, unit=d, reverse=true = tomorrow or later).
 
 ### Date.NoWeekends
 Applicable on a XTextField of type 'date' to disallow weekend dates.

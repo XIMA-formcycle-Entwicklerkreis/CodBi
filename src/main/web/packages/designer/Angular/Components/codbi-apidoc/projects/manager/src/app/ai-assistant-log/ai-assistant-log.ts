@@ -87,7 +87,14 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   private readonly sensitiveCheckInfo = new Map<string, { username: string; checkedAt: string }>();
   /** Session-storage key used to survive a page reload (e.g. after a workflow is created). */
   private static readonly HIGHLIGHT_STORAGE_KEY = "codbi-log-sensitive-elements";
+  /** Storage key used by the assistant to request revealing blocked SQL nodes after a reload. */
+  private static readonly BLOCKED_STORAGE_KEY = "codbi-log-blocked-sql";
+  /** Storage key holding the newest log entry that was already auto-surfaced (shared with the
+   *  assistant: once surfaced, a closed log is not popped open again on reload). */
+  private static readonly SURFACED_ENTRY_KEY = "codbi-log-surfaced-entry";
   expandedAll = false;
+  /** When true, the next tree build expands (reveals) blocked SQL nodes. Set by open(). */
+  private revealBlockedSql = false;
   /** How often an empty load result has been retried (see load). */
   private emptyLoadRetries = 0;
   /** Technical name/key of the form whose change log is currently shown. */
@@ -145,6 +152,13 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     console.log("[AIAssistantLog] open() called with elements =", JSON.stringify(elements));
     // Consume any pending highlight so it does not auto-open again on a later page load.
     localStorage.removeItem(AiAssistantLog.HIGHLIGHT_STORAGE_KEY);
+    // Consume a pending blocked-SQL reveal (written by the assistant before a workflow reload /
+    // auto-popup) and expand those nodes once the entries have loaded.
+    const pendingBlocked = localStorage.getItem(AiAssistantLog.BLOCKED_STORAGE_KEY);
+    if (pendingBlocked) {
+      localStorage.removeItem(AiAssistantLog.BLOCKED_STORAGE_KEY);
+      this.revealBlockedSql = true;
+    }
     this.highlightElements = elements ?? [];
     this.errorText = null;
     this.cdr.markForCheck();
@@ -154,6 +168,7 @@ export class AiAssistantLog implements OnInit, OnDestroy {
 
   /** Removes the transient sensitive-element highlights without reloading from the backend. */
   clearHighlights(): void {
+    this.revealBlockedSql = false;
     if (this.highlightElements.length === 0) return;
     this.highlightElements = [];
     this.logs = this.buildTree(this.applyFilter(this.rawEntries));
@@ -274,6 +289,23 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           this.expandSearchMatches();
           this.applyHighlights();
           this.markSensitiveNodes();
+          // Reveal blocked SQL nodes after an auto-open requested it. The flag is deliberately NOT
+          // consumed here: open() triggers a (re)load and the component's ngOnInit also loads, so the
+          // tree can be built twice; consuming the flag on the first build would leave the second
+          // (final) build collapsed. The flag is reset when the log panel closes (clearHighlights).
+          if (this.revealBlockedSql) {
+            this.expandBlockedSqlNodes();
+            // Remember the surfaced entry so the assistant does not pop the log open again on the
+            // next reload after the user closed it (see AiAssistant.checkSensitiveAutoOpen).
+            const newest = raw[0];
+            if (newest && typeof newest["id"] === "string") {
+              try {
+                localStorage.setItem(AiAssistantLog.SURFACED_ENTRY_KEY, newest["id"] as string);
+              } catch {
+                // ignore storage errors
+              }
+            }
+          }
           // On the very first display the form key may not be final yet (right after the designer /
           // dialog opens), which can make a scoped query return zero entries. Retry a few times so
           // the change log is not empty until the user hits Refresh.
@@ -1009,12 +1041,17 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           for (const [key, value] of Object.entries(params)) {
             elChildren.push(...this.workflowParamNodes(key, value, `${baseId}-elem-${ei}-${key}`, 0));
           }
+          const blocked = params["blockedSql"] === true;
+          const blockedReasons = Array.isArray(params["blockedSqlReasons"])
+            ? (params["blockedSqlReasons"] as string[]).filter((r): r is string => typeof r === "string")
+            : [];
           return {
             id: `${baseId}-elem-${ei}`,
             kind: "node",
             label: `${String(el["nodeType"] ?? "")} "${String(el["name"] ?? "")}"`,
             children: elChildren,
             expanded: false,
+            ...(blocked ? { blockedSql: true, blockedSqlReasons: blockedReasons } : {}),
           };
         });
         childChildren.push({
@@ -1067,12 +1104,17 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         for (const [key, value] of Object.entries(params)) {
           paramChildren.push(...this.workflowParamNodes(key, value, `${baseId}-${key}`, 0));
         }
+        const blocked = params["blockedSql"] === true;
+        const blockedReasons = Array.isArray(params["blockedSqlReasons"])
+          ? (params["blockedSqlReasons"] as string[]).filter((r): r is string => typeof r === "string")
+          : [];
         children.push({
           id: baseId,
           kind: "node",
           label: `${String(element["nodeType"] ?? "")} "${String(element["name"] ?? "")}"`,
           children: paramChildren,
           expanded: false,
+          ...(blocked ? { blockedSql: true, blockedSqlReasons: blockedReasons } : {}),
         });
       }
     });
@@ -1167,6 +1209,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
    */
   expandSensitiveNodes(): void {
     this.logs = this.expandMatchingNodes(this.logs, (n) => n.sensitive === true);
+    this.cdr.markForCheck();
+  }
+
+  /** Expands every blocked SQL node and all of its ancestors, so destructive statements are revealed. */
+  expandBlockedSqlNodes(): void {
+    this.logs = this.expandMatchingNodes(this.logs, (n) => n.blockedSql === true);
     this.cdr.markForCheck();
   }
 

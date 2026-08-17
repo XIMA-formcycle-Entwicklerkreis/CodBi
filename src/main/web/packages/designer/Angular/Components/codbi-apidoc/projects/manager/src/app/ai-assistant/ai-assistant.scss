@@ -303,7 +303,8 @@ cb-ai-assistant {
        open (it is reset to this centered position when the log is folded). */
     background-position: 0 0, center center;
     background-repeat: no-repeat, no-repeat !important;
-    /* Dark-orange glow around the dialog. */
+    /* Dark-orange border + glow around the dialog. */
+    border: 2px solid darkorange;
     box-shadow: 0 0 0.25em darkorange;
     /* Gentle slide-in: grow from scale 1.1 → 1 while fading opacity 0 → 1. */
     transform-origin: center;
@@ -868,9 +869,9 @@ cb-ai-assistant {
     gap: 0.6rem;
     max-width: 420px;
     padding: 0.8rem 1rem;
-    /* Slightly translucent dark background with a soft backdrop blur (glass look) — the message
+    /* Translucent dark background (alpha .75) with a soft backdrop blur (glass look) — the message
        stays fully readable because the blur keeps the underlying page from bleeding through. */
-    background: rgba(50, 49, 48, 0.92);
+    background: rgba(50, 49, 48, 0.5);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     color: #fff;
@@ -1109,4 +1110,38 @@ cb-ai-assistant {
         width: 100%;
         resize: vertical;
     }
+}
+
+/* Dialog transparency (.25) — toggled via ALT+T or the switch injected into each dialog header
+   (see AICodBiAssistantDialog.ts). Applies to every PrimeNG dialog; the local API doc manager is not
+   a PrimeNG dialog and is therefore unaffected. Default is not transparent (no persistence). */
+body.cb-dialog-transparent .p-dialog {
+    opacity: 0.25 !important;
+}
+
+/* The transparency switch (icon button) injected left of each dialog's close button. */
+.cb-dialog-transparency-switch {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    margin-right: 0.25rem;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #6b7280;
+    cursor: pointer;
+    flex-shrink: 0;
+    vertical-align: middle;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.cb-dialog-transparency-switch:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #111827;
+}
+
+.cb-dialog-transparency-switch i {
+    font-size: 1rem;
 }

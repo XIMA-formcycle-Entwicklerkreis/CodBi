@@ -17,7 +17,9 @@ import { Textarea } from "primeng/textarea";
 import { Callbacks, getJQuery, instance as getDesignerInstance } from "@de-xima/fc-form-designer";
 import { getCurrentFormKey } from "./form-key";
 import { AiAssistantLog } from "../ai-assistant-log/ai-assistant-log";
-import * as pdfjsLib from "pdfjs-dist";
+// pdf.js is loaded lazily by loadPdfJs() (on-demand script tag for the UMD pdf.min.js copy) so the
+// heavy pdf.js code is NOT part of the initial cb-manager.js bundle — the assistant dialog then
+// appears immediately on ALT+A.
 import type { PDFPageProxy } from "pdfjs-dist";
 import {
   applyDialogPosition,
@@ -31,6 +33,19 @@ import {
 // #endregion Imports
 
 // #region Interfaces
+/** Minimal pdf.js API surface used by the assistant — the global `pdfjsLib` exposed by the UMD
+ *  `pdf.min.js` build that is loaded lazily on demand (see loadPdfJs). */
+interface PdfJsLib {
+  GlobalWorkerOptions: { workerSrc: string };
+  getDocument: (args: { data: ArrayBuffer }) => { promise: Promise<PdfJsDocument> };
+}
+
+/** The pdf.js PDFDocument instance (minimal surface used by the assistant). */
+interface PdfJsDocument {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PDFPageProxy>;
+}
+
 interface AiModel {
   id: string;
   label: string;
@@ -164,8 +179,18 @@ export class AiAssistant implements OnInit, OnDestroy {
   readonly speechSupported =
     window.location.protocol === "https:" && ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
   isSpeechRecording = false;
-  private pdfJsWorkerConfigured = false;
+  /** Lazily-loaded pdf.js API (window.pdfjsLib, set by loading the UMD pdf.min.js copy), fetched
+   *  only when a PDF file is attached, so the initial cb-manager.js bundle stays small and the
+   *  assistant dialog opens instantly. */
+  private pdfJs: Promise<PdfJsLib> | null = null;
   private speechRecognition: any = null;
+  /** True while the model-list AJAX is in flight, so repeated opens (e.g. rapid ALT+A presses or
+   *  the log-panel restore racing the Status check) never fire duplicate "Models" requests. */
+  private modelsLoading = false;
+  /** True once the user dismissed the dialog while a background Status/Models request was still in
+   *  flight, so those callbacks must not re-open it (e.g. ALT+A open, then immediately close).
+   *  Cleared on the next explicit open (or the dialog's visibleChange(true)). */
+  private dialogDismissed = false;
   private speechBaseText = "";
   private speechFinalText = "";
   /** The full `codbi-prop-standards` CSV that the AI set on its most recent run.
@@ -200,14 +225,28 @@ export class AiAssistant implements OnInit, OnDestroy {
   private readonly MODEL_COOKIE = "codbi-ai-selected-model";
   /** A log entry that used sensitive elements is auto-opened only if it is at most this old. */
   private static readonly AUTO_OPEN_WINDOW_MINUTES = 10;
+  /** localStorage key written before a reload when the run generated blocked destructive SQL. */
+  private static readonly BLOCKED_SQL_STORAGE_KEY = "codbi-log-blocked-sql";
+  /** localStorage key holding the newest log entry that was already auto-surfaced, so a closed log
+   *  is not popped open again on every reload (a NEW entry re-triggers it). */
+  private static readonly SURFACED_ENTRY_KEY = "codbi-log-surfaced-entry";
   // #endregion State
 
   /** Reference to the embedded change-log panel (unfolds to the right of the assistant content). */
   @ViewChild("logPanel") logPanel?: AiAssistantLog;
 
   private readonly openHandler = (): void => {
-    this.open();
-    this.focusPrompt();
+    // ALT+A toggles the assistant: close it when it is already open, otherwise open it. Only
+    // treat it as "open" once the dialog is actually rendered in the DOM (not just visible in
+    // state) — the opening poll in AICodBiAssistantDialog.ts re-dispatches codbi:ai-assistant:open
+    // every ~700ms until the dialog element appears, and a second dispatch while this.visible is
+    // already true (but the DOM is not rendered yet) must not close the freshly opened dialog.
+    if (this.visible && document.querySelector(".cb-ai-assistant-dialog")) {
+      this.close();
+    } else {
+      this.open();
+      this.focusPrompt();
+    }
   };
 
   /** ALT+A+S hotkey (speech): open the assistant and start voice input when speech is available. */
@@ -229,6 +268,21 @@ export class AiAssistant implements OnInit, OnDestroy {
     const tryFocus = (attempt: number): void => {
       if (!this.visible) return;
       const el = document.querySelector<HTMLElement>(".cb-ai-prompt");
+      if (el) {
+        el.focus();
+        return;
+      }
+      if (attempt < 20) setTimeout(() => tryFocus(attempt + 1), 100);
+    };
+    setTimeout(() => tryFocus(0), 200);
+  }
+
+  /** Focuses the clarification answer textarea once the "The AI needs some information" popup is
+   *  visible (dialog opening is async — retry briefly until it has rendered). */
+  private focusClarificationInput(): void {
+    const tryFocus = (attempt: number): void => {
+      if (!this.clarificationVisible) return;
+      const el = document.querySelector<HTMLElement>(".cb-ai-clarification-text");
       if (el) {
         el.focus();
         return;
@@ -320,6 +374,8 @@ export class AiAssistant implements OnInit, OnDestroy {
    * elements that are not marked as checked yet.
    */
   openLog(elements: string[] = []): void {
+    // Explicit request to show the log/dialog — an earlier dismissal must not block this open.
+    this.dialogDismissed = false;
     console.log("[AICodBiAssistant] openLog called", { models: this.models.length, visible: this.visible, elements });
     // The change-log panel unfolds inside the assistant dialog, so make sure the dialog is visible
     // and the model list is populated (e.g. right after a workflow-triggered page reload).
@@ -654,7 +710,14 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.openLog(elements);
         }
       } else {
-        this.checkSensitiveAutoOpen();
+        const pendingBlocked = localStorage.getItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY);
+        console.log("[AICodBiAssistant] ngOnInit: pending blocked SQL reveal =", pendingBlocked);
+        if (pendingBlocked) {
+          // The log component consumes the key and reveals the blocked SQL nodes (error icons).
+          this.openLog([]);
+        } else {
+          this.checkSensitiveAutoOpen();
+        }
       }
     } catch (err) {
       // A designer-not-ready error here must never prevent the rest of the initialisation.
@@ -678,6 +741,7 @@ export class AiAssistant implements OnInit, OnDestroy {
   // #region Template helpers
   onVisibleChange(v: boolean): void {
     this.visible = v;
+    this.dialogDismissed = !v;
     if (!v) {
       // The change-log side panel starts folded whenever the dialog is (re)opened.
       this.showLog = false;
@@ -748,11 +812,21 @@ export class AiAssistant implements OnInit, OnDestroy {
           const entries = (payload?.["entries"] as Array<Record<string, unknown>> | undefined) ?? [];
           const newest = entries[0];
           if (!newest) return;
-          const used = newest["sensitiveUsed"];
-          if (!Array.isArray(used) || used.length === 0) return;
           const ageMin = this.ageMinutes(String(newest["ts"] ?? ""));
           if (ageMin === null || ageMin > AiAssistant.AUTO_OPEN_WINDOW_MINUTES) return;
           const entryId = String(newest["id"] ?? "");
+          // If this exact entry was already surfaced by an earlier auto-open (and the user closed
+          // the log), do not pop it open again on every reload — only a NEW entry re-triggers it.
+          try {
+            if (localStorage.getItem(AiAssistant.SURFACED_ENTRY_KEY) === entryId) return;
+          } catch {
+            // ignore storage errors
+          }
+          // Blocked destructive SQL statements in this entry's workflow changes — auto-open the log
+          // with those nodes revealed (error icons), like the sensitive-element popup.
+          const blockedUsed = Array.isArray(newest["blockedSqlUsed"])
+            ? (newest["blockedSqlUsed"] as unknown[]).filter((n) => typeof n === "string" && (n as string).length > 0)
+            : [];
           // The (entry, element) dismiss checks already persisted for this user.
           const checks = (payload?.["sensitiveChecks"] as unknown[] | undefined) ?? [];
           const acknowledged = new Set<string>();
@@ -763,13 +837,30 @@ export class AiAssistant implements OnInit, OnDestroy {
               acknowledged.add(String(c["elementName"] ?? "").toLowerCase());
             }
           }
-          const unacknowledged = (used as unknown[])
-            .map((name) => String(name))
-            .filter((name) => name && !acknowledged.has(name.toLowerCase()));
-          if (unacknowledged.length === 0) return;
+          const used = newest["sensitiveUsed"];
+          const unacknowledged = Array.isArray(used)
+            ? (used as unknown[])
+                .map((name) => String(name))
+                .filter((name) => name && !acknowledged.has(name.toLowerCase()))
+            : [];
+          if (unacknowledged.length === 0 && blockedUsed.length === 0) return;
+          if (blockedUsed.length > 0) {
+            try {
+              localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedUsed));
+            } catch {
+              // ignore storage errors
+            }
+          }
+          try {
+            localStorage.setItem(AiAssistant.SURFACED_ENTRY_KEY, entryId);
+          } catch {
+            // ignore storage errors
+          }
           console.log(
             "[AICodBiAssistant] checkSensitiveAutoOpen: opening change log with",
             JSON.stringify(unacknowledged),
+            "| blockedSql =",
+            JSON.stringify(blockedUsed),
           );
           this.openLog(unacknowledged);
         },
@@ -809,6 +900,10 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   // #region Open / close
   private open(): void {
+    // Already open/opening — ignore re-entry. The opening poll in AICodBiAssistantDialog.ts can
+    // dispatch codbi:ai-assistant:open again before the dialog DOM has rendered; without this
+    // guard each re-dispatch would reset the state and fire another Status request.
+    if (this.visible) return;
     this.resultText = null;
     this.errorText = null;
     this.attachedFile = null;
@@ -819,8 +914,21 @@ export class AiAssistant implements OnInit, OnDestroy {
     // behind it (this could make the first ALT+A appear to do nothing).
     setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
 
-    // First verify the CodBi prompt database is reachable. Without DB prompts there is no point
-    // sending anything to the AI — show an error and disable the inputs (still visible).
+    // Show the dialog IMMEDIATELY so ALT+A responds instantly — do NOT wait for the Status/Models
+    // AJAX round-trips below (they used to delay the popup by seconds while the user kept pressing
+    // the hotkey). The model list and DB-status check continue in the background; the model
+    // dropdown simply populates when the list arrives. When the models are already loaded (page
+    // load / prior open), restore the persisted change-log panel state right away as well.
+    this.dialogDismissed = false;
+    this.visible = true;
+    this.forceAssistantOnScreen();
+    if (this.models.length > 0) {
+      this.restoreLogOpenState();
+    }
+    this.cdr.markForCheck();
+
+    // Verify the CodBi prompt database is reachable in the background. Without DB prompts there is
+    // no point sending anything to the AI — show an error and disable the inputs (still visible).
     getJQuery().ajax({
       url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
       type: "GET",
@@ -832,12 +940,12 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.errorText =
             (statusResponse as { error?: string } | null)?.error ??
             "Database not available — AI prompts cannot be loaded.";
-          this.visible = true;
           this.showToast(this.errorText);
           this.cdr.markForCheck();
           return;
         }
         this.dbAvailable = true;
+        // Load the models in the background (no-op when they are already available).
         this.loadModelsAndOpen();
       },
       error: (xhr: unknown) => {
@@ -845,7 +953,6 @@ export class AiAssistant implements OnInit, OnDestroy {
         this.dbAvailable = false;
         this.errorText =
           jq.responseJSON?.error ?? jq.statusText ?? "Database not available — AI prompts cannot be loaded.";
-        this.visible = true;
         this.showToast(this.errorText);
         this.cdr.markForCheck();
       },
@@ -895,19 +1002,26 @@ export class AiAssistant implements OnInit, OnDestroy {
   private loadModelsAndOpen(): void {
     if (this.models.length > 0) {
       this.selectedModel = this.loadModelCookie() ?? this.models[0]?.id ?? null;
-      this.visible = true;
-      this.forceAssistantOnScreen();
+      // Do not re-open the dialog when the user dismissed it while the request was in flight.
+      if (!this.dialogDismissed) {
+        this.visible = true;
+        this.forceAssistantOnScreen();
+        // Re-open the change-log panel if the user left it open the last time (persisted).
+        this.restoreLogOpenState();
+      }
       this.cdr.markForCheck();
-      // Re-open the change-log panel if the user left it open the last time (persisted).
-      this.restoreLogOpenState();
       return;
     }
-
+    // A request is already fetching the model list (e.g. the log-panel restore racing the Status
+    // check) — let it finish instead of firing a duplicate.
+    if (this.modelsLoading) return;
+    this.modelsLoading = true;
     getJQuery().ajax({
       url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
       type: "GET",
       headers: { "X-Action": "Models" },
       success: (response: unknown) => {
+        this.modelsLoading = false;
         if (!Array.isArray(response)) {
           this.errorText = (response as { error?: string } | null)?.error ?? "AI service not available.";
         } else {
@@ -916,19 +1030,26 @@ export class AiAssistant implements OnInit, OnDestroy {
           const saved = this.loadModelCookie();
           this.selectedModel = saved && list.some((m) => m.id === saved) ? saved : (list[0]?.id ?? null);
         }
-        this.visible = true;
-        this.forceAssistantOnScreen();
-        if (this.errorText) this.showToast(this.errorText);
+        // Do not re-open the dialog when the user dismissed it while the request was in flight.
+        if (!this.dialogDismissed) {
+          this.visible = true;
+          this.forceAssistantOnScreen();
+          if (this.errorText) this.showToast(this.errorText);
+          // Re-open the change-log panel if the user left it open the last time (persisted).
+          this.restoreLogOpenState();
+        }
         this.cdr.markForCheck();
-        // Re-open the change-log panel if the user left it open the last time (persisted).
-        this.restoreLogOpenState();
       },
       error: (xhr: unknown) => {
+        this.modelsLoading = false;
         const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
         this.errorText = jq.responseJSON?.error ?? jq.statusText ?? "AI service not available.";
-        this.visible = true;
-        this.forceAssistantOnScreen();
-        this.showToast(this.errorText);
+        // Do not re-open the dialog when the user dismissed it while the request was in flight.
+        if (!this.dialogDismissed) {
+          this.visible = true;
+          this.forceAssistantOnScreen();
+          this.showToast(this.errorText);
+        }
         this.cdr.markForCheck();
       },
     });
@@ -969,6 +1090,7 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   close(): void {
     this.visible = false;
+    this.dialogDismissed = true;
     this.cdr.markForCheck();
     // Ensure PrimeNG's modal mask is removed when the dialog closes (it can otherwise linger and
     // leave the background darkened, even though the page underneath is clickable).
@@ -1103,12 +1225,33 @@ export class AiAssistant implements OnInit, OnDestroy {
   // #endregion Speech input
 
   // #region PDF.js helpers
-  private ensurePdfJsWorkerConfigured(): void {
-    if (this.pdfJsWorkerConfigured) {
-      return;
+  /** Loads (once) the pdf.js global API (window.pdfjsLib) by appending the UMD pdf.min.js script on
+   *  demand, then configures its worker. Resolves to the pdf.js API so callers can use
+   *  pdfjs.getDocument() right away. */
+  private loadPdfJs(): Promise<PdfJsLib> {
+    if (!this.pdfJs) {
+      this.pdfJs = new Promise<PdfJsLib>((resolve, reject) => {
+        const win = window as Window & { pdfjsLib?: PdfJsLib };
+        if (win.pdfjsLib) {
+          win.pdfjsLib.GlobalWorkerOptions.workerSrc = `${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.worker.min.js`;
+          resolve(win.pdfjsLib);
+          return;
+        }
+        const script = document.createElement("script");
+        script.src = `${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.min.js`;
+        script.onload = () => {
+          if (win.pdfjsLib) {
+            win.pdfjsLib.GlobalWorkerOptions.workerSrc = `${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.worker.min.js`;
+            resolve(win.pdfjsLib);
+          } else {
+            reject(new Error("pdf.js did not initialize the global pdfjsLib"));
+          }
+        };
+        script.onerror = () => reject(new Error("Failed to load pdf.js"));
+        document.head.appendChild(script);
+      });
     }
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/pdf.worker.min.js`;
-    this.pdfJsWorkerConfigured = true;
+    return this.pdfJs;
   }
 
   private blobToDataUrl(blob: Blob): Promise<string> {
@@ -1141,9 +1284,9 @@ export class AiAssistant implements OnInit, OnDestroy {
   }
 
   private async processPdfFile(file: File): Promise<Array<{ name: string; dataUrl: string }>> {
-    this.ensurePdfJsWorkerConfigured();
+    const pdfjs = await this.loadPdfJs();
     const arrayBuffer = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
     const results: Array<{ name: string; dataUrl: string }> = [];
     const baseName = file.name.replace(/\.pdf$/i, "");
 
@@ -1181,6 +1324,8 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.clarificationFile = null;
     this.loading = false;
     this.clarificationVisible = true;
+    // The user should be able to type an answer immediately — move focus to the answer textarea.
+    this.focusClarificationInput();
     // Register the popup as draggable/snappable like the main assistant dialog, and restore its
     // last remembered position once it has rendered.
     this.clarificationDragCleanup?.();
@@ -1332,7 +1477,7 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   /** File-name label for the attachment button. */
   get clarificationFileLabel(): string {
-    return this.clarificationFile ? this.clarificationFile.name : "Attach a document (optional)";
+    return this.clarificationFile ? this.clarificationFile.name : "Attach a document";
   }
 
   /** Whether the clarification can be submitted (a combined answer was typed/voiced, or every
@@ -1969,11 +2114,18 @@ export class AiAssistant implements OnInit, OnDestroy {
         const sensitive = Array.isArray(p2["sensitiveElements"])
           ? (p2["sensitiveElements"] as string[]).filter((e) => typeof e === "string" && e.length > 0)
           : [];
+        // Destructive SQL statements blocked by the backend sanitizer. When present, the change log
+        // is auto-opened with an error icon (same popup mechanism as sensitive elements).
+        const blockedSql = Array.isArray(p2["blockedSqlElements"])
+          ? (p2["blockedSqlElements"] as string[]).filter((e) => typeof e === "string" && e.length > 0)
+          : [];
         const hasWorkflowReload =
           typeof p2["workflowMessage"] === "string" && (p2["workflowMessage"] as string).length > 0;
         console.log(
           "[AICodBiAssistant] run: sensitiveElements =",
           JSON.stringify(sensitive),
+          "| blockedSqlElements =",
+          JSON.stringify(blockedSql),
           "| hasWorkflowReload =",
           hasWorkflowReload,
         );
@@ -2264,9 +2416,14 @@ export class AiAssistant implements OnInit, OnDestroy {
             if (sensitive.length > 0) {
               localStorage.setItem("codbi-log-sensitive-elements", JSON.stringify(sensitive));
             }
+            if (blockedSql.length > 0) {
+              localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedSql));
+            }
             console.log(
               "[AICodBiAssistant] doReload: persisted sensitive elements =",
               JSON.stringify(sensitive),
+              "| blockedSqlElements =",
+              JSON.stringify(blockedSql),
               "| reloading now",
             );
             // Persist the chat conversation so the chat popup re-opens after the reload.
@@ -2356,6 +2513,9 @@ export class AiAssistant implements OnInit, OnDestroy {
             if (sensitive.length > 0) {
               localStorage.setItem("codbi-log-sensitive-elements", JSON.stringify(sensitive));
             }
+            if (blockedSql.length > 0) {
+              localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedSql));
+            }
             // Persist the chat conversation so the chat popup re-opens after the reload.
             this.persistPendingChat();
             window.location.reload();
@@ -2407,8 +2567,16 @@ export class AiAssistant implements OnInit, OnDestroy {
             setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
             // Automatic popup: after the form changes are applied (assistant closed), unfold the
             // change-log side panel again if the last inference used sensitive elements that are not
-            // marked as checked yet. openLog re-opens the dialog, so it stays visible with the log.
-            if (sensitive.length > 0) {
+            // marked as checked yet, or generated destructive SQL that was blocked. openLog
+            // re-opens the dialog, so it stays visible with the log.
+            if (blockedSql.length > 0) {
+              try {
+                localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedSql));
+              } catch {
+                // ignore storage errors
+              }
+            }
+            if (sensitive.length > 0 || blockedSql.length > 0) {
               this.openLog(sensitive);
             }
           };

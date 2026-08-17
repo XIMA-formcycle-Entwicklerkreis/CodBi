@@ -112,19 +112,37 @@ Template:
 
 Button or button group. No label property. 'buttons' array contains button objects each with: 'name' (technical ID), 'value' (display text, may be HTML), 'action' object.
 
-WARNING: action.page uses special FORMCYCLE keywords, NOT form page names:
+AVAILABLE BUTTON ACTIONS (action.page — verified against Formcycle 8.5, ESubmitButtonAction):
+- "" (empty) = no action, or a custom action when action.customAction contains JS
+- "next" = go to the NEXT page
+- "previous" = go back to the PREVIOUS page
+- any page name (e.g. "p2") = navigate to that page
 - "submit" = submit the form to the server (NOT a page name — do NOT replace with 'p1' or any other page)
-- "previous" = go back
-- any page name (e.g. "p1") = navigate to that page
+- "submitNoCheck" = submit the form WITHOUT validation
+- "submitSave" = submit and save the data as a draft
+- "submitSaveNoCheck" = submit and save as a draft WITHOUT validation
+- "submitPreview" = open the form preview
+- "submitPreviewWindowed" = open the form preview in a new window
 
-For a button that sends/submits the form: action.page="submit", action.check=true.
-For a no-action button: omit action or set action.page="".
+action.check (boolean) controls VALIDATION of the CURRENT page's fields before the action runs:
+- check=true = validate the current page first; the action is blocked while a field on that page is invalid (a required field is empty, a datatype-validated field has the wrong format, a CodBi-validated field is invalid, etc.)
+- check=false = skip validation and run the action directly
+
+RULES for choosing check:
+- Submit buttons (page="submit"): ALWAYS check=true — see the mandatory rule below.
+- "Next page" buttons (page="next", e.g. a 'Weiter'/'Continue' button on a non-final page): use "next page + check" (check=true) whenever the current page contains a field that can be invalid — a REQUIRED field, a field with a 'datatype' (dateDE, email, etc.), or a field tagged with a CodBi functionality/class that validates input (CSS class starting with "CodBi_", e.g. CodBi_People_Name, or a data-cb-func attribute). Use plain "next page" (check=false) ONLY when the current page has no field that can invalidate (e.g. it contains only informational/layout elements).
+- "Previous page" buttons (page="previous"): check=false is fine.
 
 MANDATORY RULE — XButtonList submit button: For any button that submits or sends the form (e.g. 'Absenden', 'Senden', 'Einreichen', 'Prüfen und Senden'), use EXACTLY this action: {"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}. The string 'submit' is a FORMCYCLE server-side command — it is NOT a page name and must NEVER be replaced with any page name.
 
-Template:
+Template (submit button):
 ```json
 {"className":"XButtonList","properties":{"name":"btlExample","id":"xi-btl-example","buttons":[{"name":"btnExample","value":"Button Text","action":{"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}}]}}
+```
+
+Template ('Weiter' / next-page button WITH validation — the usual case on a page that has input fields):
+```json
+{"className":"XButtonList","properties":{"name":"btlNext","id":"xi-btl-next","buttons":[{"name":"btnNext","value":"Weiter","action":{"page":"next","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"next + check","value":""}}]}}
 ```
 
 ## XSpan

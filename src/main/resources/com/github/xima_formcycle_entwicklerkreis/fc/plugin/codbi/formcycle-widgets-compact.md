@@ -17,7 +17,7 @@ Dropdown / select list. Static items go in the 'options' array.
 ## XCheckbox
 Checkbox (lowercase 'b').
 ## XButtonList
-Button or button group. 'buttons' array; action.page uses FORMCYCLE keywords ("submit", "previous", page name).
+Button or button group. 'buttons' array; action.page uses FORMCYCLE keywords: "" (none/custom), "next" (next page), "previous" (previous page), a page name (navigate to it), or a submit command ("submit", "submitNoCheck", "submitSave", "submitSaveNoCheck", "submitPreview", "submitPreviewWindowed"). action.check=true validates the CURRENT page's fields before the action — use it for "next"/"Weiter" and submit buttons whenever the page has required, datatype-validated or CodBi-tagged (CodBi_* class) fields; check=false skips validation.
 ## XSpan
 Static text / label. Text goes in 'rtevalue', not 'label'.
 ## XImage

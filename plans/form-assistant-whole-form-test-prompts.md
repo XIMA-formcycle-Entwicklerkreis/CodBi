@@ -66,10 +66,26 @@ XAppointment, XButtonList, Date.Min, Date.NoWeekends, Date.Frame, HTML.Panel, HT
 
 **Verify:**
 - [ ] 3 XPage elements + Form.Navigator on the 2+-page form (NOT on a single page); XHeader/XFooter present.
-- [ ] Date.Min + Date.NoWeekends on `tfDatum`/the birth-date field; Date.Frame on the BEGIN field only with `MaxField` → `.`+end-field-name.
+- [ ] Birth-date field `Geburtsdatum` (`tfDatum`): block FUTURE dates via `CodBi_NoFutureDate`; **NO** `Date.NoWeekends` and **NO** future `Date.Min` (heute/morgen) — a birth date lies in the past, so "keine Vergangenheitsdaten" is contradictory for it, and it may fall on a weekend. `Date.Min` on a birth date is valid ONLY as a PAST minimum (e.g. "at least 18 years old" → `Minimum=18, Unit=y`, no `Reverse`).
+- [ ] Course date range: `Date.Frame` on the BEGIN field only with `MaxField` → `.`+end-field-name; optional future `Date.Min` (`Reverse=true`) on `Kursbeginn` only if the AI asks.
 - [ ] XAppointment with `appointmentPlan`; XButtonList with `action.page = "previous"/"submit"`; XLine; XTextArea `tfNachricht` with `data-cb-func="HTML.Input.TinyMCE"` + Plugins/Toolbar.
 - [ ] HTML.Panel on the course-selection container (XContainer + `data-cb-func="HTML.Panel"` + header attrs).
 - [ ] All selectors dot-prefixed names, no invented classes.
+
+**Known trap — „keine Vergangenheitsdaten, keine Wochenenden“ on `Geburtsdatum` (2026-08-17):**
+Both date constraints in the prompt are **contradictory** for the birth-date field: a birth date
+necessarily lies in the past ("no past dates" / Mindestdatum heute/morgen cannot apply), and it may
+fall on a weekend ("no weekends" cannot apply either — people are born on weekends). The AI must NOT
+group `Geburtsdatum` together with `Kursbeginn` and ask „Soll das Mindestdatum heute oder morgen
+sein?“ — that question is only valid for `Kursbeginn`. Correct handling:
+- `Geburtsdatum` → **no future dates**: `CodBi_NoFutureDate` (max = today); **no** `Date.NoWeekends`. `Date.Min` is legitimate ONLY as a PAST minimum (e.g. age ≥ 18 → `Minimum=18, Unit=y`, no `Reverse`); the future-minimum form (`Reverse=true`, heute/morgen) is invalid for a birth date. FS01 requests no age limit, so no `Date.Min` is applied here.
+- `Kursbeginn` → future minimum (if requested): `Date.Min` with `Reverse=true` (Minimum=1, Unit=d = tomorrow); `Date.Frame` `MaxField` → `.`+end-field-name makes it the range minimum.
+- `Kursende` → end of the `Date.Frame` only; never its own `Date.Min`/`Date.Max`/`Date.Frame`.
+If the AI asks for a future minimum or a weekday restriction for the birth-date field, answer:
+„Geburtsdatum muss in der Vergangenheit liegen und darf auch auf ein Wochenende fallen — wende nur
+`CodBi_NoFutureDate` (max. heute) an; ein `Date.Min` wäre nur als Vergangenheits-Minimum (z. B.
+Mindestalter 18 Jahre, `Minimum=18, Unit=y`) gültig; für `Kursbeginn` gelte `morgen` als
+Mindestdatum.“
 
 ### FS02 — Citizen-service application with ELSTER/BundID + address autofill (Bürgerservice switch ON)
 

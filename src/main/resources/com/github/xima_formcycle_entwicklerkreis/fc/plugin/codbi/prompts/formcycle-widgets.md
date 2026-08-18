@@ -67,6 +67,8 @@ Template:
 
 File upload / file download field.
 
+CRITICAL — when the upload is for an image/ID card WITH a cropper ("Bild-Cropper", "with crop", "Personalausweis ... mit Bild-Cropper"), the XUpload MUST carry data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) — an upload without the cropper is WRONG.
+
 Template:
 ```json
 {"className":"XUpload","properties":{"name":"fdExample","id":"xi-fd-example","label":"Example","required":"0","fileextension":"","fullwidth":"0"}}
@@ -75,6 +77,8 @@ Template:
 ## XSelect
 
 Dropdown / select list. Use 'options' array for static items. CRITICAL — each option MUST be an object with BOTH a 'text' (the visible display text, shown in the dropdown / "Auswahl") AND a 'value' (the submitted value): {"text":"<display text>","value":"<value>"}. An option with only "value" (and no "text") will render an EMPTY dropdown entry. Do NOT use a "label" key — the display key is "text".
+
+CRITICAL — An XSelect/dropdown/select MUST always have a NON-EMPTY "options" array. NEVER create an XSelect without options. If the request names the select (e.g. "Stadt") but does NOT specify its options and they cannot be derived from the request, ASK the user for the list of options (clarification) before generating the select — an empty dropdown is unusable.
 
 PRESENTATION ("selectlayout" property) — by default an XSelect renders as a dropdown. Set the "selectlayout" property to change the presentation:
 - Omit it (or "select") — dropdown (default).
@@ -134,6 +138,8 @@ RULES for choosing check:
 - "Previous page" buttons (page="previous"): check=false is fine.
 
 MANDATORY RULE — XButtonList submit button: For any button that submits or sends the form (e.g. 'Absenden', 'Senden', 'Einreichen', 'Prüfen und Senden'), use EXACTLY this action: {"page":"submit","check":true,"customAction":"","customClassNames":"","displayName":"","optionId":"submit + check","value":""}. The string 'submit' is a FORMCYCLE server-side command — it is NOT a page name and must NEVER be replaced with any page name.
+
+CRITICAL — A 'Zurück'/'Back' and 'Senden'/'Submit'/'Weiter' button set belongs in ONE XButtonList via its 'buttons' array (each button with a name, value and action including action.page). There is NO 'BUTTON' or 'XButton' widget class — never invent one and never create standalone button items; every back/submit button must be a member of an XButtonList's buttons array.
 
 Template (submit button):
 ```json
@@ -207,7 +213,7 @@ When the prompt says "Terminfinder" or "Terminkalender" or "appointment picker",
 
 Display options: AlsTextfeld (set "1" to show as text field initially, "0" to always show calendar), FreiePlaetze/showCapacity ("1" to show available slots), Terminende ("1" to show end time). Gesperrt ("1" locked). Versteckt ("1" hidden).
 
-CRITICAL — When the prompt names a specific Terminplan (e.g., "Terminfinder für ddd"), add 'appointmentPlan' with the schedule name as value (e.g., "appointmentPlan":"ddd"). The backend automatically resolves the name to the correct UUID for 'appointmentTemplate'. You do NOT need to set 'appointmentTemplate' yourself.
+CRITICAL — An XAppointment MUST have an 'appointmentPlan' (the schedule / Terminplan) — never emit an XAppointment without one. When the prompt names a specific Terminplan (e.g., "Terminfinder für ddd"), use that name as the value ("appointmentPlan":"ddd"). When the user does NOT name a plan, ASK which Terminplan to use (clarification) before generating the XAppointment. The backend automatically resolves the name to the correct UUID for 'appointmentTemplate'. You do NOT need to set 'appointmentTemplate' yourself.
 
 Template:
 ```json
@@ -268,6 +274,8 @@ Calculation/formula field (XFormula Widget Plugin). Read-only input whose value 
 
 CRITICAL: The formula expression goes into 'xformula_value' (NOT 'value' — using 'value' is wrong and won't work). All properties use the 'xformula_' prefix: xformula_value (the formula), xformula_type ("auto" or "text"), xformula_empty_as_zero ("0"=treat empty as text, "1"=treat as zero), xformula_index (order index). Formatting properties: xformula_unit, xformula_align ("p"=before number, "s"=after number), xformula_external ("true" for unit outside field), xformula_external_width, xformula_mdec, xformula_decimal, xformula_thousands, xformula_color_value, xformula_color_pos, xformula_color_neg. Do NOT set datatype, readonlyif, readonlyifmode, readonlyifcomp, or readonlyifvalue on XFormula.
 
+XFormula computes from OTHER FORM FIELDS' VALUES only: `xformula_value` is a JavaScript expression over field values — NOT a full script and NOT the page DOM (no `$.xutil.xMapApi`, no global jQuery). It cannot read live map-widget geometry; any map→field data must already be in an ordinary field. The result is READ-ONLY and is formatted by the widget's own xformula_* properties (xformula_unit, xformula_decimal, xformula_thousands, xformula_align) — NOT by a target field's AutoNumeric.
+
 ## XRating
 
 Rating widget (XRating Widget Plugin). Visual rating with configurable icons (stars, thumbs, emoticons). The NUMBER of icons is determined by the 'options' array — each entry generates one clickable icon.
@@ -277,6 +285,8 @@ Properties: xrating_icon_inactive (icon for unselected state — common values: 
 ## XCaptcha
 
 Captcha widget (CAPTCHA Plugin). Displays a hard-to-read challenge text that the user must enter to prove they are human. Standard properties: name, id, label. Has built-in refresh and audio play buttons. No custom properties needed.
+
+CRITICAL — "Captcha-Schutz" / "with CAPTCHA" / "captcha protection" / "mit Captcha" → ALWAYS create an XCaptcha element (className="XCaptcha").
 
 ## XReCaptcha
 
@@ -289,6 +299,8 @@ Custom HTML element (XHtml Widget Plugin). Renders custom HTML code. Properties:
 ## XMap
 
 Leaflet map widget (XMap Plugin). Displays an interactive map. Properties use 'xmap_' prefix: xmap_latitude, xmap_longitude, xmap_zoom, xmap_min_zoom, xmap_max_zoom, xmap_min_markers, xmap_max_markers, xmap_geometry_point, xmap_geometry_line, xmap_geometry_area, xmap_localize, xmap_locate_button, xmap_color_marker_point, xmap_color_marker_user, xmap_color_line, xmap_color_area_border, xmap_color_area_fill. Advanced: xmap_use_custom_map_source, xmap_custom_map_source, xmap_custom_map_source_type ("tms"/"wms"/"wmts"), xmap_wms_layers, xmap_wms_format, xmap_wms_version, xmap_wms_crs, xmap_use_http_settings.
+
+**XMap — the form assistant only configures the widget in the FORM JSON; it does NOT generate or describe custom JavaScript.** The form JSON has no 'script' field, so syncing the drawn map geometry to a field (e.g. a drawn area → a number field) is a MANUALLY added form-level script that the AI neither generates nor explains. In the form JSON the AI only: enables the drawing type via the xmap_ properties — `xmap_geometry_point` / `xmap_geometry_line` / `xmap_geometry_area` ("true" to allow that geometry) — and, when requested, creates the target field the geometry should go into (e.g. a number field `tfVeraeuss_Flaeche`).
 
 ## XNavigationBar
 
@@ -306,7 +318,7 @@ Languages are defined via the "options" array — each entry creates one languag
 
 ## XBsLogin (Bürger-Services)
 
-Bürger-Services login button. When the prompt asks for a "BundID Login-Button", "Bürgerkonto Login", or "Authentifizierungsbutton", create an element with className="XBsLogin".
+Bürger-Services login button. CRITICAL — Whenever the prompt asks for a "BundID Login-Button", "Bürgerkonto Login", "BundID-Login", or "Authentifizierungsbutton", ALWAYS create an element with className="XBsLogin" and set the `bs_auth_ref` property (e.g. "BUND_ID::https://idp.bundid.de"). NEVER use an XButtonList/BUTTON for a BundID/Bürgerkonto login button — a login button is NOT a navigation/submit button.
 
 Properties: name, id, bs_btn_text (button label), bs_auth_ref (authenticator reference, e.g. "BUND_ID::https://idp.bundid.de"), bs_show_in_popup ("true" for popup login), bs_page_name (page after login), bs_cancel_page_name (page on cancel), bs_check_page ("true" to validate), bs_postbox_mandatory ("true" if postbox required), bs_trust_level (trust level: "m|0"=no restriction, "e|3"=certificate, "m|3"=certificate or ID, "e|4"=ID card), bs_login_method (restrict login method), bs_requested_attributes (requested SAML attributes), bs_suffix (auth data suffix), bs_hide_if_userprofile_exists ("true" to hide if already logged in), bs_ui_info_display_name (display name for the authenticator).
 

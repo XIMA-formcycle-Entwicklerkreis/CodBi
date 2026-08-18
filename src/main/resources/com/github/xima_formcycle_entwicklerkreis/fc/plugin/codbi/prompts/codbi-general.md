@@ -14,6 +14,7 @@ CRITICAL:
 - Apply AT MOST ONE CSS class per field — do NOT stack multiple classes on the same element.
 - Only apply a CSS class when it EXACTLY matches the field's purpose. If no class matches, use data-cb-func.
 - ADDRESS GROUPS (postal code, locality/city, street, building number) MUST be tagged with the OpenPLZ classes: CodBi_OpenPLZ_AC_SET_PLZ on the postal code field, CodBi_OpenPLZ_AC_SET_Locality on the locality/city field, CodBi_OpenPLZ_AC_SET_Street on the street field, CodBi_OpenPLZ_AC_SET_BuildingNumber on the building number field — the server then configures OpenPLZ.Autocomplete automatically.
+- If the request wants German autocomplete for street / house number ("PLZ/Ort/Straße/Hausnummer sollen sich ... befüllen" / "ZIP/city/street/house number ... autofill") but the requested field list does not contain street / house-number fields, CREATE them in the address group's fieldset and tag them with the OpenPLZ classes: `tfStrasse` (label "Straße") + `CodBi_OpenPLZ_AC_SET_Street` and `tfHausnummer` (label "Hausnummer") + `CodBi_OpenPLZ_AC_SET_BuildingNumber`. Never skip the street / house-number parts just because the master-data field list omitted them — missing any address part is a FAIL.
 
 ## _codbiApplicability Report
 
@@ -46,6 +47,38 @@ You initially receive a CONDENSED reference: the CodBi Core Elements list (names
 - Do not guess or invent property names/structure. The server provides the exact details for exactly the requested items, then you continue with the full form JSON.
 - Omit a field when you need nothing from it; if you need neither, return the normal form JSON instead of a details request.
 
+## CRITICAL — Use the user's clarification answers VERBATIM
+
+When the user answered a clarification question, those answers are the FINAL VALUES — use them EXACTLY in the form. Do NOT substitute your own defaults or earlier placeholder values:
+- An XSelect options list the user provided (e.g. "Ansbach und Nürnberg") → put those EXACT options into the select's options array.
+- An appointmentPlan / Terminplan the user named (e.g. "Gonzo") → appointmentPlan gets exactly that value, NOT the widget's label or a generic name.
+- A minimum date the user chose (e.g. "morgen") → encode exactly that (data-cb-minimum=1, data-cb-unit=d, data-cb-reverse=true).
+- A completion page / email sender / subject the user named → use exactly those values.
+Only when the user answered "du entscheidest" / "you decide" may you choose a sensible default; whenever the user gave a concrete answer, honor it verbatim.
+
+## CRITICAL — Birth-date fields (Geburtsdatum / birth date)
+
+A birth-date field (labels "Geburtsdatum", "Geburtstag", "birth date", "date of birth", "birthday") ALWAYS lies in the PAST. NEVER apply to it:
+- a FUTURE `Date.Min` (`data-cb-reverse=true`, "heute"/"morgen") — never ask "Mindestdatum heute oder morgen?" for a birth-date field;
+- `Date.NoWeekends` or any weekend-restriction class (there is NO `CodBi_NoWeekends` class — never invent it).
+
+A constraint like "keine Vergangenheitsdaten"/"no past dates"/"no future dates" on a birth date means **NO FUTURE DATES** → apply ONLY the `CodBi_NoFutureDate` class (max = today; **the current date itself is a VALID value** — a person born today is a valid birth date). Do NOT add `Date.Min` and do NOT add any weekend restriction. A `Date.Min` on a birth date is valid ONLY as a PAST minimum (e.g. "mindestens 18 Jahre" → `data-cb-minimum=18, unit=y`, no `reverse`) and only when an age limit is requested.
+
+## CRITICAL — Print removal / hiding data when printing (Print.Remove)
+
+Distinguish the two cases:
+
+1. INTERACTIVE / CONTROL ELEMENTS (navigation/submit buttons, e.g. XButtonList "Weiter"/"Senden"/"Zurück", and any button that only works on screen): hiding them from the printed output is the sensible DEFAULT — they are useless on paper. Apply `CodBi_Print_Remove_PrintOnly` (or `data-cb-func="Print.Remove"` / `CodBi_Print_Remove_Tagged`) to such buttons/controls. This is NOT "hiding sensitive data".
+
+2. USER DATA / SENSITIVE FIELDS (birth place, address, personal data): NEVER hide them from prints proactively and NEVER offer to hide them — a field being personal/sensitive is NOT a reason to remove it from the print output. Only hide a data field when the user EXPLICITLY asks for it (e.g. "das Feld X soll beim Drucken ausgeblendet werden" / "field X should be hidden when printing").
+
+The CSS class is the STANDARD for print removal — use the CodBi_Print_Remove_* classes for the normal cases:
+- `CodBi_Print_Remove_Tagged` — removes exactly the tagged element (the default for "beim Drucken ausblenden" on a single field).
+- `CodBi_Print_Remove_Parent` — removes the ENTIRE parent container/section from the print.
+- `CodBi_Print_Remove_PrintOnly` — for print-only elements (e.g. buttons/controls that only work on screen).
+
+Use `data-cb-func="Print.Remove"` ONLY for the special case where the prompt specifies a parameter for the functionality — e.g. `DocumentSelector` (a dot-prefixed CSS-class selector of the section/container to remove, such as `.divPrintSection`) or `ParentalLevel` (how many ancestors to climb up to). Print.Remove is NOT normalized server-side — the AI's choice (class vs. functionality) reaches the designer unchanged. A verification check that finds the class (or the functionality with its parameter) on the requested field counts as applied.
+
 ## Critial — Form Chatbot Plugin vs CodBi AI Chat
 
 When the prompt says "XIMA Chatbot", "XIMA Chat-Assistent", or similar, use the Form Chatbot Plugin — NOT ai.llama.chat. This plugin adds form-level properties ("ChatbotEnabled":"true" at the FORM root), NOT individual elements.
@@ -60,9 +93,36 @@ When the prompt says "Terminfinder für X" (e.g., "Terminfinder für ddd"), you 
 
 All tfAntragsteller* fields are autofilled by the authentication system. Do NOT add data-cb-func (no OpenPLZ.Autocomplete, no ldap.autocomplete) to these fields — the Bürger-Services plugin itself maps the authentication response data. HOWEVER, CSS classes for client-side formatting/validation (CodBi_People_Name, CodBi_People_Mail, CodBi_People_Phone, CodBi_People_PLZ, CodBi_People_BuildingNumber) SHOULD still be applied — they are purely formatting and do NOT interfere with authentication autofill.
 
+## CRITICAL — BundID/Bürgerkonto login + ID upload + captcha bundle
+
+When the request asks for a BundID/Bürgerkonto login button together with an upload field for an ID/image and captcha protection (e.g. "BundID-Login-Button, ... Upload-Feld für den Personalausweis mit Bild-Cropper und Captcha-Schutz"), you MUST create ALL of these — missing any one is a FAIL:
+- XBsLogin (className="XBsLogin") with the `bs_auth_ref` property for the BundID/Bürgerkonto login button.
+- The XUpload field for the ID card/image WITH `data-cb-func="Media.Image.Cropper"` (or a `CodBi_Fotocropper_*` class) — an upload without the cropper is WRONG.
+- An XCaptcha element (className="XCaptcha") for the captcha protection.
+- The XSignature element when a signature field is requested.
+
+**PLACE every created element**: add each widget to the target page's/container's `elements` array AND set its `properties.parentid` to that page/container's name (e.g. a widget on page `p1` gets `parentid="p1"` and `p1` lists it in its `elements`). A widget that exists in the root `items` array but is NOT referenced by any page/container (no `parentid`, not in any `elements` array) is ORPHANED — it does NOT render in the form and counts as missing. This applies to every widget, especially XBsLogin, XCaptcha, XUpload, XSignature and hidden XSpan elements.
+
+## CRITICAL — BundID / Bürgerkonto login button
+
+For a "BundID-Login-Button", "Bürgerkonto-Login", "BundID-Login" or any citizen-authentication button, ALWAYS create an **XBsLogin** element (with the `bs_auth_ref` property, e.g. "BUND_ID::https://idp.bundid.de"). NEVER use an XButtonList/BUTTON for a login button — a login button is NOT a navigation/submit button.
+
 ## CRITICAL — Common Validation Rules
 
 Common Validation Rules (fc-plugin-common-validation-rules) are NOT CodBi functionalities. Do NOT add them as data-cb-func. These are validation-only plugins applied via data-vdt attribute — they validate input, they do NOT provide CodBi EP/functionality features. If an element already has a data-vdt attribute, leave it. Never add data-cb-func for a validation rule plugin class name.
+
+## CRITICAL — Mandatory / required fields (Constraints > Required)
+
+A field is made MANDATORY in Formcycle with the element property `"required":"1"` in its `properties` (the designer's "Constraints > Required" checkbox). `"required":"0"` = optional. It is a plain element property — NOT a CodBi functionality and NOT an HTML attribute.
+
+- NEVER implement "Pflichtfeld" / "required" / "mandatory" with `HTML.SETAttribute` + `data-cb-name="title"` / `data-cb-toset="Pflichtfeld"` — a title tooltip does NOT make a field mandatory (it only shows a hover hint) and is the WRONG way to mark a required field. Use the `required` property instead.
+- When the user asks to make a field "Pflichtfeld" / "required" / "mandatory" (e.g. 'dem Feld „E-Mail" einen Tooltip „Pflichtfeld" setzen' — the intent is "E-Mail ist ein Pflichtfeld"), set `"required":"1"` on that field. Do NOT create a `HTML.SETAttribute`/title tooltip for it.
+- PROACTIVELY DETERMINE REQUIRED FIELDS: whenever you generate or edit a form, decide which fields must be mandatory and set `"required":"1"` on them — never leave a clearly-mandatory field as `"required":"0"`. Rules of thumb:
+  - Fields the user explicitly calls Pflichtfeld / required / mandatory / obligatory.
+  - Identification / contact fields the form needs: first name, last name, e-mail, date of birth, street + house number + postal code + city (an address group is complete only when all parts are filled).
+  - Bürger-Services forms: the catalog fields marked "Pflichtfeld" (Vorname, Name, Geburtsdatum, Geburtsort, Adresse, PLZ, Ort, ELSTER org fields, BPK2, TrustLevel, …) are autofilled after login and should be `required`.
+  - A captcha element, a signature field and an ID-upload field in a BundID/login bundle are mandatory.
+  - Do NOT mark fields the user explicitly calls optional / freiwillig / "not required" as required.
 
 ## CRITICAL — Combining multiple CodBi functionalities on one element
 
@@ -133,3 +193,5 @@ CRITICAL — Sys.Log.Console is a STANDALONE functionality that does NOT need an
 ```
 
 Also add the element's name to the first page's "elements" array. Set data-cb-func="Sys.Log.Console" on it and set data-cb-Data to a string that starts with the literal prefix **"SYS.Log.Console > "** followed by the text describing what shall be logged — e.g. "SYS.Log.Console > Log the details of the planet Pluto with a saturation of .5". Do NOT use an element-placeholder expression as the whole data-cb-Data value.
+
+CRITICAL — When the thing to log is an AI-generated answer/text (e.g. "logge den KI-Text zu 'Wie wird das Wetter morgen?'" / "log the AI text for ..."), use the AI.LLAMA.STD.QA element placeholder as the logged content: `data-cb-Data = "SYS.Log.Console > AI.LLAMA.STD.QA > <Frage>; true;;;;;;"` — e.g. `"SYS.Log.Console > AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;;"`. The prefix is EXACTLY `SYS.Log.Console > ` (dots, NO spaces inside "SYS.Log.Console" — never "SYS Log.Console") and the EP keeps its trailing semicolon flags `; true;;;;;;`.

@@ -13,17 +13,18 @@ Applicable on a container element to embed an AI chat widget (requires a locally
 Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
 
 ### Date.Frame
-Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.
+For a date range (start/minimum + end/maximum date, e.g. 'Kursbeginn'/'Kursende', 'Start'/'End', 'Von'/'Bis'). A two-field date RANGE is ALWAYS Date.Frame — do NOT model a range as a mere Date.Min. PREFER the standard CSS classes: apply CodBi_DateFrame_N_Begin to the START date field AND CodBi_DateFrame_N_End to the END date field (SAME N — BOTH fields get their own class; there is NO combined CodBi_DateFrame_N_Begin_End class; these classes go ONLY on the two date XTextField fields, never on a container/fieldset). FALLBACK when the classes cannot be used: data-cb-func=date.frame on the BEGIN field only with data-cb-maxfield = dot-prefixed END field name (e.g. .tfKursende) — do NOT put the functionality on the end date element. A Date.Min may be ADDED to the start field, but the range itself still requires the Begin/End frame classes on BOTH fields.
 
 ### Date.Min
 Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates).
 REQUIRES: data-cb-minimum (digit string) + data-cb-unit (d/w/m/y, default y). For a FUTURE minimum ("at least tomorrow", "no past dates") also set data-cb-reverse=true (e.g. minimum=1, unit=d, reverse=true = tomorrow or later).
+BIRTH-DATE FIELDS (Geburtsdatum, Geburtstag, birth date, birthday): NEVER apply data-cb-reverse=true / a FUTURE Date.Min / "Mindestdatum heute oder morgen" to a birth-date field — a birth date lies in the PAST. A constraint like "keine Vergangenheitsdaten"/"no past dates"/"no future dates" on a birth date means NO FUTURE DATES → the ONLY valid CodBi behavior is the CodBi_NoFutureDate class (max = today; today itself is a valid birth date). Do NOT add Date.Min and do NOT add any weekend restriction. A PAST minimum (e.g. "mindestens 18 Jahre" → minimum=18, unit=y, NO reverse) is valid only when an age limit is requested.
 
 ### Date.NoWeekends
-Applicable on a XTextField of type 'date' to disallow weekend dates.
+Applicable on a XTextField of type 'date' to disallow weekend dates. NEVER apply to a BIRTH-DATE field (Geburtsdatum, Geburtstag, birth date, birthday) — people can be born on any weekday, so a "keine Wochenenden"/"no weekends" constraint on a birth date must be IGNORED (apply nothing, ask nothing). There is NO "CodBi_NoWeekends" class — never invent it. Only meaningful for future-dated/booking-type dates (course date, appointment, delivery).
 
 ### Form.Navigator
-Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.
+Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms. PLACEMENT — the navigator must be reachable on EVERY page: create a SEPARATE XContainer (div) and place it inside the form's XHeader or XFooter when one exists; only when there is NO header/footer add it to EVERY page's elements array. NEVER place it on only one page.
 
 ### HTML.CSS
 Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
@@ -37,10 +38,11 @@ Applicable on a XTextField to validate, reformat, or RESTRICT input against a re
 REQUIRES: the regex pattern and the mode (validate / restrict / reformat) — ask the user when the pattern cannot be derived.
 
 ### HTML.Input.TinyMCE
-Applicable on a XTextArea to turn it into a TinyMCE rich-text (WYSIWYG) editor. USE whenever the user asks for a "rich text editor", "WYSIWYG", or rich/formatted text entry for a multi-line text field — apply data-cb-func="HTML.Input.TinyMCE" on the XTextArea (optionally with data-cb-plugins and data-cb-toolbar).
+MANDATORY — it is INVALID to apply HTML.Input.TinyMCE with only data-cb-func and WITHOUT both data-cb-plugins and data-cb-toolbar; the editor would be unusable. Whenever you apply data-cb-func="HTML.Input.TinyMCE" to a XTextArea, ALWAYS also emit data-cb-plugins and data-cb-toolbar. USE for a "rich text editor", "WYSIWYG", or rich/formatted text entry on a multi-line text field. For a message/story: data-cb-plugins="advlist, autolink, lists, link, image, media, charmap" and data-cb-toolbar="undo redo | blocks | bold italic underline | bullist numlist | link image media" (do NOT include the raw-HTML 'code' option unless the field is explicitly for HTML source). Full example:
+"attributes": [{"text":"data-cb-func","value":"HTML.Input.TinyMCE"},{"text":"data-cb-plugins","value":"advlist, autolink, lists, link, image, media, charmap"},{"text":"data-cb-toolbar","value":"undo redo | blocks | bold italic underline | bullist numlist | link image media"}]
 
 ### HTML.Panel
-Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: "Standard-Panel" = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property.
+Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: "Standard-Panel" and "aufklappbares/collapsible panel" on a fieldset = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property (preferred). Use data-cb-func=html.panel only on a container (not a fieldset).
 
 ### HTML.SETAttribute
 Applicable on any element to dynamically set one or more HTML attributes on it, including CSS styling (opacity etc.) via the "style" attribute. USE when the user asks to set an attribute or visual/CSS style of an element (e.g. title, opacity) — set data-cb-name and data-cb-toset.
@@ -62,14 +64,14 @@ REQUIRES: the JSON expression / derivation rule — ask the user when it cannot 
 Applicable on form fields that should be auto-filled from a selected LDAP directory match.
 
 ### LDAP.Autocomplete
-Applicable on a text input that should autocomplete entries from an LDAP directory search.
+Applicable on a text input that should autocomplete entries from an LDAP directory search. Apply directly (data-cb-func="LDAP.Autocomplete" or the matching CodBi_LDAP_AC_* standard-configuration class) — NEVER ask the user for an LDAP server URL/endpoint (the directory is configured server-side). Do NOT apply LDAP to the person/address fields of a Bürger-Services form (fsBKDaten/fsBKOrgDaten): the address data comes from the login response or from the German OpenPLZ.Autocomplete (CodBi_OpenPLZ_AC_SET_*).
 
 ### Matomo.Tracking
 Applicable on any form to add Matomo/Piwik analytics event tracking.
 REQUIRES: the Matomo site/tracking ID — ask the user when it is not derivable.
 
 ### Media.Image.Cropper
-Applicable on an XUpload field for images; adds an interactive crop dialog before upload.
+Applicable on an XUpload field for images; adds an interactive crop dialog before upload. CRITICAL — apply to the XUpload whenever the request asks for an upload with a cropper ("Bild-Cropper", "with crop", "Upload-Feld für den Personalausweis mit Bild-Cropper"): set data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) on that XUpload. NEVER omit it.
 
 ### MEDIA.INPUT.SPEECH
 Applicable on a text input field to enable speech-to-text dictation via the Web Speech API.
@@ -78,7 +80,7 @@ Applicable on a text input field to enable speech-to-text dictation via the Web 
 Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). APPLY the OpenPLZ standard-configuration CSS classes instead of data-cb-func: CodBi_OpenPLZ_AC_SET_PLZ on the postal code field, CodBi_OpenPLZ_AC_SET_Locality on the locality/city field, CodBi_OpenPLZ_AC_SET_Street on the street field, CodBi_OpenPLZ_AC_SET_BuildingNumber on the building number field. The server then configures the OpenPLZ.Autocomplete autocomplete (with TargetData, Country, Dependent, DependentPLZ, DependentLocality, FocusOnAutocomplete) automatically. FALLBACK only when the CSS classes cannot be used: set data-cb-func=openplz.autocomplete on each address field and set the parameters individually — TargetData to match the field's type (Localities, PostalCodes, or Streets), Country, Dependent/DependentPLZ/DependentLocality and FocusOnAutocomplete exactly as described in the detailed reference.
 
 ### Print.Remove
-Applicable on any element that should be invisible when the form is printed.
+Applicable on any element that should be invisible when the form is printed. The CSS classes are the STANDARD: `CodBi_Print_Remove_Tagged` (removes exactly the element), `CodBi_Print_Remove_Parent` (removes the whole parent container/section), `CodBi_Print_Remove_PrintOnly` (print-only elements/buttons). INTERACTIVE/CONTROL elements (navigation/submit buttons, e.g. XButtonList "Weiter"/"Senden"/"Zurück") SHOULD be hidden from the print output by default — they are useless on paper (apply `CodBi_Print_Remove_PrintOnly`). USER DATA / SENSITIVE fields (birth place, address, personal data) must NEVER be hidden proactively — only when the user explicitly asks ("beim Drucken ausblenden" / "hidden when printing"). Use `data-cb-func="Print.Remove"` ONLY when the prompt specifies a parameter for it — e.g. `DocumentSelector` (a dot-prefixed CSS-class selector of the section to remove) or `ParentalLevel`. The functionality is NOT normalized server-side — the AI's choice reaches the designer unchanged.
 
 ### Sys.Log.Console
 Applicable for debugging; logs CodBi runtime data to the browser developer console. STANDALONE — does NOT need an existing form element. When the prompt asks to log something to the console, create a NEW **invisible XSpan** (the plain-text/HTML element of Formcycle — NEVER invent class names like "XText" or "XButton"; XTextField is an INPUT element, not plain text; the log output "XItem missing 'XText' using XDefault" proves invented names do NOT render) at the top of the first page. List it as a separate item in the root "items" array with EXACTLY this shape:
@@ -100,6 +102,8 @@ Applicable for debugging; logs CodBi runtime data to the browser developer conso
 ```
 
 Set data-cb-func="Sys.Log.Console" and data-cb-Data = "SYS.Log.Console > " followed by the text describing what shall be logged (e.g. "SYS.Log.Console > Log the details of the planet Pluto with a saturation of .5").
+
+CRITICAL — When the thing to log is an AI answer (e.g. "logge den KI-Text zu 'Wie wird das Wetter morgen?'"), use the AI.LLAMA.STD.QA EP as the content: data-cb-Data = "SYS.Log.Console > AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;;". The prefix is EXACTLY "SYS.Log.Console > " (dots — NEVER "SYS Log.Console"); keep the EP's trailing "; true;;;;;;".
 
 ### DQ.Table.View
 Applicable on a container element (e.g. XContainer/XContainerInvisible) to display the result of a Formcycle DataQuery in an injected HTML table and enable exporting it to Excel (.xlsx). USE whenever the user asks to show/view/display the data or the columns of a DataQuery/query/datasource as a table (e.g. "add a table that views the columns Alter, Name of HolaQuery", "zeige die Spalten Alter, Name der Abfrage HolaQuery als Tabelle") and/or export it to Excel — apply data-cb-func="DQ.Table.View" on the container. Use the DataQuery name given by the user AS-IS (do NOT ask whether it exists). If the user does not specify placement, create a NEW container on the first page — do NOT ask; show the columns as-is (no sorting/filtering unless requested). Columns are `label;datacolumn;jsonFlag[;width]` — setting the 3rd flag to `true`/`1` marks a column as containing JSON so its cells show a maximizable JSON viewer. The Excel export uses the SheetJS library bundled with the plugin and served from the plugin's Resource servlet.
@@ -221,7 +225,7 @@ Registers a standard configuration that applies Whisper Speech-to-Text onto ever
 ## People
 
 ### CodBi_People_Name
-For a person's name (Vorname, Nachname). Do NOT apply to street names or localities.
+MUST be applied to EVERY first-name/last-name/name field (Vorname, Nachname, Name, ...) — a Vorname AND a Nachname each get their own CodBi_People_Name class. Do NOT apply to street names or localities.
 
 ### CodBi_People_Alphanumeric
 ONLY for alphanumeric codes/IDs. Do NOT apply to names, streets, localities, or postal codes.
@@ -275,13 +279,13 @@ REQUIRES: which currency (e.g. EUR) / the currency global variable value — ask
 ## Appointments
 
 ### CodBi_NoFutureDate
-For date fields that should not allow future dates.
+For date fields that must not allow future dates (maximum = today — the current date itself is a valid value) — e.g. a birth-date field under a "keine zukünftigen Daten" / "no future dates" requirement.
 
-### CodBi_DateFrame_N_Begin_End
-For date ranges (N=1-5). Do NOT also add data-cb-func=date.frame.
+### CodBi_DateFrame_N_Begin / CodBi_DateFrame_N_End
+For date ranges (N=1-5): CodBi_DateFrame_N_Begin on the START date field AND CodBi_DateFrame_N_End on the END date field (SAME N — BOTH fields get their own class; NO combined ..._Begin_End class; only on the two date fields, never on a container). Do NOT also add data-cb-func=date.frame.
 
-### CodBi_TimeFrame_N_Begin_End
-For time ranges (N=1-5). Do NOT also add data-cb-func=time.frame.
+### CodBi_TimeFrame_N_Begin / CodBi_TimeFrame_N_End
+For time ranges (N=1-5): CodBi_TimeFrame_N_Begin on the START time field AND CodBi_TimeFrame_N_End on the END time field (SAME N — BOTH fields get their own class; NO combined ..._Begin_End class; only on the two time fields, never on a container). Do NOT also add data-cb-func=time.frame.
 
 ## LDAP.Autofill
 

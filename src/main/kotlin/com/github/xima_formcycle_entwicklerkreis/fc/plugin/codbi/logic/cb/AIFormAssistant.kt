@@ -760,6 +760,7 @@ class AIFormAssistant : IPluginServletAction {
       setOf(
           "XAppointment",
           "XButtonList",
+          "XBsLogin",
           "XCheckbox",
           "XContainer",
           "XContainerInvisible",
@@ -1193,6 +1194,105 @@ class AIFormAssistant : IPluginServletAction {
           if (ref.isJsonPrimitive) itemToContainerId[ref.asString] = containerId
         }
       }
+      // Normalize placement. The AI sometimes writes `parentid` as the parent's NAME (e.g.
+      // "fsBKDaten" / "p1") instead of the parent's `id` (e.g. "xi-fs-bk-daten"). Formcycle's
+      // `parentid` must reference the parent's `id` — a name-based parentid leaves every child
+      // unattached and the form renders EMPTY even though the change log lists all widgets as
+      // created. The container's `elements` array is the single source of truth: re-derive every
+      // item's parentid from it (overriding the AI's value), and attach items the AI forgot to
+      // reference (orphans) to a container — preferably the one the AI named in parentid (by name
+      // or id), else the nearest preceding container / last fieldset or page. Original items the
+      // AI deliberately detached (removed from their container's elements) are NOT re-attached —
+      // the restore logic above already honored the removal.
+      val attachContainerClassNames = setOf("XFieldSet", "XPage", "XContainer")
+      val containerById = mutableMapOf<String, JsonObject>()
+      val containerByName = mutableMapOf<String, JsonObject>()
+      val indexByName =
+          resultItems
+              .mapIndexedNotNull { idx, el ->
+                el.takeIf { it.isJsonObject }
+                    ?.asJsonObject
+                    ?.getAsJsonObject("properties")
+                    ?.get("name")
+                    ?.asString
+                    ?.let { name -> name to idx }
+              }
+              .toMap()
+      for (el in resultItems) {
+        if (!el.isJsonObject) continue
+        val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+        if (!props.has("elements")) continue
+        val id = props.get("id")?.asString
+        if (id != null) containerById[id] = el.asJsonObject
+        val name = props.get("name")?.asString
+        if (name != null) containerByName[name] = el.asJsonObject
+      }
+      for (el in resultItems) {
+        if (!el.isJsonObject) continue
+        val item = el.asJsonObject
+        val className = item.get("className")?.asString ?: continue
+        if (className == "XPage") continue // the page is top-level — it has no parent of its own
+        val props = item.getAsJsonObject("properties") ?: continue
+        val name = props.get("name")?.asString ?: continue
+        val isContainer = props.has("elements") // fieldset / container / header / footer
+        val aiParent = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+        val referencedId = itemToContainerId[name]
+        var parentId = referencedId
+        if (parentId == null) {
+          // Not referenced by any container's elements array — attach it. Prefer the container the
+          // AI named in parentid (by name or id); else the nearest preceding container (a fieldset
+          // goes on a page; a leaf goes on a fieldset/container/page); else the last matching
+          // container. Original items the AI detached are intentionally left detached.
+          val namedContainer =
+              if (aiParent != null) (containerById[aiParent] ?: containerByName[aiParent]) else null
+          val target =
+              if (namedContainer != null) {
+                namedContainer
+              } else if (name in originalByName) {
+                null // AI deliberately removed an original item from its container — respect it
+              } else {
+                (indexByName[name]?.let { idx ->
+                  (idx - 1 downTo 0)
+                      .asSequence()
+                      .map { i -> resultItems[i] }
+                      .firstOrNull { c ->
+                        c.isJsonObject &&
+                            c.asJsonObject.get("className")?.asString in
+                                (if (isContainer) setOf("XPage") else attachContainerClassNames)
+                      }
+                })
+                    ?: resultItems.lastOrNull {
+                      it.isJsonObject &&
+                          it.asJsonObject.get("className")?.asString in
+                              (if (isContainer) setOf("XPage") else setOf("XFieldSet", "XPage"))
+                    }
+              }
+          if (target != null) {
+            val targetProps = target.asJsonObject.getAsJsonObject("properties")
+            val targetId = targetProps?.get("id")?.asString
+            var elements = targetProps?.get("elements")?.takeIf { it.isJsonArray }?.asJsonArray
+            if (elements == null && targetProps != null) {
+              val newArr = JsonArray()
+              targetProps.add("elements", newArr)
+              elements = newArr
+            }
+            if (elements != null && elements.none { it.isJsonPrimitive && it.asString == name }) {
+              elements.add(name)
+              logger.warn(
+                  "[AIFormAssistant] Auto-attached orphaned item '{}' to container '{}'",
+                  name,
+                  targetProps?.get("name")?.asString)
+            }
+            parentId = targetId
+          }
+        }
+        // parentid must be the parent's `id` (xi-…), never its name — override the AI's value so
+        // the form renders.
+        if (parentId != null && props.get("parentid")?.asString != parentId) {
+          props.addProperty("parentid", parentId)
+          logger.info("[AIFormAssistant] Normalized parentid of '{}' to '{}'", name, parentId)
+        }
+      }
       for (el in resultItems) {
         if (!el.isJsonObject) continue
         val item = el.asJsonObject
@@ -1212,13 +1312,20 @@ class AIFormAssistant : IPluginServletAction {
             (itemProps.get("datatype")?.asString ?: "").startsWith("date")) {
           itemProps.addProperty("datepicker", "1")
         }
-        // Set parentid from the container's elements reference
+        // Set parentid from the container's elements reference (the source of truth — always
+        // override, because the AI sometimes writes the parent's NAME instead of its id and the
+        // form would otherwise render empty).
         val parentId = itemToContainerId[name]
-        if (parentId != null &&
-            (!itemProps.has("parentid") || itemProps.get("parentid").asString.isNullOrEmpty())) {
+        if (parentId != null && itemProps.get("parentid")?.asString != parentId) {
           itemProps.addProperty("parentid", parentId)
         }
       }
+      // Deterministic safety net for the German OpenPLZ.Autocomplete address group (see
+      // ensureOpenPlzAddressFields): apply the CodBi_OpenPLZ_AC_SET_* classes to any existing
+      // address-part field and create missing street / house-number fields for a complete address
+      // group, so "PLZ/Ort/Straße/Hausnummer mit deutscher Autovervollständigung" works even when
+      // the AI only created PLZ + Ort.
+      ensureOpenPlzAddressFields(resultItems, baseObj)
     }
     // Convert any AI-generated data-cb-* direct property keys to the proper attributes array
     // format. FORMCYCLE reads custom HTML attributes from properties["attributes"] as
@@ -1249,39 +1356,29 @@ class AIFormAssistant : IPluginServletAction {
         props.add("attributes", filtered)
       }
 
-      // --- Normalize Print.Remove: if the AI applied data-cb-func=print.remove instead of the
-      // CSS class (per TWO-OPTION RULE, CSS classes should be preferred when available), convert
-      // it to the CodBi_Print_Remove_Tagged CSS class and remove the data-cb-func entry.
-      val printRemoveFunc = props.get("data-cb-func")?.asString
-      if (printRemoveFunc != null && printRemoveFunc.contains("print.remove", ignoreCase = true)) {
-        val cssClasses =
-            if (props.has("cssclasses") && props.get("cssclasses").isJsonArray)
-                props.getAsJsonArray("cssclasses")
-            else JsonArray().also { props.add("cssclasses", it) }
-        var hasPrintRemoveTagged = false
-        for (i in 0 until cssClasses.size()) {
-          val cls = cssClasses.get(i)
-          if (cls.isJsonPrimitive && cls.asString == "CodBi_Print_Remove_Tagged") {
-            hasPrintRemoveTagged = true
-            break
-          }
-        }
-        if (!hasPrintRemoveTagged) {
-          cssClasses.add("CodBi_Print_Remove_Tagged")
-          logger.info(
-              "[AIFormAssistant] Normalized data-cb-func=print.remove to CSS class 'CodBi_Print_Remove_Tagged'")
-        }
-        // Remove print.remove from data-cb-func (other comma-separated funcs are preserved)
-        val remaining =
-            printRemoveFunc
-                .split(",")
-                .map { it.trim() }
-                .filterNot { it.equals("print.remove", ignoreCase = true) }
-        if (remaining.isEmpty()) {
-          props.remove("data-cb-func")
-        } else {
-          props.addProperty("data-cb-func", remaining.joinToString(","))
-        }
+      // NOTE: Print.Remove is intentionally NOT normalized server-side — the AI is taught to use
+      // the CodBi_Print_Remove_* CSS classes as the standard and data-cb-func="Print.Remove" only
+      // when a parameter (e.g. DocumentSelector) is required, so the AI's choice reaches the
+      // designer unchanged.
+
+      // --- Normalize the wrong "mark as Pflichtfeld" approach: the AI sometimes "marks" a field as
+      // mandatory with data-cb-func="html.setattribute" (data-cb-name="title", data-cb-toset=
+      // "Pflichtfeld"). A title tooltip does NOT make a field required — Formcycle's mandatory flag
+      // is the element property "required" (Constraints > Required). Convert it to "required":"1"
+      // and drop the tooltip so the field is actually validated as mandatory.
+      val funcLower = props.get("data-cb-func")?.asString?.lowercase()
+      if (funcLower != null &&
+          (funcLower.contains("html.setattribute") || funcLower.contains("html_setattribute")) &&
+          props.get("data-cb-name")?.asString?.equals("title", ignoreCase = true) == true &&
+          props.get("data-cb-toset")?.asString?.contains("pflichtfeld", ignoreCase = true) ==
+              true) {
+        props.addProperty("required", "1")
+        props.remove("data-cb-func")
+        props.remove("data-cb-name")
+        props.remove("data-cb-toset")
+        logger.info(
+            "[AIFormAssistant] Converted 'html.setattribute title=Pflichtfeld' on '{}' to required=1",
+            props.get("name")?.asString)
       }
 
       val cbKeys = props.entrySet().filter { it.key.startsWith("data-cb-") }.map { it.key }
@@ -1307,6 +1404,166 @@ class AIFormAssistant : IPluginServletAction {
       }
     }
     return gson.toJson(result)
+  }
+
+  /**
+   * Deterministic safety net for the German OpenPLZ.Autocomplete address group (OpenPLZ.AC.SET
+   * standard). Two jobs:
+   * 1. Ensures the matching `CodBi_OpenPLZ_AC_SET_*` CSS class is present on every XTextField that
+   *    represents an address part (street, building number, postal code, locality). The AI is
+   *    instructed to apply these classes but may omit them; existing classes are preserved.
+   * 2. When a complete address group (a postal-code field AND a locality field tagged with the
+   *    OpenPLZ classes inside the same container) has no street field and no house-number field
+   *    (and no combined address field), creates `tfStrasse` + `tfHausnummer` with the matching
+   *    OpenPLZ classes. Created fields reuse the XTextField base template (so they render) and are
+   *    placed in the same container, closing the gap where a prompt asks for
+   *    "PLZ/Ort/Straße/Hausnummer" German autocomplete but the generated fieldset only contains PLZ
+   *    and Ort.
+   *
+   * @param resultItems The form's `items` array (mutated in place).
+   * @param baseObj The form's `base` template object (used to fill required XTextField properties).
+   */
+  private fun ensureOpenPlzAddressFields(resultItems: JsonArray, baseObj: JsonObject?) {
+    // Pass 1 — apply OpenPLZ.AC.SET classes to existing address-part fields.
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val item = el.asJsonObject
+      if (item.get("className")?.asString != "XTextField") continue
+      val props = item.getAsJsonObject("properties") ?: continue
+      val name = props.get("name")?.asString ?: continue
+      // Split camelCase names into words (e.g. "tfAntragstellerPLZ" -> [tf, antragsteller, plz]) so
+      // unrelated names (e.g. "tfReport") never match by accident.
+      val words = name.split(Regex("(?=[A-Z])|[_\\s-]")).map { it.lowercase() }
+      val cls =
+          when {
+            words.any { it in setOf("street", "strasse", "straße") } ->
+                "CodBi_OpenPLZ_AC_SET_Street"
+            words.any { it in setOf("building", "buildingnumber", "hausnummer", "hausnr") } ->
+                "CodBi_OpenPLZ_AC_SET_BuildingNumber"
+            words.any {
+              it in setOf("postal", "postalcode", "postleitzahl", "plz", "zip", "zipcode")
+            } -> "CodBi_OpenPLZ_AC_SET_PLZ"
+            words.any { it in setOf("locality", "city", "ort", "wohnort") } ->
+                "CodBi_OpenPLZ_AC_SET_Locality"
+            else -> null
+          }
+      if (cls == null) continue
+      val cssClasses =
+          if (props.has("cssclasses") && props.get("cssclasses").isJsonArray)
+              props.getAsJsonArray("cssclasses")
+          else JsonArray().also { props.add("cssclasses", it) }
+      if (cssClasses.none { it.isJsonPrimitive && it.asString == cls }) {
+        cssClasses.add(cls)
+        logger.info(
+            "[AIFormAssistant] Applied OpenPLZ.AC.SET CSS class '{}' to address field '{}'",
+            cls,
+            name)
+      }
+      if (cls == "CodBi_OpenPLZ_AC_SET_PLZ" && props.get("datatype")?.asString.isNullOrBlank()) {
+        props.addProperty("datatype", "plzDE")
+      }
+    }
+    // Pass 2 — create missing street / house-number fields for complete address groups.
+    val baseTextProps = baseObj?.getAsJsonObject("XTextField")?.getAsJsonObject("properties")
+    if (baseTextProps == null) return
+    val childrenByParent = mutableMapOf<String, MutableSet<String>>()
+    val openplzByParent = mutableMapOf<String, MutableSet<String>>()
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val parentId = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      val name = props.get("name")?.asString ?: continue
+      childrenByParent.getOrPut(parentId) { mutableSetOf() }.add(name)
+      props
+          .get("cssclasses")
+          ?.takeIf { it.isJsonArray }
+          ?.asJsonArray
+          ?.forEach { c ->
+            if (c.isJsonPrimitive && c.asString.startsWith("CodBi_OpenPLZ_AC_SET_")) {
+              openplzByParent.getOrPut(parentId) { mutableSetOf() }.add(c.asString)
+            }
+          }
+    }
+    for ((parentId, classes) in openplzByParent) {
+      val hasPlz = classes.contains("CodBi_OpenPLZ_AC_SET_PLZ")
+      val hasLocality = classes.contains("CodBi_OpenPLZ_AC_SET_Locality")
+      if (!hasPlz || !hasLocality) continue
+      val children = childrenByParent[parentId] ?: continue
+      val hasStreet = children.any { it.contains(Regex("(?i)street|strasse|straße")) }
+      val hasBuilding =
+          children.any { it.contains(Regex("(?i)hausnummer|hausnr|buildingnumber|building")) }
+      val hasAddress = children.any { it.contains(Regex("(?i)adresse|address")) }
+      if (hasStreet && hasBuilding) continue
+      if (hasAddress) continue
+      val containerEl =
+          resultItems.firstOrNull {
+            it.isJsonObject &&
+                it.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString == parentId
+          } ?: continue
+      val containerProps = containerEl.asJsonObject.getAsJsonObject("properties") ?: continue
+      var elements = containerProps.getAsJsonArray("elements")
+      if (elements == null) {
+        val newArr = JsonArray()
+        containerProps.add("elements", newArr)
+        elements = newArr
+      }
+      if (!hasStreet) {
+        createAddressField(
+            resultItems,
+            elements,
+            baseTextProps,
+            parentId,
+            "tfStrasse",
+            "Straße",
+            "CodBi_OpenPLZ_AC_SET_Street")
+      }
+      if (!hasBuilding) {
+        createAddressField(
+            resultItems,
+            elements,
+            baseTextProps,
+            parentId,
+            "tfHausnummer",
+            "Hausnummer",
+            "CodBi_OpenPLZ_AC_SET_BuildingNumber")
+      }
+    }
+  }
+
+  /**
+   * Creates a new XTextField item reusing the XTextField base template and appends it to
+   * [elements]. Returns the created item, or `null` when the name is already referenced.
+   */
+  private fun createAddressField(
+      resultItems: JsonArray,
+      elements: JsonArray,
+      baseTextProps: JsonObject,
+      parentId: String,
+      name: String,
+      label: String,
+      cls: String,
+  ): JsonObject? {
+    if (elements.any { it.isJsonPrimitive && it.asString == name }) return null
+    val props = JsonObject()
+    for (entry in baseTextProps.entrySet()) props.add(entry.key, entry.value.deepCopy())
+    props.addProperty("name", name)
+    props.addProperty("id", "xi-${name.lowercase()}")
+    props.addProperty("label", label)
+    props.addProperty("parentid", parentId)
+    val cssClasses = JsonArray()
+    cssClasses.add(cls)
+    props.add("cssclasses", cssClasses)
+    val item = JsonObject()
+    item.addProperty("className", "XTextField")
+    item.add("properties", props)
+    resultItems.add(item)
+    elements.add(name)
+    logger.info(
+        "[AIFormAssistant] Created missing address field '{}' ({} class) in container '{}'",
+        name,
+        cls,
+        parentId)
+    return item
   }
 
   /**

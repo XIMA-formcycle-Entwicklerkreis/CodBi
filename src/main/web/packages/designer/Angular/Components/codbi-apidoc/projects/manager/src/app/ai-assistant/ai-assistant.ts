@@ -191,6 +191,10 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  flight, so those callbacks must not re-open it (e.g. ALT+A open, then immediately close).
    *  Cleared on the next explicit open (or the dialog's visibleChange(true)). */
   private dialogDismissed = false;
+  /** Timestamp of the last time the dialog was opened — a stray second open event within the first
+   *  400ms (poll tick / host re-mount) must never toggle the freshly opened dialog closed (see
+   *  openHandler). */
+  private lastOpenedAt = 0;
   private speechBaseText = "";
   private speechFinalText = "";
   /** The full `codbi-prop-standards` CSV that the AI set on its most recent run.
@@ -212,6 +216,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   private logResizeState: { startX: number; startWidth: number } | null = null;
   private static readonly LOG_PANEL_MIN_WIDTH = 320;
   private static readonly LOG_PANEL_MAIN_MIN_WIDTH = 430;
+  /** Minimum width of each side (assistant content / change log) as a fraction of the dialog width. */
+  private static readonly LOG_PANE_MIN_RATIO = 0.25;
   private readonly LOG_PANEL_WIDTH_KEY = "codbi-ai-log-panel-width";
   /** localStorage key remembering the open/closed state of the change-log panel. */
   private readonly LOG_PANEL_OPEN_KEY = "codbi-ai-log-panel-open";
@@ -239,9 +245,11 @@ export class AiAssistant implements OnInit, OnDestroy {
     // ALT+A toggles the assistant: close it when it is already open, otherwise open it. Only
     // treat it as "open" once the dialog is actually rendered in the DOM (not just visible in
     // state) — the opening poll in AICodBiAssistantDialog.ts re-dispatches codbi:ai-assistant:open
-    // every ~700ms until the dialog element appears, and a second dispatch while this.visible is
-    // already true (but the DOM is not rendered yet) must not close the freshly opened dialog.
-    if (this.visible && document.querySelector(".cb-ai-assistant-dialog")) {
+    // until the dialog element appears, and a second dispatch while this.visible is already true
+    // (but the DOM is not rendered yet) must not close the freshly opened dialog. A stray second
+    // event shortly after opening (a poll tick or a host re-mount) must also never close it — only a
+    // deliberate ALT+A press once the dialog has been open for a moment toggles it closed.
+    if (this.visible && document.querySelector(".cb-ai-assistant-dialog") && Date.now() - this.lastOpenedAt > 400) {
       this.close();
     } else {
       this.open();
@@ -261,6 +269,7 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  publish-reload). */
   private readonly beforeUnloadHandler = (): void => {
     this.persistPendingChat();
+    this.persistChatSession();
   };
 
   /** Focuses the prompt textarea once the dialog is visible (dialog opening is async). */
@@ -307,6 +316,9 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   /** Remembered dialog position, persisted across reloads so the browser keeps the location. */
   private dialogPosition: DialogPosition | null = loadDialogPosition("codbi-dialog-assistant-position");
+  /** localStorage key remembering whether the assistant dialog was maximized (persisted so a dialog
+   *  closed while maximized reopens maximized). */
+  private static readonly MAXIMIZED_KEY = "codbi-ai-assistant-maximized";
   private static readonly DIALOG_STYLE_CLASS = "cb-ai-assistant-dialog";
   /** Cleanup for the custom header-drag handlers (re-enabled on every dialog show). */
   private dragCleanup: (() => void) | null = null;
@@ -322,6 +334,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   chatMessages: Array<{ role: "user" | "assistant"; text: string }> = [];
   /** Current chat input text. */
   chatInput = "";
+  /** Index of the chat message whose copy button currently shows the "copied" state (-1 = none). */
+  copiedChatIndex = -1;
   /** True while a chat turn is being processed. */
   chatLoading = false;
   /** Remembered chat popup position, persisted across reloads. */
@@ -329,8 +343,14 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Cleanup for the chat popup's custom drag handlers (registered on each open). */
   private chatDragCleanup: (() => void) | null = null;
   private static readonly CHAT_DIALOG_STYLE_CLASS = "cb-ai-chat-dialog";
+  /** localStorage key remembering whether the chat popup was maximized. */
+  private static readonly CHAT_MAXIMIZED_KEY = "codbi-ai-chat-maximized";
   /** localStorage key used to re-open the chat popup after a workflow-triggered reload. */
   private static readonly PENDING_CHAT_KEY = "codbi-pending-chat";
+  /** sessionStorage key persisting the current chat conversation within the tab session — survives
+   *  closing/reopening the chat and host re-creation, and is cleared automatically when the tab
+   *  closes (no DB storage). */
+  private static readonly CHAT_SESSION_KEY = "codbi-chat-session";
   // #endregion Form chat popup
 
   constructor(private readonly cdr: ChangeDetectorRef) {}
@@ -407,11 +427,8 @@ export class AiAssistant implements OnInit, OnDestroy {
     const state = this.logResizeState;
     if (!state) return;
     const next = state.startWidth - (event.clientX - state.startX);
-    const max = Math.max(
-      AiAssistant.LOG_PANEL_MIN_WIDTH,
-      Math.round(this.dialogWidth - AiAssistant.LOG_PANEL_MAIN_MIN_WIDTH),
-    );
-    this.logPanelWidth = Math.round(Math.min(Math.max(next, AiAssistant.LOG_PANEL_MIN_WIDTH), max));
+    // Clamp so BOTH sides stay at least 25% of the ACTUAL dialog width.
+    this.logPanelWidth = this.clampLogPanelWidth(next);
     // Keep the watermark centered over the left (assistant) content as the splitter moves.
     this.applyWatermarkPosition();
     this.cdr.markForCheck();
@@ -445,6 +462,34 @@ export class AiAssistant implements OnInit, OnDestroy {
     } catch {
       // ignore storage errors
     }
+  }
+
+  /** The dialog's ACTUAL rendered width (measured from the DOM). Falls back to the stored width when
+   *  the dialog is not rendered/measurable yet (e.g. before its first layout). This is used instead
+   *  of `this.dialogWidth` because that field can be stale — it is set to the full viewport width
+   *  when the change log widens the dialog, but stays there after the user undocks/drags the dialog
+   *  to a much smaller floating width, so the 25% guard would be computed against the wrong width. */
+  private actualDialogWidth(): number {
+    const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+    const w = el ? Math.round(el.getBoundingClientRect().width) : 0;
+    return w > 0 ? w : this.dialogWidth;
+  }
+
+  /** Clamps the change-log panel width so that BOTH sides of the dialog (assistant content + change
+   *  log) always stay at least 25% of the ACTUAL dialog width. No absolute pixel floor — a hard
+   *  minimum would break the 25% rule on small dialogs (it would force a wide log panel into a
+   *  narrow dialog and squeeze the main content to nothing). [refWidth] overrides the measured width
+   *  (e.g. the viewport, when the dialog is about to be widened). */
+  private clampLogPanelWidth(width: number, refWidth?: number): number {
+    const actual = this.actualDialogWidth();
+    const w = refWidth ?? actual;
+    const min = Math.round(w * AiAssistant.LOG_PANE_MIN_RATIO);
+    const max = Math.max(min, Math.round(w * (1 - AiAssistant.LOG_PANE_MIN_RATIO) - 8));
+    const result = Math.round(Math.min(Math.max(width, min), max));
+    console.log(
+      `[AICodBiAssistant] clampLogPanelWidth width=${Math.round(width)} refWidth=${refWidth ?? "actual"} actualWidth=${actual} dialogWidth=${this.dialogWidth} -> min=${min} max=${max} result=${result}`,
+    );
+    return result;
   }
 
   /** Persists the open/closed state of the change-log panel across reloads. */
@@ -481,6 +526,8 @@ export class AiAssistant implements OnInit, OnDestroy {
       this.setLogOpenState(true);
     }
     this.cdr.markForCheck();
+    // The dialog width changed — re-evaluate the footer wrap state.
+    setTimeout(() => this.updateFooterLayout(), 0);
   }
 
   /** The embedded change-log panel auto-opened (e.g. from the `codbi:ai-assistant-log:open`
@@ -499,6 +546,8 @@ export class AiAssistant implements OnInit, OnDestroy {
       }
     };
     setTimeout(() => show(0), 100);
+    // The dialog widened — re-evaluate the footer wrap state once the layout settles.
+    setTimeout(() => this.updateFooterLayout(), 250);
   }
 
   /** The user folded the change-log panel via its close button. */
@@ -508,7 +557,58 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.restoreDialogSize();
     this.setLogOpenState(false);
     this.cdr.markForCheck();
+    // The dialog narrowed — re-evaluate whether the footer switches/buttons wrapped.
+    setTimeout(() => this.updateFooterLayout(), 0);
   }
+
+  /** Keeps the dialog footer layout in sync: when the switch group and the button group wrap onto
+   *  separate lines (the dialog is too narrow), they are centered; otherwise they stay left/right
+   *  aligned on one row. */
+  private updateFooterLayout(): void {
+    const footer = document.querySelector<HTMLElement>(".cb-ai-assistant-dialog .p-dialog-footer");
+    if (!footer) return;
+    const codbi = footer.querySelector<HTMLElement>(".cb-ai-footer-codbi");
+    const actions = footer.querySelector<HTMLElement>(".cb-ai-footer-actions");
+    const wrapped = !!codbi && !!actions && actions.offsetTop > codbi.offsetTop;
+    footer.classList.toggle("cb-ai-footer-wrapped", wrapped);
+  }
+
+  /** On a viewport resize (change-log open), re-measures the ACTUAL rendered dialog width — the
+   *  stored `dialogWidth` can be stale after the window shrank or after the dialog was undocked —
+   *  and re-clamps the change-log panel so both sides stay at least 25% of the dialog width. Runs
+   *  deferred so the viewport guard (which caps the dialog width on resize) has already applied. */
+  private updatePanelWidthsForViewport(): void {
+    console.log(
+      `[AICodBiAssistant] updatePanelWidthsForViewport showLog=${this.showLog} vw=${window.innerWidth} dialogWidth=${this.dialogWidth} logPanelWidth=${this.logPanelWidth}`,
+    );
+    if (!this.showLog) return;
+    setTimeout(() => {
+      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (!el) {
+        console.log("[AICodBiAssistant] updatePanelWidthsForViewport: dialog element NOT found");
+        return;
+      }
+      const actualWidth = Math.round(el.getBoundingClientRect().width);
+      console.log(
+        `[AICodBiAssistant] updatePanelWidthsForViewport: actualWidth=${actualWidth} oldDialogWidth=${this.dialogWidth} oldLogPanelWidth=${this.logPanelWidth}`,
+      );
+      if (actualWidth > 0) {
+        this.dialogWidth = actualWidth;
+      }
+      this.logPanelWidth = this.clampLogPanelWidth(this.logPanelWidth);
+      console.log(
+        `[AICodBiAssistant] updatePanelWidthsForViewport: -> dialogWidth=${this.dialogWidth} logPanelWidth=${this.logPanelWidth}`,
+      );
+      this.applyWatermarkPosition();
+      this.cdr.markForCheck();
+    }, 0);
+  }
+
+  private readonly onWindowResize = (): void => {
+    console.log(`[AICodBiAssistant] onWindowResize vw=${window.innerWidth} showLog=${this.showLog}`);
+    this.updatePanelWidthsForViewport();
+    this.updateFooterLayout();
+  };
 
   /**
    * Widens the assistant dialog so its right edge reaches the right edge of the viewport, then
@@ -522,14 +622,8 @@ export class AiAssistant implements OnInit, OnDestroy {
         `[AICodBiAssistant] expandAndShow attempt=${attempt} visible=${this.visible} showLog=${this.showLog} models=${this.models.length}`,
       );
       if (this.expandDialogForLog()) {
-        // Never let the saved panel width exceed the dialog's available space.
-        this.logPanelWidth = Math.min(
-          this.logPanelWidth,
-          Math.max(
-            AiAssistant.LOG_PANEL_MIN_WIDTH,
-            Math.round(this.dialogWidth - AiAssistant.LOG_PANEL_MAIN_MIN_WIDTH),
-          ),
-        );
+        // Never let the panel width leave either side below 25% of the actual dialog width.
+        this.logPanelWidth = this.clampLogPanelWidth(this.logPanelWidth);
         this.showLog = true;
         this.cdr.markForCheck();
         // The embedded change-log component is created together with the dialog content; retry for
@@ -573,6 +667,10 @@ export class AiAssistant implements OnInit, OnDestroy {
     const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
     const maskDisplay = mask ? getComputedStyle(mask).display : "no-mask";
     const visible = mask ? getComputedStyle(mask).display !== "none" : el.offsetParent !== null;
+    // Neutralize any scale/translate transform (e.g. the Formcycle designer's zoom) BEFORE measuring,
+    // so rect.left/top reflect the real (unscaled) position — otherwise the transform offsets the
+    // measurement and the dialog is pushed further off-screen.
+    el.style.transform = "none";
     const rect = el.getBoundingClientRect();
     console.log("[AICodBiAssistant] expandDialogForLog:", {
       maskDisplay,
@@ -587,9 +685,13 @@ export class AiAssistant implements OnInit, OnDestroy {
     if (rect.width < 50 || rect.height < 50) return false;
     // The dialog must be wide enough for both panes. If its current left edge leaves too little
     // room to reach the right edge of the viewport, shift the left edge left so the dialog always
-    // expands and the change-log panel never overlaps the assistant content.
-    const minTotal = this.logPanelWidth + AiAssistant.LOG_PANEL_MAIN_MIN_WIDTH + 8;
-    const left = Math.min(rect.left, Math.max(0, Math.round(window.innerWidth - minTotal)));
+    // expands and the change-log panel never overlaps the assistant content. Never place it left of
+    // the viewport edge.
+    // Clamp the panel width against the viewport so a stale/huge saved width can't blow up the
+    // expansion math (which would otherwise squeeze the assistant content to nothing).
+    const minTotal =
+      this.clampLogPanelWidth(this.logPanelWidth, window.innerWidth) + AiAssistant.LOG_PANEL_MAIN_MIN_WIDTH + 8;
+    const left = Math.max(0, Math.min(rect.left, Math.max(0, Math.round(window.innerWidth - minTotal))));
     const dialogWidth = Math.max(620, Math.round(window.innerWidth - left));
     console.log("[AICodBiAssistant] expandDialogForLog computed:", {
       windowInnerWidth: window.innerWidth,
@@ -601,7 +703,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     el.style.position = "fixed";
     el.style.transform = "none";
     el.style.left = `${left}px`;
-    el.style.top = `${rect.top}px`;
+    el.style.top = `${Math.max(0, Math.round(rect.top))}px`;
     this.dialogWidth = dialogWidth;
     // Apply the expanded width directly (no Angular style binding) so the resize handle and manual
     // resize are never overwritten.
@@ -659,6 +761,9 @@ export class AiAssistant implements OnInit, OnDestroy {
     document.addEventListener("codbi:ai-assistant:speech", this.speechHandler);
     // Persist the chat before ANY reload so it re-opens afterwards (our own reload or Formcycle's).
     window.addEventListener("beforeunload", this.beforeUnloadHandler);
+    // On window resizes, re-clamp the change-log panel (25%-75% of the actual dialog width) and
+    // refresh the footer wrap state.
+    window.addEventListener("resize", this.onWindowResize);
     // Re-open the chat popup with a persisted conversation after a workflow-triggered reload. This
     // MUST run before the steps below: checkSensitiveAutoOpen() can throw "Designer instance was
     // not created yet" when the Formcycle designer is not ready on first paint, and an uncaught
@@ -729,6 +834,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     document.removeEventListener("codbi:ai-assistant:open", this.openHandler);
     document.removeEventListener("codbi:ai-assistant:speech", this.speechHandler);
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
+    window.removeEventListener("resize", this.onWindowResize);
     this.stopSpeech();
     this.dragCleanup?.();
     this.dragCleanup = null;
@@ -746,6 +852,8 @@ export class AiAssistant implements OnInit, OnDestroy {
       // The change-log side panel starts folded whenever the dialog is (re)opened.
       this.showLog = false;
       this.dialogWidth = this.foldedDialogWidth;
+      // Remember the maximized state so a dialog closed while maximized reopens maximized.
+      this.persistMaximized();
       // Ensure PrimeNG's modal mask is removed when the dialog closes (it can otherwise linger and
       // leave the background darkened).
       setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
@@ -758,9 +866,12 @@ export class AiAssistant implements OnInit, OnDestroy {
     console.log("[AICodBiAssistant] onDialogShow fired", { showLog: this.showLog, dialogWidth: this.dialogWidth });
     const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
     if (el) {
-      el.style.width = `${this.foldedDialogWidth}px`;
-      el.style.maxWidth = "";
-      el.style.backgroundPosition = "";
+      // A maximized dialog fills the viewport — never reset its width.
+      if (!el.classList.contains("p-dialog-maximized")) {
+        el.style.width = `${this.foldedDialogWidth}px`;
+        el.style.maxWidth = "";
+        el.style.backgroundPosition = "";
+      }
     }
     setTimeout(() => applyDialogPosition(AiAssistant.DIALOG_STYLE_CLASS, this.dialogPosition), 0);
   }
@@ -771,6 +882,91 @@ export class AiAssistant implements OnInit, OnDestroy {
     if (p) {
       this.dialogPosition = p;
       saveDialogPosition("codbi-dialog-assistant-position", p);
+    }
+  }
+
+  /** Re-maximizes the assistant dialog after a reopen when it was closed while maximized. Clicks
+   *  PrimeNG's own maximize button so it uses the correct fill styles AND captures the current
+   *  position as the pre-maximize state — un-maximizing later returns to the saved spot. */
+  private restoreMaximized(): void {
+    let want = false;
+    try {
+      want = localStorage.getItem(AiAssistant.MAXIMIZED_KEY) === "1";
+    } catch {
+      // ignore storage errors
+    }
+    if (!want) return;
+    const tryRestore = (attempt: number): void => {
+      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (!el || el.classList.contains("p-dialog-maximized")) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        if (attempt < 30) setTimeout(() => tryRestore(attempt + 1), 100);
+        return;
+      }
+      // Apply the saved floating position first so PrimeNG captures it as the pre-maximize size.
+      applyDialogPosition(AiAssistant.DIALOG_STYLE_CLASS, this.dialogPosition);
+      // PrimeNG v20 renders the maximize button as .p-dialog-maximize-button (the old
+      // .p-dialog-maximize-icon class no longer exists) — match both.
+      const btn = el.querySelector<HTMLElement>(".p-dialog-maximize-button, .p-dialog-maximize-icon");
+      if (btn) {
+        btn.click();
+      }
+    };
+    setTimeout(() => tryRestore(0), 150);
+  }
+
+  /** Persists the current maximized state (reads the rendered `p-dialog-maximized` class so it is
+   *  robust against any PrimeNG internal reset), so a dialog closed while maximized reopens
+   *  maximized. */
+  private persistMaximized(): void {
+    const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+    const isMaximized = !!el?.classList.contains("p-dialog-maximized");
+    try {
+      localStorage.setItem(AiAssistant.MAXIMIZED_KEY, isMaximized ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** Restores the chat popup's maximized state (clicking PrimeNG's own maximize button) so a chat
+   *  closed while maximized reopens maximized. */
+  private restoreChatMaximized(): void {
+    let want = false;
+    try {
+      want = localStorage.getItem(AiAssistant.CHAT_MAXIMIZED_KEY) === "1";
+    } catch {
+      // ignore storage errors
+    }
+    if (!want) return;
+    const tryRestore = (attempt: number): void => {
+      const el = document.querySelector(`.${AiAssistant.CHAT_DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (!el || el.classList.contains("p-dialog-maximized")) return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        if (attempt < 30) setTimeout(() => tryRestore(attempt + 1), 100);
+        return;
+      }
+      // Apply the saved floating position first so PrimeNG captures it as the pre-maximize size.
+      applyDialogPosition(AiAssistant.CHAT_DIALOG_STYLE_CLASS, this.chatPosition);
+      // PrimeNG v20 renders the maximize button as .p-dialog-maximize-button (the old
+      // .p-dialog-maximize-icon class no longer exists) — match both.
+      const btn = el.querySelector<HTMLElement>(".p-dialog-maximize-button, .p-dialog-maximize-icon");
+      if (btn) {
+        btn.click();
+      }
+    };
+    setTimeout(() => tryRestore(0), 150);
+  }
+
+  /** Persists the chat popup's current maximized state so it reopens maximized. */
+  private persistChatMaximized(): void {
+    const el = document.querySelector(`.${AiAssistant.CHAT_DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+    const isMaximized = !!el?.classList.contains("p-dialog-maximized");
+    try {
+      localStorage.setItem(AiAssistant.CHAT_MAXIMIZED_KEY, isMaximized ? "1" : "0");
+    } catch {
+      // ignore storage errors
     }
   }
 
@@ -900,19 +1096,36 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   // #region Open / close
   private open(): void {
-    // Already open/opening — ignore re-entry. The opening poll in AICodBiAssistantDialog.ts can
-    // dispatch codbi:ai-assistant:open again before the dialog DOM has rendered; without this
-    // guard each re-dispatch would reset the state and fire another Status request.
-    if (this.visible) return;
+    // A genuinely rendered, visible dialog ignores re-entry — the opening poll in
+    // AICodBiAssistantDialog.ts can re-dispatch the open event while the dialog is still rendering.
+    // Only when `visible` has been true for a long time with NO dialog rendered (a stuck state, e.g.
+    // caused by the former delayed mask-cleanup race) is the state reset, so the next open event (a
+    // poll tick or the next ALT+A) can render the dialog afresh — otherwise it could never appear
+    // again until a page reload.
+    if (this.visible) {
+      if (document.querySelector(".cb-ai-assistant-dialog") || Date.now() - this.lastOpenedAt < 1500) {
+        return;
+      }
+      this.visible = false;
+      this.dialogDismissed = false;
+      this.cdr.markForCheck();
+      return;
+    }
+    // Remember when the dialog was opened so openHandler's toggle only closes it on a deliberate
+    // later ALT+A press, never on a stray second open event right after opening.
+    this.lastOpenedAt = Date.now();
     this.resultText = null;
     this.errorText = null;
     this.attachedFile = null;
     // Always recover from a stuck busy state so the ALT+A hotkey can reopen the dialog even after
     // an inference that closed it without a page reload.
     this.loading = false;
-    // Remove any lingering modal mask from a previous close so the reopened dialog is never hidden
-    // behind it (this could make the first ALT+A appear to do nothing).
-    setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
+    // Remove any lingering modal mask from a previous close SYNCHRONOUSLY, before the dialog
+    // renders again. Removing it with a setTimeout(0) races the new dialog's render: when Angular
+    // renders the fresh mask fast enough, the delayed cleanup deletes it and the dialog "flashes up
+    // and vanishes" (and, being stuck at visible=true with no DOM, would then refuse to open on
+    // later ALT+A presses). Removing it up front is safe — the newly rendered mask is never touched.
+    this.removeOverlayMask(".cb-ai-assistant-mask");
 
     // Show the dialog IMMEDIATELY so ALT+A responds instantly — do NOT wait for the Status/Models
     // AJAX round-trips below (they used to delay the popup by seconds while the user kept pressing
@@ -922,10 +1135,43 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.dialogDismissed = false;
     this.visible = true;
     this.forceAssistantOnScreen();
+    // Re-maximize the dialog when it was closed while maximized.
+    this.restoreMaximized();
     if (this.models.length > 0) {
       this.restoreLogOpenState();
     }
     this.cdr.markForCheck();
+
+    // DIAGNOSTIC: log the dialog's real geometry/style shortly after opening — reveals an off-screen
+    // position or a leftover PrimeNG centering transform. Remove once the off-screen issue is fixed.
+    setTimeout(() => {
+      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (!el) {
+        console.log("[AICodBiAssistant] open diagnostic: dialog element NOT found after 250ms");
+        return;
+      }
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      const chain: string[] = [];
+      let node: HTMLElement | null = el;
+      while (node) {
+        const t = getComputedStyle(node).transform;
+        const cls =
+          typeof node.className === "string" && node.className
+            ? "." + node.className.trim().split(/\s+/).join(".")
+            : "";
+        chain.push(
+          `${node.tagName.toLowerCase()}${node.id ? "#" + node.id : ""}${cls} transform=${t === "none" ? "none" : t}`,
+        );
+        node = node.parentElement;
+      }
+      console.log(
+        `[AICodBiAssistant] open diagnostic: rect=(${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}) vw=${window.innerWidth} vh=${window.innerHeight} position=${cs.position} inlineTransform=${el.style.transform || "none"} computedTransform=${cs.transform} left=${cs.left} top=${cs.top}`,
+      );
+      console.log(`[AICodBiAssistant] open diagnostic chain:\n  ` + chain.join("\n  "));
+    }, 250);
+    // Keep the footer (switches vs buttons) centered when it wraps onto two lines.
+    setTimeout(() => this.updateFooterLayout(), 300);
 
     // Verify the CodBi prompt database is reachable in the background. Without DB prompts there is
     // no point sending anything to the AI — show an error and disable the inputs (still visible).
@@ -1091,6 +1337,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   close(): void {
     this.visible = false;
     this.dialogDismissed = true;
+    // Remember the maximized state so a dialog closed while maximized reopens maximized.
+    this.persistMaximized();
     this.cdr.markForCheck();
     // Ensure PrimeNG's modal mask is removed when the dialog closes (it can otherwise linger and
     // leave the background darkened, even though the page underneath is clickable).
@@ -1633,6 +1881,11 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   /** Opens the chat popup, optionally appending an assistant answer to the conversation. */
   openChat(answer?: string): void {
+    // Restore the in-session conversation when the component was re-created (e.g. host re-mount),
+    // so closing and reopening the chat keeps the bubbles.
+    if (this.chatMessages.length === 0) {
+      this.restoreChatSession();
+    }
     if (answer && answer.trim()) {
       const last = this.chatMessages[this.chatMessages.length - 1];
       if (!(last && last.role === "assistant" && last.text === answer)) {
@@ -1650,6 +1903,8 @@ export class AiAssistant implements OnInit, OnDestroy {
       (p) => (this.chatPosition = p),
     );
     setTimeout(() => applyDialogPosition(AiAssistant.CHAT_DIALOG_STYLE_CLASS, this.chatPosition), 0);
+    // Re-maximize the chat popup when it was closed while maximized.
+    this.restoreChatMaximized();
     // Force the chat dialog (and its mask) above the Formcycle designer: the designer's own
     // overlays use very high z-index values and PrimeNG's z-index manager may not assign a high
     // enough one for this dynamically created modal dialog.
@@ -1660,12 +1915,25 @@ export class AiAssistant implements OnInit, OnDestroy {
       if (mask) mask.style.zIndex = "2147482000";
     }, 0);
     this.scrollChatToBottom();
+    this.persistChatSession();
     this.cdr.markForCheck();
   }
 
   /** Closes the chat popup and unregisters its drag handler. */
   closeChat(): void {
+    // Persist the current size/position BEFORE the dialog is removed from the DOM, so closing and
+    // reopening keeps the last spot. Dragging already saves via the custom drag coordinator, but a
+    // PrimeNG resize — or a close without a preceding drag — would otherwise never reach the store.
+    const p = readDialogPosition(AiAssistant.CHAT_DIALOG_STYLE_CLASS);
+    if (p) {
+      this.chatPosition = p;
+      saveDialogPosition("codbi-dialog-chat-position", p);
+    }
     this.chatVisible = false;
+    // Remember the maximized state so a chat closed while maximized reopens maximized.
+    this.persistChatMaximized();
+    // Keep the conversation for this session (sessionStorage) so reopening shows the bubbles.
+    this.persistChatSession();
     this.chatDragCleanup?.();
     this.chatDragCleanup = null;
     // A chat the user explicitly closed must not reappear on the next reload.
@@ -1677,9 +1945,57 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  /** Persists the chat popup's size/position after the user resized it (PrimeNG `(onResizeEnd)`).
+   *  Dragging already persists via the custom drag coordinator; this covers the resize handle so a
+   *  resized chat reopens at the same size and spot. */
+  onChatResizeEnd(): void {
+    const p = readDialogPosition(AiAssistant.CHAT_DIALOG_STYLE_CLASS);
+    if (p) {
+      this.chatPosition = p;
+      saveDialogPosition("codbi-dialog-chat-position", p);
+    }
+  }
+
   /** Handles manual dismissal of the chat popup (X / Escape). */
   onChatVisibleChange(visible: boolean): void {
     if (!visible) this.closeChat();
+  }
+
+  /**
+   * Copies a chat message's text to the clipboard and briefly shows a "copied" state on its button.
+   * Falls back to the legacy execCommand path when the async Clipboard API is unavailable.
+   */
+  copyChatMessage(text: string, index: number): void {
+    const done = (): void => {
+      this.copiedChatIndex = index;
+      this.cdr.markForCheck();
+      setTimeout(() => {
+        if (this.copiedChatIndex === index) {
+          this.copiedChatIndex = -1;
+          this.cdr.markForCheck();
+        }
+      }, 1600);
+    };
+    const fallback = (): void => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        done();
+      } catch {
+        window.prompt("Copy message", text);
+      }
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+    } else {
+      fallback();
+    }
   }
 
   /** Sends the current chat input as a new chat turn (question or instruction). */
@@ -1689,6 +2005,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     const history = this.chatHistoryPayload();
     this.chatInput = "";
     this.chatMessages.push({ role: "user", text });
+    this.persistChatSession();
     this.chatLoading = true;
     this.scrollChatToBottom();
     this.cdr.markForCheck();
@@ -1749,6 +2066,47 @@ export class AiAssistant implements OnInit, OnDestroy {
       console.log("[AICodBiAssistant] persistPendingChat: saved", this.chatMessages.length, "message(s)");
     } catch {
       // ignore storage errors
+    }
+  }
+
+  /** Persists the current chat conversation to sessionStorage (tab session only, no DB). Runs even
+   *  when the chat is closed, so closing and reopening keeps the bubbles. */
+  private persistChatSession(): void {
+    if (this.chatMessages.length === 0) return;
+    try {
+      sessionStorage.setItem(
+        AiAssistant.CHAT_SESSION_KEY,
+        JSON.stringify({
+          messages: this.chatMessages,
+          clarificationHistory: this.clarificationHistory,
+        }),
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** Restores the in-session chat conversation from sessionStorage. Returns true when messages were
+   *  restored (used on open when the component was re-created). */
+  private restoreChatSession(): boolean {
+    try {
+      const raw = sessionStorage.getItem(AiAssistant.CHAT_SESSION_KEY);
+      if (!raw) return false;
+      const parsed: unknown = JSON.parse(raw);
+      const obj = parsed as { messages?: unknown; clarificationHistory?: unknown } | null;
+      const messages = Array.isArray(obj?.messages)
+        ? (obj.messages as Array<{ role?: unknown; text?: unknown }>)
+            .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string")
+            .map((m) => ({ role: m.role as "user" | "assistant", text: m.text as string }))
+        : [];
+      if (messages.length === 0) return false;
+      this.chatMessages = messages;
+      if (Array.isArray(obj?.clarificationHistory)) {
+        this.clarificationHistory = obj.clarificationHistory;
+      }
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -2175,6 +2533,7 @@ export class AiAssistant implements OnInit, OnDestroy {
           // A pure instruction chat turn gets an acknowledgment bubble so the conversation stays
           // coherent (see chatAckText). This bubble is also persisted across workflow reloads.
           this.chatMessages.push({ role: "assistant", text: this.chatAckText() });
+          this.persistChatSession();
           this.cdr.markForCheck();
         }
 

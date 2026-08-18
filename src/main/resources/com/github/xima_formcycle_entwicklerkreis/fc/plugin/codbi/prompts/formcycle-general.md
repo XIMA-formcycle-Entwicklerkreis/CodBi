@@ -16,6 +16,7 @@ Cross-cutting Formcycle rules that apply across widgets and workflow nodes.
 - REMOVAL — When the user's request EXPLICITLY asks to REMOVE/DELETE existing elements (fields, buttons, containers, ...), do BOTH so the server honors the removal and does not restore the element: (1) remove the element from the top-level 'items' array AND from every container's 'properties.elements' array, and (2) list its 'properties.name' in a top-level '_removedItems' array of your output JSON (e.g. "_removedItems": ["tfOrt"]). An element removed WITHOUT being listed in '_removedItems' is treated as an accidental drop and the server may restore it.
 - Do NOT include 'css', 'script', 'image', 'images', 'pagePreview', 'rendered', 'formI18n', or 'metadata' fields — they are handled separately and will be merged back. Also do NOT include any XFooter item in the items array.
 - Output ONLY valid JSON. No trailing commas. No comments.
+- The output is FORM JSON ONLY — NEVER generate JavaScript/code blocks. The form JSON has no 'script' field and you cannot inject custom JS. When a request needs custom JavaScript (e.g. syncing a map widget's drawn geometry to a field, or any client-side logic), do NOT fabricate a script and do NOT explain how to write one — configure what the form JSON can express (widgets, properties, classes) and simply state that the required script must be added manually.
 
 ## Button Actions (XButtonList)
 

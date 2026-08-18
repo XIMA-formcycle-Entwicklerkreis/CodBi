@@ -42,7 +42,8 @@
             icon="pi pi-bolt"
             severity="secondary"
             size="small"
-            [outlined]="true"
+            [outlined]="!hasUncheckedSensitive"
+            [styleClass]="hasUncheckedSensitive ? 'cb-log-sensitive-btn--pending' : ''"
             (onClick)="expandSensitiveNodes()"
             [disabled]="loading || logs.length === 0"
             title="Expand all un-checked sensitive elements up to their top-level nodes" />
@@ -123,7 +124,33 @@
 
     <div class="cb-log-tree">
         @for (node of logs; track trackById($index, node)) {
-            <cb-log-node [node]="node" (sensitiveChecked)="onSensitiveChecked($event)" />
+            <cb-log-node [node]="node" (sensitiveChecked)="onSensitiveChecked($event)" (promptOpen)="onPromptOpen($event)" />
         }
     </div>
 </div>
+
+<!-- Full-prompt viewer: a single top-level popup (like the chat / clarification dialogs), rendered
+     once by this component and NOT inside the recursive tree node. A dialog placed inside the tree
+     ends up positioned relative to the scrollable list container and lands offset from its top-left
+     corner; appended to <body> and centered here it is a proper modal like the other CodBi popups. -->
+@if (activePrompt !== null) {
+<p-dialog
+    [visible]="true"
+    (visibleChange)="onPromptDialogVisibleChange($event)"
+    [modal]="true"
+    [draggable]="false"
+    [resizable]="true"
+    [closeOnEscape]="true"
+    appendTo="body"
+    [baseZIndex]="999999"
+    maskStyleClass="cb-log-prompt-mask"
+    styleClass="cb-log-prompt-dialog">
+    <ng-template #header>
+        <div class="cb-log-prompt-header">
+            <img class="cb-log-prompt-logo" [src]="codbiLogoUrl" alt="CodBi" />
+            <span class="cb-log-prompt-title">Full prompt</span>
+        </div>
+    </ng-template>
+    <pre class="cb-log-prompt-text">{{ activePrompt }}</pre>
+</p-dialog>
+}

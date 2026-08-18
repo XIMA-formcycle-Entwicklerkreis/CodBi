@@ -170,7 +170,7 @@ when CodBi searches within the shared parent container.
   - FocusOnAutocomplete: CSS-Class-Selector of the field to focus after an autocomplete selection. On POSTAL CODE and LOCALITY fields: set to the street field (e.g., '.tfStreet'). On the STREET field: set to the building number field if one exists (e.g., '.tfBuildingNumber'). Do NOT use an ID selector.
   - MsgNotKnown: Message to show when the entered value is not found in the OpenPLZ database.
   - TargetData: Defines what type of data is being autocompleted: 'Localities' (city/town), 'PostalCodes' (ZIP/PLZ), or 'Streets'. Pick the one that matches the tagged field's purpose.
-- Print.Remove: Applicable on any element that should be invisible when the form is printed.
+- Print.Remove: Applicable on any element that should be invisible when the form is printed. STANDARD: use the CodBi_Print_Remove_* CSS classes (Tagged / Parent / PrintOnly). Use this functionality ONLY when a parameter is needed — e.g. DocumentSelector (a dot-prefixed CSS-class selector of the section to remove) or ParentalLevel.
   - DocumentSelector: CSS-Class-Selector for the element to remove (e.g., '.divPrintSection'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Invert: Specifies whether this functionality shall be inverted, e.g.
   - ParentalLevel: The number of elements to climb up the HTMLElement.parentElement -Tree to get to.

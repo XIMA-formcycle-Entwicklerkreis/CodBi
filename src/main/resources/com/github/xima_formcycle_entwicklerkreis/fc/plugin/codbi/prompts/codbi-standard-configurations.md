@@ -16,6 +16,7 @@ CRITICAL: NEVER invent CSS class names. If a CSS class is not in the list below,
 a) Apply AT MOST ONE CSS class per field — do NOT stack multiple classes on the same element.
 b) Only apply a CSS class when it has an EXACT match to the field's purpose. If no class matches, use data-cb-func.
 c) For Time/Date frame ranges: When a CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End CSS class exists (N=1-5), use it. FALLBACK: If all 5 numbers are already used, use data-cb-func=time.frame (or date.frame). When using a frame CSS class, do NOT add data-cb-func=time.frame or data-cb-func=date.frame — that would be redundant. However, you MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends is valid).
+c2) FRAME CLASSES ARE PER-FIELD AND ONLY "..._Begin"/"..._End" EXIST — There is NO "CodBi_DateFrame_N_Begin_End" / "CodBi_TimeFrame_N_Begin_End" combined class; NEVER invent it. Apply "CodBi_DateFrame_N_Begin" (or TimeFrame) to the START/minimum date field AND "CodBi_DateFrame_N_End" (or TimeFrame) to the END/maximum date field — BOTH fields get their own class (Begin on the start field, End on the end field). Apply these classes ONLY to the two date XTextField fields, NEVER to a container/fieldset/XFieldSet/panel.
 d) NUMBERING — When creating frame CSS classes, scan the existing form items for which frame numbers N (1-5) are already in use. Use the lowest unused N for each new pair. If all 5 numbers are taken, fall back to data-cb-func.
 e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or other non-alphanumeric-code fields.
 f) REDUNDANCY RULE: When a field's datatype already triggers a Holistic.Cleave.* standard (datatype="phone" → Cleave.Phone, "plzDE" → Cleave.PLZ, "dateDE"/"time" → Cleave.Date/Time), do NOT apply the equivalent People CSS class.
@@ -24,7 +25,7 @@ g) Street names and locality/city names have no dedicated People CSS class — l
 ## People
 
 ### CodBi_People_Name
-For a person's name (Vorname, Nachname). Do NOT apply to street names or localities.
+For a person's name — MUST be applied to EVERY first-name / last-name / name field you create or modify (Vorname, Nachname, Name, "First name", "Last name", …). A "Vorname" (first name) and a "Nachname" (last name) EACH get their own CodBi_People_Name class. Do NOT apply to street names or localities.
 
 ### CodBi_People_Alphanumeric
 ONLY for alphanumeric codes/IDs. Do NOT apply to names, streets, localities, or postal codes.
@@ -77,13 +78,13 @@ For money/currency fields.
 ## Appointments
 
 ### CodBi_NoFutureDate
-For date fields that should not allow future dates.
+For date fields that should not allow future dates (maximum = today). Apply it to a date field that must not allow future dates — e.g. a birth-date field under a "keine zukünftigen Daten" / "no future dates" requirement.
 
-### CodBi_DateFrame_N_Begin_End
-For date ranges (N=1-5). When using these classes, do NOT also add data-cb-func=date.frame.
+### CodBi_DateFrame_N_Begin / CodBi_DateFrame_N_End
+For date ranges (N=1-5): apply `CodBi_DateFrame_N_Begin` to the START/minimum date field AND `CodBi_DateFrame_N_End` to the END/maximum date field (SAME N — BOTH fields get their own class). There is NO combined `CodBi_DateFrame_N_Begin_End` class — never invent it. Apply these classes ONLY to the two date XTextField fields, NEVER to a container/fieldset. When using these classes, do NOT also add data-cb-func=date.frame (that would be redundant); you MAY add data-cb-func for a DIFFERENT functionality.
 
-### CodBi_TimeFrame_N_Begin_End
-For time ranges (N=1-5). When using these classes, do NOT also add data-cb-func=time.frame.
+### CodBi_TimeFrame_N_Begin / CodBi_TimeFrame_N_End
+For time ranges (N=1-5): apply `CodBi_TimeFrame_N_Begin` to the START time field AND `CodBi_TimeFrame_N_End` to the END time field (SAME N — BOTH fields get their own class). There is NO combined `CodBi_TimeFrame_N_Begin_End` class — never invent it. Apply these classes ONLY to the two time fields, NEVER to a container/fieldset. When using these classes, do NOT also add data-cb-func=time.frame.
 
 ## LDAP.Autofill
 

@@ -7,7 +7,6 @@ import {
   Output,
   ViewEncapsulation,
 } from "@angular/core";
-import { Dialog } from "primeng/dialog";
 
 /** One node of the change-log tree rendered by the log dialog. */
 export interface LogNode {
@@ -73,7 +72,7 @@ export interface LogNode {
 @Component({
   selector: "cb-log-node",
   standalone: true,
-  imports: [LogTreeNode, Dialog],
+  imports: [LogTreeNode],
   template: `
     <details
         class="cb-log-node"
@@ -196,34 +195,16 @@ export interface LogNode {
       @if (node.children?.length) {
         <div class="cb-log-node__children">
           @for (child of node.children; track child.id) {
-            <cb-log-node [node]="child" (sensitiveChecked)="sensitiveChecked.emit($event)" />
+            <cb-log-node
+                [node]="child"
+                (sensitiveChecked)="sensitiveChecked.emit($event)"
+                (promptOpen)="promptOpen.emit($event)" />
           }
         </div>
       }
     </details>
     @if (node.valueExpanded === true && node.value && node.kind !== 'prompt') {
       <div class="cb-log-node__value-full">{{ node.value }}</div>
-    }
-    @if (promptDialogVisible && node.value) {
-      <p-dialog
-          [visible]="true"
-          (visibleChange)="onPromptDialogVisibleChange($event)"
-          [modal]="true"
-          [draggable]="false"
-          [resizable]="true"
-          [closeOnEscape]="true"
-          appendTo="body"
-          [baseZIndex]="999999"
-          maskStyleClass="cb-log-prompt-mask"
-          styleClass="cb-log-prompt-dialog">
-        <ng-template #header>
-          <div class="cb-log-prompt-header">
-            <img class="cb-log-prompt-logo" [src]="codbiLogoUrl" alt="CodBi" />
-            <span class="cb-log-prompt-title">Full prompt</span>
-          </div>
-        </ng-template>
-        <pre class="cb-log-prompt-text">{{ node.value }}</pre>
-      </p-dialog>
     }
   `,
   encapsulation: ViewEncapsulation.None,
@@ -233,6 +214,10 @@ export class LogTreeNode {
   @Input() node!: LogNode;
   /** Emitted when the user ticks/untickes a sensitive node's dismiss checkbox. */
   @Output() sensitiveChecked = new EventEmitter<LogNode>();
+  /** Emitted with the prompt text when the user requests the full-prompt viewer. The dialog itself
+   *  is rendered once by the parent AiAssistantLog (a proper top-level popup, appended to body) so
+   *  it is never positioned relative to this recursive tree node / the scrollable list container. */
+  @Output() promptOpen = new EventEmitter<string>();
 
   private readonly baseUrl = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   /** CodBi logo used as the icon for CodBi CSS class nodes (same resource as the dialog header). */
@@ -339,28 +324,14 @@ export class LogTreeNode {
     URL.revokeObjectURL(url);
   }
 
-  /** True while the full-prompt viewer dialog is open for this node. */
-  promptDialogVisible = false;
-
-  /** Opens the full-prompt dialog. Forces it (and its mask) above the Formcycle designer like the
-   *  other CodBi dialogs — a plain PrimeNG dialog can otherwise render below the designer's
-   *  windows. */
+  /** Opens the full-prompt viewer. The dialog itself lives once in the parent (AiAssistantLog) as a
+   *  proper top-level popup (appended to body, centered) exactly like the chat/clarification
+   *  dialogs — a dialog rendered inside this recursive tree node would be positioned relative to
+   *  the scrollable list container and land off its top-left corner. */
   openPromptDialog(event: Event): void {
     event.stopPropagation();
     event.preventDefault();
-    this.promptDialogVisible = true;
-    this.cdr.markForCheck();
-    setTimeout(() => {
-      const el = document.querySelector(".cb-log-prompt-dialog") as HTMLElement | null;
-      if (el) el.style.zIndex = "2147483000";
-      const mask = document.querySelector(".cb-log-prompt-mask") as HTMLElement | null;
-      if (mask) mask.style.zIndex = "2147482000";
-    }, 0);
-  }
-
-  onPromptDialogVisibleChange(visible: boolean): void {
-    this.promptDialogVisible = visible;
-    this.cdr.markForCheck();
+    this.promptOpen.emit(this.node.value ?? "");
   }
 
   /** Copies the unfolded prompt body to the clipboard (with fallback + brief check feedback). */

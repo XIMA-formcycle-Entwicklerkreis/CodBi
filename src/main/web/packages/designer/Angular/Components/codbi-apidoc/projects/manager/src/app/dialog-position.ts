@@ -48,11 +48,26 @@ export function saveDialogPosition(storageKey: string, position: DialogPosition)
  * `transform: none` neutralizes PrimeNG's centering transform so the coordinates are not offset.
  */
 export function applyDialogPosition(styleClass: string, position: DialogPosition | null): void {
-  if (!position) return;
+  if (!position) {
+    console.log(`[CodBiPos] apply '${styleClass}' called with NO saved position`);
+    return;
+  }
   const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
-  if (!el) return;
+  if (!el) {
+    console.log(`[CodBiPos] apply '${styleClass}' element NOT found`);
+    return;
+  }
+  // Maximized dialogs intentionally fill the viewport — never apply a saved floating position/size
+  // to them (clampRenderedToViewport and the drag coordinator skip maximized dialogs too).
+  if (el.classList.contains("p-dialog-maximized")) {
+    console.log(`[CodBiPos] apply '${styleClass}' SKIPPED (maximized)`);
+    return;
+  }
   el.style.position = "fixed";
   el.style.transform = "none";
+  console.log(
+    `[CodBiPos] apply '${styleClass}' saved=(${Math.round(position.left)},${Math.round(position.top)} ${typeof position.width === "number" ? Math.round(position.width) : "?"}x${typeof position.height === "number" ? Math.round(position.height) : "?"}) docked=${position.docked ?? "no"}`,
+  );
   if (position.docked) {
     // Remember the pre-dock size so un-snapping restores it. When a dialog is restored as docked
     // from a saved position (or was never floated in this session), lastFloatingSizes is empty —
@@ -105,6 +120,9 @@ export function applyDialogPosition(styleClass: string, position: DialogPosition
     el.style.left = `${Math.round(left)}px`;
     el.style.top = `${Math.round(top)}px`;
   }
+  console.log(
+    `[CodBiPos] apply '${styleClass}' -> left=${el.style.left} top=${el.style.top} width=${el.style.width} height=${el.style.height} maximized=${el.classList.contains("p-dialog-maximized")}`,
+  );
   // Re-check shortly after so the FINAL laid-out dialog is never off-screen: a stale/off-screen
   // saved position, a window resize, or a size change that happens between this apply and the actual
   // render could otherwise leave the header above the viewport or the right edge cut off.
@@ -116,6 +134,11 @@ export function applyDialogPosition(styleClass: string, position: DialogPosition
 export function clampRenderedToViewport(styleClass: string): void {
   const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
   if (!el) return;
+  // Neutralize any scale/translate transform (e.g. the Formcycle designer's zoom) that would offset
+  // a `position:fixed` dialog relative to the viewport. This must run for docked and maximized
+  // dialogs too — otherwise a zoom transform scales them about their center and pushes the header
+  // off-screen (e.g. a docked dialog at left:0 renders at a negative left/top).
+  el.style.transform = "none";
   if (el.classList.contains("cb-docked")) return; // docked dialogs intentionally fill a half / full viewport
   if (el.classList.contains("p-dialog-maximized")) return; // maximized dialogs fill the viewport on purpose
   const rect = el.getBoundingClientRect();
@@ -135,6 +158,9 @@ export function clampRenderedToViewport(styleClass: string): void {
   const finalRect = el.getBoundingClientRect();
   const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, vw - finalRect.width - VIEWPORT_MARGIN));
   const top = Math.max(VIEWPORT_MARGIN, Math.min(rect.top, vh - finalRect.height - VIEWPORT_MARGIN));
+  console.log(
+    `[CodBiPos] clamp '${styleClass}' rect=(${Math.round(rect.left)},${Math.round(rect.top)} ${Math.round(rect.width)}x${Math.round(rect.height)}) vw=${vw} vh=${vh} transform=${el.style.transform || "none"} -> left=${Math.round(left)} top=${Math.round(top)}`,
+  );
   el.style.position = "fixed";
   el.style.transform = "none";
   el.style.left = `${Math.round(left)}px`;
@@ -204,6 +230,7 @@ export function enableDialogDrag(
   console.log(`[CodBiDrag] enableDialogDrag('${styleClass}', '${storageKey}')`);
   installGlobalDragCoordinator();
   installGlobalPositionRestore();
+  installViewportGuard();
   // The registry is shared globally and keyed only by styleClass, but the <cb-ai-assistant> /
   // <cb-prompt-manager> hosts can be destroyed and re-bootstrapped in place (e.g. the ALT+A
   // re-mount). Angular may run the OLD host's ngOnDestroy cleanup AFTER the NEW host's ngOnInit
@@ -320,8 +347,17 @@ function resolveDraggable(target: EventTarget | null): { dialog: HTMLElement; st
 
 function onGlobalMouseDown(e: MouseEvent): void {
   const target = e.target as HTMLElement | null;
-  // Never start a drag from the maximize / close buttons.
-  if (target?.closest(".p-dialog-header-icon, .p-dialog-maximize-icon, .p-dialog-header-close-icon")) {
+  // Never start a drag (or an un-dock of a snapped dialog) from the header action buttons. PrimeNG
+  // v20 renders these as .p-dialog-maximize-button / .p-dialog-close-button (the old
+  // .p-dialog-maximize-icon / .p-dialog-header-close-icon classes no longer exist) plus the injected
+  // .cb-dialog-transparency-switch — match all of them so clicking close on a snapped/docked dialog
+  // closes it on the FIRST click instead of starting an un-dock drag.
+  if (
+    target?.closest(
+      ".p-dialog-header-icon, .p-dialog-maximize-icon, .p-dialog-header-close-icon, " +
+        ".p-dialog-maximize-button, .p-dialog-close-button, .cb-dialog-transparency-switch",
+    )
+  ) {
     console.log("[CodBiDrag] mousedown ignored (icon button)");
     return;
   }
@@ -472,12 +508,53 @@ function installGlobalPositionRestore(): void {
   restoreVisibleDialogPositions();
 }
 
+let viewportGuardInstalled = false;
+
+/**
+ * Installs a global guard (once per page) that makes it impossible for a registered dialog to end
+ * up — or stay — outside the viewport: while any registered dialog is visible it is re-clamped
+ * periodically and immediately on every window resize. Active drags and intentionally full-viewport
+ * states (maximized / docked) are skipped (see clampRenderedToViewport). This is the safety net on
+ * top of the clamps inside applyDialogPosition and the drag handling, covering races where a
+ * PrimeNG re-render or a position restore could otherwise leave the header unreachable.
+ */
+function installViewportGuard(): void {
+  if (viewportGuardInstalled) return;
+  viewportGuardInstalled = true;
+  console.log("[CodBiPos] viewport guard installed (periodic re-clamp + resize)");
+  const guard = (): void => {
+    if (dragSession) return; // never fight an active drag
+    for (const styleClass of dialogDragRegistry.keys()) {
+      const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
+      if (!el) continue;
+      const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
+      const visible = mask ? getComputedStyle(mask).display !== "none" : false;
+      if (visible) {
+        clampRenderedToViewport(styleClass);
+      }
+    }
+  };
+  window.addEventListener("resize", guard);
+  const tick = (): void => {
+    guard();
+    window.setTimeout(tick, 600);
+  };
+  window.setTimeout(tick, 600);
+}
+
 /** Applies the saved position to every registered dialog that just became visible (once per open). */
 function restoreVisibleDialogPositions(): void {
   if (dragSession) return; // never fight an active drag
   for (const styleClass of dialogDragRegistry.keys()) {
     const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
-    if (!el) continue;
+    if (!el) {
+      // Dialog is not in the DOM (closed → PrimeNG removed its mask/dialog). Remember it as hidden
+      // so the next open counts as a real hidden→visible transition and the saved position/size is
+      // restored again. Without this, the stale "visible" flag from the previous open suppresses
+      // the restore on every reopen (open → close → reopen would lose position and size).
+      lastVisibleState.set(styleClass, false);
+      continue;
+    }
     const mask = el.closest(".p-dialog-mask");
     const visible = mask ? getComputedStyle(mask).display !== "none" : false;
     const wasVisible = lastVisibleState.get(styleClass) ?? false;
@@ -485,6 +562,7 @@ function restoreVisibleDialogPositions(): void {
     if (visible && !wasVisible) {
       const reg = dialogDragRegistry.get(styleClass);
       const pos = reg ? loadDialogPosition(reg.storageKey) : null;
+      console.log(`[CodBiPos] '${styleClass}' became visible; saved=${JSON.stringify(pos)}`);
       if (pos) {
         applyDialogPosition(styleClass, pos);
       }

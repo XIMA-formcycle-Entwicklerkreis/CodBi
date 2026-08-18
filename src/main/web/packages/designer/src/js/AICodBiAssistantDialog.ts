@@ -74,6 +74,45 @@ export function enableAICodBiAssistantDialog(): void {
   // Inject a small transparency switch into the header of every PrimeNG dialog, left of the close
   // button, so the user can toggle the .25 transparency with the mouse as well.
   installDialogTransparencySwitches();
+  // PrimeNG v20 maximized-dialog quirk: in the maximized state the header-action buttons can
+  // overlap, so a click meant for the close button or the transparency (eye) switch can land on the
+  // maximize/restore button instead — unmaximizing the dialog on the FIRST click. Normalize this so
+  // the first click on the close button closes the dialog and the first click on the eye toggles the
+  // transparency, for every CodBi dialog.
+  let normalizingMaximizedClose = false;
+  document.addEventListener(
+    "click",
+    (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      const dlg = target.closest(".p-dialog") as HTMLElement | null;
+      if (!dlg || !dlg.classList.contains("p-dialog-maximized")) return;
+      if (normalizingMaximizedClose) return;
+      const isClose =
+        target.closest('.p-dialog-close-button, [data-pc-name="dialog-close"], .p-dialog-header-close-icon') !== null;
+      const isEye = target.closest(".cb-dialog-transparency-switch") !== null;
+      if (!isClose && !isEye) return;
+      event.stopPropagation();
+      event.preventDefault();
+      if (isClose) {
+        // Close on this same click: unmaximize first (so the restore icon no longer covers the
+        // close button), then click the close button once more to actually close the dialog.
+        normalizingMaximizedClose = true;
+        const maxBtn = dlg.querySelector<HTMLElement>(".p-dialog-maximize-button, .p-dialog-maximize-icon");
+        if (dlg.classList.contains("p-dialog-maximized")) maxBtn?.click();
+        setTimeout(() => {
+          normalizingMaximizedClose = false;
+          const closeBtn = dlg.querySelector<HTMLElement>(
+            '.p-dialog-close-button, [data-pc-name="dialog-close"], .p-dialog-header-close-icon',
+          );
+          closeBtn?.click();
+        }, 0);
+      } else {
+        setDialogTransparent(!isDialogTransparent());
+      }
+    },
+    true,
+  );
 }
 
 /**
@@ -104,18 +143,29 @@ function openAssistant(): void {
     return;
   }
 
-  // Show a loading indicator (CodBi logo + animated ring) only after a short grace period and only
-  // while the dialog is still missing, so a fast open (bundle already loaded) does not flash it.
-  // It is removed as soon as the dialog appears, on click, or after a safety timeout.
+  // Show a loading indicator (CodBi logo + animated ring) only after a longer grace period and only
+  // while the dialog is still missing, so a fast / moderately slow open (bundle already loaded) never
+  // flashes it. It is removed (with a short fade-out) as soon as the dialog is actually on screen, on
+  // click, or after a safety timeout.
   let indicatorShown = false;
   const watchStart = Date.now();
 
+  /** True once the assistant dialog is actually on screen (element rendered and mask not display:none). */
+  const assistantDialogVisible = (): boolean => {
+    const el = document.querySelector<HTMLElement>(".cb-ai-assistant-dialog");
+    if (!el) return false;
+    const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
+    if (mask && getComputedStyle(mask).display === "none") return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+
   const watchForDialog = (): void => {
-    if (document.querySelector(".cb-ai-assistant-dialog")) {
+    if (assistantDialogVisible()) {
       hideAssistantLoadingIndicator();
       return;
     }
-    if (!indicatorShown && Date.now() - watchStart > 300) {
+    if (!indicatorShown && Date.now() - watchStart > 1000) {
       indicatorShown = true;
       showAssistantLoadingIndicator();
     }
@@ -173,14 +223,34 @@ function openAssistant(): void {
 }
 
 /**
+ * Localized texts for the assistant-loading overlay (title + click-to-dismiss line), following the
+ * Formcycle UI language via `XFC_METADATA.currentLanguage` (fallback English).
+ */
+function assistantLoadingTexts(): { title: string; dismiss: string; dismissTitle: string } {
+  const lang = (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage;
+  switch (lang) {
+    case "de":
+      return { title: "Formular-Assistent", dismiss: "zum Schließen klicken", dismissTitle: "Zum Schließen klicken" };
+    case "it":
+      return { title: "Assistente Modulo", dismiss: "clicca per chiudere", dismissTitle: "Clicca per chiudere" };
+    case "nl":
+      return { title: "Formulierassistent", dismiss: "klik om te sluiten", dismissTitle: "Klik om te sluiten" };
+    default:
+      return { title: "Form Assistant", dismiss: "click to dismiss", dismissTitle: "Click to dismiss" };
+  }
+}
+
+/**
  * Shows a lightweight "assistant is loading" indicator (CodBi logo + animated ring) while the
  * Angular `cb-manager.js` bundle is still downloading / bootstrapping, so ALT+A gives immediate
  * visual feedback instead of a silent multi-second pause. Self-contained in the designer bundle
- * (plain DOM + a scoped <style>); it does NOT depend on cb-manager.js. It is removed as soon as the
- * assistant dialog appears, on click, or after a safety timeout (see openAssistant).
+ * (plain DOM + a scoped <style>); it does NOT depend on cb-manager.js. It is removed (with a short
+ * fade-out) as soon as the assistant dialog is actually on screen, on click, or after a safety
+ * timeout (see openAssistant).
  */
 function showAssistantLoadingIndicator(): void {
-  hideAssistantLoadingIndicator();
+  // Instantly remove any previous indicator (no fade — the new overlay replaces it right away).
+  document.getElementById("codbi-assistant-loading")?.remove();
   const baseURL: string = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   const styleId = "codbi-assistant-loading-style";
 
@@ -191,17 +261,33 @@ function showAssistantLoadingIndicator(): void {
     style.textContent =
       ".codbi-assistant-loading{" +
       "position:fixed;inset:0;z-index:1900;display:flex;flex-direction:column;" +
-      "align-items:center;justify-content:center;gap:18px;" +
-      "background:rgba(255,255,255,.55);backdrop-filter:blur(1px);cursor:pointer}" +
+      "align-items:center;justify-content:center;gap:14px;" +
+      "background:rgba(255,255,255,.55);backdrop-filter:blur(1px);cursor:pointer;" +
+      "opacity:0;animation:codbi-assistant-fade-in .3s ease-out forwards}" +
       ".codbi-assistant-loading__ring{position:relative;width:104px;height:104px;" +
       "display:flex;align-items:center;justify-content:center}" +
+      // The ring is a rotating darkorange ARC ("slash"), not a full circle: only the top segment of
+      // the border is colored, the rest stays transparent, so a darkorange slash spins around the logo.
       '.codbi-assistant-loading__ring::before{content:"";position:absolute;inset:0;' +
-      "border-radius:50%;border:4px solid rgba(11,107,203,.18);border-top-color:#0b6bcb;" +
+      "border-radius:50%;border:4px solid transparent;border-top-color:darkorange;" +
       "animation:codbi-assistant-spin 1s linear infinite}" +
       ".codbi-assistant-loading__logo{width:58px;height:58px;opacity:.95}" +
-      ".codbi-assistant-loading__label{color:#374151;font:500 13px/1.4 " +
-      'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.02em}' +
-      "@keyframes codbi-assistant-spin{to{transform:rotate(360deg)}}";
+      // "FORM ASSISTANT": uppercase, monospace (technical) — no serif/humanist UI font.
+      ".codbi-assistant-loading__label{color:#374151;font-weight:600;font-size:13px;line-height:1.4;" +
+      "font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,'Liberation Mono','Courier New',monospace;" +
+      "letter-spacing:.04em;text-transform:uppercase}" +
+      ".codbi-assistant-loading__dismiss{font:400 11px/1.4 " +
+      'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;letter-spacing:.03em;' +
+      "animation:codbi-assistant-rainbow 1.1s linear infinite}" +
+      ".codbi-assistant-loading--hiding{opacity:1;" +
+      "animation:codbi-assistant-fade-out .25s ease-in forwards}" +
+      "@keyframes codbi-assistant-spin{to{transform:rotate(360deg)}}" +
+      "@keyframes codbi-assistant-fade-in{to{opacity:1}}" +
+      "@keyframes codbi-assistant-fade-out{to{opacity:0}}" +
+      // "< click to dismiss >" cycles through the rainbow colors while the overlay is shown.
+      "@keyframes codbi-assistant-rainbow{0%{color:#ef4444}14%{color:#f97316}" +
+      "28%{color:#eab308}43%{color:#22c55e}57%{color:#3b82f6}71%{color:#8b5cf6}" +
+      "86%{color:#ec4899}100%{color:#ef4444}}";
     document.head.appendChild(style);
   }
 
@@ -209,20 +295,34 @@ function showAssistantLoadingIndicator(): void {
 
   host.id = "codbi-assistant-loading";
   host.className = "codbi-assistant-loading";
-  host.title = "Click to dismiss";
   host.innerHTML =
     `<div class="codbi-assistant-loading__ring">` +
     `<img class="codbi-assistant-loading__logo" ` +
     `src="${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg" ` +
     `alt="CodBi" /></div>` +
-    `<div class="codbi-assistant-loading__label">AI Form Assistant …</div>`;
+    `<div class="codbi-assistant-loading__label"></div>` +
+    `<div class="codbi-assistant-loading__dismiss"></div>`;
+  // Fill the localized texts via textContent (avoids HTML-escaping the "< … >" brackets).
+  const texts = assistantLoadingTexts();
+  const labelEl = host.querySelector<HTMLElement>(".codbi-assistant-loading__label");
+  if (labelEl) labelEl.textContent = texts.title;
+  const dismissEl = host.querySelector<HTMLElement>(".codbi-assistant-loading__dismiss");
+  if (dismissEl) dismissEl.textContent = `< ${texts.dismiss} >`;
+  host.title = texts.dismissTitle;
   host.addEventListener("click", () => hideAssistantLoadingIndicator());
   document.body.appendChild(host);
 }
 
-/** Removes the assistant-loading indicator (no-op when it is not shown). */
+/**
+ * Removes the assistant-loading indicator with a short fade-out (no-op when it is not shown or
+ * already fading). The full-screen overlay stays in place for the ~220ms it takes to fade, so the
+ * removal never looks like an abrupt "pop".
+ */
 function hideAssistantLoadingIndicator(): void {
-  document.getElementById("codbi-assistant-loading")?.remove();
+  const host = document.getElementById("codbi-assistant-loading");
+  if (!host || host.classList.contains("codbi-assistant-loading--hiding")) return;
+  host.classList.add("codbi-assistant-loading--hiding");
+  setTimeout(() => host.remove(), 220);
 }
 
 /** Whether the "CodBi" checkbox (`codbi-prop-enable`) is set for the currently edited form. */

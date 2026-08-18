@@ -47,6 +47,29 @@ cb-ai-assistant {
     max-height: none;
 }
 
+/* In the maximized state keep the header-action buttons (maximize / transparency eye / close) in a
+   normal, non-overlapping flex row so a click on one never lands on another (PrimeNG v20 maximize
+   interaction — the restore button must not swallow the close/eye click). */
+.p-dialog.p-dialog-maximized .p-dialog-header {
+    position: relative;
+    z-index: 2;
+}
+.p-dialog.p-dialog-maximized .p-dialog-header-actions {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    flex-wrap: nowrap !important;
+    gap: 0.25rem !important;
+    position: relative !important;
+    z-index: 3 !important;
+}
+.p-dialog.p-dialog-maximized .p-dialog-header-actions > .p-button,
+.p-dialog.p-dialog-maximized .p-dialog-header-actions > .cb-dialog-transparency-switch {
+    position: relative !important;
+    z-index: 1 !important;
+    flex-shrink: 0 !important;
+}
+
 .cb-ai-content {
     position: relative;
     display: flex;
@@ -107,20 +130,24 @@ cb-ai-assistant {
     animation: none;
 }
 
-/* Draggable splitter between the assistant content and the change-log panel. */
+/* Draggable splitter (divider) between the assistant content and the change-log panel — darkorange. */
 .cb-ai-log-splitter {
     flex: 0 0 8px;
     width: 8px;
     cursor: col-resize;
     position: relative;
-    background: #ececec;
-    border-left: 1px solid #d8d8d8;
-    transition: background 0.15s;
+    background: #ff8c00;
+    border-left: 1px solid #d97a00;
+    /* Rounded pill divider with a subtle black drop shadow. */
+    border-radius: 4px;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.35);
+    transition: background 0.15s, box-shadow 0.15s;
 }
 
 .cb-ai-log-splitter:hover,
 .cb-ai-log-splitter--active {
-    background: #ffd9a0;
+    background: #ffb266;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
 }
 
 .cb-ai-log-splitter::before {
@@ -132,7 +159,7 @@ cb-ai-assistant {
     width: 3px;
     height: 48px;
     border-radius: 3px;
-    background: #b8b8b8;
+    background: rgba(255, 255, 255, 0.75);
 }
 
 .p-component.p-overlay:has(.cb-ai-model-select-panel) {
@@ -194,6 +221,15 @@ cb-ai-assistant {
     white-space: nowrap;
 }
 
+/* Dialog footer — the switch group (left) and the action buttons (right) share one flex row; when
+   the dialog is too narrow they wrap onto separate lines instead of overflowing/clipping. */
+.cb-ai-assistant-dialog .p-dialog-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+}
+
 /* CodBi on/off switch — defaults to ON. When OFF, no CodBi prompts are sent to the AI in any
    pass (only Formcycle widgets and workflow nodes), and no Holistic.* standard configuration is
    applied. Lives in the dialog footer, same row as Run, aligned left. */
@@ -202,6 +238,23 @@ cb-ai-assistant {
     align-items: center;
     gap: 8px;
     margin-right: auto;
+}
+
+/* The Run / Prompts / Change log buttons — grouped so they wrap onto their own line together (right
+   aligned, like the un-wrapped footer). */
+.cb-ai-footer-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+/* When the footer wrapped onto two lines (dialog too narrow — detected in ai-assistant.ts via the
+   `cb-ai-footer-wrapped` class), center each group on its own line instead of keeping them at the
+   outer edges. */
+.cb-ai-assistant-dialog .p-dialog-footer.cb-ai-footer-wrapped .cb-ai-footer-codbi,
+.cb-ai-assistant-dialog .p-dialog-footer.cb-ai-footer-wrapped .cb-ai-footer-actions {
+    margin-inline: auto;
 }
 
 .cb-ai-codbi-switch,
@@ -353,6 +406,20 @@ cb-ai-assistant {
     background-color: transparent !important;
     /* Neutralize the PrimeNG theme variable so the dialog watermark shows through. */
     --p-textarea-background: transparent !important;
+    /* Darkorange scrollbar (transparent track) — matches the change-log / chat bubble listing. */
+    scrollbar-color: #ff9f40 transparent;
+    scrollbar-width: thin;
+}
+
+.cb-ai-prompt::-webkit-scrollbar {
+    width: 10px;
+}
+.cb-ai-prompt::-webkit-scrollbar-track {
+    background: transparent;
+}
+.cb-ai-prompt::-webkit-scrollbar-thumb {
+    background: #ff9f40;
+    border-radius: 5px;
 }
 
 /* Keep the prompt textarea transparent in every state (hover, focus, filled variant, disabled)
@@ -871,7 +938,7 @@ cb-ai-assistant {
     padding: 0.8rem 1rem;
     /* Translucent dark background (alpha .75) with a soft backdrop blur (glass look) — the message
        stays fully readable because the blur keeps the underlying page from bleeding through. */
-    background: rgba(50, 49, 48, 0.5);
+    background: rgba(50, 49, 48, 0.75);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
     color: #fff;
@@ -971,7 +1038,7 @@ cb-ai-assistant {
 }
 
 /* ---------------------------------------------------------------------------
- * Chat popup (AI Form Assistant Chat) — answers questions about the form + continued chat
+ * Chat popup (Form Assistant Chat) — answers questions about the form + continued chat
  * ------------------------------------------------------------------------- */
 /* Force the chat dialog and its mask above the Formcycle designer. The designer uses very high
    z-index values for its own overlays, and PrimeNG's z-index manager may not assign a high enough
@@ -1046,6 +1113,31 @@ cb-ai-assistant {
     color: #1e293b;
 }
 
+/* Dialog header — the CodBi logo sits left of the "Form Assistant" title (like the chat popup and
+   the prompt-manager dialog). */
+.cb-ai-assistant-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex: 1 1 auto;
+    min-width: 0;
+    user-select: none;
+}
+
+.cb-ai-assistant-logo {
+    height: 36px;
+    width: auto;
+    display: block;
+    flex-shrink: 0;
+    opacity: 0.92;
+}
+
+.cb-ai-assistant-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #1e293b;
+}
+
 .cb-ai-chat-body {
     display: flex;
     flex-direction: column;
@@ -1063,20 +1155,93 @@ cb-ai-assistant {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
+    /* Fade the bubbles at the top/bottom edges while scrolling (gradient mask). */
+    -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        #000 1.5rem,
+        #000 calc(100% - 1.5rem),
+        transparent 100%
+    );
+    mask-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        #000 1.5rem,
+        #000 calc(100% - 1.5rem),
+        transparent 100%
+    );
+}
+
+/* Bright orange scrollbar for the chat bubble listing — transparent track/background. */
+.cb-ai-chat-messages {
+    scrollbar-color: #ff9f40 transparent;
+    scrollbar-width: thin;
+}
+.cb-ai-chat-messages::-webkit-scrollbar {
+    width: 10px;
+}
+.cb-ai-chat-messages::-webkit-scrollbar-track {
+    background: transparent;
+}
+.cb-ai-chat-messages::-webkit-scrollbar-thumb {
+    background: #ff9f40;
+    border-radius: 5px;
+}
+.cb-ai-chat-messages::-webkit-scrollbar-thumb:hover {
+    background: #ffb266;
 }
 
 .cb-ai-chat-msg {
     display: flex;
+    align-items: flex-start;
     justify-content: flex-start;
+    gap: 0.4rem;
 
     &--user {
-        justify-content: flex-end;
+        /* Reverse the row so the copy button sits on the outer (right) edge of the user bubble. */
+        flex-direction: row-reverse;
+        justify-content: flex-start;
 
         .cb-ai-chat-bubble {
             background: #2563eb;
             color: #fff;
             border-bottom-right-radius: 4px;
         }
+    }
+}
+
+/* Copy button on each chat bubble — dimmed by default, full opacity on hover/focus, turns green
+   with a check mark after the message was copied. */
+.cb-ai-chat-copy {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    margin-top: 0.15rem;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    opacity: 0.4;
+    transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+
+    &:hover,
+    &:focus-visible {
+        opacity: 1;
+        background: #e2e8f0;
+        color: #0f172a;
+    }
+
+    &--copied {
+        opacity: 1;
+        color: #16a34a;
+    }
+
+    .pi {
+        font-size: 0.85rem;
     }
 }
 
@@ -1100,7 +1265,9 @@ cb-ai-assistant {
 .cb-ai-chat-input-row {
     flex: 0 0 auto;
     display: flex;
-    align-items: flex-end;
+    /* Center the send button vertically next to the (2-row) textarea instead of pushing it to the
+       bottom edge. */
+    align-items: center;
     gap: 0.5rem;
     padding: 0.6rem 0.75rem;
     border-top: 1px solid #e2e8f0;

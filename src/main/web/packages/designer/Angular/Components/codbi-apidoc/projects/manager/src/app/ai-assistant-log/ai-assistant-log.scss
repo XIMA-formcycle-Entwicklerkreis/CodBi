@@ -54,6 +54,25 @@ cb-ai-assistant-log {
     color: #e65100;
 }
 
+/* The "Sensitive" (bolt) button lights up orange with a soft pulse while un-checked sensitive
+   elements remain — the look signals it, no count needed. */
+.cb-log-sensitive-btn--pending.p-button {
+    background: #ff8c00 !important;
+    border-color: #ff8c00 !important;
+    color: #fff !important;
+    animation: cb-log-sensitive-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes cb-log-sensitive-pulse {
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(255, 140, 0, 0.45);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(255, 140, 0, 0);
+    }
+}
+
 /* Toolbar — refresh / expand-all buttons + inference counter */
 .cb-log-toolbar {
     display: flex;
@@ -195,6 +214,45 @@ cb-ai-assistant-log {
     font-family: inherit;
     flex: 1 1 auto;
     min-height: 0;
+    /* Fade the entries at the top/bottom edges while scrolling (gradient mask). */
+    -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        #000 1rem,
+        #000 calc(100% - 1rem),
+        transparent 100%
+    );
+    mask-image: linear-gradient(
+        to bottom,
+        transparent 0,
+        #000 1rem,
+        #000 calc(100% - 1rem),
+        transparent 100%
+    );
+}
+
+/* Bright orange scrollbar for the change-log tree - transparent track/background. */
+.cb-log-tree {
+    scrollbar-color: #ff9f40 transparent;
+    scrollbar-width: thin;
+}
+.cb-log-tree::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.cb-log-tree::-webkit-scrollbar-track {
+    background: transparent;
+}
+.cb-log-tree::-webkit-scrollbar-thumb {
+    background: #ff9f40;
+    border-radius: 5px;
+}
+.cb-log-tree::-webkit-scrollbar-thumb:hover {
+    background: #ffb266;
+}
+/* The corner where the vertical and horizontal bars meet stays transparent (no default square). */
+.cb-log-tree::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 /* --- Tree nodes --- */
@@ -207,13 +265,16 @@ cb-ai-assistant-log {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 3px 4px;
+    /* Extra left padding so the hover accent has breathing room before the unfold arrow. */
+    padding: 3px 4px 3px 8px;
     border-radius: 4px;
     cursor: pointer;
     user-select: none;
     font-size: 0.85em;
     color: #333;
     list-style: none;
+    /* Animate the hover highlight (background + darkorange left accent + unrounded left edge). */
+    transition: background-color 0.5s ease, box-shadow 0.5s ease, border-radius 0.5s ease;
 }
 
 .cb-log-node > .cb-log-node__summary::-webkit-details-marker {
@@ -221,7 +282,10 @@ cb-ai-assistant-log {
 }
 
 .cb-log-node > .cb-log-node__summary:hover {
-    background: #f0f4ff;
+    background: #fff3e0;
+    /* Unrounded left edge so the darkorange accent is square, not rounded. */
+    border-radius: 0 4px 4px 0;
+    box-shadow: inset 3px 0 0 #ff8c00;
 }
 
 /* Hide the disclosure marker for leaf nodes (no children). */
@@ -331,6 +395,20 @@ cb-ai-assistant-log {
     max-width: 340px;
 }
 
+/* Nested (non-top-level) values wrap instead of being cut off, so long attribute values stay
+   fully readable even when they are much wider than the available space. The top-level rows keep
+   the compact single-line ellipsis. */
+.cb-log-node__children .cb-log-node__value {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    overflow: visible;
+    text-overflow: clip;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+}
+
 /* Toggle button that expands/collapses a long node value (e.g. a clarification answer). */
 .cb-log-node__value-toggle {
     flex-shrink: 0;
@@ -370,6 +448,30 @@ cb-ai-assistant-log {
     color: #333;
     max-height: 40vh;
     overflow: auto;
+}
+
+/* Bright orange scrollbar (transparent track/corner) for the expanded-value box — matches the
+   change-log listing, so the horizontal bar looks the same as the vertical one. */
+.cb-log-node__value-full {
+    scrollbar-color: #ff9f40 transparent;
+    scrollbar-width: thin;
+}
+.cb-log-node__value-full::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.cb-log-node__value-full::-webkit-scrollbar-track {
+    background: transparent;
+}
+.cb-log-node__value-full::-webkit-scrollbar-thumb {
+    background: #ff9f40;
+    border-radius: 5px;
+}
+.cb-log-node__value-full::-webkit-scrollbar-thumb:hover {
+    background: #ffb266;
+}
+.cb-log-node__value-full::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 /* Small badge next to a node label (e.g. the token count of an inference). */
@@ -620,6 +722,30 @@ cb-ai-assistant-log {
     overflow: auto;
 }
 
+/* Darkorange scrollbar (transparent track) for the prompt text — matches the change-log listing
+   and the AI chat bubble listing. */
+.cb-log-node__prompt {
+    scrollbar-color: #ff9f40 transparent;
+    scrollbar-width: thin;
+}
+.cb-log-node__prompt::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.cb-log-node__prompt::-webkit-scrollbar-track {
+    background: transparent;
+}
+.cb-log-node__prompt::-webkit-scrollbar-thumb {
+    background: #ff9f40;
+    border-radius: 5px;
+}
+.cb-log-node__prompt::-webkit-scrollbar-thumb:hover {
+    background: #ffb266;
+}
+.cb-log-node__prompt::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
 /* Copy button on the top-right corner of the unfolded prompt body. */
 .cb-log-node__prompt-copy,
 .cb-log-node__prompt-max {
@@ -720,4 +846,28 @@ cb-ai-assistant-log {
     word-break: break-word;
     color: #333;
     background: #f6f8fb;
+}
+
+/* Darkorange scrollbar (transparent track) for the full-prompt viewer text — matches the
+   change-log listing and the AI chat bubble listing. */
+.cb-log-prompt-text {
+    scrollbar-color: #ff9f40 transparent;
+    scrollbar-width: thin;
+}
+.cb-log-prompt-text::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.cb-log-prompt-text::-webkit-scrollbar-track {
+    background: transparent;
+}
+.cb-log-prompt-text::-webkit-scrollbar-thumb {
+    background: #ff9f40;
+    border-radius: 5px;
+}
+.cb-log-prompt-text::-webkit-scrollbar-thumb:hover {
+    background: #ffb266;
+}
+.cb-log-prompt-text::-webkit-scrollbar-corner {
+    background: transparent;
 }

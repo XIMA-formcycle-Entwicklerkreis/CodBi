@@ -10,11 +10,13 @@ import {
 import type { OnDestroy, OnInit } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { Button } from "primeng/button";
+import { Dialog } from "primeng/dialog";
 import { Message } from "primeng/message";
 import { ProgressSpinner } from "primeng/progressspinner";
 import { TranslocoPipe } from "@ngneat/transloco";
 import { getJQuery } from "@de-xima/fc-form-designer";
 import { getCurrentFormKey } from "../ai-assistant/form-key";
+import { applyDialogPosition } from "../dialog-position";
 import { LogTreeNode } from "./log-tree-node";
 import type { LogNode } from "./log-tree-node";
 // #endregion Imports
@@ -47,7 +49,7 @@ import type { LogNode } from "./log-tree-node";
 @Component({
   selector: "cb-ai-assistant-log",
   standalone: true,
-  imports: [CommonModule, Button, ProgressSpinner, Message, LogTreeNode, TranslocoPipe],
+  imports: [CommonModule, Button, Dialog, ProgressSpinner, Message, LogTreeNode, TranslocoPipe],
   templateUrl: "./ai-assistant-log.html",
   styleUrl: "./ai-assistant-log.scss",
   encapsulation: ViewEncapsulation.None,
@@ -55,6 +57,11 @@ import type { LogNode } from "./log-tree-node";
 })
 export class AiAssistantLog implements OnInit, OnDestroy {
   private readonly baseUrl = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
+  /** CodBi logo used in the full-prompt viewer header (same resource as the other CodBi dialogs). */
+  readonly codbiLogoUrl =
+    `${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg`;
+  /** Prompt text of the full-prompt viewer popup — `null` while the popup is closed. */
+  activePrompt: string | null = null;
 
   loading = false;
   errorText: string | null = null;
@@ -144,6 +151,49 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   // #endregion Lifecycle
 
   // #region Open / close / load
+  /** Opens the full-prompt viewer popup for the given prompt text and centers it in the viewport.
+   *  The popup is rendered once at the top level of this component (not inside the recursive tree
+   *  node) and appended to <body>, so it behaves like the chat/clarification popups: centered,
+   *  above the Formcycle designer, never offset relative to the scrollable list container. */
+  onPromptOpen(value: string): void {
+    this.activePrompt = value || null;
+    this.cdr.markForCheck();
+    if (this.activePrompt === null) return;
+    this.centerPromptDialog(0);
+  }
+
+  /** Centers the full-prompt viewer popup. Retries until PrimeNG has rendered the dialog (Angular
+   *  change detection is asynchronous, so the element may not exist yet on the first try). PrimeNG's
+   *  own centering is thrown off by the Formcycle designer's zoom transform, which would push a
+   *  position:fixed dialog off its spot — the shared dialog-position helper pins position:fixed
+   *  left/top, neutralizes the transform and re-clamps the final laid-out dialog into the viewport,
+   *  the same mechanism the chat popup uses. */
+  private centerPromptDialog(attempt = 0): void {
+    const styleClass = "cb-log-prompt-dialog";
+    const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
+    if (!el || el.getBoundingClientRect().width === 0) {
+      if (attempt < 30) setTimeout(() => this.centerPromptDialog(attempt + 1), 80);
+      return;
+    }
+    el.style.zIndex = "2147483000";
+    const mask = document.querySelector(".cb-log-prompt-mask") as HTMLElement | null;
+    if (mask) mask.style.zIndex = "2147482000";
+    const width = Math.min(720, Math.max(0, window.innerWidth - 16));
+    const height = Math.min(Math.round(window.innerHeight * 0.7), Math.max(0, window.innerHeight - 16));
+    applyDialogPosition(styleClass, {
+      left: Math.round((window.innerWidth - width) / 2),
+      top: Math.round((window.innerHeight - height) / 2),
+      width,
+      height,
+    });
+  }
+
+  /** Closes the full-prompt viewer popup when the user dismisses it. */
+  onPromptDialogVisibleChange(visible: boolean): void {
+    if (!visible) this.activePrompt = null;
+    this.cdr.markForCheck();
+  }
+
   /**
    * Opens the change log. [elements] are names of sensitive CodBi elements to highlight. Emits the
    * `opened` output so the embedding dialog can unfold the panel / become visible if needed.
@@ -442,6 +492,20 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       node.checkedAt = undefined;
     }
     this.cdr.markForCheck();
+  }
+
+  /** True while at least one un-checked sensitive element exists in the log. Makes the
+   *  "Sensitive" (bolt) button light up by its looks (no count) until everything is acknowledged. */
+  get hasUncheckedSensitive(): boolean {
+    const find = (nodes: LogNode[] | undefined): boolean => {
+      if (!nodes) return false;
+      for (const n of nodes) {
+        if (n.sensitive === true) return true;
+        if (find(n.children)) return true;
+      }
+      return false;
+    };
+    return find(this.logs);
   }
 
   /** Sets the "checked by … on …" badge fields on a node from the stored check details. */

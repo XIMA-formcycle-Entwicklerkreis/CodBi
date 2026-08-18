@@ -43,6 +43,8 @@ Applicable on an XUpload field to extract and return text from uploaded images o
 Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.
 **REQUIRED**: data-cb-maxfield = the END (maximum) date field's name. The begin field is the tagged element.
 
+CSS-CLASS VARIANT — when the standard-configuration CSS classes are used instead of data-cb-func, apply `CodBi_DateFrame_N_Begin` to the BEGIN date field AND `CodBi_DateFrame_N_End` to the END date field (BOTH fields get their own class, with the SAME frame number N). There is NO combined `CodBi_DateFrame_N_Begin_End` class — never invent it. Never apply these classes to a container/fieldset — only to the two date fields. A two-field date RANGE (Start/End, Von/Bis, Kursbeginn/Kursende) is ALWAYS Date.Frame — do NOT model a range as a mere Date.Min; a Date.Min may be added to the BEGIN field, but the range itself still requires Begin on the START field AND End on the END field.
+
 ## Date.Min
 
 Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates).
@@ -51,13 +53,15 @@ Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g
 - FUTURE minimum (e.g. "at least tomorrow", "ab morgen", "from tomorrow on", "no past dates"): data-cb-minimum="<N>" + data-cb-unit="d" (or w/m/y) + data-cb-reverse="true".
   - "at least tomorrow" / "ab morgen" → data-cb-minimum="1", data-cb-unit="d", data-cb-reverse="true".
   - "today or later" / "no past dates" / "not in the past" → data-cb-minimum="0", data-cb-unit="d", data-cb-reverse="true".
-- BIRTH-DATE FIELDS (labels "Geburtsdatum", "Geburtstag", "birth date", "date of birth", "birthday"): a birth date ALWAYS lies in the PAST. NEVER apply a FUTURE minimum (data-cb-reverse=true, "heute"/"morgen", "no past dates") to a birth-date field — the constraint "keine Vergangenheitsdaten" is contradictory for it and means the OPPOSITE: only PAST dates are valid, i.e. NO FUTURE dates (maximum = today). Do NOT ask "Mindestdatum heute oder morgen?" for a birth-date field; only a PAST minimum (e.g. "mindestens 18 Jahre" → data-cb-minimum="18", data-cb-unit="y", no data-cb-reverse) is legitimate, and only when an age limit is requested. Ask the future-minimum question ONLY for genuinely future-dated fields (e.g. a course start "Kursbeginn").
+- BIRTH-DATE FIELDS (labels "Geburtsdatum", "Geburtstag", "birth date", "date of birth", "birthday"): a birth date ALWAYS lies in the PAST and must NEVER be treated as a future-dated field. Under NO circumstances apply a FUTURE minimum (data-cb-reverse=true, "heute"/"morgen", "no past dates") to a birth-date field — the constraint "keine Vergangenheitsdaten"/"no past dates"/"no past dates allowed" is CONTRADICTORY for it and means the OPPOSITE: only PAST dates are valid, i.e. NO FUTURE dates (maximum = today; the current date itself is a VALID birth date). Do NOT ask "Mindestdatum heute oder morgen?" for a birth-date field; only a PAST minimum (e.g. "mindestens 18 Jahre" → data-cb-minimum="18", data-cb-unit="y", no data-cb-reverse) is legitimate, and only when an age limit is requested. WHEN a birth-date field is grouped with genuinely future-dated fields under one "keine Vergangenheitsdaten" constraint (e.g. "Geburtsdatum, Kursbeginn"): EXCLUDE the birth-date field from the "heute oder morgen" question entirely — apply the future minimum (data-cb-reverse=true) ONLY to the future-dated field(s) (e.g. "Kursbeginn" = morgen) and apply maximum=heute to the birth-date field WITHOUT asking. Ask the future-minimum question ONLY for genuinely future-dated fields and NEVER when a birth-date field is among the affected fields. When the only requirement for a birth-date field is "no future dates" (or the contradictory "keine Vergangenheitsdaten"), apply the CodBi_NoFutureDate CSS class (max = today, today included) to the field — NEVER leave a birth-date field without any date restriction.
 
 Ask the user for the minimum when not specified, then encode it EXACTLY as above (example: {"text":"data-cb-func","value":"Date.Min"}, {"text":"data-cb-minimum","value":"1"}, {"text":"data-cb-unit","value":"d"}, {"text":"data-cb-reverse","value":"true"}).
 
 ## Date.NoWeekends
 
 Applicable on a XTextField of type 'date' to disallow weekend dates.
+
+CRITICAL — NEVER apply Date.NoWeekends to a BIRTH-DATE field (labels "Geburtsdatum", "Geburtstag", "birth date", "date of birth", "birthday"): people can be born on any day of the week, so a weekend restriction is senseless there. A constraint like "keine Wochenenden" / "no weekends" on a birth date must be IGNORED for that field (do NOT apply the functionality and do NOT ask about it). Date.NoWeekends is only meaningful for future-dated/booking-type date fields (e.g. a course date, appointment date, delivery date).
 
 ## Date.Today
 
@@ -71,7 +75,7 @@ Turns a date string into a Date object. Use for any prompt about converting/pars
 
 Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.
 
-CRITICAL — Form.Navigator AUTO-GENERATES navigation buttons. Create a SEPARATE XContainer (div) for the nav bar — do NOT put data-cb-func=form.navigator on XPage elements. XPage is not a div and the functionality requires HTMLDivElement. Add the container to the first page's elements array.
+CRITICAL — Form.Navigator AUTO-GENERATES navigation buttons. Create a SEPARATE XContainer (div) for the nav bar — do NOT put data-cb-func=form.navigator on XPage elements. XPage is not a div and the functionality requires HTMLDivElement. PLACEMENT — the navigation must be reachable on EVERY page: when the form HAS an XHeader or XFooter, ALWAYS place the navigator container inside the XHeader (or XFooter) so it is visible on all pages — never inside a specific page's content. Only when the form has NO header and NO footer, add the container to EVERY page's elements array. NEVER place it on only one page — a navigator that is only visible on a single page is useless.
 
 CRITICAL — Distinguish from XNavigationBar plugin: Use data-cb-func=form.navigator ONLY when the prompt mentions "CodBi Navbar" or "CodBi Navigation". When the prompt mentions "XIMA Navigationsleiste", "XIMA navbar", "FORMCYCLE navbar", "Navigationsleiste", "Progress Bar", "FC-Navbar", or "formcycle navigation bar", use className="XNavigationBar" instead.
 
@@ -106,13 +110,20 @@ CRITICAL — Inside a character class `$` is a LITERAL dollar sign (NOT the end-
 
 Applicable on a XTextArea to turn it into a TinyMCE rich-text (WYSIWYG) editor.
 
-CRITICAL — USE THIS FUNCTIONALITY whenever the user asks for a "rich text editor", "WYSIWYG editor", or rich/formatted text entry for a multi-line text field (e.g. "a field to write a story / message with a rich text editor"). Turn the XTextArea into a TinyMCE editor by setting these attributes on it:
-- data-cb-func = "HTML.Input.TinyMCE"
-- data-cb-plugins = (optional) CSV of TinyMCE plugins to load, e.g. "advlist, autolink, lists, link, image, table, code"
-- data-cb-toolbar = (optional) TinyMCE toolbar string, e.g. "undo redo | blocks | bold italic | bullist numlist | link image | code"
+MANDATORY — it is INVALID to emit data-cb-func="HTML.Input.TinyMCE" WITHOUT also setting data-cb-plugins and data-cb-toolbar; the editor would render without any formatting tools. BOTH params MUST accompany the func, always.
 
-Example — a "story" textarea that becomes a rich text editor:
-"attributes": [{"text":"data-cb-func","value":"HTML.Input.TinyMCE"},{"text":"data-cb-plugins","value":"advlist, autolink, lists, link, image, table, code"}]
+CRITICAL — USE THIS FUNCTIONALITY whenever the user asks for a "rich text editor", "WYSIWYG editor", or rich/formatted text entry for a multi-line text field (e.g. "a field to write a story / message with a rich text editor"). Turn the XTextArea into a TinyMCE editor and ALWAYS set BOTH attributes (never omit them):
+- data-cb-func = "HTML.Input.TinyMCE"
+- data-cb-plugins = CSV of the TinyMCE plugins the editor needs — decide YOURSELF which plugins are useful for the field's content.
+- data-cb-toolbar = the TinyMCE toolbar string — decide YOURSELF which tools are useful for the field's content.
+
+DECIDE THE TOOLBAR/PLUGINS YOURSELF — pick the tools that are USEFUL for what the field is for:
+- A message / story / free-text editor → text editing + media insertion: plugins "advlist, autolink, lists, link, image, media, charmap" and toolbar "undo redo | blocks | bold italic underline | bullist numlist | link image media".
+- Do NOT include raw HTML / source-code editing (the "code" plugin and the "code" toolbar button) for an ordinary message/story field — HTML editing is not useful for an end user writing a message.
+- Only add "code" / HTML source options when the field is explicitly meant to hold custom HTML (e.g. a "HTML-Quelltext" / "HTML source" field).
+
+Example — a "message" textarea that becomes a rich text editor for writing a message:
+"attributes": [{"text":"data-cb-func","value":"HTML.Input.TinyMCE"},{"text":"data-cb-plugins","value":"advlist, autolink, lists, link, image, media, charmap"},{"text":"data-cb-toolbar","value":"undo redo | blocks | bold italic underline | bullist numlist | link image media"}]
 
 ## HTML.Panel
 
@@ -179,7 +190,7 @@ Applicable on any form to add Matomo/Piwik analytics event tracking. **REQUIRES*
 
 ## Media.Image.Cropper
 
-Applicable on an XUpload field for images; adds an interactive crop dialog before upload.
+Applicable on an XUpload field for images; adds an interactive crop dialog before upload. CRITICAL — apply to the XUpload whenever the request asks for an upload with a cropper ("Bild-Cropper", "with crop", "Upload-Feld für den Personalausweis mit Bild-Cropper"): set data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) on that XUpload. NEVER omit it.
 
 ## MEDIA.INPUT.SPEECH
 
@@ -202,7 +213,7 @@ CRITICAL — OpenPLZ.Autocomplete must be applied to ALL address fields in EVERY
 
 ## Print.Remove
 
-Applicable on any element that should be invisible when the form is printed.
+Applicable on any element that should be invisible when the form is printed. The CSS classes are the STANDARD: `CodBi_Print_Remove_Tagged` (removes exactly the element — the default for "beim Drucken ausblenden" on a single field), `CodBi_Print_Remove_Parent` (removes the whole parent container/section), `CodBi_Print_Remove_PrintOnly` (print-only elements/buttons). INTERACTIVE/CONTROL elements (navigation/submit buttons, e.g. XButtonList "Weiter"/"Senden"/"Zurück") SHOULD be hidden from the printed output by default — they are useless on paper (use `CodBi_Print_Remove_PrintOnly`). USER DATA / SENSITIVE fields (birth place, address, personal data) must NEVER be hidden proactively — only when the user explicitly requests it (e.g. "beim Drucken ausblenden" / "hidden when printing"). Use `data-cb-func="Print.Remove"` ONLY when the prompt specifies a parameter for it — e.g. `DocumentSelector` (a dot-prefixed CSS-class selector of the section to remove, such as `.divPrintSection`) or `ParentalLevel` (how many ancestors to climb up). The functionality is NOT normalized server-side — the AI's choice reaches the designer unchanged.
 
 ## Sys.Log.Console
 

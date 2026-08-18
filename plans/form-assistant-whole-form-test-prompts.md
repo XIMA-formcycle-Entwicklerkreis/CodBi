@@ -25,7 +25,7 @@ DataQuery `HolaQuery` configured on the server.
 - [ ] Details request lists **every** widget and functionality the prompt needs — never invented `className`s (`XText` is wrong, `XTextField` is right).
 - [ ] Final JSON is valid and coherent: pages/containers reference element `name`s correctly; no orphan elements; unique `name` + `xi-…` id per element.
 - [ ] All `data-cb-func` values and `data-cb-*` parameters are exactly as in [`codbi-core-api-compact.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/codbi-core-api-compact.md:1).
-- [ ] CSS-Selector parameters use the target element's `name` with a dot prefix (`.tfDatumEnde`), **never** `#`-IDs.
+- [ ] CSS-Selector parameters use the target element's `name` with a dot prefix (`.tfDatumEnde`), **never** `#`-IDs. Element `name`s themselves NEVER carry a dot (`tfVorname`, not `.tfVorname`) — only CSS-selector PARAMETERS (e.g. `data-cb-maxfield`, `data-cb-field`) are dot-prefixed.
 - [ ] Labels/placeholders in the prompt's language (DE prompt → German labels).
 
 **Global checks for every whole-workflow scenario:**
@@ -65,12 +65,12 @@ XAppointment, XButtonList, Date.Min, Date.NoWeekends, Date.Frame, HTML.Panel, HT
 > a collapsible panel.
 
 **Verify:**
-- [ ] 3 XPage elements + Form.Navigator on the 2+-page form (NOT on a single page); XHeader/XFooter present.
+- [ ] 3 XPage elements + Form.Navigator on the 2+-page form (NOT on a single page); XHeader/XFooter present. Navigator container placed in XHeader/XFooter or on EVERY page — never only one page.
 - [ ] Birth-date field `Geburtsdatum` (`tfDatum`): block FUTURE dates via `CodBi_NoFutureDate`; **NO** `Date.NoWeekends` and **NO** future `Date.Min` (heute/morgen) — a birth date lies in the past, so "keine Vergangenheitsdaten" is contradictory for it, and it may fall on a weekend. `Date.Min` on a birth date is valid ONLY as a PAST minimum (e.g. "at least 18 years old" → `Minimum=18, Unit=y`, no `Reverse`).
-- [ ] Course date range: `Date.Frame` on the BEGIN field only with `MaxField` → `.`+end-field-name; optional future `Date.Min` (`Reverse=true`) on `Kursbeginn` only if the AI asks.
-- [ ] XAppointment with `appointmentPlan`; XButtonList with `action.page = "previous"/"submit"`; XLine; XTextArea `tfNachricht` with `data-cb-func="HTML.Input.TinyMCE"` + Plugins/Toolbar.
-- [ ] HTML.Panel on the course-selection container (XContainer + `data-cb-func="HTML.Panel"` + header attrs).
-- [ ] All selectors dot-prefixed names, no invented classes.
+- [ ] Course date range: `CodBi_DateFrame_1_Begin` on `Kursbeginn` AND `CodBi_DateFrame_1_End` on `Kursende` (BOTH fields; no invented `…_Begin_End` class; never on a container). (Alternative: `data-cb-func=date.frame` on the BEGIN field only with `MaxField` → `.`+end-field-name.) Optional future `Date.Min` (`Reverse=true`) on `Kursbeginn` is CORRECT when the user answered the AI's clarification question about the minimum (e.g. "morgen" → `Minimum=1, Unit=d, Reverse=true`); flag it only if it was applied without any user answer.
+- [ ] XAppointment with `appointmentPlan`; XButtonList with `action.page = "previous"/"submit"`; XLine; XTextArea `tfNachricht` with `data-cb-func="HTML.Input.TinyMCE"` + **both** Plugins **and** Toolbar (message toolbar WITHOUT the raw-HTML `code` option); XSelect `selStadt` with a NON-EMPTY options list (the AI must ask for the options when not given).
+- [ ] Collapsible panel on the course-selection group: `CodBi_HTML_Panel_Standard` on the XFieldSet (preferred — the legend is the title) — OR `data-cb-func="HTML.Panel"` + header attrs on a plain XContainer.
+- [ ] `CodBi_People_Name` on `Vorname` AND `Nachname`; element `name`s have NO dot (`tfVorname`); only CSS-selector parameters (MaxField/Field/…) use a dot prefix (`.tfVorname`); no invented classes.
 
 **Known trap — „keine Vergangenheitsdaten, keine Wochenenden“ on `Geburtsdatum` (2026-08-17):**
 Both date constraints in the prompt are **contradictory** for the birth-date field: a birth date
@@ -86,6 +86,10 @@ If the AI asks for a future minimum or a weekday restriction for the birth-date 
 `CodBi_NoFutureDate` (max. heute) an; ein `Date.Min` wäre nur als Vergangenheits-Minimum (z. B.
 Mindestalter 18 Jahre, `Minimum=18, Unit=y`) gültig; für `Kursbeginn` gelte `morgen` als
 Mindestdatum.“
+
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der `Verify:`-Checkliste von FS01 oben (inkl. der „Known trap“-Hinweise). Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS01 `Verify:` checklist above (including the "Known trap" notes). Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
 
 ### FS02 — Citizen-service application with ELSTER/BundID + address autofill (Bürgerservice switch ON)
 
@@ -116,13 +120,7 @@ XUpload + Media.Image.Cropper, XCaptcha, HTML.SETAttribute, Print.Remove, Sys.Lo
 > birth" field should be hidden when printing, and the "E-mail" field gets a tooltip "Required
 > field". Additionally log the AI text for "How will the weather be tomorrow?" to the console.
 
-**Verify:**
-- [ ] `fsBKDaten` fieldset with the canonical IDs (`tfAntragstellerVorname`, `tfAntragstellerName`, `tfAntragstellerGeburtsdatum`, `tfAntragstellerGeburtsort`, `tfAntragstellerPLZ`, `tfAntragstellerOrt`, `tfAntragstellerEmail`, `tfAntragstellerTelefon`); `fsBKOrgDaten` with ELSTER-only fields (`tfOrgName`, `tfOrgRegisterart`, `selOrgPersTyp`, `BPK2`, `TrustLevel`, …).
-- [ ] XBsLogin with `bs_auth_ref`; XSignature; XUpload with `data-cb-func="Media.Image.Cropper"`; XCaptcha.
-- [ ] `CodBi_OpenPLZ_AC_SET_PLZ/Locality/Street/BuildingNumber` on the right fields; `CodBi_LDAP_AC_*` where LDAP was requested.
-- [ ] `data-cb-func="Print.Remove"` on the birth-place field; `HTML.SETAttribute` (Name `title`, ToSet `Pflichtfeld`) on `tfAntragstellerEmail`.
-- [ ] Invisible XSpan with `data-cb-Data="SYS.Log.Console > AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;;"`.
-
+d
 ### FS03 — Feedback form with AI chat, OCR and data-table (AI + media + DQ)
 
 **Elements covered:** AI.LLAMA.CHAT + sub-classes, AI.OCR, XTextArea + TinyMCE, HTML.Input.REGEX,
@@ -155,6 +153,10 @@ JSON.SET, DQ.Table.View, Matomo.Tracking, HTML.CSS, XRating, XMap.
 - [ ] DQ.Table.View: `data-cb-columns="Alter,Name,Details"`, `data-cb-dataquery="HolaQuery"`, `jsonFlag` on Details, `excludecolumns` for Details-not-exported, Excel export enabled.
 - [ ] Matomo.Tracking (`SiteID` — ask if missing), HTML.CSS with the CSS text, XMap (Leaflet).
 
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS03. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS03 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
+
 ### FS04 — Event booking with appointment finder, time frame and panels
 
 **Elements covered:** XAppointment, XFieldSet + CodBi_HTML_Panel_Standard, CodBi_Accordion_*,
@@ -178,6 +180,10 @@ Time.Frame, XNavigationBar (NOT Form.Navigator), XLanguageSwich, XFormula, XSpac
 - [ ] Time.Frame on the BEGIN time field only with `MaxField` → end field (no Date.Frame).
 - [ ] XAppointment with `appointmentPlan`; XFormula read-only; XNavigationBar (NOT Form.Navigator); XLanguageSwich; XSpacer.
 - [ ] Panel/accordion headers carry the requested German titles.
+
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS04. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS04 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
 
 ### FS05 — Data / research form (element-placeholder heavy)
 
@@ -210,6 +216,10 @@ JSON.Path, LDAP.Find, Net.URL, Sorted, Unique, V.
 - [ ] EPs placed via Sys.Log.Console data or field default values; no invented EP ids.
 - [ ] Regex params are regexes (`^An`).
 
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS05. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS05 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
+
 ### FS06 — Payment / order form (XOrderItem + Cleave + REGEX)
 
 **Elements covered:** XOrderItem, XOrderButton, HTML.Input.Cleave, HTML.Input.REGEX, HTML.SETAttribute,
@@ -232,6 +242,10 @@ CodBi_Currency, XFieldSet panel, XLine, XSpacer.
 - [ ] XOrderItem with `xorderitem_price`/`xorderitem_tax`/`xorderitem_description` + XOrderButton.
 - [ ] `CodBi_Currency` (EUR) on the price field; HTML.Input.Cleave with the card mask; HTML.Input.REGEX (`^[0-9]{3}$` style) on the security code; HTML.SETAttribute (Name `title`, ToSet `Pflichtfeld`).
 - [ ] XFieldSet "Zahlung" + `CodBi_HTML_Panel_Standard` (if panel requested), XLine, XSpacer.
+
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS06. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS06 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
 
 ### FS07 — Multi-language form with hidden container and console logging
 
@@ -258,11 +272,16 @@ HTML.Text.Injector, HTML.Text.Mapper, XCheckbox, XDatalistAdvanced, XTextfieldAd
 - [ ] HTML.Text.Injector (Placeholder/Property/Replacement) on `tfVorname`; HTML.Text.Mapper (Property + Replacements) on `tfNachricht`.
 - [ ] Invisible XSpan with `data-cb-Data="SYS.Log.Console > { V > tfMail }"` (or equivalent reference).
 
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS07. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS07 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
+
 ### FS08 — Autocomplete, cropper and print layout (CSS-class heavy)
 
 **Elements covered:** CodBi_OpenPLZ_AC_SET_*, CodBi_LDAP_AC_*, CodBi_Fotocropper_*,
-CodBi_Print_Remove_*, Media.Image.Cropper, CodBi_NoFutureDate, CodBi_DateFrame_1_Begin_End,
-CodBi_TimeFrame_1_Begin_End, CodBi_People_*, Sys.Log.Console.
+CodBi_Print_Remove_*, Media.Image.Cropper, CodBi_NoFutureDate, CodBi_DateFrame_1_Begin,
+CodBi_DateFrame_1_End, CodBi_TimeFrame_1_Begin, CodBi_TimeFrame_1_End, CodBi_People_*,
+Sys.Log.Console.
 
 **Prompt (DE):**
 > Richte die Adressfelder `tfPLZ`, `tfOrt`, `tfVorname`, `tfNachname` mit deutscher
@@ -285,8 +304,12 @@ CodBi_TimeFrame_1_Begin_End, CodBi_People_*, Sys.Log.Console.
 - [ ] `CodBi_OpenPLZ_AC_SET_PLZ/Locality/Street/BuildingNumber` classes on the correct fields (preferred over `data-cb-func`); `CodBi_LDAP_AC_*` on the person group.
 - [ ] `CodBi_Fotocropper_*` classes; `Media.Image.Cropper` on `fdDatei`.
 - [ ] `CodBi_Print_Remove_PrintOnly` (or the correct variant) on `tfNachname`.
-- [ ] `CodBi_NoFutureDate` on `tfDatum`; `CodBi_DateFrame_1_Begin_End` and `CodBi_TimeFrame_1_Begin_End` (no `data-cb-func="date.frame"`).
+- [ ] `CodBi_NoFutureDate` on `tfDatum`; `CodBi_DateFrame_1_Begin` + `CodBi_DateFrame_1_End` on the two date fields and `CodBi_TimeFrame_1_Begin` + `CodBi_TimeFrame_1_End` on the two time fields (no combined `…_Begin_End` class; no `data-cb-func="date.frame"`).
 - [ ] `CodBi_People_*` per field type (not on streets/localities).
+
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS08. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS08 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
 
 ### FS09 — Kitchen-sink form (every widget type at least once)
 
@@ -323,6 +346,10 @@ CodBi_TimeFrame_1_Begin_End, CodBi_People_*, Sys.Log.Console.
 - [ ] Widget-required options (XSelect `options` text+value; XButtonList `buttons`; XUpload source; datatype `dateDE`; fullwidth on the textarea; `appointmentPlan` on the Terminfinder).
 - [ ] 2 XPages + Form.Navigator in its own container; XNavigationBar as separate element (not Form.Navigator).
 
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS09. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS09 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
+
 ### FS10 — Global standard configurations (holistic)
 
 **Elements covered:** Holistic.CSS.Standard, Holistic.Matomo.Tracking, Holistic.Media.Input.Speech,
@@ -340,6 +367,10 @@ Holistic.Media.Input.Speech.Whisper, CodBi_XCL_Speech, DQ.Table.View (already pr
 - [ ] The returned `standards` CSV contains `Holistic.CSS.Standard`, `Holistic.Matomo.Tracking`, `Holistic.Media.Input.Speech` / `.Whisper` (config-level, not per-element attributes).
 - [ ] `CodBi_XCL_Speech` / `CodBi_XCL_Speech_Whisper` present on the fields (or the config applied).
 - [ ] No per-element `data-cb-func` invented for configs that belong in `standards`.
+
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS10. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS10 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
 
 ---
 
@@ -365,6 +396,10 @@ Holistic.Media.Input.Speech.Whisper, CodBi_XCL_Speech, DQ.Table.View (already pr
 - [ ] Node order: FC_LOG_ENTRY → FC_CHANGE_STATE → FC_EMAIL (from literal `office@ansbach.de`, to `[%tfMail%]`, subject `Eingang`) → FC_RETURN (`endpointType=FC_RETURN`, `endpointState=""`).
 - [ ] `taskName` + `endpointState` in the prompt's language (`Empfangen`/`Eingegangen` for DE, `Received` for EN).
 
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS01. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS01 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
+
 ### WS02 — Double opt-in with welcome lane (two lanes)
 
 **Triggers/nodes covered:** FC_FORM_SUBMIT_BUTTON, FC_DOI_INIT, FC_DOI_VERIFIED, FC_CHANGE_STATE,
@@ -388,6 +423,10 @@ FC_EMAIL, FC_INVITATION_SENT, FC_INVITATION_ERROR.
 - [ ] Lane 2: FC_DOI_VERIFIED → FC_CHANGE_STATE → FC_EMAIL welcome; optional third lane/branch for FC_INVITATION_ERROR (→ FC_LOG_ENTRY).
 - [ ] No FC_EMAIL used for the DOI invitation itself.
 
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS02. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS02 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
+
 ### WS03 — Payment + postbox with authentication guard
 
 **Triggers/nodes covered:** FC_FORM_SUBMIT_BUTTON, CheckTrustLevelPlugin, PaymentInitPlugin,
@@ -407,6 +446,10 @@ PostboxPlugin, FC_CHANGE_STATE.
 - [ ] Details request lists CheckTrustLevelPlugin + PaymentInitPlugin + PostboxPlugin (+ their exact sub-schemas).
 - [ ] CheckTrustLevelPlugin (CERTIFICATE) as guard; `_childNodes` contain PaymentInitPlugin (orderItemDefs amount "30", paymentClient/customerData/address from form fields) + PostboxPlugin (message subject/body + id, **NOT** FC_EMAIL).
 - [ ] FC_CHANGE_STATE `endpointState` in the prompt's language; chain nodes after the guard.
+
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS03. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS03 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
 
 ### WS04 — Repeatable rows as JSON into DB (loop + SQL)
 
@@ -431,6 +474,10 @@ FC_SQL_STATEMENT.
 - [ ] `[%tfName%]` placeholders **unquoted** in the SQL; single INSERT (not one per row).
 - [ ] Loop iteration type `FORM_FIELD_REPETITIONS`.
 
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS04. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS04 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
+
 ### WS05 — Branching: switch + conditions + context
 
 **Triggers/nodes covered:** FC_FORM_SUBMIT_BUTTON, FC_SWITCH, FC_MULTIPLE_CONDITION, FC_EMAIL,
@@ -450,6 +497,10 @@ FC_WITH_FORM_ELEMENT_CONTEXT.
 - [ ] FC_SWITCH with `_cases` mapping `A`→mail A, `B`→mail B; FC_MULTIPLE_CONDITION with the child on YES; FC_WITH_FORM_ELEMENT_CONTEXT around the block.
 - [ ] Children in `_childNodes`; conditions reference the field names correctly.
 - [ ] All emails have sender/subject either provided or asked for (no invented values).
+
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS05. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS05 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
 
 ### WS06 — Loops: for-each, while, break/continue
 
@@ -472,6 +523,10 @@ FC_DO_UNTIL_LOOP, FC_EMAIL, FC_BREAK, FC_CONTINUE, FC_LOG_ENTRY.
 - [ ] FC_WHILE_LOOP with FC_EMAIL in `_childNodes` and FC_BREAK child for the limit; FC_DO_UNTIL_LOOP for the trailing loop.
 - [ ] No per-row append in `chainedNodes`; loops correctly nested/sequenced.
 
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS06. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS06 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
+
 ### WS07 — Error handling: experiment + catch + throw
 
 **Triggers/nodes covered:** FC_FORM_SUBMIT_BUTTON, FC_EXPERIMENT, FC_EMAIL, FC_CATCH_ERROR,
@@ -492,6 +547,10 @@ FC_THROW_EXCEPTION, FC_LOG_ENTRY.
 - [ ] FC_EXPERIMENT with the main action in `_childNodes` and the error handler in `_handlerChildNodes`.
 - [ ] FC_THROW_EXCEPTION with message "Senden fehlgeschlagen".
 - [ ] Second lane: FC_CATCH_ERROR (with filters) → FC_LOG_ENTRY → FC_EMAIL; output is an array of two objects.
+
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS07. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS07 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
 
 ### WS08 — Document workflow (PDF/Word/ZIP/CMIS/WebDAV/file system)
 
@@ -523,6 +582,10 @@ UploadDocumentPlugin (RegiSafe), FC_DECODE_BASE64, FC_ENCODE_BASE64.
 - [ ] `de.xima.fc.fc_plugin_cmis.plugin.CmisActionPlugin` (objectName/objectType/folderPath) and `de.xima.regisafe.plugin.node.UploadDocumentPlugin` (files + metadata); no invented credentials.
 - [ ] Details request lists every node type used.
 
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS08. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS08 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
+
 ### WS09 — Record management (state, inbox, counter, availability, SQL, message, chat)
 
 **Triggers/nodes covered:** FC_MANUAL, FC_COUNTER, FC_CHANGE_FORM_AVAILABILITY,
@@ -549,6 +612,10 @@ FC_WRITE_FORM_RECORD_ATTRIBUTES, FC_SQL_STATEMENT, FC_CREATE_TEXT_FILE.
 - [ ] FC_CREATE_TEXT_FILE (name `ausgabe.json` + content); FC_WRITE_FORM_RECORD_ATTRIBUTES (`narrativeJson`), NOT FC_SQL_STATEMENT (no table involved).
 - [ ] Terminal nodes FC_QUEUE_TASK / FC_DELETE_FORM_RECORD with `endpointState=""`.
 - [ ] Single lane → single object (no multi-lane unless asked).
+
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS09. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS09 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
 
 ### WS10 — End-to-end complex process (kitchen-sink workflow)
 
@@ -581,6 +648,149 @@ FC_THROW_EXCEPTION, FC_RETURN.
 - [ ] FC_SWITCH with two branches; branch A → FC_DOI_INIT … (and the FC_DOI_VERIFIED continuation, possibly its own lane); branch B → FC_FOR_EACH_LOOP + single unquoted FC_SQL_STATEMENT + FC_COMPRESS_AS_ZIP + FC_SAVE_TO_WEBDAV.
 - [ ] Loop/condition children in `_childNodes`; chain nodes after loops; `endpointState` in the prompt's language; FC_THROW_EXCEPTION in the error lane.
 - [ ] No `FC_SHOW_TEMPLATE` for a completion page that should be avoided.
+
+**Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS10. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
+
+**Verification prompt to copy (EN):** Check the current workflow against the WS10 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes, `endpointState`/`endpointType`.
+
+---
+
+## C. Verification prompts (paste into the assistant after generation)
+
+Turn any scenario's `Verify:` checklist into an audit that the AI runs against the live form or
+workflow.
+
+**How to use:**
+1. Run a scenario prompt (FS01–FS10 in the Form Assistant, WS01–WS10 in the Workflow Assistant).
+2. **Quick check:** every scenario above already has a short **"Verification prompt to copy"** (DE +
+   EN) directly beneath its `Verify:` checklist — just copy that one.
+3. **Thorough check:** for a full audit that also covers the global checks (details-request
+   completeness, JSON validity/uniqueness, exact API params, dot-prefixed selectors,
+   prompt-language labels, unquoted SQL placeholders), copy the full template below (DE or EN) and
+   append the scenario's `Verify:` checklist.
+4. Paste it into the assistant chat. The AI inspects the actual form/workflow, marks every
+   checklist item `✅ PASS` / `❌ FAIL`, shows expected vs. actual for each failure and offers to fix
+   the failures.
+5. Re-run after any prompt change (regression).
+
+### Form Assistant — verification prompt
+
+Paste after a whole-form run (FS01–FS10). Replace `{Auftrag}` with the original prompt and append
+the scenario's `Verify:` checklist.
+
+**DE:**
+
+> Du bist jetzt Prüfer für das Formular im Designer. Vorhin habe ich dir diesen Auftrag gegeben:
+>
+> {Auftrag — z. B. den FS-Prompt hier einfügen}
+>
+> Prüfe jetzt das AKTUELLE Formular Zeile für Zeile anhand der folgenden Checkliste. Bewerte jeden
+> Punkt als `✅ PASS` oder `❌ FAIL`. Erfinde keine Ergebnisse — schaue in die tatsächlichen Elemente,
+> deren `className`, Attribute, CSS-Klassen und `data-cb-func`/`data-cb-*`-Werte im Formular. Bei
+> jedem `❌ FAIL` nenne das Erwartete und das tatsächlich Erzeugte.
+>
+> Globale Formular-Checks:
+> - Details-Request hat jedes benötigte Widget und jede benötigte Funktion aufgelistet — keine
+>   erfundenen `className`s (`XText` ist falsch, `XTextField` ist richtig).
+> - Finales JSON valide und kohärent: Seiten/Container referenzieren die korrekten Element-`name`s;
+>   keine Waisen; eindeutige `name` + `xi-…`-Id pro Element.
+> - Alle `data-cb-func`-Werte und `data-cb-*`-Parameter exakt wie in der CodBi-API-Dokumentation.
+> - Element-`name`s haben KEINEN Punkt-Präfix (`tfVorname`, nicht `.tfVorname`); nur CSS-Selektor-
+>   PARAMETER (z. B. `data-cb-maxfield`, `data-cb-field`) referenzieren ein Zielelement mit
+>   Punkt-Präfix (`.tfVorname`) — niemals `#`-Ids.
+> - Labels/Platzhalter in der Sprache des Prompts (DE-Prompt → deutsche Labels).
+>
+> Checkliste dieses Szenarios:
+> {Hier die `Verify:`-Checkliste des Szenarios einfügen}
+>
+> Am Ende eine Zusammenfassung: „X von Y bestanden“. Bei Fehlschlägen biete an, die Probleme sofort
+> zu korrigieren.
+
+**EN:**
+
+> You are now the verifier for the form in the designer. Earlier I gave you this task:
+>
+> {Task — e.g. paste the FS prompt}
+>
+> Now check the CURRENT form item by item against the following checklist. Mark every item as
+> `✅ PASS` or `❌ FAIL`. Do not invent results — inspect the actual elements, their `className`,
+> attributes, CSS classes and `data-cb-func`/`data-cb-*` values in the form. For every `❌ FAIL`
+> state the expected and the actually generated value.
+>
+> Global form checks:
+> - The details request listed every widget and functionality needed — no invented `className`s
+>   (`XText` is wrong, `XTextField` is right).
+> - Final JSON is valid and coherent: pages/containers reference the correct element `name`s; no
+>   orphans; unique `name` + `xi-…` id per element.
+> - All `data-cb-func` values and `data-cb-*` parameters exactly as in the CodBi API documentation.
+> - Element `name`s NEVER carry a dot (`tfVorname`, not `.tfVorname`); only CSS-selector PARAMETERS
+>   (e.g. `data-cb-maxfield`, `data-cb-field`) reference a target element with a dot prefix
+>   (`.tfVorname`) — never `#`-ids.
+> - Labels/placeholders in the prompt's language (DE prompt → German labels).
+>
+> Checklist for this scenario:
+> {Paste the scenario's `Verify:` checklist here}
+>
+> End with a summary: "X of Y passed". On failures, offer to fix the problems right away.
+
+### Workflow Assistant — verification prompt
+
+Paste after a whole-workflow run (WS01–WS10). Replace `{Auftrag}` with the original prompt and
+append the scenario's `Verify:` checklist.
+
+**DE:**
+
+> Du bist jetzt Prüfer für den Workflow im Editor. Vorhin habe ich dir diesen Auftrag gegeben:
+>
+> {Auftrag — z. B. den WS-Prompt hier einfügen}
+>
+> Prüfe jetzt den AKTUELLEN Workflow anhand der folgenden Checkliste. Bewerte jeden Punkt als
+> `✅ PASS` oder `❌ FAIL`. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten,
+> `_childNodes`, Chain-Knoten, `endpointState` und `endpointType`. Bei jedem `❌ FAIL` nenne das
+> Erwartete und das tatsächlich Erzeugte.
+>
+> Globale Workflow-Checks:
+> - Details-Request listet jeden Trigger und jeden Knoten auf (inkl. Bedingungs-/Schleifen-/
+>   Container-Knoten).
+> - Ein Lane → ein JSON-Objekt; mehrere unabhängige Lanes → Array von Objekten; jedes mit
+>   `taskName`, `taskDescription`, `triggerType`, `triggerParams`, `nodeType`, `nodeParams`,
+>   `endpointState`, `endpointType`.
+> - Kind-Knoten in `_childNodes` bei Bedingungen/Schleifen; Chain-Knoten nie in `_childNodes`.
+> - `endpointState`-Label in der Sprache des Prompts (DE-Prompt → „Empfangen“, nicht „Received“);
+>   `""` bei Terminal-Knoten (FC_RETURN / FC_DELETE_FORM_RECORD / FC_QUEUE_TASK).
+> - `[%fieldName%]`-Platzhalter in SQL **unquoted**.
+>
+> Checkliste dieses Szenarios:
+> {Hier die `Verify:`-Checkliste des Szenarios einfügen}
+>
+> Am Ende eine Zusammenfassung: „X von Y bestanden“. Bei Fehlschlägen biete an, die Probleme sofort
+> zu korrigieren.
+
+**EN:**
+
+> You are now the verifier for the workflow in the editor. Earlier I gave you this task:
+>
+> {Task — e.g. paste the WS prompt}
+>
+> Now check the CURRENT workflow against the following checklist. Mark every item as `✅ PASS` or
+> `❌ FAIL`. Do not invent results — inspect the actual triggers, nodes, `_childNodes`, chain nodes,
+> `endpointState` and `endpointType`. For every `❌ FAIL` state the expected and the actually
+> generated value.
+>
+> Global workflow checks:
+> - The details request listed every trigger and node (incl. condition/loop/container nodes).
+> - Single lane → single JSON object; multiple independent lanes → array of objects; each with
+>   `taskName`, `taskDescription`, `triggerType`, `triggerParams`, `nodeType`, `nodeParams`,
+>   `endpointState`, `endpointType`.
+> - Child nodes inside `_childNodes` for conditions/loops; chain nodes never in `_childNodes`.
+> - `endpointState` label in the prompt's language (German prompt → `"Empfangen"`, not
+>   `"Received"`); `""` for terminal nodes (FC_RETURN / FC_DELETE_FORM_RECORD / FC_QUEUE_TASK).
+> - `[%fieldName%]` placeholders in SQL **unquoted**.
+>
+> Checklist for this scenario:
+> {Paste the scenario's `Verify:` checklist here}
+>
+> End with a summary: "X of Y passed". On failures, offer to fix the problems right away.
 
 ---
 

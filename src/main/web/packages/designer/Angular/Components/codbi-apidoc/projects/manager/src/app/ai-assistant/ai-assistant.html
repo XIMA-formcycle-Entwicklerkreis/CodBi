@@ -7,11 +7,19 @@
     [draggable]="false"
     [resizable]="false"
     [maximizable]="true"
-    header="AI Form Assistant"
     [closeOnEscape]="true"
     [baseZIndex]="2000"
     maskStyleClass="cb-ai-assistant-mask"
     styleClass="cb-ai-assistant-dialog">
+
+    <!-- The header template lives in PrimeNG's .p-dialog-header, so the whole bar (logo + title) is
+         draggable, exactly like the chat popup / prompt-manager dialog. -->
+    <ng-template #header>
+        <div class="cb-ai-assistant-header">
+            <img class="cb-ai-assistant-logo" [src]="codbiLogoUrl" alt="CodBi" />
+            <span class="cb-ai-assistant-title">Form Assistant</span>
+        </div>
+    </ng-template>
 
     <div class="cb-ai-content" #contentContainer>
         <div class="cb-ai-body">
@@ -183,29 +191,39 @@
             </label>
             <span class="cb-ai-askall-switch__label">{{ buergerserviceSwitchLabel }}</span>
         </span>
-        <p-button
-            label="Run"
-            icon="pi pi-play"
-            (onClick)="run()"
-            [disabled]="loading || !dbAvailable || !selectedModel || !promptText.trim()" />
-        @if (syncAllowed) {
-        <p-button
-            label="Prompts"
-            icon="pi pi-pencil"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="openPromptManager()"
-            [disabled]="loading || !dbAvailable"
-            title="Prompt Manager — customize AI prompts" />
-        }
-        <p-button
-            [label]="showLog ? 'Hide log' : 'Change log'"
-            icon="pi pi-list"
-            severity="secondary"
-            [outlined]="true"
-            (onClick)="toggleLog()"
-            [disabled]="loading || !dbAvailable"
-            title="Show a log of all changes made by the AI assistant" />
+        <span class="cb-ai-footer-actions">
+            <p-button
+                label="Run"
+                icon="pi pi-play"
+                (onClick)="run()"
+                [disabled]="loading || !dbAvailable || !selectedModel || !promptText.trim()" />
+            @if (syncAllowed) {
+            <p-button
+                label="Prompts"
+                icon="pi pi-pencil"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="openPromptManager()"
+                [disabled]="loading || !dbAvailable"
+                title="Prompt Manager — customize AI prompts" />
+            }
+            <p-button
+                [label]="showLog ? 'Hide log' : 'Change log'"
+                icon="pi pi-list"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="toggleLog()"
+                [disabled]="loading || !dbAvailable"
+                title="Show a log of all changes made by the AI assistant" />
+            <p-button
+                label="Chat"
+                icon="pi pi-comments"
+                severity="secondary"
+                [outlined]="true"
+                (onClick)="openChat()"
+                [disabled]="loading || !dbAvailable"
+                title="Open the chat about the current form" />
+        </span>
     </ng-template>
 </p-dialog>
 
@@ -340,9 +358,11 @@
 <p-dialog
     [visible]="true"
     (visibleChange)="onChatVisibleChange($event)"
+    (onResizeEnd)="onChatResizeEnd()"
     [modal]="true"
     [draggable]="false"
     [resizable]="true"
+    [maximizable]="true"
     [closeOnEscape]="true"
     appendTo="body"
     [baseZIndex]="999999"
@@ -354,7 +374,7 @@
     <ng-template #header>
         <div class="cb-ai-chat-header">
             <img class="cb-ai-chat-logo" [src]="codbiLogoUrl" alt="CodBi" />
-            <span class="cb-ai-chat-title">AI Form Assistant Chat</span>
+            <span class="cb-ai-chat-title">Form Assistant Chat</span>
         </div>
     </ng-template>
 
@@ -362,6 +382,15 @@
         <div class="cb-ai-chat-messages">
             @for (m of chatMessages; track $index) {
                 <div class="cb-ai-chat-msg" [class.cb-ai-chat-msg--user]="m.role === 'user'">
+                    <button
+                        type="button"
+                        class="cb-ai-chat-copy"
+                        [class.cb-ai-chat-copy--copied]="copiedChatIndex === $index"
+                        [title]="copiedChatIndex === $index ? 'Copied' : 'Copy message'"
+                        (click)="copyChatMessage(m.text, $index)"
+                        aria-label="Copy message">
+                        <i [class]="copiedChatIndex === $index ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
+                    </button>
                     <div class="cb-ai-chat-bubble">{{ m.text }}</div>
                 </div>
             }

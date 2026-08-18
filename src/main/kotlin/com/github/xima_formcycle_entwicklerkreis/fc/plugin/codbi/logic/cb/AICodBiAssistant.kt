@@ -485,6 +485,19 @@ class AICodBiAssistant : IPluginServletAction {
         if (intent == "form" || intent == "both") {
           buildFormStructureContext(params.requestParameters["persist"]?.firstOrNull())
         } else null
+    // COMPLETE form structure — the full persist JSON with EVERY detail (cssclasses, data-cb-func /
+    // data-cb-* attributes, datatype, XSelect options, appointmentPlan, XButtonList action.page,
+    // ...). The chat AI receives this so it can answer questions about or VERIFY the form against a
+    // checklist; the condensed structure above intentionally omits classes and attributes.
+    val completeFormJson: String? =
+        params.requestParameters["persist"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+    // COMPLETE workflow structure — tasks, triggers (with their parameters) and the full node tree
+    // (every node's type/name/description and customParameters) — so the chat AI can answer
+    // questions about or verify the workflow with all details as well.
+    val completeWorkflowJson: String? =
+        params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()?.let { wid ->
+          buildWorkflowStructureContext(wid, getUserContext(params))
+        }
     // Estimated tokens consumed by this run, split into input (prompts) and output (completions).
     // runTokens keeps the combined total for the frontend token counter.
     var tokensIn = 0
@@ -522,7 +535,14 @@ class AICodBiAssistant : IPluginServletAction {
     val chatAnswerResult =
         try {
           produceChatAnswer(
-              prompt, modelId, instance, formStructureContext, chatTurns, clarificationContext)
+              prompt,
+              modelId,
+              instance,
+              formStructureContext,
+              completeFormJson,
+              completeWorkflowJson,
+              chatTurns,
+              clarificationContext)
         } catch (e: Exception) {
           logger.warn("[AICodBiAssistant] Chat answer pass failed: {}", e.message)
           null
@@ -1308,7 +1328,7 @@ class AICodBiAssistant : IPluginServletAction {
             }
 
         val applySystemPrompt =
-            loadCodbiApplyPrompt(requested, widgets, useCodbi) +
+            loadCodbiApplyPrompt(requested, widgets, useCodbi, useBuergerserviceNaming) +
                 historySection +
                 clarificationSection +
                 chatSection +
@@ -1387,7 +1407,7 @@ class AICodBiAssistant : IPluginServletAction {
         logger.info(
             "[AICodBiAssistant] Rerun budget exhausted but AI still requests details - forcing final complete-form pass")
         val finalSystemPrompt =
-            loadCodbiApplyPrompt(emptyList(), emptyList(), useCodbi) +
+            loadCodbiApplyPrompt(emptyList(), emptyList(), useCodbi, useBuergerserviceNaming) +
                 chatSection +
                 "\n\nYou MUST now return the COMPLETE modified form JSON with ALL items. " +
                 "Do NOT return a need_codbi_details request - you already received every reference " +
@@ -1983,8 +2003,16 @@ class AICodBiAssistant : IPluginServletAction {
    * Existing classes (e.g. "Goon") are preserved - nothing is ever removed or overridden. The
    * postal code field additionally gets the `plzDE` datatype (when none is set) so the
    * Holistic.Cleave.PLZ standard stays active.
+   *
+   * In addition, when a complete address group (a postal-code field AND a locality field tagged
+   * with the OpenPLZ classes inside the same container) has no street field and no house-number
+   * field (and no combined address field), missing `tfStrasse` + `tfHausnummer` fields are created
+   * with the matching OpenPLZ classes — closing the gap where a prompt asks for
+   * "PLZ/Ort/Straße/Hausnummer" German autocomplete but the generated fieldset only contains PLZ
+   * and Ort.
    */
-  private fun applyOpenPlzAddressClasses(resultItems: JsonArray) {
+  private fun applyOpenPlzAddressClasses(resultItems: JsonArray, baseObj: JsonObject?) {
+    // Pass 1 — apply OpenPLZ.AC.SET classes to existing address-part fields.
     for (el in resultItems) {
       if (!el.isJsonObject) continue
       val item = el.asJsonObject
@@ -2024,6 +2052,107 @@ class AICodBiAssistant : IPluginServletAction {
         logger.info("[AICodBiAssistant] Set datatype 'plzDE' on postal code field '{}'", name)
       }
     }
+    // Pass 2 — create missing street / house-number fields for complete address groups.
+    val baseTextProps = baseObj?.getAsJsonObject("XTextField")?.getAsJsonObject("properties")
+    if (baseTextProps == null) return
+    val childrenByParent = mutableMapOf<String, MutableSet<String>>()
+    val openplzByParent = mutableMapOf<String, MutableSet<String>>()
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val parentId = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      val name = props.get("name")?.asString ?: continue
+      childrenByParent.getOrPut(parentId) { mutableSetOf() }.add(name)
+      props
+          .get("cssclasses")
+          ?.takeIf { it.isJsonArray }
+          ?.asJsonArray
+          ?.forEach { c ->
+            if (c.isJsonPrimitive && c.asString.startsWith("CodBi_OpenPLZ_AC_SET_")) {
+              openplzByParent.getOrPut(parentId) { mutableSetOf() }.add(c.asString)
+            }
+          }
+    }
+    for ((parentId, classes) in openplzByParent) {
+      val hasPlz = classes.contains("CodBi_OpenPLZ_AC_SET_PLZ")
+      val hasLocality = classes.contains("CodBi_OpenPLZ_AC_SET_Locality")
+      if (!hasPlz || !hasLocality) continue
+      val children = childrenByParent[parentId] ?: continue
+      val hasStreet = children.any { it.contains(Regex("(?i)street|strasse|straße")) }
+      val hasBuilding =
+          children.any { it.contains(Regex("(?i)hausnummer|hausnr|buildingnumber|building")) }
+      val hasAddress = children.any { it.contains(Regex("(?i)adresse|address")) }
+      if (hasStreet && hasBuilding) continue
+      if (hasAddress) continue
+      val containerEl =
+          resultItems.firstOrNull {
+            it.isJsonObject &&
+                it.asJsonObject.getAsJsonObject("properties")?.get("id")?.asString == parentId
+          } ?: continue
+      val containerProps = containerEl.asJsonObject.getAsJsonObject("properties") ?: continue
+      var elements = containerProps.getAsJsonArray("elements")
+      if (elements == null) {
+        val newArr = JsonArray()
+        containerProps.add("elements", newArr)
+        elements = newArr
+      }
+      if (!hasStreet) {
+        createAddressField(
+            resultItems,
+            elements,
+            baseTextProps,
+            parentId,
+            "tfStrasse",
+            "Straße",
+            "CodBi_OpenPLZ_AC_SET_Street")
+      }
+      if (!hasBuilding) {
+        createAddressField(
+            resultItems,
+            elements,
+            baseTextProps,
+            parentId,
+            "tfHausnummer",
+            "Hausnummer",
+            "CodBi_OpenPLZ_AC_SET_BuildingNumber")
+      }
+    }
+  }
+
+  /**
+   * Creates a new XTextField item reusing the XTextField base template and appends it to
+   * [elements]. Returns the created item, or `null` when the name is already referenced.
+   */
+  private fun createAddressField(
+      resultItems: JsonArray,
+      elements: JsonArray,
+      baseTextProps: JsonObject,
+      parentId: String,
+      name: String,
+      label: String,
+      cls: String,
+  ): JsonObject? {
+    if (elements.any { it.isJsonPrimitive && it.asString == name }) return null
+    val props = JsonObject()
+    for (entry in baseTextProps.entrySet()) props.add(entry.key, entry.value.deepCopy())
+    props.addProperty("name", name)
+    props.addProperty("id", "xi-${name.lowercase()}")
+    props.addProperty("label", label)
+    props.addProperty("parentid", parentId)
+    val cssClasses = JsonArray()
+    cssClasses.add(cls)
+    props.add("cssclasses", cssClasses)
+    val item = JsonObject()
+    item.addProperty("className", "XTextField")
+    item.add("properties", props)
+    resultItems.add(item)
+    elements.add(name)
+    logger.info(
+        "[AICodBiAssistant] Created missing address field '{}' ({} class) in container '{}'",
+        name,
+        cls,
+        parentId)
+    return item
   }
 
   private fun extractAppliedCodbiIds(cleanedJson: String): List<String> {
@@ -2077,6 +2206,7 @@ class AICodBiAssistant : IPluginServletAction {
       setOf(
           "XAppointment",
           "XButtonList",
+          "XBsLogin",
           "XCaptcha",
           "XReCaptcha",
           "XCheckbox",
@@ -2955,75 +3085,103 @@ class AICodBiAssistant : IPluginServletAction {
           if (ref.isJsonPrimitive) itemToContainerId[ref.asString] = containerId
         }
       }
-      // Fix orphaned new items: items added by the AI to the flat `items` array but not referenced
-      // in any container's `properties.elements` list. Without a container reference the FC
-      // designer
-      // ignores them completely. We attach orphans to the last XFieldSet (or XPage) found.
-      val containerClassNames = setOf("XPage", "XFieldSet", "XContainer", "XHeader", "XFooter")
-      val orphanedNames = mutableListOf<String>()
+      // Normalize placement. The AI sometimes writes `parentid` as the parent's NAME (e.g.
+      // "fsBKDaten" / "p1") instead of the parent's `id` (e.g. "xi-fs-bk-daten"). Formcycle's
+      // `parentid` must reference the parent's `id` — a name-based parentid leaves every child
+      // unattached and the form renders EMPTY even though the change log lists all widgets as
+      // created. The container's `elements` array is the single source of truth: re-derive every
+      // item's parentid from it (overriding the AI's value), and attach items the AI forgot to
+      // reference (orphans) to a container — preferably the one the AI named in parentid (by name
+      // or id), else the nearest preceding container / last fieldset or page. Original items the
+      // AI deliberately detached (removed from their container's elements) are NOT re-attached —
+      // the restore logic above already honored the removal.
+      val attachContainerClassNames = setOf("XFieldSet", "XPage", "XContainer")
+      val containerById = mutableMapOf<String, JsonObject>()
+      val containerByName = mutableMapOf<String, JsonObject>()
+      val indexByName =
+          resultItems
+              .mapIndexedNotNull { idx, el ->
+                el.takeIf { it.isJsonObject }
+                    ?.asJsonObject
+                    ?.getAsJsonObject("properties")
+                    ?.get("name")
+                    ?.asString
+                    ?.let { name -> name to idx }
+              }
+              .toMap()
       for (el in resultItems) {
         if (!el.isJsonObject) continue
-        val className = el.asJsonObject.get("className")?.asString ?: continue
-        if (className in containerClassNames) continue
-        val name = el.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString ?: continue
-        if (name !in itemToContainerId) orphanedNames.add(name)
+        val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+        if (!props.has("elements")) continue
+        val id = props.get("id")?.asString
+        if (id != null) containerById[id] = el.asJsonObject
+        val name = props.get("name")?.asString
+        if (name != null) containerByName[name] = el.asJsonObject
       }
-      if (orphanedNames.isNotEmpty()) {
-        logger.warn(
-            "[AICodBiAssistant] {} orphaned items not in any container's elements (will auto-attach): {}",
-            orphanedNames.size,
-            orphanedNames)
-        // Build a nameâ†’index map so we can find each orphan's position in the array.
-        val indexByName =
-            resultItems
-                .mapIndexedNotNull { idx, el ->
-                  el.takeIf { it.isJsonObject }
-                      ?.asJsonObject
-                      ?.getAsJsonObject("properties")
-                      ?.get("name")
-                      ?.asString
-                      ?.let { name -> name to idx }
-                }
-                .toMap()
-        val attachContainerClassNames = setOf("XFieldSet", "XPage", "XContainer")
-        // Attach each orphan to the nearest preceding container, so items generated
-        // for page 2 land on p2 instead of on the last XFieldSet that belongs to page 1.
-        for (name in orphanedNames) {
-          val orphanIdx = indexByName[name] ?: continue
-          val targetContainer =
-              (orphanIdx - 1 downTo 0)
-                  .asSequence()
-                  .map { idx -> resultItems[idx] }
-                  .firstOrNull { el ->
-                    el.isJsonObject &&
-                        el.asJsonObject.get("className")?.asString in attachContainerClassNames
-                  }
-                  // Fallback: last XFieldSet or XPage in the whole array.
-                  ?: resultItems.lastOrNull {
-                    it.isJsonObject &&
-                        it.asJsonObject.get("className")?.asString in setOf("XFieldSet", "XPage")
-                  }
-          if (targetContainer == null) {
-            logger.warn("[AICodBiAssistant] No container found for orphaned item '{}'", name)
-            continue
+      for (el in resultItems) {
+        if (!el.isJsonObject) continue
+        val item = el.asJsonObject
+        val className = item.get("className")?.asString ?: continue
+        if (className == "XPage") continue // the page is top-level — it has no parent of its own
+        val props = item.getAsJsonObject("properties") ?: continue
+        val name = props.get("name")?.asString ?: continue
+        val isContainer = props.has("elements") // fieldset / container / header / footer
+        val aiParent = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+        val referencedId = itemToContainerId[name]
+        var parentId = referencedId
+        if (parentId == null) {
+          // Not referenced by any container's elements array — attach it. Prefer the container the
+          // AI named in parentid (by name or id); else the nearest preceding container (a fieldset
+          // goes on a page; a leaf goes on a fieldset/container/page); else the last matching
+          // container. Original items the AI detached are intentionally left detached.
+          val namedContainer =
+              if (aiParent != null) (containerById[aiParent] ?: containerByName[aiParent]) else null
+          val target =
+              if (namedContainer != null) {
+                namedContainer
+              } else if (name in originalByName) {
+                null // AI deliberately removed an original item from its container — respect it
+              } else {
+                (indexByName[name]?.let { idx ->
+                  (idx - 1 downTo 0)
+                      .asSequence()
+                      .map { i -> resultItems[i] }
+                      .firstOrNull { c ->
+                        c.isJsonObject &&
+                            c.asJsonObject.get("className")?.asString in
+                                (if (isContainer) setOf("XPage") else attachContainerClassNames)
+                      }
+                })
+                    ?: resultItems.lastOrNull {
+                      it.isJsonObject &&
+                          it.asJsonObject.get("className")?.asString in
+                              (if (isContainer) setOf("XPage") else setOf("XFieldSet", "XPage"))
+                    }
+              }
+          if (target != null) {
+            val targetProps = target.asJsonObject.getAsJsonObject("properties")
+            val targetId = targetProps?.get("id")?.asString
+            var elements = targetProps?.get("elements")?.takeIf { it.isJsonArray }?.asJsonArray
+            if (elements == null && targetProps != null) {
+              val newArr = JsonArray()
+              targetProps.add("elements", newArr)
+              elements = newArr
+            }
+            if (elements != null && elements.none { it.isJsonPrimitive && it.asString == name }) {
+              elements.add(name)
+              logger.warn(
+                  "[AICodBiAssistant] Auto-attached orphaned item '{}' to container '{}'",
+                  name,
+                  targetProps?.get("name")?.asString)
+            }
+            parentId = targetId
           }
-          val containerProps =
-              targetContainer.asJsonObject.getAsJsonObject("properties") ?: continue
-          val containerId = containerProps.get("id")?.asString
-          var elements = containerProps.getAsJsonArray("elements")
-          if (elements == null) {
-            val newArr = JsonArray()
-            containerProps.add("elements", newArr)
-            elements = newArr
-          }
-          if (elements.none { it.isJsonPrimitive && it.asString == name }) {
-            elements.add(name)
-            if (containerId != null) itemToContainerId[name] = containerId
-            logger.warn(
-                "[AICodBiAssistant] Auto-attached orphaned item '{}' to container '{}'",
-                name,
-                containerProps.get("name")?.asString)
-          }
+        }
+        // parentid must be the parent's `id` (xi-…), never its name — override the AI's value so
+        // the form renders.
+        if (parentId != null && props.get("parentid")?.asString != parentId) {
+          props.addProperty("parentid", parentId)
+          logger.info("[AICodBiAssistant] Normalized parentid of '{}' to '{}'", name, parentId)
         }
       }
       for (el in resultItems) {
@@ -3048,8 +3206,7 @@ class AICodBiAssistant : IPluginServletAction {
           itemProps.addProperty("datepicker", "1")
         }
         val parentId = itemToContainerId[name]
-        if (parentId != null &&
-            (!itemProps.has("parentid") || itemProps.get("parentid").asString.isNullOrEmpty())) {
+        if (parentId != null && itemProps.get("parentid")?.asString != parentId) {
           itemProps.addProperty("parentid", parentId)
         }
       }
@@ -3172,7 +3329,9 @@ class AICodBiAssistant : IPluginServletAction {
     // address-part field (street, building number, postal code, locality). The AI is instructed to
     // apply these classes but may omit them; this guarantees they reach the designer. Existing
     // classes (e.g. "Goon") are preserved — nothing is removed or overridden.
-    applyOpenPlzAddressClasses(resultItems)
+    // NOTE: baseObj is read from the result again here (not the one declared inside the
+    // `if (originalItems != null)` block above, which is out of scope at this point).
+    applyOpenPlzAddressClasses(resultItems, result.getAsJsonObject("base"))
     // CSS class names from the AI are passed through unchanged (no whitelist/validation) — they
     // reach the designer as-is. AI-generated CSS *code* is already removed via STRIPPED_FIELDS /
     // STRIPPED_ITEM_PROPS, so only class names can ever be taken over, never code.
@@ -3205,40 +3364,10 @@ class AICodBiAssistant : IPluginServletAction {
     for (el in resultItems) {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
-      // --- Normalize Print.Remove: if the AI applied data-cb-func=print.remove instead of the
-      // CSS class (per TWO-OPTION RULE, CSS classes should be preferred when available), convert
-      // it to the CodBi_Print_Remove_Tagged CSS class and remove the data-cb-func entry.
-      val printRemoveFunc = props.get("data-cb-func")?.asString
-      if (printRemoveFunc != null && printRemoveFunc.contains("print.remove", ignoreCase = true)) {
-        val cssClasses =
-            if (props.has("cssclasses") && props.get("cssclasses").isJsonArray)
-                props.getAsJsonArray("cssclasses")
-            else JsonArray().also { props.add("cssclasses", it) }
-        var hasPrintRemoveTagged = false
-        for (i in 0 until cssClasses.size()) {
-          val cls = cssClasses.get(i)
-          if (cls.isJsonPrimitive && cls.asString == "CodBi_Print_Remove_Tagged") {
-            hasPrintRemoveTagged = true
-            break
-          }
-        }
-        if (!hasPrintRemoveTagged) {
-          cssClasses.add("CodBi_Print_Remove_Tagged")
-          logger.info(
-              "[AICodBiAssistant] Normalized data-cb-func=print.remove to CSS class 'CodBi_Print_Remove_Tagged'")
-        }
-        // Remove print.remove from data-cb-func (other comma-separated funcs are preserved)
-        val remaining =
-            printRemoveFunc
-                .split(",")
-                .map { it.trim() }
-                .filterNot { it.equals("print.remove", ignoreCase = true) }
-        if (remaining.isEmpty()) {
-          props.remove("data-cb-func")
-        } else {
-          props.addProperty("data-cb-func", remaining.joinToString(","))
-        }
-      }
+      // NOTE: Print.Remove is intentionally NOT normalized server-side — the AI is taught to use
+      // the CodBi_Print_Remove_* CSS classes as the standard and data-cb-func="Print.Remove" only
+      // when a parameter (e.g. DocumentSelector) is required, so the AI's choice reaches the
+      // designer unchanged.
       // --- Normalize panels: the UI.Panels standard CSS classes (CodBi_HTML_Panel_* /
       // CodBi_Accordion_*) ALREADY apply HTML.Panel. If the AI put BOTH a panel class AND
       // data-cb-func=html.panel on the same element, drop the redundant html.panel (and its
@@ -3355,6 +3484,26 @@ class AICodBiAssistant : IPluginServletAction {
           }
         }
         props.add("attributes", filtered)
+      }
+
+      // --- Normalize the wrong "mark as Pflichtfeld" approach: the AI sometimes "marks" a field as
+      // mandatory with data-cb-func="html.setattribute" (data-cb-name="title", data-cb-toset=
+      // "Pflichtfeld"). A title tooltip does NOT make a field required — Formcycle's mandatory flag
+      // is the element property "required" (Constraints > Required). Convert it to "required":"1"
+      // and drop the tooltip so the field is actually validated as mandatory.
+      val funcLower = props.get("data-cb-func")?.asString?.lowercase()
+      if (funcLower != null &&
+          (funcLower.contains("html.setattribute") || funcLower.contains("html_setattribute")) &&
+          props.get("data-cb-name")?.asString?.equals("title", ignoreCase = true) == true &&
+          props.get("data-cb-toset")?.asString?.contains("pflichtfeld", ignoreCase = true) ==
+              true) {
+        props.addProperty("required", "1")
+        props.remove("data-cb-func")
+        props.remove("data-cb-name")
+        props.remove("data-cb-toset")
+        logger.info(
+            "[AICodBiAssistant] Converted 'html.setattribute title=Pflichtfeld' on '{}' to required=1",
+            props.get("name")?.asString)
       }
 
       val cbKeys = props.entrySet().filter { it.key.startsWith("data-cb-") }.map { it.key }
@@ -5685,6 +5834,101 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] fetchExistingWorkflowNodes failed: ${e.message}")
       null
+    }
+  }
+
+  /**
+   * Serializes the COMPLETE workflow (tasks → triggers with their parameters → the full node tree
+   * with every node's type/name/description and customParameters) as JSON, so the chat AI can
+   * answer questions about or verify the workflow with ALL details. Returns null when the workflow
+   * cannot be read (the chat then simply lacks the workflow section).
+   */
+  private fun buildWorkflowStructureContext(workflowVersionId: Long, userContext: Any): String? {
+    val em = formcycleEntityManager(userContext) ?: return null
+    return try {
+      val taskRows =
+          runJpqlOn(
+              em,
+              "SELECT t.id, t.name, t.description, t.trigger.type, t.trigger.customParameters, " +
+                  "t.rootNode.id FROM de.xima.fc.entities.WorkflowTask t JOIN t.process wp " +
+                  "JOIN wp.version wv WHERE wv.id = :vid",
+              "vid",
+              workflowVersionId)
+      if (taskRows.isNullOrEmpty()) return null
+      val nodeRows =
+          runJpqlOn(
+              em,
+              "SELECT n.id, n.type, n.name, n.description, n.customParameters, n.parent.id " +
+                  "FROM de.xima.fc.entities.WorkflowNode n JOIN n.task wta JOIN wta.process wp " +
+                  "JOIN wp.version wv WHERE wv.id = :vid ORDER BY n.id",
+              "vid",
+              workflowVersionId)
+      val nodesById = LinkedHashMap<String, JsonObject>()
+      val childrenByParent = HashMap<String, MutableList<String>>()
+      for (row in nodeRows) {
+        val cols = row as? Array<*> ?: continue
+        if (cols.size < 6) continue
+        val id = cols[0]?.toString() ?: continue
+        val node = JsonObject()
+        node.addProperty("id", id)
+        node.addProperty("type", cols[1]?.toString() ?: "")
+        node.addProperty("name", cols[2]?.toString() ?: "")
+        node.addProperty("description", cols[3]?.toString() ?: "")
+        val custom = cols[4]?.toString()
+        if (!custom.isNullOrBlank()) {
+          try {
+            node.add("customParameters", JsonParser.parseString(custom))
+          } catch (_: Exception) {
+            node.addProperty("customParameters", custom)
+          }
+        }
+        val parentId = cols[5]?.toString()
+        if (parentId != null && parentId.isNotBlank()) {
+          childrenByParent.getOrPut(parentId) { mutableListOf() }.add(id)
+        }
+        nodesById[id] = node
+      }
+      for ((parentId, childIds) in childrenByParent) {
+        val parent = nodesById[parentId] ?: continue
+        val arr = JsonArray()
+        for (cid in childIds) {
+          nodesById[cid]?.let { arr.add(it) }
+        }
+        parent.add("children", arr)
+      }
+      val list = JsonArray()
+      for (row in taskRows) {
+        val cols = row as? Array<*> ?: continue
+        if (cols.size < 6) continue
+        val t = JsonObject()
+        t.addProperty("name", cols[1]?.toString() ?: "")
+        t.addProperty("description", cols[2]?.toString() ?: "")
+        val tr = JsonObject()
+        tr.addProperty("type", cols[3]?.toString() ?: "")
+        val triggerCustom = cols[4]?.toString()
+        if (!triggerCustom.isNullOrBlank()) {
+          try {
+            tr.add("customParameters", JsonParser.parseString(triggerCustom))
+          } catch (_: Exception) {
+            tr.addProperty("customParameters", triggerCustom)
+          }
+        }
+        t.add("trigger", tr)
+        val rootNodeId = cols[5]?.toString()
+        if (!rootNodeId.isNullOrBlank()) {
+          nodesById[rootNodeId]?.let { t.add("rootNode", it) }
+        }
+        list.add(t)
+      }
+      gson.toJson(list)
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] buildWorkflowStructureContext failed for workflowVersion {}: {}",
+          workflowVersionId,
+          e.message)
+      null
+    } finally {
+      (em as? AutoCloseable)?.close()
     }
   }
 
@@ -10330,7 +10574,9 @@ class AICodBiAssistant : IPluginServletAction {
               "property to that page's label/title — use the labels from the user's request or the clarification " +
               "answers (e.g. \"Personendaten\", \"Kurs & Termin\", \"Nachricht\"); never leave a page header empty. " +
               "The Form.Navigator (XNavigationBar) options must reference the page names in \"value\" and show the " +
-              "same label in \"text\".\n\n"
+              "same label in \"text\".\n\n" +
+              "AUTHENTICATION BUNDLE (BundID/Bürgerkonto login + ID upload + captcha): when the request asks for a login button AND an upload field for an ID/image AND captcha protection (e.g. 'BundID-Login-Button, ein Signaturfeld, ein Upload-Feld für den Personalausweis mit Bild-Cropper und Captcha-Schutz'), you MUST create ALL of these elements — missing any one is a FAIL: (1) XBsLogin (className=\"XBsLogin\") with the bs_auth_ref property for the BundID/Bürgerkonto login button; (2) the XUpload field for the ID card/image WITH data-cb-func=\"Media.Image.Cropper\" (or a CodBi_Fotocropper_* class) — an upload without the cropper is WRONG; (3) an XCaptcha element (className=\"XCaptcha\") for the captcha; (4) the XSignature element when a signature field is requested.\n" +
+              "PLACE EVERY CREATED ELEMENT: add each widget you create to the target page's/container's \"elements\" array AND set its properties.parentid to that page/container's name (e.g. a widget placed on page 'p1' gets parentid=\"p1\" and 'p1' lists it in its elements). A widget that exists in the root \"items\" array but is NOT referenced by any page/container (no parentid, not in any \"elements\" array) is ORPHANED — it does NOT render in the form and counts as missing. This applies to every widget, especially XBsLogin, XCaptcha, XUpload, XSignature and hidden XSpan elements.\n"
       "Do NOT ask for more details â€” the user's instruction and the form data below are sufficient.\n\n"
       // Pass-1 uses ONLY the condensed references (element/widget names + purposes) plus the
       // general rules. The parameter-complete sections (codbi.standard_configurations /
@@ -10429,7 +10675,8 @@ class AICodBiAssistant : IPluginServletAction {
   private fun loadCodbiApplyPrompt(
       requestedIds: List<String> = emptyList(),
       widgetIds: List<String> = emptyList(),
-      useCodbi: Boolean = true
+      useCodbi: Boolean = true,
+      useBuergerserviceNaming: Boolean = false
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return FALLBACK_APPLY_PROMPT
@@ -10451,6 +10698,12 @@ class AICodBiAssistant : IPluginServletAction {
       // this apply prompt is what replaces the full system prompt on pass-2/3/4 reruns.
       val fc = PromptLoader.loadCategory(em, "formcycle")
       val formcycleGeneral = fc["formcycle.general"] ?: ""
+      // The Bürger-Services canonical field naming MUST also be carried into pass-2 — the model
+      // actually builds the form in this apply pass, and without it the canonical tfAntragsteller*
+      // /
+      // tfOrg* IDs (and the fsBKOrgDaten ELSTER organisation fields) are lost.
+      val buergerserviceNaming =
+          if (useBuergerserviceNaming) categories["codbi.buergerservice_naming"] ?: "" else ""
       val codbiPart =
           when {
             requestedIds.isNotEmpty() -> {
@@ -10475,6 +10728,7 @@ class AICodBiAssistant : IPluginServletAction {
           base +
           "\n\n" +
           codbiPart +
+          (if (buergerserviceNaming.isNotBlank()) "\n\n" + buergerserviceNaming else "") +
           "\n\n" +
           widgetPart
     } catch (e: Exception) {
@@ -10852,12 +11106,23 @@ class AICodBiAssistant : IPluginServletAction {
               "    - FC_POST_REQUEST: URL and HTTP method.\n" +
               "    - FC_MOVE_FORM_RECORD_TO_INBOX: inbox name.\n" +
               "    - FC_CHANGE_FORM_VALUE / FC_WRITE_FORM_RECORD_ATTRIBUTES: which field/attribute and its value.\n" +
+              "    - XSelect / dropdown / select list (e.g. 'Stadt', a city dropdown): the OPTIONS list is required — if the request does NOT provide them and they cannot be derived from the request, ASK for the list of options; NEVER create a select with an empty options array.\n" +
               "    - Date.Min (minimum date, e.g. 'Kursbeginn darf nicht in der Vergangenheit liegen'): the minimum — ask whether it is a PAST minimum (age, e.g. 'at least 18 years') or a FUTURE minimum (e.g. 'at least tomorrow', 'ab morgen'); then encode it as data-cb-minimum + data-cb-unit (+ data-cb-reverse=true for a future minimum).\n" +
-              "    - BIRTH-DATE FIELDS (labels 'Geburtsdatum', 'Geburtstag', 'birth date', 'date of birth', 'birthday'): a birth date ALWAYS lies in the PAST. NEVER apply a FUTURE minimum (today/tomorrow, data-cb-reverse=true) to it and NEVER ask 'Mindestdatum heute oder morgen?' for it. A constraint like 'keine Vergangenheitsdaten'/'no past dates' on a birth date is contradictory — interpret it as the OPPOSITE: only PAST dates are valid, i.e. NO FUTURE dates (maximum = today). Only a PAST minimum (e.g. 'mindestens 18 Jahre' → data-cb-minimum=18, unit=y, no reverse) is meaningful for a birth date, and only when an age requirement is stated. Ask the 'heute oder morgen' minimum question ONLY for genuinely future-dated fields (e.g. a course start 'Kursbeginn').\n" +
+              "    - BIRTH-DATE FIELDS (labels 'Geburtsdatum', 'Geburtstag', 'birth date', 'date of birth', 'birthday'): a birth date ALWAYS lies in the PAST and must NEVER be treated as a future-dated field. Under NO circumstances apply a FUTURE minimum (today/tomorrow, data-cb-reverse=true) to a birth-date field and NEVER ask the 'Mindestdatum heute oder morgen?'/'heute oder morgen' question for it. A constraint like 'keine Vergangenheitsdaten'/'no past dates'/'no past dates allowed' on a birth date is CONTRADICTORY — interpret it as the OPPOSITE: only PAST dates are valid, i.e. NO FUTURE dates (maximum = today, CodBi_NoFutureDate). Only a PAST minimum (e.g. 'mindestens 18 Jahre' → data-cb-minimum=18, unit=y, no reverse) is meaningful for a birth date, and only when an age requirement is stated. WHEN a birth-date field is grouped with genuinely future-dated fields under one 'keine Vergangenheitsdaten' constraint (e.g. 'Geburtsdatum, Kursbeginn'): EXCLUDE the birth-date field from the 'heute oder morgen' question entirely — apply the future minimum (data-cb-reverse=true) ONLY to the future-dated field(s) (e.g. 'Kursbeginn' = morgen) and apply maximum=heute (CodBi_NoFutureDate) to the birth-date field WITHOUT asking. The 'heute oder morgen' minimum question may be asked ONLY for genuinely future-dated fields and NEVER when a birth-date field is among the affected fields. ALSO NEVER apply Date.NoWeekends to a birth-date field — people can be born on weekends, so a 'keine Wochenenden'/'no weekends' constraint on a birth date must be IGNORED (apply nothing, ask nothing). TODAY ITSELF IS A VALID BIRTH DATE — the maximum = heute includes heute.\n" +
               "    - Standard configurations that rely on a global variable (tracking ID, currency,\n" +
               "      threshold, ...): ask which value to set when it cannot be derived.\n" +
               "    - Functionalities / element placeholders that need a parameter value (regex pattern,\n" +
               "      target attribute, injected text, template): ask for it when missing.\n" +
+              "- BÜRGER-SERVICES FIELDSETS (fsBKDaten / fsBKOrgDaten / fsBKAllDaten): NEVER ask which fields a Bürgerkonto / BundID / BayernID / ELSTER fieldset should contain — the canonical field set is predefined. A 'fsBKOrgDaten' ELSTER-Organisationslogin fieldset MUST include the ELSTER organisation fields tfOrgName, tfOrgRechtsform, tfOrgRechtsformText, tfOrgRegisterNummer, tfOrgRegistergericht, tfOrgRegisterart, selOrgPersTyp, tfTaetigkeit, tfTaetigkeitText, tfDatenkranzTyp, BPK2, TrustLevel; a 'fsBKDaten' Bürgerkonto fieldset the person fields (tfAntragstellerVorname, tfAntragstellerName, tfAntragstellerGeburtsdatum, tfAntragstellerGeburtsort, tfAntragstellerPLZ, tfAntragstellerOrt, tfAntragstellerEmail, ...). Use the buergerservice_naming catalog when present; otherwise use these canonical fields — do NOT ask which ones to include. NEVER omit selOrgPersTyp, BPK2 and TrustLevel from fsBKOrgDaten.\n" +
+              "- FORM NAVIGATOR (multi-page forms with a progress indicator): the Form.Navigator nav bar must be reachable on EVERY page — place its container in the form's XHeader or XFooter, or when there is none, add it to EVERY page's elements array; NEVER only on one page.\n" +
+              "- DATE RANGES (e.g. 'Kursbeginn'/'Kursende', a date range): apply the CSS class CodBi_DateFrame_N_Begin to the START date field AND CodBi_DateFrame_N_End to the END date field (same N, BOTH fields get their own class). There is NO combined 'CodBi_DateFrame_N_Begin_End' class and these classes never go on a container/fieldset — only on the two date fields.\n" +
+              "- RICH TEXT / WYSIWYG EDITOR (HTML.Input.TinyMCE): MANDATORY — it is INVALID to emit HTML.Input.TinyMCE withOUT data-cb-plugins AND data-cb-toolbar. ALWAYS set both, choosing tools useful for the field's content. For a message: data-cb-plugins=\"advlist, autolink, lists, link, image, media, charmap\" and data-cb-toolbar=\"undo redo | blocks | bold italic underline | bullist numlist | link image media\" — NOT the raw-HTML 'code' option unless the field is explicitly for HTML source.\n" +
+              "- APPOINTMENT FINDER / Terminfinder (XAppointment): requires an 'appointmentPlan' (the schedule / Terminplan). If the user names a plan, use it as the value; if it is not provided, ASK which Terminplan to use — never generate an XAppointment without appointmentPlan.\n" +
+              "- BUTTON LIST (XButtonList): every navigation/submit button MUST have an action.page — a 'Zurück'/'Back' button gets action.page=\"previous\", a 'Weiter'/'Next' button gets action.page=\"next\" (check=true when the page has input fields), and a 'Senden'/'Absenden'/'Submit' button gets action.page=\"submit\" (check=true). Never leave action.page empty.\n" +
+              "- BUNDID / BÜRGERKONTO LOGIN BUTTON: ALWAYS create an XBsLogin element (with the bs_auth_ref property) for a 'BundID-Login-Button' / 'Bürgerkonto-Login' / authentication button — NEVER an XButtonList/BUTTON (a login button is not a navigation/submit button).\n" +
+              "- CONSOLE LOGGING OF AN AI ANSWER (Sys.Log.Console): set data-cb-Data to exactly 'SYS.Log.Console > AI.LLAMA.STD.QA > <Frage>; true;;;;;;' — e.g. 'SYS.Log.Console > AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;;'. The prefix is 'SYS.Log.Console' with dots — NEVER 'SYS Log.Console' — and the EP keeps its trailing '; true;;;;;;'.\n" +
+              "- COLLAPSIBLE PANEL ('aufklappbares Panel', 'collapsible panel', 'accordion') on a fieldset: apply the standard class CodBi_HTML_Panel_Standard to the XFieldSet (the legend becomes the title). Only when the panel must sit on a container (not a fieldset) use data-cb-func=html.panel with data-cb-generateheader=\"true\".\n" +
+              "- LDAP AUTOFILL / AUTOCOMPLETE (LDAP.Autocomplete, LDAP.Autocomplete.Set, CodBi_LDAP_AC_* classes): NEVER ask the user for an LDAP server URL, endpoint or connection details — the LDAP directory is configured server-side in Formcycle/CodBi settings (predefined LDAP queries / LDAP_URL), so the user does not know or provide it. When LDAP autocomplete is requested, apply it directly (data-cb-func=\"LDAP.Autocomplete\" or the matching CodBi_LDAP_AC_* class) WITHOUT clarification. For a BÜRGER-SERVICES form (fsBKDaten / fsBKOrgDaten / BundID / BayernID), the person's address fields are filled by the login/authentication data or by the German OpenPLZ.Autocomplete (CodBi_OpenPLZ_AC_SET_*) — a citizen is either a citizen or an employee, and a citizen is NOT in an Active Directory, so do NOT ask for LDAP details there; apply LDAP only when the request explicitly asks for an LDAP/employee-directory lookup, and even then never ask for the endpoint.\n" +
               "- Data tables (DQ.Table.View): when the user asks to show/view/display the columns of a\n" +
               "  DataQuery/datasource as a table (e.g. \"add a table that views the columns Alter, Name of\n" +
               "  HolaQuery\", \"zeige die Spalten ... der Abfrage ... als Tabelle\"), the DataQuery name the\n" +
@@ -11189,6 +11454,8 @@ class AICodBiAssistant : IPluginServletAction {
       modelId: String,
       instance: Standard,
       formStructureContext: String?,
+      completeFormJson: String?,
+      completeWorkflowJson: String?,
       chatTurns: List<ChatTurn>,
       clarificationContext: String
   ): ChatAnswer? {
@@ -11221,6 +11488,20 @@ class AICodBiAssistant : IPluginServletAction {
               "\"hasInstructions\": true|false, \"answer\": \"...\"}\n")
       if (!formStructureContext.isNullOrBlank()) {
         append("\nCURRENT FORM STRUCTURE:\n$formStructureContext\n")
+      }
+      if (!completeFormJson.isNullOrBlank()) {
+        append(
+            "\nCOMPLETE FORM STRUCTURE (all details — cssclasses, data-cb-func/data-cb-* " +
+                "attributes, datatype, XSelect options, appointmentPlan, XButtonList action.page):\n" +
+                completeFormJson +
+                "\n")
+      }
+      if (!completeWorkflowJson.isNullOrBlank()) {
+        append(
+            "\nCOMPLETE WORKFLOW STRUCTURE (all details — tasks, triggers with their parameters, " +
+                "full node tree with every node's parameters):\n" +
+                completeWorkflowJson +
+                "\n")
       }
       val chatContext = buildChatContext(chatTurns)
       if (chatContext.isNotBlank()) {

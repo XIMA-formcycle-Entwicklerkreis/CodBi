@@ -272,10 +272,11 @@
             <button
                 type="button"
                 class="cb-ai-clarification-copy"
-                title="Copy ALL questions to the clipboard (like the drag & drop)"
+                [class.cb-ai-clarification-copy--copied]="clarificationCopiedAll"
+                [title]="clarificationCopiedAll ? 'Copied' : 'Copy ALL questions to the clipboard (like the drag & drop)'"
                 aria-label="Copy all questions"
                 (click)="copyAllClarificationQuestions()">
-                <i class="pi pi-copy"></i>
+                <i [class]="clarificationCopiedAll ? 'pi pi-check' : 'pi pi-copy'"></i>
             </button>
         </div>
         <p class="cb-ai-clarification-intro">
@@ -293,9 +294,10 @@
                         <button
                             type="button"
                             class="cb-ai-clarification-copy"
+                            [class.cb-ai-clarification-copy--copied]="clarificationCopiedQuestionId === q.id"
                             (click)="copyClarificationQuestion(q)"
-                            title="Copy this question (with its options) so you can paste it into an email">
-                            <i class="pi pi-copy"></i>
+                            [title]="clarificationCopiedQuestionId === q.id ? 'Copied' : 'Copy this question (with its options) so you can paste it into an email'">
+                            <i [class]="clarificationCopiedQuestionId === q.id ? 'pi pi-check' : 'pi pi-copy'"></i>
                         </button>
                     </div>
                     @if (q.options && q.options.length > 0) {

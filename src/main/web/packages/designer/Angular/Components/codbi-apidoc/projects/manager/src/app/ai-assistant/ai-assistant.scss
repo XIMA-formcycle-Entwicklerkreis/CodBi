@@ -346,16 +346,9 @@ cb-ai-assistant {
     color: #b45309;
 }
 
-/* Watermark faded behind the entire popup — two-layer gradient over SVG creates opacity effect. */
+/* Dark-orange border + glow around the dialog (CodBi logo watermark removed). */
 .p-dialog.cb-ai-assistant-dialog {
-    background-image: linear-gradient(rgba(255,255,255,0.91), rgba(255,255,255,0.91)),
-                      var(--cb-ai-watermark-url, none) !important;
     background-color: #fff !important;
-    background-size: cover, min(200px, 30%) auto !important;
-    /* NOT !important so JS can recenter the watermark over the left content when the change log is
-       open (it is reset to this centered position when the log is folded). */
-    background-position: 0 0, center center;
-    background-repeat: no-repeat, no-repeat !important;
     /* Dark-orange border + glow around the dialog. */
     border: 2px solid darkorange;
     box-shadow: 0 0 0.25em darkorange;
@@ -588,7 +581,17 @@ cb-ai-assistant {
         user-select: none;
     }
 
-    .cb-ai-clarification-header:active {
+    /* Hovering anywhere on the visible header (title text, logo) should show the move cursor; only
+       the copy button keeps its pointer affordance. */
+    .cb-ai-clarification-header,
+    .cb-ai-clarification-header .cb-ai-clarification-title,
+    .cb-ai-clarification-header .cb-ai-clarification-logo {
+        cursor: move;
+    }
+
+    .cb-ai-clarification-header:active,
+    .cb-ai-clarification-header:active .cb-ai-clarification-title,
+    .cb-ai-clarification-header:active .cb-ai-clarification-logo {
         cursor: grabbing;
     }
 
@@ -613,6 +616,10 @@ cb-ai-assistant {
         &:hover {
             background: #eef2f7;
             color: #1d4ed8;
+        }
+
+        &--copied {
+            color: #16a34a;
         }
     }
 
@@ -705,10 +712,11 @@ cb-ai-assistant {
             color 0.15s ease;
     }
 
-    .cb-ai-clarification-copy:hover {
-        background: #eef2ff;
-        border-color: #818cf8;
-        color: #4f46e5;
+    .cb-ai-clarification-copy--copied,
+    .cb-ai-clarification-copy--copied:hover {
+        color: #16a34a;
+        border-color: #86efac;
+        background: #f0fdf4;
     }
 
     .cb-ai-clarification-answer {

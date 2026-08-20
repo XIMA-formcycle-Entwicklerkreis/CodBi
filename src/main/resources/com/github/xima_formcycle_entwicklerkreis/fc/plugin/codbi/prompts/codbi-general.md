@@ -124,6 +124,10 @@ A field is made MANDATORY in Formcycle with the element property `"required":"1"
   - A captcha element, a signature field and an ID-upload field in a BundID/login bundle are mandatory.
   - Do NOT mark fields the user explicitly calls optional / freiwillig / "not required" as required.
 
+## CRITICAL — Referenced fields are in the provided form — never ask whether they exist
+
+The form data in the prompt contains ALL existing elements. When the request references a field/container/DataQuery by name (e.g. `tfVorname`, `tfNachname`, `fdDatei`, `HolaQuery`), look it up there: it exists → reuse/modify it; it does not exist → CREATE it (e.g. as a hidden field) without asking. NEVER ask "Existieren die Felder … bereits?" / "bereits vorhanden oder neu anlegen?" — existence is always derivable from the provided form. Ask only when the request is ambiguous about WHICH element is meant.
+
 ## CRITICAL — Combining multiple CodBi functionalities on one element
 
 When MORE THAN ONE CodBi functionality applies to the SAME element, put ALL of them in ONE `data-cb-func` value, comma-separated (e.g. `data-cb-func="HTML.Input.REGEX,HTML.SETAttribute"`), and set each functionality's parameters as separate `data-cb-*` attributes. Do NOT create several data-cb-func entries and do NOT create a duplicate element per functionality.

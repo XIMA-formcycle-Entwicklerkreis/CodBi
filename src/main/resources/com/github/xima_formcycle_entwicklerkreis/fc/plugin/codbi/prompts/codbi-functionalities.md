@@ -14,8 +14,8 @@ Parameters explicitly marked **REQUIRED** below MUST be present on the element (
 
 Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).
 
-When the user asks for an AI chat / KI-Chat / chatbot, create all of the following elements:
-- XContainer wrapper (fullwidth="1"). Do NOT add data-cb-func="ai.llama.chat" to the container — it goes ONLY on the chat display.
+When the user asks for an AI chat / KI-Chat / chatbot, create ALL of the following elements — never an empty container and never a placeholder span / "Chat-Platzhalter" element. Building the chat is part of the current change; do NOT defer it. EVERY sub-element below is REQUIRED — including the Upload's `fileextension="image/*,.pdf"` attribute and the Mail container (MailForward checkbox + MailAddress field); omitting any of them is a FAIL:
+- XContainer wrapper with `fullwidth` property set to `"1"` (MUST be `"1"`, never `"0"`). Do NOT add data-cb-func="ai.llama.chat" to the container — it goes ONLY on the chat display.
 - Chat display: XTextArea (data-cb-func="ai.llama.chat", readonly, fullwidth, autosize, no label). ADD attributes: data-cb-MaxPixelSize="360000", data-cb-maxchatwindowheight="1200".
 - User input: XTextArea (cssclasses=["AI_LLAMA_CHAT_Input"], fullwidth, autosize).
 - Send button: XButtonList with SINGLE button (cssclasses=["AI_LLAMA_CHAT_Send"], action.page="").
@@ -33,10 +33,11 @@ CRITICAL — Distinguish from Form Chatbot Plugin (XIMA Chatbot): Use XNavigatio
 
 ## AI.OCR
 
-Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
-- **REQUIRED**: Mode ("print" or "verify").
-- Mode="print": do NOT set data-cb-Field on the upload. The receiver text field is identified by its CodBi_AI_OCR_Receiver CSS class.
-- Mode="verify": **REQUIRED** to set Pattern, RegExFlags, WrongFileMessage, InvalidImageText (ALL five for verify).
+Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR. USE whenever the request asks to extract/text-recognize the content of an uploaded image/PDF into a text field (e.g. "per OCR den Text extrahieren und in ein Feld schreiben").
+- **REQUIRED**: Mode ("print" or "verify") AND the receiver field link data-cb-field (dot-prefixed class selector of the target field's `name`, e.g. data-cb-field=".tfExtractedText" — never an ID selector, never without it).
+- Create the receiver field (e.g. an XTextArea `tfExtractedText`) when the request names a target field that does not exist yet, and link it via data-cb-field.
+- Mode="print": except when a specific mode is requested, this is the default for writing extracted text into a receiver field — still set data-cb-field so the target is explicit.
+- Mode="verify": additionally **REQUIRED** to set Pattern, RegExFlags, WrongFileMessage, InvalidImageText (ALL five for verify).
 
 ## Date.Frame
 
@@ -81,8 +82,8 @@ CRITICAL — Distinguish from XNavigationBar plugin: Use data-cb-func=form.navig
 
 ## HTML.CSS
 
-Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
-**REQUIRES**: the CSS text to inject (data-cb-css) — ask the user when not provided.
+Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements). USE whenever the request asks to style/color/skin the form (e.g. "eigenes CSS", "rote Überschriften", "red headings", "roter Hintergrund", custom colors) — emit an element with `data-cb-func="HTML.CSS"` and `data-cb-css` set to the derived CSS snippet (e.g. "rote Überschriften" → `data-cb-css="h1 {color:red;}"`). NEVER merely invent/apply a CSS class name (e.g. `customRedHeading`) instead of emitting the HTML.CSS functionality with the actual CSS text.
+**REQUIRES**: the CSS text to inject (data-cb-css). Derive it whenever the styling rule is described in the request; ask the user only when the CSS cannot be derived.
 
 ## HTML.Input.Cleave
 
@@ -105,6 +106,11 @@ Example — an input field that must not allow the characters e, $ and %:
 "attributes": [{"text":"data-cb-func","value":"HTML.Input.REGEX"},{"text":"data-cb-keyexpression","value":"[^e$%]"},{"text":"data-cb-expression","value":"^[^e$%]*$"}]
 
 CRITICAL — Inside a character class `$` is a LITERAL dollar sign (NOT the end-of-string anchor) and `.` is a literal dot, so `[^e$%]` really blocks e, $ and %. Regex metacharacters that must be blocked literally (e.g. `]`, `\`, `^` inside a class) still need to be escaped.
+
+DERIVE the regex from the described rule — do NOT ask the user for a regex pattern when the allowed/blocked characters are stated in the request:
+- ALLOW-LIST ("nur die Zeichen X erlaubt" / "only allows X" / "nur X zulassen"): every typed character must be one of X → data-cb-keyexpression is the ALLOWED class (no negation), e.g. "nur die Zeichen a–z erlaubt" → data-cb-keyexpression="[a-z]", data-cb-expression="^[a-z]*$".
+- BLOCK-LIST ("darf X nicht enthalten" / "must not contain X" / "block X"): use the NEGATED class as above, e.g. "nicht erlaubt: e$%" → data-cb-keyexpression="[^e$%]", data-cb-expression="^[^e$%]*$".
+- Ask for the pattern ONLY when the request does not describe the allowed/blocked characters at all.
 
 ## HTML.Input.TinyMCE
 
@@ -173,8 +179,8 @@ CRITICAL — When applying this functionality you MUST also add a data-cb-initia
 
 ## JSON.SET
 
-Applicable on a hidden field to store a JSON-serialized value derived from another element. JSON.SET fallback only on explicit user request.
-**REQUIRES**: the JSON expression / derivation rule — ask the user when it cannot be derived.
+Applicable on a hidden field to store a JSON-serialized value derived from another element. JSON.SET fallback only on explicit user request. USE when the request asks to store/combine the values of other fields as JSON in a hidden field (e.g. "verstecktes Feld, das das JSON aus tfVorname/tfNachname speichert"). Apply data-cb-func="JSON.SET" to a hidden XTextField/XTextArea with `invisible="1"` (a hidden JSON field MUST be invisible) and set the derivation parameters (data-cb-path naming the source fields from the request, e.g. "JSON aus tfVorname/tfNachname" → data-cb-path="tfVorname,tfNachname", plus data-cb-property and data-cb-toset) so the hidden field's value is the JSON object built from the referenced fields. NEVER emit an XTextField/XTextArea with data-cb-func="JSON.SET" WITHOUT `invisible="1"` and WITHOUT the derivation parameters.
+**REQUIRES**: the JSON expression / derivation rule (data-cb-property / data-cb-toset / data-cb-path) and the hidden (`invisible`=1) flag — derive them from the request; ask the user only when they cannot be derived.
 
 ## LDAP.Autocomplete.Set
 
@@ -186,7 +192,7 @@ Applicable on a text input that should autocomplete entries from an LDAP directo
 
 ## Matomo.Tracking
 
-Applicable on any form to add Matomo/Piwik analytics event tracking. **REQUIRES**: the Matomo site/tracking ID (SiteID) — ask the user when not provided. When the prompt says "Matomo-Tracking aktivieren" or "activate Matomo tracking" without specifying a SiteID, do NOT add Matomo.Tracking functionality via data-cb-func on any element. Instead, include {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied — the server reads this and activates the standard configuration.
+Applicable on any form to add Matomo/Piwik analytics event tracking. **REQUIRES**: the Matomo site/tracking ID (SiteID) — ask the user when not provided. Matomo server URL: NEVER ask the user for it — if the request specifies a URL, use that URL; otherwise the URL is taken automatically from the server-side plugin configuration (Matomo_URL property) and must NOT be requested. When the prompt says "Matomo-Tracking aktivieren" or "activate Matomo tracking" without specifying a SiteID, do NOT add Matomo.Tracking functionality via data-cb-func on any element. Instead, include {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied — the server reads this and activates the standard configuration.
 
 ## Media.Image.Cropper
 
@@ -258,14 +264,14 @@ Use the DataQuery name given by the user AS-IS for data-cb-dataquery — do NOT 
 
 Create an XContainer/XContainerInvisible and set on it (via the attributes array):
 - data-cb-func = "DQ.Table.View"
-- data-cb-columns = **REQUIRED** — a CSV defining the columns to show, each column is `label;datacolumn;jsonFlag` with an optional fourth entry `;width`: e.g. `Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30`. `label` is the displayed header, `datacolumn` is the exact column name in the DataQuery result, `jsonFlag` (`true`/`1`/`yes`) marks a column as containing JSON so its cells show a maximizable JSON viewer (use `false`/`0`/`no` for plain columns; a plain number in this position is treated as the legacy width), `width` (optional) sets the column width (characters in Excel, pixels on screen).
+- data-cb-columns = **REQUIRED** — a CSV defining the columns to show, each column is `label;datacolumn;jsonFlag` with an optional fourth entry `;width`: e.g. `Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30`. `label` is the displayed header, `datacolumn` is the exact column name in the DataQuery result, `jsonFlag` (`true`/`1`/`yes`) marks a column as containing JSON so its cells show a maximizable JSON viewer (use `false`/`0`/`no` for plain columns; a plain number in this position is treated as the legacy width), `width` (optional) sets the column width (characters in Excel, pixels on screen). A JSON column is expressed as `label;datacolumn;true` (e.g. `Details;Details;true`).
 - data-cb-dataquery = **REQUIRED** — the name of the Formcycle DataQuery on the server whose result shall be shown (e.g. `HolaQuery` or `INHALT.Eigentuemerdialog_Dezember_2025`).
 - data-cb-css = (optional) one or more (space separated) CSS classes to apply to BOTH the tagged container and the injected table.
 - data-cb-filename = (optional) the name of the exported Excel file WITHOUT extension (the extension is always `.xlsx`). Defaults to `Export`.
 - data-cb-sheetname = (optional) the worksheet name in the exported Excel file. Defaults to `sheet1`.
-- data-cb-exportbutton = (optional) a CSS selector of an existing button that shall trigger the export. If omitted (or no matching element is found) the table is rendered WITHOUT any export button — the Excel export is then simply not available.
+- data-cb-exportbutton = (optional) a CSS selector of an existing button that shall trigger the export. If omitted (or no matching element is found) the table is rendered WITHOUT any export button — the Excel export is then simply not available. When the user asks for an Excel export, YOU must make it reachable: set data-cb-exportbutton to the selector of an existing button on the form (e.g. the submit button) so the export control is actually rendered. Do NOT accept the request to export and then omit this parameter.
 - data-cb-centered = (optional) whether the content of the table cells is centered. Defaults to `true`; set to `false`/`0`/`no` to keep the cells left-aligned.
-- data-cb-excludecolumns = (optional) a CSV of column names (matched against the column's `label` or `datacolumn`) to EXCLUDE from the Excel-export — those columns stay visible in the table but are omitted from the exported `.xlsx`. E.g. `Nachricht,Wichtige_Hinweise`.
+- data-cb-excludecolumns = (optional) a CSV of column names (matched against the column's `label` or `datacolumn`) to EXCLUDE from the Excel-export — those columns stay visible in the table but are omitted from the exported `.xlsx`. E.g. `Nachricht,Wichtige_Hinweise`. Use this to honor "Details nicht exportieren" / "do not export Details".
 
 Example — a table that views the columns "Alter" and "Name" of the DataQuery "HolaQuery":
 "attributes": [

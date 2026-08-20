@@ -69,7 +69,7 @@ when CodBi searches within the shared parent container.
   - CSSHoverNavButtons: Configures 'CSSHoverNavButtons' for this functionality.
   - CSSNavButtons: Configures 'CSSNavButtons' for this functionality.
   - Preview: Configures 'Preview' for this functionality.
-- HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
+- HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements). USE when the request asks to style/color the form ("eigenes CSS", "rote Überschriften", "red headings", custom colors) — emit data-cb-func="HTML.CSS" with data-cb-css = the derived CSS text (e.g. "rote Überschriften" → data-cb-css="h1 {color:red;}"). NEVER just invent/apply a CSS class name instead of emitting the HTML.CSS functionality with the actual CSS text.
   - CSS: The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an.
   - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the.
   - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
@@ -146,7 +146,7 @@ when CodBi searches within the shared parent container.
 - Matomo.Tracking: Applicable on any form to add Matomo/Piwik analytics event tracking.
   - ImageURL: Configures 'ImageURL' for this functionality.
   - SiteID: The ID of the Matomo-Project-Site that shall be used for tracking.
-  - URL: The URL of the Matomo-Server that shall track the tagged form.
+  - URL: The URL of the Matomo-Server that shall track the tagged form. Never a required value — use the URL from the user's request if provided; otherwise it is taken automatically from the server-side plugin configuration (Matomo_URL property) and must NOT be requested.
 - Media.Image.Cropper: Applicable on an XUpload field for images; adds an interactive crop dialog before upload.
   - AspectRatio: The optional cropper's aspect-ratio to retain (e.g.
   - Container: CSS-Class-Selector for the container element (e.g., '.divCropperBoard'). Use dot-prefixed class selector. Do NOT use an ID selector.

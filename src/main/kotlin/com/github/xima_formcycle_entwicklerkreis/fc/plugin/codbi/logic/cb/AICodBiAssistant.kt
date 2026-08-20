@@ -1079,7 +1079,7 @@ class AICodBiAssistant : IPluginServletAction {
               "The user's request refers to earlier AI runs. Below is the raw change log of the " +
               "relevant form as a JSON array; each entry describes ONE earlier AI run.\n\n" +
               "CHANGE LOG SCHEMA — what each property means:\n" +
-              CHANGE_LOG_SCHEMA +
+              loadChangeLogSchema() +
               "\n\n" +
               "CHANGE LOG:\n" +
               changeHistoryContext +
@@ -1143,7 +1143,7 @@ class AICodBiAssistant : IPluginServletAction {
           else
               "\n\n## PRIOR CHANGE HISTORY (JSON — interpret it using the schema below)\n\n" +
                   "CHANGE LOG SCHEMA — what each property means:\n" +
-                  CHANGE_LOG_SCHEMA +
+                  loadChangeLogSchema() +
                   "\n\n" +
                   "CHANGE LOG:\n" +
                   changeHistoryContext +
@@ -1169,7 +1169,8 @@ class AICodBiAssistant : IPluginServletAction {
               "\n\n## CHAT HISTORY (previous turns in the form-chat popup — treat as authoritative " +
                   "context; the user's request may refer to earlier turns, e.g. by option numbers)\n\n" +
                   chatContext
-      val controlTypesSection = CONTROL_TYPES_RULES
+      val controlTypesSection =
+          "\n\n" + (loadPromptWithClasspathFallback("codbi.control_types_rules") ?: "")
       val pass1Obj =
           try {
             JsonParser.parseString(cleaned).asJsonObject
@@ -5583,7 +5584,7 @@ class AICodBiAssistant : IPluginServletAction {
       changeHistoryContext: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
-    if (em == null) return FALLBACK_WORKFLOW_PROMPT
+    if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
     try {
       val fc = PromptLoader.loadCategory(em, "formcycle")
       val general = fc["formcycle.general"] ?: ""
@@ -5760,7 +5761,7 @@ class AICodBiAssistant : IPluginServletAction {
                   "The user's request refers to earlier AI runs. The change log below is a JSON " +
                   "array; each entry describes ONE earlier AI run.\n\n" +
                   "CHANGE LOG SCHEMA — what each property means:\n" +
-                  CHANGE_LOG_SCHEMA +
+                  loadChangeLogSchema() +
                   "\n\n" +
                   "CHANGE LOG:\n" +
                   changeHistoryContext +
@@ -5795,7 +5796,7 @@ class AICodBiAssistant : IPluginServletAction {
       }
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to build workflow system prompt", e)
-      return FALLBACK_WORKFLOW_PROMPT
+      return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
     } finally {
       em?.close()
     }
@@ -10516,68 +10517,42 @@ class AICodBiAssistant : IPluginServletAction {
    * Loads the CodBi form system prompt from the database. Combines formcycle.general,
    * formcycle.widgets, and all codbi.* categories.
    */
+  /**
+   * Loads a prompt from the DB (via [PromptLoader.loadPrompt]) with a classpath `.md` fallback for
+   * when the database is unavailable (or the prompt is not seeded yet). Placeholders are resolved.
+   * Returns `null` only when the prompt exists nowhere.
+   */
+  private fun loadPromptWithClasspathFallback(key: String): String? {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em != null) {
+      try {
+        val db = PromptLoader.loadPrompt(em, key)
+        if (db != null) return PromptLoader.resolvePlaceholders(db)
+      } catch (e: Exception) {
+        logger.warn("[AICodBiAssistant] Failed to load prompt '{}': {}", key, e.message)
+      } finally {
+        em.close()
+      }
+    }
+    return PromptLoader.loadPromptFromClasspath(key)?.let { PromptLoader.resolvePlaceholders(it) }
+  }
+
+  /**
+   * Loads the change-log schema description (bundled `.md` / DB) used to decode earlier AI runs.
+   */
+  private fun loadChangeLogSchema(): String =
+      loadPromptWithClasspathFallback("codbi.change_log_schema") ?: ""
+
   private fun buildCodbiFormSystemPrompt(
       useCodbi: Boolean = true,
       useBuergerserviceNaming: Boolean = false
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
-    if (em == null) return FALLBACK_FORM_SYSTEM_PROMPT
+    if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_form_system") ?: ""
     try {
       val fc = PromptLoader.loadCategory(em, "formcycle")
       val cb = if (useCodbi) PromptLoader.loadCategory(em, "codbi") else emptyMap()
-      val taskInstruction =
-          "You receive a partial form JSON (IPersistJson) and a natural language instruction. " +
-              "MODIFY the form according to the instruction and return the COMPLETE modified form JSON. " +
-              "REMOVALS: If the user asks to REMOVE or DELETE fields/elements/buttons/widgets, honor it: drop those items " +
-              "from the root \"items\" array AND from their parent container's \"elements\" array. For " +
-              "\"remove all fields\" / \"delete all fields\" clear the page/fieldset \"elements\" arrays to [] and " +
-              "drop the corresponding items. For \"remove all buttons\" drop every XButtonList item and its reference " +
-              "in the page \"elements\" array. Keep structural items (page, header, footer) unless the user asks to " +
-              "remove them too. For \"remove everything\" / \"remove all\" / \"alles entfernen\" / \"rimuovi tutto\" return an empty " +
-              "\"items\" array (drop every item including the page, header and footer). " +
-              "A removal request is a valid form modification: do NOT return the form unchanged and do NOT " +
-              "report _codbiApplicability codbiVerdict \"none\" merely because no CodBi functionality applies.\n\n" +
-              "SCOPE: You operate ONLY on the currently open form. You CANNOT create, rename, duplicate or " +
-              "open a NEW or SEPARATE form, nor a second/admin/dashboard/overview form, on the server. If the " +
-              "user asks for a separate form or an admin/overview/dashboard form, do NOT promise to create one " +
-              "and do NOT ask for its title - instead explain that a separate form cannot be created here and " +
-              "offer to implement the requested capability (e.g. an overview / Excel export) as a workflow action " +
-              "or a section on the CURRENT form.\n" +
-              "COMPLETE OUTPUT: You MUST eventually return the COMPLETE modified form JSON containing ALL field items " +
-              "in the root \"items\" array and their references in the parent container's \"elements\" array. " +
-              "The widget and CodBi references above are CONDENSED (names + purpose only, no property structure). " +
-              "To emit correct widget properties, request the FULL details ONLY for the specific widget classes and " +
-              "CodBi functionalities you will ACTUALLY create - never for the whole catalog. Request all the details " +
-              "you need IN A SINGLE request: {\"status\":\"need_codbi_details\",\"elements\":[...],\"widgets\":[...]}. " +
-              "After receiving those details, build the complete form in the VERY NEXT response - never answer with " +
-              "a details request more than once.\n" +
-              "REPEATABLE FIELDS: Whenever the user's INTENT is that certain fields can be added/duplicated " +
-              "repeatedly (a '+' to add another topic/entry/row - in ANY language), you MUST wrap those fields " +
-              "in a DYNAMIC CONTAINER (XContainer or XContainerInvisible) that is itself an item in the root " +
-              "\"items\" array. The container MUST have dynamic:\"1\" (this is what makes it repeatable - " +
-              "without dynamic:\"1\" the container is NOT repeatable), plus dynamicMinSize:\"1\", " +
-              "dynamicMaxSize:\"10\", dynamicAddText (the '+' button label, e.g. '+ Thema hinzufügen') and " +
-              "dynamicDeleteText. The container's \"elements\" array holds the inner field names. The page's " +
-              "\"elements\" array references the CONTAINER name only - do NOT list the inner fields directly on " +
-              "the page. CRITICAL - Do NOT add ANY extra element (button, text, span or label such as " +
-              "'Thema hinzufügen') inside the container: the dynamic container renders its own add/delete " +
-              "buttons automatically via dynamicAddText/dynamicDeleteText. A missing dynamic:\"1\" or an extra " +
-              "add-label element is WRONG. Decide from intent, not from specific keywords. Do NOT leave such " +
-              "fields as plain non-repeating fields on the page.\n" +
-              "EXAMPLE (repeatable topic fields on page 'p1'): items = [ ..., {\"className\":\"XPage\",\"properties\":{\"name\":\"p1\",\"elements\":[\"coTopics\"]}}, {\"className\":\"XContainer\",\"properties\":{\"name\":\"coTopics\",\"id\":\"xi-co-topics\",\"dynamic\":\"1\",\"dynamicMinSize\":\"1\",\"dynamicMaxSize\":\"10\",\"dynamicAddText\":\"+ Thema hinzufügen\",\"dynamicDeleteText\":\"Thema entfernen\",\"elements\":[\"tfTopicTitle\",\"taTopicDesc\"]}}, {\"className\":\"XTextField\",\"properties\":{\"name\":\"tfTopicTitle\",...}}, {\"className\":\"XTextArea\",\"properties\":{\"name\":\"taTopicDesc\",...}}, ... ]. The page references ONLY \"coTopics\"; the two fields live in coTopics' elements.\n" +
-              "CONTROL TYPES: Honor the USER CLARIFICATION answer about the input control type. \"Radio-Button\" / \"radio\" " +
-              "→ create an XSelect with selectlayout:\"radio\" (options with text+value). \"Checkbox\" → a single XCheckbox " +
-              "for a yes/no question, or XSelect with selectlayout:\"checkbox\" for a multi-select option list. " +
-              "\"Dropdown\" / not specified → XSelect without selectlayout (default dropdown). NEVER generate a plain " +
-              "dropdown when the user explicitly chose radio buttons or a checkbox.\n" +
-              "MULTI-PAGE LABELS: when the form has several pages (XPage elements), set each XPage's \"header\" " +
-              "property to that page's label/title — use the labels from the user's request or the clarification " +
-              "answers (e.g. \"Personendaten\", \"Kurs & Termin\", \"Nachricht\"); never leave a page header empty. " +
-              "The Form.Navigator (XNavigationBar) options must reference the page names in \"value\" and show the " +
-              "same label in \"text\".\n\n" +
-              "AUTHENTICATION BUNDLE (BundID/Bürgerkonto login + ID upload + captcha): when the request asks for a login button AND an upload field for an ID/image AND captcha protection (e.g. 'BundID-Login-Button, ein Signaturfeld, ein Upload-Feld für den Personalausweis mit Bild-Cropper und Captcha-Schutz'), you MUST create ALL of these elements — missing any one is a FAIL: (1) XBsLogin (className=\"XBsLogin\") with the bs_auth_ref property for the BundID/Bürgerkonto login button; (2) the XUpload field for the ID card/image WITH data-cb-func=\"Media.Image.Cropper\" (or a CodBi_Fotocropper_* class) — an upload without the cropper is WRONG; (3) an XCaptcha element (className=\"XCaptcha\") for the captcha; (4) the XSignature element when a signature field is requested.\n" +
-              "PLACE EVERY CREATED ELEMENT: add each widget you create to the target page's/container's \"elements\" array AND set its properties.parentid to that page/container's name (e.g. a widget placed on page 'p1' gets parentid=\"p1\" and 'p1' lists it in its elements). A widget that exists in the root \"items\" array but is NOT referenced by any page/container (no parentid, not in any \"elements\" array) is ORPHANED — it does NOT render in the form and counts as missing. This applies to every widget, especially XBsLogin, XCaptcha, XUpload, XSignature and hidden XSpan elements.\n"
-      "Do NOT ask for more details â€” the user's instruction and the form data below are sufficient.\n\n"
+      val taskInstruction = loadPromptWithClasspathFallback("codbi.form_task_instruction") ?: ""
       // Pass-1 uses ONLY the condensed references (element/widget names + purposes) plus the
       // general rules. The parameter-complete sections (codbi.standard_configurations /
       // codbi.functionalities / codbi.element_placeholders) are intentionally NOT included here:
@@ -10597,17 +10572,17 @@ class AICodBiAssistant : IPluginServletAction {
           }
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
-              WIDGET_STRUCTURE_RULES +
-              ROW_PAIRING_RULES +
-              COMPLETE_FORM_RULES +
+              "\n\n" +
+              (loadPromptWithClasspathFallback("codbi.form_structure_rules") ?: "") +
+              "\n\n" +
               (fc["formcycle.general"] ?: "") +
-              "\n" +
+              "\n\n" +
               "{{FORMCYCLE_WIDGETS_SECTION}}" +
               codbiPart +
               buergerserviceNamingPart)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load form system prompt", e)
-      return FALLBACK_FORM_SYSTEM_PROMPT
+      return loadPromptWithClasspathFallback("codbi.fallback_form_system") ?: ""
     } finally {
       em?.close()
     }
@@ -10631,20 +10606,17 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load classify intent prompt", e)
     }
-    return FALLBACK_CLASSIFY_INTENT_PROMPT
+    return loadPromptWithClasspathFallback("codbi.fallback_classify_intent") ?: ""
   }
 
   /** Loads the CodBi rethink (blind pass) prompt from the database. */
   private fun loadCodbiRethinkPrompt(): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
-    if (em == null) return FALLBACK_RETHINK_PROMPT
+    if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_rethink") ?: ""
     try {
       val categories = PromptLoader.loadCategory(em, "codbi")
       val fc = PromptLoader.loadCategory(em, "formcycle")
-      val taskInstruction =
-          "You receive a form to review for CodBi applicability. " +
-              "Review the form elements below and determine which CodBi functionalities apply. " +
-              "Return the form JSON with a _codbiApplicability field listing considered/applied/skipped items.\n\n"
+      val taskInstruction = loadPromptWithClasspathFallback("codbi.rethink_instruction") ?: ""
       // The detailed standards/functionalities are included in the DB-driven
       // {{CODBI_FULL_SECTION}},
       // so only the general rules, the widgets reference, and the full section are sent here.
@@ -10657,7 +10629,7 @@ class AICodBiAssistant : IPluginServletAction {
               "{{CODBI_FULL_SECTION}}")
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load rethink prompt", e)
-      return FALLBACK_RETHINK_PROMPT
+      return loadPromptWithClasspathFallback("codbi.fallback_rethink") ?: ""
     } finally {
       em?.close()
     }
@@ -10679,7 +10651,7 @@ class AICodBiAssistant : IPluginServletAction {
       useBuergerserviceNaming: Boolean = false
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
-    if (em == null) return FALLBACK_APPLY_PROMPT
+    if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_apply") ?: ""
     try {
       val widgetPart = buildWidgetDetailsSection(em, widgetIds)
       if (!useCodbi) {
@@ -10719,10 +10691,8 @@ class AICodBiAssistant : IPluginServletAction {
             // Pure blind reconsideration: provide the complete reference.
             else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
           }
-      return WIDGET_STRUCTURE_RULES +
-          ROW_PAIRING_RULES +
-          COMPLETE_FORM_RULES +
-          "\n" +
+      return (loadPromptWithClasspathFallback("codbi.form_structure_rules") ?: "") +
+          "\n\n" +
           formcycleGeneral +
           "\n\n" +
           base +
@@ -10733,7 +10703,7 @@ class AICodBiAssistant : IPluginServletAction {
           widgetPart
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load apply prompt", e)
-      return FALLBACK_APPLY_PROMPT
+      return loadPromptWithClasspathFallback("codbi.fallback_apply") ?: ""
     } finally {
       em?.close()
     }
@@ -10966,6 +10936,86 @@ class AICodBiAssistant : IPluginServletAction {
         } else {
           "- Ask at most 3 questions per round; each question needs a unique \"id\".\n"
         }
+    // PRIMARY SOURCE: the clarification prompt comes from the .md file (codbi-clarification.md,
+    // seeded as codbi.clarification) — loaded from the DB or, while the seed hasn't run, directly
+    // from the bundled .md on the classpath. The inline builder below is only a last-resort
+    // fallback. This keeps all prompt text in the .md files.
+    loadClarificationTemplate()?.let { template ->
+      val currentlyOpenForm =
+          if (!currentFormKey.isNullOrBlank() || !currentFormTitle.isNullOrBlank()) {
+            "\nCURRENTLY OPEN FORM: title=${gson.toJson(currentFormTitle ?: "")}, " +
+                "key=${gson.toJson(currentFormKey ?: "")} — this is the form the user is editing " +
+                "right now. When the user names a DIFFERENT form by its title, treat it as another form.\n"
+          } else ""
+      val formElementsBlock =
+          if (!formElements.isNullOrBlank()) "\nFORM ELEMENTS available: $formElements\n" else ""
+      val formStructureBlock =
+          if (!formStructureContext.isNullOrBlank()) {
+            "\nCURRENT FORM STRUCTURE (pages, fieldsets, containers and their titles/names — use it " +
+                "to resolve references to existing elements like \"the two fieldsets on the first " +
+                "page\"):\n" +
+                formStructureContext +
+                "\n"
+          } else ""
+      val clarificationHistoryBlock =
+          if (clarificationContext.isNotBlank()) {
+            "\nQUESTIONS THE USER ALREADY ANSWERED (treat these as authoritative):\n" +
+                clarificationContext +
+                "\n"
+          } else ""
+      val chatHistoryBlock =
+          if (chatContext.isNotBlank()) {
+            "\nCHAT HISTORY (previous turns in the form-chat popup — treat as authoritative context):\n" +
+                "The user's current message may refer to earlier chat turns (e.g. \"apply options 1, 2, 5 and 7\"). " +
+                "Resolve such references from this history BEFORE asking the user anything.\n" +
+                chatContext +
+                "\n"
+          } else ""
+      val changeHistoryBlock =
+          if (!changeHistoryContext.isNullOrBlank()) {
+            "\nPRIOR CHANGE HISTORY (JSON — interpret it using the schema below)\n" +
+                "The change log below is a JSON array of earlier AI runs; each entry describes ONE earlier run.\n\n" +
+                "CHANGE LOG SCHEMA — what each property means:\n" +
+                loadChangeLogSchema() +
+                "\n\n" +
+                "CHANGE LOG:\n" +
+                changeHistoryContext +
+                "\n\nIdentify the entry/entries the user's request refers to and determine whether you still need information from the user.\n"
+          } else ""
+      val formListBlock =
+          if (!formListContext.isNullOrBlank()) {
+            "\nAVAILABLE FORMS ON THE SERVER (each entry has \"id\", \"key\" = the technical identifier to pass in need_chat_history, " +
+                "\"name\"/\"title\" = the form's TITLE as users refer to it, and \"current\": true marks the form being edited right now):\n" +
+                formListContext +
+                "\n" +
+                "You now HAVE the form list — never respond {\"status\":\"need_form_list\"} again. " +
+                "Pick the form whose title best matches the user's request and respond ONLY with " +
+                "{\"status\":\"need_chat_history\",\"formKey\":\"<that form's key>\"} — or, if no form reasonably matches, " +
+                "ask the user which form they meant via need_clarification.\n"
+          } else ""
+      val changeHistoryStatus =
+          if (changeHistoryContext.isNullOrBlank()) {
+            "\nThe change history is NOT shown by default. If the user's request refers to earlier AI runs / prior work on " +
+                "THIS form (e.g. \"apply the same functionalities as a week ago\", \"like before\", \"what was configured earlier\", " +
+                "\"what another user prompted\"), fetch it first: respond ONLY with {\"status\":\"need_chat_history\"} (current form) " +
+                "or {\"status\":\"need_chat_history\",\"formKey\":\"<key>\"} (another form).\n"
+          } else {
+            "\nYou ALREADY have the PRIOR CHANGE HISTORY above (with the schema). Do NOT request the change history again — " +
+                "interpret it and decide whether you still need information from the user.\n"
+          }
+      return template
+          .replace("{{ACTION}}", action)
+          .replace("{{USER_REQUEST}}", gson.toJson(prompt))
+          .replace("{{QUESTION_COUNT_RULE}}", questionCountRule)
+          .replace("{{CURRENTLY_OPEN_FORM}}", currentlyOpenForm)
+          .replace("{{FORM_ELEMENTS}}", formElementsBlock)
+          .replace("{{FORM_STRUCTURE}}", formStructureBlock)
+          .replace("{{CLARIFICATION_HISTORY}}", clarificationHistoryBlock)
+          .replace("{{CHAT_HISTORY}}", chatHistoryBlock)
+          .replace("{{CHANGE_HISTORY_BLOCK}}", changeHistoryBlock)
+          .replace("{{FORM_LIST_BLOCK}}", formListBlock)
+          .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus)
+    }
     return buildString {
       append(
           "You are a FORMCYCLE assistant. You are about to $action for the user.\n" +
@@ -11020,7 +11070,7 @@ class AICodBiAssistant : IPluginServletAction {
                 "The change log below is a JSON array of earlier AI runs; each entry describes ONE " +
                 "earlier run.\n\n" +
                 "CHANGE LOG SCHEMA — what each property means:\n" +
-                CHANGE_LOG_SCHEMA +
+                loadChangeLogSchema() +
                 "\n\n" +
                 "CHANGE LOG:\n" +
                 changeHistoryContext +
@@ -11086,6 +11136,19 @@ class AICodBiAssistant : IPluginServletAction {
               "  on the first page\", \"the name field\", \"the submit button\"), identify them from the\n" +
               "  CURRENT FORM STRUCTURE / FORM ELEMENTS above — do NOT ask the user which element is\n" +
               "  meant when it can be determined from the provided structure.\n" +
+              "- EXISTING FIELDS ARE ALWAYS KNOWN: the CURRENT FORM STRUCTURE / FORM ELEMENTS always list every\n" +
+              "  existing element. NEVER ask the user whether a referenced field/container exists (NEVER\n" +
+              "  \"Existieren die Felder ... bereits?\" / \"do the fields ... already exist?\"). Determine it from\n" +
+              "  the provided form data: name present → reuse it; name absent → create it as requested WITHOUT\n" +
+              "  asking.\n" +
+              "- NEVER ask the user for a technical name / id / \"technicalId\" of a field, container, button or\n" +
+              "  widget. Newly created elements get a sensible auto-generated `name` (and `xi-…` id) based on\n" +
+              "  the request (e.g. a \"Kundennummer\" field → `tfKundenummer`, an AI-chat result field →\n" +
+              "  `tfExtractedText`). DO NOT ask \"Wie soll das technische Feld-ID heißen?\" — generate it.\n" +
+              "- Placement: when the user does NOT specify where a new element goes, place it in the current\n" +
+              "  page's main container and DO NOT ask \"wo soll ... platziert werden?\". Map providers/coordinates\n" +
+              "  and DataQuery column names come from the request or server configuration — do NOT ask the user\n" +
+              "  to confirm DB column identifiers.\n" +
               "- When the user answers a question with a statement that delegates the decision to you\n" +
               "  (\"you decide\", \"entscheide du\", \"egal\", \"whatever you think is best\", \"I don't\n" +
               "  care\") or declines to answer (\"does not matter\", \"keine Angabe\", \"skip it\", \"I\n" +
@@ -11123,6 +11186,13 @@ class AICodBiAssistant : IPluginServletAction {
               "- CONSOLE LOGGING OF AN AI ANSWER (Sys.Log.Console): set data-cb-Data to exactly 'SYS.Log.Console > AI.LLAMA.STD.QA > <Frage>; true;;;;;;' — e.g. 'SYS.Log.Console > AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;;'. The prefix is 'SYS.Log.Console' with dots — NEVER 'SYS Log.Console' — and the EP keeps its trailing '; true;;;;;;'.\n" +
               "- COLLAPSIBLE PANEL ('aufklappbares Panel', 'collapsible panel', 'accordion') on a fieldset: apply the standard class CodBi_HTML_Panel_Standard to the XFieldSet (the legend becomes the title). Only when the panel must sit on a container (not a fieldset) use data-cb-func=html.panel with data-cb-generateheader=\"true\".\n" +
               "- LDAP AUTOFILL / AUTOCOMPLETE (LDAP.Autocomplete, LDAP.Autocomplete.Set, CodBi_LDAP_AC_* classes): NEVER ask the user for an LDAP server URL, endpoint or connection details — the LDAP directory is configured server-side in Formcycle/CodBi settings (predefined LDAP queries / LDAP_URL), so the user does not know or provide it. When LDAP autocomplete is requested, apply it directly (data-cb-func=\"LDAP.Autocomplete\" or the matching CodBi_LDAP_AC_* class) WITHOUT clarification. For a BÜRGER-SERVICES form (fsBKDaten / fsBKOrgDaten / BundID / BayernID), the person's address fields are filled by the login/authentication data or by the German OpenPLZ.Autocomplete (CodBi_OpenPLZ_AC_SET_*) — a citizen is either a citizen or an employee, and a citizen is NOT in an Active Directory, so do NOT ask for LDAP details there; apply LDAP only when the request explicitly asks for an LDAP/employee-directory lookup, and even then never ask for the endpoint.\n" +
+              "- MATOMO TRACKING (Matomo.Tracking / Holistic.Matomo.Tracking): NEVER ask the user for the Matomo server URL. If the user's request specifies a URL, use that URL; otherwise the URL is taken automatically from the server-side plugin configuration (Matomo_URL property). The only Matomo value you may ask about is the tracking/SiteID when the user explicitly wants per-element Matomo.Tracking with a SiteID and none is derivable from the request. When the request just says \"Matomo-Tracking aktivieren\" / \"activate Matomo tracking\" without a SiteID, do NOT ask for the URL or SiteID — report {\"id\":\"Holistic.Matomo.Tracking\",\"targets\":[]} in _codbiApplicability.applied and the server activates the configured tracking.\n" +
+              "- AI CHAT (AI.LLAMA.CHAT / \"KI-Chat\" / \"KI-Assistent\" container): when the user asks to embed an AI chat, do NOT ask which chat widget/provider to use — build the COMPLETE CodBi AI.LLAMA.CHAT widget. Create ONE XContainer wrapper (the \"KI-Assistent\" container) with fullwidth=\"1\" and place EVERY chat sub-element inside it — NONE of them may be omitted and NONE may be left outside the wrapper. The wrapper MUST contain ALL of the following: (1) a chat display XTextArea with data-cb-func=\"ai.llama.chat\" that is readonly, has autosize, and carries data-cb-MaxPixelSize=\"360000\" AND data-cb-maxchatwindowheight=\"1200\"; (2) an Input XTextArea; (3) exactly ONE Send button inside an XButtonList; (4) a SEPARATE Stop button inside its OWN XButtonList (not merged with Send); (5) an Upload XUpload with fileextension=\"image/*,.pdf\"; (6) the four checkboxes Thinking, Internet, Location, AlertOnFinish; and (7) the Mail container — itself an inner XContainer containing a MailForward XCheckbox (CSS class AI_LLAMA_CHAT_MailForward) AND a MailAddress XTextField (CSS class AI_LLAMA_CHAT_MailAddress). Do NOT add a bare/empty placeholder container for the chat. NEVER ask \"welchen KI-Chat\" / \"welchen OCR-Dienst\" or whether the chat fields already exist.\n" +
+              "- AI.OCR (extract text from an uploaded image/PDF into a field): do NOT ask the user which OCR service to use or how to link the output — create the receiver field if named (e.g. tfExtractedText), link it via data-cb-field (dot-prefixed class selector) and use the default Mode=\"print\" unless the request explicitly asks for verification.\n" +
+              "- AI.LLAMA.CHAT wrapper: the chat XContainer wrapper's `fullwidth` property must be \"1\" — never ask the user and never leave it \"0\".\n" +
+              "- XRating (Bewertung/rating widget): when the user asks for a \"5-star\"/\"5-Sterne\"/\"5 Sterne\" rating, create an actual XRating element (NOT a default/placeholder rating widget and NOT a radio group or dropdown) whose `options` array has EXACTLY 5 entries, each a star icon (e.g. 5\u00d7 {\"icon\":\"ico-rating-star\"}). Do NOT ask whether it should be a radio group/dropdown or how many stars. The input-masking regex (Maskierung) belongs on the separate masked text field (e.g. the Kundennummer XTextField), NEVER on the rating widget.\n" +
+              "- HTML.CSS (custom CSS / styling): when the styling rule is described (\"rote Überschriften\"/\"red headings\"/custom colors), do NOT ask for the CSS text — derive it (e.g. \"rote Überschriften\" → data-cb-css=\"h1 {color:red;}\") and emit an element with data-cb-func=\"HTML.CSS\". Only ask when the styling cannot be derived at all.\n" +
+              "- JSON.SET (hidden JSON field): when the request asks for a hidden field that stores the JSON of other fields (e.g. \"JSON aus tfVorname/tfNachname\"), do NOT ask how to format the JSON or what to name the field. Build an XDefault/XTextField element with data-cb-func=\"JSON.SET\" that is invisible=\"1\" and set the derivation parameters: data-cb-path naming the source fields from the request (comma-separated, e.g. tfVorname,tfNachname), data-cb-property and data-cb-toset describing how the JSON is composed (e.g. building {\"vorname\":\"...\",\"nachname\":\"...\"}). The field MUST be marked invisible (hidden) — a JSON.SET field that is left visible is a FAIL — and MUST carry these derivation params (a JSON.SET field without data-cb-path/data-cb-property/data-cb-toset is a FAIL). Do NOT ask the user to name or format the field; auto-generate a name (e.g. tfVornameNachnameJSON).\n" +
               "- Data tables (DQ.Table.View): when the user asks to show/view/display the columns of a\n" +
               "  DataQuery/datasource as a table (e.g. \"add a table that views the columns Alter, Name of\n" +
               "  HolaQuery\", \"zeige die Spalten ... der Abfrage ... als Tabelle\"), the DataQuery name the\n" +
@@ -11152,6 +11222,37 @@ class AICodBiAssistant : IPluginServletAction {
               "  exact labels and do NOT ask again.\n" +
               "If you have everything you need, respond with exactly the single word: NO_CLARIFICATION\n")
     }
+  }
+
+  /**
+   * Loads the clarification system-prompt template — first from the DB (seeded from
+   * `codbi-clarification.md` as `codbi.clarification`), and while the seed hasn't run yet, directly
+   * from the bundled `.md` on the classpath. Returns null only if neither is available (falls back
+   * to the inline builder). Keeps the clarification prompt sourced from the .md files.
+   */
+  private fun loadClarificationTemplate(): String? {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em != null) {
+      try {
+        val fromDb = PromptLoader.loadCategory(em, "codbi")["codbi.clarification"]
+        if (!fromDb.isNullOrBlank()) return fromDb
+      } catch (_: Exception) {} finally {
+        try {
+          em.close()
+        } catch (_: Exception) {}
+      }
+    }
+    return runCatching {
+          AICodBiAssistant::class
+              .java
+              .classLoader
+              .getResourceAsStream(
+                  "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-clarification.md")
+              ?.bufferedReader(Charsets.UTF_8)
+              ?.use { it.readText() }
+              ?.trim()
+        }
+        .getOrNull()
   }
 
   /** Parses a `need_chat_history` response into (wanted, optional form key for another form). */
@@ -11432,11 +11533,8 @@ class AICodBiAssistant : IPluginServletAction {
     // The numbered options the user refers to (e.g. "do 1, 2, 5 and 7") may have been listed by the
     // assistant SEVERAL turns earlier in this history — the whole conversation is always sent, so
     // search all assistant messages for the numbered list before asking or deciding anything.
-    sb.append(
-        "NOTE: the user's request may refer to options/suggestions the assistant listed earlier " +
-            "in this history — by NUMBER (e.g. \"do 1, 2, 5 and 7\"), by phrase (\"do it like " +
-            "that\", \"the second one\") or by description. The referenced list may appear SEVERAL " +
-            "turns back — search the ENTIRE history before resolving it.\n")
+    sb.append((loadPromptWithClasspathFallback("codbi.chat_context_note") ?: "").trimEnd())
+    sb.append("\n")
     for ((i, t) in chatTurns.withIndex()) {
       if (t.user.isNotBlank()) sb.append("${i + 1}. User: ${t.user}\n")
       if (t.assistant.isNotBlank()) sb.append("   Assistant: ${t.assistant}\n")
@@ -11460,32 +11558,7 @@ class AICodBiAssistant : IPluginServletAction {
       clarificationContext: String
   ): ChatAnswer? {
     val system = buildString {
-      append(
-          "You are a FORMCYCLE form assistant. You are chatting with the user about their " +
-              "current form. Determine what the user's message contains:\n" +
-              "- \"hasQuestion\": true when the user asks a question or requests information/" +
-              "explanation about the form (e.g. \"which fields are on page 1?\", \"what happens " +
-              "on submit?\", \"erkläre mir das Formular\", \"wie funktioniert X?\"). A question or " +
-              "a request for information is NEVER instructions.\n" +
-              "- \"hasInstructions\": true ONLY when the user commands an actual CHANGE to the " +
-              "form or workflow (e.g. \"add a field\", \"make it collapsible\", \"send an email " +
-              "on submit\"). Asking about or describing the form is NOT instructions. If the " +
-              "message contains BOTH a question and change commands, both flags are true.\n" +
-              "- If the user's message is ONLY a short acknowledgment/confirmation with no " +
-              "question and no change request (e.g. \"ok\", \"okay\", \"verstanden\", \"gut\", " +
-              "\"danke\", \"thanks\", \"alles klar\", \"perfect\"), set BOTH hasQuestion and " +
-              "hasInstructions to FALSE and answer with a brief, friendly acknowledgment in the " +
-              "same language.\n" +
-              "- \"answer\": your answer to the user's question, in the SAME language as the " +
-              "user's message. Base it on the CURRENT FORM STRUCTURE below. If there is no " +
-              "question, return an empty answer.\n" +
-              "When hasQuestion is true and hasInstructions is false, the assistant answers the " +
-              "question WITHOUT changing the form.\n" +
-              "When your answer lists multiple options/suggestions (e.g. possible optimizations), " +
-              "enumerate them (1., 2., 3., ...) so the user can reference them by number in a " +
-              "follow-up message like \"apply 1, 2, 5 and 7\".\n" +
-              "Respond ONLY with valid JSON: {\"hasQuestion\": true|false, " +
-              "\"hasInstructions\": true|false, \"answer\": \"...\"}\n")
+      append(loadPromptWithClasspathFallback("codbi.chat_system_prompt") ?: "")
       if (!formStructureContext.isNullOrBlank()) {
         append("\nCURRENT FORM STRUCTURE:\n$formStructureContext\n")
       }
@@ -11634,139 +11707,9 @@ class AICodBiAssistant : IPluginServletAction {
      */
     private const val MAX_FORM_RERUNS = 2
 
-    /**
-     * Hard rules injected into the form AI prompts so the model does not invent Formcycle widget
-     * classNames (e.g. a standalone "BUTTON"). The server only accepts the X-* classes listed in
-     * the Formcycle widget reference, so the model must never guess one.
-     */
-    private val WIDGET_STRUCTURE_RULES =
-        "\nWIDGET STRUCTURE RULES:\n" +
-            "- Only the widget classNames listed in the Formcycle widget reference below are valid " +
-            "(they all start with 'X', e.g. XButtonList, XTextField, XSelect, XPage). NEVER invent a " +
-            "className — there is NO standalone 'BUTTON' widget class.\n" +
-            "- Buttons (submit, back, next) are NOT standalone widgets: define each button as an entry " +
-            "inside an XButtonList item's 'buttons' array (name, title, value, action). A workflow " +
-            "submit trigger (FC_FORM_SUBMIT_BUTTON) references that button by its 'name'.\n" +
-            "- Every created widget MUST have a unique 'id' (e.g. 'xi-...') and a className from the " +
-            "reference list.\n" +
-            "- There is NO 'row' className — never use 'xm-form-row' (or any similar name) as a " +
-            "className. To place fields side by side in one row, give them the same 'rowid' property " +
-            "(see ROW PAIRING RULES).\n\n"
-
-    /**
-     * Teaches the form AI which fields belong on the SAME row because they form one composite
-     * value. Written semantically (language-agnostic) so it applies in any user language.
-     */
-    private val ROW_PAIRING_RULES =
-        "\nROW PAIRING RULES (fields that belong on the SAME row):\n" +
-            "Some fields describe one logical value together and must appear SIDE BY SIDE in the SAME row " +
-            "of the form (not stacked one per line, not wrapped in a nested container). Identify these " +
-            "pairs by what they mean, in ANY language:\n" +
-            "- A person's GIVEN/FIRST name + FAMILY/LAST name (e.g. Max + Mustermann).\n" +
-            "- A STREET/ROAD name + HOUSE/BUILDING number (e.g. Main Street + 12).\n" +
-            "- A POSTAL CODE + LOCALITY/CITY (e.g. 12345 + Berlin).\n" +
-            "HOW Formcycle renders a row (there is NO 'row' widget/className — 'xm-form-row' is only the " +
-            "CSS class the renderer adds automatically, never a className you should write):\n" +
-            "- Keep the two fields as DIRECT SIBLINGS inside the same parent container (e.g. in the " +
-            "XPage/container's 'elements' array) — do NOT wrap them in an extra XContainer/XFieldSet.\n" +
-            "- Give BOTH fields the SAME string value for the 'rowid' property in their 'properties' " +
-            "object (e.g. \"rowid\": \"row-1\"). Formcycle renders all sibling fields with an identical " +
-            "'rowid' next to each other in one row.\n" +
-            "- Use a DIFFERENT 'rowid' value for each separate row (\"row-1\", \"row-2\", ...) so every " +
-            "pair stays on its own line; omit 'rowid' (or leave it empty) for fields that should span the " +
-            "full width on their own line.\n" +
-            "- Size the two fields sensibly so they share the line (e.g. roughly half the row width each).\n\n"
-
-    /**
-     * Teaches the form AI how to map the user's chosen input control type to a Formcycle widget.
-     * Injected into BOTH the pass-1 form prompt and the pass-2 (widget-creating) prompts so the
-     * choice (e.g. "radio buttons") is honored regardless of which pass builds the fields.
-     */
-    private val CONTROL_TYPES_RULES =
-        "\nCONTROL TYPES: Honor the user's choice of input control type (from the request or the USER " +
-            "CLARIFICATION). \"Radio-Button\" / \"radio\" → create an XSelect with selectlayout:\"radio\" " +
-            "(options with text+value). \"Checkbox\" → a single XCheckbox for a yes/no question, or an XSelect " +
-            "with selectlayout:\"checkbox\" for a multi-select option list. \"Dropdown\" / not specified → XSelect " +
-            "without selectlayout (default dropdown). NEVER generate a plain dropdown when the user explicitly " +
-            "chose radio buttons or a checkbox.\n\n"
-
-    /**
-     * Teaches the form AI to build the ENTIRE requested form instead of only the last/clarified
-     * subset. Addresses under-delivery where a request with many fields (e.g. an email) results in
-     * only the most-emphasized group being created.
-     */
-    private val COMPLETE_FORM_RULES =
-        "\nCOMPLETE FORM RULES (build the ENTIRE requested form):\n" +
-            "A request (email, list, description, mail thread, ...) can contain MANY fields. Create " +
-            "EVERY field the user asked for in ONE output — never create only the most recent / most " +
-            "emphasized / clarified subset and never drop fields mentioned earlier.\n" +
-            "- \"Make this group repeatable\" (e.g. \"+ to add more\", \"the answer fields can be " +
-            "duplicated\") applies ONLY to that one group — all OTHER requested fields must still be " +
-            "created.\n" +
-            "- Map each requested input to the matching widget: single-line text → XTextField, " +
-            "multi-line text → XTextArea, yes/no or a choice → XCheckbox / XSelect (see CONTROL " +
-            "TYPES), etc.\n" +
-            "- A given/family name pair (\"Name, Vorname\") → two XTextFields on the SAME row (same " +
-            "'rowid', see ROW PAIRING RULES).\n" +
-            "- Add every created field to its page's/container's 'elements' array so it actually " +
-            "appears on the form.\n" +
-            "- When in doubt, CREATE the field — a missing requested field is a failed request.\n\n"
-
-    /**
-     * Describes the structure of the change log that is delivered to the AI as JSON (see
-     * [AiAssistantLog.loadChangeHistoryForAi]). Each array entry represents ONE earlier AI run. The
-     * AI uses this schema to decode the change log whenever the user's prompt refers to earlier
-     * work (e.g. "apply the same changes as a week ago", "what salva made on form XY"). Prompts can
-     * reference history in countless ways, so the AI decides which entries apply — the backend does
-     * not pre-resolve them.
-     */
-    private val CHANGE_LOG_SCHEMA =
-        """
-        "ts"        - ISO timestamp of when the earlier run happened (match "yesterday", "20:49", "last week", ...)
-        "username"  - the user who triggered that run (match a named user, or "I" = the current user)
-        "intent"    - "form" | "workflow" | "both" — what that run changed
-        "modelId"   - the AI model used (informational)
-        "prompt"    - the ORIGINAL natural-language request the user typed for that run; the most
-                      important field to understand what was done
-        "form"      - object describing the form changes of that run:
-            "widgetsCreated" - [ { "name", "className" } ] widgets added to the form
-            "widgetsRemoved" - [ { "name", "className" } ] widgets removed
-            "classesSet"     - [ { "widget", "className", "classes": [...] } ] CSS classes (e.g.
-                               CodBi_*) added to widgets
-            "attributesSet"  - [ { "widget", "className", "attributes": [ { "name", "value",
-                               "kind" (attr|func|param), "codbi" (bool), "params": [...] } ] } ]
-                               properties/functions set on widgets ("kind":"func" = a data-cb-func
-                               functionality; "kind":"param" = a data-cb-* parameter of it)
-        "workflow"  - array describing the workflow changes of that run (e.g. nodes created, their
-                      type and parameters)
-        "clarification" - array of { "question", "answer" } turns if the user was asked and
-                          answered clarifying questions during that run
-        """
-            .trimIndent()
-
-    private const val FALLBACK_FORM_SYSTEM_PROMPT =
-        "You are a FORMCYCLE form structure assistant. " +
-            "You receive a partial IPersistJson object and a natural language instruction. " +
-            "Your ONLY output must be the modified IPersistJson as raw JSON. " +
-            "Every generated element MUST carry a meaningful, human-readable 'label' describing its " +
-            "purpose in the language of the user's request — never the generic value \"Label\" or \"Example\"."
-
-    private const val FALLBACK_CLASSIFY_INTENT_PROMPT =
-        "You are a FORMCYCLE assistant router. Based on the user's request, " +
-            "determine what type of change is needed: form, workflow, or both. " +
-            "Respond ONLY with valid JSON: {\"intent\":\"form\"} or {\"intent\":\"workflow\"} or {\"intent\":\"both\"}"
-
-    private const val FALLBACK_RETHINK_PROMPT =
-        "You are a CodBi form element configurator. Review the form elements and apply " +
-            "relevant CodBi functionalities (data-cb-func, CSS classes)."
-
-    private const val FALLBACK_APPLY_PROMPT =
-        "You are a CodBi form element configurator. Apply the listed CodBi functionalities " +
-            "to the appropriate form elements with correct data-cb-* parameters."
-
-    private const val FALLBACK_WORKFLOW_PROMPT =
-        "You are a FORMCYCLE workflow assistant. The user will describe a desired workflow " +
-            "action in natural language. Your ONLY output must be a single JSON object that " +
-            "describes the workflow task to create. No explanation, no markdown, no code fences."
+    // All prompt texts (structure rules, control-types rules, complete-form rules, change-log
+    // schema, chat context, chat system prompt, fallback prompts) live in the bundled .md files
+    // (see prompts/index.json) and are loaded via PromptLoader with a classpath fallback — the
+    // backend itself contains no prompt text anymore.
   }
 }

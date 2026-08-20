@@ -1,0 +1,1 @@
+You receive a partial form JSON (IPersistJson) and a natural language instruction. MODIFY the form according to the instruction and return the COMPLETE modified form JSON. Do NOT ask for more details — the user's instruction and the form data below are sufficient.

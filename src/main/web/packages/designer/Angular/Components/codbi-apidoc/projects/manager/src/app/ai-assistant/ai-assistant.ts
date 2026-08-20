@@ -195,6 +195,15 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  400ms (poll tick / host re-mount) must never toggle the freshly opened dialog closed (see
    *  openHandler). */
   private lastOpenedAt = 0;
+  /** Performance timestamp of the most recent request to show the dialog (set in open()). Used by
+   *  onDialogShow() to measure how long PrimeNG takes to actually render the dialog on reopen. */
+  private lastShowRequestedAt = 0;
+  /** True while the dialog is intentionally hidden (via CSS) but still mounted. We keep `visible`
+   *  `true` so PrimeNG never tears the dialog down (which forces a full re-bootstrap / re-mount on
+   *  every reopen) and hide/show is a pure CSS flip (user-preferred approach).
+   *  Starts `true` (dialog closed on a fresh host) so the FIRST ALT+A opens directly instead of
+   *  running the toggle's close() branch on a dialog that was never open. */
+  private dialogHidden = true;
   private speechBaseText = "";
   private speechFinalText = "";
   /** The full `codbi-prop-standards` CSV that the AI set on its most recent run.
@@ -249,7 +258,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     // (but the DOM is not rendered yet) must not close the freshly opened dialog. A stray second
     // event shortly after opening (a poll tick or a host re-mount) must also never close it — only a
     // deliberate ALT+A press once the dialog has been open for a moment toggles it closed.
-    if (this.visible && document.querySelector(".cb-ai-assistant-dialog") && Date.now() - this.lastOpenedAt > 400) {
+    if (!this.dialogHidden) {
       this.close();
     } else {
       this.open();
@@ -320,6 +329,9 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  closed while maximized reopens maximized). */
   private static readonly MAXIMIZED_KEY = "codbi-ai-assistant-maximized";
   private static readonly DIALOG_STYLE_CLASS = "cb-ai-assistant-dialog";
+  /** sessionStorage key caching the loaded AI model list so a re-bootstrapped host (the Angular
+   *  custom element is re-created on reopen) does not have to re-fetch it with a 2-3s AJAX call. */
+  private static readonly MODELS_CACHE_KEY = "codbi-models-cache";
   /** Cleanup for the custom header-drag handlers (re-enabled on every dialog show). */
   private dragCleanup: (() => void) | null = null;
   /** Remembered clarification popup position, persisted across reloads. */
@@ -336,6 +348,10 @@ export class AiAssistant implements OnInit, OnDestroy {
   chatInput = "";
   /** Index of the chat message whose copy button currently shows the "copied" state (-1 = none). */
   copiedChatIndex = -1;
+  /** True while the "copy ALL questions" button in the clarification dialog shows the copied check. */
+  clarificationCopiedAll = false;
+  /** Id of the clarification question whose copy button currently shows the copied check. */
+  clarificationCopiedQuestionId: string | null = null;
   /** True while a chat turn is being processed. */
   chatLoading = false;
   /** Remembered chat popup position, persisted across reloads. */
@@ -402,7 +418,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     if (this.models.length === 0) {
       this.loadModelsAndOpen();
     } else {
-      this.visible = true;
+      this.open(); //this.visible = true;
     }
     this.cdr.markForCheck();
     this.expandAndUnfoldLog(elements);
@@ -535,7 +551,7 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  unfolded. The log data is already loaded by the opening component, so it is NOT re-opened. */
   onLogOpened(): void {
     console.log("[AICodBiAssistant] onLogOpened fired (log panel emitted opened)", { showLog: this.showLog });
-    this.visible = true;
+    this.open(); //this.visible = true;
     this.cdr.markForCheck();
     const show = (attempt: number): void => {
       if (this.expandDialogForLog()) {
@@ -631,14 +647,15 @@ export class AiAssistant implements OnInit, OnDestroy {
         const tryOpen = (openAttempt: number): void => {
           if (this.logPanel) {
             this.logPanel.open(elements);
-          } else if (openAttempt < 40) {
-            setTimeout(() => tryOpen(openAttempt + 1), 100);
+          } else if (openAttempt < 20) {
+            setTimeout(() => tryOpen(openAttempt + 1), 150);
           }
         };
         tryOpen(0);
-      } else if (attempt < 60) {
-        // The dialog is not rendered yet (model list may still be loading) — retry.
-        setTimeout(() => expandAndShow(attempt + 1), 100);
+      } else if (attempt < 30) {
+        // The dialog is not rendered yet (model list may still be loading) — retry, but keep the
+        // retry window short so this never floods the main thread while the dialog is rendering.
+        setTimeout(() => expandAndShow(attempt + 1), 150);
       }
     };
     // Give the dialog a moment to render (and its open animation to settle) before measuring, so the
@@ -846,24 +863,70 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   // #region Template helpers
   onVisibleChange(v: boolean): void {
-    this.visible = v;
-    this.dialogDismissed = !v;
-    if (!v) {
-      // The change-log side panel starts folded whenever the dialog is (re)opened.
-      this.showLog = false;
-      this.dialogWidth = this.foldedDialogWidth;
+    if (v) {
+      // PrimeNG (re)showed the dialog — ensure it is not marked hidden and its CSS is restored.
+      this.dialogHidden = false;
+      //this.visible = true;
+      this.dialogDismissed = false;
+      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (el) {
+        el.style.display = "";
+        el.style.pointerEvents = "";
+        const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
+        if (mask) {
+          mask.style.display = "";
+          mask.style.pointerEvents = "";
+        }
+      }
+    } else {
+      // Native close (Escape / close button / mask click). Keep the dialog MOUNTED (user-preferred
+      // approach) so a subsequent open is a fast, pure CSS flip — do NOT set visible=false, which
+      // would make PrimeNG remove the dialog from the DOM and force a full host re-bootstrap (the
+      // 2-3s reopen). Hide it purely via CSS instead.
+      this.dialogHidden = true;
+      this.dialogDismissed = true;
+      // Keep visible=true so PrimeNG never destroys the element.
+      //this.visible = true;
+      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (el) {
+        el.style.display = "none";
+        el.style.pointerEvents = "none";
+        const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
+        if (mask) {
+          mask.style.display = "none";
+          mask.style.pointerEvents = "none";
+        }
+      }
+      // Preserve the change-log panel state across a native close (Escape / close button / mask
+      // click) so it reopens exactly as the user left it — the same behavior as the ALT+A close()
+      // path. Only reset the dialog width when the log was NOT open (it was already folded then).
+      if (!this.showLog) {
+        this.dialogWidth = this.foldedDialogWidth;
+      }
       // Remember the maximized state so a dialog closed while maximized reopens maximized.
       this.persistMaximized();
-      // Ensure PrimeNG's modal mask is removed when the dialog closes (it can otherwise linger and
-      // leave the background darkened).
-      setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
+      // The dialog is kept MOUNTED (hidden via display:none), and PrimeNG nests the dialog inside its
+      // mask — so removing the mask here would destroy the kept-mounted dialog. Only remove a mask
+      // that is genuinely orphaned (no mounted dialog underneath it).
+      setTimeout(() => {
+        if (!document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`)) {
+          this.removeOverlayMask(".cb-ai-assistant-mask");
+        }
+        if (!document.querySelector(".cb-prompt-manager-dialog")) {
+          this.removeOverlayMask(".cb-prompt-manager-mask");
+        }
+      }, 0);
     }
     this.cdr.markForCheck();
   }
 
   /** Restores the remembered dialog position/size once it has rendered (best effort — see ngOnInit). */
   onDialogShow(): void {
-    console.log("[AICodBiAssistant] onDialogShow fired", { showLog: this.showLog, dialogWidth: this.dialogWidth });
+    const showElapsed = this.lastShowRequestedAt ? performance.now() - this.lastShowRequestedAt : -1;
+    console.log(`[AICodBiAssistant] onDialogShow fired after ${Math.round(showElapsed)}ms`, {
+      showLog: this.showLog,
+      dialogWidth: this.dialogWidth,
+    });
     const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
     if (el) {
       // A maximized dialog fills the viewport — never reset its width.
@@ -1096,21 +1159,50 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   // #region Open / close
   private open(): void {
+    // Reopen-fast FIRST: if the dialog element is still mounted (kept hidden via display:none on
+    // close), restore its display/pointer-events so it shows instantly — no Angular re-bootstrap, no
+    // PrimeNG re-create. This MUST run before the re-entry guard below, which would otherwise treat
+    // the mounted-but-hidden dialog as "already visible" and return without ever showing it again.
+    const openEl = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+    if (openEl) {
+      openEl.style.display = "";
+      openEl.style.pointerEvents = "";
+      const openMask = openEl.closest(".p-dialog-mask") as HTMLElement | null;
+      if (openMask) {
+        openMask.style.display = "";
+        openMask.style.pointerEvents = "";
+      }
+      console.log("[AICodBiAssistant] reopen: dialog element ALREADY mounted — restoring display");
+      this.dialogHidden = false;
+      this.dialogDismissed = false;
+      this.lastOpenedAt = Date.now();
+      this.lastShowRequestedAt = performance.now();
+      this.forceAssistantOnScreen();
+      this.restoreMaximized();
+      this.cdr.markForCheck();
+      setTimeout(() => this.updateFooterLayout(), 300);
+      return;
+    }
+
     // A genuinely rendered, visible dialog ignores re-entry — the opening poll in
     // AICodBiAssistantDialog.ts can re-dispatch the open event while the dialog is still rendering.
     // Only when `visible` has been true for a long time with NO dialog rendered (a stuck state, e.g.
-    // caused by the former delayed mask-cleanup race) is the state reset, so the next open event (a
-    // poll tick or the next ALT+A) can render the dialog afresh — otherwise it could never appear
-    // again until a page reload.
+    // caused by a dialog element destroyed externally while the state still says visible) is the
+    // state reset, so the next open event (a poll tick or the next ALT+A) can render the dialog
+    // afresh — otherwise it could never appear again until a page reload.
     if (this.visible) {
-      if (document.querySelector(".cb-ai-assistant-dialog") || Date.now() - this.lastOpenedAt < 1500) {
+      if (Date.now() - this.lastOpenedAt < 1500) {
         return;
       }
+      // Stuck state: reset visible and fall through to the fresh-open below, so the CURRENT open
+      // renders the dialog (no need to wait for another poll tick). (close() must NOT be used here
+      // — it keeps visible=true, which would leave the dialog stuck closed.)
       this.visible = false;
+      this.dialogHidden = true;
       this.dialogDismissed = false;
       this.cdr.markForCheck();
-      return;
     }
+    console.log("[AICodBiAssistant] reopen: dialog element NOT mounted — creating fresh");
     // Remember when the dialog was opened so openHandler's toggle only closes it on a deliberate
     // later ALT+A press, never on a stray second open event right after opening.
     this.lastOpenedAt = Date.now();
@@ -1133,43 +1225,19 @@ export class AiAssistant implements OnInit, OnDestroy {
     // dropdown simply populates when the list arrives. When the models are already loaded (page
     // load / prior open), restore the persisted change-log panel state right away as well.
     this.dialogDismissed = false;
+    this.lastShowRequestedAt = performance.now();
+    this.dialogHidden = false;
     this.visible = true;
     this.forceAssistantOnScreen();
     // Re-maximize the dialog when it was closed while maximized.
     this.restoreMaximized();
-    if (this.models.length > 0) {
-      this.restoreLogOpenState();
-    }
+    // NOTE: deliberately NOT auto-expanding the change-log panel here (no restoreLogOpenState on the
+    // manual ALT+A path). Auto-expanding it runs expandAndUnfoldLog, which retry-polled the dialog
+    // and flooded the main thread — that is what kept delaying a subsequent manual reopen by
+    // seconds. The change-log auto-open remains only on the inference-driven auto-popup paths
+    // (loadModelsAndOpen / sensitive-element popups), where it is needed to surface results.
     this.cdr.markForCheck();
 
-    // DIAGNOSTIC: log the dialog's real geometry/style shortly after opening — reveals an off-screen
-    // position or a leftover PrimeNG centering transform. Remove once the off-screen issue is fixed.
-    setTimeout(() => {
-      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
-      if (!el) {
-        console.log("[AICodBiAssistant] open diagnostic: dialog element NOT found after 250ms");
-        return;
-      }
-      const r = el.getBoundingClientRect();
-      const cs = getComputedStyle(el);
-      const chain: string[] = [];
-      let node: HTMLElement | null = el;
-      while (node) {
-        const t = getComputedStyle(node).transform;
-        const cls =
-          typeof node.className === "string" && node.className
-            ? "." + node.className.trim().split(/\s+/).join(".")
-            : "";
-        chain.push(
-          `${node.tagName.toLowerCase()}${node.id ? "#" + node.id : ""}${cls} transform=${t === "none" ? "none" : t}`,
-        );
-        node = node.parentElement;
-      }
-      console.log(
-        `[AICodBiAssistant] open diagnostic: rect=(${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}) vw=${window.innerWidth} vh=${window.innerHeight} position=${cs.position} inlineTransform=${el.style.transform || "none"} computedTransform=${cs.transform} left=${cs.left} top=${cs.top}`,
-      );
-      console.log(`[AICodBiAssistant] open diagnostic chain:\n  ` + chain.join("\n  "));
-    }, 250);
     // Keep the footer (switches vs buttons) centered when it wraps onto two lines.
     setTimeout(() => this.updateFooterLayout(), 300);
 
@@ -1246,6 +1314,9 @@ export class AiAssistant implements OnInit, OnDestroy {
   }
 
   private loadModelsAndOpen(): void {
+    if (this.models.length === 0) {
+      this.restoreCachedModels();
+    }
     if (this.models.length > 0) {
       this.selectedModel = this.loadModelCookie() ?? this.models[0]?.id ?? null;
       // Do not re-open the dialog when the user dismissed it while the request was in flight.
@@ -1273,6 +1344,7 @@ export class AiAssistant implements OnInit, OnDestroy {
         } else {
           const list = response as AiModel[];
           this.models = list;
+          this.cacheModels();
           const saved = this.loadModelCookie();
           this.selectedModel = saved && list.some((m) => m.id === saved) ? saved : (list[0]?.id ?? null);
         }
@@ -1301,10 +1373,44 @@ export class AiAssistant implements OnInit, OnDestroy {
     });
   }
 
+  /** Restores the AI model list from sessionStorage when present (covers the Angular host being
+   *  re-created on reopen), so a reopen does not wait on the models AJAX. Returns true on restore. */
+  private restoreCachedModels(): boolean {
+    if (this.models.length > 0) return true;
+    try {
+      const raw = sessionStorage.getItem(AiAssistant.MODELS_CACHE_KEY);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return false;
+      const list = parsed.filter(
+        (m): m is AiModel => !!m && typeof m === "object" && typeof (m as { id?: unknown }).id === "string",
+      );
+      if (list.length === 0) return false;
+      this.models = list;
+      const saved = this.loadModelCookie();
+      this.selectedModel = saved && list.some((m) => m.id === saved) ? saved : (list[0]?.id ?? null);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Saves the loaded AI model list to sessionStorage for the next host bootstrap. */
+  private cacheModels(): void {
+    try {
+      sessionStorage.setItem(AiAssistant.MODELS_CACHE_KEY, JSON.stringify(this.models));
+    } catch {
+      // ignore storage errors
+    }
+  }
+
   /** Ensures the AI models are loaded and a model is selected, WITHOUT opening the assistant dialog
    *  (used on page load / after a workflow-triggered reload so the restored chat can continue
    *  immediately). Invokes [onLoaded] once the models are available (or the load failed). */
   private ensureModelLoaded(onLoaded?: () => void): void {
+    if (!this.selectedModel && this.models.length === 0) {
+      this.restoreCachedModels();
+    }
     if (this.selectedModel) {
       onLoaded?.();
       return;
@@ -1322,6 +1428,7 @@ export class AiAssistant implements OnInit, OnDestroy {
         if (Array.isArray(response)) {
           const list = response as AiModel[];
           this.models = list;
+          this.cacheModels();
           const saved = this.loadModelCookie();
           this.selectedModel = saved && list.some((m) => m.id === saved) ? saved : (list[0]?.id ?? null);
         }
@@ -1335,14 +1442,39 @@ export class AiAssistant implements OnInit, OnDestroy {
   }
 
   close(): void {
-    this.visible = false;
+    // Keep the dialog MOUNTED: DO NOT set `visible=false` — that is what makes PrimeNG remove the
+    // dialog from the DOM, which then triggers the host re-bootstrap/re-mount on the next open
+    // (the 2-3s reopening). Instead keep `visible=true` and hide the element purely via CSS
+    // (display:none / pointer-events:none), so a reopen is a fast, pure CSS flip.
+    this.dialogHidden = true;
     this.dialogDismissed = true;
+    const closeEl = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+    if (closeEl) {
+      closeEl.style.display = "none";
+      closeEl.style.pointerEvents = "none";
+      const closeMask = closeEl.closest(".p-dialog-mask") as HTMLElement | null;
+      if (closeMask) {
+        closeMask.style.display = "none";
+        closeMask.style.pointerEvents = "none";
+      }
+      console.log("[AICodBiAssistant] close: hid dialog via display:none (kept mounted)");
+    } else {
+      console.log("[AICodBiAssistant] close: dialog element already removed by PrimeNG");
+    }
     // Remember the maximized state so a dialog closed while maximized reopens maximized.
     this.persistMaximized();
     this.cdr.markForCheck();
-    // Ensure PrimeNG's modal mask is removed when the dialog closes (it can otherwise linger and
-    // leave the background darkened, even though the page underneath is clickable).
-    setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
+    // The dialog is kept MOUNTED (hidden via display:none), and PrimeNG nests the dialog inside its
+    // mask — so removing the mask here would destroy the dialog we just kept mounted. Only remove a
+    // mask that is genuinely orphaned (no mounted dialog underneath it).
+    setTimeout(() => {
+      if (!document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`)) {
+        this.removeOverlayMask(".cb-ai-assistant-mask");
+      }
+      if (!document.querySelector(".cb-prompt-manager-dialog")) {
+        this.removeOverlayMask(".cb-prompt-manager-mask");
+      }
+    }, 0);
   }
 
   /** Forces the assistant dialog back fully inside the viewport shortly after it opens (guards
@@ -1636,8 +1768,15 @@ export class AiAssistant implements OnInit, OnDestroy {
   copyClarificationQuestion(q: ClarificationQuestion): void {
     const text = this.formatQuestionForEmail(q);
     const done = (): void => {
+      this.clarificationCopiedQuestionId = q.id;
       this.showToast("Question copied to clipboard");
       this.cdr.markForCheck();
+      setTimeout(() => {
+        if (this.clarificationCopiedQuestionId === q.id) {
+          this.clarificationCopiedQuestionId = null;
+          this.cdr.markForCheck();
+        }
+      }, 1600);
     };
     if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
       navigator.clipboard
@@ -1657,8 +1796,13 @@ export class AiAssistant implements OnInit, OnDestroy {
     const text = this.formatAllQuestionsForEmail();
     if (!text) return;
     const done = (): void => {
+      this.clarificationCopiedAll = true;
       this.showToast("All questions copied to clipboard", "success");
       this.cdr.markForCheck();
+      setTimeout(() => {
+        this.clarificationCopiedAll = false;
+        this.cdr.markForCheck();
+      }, 1600);
     };
     if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
       navigator.clipboard
@@ -1903,6 +2047,21 @@ export class AiAssistant implements OnInit, OnDestroy {
       (p) => (this.chatPosition = p),
     );
     setTimeout(() => applyDialogPosition(AiAssistant.CHAT_DIALOG_STYLE_CLASS, this.chatPosition), 0);
+    // When the chat is opened from a prompt question the main assistant dialog closes and the
+    // masks are removed right after, which re-renders the chat dialog and can wipe a just-applied
+    // saved size/position before it has laid out. Re-apply the saved position once the dialog is
+    // actually visible so it is restored even on that late-render path.
+    const reapply = (attempt: number): void => {
+      const el = document.querySelector(`.${AiAssistant.CHAT_DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (el && this.chatVisible) {
+        if (!el.classList.contains("p-dialog-maximized")) {
+          applyDialogPosition(AiAssistant.CHAT_DIALOG_STYLE_CLASS, this.chatPosition);
+        }
+        return;
+      }
+      if (attempt < 10) setTimeout(() => reapply(attempt + 1), 150);
+    };
+    setTimeout(() => reapply(0), 250);
     // Re-maximize the chat popup when it was closed while maximized.
     this.restoreChatMaximized();
     // Force the chat dialog (and its mask) above the Formcycle designer: the designer's own
@@ -2918,12 +3077,17 @@ export class AiAssistant implements OnInit, OnDestroy {
                 cpd2.setStandardsValue(stdVal);
               }
             }
-            this.visible = false;
+            this.close(); //this.visible = false;
             this.cdr.markForCheck();
             // Form-only flow has no page reload, so PrimeNG's modal mask would otherwise linger and
-            // keep the background darkened. Remove it right after the dialog hides (the log popup
-            // below re-opens the dialog with its own mask when sensitive elements were used).
-            setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
+            // keep the background darkened. close() already hides the mask via display:none (the
+            // dialog is kept mounted), so only strip a mask that is genuinely orphaned — removing a
+            // mounted mask would destroy the dialog and force a slow fresh recreate on the next open.
+            setTimeout(() => {
+              if (!document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`)) {
+                this.removeOverlayMask(".cb-ai-assistant-mask");
+              }
+            }, 0);
             // Automatic popup: after the form changes are applied (assistant closed), unfold the
             // change-log side panel again if the last inference used sensitive elements that are not
             // marked as checked yet, or generated destructive SQL that was blocked. openLog
@@ -2956,8 +3120,14 @@ export class AiAssistant implements OnInit, OnDestroy {
         } else if (hasChat) {
           // Answer-only run: close the main assistant dialog so the chat popup with the answer is
           // clearly visible and becomes the focus (the popup was opened above).
-          this.visible = false;
-          setTimeout(() => this.removeOverlayMask(".cb-ai-assistant-mask"), 0);
+          this.close(); //this.visible = false;
+          // close() already hides the mask via display:none (dialog kept mounted); only strip a mask
+          // that is genuinely orphaned so a later reopen stays a fast CSS flip.
+          setTimeout(() => {
+            if (!document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`)) {
+              this.removeOverlayMask(".cb-ai-assistant-mask");
+            }
+          }, 0);
         } else {
           this.setError("Unexpected response format.");
         }

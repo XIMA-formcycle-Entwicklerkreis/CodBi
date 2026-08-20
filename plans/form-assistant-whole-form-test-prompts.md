@@ -119,7 +119,14 @@ XUpload + Media.Image.Cropper, XCaptcha, HTML.SETAttribute, Print.Remove, Sys.Lo
 > directory; ZIP/city/street/house number should autofill with German autocomplete. The "Place of
 > birth" field should be hidden when printing, and the "E-mail" field gets a tooltip "Required
 > field". Additionally log the AI text for "How will the weather be tomorrow?" to the console.
+**Verify:**
+- [ ] `fsBKDaten` fieldset with the canonical IDs (`tfAntragstellerVorname`, `tfAntragstellerName`, `tfAntragstellerGeburtsdatum`, `tfAntragstellerGeburtsort`, `tfAntragstellerPLZ`, `tfAntragstellerOrt`, `tfAntragstellerEmail`, `tfAntragstellerTelefon`); `fsBKOrgDaten` with ELSTER-only fields (`tfOrgName`, `tfOrgRegisterart`, `selOrgPersTyp`, `BPK2`, `TrustLevel`, …).
+- [ ] XBsLogin with `bs_auth_ref`; XSignature; XUpload with `data-cb-func="Media.Image.Cropper"`; XCaptcha.
+- [ ] `CodBi_OpenPLZ_AC_SET_PLZ/Locality/Street/BuildingNumber` on the right fields; `CodBi_LDAP_AC_*` where LDAP was requested.
+- [ ] `data-cb-func="Print.Remove"` on the birth-place field; `HTML.SETAttribute` (Name `title`, ToSet `Pflichtfeld`) on `tfAntragstellerEmail`.
+- [ ] Invisible XSpan with `data-cb-Data="SYS.Log.Console > AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;;"`.
 
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS02. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
 d
 ### FS03 — Feedback form with AI chat, OCR and data-table (AI + media + DQ)
 
@@ -146,12 +153,18 @@ JSON.SET, DQ.Table.View, Matomo.Tracking, HTML.CSS, XRating, XMap.
 > Enable Matomo tracking for the form, add custom CSS for red headings and place an interactive map.
 
 **Verify:**
-- [ ] AI.LLAMA.CHAT on the new container with the `AI_LLAMA_CHAT_*` sub-elements (Input/Send/Stop/…).
-- [ ] AI.OCR on `fdDatei` with `Field=".tfExtractedText"` (+ Mode required); target field `tfExtractedText` exists.
-- [ ] XRating (5 stars); HTML.Input.REGEX: `data-cb-keyexpression="[^a-z]"`, `data-cb-expression="^[^a-z]*$"` (adjust to the requested rule).
-- [ ] Hidden field with `data-cb-func="JSON.SET"` + expression over `tfVorname`/`tfNachname`.
-- [ ] DQ.Table.View: `data-cb-columns="Alter,Name,Details"`, `data-cb-dataquery="HolaQuery"`, `jsonFlag` on Details, `excludecolumns` for Details-not-exported, Excel export enabled.
-- [ ] Matomo.Tracking (`SiteID` — ask if missing), HTML.CSS with the CSS text, XMap (Leaflet).
+- [ ] AI.LLAMA.CHAT: one XContainer wrapper (fullwidth="1") containing the chat display XTextArea (`data-cb-func="ai.llama.chat"`, readonly, autosize, `data-cb-MaxPixelSize="360000"`, `data-cb-maxchatwindowheight="1200"`) PLUS the `AI_LLAMA_CHAT_*` sub-elements: Input (XTextArea), Send (XButtonList, 1 button), Stop (separate XButtonList, 1 button), Upload (XUpload, `fileextension="image/*,.pdf"`), Thinking/Internet/Location/AlertOnFinish checkboxes, Mail container (MailForward XCheckbox + MailAddress XTextField). A bare/empty XContainer is a FAIL.
+- [ ] AI.OCR on `fdDatei`: `data-cb-func="AI.OCR"` with `data-cb-field=".tfExtractedText"` (dot-prefixed class selector on the target's name) AND `Mode` (default "print"); the receiver field `tfExtractedText` exists.
+- [ ] XRating (5 stars): an XRating element whose `options` array has exactly 5 entries (e.g. 5 star icons). HTML.Input.REGEX on the **Kundennummer** field (NOT on the rating): `data-cb-keyexpression="[^a-z]"`, `data-cb-expression="^[^a-z]*$"` when blocking — or the allow-list form `data-cb-keyexpression="[a-z]"`, `data-cb-expression="^[a-z]*$"` matching the requested rule. (The regex belongs on the masked text field, never on the rating widget.)
+- [ ] Hidden field with `data-cb-func="JSON.SET"` (invisible) + the derivation parameters (`data-cb-property`/`data-cb-toset` or expression) combining `tfVorname`/`tfNachname` into JSON. A hidden field WITHOUT `data-cb-func="JSON.SET"` is a FAIL.
+- [ ] DQ.Table.View: `data-cb-dataquery="HolaQuery"`; `data-cb-columns` in `label;datacolumn;jsonFlag[;width]` CSV form, e.g. `Alter;Alter,Name;Name,Details;Details;true` — NOT a plain comma list. "Details als JSON" ⇒ `Details;Details;true` (3rd flag true); "Details nicht exportieren" ⇒ `data-cb-excludecolumns="Details"`; "Excel-Export" ⇒ the export is actually reachable (`data-cb-exportbutton` set to an existing button selector, or a rendered export control) — a bare `DQ.Table.View` without any export trigger that still claims Excel export is a FAIL.
+- [ ] Matomo: since the request says "Aktiviere Matomo-Tracking für das Formular" WITHOUT a SiteID, expect `{"id":"Holistic.Matomo.Tracking","targets":[]}` in `_codbiApplicability.applied` (server uses the `Matomo_SiteID`/`Matomo_URL` config) — NOT a `data-cb-func="MATOMO.TRACKING"` element and NO URL question. Plus HTML.CSS with the CSS text (`h1 {color:red;}`), and XMap (Leaflet) for the interactive map.
+
+**Known trap — AI.LLAMA.CHAT sub-elements & hidden JSON field are MANDATORY (2026-08-19):**
+The AI.LLAMA.CHAT widget must include the Upload `fileextension="image/*,.pdf"` and the Mail container (MailForward checkbox + MailAddress field) in EVERY run — omitting them is a FAIL even when the rest of the chat is present. The JSON.SET hidden field must be `invisible="1"` AND carry its derivation params (`data-cb-path` naming the source fields from the request + `data-cb-property`/`data-cb-toset`); a JSON.SET field left visible or without derivation is a FAIL.
+
+**Known trap — clarification must NOT ask for existing fields / technical IDs (2026-08-19):**
+The clarification round must never ask "Existieren die Felder … bereits?" / "do the fields … already exist?" (existing elements are always provided in the form data — `tfVorname`/`tfNachname`/`fdDatei`/`tfNachricht` exist in the shared test form and must be REUSED), and never ask "Wie soll das technische Feld-ID heißen?" / for a field's technical name. New elements get auto-generated `name`s (e.g. a "Kundennummer" masked field → `tfKundenummer`, the JSON hidden field → e.g. `tfVornameNachnameJSON`). Placements default to the current page's main container; DB column identifiers are never confirmed with the user. The ONLY location question that is acceptable is the interactive map's start location/coordinates when the request does not name one (e.g. "Ansbach") — a provider (OpenStreetMap) and the star count (5) are decided automatically. The AI also must NOT place a placeholder span for the AI chat, must keep the chat wrapper `fullwidth="1"`, must give an XRating for "5 Sterne" an `options` array of exactly 5 entries, and must emit a `data-cb-func="HTML.CSS"` element with `data-cb-css="h1 {color:red;}"` for the red headings instead of applying an invented CSS class.
 
 **Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS03. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
 

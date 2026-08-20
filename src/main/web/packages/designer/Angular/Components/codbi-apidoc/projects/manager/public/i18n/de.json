@@ -100,6 +100,8 @@
   "pm.filter.inactive": "Inaktiv",
   "pm.filter.inactive.tip": "Nur inaktive Prompts anzeigen",
   "pm.filterPlaceholder": "Prompts filtern...",
+  "pm.searchText": "Text",
+  "pm.searchText.tip": "Auch im Prompt-Text suchen (Pre / Main / Post)",
   "pm.tree.inactive.tip": "Inaktiv",
   "pm.tree.partial.tip": "Pre-/Post-Prompt deaktiviert",
   "pm.tree.add.tip": "Neuen Prompt zu dieser Kategorie hinzufügen",

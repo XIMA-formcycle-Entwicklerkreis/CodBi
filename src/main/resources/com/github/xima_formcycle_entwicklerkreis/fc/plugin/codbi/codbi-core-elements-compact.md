@@ -2,15 +2,26 @@
 
 Element-only reference: what each functionality, element placeholder, and standard class does.
 
-REQUIRED VALUES: Some elements need parameter values or global variables to be configured. Whenever a value is genuinely required and cannot be derived from the user's request, ASK the user for it instead of guessing or inventing one (e.g. the CSS text for HTML.CSS, the regex for HTML.Input.REGEX, the attribute + value for HTML.SETAttribute, the text for HTML.Text.Injector, the tracking ID for Matomo.Tracking, or the global variable value behind a standard configuration).
+REQUIRED VALUES: Some elements need parameter values or global variables to be configured. Whenever a value is genuinely required and cannot be derived from the user's request, ASK the user for it instead of guessing or inventing one (e.g. the CSS text for HTML.CSS, the regex for HTML.Input.REGEX only when the allowed/blocked characters are NOT described in the request, the attribute + value for HTML.SETAttribute, the text for HTML.Text.Injector, the tracking ID for Matomo.Tracking, or the global variable value behind a standard configuration).
+
+EXISTING FORM ELEMENTS: the current form's existing elements (all items with their `name`s) are ALWAYS provided with the request. NEVER ask the user whether a referenced field/container already exists (e.g. "Existieren die Felder … bereits?" / "bereits vorhanden oder neu anlegen?") — determine it from the provided form data: name present → reuse/modify it (no duplicate, no question); name absent → create it as requested (e.g. a hidden field), without asking.
 
 ## Functionalities
 
 ### AI.LLAMA.CHAT
-Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).
+Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings). USE whenever the user asks for an "AI chat" / "KI-Chat" / chatbot / "KI-Assistent" - NEVER just create an empty container and NEVER emit a placeholder span / "Chat-Platzhalter" element. Build the FULL widget as a set of elements inside one XContainer wrapper whose `fullwidth` property MUST be `"1"` (never `"0"`):
+- Chat display: XTextArea (data-cb-func="ai.llama.chat", readonly, autosize, no label) with data-cb-MaxPixelSize="360000" and data-cb-maxchatwindowheight="1200".
+- User input: XTextArea (cssclasses=["AI_LLAMA_CHAT_Input"], fullwidth, autosize).
+- Send button: XButtonList with SINGLE button (cssclasses=["AI_LLAMA_CHAT_Send"]).
+- Stop button: SEPARATE XButtonList with SINGLE button (cssclasses=["AI_LLAMA_CHAT_Stop"]).
+- Upload: XUpload (cssclasses=["AI_LLAMA_CHAT_Upload"], fileextension="image/*,.pdf").
+- Checkboxes: XCheckbox for Thinking, Internet, Location, AlertOnFinish (cssclasses=["AI_LLAMA_CHAT_Thinking"/"AI_LLAMA_CHAT_Internet"/"AI_LLAMA_CHAT_Location"/"AI_LLAMA_CHAT_AlertOnFinish"]).
+- Mail group: a child XContainer with XCheckbox (cssclasses=["AI_LLAMA_CHAT_MailForward"]) + XTextField (cssclasses=["AI_LLAMA_CHAT_MailAddress"], datatype="email").
+When the request says to embed an "AI chat"/"KI-Chat"/chatbot, ALWAYS create ALL of these sub-elements inside the container — including the Upload `fileextension="image/*,.pdf"` attribute and the Mail group (the child XContainer with the MailForward XCheckbox + MailAddress XTextField). NONE of them are optional; omitting the upload's fileextension, the Mail group, or any checkbox is a FAIL. A bare XContainer or a placeholder span is NOT a chat. Do not defer the chat to a later step; build it now.
 
 ### AI.OCR
-Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
+Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR. USE whenever the request asks to extract/text-recognize the content of an uploaded image/PDF into a text field (e.g. "per OCR den Text extrahieren und in ein Feld schreiben"). Set data-cb-func="AI.OCR" on the XUpload AND link the receiver field: data-cb-field = dot-prefixed class selector of the target field's `name` (e.g. data-cb-field=".tfExtractedText"). Also set the Mode parameter (data-cb-mode="print" or "verify") — never emit AI.OCR without Mode and without the receiver field link.
+REQUIRES: the receiver field (data-cb-field) and Mode.
 
 ### Date.Frame
 For a date range (start/minimum + end/maximum date, e.g. 'Kursbeginn'/'Kursende', 'Start'/'End', 'Von'/'Bis'). A two-field date RANGE is ALWAYS Date.Frame — do NOT model a range as a mere Date.Min. PREFER the standard CSS classes: apply CodBi_DateFrame_N_Begin to the START date field AND CodBi_DateFrame_N_End to the END date field (SAME N — BOTH fields get their own class; there is NO combined CodBi_DateFrame_N_Begin_End class; these classes go ONLY on the two date XTextField fields, never on a container/fieldset). FALLBACK when the classes cannot be used: data-cb-func=date.frame on the BEGIN field only with data-cb-maxfield = dot-prefixed END field name (e.g. .tfKursende) — do NOT put the functionality on the end date element. A Date.Min may be ADDED to the start field, but the range itself still requires the Begin/End frame classes on BOTH fields.
@@ -27,15 +38,15 @@ Applicable on a XTextField of type 'date' to disallow weekend dates. NEVER apply
 Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms. PLACEMENT — the navigator must be reachable on EVERY page: create a SEPARATE XContainer (div) and place it inside the form's XHeader or XFooter when one exists; only when there is NO header/footer add it to EVERY page's elements array. NEVER place it on only one page.
 
 ### HTML.CSS
-Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
-REQUIRES: the CSS text to inject (ask the user if not provided).
+Applicable on ANY element to inject custom CSS text into the page (with optional placeholder replacements). USE whenever the request asks to style/color/skin the form (e.g. "eigenes CSS", "rote Überschriften", "red headings", "roter Hintergrund") — emit an element with data-cb-func="HTML.CSS" and data-cb-css set to the derived CSS snippet (e.g. "rote Überschriften" → data-cb-css="h1 {color:red;}"). NEVER merely invent/apply a CSS class name (e.g. "customRedHeading") instead of emitting the HTML.CSS functionality with the actual CSS text.
+REQUIRES: data-cb-css = the CSS text to inject. Derive it whenever the styling rule is described; ask the user only when the CSS cannot be derived.
 
 ### HTML.Input.Cleave
 Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
 
 ### HTML.Input.REGEX
-Applicable on a XTextField to validate, reformat, or RESTRICT input against a regular expression pattern. USE when the user asks to disallow/block certain characters (e.g. "darf die Zeichen e$% nicht enthalten") — apply data-cb-func="HTML.Input.REGEX" with the forbidden set as a negated character class (data-cb-keyexpression="[^e$%]" blocks the keystrokes, data-cb-expression="^[^e$%]*$" validates the whole value).
-REQUIRES: the regex pattern and the mode (validate / restrict / reformat) — ask the user when the pattern cannot be derived.
+Applicable on a XTextField to validate, reformat, or RESTRICT input against a regular expression pattern. USE when the user asks to disallow/block certain characters (e.g. "darf die Zeichen e$% nicht enthalten") — apply data-cb-func="HTML.Input.REGEX" with the forbidden set as a negated character class (data-cb-keyexpression="[^e$%]" blocks the keystrokes, data-cb-expression="^[^e$%]*$" validates the whole value). For an ALLOW-LIST rule ("nur die Zeichen a–z erlaubt" / "only allows a–z") use the allowed class WITHOUT negation: data-cb-keyexpression="[a-z]", data-cb-expression="^[a-z]*$".
+REQUIRES: the regex pattern and the mode (validate / restrict / reformat). DERIVE the pattern automatically whenever the user describes the allowed/blocked characters in words; ask the user only when the pattern cannot be derived.
 
 ### HTML.Input.TinyMCE
 MANDATORY — it is INVALID to apply HTML.Input.TinyMCE with only data-cb-func and WITHOUT both data-cb-plugins and data-cb-toolbar; the editor would be unusable. Whenever you apply data-cb-func="HTML.Input.TinyMCE" to a XTextArea, ALWAYS also emit data-cb-plugins and data-cb-toolbar. USE for a "rich text editor", "WYSIWYG", or rich/formatted text entry on a multi-line text field. For a message/story: data-cb-plugins="advlist, autolink, lists, link, image, media, charmap" and data-cb-toolbar="undo redo | blocks | bold italic underline | bullist numlist | link image media" (do NOT include the raw-HTML 'code' option unless the field is explicitly for HTML source). Full example:
@@ -57,8 +68,8 @@ Applicable on any element to map object properties to named placeholders in a te
 REQUIRES: the object source and the text template with placeholders — ask the user when missing.
 
 ### JSON.SET
-Applicable on a hidden field to store a JSON-serialized value derived from another element.
-REQUIRES: the JSON expression / derivation rule — ask the user when it cannot be derived.
+Applicable on a hidden field to store a JSON-serialized value derived from another element. USE when the request asks to store/combine the values of other fields as JSON in a hidden field (e.g. "verstecktes Feld, das das JSON aus tfVorname/tfNachname speichert"). Apply data-cb-func="JSON.SET" to a hidden XTextField/XTextArea, set `invisible="1"` (a hidden JSON field MUST be invisible), and set the derivation parameters (data-cb-property / data-cb-toset and data-cb-path naming the source fields, or the JSON expression) so it combines the referenced fields' values — use the source field names from the request (e.g. "JSON aus tfVorname/tfNachname" → data-cb-path="tfVorname,tfNachname"). A JSON.SET field MUST NOT be left without its derivation parameters.
+REQUIRES: the JSON expression / derivation rule (data-cb-property / data-cb-toset / data-cb-path) and the hidden (`invisible`) flag — derive them from the request; ask the user only when they cannot be derived.
 
 ### LDAP.Autocomplete.Set
 Applicable on form fields that should be auto-filled from a selected LDAP directory match.
@@ -69,6 +80,7 @@ Applicable on a text input that should autocomplete entries from an LDAP directo
 ### Matomo.Tracking
 Applicable on any form to add Matomo/Piwik analytics event tracking.
 REQUIRES: the Matomo site/tracking ID — ask the user when it is not derivable.
+Matomo server URL: NEVER ask the user for it. If the user's request specifies a URL, use that URL. Otherwise the URL is taken automatically from the server-side plugin configuration (Matomo_URL property) and must NOT be requested.
 
 ### Media.Image.Cropper
 Applicable on an XUpload field for images; adds an interactive crop dialog before upload. CRITICAL — apply to the XUpload whenever the request asks for an upload with a cropper ("Bild-Cropper", "with crop", "Upload-Feld für den Personalausweis mit Bild-Cropper"): set data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) on that XUpload. NEVER omit it.
@@ -106,8 +118,8 @@ Set data-cb-func="Sys.Log.Console" and data-cb-Data = "SYS.Log.Console > " follo
 CRITICAL — When the thing to log is an AI answer (e.g. "logge den KI-Text zu 'Wie wird das Wetter morgen?'"), use the AI.LLAMA.STD.QA EP as the content: data-cb-Data = "SYS.Log.Console > AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;;". The prefix is EXACTLY "SYS.Log.Console > " (dots — NEVER "SYS Log.Console"); keep the EP's trailing "; true;;;;;;".
 
 ### DQ.Table.View
-Applicable on a container element (e.g. XContainer/XContainerInvisible) to display the result of a Formcycle DataQuery in an injected HTML table and enable exporting it to Excel (.xlsx). USE whenever the user asks to show/view/display the data or the columns of a DataQuery/query/datasource as a table (e.g. "add a table that views the columns Alter, Name of HolaQuery", "zeige die Spalten Alter, Name der Abfrage HolaQuery als Tabelle") and/or export it to Excel — apply data-cb-func="DQ.Table.View" on the container. Use the DataQuery name given by the user AS-IS (do NOT ask whether it exists). If the user does not specify placement, create a NEW container on the first page — do NOT ask; show the columns as-is (no sorting/filtering unless requested). Columns are `label;datacolumn;jsonFlag[;width]` — setting the 3rd flag to `true`/`1` marks a column as containing JSON so its cells show a maximizable JSON viewer. The Excel export uses the SheetJS library bundled with the plugin and served from the plugin's Resource servlet.
-REQUIRES: the columns CSV (data-cb-columns) and the DataQuery name (data-cb-dataquery) — ask the user when missing. Cell content is centered by default; set data-cb-centered="false" to keep cells left-aligned. data-cb-excludecolumns (optional CSV of column names) omits those columns from the Excel-export only.
+Applicable on a container element (e.g. XContainer/XContainerInvisible) to display the result of a Formcycle DataQuery in an injected HTML table and enable exporting it to Excel (.xlsx). USE whenever the user asks to show/view/display the data or the columns of a DataQuery/query/datasource as a table (e.g. "add a table that views the columns Alter, Name of HolaQuery", "zeige die Spalten Alter, Name der Abfrage HolaQuery als Tabelle") and/or export it to Excel — apply data-cb-func="DQ.Table.View" on the container. Use the DataQuery name given by the user AS-IS (do NOT ask whether it exists). If the user does not specify placement, create a NEW container on the first page — do NOT ask; show the columns as-is (no sorting/filtering unless requested). Columns are `label;datacolumn;jsonFlag[;width]` (columns separated by `,`, each entry's parts by `;`) — set the 3rd flag to `true`/`1` to mark a JSON column so its cells show a maximizable JSON viewer, `false`/`0` for plain columns. The Excel export uses the SheetJS library bundled with the plugin and served from the plugin's Resource servlet.
+REQUIRES: the columns CSV (data-cb-columns) and the DataQuery name (data-cb-dataquery) — ask the user when missing. A JSON column in data-cb-columns is expressed as `label;datacolumn;true` (e.g. `Details;Details;true`). data-cb-excludecolumns (optional CSV of column names) omits those columns from the Excel-export only. When the user asks for an Excel EXport ("Excel-Export", "export to Excel"), make sure the export is actually available: the export button is only rendered when data-cb-exportbutton matches an existing element, so when no button element is referenced, set data-cb-exportbutton to a selector of a submit-like button on the form (or document that the table is exported via the auto-rendered control); do NOT emit an export request and then omit the parameter that makes the export reachable. Cell content is centered by default; set data-cb-centered="false" to keep cells left-aligned.
 
 ### Time.Frame
 Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.

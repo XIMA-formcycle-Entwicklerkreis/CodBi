@@ -1698,19 +1698,35 @@ class AIFormAssistant : IPluginServletAction {
       PluginServletActionRetVal(ServletResponse(EResponseType.JSON, json))
 
   /**
+   * Loads a prompt from the DB with a classpath `.md` fallback for when the database is
+   * unavailable. Returns `""` only when the prompt exists nowhere.
+   */
+  private fun loadFallbackPrompt(key: String): String {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em != null) {
+      try {
+        val db = PromptLoader.loadPrompt(em, key)
+        if (db != null) return PromptLoader.resolvePlaceholders(db)
+      } catch (e: Exception) {
+        logger.warn("[AIFormAssistant] Failed to load prompt '{}': {}", key, e.message)
+      } finally {
+        em.close()
+      }
+    }
+    return PromptLoader.loadPromptFromClasspath(key) ?: ""
+  }
+
+  /**
    * Builds the main system prompt by loading categorized sections from the database. Falls back to
-   * a minimal inline prompt if the DB is unavailable.
+   * the bundled `.md` prompt if the DB is unavailable.
    */
   private fun buildMainSystemPrompt(): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
-    if (em == null) return FALLBACK_FORM_SYSTEM_PROMPT
+    if (em == null) return loadFallbackPrompt("codbi.fallback_form_system")
     try {
       val categories =
           PromptLoader.loadCategory(em, "formcycle") + PromptLoader.loadCategory(em, "codbi")
-      val taskInstruction =
-          "You receive a partial form JSON (IPersistJson) and a natural language instruction. " +
-              "MODIFY the form according to the instruction and return the COMPLETE modified form JSON. " +
-              "Do NOT ask for more details — the user's instruction and the form data below are sufficient.\n\n"
+      val taskInstruction = loadFallbackPrompt("codbi.form_short_task_instruction")
       // Pass-1 uses ONLY the condensed references (element/widget names + purposes) plus the
       // general rules. The parameter-complete sections (codbi.standard_configurations /
       // codbi.functionalities / codbi.element_placeholders) are intentionally NOT included here:
@@ -1720,6 +1736,7 @@ class AIFormAssistant : IPluginServletAction {
       // the outcome (the AI requests details regardless).
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
+              "\n\n" +
               (categories["formcycle.general"] ?: "") +
               "\n" +
               "{{FORMCYCLE_WIDGETS_SECTION}}" +
@@ -1729,7 +1746,7 @@ class AIFormAssistant : IPluginServletAction {
               "{{CODBI_ELEMENTS_SECTION}}")
     } catch (e: Exception) {
       logger.warn("[AIFormAssistant] Failed to load prompts from DB", e)
-      return FALLBACK_FORM_SYSTEM_PROMPT
+      return loadFallbackPrompt("codbi.fallback_form_system")
     } finally {
       em?.close()
     }
@@ -1738,19 +1755,17 @@ class AIFormAssistant : IPluginServletAction {
   /** Loads the CodBi rethink (blind pass) prompt from the database. */
   private fun loadCodbiRethinkPrompt(): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
-    if (em == null) return FALLBACK_RETHINK_PROMPT
+    if (em == null) return loadFallbackPrompt("codbi.fallback_rethink")
     try {
       val categories = PromptLoader.loadCategory(em, "codbi")
       val fc = PromptLoader.loadCategory(em, "formcycle")
-      val taskInstruction =
-          "You receive a form to review for CodBi applicability. " +
-              "Review the form elements below and determine which CodBi functionalities apply. " +
-              "Return the form JSON with a _codbiApplicability field listing considered/applied/skipped items.\n\n"
+      val taskInstruction = loadFallbackPrompt("codbi.rethink_instruction")
       // The detailed standards/functionalities are included in the DB-driven
       // {{CODBI_FULL_SECTION}},
       // so only the general rules, the widgets reference, and the full section are sent here.
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
+              "\n\n" +
               (categories["codbi.general"] ?: "") +
               "\n" +
               (fc["formcycle.widgets"] ?: "") +
@@ -1758,7 +1773,7 @@ class AIFormAssistant : IPluginServletAction {
               "{{CODBI_FULL_SECTION}}")
     } catch (e: Exception) {
       logger.warn("[AIFormAssistant] Failed to load rethink prompt", e)
-      return FALLBACK_RETHINK_PROMPT
+      return loadFallbackPrompt("codbi.fallback_rethink")
     } finally {
       em?.close()
     }
@@ -1778,7 +1793,7 @@ class AIFormAssistant : IPluginServletAction {
       widgetIds: List<String> = emptyList()
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
-    if (em == null) return FALLBACK_APPLY_PROMPT
+    if (em == null) return loadFallbackPrompt("codbi.fallback_apply")
     try {
       val categories = PromptLoader.loadCategory(em, "codbi")
       // Only the cross-cutting general rules form the base — the detailed standard/functionality/
@@ -1804,7 +1819,7 @@ class AIFormAssistant : IPluginServletAction {
       return base + "\n\n" + codbiPart + "\n\n" + widgetPart
     } catch (e: Exception) {
       logger.warn("[AIFormAssistant] Failed to load apply prompt", e)
-      return FALLBACK_APPLY_PROMPT
+      return loadFallbackPrompt("codbi.fallback_apply")
     } finally {
       em?.close()
     }
@@ -1837,21 +1852,8 @@ class AIFormAssistant : IPluginServletAction {
   }
 
   companion object {
-    /** Fallback system prompt used when the database is unavailable. */
-    private const val FALLBACK_FORM_SYSTEM_PROMPT =
-        "You are a FORMCYCLE form structure assistant. " +
-            "You receive a partial IPersistJson object and a natural language instruction. " +
-            "Your ONLY output must be the same partial IPersistJson â€” modified according " +
-            "to the instruction â€” as a raw JSON object. No explanation, no markdown, no code fences. " +
-            "Every generated element MUST carry a meaningful, human-readable 'label' describing its " +
-            "purpose in the language of the user's request â€” never the generic value \"Label\" or \"Example\"."
-
-    private const val FALLBACK_RETHINK_PROMPT =
-        "You are a CodBi form element configurator. Review the form elements and apply " +
-            "relevant CodBi functionalities (data-cb-func, CSS classes)."
-
-    private const val FALLBACK_APPLY_PROMPT =
-        "You are a CodBi form element configurator. Apply the listed CodBi functionalities " +
-            "to the appropriate form elements with correct data-cb-* parameters."
+    // All prompt texts (including the DB-unavailable fallbacks) live in the bundled .md files (see
+    // prompts/index.json) and are loaded via PromptLoader with a classpath fallback — the backend
+    // itself contains no prompt text anymore.
   }
 }

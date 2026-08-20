@@ -92,6 +92,8 @@
   "pm.filter.inactive": "Inattivi",
   "pm.filter.inactive.tip": "Mostra solo i prompt inattivi",
   "pm.filterPlaceholder": "Filtra i prompt...",
+  "pm.searchText": "Testo",
+  "pm.searchText.tip": "Cerca anche nel testo del prompt (pre / principale / post)",
   "pm.tree.inactive.tip": "Inattivo",
   "pm.tree.partial.tip": "Pre/Post prompt disattivato",
   "pm.tree.add.tip": "Aggiungi un nuovo prompt a questa categoria",

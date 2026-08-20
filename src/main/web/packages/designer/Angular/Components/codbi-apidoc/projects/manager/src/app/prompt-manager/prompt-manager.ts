@@ -14,6 +14,7 @@ import { Button } from "primeng/button";
 import { Dialog } from "primeng/dialog";
 import { Message } from "primeng/message";
 import { InputText } from "primeng/inputtext";
+import { ToggleSwitch } from "primeng/toggleswitch";
 import { TreeModule } from "primeng/tree";
 import type { TreeNode } from "primeng/api";
 import { Textarea } from "primeng/textarea";
@@ -76,6 +77,7 @@ interface PromptExport {
     Dialog,
     Message,
     InputText,
+    ToggleSwitch,
     TreeModule,
     Textarea,
     Tooltip,
@@ -105,6 +107,9 @@ export class PromptManager implements OnInit, OnDestroy {
   /** Tree nodes (category → subcategory → item). */
   treeNodes: TreeNode[] = [];
 
+  /** Unfiltered tree nodes — the text search filters a copy of these. */
+  private masterTreeNodes: TreeNode[] = [];
+
   /** The selected tree node's data key (prompt_key). */
   selectedKey: string | null = null;
 
@@ -130,9 +135,18 @@ export class PromptManager implements OnInit, OnDestroy {
   /** View mode: "detailed" (codbi_ai_prompt) or "condensed" (codbi_compact_prompt). */
   viewMode: "detailed" | "condensed" = "detailed";
 
+  /** Search text for the tree filter (matches label + key). */
+  searchText = "";
+
+  /** When true, the tree search also matches inside the prompt text (pre/main/post). */
+  searchPromptText = localStorage.getItem("cb_pm_search_prompt_text") === "true";
+
   /** Storage key prefix for persisting pre/post active states in localStorage. */
   private static readonly LS_PRE = "cb_pm_pre_";
   private static readonly LS_POST = "cb_pm_post_";
+
+  /** Storage key for persisting the "search prompt text" switch in localStorage. */
+  private static readonly LS_SEARCH_PROMPT_TEXT = "cb_pm_search_prompt_text";
   // #endregion
 
   // #region Add Category dialog
@@ -336,7 +350,16 @@ export class PromptManager implements OnInit, OnDestroy {
     this.activeRecord = null;
     this.showAddCategoryDialog = false;
     this.showAddItemDialog = false;
+    // PrimeNG sometimes fails to remove a modal dialog's mask (known issue, e.g. when this dialog
+    // was opened on top of another modal like the Form Assistant). Remove the mask explicitly so
+    // the background never stays darkened after closing.
+    setTimeout(() => this.removeOverlayMask(".cb-prompt-manager-mask"), 0);
     this.cdr.markForCheck();
+  }
+
+  /** Defensively removes any leftover PrimeNG overlay mask matching [selector]. */
+  private removeOverlayMask(selector: string): void {
+    document.querySelectorAll<HTMLElement>(selector).forEach((el) => el.remove());
   }
 
   private loadPrompts(): void {
@@ -405,6 +428,60 @@ export class PromptManager implements OnInit, OnDestroy {
   toggleFilterMode(): void {
     this.buildTree();
     this.cdr.markForCheck();
+  }
+
+  /** Applies the current tree search text (and prompt-text toggle) to the displayed nodes. */
+  applySearchFilter(): void {
+    const q = this.searchText.trim().toLowerCase();
+    if (!q) {
+      this.treeNodes = this.masterTreeNodes;
+    } else {
+      this.treeNodes =
+        this.masterTreeNodes.map((n) => this.filterTreeNode(n, q)).filter((n): n is TreeNode => n != null) ?? [];
+    }
+    this.cdr.markForCheck();
+  }
+
+  /** Called when the tree search input changes. */
+  onSearchTextChange(value: string): void {
+    this.searchText = value ?? "";
+    this.applySearchFilter();
+  }
+
+  /** Called when the "search prompt text" switch is toggled. */
+  onSearchPromptToggle(value: boolean): void {
+    this.searchPromptText = value;
+    localStorage.setItem(PromptManager.LS_SEARCH_PROMPT_TEXT, String(value));
+    this.applySearchFilter();
+  }
+
+  /**
+   * Recursively keeps tree nodes whose label/key (and — when enabled — prompt text) matches the
+   * search query. A parent is kept when it has matching descendants; a matching node keeps its
+   * full subtree so a matching category reveals all of its children.
+   */
+  private filterTreeNode(node: TreeNode, q: string): TreeNode | null {
+    const children = (node.children ?? [])
+      .map((c) => this.filterTreeNode(c, q))
+      .filter((c): c is TreeNode => c != null);
+    if (children.length > 0) {
+      return { ...node, children };
+    }
+    return this.nodeMatches(node, q) ? node : null;
+  }
+
+  /** Returns true when a single tree node matches the search query. */
+  private nodeMatches(node: TreeNode, q: string): boolean {
+    const label = String(node.label ?? "").toLowerCase();
+    const data = String(node.data ?? "").toLowerCase();
+    if (label.includes(q) || data.includes(q)) return true;
+    if (this.searchPromptText) {
+      const any = node as TreeNode & { prePrompt?: string; promptText?: string; postPrompt?: string };
+      if ((any.prePrompt ?? "").toLowerCase().includes(q)) return true;
+      if ((any.promptText ?? "").toLowerCase().includes(q)) return true;
+      if ((any.postPrompt ?? "").toLowerCase().includes(q)) return true;
+    }
+    return false;
   }
 
   /**
@@ -549,6 +626,9 @@ export class PromptManager implements OnInit, OnDestroy {
       );
       this.treeNodes.push(catNode);
     }
+    // Keep an unfiltered copy so the text search can re-filter without rebuilding.
+    this.masterTreeNodes = this.treeNodes;
+    this.applySearchFilter();
   }
 
   private makeTreeNode(p: PromptRecord, category: string): TreeNode {
@@ -571,12 +651,19 @@ export class PromptManager implements OnInit, OnDestroy {
       isReadOnly: p.readOnly === true,
       // Token count of this prompt (pre + main + post).
       tokens: this.recordTokens(p),
+      // Prompt texts (pre / main / post) — exposed so the tree filter can also match inside them.
+      prePrompt: p.prePrompt ?? "",
+      promptText: p.promptText ?? "",
+      postPrompt: p.postPrompt ?? "",
     } as TreeNode & {
       isAbstract: boolean;
       isSystemApp: boolean;
       isUserApp: boolean;
       isReadOnly: boolean;
       tokens: number;
+      prePrompt: string;
+      promptText: string;
+      postPrompt: string;
     };
     return node;
   }

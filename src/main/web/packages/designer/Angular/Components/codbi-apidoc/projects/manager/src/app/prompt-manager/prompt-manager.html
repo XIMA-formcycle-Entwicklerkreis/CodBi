@@ -10,6 +10,7 @@
     [style]="{ width: '85vw', maxWidth: '1200px', maxHeight: '85vh' }"
     [closeOnEscape]="true"
     [baseZIndex]="2100"
+    maskStyleClass="cb-prompt-manager-mask"
     styleClass="cb-prompt-manager-dialog">
     <ng-template pTemplate="header">
         <div class="cb-pm-dialog-header">
@@ -90,12 +91,25 @@
                     {{ 'pm.legend.abstract' | transloco }}
                 </span>
             </div>
+            <!-- Tree search: label/key always; prompt text (pre/main/post) only when the switch is on -->
+            <div class="cb-pm-tree-search">
+                <span class="pi pi-search cb-pm-tree-search-icon"></span>
+                <input type="text" pInputText class="cb-pm-tree-search-input"
+                    [ngModel]="searchText"
+                    (ngModelChange)="onSearchTextChange($event)"
+                    [placeholder]="'pm.filterPlaceholder' | transloco"
+                    autocomplete="off" />
+                <div class="cb-pm-tree-search-switch"
+                    [title]="'pm.searchText.tip' | transloco">
+                    <span class="cb-pm-tree-search-switch-label">{{ 'pm.searchText' | transloco }}</span>
+                    <p-toggleswitch [ngModel]="searchPromptText"
+                        (ngModelChange)="onSearchPromptToggle($event)"></p-toggleswitch>
+                </div>
+            </div>
             <p-tree
                 [value]="treeNodes"
                 selectionMode="single"
                 (onNodeSelect)="onNodeSelect($event)"
-                [filter]="true"
-                [filterPlaceholder]="'pm.filterPlaceholder' | transloco"
                 scrollHeight="flex"
                 styleClass="cb-pm-tree">
                 <ng-template let-node pTemplate="item">

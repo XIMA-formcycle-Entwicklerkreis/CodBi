@@ -150,13 +150,47 @@
   overflow: hidden;
 }
 
-/* Keep the search input visible above the scrolling node list */
-.cb-pm-tree .p-iconfield {
+/* Tree search row (search input + "search prompt text" switch) — pinned above the node list */
+.cb-pm-tree-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  z-index: 5;
+  margin-bottom: 8px;
+  padding: 4px 6px;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
   background: #fff;
+}
+
+.cb-pm-tree-search-icon {
+  color: #999;
+  font-size: 0.85em;
+  flex-shrink: 0;
+}
+
+.cb-pm-tree-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  font-size: 0.85em;
+  color: #444;
+  background: transparent;
+}
+
+.cb-pm-tree-search-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.cb-pm-tree-search-switch-label {
+  font-size: 0.78em;
+  color: #777;
+  white-space: nowrap;
 }
 
 /* Scrollable tree body — only the nodes scroll (PrimeNG v20 wrapper) */

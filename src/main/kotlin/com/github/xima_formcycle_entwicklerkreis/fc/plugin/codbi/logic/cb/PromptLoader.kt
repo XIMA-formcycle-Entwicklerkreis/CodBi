@@ -31,6 +31,11 @@ internal object PromptLoader {
 
   /** Set externally from plugin properties (e.g., `AI_Prompt_Reseed=true`) to force a re-seed. */
   @Volatile internal var forceReseed = false
+  /**
+   * Set externally (e.g., `AI_FormAssistant_Prompt_Overwrite=true`) to OVERWRITE user-modified
+   * prompts with the bundled .md content on the next seed — not just the unmodified ones.
+   */
+  @Volatile internal var overwriteUserModified = false
 
   /** Keys successfully seeded/upserted during the current [seedIfNeeded] run. */
   private val seededKeys = mutableSetOf<String>()
@@ -59,6 +64,10 @@ internal object PromptLoader {
    */
   /** Plugin property name for forcing a prompt re-seed via Formcycle plugin config. */
   internal const val RESEED_PROPERTY = "AI_FormAssistant_Prompt_Reseed"
+  /**
+   * Plugin property name for forcing an OVERWRITE of user-modified prompts with the .md content.
+   */
+  internal const val OVERWRITE_PROPERTY = "AI_FormAssistant_Prompt_Overwrite"
 
   /** DB key for the formcycle general category. */
   const val KEY_FORMCYCLE_GENERAL = "formcycle.general"
@@ -238,20 +247,35 @@ internal object PromptLoader {
         }
     if (dbResult != null) return dbResult
 
-    // Not found in DB — try to auto-seed this specific key from classpath resources
+    // Not found in DB (or the DB is unavailable) — fall back to the bundled .jar .md file directly.
+    // This is the documented offline path: the plugin still works without a database.
     val entry = findIndexEntryByKey(key) ?: return null
     val content = loadResourceFile(entry) ?: return null
-    return try {
+    // Best-effort self-healing: auto-seed the DB so it is warm next time. A failure (DB
+    // unavailable) must never hide the classpath content.
+    try {
       val version = System.currentTimeMillis().toString()
       em.transaction.begin()
       upsertPrompt(em, key, content, version)
       em.transaction.commit()
       logger.info("[PromptLoader] Auto-seeded missing prompt '{}' from '{}'", key, entry)
-      content
     } catch (e: Exception) {
-      logger.warn("[PromptLoader] Failed to auto-seed prompt '{}': {}", key, e.message)
-      null
+      logger.warn(
+          "[PromptLoader] DB unavailable for prompt '{}' — serving from classpath: {}",
+          key,
+          e.message)
     }
+    return content
+  }
+
+  /**
+   * Loads a prompt's text directly from the bundled classpath `.md` resources (via `index.json`),
+   * WITHOUT touching the database. Used as the offline fallback whenever the DB is unavailable.
+   */
+  internal fun loadPromptFromClasspath(key: String): String? {
+    val (baseKey, file) = findIndexEntryForKey(key) ?: return null
+    val content = loadResourceFile(file) ?: return null
+    return seedContentMap(baseKey, content)[key]
   }
 
   /**
@@ -269,9 +293,10 @@ internal object PromptLoader {
    * Loads all prompts whose key starts with the given [prefix].
    *
    * If no prompts are found in the database for this prefix (e.g. during a hot deploy before the
-   * full [seedIfNeeded] has run), iterates [index.json] for all entries whose key starts with the
-   * prefix, loads them from the classpath `.md` files, and upserts each into the database before
-   * returning. This makes category loading self-healing on hot deploy.
+   * full [seedIfNeeded] has run, or when the database is unavailable), serves the bundled `.md`
+   * files from the classpath directly (via [index.json]) and — best-effort — upserts each into the
+   * database so it is warm next time. This makes category loading self-healing on hot deploy AND
+   * lets the plugin keep working without a database.
    *
    * Returns a map of prompt_key → prompt_text.
    */
@@ -283,45 +308,80 @@ internal object PromptLoader {
     val fromDb = queryCategory(em, prefix)
     if (fromDb.isNotEmpty()) return fromDb
 
-    // Not found in DB — try to auto-seed all entries matching this prefix from index.json
-    logger.info("[PromptLoader] Category '{}' not found in DB — attempting auto-seed", prefix)
-    val index = loadIndex() ?: return emptyMap()
-    val toUpsert = index.filter { entry -> (entry["key"] as? String)?.startsWith(prefix) == true }
-
-    if (toUpsert.isEmpty()) {
-      logger.warn("[PromptLoader] No index.json entries match prefix '{}'", prefix)
-      return emptyMap()
+    // Not found in DB (or the DB is unavailable) — serve the bundled .jar .md files directly.
+    val fromClasspath = loadCategoryFromClasspath(prefix)
+    if (fromClasspath.isNotEmpty()) {
+      logger.info(
+          "[PromptLoader] Category '{}' not found in DB — serving from bundled classpath .md files",
+          prefix)
+      // Best-effort self-healing: seed the DB so it is warm next time. A failure (DB unavailable)
+      // must never hide the classpath content.
+      try {
+        seedCategoryFromClasspath(em, prefix)
+      } catch (e: Exception) {
+        logger.warn(
+            "[PromptLoader] DB unavailable — serving category '{}' from classpath only: {}",
+            prefix,
+            e.message)
+      }
+      return fromClasspath
     }
+
+    logger.warn("[PromptLoader] No classpath .md files match prefix '{}'", prefix)
+    return emptyMap()
+  }
+
+  /**
+   * Reconstructs a category (prompt_key → text) directly from the bundled classpath `.md` files
+   * (via `index.json`) — WITHOUT touching the database. Sub-items are folded into their parent keys
+   * exactly like [queryCategory], so lookups such as `cb["codbi.functionalities"]` return the full
+   * content (parent + all sections).
+   */
+  private fun loadCategoryFromClasspath(prefix: String): Map<String, String> {
+    val index = loadIndex() ?: return emptyMap()
+    val flat = linkedMapOf<String, String>()
+    for (entry in index) {
+      val base = entry["key"] as? String ?: continue
+      if (!base.startsWith(prefix)) continue
+      val file = entry["file"] as? String ?: continue
+      val content = loadResourceFile(file) ?: continue
+      seedContentMap(base, content).forEach { (k, v) -> flat[k] = v }
+    }
+    if (flat.isEmpty()) return emptyMap()
+
+    // Fold sub-items into their parent keys — mirror queryCategory() semantics.
+    val allKeys = flat.keys
+    val folded = mutableMapOf<String, String>()
+    for ((key, text) in flat) {
+      val parentKey =
+          allKeys.filter { it != key && key.startsWith("$it.") }.maxByOrNull { it.length }
+      if (parentKey != null) {
+        folded[parentKey] = (folded[parentKey] ?: "") + "\n" + text
+      } else {
+        folded[key] = (folded[key] ?: "") + "\n" + text
+      }
+    }
+    return folded
+  }
+
+  /**
+   * Upserts every `index.json` entry matching [prefix] into the DB (self-healing on hot deploy).
+   */
+  private fun seedCategoryFromClasspath(em: EntityManager, prefix: String) {
+    val index = loadIndex() ?: return
+    val toUpsert = index.filter { entry -> (entry["key"] as? String)?.startsWith(prefix) == true }
+    if (toUpsert.isEmpty()) return
 
     val version = System.currentTimeMillis().toString()
-    var seeded = 0
-    try {
-      em.transaction.begin()
-      for (entry in toUpsert) {
-        val key = entry["key"] as? String ?: continue
-        val file = entry["file"] as? String ?: continue
-        val content = loadResourceFile(file)
-        if (content == null) {
-          logger.warn(
-              "[PromptLoader] Resource file '{}' not found — skipping auto-seed for '{}'",
-              file,
-              key)
-          continue
-        }
-        upsertPrompt(em, key, content, version)
-        seeded++
-        logger.info("[PromptLoader] Auto-seeded missing prompt '{}' from '{}'", key, file)
-      }
-      em.transaction.commit()
-    } catch (e: Exception) {
-      logger.warn("[PromptLoader] Failed to auto-seed category '{}': {}", prefix, e.message)
-      return emptyMap()
+    em.transaction.begin()
+    for (entry in toUpsert) {
+      val key = entry["key"] as? String ?: continue
+      val file = entry["file"] as? String ?: continue
+      val content = loadResourceFile(file) ?: continue
+      upsertPrompt(em, key, content, version)
+      logger.info("[PromptLoader] Auto-seeded missing prompt '{}' from '{}'", key, file)
     }
-
-    if (seeded == 0) return emptyMap()
-
-    // Re-query and return
-    return queryCategory(em, prefix)
+    em.transaction.commit()
   }
 
   /**
@@ -530,8 +590,10 @@ internal object PromptLoader {
 
     if (existing != null) {
       val (dbText, dbOriginal) = existing
-      // User has modified this prompt — skip it to preserve edits
-      if (dbText != null && dbOriginal != null && dbText != dbOriginal) {
+      // User has modified this prompt — skip it to preserve edits, UNLESS the admin explicitly
+      // requested an overwrite (AI_FormAssistant_Prompt_Overwrite=true), in which case the bundled
+      // .md content always wins.
+      if (dbText != null && dbOriginal != null && dbText != dbOriginal && !overwriteUserModified) {
         // A newer version is available when the bundled .md content differs from the stored
         // original snapshot. Surface this via the update_available flag so the Prompt Manager
         // can offer to load the new version ("Restore Original").

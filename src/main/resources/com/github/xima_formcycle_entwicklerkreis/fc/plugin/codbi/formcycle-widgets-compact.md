@@ -6,6 +6,8 @@ LABELS — Every interactive element you create MUST carry a meaningful 'label' 
 
 REQUIRED OPTIONS — Several widgets have mandatory options (e.g. XSelect needs its 'options' list, XButtonList needs its 'buttons' with the action, XUpload needs its source, a datatype-validated XTextField needs the matching datatype). Whenever a genuinely required widget option cannot be derived from the user's request, ASK the user for it instead of inventing it (e.g. if the user says "a dropdown for the city" but does not list the choices, ask which options to show).
 
+EXISTING FORM ELEMENTS — the current form's existing items (their `name`s) are always provided with the request. NEVER ask whether a referenced field/container already exists (e.g. "Existieren die Felder … bereits?" / "bereits vorhanden oder neu anlegen?") — reuse it if present, create it if absent, without asking.
+
 ## XTextField
 Single-line text input. Validation via the 'datatype' property (plain, date/dateDE, email, phone, url, time, number, money, plzDE, ipv4, regexp, ...).
 ## XTextArea
@@ -49,7 +51,7 @@ Filterable text field (DS Widget Plugin).
 ## XFormula
 Read-only calculation / formula field (XFormula Widget Plugin). Properties use the 'xformula_' prefix; the formula goes into xformula_value (NOT 'value'); formatting via xformula_unit/xformula_decimal/xformula_thousands/xformula_align. Computes from other fields' values only — not the page DOM.
 ## XRating
-Rating widget with configurable icons (XRating Widget Plugin).
+Rating widget with configurable icons (XRating Widget Plugin). The NUMBER of icons/stars is determined by the `options` array — each entry generates one clickable icon. A "5-star" / "5-Sterne" / "5 stars" rating MUST produce an `options` array of EXACTLY 5 entries (e.g. 5 star icons). NEVER create an XRating without an `options` array when the star/level count is requested.
 ## XCaptcha
 Captcha widget (CAPTCHA Plugin). CRITICAL — "Captcha-Schutz" / "with CAPTCHA" / "captcha protection" / "mit Captcha" → ALWAYS create an XCaptcha element (className="XCaptcha").
 ## XReCaptcha

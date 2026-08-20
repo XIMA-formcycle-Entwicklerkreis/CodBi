@@ -278,7 +278,7 @@ XFormula computes from OTHER FORM FIELDS' VALUES only: `xformula_value` is a Jav
 
 ## XRating
 
-Rating widget (XRating Widget Plugin). Visual rating with configurable icons (stars, thumbs, emoticons). The NUMBER of icons is determined by the 'options' array — each entry generates one clickable icon.
+Rating widget (XRating Widget Plugin). Visual rating with configurable icons (stars, thumbs, emoticons). The NUMBER of icons is determined by the 'options' array — each entry generates one clickable icon. A "5-star" / "5-Sterne" / "5 stars" / "Bewertung mit 5 Sternen" rating MUST produce an `options` array of EXACTLY 5 entries (5 star icons), e.g. `[{"icon":"ico-rating-star"},{"icon":"ico-rating-star"},{"icon":"ico-rating-star"},{"icon":"ico-rating-star"},{"icon":"ico-rating-star"}]`. NEVER emit an XRating without an `options` array when the star/level count is requested.
 
 Properties: xrating_icon_inactive (icon for unselected state — common values: "ico-rating-star", "ico-rating-star-outline", "ico-rating-thumb-up", "ico-rating-thumb-down", "ico-rating-emoticon-happy", "ico-rating-emoticon-sad", "ico-rating-emoticon-neutral"), xrating_icon_active (icon for selected state — same icon options), xrating_color_gradient ("true" to enable color gradient), xrating_color_start (start color in rgb() format, e.g. "rgb(181,45,58)" — CRITICAL: use rgb(R,G,B) format, NOT hex like "#b52d3a"), xrating_color_end (end color in rgb() format).
 

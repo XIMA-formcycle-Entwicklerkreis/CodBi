@@ -126,6 +126,11 @@ export function enableAICodBiAssistantDialog(): void {
  *
  * Also remembers the manual open so {@link isCodBiEnabled} can fall back to it while the
  * form-property model is stale (see below). */
+/** True once the assistant dialog has been rendered on screen at least once in this session, which
+ *  tells us the Angular `cb-ai-assistant` host is already bootstrapped and the models are loaded.
+ *  On such reopens the dialog opens fast, so the full-screen loading overlay is never needed. */
+let assistantOpenedOnce = false;
+
 function openAssistant(): void {
   // Remember this manual open — a strong signal that CodBi is enabled for the current form, used
   // by isCodBiEnabled() while the form-property model is stale right after an inference-driven
@@ -142,6 +147,14 @@ function openAssistant(): void {
     document.dispatchEvent(new CustomEvent("codbi:ai-assistant:open"));
     return;
   }
+
+  // DIAGNOSTIC: capture the ALT+A time and whether the Angular host was already mounted, to see
+  // where the reopen delay happens (dispatch -> component open() -> dialog element appears).
+  const openStart = performance.now();
+  const hostExisted = !!document.querySelector("cb-ai-assistant");
+  console.log(
+    `[CodBiAssistantDialog] ALT+A open at ${Math.round(openStart)}ms; host existed=${hostExisted} dialogEl=${!!document.querySelector(".cb-ai-assistant-dialog")}`,
+  );
 
   // Show a loading indicator (CodBi logo + animated ring) only after a longer grace period and only
   // while the dialog is still missing, so a fast / moderately slow open (bundle already loaded) never
@@ -162,7 +175,11 @@ function openAssistant(): void {
 
   const watchForDialog = (): void => {
     if (assistantDialogVisible()) {
+      assistantOpenedOnce = true;
       hideAssistantLoadingIndicator();
+      console.log(
+        `[CodBiAssistantDialog] dialog VISIBLE after ${Math.round(performance.now() - openStart)}ms (dispatch->visible)`,
+      );
       return;
     }
     if (!indicatorShown && Date.now() - watchStart > 1000) {
@@ -176,7 +193,17 @@ function openAssistant(): void {
     setTimeout(watchForDialog, 150);
   };
 
-  setTimeout(watchForDialog, 150);
+  // Only show the full-screen loading overlay during the very first bootstrap (cb-manager.js still
+  // downloading / Angular host not yet rendered). On reopens of an already-loaded host the dialog
+  // appears immediately and the overlay would just linger for seconds over a fast open — so skip it.
+  // Hide any leftover overlay regardless, then start the watcher only when the host has not yet
+  // proven itself (a fresh page or the designer re-mounted the element).
+  if (!assistantOpenedOnce) {
+    hideAssistantLoadingIndicator();
+    setTimeout(watchForDialog, 150);
+  } else {
+    hideAssistantLoadingIndicator();
+  }
 
   // Angular's custom-element bootstrap is asynchronous — poll until the dialog is visible (capped
   // at 4s), dispatching the open event only while it is not. The first dispatch happens right away
@@ -196,13 +223,10 @@ function openAssistant(): void {
       document.dispatchEvent(new CustomEvent("codbi:ai-assistant:open"));
     }
     // A stale host (its Angular component was destroyed by an inference-driven in-place form load)
-    // silently swallows the open event. Give it a short window to respond; only if the dialog is
-    // still not visible, re-mount a fresh element ONCE. A healthy host opens within ~250ms with the
-    // fast poll above, so anything still invisible after 1200ms is treated as stale. Preferring the
-    // existing host avoids destroying a healthy component on every reopen — that teardown/reboot
-    // cycle used to race the drag coordinator's global registry and leave the dialog undraggable
-    // (see the generation guard in dialog-position.ts).
-    if (!freshMounted && Date.now() - startedAt > 1200) {
+    // silently swallows the open event. Give it a generous window to respond; only if the dialog is
+    // still not visible do we re-mount a fresh element ONCE. A healthy host opens within ~250ms with
+    // the fast poll above, so a host still invisible after the grace is treated as stale.
+    if (!freshMounted && Date.now() - startedAt > 3000) {
       freshMounted = true;
       const stale = document.querySelector("cb-ai-assistant");
 

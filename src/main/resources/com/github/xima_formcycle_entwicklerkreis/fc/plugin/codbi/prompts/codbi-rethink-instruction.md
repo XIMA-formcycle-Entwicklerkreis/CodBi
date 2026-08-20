@@ -1,0 +1,1 @@
+You receive a form to review for CodBi applicability. Review the form elements below and determine which CodBi functionalities apply. Return the form JSON with a _codbiApplicability field listing considered/applied/skipped items.

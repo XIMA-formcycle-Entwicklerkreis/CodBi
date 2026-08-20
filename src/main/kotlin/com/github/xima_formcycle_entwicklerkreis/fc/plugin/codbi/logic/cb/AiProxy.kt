@@ -106,6 +106,20 @@ class AiProxy : AI() {
           "AI_Prompt_Reseed = true — will re-seed all prompts on next DB initialization")
     }
 
+    // Optional force-overwrite: restore EVERY prompt (including user-modified ones) from the .md
+    // files. Setting this implies a re-seed, otherwise the overwrite would never run.
+    val overwriteRaw =
+        configData.properties.getProperty(PromptLoader.OVERWRITE_PROPERTY)?.trim()?.lowercase()
+    if (overwriteRaw == "true" || overwriteRaw == "1" || overwriteRaw == "yes") {
+      PromptLoader.overwriteUserModified = true
+      CompactPromptLoader.overwriteUserModified = true
+      PromptLoader.forceReseed = true
+      CompactPromptLoader.forceReseed = true
+      log(
+          LogLevel.INFO,
+          "AI_FormAssistant_Prompt_Overwrite = true — will OVERWRITE user-modified prompts from the .md files on next DB initialization")
+    }
+
     val ipRaw = configData.properties.getProperty("AI_Proxy_AllowedIPs") ?: ""
     val entries = ipRaw.split(",").map { it.trim() }.filter { it.isNotEmpty() }
     val cidrs = mutableListOf<CidrEntry>()

@@ -46,6 +46,16 @@ import type { LogNode } from "./log-tree-node";
  * - **Workflow**: one node per created workflow element; unfolding a node reveals the parameters
  *   defined for it.
  */
+
+/**
+ * Module-level cache of the change-log entries for the currently edited form, shared across
+ * `AiAssistantLog` component re-creations (the change-log panel is destroyed and re-created every
+ * time the assistant dialog reopens, and ngOnInit reloads from the DB each time). Reusing this
+ * cache means a reopen shows the log instantly without the "Loading change log…" delay or the DB
+ * round-trip. Invalidate by clearing and re-loading on the manual Refresh action.
+ */
+let logEntriesCache: { formKey: string; raw: Array<Record<string, unknown>> } | null = null;
+
 @Component({
   selector: "cb-ai-assistant-log",
   standalone: true,
@@ -244,6 +254,20 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         return;
       }
       this.currentFormKey = formKey;
+      // If we already loaded this form's change log this session, reuse it instantly instead of
+      // calling the DB again on every reopen (avoids the "Loading change log…" delay).
+      if (logEntriesCache && logEntriesCache.formKey === formKey && logEntriesCache.raw.length > 0) {
+        this.loading = false;
+        this.errorText = null;
+        console.log("[AIAssistantLog] load: reusing cached change-log entries (formKey =", formKey, ")");
+        this.rawEntries = logEntriesCache.raw;
+        this.logs = this.buildTree(this.applyFilter(logEntriesCache.raw));
+        this.expandSearchMatches();
+        this.applyHighlights();
+        this.markSensitiveNodes();
+        this.cdr.markForCheck();
+        return;
+      }
       console.log("[AIAssistantLog] load: fetching log for formKey =", formKey);
       const headers: Record<string, string> = { "X-Action": "Log" };
       if (formKey) {
@@ -335,6 +359,9 @@ export class AiAssistantLog implements OnInit, OnDestroy {
             Object.entries(costObj).map(([currency, cost]) => [currency, Number(cost) || 0]),
           );
           this.rawEntries = raw;
+          // Remember the freshly loaded entries so the next reopen of the dialog (which re-creates
+          // this component and re-runs load()) can show them instantly without a DB round-trip.
+          logEntriesCache = { formKey: this.currentFormKey, raw };
           this.logs = this.buildTree(this.applyFilter(raw));
           this.expandSearchMatches();
           this.applyHighlights();
@@ -377,6 +404,14 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       });
     };
     fetchWhenReady(0);
+  }
+
+  /** Manually reloads the change log from the DB, bypassing the shared session cache (the Refresh
+   *  button). The cached entries are always the same across reopens; only an explicit refresh pulls
+   *  the newest DB state. */
+  refresh(): void {
+    logEntriesCache = null;
+    this.load();
   }
 
   /** Re-applies the search filter to the already loaded entries and expands to the matches. */

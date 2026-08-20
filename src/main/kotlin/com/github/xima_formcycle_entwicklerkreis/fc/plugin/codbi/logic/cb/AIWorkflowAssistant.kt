@@ -46,12 +46,6 @@ class AIWorkflowAssistant : IPluginServletAction {
      * AI_Workflow_DefaultFromEmail.
      */
     @Volatile var defaultFromEmail: String = ""
-
-    /** Fallback prompt used when the database is unavailable. */
-    private const val FALLBACK_WORKFLOW_PROMPT =
-        "You are a FORMCYCLE workflow assistant. The user will describe a desired workflow " +
-            "action in natural language. Your ONLY output must be a single JSON object that " +
-            "describes the workflow task to create. No explanation, no markdown, no code fences."
   }
 
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
@@ -425,12 +419,31 @@ class AIWorkflowAssistant : IPluginServletAction {
    * nodes in pass-1, or the requested node/trigger detail sections in pass-2). Falls back to a
    * minimal prompt if the DB is unavailable.
    */
+  /**
+   * Loads a prompt from the DB with a classpath `.md` fallback for when the database is
+   * unavailable. Returns `""` only when the prompt exists nowhere.
+   */
+  private fun loadFallbackPrompt(key: String): String {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em != null) {
+      try {
+        val db = PromptLoader.loadPrompt(em, key)
+        if (db != null) return PromptLoader.resolvePlaceholders(db)
+      } catch (e: Exception) {
+        logger.warn("[AIWorkflowAssistant] Failed to load prompt '{}': {}", key, e.message)
+      } finally {
+        em.close()
+      }
+    }
+    return PromptLoader.loadPromptFromClasspath(key) ?: ""
+  }
+
   private fun loadWorkflowPrompt(
       requestedNodes: List<String> = emptyList(),
       requestedTriggers: List<String> = emptyList()
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
-    if (em == null) return FALLBACK_WORKFLOW_PROMPT
+    if (em == null) return loadFallbackPrompt("codbi.fallback_workflow")
     try {
       val categories = PromptLoader.loadCategory(em, "formcycle")
       val general = categories["formcycle.general"] ?: ""
@@ -443,7 +456,7 @@ class AIWorkflowAssistant : IPluginServletAction {
       return PromptLoader.resolvePlaceholders(general + "\n" + workflowRef)
     } catch (e: Exception) {
       logger.warn("[AIWorkflowAssistant] Failed to load prompts from DB", e)
-      return FALLBACK_WORKFLOW_PROMPT
+      return loadFallbackPrompt("codbi.fallback_workflow")
     } finally {
       em?.close()
     }

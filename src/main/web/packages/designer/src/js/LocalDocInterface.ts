@@ -1068,11 +1068,17 @@ export function enableLocalDocInterface(): void {
           );
           // #endregion Load into global structures and components
           // #region Load and inject Angular local API-Documentation-Manager web component
+          // Guard against double-loading: enableAICodBiAssistantDialog() already injects cb-manager.js
+          // (which defines cb-manager, cb-ai-assistant and cb-prompt-manager) on designer startup. Loading
+          // the bundle again would re-run main.ts and throw "the name cb-manager has already been used".
+          const managerScriptSrc = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.js`;
           const scriptAPIManager = document.createElement("script");
 
-          scriptAPIManager.src = `${baseURL}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/cb-manager.js`;
+          scriptAPIManager.src = managerScriptSrc;
 
-          document.head.appendChild(scriptAPIManager);
+          if (!document.querySelector(`script[src="${managerScriptSrc}"]`)) {
+            document.head.appendChild(scriptAPIManager);
+          }
 
           const cssAPIManager = document.createElement("link");
           cssAPIManager.rel = "stylesheet";

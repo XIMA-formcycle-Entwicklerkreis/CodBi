@@ -33,6 +33,11 @@ internal object CompactPromptLoader {
 
   /** Set externally from plugin properties (e.g., `AI_Prompt_Reseed=true`) to force a re-seed. */
   @Volatile internal var forceReseed = false
+  /**
+   * Set externally (e.g., `AI_FormAssistant_Prompt_Overwrite=true`) to OVERWRITE user-modified
+   * prompts with the bundled .md content on the next seed — not just the unmodified ones.
+   */
+  @Volatile internal var overwriteUserModified = false
 
   /** Base classpath resource directory. */
   private const val RESOURCE_BASE = "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/"
@@ -62,6 +67,10 @@ internal object CompactPromptLoader {
 
   /** Plugin property name for forcing a prompt re-seed via Formcycle plugin config. */
   internal const val RESEED_PROPERTY = "AI_FormAssistant_Prompt_Reseed"
+  /**
+   * Plugin property name for forcing an OVERWRITE of user-modified prompts with the .md content.
+   */
+  internal const val OVERWRITE_PROPERTY = "AI_FormAssistant_Prompt_Overwrite"
 
   // region Seed
 
@@ -402,7 +411,9 @@ internal object CompactPromptLoader {
 
     if (existing != null) {
       val (dbText, dbOriginal) = existing
-      if (dbText != null && dbOriginal != null && dbText != dbOriginal) {
+      // Preserve user edits UNLESS the admin explicitly requested an overwrite
+      // (AI_FormAssistant_Prompt_Overwrite=true) — then the bundled .md content always wins.
+      if (dbText != null && dbOriginal != null && dbText != dbOriginal && !overwriteUserModified) {
         // A newer version is available when the bundled .md content differs from the stored
         // original snapshot. Surface this via the update_available flag.
         val newerAvailable = dbOriginal != text
@@ -580,26 +591,121 @@ internal object CompactPromptLoader {
    * so the AI's pass-1 prompt is DB-driven.
    */
   internal fun loadCategory(em: EntityManager, prefix: String): Map<String, String> {
-    return try {
-      val q =
-          em.createNativeQuery(
-              "SELECT prompt_key, prompt_text FROM $TABLE " +
-                  "WHERE prompt_key LIKE :prefix AND is_active = 1 ORDER BY prompt_key")
-      q.setParameter("prefix", "$prefix%")
-      @Suppress("UNCHECKED_CAST")
-      (q.resultList as? List<Array<Any>>)
-          ?.mapNotNull { row ->
-            if (row.size < 2) return@mapNotNull null
-            val key = row[0]?.toString() ?: return@mapNotNull null
-            val text = resolveClob(row[1]) ?: return@mapNotNull null
-            key to text
-          }
-          ?.toMap() ?: emptyMap()
-    } catch (e: Exception) {
-      logger.warn(
-          "[CompactPromptLoader] Failed to load compact category '{}': {}", prefix, e.message)
-      emptyMap()
+    val fromDb =
+        try {
+          val q =
+              em.createNativeQuery(
+                  "SELECT prompt_key, prompt_text FROM $TABLE " +
+                      "WHERE prompt_key LIKE :prefix AND is_active = 1 ORDER BY prompt_key")
+          q.setParameter("prefix", "$prefix%")
+          @Suppress("UNCHECKED_CAST")
+          (q.resultList as? List<Array<Any>>)
+              ?.mapNotNull { row ->
+                if (row.size < 2) return@mapNotNull null
+                val key = row[0]?.toString() ?: return@mapNotNull null
+                val text = resolveClob(row[1]) ?: return@mapNotNull null
+                key to text
+              }
+              ?.toMap() ?: emptyMap()
+        } catch (e: Exception) {
+          logger.warn(
+              "[CompactPromptLoader] Failed to load compact category '{}': {}", prefix, e.message)
+          emptyMap()
+        }
+    if (fromDb.isNotEmpty()) return fromDb
+    // Not in DB (or the DB is unavailable) — serve the bundled .jar .md files directly so the
+    // condensed reference still works offline.
+    val fromClasspath = loadCategoryFromClasspath(prefix)
+    if (fromClasspath.isNotEmpty()) {
+      logger.info(
+          "[CompactPromptLoader] Category '{}' not found in DB — serving from bundled classpath .md files",
+          prefix)
     }
+    return fromClasspath
+  }
+
+  /**
+   * Reconstructs a compact category (prompt_key → text) directly from the bundled classpath `.md`
+   * files ([SEED_FILES]) — WITHOUT touching the database. Mirrors [seedSplitFile] key derivation
+   * (incl. `###` sub-items) so the offline map matches the DB-seeded one.
+   */
+  internal fun loadCategoryFromClasspath(prefix: String): Map<String, String> {
+    val result = linkedMapOf<String, String>()
+    for ((resourcePath, baseKey) in SEED_FILES) {
+      if (!baseKey.startsWith(prefix)) continue
+      val content = loadResourceFile(resourcePath) ?: continue
+      if (content.contains("\n## ")) {
+        result.putAll(splitContentMap(baseKey, content))
+      } else {
+        result[baseKey] = content.trim()
+      }
+    }
+    return result
+  }
+
+  /** Splits a compact `.md` file into its base key + `##` sections (+ `###` sub-items), no DB. */
+  private fun splitContentMap(baseKey: String, content: String): Map<String, String> {
+    val result = mutableMapOf<String, String>()
+    val lines = content.lines()
+    val headerBuilder = StringBuilder()
+    var currentSection: String? = null
+    val currentBody = StringBuilder()
+    val sections = mutableListOf<Pair<String, String>>()
+
+    for (line in lines) {
+      val trimmed = line.trimStart()
+      if (trimmed.startsWith("## ")) {
+        if (currentSection != null) sections.add(currentSection!! to currentBody.toString().trim())
+        currentBody.clear()
+        val ht = trimmed.removePrefix("## ").trim()
+        if (ht.uppercase().startsWith("GENERIC")) {
+          currentSection = null
+          headerBuilder.append("\n").append(line).append("\n")
+        } else currentSection = ht
+      } else if (currentSection != null) currentBody.append(line).append("\n")
+      else headerBuilder.append(line).append("\n")
+    }
+    if (currentSection != null) sections.add(currentSection!! to currentBody.toString().trim())
+
+    val parent = headerBuilder.toString().trim()
+    if (parent.isNotBlank()) result[baseKey] = parent
+
+    val norm: (String) -> String = { name ->
+      name.lowercase().replace(Regex("[^a-z0-9_]"), "_").replace(Regex("_+"), "_").trim('_')
+    }
+
+    for ((name, body) in sections) {
+      if (body.isBlank()) continue
+      val itemKey = "$baseKey.${norm(name)}"
+
+      // ### sub-header splitting (element names, e.g. "### AI.LLAMA.CHAT").
+      val subLines = body.lines()
+      val subSections = mutableListOf<Pair<String, String>>()
+      var currentSub: String? = null
+      val subBody = StringBuilder()
+      for (line in subLines) {
+        val t = line.trimStart()
+        if (t.startsWith("### ")) {
+          if (currentSub != null) subSections.add(currentSub!! to subBody.toString().trim())
+          subBody.clear()
+          currentSub = t.removePrefix("### ").trim()
+        } else if (currentSub != null) subBody.append(line).append("\n")
+      }
+      if (currentSub != null) subSections.add(currentSub!! to subBody.toString().trim())
+
+      if (subSections.isNotEmpty()) {
+        val sectionMainBody =
+            subLines.takeWhile { !it.trimStart().startsWith("### ") }.joinToString("\n").trim()
+        if (sectionMainBody.isNotBlank()) result[itemKey] = sectionMainBody
+        for ((subName, subContent) in subSections) {
+          if (subContent.isBlank()) continue
+          result["$itemKey.${norm(subName)}"] = subContent
+        }
+      } else {
+        result[itemKey] = body
+      }
+    }
+    return result
   }
 
   /**

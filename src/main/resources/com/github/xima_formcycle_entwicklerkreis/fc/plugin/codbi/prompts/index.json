@@ -8,5 +8,19 @@
   { "file": "codbi-general.md", "key": "codbi.general" },
   { "file": "codbi-document-parsing.md", "key": "codbi.document_parsing" },
   { "file": "codbi-classify-intent.md", "key": "codbi.classify_intent" },
-  { "file": "codbi-buergerservice-naming.md", "key": "codbi.buergerservice_naming" }
+  { "file": "codbi-buergerservice-naming.md", "key": "codbi.buergerservice_naming" },
+  { "file": "codbi-clarification.md", "key": "codbi.clarification" },
+  { "file": "codbi-form-task-instruction.md", "key": "codbi.form_task_instruction" },
+  { "file": "codbi-form-short-task-instruction.md", "key": "codbi.form_short_task_instruction" },
+  { "file": "codbi-form-structure-rules.md", "key": "codbi.form_structure_rules" },
+  { "file": "codbi-control-types-rules.md", "key": "codbi.control_types_rules" },
+  { "file": "codbi-change-log-schema.md", "key": "codbi.change_log_schema" },
+  { "file": "codbi-chat-context-note.md", "key": "codbi.chat_context_note" },
+  { "file": "codbi-rethink-instruction.md", "key": "codbi.rethink_instruction" },
+  { "file": "codbi-chat-system-prompt.md", "key": "codbi.chat_system_prompt" },
+  { "file": "codbi-fallback-form-system.md", "key": "codbi.fallback_form_system" },
+  { "file": "codbi-fallback-classify-intent.md", "key": "codbi.fallback_classify_intent" },
+  { "file": "codbi-fallback-rethink.md", "key": "codbi.fallback_rethink" },
+  { "file": "codbi-fallback-apply.md", "key": "codbi.fallback_apply" },
+  { "file": "codbi-fallback-workflow.md", "key": "codbi.fallback_workflow" }
 ]

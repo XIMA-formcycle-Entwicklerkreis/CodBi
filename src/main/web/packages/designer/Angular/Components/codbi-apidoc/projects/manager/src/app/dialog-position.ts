@@ -315,7 +315,9 @@ function installGlobalDragCoordinator(): void {
 function resolveDraggable(target: EventTarget | null): { dialog: HTMLElement; styleClass: string } | null {
   const el = target as HTMLElement | null;
   if (!el) return null;
-  const header = el.closest(".p-dialog-header") as HTMLElement | null;
+  // The clarification popup uses a custom header (.cb-ai-clarification-header) inside the dialog
+  // body instead of PrimeNG's .p-dialog-header, so treat it as a move-drag handle as well.
+  const header = el.closest(".p-dialog-header, .cb-ai-clarification-header") as HTMLElement | null;
   console.log(
     `[CodBiDrag] mousedown target: <${el.tagName}> class="${el.className}" | .p-dialog-header found: ${!!header}`,
   );

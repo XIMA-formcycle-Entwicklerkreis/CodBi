@@ -1,0 +1,1 @@
+NOTE: the user's request may refer to options/suggestions the assistant listed earlier in this history — by NUMBER (e.g. "do 1, 2, 5 and 7"), by phrase ("do it like that", "the second one") or by description. The referenced list may appear SEVERAL turns back — search the ENTIRE history before resolving it.

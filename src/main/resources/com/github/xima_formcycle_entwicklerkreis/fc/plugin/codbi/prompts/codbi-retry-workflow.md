@@ -1,0 +1,1 @@
+Your previous response was NOT valid JSON workflow specification. It contained prose or clarifying questions. Do NOT ask any questions and do NOT explain. The user has already answered everything that is needed (use the USER CLARIFICATION context). Output ONLY the workflow task JSON now (a task object, an array of task objects, or {"workflow":[...]}/{"tasks":[...]}).

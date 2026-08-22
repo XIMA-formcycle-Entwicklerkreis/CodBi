@@ -472,6 +472,56 @@ export class CodBi implements CodbiGlobal {
     return parts.map((part) => part.trim());
   }
   /**
+   * Resolves Formcycle placeholders in the notation `[%XXX%]` within a parameter string by replacing
+   * them with the CURRENT value of the referenced field. The field is looked up by its CodBi
+   * `data-name` attribute (falling back to the native `name` attribute); input/textarea/select
+   * controls contribute their current value, other elements their `value` attribute or text content.
+   * Placeholders whose field does not exist (or is not present in the DOM) are left untouched so
+   * nothing silently disappears. Runs BEFORE element placeholders/functionalities are invoked, so a
+   * parameter like `{ Data.CSV > [%tfCsv%] }` feeds the referenced field's value into the EP.
+   *
+   * @param value The raw parameter value that may contain `[%...%]` placeholders.
+   *
+   * @returns The value with every resolvable `[%...%]` placeholder replaced by the field's value. */
+  protected resolveFormcyclePlaceholders(value: string): string {
+    if (typeof value !== "string" || !value || value.indexOf("[%") === -1 || value.indexOf("%]") === -1) {
+      return value;
+    }
+    // Index the form's fields once per call so multiple placeholders resolve without re-scanning.
+    // The FIRST match wins (like the V EP) — within a repeatable container the first row's value is
+    // used, which keeps the behaviour deterministic.
+    const byName = new Map<string, Element>();
+    for (const candidate of document.querySelectorAll("[data-name],[name]")) {
+      const key = candidate.getAttribute("data-name") ?? candidate.getAttribute("name");
+      if (key && !byName.has(key)) {
+        byName.set(key, candidate);
+      }
+    }
+    return value.replace(/\[%([^%\]]+?)%\]/g, (_m, rawName: string) => {
+      const name = rawName.trim();
+      if (!name) {
+        return _m;
+      }
+      const el = byName.get(name);
+      if (!el) {
+        return _m;
+      }
+      const control = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      if (
+        control instanceof HTMLInputElement ||
+        control instanceof HTMLTextAreaElement ||
+        control instanceof HTMLSelectElement
+      ) {
+        return control.value;
+      }
+      const valueAttr = el.getAttribute("value");
+      if (valueAttr !== null) {
+        return valueAttr;
+      }
+      return (el.textContent ?? "").trim();
+    });
+  }
+  /**
    * Resolves nested **E**lement **P**laceholder within **E**lement **P**laceholder Parameter
    * recursively ({@link CodBi.epSeparator }'s count of initiators determine the level of possible nesting).
    *
@@ -485,7 +535,7 @@ export class CodBi implements CodbiGlobal {
       const result: Array<string> = new Array<string>();
 
       for (let i = 0; i < params.length; i++) {
-        const candidate = (params[i] as string).trim();
+        const candidate = this.resolveFormcyclePlaceholders((params[i] as string).trim());
         const outermostEP = this.getOutermostEP(candidate);
 
         if (outermostEP !== null) {
@@ -632,6 +682,13 @@ export class CodBi implements CodbiGlobal {
                   if (candidate !== undefined) {
                     const outermostEP = this.getOutermostEP(candidate);
 
+                    if (outermostEP === null) {
+                      // No element placeholder — still resolve Formcycle [%field%] placeholders so a
+                      // plain parameter like "[%tfVorname%]" yields the referenced field's value.
+                      (config[key] as [])[i] = this.resolveFormcyclePlaceholders(candidate);
+                      continue;
+                    }
+
                     if (outermostEP !== null) {
                       if (this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()]) {
                         cntPromises++;
@@ -735,6 +792,12 @@ export class CodBi implements CodbiGlobal {
               }
 
               const outermostEP = this.getOutermostEP(config[key] as string);
+
+              if (outermostEP === null) {
+                // No element placeholder — resolve Formcycle [%field%] placeholders in the plain value.
+                config[key] = this.resolveFormcyclePlaceholders(config[key] as string);
+                continue;
+              }
 
               if (outermostEP !== null) {
                 if (this.availableEPs[outermostEP.keyPlaceholder.toLowerCase()]) {

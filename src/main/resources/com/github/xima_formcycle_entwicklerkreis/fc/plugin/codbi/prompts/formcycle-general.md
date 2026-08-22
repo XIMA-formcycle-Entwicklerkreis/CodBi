@@ -29,18 +29,21 @@ action.check=true validates the CURRENT page's fields before the action runs; ac
 
 These control when a field is hidden or locked based on another field's value. Set these as DIRECT properties on the element (NOT inside the attributes array). Formcycle uses the component's ID to reference the controlling field.
 
-- For a SIMPLE checkbox-controlled condition (hide/lock when checkbox is CHECKED): set hiddenif="<checkboxID>" (the checkbox's properties.id value) with hiddenifcomp=0 and hiddenifclear="false". The same applies to readonlyif: set readonlyif="<checkboxID>" with readonlyifcomp=0 and readonlyifclear="1".
-- For VALUE-BASED conditions on other fields, also set hiddenifcomp (comparison mode) and hiddenifvalue (comparison value):
-  - hiddenifcomp=1, hiddenifvalue="<placeholder>" — hide when the controlling field is NOT EMPTY (has any value).
-  - hiddenifcomp=2, hiddenifvalue="<exactValue>" — hide when controlling field's value EQUALS this string.
-  - hiddenifcomp=3, hiddenifvalue="<regex>" — hide when controlling field's value MATCHES the regex pattern.
-  - hiddenifcomp=4, hiddenifvalue="<number>" — hide when controlling field's value is LESS THAN this number.
-  - hiddenifcomp=5, hiddenifvalue="<number>" — hide when controlling field's value is GREATER THAN this number.
-  - hiddenifcomp=6, hiddenifvalue="<min>-<max>" — hide when controlling field's value is WITHIN this range.
-  - hiddenifcomp=7, hiddenifvalue="<value>" — hide when controlling field's value is NOT EQUAL to this.
-  - hiddenifcomp=8, hiddenifvalue="<regex>" — hide when controlling field's value does NOT MATCH the regex.
+- hiddenif = the EXACT properties.id of the controlling component (e.g. the checkbox's id).
+- hiddenifcomp = the Formcycle condition code (enum de.xima.fc.form.common.statics.EConditionType). The field is hidden when the condition is met:
+  - 0 = MANDATORY — hidden when the controlling field HAS a value (e.g. a checkbox is CHECKED).
+  - 1 = EQUAL — hidden when the controlling field's value EQUALS hiddenifvalue.
+  - 2 = NOT_EQUAL — hidden when the controlling field's value is NOT EQUAL to hiddenifvalue.
+  - 3 = REGEX — hidden when the controlling field's value MATCHES the hiddenifvalue regex.
+  - 4 = LESS_THAN — hidden when the controlling field's value is LESS THAN hiddenifvalue (number).
+  - 5 = GREATER_THAN — hidden when the controlling field's value is GREATER THAN hiddenifvalue (number).
+  - 6 = BETWEEN — hidden when the controlling field's value is WITHIN the hiddenifvalue range (<min>-<max>).
+  - 7 = LESS_OR_EQUAL — hidden when the controlling field's value is <= hiddenifvalue.
+  - 8 = GREATER_OR_EQUAL — hidden when the controlling field's value is >= hiddenifvalue.
+  - 9 = EMPTY — hidden when the controlling field has NO value (is empty). For a checkbox: hidden while the checkbox is UNCHECKED, shown once it is CHECKED.
+- hiddenifvalue = the comparison value used by EQUAL/NOT_EQUAL/REGEX and the numeric codes.
 - hiddenifclear controls what happens to the field's value when hidden: "false" or 0 = preserve value, "1" = clear value, "2" = disable but keep value.
-- The SAME modes apply to readonlyif (gesperrt wenn): readonlyifcomp values 0-8 work identically to hiddenifcomp.
+- The SAME codes apply to readonlyif (gesperrt wenn): readonlyifcomp works identically to hiddenifcomp.
 - CRITICAL: The hiddenif (and readonlyif) value must be the EXACT properties.id of the controlling component.
 
 ## CONTAINER FOR CONDITIONALLY SHOWN FIELDS

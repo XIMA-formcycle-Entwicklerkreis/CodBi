@@ -36,6 +36,10 @@ Supports arithmetic directly — do NOT wrap it in Date.Arithmetic. Use "{ Date.
 
 Turns a date string into a Date object. Use for any prompt about converting/parsing a date string. Example: "{ Date.FromString > 01.12.1978 }" returns a Date object for December 1st, 1978. Optional second param sets the format (e.g. "DD/MM/YYYY").
 
+## Date.Holidays
+
+Retrieves GERMAN holidays ("Feiertage") for the requested years/states from API-Feiertage.de. The EP id is ALWAYS `Date.Holidays` — NEVER invent or translate it (there is NO `Feiertage` EP). THE YEAR CANNOT BE GIVEN AS AN EXPLICIT NUMBER (e.g. `2026`) — the code only recognizes `THIS_YEAR` (current year) and `THIS_YEAR +/- N` (relative to the current year, e.g. `THIS_YEAR + 1` = next year); any other token is treated as a state abbreviation. Other parameters (order/case-insensitive): a German state abbreviation (bw, by, be, bb, hb, hh, he, mv, ni, nw, rp, sl, sn, st, sh, th), `Friedensfest` (Augsburg), `KATHOLISCH`. Examples: 'Feiertage dieses Jahr' → `{ Date.Holidays > THIS_YEAR }`; 'Feiertage nächstes Jahr' → `{ Date.Holidays > THIS_YEAR + 1 }`; 'Feiertage Bayern dieses Jahr' → `{ Date.Holidays > by ; THIS_YEAR }`.
+
 ## JSON.Path
 
 Extracts a property from an object using a dotted path. It can also call methods on an object by using the method name with parentheses as the path, e.g. "toString()" calls the toString method.

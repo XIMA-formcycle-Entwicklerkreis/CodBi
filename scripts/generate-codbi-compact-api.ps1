@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
 
@@ -298,14 +298,14 @@ $compactDescOverrides = @{
   "Date.NoWeekends"      = "Applicable on a XTextField of type 'date' to disallow weekend dates. NEVER apply to a BIRTH-DATE field (Geburtsdatum, Geburtstag, birth date, birthday) — people can be born on any weekday, so a 'keine Wochenenden'/'no weekends' constraint on a birth date must be IGNORED (apply nothing, ask nothing). Only meaningful for future-dated/booking-type dates (course date, appointment, delivery)."
   "HTML.Input.REGEX"     = "Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern."
   "HTML.Input.Cleave"    = "Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js."
-  "HTML.Input.TinyMCE"   = "MANDATORY — it is INVALID to apply HTML.Input.TinyMCE with only data-cb-func and WITHOUT both data-cb-plugins and data-cb-toolbar. Whenever you apply data-cb-func=HTML.Input.TinyMCE to a XTextArea, ALWAYS also emit data-cb-plugins and data-cb-toolbar. For a message/story: data-cb-plugins=\"advlist, autolink, lists, link, image, media, charmap\" and data-cb-toolbar=\"undo redo | blocks | bold italic underline | bullist numlist | link image media\" (do NOT include the raw-HTML 'code' option unless the field is explicitly for HTML source)."
+  "HTML.Input.TinyMCE"   = "MANDATORY — it is INVALID to apply HTML.Input.TinyMCE with only data-cb-func and WITHOUT both data-cb-plugins and data-cb-toolbar. Whenever you apply data-cb-func=HTML.Input.TinyMCE to a XTextArea, ALWAYS also emit data-cb-plugins and data-cb-toolbar. For a message/story: data-cb-plugins=`"advlist, autolink, lists, link, image, media, charmap`" and data-cb-toolbar=`"undo redo | blocks | bold italic underline | bullist numlist | link image media`" (do NOT include the raw-HTML 'code' option unless the field is explicitly for HTML source)."
   "OpenPLZ.Autocomplete" = "Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). Tag EACH address field with this functionality and set its own parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ to reference the postal code field and DependentLocality to reference the locality/city field. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field that gets filled automatically (e.g., on a postal code field set Dependent to the locality field, on a locality field set Dependent to the postal code field). On POSTAL CODE and LOCALITY fields: set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists."
   "Form.Navigator"       = "Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms. PLACEMENT — the navigator must be reachable on EVERY page: create a SEPARATE XContainer (div) and place it inside the form's XHeader or XFooter when one exists; only when there is NO header/footer add it to EVERY page's elements array. NEVER place it on only one page."
   "HTML.CSS"             = "Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements)."
   "HTML.Panel.Accordion" = "Applicable on a container (XContainer/XFieldSet) that wraps multiple collapsible panels. Joins all child panels with the .CodBi.--HTML_Panel class into an accordion group where only one panel can be open at a time. Set the data-cb-Accordion parameter to a unique group name."
   "HTML.Panel"           = "Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: 'Standard-Panel' and 'aufklappbares/collapsible panel' on a fieldset = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property (preferred). Use data-cb-func=html.panel only on a container (not a fieldset)."
   "HTML.SETAttribute"    = "Applicable on any element to dynamically set one or more HTML attributes on it."
-  "HTML.Text.Injector"   = "Applicable on any element to inject a dynamic text value into a specific property of that element."
+  "HTML.Text.Injector"   = "Applicable on XTextField/XTextArea or XSpan to inject a dynamic text value into the element's value. CRITICAL WIRING — data-cb-replacement only reaches the field value when BOTH are set: (1) data-cb-property MUST be set to 'value' on XTextField/XTextArea and 'innerHTML' on XSpan, AND (2) the data-cb-placeholder (default '[[INJECTOR_REPLACEMENT]]') MUST be placed inside the OWN value property of the field (XTextField/XTextArea) or its rtevalue property (XSpan) — e.g. 'value':'[[INJECTOR_REPLACEMENT]]' — otherwise data-cb-replacement never reaches the value. data-cb-func stays 'HTML.Text.Injector' (the FUNCTIONALITY name, never an EP name)."
   "HTML.Text.Mapper"     = "Applicable on any element to map object properties to named placeholders in a text template."
   "JSON.SET"             = "Applicable on a hidden field to store a JSON-serialized value derived from another element."
   "LDAP.Autocomplete"    = "Applicable on a text input that should autocomplete entries from an LDAP directory search."
@@ -361,7 +361,7 @@ $funcDir = Join-Path $jsRoot "Functionalities"
 Get-ChildItem $funcDir -Filter "*.ts" | Sort-Object Name | ForEach-Object {
   $file = $_
   $ts = Get-Content -Raw $file.FullName
-  $idMatch = [regex]::Match($ts, 'registerFunctionality\("([^"]+)"')
+  $idMatch = [regex]::Match($ts, 'registerFunctionality\s*\(\s*"([^"]+)"')
   if (-not $idMatch.Success) { return }
 
   $id = $idMatch.Groups[1].Value

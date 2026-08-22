@@ -571,13 +571,20 @@ cb-ai-assistant {
         padding: 1.25rem 1.5rem;
     }
 
+    /* The empty PrimeNG header bar (`header=" "` in the markup) is also a move-drag handle — show
+       the move cursor there too so users know the whole title strip can be dragged. */
+    .p-dialog-header {
+        cursor: move;
+    }
+
     .cb-ai-clarification-header {
         display: flex;
         align-items: center;
         gap: 0.6rem;
         /* The header both moves the dialog (custom drag) and is an HTML5 drag source for copying
-           the questions — signal that it is movable/draggable. */
-        cursor: move;
+           the questions — signal that it is movable/draggable. `!important` beats the default
+           cursor that the HTML5 `draggable="true"` attribute otherwise forces even on hover. */
+        cursor: move !important;
         user-select: none;
     }
 
@@ -586,13 +593,33 @@ cb-ai-assistant {
     .cb-ai-clarification-header,
     .cb-ai-clarification-header .cb-ai-clarification-title,
     .cb-ai-clarification-header .cb-ai-clarification-logo {
-        cursor: move;
+        cursor: move !important;
     }
 
     .cb-ai-clarification-header:active,
     .cb-ai-clarification-header:active .cb-ai-clarification-title,
     .cb-ai-clarification-header:active .cb-ai-clarification-logo {
         cursor: grabbing;
+    }
+
+    /* Darkorange scrollbar on the popup's scroll container (the dialog content) — matches the
+       change-log treeview. */
+    .p-dialog-content {
+        scrollbar-color: #ff9f40 transparent;
+        scrollbar-width: thin;
+    }
+    .p-dialog-content::-webkit-scrollbar {
+        width: 10px;
+    }
+    .p-dialog-content::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .p-dialog-content::-webkit-scrollbar-thumb {
+        background: #ff9f40;
+        border-radius: 5px;
+    }
+    .p-dialog-content::-webkit-scrollbar-thumb:hover {
+        background: #ffb266;
     }
 
     /* Button that copies ALL questions to the clipboard (same text as the header drag & drop). */
@@ -1206,7 +1233,7 @@ cb-ai-assistant {
     gap: 0.4rem;
 
     &--user {
-        /* Reverse the row so the copy button sits on the outer (right) edge of the user bubble. */
+        /* Reverse the row so the action buttons sit on the outer (right) edge of the user bubble. */
         flex-direction: row-reverse;
         justify-content: flex-start;
 
@@ -1215,6 +1242,52 @@ cb-ai-assistant {
             color: #fff;
             border-bottom-right-radius: 4px;
         }
+    }
+}
+
+/* Action buttons (view toggle + copy) next to a bubble — a compact horizontal group, like the
+   single copy button before them. */
+.cb-ai-chat-actions {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.25rem;
+}
+
+/* View-toggle button on each chat bubble (Markdown <-> plain text). Mirror of the copy button:
+   dimmed by default, full opacity on hover/focus. While the bubble shows plain text (`--plain`)
+   it is highlighted so the active view is visible at a glance. */
+.cb-ai-chat-view {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    margin-top: 0.15rem;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    opacity: 0.4;
+    transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+
+    &:hover,
+    &:focus-visible {
+        opacity: 1;
+        background: #e2e8f0;
+        color: #0f172a;
+    }
+
+    &--plain {
+        opacity: 1;
+        color: #e67e22;
+        background: #fdf3dd;
+    }
+
+    .pi {
+        font-size: 0.85rem;
     }
 }
 
@@ -1267,6 +1340,189 @@ cb-ai-assistant {
     &--typing {
         color: #64748b;
         font-style: italic;
+    }
+}
+
+/* Rendered-Markdown bubble (default view): the HTML produced by markdown.ts is laid out normally
+   (not as pre-formatted text) and its common elements are styled to fit the light assistant bubble. */
+.cb-ai-chat-bubble--markdown {
+    white-space: normal;
+    min-width: 0;
+
+    > :first-child {
+        margin-top: 0;
+    }
+    > :last-child {
+        margin-bottom: 0;
+    }
+
+    p {
+        margin: 0.4rem 0;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        margin: 0.6rem 0 0.3rem;
+        line-height: 1.25;
+        font-weight: 700;
+    }
+    h1 {
+        font-size: 1.15em;
+    }
+    h2 {
+        font-size: 1.08em;
+    }
+    h3 {
+        font-size: 1.02em;
+    }
+    h4,
+    h5,
+    h6 {
+        font-size: 0.98em;
+    }
+
+    ul,
+    ol {
+        margin: 0.4rem 0;
+        padding-left: 1.4rem;
+    }
+    li {
+        margin: 0.15rem 0;
+    }
+    li > input[type="checkbox"] {
+        margin-right: 0.35rem;
+        vertical-align: -0.15em;
+        pointer-events: none;
+    }
+
+    pre {
+        margin: 0.5rem 0;
+        padding: 0.55rem 0.7rem;
+        border-radius: 8px;
+        background: #0f172a;
+        color: #e2e8f0;
+        max-width: 100%;
+        overflow-x: auto;
+        font-size: 0.82rem;
+        line-height: 1.45;
+    }
+    code {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    :not(pre) > code {
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+        background: #e2e8f0;
+        color: #b91c1c;
+        font-size: 0.88em;
+        word-break: break-word;
+    }
+
+    blockquote {
+        margin: 0.5rem 0;
+        padding: 0.3rem 0.8rem;
+        border-left: 3px solid #cbd5e1;
+        color: #475569;
+    }
+
+    a {
+        color: #2563eb;
+        text-decoration: underline;
+        word-break: break-word;
+
+        &:hover {
+            color: #1d4ed8;
+        }
+    }
+
+    img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        border-radius: 6px;
+    }
+
+    hr {
+        border: none;
+        border-top: 1px solid #cbd5e1;
+        margin: 0.6rem 0;
+    }
+
+    table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+        border-collapse: collapse;
+        margin: 0.5rem 0;
+        font-size: 0.85em;
+    }
+    th,
+    td {
+        border: 1px solid #cbd5e1;
+        padding: 0.3rem 0.5rem;
+        text-align: left;
+    }
+    th {
+        background: #e2e8f0;
+        font-weight: 600;
+    }
+
+    del {
+        opacity: 0.75;
+    }
+
+    /* Unsafe (rejected) link/image Markdown is shown verbatim in a mono font. */
+    .cb-ai-md-raw {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 0.85em;
+        opacity: 0.85;
+    }
+}
+
+/* Markdown elements inside a USER bubble (blue background, white text) — re-tint links, code and
+   tables so they stay readable instead of inheriting the light-bubble colors. */
+.cb-ai-chat-msg--user .cb-ai-chat-bubble--markdown {
+    a {
+        color: #bfdbfe;
+
+        &:hover {
+            color: #dbeafe;
+        }
+    }
+
+    :not(pre) > code {
+        background: rgba(255, 255, 255, 0.18);
+        color: #e0f2fe;
+    }
+
+    pre {
+        background: #1e3a8a;
+        color: #e0f2fe;
+    }
+
+    blockquote {
+        border-left-color: rgba(255, 255, 255, 0.45);
+        color: #dbeafe;
+    }
+
+    th {
+        background: rgba(255, 255, 255, 0.14);
+    }
+    th,
+    td {
+        border-color: rgba(255, 255, 255, 0.35);
+    }
+
+    hr {
+        border-top-color: rgba(255, 255, 255, 0.35);
+    }
+
+    .cb-ai-md-raw {
+        color: #dbeafe;
     }
 }
 

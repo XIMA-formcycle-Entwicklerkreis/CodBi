@@ -201,6 +201,31 @@
   overflow-x: hidden;
 }
 
+/* Bright orange scrollbar for the prompt-manager tree, matching the change-log listing —
+   transparent track/background. */
+.cb-pm-tree .p-tree-root {
+  scrollbar-color: #ff9f40 transparent;
+  scrollbar-width: thin;
+}
+.cb-pm-tree .p-tree-root::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.cb-pm-tree .p-tree-root::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cb-pm-tree .p-tree-root::-webkit-scrollbar-thumb {
+  background: #ff9f40;
+  border-radius: 5px;
+}
+.cb-pm-tree .p-tree-root::-webkit-scrollbar-thumb:hover {
+  background: #ffb266;
+}
+/* The corner where the vertical and horizontal bars meet stays transparent (no default square). */
+.cb-pm-tree .p-tree-root::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .cb-pm-filter-btn {
   flex: 1 1 0;
   min-width: max-content;

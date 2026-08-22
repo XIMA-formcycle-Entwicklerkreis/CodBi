@@ -1,5 +1,12 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons
 
+// !!! REMINDER — NEVER embed AI prompt / system-prompt text in Kotlin files !!!
+// All prompt text belongs in the .md files under
+// src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/
+// (see prompts/index.json) and is loaded via ChatPromptFragments / PromptLoader. Adding prompt
+// strings to .kt files is forbidden — they get out of sync, go stale, and are never reseeded.
+// Move any prompt text into the .md files instead.
+
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.BraveSearch
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.MailBridge
 import com.google.gson.JsonArray
@@ -81,8 +88,8 @@ internal class MessageBuilder(
         messages.add(
             message(
                 "system",
-                "LANGUAGE SWITCH: The user is now writing in ${lang.languageName}. " +
-                    "You MUST respond ENTIRELY in ${lang.languageName}, regardless of what language was used earlier in the conversation."))
+                ChatPromptFragments.section("language_switch", "language" to lang.languageName)
+                    ?: ""))
       }
     }
 
@@ -96,7 +103,7 @@ internal class MessageBuilder(
       messages.add(
           message(
               "assistant",
-              "<think>\n${lang?.thinkSeed ?: "Think briefly. Do NOT repeat yourself."}"))
+              "<think>\n${lang?.thinkSeed ?: (ChatPromptFragments.section("think_seed") ?: "")}"))
     }
 
     return gsonCompact.toJson(messages)
@@ -155,11 +162,12 @@ internal class MessageBuilder(
       append(" ")
     } else {
       append(
-          "You are a helpful assistant with knowledge about calendars and precise calendar logic. " +
-              "Today is $today, current time is $currentTime. This month has $daysInMonth days. " +
-              "When calculating dates, silently count day by day in your head to ensure correctness — " +
-              "for example, Monday +1=Tue, +2=Wed, +3=Thu, +4=Fri — but only show the final result to the user, not the counting steps. " +
-              "Account for month boundaries. Never skip ahead or guess. Answer precisely and concisely. ")
+          ChatPromptFragments.section(
+              "identity",
+              "date" to today,
+              "time" to currentTime,
+              "daysInMonth" to daysInMonth.toString()) ?: "")
+      append(" ")
     }
   }
 
@@ -169,16 +177,11 @@ internal class MessageBuilder(
         append(promptLocation.replace("{location}", userLocation))
         append(" ")
       } else {
-        append(
-            "IMPORTANT: The user is located near $userLocation. " +
-                "Use this as the DEFAULT area for any location-dependent question (weather, nearby places, directions, local events). " +
-                "This is the user's approximate area, NOT a specific address — never cite it as an address in answers. " +
-                "If the user EXPLICITLY names a different city or place, use that location instead. ")
+        append(ChatPromptFragments.section("location", "location" to userLocation) ?: "")
+        append(" ")
       }
     } else if (locationEnabled) {
-      append(
-          "The user enabled location sharing but their location could not be determined. " +
-              "If the question depends on location, ask the user to specify their city or region. ")
+      append(ChatPromptFragments.section("location_unknown") ?: "")
     }
   }
 
@@ -192,31 +195,14 @@ internal class MessageBuilder(
       append(promptSearch)
       append(" ")
     } else {
-      append("When you need current info, reply ONLY with CALL:search(query='your search query'). ")
-      append(
-          "CRITICAL: For questions about specific factual details (phone numbers, addresses, opening hours, prices, contact info, official data), " +
-              "you MUST ALWAYS use CALL:search — NEVER answer from memory alone. " +
-              "Even if a similar question was answered earlier in this conversation, ALWAYS search again — previous answers may have been given without internet access and could be wrong. ")
-      append(
-          "The search query MUST be about the user's ACTUAL topic. Extract the core subject from the user's question. ")
-      append(
-          "SANITIZE: The search query is sent to an external search engine — NEVER include sensitive or personal data. " +
-              "Remove: private person names (non-public individuals), email addresses, phone numbers, street addresses, serial numbers, " +
-              "IDs (case numbers, SSN, IBAN, passport), dates of birth, and any code mixing letters+digits. " +
-              "Well-known public figures (politicians, historical figures, celebrities, scientists) MAY be included by name. " +
-              "Keep only brand names, product names, public person names, and generic topic keywords. ")
+      append(ChatPromptFragments.section("search") ?: "")
+      append(" ")
     }
 
     appendSearchExamples(detectedLang, locationEnabled, userLocation)
 
-    append(
-        "EXCEPTION: If the user wraps a word in << >>, copy it into the query verbatim with the << >> markers. ")
-    append(
-        "Example: 'What did << Elon Musk >> say about AI?' → CALL:search(query='<< Elon Musk >> AI statements'). ")
-    append(
-        "Never include person names in the query UNLESS they are wrapped in << >>. Never use '...' as the query. ")
-    append(
-        "IMPORTANT: The search query must match the user's actual question topic — never copy an example query. ")
+    append(ChatPromptFragments.section("search_exceptions") ?: "")
+    append(" ")
 
     if (enableThinking) {
       appendThinkingInstructions(detectedLang)
@@ -235,7 +221,9 @@ internal class MessageBuilder(
 
     if (detectedLang != null && detectedLang.languageName != "English") {
       append(
-          "IMPORTANT: Always write search queries in ${detectedLang.languageName}, NEVER in English. ")
+          ChatPromptFragments.section(
+              "search_query_language", "language" to detectedLang.languageName) ?: "")
+      append(" ")
       productQ = detectedLang.exampleProductQuery
       lawQ = detectedLang.exampleLawQuery
       weatherQ = detectedLang.exampleWeatherQuery
@@ -247,55 +235,41 @@ internal class MessageBuilder(
       localQ = "restaurants near me"
     }
 
-    append("Example: user asks about a product error → CALL:search(query='$productQ'). ")
-    append("Example: user asks about contract law → CALL:search(query='$lawQ'). ")
+    append(
+        ChatPromptFragments.section("search_examples_product", "product" to productQ, "law" to lawQ)
+            ?: "")
+    append(" ")
 
     if (locationEnabled && userLocation != null) {
       val shortLocation = userLocation.substringBefore(",").trim()
-      append("Example: user asks about weather → CALL:search(query='$weatherQ $shortLocation'). ")
-      append("Example: user asks where to eat → CALL:search(query='$localQ $shortLocation'). ")
       append(
-          "LOCATION RULE: Only append the user's location to queries where geography is relevant (weather, local services, events, businesses, city-specific info). " +
-              "NEVER append location to general knowledge questions (history, biographies, science, definitions, worldwide topics, etc.).")
+          ChatPromptFragments.section(
+              "search_examples_local",
+              "weather" to weatherQ,
+              "shortLocation" to shortLocation,
+              "local" to localQ) ?: "")
+      append(" ")
     } else {
+      val tomorrow =
+          if (detectedLang == null || detectedLang.languageName == "English") " tomorrow" else ""
       append(
-          "Example: user asks about weather → CALL:search(query='$weatherQ${if (detectedLang == null || detectedLang.languageName == "English") " tomorrow" else ""}'). ")
-      append("Example: user asks where to eat → CALL:search(query='$localQ'). ")
+          ChatPromptFragments.section(
+              "search_examples_plain",
+              "weather" to weatherQ,
+              "tomorrow" to tomorrow,
+              "local" to localQ) ?: "")
+      append(" ")
     }
   }
 
   private fun StringBuilder.appendFetchInstructions() {
-    append(
-        "URL READING: After performing a web search, if the search result snippets are not detailed enough to answer the question, " +
-            "you can read the full content of a specific URL by replying ONLY with CALL:fetch(url='https://example.com/page'). ")
-    append(
-        "Use CALL:fetch only with URLs that appeared in previous search results — NEVER guess or fabricate URLs. ")
-    append(
-        "Use CALL:fetch when the user explicitly asks you to read or check a specific link, or when search snippets lack the detail needed for a thorough answer. ")
-    append(
-        "Do NOT use CALL:fetch for every search result — only when deeper investigation is clearly needed. ")
-    append(
-        "Example: search results mention a product page but lack pricing details the user asked about → CALL:fetch(url='https://example.com/product'). ")
+    append(ChatPromptFragments.section("fetch") ?: "")
+    append(" ")
   }
 
   private fun StringBuilder.appendMailInstructions() {
-    append(
-        "EMAIL: When the user asks you to send an email, or says 'send me a summary by mail', " +
-            "you can send an email by responding ONLY with CALL:mail(to='recipient@example.com', subject='Your subject', body='Your full answer text here'). ")
-    append(
-        "IMPORTANT: When sending an email, your ENTIRE response must be ONLY the CALL:mail(...) call — do NOT write the answer before it. " +
-            "Put the full answer inside the body parameter. The to parameter must contain ONLY the raw email address — no emojis, no icons, no whitespace around it. ")
-    append(
-        "RULES: You may ONLY send an email when the user EXPLICITLY asks for it IN THEIR CURRENT MESSAGE. " +
-            "NEVER send emails on your own initiative. " +
-            "NEVER re-use a recipient address from a previous message unless the user repeats the request. " +
-            "NEVER send more than one email per user request. ")
-    append(
-        "If the user does not provide a recipient address, ask them for it before sending. " +
-            "The email body should be clean plain text — no Markdown, no HTML. ")
-    append(
-        "Example: user says 'search for the weather and send it to me at user@example.com' " +
-            "\u2192 CALL:mail(to='user@example.com', subject='Weather forecast', body='Tomorrow it will be sunny with temperatures up to 20C...'). ")
+    append(ChatPromptFragments.section("mail") ?: "")
+    append(" ")
   }
 
   private fun StringBuilder.appendThinkingInstructions(detectedLang: DetectedLanguage?) {
@@ -303,16 +277,13 @@ internal class MessageBuilder(
       append(promptThinking.replace("{language}", detectedLang?.languageName ?: "English"))
       append(" ")
     } else {
-      append("THINKING MODE: You MUST reason thoroughly FIRST inside <think>...</think>. ")
-
-      if (detectedLang != null && detectedLang.languageName != "English") {
-        append(
-            "CRITICAL: Your reasoning inside <think> tags MUST be written in ${detectedLang.languageName}, NOT in English. ")
-      }
-
-      append(
-          "Only AFTER you have finished thinking and closed </think>, output CALL:search as your visible answer if needed. ")
-      append("NEVER put CALL:search inside <think> tags. Think first, then decide. ")
+      val languageRule =
+          if (detectedLang != null && detectedLang.languageName != "English") {
+            ChatPromptFragments.section(
+                "thinking_language_rule", "language" to detectedLang.languageName) ?: ""
+          } else ""
+      append(ChatPromptFragments.section("thinking", "languageRule" to languageRule) ?: "")
+      append(" ")
     }
   }
 
@@ -321,11 +292,8 @@ internal class MessageBuilder(
       append(promptNoInternet)
       append(" ")
     } else {
-      append(
-          "IMPORTANT: You do NOT have internet access. " +
-              "NEVER fabricate or guess ANY information you are not certain about. " +
-              "If you do not know something, clearly say so and suggest the user enable internet search or look it up directly. " +
-              "Do NOT invent plausible-sounding answers — honesty about your limits is always better than a wrong answer. ")
+      append(ChatPromptFragments.section("no_internet") ?: "")
+      append(" ")
     }
   }
 
@@ -333,22 +301,12 @@ internal class MessageBuilder(
     if (promptRules != null) {
       append(promptRules)
     } else {
-      append(
-          "CRITICAL LANGUAGE RULE: Always respond in the EXACT language of the user's CURRENT message. If the user switches language mid-conversation, switch with them immediately. Never mention or reference products, brands, or services that are not part of the user's question. ")
-      append(
-          "When mentioning measurements, always show BOTH metric and imperial units: °C (°F), km (mi), m (ft), kg (lbs), km/h (mph), liters (gallons), cm (in), etc. ")
-      append(
-          "Each question is independent — answer ONLY the current question. Do NOT repeat or mix in information from previous answers unless the user explicitly refers to them.")
+      append(ChatPromptFragments.section("rules") ?: "")
     }
   }
 
   private fun StringBuilder.appendDocumentGrounding() {
-    append(
-        " DOCUMENT GROUNDING: The user has uploaded a document. " +
-            "Answer ONLY based on what you can actually see in the provided document image(s). " +
-            "Do NOT recite general knowledge about the type of document, its typical contents, or information you may know from training data. " +
-            "If the document is unreadable or a specific detail is not visible, say so honestly instead of guessing or filling in from general knowledge. " +
-            "Internet search, if available, should only be used when the user explicitly asks for external information — never to supplement or replace what is in the document.")
+    append(" ").append(ChatPromptFragments.section("document_grounding") ?: "")
   }
 
   private fun appendCapabilityReminder(
@@ -373,13 +331,14 @@ internal class MessageBuilder(
 
     if (capabilities.isNotEmpty()) {
       val capList = capabilities.joinToString(" and ")
-      messages.add(message("user", "Do you have access to $capList now?"))
+      messages.add(
+          message(
+              "user",
+              ChatPromptFragments.section("capability_user", "capabilities" to capList) ?: ""))
       messages.add(
           message(
               "assistant",
-              "Yes! I have access to $capList. " +
-                  "I MUST use CALL:search for: current events, weather, prices, phone numbers, addresses, opening hours, contact information, news, official data, or ANY specific factual detail that could be wrong or outdated. " +
-                  "Answering from memory alone is NEVER acceptable for such questions — I must always search first."))
+              ChatPromptFragments.section("capability_assistant", "capabilities" to capList) ?: ""))
     }
   }
 

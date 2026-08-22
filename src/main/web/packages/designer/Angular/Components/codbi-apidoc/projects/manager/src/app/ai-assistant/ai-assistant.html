@@ -65,7 +65,7 @@
                 </div>
 
                 <div class="cb-ai-token-row" title="Estimated tokens (characters ÷ 4). This run sums all AI calls made for one Run action (e.g. form pass + CodBi pass), so it is not a single inference.">
-                    <span class="cb-ai-token-item">This run (est.): <strong>{{ lastTokens }}</strong></span>
+                    <span class="cb-ai-token-item">This run: <strong>{{ lastTokens }}</strong></span>
                     <span class="cb-ai-token-item">Session total: <strong>{{ sessionTokens }}</strong></span>
                     <span class="cb-ai-token-item">tokens</span>
                     @if (lastCostLabel) {
@@ -384,16 +384,31 @@
         <div class="cb-ai-chat-messages">
             @for (m of chatMessages; track $index) {
                 <div class="cb-ai-chat-msg" [class.cb-ai-chat-msg--user]="m.role === 'user'">
-                    <button
-                        type="button"
-                        class="cb-ai-chat-copy"
-                        [class.cb-ai-chat-copy--copied]="copiedChatIndex === $index"
-                        [title]="copiedChatIndex === $index ? 'Copied' : 'Copy message'"
-                        (click)="copyChatMessage(m.text, $index)"
-                        aria-label="Copy message">
-                        <i [class]="copiedChatIndex === $index ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
-                    </button>
-                    <div class="cb-ai-chat-bubble">{{ m.text }}</div>
+                    <div class="cb-ai-chat-actions">
+                        <button
+                            type="button"
+                            class="cb-ai-chat-view"
+                            [class.cb-ai-chat-view--plain]="m.view === 'plain'"
+                            [title]="m.view === 'plain' ? 'Show rendered Markdown' : 'Show plain text'"
+                            (click)="toggleChatMessageView($index)"
+                            aria-label="Switch between rendered Markdown and plain text view">
+                            <i [class]="m.view === 'plain' ? 'pi pi-eye' : 'pi pi-code'" aria-hidden="true"></i>
+                        </button>
+                        <button
+                            type="button"
+                            class="cb-ai-chat-copy"
+                            [class.cb-ai-chat-copy--copied]="copiedChatIndex === $index"
+                            [title]="copiedChatIndex === $index ? 'Copied' : 'Copy message'"
+                            (click)="copyChatMessage(m.text, $index)"
+                            aria-label="Copy message">
+                            <i [class]="copiedChatIndex === $index ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    @if (m.view === 'plain') {
+                        <div class="cb-ai-chat-bubble">{{ m.text }}</div>
+                    } @else {
+                        <div class="cb-ai-chat-bubble cb-ai-chat-bubble--markdown" [innerHTML]="markdownHtml(m.text)"></div>
+                    }
                 </div>
             }
             @if (chatLoading) {
@@ -408,9 +423,11 @@
                 rows="2"
                 class="cb-ai-chat-input"
                 placeholder="Ask about the form or give an instruction…"
-                title="Ctrl + Enter to send"
+                title="Ctrl + Enter to send · Arrow Up/Down on the first/last line to browse past prompts"
                 [(ngModel)]="chatInput"
                 (keydown.control.enter)="sendChatMessage()"
+                (keydown.arrowup)="onChatArrowUp($event)"
+                (keydown.arrowdown)="onChatArrowDown($event)"
                 [disabled]="chatLoading">
             </textarea>
             <p-button

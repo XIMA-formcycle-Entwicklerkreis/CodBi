@@ -44,6 +44,10 @@ LOOP CHILD NODE PLACEMENT (CRITICAL — applies to FC_FOR_EACH_LOOP, FC_WHILE_LO
 
 PLACEHOLDERS: To include a form field value in email body/subject/recipient use [%technicalId%] where 'technicalId' is taken from the FORM ELEMENTS list. Example: [%tfEmail%] for a field whose 'technicalId' is 'tfEmail'.
 
+REPEATED / DYNAMIC ELEMENTS IN THE WORKFLOW (from the Formcycle "Repeated elements in the workflow" article):
+- In the FORM, every duplicated element of a repeatable/dynamic container gets a generated name following the schema `Elementname_index` — e.g. three instances of `tf1` become `tf1_0`, `tf1_1`, `tf1_2`. These per-instance names (name + `_` + zero-based index) can be referenced directly (e.g. `[%tf1_0%]` in an inbox column or a workflow action).
+- In the INBOX and in the WORKFLOW, a plain `[%fieldName%]` placeholder of a dynamic element returns ALL its values joined with commas (one comma-separated string). For per-row processing (or to build a combined value like a JSON array or a multi-line list) do NOT rely on that string — iterate the container with FC_FOR_EACH_LOOP (sourceType FORM_FIELD_REPETITIONS) and place the per-row action in `_childNodes` (see REPEATABLE-CONTAINER → JSON → STORAGE above).
+
 AVAILABLE SERVER VARIABLES (system placeholders — use [%\$NAME%] syntax, no curly braces):
   FORM RECORD:
     [%\$PROCESS_ID%] — form record process ID (string)
@@ -561,6 +565,7 @@ Iterates over items (repeatable form fields, field values, files, attachments, C
 - CRITICAL — When the user says "für jede Klausel" (for each clause), "für jeden Eintrag" (for each entry), "pro Zeile" (per row), or uses "für jede/n" (for each) with a field label, the field is inside a repeatable container. Use FC_FOR_EACH_LOOP with source type FORM_FIELD_REPETITIONS. Set "fieldTechnicalId" to the field's technicalId and wrap the action nodes in "_childNodes".
 - CRITICAL — When the user says "durch ein X getrennt" (separated by X), "voneinander getrennt durch" (separated by), "getrennt durch Komma/Strich/Punkt" (separated by comma/hyphen/dot), the field contains delimiter-separated values. Use CHARACTER_SEPARATED_VALUES as sourceType. Set "fieldTechnicalId" to the field's technicalId, "delimiter" to the delimiter character, and "sourceType":"CHARACTER_SEPARATED_VALUES".
 - CRITICAL — The child action nodes must be placed in a "_childNodes" array inside nodeParams, similar to FC_MULTIPLE_CONDITION. Each child has "nodeType" and "nodeParams".
+- LOOP DATA PLACEHOLDER (Formcycle "Loops" article): every named loop exposes its current iteration's data via [%\$<loop_name>.CURRENT%] inside the loop — name the loop (a taskName label) so children can reference the current item; after the loop the loop's own RESULT (accessible like other action results) holds the number of times the loop ran.
 - Example output for repeatable field:
   {"taskName":"Send email per Klausel","triggerType":"FC_FORM_SUBMIT_BUTTON","triggerParams":{"buttonName":"btnSubmit"},"nodeType":"FC_FOR_EACH_LOOP","nodeParams":{"fieldTechnicalId":"tfKlausel","_childNodes":[{"nodeType":"FC_EMAIL","nodeParams":{"to":"A@B.C.DE","subject":"XXX","body":"<p>ZZZ</p>","from":"X@X.XX"}}]},"endpointState":"Received","endpointType":"FC_CHANGE_STATE"}
 - Example output for character-separated values:

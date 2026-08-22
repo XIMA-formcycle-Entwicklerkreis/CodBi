@@ -155,7 +155,7 @@ The approach is sound and is essentially a **golden-set / acceptance test** of t
 | LDAP.Find | "Suche 'sn=Callari' im LDAP." | `{ LDAP.Find > AND ; sn=Callari }`. |
 | Net.URL | "Lade den Inhalt der URL." | `{ Net.URL > <url> }`. |
 | OpenPLZ.Localities | "Suche Orte, die mit 'An' beginnen (DE)." | `{ OpenPLZ.Localities > de ; ^An }`. |
-| OpenPLZ.Streets | "Suche Straßen in 91522." | `{ OpenPLZ.Streets > de ; 91522 ; … }`. |
+| OpenPLZ.Streets | "Suche Straßen in 91522." | `{ OpenPLZ.Streets > ; .* ; 91522 }`. |
 | OpenPLZ.OrganizationalUnits | "Alle Kantone der Schweiz." | `{ OpenPLZ > ch ; Cantons }` (or OrganizationalUnits). |
 | OpenPLZ.TextSearch | "Volltextsuche '91522 Karolinen'." | `{ OpenPLZ.TextSearch > de ; 91522 Karolinen }`. |
 | Sorted / Unique | "Sortiere / dedupliziere die Ortsnamen." | `{ Sorted > { JSON.Path > … ; name } }` / Unique analog. |

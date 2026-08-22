@@ -15,7 +15,7 @@ Parameters explicitly marked **REQUIRED** below MUST be present on the element (
 Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).
 
 When the user asks for an AI chat / KI-Chat / chatbot, create ALL of the following elements — never an empty container and never a placeholder span / "Chat-Platzhalter" element. Building the chat is part of the current change; do NOT defer it. EVERY sub-element below is REQUIRED — including the Upload's `fileextension="image/*,.pdf"` attribute and the Mail container (MailForward checkbox + MailAddress field); omitting any of them is a FAIL:
-- XContainer wrapper with `fullwidth` property set to `"1"` (MUST be `"1"`, never `"0"`). Do NOT add data-cb-func="ai.llama.chat" to the container — it goes ONLY on the chat display.
+- XContainer wrapper with `fullwidth` property set to `"1"` (MUST be `"1"`, never `"0"`). Do NOT add data-cb-func="ai.llama.chat" to the container, the Upload or any other sub-element — it goes ONLY on the chat display XTextArea; every other chat sub-element (Input/Send/Stop/Upload/checkboxes/Mail) is wired ONLY via its AI_LLAMA_CHAT_* CSS class (standard configuration), never via a data-cb-func.
 - Chat display: XTextArea (data-cb-func="ai.llama.chat", readonly, fullwidth, autosize, no label). ADD attributes: data-cb-MaxPixelSize="360000", data-cb-maxchatwindowheight="1200".
 - User input: XTextArea (cssclasses=["AI_LLAMA_CHAT_Input"], fullwidth, autosize).
 - Send button: XButtonList with SINGLE button (cssclasses=["AI_LLAMA_CHAT_Send"], action.page="").
@@ -27,7 +27,7 @@ When the user asks for an AI chat / KI-Chat / chatbot, create ALL of the followi
 - Alert checkbox: XCheckbox (cssclasses=["AI_LLAMA_CHAT_AlertOnFinish"]).
 - Mail container: XContainer containing mail checkbox + mail address field.
 - Mail checkbox: XCheckbox (cssclasses=["AI_LLAMA_CHAT_MailForward"]) inside the mail container.
-- Mail address: XTextField (cssclasses=["AI_LLAMA_CHAT_MailAddress"], datatype="email") inside the mail container. Set hiddenif="<MailForwardCheckbox_ID>", hiddenifcomp=0 and hiddenifclear="false" as DIRECT properties.
+- Mail address: XTextField (cssclasses=["AI_LLAMA_CHAT_MailAddress","CodBi_People_Mail"], datatype="email") inside the mail container. The MailForward checkbox toggles its visibility — set hiddenif="<MailForwardCheckbox_ID>", hiddenifcomp="9" (EConditionType EMPTY: hidden while the checkbox is empty/unchecked) and hiddenifclear="false" as DIRECT properties so the address is hidden while MailForward is UNCHECKED (has no value) and only shown once it is CHECKED. CodBi_People_Mail (People standard class) restricts input to valid e-mail characters.
 
 CRITICAL — Distinguish from Form Chatbot Plugin (XIMA Chatbot): Use XNavigationBar for XIMA mentioned navigation. Use CodBi ai.llama.chat ONLY when "CodBi KI-Chat" is explicitly mentioned.
 
@@ -35,14 +35,19 @@ CRITICAL — Distinguish from Form Chatbot Plugin (XIMA Chatbot): Use XNavigatio
 
 Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR. USE whenever the request asks to extract/text-recognize the content of an uploaded image/PDF into a text field (e.g. "per OCR den Text extrahieren und in ein Feld schreiben").
 - **REQUIRED**: Mode ("print" or "verify") AND the receiver field link data-cb-field (dot-prefixed class selector of the target field's `name`, e.g. data-cb-field=".tfExtractedText" — never an ID selector, never without it).
-- Create the receiver field (e.g. an XTextArea `tfExtractedText`) when the request names a target field that does not exist yet, and link it via data-cb-field.
+- Create the receiver field (e.g. an XTextArea `tfExtractedText`) when the request names a target field that does not exist yet, link it via data-cb-field, and enable AutoResize on it (autosize="1") so the extracted text is displayed comfortably.
 - Mode="print": except when a specific mode is requested, this is the default for writing extracted text into a receiver field — still set data-cb-field so the target is explicit.
 - Mode="verify": additionally **REQUIRED** to set Pattern, RegExFlags, WrongFileMessage, InvalidImageText (ALL five for verify).
 
 ## Date.Frame
 
 Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.
-**REQUIRED**: data-cb-maxfield = the END (maximum) date field's name. The begin field is the tagged element.
+**REQUIRED**: data-cb-maxfield = the END (maximum) date field's name. The begin field is the tagged element. Connect the two jQuery-datepicker date fields so the BEGIN date may not be AFTER the END date (Begin ≤ End when equality is permitted).
+
+**OPTIONAL PARAMS (from the Date.Frame tsdoc):**
+- `EqualityPermitted`: a boolean indicating whether equality between the minimum (begin) and maximum (end) date is allowed. Default (unset) = equality permitted, so the begin and end may be the SAME date. Set it explicitly only when the user requires strictly different dates (end strictly after begin) — e.g. for a booking range where start and end must differ.
+- `MsgMinInvalid` / `MsgMaxInvalid`: optional custom error-message strings shown when the begin is after the end, or the end is before the begin.
+- REPEATABLE CONTAINERS: for the frame to work inside a repeatable/dynamic container, the tagged BEGIN input AND the corresponding END (MaxField) must be within the SAME container row.
 
 CSS-CLASS VARIANT — when the standard-configuration CSS classes are used instead of data-cb-func, apply `CodBi_DateFrame_N_Begin` to the BEGIN date field AND `CodBi_DateFrame_N_End` to the END date field (BOTH fields get their own class, with the SAME frame number N). There is NO combined `CodBi_DateFrame_N_Begin_End` class — never invent it. Never apply these classes to a container/fieldset — only to the two date fields. A two-field date RANGE (Start/End, Von/Bis, Kursbeginn/Kursende) is ALWAYS Date.Frame — do NOT model a range as a mere Date.Min; a Date.Min may be added to the BEGIN field, but the range itself still requires Begin on the START field AND End on the END field.
 
@@ -136,8 +141,8 @@ Example — a "message" textarea that becomes a rich text editor for writing a m
 Applicable on any element to wrap it in a collapsible accordion/panel widget.
 
 PREFER THE STANDARD CSS CLASSES (see UI.Panels) — they need NO data-cb-* parameters and cover the common panel/accordion cases. Choose the class by what the prompt says about the panel:
-- A single standalone collapsible panel → CSS class CodBi_HTML_Panel_Standard on the XFieldSet; the fieldset's 'legend' becomes the panel title.
-- Multiple collapsible sections where ONLY ONE may be open at a time (accordion / mutually exclusive) → give EACH collapsible fieldset BOTH classes: the accordion membership class CodBi_Accordion_A (or B/C/D — use the SAME letter on every member) AND a panel type class (CodBi_HTML_Panel_Standard for top-level panels, Flat/Minimal for nested levels). The accordion class alone only says which group a panel belongs to — it does NOT make the fieldset collapsible, so the panel type class is REQUIRED on every member. The accordion keeps exactly one member open. Panels default to UNFOLDED (open), so the member that must be open at the start (e.g. "am Anfang ... aufgeklappt") needs NO data-cb-folded; set data-cb-folded="true" on every OTHER member that shall start folded/closed. NEVER use data-cb-open — that parameter does not exist.
+- A single standalone collapsible panel ("Standard-Panel" / "aufklappbares Panel" / "collapsible panel") on a fieldset → CSS class CodBi_HTML_Panel_Standard on the XFieldSet; the fieldset's 'legend' becomes the panel title. Apply this to EVERY standalone panel fieldset — e.g. the event-registration fieldset "Veranstaltung".
+- Multiple collapsible sections where ONLY ONE may be open at a time (accordion / mutually exclusive) → put the accordion membership class CodBi_Accordion_A (or B/C/D — pick ONE letter) on the CONTAINER that wraps the sections (an XContainer; the container is NOT a panel and gets NO panel type class). Then put a panel type class (CodBi_HTML_Panel_Standard for top-level panels, Flat/Minimal for nested levels) on EVERY member XFieldSet INSIDE that container. The accordion class alone only says which group a panel belongs to — it does NOT make anything collapsible, so the panel type class is REQUIRED on every member. EXPLICIT STRUCTURE for an accordion with three panels: a wrapper XContainer cssclasses=["CodBi_Accordion_A"] (NO panel class on it) containing three XFieldSet members each cssclasses=["CodBi_HTML_Panel_Standard"] with legend="<panel title>". The real classes are ONLY CodBi_Accordion_A, CodBi_Accordion_B, CodBi_Accordion_C and CodBi_Accordion_D — there is NO class 'CodBi_Accordion_A_B_C_D'; NEVER apply it. The accordion keeps exactly one member open. Panels default to UNFOLDED (open), so the member that must be open at the start (e.g. "am Anfang ... aufgeklappt") needs NO data-cb-folded; set data-cb-folded="true" on every OTHER member that shall start folded/closed. NEVER use data-cb-open — that parameter does not exist.
 - A panel that must NOT join the accordion behavior → CSS class CodBi_HTML_Panel_NoCordion on that panel.
 - Panels by NESTING DEPTH → CodBi_HTML_Panel_Standard at the top (1st level), CodBi_HTML_Panel_Flat for a panel nested inside a panel (2nd level), CodBi_HTML_Panel_Minimal for a panel two levels deep (3rd level); deeper levels repeat Standard → Flat → Minimal.
 - An index-like panel (like a book index / table of contents, numbered unfoldable sections e.g. "1. Your Info, 2. Describe Your Issue, 3. Upload Files") → CodBi_HTML_Panel_Index.
@@ -150,6 +155,18 @@ Use data-cb-func=html.panel ONLY when no standard class matches the requirement 
 - data-cb-generateheader="true" — the clickable panel header must be generated.
 - data-cb-autoheadertitle="<title>" — the header text (use the panel/group title from the prompt).
 - For an accordion built manually: data-cb-accordion="true" on every member plus data-cb-folded (false = open initially, true = folded). Exactly one member may be open initially.
+
+## HTML.Select.Injection
+
+Applicable on an XSelect (select/dropdown) to dynamically populate its <option> entries from an element placeholder (EP) — use whenever a select's options come from a lookup EP (e.g. an "Ortsvorschläge" field listing all localities, "Straßen in <PLZ>", "Kantone der Schweiz"). Parameters:
+- data-cb-Values (REQUIRED): the entries — an EP placeholder that returns the list, e.g. data-cb-Values="{ OpenPLZ.Localities > de ; ^An }" (all DE localities starting with "An"), or "{ Unique > { OpenPLZ.Localities > de ; ^An ; 1 }; name }" when a distinct name list is needed.
+- data-cb-ValueProperty (REQUIRED for object-returning EPs — e.g. OpenPLZ.Localities): the property to use as the <option> value — set "name" so the value is the city name.
+- data-cb-TextProperty (REQUIRED for object-returning EPs): the property to use as the visible <option> text — set "name" (falls back to ValueProperty).
+CRITICAL — OpenPLZ.Localities returns objects {postalCode, name, district, federalState, municipality, ...} with postalCode as the FIRST string. WITHOUT data-cb-ValueProperty="name" / data-cb-TextProperty="name" the functionality uses the first string property (the postalCode) as the option, so the "Ortsvorschläge" select would show PLZ numbers instead of the city names. Always set both to "name" for locality/street/canton lists.
+- data-cb-Titles / data-cb-TitleProperty: optional <option> title-attributes.
+- data-cb-ReClean: "true" to clear existing options before populating.
+CRITICAL — NEVER put the EP into data-cb-Data for this functionality (data-cb-Data belongs to Sys.Log.Console / HTML.Text.Injector). The EP goes into data-cb-Values. APPLIES to XSelect only.
+CRITICAL — EMPTY the XSelect's manual `options`: an XSelect carrying data-cb-func="html.select.injection" MUST have an EMPTY Formcycle `options` array ([]) by default. Manually entered options are rendered by the browser at the BEGINNING of the select, ahead of the EP-injected options (the functionality appends after them), so they would appear as unwanted leading entries. Only add specific `options` when the user EXPLICITLY asked for leading options (they are then shown first, before the injected list); otherwise leave it empty.
 
 ## HTML.SETAttribute
 
@@ -166,7 +183,15 @@ CRITICAL — When MORE THAN ONE functionality applies to the SAME element (e.g. 
 
 ## HTML.Text.Injector
 
-Applicable on any element to inject a dynamic text value into a specific property of that element. **REQUIRED**: data-cb-replacement (the EP expression AS-IS — do NOT resolve it), data-cb-placeholder (the placeholder string verbatim), and data-cb-property (default "innerHTML"). Keep the element's rtevalue unchanged.
+Applicable on an **XSpan** (the plain-text/HTML element — NEVER XText, which does not render) OR on an **XTextField / XTextArea** (input field / textarea) to inject a dynamic text value into a specific property of that element. **HTML.Text.Injector only REPLACES a placeholder inside the element's target property — it does NOT set or append the value on its own** (the placeholder defaults to `[[INJECTOR_REPLACEMENT]]`; if the target property does not contain it, nothing is injected). **REQUIRED**: data-cb-replacement (the EP expression AS-IS, e.g. `{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }` — it is resolved at runtime), data-cb-placeholder (the marker that is replaced; default `[[INJECTOR_REPLACEMENT]]`), and data-cb-property (the element property that holds the placeholder and receives the replacement). **XSpan**: data-cb-property="innerHTML" AND the placeholder MUST be written into the XSpan's text content — its Formcycle value property `rtevalue` (`rtevalue="[[INJECTOR_REPLACEMENT]]"`) — the placeholder in the rendered content is then replaced by the resolved EP result. **XTextField / XTextArea (input field / textarea)**: data-cb-property="value" AND the placeholder MUST be written into the Formcycle field's `value` property (e.g. `"value":"[[INJECTOR_REPLACEMENT]]"`) — WITHOUT the placeholder in the field's value properties the data-cb-replacement will NEVER reach the value. **CRITICAL — data-cb-func is the FUNCTIONALITY name `HTML.Text.Injector` — NEVER set data-cb-func to an element-placeholder (EP) name (e.g. NEVER `data-cb-func="OpenPLZ.Streets"`)**; the EP always goes into the `data-cb-replacement` value attribute, never into data-cb-func. (Setting an input's value from an EP may also be done with JSON.SET: data-cb-property="value" + data-cb-toset="{ <EP> }".)
+CORRECT full example — a read-only XTextArea that displays the EP result (the `value` property MUST hold the placeholder AND `data-cb-property` MUST be "value"):
+```json
+{"className":"XTextArea","properties":{"name":"taWetterKI","id":"xi-ta-wetter-ki","label":"Wetter-KI","required":"0","readonly":"1","value":"[[INJECTOR_REPLACEMENT]]","fullwidth":"1","autosize":"1"},"attributes":[{"text":"data-cb-func","value":"HTML.Text.Injector"},{"text":"data-cb-property","value":"value"},{"text":"data-cb-replacement","value":"{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }"}]}
+```
+CORRECT full example — an XSpan that displays the EP result (the `rtevalue` MUST hold the placeholder AND `data-cb-property` MUST be "innerHTML"):
+```json
+{"className":"XSpan","properties":{"name":"spWetterKI","id":"xi-sp-wetter-ki","rtevalue":"[[INJECTOR_REPLACEMENT]]"},"attributes":[{"text":"data-cb-func","value":"HTML.Text.Injector"},{"text":"data-cb-property","value":"innerHTML"},{"text":"data-cb-replacement","value":"{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }"}]}
+```
 
 ## HTML.Text.Mapper
 
@@ -179,8 +204,13 @@ CRITICAL — When applying this functionality you MUST also add a data-cb-initia
 
 ## JSON.SET
 
-Applicable on a hidden field to store a JSON-serialized value derived from another element. JSON.SET fallback only on explicit user request. USE when the request asks to store/combine the values of other fields as JSON in a hidden field (e.g. "verstecktes Feld, das das JSON aus tfVorname/tfNachname speichert"). Apply data-cb-func="JSON.SET" to a hidden XTextField/XTextArea with `invisible="1"` (a hidden JSON field MUST be invisible) and set the derivation parameters (data-cb-path naming the source fields from the request, e.g. "JSON aus tfVorname/tfNachname" → data-cb-path="tfVorname,tfNachname", plus data-cb-property and data-cb-toset) so the hidden field's value is the JSON object built from the referenced fields. NEVER emit an XTextField/XTextArea with data-cb-func="JSON.SET" WITHOUT `invisible="1"` and WITHOUT the derivation parameters.
-**REQUIRES**: the JSON expression / derivation rule (data-cb-property / data-cb-toset / data-cb-path) and the hidden (`invisible`=1) flag — derive them from the request; ask the user only when they cannot be derived.
+Applicable on a hidden field to store a JSON-serialized value derived from another element — ONLY with hard-coded values, NEVER with live field values. Apply data-cb-func="JSON.SET" to a hidden XTextField/XTextArea with `invisible="1"` (a hidden JSON field MUST be invisible) and set exactly these three parameters:
+- data-cb-property: the name of the property to set.
+- data-cb-path: a regular JavaScript path in dot notation (plain `x`, dotted `x.y.z`, empty method call `x()`, index access `x[0]`) leading from the property in data-cb-property onward. This is a SINGLE path — NEVER a CSV list of field names (`data-cb-path="tfVorname,tfNachname"` is WRONG).
+- data-cb-toset: the plain value to assign. To assign a JSON object literal, prefix it with `^` so its commas are NOT treated as CSV separators by CodBi (e.g. data-cb-toset="^{firstname:..., lastname:...}").
+CRITICAL — data-cb-property/data-cb-toset do NOT support field placeholders, so JSON.SET can NEVER build JSON from the RUNTIME values of other form fields. For a hidden field that stores the JSON of OTHER FIELDS' values (e.g. "verstecktes Feld, das das JSON aus tfVorname/tfNachname speichert") DO NOT use JSON.SET — create a Formcycle CALCULATION field (XFormula, read-only, formula in xformula_value) that builds the JSON, and mark it invisible="1". The xformula_value builds the JSON string EXACTLY as written using [%fieldName%] placeholders — e.g. xformula_value = {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"} — do NOT use JSON.stringify and do NOT reference bare field names ([%name%] is replaced by the field's runtime value).
+NEVER emit an XTextField/XTextArea with data-cb-func="JSON.SET" WITHOUT `invisible="1"` and WITHOUT the three derivation parameters.
+**REQUIRES**: data-cb-property, data-cb-path and data-cb-toset plus the hidden (`invisible`=1) flag — derive them from the request; ask the user only when they cannot be derived.
 
 ## LDAP.Autocomplete.Set
 
@@ -247,8 +277,9 @@ Also add the element's name to the first page's "elements" array. The `data-cb-D
 
 ## Time.Frame
 
-Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
-**REQUIRED**: data-cb-maxfield = the END (maximum) time field's name. The begin field is the tagged element.
+Applicable ONLY on the BEGIN (minimum) XTextField of **type 'time'** when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
+**REQUIRED**: data-cb-maxfield = the END (maximum) time field's name. The begin field is the tagged element. Both fields are time inputs restricted to HH:MM (pattern `^(0[0-9]|1[0-9]|2[0-3]):(0[0-9]|[1-5][0-9])$`) so the BEGIN time may not be AFTER the END time.
+- `EqualityPermitted`: specifies whether the SAME start and end time is permitted. Default (unset) = equality permitted, so begin and end may be identical (a zero-length slot). Set it to false only when the user requires the end time to be STRICTLY after the start — e.g. `CodBi_TimeFrame_4_Begin`/`CodBi_TimeFrame_5_Begin` are exactly the standard classes that forbid equal start/end.
 
 ## DQ.Table.View
 
@@ -272,6 +303,7 @@ Create an XContainer/XContainerInvisible and set on it (via the attributes array
 - data-cb-exportbutton = (optional) a CSS selector of an existing button that shall trigger the export. If omitted (or no matching element is found) the table is rendered WITHOUT any export button — the Excel export is then simply not available. When the user asks for an Excel export, YOU must make it reachable: set data-cb-exportbutton to the selector of an existing button on the form (e.g. the submit button) so the export control is actually rendered. Do NOT accept the request to export and then omit this parameter.
 - data-cb-centered = (optional) whether the content of the table cells is centered. Defaults to `true`; set to `false`/`0`/`no` to keep the cells left-aligned.
 - data-cb-excludecolumns = (optional) a CSV of column names (matched against the column's `label` or `datacolumn`) to EXCLUDE from the Excel-export — those columns stay visible in the table but are omitted from the exported `.xlsx`. E.g. `Nachricht,Wichtige_Hinweise`. Use this to honor "Details nicht exportieren" / "do not export Details".
+CRITICAL — DQ.Table.View is configured ONLY via the SEPARATE data-cb-* attributes above (data-cb-dataquery, data-cb-columns, data-cb-exportbutton, data-cb-excludecolumns, data-cb-centered, data-cb-filename, data-cb-sheetname, data-cb-css) on the container element. NEVER invent a combined single value like data-cb-Data="HolaQuery;columns=...;export=excel;detailsAsJson=true;excludeExportDetails=true" — that combined form is the Sys.Log.Console pattern and does NOT configure the table. Apply the functionality to an XContainer/XContainerInvisible (never an XSpan/XText) and request its details before emitting it.
 
 Example — a table that views the columns "Alter" and "Name" of the DataQuery "HolaQuery":
 "attributes": [

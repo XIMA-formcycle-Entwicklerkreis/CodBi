@@ -272,9 +272,42 @@ Filterable text field (DS Widget Plugin). Properties: xtf_ds_param (datasource p
 
 Calculation/formula field (XFormula Widget Plugin). Read-only input whose value is auto-computed from a JavaScript formula.
 
-CRITICAL: The formula expression goes into 'xformula_value' (NOT 'value' — using 'value' is wrong and won't work). All properties use the 'xformula_' prefix: xformula_value (the formula), xformula_type ("auto" or "text"), xformula_empty_as_zero ("0"=treat empty as text, "1"=treat as zero), xformula_index (order index). Formatting properties: xformula_unit, xformula_align ("p"=before number, "s"=after number), xformula_external ("true" for unit outside field), xformula_external_width, xformula_mdec, xformula_decimal, xformula_thousands, xformula_color_value, xformula_color_pos, xformula_color_neg. Do NOT set datatype, readonlyif, readonlyifmode, readonlyifcomp, or readonlyifvalue on XFormula.
+CRITICAL: The formula goes into 'xformula_value' (NOT 'value' — using 'value' is wrong and won't work). All properties use the 'xformula_' prefix: xformula_value (the formula), xformula_type ("auto" or "text"), xformula_empty_as_zero ("0"=treat empty as text, "1"=treat as zero), xformula_index (order index). Formatting properties: xformula_unit, xformula_align ("p"=before number, "s"=after number), xformula_external ("true" for unit outside field), xformula_external_width, xformula_mdec, xformula_decimal, xformula_thousands, xformula_color_value, xformula_color_pos, xformula_color_neg. Do NOT set datatype, readonlyif, readonlyifmode, readonlyifcomp, or readonlyifvalue on XFormula.
 
-XFormula computes from OTHER FORM FIELDS' VALUES only: `xformula_value` is a JavaScript expression over field values — NOT a full script and NOT the page DOM (no `$.xutil.xMapApi`, no global jQuery). It cannot read live map-widget geometry; any map→field data must already be in an ordinary field. The result is READ-ONLY and is formatted by the widget's own xformula_* properties (xformula_unit, xformula_decimal, xformula_thousands, xformula_align) — NOT by a target field's AutoNumeric.
+**SYNTAX — `xformula_value` is FULL JavaScript, not just a single expression.** It is executed verbatim with JavaScript syntax. Plain expressions are fine ("[%tf1%] + [%tf2%]"), but since plugin 3.6.0 it ALSO supports statements, `if/else`, `const`, ternary, and an explicit `return`. The result is the value of the last statement (or the `return` value), exactly like evaluating code in a REPL/browser console. Examples from the official documentation:
+```js
+const threshold = 10;
+if ([%tf1%] > threshold) [%tf2%];
+else [%tf3%];
+```
+```js
+if ([%tf1%] < 10) return 0;
+const sum = [%tf1%] + [%tf2%];
+sum * [%tf3%]; // result = last statement
+```
+So conditional pricing ("if the value is under 10, the price is 0, otherwise …") IS expressible — do NOT fall back to inventing hidden fields for it.
+
+**REFERENCING FIELD VALUES — FORMCYCLE placeholder vs jQuery selector:**
+1. FORMCYCLE placeholder: `[%tf1%]` (equivalent to the field's value; works for text, numbers, concatenation "[%tf1%] + ' ' + [%tf2%]", and `.length` → "[%tf1%].length" counts the typed characters).
+2. jQuery selector: `$('[name=tf1]').val()`.
+
+**CANONICAL form-element selector — `data-name` (from the Formcycle Selectors article):**
+To select a form element by its technical `name` (the name from the designer's base settings) you use the special attribute selectors `$("[data-name='tfMail']")` (jQuery/JavaScript) and `[data-name="tfMail"]` (CSS). `data-name` carries the element's NAME exactly as you configured it, so it is the most robust selector — inside repeatable/dynamic containers the plain HTML `name`/id get mangled with row-suffixes (`tf1_0`, `tf1_1`, …), while `data-name` stays stable. The XFormula widget also accepts such selectors for summing/counting repeated values.
+
+**CRITICAL — REPEATED (DYNAMIC) CONTAINERS: placeholders return ONLY THE FIRST ROW.**
+When a field lives inside a repeatable/dynamic container (an XContainer with `dynamic:"1"`), a plain placeholder like `[%tfBeginn%]` gives only the FIRST row's value — the extra added rows are NOT included. To sum or COUNT across ALL rows you MUST use a **jQuery selector** over the field's stable name, NOT a placeholder and NEVER an invented variable:
+- Sum of a repeated numeric field: `$('[data-name=tfBetrag]').sum()`
+- COUNT the number of repetitions/rows of the container: `$('[data-name=tfBeginn]').length` — where `tfBeginn` is a field that lives INSIDE the repeated container (its element is repeated once per row, so `.length` equals the row count).
+- Prefer the `data-name` selector (stable original name). `data-org-name` also carries the original un-mangled name and is accepted in W3C-conform mode; the plain `[name=tf1]` does NOT work reliably inside repeatable containers because the HTML `name` gets a row-suffix. Use `data-name=<fieldName>` (choose `<fieldName>` = the element's `properties.name`, e.g. `tfBeginn`).
+
+Example — the official pricing pattern for "every repetition of the panel costs X € on top of a base price":
+```js
+// Whenever you need "the number of times a container was repeated/added", DERIVE it from a field
+// that sits inside that container via a jQuery data-name selector — never invent a "..._count" var.
+// FS04: base 11.50 €, +11.25 € per ADDITIONAL repetition of the time-range container:
+11.5 + 11.25 * ($("[data-name='tfBeginn']").length - 1)
+```
+Whether a field value is a number, text, or repeated: XFormula computes from OTHER FORM FIELDS' / the DOM's values only. It cannot read live map-widget geometry; any map→field data must already be in an ordinary field. The result is READ-ONLY and is formatted by the widget's own xformula_* properties (xformula_unit, xformula_decimal, xformula_thousands, xformula_align) — NOT by a target field's AutoNumeric. The unit (e.g. "€") is set via `xformula_unit` (`xformula_align="s"` = after the value).
 
 ## XRating
 

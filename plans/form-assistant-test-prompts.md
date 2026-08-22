@@ -91,7 +91,7 @@ Run each card in **German and English** — label/endpoint language is part of t
 | E11 | "Suche 'sn=Callari' im LDAP." | `{ LDAP.Find > AND ; sn=Callari }`. |
 | E12 | "Lade den Inhalt der URL." | `{ Net.URL > <url> }`. |
 | E13 | "Suche Orte, die mit 'An' beginnen (DE)." | `{ OpenPLZ.Localities > de ; ^An }`. |
-| E14 | "Suche Straßen in 91522." | `{ OpenPLZ.Streets > de ; … }`. |
+| E14 | "Suche Straßen in 91522." | `{ OpenPLZ.Streets > ; .* ; 91522 }`. |
 | E15 | "Alle Kantone der Schweiz." | `{ OpenPLZ > ch ; Cantons }`. |
 | E16 | "Volltextsuche '91522 Karolinen'." | `{ OpenPLZ.TextSearch > de ; 91522 Karolinen }`. |
 | E17 | "Sortiere / dedupliziere die Ortsnamen." | `{ Sorted > … }` / `{ Unique > … }`. |

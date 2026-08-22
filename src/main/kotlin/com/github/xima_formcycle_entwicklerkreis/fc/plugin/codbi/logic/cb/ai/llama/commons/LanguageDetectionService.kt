@@ -22,7 +22,7 @@ internal data class DetectedLanguage(
     val thinkSeed: String,
     val searchPrompt: String,
     val searchPromptIntermediate: String =
-        "Review the search results. If they fully answer the question, give a short, direct answer in 2-4 sentences with Markdown links. If the results are insufficient, you may issue another search with CALL:search('refined query'). Do not repeat yourself.",
+        ChatPromptFragments.section("search_followup_intermediate") ?: "",
     val searchingLabel: String = "🔍 Searching the web for: \"%s\"",
     val analyzingLabel: String = "Analyzing %d results to formulate an answer.",
     val readingLabel: String = "\uD83D\uDCC4 Reading: \"%s\"",
@@ -172,12 +172,9 @@ internal class LanguageDetectionService(private val log: (LogLevel, String) -> U
       val messagesJson = buildString {
         append("[")
         append(
-            "{\"role\":\"system\",\"content\":\"You are a language detector. " +
-                "Detect the LANGUAGE the text is WRITTEN IN based on its words and grammar. " +
-                "IGNORE the topic, subject matter, or any people/places/countries mentioned in the text. " +
-                "The text may be in its native script OR romanized (Latin alphabet). " +
-                "Reply with ONLY the language name in English, nothing else. " +
-                "Examples: English, German, French, Italian, Spanish, Portuguese, Dutch, Turkish, Japanese, Chinese, Korean, Arabic, Russian, Hindi.\"}")
+            "{\"role\":\"system\",\"content\":\"" +
+                (ChatPromptFragments.section("language_detector") ?: "") +
+                "\"}")
         append(",{\"role\":\"user\",\"content\":\"Chi è Nelson Mandela?\"}")
         append(",{\"role\":\"assistant\",\"content\":\"Italian\"}")
         append(",{\"role\":\"user\",\"content\":\"Wie wird das Wetter in Tokyo?\"}")
@@ -561,9 +558,9 @@ internal class LanguageDetectionService(private val log: (LogLevel, String) -> U
     }
 
     return if (isLastRound) {
-      "Give a short, direct answer in 2-4 sentences using the search results. Include relevant links from the results as Markdown links. Do not repeat yourself."
+      ChatPromptFragments.section("search_followup_last") ?: ""
     } else {
-      "Review the search results. If they fully answer the question, give a short, direct answer in 2-4 sentences with Markdown links. If the results are insufficient, you may issue another search with CALL:search('refined query'). Do not repeat yourself."
+      ChatPromptFragments.section("search_followup_intermediate") ?: ""
     }
   }
 

@@ -186,12 +186,55 @@ cb-ai-assistant-log {
     border-color: #b8cff0;
 }
 
+/* Loading state: occupies the whole treeview area (the tree is hidden while loading) and centers a
+   spinner in the middle of it, growing/shrinking with the dialog height like the tree does. */
 .cb-log-spinner {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.88em;
+    justify-content: center;
+    gap: 0.75rem;
+    font-size: 0.9em;
     color: #666;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fff;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 1rem;
+}
+
+/* The change-log loader line is DARK ORANGE (CodBi brand) instead of the PrimeNG theme's default
+   red. The theme's four animated arc colors come from the --p-progressspinner-color-* variables; the
+   stroke fallback forces the same color even when the theme uses an older variable scheme. */
+.cb-log-spinner .p-progressspinner {
+    --p-progressspinner-color-1: #ff8c00;
+    --p-progressspinner-color-2: #e67e22;
+    --p-progressspinner-color-3: #d97a00;
+    --p-progressspinner-color-4: #ff9f40;
+}
+/* The loader line is DARK ORANGE and LONG: PrimeNG's default dash only reaches 89/200 of the
+   circumference (looks like a spinning dot). Override the circle's dash animation with a custom one
+   that keeps a long dark-orange arc (40→170/200) while the rotation on .p-progressspinner-spin
+   still sweeps it around. */
+.cb-log-spinner .p-progressspinner-circle {
+    stroke: #ff8c00 !important;
+    stroke-dasharray: 170, 200;
+    animation: cb-log-spinner-dash 1.5s ease-in-out infinite;
+}
+@keyframes cb-log-spinner-dash {
+    0% {
+        stroke-dasharray: 40, 200;
+        stroke-dashoffset: 0;
+    }
+    50% {
+        stroke-dasharray: 170, 200;
+        stroke-dashoffset: -35px;
+    }
+    100% {
+        stroke-dasharray: 170, 200;
+        stroke-dashoffset: -124px;
+    }
 }
 
 .cb-log-empty {

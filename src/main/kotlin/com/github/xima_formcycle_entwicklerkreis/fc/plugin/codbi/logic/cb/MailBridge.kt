@@ -1,6 +1,7 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ChatPromptFragments
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -230,12 +231,9 @@ object MailBridge : CodBi() {
   fun formatResultForModel(result: MailResult): String {
     return if (result.success) {
       "MAIL SENT SUCCESSFULLY to ${result.recipient} with subject \"${result.subject}\".\n" +
-          "INSTRUCTIONS: Briefly confirm to the user that the email was sent. " +
-          "Mention the recipient and subject. Do not repeat the full email body."
+          (ChatPromptFragments.section("mail_success") ?: "")
     } else {
-      "MAIL SENDING FAILED: ${result.error}\n" +
-          "INSTRUCTIONS: Inform the user that the email could not be sent and explain the reason. " +
-          "Do NOT retry automatically."
+      "MAIL SENDING FAILED: ${result.error}\n" + (ChatPromptFragments.section("mail_failure") ?: "")
     }
   }
 

@@ -1,0 +1,1 @@
+You MUST now return the COMPLETE modified form JSON with ALL items. Do NOT return a need_codbi_details request - you already received every reference you need. Build every field/element the user asked for using the widget templates above.

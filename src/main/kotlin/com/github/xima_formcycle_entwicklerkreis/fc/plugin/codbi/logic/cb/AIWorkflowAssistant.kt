@@ -1,5 +1,12 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
+// !!! REMINDER — NEVER embed AI prompt / system-prompt text in Kotlin files !!!
+// All prompt text belongs in the .md files under
+// src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/
+// (see prompts/index.json) and is loaded via PromptLoader / loadPromptWithClasspathFallback / the
+// template helpers. Adding prompt strings to .kt files is forbidden — they get out of sync, go
+// stale, and are never reseeded. Move any prompt text into the .md files instead.
+
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.Standard
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
@@ -331,87 +338,114 @@ class AIWorkflowAssistant : IPluginServletAction {
       inboxes: String? = null,
       requestedNodes: List<String> = emptyList(),
       requestedTriggers: List<String> = emptyList()
-  ): String = buildString {
-    // Load static prompt sections from database (condensed workflow nodes in pass-1, requested
-    // details in pass-2).
-    val dbPrompt = loadWorkflowPrompt(requestedNodes, requestedTriggers)
-    append(dbPrompt)
-    append(
-        "SCOPE: You operate ONLY on the currently open form. You CANNOT create, rename, duplicate or " +
-            "open a NEW or SEPARATE form, nor a second/admin/dashboard/overview form, on the server. If the " +
-            "user asks for a separate form or an admin/overview/dashboard form, do NOT promise to create one " +
-            "and do NOT ask for its title - instead explain that a separate form cannot be created here and " +
-            "offer to implement the requested capability (e.g. an overview / Excel export) as a workflow " +
-            "action on the CURRENT form.\n\n")
+  ): String {
+    val template = loadWorkflowTaskInstruction() ?: ""
+    if (template.isBlank()) return loadFallbackPrompt("codbi.fallback_workflow")
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    val general =
+        em?.let { PromptLoader.loadCategory(it, "formcycle")["formcycle.general"] ?: "" } ?: ""
+    val workflowReference =
+        em?.let {
+          if (requestedNodes.isNotEmpty() || requestedTriggers.isNotEmpty()) {
+            PromptLoader.buildWorkflowNodeDetails(it, requestedNodes, requestedTriggers)
+          } else {
+            PromptLoader.buildWorkflowNodesCondensed(it)
+          }
+        } ?: ""
+    em?.close()
+    return renderWorkflowSystemPrompt(
+        template,
+        general = general,
+        workflowReference = workflowReference,
+        pass2 = requestedNodes.isNotEmpty() || requestedTriggers.isNotEmpty(),
+        isPhase1 = isPhase1,
+        formContext = formContext,
+        workflowContext = workflowContext,
+        completionPages = completionPages,
+        htmlTemplates = htmlTemplates,
+        urlTemplates = urlTemplates,
+        inboxes = inboxes)
+  }
 
-    // Dynamic context (injected at runtime)
-    if (formContext != null) {
-      append(
-          "FORM ELEMENTS (match user descriptions via 'displayText'; always use 'technicalId' in output):\n" +
-              formContext +
-              "\n\n")
+  /**
+   * Loads the workflow task-instruction template — first from the DB (seeded from
+   * `codbi-workflow-task-instruction.md` as `codbi.workflow_task_instruction`), and while the seed
+   * hasn't run yet, directly from the bundled `.md` on the classpath. No prompt text is embedded in
+   * the backend.
+   */
+  private fun loadWorkflowTaskInstruction(): String? {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em != null) {
+      try {
+        val fromDb = PromptLoader.loadCategory(em, "codbi")["codbi.workflow_task_instruction"]
+        if (!fromDb.isNullOrBlank()) return fromDb
+      } catch (_: Exception) {} finally {
+        try {
+          em.close()
+        } catch (_: Exception) {}
+      }
     }
-    if (workflowContext != null) {
-      append(
-          "EXISTING WORKFLOW TASKS â€” for reference; avoid creating duplicates:\n" +
-              workflowContext +
-              "\n\n")
+    return runCatching {
+          AIWorkflowAssistant::class
+              .java
+              .classLoader
+              .getResourceAsStream(
+                  "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-workflow-task-instruction.md")
+              ?.bufferedReader(Charsets.UTF_8)
+              ?.use { it.readText() }
+              ?.trim()
+        }
+        .getOrNull()
+  }
+
+  /**
+   * Renders the workflow task-instruction template by filling its conditional `{{BEGIN_*}} …
+   * {{END_*}}` sections. A section is kept (with its `{{*_DATA}}` placeholder replaced) when the
+   * data is non-blank, and dropped entirely when the data is absent. Always-present sections
+   * (SCOPE, PDF GENERATION, OUTPUT CONTRACT) stay untouched. No prompt text lives in the backend.
+   */
+  private fun renderWorkflowSystemPrompt(
+      template: String,
+      general: String,
+      workflowReference: String,
+      pass2: Boolean,
+      isPhase1: Boolean,
+      formContext: String?,
+      workflowContext: String?,
+      completionPages: String?,
+      htmlTemplates: String?,
+      urlTemplates: String?,
+      inboxes: String?
+  ): String {
+    var out =
+        template
+            .replace("{{GENERAL}}", general)
+            .replace("{{WORKFLOW_REFERENCE}}", workflowReference)
+    out = applyWorkflowSection(out, "NEED_FORM_DATA", if (isPhase1) " " else null)
+    out = applyWorkflowSection(out, "WORKFLOW_DETAILS_REQUEST", if (pass2) null else " ")
+    out = applyWorkflowSection(out, "FORM_ELEMENTS", formContext)
+    out = applyWorkflowSection(out, "EXISTING_WORKFLOW_NODES", workflowContext)
+    out = applyWorkflowSection(out, "COMPLETION_PAGES", completionPages)
+    out = applyWorkflowSection(out, "HTML_TEMPLATES", htmlTemplates)
+    out = applyWorkflowSection(out, "URL_TEMPLATES", urlTemplates)
+    out = applyWorkflowSection(out, "INBOXES", inboxes)
+    return out
+  }
+
+  /** Keeps or drops one `{{BEGIN_name}}…{{END_name}}` section of a template. */
+  private fun applyWorkflowSection(template: String, name: String, data: String?): String {
+    val begin = "{{BEGIN_$name}}"
+    val end = "{{END_$name}}"
+    val startIdx = template.indexOf(begin)
+    if (startIdx < 0) return template
+    val endIdx = template.indexOf(end, startIdx)
+    if (endIdx < 0) return template
+    val afterEnd = endIdx + end.length
+    if (data.isNullOrBlank()) {
+      return template.removeRange(startIdx, afterEnd)
     }
-    if (isPhase1) {
-      append(
-          "IMPORTANT â€” You do NOT yet have the form element list.\n" +
-              "You MUST respond with {\"need\":\"form_data\"} UNLESS the request meets ALL of these:\n" +
-              "  1. No button is mentioned (not even vaguely â€” e.g. 'submit button', 'Senden', 'absenden')\n" +
-              "  2. No form field is mentioned (not even vaguely â€” e.g. 'email field', 'name field', 'E-Mail-Adresse')\n" +
-              "  3. All values needed for triggerParams and nodeParams are explicitly given as exact technical identifiers\n" +
-              "If ANY of these conditions is NOT met, respond ONLY with: {\"need\":\"form_data\"}\n\n")
-    }
-    if (requestedNodes.isEmpty() && requestedTriggers.isEmpty() && !isPhase1) {
-      append(
-          "WORKFLOW DETAILS REQUEST â€” You receive ONLY the condensed workflow-trigger/node list above.\n" +
-              "Before you emit the final workflow task JSON, if you need the exact triggerParams/nodeParams of any " +
-              "trigger or node type you intend to use, respond ONLY with the following JSON (nothing else):\n" +
-              "{\"status\":\"need_workflow_node_details\",\"nodes\":[\"FC_EMAIL\",\"FC_POST_REQUEST\",...],\"triggers\":[\"FC_FORM_SUBMIT_BUTTON\",...]}\n" +
-              "List EVERY trigger and node you plan to use (including condition/loop/container nodes) so none is missing. " +
-              "The server then provides the exact JSON schemas for exactly those and you continue with the final task JSON.\n\n")
-    }
-    if (!completionPages.isNullOrBlank()) {
-      append(
-          "AVAILABLE ABSCHLUSSSEITEN (completion pages â€” pick one for failurePage when creating a FC_DOI_INIT node):\n" +
-              completionPages +
-              "\n\n")
-    }
-    if (!htmlTemplates.isNullOrBlank()) {
-      append(
-          "AVAILABLE HTML TEMPLATES (for htmlTemplate when creating a FC_SHOW_TEMPLATE node):\n" +
-              htmlTemplates +
-              "\n\n")
-    }
-    if (!urlTemplates.isNullOrBlank()) {
-      append(
-          "AVAILABLE URL TEMPLATES (for urlTemplate when creating a FC_REDIRECT node):\n" +
-              urlTemplates +
-              "\n\n")
-    }
-    if (!inboxes.isNullOrBlank()) {
-      append(
-          "AVAILABLE INBOXES (for inboxName when creating a FC_MOVE_FORM_RECORD_TO_INBOX node):\n" +
-              inboxes +
-              "\n\n")
-    }
-    append(
-        "PDF GENERATION IS AUTOMATIC: nodes like FC_FILL_PDF (and PDF exports such as " +
-            "FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF) render a pre-configured template " +
-            "with the form data at runtime — Formcycle creates the PDF, not you. The PDF template " +
-            "is ALREADY configured in Formcycle; do NOT require a PDF template name, layout, text " +
-            "or content from the user and do not invent that text. Only use a template/file name the " +
-            "user explicitly mentioned (or a sensible default like \"filled.pdf\").\n" +
-            "CREATING AND SENDING A PDF IS A TWO-NODE OPERATION: first create a PDF-generation node " +
-            "(FC_FILL_PDF / FC_PROCESS_LOG_PDF / FC_EXPORT_FORM_RECORD_CHATS) that produces the PDF, " +
-            "then create an FC_EMAIL node that sends that PDF as an attachment, chained after the " +
-            "PDF node (via chainedNodes). NEVER put the PDF in an email as if it were a plain " +
-            "uploaded file with no producing node.\n\n")
-    append("Output ONLY valid JSON. No trailing commas. No comments.")
+    val body = template.substring(startIdx + begin.length, endIdx).replace("{{${name}_DATA}}", data)
+    return template.replaceRange(startIdx, afterEnd, body)
   }
 
   /**

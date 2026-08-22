@@ -5,7 +5,7 @@
       "id": "AI.LLAMA.CHAT",
       "type": "functionality",
       "summary": "Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).",
-      "tsdoc": "Provides the {@link AI_LLAMA_CHAT.functionality }.",
+      "tsdoc": "Build the FULL AI chat as a set of elements inside ONE XContainer wrapper whose `fullwidth` property MUST be \"1\" (never \"0\"). Do NOT add data-cb-func=\"ai.llama.chat\" to the container, the Upload or any other sub-element - it goes ONLY on the chat display XTextArea; every other chat sub-element (Input/Send/Stop/Upload/checkboxes/Mail) is wired ONLY via its AI_LLAMA_CHAT_* CSS class (standard configuration), never via a data-cb-func. When the user asks to embed an \"AI chat\"/\"KI-Chat\"/\"KI-Assistent\"/chatbot, ALWAYS create ALL of the following sub-elements inside the container - never an empty container and never a placeholder span/\"Chat-Platzhalter\" element. NONE of them are optional; omitting the Upload's fileextension, the Mail container, or any checkbox is a FAIL:\n- Chat display: XTextArea (data-cb-func=\"ai.llama.chat\", readonly, fullwidth, autosize, no label) with data-cb-MaxPixelSize=\"360000\" and data-cb-maxchatwindowheight=\"1200\".\n- User input: XTextArea (cssclasses=[\"AI_LLAMA_CHAT_Input\"], fullwidth, autosize).\n- Send button: XButtonList with SINGLE button (cssclasses=[\"AI_LLAMA_CHAT_Send\"], action.page=\"\").\n- Stop button: SEPARATE XButtonList with SINGLE button (cssclasses=[\"AI_LLAMA_CHAT_Stop\"], action.page=\"\").\n- Upload: XUpload (cssclasses=[\"AI_LLAMA_CHAT_Upload\"], fileextension=\"image/*,.pdf\").\n- Thinking checkbox: XCheckbox (cssclasses=[\"AI_LLAMA_CHAT_Thinking\"]).\n- Internet checkbox: XCheckbox (cssclasses=[\"AI_LLAMA_CHAT_Internet\"]).\n- Location checkbox: XCheckbox (cssclasses=[\"AI_LLAMA_CHAT_Location\"]).\n- Alert checkbox: XCheckbox (cssclasses=[\"AI_LLAMA_CHAT_AlertOnFinish\"]).\n- Mail container: XContainer containing a mail checkbox + mail address field.\n- Mail checkbox: XCheckbox (cssclasses=[\"AI_LLAMA_CHAT_MailForward\"]) inside the mail container.\n- Mail address: XTextField (cssclasses=[\"AI_LLAMA_CHAT_MailAddress\",\"CodBi_People_Mail\"], datatype=\"email\") inside the mail container, with hiddenif=\"<MailForwardCheckbox_ID>\", hiddenifcomp=9 (EConditionType EMPTY - hidden while the checkbox is unchecked), hiddenifclear=\"false\".\nCRITICAL - Distinguish from the XIMA Form Chatbot Plugin: use CodBi ai.llama.chat ONLY when \"CodBi KI-Chat\" is implied/requested; for XIMA chatbot navigation use XNavigationBar.",
       "parameters": {},
       "classDescriptions": {}
     },
@@ -13,7 +13,7 @@
       "id": "AI.OCR",
       "type": "functionality",
       "summary": "Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.",
-      "tsdoc": "Provides the {@link AI.functionality }.",
+      "tsdoc": "Applicable on an XUpload field to extract text from uploaded images/PDFs via OCR. Set data-cb-field (dot-prefixed class selector of the receiver field's name, e.g. .tfExtractedText) and data-cb-mode (print/verify). Create the receiver field (e.g. an XTextArea) with AutoResize enabled (autosize=\"1\") so the extracted text is displayed comfortably.",
       "parameters": {
         "Field": "CSS-Class-Selector for the field receiving the OCR output (e.g., \u0027.tfExtractedText\u0027). Use dot-prefixed class selector based on the target element\u0027s name. Do NOT use an ID selector."
       },
@@ -151,7 +151,7 @@
     "HTML.Text.Injector": {
       "id": "HTML.Text.Injector",
       "type": "functionality",
-      "summary": "Applicable on any element to inject a dynamic text value into a specific property of that element.",
+      "summary": "Applicable on XTextField/XTextArea or XSpan to inject a dynamic text value into the element's value. CRITICAL WIRING — data-cb-replacement only reaches the field value when BOTH are set: (1) data-cb-property MUST be set to 'value' on XTextField/XTextArea and 'innerHTML' on XSpan, AND (2) the data-cb-placeholder (default '[[INJECTOR_REPLACEMENT]]') MUST be placed inside the OWN value property of the field (XTextField/XTextArea) or its rtevalue property (XSpan) — e.g. 'value':'[[INJECTOR_REPLACEMENT]]' — otherwise data-cb-replacement never reaches the value. data-cb-func stays 'HTML.Text.Injector' (the FUNCTIONALITY name, never an EP name).",
       "tsdoc": "Provides the {@link HTML_Text_Injector.functionality }.",
       "parameters": {
         "Placeholder": "Specifies the string that shall be replaced within the.",
@@ -172,7 +172,7 @@
       "id": "JSON.SET",
       "type": "functionality",
       "summary": "Applicable on a hidden field to store a JSON-serialized value derived from another element.",
-      "tsdoc": "Provides the {@link JSON_SET.functionality }.",
+      "tsdoc": "Applicable on a hidden field to store a JSON-serialized value derived from another element — ONLY with hard-coded values, NEVER with live field values. Apply data-cb-func=\"JSON.SET\" to a hidden XTextField/XTextArea with invisible=\"1\" (a hidden JSON field MUST be invisible) and set exactly these three parameters:\n- data-cb-property: the name of the property to set.\n- data-cb-path: a regular JavaScript path in dot notation (plain x, dotted x.y.z, empty method call x(), index access x[0]) leading from the property in data-cb-property onward. This is a SINGLE path — NEVER a CSV list of field names (data-cb-path=\"tfVorname,tfNachname\" is WRONG).\n- data-cb-toset: the plain value to assign. To assign a JSON object literal, prefix it with \"^\" so its commas are NOT treated as CSV separators (e.g. data-cb-toset=\"^{firstname:..., lastname:...}\").\nCRITICAL — data-cb-property/data-cb-toset do NOT support field placeholders, so JSON.SET can NEVER build JSON from the RUNTIME values of other form fields. For a hidden field that stores the JSON of OTHER FIELDS' values (e.g. \"verstecktes Feld, das das JSON aus tfVorname/tfNachname speichert\") DO NOT use JSON.SET — create a Formcycle CALCULATION field (XFormula, read-only, formula in xformula_value) that builds the JSON, and mark it invisible=\"1\". The xformula_value writes the JSON string literally with [%fieldName%] placeholders, e.g. {\"vorname\":\"[%tfVorname%]\",\"nachname\":\"[%tfNachname%]\"} — do NOT use JSON.stringify and do NOT reference bare field names.\nREQUIRES: data-cb-property, data-cb-path and data-cb-toset plus the hidden (invisible=\"1\") flag — derive them from the request; ask the user only when they cannot be derived. A hidden field WITHOUT data-cb-func=\"JSON.SET\" or WITHOUT its three derivation params is a FAIL.",
       "parameters": {
         "Path": "The dotted path string leading to the object, starting from the.",
         "Property": "The name of the property to set.",
@@ -278,7 +278,7 @@
       "id": "DQ.Table.View",
       "type": "functionality",
       "summary": "Applicable on a container element to display the result of a Formcycle DataQuery in an injected HTML table and enable exporting it to Excel (.xlsx).",
-      "tsdoc": "Provides the {@link DQ_Table_View.functionality }.",
+      "tsdoc": "Applicable on a container element (XContainer/XContainerInvisible) to display a DataQuery result as an HTML table and export it to Excel (.xlsx). Configure ONLY via the SEPARATE data-cb-* attributes on the container: data-cb-dataquery (REQUIRED), data-cb-columns (REQUIRED, CSV label;datacolumn;jsonFlag[;width], entries separated by ','), data-cb-exportbutton (CSS selector of an existing button that triggers the Excel export), data-cb-excludecolumns (CSV of column names omitted from the export), data-cb-centered, data-cb-filename, data-cb-sheetname, data-cb-css. NEVER invent a combined single value like data-cb-Data=\"query;columns=...;export=excel;...\" — that is the Sys.Log.Console pattern and does NOT configure the table. Apply to an XContainer/XContainerInvisible, never to an XSpan.",
       "parameters": {
         "CSS": "An optional string of one or more (space separated) CSS classes applied to BOTH the tagged container and the injected table.",
         "Columns": "REQUIRED - A CSV defining the columns to show, each column is label;datacolumn;jsonFlag with an optional fourth entry ;width (e.g. Anrede;Anrede;false,Unternehmen;Unternehmen;true,Nachricht;Nachricht;false;30). jsonFlag true/1/yes marks a column as containing JSON so its cells show a maximizable JSON viewer (false/0/no for plain columns; a plain number in this position is treated as the legacy width).",
@@ -553,10 +553,10 @@
       "id": "OpenPLZ.Streets",
       "type": "ep",
       "summary": "An OpenPLZ -Request specialized into searching for streets.",
-      "tsdoc": "An {@link OpenPLZ }-Request specialized into searching for streets.\n### Config Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s name.\n- 3rd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s postal code. If this is empty the\n**4th** parameter will be used for the search as the street\u0027s city-name.\n- 4th: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city\u0027s name used if the **3rd**\nparameter is empty.\n- 5th: An Optional number of pages to load.",
+      "tsdoc": "An {@link OpenPLZ }-Request specialized into searching for streets.\n### Config Parameter:\n- 1st: The optional **country** to retrieve the data of (if not provided either the country specified in\nthe CodBi\u0027s Configuration **OpenPLZ_Country** will be used or, if not specified, \"de\").\n- 2nd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s name. **REQUIRED** — use \".*\" for \"any street\" when only a postal-code/city search is requested.\n- 3rd: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s postal code. If this is empty the\n**4th** parameter will be used for the search as the street\u0027s city-name.\n- 4th: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city\u0027s name used if the **3rd**\nparameter is empty.\n- 5th: An Optional number of pages to load.\n- CRITICAL — ALWAYS provide THREE parameters (country, street-name regex, postal/city regex): \"{ OpenPLZ.Streets > ; .* ; 91522 }\" (empty country → \"de\", \".*\" = any street, \"91522\" = postal code). NEVER emit only two parameters like \"{ OpenPLZ.Streets > de ; 91522 }\" — the postal code would land in the street-name slot and the search fails.",
       "parameters": {
         "1": "The optional country to retrieve the data of (if not provided either the country specified in.",
-        "2": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s name.",
+        "2": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s name. REQUIRED — use \".*\" for \"any street\" when only a postal-code/city search is requested.",
         "3": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street\u0027s postal code.",
         "4": "The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city\u0027s name used if the 3rd.",
         "5": "An Optional number of pages to load."
@@ -788,8 +788,8 @@
       "tsdoc": "Registers standard configurations providing CodBi-\"HTML.Panel\"s\nCSS-Classes\n- **CodBi_HTML_Panel_Standard**\nA panel with shaded gray background for the auto generated \\\u003ch2\u003e header that changes the title\u0027s color to darkgreen\nwhen unfolded. The content will appear through a popup animation.\n**Usage:**\nTag the {@link HTMLDivElement } or fieldset with the CSS-Class \"CodBi_HTML_Panel_Standard\" and set the attribute \"cbAutoheaderTitle\"\nto define the title showed in the header.\n- **CodBi_Accordion_A to D**\nSets up accordions using the **HTML.Panel.Accordion** Functionality named either\n**CodBi_Accordion_A**, **CodBi_Accordion_B**, **CodBi_Accordion_C** or **CodBi_Accordion_D** depending\non the Standardconfiguration-Class used.",
       "parameters": {},
       "classDescriptions": {
-        "CodBi_Accordion_A": "Sets up accordions using the HTML.Panel.Accordion Functionality named either CodBi_Accordion_A, CodBi_Accordion_B, CodBi_Accordion_C or CodBi_Accordion_D depending on the Standardconfiguration-Class used.",
-        "CodBi_HTML_Panel_Standard": "A panel with shaded gray background for the auto generated \\\u003ch2\u003e header that changes the title\u0027s color to darkgreen when unfolded."
+        "CodBi_Accordion_A": "Apply to a container to set up accordion group A. The container is NOT a panel - do NOT give it a panel type class (CodBi_HTML_Panel_Standard/Flat/Index/Minimal). Every member XFieldSet inside must ALSO carry a panel type class to become collapsible. Only CodBi_Accordion_A/B/C/D exist - there is no CodBi_Accordion_A_B_C_D.",
+        "CodBi_HTML_Panel_Standard": "A panel with shaded gray background for the auto generated h2 header that changes the title color to darkgreen when unfolded. Apply to EVERY XFieldSet that shall be a collapsible panel - a standalone panel AND every accordion member; NEVER to the accordion wrapping container."
       }
     }
   },

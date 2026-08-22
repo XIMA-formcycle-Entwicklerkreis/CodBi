@@ -177,8 +177,8 @@ Time.Frame, XNavigationBar (NOT Form.Navigator), XLanguageSwich, XFormula, XSpac
 
 **Prompt (DE):**
 > Erstelle eine Event-Anmeldung: ein Feldset „Veranstaltung“ als Standard-Panel mit der Überschrift
-> „Anmeldung“, ein Terminfinder „Wunschtermin“, ein Zeitbereich „Beginn“/„Ende“ (Beginn ist
-> Mindestzeit) und ein berechnetes, schreibgeschütztes Feld „Gesamtpreis“. Ordne drei weitere
+> „Anmeldung“, ein Terminfinder „Wunschtermin“, ein Zeitbereich „Beginn“/„Ende“ welches sich bis zu 3 mal wiederholen darf. Darunter ein berechnetes, schreibgeschütztes Feld „Gesamtpreis“.
+> Jede Wiedeholung des Panels "Anemldung" soll dort mit einem Preis von 11,25€ mit eingerechnet werden. Der Standardwert dess Feldes ist also 11,50€. Die € sind die Einheit des Feldes. Ordne drei weitere
 > Inhaltsgruppen als Akkordeon mit drei Panels an. Füge eine Navigations-/Fortschrittsleiste
 > (Formcycle-Navbar), einen Sprachumschalter und einen Abstand ein.
 
@@ -189,10 +189,42 @@ Time.Frame, XNavigationBar (NOT Form.Navigator), XLanguageSwich, XFormula, XSpac
 > three panels. Add a navigation/progress bar (Formcycle navbar), a language switcher and a spacer.
 
 **Verify:**
-- [ ] XFieldSet with `legend="Anmeldung"` + class `CodBi_HTML_Panel_Standard` (NOT `data-cb-func="HTML.Panel"` on a container); accordion via `CodBi_Accordion_A/B/C/D` on the three groups.
+- [ ] XFieldSet with `legend="Anmeldung"` + class `CodBi_HTML_Panel_Standard` (NOT `data-cb-func="HTML.Panel"` on a container); accordion = `CodBi_Accordion_A` (ONE single letter, NEVER the invented `CodBi_Accordion_A_B_C_D`) on the CONTAINER wrapping the three groups, with EACH of the three group XFieldSets ALSO carrying a panel type class `CodBi_HTML_Panel_Standard` — the panels themselves must have a panel class; the container is NOT a panel and gets NO panel type class.
 - [ ] Time.Frame on the BEGIN time field only with `MaxField` → end field (no Date.Frame).
-- [ ] XAppointment with `appointmentPlan`; XFormula read-only; XNavigationBar (NOT Form.Navigator); XLanguageSwich; XSpacer.
+- [ ] XAppointment with `appointmentPlan`; XFormula read-only (read-only = never `readonlyif`, XFormula is inherently locked); XNavigationBar (NOT Form.Navigator); XLanguageSwich; XSpacer.
 - [ ] Panel/accordion headers carry the requested German titles.
+- [ ] **Gesamtpreis XFormula** counts the repeated "Anmeldung"/time-range container CORRECTLY: `xformula_value` derives the repetition count from a field that lives INSIDE the repeated container via a jQuery `data-org-name` selector — e.g. `11.5 + 11.25 * ($('[data-org-name=<tfBeginn>]').length - 1)` (11.50 € base, +11.25 € per ADDITIONAL repetition). The unit is set via `xformula_unit` (e.g. "€", `xformula_align="s"`). **FAIL if the formula references a nonexistent `..._count` variable (e.g. `coZeitbereich_count`) instead of a real `data-org-name` selector** — that variable does not exist in the form.
+
+**Known trap — „coZeitbereich_count“ does not exist (2026-08-21):**
+For a price that scales with the number of reps of a repeatable (dynamic) container, the AI must NOT
+generate `11.5 + 11.25 * (coZeitbereich_count - 1)` — `coZeitbereich_count` is invented and never
+exists in the form. XFormula's `[%field%]` placeholder returns only the FIRST row of a repeated
+container, so it cannot count rows either. The CORRECT way to count the repetitions is a jQuery
+selector over the container member's un-mangled name: `$('[data-org-name=<fieldInsideContainer>]').length`
+(pick `<fieldInsideContainer>` = the `properties.name` of an element inside the repeated container,
+e.g. the "Beginn" time field `tfBeginn`). So the total price is
+`11.5 + 11.25 * ($('[data-org-name=tfBeginn]').length - 1)`. `xformula_value` is full JavaScript, so
+the arithmetic (and any `if`/`return`) goes straight into it; the "€" unit goes into `xformula_unit`
+(`xformula_align="s"`). See the XFormula section of
+[`formcycle-widgets.md`](../src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/formcycle-widgets.md:271).
+
+**Known trap — „CodBi_Accordion_A_B_C_D“ does not exist; accordion members need a panel class (2026-08-21):**
+The ONLY accordion classes are `CodBi_Accordion_A`, `CodBi_Accordion_B`, `CodBi_Accordion_C` and
+`CodBi_Accordion_D` — the combined name `CodBi_Accordion_A_B_C_D` is a markdown section heading, NOT
+a real class, and must NEVER be applied (the AI has misread it as a class and put
+`CodBi_HTML_Panel_Standard CodBi_Accordion_A_B_C_D` on the wrapping container while leaving the
+panels without any class). Per the tsdocs (UI.Panels / HTML.Panel.Accordion): `CodBi_Accordion_A..D`
+goes on the CONTAINER wrapping the collapsible sections (HTML.Panel.Accordion joins the
+`.CodBi.--HTML_Panel` descendants INSIDE the tagged container into an accordion set — the container
+itself is NOT a panel and gets NO panel type class), and EVERY member XFieldSet INSIDE the container
+ALSO needs a panel type class (`CodBi_HTML_Panel_Standard`/`Flat`/`Index`/`Minimal`) to be
+collapsible. A FAIL is: container = `CodBi_HTML_Panel_Standard CodBi_Accordion_A_B_C_D` with the
+three panels carrying no panel class at all. Correct: container = `CodBi_Accordion_A`, each of the
+three panels = `CodBi_HTML_Panel_Standard` (with the requested German titles as legend/panel titles).
+The server does NOT add panel classes automatically anymore — the AI itself MUST emit
+`CodBi_HTML_Panel_Standard` on EVERY panel fieldset (the three accordion members AND the standalone
+`fsVeranstaltung` fieldset that the prompt wants as "Standard-Panel") and MUST NOT put any
+`CodBi_HTML_Panel_*` class on the accordion container.
 
 **Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS04. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
 
@@ -225,9 +257,69 @@ JSON.Path, LDAP.Find, Net.URL, Sorted, Unique, V.
 > console.
 
 **Verify:**
-- [ ] Every EP id verbatim, correct param order and trailing `;`: `{ OpenPLZ.Localities > de ; ^An }`, `{ OpenPLZ.Streets > de ; 91522 }`, `{ OpenPLZ.TextSearch > de ; 91522 Karolinen }`, `{ OpenPLZ > ch ; Cantons }`, `{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }`, `{ Data.CSV > … }`, `{ Data.Join > … }`, `{ Date.FromString > … }`, `{ Date.Holidays > 2026 }`, `{ DOM.Query > .p1 }`, `{ F > postalCode ; 91522 ; … }` (F outermost), `{ I > 0 ; … }`, `{ JSON.Path > … ; name }`, `{ LDAP.Find > AND ; sn=Callari }`, `{ Net.URL > <url> }`, `{ Sorted > { JSON.Path > … ; name } }` + `Unique`, `{ V > USGrade }`.
-- [ ] EPs placed via Sys.Log.Console data or field default values; no invented EP ids.
+- [ ] Every EP id verbatim, correct param order and trailing `;`: `{ OpenPLZ.Localities > de ; ^An }`, `{ OpenPLZ.Streets > ; .* ; 91522 }`, `{ OpenPLZ.TextSearch > de ; 91522 Karolinen }`, `{ OpenPLZ > ch ; Cantons }`, `{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }`, `{ Data.CSV > … }`, `{ Data.Join > … }`, `{ Date.FromString > … }`, `{ Date.Holidays > 2026 }`, `{ DOM.Query > .p1 }`, `{ F > postalCode ; 91522 ; … }` (F outermost), `{ I > 0 ; … }`, `{ JSON.Path > … ; name }`, `{ LDAP.Find > AND ; sn=Callari }`, `{ Net.URL > <url> }`, `{ Sorted > { JSON.Path > … ; name } }` + `Unique`, `{ V > USGrade }`.
+- [ ] EPs placed via Sys.Log.Console data or field default values; no invented EP ids. The OpenPLZ LIST fields ('Ortsvorschläge', 'Straßen in 91522', 'Kantone der Schweiz') are XSelects with `data-cb-func="html.select.injection"` and the EP in `data-cb-Values` (e.g. `data-cb-Values="{ OpenPLZ.Localities > de ; ^An }"`, + `data-cb-ValueProperty="name"`) — NEVER `data-cb-Data`.
 - [ ] Regex params are regexes (`^An`).
+
+**Known trap — OpenPLZ lookup fields must NOT ask for options (2026-08-21):**
+The AI has asked „Bitte nennen Sie die gewünschten Straßen als Optionen für das Feld ‚Straßen in
+91522‘.“ — WRONG. A field whose content is a geographic lookup ('Ortsvorschläge', 'Straßen in
+<PLZ>', 'Volltextsuche <PLZ> <Ort>', 'Kantone der Schweiz') is NOT a user-options select: the list
+is supplied at RUNTIME by the OpenPLZ element placeholders, so the AI must build the field and wire
+the EP as its value — `{ OpenPLZ.Streets > ; .* ; 91522 }`, `{ OpenPLZ.Localities > de ; ^An }`,
+`{ OpenPLZ.TextSearch > de ; 91522 Karolinen }`, `{ OpenPLZ > ch ; Cantons }` — and NEVER ask the
+user for street/locality options. The XSelect-options clarification rule applies ONLY to genuinely
+user-provided option lists (e.g. a 'Stadt' dropdown with no EP supplying the data).
+
+**Known trap — Ortsvorschläge must use HTML.Select.Injection with data-cb-Values, not data-cb-Data (2026-08-21):**
+The AI generated the 'Ortsvorschläge' field with the wrong functionality/attribute. The correct
+widget for a list fed by an element placeholder is an XSelect with
+`data-cb-func="html.select.injection"` and the EP in `data-cb-Values` — e.g.
+`data-cb-Values="{ OpenPLZ.Localities > de ; ^An }"`. CRITICAL — OpenPLZ.Localities returns OBJECTS
+`{postalCode, name, district, federalState, municipality, ...}` with `postalCode` as the FIRST
+string, so you MUST ALSO set `data-cb-ValueProperty="name"` AND `data-cb-TextProperty="name"` —
+otherwise the option shows the postal code instead of the city name (the AI did exactly that:
+'orts-vorschlaege' showed the PLZ). NEVER put the EP in `data-cb-Data` (that attribute belongs to
+Sys.Log.Console / HTML.Text.Injector). Applies to all OpenPLZ list fields: 'Straßen in <PLZ>' →
+`{ OpenPLZ.Streets > ; .* ; 91522 }` + `data-cb-ValueProperty="name"`, 'Kantone der Schweiz' →
+`{ OpenPLZ > ch ; Cantons }` + `data-cb-ValueProperty="name"`. CRITICAL — OpenPLZ.Streets ALWAYS takes
+THREE parameters (country [empty → "de"], street-name regex [use `.*` for "any street"], postal-code /
+city regex) — NEVER the two-parameter `{ OpenPLZ.Streets > de ; 91522 }` form, because the postal
+code would land in the street-name slot and the search fails. CRITICAL — the XSelect's manually-set
+Formcycle `options` array MUST be empty ([]) by default: manually entered options render at the
+BEGINNING of the select, before the EP-injected options (html.select.injection appends), so they
+would appear as unwanted leading entries; only add specific `options` when the user explicitly asked
+for leading options.
+
+**Known trap — EP output fields: NO clarification for input data / format / country / URL / LDAP params / widget type (2026-08-21):**
+The AI has asked for example input data (CSV → Array, Zwei Objekte zusammenführen, String in
+Datum, erstes Element des Arrays, name extrahieren, Ortsnamen sortieren/deduplizieren), for a
+country/region (Feiertage 2026), for a URL (URL-Inhalt laden), for LDAP search parameters / base-DN
+(LDAP sn=Callari), and whether the result fields shall be read-only — ALL WRONG. Every
+'Recherche'-field is an EP OUTPUT field: build it with SENSIBLE EXAMPLE parameters derived from the
+request / sensible defaults — `{ Data.CSV > <Beispiel-CSV> }`, `{ Data.Join > … }`,
+`{ Date.FromString > 01.12.1978 }`, `{ Date.Holidays > 2026 }` (default country), `{ Net.URL > <Beispiel-URL> }`,
+`{ LDAP.Find > AND ; sn=Callari }`, `{ I > 0 ; … }`, `{ JSON.Path > … ; name }`,
+`{ Sorted > { JSON.Path > … ; name } }` + `Unique` — and WIRE each EP as its field's value so the
+field displays the result: the OpenPLZ list fields ('Ortsvorschläge', 'Straßen in 91522', 'Kantone
+der Schweiz') as XSelects with `data-cb-func="html.select.injection"` + the EP in `data-cb-Values`
+(+ `data-cb-ValueProperty`/`data-cb-TextProperty="name"`), the other EP output fields DISPLAY their EP
+result by setting the field's value via a FUNCTIONALITY — `data-cb-func="JSON.SET"` +
+`data-cb-property="value"` + `data-cb-toset="{ <EP with example params> }"` (assigned directly to the
+value). To show the EP result as PLAIN TEXT, use an XSpan (the plain-text element — NEVER XText) with
+`data-cb-func="HTML.Text.Injector"` + `data-cb-property="innerHTML"` +
+`data-cb-replacement="{ <EP with example params> }"` and write the placeholder
+`[[INJECTOR_REPLACEMENT]]` literally into the XSpan's text content (rtevalue) — Injector REPLACES
+that placeholder with the resolved EP; it does not set/append on its own; without the placeholder in
+the content nothing is injected; it is NOT for XTextField/XTextArea, rendered read-only
+(display-only = non-editable, NOT unwired). NEVER
+a bare `data-cb-Data` attribute — without a `data-cb-func` it does nothing.
+When the user asks to log the results, ONE invisible XSpan with Sys.Log.Console logs the EP outputs
+(`data-cb-Data="SYS.Log.Console > { <EP with example params> } ; ..."`) — it never replaces wiring
+the fields and never uses a `[%field%]` placeholder as the parameter of the EP that produces that same field (`[%fieldName%]` placeholders ARE resolved to the referenced field's value at runtime, so they may feed another EXISTING field's value into a parameter — but only fields that actually exist in the form; an invented name resolves to empty). NEVER ask for the input
+data/format, the country/region, the URL, an LDAP base-DN / extra LDAP parameters, or the widget
+type — the XSelect-options / mandatory-values clarification rules apply ONLY to genuinely
+user-supplied values, not to EP-derived demo fields.
 
 **Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS05. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
 

@@ -644,10 +644,7 @@ class Standard : LLAMA() {
             searchFollowUpPrompt = { q, dl, last ->
               val base = langService!!.searchFollowUpPrompt(q, dl, last)
               if (MailBridge.isAvailable) {
-                "$base If the user EXPLICITLY asked IN THEIR CURRENT MESSAGE to send the answer via email, respond ONLY with CALL:mail(to='address', subject='...', body='your full answer here'). " +
-                    "Put the ENTIRE answer inside the body field. Do NOT write the answer before CALL:mail. " +
-                    "The to field must contain ONLY the raw email address — no emojis, no icons. " +
-                    "Do NOT send email if the user did not ask for it in this message — even if a previous message mentioned an email address."
+                "$base ${ChatPromptFragments.section("mail_followup") ?: ""}"
               } else base
             },
             buildMessages = { q, ip, ch, se, et, dl, le, ul ->

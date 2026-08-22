@@ -1,5 +1,12 @@
 package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
+// !!! REMINDER — NEVER embed AI prompt / system-prompt text in Kotlin files !!!
+// All prompt text belongs in the .md files under
+// src/main/resources/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/
+// (see prompts/index.json) and is loaded via PromptLoader / loadPromptWithClasspathFallback / the
+// template helpers. Adding prompt strings to .kt files is forbidden — they get out of sync, go
+// stale, and are never reseeded. Move any prompt text into the .md files instead.
+
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.localize
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi.LogLevel
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
@@ -955,28 +962,12 @@ class AICodBiAssistant : IPluginServletAction {
       clarificationContext: String? = null
   ): Pair<String, TokenUsage> {
     val baseSystemPrompt = loadClassifyIntentPrompt()
-    val systemPrompt = buildString {
-      append(baseSystemPrompt)
-      if (!chatContext.isNullOrBlank()) {
-        append(
-            "\n\nCHAT HISTORY (previous turns — the user's message may refer to numbered options " +
-                "or earlier statements from this conversation):\n$chatContext\n")
-      }
-      if (!formStructureContext.isNullOrBlank()) {
-        append(
-            "\n\nCURRENT FORM STRUCTURE (the user may refer to existing form elements by name or " +
-                "number):\n$formStructureContext\n")
-      }
-      if (!clarificationContext.isNullOrBlank()) {
-        append("\n\nQUESTIONS THE USER ALREADY ANSWERED:\n$clarificationContext\n")
-      }
-      append(
-          "\n\nWhen the user refers to numbered options/items from the CHAT HISTORY, base your " +
-              "decision on what those options describe: field validation, required fields, " +
-              "conditional visibility, layout, help texts, tooltips and accessibility are FORM " +
-              "changes (intent \"form\"); emails, redirects, workflow nodes, triggers and " +
-              "automations are WORKFLOW changes (intent \"workflow\"); a mix is \"both\".\n")
-    }
+    val systemPrompt =
+        baseSystemPrompt +
+            renderClassifyIntentContext(
+                chatContext = chatContext,
+                formStructureContext = formStructureContext,
+                clarificationContext = clarificationContext)
 
     val messagesJson = buildString {
       append("[")
@@ -1410,9 +1401,8 @@ class AICodBiAssistant : IPluginServletAction {
         val finalSystemPrompt =
             loadCodbiApplyPrompt(emptyList(), emptyList(), useCodbi, useBuergerserviceNaming) +
                 chatSection +
-                "\n\nYou MUST now return the COMPLETE modified form JSON with ALL items. " +
-                "Do NOT return a need_codbi_details request - you already received every reference " +
-                "you need. Build every field/element the user asked for using the widget templates above."
+                "\n\n" +
+                (loadPromptWithClasspathFallback("codbi.retry_form") ?: "")
         val finalUserContent =
             "Original user request: $prompt\n\n" +
                 "Complete current form (IPersistJson):\n${slimPersistJson(formBase)}\n\n" +
@@ -3442,32 +3432,6 @@ class AICodBiAssistant : IPluginServletAction {
               "[AICodBiAssistant] Removed redundant data-cb-func=html.panel (UI.Panels class present)")
         }
       }
-      // --- Ensure every UI.Panels member also has a panel TYPE class ---
-      // The accordion classes (CodBi_Accordion_A-D) and the NoCordion marker only say WHICH group a
-      // panel belongs to; they do NOT make the fieldset collapsible on their own. A member
-      // therefore
-      // needs BOTH the group class AND a panel type class (CodBi_HTML_Panel_Standard / Flat / Index
-      // /
-      // Minimal). If the AI omitted the type class, default to Standard.
-      if (hasPanelClass) {
-        val hasTypeClass =
-            (0 until cssArr.size()).any { i ->
-              val c = cssArr.get(i)
-              c.isJsonPrimitive &&
-                  (c.asString == "CodBi_HTML_Panel_Standard" ||
-                      c.asString == "CodBi_HTML_Panel_Flat" ||
-                      c.asString == "CodBi_HTML_Panel_Index" ||
-                      c.asString == "CodBi_HTML_Panel_Minimal")
-            }
-        // Remove the invented data-cb-open parameter (not a real HTML.Panel parameter; the correct
-        // initial-state parameter is data-cb-folded).
-        props.remove("data-cb-open")
-        if (!hasTypeClass) {
-          cssArr.add("CodBi_HTML_Panel_Standard")
-          logger.info(
-              "[AICodBiAssistant] Added missing panel type class 'CodBi_HTML_Panel_Standard' (accordion/marker member without a panel class)")
-        }
-      }
       val attrs =
           if (props.has("attributes") && props.get("attributes").isJsonArray)
               props.getAsJsonArray("attributes")
@@ -3609,7 +3573,12 @@ class AICodBiAssistant : IPluginServletAction {
     // Normalize AI Chat MailAddress hiddenif values â€” the AI often generates
     // the wrong format. Formcycle stores the condition as:
     //   hiddenif = the MailForward checkbox's ID (e.g. "xi-cb-aichat-mailforward")
-    //   hiddenifcomp = 0 (no comparison value)
+    //   hiddenifcomp = a valid Formcycle EConditionType code (0=MANDATORY, 1=EQUAL, 2=NOT_EQUAL,
+    //                  3=REGEX, 4=LESS_THAN, 5=GREATER_THAN, 6=BETWEEN, 7=LESS_OR_EQUAL,
+    //                  8=GREATER_OR_EQUAL, 9=EMPTY). For the AI Chat MailAddress the correct code
+    // is
+    //                  9 (EMPTY) - the address is hidden while the MailForward checkbox is
+    // unchecked.
     //   hiddenifclear = "false" (don't clear on hide)
     // But the AI may set hiddenif="9" (mode number) and hiddenifcomp="<name>".
     // Fix these to match Formcycle's expected format.
@@ -3640,46 +3609,45 @@ class AICodBiAssistant : IPluginServletAction {
                 ?: false
         if (!isMailAddressField) continue
         var changed = false
+        // The MailAddress visibility is a FIXED requirement: hidden while the MailForward checkbox
+        // is UNCHECKED (empty), visible once it is CHECKED. Formcycle evaluates this via the DIRECT
+        // properties hiddenif (controlling element ID) + hiddenifcomp (EConditionType code; 9 =
+        // EMPTY - hidden when the controlling field has no value) + hiddenifclear. Guarantee these
+        // direct properties on the MailAddress item so the designer shows the condition and the
+        // runtime behaves correctly, regardless of what the AI emitted (it often omits them, swaps
+        // the fields, or sets hiddenifcomp=0/MANDATORY, which yields no working hide-condition).
         // Fix 1: hiddenif MUST be the MailForward checkbox's ID, not a mode number
         if (mailForwardId != null) {
           val currentHiddenIf = props.get("hiddenif")?.asString
-          if (currentHiddenIf != null && currentHiddenIf != mailForwardId) {
+          if (currentHiddenIf == null || currentHiddenIf != mailForwardId) {
             logger.info(
-                "[AICodBiAssistant] Normalized hiddenif on '{}': '{}' â†’ '{}'",
+                "[AICodBiAssistant] Set hiddenif on '{}': '{}' â†’ '{}'",
                 props.get("name")?.asString ?: "<unknown>",
-                currentHiddenIf,
+                currentHiddenIf ?: "<missing>",
                 mailForwardId)
             props.addProperty("hiddenif", mailForwardId)
             changed = true
           }
         }
-        // Fix 2: hiddenifcomp should be 0 (not a component name or "9")
-        if (props.has("hiddenifcomp")) {
-          val raw = props.get("hiddenifcomp")
-          val rawStr = if (raw.isJsonPrimitive) raw.asString else null
-          if (rawStr != null &&
-              rawStr != "0" &&
-              rawStr != mailForwardName &&
-              rawStr != mailForwardId) {
-            logger.info(
-                "[AICodBiAssistant] Normalized hiddenifcomp on '{}': '{}' â†’ 0",
-                props.get("name")?.asString ?: "<unknown>",
-                rawStr)
-            props.addProperty("hiddenifcomp", 0)
-            changed = true
-          }
+        // Fix 2: hiddenifcomp MUST be "9" (EConditionType EMPTY) for the MailAddress - the only
+        // code that hides the field while the MailForward checkbox is empty/unchecked.
+        val currentComp =
+            props.get("hiddenifcomp")?.let { if (it.isJsonPrimitive) it.asString else null }
+        if (currentComp != "9") {
+          logger.info(
+              "[AICodBiAssistant] Set hiddenifcomp on '{}': '{}' â†’ 9 (EMPTY)",
+              props.get("name")?.asString ?: "<unknown>",
+              currentComp ?: "<missing>")
+          props.addProperty("hiddenifcomp", "9")
+          changed = true
         }
-        // Fix 3: hiddenifclear should be "false" string (Formcycle format)
-        if (props.has("hiddenifclear")) {
-          val raw = props.get("hiddenifclear").asString.trim().lowercase()
-          if (raw == "0") {
-            logger.info(
-                "[AICodBiAssistant] Normalized hiddenifclear on '{}': '{}' â†’ 'false'",
-                props.get("name")?.asString ?: "<unknown>",
-                raw)
-            props.addProperty("hiddenifclear", "false")
-            changed = true
-          }
+        // Fix 3: hiddenifclear MUST be "false" (preserve the field's value when hidden)
+        if (props.get("hiddenifclear")?.asString?.trim()?.lowercase() != "false") {
+          logger.info(
+              "[AICodBiAssistant] Set hiddenifclear on '{}' to 'false'",
+              props.get("name")?.asString ?: "<unknown>")
+          props.addProperty("hiddenifclear", "false")
+          changed = true
         }
         if (changed) {
           logger.info(
@@ -5304,7 +5272,7 @@ class AICodBiAssistant : IPluginServletAction {
         append("""{"role":"user","content":${buildUserContent(prompt, imageParts)}},""")
         append("""{"role":"assistant","content":${gson.toJson(cleaned)}},""")
         append(
-            """{"role":"user","content":${gson.toJson("Your previous response was NOT valid JSON workflow specification. It contained prose or clarifying questions. Do NOT ask any questions and do NOT explain. The user has already answered everything that is needed (use the USER CLARIFICATION context). Output ONLY the workflow task JSON now (a task object, an array of task objects, or {\"workflow\":[...]}/{\"tasks\":[...]}).")}}""")
+            """{"role":"user","content":${gson.toJson(loadPromptWithClasspathFallback("codbi.retry_workflow") ?: "")}}""")
         append("]")
       }
       val retryRaw = instance.performFormAssist(modelId, retryMessagesJson)
@@ -5595,205 +5563,28 @@ class AICodBiAssistant : IPluginServletAction {
           } else {
             PromptLoader.buildWorkflowNodesCondensed(em)
           }
-      return buildString {
-        append(general).append("\n\n")
-        append(
-            "SCOPE: You operate ONLY on the currently open form. You CANNOT create, rename, duplicate or " +
-                "open a NEW or SEPARATE form, nor a second/admin/dashboard/overview form, on the server. If the " +
-                "user asks for a separate form or an admin/overview/dashboard form, do NOT promise to create one " +
-                "and do NOT ask for its title - instead explain that a separate form cannot be created here and " +
-                "offer to implement the requested capability (e.g. an overview / Excel export) as a workflow " +
-                "action on the CURRENT form.\n\n")
-        append(workflowReference).append("\n\n")
-        if (!pass2) {
-          append(
-              "WORKFLOW DETAILS REQUEST â€” You receive ONLY the condensed workflow-trigger/node list above.\n" +
-                  "Before you emit the final workflow task JSON, if you need the exact triggerParams/nodeParams of any " +
-                  "trigger or node type you intend to use, respond ONLY with the following JSON (nothing else):\n" +
-                  "{\"status\":\"need_workflow_node_details\",\"nodes\":[\"FC_EMAIL\",\"FC_POST_REQUEST\",...],\"triggers\":[\"FC_FORM_SUBMIT_BUTTON\",...]}\n" +
-                  "List EVERY trigger and node you plan to use (including condition/loop/container nodes) so none is missing. " +
-                  "The server then provides the exact JSON schemas for exactly those and you continue with the final task JSON.\n\n")
-        }
-        if (formContext != null) {
-          append(
-              "FORM ELEMENTS (match user descriptions via 'displayText'; always use 'technicalId' in output):\n" +
-                  formContext +
-                  "\n\n")
-        }
-        if (!repeatableContainers.isNullOrBlank()) {
-          append(
-              "REPEATABLE (DYNAMIC) CONTAINERS — the fields listed here are inside a repeatable " +
-                  "container. A plain [%fieldName%] placeholder in an email body / other text returns " +
-                  "only the FIRST row. To include ALL rows — which a general description like \"the " +
-                  "times\" / \"die Öffnungszeiten\" implies, covering regular AND special entries — " +
-                  "iterate the container with FC_FOR_EACH_LOOP (sourceType FORM_FIELD_REPETITIONS), " +
-                  "accumulate each row's text via FC_WRITE_FORM_RECORD_ATTRIBUTES (inside the loop's " +
-                  "_childNodes), then reference that server attribute ([%\$RECORD_ATTR.key%]) in the " +
-                  "final content (e.g. the FC_EMAIL body).\n" +
-                  "IMPORTANT: when the accumulated value is shown to a HUMAN (e.g. an email body), " +
-                  "accumulate each row as READABLE TEXT — one line per row (e.g. \"Mo: 09:00 - " +
-                  "17:00\") or a bulleted list — NOT JSON. Only build a JSON array when the user " +
-                  "explicitly asked to store the rows as JSON (e.g. into a database field).\n" +
-                  repeatableContainers +
-                  "\n\n")
-        }
-        if (!completionPages.isNullOrBlank()) {
-          append(
-              "AVAILABLE ABSCHLUSSSEITEN (completion pages â€” pick one for failurePage when creating a FC_DOI_INIT node):\n" +
-                  completionPages +
-                  "\n\n" +
-                  "Select the most suitable Abschlussseite from the list above. The Abschlussseite is displayed to the user " +
-                  "when the Double Opt-In (DOI) email verification fails.\n" +
-                  "SELECTION CRITERIA (in order of priority):\n" +
-                  "  1. FIRST CHOICE â€” If any available Abschlussseite has a name that combines \"double opt-in\" (or \"doi\") " +
-                  "and \"failed\" / \"error\" / \"fehler\" (e.g. \"Double opt-in verification failed\"), pick that one.\n" +
-                  "  2. SECOND CHOICE â€” If no DOI-specific failure page exists, pick a generic error/failure page " +
-                  "(name containing \"Fehler\", \"Error\", \"Failed\", \"Allgemein\", \"Standard\").\n" +
-                  "  3. LAST RESORT â€” If neither exists, pick the most generically named page.\n" +
-                  "NEVER create a new page â€” always pick from the list above.\n\n")
-        }
-        if (!htmlTemplates.isNullOrBlank()) {
-          append(
-              "AVAILABLE HTML TEMPLATES (for htmlTemplate when creating a FC_SHOW_TEMPLATE node â€” pick the EXACT match to the user's request):\n" +
-                  htmlTemplates +
-                  "\n\n" +
-                  "The HTML template is rendered to the user when the workflow runs (e.g. after clicking a submit button). " +
-                  "Use this when the user says a specific completion page, Abschlussseite, error page, or template should be displayed " +
-                  "(e.g. \"Bei Klick auf submit, Abschlussseite 'Allgemeiner Fehler 2' anzeigen\"). " +
-                  "NEVER create a new template â€” always pick from the list above.\n\n")
-          append(
-              "AVAILABLE URL TEMPLATES (for urlTemplate when creating a FC_REDIRECT node â€” pick the EXACT match to the user's request):\n" +
-                  htmlTemplates +
-                  "\n\n" +
-                  "The URL template is a named URL stored in the system. " +
-                  "Use this when the user says \"URL-Template\", \"URL-Vorlage\" or mentions a named template " +
-                  "(e.g. \"Bei Klick auf submit, an die URL-Template X2 umleiten\"). " +
-                  "NEVER create a new template â€” always pick from the list above.\n\n")
-        }
-        append(
-            "PDF GENERATION IS AUTOMATIC: Formcycle creates the PDF at runtime — you do NOT invent " +
-                "the template/layout/text. Choose the PDF node by INTENT:\n" +
-                "- FORM AS PDF (the user wants the filled/submitted FORM ITSELF as a PDF, e.g. " +
-                "\"die Anmeldung als PDF zusenden\", \"das Formular als PDF verschicken\", \"send the " +
-                "form as a PDF\") → use RemotePrintService (print service). It needs NO template and " +
-                "NO \"file\" param. NEVER use FC_FILL_PDF for this.\n" +
-                "- FILL AN EXISTING PDF TEMPLATE with data collected at runtime (e.g. a vorlage.pdf " +
-                "whose fields are mapped to form values) → use FC_FILL_PDF, and the mandatory " +
-                "\"Details für die PDF-Befüllung > Datei\" field MUST be set (provide the template " +
-                "file via \"file\", e.g. \"vorlage.pdf\" — never omit it).\n" +
-                "- Other PDF exports: FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF.\n" +
-                "CREATING AND SENDING A PDF IS A TWO-NODE OPERATION: first create the PDF-generation " +
-                "node (RemotePrintService / FC_FILL_PDF / FC_PROCESS_LOG_PDF / " +
-                "FC_EXPORT_FORM_RECORD_CHATS) that produces the PDF, then create an FC_EMAIL node " +
-                "that sends that PDF as an attachment, chained after the PDF node (via chainedNodes). " +
-                "NEVER put the PDF in an email as if it were a plain uploaded file with no producing " +
-                "node — the email's attachment must reference the output of the PDF node created in " +
-                "the same workflow path.\n\n")
-        if (!inboxes.isNullOrBlank()) {
-          append(
-              "AVAILABLE INBOXES (for inboxName when creating a FC_MOVE_FORM_RECORD_TO_INBOX node â€” pick the EXACT match to the user's request):\n" +
-                  inboxes +
-                  "\n\n" +
-                  "CRITICAL â€” If the user explicitly provides a specific inbox name and says \"suche Ã¼ber den Namen\" " +
-                  "(search by name), \"find by name\", or provides a name that is NOT in the list above, " +
-                  "then use targetType:\"COMPUTED_INBOX_NAME\" with inboxName set to the EXACT name the user provided. " +
-                  "Do NOT pick a different inbox from the list. " +
-                  "Only use STATIC_INBOX (default) when the user mentions an inbox that EXISTS in the list above " +
-                  "and does NOT instruct to search by name.\n\n")
-        }
-        if (!messageServices.isNullOrBlank()) {
-          append(
-              "AVAILABLE MESSAGE SERVICES (for 'recipientMessageService' when creating a FC_SEND_FORM_RECORD_MESSAGE node with recipientType=INBOX_ID â€” pick the EXACT match from this list):\n" +
-                  messageServices +
-                  "\n\n")
-        }
-        if (!triggers.isNullOrBlank()) {
-          append(
-              "AVAILABLE TRIGGERS (for 'triggerUuid' when creating a FC_QUEUE_TASK node â€” pick the EXACT uuid matching the user's requested event name):\n" +
-                  triggers +
-                  "\n\n")
-        }
-        if (workflowStates != null && workflowStates.isNotBlank()) {
-          append(
-              "AVAILABLE WORKFLOW STATES (for reference only â€” use the user's requested status name, not this list):\n" +
-                  workflowStates +
-                  "\n\n")
-        }
-        if (!existingWorkflowNodes.isNullOrBlank()) {
-          append(
-              "EXISTING WORKFLOW NODES (the workflow that already exists — reference them by their numeric 'id'; " +
-                  "nodes with an empty \"parentId\" are ROOT nodes, each representing one whole workflow path):\n" +
-                  existingWorkflowNodes +
-                  "\n\n" +
-                  "OPERATIONS — you MAY return a JSON array of operations instead of a single new task. " +
-                  "Each operation is a task object with an extra \"operation\" field:\n" +
-                  "  - \"operation\":\"create\" (default) — create a NEW workflow path (task + trigger) as described above. " +
-                  "Only use it to ADD a workflow path that does not exist yet.\n" +
-                  "  - \"operation\":\"remove\" — delete an existing node and its whole subtree; MUST include " +
-                  "\"targetNodeId\":\"<numeric id of an existing node from EXISTING WORKFLOW NODES>\". " +
-                  "Targeting a ROOT node (empty \"parentId\") removes the ENTIRE workflow path including its trigger — " +
-                  "use this to remove whole paths. Other node/trigger fields are ignored.\n" +
-                  "  - \"operation\":\"replace\" — CHANGE an existing node IN PLACE. Include \"targetNodeId\" of an existing " +
-                  "action node (NOT a root/SEQUENCE node) plus the new \"nodeType\" and \"nodeParams\". The node's type, name and " +
-                  "parameters are replaced but it KEEPS its current workflow path and trigger — NO new path is created.\n" +
-                  "CHANGING AN EXISTING NODE — when the user asks to modify/change an existing workflow node, use exactly ONE " +
-                  "\"replace\" operation for that node. NEVER also emit a \"create\" operation for the same change, and never " +
-                  "create a new/empty workflow path for a node that already exists.\n" +
-                  "Never invent ids — only use the numeric 'id' values listed in EXISTING WORKFLOW NODES.\n\n")
-        }
-        if (!clarificationContext.isNullOrBlank()) {
-          append(
-              "\nUSER CLARIFICATION (authoritative answers the user already gave — use them as context; " +
-                  "do NOT ask the user any of these questions again):\n" +
-                  clarificationContext +
-                  "\n\n")
-        }
-        if (!chatContext.isNullOrBlank()) {
-          append(
-              "\nCHAT HISTORY (previous turns in the form-chat popup — treat as authoritative " +
-                  "context; the user's request may refer to earlier turns, e.g. by option numbers):\n" +
-                  chatContext +
-                  "\n\n")
-        }
-        if (!changeHistoryContext.isNullOrBlank()) {
-          append(
-              "\nPRIOR CHANGE HISTORY (JSON — interpret it using the schema below)\n" +
-                  "The user's request refers to earlier AI runs. The change log below is a JSON " +
-                  "array; each entry describes ONE earlier AI run.\n\n" +
-                  "CHANGE LOG SCHEMA — what each property means:\n" +
-                  loadChangeLogSchema() +
-                  "\n\n" +
-                  "CHANGE LOG:\n" +
-                  changeHistoryContext +
-                  "\n\nIdentify the entries the user is referring to (match by prompt text, " +
-                  "timestamp \"ts\", username, or the listed form/workflow changes) and APPLY the " +
-                  "same changes to the CURRENT form, adapting names as needed. Do NOT ask the user " +
-                  "which changes were requested — the change log is authoritative.\n\n")
-        }
-        append(
-            "OUTPUT CONTRACT — STRICTLY ENFORCED:\n" +
-                "- LANGUAGE — write taskName and ALL node names/labels in the SAME language as the user's request " +
-                "(a German prompt → German labels, e.g. 'Zeilen als JSON in Hulu schreiben'; an English prompt → English). " +
-                "Never switch to a default language.\n" +
-                "- Output ONLY valid JSON (a task object, an array of task objects, or " +
-                "{\"workflow\":[...]}/{\"tasks\":[...]}). No prose, no explanation, no Markdown.\n" +
-                "- This is a WORKFLOW TASK response, NOT a form: NEVER output form fields, form " +
-                "elements, or an \"items\" array. Your response must describe the workflow task(s) " +
-                "(trigger + nodes), not rebuild the form - the form has already been handled " +
-                "separately.\n" +
-                "- IGNORE any QUESTION inside the user's message (e.g. \"Hat das Formular ein Feld " +
-                "für den Vornamen?\" / \"does the form have a first-name field?\") — such questions " +
-                "are answered separately in the chat popup. Build ONLY the workflow automation for " +
-                "the instruction part; NEVER answer a question inside this response.\n" +
-                "- NEVER ask the user clarifying questions inside this response. All missing details " +
-                "that the user did not specify (and did NOT delegate to you) are to be derived from " +
-                "the form elements and available context above; if a value is still genuinely " +
-                "unknown, choose a sensible default (e.g. a reasonable sender address/subject) " +
-                "instead of asking. Do NOT output numbered question lists or \"I'm happy to help\" text.\n" +
-                "- The USER CLARIFICATION section above is authoritative: every answered or " +
-                "delegated question is considered resolved. Never re-ask an answered question.\n" +
-                "No trailing commas. No comments.")
+      val workflowTemplate = loadWorkflowTaskInstruction() ?: ""
+      if (workflowTemplate.isBlank()) {
+        return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
       }
+      return renderWorkflowSystemPrompt(
+          workflowTemplate,
+          general = general,
+          workflowReference = workflowReference,
+          pass2 = pass2,
+          formContext = formContext,
+          repeatableContainers = repeatableContainers,
+          completionPages = completionPages,
+          htmlTemplates = htmlTemplates,
+          inboxes = inboxes,
+          messageServices = messageServices,
+          triggers = triggers,
+          workflowStates = workflowStates,
+          existingWorkflowNodes = existingWorkflowNodes,
+          clarificationContext = clarificationContext,
+          chatContext = chatContext,
+          changeHistoryContext = changeHistoryContext,
+          changeLogSchema = loadChangeLogSchema())
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to build workflow system prompt", e)
       return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -10938,8 +10729,8 @@ class AICodBiAssistant : IPluginServletAction {
         }
     // PRIMARY SOURCE: the clarification prompt comes from the .md file (codbi-clarification.md,
     // seeded as codbi.clarification) — loaded from the DB or, while the seed hasn't run, directly
-    // from the bundled .md on the classpath. The inline builder below is only a last-resort
-    // fallback. This keeps all prompt text in the .md files.
+    // from the bundled .md on the classpath. No prompt text is embedded in the backend; if neither
+    // source is available an empty system prompt is returned.
     loadClarificationTemplate()?.let { template ->
       val currentlyOpenForm =
           if (!currentFormKey.isNullOrBlank() || !currentFormTitle.isNullOrBlank()) {
@@ -11016,219 +10807,19 @@ class AICodBiAssistant : IPluginServletAction {
           .replace("{{FORM_LIST_BLOCK}}", formListBlock)
           .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus)
     }
-    return buildString {
-      append(
-          "You are a FORMCYCLE assistant. You are about to $action for the user.\n" +
-              "USER REQUEST: ${gson.toJson(prompt)}\n")
-      append(
-          "LIMITATION: You CANNOT create, rename, duplicate or open a NEW or SEPARATE form, nor a " +
-              "second/admin/dashboard/overview form, on the server. If the user wants a separate form " +
-              "or an admin/overview/dashboard form, do NOT promise it and do NOT ask for its title; " +
-              "instead note that it cannot be created and propose an alternative on the current form " +
-              "(e.g. a workflow action or a section).\n")
-      append(
-          "CONTROL TYPES: Whenever the request involves options/choices and you cannot determine whether they are " +
-              "mutually exclusive (single-select: radio button or dropdown) or non-exclusive (multi-select: checkbox), " +
-              "clarify the control type by offering the plausible options (e.g. checkbox vs radio button for 'Ja/Nein') " +
-              "in ANY language - unless the control type is already clear from the request.\n")
-      if (!currentFormKey.isNullOrBlank() || !currentFormTitle.isNullOrBlank()) {
-        append(
-            "\nCURRENTLY OPEN FORM: title=${gson.toJson(currentFormTitle ?: "")}, " +
-                "key=${gson.toJson(currentFormKey ?: "")} — this is the form the user is editing " +
-                "right now. When the user names a DIFFERENT form by its title, treat it as another form.\n")
-      }
-      if (!formElements.isNullOrBlank()) {
-        append("\nFORM ELEMENTS available: $formElements\n")
-      }
-      if (!formStructureContext.isNullOrBlank()) {
-        append(
-            "\nCURRENT FORM STRUCTURE (pages, fieldsets, containers and their titles/names — use it " +
-                "to resolve references to existing elements like \"the two fieldsets on the first " +
-                "page\"):\n" +
-                formStructureContext +
-                "\n")
-      }
-      if (clarificationContext.isNotBlank()) {
-        append(
-            "\nQUESTIONS THE USER ALREADY ANSWERED (treat these as authoritative):\n" +
-                clarificationContext +
-                "\n")
-      }
-      if (chatContext.isNotBlank()) {
-        append(
-            "\nCHAT HISTORY (previous turns in the form-chat popup — treat as authoritative " +
-                "context):\n" +
-                "The user's current message may refer to earlier chat turns (e.g. \"apply options " +
-                "1, 2, 5 and 7\"). Resolve such references from this history BEFORE asking the user " +
-                "anything.\n" +
-                chatContext +
-                "\n")
-      }
-      if (!changeHistoryContext.isNullOrBlank()) {
-        append(
-            "\nPRIOR CHANGE HISTORY (JSON — interpret it using the schema below)\n" +
-                "The change log below is a JSON array of earlier AI runs; each entry describes ONE " +
-                "earlier run.\n\n" +
-                "CHANGE LOG SCHEMA — what each property means:\n" +
-                loadChangeLogSchema() +
-                "\n\n" +
-                "CHANGE LOG:\n" +
-                changeHistoryContext +
-                "\n\nIdentify the entry/entries the user's request refers to and determine whether " +
-                "you still need information from the user.\n")
-      }
-      if (!formListContext.isNullOrBlank()) {
-        append(
-            "\nAVAILABLE FORMS ON THE SERVER (each entry has \"id\", \"key\" = the technical " +
-                "identifier to pass in need_chat_history, \"name\"/\"title\" = the form's TITLE as " +
-                "users refer to it, and \"current\": true marks the form being edited right now):\n" +
-                formListContext +
-                "\n" +
-                "You now HAVE the form list — never respond {\"status\":\"need_form_list\"} again. " +
-                "Pick the form whose title best matches the user's request and respond ONLY with " +
-                "{\"status\":\"need_chat_history\",\"formKey\":\"<that form's key>\"} — or, if no " +
-                "form reasonably matches, ask the user which form they meant via need_clarification.\n")
-      }
-      if (changeHistoryContext.isNullOrBlank()) {
-        append(
-            "\nThe change history is NOT shown by default. If the user's request refers to earlier AI " +
-                "runs / prior work on THIS form (e.g. \"apply the same functionalities as a week ago\", " +
-                "\"like before\", \"what was configured earlier\", \"what another user prompted\"), fetch " +
-                "it first: respond ONLY with {\"status\":\"need_chat_history\"} (current form) or " +
-                "{\"status\":\"need_chat_history\",\"formKey\":\"<key>\"} (another form).\n")
-      } else {
-        append(
-            "\nYou ALREADY have the PRIOR CHANGE HISTORY above (with the schema). Do NOT request " +
-                "the change history again — interpret it and decide whether you still need " +
-                "information from the user.\n")
-      }
-      append(
-          "If the user's request refers to actions on ANOTHER form (any title that is NOT the " +
-              "currently open form, e.g. \"do the same as on form 'Rechnung'\" or \"like on the " +
-              "contact form\"), you MUST first fetch the list of all forms: respond ONLY with " +
-              "{\"status\":\"need_form_list\"}.\n" +
-              "After you receive the form list, pick the form whose TITLE (the \"name\" field) best " +
-              "matches what the user described — users refer to forms by their TITLE, never by id or " +
-              "key. The match need NOT be exact; use your judgment for the most reasonable one. Then " +
-              "fetch its change history: respond ONLY with {\"status\":\"need_chat_history\",\"formKey\":\"<key>\"}.\n" +
-              "If NO form in the list reasonably matches, ask the user which form they meant via " +
-              "need_clarification and list the most plausible candidates BY TITLE as options.\n" +
-              "If the form list is not provided after you request it, ask the user which form they " +
-              "mean instead of repeating the request.\n" +
-              "After you have the history, decide whether you still need information from the user.\n" +
-              "Ask ONLY when a detail is genuinely missing and you cannot determine it yourself.\n" +
-              "If you need clarification, respond ONLY with this JSON (nothing else):\n" +
-              "{\"status\":\"need_clarification\",\"questions\":[" +
-              "{\"id\":\"q1\",\"question\":\"<your question>\",\"options\":[\"<option>\",\"<option>\"],\"allowFreeText\":true,\"multiSelect\":false}" +
-              "]}\n" +
-              "Rules:\n" +
-              questionCountRule +
-              "- \"options\" is an optional list of multiple-choice answers (may be empty).\n" +
-              "- \"multiSelect\" true when the user may pick MORE THAN ONE option (e.g. \"which personal data?\"); false (default) when exactly ONE answer is expected. For multiSelect questions the user's answer lists all chosen options.\n" +
-              "- \"allowFreeText\" true means the user may type a free answer and/or attach a document.\n" +
-              "- Build on previous answers; only ask what is still missing. NEVER ask a question whose\n" +
-              "  answer the user already gave in the clarification history above.\n" +
-              "- When the user's answer names a form field (e.g. \"take it from the email field\", \"use\n" +
-              "  the value of the first-name field\", \"the field 'Vorname'\"), this refers to the FIELD\n" +
-              "  ITSELF / its value at runtime — do NOT ask for the literal text to insert. Use the\n" +
-              "  field's technicalId / placeholder. Do NOT ask for the exact wording.\n" +
-              "- If the user refers to elements that ALREADY exist in the form (e.g. \"the two fieldsets\n" +
-              "  on the first page\", \"the name field\", \"the submit button\"), identify them from the\n" +
-              "  CURRENT FORM STRUCTURE / FORM ELEMENTS above — do NOT ask the user which element is\n" +
-              "  meant when it can be determined from the provided structure.\n" +
-              "- EXISTING FIELDS ARE ALWAYS KNOWN: the CURRENT FORM STRUCTURE / FORM ELEMENTS always list every\n" +
-              "  existing element. NEVER ask the user whether a referenced field/container exists (NEVER\n" +
-              "  \"Existieren die Felder ... bereits?\" / \"do the fields ... already exist?\"). Determine it from\n" +
-              "  the provided form data: name present → reuse it; name absent → create it as requested WITHOUT\n" +
-              "  asking.\n" +
-              "- NEVER ask the user for a technical name / id / \"technicalId\" of a field, container, button or\n" +
-              "  widget. Newly created elements get a sensible auto-generated `name` (and `xi-…` id) based on\n" +
-              "  the request (e.g. a \"Kundennummer\" field → `tfKundenummer`, an AI-chat result field →\n" +
-              "  `tfExtractedText`). DO NOT ask \"Wie soll das technische Feld-ID heißen?\" — generate it.\n" +
-              "- Placement: when the user does NOT specify where a new element goes, place it in the current\n" +
-              "  page's main container and DO NOT ask \"wo soll ... platziert werden?\". Map providers/coordinates\n" +
-              "  and DataQuery column names come from the request or server configuration — do NOT ask the user\n" +
-              "  to confirm DB column identifiers.\n" +
-              "- When the user answers a question with a statement that delegates the decision to you\n" +
-              "  (\"you decide\", \"entscheide du\", \"egal\", \"whatever you think is best\", \"I don't\n" +
-              "  care\") or declines to answer (\"does not matter\", \"keine Angabe\", \"skip it\", \"I\n" +
-              "  don't want to answer\"), treat that question as ANSWERED — choose a sensible default\n" +
-              "  yourself and NEVER ask that question (or a variant of it) again in a later round.\n" +
-              "- Do not insist on a specific format of an answer (e.g. repeatedly asking for the exact\n" +
-              "  e-mail body text). Once the user provided content, data or a decision, proceed with it.\n" +
-              "- MANDATORY VALUES: formcycle widgets, workflow nodes, CodBi functionalities, element\n" +
-              "  placeholders and standard configurations all have required parameters and/or global\n" +
-              "  variables. Whenever the user's request implies such an element but does NOT provide a\n" +
-              "  value that is genuinely required and cannot be derived from the request, ASK for it\n" +
-              "  instead of guessing or inventing one.\n" +
-              "  Examples of required values to ask about:\n" +
-              "    - Email (FC_EMAIL / sending an email): sender address and subject are mandatory even\n" +
-              "      when the recipient is given; ask for them if not provided.\n" +
-              "    - FC_REDIRECT: target URL or URL template.\n" +
-              "    - FC_SHOW_TEMPLATE / FC_DOI_INIT / Abschlussseite: which completion page or template.\n" +
-              "    - FC_POST_REQUEST: URL and HTTP method.\n" +
-              "    - FC_MOVE_FORM_RECORD_TO_INBOX: inbox name.\n" +
-              "    - FC_CHANGE_FORM_VALUE / FC_WRITE_FORM_RECORD_ATTRIBUTES: which field/attribute and its value.\n" +
-              "    - XSelect / dropdown / select list (e.g. 'Stadt', a city dropdown): the OPTIONS list is required — if the request does NOT provide them and they cannot be derived from the request, ASK for the list of options; NEVER create a select with an empty options array.\n" +
-              "    - Date.Min (minimum date, e.g. 'Kursbeginn darf nicht in der Vergangenheit liegen'): the minimum — ask whether it is a PAST minimum (age, e.g. 'at least 18 years') or a FUTURE minimum (e.g. 'at least tomorrow', 'ab morgen'); then encode it as data-cb-minimum + data-cb-unit (+ data-cb-reverse=true for a future minimum).\n" +
-              "    - BIRTH-DATE FIELDS (labels 'Geburtsdatum', 'Geburtstag', 'birth date', 'date of birth', 'birthday'): a birth date ALWAYS lies in the PAST and must NEVER be treated as a future-dated field. Under NO circumstances apply a FUTURE minimum (today/tomorrow, data-cb-reverse=true) to a birth-date field and NEVER ask the 'Mindestdatum heute oder morgen?'/'heute oder morgen' question for it. A constraint like 'keine Vergangenheitsdaten'/'no past dates'/'no past dates allowed' on a birth date is CONTRADICTORY — interpret it as the OPPOSITE: only PAST dates are valid, i.e. NO FUTURE dates (maximum = today, CodBi_NoFutureDate). Only a PAST minimum (e.g. 'mindestens 18 Jahre' → data-cb-minimum=18, unit=y, no reverse) is meaningful for a birth date, and only when an age requirement is stated. WHEN a birth-date field is grouped with genuinely future-dated fields under one 'keine Vergangenheitsdaten' constraint (e.g. 'Geburtsdatum, Kursbeginn'): EXCLUDE the birth-date field from the 'heute oder morgen' question entirely — apply the future minimum (data-cb-reverse=true) ONLY to the future-dated field(s) (e.g. 'Kursbeginn' = morgen) and apply maximum=heute (CodBi_NoFutureDate) to the birth-date field WITHOUT asking. The 'heute oder morgen' minimum question may be asked ONLY for genuinely future-dated fields and NEVER when a birth-date field is among the affected fields. ALSO NEVER apply Date.NoWeekends to a birth-date field — people can be born on weekends, so a 'keine Wochenenden'/'no weekends' constraint on a birth date must be IGNORED (apply nothing, ask nothing). TODAY ITSELF IS A VALID BIRTH DATE — the maximum = heute includes heute.\n" +
-              "    - Standard configurations that rely on a global variable (tracking ID, currency,\n" +
-              "      threshold, ...): ask which value to set when it cannot be derived.\n" +
-              "    - Functionalities / element placeholders that need a parameter value (regex pattern,\n" +
-              "      target attribute, injected text, template): ask for it when missing.\n" +
-              "- BÜRGER-SERVICES FIELDSETS (fsBKDaten / fsBKOrgDaten / fsBKAllDaten): NEVER ask which fields a Bürgerkonto / BundID / BayernID / ELSTER fieldset should contain — the canonical field set is predefined. A 'fsBKOrgDaten' ELSTER-Organisationslogin fieldset MUST include the ELSTER organisation fields tfOrgName, tfOrgRechtsform, tfOrgRechtsformText, tfOrgRegisterNummer, tfOrgRegistergericht, tfOrgRegisterart, selOrgPersTyp, tfTaetigkeit, tfTaetigkeitText, tfDatenkranzTyp, BPK2, TrustLevel; a 'fsBKDaten' Bürgerkonto fieldset the person fields (tfAntragstellerVorname, tfAntragstellerName, tfAntragstellerGeburtsdatum, tfAntragstellerGeburtsort, tfAntragstellerPLZ, tfAntragstellerOrt, tfAntragstellerEmail, ...). Use the buergerservice_naming catalog when present; otherwise use these canonical fields — do NOT ask which ones to include. NEVER omit selOrgPersTyp, BPK2 and TrustLevel from fsBKOrgDaten.\n" +
-              "- FORM NAVIGATOR (multi-page forms with a progress indicator): the Form.Navigator nav bar must be reachable on EVERY page — place its container in the form's XHeader or XFooter, or when there is none, add it to EVERY page's elements array; NEVER only on one page.\n" +
-              "- DATE RANGES (e.g. 'Kursbeginn'/'Kursende', a date range): apply the CSS class CodBi_DateFrame_N_Begin to the START date field AND CodBi_DateFrame_N_End to the END date field (same N, BOTH fields get their own class). There is NO combined 'CodBi_DateFrame_N_Begin_End' class and these classes never go on a container/fieldset — only on the two date fields.\n" +
-              "- RICH TEXT / WYSIWYG EDITOR (HTML.Input.TinyMCE): MANDATORY — it is INVALID to emit HTML.Input.TinyMCE withOUT data-cb-plugins AND data-cb-toolbar. ALWAYS set both, choosing tools useful for the field's content. For a message: data-cb-plugins=\"advlist, autolink, lists, link, image, media, charmap\" and data-cb-toolbar=\"undo redo | blocks | bold italic underline | bullist numlist | link image media\" — NOT the raw-HTML 'code' option unless the field is explicitly for HTML source.\n" +
-              "- APPOINTMENT FINDER / Terminfinder (XAppointment): requires an 'appointmentPlan' (the schedule / Terminplan). If the user names a plan, use it as the value; if it is not provided, ASK which Terminplan to use — never generate an XAppointment without appointmentPlan.\n" +
-              "- BUTTON LIST (XButtonList): every navigation/submit button MUST have an action.page — a 'Zurück'/'Back' button gets action.page=\"previous\", a 'Weiter'/'Next' button gets action.page=\"next\" (check=true when the page has input fields), and a 'Senden'/'Absenden'/'Submit' button gets action.page=\"submit\" (check=true). Never leave action.page empty.\n" +
-              "- BUNDID / BÜRGERKONTO LOGIN BUTTON: ALWAYS create an XBsLogin element (with the bs_auth_ref property) for a 'BundID-Login-Button' / 'Bürgerkonto-Login' / authentication button — NEVER an XButtonList/BUTTON (a login button is not a navigation/submit button).\n" +
-              "- CONSOLE LOGGING OF AN AI ANSWER (Sys.Log.Console): set data-cb-Data to exactly 'SYS.Log.Console > AI.LLAMA.STD.QA > <Frage>; true;;;;;;' — e.g. 'SYS.Log.Console > AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;;'. The prefix is 'SYS.Log.Console' with dots — NEVER 'SYS Log.Console' — and the EP keeps its trailing '; true;;;;;;'.\n" +
-              "- COLLAPSIBLE PANEL ('aufklappbares Panel', 'collapsible panel', 'accordion') on a fieldset: apply the standard class CodBi_HTML_Panel_Standard to the XFieldSet (the legend becomes the title). Only when the panel must sit on a container (not a fieldset) use data-cb-func=html.panel with data-cb-generateheader=\"true\".\n" +
-              "- LDAP AUTOFILL / AUTOCOMPLETE (LDAP.Autocomplete, LDAP.Autocomplete.Set, CodBi_LDAP_AC_* classes): NEVER ask the user for an LDAP server URL, endpoint or connection details — the LDAP directory is configured server-side in Formcycle/CodBi settings (predefined LDAP queries / LDAP_URL), so the user does not know or provide it. When LDAP autocomplete is requested, apply it directly (data-cb-func=\"LDAP.Autocomplete\" or the matching CodBi_LDAP_AC_* class) WITHOUT clarification. For a BÜRGER-SERVICES form (fsBKDaten / fsBKOrgDaten / BundID / BayernID), the person's address fields are filled by the login/authentication data or by the German OpenPLZ.Autocomplete (CodBi_OpenPLZ_AC_SET_*) — a citizen is either a citizen or an employee, and a citizen is NOT in an Active Directory, so do NOT ask for LDAP details there; apply LDAP only when the request explicitly asks for an LDAP/employee-directory lookup, and even then never ask for the endpoint.\n" +
-              "- MATOMO TRACKING (Matomo.Tracking / Holistic.Matomo.Tracking): NEVER ask the user for the Matomo server URL. If the user's request specifies a URL, use that URL; otherwise the URL is taken automatically from the server-side plugin configuration (Matomo_URL property). The only Matomo value you may ask about is the tracking/SiteID when the user explicitly wants per-element Matomo.Tracking with a SiteID and none is derivable from the request. When the request just says \"Matomo-Tracking aktivieren\" / \"activate Matomo tracking\" without a SiteID, do NOT ask for the URL or SiteID — report {\"id\":\"Holistic.Matomo.Tracking\",\"targets\":[]} in _codbiApplicability.applied and the server activates the configured tracking.\n" +
-              "- AI CHAT (AI.LLAMA.CHAT / \"KI-Chat\" / \"KI-Assistent\" container): when the user asks to embed an AI chat, do NOT ask which chat widget/provider to use — build the COMPLETE CodBi AI.LLAMA.CHAT widget. Create ONE XContainer wrapper (the \"KI-Assistent\" container) with fullwidth=\"1\" and place EVERY chat sub-element inside it — NONE of them may be omitted and NONE may be left outside the wrapper. The wrapper MUST contain ALL of the following: (1) a chat display XTextArea with data-cb-func=\"ai.llama.chat\" that is readonly, has autosize, and carries data-cb-MaxPixelSize=\"360000\" AND data-cb-maxchatwindowheight=\"1200\"; (2) an Input XTextArea; (3) exactly ONE Send button inside an XButtonList; (4) a SEPARATE Stop button inside its OWN XButtonList (not merged with Send); (5) an Upload XUpload with fileextension=\"image/*,.pdf\"; (6) the four checkboxes Thinking, Internet, Location, AlertOnFinish; and (7) the Mail container — itself an inner XContainer containing a MailForward XCheckbox (CSS class AI_LLAMA_CHAT_MailForward) AND a MailAddress XTextField (CSS class AI_LLAMA_CHAT_MailAddress). Do NOT add a bare/empty placeholder container for the chat. NEVER ask \"welchen KI-Chat\" / \"welchen OCR-Dienst\" or whether the chat fields already exist.\n" +
-              "- AI.OCR (extract text from an uploaded image/PDF into a field): do NOT ask the user which OCR service to use or how to link the output — create the receiver field if named (e.g. tfExtractedText), link it via data-cb-field (dot-prefixed class selector) and use the default Mode=\"print\" unless the request explicitly asks for verification.\n" +
-              "- AI.LLAMA.CHAT wrapper: the chat XContainer wrapper's `fullwidth` property must be \"1\" — never ask the user and never leave it \"0\".\n" +
-              "- XRating (Bewertung/rating widget): when the user asks for a \"5-star\"/\"5-Sterne\"/\"5 Sterne\" rating, create an actual XRating element (NOT a default/placeholder rating widget and NOT a radio group or dropdown) whose `options` array has EXACTLY 5 entries, each a star icon (e.g. 5\u00d7 {\"icon\":\"ico-rating-star\"}). Do NOT ask whether it should be a radio group/dropdown or how many stars. The input-masking regex (Maskierung) belongs on the separate masked text field (e.g. the Kundennummer XTextField), NEVER on the rating widget.\n" +
-              "- HTML.CSS (custom CSS / styling): when the styling rule is described (\"rote Überschriften\"/\"red headings\"/custom colors), do NOT ask for the CSS text — derive it (e.g. \"rote Überschriften\" → data-cb-css=\"h1 {color:red;}\") and emit an element with data-cb-func=\"HTML.CSS\". Only ask when the styling cannot be derived at all.\n" +
-              "- JSON.SET (hidden JSON field): when the request asks for a hidden field that stores the JSON of other fields (e.g. \"JSON aus tfVorname/tfNachname\"), do NOT ask how to format the JSON or what to name the field. Build an XDefault/XTextField element with data-cb-func=\"JSON.SET\" that is invisible=\"1\" and set the derivation parameters: data-cb-path naming the source fields from the request (comma-separated, e.g. tfVorname,tfNachname), data-cb-property and data-cb-toset describing how the JSON is composed (e.g. building {\"vorname\":\"...\",\"nachname\":\"...\"}). The field MUST be marked invisible (hidden) — a JSON.SET field that is left visible is a FAIL — and MUST carry these derivation params (a JSON.SET field without data-cb-path/data-cb-property/data-cb-toset is a FAIL). Do NOT ask the user to name or format the field; auto-generate a name (e.g. tfVornameNachnameJSON).\n" +
-              "- Data tables (DQ.Table.View): when the user asks to show/view/display the columns of a\n" +
-              "  DataQuery/datasource as a table (e.g. \"add a table that views the columns Alter, Name of\n" +
-              "  HolaQuery\", \"zeige die Spalten ... der Abfrage ... als Tabelle\"), the DataQuery name the\n" +
-              "  user gives IS the value for data-cb-dataquery — NEVER ask whether the query exists or for\n" +
-              "  its technical ID (DataQueries are server-side datasources configured in the Formcycle\n" +
-              "  backend). Do NOT ask where to place the table: create a new XContainer/XContainerInvisible\n" +
-              "  tagged with data-cb-func=\"DQ.Table.View\" and append it to the first/current page. Do NOT\n" +
-              "  ask about sorting or filtering — show the columns as-is by default (only add sorting or\n" +
-              "  filtering when the user explicitly asks for it). The only genuinely required values are\n" +
-              "  the columns (data-cb-columns, CSV label;datacolumn[;width]) and the DataQuery name\n" +
-              "  (data-cb-dataquery).\n" +
-              "- PDF generation is AUTOMATIC in Formcycle: nodes like FC_FILL_PDF (and PDF exports such\n" +
-              "  as FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF) render a pre-configured template\n" +
-              "  with the form data at runtime. The PDF template is ALREADY configured in Formcycle.\n" +
-              "  NEVER ask the user for a PDF template name, layout, text or content — that is never a\n" +
-              "  required value. Only use a template/file name if the user explicitly mentioned one;\n" +
-              "  otherwise use the default configured template.\n" +
-              "- Creating AND sending a PDF is a TWO-NODE operation: first a PDF-generation node\n" +
-              "  (FC_FILL_PDF / FC_PROCESS_LOG_PDF / FC_EXPORT_FORM_RECORD_CHATS) that produces the PDF,\n" +
-              "  then an FC_EMAIL node that sends that PDF as an attachment (chained after the PDF node).\n" +
-              "  Never treat the PDF as a plain uploaded file in an email — always create the PDF node\n" +
-              "  and chain the email to it. Do NOT ask the user about this; build both nodes automatically.\n" +
-              "- MULTI-PAGE FORMS: when the request creates or restructures the form into multiple pages\n" +
-              "  (XPage elements) and the user has NOT already provided the page labels/titles, ASK for the\n" +
-              "  label/title of EVERY page (e.g. \"Personendaten\", \"Kurs & Termin\", \"Nachricht\") instead of\n" +
-              "  inventing them. When the user DID name the pages (directly or in the chat history), use those\n" +
-              "  exact labels and do NOT ask again.\n" +
-              "If you have everything you need, respond with exactly the single word: NO_CLARIFICATION\n")
-    }
+    // No prompt text is embedded in the backend: the clarification prompt is sourced exclusively
+    // from
+    // the bundled codbi-clarification.md (-> codbi.clarification) via loadClarificationTemplate()
+    // above.
+    // If neither the DB nor the classpath copy is available, return an empty system prompt.
+    return ""
   }
 
   /**
    * Loads the clarification system-prompt template — first from the DB (seeded from
    * `codbi-clarification.md` as `codbi.clarification`), and while the seed hasn't run yet, directly
-   * from the bundled `.md` on the classpath. Returns null only if neither is available (falls back
-   * to the inline builder). Keeps the clarification prompt sourced from the .md files.
+   * from the bundled `.md` on the classpath. Returns null only if neither is available — no prompt
+   * text is embedded in the backend. Keeps the clarification prompt sourced from the .md files.
    */
   private fun loadClarificationTemplate(): String? {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
@@ -11253,6 +10844,214 @@ class AICodBiAssistant : IPluginServletAction {
               ?.trim()
         }
         .getOrNull()
+  }
+
+  /**
+   * Loads the workflow task-instruction template — first from the DB (seeded from
+   * `codbi-workflow-task-instruction.md` as `codbi.workflow_task_instruction`), and while the seed
+   * hasn't run yet, directly from the bundled `.md` on the classpath. No prompt text is embedded in
+   * the backend.
+   */
+  private fun loadWorkflowTaskInstruction(): String? {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em != null) {
+      try {
+        val fromDb = PromptLoader.loadCategory(em, "codbi")["codbi.workflow_task_instruction"]
+        if (!fromDb.isNullOrBlank()) return fromDb
+      } catch (_: Exception) {} finally {
+        try {
+          em.close()
+        } catch (_: Exception) {}
+      }
+    }
+    return runCatching {
+          AICodBiAssistant::class
+              .java
+              .classLoader
+              .getResourceAsStream(
+                  "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-workflow-task-instruction.md")
+              ?.bufferedReader(Charsets.UTF_8)
+              ?.use { it.readText() }
+              ?.trim()
+        }
+        .getOrNull()
+  }
+
+  /**
+   * Renders the workflow task-instruction template by filling its conditional `{{BEGIN_*}} …
+   * {{END_*}}` sections. A section is kept (with its `{{*_DATA}}` placeholder replaced) when the
+   * data is non-blank, and dropped entirely when the data is absent. Always-present sections
+   * (SCOPE, PDF GENERATION, OUTPUT CONTRACT) stay untouched. No prompt text lives in the backend.
+   */
+  private fun renderWorkflowSystemPrompt(
+      template: String,
+      general: String,
+      workflowReference: String,
+      pass2: Boolean,
+      formContext: String?,
+      repeatableContainers: String?,
+      completionPages: String?,
+      htmlTemplates: String?,
+      inboxes: String?,
+      messageServices: String?,
+      triggers: String?,
+      workflowStates: String?,
+      existingWorkflowNodes: String?,
+      clarificationContext: String?,
+      chatContext: String?,
+      changeHistoryContext: String?,
+      changeLogSchema: String
+  ): String {
+    var out =
+        template
+            .replace("{{GENERAL}}", general)
+            .replace("{{WORKFLOW_REFERENCE}}", workflowReference)
+    // Conditional sections: drop the whole {{BEGIN_*}}…{{END_*}} block when data is blank.
+    out = applyWorkflowSection(out, "WORKFLOW_DETAILS_REQUEST", if (pass2) null else " ")
+    out = applyWorkflowSection(out, "FORM_ELEMENTS", formContext)
+    out = applyWorkflowSection(out, "REPEATABLE_CONTAINERS", repeatableContainers)
+    out = applyWorkflowSection(out, "COMPLETION_PAGES", completionPages)
+    out = applyWorkflowSection(out, "HTML_TEMPLATES", htmlTemplates)
+    out = applyWorkflowSection(out, "URL_TEMPLATES", htmlTemplates)
+    out = applyWorkflowSection(out, "INBOXES", inboxes)
+    out = applyWorkflowSection(out, "MESSAGE_SERVICES", messageServices)
+    out = applyWorkflowSection(out, "TRIGGERS", triggers)
+    out = applyWorkflowSection(out, "WORKFLOW_STATES", workflowStates)
+    out = applyWorkflowSection(out, "EXISTING_WORKFLOW_NODES", existingWorkflowNodes)
+    out = applyWorkflowSection(out, "USER_CLARIFICATION", clarificationContext)
+    out = applyWorkflowSection(out, "CHAT_HISTORY", chatContext)
+    out =
+        applyWorkflowSection(
+            out,
+            "PRIOR_CHANGE_HISTORY",
+            changeHistoryContext,
+            mapOf("{{CHANGE_LOG_SCHEMA}}" to changeLogSchema))
+    return out
+  }
+
+  /** Keeps or drops one `{{BEGIN_name}}…{{END_name}}` section of a template. */
+  private fun applyWorkflowSection(
+      template: String,
+      name: String,
+      data: String?,
+      extraReplacements: Map<String, String> = emptyMap()
+  ): String {
+    val begin = "{{BEGIN_$name}}"
+    val end = "{{END_$name}}"
+    val startIdx = template.indexOf(begin)
+    if (startIdx < 0) return template
+    val endIdx = template.indexOf(end, startIdx)
+    if (endIdx < 0) return template
+    val afterEnd = endIdx + end.length
+    if (data.isNullOrBlank()) {
+      return template.removeRange(startIdx, afterEnd)
+    }
+    var body = template.substring(startIdx + begin.length, endIdx)
+    body = body.replace("{{${name}_DATA}}", data)
+    for ((ph, value) in extraReplacements) body = body.replace(ph, value)
+    return template.replaceRange(startIdx, afterEnd, body)
+  }
+
+  /**
+   * Loads the classify-intent context template — first from the DB (seeded from
+   * `codbi-classify-intent-context.md` as `codbi.classify_intent_context`), and while the seed
+   * hasn't run yet, directly from the bundled `.md` on the classpath. No prompt text is embedded in
+   * the backend.
+   */
+  private fun loadClassifyIntentContextTemplate(): String? {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em != null) {
+      try {
+        val fromDb = PromptLoader.loadCategory(em, "codbi")["codbi.classify_intent_context"]
+        if (!fromDb.isNullOrBlank()) return fromDb
+      } catch (_: Exception) {} finally {
+        try {
+          em.close()
+        } catch (_: Exception) {}
+      }
+    }
+    return runCatching {
+          AICodBiAssistant::class
+              .java
+              .classLoader
+              .getResourceAsStream(
+                  "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-classify-intent-context.md")
+              ?.bufferedReader(Charsets.UTF_8)
+              ?.use { it.readText() }
+              ?.trim()
+        }
+        .getOrNull()
+  }
+
+  /**
+   * Renders the classify-intent context template by filling its conditional `{{BEGIN_*}} …
+   * {{END_*}}` sections with the runtime chat/form/clarification context. Sections with no data are
+   * dropped. No prompt text lives in the backend.
+   */
+  private fun renderClassifyIntentContext(
+      chatContext: String?,
+      formStructureContext: String?,
+      clarificationContext: String?
+  ): String {
+    val template = loadClassifyIntentContextTemplate() ?: return ""
+    var out = template
+    out = applyWorkflowSection(out, "CHAT_HISTORY", chatContext)
+    out = applyWorkflowSection(out, "FORM_STRUCTURE", formStructureContext)
+    out = applyWorkflowSection(out, "CLARIFICATION", clarificationContext)
+    return out
+  }
+
+  /**
+   * Loads the chat-context template — first from the DB (seeded from `codbi-chat-context.md` as
+   * `codbi.chat_context`), and while the seed hasn't run yet, directly from the bundled `.md` on
+   * the classpath. No prompt text is embedded in the backend.
+   */
+  private fun loadChatContextTemplate(): String? {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em != null) {
+      try {
+        val fromDb = PromptLoader.loadCategory(em, "codbi")["codbi.chat_context"]
+        if (!fromDb.isNullOrBlank()) return fromDb
+      } catch (_: Exception) {} finally {
+        try {
+          em.close()
+        } catch (_: Exception) {}
+      }
+    }
+    return runCatching {
+          AICodBiAssistant::class
+              .java
+              .classLoader
+              .getResourceAsStream(
+                  "com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/prompts/codbi-chat-context.md")
+              ?.bufferedReader(Charsets.UTF_8)
+              ?.use { it.readText() }
+              ?.trim()
+        }
+        .getOrNull()
+  }
+
+  /**
+   * Renders the chat-context template by filling its conditional `{{BEGIN_*}} … {{END_*}}` sections
+   * with the runtime form/workflow/chat/clarification context. Sections with no data are dropped.
+   * No prompt text lives in the backend.
+   */
+  private fun renderChatContext(
+      formStructureContext: String?,
+      completeFormJson: String?,
+      completeWorkflowJson: String?,
+      chatContext: String,
+      clarificationContext: String
+  ): String {
+    val template = loadChatContextTemplate() ?: return ""
+    var out = template
+    out = applyWorkflowSection(out, "FORM_STRUCTURE", formStructureContext)
+    out = applyWorkflowSection(out, "COMPLETE_FORM", completeFormJson)
+    out = applyWorkflowSection(out, "COMPLETE_WORKFLOW", completeWorkflowJson)
+    out = applyWorkflowSection(out, "CHAT_HISTORY", chatContext.takeIf { it.isNotBlank() })
+    out =
+        applyWorkflowSection(out, "CLARIFICATION", clarificationContext.takeIf { it.isNotBlank() })
+    return out
   }
 
   /** Parses a `need_chat_history` response into (wanted, optional form key for another form). */
@@ -11559,30 +11358,13 @@ class AICodBiAssistant : IPluginServletAction {
   ): ChatAnswer? {
     val system = buildString {
       append(loadPromptWithClasspathFallback("codbi.chat_system_prompt") ?: "")
-      if (!formStructureContext.isNullOrBlank()) {
-        append("\nCURRENT FORM STRUCTURE:\n$formStructureContext\n")
-      }
-      if (!completeFormJson.isNullOrBlank()) {
-        append(
-            "\nCOMPLETE FORM STRUCTURE (all details — cssclasses, data-cb-func/data-cb-* " +
-                "attributes, datatype, XSelect options, appointmentPlan, XButtonList action.page):\n" +
-                completeFormJson +
-                "\n")
-      }
-      if (!completeWorkflowJson.isNullOrBlank()) {
-        append(
-            "\nCOMPLETE WORKFLOW STRUCTURE (all details — tasks, triggers with their parameters, " +
-                "full node tree with every node's parameters):\n" +
-                completeWorkflowJson +
-                "\n")
-      }
-      val chatContext = buildChatContext(chatTurns)
-      if (chatContext.isNotBlank()) {
-        append("\nCHAT HISTORY (previous turns):\n$chatContext\n")
-      }
-      if (clarificationContext.isNotBlank()) {
-        append("\nQUESTIONS THE USER ALREADY ANSWERED (authoritative):\n$clarificationContext\n")
-      }
+      append(
+          renderChatContext(
+              formStructureContext,
+              completeFormJson,
+              completeWorkflowJson,
+              buildChatContext(chatTurns),
+              clarificationContext))
     }
     val messagesJson = buildString {
       append("[")
@@ -11599,10 +11381,7 @@ class AICodBiAssistant : IPluginServletAction {
       // so
       // the model emits ONLY the raw JSON object.
       val strictSystem =
-          system +
-              "\n\nIMPORTANT: Output ONLY the raw JSON object {\"hasQuestion\":true|false," +
-              "\"hasInstructions\":true|false,\"answer\":\"...\"} — no explanation, no markdown, " +
-              "no surrounding text."
+          system + "\n\n" + (loadPromptWithClasspathFallback("codbi.retry_chat") ?: "")
       val retryMessages = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(strictSystem)}},""")

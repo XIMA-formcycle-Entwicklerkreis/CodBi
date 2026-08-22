@@ -30,6 +30,7 @@ import {
   saveDialogPosition,
   type DialogPosition,
 } from "../dialog-position";
+import { markdownToHtml } from "./markdown";
 // #endregion Imports
 
 // #region Interfaces
@@ -88,6 +89,15 @@ interface ClarificationTurn {
 interface ChatRunOptions {
   chatMode: boolean;
   chatHistory: Array<{ user: string; assistant: string }>;
+}
+
+/** One bubble in the Form Assistant Chat. `view` selects the per-bubble rendering — it defaults to
+ *  Markdown, so AI answers are shown formatted; the user can switch a bubble to raw plain text. */
+interface ChatMessage {
+  role: "user" | "assistant";
+  text: string;
+  /** Per-bubble view: "markdown" (default) renders the text, "plain" shows the raw text. */
+  view?: "markdown" | "plain";
 }
 // #endregion Interfaces
 
@@ -343,9 +353,18 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Popup visibility for the AI chat (answer + continued conversation about the form). */
   chatVisible = false;
   /** The conversation shown in the chat popup (user + assistant messages). */
-  chatMessages: Array<{ role: "user" | "assistant"; text: string }> = [];
+  chatMessages: Array<ChatMessage> = [];
+  /** Cache of rendered Markdown (keyed by message text) so unchanged bubbles are not re-parsed on
+   *  every change-detection cycle. */
+  private readonly markdownCache = new Map<string, string>();
   /** Current chat input text. */
   chatInput = "";
+  /** Position in the sent-prompt history while browsing it with Arrow Up/Down. -1 = not browsing
+   *  (the input shows the current draft). */
+  private chatHistoryIndex = -1;
+  /** Text that was in the input when history browsing started; restored once the user arrows past
+   *  the newest prompt. */
+  private chatDraft = "";
   /** Index of the chat message whose copy button currently shows the "copied" state (-1 = none). */
   copiedChatIndex = -1;
   /** True while the "copy ALL questions" button in the clarification dialog shows the copied check. */
@@ -2121,6 +2140,32 @@ export class AiAssistant implements OnInit, OnDestroy {
   }
 
   /**
+   * Renders a chat message's text as safe Markdown HTML for the bubble's markdown view (the
+   * default). Results are memoized per text, so re-renders (e.g. toggling another bubble) do not
+   * re-parse unchanged messages.
+   */
+  markdownHtml(text: string): string {
+    const cached = this.markdownCache.get(text);
+    if (cached !== undefined) return cached;
+    const html = markdownToHtml(text);
+    // Bound the cache so a very long chat session cannot grow it unboundedly.
+    if (this.markdownCache.size >= 200) this.markdownCache.clear();
+    this.markdownCache.set(text, html);
+    return html;
+  }
+
+  /**
+   * Toggles one chat bubble between the rendered Markdown view (default) and the raw plain-text
+   * view. The choice is stored on the message itself, so it survives reopening the chat.
+   */
+  toggleChatMessageView(index: number): void {
+    const msg = this.chatMessages[index];
+    if (!msg) return;
+    msg.view = msg.view === "plain" ? "markdown" : "plain";
+    this.cdr.markForCheck();
+  }
+
+  /**
    * Copies a chat message's text to the clipboard and briefly shows a "copied" state on its button.
    * Falls back to the legacy execCommand path when the async Clipboard API is unavailable.
    */
@@ -2157,12 +2202,69 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Handles Arrow Up in the chat input: when the caret is on the first line, browse the previously
+   * sent prompts (shell-style history). When the caret is not on the first line the default
+   * "move to the previous line" behavior is left untouched.
+   */
+  onChatArrowUp(event: Event): void {
+    const e = event as KeyboardEvent;
+    const input = this.chatInput ?? "";
+    const caret = (e.target as HTMLTextAreaElement | null)?.selectionStart ?? input.length;
+    if (input.slice(0, caret).includes("\n")) return;
+    e.preventDefault();
+    this.navigateChatHistory(1);
+  }
+
+  /** Handles Arrow Down in the chat input: browses forward through the prompt history when the
+   *  caret is on the last line (otherwise the caret simply moves to the next line). */
+  onChatArrowDown(event: Event): void {
+    const e = event as KeyboardEvent;
+    const input = this.chatInput ?? "";
+    const caret = (e.target as HTMLTextAreaElement | null)?.selectionStart ?? input.length;
+    if (input.slice(caret).includes("\n")) return;
+    e.preventDefault();
+    this.navigateChatHistory(-1);
+  }
+
+  /** Previously sent chat prompts, newest first — the entries recalled with Arrow Up. */
+  private chatPromptHistory(): string[] {
+    return this.chatMessages
+      .filter((m) => m.role === "user")
+      .map((m) => m.text)
+      .reverse();
+  }
+
+  /**
+   * Moves through the sent-prompt history. `delta` is +1 for Arrow Up (towards older prompts) and
+   * -1 for Arrow Down (towards newer prompts / back to the draft). Browsing starts from the text
+   * currently typed in the input, which is restored again once the user arrows past the newest
+   * prompt.
+   */
+  private navigateChatHistory(delta: number): void {
+    const history = this.chatPromptHistory();
+    if (history.length === 0) return;
+    // Remember the typed text when history browsing starts, so Arrow Down can bring it back.
+    if (this.chatHistoryIndex === -1) {
+      this.chatDraft = this.chatInput ?? "";
+    }
+    let next = this.chatHistoryIndex + delta;
+    if (next > history.length - 1) next = history.length - 1;
+    if (next < -1) next = -1;
+    this.chatHistoryIndex = next;
+    this.chatInput = next === -1 ? this.chatDraft : history[next];
+    this.cdr.markForCheck();
+  }
+
   /** Sends the current chat input as a new chat turn (question or instruction). */
   sendChatMessage(): void {
     const text = (this.chatInput ?? "").trim();
     if (!text || this.chatLoading) return;
     const history = this.chatHistoryPayload();
     this.chatInput = "";
+    // A newly sent prompt is the newest history entry — reset the browsing position to the draft.
+    this.chatHistoryIndex = -1;
+    this.chatDraft = "";
     this.chatMessages.push({ role: "user", text });
     this.persistChatSession();
     this.chatLoading = true;

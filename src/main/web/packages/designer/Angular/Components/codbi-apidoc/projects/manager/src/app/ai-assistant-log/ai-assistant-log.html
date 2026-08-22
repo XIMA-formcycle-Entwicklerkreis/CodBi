@@ -1,7 +1,7 @@
 <div class="cb-ai-log">
     <div class="cb-ai-log__header">
         <span class="cb-log-title">Change Log</span>
-        @if (highlightElements.length > 0) {
+        @if (hasUncheckedSensitive) {
             <span class="cb-log-attention" title="The last inference used sensitive CodBi elements that are not marked as checked yet">
                 <i class="pi pi-exclamation-triangle"></i>
                 <span>{{ 'cb.log.attention' | transloco }}</span>
@@ -107,7 +107,7 @@
 
     @if (loading) {
         <div class="cb-log-spinner">
-            <p-progressspinner [style]="{ width: '20px', height: '20px' }" strokeWidth="5" />
+            <p-progressspinner [style]="{ width: '60px', height: '60px' }" strokeWidth="6" />
             <span>Loading change log&#x2026;</span>
         </div>
     }
@@ -122,11 +122,13 @@
         </div>
     }
 
-    <div class="cb-log-tree">
-        @for (node of logs; track trackById($index, node)) {
-            <cb-log-node [node]="node" (sensitiveChecked)="onSensitiveChecked($event)" (promptOpen)="onPromptOpen($event)" />
-        }
-    </div>
+    @if (!loading) {
+        <div class="cb-log-tree">
+            @for (node of logs; track trackById($index, node)) {
+                <cb-log-node [node]="node" (sensitiveChecked)="onSensitiveChecked($event)" (promptOpen)="onPromptOpen($event)" />
+            }
+        </div>
+    }
 </div>
 
 <!-- Full-prompt viewer: a single top-level popup (like the chat / clarification dialogs), rendered

@@ -2,6 +2,7 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 
 // region Imports
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodBi
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ChatPromptFragments
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
@@ -143,9 +144,7 @@ object UrlFetcher : CodBi() {
       append("PAGE CONTENT FROM: ${result.url}\n")
       if (!result.title.isNullOrBlank()) append("TITLE: ${result.title}\n")
       append("\n${result.text}\n\n")
-      append("INSTRUCTIONS: Answer the user's question based on the page content above. ")
-      append("Be concise (2-6 sentences). Cite the source URL as a Markdown link. ")
-      append("Do NOT say 'the page says' repeatedly — just integrate the information naturally.")
+      append(ChatPromptFragments.section("page_content") ?: "")
     }
   }
 
@@ -499,12 +498,7 @@ object BraveSearch : CodBi() {
         append("\n")
       }
       // region Common guidance
-      append("INSTRUCTIONS: Answer in 2-4 sentences. Be concise, do not repeat yourself. ")
-      append("Do NOT say 'the results do not contain' or 'I cannot provide'. ")
-      append("Do NOT tell the user to visit a website. ")
-      append(
-          "Add links like [AccuWeather](https://accuweather.com/forecast) or [Wikipedia](https://en.wikipedia.org). ")
-      append("Never write 'Source', 'SiteName', or 'website name' as a link label.")
+      append(ChatPromptFragments.section("search_results") ?: "")
       // endregion Common guidance
     }
   }

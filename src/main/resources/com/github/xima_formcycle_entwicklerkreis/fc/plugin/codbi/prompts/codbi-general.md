@@ -46,6 +46,10 @@ You initially receive a CONDENSED reference: the CodBi Core Elements list (names
 - "widgets" — list EVERY FORMCYCLE widget className (e.g. "XTextField", "XContainer", "XPage") whose detailed JSON structure you need. Include every widget you plan to create, including containers and pages.
 - Do not guess or invent property names/structure. The server provides the exact details for exactly the requested items, then you continue with the full form JSON.
 - Omit a field when you need nothing from it; if you need neither, return the normal form JSON instead of a details request.
+- MANDATORY — ALWAYS include these functionality IDs in "elements" when the request matches, EVEN IF the condensed entry already looks complete (you still need their exact TSDoc to build them; omitting any of them is a FAIL):
+  - "AI.LLAMA.CHAT" — the request asks for an "AI chat"/"KI-Chat"/"KI-Assistent"/chatbot container. You must then build the FULL chat widget (never an empty container / placeholder span).
+  - "JSON.SET" — the request asks to store/combine other fields' values as JSON in a hidden field (e.g. "JSON aus tfVorname/tfNachname"). JSON.SET cannot interpolate field values (no placeholders in data-cb-property/data-cb-toset), so for a hidden field holding the JSON of OTHER FIELDS create a Formcycle CALCULATION field (XFormula, read-only, xformula_value builds the JSON) with invisible="1"; the xformula_value writes the JSON literally with [%field%] placeholders (e.g. {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"}) — no JSON.stringify, no bare field names. Use JSON.SET only for hard-coded values (data-cb-property + data-cb-path as a single JS dot path + data-cb-toset, "^"-prefixed for a JSON object literal).
+  - "HTML.Input.TinyMCE" — the request asks for a rich-text editor ("Rich-Text-Editor") on a textarea. You must then apply it with data-cb-plugins and data-cb-toolbar.
 
 ## CRITICAL — Use the user's clarification answers VERBATIM
 
@@ -151,9 +155,17 @@ CRITICAL:
 - The EP placeholder IS the value. It is NOT a description of what to build, and you must NEVER expand it into a hand-written JSON object/array.
 - WRONG: `data-cb-Data="{"planet":"Pluto","saturation":0.5}"` — this builds a JSON object manually and bypasses the EP entirely.
 - CORRECT: `data-cb-Data="{ data.join > Param1 ; Param2 }"` — the first token inside the braces is the EP's NAME. `data.join` is ONLY an example — ANY EP id works (built-in like AI.LLAMA.STD.QA, OpenPLZ.Localities, or any custom EP defined in the local API doc manager). The pattern is always `{ <any EP id> > Param1 ; Param2 ; ... }`, then >, then the parameters. The placeholder tells CodBi to invoke that EP, which produces the data at runtime.
-- NEVER invent or rename an EP id. Use EXACTLY the id under which the EP is defined (e.g. a custom EP named `gustav` must be invoked as `{ gustav > ... }` — do NOT rename it to something descriptive like `{ LogPlanet > ... }`).
+- NEVER invent or rename an EP id. Use EXACTLY the id under which the EP is defined (e.g. a custom EP named `gustav` must be invoked as `{ gustav > ... }` — do NOT rename it to something descriptive like `{ LogPlanet > ... }`). NEVER translate an EP id to another language: German holidays = the EP `Date.Holidays` (there is NO `Feiertage` EP) — 'Feiertage 2026' → `{ Date.Holidays > 2026 }`; 'Feiertage 2026 Bayern' → `{ Date.Holidays > by ; 2026 }`; current year → `{ Date.Holidays > THIS_YEAR }`.
 - Match each parameter to the EP's declared parameters in order. Only the parameters the EP declares may be used (name-to-parameter mapping, not your own invented JSON keys).
 - When a prompt asks you to log/show/output data that a known EP provides (built-in or custom), ALWAYS use the EP placeholder as the value — never construct the equivalent JSON yourself.
+
+## CRITICAL — data-cb-func is the FUNCTIONALITY name, NEVER an Element Placeholder (EP) name
+
+`data-cb-func` holds the FUNCTIONALITY id (e.g. `HTML.Text.Injector`, `html.select.injection`, `JSON.SET`, `Sys.Log.Console`, `DQ.Table.View`, `HTML.Input.REGEX`, `HTML.SETAttribute`, ...) — it NEVER holds an element-placeholder (EP) name. Element placeholders (e.g. `OpenPLZ.Streets`, `OpenPLZ.Localities`, `AI.LLAMA.STD.QA`, `Data.CSV`, `Date.FromString`, `LDAP.Find`, `V`, `F`, `I`, `JSON.Path`, ...) are VALUES that go into a data-cb-* VALUE parameter, NEVER into data-cb-func:
+- `data-cb-Data` (Sys.Log.Console), `data-cb-replacement` (HTML.Text.Injector), `data-cb-Values` (HTML.Select.Injection), `data-cb-toset` (JSON.SET).
+- WRONG: `data-cb-func="OpenPLZ.Streets"` + `data-cb-Data="{ OpenPLZ.Streets > ; .* ; 91522 }"` — OpenPLZ.Streets is an EP, not a functionality.
+- CORRECT: `data-cb-func="html.select.injection"` + `data-cb-Values="{ OpenPLZ.Streets > ; .* ; 91522 }"` for a select fed by the EP, or `data-cb-func="HTML.Text.Injector"` + `data-cb-replacement="{ OpenPLZ.Streets > ; .* ; 91522 }"` for injecting the EP result.
+CRITICAL — every functionality has PARAMETERS (the data-cb-* attributes it requires, e.g. data-cb-replacement/data-cb-property/data-cb-placeholder for HTML.Text.Injector, data-cb-Values/data-cb-ValueProperty/data-cb-TextProperty for HTML.Select.Injection, data-cb-Data for Sys.Log.Console). Never emit a bare data-cb-func without its required parameters, and never put an EP or its parameters into data-cb-func.
 
 ## CRITICAL — Standard Configurations are CSS classes, never data-cb-func
 

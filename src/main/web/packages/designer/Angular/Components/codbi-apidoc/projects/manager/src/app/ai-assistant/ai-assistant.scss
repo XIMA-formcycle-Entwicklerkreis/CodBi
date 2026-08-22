@@ -776,15 +776,19 @@ cb-ai-assistant {
         font-size: 0.85rem;
         color: #334155;
         cursor: pointer;
+        box-shadow: 0 0 0.5em black;
         transition:
             background 0.15s ease,
             border-color 0.15s ease,
             color 0.15s ease,
-            transform 0.1s ease;
+            transform 0.25s ease,
+            box-shadow 0.15s ease;
 
         &:hover {
-            border-color: #3b82f6;
-            color: #1d4ed8;
+            border-color: darkorange;
+            /* Keep the text color as-is (white when selected) — do NOT recolor it darkorange,
+               which would make it invisible on the darkorange background. */
+            transform: scale(1.1);
         }
 
         &__check {
@@ -797,7 +801,7 @@ cb-ai-assistant {
             border: 1.5px solid #94a3b8;
             border-radius: 3px;
             background: #fff;
-            color: #2563eb;
+            color: darkorange;
             font-size: 0.72rem;
             font-weight: 700;
             line-height: 1;
@@ -835,7 +839,7 @@ cb-ai-assistant {
                 width: 0.45rem;
                 height: 0.45rem;
                 border-radius: 50%;
-                background: #2563eb;
+                background: darkorange;
                 opacity: 0;
                 transform: scale(0.4);
                 transition:
@@ -845,15 +849,16 @@ cb-ai-assistant {
         }
 
         &--selected {
-            background: #2563eb;
-            border-color: #2563eb;
+            background: darkorange;
+            border-color: darkorange;
             color: #fff;
             font-weight: 600;
+            box-shadow: 0 0 0.5em black;
 
             .cb-ai-clarification-option__check {
                 border-color: #fff;
                 background: #fff;
-                color: #2563eb;
+                color: darkorange;
 
                 &::after {
                     opacity: 1;

@@ -767,32 +767,41 @@
   margin: 0 4px;
 }
 
-/* Resize splitter handle between tree and card panels */
+/* Resize splitter handle between tree and card panels — styled like the form-assistant divider
+   (darkorange rounded pill with a subtle black drop shadow and a white grip bar). */
 .cb-pm-splitter {
-  width: 5px;
-  min-width: 5px;
+  width: 8px;
+  min-width: 8px;
   cursor: col-resize;
-  background: #e8e8e8;
-  transition: background 0.15s;
+  position: relative;
+  background: #ff8c00;
+  border-left: 1px solid #d97a00;
+  border-radius: 4px;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.35);
+  transition: background 0.15s, box-shadow 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .cb-pm-splitter:hover {
-  background: #ff8c00;
+  background: #ffb266;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
 }
 
-.cb-pm-splitter::after {
+.cb-pm-splitter::before {
   content: "";
-  display: block;
-  width: 2px;
-  height: 24px;
-  background: #ccc;
-  border-radius: 1px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 48px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.75);
 }
 
-.cb-pm-splitter:hover::after {
+.cb-pm-splitter:hover::before {
   background: #fff;
 }
 

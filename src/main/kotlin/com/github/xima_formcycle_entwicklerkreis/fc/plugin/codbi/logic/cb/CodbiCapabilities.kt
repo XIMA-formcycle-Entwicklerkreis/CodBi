@@ -201,8 +201,9 @@ internal object CodbiCapabilities {
       // (e.g. leftovers from an earlier sync) that carry the same key as a local AI-capable
       // element.
       val localKeys = LocalApiDocPrompts.compactPromptKeys(em)
+      val allRecords = CompactPromptLoader.loadCategoryRecords(em, "compact.elements")
       val records =
-          CompactPromptLoader.loadCategoryRecords(em, "compact.elements").filter {
+          allRecords.filter {
             it.promptKey !in localKeys && !CodBiElementAccess.isHidden(it.promptKey, it.displayName)
           }
       if (records.isEmpty()) return null

@@ -345,14 +345,20 @@ export class PromptManager implements OnInit, OnDestroy {
   }
 
   close(): void {
+    // Setting `visible=false` drives the `@if (visible)` wrapper in the template, which fully
+    // destroys the PrimeNG dialog (and its modal mask). This is important: when the dialog is kept
+    // mounted, PrimeNG's internal mask state can stay stuck (the close animation never completes),
+    // and then the stuck mask is removed by the defensive cleanup below while the dialog still
+    // thinks it is open — so the NEXT open renders the dialog inside the detached mask and it never
+    // appears again.
     this.visible = false;
     this.selectedKey = null;
     this.activeRecord = null;
     this.showAddCategoryDialog = false;
     this.showAddItemDialog = false;
-    // PrimeNG sometimes fails to remove a modal dialog's mask (known issue, e.g. when this dialog
-    // was opened on top of another modal like the Form Assistant). Remove the mask explicitly so
-    // the background never stays darkened after closing.
+    // Defensive cleanup: with the @if teardown the mask is destroyed with the dialog, but on the
+    // off-chance a stale mask survives (e.g. when this modal was opened on top of another modal
+    // like the Form Assistant) remove it so the background never stays darkened after closing.
     setTimeout(() => this.removeOverlayMask(".cb-prompt-manager-mask"), 0);
     this.cdr.markForCheck();
   }

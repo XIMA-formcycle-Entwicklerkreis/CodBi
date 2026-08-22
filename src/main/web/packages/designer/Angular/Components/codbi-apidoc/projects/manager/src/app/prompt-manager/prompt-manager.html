@@ -1,3 +1,10 @@
+<!-- The main dialog is mounted/unmounted via @if so a FRESH PrimeNG dialog (and its modal mask) is
+     created on every open and fully destroyed on close — same pattern as the chat / clarification
+     popups in ai-assistant.html. Keeping the dialog mounted (visible=false only) leaves PrimeNG's
+     internal mask state stuck after the close animation never completes; the stuck mask is then
+     removed by close()/cleanup while the dialog still thinks it is open, so the NEXT open would
+     render the dialog inside the detached mask and it would never appear again. -->
+@if (visible) {
 <p-dialog
     [visible]="visible"
     (visibleChange)="close()"
@@ -321,6 +328,7 @@
         </div>
     </div>
 </p-dialog>
+}
 
 <!-- Add Category Dialog -->
 <p-dialog

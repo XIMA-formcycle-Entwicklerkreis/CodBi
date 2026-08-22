@@ -34,6 +34,10 @@ Return the form JSON normally. Include a top-level "_codbiApplicability" field w
 The server will handle functionality application in a second pass if candidates are found. This metadata field is removed server-side before the form is applied.
 For each listed element, use your judgment to decide if a functionality is useful for a field or if it applies standalone (no field needed). Consider BOTH whether it could benefit AND whether it would be inappropriate.
 
+## CRITICAL — STRICT VALID JSON OUTPUT
+
+Return the form as ONE valid JSON document. Property values are plain JSON strings — the surrounding quotes of a string value are plain `"` characters and MUST NOT be escaped: `"xformula_unit": "€"` is correct, `"xformula_unit": \"€\"` is INVALID JSON and makes the whole response unparseable. Inside a string, only the characters `"` and `\` need escaping. Never emit trailing commas (`"a":1,}`), unquoted keys, comments, or markdown code fences, and never wrap the JSON in backticks. A single malformed token means the entire form is lost.
+
 ## CodBi / Widget DETAILS REQUEST
 
 You initially receive a CONDENSED reference: the CodBi Core Elements list (names + purposes) and the FORMCYCLE Widgets list (names + purposes), NOT the full JSON structures. When you need the exact JSON template / properties of any CodBi element or formcycle widget before you can implement the request, STOP and return ONLY this JSON (nothing else, no prose):
@@ -145,6 +149,15 @@ Example — one input field that blocks the characters e, $ and % AND gets its t
   {"text":"data-cb-toset","value":"Holla die Waldfee"}
 ]
 
+## CRITICAL — Datatype regex vs. HTML.Input.REGEX (input value restrictions)
+
+A field that RESTRICTS what can be entered ("nur 3 Ziffern" / "only 3 digits", "nur die Zeichen a–z" / "only allows a–z", "darf e$% nicht enthalten" / "must not contain e$%", a fixed format/pattern) MUST NOT remain a plain text field (`datatype=""`) with no validation. Choose the mechanism by the field's datatype:
+
+- TEXT field (no other datatype is required — e.g. a "Sicherheitscode"/CVV that allows only 3 digits): the datatype regex is the right tool. Set `datatype="regexp"` on the XTextField AND put the regex pattern into the **`vrule`** property (the validation rule Formcycle's regexp datatype actually reads — NOT `datatypeHint`), e.g. `datatype="regexp"` + `"vrule": "^[0-9]{3}$"`. ALWAYS set the `"vrulemismatch"` property as well, with a proper, user-readable error message shown when the value does not match `vrule` (e.g. `"vrulemismatch": "Bitte genau 3 Ziffern eingeben"`) — a regexp field WITHOUT an error message is incomplete. The regexp datatype validates the submitted VALUE via `vrule`. ADDITIONALLY apply the HTML.Input.REGEX functionality so the field ALSO restricts the characters that can be TYPED — but ONLY with `data-cb-keyexpression`: `data-cb-func="HTML.Input.REGEX"` + `data-cb-keyexpression="[0-9]"` (per-keystroke allowed characters). Do NOT set `data-cb-expression` on a regexp field — the datatype already validates the whole value, so `data-cb-expression` would be redundant.
+- NON-TEXT datatype field (the field's datatype must be something else than text — `money`/`posmoney` for an amount like "Kaufpreis", `number`/`integer`, `dateDE`, `phone`, `email`, `plzDE`, ...): KEEP that datatype (do NOT overwrite it with `regexp`) and apply the HTML.Input.REGEX functionality for the input restriction with a proper regex for values and keys: `data-cb-keyexpression` (per-keystroke allowed characters) + `data-cb-expression` (whole-value pattern).
+
+DERIVE the regexes from the described rule yourself — never ask the user for a pattern when the allowed/blocked characters or the value format are stated in the request.
+
 ## CRITICAL — Element Placeholders (EPs) are VALUES, never JSON
 
 An Element Placeholder (EP) — built-in (from the Element Placeholders reference list) OR custom (defined in the local API doc manager) — is invoked by writing the PLACEHOLDER ITSELF as the value of a `data-cb-*` attribute (e.g. `data-cb-Data`), in the form:
@@ -155,7 +168,7 @@ CRITICAL:
 - The EP placeholder IS the value. It is NOT a description of what to build, and you must NEVER expand it into a hand-written JSON object/array.
 - WRONG: `data-cb-Data="{"planet":"Pluto","saturation":0.5}"` — this builds a JSON object manually and bypasses the EP entirely.
 - CORRECT: `data-cb-Data="{ data.join > Param1 ; Param2 }"` — the first token inside the braces is the EP's NAME. `data.join` is ONLY an example — ANY EP id works (built-in like AI.LLAMA.STD.QA, OpenPLZ.Localities, or any custom EP defined in the local API doc manager). The pattern is always `{ <any EP id> > Param1 ; Param2 ; ... }`, then >, then the parameters. The placeholder tells CodBi to invoke that EP, which produces the data at runtime.
-- NEVER invent or rename an EP id. Use EXACTLY the id under which the EP is defined (e.g. a custom EP named `gustav` must be invoked as `{ gustav > ... }` — do NOT rename it to something descriptive like `{ LogPlanet > ... }`). NEVER translate an EP id to another language: German holidays = the EP `Date.Holidays` (there is NO `Feiertage` EP) — 'Feiertage 2026' → `{ Date.Holidays > 2026 }`; 'Feiertage 2026 Bayern' → `{ Date.Holidays > by ; 2026 }`; current year → `{ Date.Holidays > THIS_YEAR }`.
+- NEVER invent or rename an EP id. Use EXACTLY the id under which the EP is defined (e.g. a custom EP named `gustav` must be invoked as `{ gustav > ... }` — do NOT rename it to something descriptive like `{ LogPlanet > ... }`). NEVER translate an EP id to another language: German holidays = the EP `Date.Holidays` (there is NO `Feiertage` EP) — 'Feiertage dieses Jahr' → `{ Date.Holidays > THIS_YEAR }`; 'Feiertage Bayern dieses Jahr' → `{ Date.Holidays > by ; THIS_YEAR }`; 'Feiertage nächstes Jahr' → `{ Date.Holidays > THIS_YEAR + 1 }`.
 - Match each parameter to the EP's declared parameters in order. Only the parameters the EP declares may be used (name-to-parameter mapping, not your own invented JSON keys).
 - When a prompt asks you to log/show/output data that a known EP provides (built-in or custom), ALWAYS use the EP placeholder as the value — never construct the equivalent JSON yourself.
 

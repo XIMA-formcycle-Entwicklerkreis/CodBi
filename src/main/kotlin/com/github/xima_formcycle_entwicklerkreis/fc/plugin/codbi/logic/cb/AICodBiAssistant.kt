@@ -1048,13 +1048,14 @@ class AICodBiAssistant : IPluginServletAction {
             "$baseSystemPrompt\n\n## DOCUMENT PARSING RULES (attached document)\n\n$docRules"
           } else baseSystemPrompt
         } else baseSystemPrompt
-    // Inject the clarifying questions/answers the user already gave (multi-round clarification),
-    // so the form AI treats them as authoritative context instead of asking again.
+    // The clarifying questions/answers the user already gave (multi-round clarification) are
+    // intentionally NOT injected into the system prompt: putting the raw Q&A block there degraded
+    // the model's build quality (it switched to a generic HTML.Text.Injector wrapper and invented
+    // EP names). The answers are instead appended to the USER instruction below, so the re-run
+    // reads
+    // like a normal user turn and builds the complete form exactly like a run without
+    // clarification.
     var effectiveSystemPrompt = systemPrompt
-    if (!clarificationContext.isNullOrBlank()) {
-      effectiveSystemPrompt +=
-          "\n\n## USER CLARIFICATION (authoritative answers the user already gave — use them as context)\n\n$clarificationContext"
-    }
     if (!chatContext.isNullOrBlank()) {
       effectiveSystemPrompt +=
           "\n\n## CHAT HISTORY (previous turns in the form-chat popup — treat as authoritative " +
@@ -1097,8 +1098,12 @@ class AICodBiAssistant : IPluginServletAction {
               "section headings, and buttons on EVERY page must appear in the output." +
               multiPageSuffix
         } else ""
+    val clarificationInstruction =
+        if (clarificationContext.isNullOrBlank()) ""
+        else
+            "\n\nThe user already answered these clarification questions — treat the answers as part of the instruction and build the COMPLETE form accordingly. The answers resolve ONLY the specific questions they belong to; you must STILL create every field and wire EVERY element placeholder (EP) / CodBi functionality described in the system prompt (OpenPLZ EPs → XSelect with data-cb-func=\"html.select.injection\" + the EP in data-cb-Values; other EP output/research fields such as Date.Holidays, Data.CSV, Data.Join, Date.FromString, DOM.Query, JSON.Path, LDAP.Find, Net.URL, Sorted, Unique, F, I, V → data-cb-func=\"JSON.SET\" / \"HTML.Text.Injector\" wired as the field's value; Sys.Log.Console for console logging). NEVER emit an EP/research field as a bare plain text field without its EP wiring.\n\nAnswers:\n$clarificationContext"
     val userContent =
-        "Instruction: $prompt$imageHint\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
+        "Instruction: $prompt$imageHint$clarificationInstruction\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
             "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt.\n" +
             "If the user asks to REMOVE/DELETE elements, OMIT them from \"items\" AND list their names in a " +
             "top-level \"_removedItems\": [\"elementName\", ...] array so the server removes them completely " +
@@ -1145,11 +1150,11 @@ class AICodBiAssistant : IPluginServletAction {
       // The USER CLARIFICATION answers (e.g. "use radio buttons") and the CONTROL TYPES rule must
       // also reach pass-2 — pass-1 may only answer with a details request, while the actual widgets
       // are created here. Without them the model ignores the user's control-type choice.
-      val clarificationSection =
-          if (clarificationContext.isNullOrBlank()) ""
-          else
-              "\n\n## USER CLARIFICATION (authoritative answers the user already gave — use them as context)\n\n" +
-                  clarificationContext
+      // The clarification answers are NOT injected into the pass-2 system prompt either (same
+      // reason
+      // as pass-1: the raw Q&A block degraded the build). They are carried in the pass-2 USER
+      // content below so they read as part of the instruction.
+      val clarificationSection = ""
       // The chat history must also reach EVERY rerun pass — pass-1 may only answer with a
       // need_codbi_details meta-request, while the actual changes are applied in pass-2. Without it
       // the model cannot resolve references like "apply options 1, 2, 5, 7" against the numbered
@@ -1206,8 +1211,12 @@ class AICodBiAssistant : IPluginServletAction {
           append("[")
           append("""{"role":"system","content":${gson.toJson(rethinkSystemPrompt)}},""")
           val formJson = gson.toJson(mapOf("items" to allItems))
+          val clarificationLine =
+              if (clarificationContext.isNullOrBlank()) ""
+              else
+                  "\n\nUser's clarification answers (treat as part of the instruction):\n$clarificationContext"
           val userContent =
-              "Original user request: $prompt\n\n" +
+              "Original user request: $prompt$clarificationLine\n\n" +
                   "Modify the form below according to that request. If the user asked to REMOVE or " +
                   "DELETE fields/elements, honor it: drop those items from the root \"items\" array AND " +
                   "from their parent container's \"elements\" array (clear to [] for \"remove all " +
@@ -1326,8 +1335,12 @@ class AICodBiAssistant : IPluginServletAction {
                 chatSection +
                 controlTypesSection
 
+        val clarificationLine2 =
+            if (clarificationContext.isNullOrBlank()) ""
+            else
+                "\n\nUser's clarification answers (treat as part of the instruction):\n$clarificationContext"
         val pass2UserContent =
-            "Original user request: $prompt\n\n" +
+            "Original user request: $prompt$clarificationLine2\n\n" +
                 "Complete current form (IPersistJson):\n${slimPersistJson(formBase)}\n\n" +
                 (if (candidateClause.isNotBlank())
                     "Apply these CodBi functionalities: $candidateClause\n"
@@ -1531,7 +1544,27 @@ class AICodBiAssistant : IPluginServletAction {
     }
 
     return try {
-      val parsed = JsonParser.parseString(sanitizedCleaned)
+      val parsed =
+          try {
+            JsonParser.parseString(sanitizedCleaned)
+          } catch (first: Exception) {
+            // The model occasionally emits malformed JSON (a stray `\"` around a value such as the
+            // euro unit, or a trailing comma). Repair the common LLM slips and retry so a single
+            // bad
+            // token does not lose the whole build.
+            val repaired = repairAiJson(sanitizedCleaned)
+            if (repaired != sanitizedCleaned) {
+              logger.warn(
+                  "[AICodBiAssistant] AI returned invalid JSON; repaired malformed tokens ({} -> {} chars)",
+                  sanitizedCleaned.length,
+                  repaired.length)
+            }
+            try {
+              JsonParser.parseString(repaired)
+            } catch (_: Exception) {
+              throw first
+            }
+          }
       warnUnknownClassNames(parsed)
       // Sanitize the AI output before it reaches the designer: fold invented standalone buttons
       // into an XButtonList and drop any item with an unknown className or missing id (such items
@@ -9918,6 +9951,89 @@ class AICodBiAssistant : IPluginServletAction {
     return text.substring(start)
   }
 
+  /**
+   * Repairs common malformations LLMs produce in JSON, so a single bad token does not lose the
+   * whole build. Only invoked when the initial parse fails. Handles:
+   * - stray `\"` used as string delimiters around a value (e.g. `"unit": \"€\"` instead of `"unit":
+   *   "€"` — the model escaped the surrounding quotes of a value containing a special character);
+   * - trailing commas before `}`/`]` (`"a":1,}`).
+   */
+  private fun repairAiJson(raw: String): String {
+    if (raw.isBlank()) return raw
+    val sb = StringBuilder(raw.length)
+    var inString = false
+    var i = 0
+    val n = raw.length
+    fun skipWs(from: Int): Int {
+      var j = from
+      while (j < n && (raw[j] == ' ' || raw[j] == '\t' || raw[j] == '\r' || raw[j] == '\n')) j++
+      return j
+    }
+    while (i < n) {
+      val c = raw[i]
+      if (inString) {
+        if (c == '\\' && i + 1 < n) {
+          val nxt = raw[i + 1]
+          if (nxt == '"') {
+            // A backslash-quote inside a string: if it closes a value (followed by `,`/`}`/`]`/`:`
+            // or end of input), the model meant it as a plain closing quote; otherwise it is a
+            // legitimate escape and stays verbatim.
+            val after = skipWs(i + 2)
+            val closesValue =
+                after >= n ||
+                    raw[after] == ',' ||
+                    raw[after] == '}' ||
+                    raw[after] == ']' ||
+                    raw[after] == ':'
+            if (closesValue) {
+              sb.append('"')
+              inString = false
+            } else {
+              sb.append(c).append(nxt)
+            }
+            i += 2
+          } else {
+            // Other escape sequences (\\n, \\u..., \\/, ...): keep verbatim.
+            sb.append(c).append(nxt)
+            i += 2
+          }
+        } else if (c == '"') {
+          sb.append(c)
+          inString = false
+          i++
+        } else {
+          sb.append(c)
+          i++
+        }
+      } else {
+        if (c == '"') {
+          sb.append(c)
+          inString = true
+          i++
+        } else if (c == '\\' && i + 1 < n && raw[i + 1] == '"') {
+          // Stray `\"` outside a string: treat it as a plain opening quote (the model escaped the
+          // delimiter instead of writing a plain `"`).
+          sb.append('"')
+          inString = true
+          i += 2
+        } else if (c == ',') {
+          val after = skipWs(i + 1)
+          if (after < n && (raw[after] == '}' || raw[after] == ']')) {
+            // Trailing comma before a closing brace/bracket: drop the comma.
+            i++
+          } else {
+            sb.append(c)
+            i++
+          }
+        } else {
+          sb.append(c)
+          i++
+        }
+      }
+    }
+    return sb.toString()
+  }
+
   private fun jsonResponse(json: String): IPluginServletActionRetVal =
       PluginServletActionRetVal(ServletResponse(EResponseType.JSON, json))
 
@@ -10473,7 +10589,17 @@ class AICodBiAssistant : IPluginServletAction {
               val details = CodbiCapabilities.buildFullSectionFor(requestedIds)
               // Fall back to the full reference when none of the requested IDs could be resolved.
               if (details.isBlank()) PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
-              else details
+              else
+              // The COMPLETE condensed EP/functionality name list MUST accompany the requested
+              // details: the model builds the form in THIS (pass-2) call, whose context is a
+              // fresh conversation that no longer contains the pass-1 prompt with the full
+              // listing. Without the name list the model invents EP names (e.g.
+              // Data.PlaceListStartingWithAn, Data.CantonsSwitzerland) for anything it did not
+              // explicitly request details for in pass-1.
+              details +
+                      "\n\n## COMPLETE ELEMENT PLACEHOLDER / FUNCTIONALITY / STANDARD CONFIGURATION " +
+                      "REFERENCE (authoritative EP names + usage — use EXACTLY these names, never invent names)\n" +
+                      PromptLoader.resolvePlaceholders("{{CODBI_ELEMENTS_SECTION}}")
             }
             // The AI asked ONLY for widget templates (elements list empty): give it the condensed
             // element list (names + purposes) plus the widget templates — NOT the full API
@@ -10750,7 +10876,11 @@ class AICodBiAssistant : IPluginServletAction {
           } else ""
       val clarificationHistoryBlock =
           if (clarificationContext.isNotBlank()) {
-            "\nQUESTIONS THE USER ALREADY ANSWERED (treat these as authoritative):\n" +
+            "\nQUESTIONS THE USER ALREADY ANSWERED (treat these as authoritative). " +
+                "NEVER re-ask a question whose answer is already given above, and NEVER ask the same " +
+                "question twice. Use the provided answers and respond with " +
+                "{\"status\":\"NO_CLARIFICATION\"} unless a genuinely NEW, still-unanswered question " +
+                "remains:\n" +
                 clarificationContext +
                 "\n"
           } else ""

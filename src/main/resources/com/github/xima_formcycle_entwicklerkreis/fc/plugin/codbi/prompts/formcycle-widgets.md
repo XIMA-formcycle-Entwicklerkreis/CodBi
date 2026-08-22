@@ -28,7 +28,7 @@ Single-line text input. Set 'datatype' property to validate input:
 - "ipv4" IPv4 address
 - "onlyLetterNumber" alphanumeric
 - "onlyLetterSp" letters and spaces
-- "regexp" custom regex (also add datatypeHint property with the regex pattern and error message)
+- "regexp" custom regex — the datatype for a TEXT field whose input is limited (e.g. a "Sicherheitscode" that allows only 3 digits). Put the regex pattern into the `vrule` property (Formcycle's regexp datatype reads `vrule`, NOT `datatypeHint`), e.g. "vrule":"^[0-9]{3}$", and ALWAYS set `vrulemismatch` with a proper error message (e.g. "vrulemismatch":"Bitte genau 3 Ziffern eingeben") — shown when the value does not match `vrule`; a regexp field without an error message is incomplete. The datatype validates the value, so if HTML.Input.REGEX is also applied, use only `data-cb-keyexpression` (no `data-cb-expression`). When the field's datatype must be NON-text (money, number, date, phone, email, plzDE, ...), keep that datatype and restrict the input with the HTML.Input.REGEX functionality instead (data-cb-keyexpression + data-cb-expression).
 
 Common Validation Rules (fc-plugin-common-validation-rules) custom datatypes — set directly as datatype value using FULL getKey() path:
 - "de.xima.fc.plugin.fc-plugin-common-validation-rules.KfzDE" for German license plate

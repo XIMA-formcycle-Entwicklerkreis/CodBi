@@ -99,12 +99,14 @@ Applicable on a XTextField to apply input masking/formatting (credit card, phone
 
 Applicable on a XTextField to validate, reformat, or RESTRICT the typed value against a regular expression pattern.
 
+DISTINGUISH IT FROM THE "regexp" DATATYPE: on a TEXT field whose input is limited (e.g. a "Sicherheitscode" that allows only 3 digits), set datatype="regexp" and put the regex pattern into the **`vrule`** property (Formcycle's regexp datatype reads `vrule`, NOT `datatypeHint`) and ALWAYS set **`vrulemismatch`** with a proper, user-readable error message (e.g. "vrulemismatch":"Bitte genau 3 Ziffern eingeben") — a regexp field without an error message is incomplete — the datatype validates the VALUE, so apply this functionality with ONLY `data-cb-keyexpression` (per-keystroke allowed characters) and DO NOT set `data-cb-expression` on a regexp field. On a field whose datatype must be NON-text (money/posmoney, number/integer, dateDE, phone, email, plzDE, ...), KEEP that datatype (do NOT overwrite it with regexp) and apply this functionality with BOTH `data-cb-keyexpression` (per-keystroke allowed characters) AND `data-cb-expression` (whole-value pattern).
+
 CRITICAL — USE THIS FUNCTIONALITY whenever the user asks to disallow/block/prevent certain characters from being typed into an input field (input restriction / character blacklist). Examples: "darf die Zeichen e$% nicht enthalten", "soll die Eingabe von e, $ und % verhindern", "does not allow the input of the characters e$%", "block the characters ...". This is the ONLY CodBi functionality for blocking characters — do NOT use HTML.Input.Cleave or any CSS class for this.
 
 To BLOCK characters, express the forbidden set as a NEGATED character class `[^…]` (matches any character EXCEPT the listed ones) and set the parameters on the XTextField via the attributes array:
 - data-cb-func = "HTML.Input.REGEX"
 - data-cb-keyexpression = **REQUIRED** — the per-keystroke pattern every typed character must comply with → negated class, e.g. "[^e$%]" (prevents typing e, $ and %)
-- data-cb-expression = **REQUIRED** — the whole-value pattern the final value must comply with → "^[^e$%]*$" (the complete value may contain any characters except e, $ and %)
+- data-cb-expression = **REQUIRED UNLESS the field uses datatype="regexp"** — the whole-value pattern the final value must comply with → "^[^e$%]*$" (the complete value may contain any characters except e, $ and %). On a field with datatype="regexp" OMIT data-cb-expression entirely — the regexp datatype validates the value via its "vrule" property, so only data-cb-keyexpression is set on that field.
 - data-cb-flags = (optional) regex flags, e.g. "g"
 
 Example — an input field that must not allow the characters e, $ and %:
@@ -113,8 +115,8 @@ Example — an input field that must not allow the characters e, $ and %:
 CRITICAL — Inside a character class `$` is a LITERAL dollar sign (NOT the end-of-string anchor) and `.` is a literal dot, so `[^e$%]` really blocks e, $ and %. Regex metacharacters that must be blocked literally (e.g. `]`, `\`, `^` inside a class) still need to be escaped.
 
 DERIVE the regex from the described rule — do NOT ask the user for a regex pattern when the allowed/blocked characters are stated in the request:
-- ALLOW-LIST ("nur die Zeichen X erlaubt" / "only allows X" / "nur X zulassen"): every typed character must be one of X → data-cb-keyexpression is the ALLOWED class (no negation), e.g. "nur die Zeichen a–z erlaubt" → data-cb-keyexpression="[a-z]", data-cb-expression="^[a-z]*$".
-- BLOCK-LIST ("darf X nicht enthalten" / "must not contain X" / "block X"): use the NEGATED class as above, e.g. "nicht erlaubt: e$%" → data-cb-keyexpression="[^e$%]", data-cb-expression="^[^e$%]*$".
+- ALLOW-LIST ("nur die Zeichen X erlaubt" / "only allows X" / "nur X zulassen"): every typed character must be one of X → data-cb-keyexpression is the ALLOWED class (no negation), e.g. "nur die Zeichen a–z erlaubt" → data-cb-keyexpression="[a-z]" (+ data-cb-expression="^[a-z]*$" ONLY when the field does NOT use datatype="regexp").
+- BLOCK-LIST ("darf X nicht enthalten" / "must not contain X" / "block X"): use the NEGATED class as above, e.g. "nicht erlaubt: e$%" → data-cb-keyexpression="[^e$%]" (+ data-cb-expression="^[^e$%]*$" ONLY when the field does NOT use datatype="regexp").
 - Ask for the pattern ONLY when the request does not describe the allowed/blocked characters at all.
 
 ## HTML.Input.TinyMCE

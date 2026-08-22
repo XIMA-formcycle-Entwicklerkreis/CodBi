@@ -5,7 +5,11 @@ import { getJQuery } from "@de-xima/fc-form-renderer";
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { AE } from "xdbc/src/DBC/AE";
-import { GREATER } from "xdbc/src/DBC/COMPARISON/GREATER";
+// GREATER_OR_EQUAL instead of GREATER: the XDBC GREATER.PRE hardcodes equalityPermitted=false
+// when forwarding to COMPARISON.PRE, so @GREATER.PRE(1, true, ...) is enforced as STRICT
+// params.length > 1 and rejects a single year param (e.g. { Date.Holidays > THIS_YEAR }).
+// GREATER_OR_EQUAL.PRE forwards equalityPermitted=true and enforces params.length >= 1 as intended.
+import { GREATER_OR_EQUAL } from "xdbc/src/DBC/COMPARISON/GREATER_OR_EQUAL";
 import { TYPE } from "xdbc/src/DBC/TYPE";
 // #endregion XDBC
 // #endregion Imports
@@ -61,7 +65,7 @@ export class Date_Holidays {
    * @param params The parameters for that Element-Placeholder (provided by CodBi). */
   @DBC.ParamvalueProvider
   public static retrieve(
-    @GREATER.PRE(1, true, false, "length", "Hasn't at least the year been specified?")
+    @GREATER_OR_EQUAL.PRE(0, false, false, "length", "Hasn't at least the year been specified?")
     @AE.PRE(new TYPE("string"))
     params: Array<string>,
   ): Promise<Array<string>> {

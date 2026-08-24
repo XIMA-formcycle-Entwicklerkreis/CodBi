@@ -375,7 +375,7 @@ HTML.Text.Injector, HTML.Text.Mapper, XCheckbox, XDatalistAdvanced, XTextfieldAd
 - [ ] XLanguageSwich; XNavigationBar; XContainerInvisible holding the two JSON.SET hidden fields.
 - [ ] XDatalistAdvanced + XTextfieldAdvanced (DS widgets).
 - [ ] HTML.Text.Injector (Placeholder/Property/Replacement) on `tfVorname`; HTML.Text.Mapper (Property + Replacements) on `tfNachricht`.
-- [ ] Invisible XSpan with `data-cb-Data="SYS.Log.Console > { V > tfMail }"` (or equivalent reference).
+- [ ] Invisible XSpan with `data-cb-Data="SYS.Log.Console > { V > tfMail }"` (or equivalent reference).  
 
 **Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS07. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
 

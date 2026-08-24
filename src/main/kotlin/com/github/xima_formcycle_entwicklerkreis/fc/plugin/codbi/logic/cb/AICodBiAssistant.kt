@@ -72,17 +72,167 @@ class AICodBiAssistant : IPluginServletAction {
     // Apply per-user CodBi element visibility for the whole request so every prompt transmitted to
     // the AI omits the elements hidden for the current user.
     return CodBiElementAccess.runForUser(currentUsername(params)) {
-      val action =
-          params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
-      when (action) {
-        "Models" -> handleModels()
-        "Run" -> handleRun(params)
-        "AppointmentPlan" -> handleAppointmentPlan(params)
-        "Status" -> handleStatus()
-        "Log" -> handleLog(params)
-        "SensitiveCheck" -> handleSensitiveCheck(params)
-        else -> jsonResponse("""{"error":"Unknown action"}""")
+      // When the "Nicht installierte Elemente erstellen" feature is active, the frontend sends the
+      // checked widget / node / trigger lists; the request-scoped filter then strips every prompt
+      // section whose element is NOT in the checked list before it reaches the AI.
+      val allowedWidgets = parseAllowedElements(params, "allowedWidgets")
+      val allowedNodes = parseAllowedElements(params, "allowedNodes")
+      val allowedTriggers = parseAllowedElements(params, "allowedTriggers")
+      // Diagnostic: -1 = parameter absent (no restriction); >= 0 = the filter is active with that
+      // many allowed elements. Helps verify the frontend transmits the allowed lists.
+      logger.info(
+          "[AICodBiAssistant] Element filter: widgets={} nodes={} triggers={} (null = no restriction)",
+          allowedWidgets?.size ?: -1,
+          allowedNodes?.size ?: -1,
+          allowedTriggers?.size ?: -1)
+      FormcycleElementFilter.runForRequest(allowedWidgets, allowedNodes, allowedTriggers) {
+        val action =
+            params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
+        when (action) {
+          "Models" -> handleModels()
+          "Run" -> handleRun(params)
+          "AppointmentPlan" -> handleAppointmentPlan(params)
+          "Status" -> handleStatus()
+          "AvailableElements" -> handleAvailableElements(params)
+          "Log" -> handleLog(params)
+          "SensitiveCheck" -> handleSensitiveCheck(params)
+          else -> jsonResponse("""{"error":"Unknown action"}""")
+        }
       }
+    }
+  }
+
+  /**
+   * Parses an `allowed*` request parameter (JSON array or CSV) into a normalized identifier set, or
+   * `null` when the parameter is absent (meaning "no restriction").
+   */
+  private fun parseAllowedElements(params: IPluginServletActionParams, key: String): Set<String>? {
+    val raw = params.requestParameters[key]?.firstOrNull()?.trim()
+    if (raw.isNullOrBlank()) return null
+    return try {
+      val parsed = JsonParser.parseString(raw)
+      if (parsed.isJsonArray) {
+        parsed.asJsonArray
+            .mapNotNull { if (it.isJsonNull) null else it.asString }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+      } else {
+        raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+      }
+    } catch (_: Exception) {
+      raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    }
+  }
+
+  /**
+   * Returns the list of all widgets / workflow nodes / workflow triggers that CodBi knows (from the
+   * compact prompt tables), each annotated with whether it is installed on the current system. The
+   * frontend uses this to render the "Nicht installierte Elemente erstellen" dialog (availability
+   * markings + checkboxes). Called with X-Action: AvailableElements.
+   */
+  private fun handleAvailableElements(
+      params: IPluginServletActionParams
+  ): IPluginServletActionRetVal {
+    val emf = CodbiEntities.entityManagerFactory
+    if (emf == null) return jsonResponse("""{"error":"Database not available"}""")
+    val snapshot = InstalledFormcycleElements.snapshotFor(params)
+    // Diagnostic: make a detection failure visible instead of silently treating elements as either
+    // all-available or all-unavailable.
+    if (snapshot.widgets.isEmpty()) {
+      logger.warn(
+          "[AICodBiAssistant] Installed-widget detection returned no widgets — widgets fall back to 'available'")
+    }
+    if (snapshot.nodes.isEmpty()) {
+      logger.warn(
+          "[AICodBiAssistant] Installed-node detection returned no nodes — no workflow node is allowed by default")
+    }
+    if (snapshot.triggers.isEmpty()) {
+      logger.warn(
+          "[AICodBiAssistant] Installed-trigger detection returned no triggers — no workflow trigger is allowed by default")
+    }
+    // Installed widget names keyed by their normalized id, so the dialog can show the real widget
+    // class name (e.g. "XTextField") instead of the derived prompt display name.
+    val installedWidgetNames = snapshot.widgets.associateBy { normalize(it) }
+    val em = emf.createEntityManager()
+    try {
+      val widgets = JsonArray()
+      for (r in CompactPromptLoader.loadCategoryRecords(em, "compact.formcycle_widgets")) {
+        if (r.promptKey == "compact.formcycle_widgets") continue
+        val id = r.promptKey.substringAfterLast('.')
+        if (id.isBlank()) continue
+        val o = JsonObject()
+        o.addProperty("id", id)
+        o.addProperty("name", installedWidgetNames[normalize(id)] ?: prettifyElementId(id))
+        // Widgets stay fail-open: when widget detection is empty (registry unavailable) every
+        // widget
+        // is shown as available so normal form building is not blocked by a detection hiccup.
+        o.addProperty("available", snapshot.widgets.isEmpty() || isInstalled(id, snapshot.widgets))
+        widgets.add(o)
+      }
+      val nodes = JsonArray()
+      val triggers = JsonArray()
+      for (r in CompactPromptLoader.loadCategoryRecords(em, "compact.formcycle_workflow_nodes")) {
+        val key = r.promptKey
+        val id = key.substringAfterLast('.')
+        if (id.isBlank()) continue
+        if (key.contains(".trigger_types.")) {
+          val o = JsonObject()
+          o.addProperty("id", id)
+          o.addProperty("name", r.displayName?.takeIf { it.isNotBlank() } ?: prettifyElementId(id))
+          o.addProperty("available", isInstalled(id, snapshot.triggers))
+          triggers.add(o)
+        } else if (key.contains(".node_types.")) {
+          val o = JsonObject()
+          o.addProperty("id", id)
+          o.addProperty("name", r.displayName?.takeIf { it.isNotBlank() } ?: prettifyElementId(id))
+          o.addProperty("available", isInstalled(id, snapshot.nodes))
+          nodes.add(o)
+        }
+      }
+      val root = JsonObject()
+      root.add("widgets", widgets)
+      root.add("nodes", nodes)
+      root.add("triggers", triggers)
+      return jsonResponse(gson.toJson(root))
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] AvailableElements failed: {}", e.message)
+      return jsonResponse("""{"error":"Failed to load available elements"}""")
+    } finally {
+      em.close()
+    }
+  }
+
+  /** Prettifies a compact element id for display (e.g. `xtextfield` → `Xtextfield`). */
+  private fun prettifyElementId(id: String): String =
+      id.replace('_', ' ')
+          .split(" ")
+          .filter { it.isNotEmpty() }
+          .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+
+  /**
+   * Normalizes an element identifier for availability matching (lowercase, non-alphanumeric
+   * removed).
+   */
+  private fun normalize(id: String): String = id.trim().lowercase().replace(Regex("[^a-z0-9]"), "")
+
+  /**
+   * Whether the compact element [id] is installed on the current system. Tolerates the compact-key
+   * vs. class-name identifier mismatch (compact keys embed the node/widget class name, e.g. the
+   * ePayBL node's "..._paymentinitplugin"), so a fully-qualified installed class name matches its
+   * compact key. When the installed set is empty (detection unavailable) every element is treated
+   * as installed instead of wrongly marking everything uninstalled.
+   */
+  private fun isInstalled(id: String, installed: Set<String>): Boolean {
+    // Fail-closed: an element is only "available" when positively detected as installed. When the
+    // installed set is empty (detection unavailable) nothing is considered installed, so the switch
+    // OFF default (check only available elements) never transmits a non-installed element.
+    if (installed.isEmpty()) return false
+    val n = normalize(id)
+    if (n.isEmpty()) return false
+    return installed.any { raw ->
+      val i = normalize(raw)
+      n == i || (raw.contains('.') && i.length >= 12 && n.endsWith(i))
     }
   }
 
@@ -693,8 +843,9 @@ class AICodBiAssistant : IPluginServletAction {
     }
     if (clarification != null) {
       logger.info(
-          "[AICodBiAssistant] AI requested clarification with {} question(s)",
-          clarification.questions.size)
+          "[AICodBiAssistant] AI asked {} clarification question(s): {}",
+          clarification.questions.size,
+          clarification.questions.joinToString(" | ") { "Q[${it.id}]: ${it.question}" })
       return jsonResponse(
           """{"intent":${gson.toJson(intent)},"clarification":${gson.toJson(clarification)},"clarificationHistory":${gson.toJson(clarificationTurnsToJson(clarificationHistory))}}""")
     }
@@ -711,6 +862,13 @@ class AICodBiAssistant : IPluginServletAction {
       if (formKey == null) {
         formKey = AiAssistantLog.extractFormKey(persistJson)
       }
+      // Pass the FULL clarification context to the form AI. How to interpret the answers (a literal
+      // recipient/sender/subject is workflow-email config and must NOT become a form field, while
+      // an
+      // answer that tells the AI to create a form field for the address MUST result in such a
+      // field)
+      // is decided by the AI from the clarificationInstruction prompt text — not by a brittle
+      // backend keyword filter that could never cover every phrasing.
       val (formJson, applicabilityReport, formTokenUsage) =
           try {
             runFormModification(
@@ -1101,7 +1259,11 @@ class AICodBiAssistant : IPluginServletAction {
     val clarificationInstruction =
         if (clarificationContext.isNullOrBlank()) ""
         else
-            "\n\nThe user already answered these clarification questions — treat the answers as part of the instruction and build the COMPLETE form accordingly. The answers resolve ONLY the specific questions they belong to; you must STILL create every field and wire EVERY element placeholder (EP) / CodBi functionality described in the system prompt (OpenPLZ EPs → XSelect with data-cb-func=\"html.select.injection\" + the EP in data-cb-Values; other EP output/research fields such as Date.Holidays, Data.CSV, Data.Join, Date.FromString, DOM.Query, JSON.Path, LDAP.Find, Net.URL, Sorted, Unique, F, I, V → data-cb-func=\"JSON.SET\" / \"HTML.Text.Injector\" wired as the field's value; Sys.Log.Console for console logging). NEVER emit an EP/research field as a bare plain text field without its EP wiring.\n\nAnswers:\n$clarificationContext"
+            "\n\nThe user already answered these clarification questions — treat the answers as part of the instruction and build the COMPLETE form accordingly. The answers resolve ONLY the specific questions they belong to; you must STILL create every field and wire EVERY element placeholder (EP) / CodBi functionality described in the system prompt (OpenPLZ EPs → XSelect with data-cb-func=\"html.select.injection\" + the EP in data-cb-Values; other EP output/research fields such as Date.Holidays, Data.CSV, Data.Join, Date.FromString, DOM.Query, JSON.Path, LDAP.Find, Net.URL, Sorted, Unique, F, I, V → data-cb-func=\"JSON.SET\" / \"HTML.Text.Injector\" wired as the field's value; Sys.Log.Console for console logging). NEVER emit an EP/research field as a bare plain text field without its EP wiring." +
+                "\n\nCRITICAL — THE WORKFLOW IS BUILT IN A SEPARATE STEP THAT READS THE CLARIFICATION ANSWERS DIRECTLY: your job is ONLY the FORM — you do NOT store clarified workflow values (email, sender, subject, address, ...) anywhere in the form and you do NOT reference them via [%field%] (there is no such field). GENERAL RULE — EVERY NEEDED VALUE: ASK → USE LITERALLY → FORM FIELD ONLY IF REQUESTED. Whenever a node, email, notification, parameter or placeholder needs a value (recipient, sender, subject, address, URL, amount, status, connection, template, ...): (1) ASK for it when the request does not provide it and it cannot be derived — NEVER invent or fabricate a value (never a placeholder address like \"recipient@example.com\"). (2) A value the user provided or clarified is a LITERAL value: write it DIRECTLY into the node/parameter; do NOT wrap it in a form field and do NOT reference it via [%field%]. (3) ONLY when the user explicitly wants the value entered at runtime (e.g. \"Erstelle ein E-Mail-Feld für den Kunden\", \"Erstelle ein Formularfeld\", \"Der Kunde soll seine E-Mail-Adresse selbst angeben\", \"take the recipient from a field you generate\", \"E-Mail-Feld anlegen und dort eintragen\") do you create a form field for THAT ONE value (a visible input, e.g. an XTextField with datatype email) and reference it via its [%fieldName%] — in the node AND in any other reference: an email body, a condition, an element-placeholder (EP) parameter, another node's input, etc. A create-a-field request for one value does NOT turn the other literal values in the same answer into fields (e.g. \"Erstelle ein Feld für die Kundenadresse und der Betreff ist 'ZZZZ'\" → create ONLY the address field; 'ZZZZ' is the email node's literal subject). CLARIFIED EMAIL ADDRESSES ARE NODE RECIPIENTS, NOT FORM FIELDS: an email address the user gave for a notification (e.g. \"Admin@X.de\", \"Bestellabwicklung@X.com\") is the FC_EMAIL \"to\" value — do NOT create a form field for it (no \"E-Mail-Adresse Administrator\"/\"Admin E-Mail\" input) and do NOT put it into a placeholder/value; create an email input field ONLY when the user explicitly asked to create one for that exact address. ANTI-PATTERN (FORBIDDEN unless the user explicitly asked to create the field): creating fields like \"Absender\"/\"From\", \"Betreff\"/\"Subject\", \"Admin E-Mail\"/\"Admin Absender\"/\"Admin Betreff\" to hold a clarified literal value. In a PAYMENT/ORDER form the ONLY email/address field EVER justified is the CLIENT's email input — and only when the user asked for it; the admin recipient/sender/subject (e.g. \"A@X.de\", \"Absender: S@S.S\", \"Fehler in Zahlung\") are BY DEFAULT written literally into the FC_EMAIL node and are NOT turned into fields. NEVER emit a field whose placeholder/value is a literal value you already know, and NEVER reference an invented field name." +
+                "\n\nTHE PRINCIPLE — NEVER CREATE A FORM FIELD FOR A LITERAL VALUE UNLESS THE USER'S PROMPT EXPLICITLY ASKS FOR A FIELD FOR THAT VALUE. A literal value the user wrote (an email address, sender, subject, address, URL, amount, status, ...) is used DIRECTLY in the workflow node/parameter — it is NOT a form field, NOT a placeholder, NOT a value in any field. Create a form field ONLY for a value the user explicitly said to create a field for (e.g. \"Erstelle ein Feld dafür\", \"Erstelle ein E-Mail-Feld für den Kunden\", \"Der Kunde gibt seine E-Mail-Adresse selbst an\") — one field per explicitly requested value (several values → several fields). If the user gives a literal email (e.g. \"2. Admin@X.de\", \"Rechnung@X.de\") without asking for a field, create NOTHING for it — no \"Admin E-Mail\"/\"Adminmail\"/\"E-Mail-Adresse Administrator\"/\"tfAdminEmail\" field. Concrete example: \"Erstelle ein Feld im Formular dafür.\" (customer receipt email) + \"2. Admin@X.de\" (admin failure, no field requested) → create ONLY the customer's email field (empty); do NOT create an admin email field. If the user ALSO asks for an admin email field, create it too. The workflow step reads the answers directly and uses the literal values in the nodes; your job is only the form." +
+                "\n\nRESOLVE CROSS-ANSWER REFERENCES: an answer that refers to another answer (e.g. \"same address as 1.\", \"gleiche Adresse wie bei Frage 1\", \"wie in Antwort 1\") means USE that referenced answer's value verbatim — copy it, do not ask again and do not leave it empty." +
+                "\n\nAnswers:\n$clarificationContext"
     val userContent =
         "Instruction: $prompt$imageHint$clarificationInstruction\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
             "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt.\n" +
@@ -1579,6 +1741,9 @@ class AICodBiAssistant : IPluginServletAction {
           runCatching {
                 val obj = JsonParser.parseString(restored).asJsonObject
                 applyRemovedItems(obj)
+                // Belt-and-suspenders: invisible email-config clone fields must not remain in the
+                // form even if the model created them despite the filtered clarification context.
+                dropInvisibleEmailConfigFields(obj)
                 gson.toJson(obj)
               }
               .getOrDefault(restored)
@@ -1661,16 +1826,85 @@ class AICodBiAssistant : IPluginServletAction {
     return try {
       @Suppress("UNCHECKED_CAST")
       val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any>
-      if ((obj?.get("status") as? String) != "need_workflow_node_details") {
-        return null
+      if (obj == null) return null
+      // Strict form: the prompt asks for the full {"status":"need_workflow_node_details",...}.
+      if ((obj["status"] as? String) == "need_workflow_node_details") {
+        val nodesArr = obj["nodes"] as? List<*> ?: emptyList<Any>()
+        val nodes = nodesArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+        val triggersArr = obj["triggers"] as? List<*> ?: emptyList<Any>()
+        val triggers = triggersArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+        return WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
       }
-      val nodesArr = obj["nodes"] as? List<*> ?: emptyList<Any>()
-      val nodes = nodesArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
-      val triggersArr = obj["triggers"] as? List<*> ?: emptyList<Any>()
-      val triggers = triggersArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+      // Tolerant form — many models omit the "status" field and return only
+      // {"nodes":[...],"triggers":[...]}. Treat an object as a details request when it is clearly a
+      // list of node/trigger names and NOT a workflow task (a task object carries keys like
+      // nodeType/triggerType/taskName/nodeParams/...).
+      val looksLikeTask =
+          listOf(
+                  "nodeType",
+                  "triggerType",
+                  "taskName",
+                  "taskDescription",
+                  "nodeParams",
+                  "triggerParams",
+                  "operation",
+                  "targetNodeId",
+                  "chainedNodes",
+                  "endpointState",
+                  "endpointType",
+                  "stateProperties",
+                  "_childNodes",
+                  "_handlerChildNodes",
+                  "_cases")
+              .any { obj.containsKey(it) }
+      if (looksLikeTask) return null
+      val nodesArr = obj["nodes"] as? List<*>
+      val triggersArr = obj["triggers"] as? List<*>
+      val nodes =
+          nodesArr?.mapNotNull { (it as? String)?.trim() }?.filter { it.isNotEmpty() }
+              ?: emptyList()
+      val triggers =
+          triggersArr?.mapNotNull { (it as? String)?.trim() }?.filter { it.isNotEmpty() }
+              ?: emptyList()
+      if (nodes.isEmpty() && triggers.isEmpty()) return null
       WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
     } catch (_: Exception) {
       null
+    }
+  }
+
+  /**
+   * True when the workflow AI's cleaned JSON is a FORM response rather than a workflow task — i.e.
+   * it echoes/describes form elements (a top-level "items" array) instead of emitting the workflow
+   * automation JSON. The workflow output contract forbids an "items" array, so its presence means
+   * the model got confused (e.g. after the clarification round it returns the form it just built)
+   * and the run should be retried once with the strict workflow instruction.
+   */
+  private fun isFormShapedWorkflowResponse(cleanedJson: String): Boolean {
+    return try {
+      @Suppress("UNCHECKED_CAST")
+      val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any> ?: return false
+      if (obj["items"] !is List<*>) return false
+      // A workflow task may legitimately carry a "workflow"/"tasks" wrapper — those are NOT form
+      // responses even if they also contain an items key.
+      if (obj.containsKey("workflow") || obj.containsKey("tasks")) return false
+      true
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  /**
+   * True when the workflow AI returned an empty JSON array `[]` — a degenerate non-answer that
+   * would parse to zero task specs and abort the run; it should be retried once with the strict
+   * workflow instruction instead.
+   */
+  private fun isWorkflowEmptyArray(cleanedJson: String): Boolean {
+    return try {
+      val el = JsonParser.parseString(cleanedJson)
+      el.isJsonArray && el.asJsonArray.size() == 0
+    } catch (_: Exception) {
+      false
     }
   }
 
@@ -2625,6 +2859,61 @@ class AICodBiAssistant : IPluginServletAction {
       val clean = JsonArray()
       for (e in elements) {
         if (e.isJsonPrimitive && e.asString in removed) continue
+        clean.add(e)
+      }
+      props.add("elements", clean)
+    }
+  }
+
+  /**
+   * Belt-and-suspenders cleanup: drops INVISIBLE XTextField/XTextArea items whose placeholder holds
+   * an email address (e.g. tfEmpfaengerEmail/tfAbsenderEmail created from a clarified
+   * recipient/sender). Such fields are pure workflow-email config clones — the email node already
+   * carries the literal address, so the field is dead weight and, being invisible, has no user
+   * purpose. A real email input the end user fills in is visible (placeholder is just a hint, and
+   * its label/name is not an email value). Also removes the dangling references from every
+   * container's "elements" array.
+   */
+  private fun dropInvisibleEmailConfigFields(root: JsonObject) {
+    val items = root.getAsJsonArray("items") ?: return
+    val dropped = mutableSetOf<String>()
+    val keep = JsonArray()
+    for (item in items) {
+      if (!item.isJsonObject) {
+        keep.add(item)
+        continue
+      }
+      val obj = item.asJsonObject
+      val props = obj.getAsJsonObject("properties")
+      val isInvisible =
+          props?.get("invisible")?.let {
+            it.isJsonPrimitive && (it.asString == "1" || it.asBoolean)
+          } ?: false
+      val placeholder = props?.get("placeholder")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+      val isEmailPlaceholder =
+          Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}").containsMatchIn(placeholder)
+      val className = obj.get("className")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+      val isTextField = className.startsWith("XText")
+      if (isInvisible && isEmailPlaceholder && isTextField) {
+        val name = props?.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+        logger.info(
+            "[AICodBiAssistant] Dropping invisible email-config field '{}' (placeholder={})",
+            name,
+            placeholder)
+        dropped.add(name)
+        continue
+      }
+      keep.add(item)
+    }
+    if (dropped.isEmpty()) return
+    root.add("items", keep)
+    for (item in keep) {
+      if (!item.isJsonObject) continue
+      val props = item.asJsonObject.getAsJsonObject("properties") ?: continue
+      val elements = props.getAsJsonArray("elements") ?: continue
+      val clean = JsonArray()
+      for (e in elements) {
+        if (e.isJsonPrimitive && e.asString in dropped) continue
         clean.add(e)
       }
       props.add("elements", clean)
@@ -5243,7 +5532,6 @@ class AICodBiAssistant : IPluginServletAction {
       append("""{"role":"user","content":${buildUserContent(prompt, imageParts)}}""")
       append("]")
     }
-
     val pass1Raw = instance.performFormAssist(modelId, messagesJson)
     tokensIn += estimateTokens(messagesJson)
     tokensOut += estimateTokens(pass1Raw)
@@ -5295,9 +5583,14 @@ class AICodBiAssistant : IPluginServletAction {
     // clarification rounds), retry ONCE with a strict corrective instruction before surfacing a
     // readable error. This avoids the "did not return a workflow specification" failure that
     // previously aborted the run after several clarification loops.
-    if (!safeCleaned.trim().startsWith("{") && !safeCleaned.trim().startsWith("[")) {
+    // Also retry when the AI echoed the FORM instead of the workflow task — after the clarification
+    // round it sometimes returns the form JSON (an "items" array / no workflow task fields), or an
+    // empty JSON array, which would otherwise parse to zero task specs and abort the run.
+    if ((!safeCleaned.trim().startsWith("{") && !safeCleaned.trim().startsWith("[")) ||
+        isFormShapedWorkflowResponse(safeCleaned) ||
+        isWorkflowEmptyArray(safeCleaned)) {
       logger.warn(
-          "[AICodBiAssistant] Workflow AI returned prose — retrying once with strict JSON instruction: {}",
+          "[AICodBiAssistant] Workflow AI returned non-task response (prose, form JSON, or empty array) — retrying once with strict JSON instruction: {}",
           safeCleaned.take(300))
       val retryMessagesJson = buildString {
         append("[")
@@ -5596,7 +5889,11 @@ class AICodBiAssistant : IPluginServletAction {
           } else {
             PromptLoader.buildWorkflowNodesCondensed(em)
           }
-      val workflowTemplate = loadWorkflowTaskInstruction() ?: ""
+      // "Nicht installierte Elemente erstellen": the template embeds hard-coded, node-specific
+      // instruction blocks (e.g. the AKDB ePayBL payment block); strip those whose node is not
+      // allowed so the AI is never told to create a node that is filtered out of the references.
+      val workflowTemplate =
+          FormcycleElementFilter.scrubNodeProse(loadWorkflowTaskInstruction() ?: "")
       if (workflowTemplate.isBlank()) {
         return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
       }
@@ -10505,7 +10802,11 @@ class AICodBiAssistant : IPluginServletAction {
       if (em != null) {
         try {
           val dbPrompt = PromptLoader.loadPrompt(em, "codbi.classify_intent")
-          if (dbPrompt != null) return PromptLoader.resolvePlaceholders(dbPrompt)
+          // "Nicht installierte Elemente erstellen": drop hard-coded node-specific blocks (e.g. the
+          // ePayBL payment-form intent rule) whose node is not allowed on this system.
+          if (dbPrompt != null) {
+            return FormcycleElementFilter.scrubNodeProse(PromptLoader.resolvePlaceholders(dbPrompt))
+          }
         } finally {
           em.close()
         }
@@ -10513,7 +10814,8 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to load classify intent prompt", e)
     }
-    return loadPromptWithClasspathFallback("codbi.fallback_classify_intent") ?: ""
+    return FormcycleElementFilter.scrubNodeProse(
+        loadPromptWithClasspathFallback("codbi.fallback_classify_intent") ?: "")
   }
 
   /** Loads the CodBi rethink (blind pass) prompt from the database. */
@@ -10531,7 +10833,7 @@ class AICodBiAssistant : IPluginServletAction {
           taskInstruction +
               (categories["codbi.general"] ?: "") +
               "\n" +
-              (fc["formcycle.widgets"] ?: "") +
+              FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: "") +
               "\n" +
               "{{CODBI_FULL_SECTION}}")
     } catch (e: Exception) {
@@ -10633,11 +10935,15 @@ class AICodBiAssistant : IPluginServletAction {
    */
   private fun buildWidgetDetailsSection(em: EntityManager, widgetIds: List<String>): String {
     if (widgetIds.isEmpty()) {
-      return PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: ""
+      // Full-widget fallback — scrub out widgets not allowed for the current request.
+      return FormcycleElementFilter.scrubWidgetSections(
+          PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
     }
     val all = PromptLoader.loadSectionMap(em, "formcycle.widgets.")
     val sb = StringBuilder("\nFORMCYCLE WIDGET DETAILS (requested)\n")
     for (id in widgetIds) {
+      // "Nicht installierte Elemente erstellen": skip requested widgets not in the allowed set.
+      if (!FormcycleElementFilter.isWidgetAllowed(id)) continue
       val norm =
           id.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").replace(Regex("_+"), "_").trim('_')
       if (norm.isEmpty()) continue
@@ -10693,6 +10999,14 @@ class AICodBiAssistant : IPluginServletAction {
         val answer = o.get("answer")?.asString ?: ""
         val attachment = o.get("attachmentName")?.asString
         turns.add(ClarificationTurn(question, answer, attachment))
+      }
+      if (turns.isNotEmpty()) {
+        logger.info(
+            "[AICodBiAssistant] User answered {} clarification question(s): {}",
+            turns.size,
+            turns.joinToString(" | ") {
+              "Q: ${it.question}  A: ${if (it.answer.isBlank()) "<blank>" else it.answer}"
+            })
       }
       turns
     } catch (_: Exception) {
@@ -10956,7 +11270,10 @@ class AICodBiAssistant : IPluginServletAction {
     if (em != null) {
       try {
         val fromDb = PromptLoader.loadCategory(em, "codbi")["codbi.clarification"]
-        if (!fromDb.isNullOrBlank()) return fromDb
+        // "Nicht installierte Elemente erstellen": drop hard-coded ePayBL clarification blocks
+        // whose
+        // node is not allowed (the payment/notification-matrix questions must not reach the AI).
+        if (!fromDb.isNullOrBlank()) return FormcycleElementFilter.scrubNodeProse(fromDb)
       } catch (_: Exception) {} finally {
         try {
           em.close()
@@ -10974,6 +11291,7 @@ class AICodBiAssistant : IPluginServletAction {
               ?.trim()
         }
         .getOrNull()
+        ?.let { FormcycleElementFilter.scrubNodeProse(it) }
   }
 
   /**
@@ -11038,6 +11356,13 @@ class AICodBiAssistant : IPluginServletAction {
             .replace("{{WORKFLOW_REFERENCE}}", workflowReference)
     // Conditional sections: drop the whole {{BEGIN_*}}…{{END_*}} block when data is blank.
     out = applyWorkflowSection(out, "WORKFLOW_DETAILS_REQUEST", if (pass2) null else " ")
+    // The NEED_FORM_DATA block instructs the AI to ask for the form element list — only meaningful
+    // when no form context is available. In the whole-form/"both" flow the form elements are always
+    // passed along, so the block (and its "respond ONLY with need_form_data" mandate) must be
+    // removed — otherwise the workflow AI returns {"need":"form_data"} and the run aborts even
+    // though the elements are right there in the prompt.
+    out =
+        applyWorkflowSection(out, "NEED_FORM_DATA", if (formContext.isNullOrBlank()) " " else null)
     out = applyWorkflowSection(out, "FORM_ELEMENTS", formContext)
     out = applyWorkflowSection(out, "REPEATABLE_CONTAINERS", repeatableContainers)
     out = applyWorkflowSection(out, "COMPLETION_PAGES", completionPages)

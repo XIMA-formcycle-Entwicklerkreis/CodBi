@@ -184,7 +184,10 @@ internal object CodbiCapabilities {
     // Prefer the database so deactivated widgets are excluded from the AI's pass-1 reference.
     val fromDb = buildWidgetsFromDb()
     if (fromDb != null) return fromDb
-    return load(FORMCYCLE_WIDGETS_ONLY_RESOURCE, "FORMCYCLE WIDGETS (COMPACT)")
+    // Fallback: bundled resource — scrub out any widget that is not allowed for the current request
+    // (the "Nicht installierte Elemente erstellen" feature).
+    return FormcycleElementFilter.scrubWidgetSections(
+        load(FORMCYCLE_WIDGETS_ONLY_RESOURCE, "FORMCYCLE WIDGETS (COMPACT)"))
   }
 
   /**
@@ -259,6 +262,10 @@ internal object CodbiCapabilities {
       for (r in records) {
         if (r.promptKey == "compact.formcycle_widgets") continue
         val name = r.displayName?.takeIf { it.isNotBlank() } ?: r.promptKey.substringAfterLast('.')
+        // "Nicht installierte Elemente erstellen": skip widgets that are not in the allowed set.
+        if (!FormcycleElementFilter.isWidgetAllowed(r.promptKey.substringAfterLast('.')) &&
+            !FormcycleElementFilter.isWidgetAllowed(name))
+            continue
         sb.append("\n### ").append(name).append("\n")
         if (!r.promptText.isNullOrBlank()) sb.append(r.promptText).append("\n")
       }

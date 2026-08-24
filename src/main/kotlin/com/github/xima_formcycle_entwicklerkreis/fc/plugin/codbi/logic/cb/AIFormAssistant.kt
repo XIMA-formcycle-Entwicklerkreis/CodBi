@@ -47,13 +47,47 @@ class AIFormAssistant : IPluginServletAction {
     // Apply per-user CodBi element visibility for the whole request so every prompt transmitted to
     // the AI omits the elements hidden for the current user.
     return CodBiElementAccess.runForUser(resolveRequestUsername(params)) {
-      val action =
-          params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
-      when (action) {
-        "Models" -> handleModels()
-        "Run" -> handleRun(params)
-        else -> jsonResponse("""{"error":"Unknown action"}""")
+      // "Nicht installierte Elemente erstellen": when the frontend sends the checked widget / node
+      // /
+      // trigger lists, restrict the transmitted prompt sections to exactly those (mirrors
+      // AICodBiAssistant) so the AI is never told about an element the user disabled.
+      FormcycleElementFilter.runForRequest(
+          parseAllowedElements(params, "allowedWidgets"),
+          parseAllowedElements(params, "allowedNodes"),
+          parseAllowedElements(params, "allowedTriggers")) {
+            val action =
+                params.headerMap.entries
+                    .find { it.key.equals("X-Action", ignoreCase = true) }
+                    ?.value
+            when (action) {
+              "Models" -> handleModels()
+              "Run" -> handleRun(params)
+              else -> jsonResponse("""{"error":"Unknown action"}""")
+            }
+          }
+    }
+  }
+
+  /**
+   * Parses an `allowed*` request parameter (JSON array or CSV) into a normalized identifier set, or
+   * `null` when the parameter is absent (meaning "no restriction").
+   */
+  private fun parseAllowedElements(params: IPluginServletActionParams, key: String): Set<String>? {
+    val raw = params.requestParameters[key]?.firstOrNull()?.trim()
+    if (raw.isNullOrBlank()) return null
+    return try {
+      val parsed = JsonParser.parseString(raw)
+      if (parsed.isJsonArray) {
+        parsed.asJsonArray
+            .mapNotNull { if (it.isJsonNull) null else it.asString }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+      } else {
+        raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
       }
+    } catch (_: Exception) {
+      raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     }
   }
 
@@ -1768,7 +1802,7 @@ class AIFormAssistant : IPluginServletAction {
               "\n\n" +
               (categories["codbi.general"] ?: "") +
               "\n" +
-              (fc["formcycle.widgets"] ?: "") +
+              FormcycleElementFilter.scrubWidgetSections(fc["formcycle.widgets"] ?: "") +
               "\n" +
               "{{CODBI_FULL_SECTION}}")
     } catch (e: Exception) {
@@ -1832,11 +1866,15 @@ class AIFormAssistant : IPluginServletAction {
    */
   private fun buildWidgetDetailsSection(em: EntityManager, widgetIds: List<String>): String {
     if (widgetIds.isEmpty()) {
-      return PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: ""
+      // Full-widget fallback — scrub out widgets not allowed for the current request.
+      return FormcycleElementFilter.scrubWidgetSections(
+          PromptLoader.loadCategory(em, "formcycle")["formcycle.widgets"] ?: "")
     }
     val all = PromptLoader.loadSectionMap(em, "formcycle.widgets.")
     val sb = StringBuilder("\nFORMCYCLE WIDGET DETAILS (requested)\n")
     for (id in widgetIds) {
+      // "Nicht installierte Elemente erstellen": skip requested widgets not in the allowed set.
+      if (!FormcycleElementFilter.isWidgetAllowed(id)) continue
       val norm =
           id.trim().lowercase().replace(Regex("[^a-z0-9]"), "_").replace(Regex("_+"), "_").trim('_')
       if (norm.isEmpty()) continue

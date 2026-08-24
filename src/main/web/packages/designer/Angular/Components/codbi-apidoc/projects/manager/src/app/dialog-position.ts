@@ -49,25 +49,19 @@ export function saveDialogPosition(storageKey: string, position: DialogPosition)
  */
 export function applyDialogPosition(styleClass: string, position: DialogPosition | null): void {
   if (!position) {
-    console.log(`[CodBiPos] apply '${styleClass}' called with NO saved position`);
     return;
   }
   const el = document.querySelector(`.${styleClass}`) as HTMLElement | null;
   if (!el) {
-    console.log(`[CodBiPos] apply '${styleClass}' element NOT found`);
     return;
   }
   // Maximized dialogs intentionally fill the viewport — never apply a saved floating position/size
   // to them (clampRenderedToViewport and the drag coordinator skip maximized dialogs too).
   if (el.classList.contains("p-dialog-maximized")) {
-    console.log(`[CodBiPos] apply '${styleClass}' SKIPPED (maximized)`);
     return;
   }
   el.style.position = "fixed";
   el.style.transform = "none";
-  console.log(
-    `[CodBiPos] apply '${styleClass}' saved=(${Math.round(position.left)},${Math.round(position.top)} ${typeof position.width === "number" ? Math.round(position.width) : "?"}x${typeof position.height === "number" ? Math.round(position.height) : "?"}) docked=${position.docked ?? "no"}`,
-  );
   if (position.docked) {
     // Remember the pre-dock size so un-snapping restores it. When a dialog is restored as docked
     // from a saved position (or was never floated in this session), lastFloatingSizes is empty —
@@ -120,9 +114,6 @@ export function applyDialogPosition(styleClass: string, position: DialogPosition
     el.style.left = `${Math.round(left)}px`;
     el.style.top = `${Math.round(top)}px`;
   }
-  console.log(
-    `[CodBiPos] apply '${styleClass}' -> left=${el.style.left} top=${el.style.top} width=${el.style.width} height=${el.style.height} maximized=${el.classList.contains("p-dialog-maximized")}`,
-  );
   // Re-check shortly after so the FINAL laid-out dialog is never off-screen: a stale/off-screen
   // saved position, a window resize, or a size change that happens between this apply and the actual
   // render could otherwise leave the header above the viewport or the right edge cut off.
@@ -158,9 +149,6 @@ export function clampRenderedToViewport(styleClass: string): void {
   const finalRect = el.getBoundingClientRect();
   const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, vw - finalRect.width - VIEWPORT_MARGIN));
   const top = Math.max(VIEWPORT_MARGIN, Math.min(rect.top, vh - finalRect.height - VIEWPORT_MARGIN));
-  console.log(
-    `[CodBiPos] clamp '${styleClass}' rect=(${Math.round(rect.left)},${Math.round(rect.top)} ${Math.round(rect.width)}x${Math.round(rect.height)}) vw=${vw} vh=${vh} transform=${el.style.transform || "none"} -> left=${Math.round(left)} top=${Math.round(top)}`,
-  );
   el.style.position = "fixed";
   el.style.transform = "none";
   el.style.left = `${Math.round(left)}px`;
@@ -227,7 +215,6 @@ export function enableDialogDrag(
   storageKey: string,
   onMoved?: (position: DialogPosition) => void,
 ): () => void {
-  console.log(`[CodBiDrag] enableDialogDrag('${styleClass}', '${storageKey}')`);
   installGlobalDragCoordinator();
   installGlobalPositionRestore();
   installViewportGuard();
@@ -239,18 +226,10 @@ export function enableDialogDrag(
   // incrementing generation makes the cleanup a no-op once a newer registration exists.
   const generation = (dialogDragRegistry.get(styleClass)?.generation ?? 0) + 1;
   dialogDragRegistry.set(styleClass, { storageKey, onMoved, generation });
-  console.log(
-    `[CodBiDrag] registered '${styleClass}' -> '${storageKey}' (gen ${generation}, total ${dialogDragRegistry.size})`,
-  );
   return () => {
     const current = dialogDragRegistry.get(styleClass);
     if (current && current.generation === generation) {
-      console.log(`[CodBiDrag] unregister '${styleClass}' (gen ${generation})`);
       dialogDragRegistry.delete(styleClass);
-    } else {
-      console.log(
-        `[CodBiDrag] skip unregister '${styleClass}': superseded by newer registration (current gen ${current?.generation}, own ${generation})`,
-      );
     }
   };
 }
@@ -301,14 +280,12 @@ let dragCoordinatorInstalled = false;
 /** Installs the single global drag coordinator (once per page). */
 function installGlobalDragCoordinator(): void {
   if (dragCoordinatorInstalled) {
-    console.log("[CodBiDrag] coordinator already installed");
     return;
   }
   dragCoordinatorInstalled = true;
   document.addEventListener("mousedown", onGlobalMouseDown, true);
   document.addEventListener("mousemove", onGlobalMouseMove, true);
   document.addEventListener("mouseup", onGlobalMouseUp, true);
-  console.log("[CodBiDrag] global coordinator installed (capture listeners on document)");
 }
 
 /** Resolves the dragged dialog + storage key from the event target, or `null`. */
@@ -318,32 +295,16 @@ function resolveDraggable(target: EventTarget | null): { dialog: HTMLElement; st
   // The clarification popup uses a custom header (.cb-ai-clarification-header) inside the dialog
   // body instead of PrimeNG's .p-dialog-header, so treat it as a move-drag handle as well.
   const header = el.closest(".p-dialog-header, .cb-ai-clarification-header") as HTMLElement | null;
-  console.log(
-    `[CodBiDrag] mousedown target: <${el.tagName}> class="${el.className}" | .p-dialog-header found: ${!!header}`,
-  );
   if (!header) {
-    const dlg = el.closest(".p-dialog") as HTMLElement | null;
-    console.log(
-      `[CodBiDrag]   no .p-dialog-header. closest .p-dialog: ${
-        dlg ? dlg.className : "NONE"
-      } | path: ${el.className} -> ${el.parentElement?.className} -> ${el.parentElement?.parentElement?.className}`,
-    );
     return null;
   }
   const dialog = header.closest(".p-dialog") as HTMLElement | null;
-  console.log(
-    `[CodBiDrag]   header <${header.tagName}> class="${header.className}" | .p-dialog found: ${!!dialog} | dialog class="${dialog?.className}"`,
-  );
   if (!dialog) return null;
   for (const styleClass of dialogDragRegistry.keys()) {
     if (dialog.classList.contains(styleClass)) {
-      console.log(`[CodBiDrag]   matched dialog styleClass: '${styleClass}'`);
       return { dialog, styleClass };
     }
   }
-  console.log(
-    `[CodBiDrag]   no match! dialog class="${dialog.className}" | registered: ${JSON.stringify([...dialogDragRegistry.keys()])}`,
-  );
   return null;
 }
 
@@ -360,17 +321,14 @@ function onGlobalMouseDown(e: MouseEvent): void {
         ".p-dialog-maximize-button, .p-dialog-close-button, .cb-dialog-transparency-switch",
     )
   ) {
-    console.log("[CodBiDrag] mousedown ignored (icon button)");
     return;
   }
   const hit = resolveDraggable(target);
   if (!hit) {
-    console.log("[CodBiDrag] mousedown: no draggable dialog started");
     return;
   }
   // Do not drag a maximized dialog around.
   if (hit.dialog.classList.contains("p-dialog-maximized")) {
-    console.log("[CodBiDrag] mousedown ignored (maximized)");
     return;
   }
   // Disable CSS transitions while dragging so the dialog follows the mouse immediately (the change
@@ -403,9 +361,6 @@ function onGlobalMouseDown(e: MouseEvent): void {
     // `if (s.snapped)` un-dock branch below never fires when the drag starts on a docked dialog.
     snapped: hit.dialog.classList.contains("cb-docked") ? (hit.dialog.style.left === "0px" ? "left" : "right") : null,
   };
-  console.log(
-    `[CodBiDrag] SESSION START styleClass='${hit.styleClass}' start=(${e.clientX},${e.clientY}) origin=(${rect.left},${rect.top}) size=(${rect.width}x${rect.height})`,
-  );
   e.preventDefault();
 }
 
@@ -445,7 +400,6 @@ function onGlobalMouseMove(e: MouseEvent): void {
     s.dialog.style.height = "100vh";
     // Override the dialog's own max-height (e.g. "85vh") so the docked dialog fills the viewport.
     s.dialog.style.maxHeight = "100vh";
-    console.log(`[CodBiDrag] DOCK ${nextSnap}`);
   } else {
     if (s.snapped) {
       s.snapped = null;
@@ -453,11 +407,9 @@ function onGlobalMouseMove(e: MouseEvent): void {
       s.dialog.style.width = `${Math.round(s.floatingWidth)}px`;
       s.dialog.style.height = `${Math.round(s.floatingHeight)}px`;
       s.dialog.style.maxHeight = s.originalMaxHeight;
-      console.log("[CodBiDrag] UNDOCK");
     }
     s.dialog.style.left = `${Math.round(left)}px`;
     s.dialog.style.top = `${Math.round(top)}px`;
-    console.log(`[CodBiDrag] move -> left=${Math.round(left)} top=${Math.round(top)}`);
   }
 }
 
@@ -481,9 +433,6 @@ function onGlobalMouseUp(): void {
   // Re-enable the dialog's own CSS transitions (they were disabled while dragging).
   s.dialog.style.transition = "";
   const reg = dialogDragRegistry.get(s.styleClass);
-  console.log(
-    `[CodBiDrag] SESSION END styleClass='${s.styleClass}' final=(${position.left},${position.top}) size=(${position.width}x${position.height}) docked=${s.snapped} storageKey='${reg?.storageKey ?? s.styleClass}'`,
-  );
   saveDialogPosition(reg?.storageKey ?? s.styleClass, position);
   reg?.onMoved?.(position);
 }
@@ -523,7 +472,6 @@ let viewportGuardInstalled = false;
 function installViewportGuard(): void {
   if (viewportGuardInstalled) return;
   viewportGuardInstalled = true;
-  console.log("[CodBiPos] viewport guard installed (periodic re-clamp + resize)");
   const guard = (): void => {
     if (dragSession) return; // never fight an active drag
     for (const styleClass of dialogDragRegistry.keys()) {
@@ -564,7 +512,6 @@ function restoreVisibleDialogPositions(): void {
     if (visible && !wasVisible) {
       const reg = dialogDragRegistry.get(styleClass);
       const pos = reg ? loadDialogPosition(reg.storageKey) : null;
-      console.log(`[CodBiPos] '${styleClass}' became visible; saved=${JSON.stringify(pos)}`);
       if (pos) {
         applyDialogPosition(styleClass, pos);
       }

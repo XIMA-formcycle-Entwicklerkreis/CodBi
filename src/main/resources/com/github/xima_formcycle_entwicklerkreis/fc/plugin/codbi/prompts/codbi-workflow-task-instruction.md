@@ -61,6 +61,53 @@ PDF GENERATION IS AUTOMATIC: Formcycle creates the PDF at runtime — you do NOT
 - Other PDF exports: FC_EXPORT_FORM_RECORD_CHATS / FC_PROCESS_LOG_PDF.
 CREATING AND SENDING A PDF IS A TWO-NODE OPERATION: first create the PDF-generation node (RemotePrintService / FC_FILL_PDF / FC_PROCESS_LOG_PDF / FC_EXPORT_FORM_RECORD_CHATS) that produces the PDF, then create an FC_EMAIL node that sends that PDF as an attachment, chained after the PDF node (via chainedNodes). NEVER put the PDF in an email as if it were a plain uploaded file with no producing node — the email's attachment must reference the output of the PDF node created in the same workflow path.
 
+PAYMENT / ORDER FORMS (AKDB ePayBL): when the request builds a payment, order or fee form
+("Bezahlformular", "Bestellformular", "Zahlung", "Gebühr bezahlen", "ePayment", "ePayBL",
+order items with a buy button, a parking permit for a fee, …), the workflow MUST contain the
+AKDB E-Payment node to actually charge the fee, PLUS the notification matrix the user clarified.
+CRITICAL — nodeType MUST be the EXACT class name "de.xima.akdb.epay.logic.plugin.node.PaymentInitPlugin"
+(never the display label "AKDB E-Payment"), and every email is nodeType "FC_EMAIL" (never "E-Mail").
+The notification matrix is per RECIPIENT (client vs admin/internal) × OUTCOME (success vs failure) ×
+TRANSPORT (email / CMIS / DB / log / inbox):
+- Trigger: the order/submit button of the payment form (FC_FORM_SUBMIT_BUTTON with buttonName).
+- Main action: de.xima.akdb.epay.logic.plugin.node.PaymentInitPlugin (see the workflow reference for
+  its exact nodeParams — orderConfig orderItemDefs with amount/taxRate, customerData with the payer
+  email, address, paymentClient only when the prompt provides it). The node writes
+  totalAmount/kassenzeichen/paymentProcessId/txNumber/urlToPaypage onto the record and redirects to
+  the PayPage; on failure it aborts the workflow.
+- RESOLVE EVERY USER CLARIFICATION ANSWER FIRST, including cross-references ("same address as 1." /
+  "gleiche Adresse wie bei 1." → use answer 1's value verbatim; "take the recipient from an email
+  field you generate" → that field exists on the form and is referenced as [%fieldName%]). Then build
+  the notification nodes exactly as clarified.
+- DEFAULT — the CLIENT always gets the payment RECEIPT on SUCCESS via FC_EMAIL (chained after the
+  PaymentInitPlugin inside the same "_childNodes"), unless the user clarified otherwise.
+- SUCCESS path ("_childNodes", chained after the payment): every success notification the user
+  confirmed — the client receipt (FC_EMAIL) plus any admin/internal success notification (FC_EMAIL,
+  CMIS node, DB entry, log, inbox). Each recipient that was confirmed gets its OWN node with its
+  own literal/clarified address, subject and content (e.g. client receipt vs admin success copy may
+  differ).
+- FAILURE path ("_handlerChildNodes", fires when the ePayBL node returns an error): every failure
+  notification the user confirmed — the client failure message (different subject/content than the
+  receipt), the admin/internal failure alert, and/or a failure recording (FC_SQL_STATEMENT DB entry,
+  FC_WRITE_FORM_RECORD_ATTRIBUTES, FC_LOG_ENTRY, CMIS node, inbox). Each confirmed cell gets its own
+  node; the transport may differ per (recipient, outcome) (e.g. client failure by email, admin
+  failure into CMIS, plus a DB row).
+- Build EXACTLY the matrix cells the user confirmed in the USER CLARIFICATION — NEVER invent a
+  recipient, an outcome cell, or a transport the user did not confirm. When a cell is "no"/none,
+  do NOT add a node for it; when the user chose NO failure notification at all, emit the payment +
+  the confirmed success notifications WITHOUT a failure handler (no _handlerChildNodes). NEVER skip
+  the notification nodes when the USER CLARIFICATION confirmed them — the payment node alone is
+  incomplete.
+- Use a single FC_EXPERIMENT lane (payment + success nodes in "_childNodes", the confirmed failure
+  nodes in "_handlerChildNodes") whenever any failure handling was chosen; never create two separate
+  lanes for success/failure.
+- VALUES FOR NODE PARAMETERS (email recipient/sender/subject, address, URL, amount, status, ...) are
+  the literal/clarified values written DIRECTLY into the node, or a [%…%] placeholder of an EXISTING
+  form field the user asked to create for the end user to fill in. NEVER invent a value, NEVER
+  create a new form field just to hold a config value, and NEVER reference a literal clarified value
+  via [%…%] — a "create a field" answer applies ONLY to the one value it names; the OTHER literal
+  values in the same answer stay literal node values.
+
 {{BEGIN_INBOXES}}
 AVAILABLE INBOXES (for inboxName when creating a FC_MOVE_FORM_RECORD_TO_INBOX node — pick the EXACT match to the user's request):
 {{INBOXES_DATA}}
@@ -124,5 +171,7 @@ OUTPUT CONTRACT — STRICTLY ENFORCED:
 - This is a WORKFLOW TASK response, NOT a form: NEVER output form fields, form elements, or an "items" array. Your response must describe the workflow task(s) (trigger + nodes), not rebuild the form - the form has already been handled separately.
 - IGNORE any QUESTION inside the user's message (e.g. "Hat das Formular ein Feld für den Vornamen?" / "does the form have a first-name field?") — such questions are answered separately in the chat popup. Build ONLY the workflow automation for the instruction part; NEVER answer a question inside this response.
 - NEVER ask the user clarifying questions inside this response. All missing details that the user did not specify (and did NOT delegate to you) are to be derived from the form elements and available context above; if a value is still genuinely unknown, choose a sensible default (e.g. a reasonable sender address/subject) instead of asking. Do NOT output numbered question lists or "I'm happy to help" text.
+- NEVER invent an email RECIPIENT address (e.g. NEVER "recipient@example.com"). An FC_EMAIL "to" must come from the USER CLARIFICATION answer or a real form field placeholder ([%…%] of an email field, e.g. the payer's email in a payment form). When no recipient is available, leave "to" as an empty/derivable placeholder and rely on the clarification round to have asked for it — do NOT fabricate a mail address.
+- CLARIFIED VALUES ARE LITERAL — when the USER CLARIFICATION (or the prompt) provides a value for a node (recipient, sender, subject, address, URL, amount, status, ...), write those EXACT values DIRECTLY into the corresponding node/parameter. NEVER create form fields to store them and NEVER reference such a value via a [%field%] placeholder — a [%…%] placeholder is only valid for a REAL form field that the end user fills in at runtime, not for a configuration value you already know. ONE-TO-ONE RULE: a "create a field" answer (e.g. "Erstelle ein E-Mail-Feld für den Kunden", "lege ein Feld für die Adresse an") applies ONLY to the exact value it names — create that ONE field and reference it via [%fieldName%] in the node AND in any other reference (an email body, a condition, another node's input); the OTHER literal values in the same answer are STILL written LITERALLY into the node and are NOT turned into fields. Example: "Erstelle ein Feld für die Kundenadresse und der Betreff ist 'ZZZZ'" → create the address field and reference it as [%fieldName%]; 'ZZZZ' is the node's literal "subject". NEVER emit a field whose content/placeholder is a copy of a literal value you already have.
 - The USER CLARIFICATION section above is authoritative: every answered or delegated question is considered resolved. Never re-ask an answered question.
 No trailing commas. No comments.

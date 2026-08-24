@@ -148,14 +148,6 @@ function openAssistant(): void {
     return;
   }
 
-  // DIAGNOSTIC: capture the ALT+A time and whether the Angular host was already mounted, to see
-  // where the reopen delay happens (dispatch -> component open() -> dialog element appears).
-  const openStart = performance.now();
-  const hostExisted = !!document.querySelector("cb-ai-assistant");
-  console.log(
-    `[CodBiAssistantDialog] ALT+A open at ${Math.round(openStart)}ms; host existed=${hostExisted} dialogEl=${!!document.querySelector(".cb-ai-assistant-dialog")}`,
-  );
-
   // Show a loading indicator (CodBi logo + animated ring) only after a longer grace period and only
   // while the dialog is still missing, so a fast / moderately slow open (bundle already loaded) never
   // flashes it. It is removed (with a short fade-out) as soon as the dialog is actually on screen, on
@@ -177,9 +169,6 @@ function openAssistant(): void {
     if (assistantDialogVisible()) {
       assistantOpenedOnce = true;
       hideAssistantLoadingIndicator();
-      console.log(
-        `[CodBiAssistantDialog] dialog VISIBLE after ${Math.round(performance.now() - openStart)}ms (dispatch->visible)`,
-      );
       return;
     }
     if (!indicatorShown && Date.now() - watchStart > 1000) {

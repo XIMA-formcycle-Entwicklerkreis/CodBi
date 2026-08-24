@@ -249,6 +249,21 @@ cb-ai-assistant {
     margin-left: auto;
 }
 
+/* Buttons in the form assistant dialog shrink to scale .9 while pressed (0.25s ease) for tactile
+   feedback, then spring back when released. */
+.cb-ai-assistant-dialog .p-button {
+    transition:
+        background-color 0.2s,
+        color 0.2s,
+        border-color 0.2s,
+        box-shadow 0.2s,
+        transform 0.25s ease;
+}
+
+.cb-ai-assistant-dialog .p-button:active:not(:disabled) {
+    transform: scale(0.9);
+}
+
 /* When the footer wrapped onto two lines (dialog too narrow — detected in ai-assistant.ts via the
    `cb-ai-footer-wrapped` class), center each group on its own line instead of keeping them at the
    outer edges. */
@@ -320,6 +335,187 @@ cb-ai-assistant {
     font-size: 0.85em;
     font-weight: 600;
     color: #555;
+}
+
+/* Settings button right next to the "Nicht installierte Elemente erstellen" switch — opens the
+   element picker dialog. Small, icon-only, and aligned with the switch so it is visually tied to
+   it. */
+.cb-ai-element-settings-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 20px;
+    padding: 0;
+    margin-left: 2px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: #fff;
+    color: #64748b;
+    cursor: pointer;
+    transition:
+        background-color 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease,
+        transform 0.25s ease;
+
+    &:hover {
+        background: #f1f5f9;
+        border-color: #94a3b8;
+        color: #334155;
+    }
+
+    &:active:not(:disabled) {
+        transform: scale(0.9);
+    }
+
+    i {
+        font-size: 12px;
+        line-height: 1;
+    }
+}
+
+/* Element picker dialog ("Nicht installierte Elemente erstellen") — lists every Formcycle widget,
+   workflow node and trigger with its installed-status and a checkbox per element. */
+/* The dialog is appended to <body> and must sit on top of every other Formcycle window, so it gets
+   a very high z-index (mask just below the dialog, both far above PrimeNG's default ~1000 stack). */
+.p-overlay-mask.cb-ai-elements-mask {
+    z-index: 2147482000 !important;
+}
+
+.cb-ai-elements-dialog {
+    width: min(720px, 92vw);
+    max-height: 80vh;
+    z-index: 2147483000 !important;
+
+    .p-dialog-content {
+        overflow: auto;
+        padding: 1rem 1.25rem 1.25rem;
+    }
+}
+
+.cb-ai-elements-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.cb-ai-elements-logo {
+    width: 26px;
+    height: 26px;
+}
+
+.cb-ai-elements-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #333;
+}
+
+.cb-ai-elements-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+}
+
+.cb-ai-elements-intro {
+    margin: 0;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+.cb-ai-elements-loading {
+    display: flex;
+    justify-content: center;
+    padding: 2rem 0;
+}
+
+.cb-ai-elements-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.cb-ai-elements-group {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 0.6rem;
+    background: #fafbfc;
+}
+
+.cb-ai-elements-group-title {
+    margin: 0 0 0.5rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+}
+
+.cb-ai-elements-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.cb-ai-elements-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.83rem;
+    color: #333;
+
+    &:hover {
+        background: #eef2f7;
+    }
+
+    &--unavailable {
+        color: #94a3b8;
+    }
+}
+
+.cb-ai-elements-check {
+    flex-shrink: 0;
+    accent-color: darkorange;
+    cursor: pointer;
+}
+
+.cb-ai-elements-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cb-ai-elements-badge {
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+
+    &--available {
+        background: #dcfce7;
+        color: #15803d;
+    }
+
+    &--unavailable {
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+}
+
+.cb-ai-elements-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
 }
 
 /* Token counters — last inference + session total */
@@ -761,7 +957,7 @@ cb-ai-assistant {
     .cb-ai-clarification-options {
         display: flex;
         flex-wrap: wrap;
-        gap: 0.5rem;
+        gap: 0.9rem;
         margin-bottom: 0.6rem;
     }
 
@@ -769,26 +965,30 @@ cb-ai-assistant {
         display: inline-flex;
         align-items: center;
         gap: 0.4rem;
-        border: 1px solid #cbd5e1;
-        background: #fff;
+        border: 1px solid darkorange;
+        background: darkorange;
         border-radius: 999px;
         padding: 0.4rem 0.85rem;
         font-size: 0.85rem;
-        color: #334155;
+        color: #fff;
         cursor: pointer;
-        box-shadow: 0 0 0.5em black;
+        box-shadow: none;
         transition:
             background 0.15s ease,
             border-color 0.15s ease,
-            color 0.15s ease,
+            color 0.25s ease,
             transform 0.25s ease,
-            box-shadow 0.15s ease;
+            box-shadow 0.25s ease;
 
         &:hover {
             border-color: darkorange;
-            /* Keep the text color as-is (white when selected) — do NOT recolor it darkorange,
-               which would make it invisible on the darkorange background. */
+            color: #fff;
             transform: scale(1.1);
+            box-shadow: 0 0 5em darkorange;
+        }
+
+        &:active {
+            transform: scale(0.9);
         }
 
         &__check {
@@ -853,7 +1053,7 @@ cb-ai-assistant {
             border-color: darkorange;
             color: #fff;
             font-weight: 600;
-            box-shadow: 0 0 0.5em black;
+            box-shadow: none;
 
             .cb-ai-clarification-option__check {
                 border-color: #fff;

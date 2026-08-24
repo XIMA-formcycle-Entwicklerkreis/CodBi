@@ -1972,7 +1972,6 @@ export class Manager implements AfterViewInit {
       this.currentlySelectedTreeNode.data.Description !== "" &&
       this.activeTabDocFSL.indexOf(`"${this.currentlySelectedTreeNodePath.toLowerCase()}.js"`) === -1
     ) {
-      console.log("not double:", this.activeTabDocFSL, this.currentlySelectedTreeNodePath);
       this.activeTabDocFSL = `${this.activeTabDocFSL.substring(0, this.activeTabDocFSL.length - 1)},\"${this.currentlySelectedTreeNodePath.toLowerCase()}.js\"]`;
     }
     // #endregion Update FSL if necessary

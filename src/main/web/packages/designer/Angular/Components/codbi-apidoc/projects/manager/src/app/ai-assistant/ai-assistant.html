@@ -3,6 +3,7 @@
     (visibleChange)="onVisibleChange($event)"
     (onShow)="onDialogShow()"
     (onDragEnd)="onDialogDragEnd()"
+    (onMaximize)="onDialogMaximize($event)"
     [modal]="true"
     [draggable]="false"
     [resizable]="false"
@@ -190,6 +191,25 @@
                 <span class="cb-ai-askall-switch__slider"></span>
             </label>
             <span class="cb-ai-askall-switch__label">{{ buergerserviceSwitchLabel }}</span>
+            <label
+                class="cb-ai-askall-switch"
+                title="When ON, the AI may create ANY Formcycle widget and workflow node — including ones not installed on this system. When OFF, the AI only receives the elements you allow (see the list button next to this switch); non-installed elements are then never created. The list button opens the element picker.">
+                <input
+                    type="checkbox"
+                    [(ngModel)]="allowUninstalledElements"
+                    (ngModelChange)="onAllowUninstalledElementsChange($event)"
+                    [disabled]="loading || !dbAvailable" />
+                <span class="cb-ai-askall-switch__slider"></span>
+            </label>
+            <span class="cb-ai-askall-switch__label">{{ allowUninstalledSwitchLabel }}</span>
+            <button
+                type="button"
+                class="cb-ai-element-settings-btn"
+                title="Choose which Formcycle widgets and workflow nodes the AI may create (non-installed ones are hidden behind this list)"
+                aria-label="Choose allowed widgets and workflow nodes"
+                (click)="openElementSettings()">
+                <i class="pi pi-sliders-h"></i>
+            </button>
         </span>
         <span class="cb-ai-footer-actions">
             <p-button
@@ -226,6 +246,137 @@
         </span>
     </ng-template>
 </p-dialog>
+
+<!-- Element picker dialog ("Nicht installierte Elemente erstellen"): lists every Formcycle widget,
+     workflow node and workflow trigger CodBi knows about, marks which are installed on this system,
+     and lets the user check exactly which elements may be transmitted to the AI. The switch next to
+     it only resets the checks to a preset (all / available-only); manual per-element changes persist
+     in the browser until the switch is toggled again. -->
+@if (elementSettingsVisible) {
+<p-dialog
+    [visible]="true"
+    (visibleChange)="onElementSettingsVisibleChange($event)"
+    [modal]="true"
+    [draggable]="true"
+    [resizable]="true"
+    [closeOnEscape]="true"
+    appendTo="body"
+    [baseZIndex]="2147483000"
+    maskStyleClass="cb-ai-elements-mask"
+    styleClass="cb-ai-elements-dialog">
+    <ng-template #header>
+        <div class="cb-ai-elements-header">
+            <img class="cb-ai-elements-logo" [src]="codbiLogoUrl" alt="CodBi" />
+            <span class="cb-ai-elements-title">Allowed Formcycle Elements</span>
+        </div>
+    </ng-template>
+    <div class="cb-ai-elements-body">
+        <p class="cb-ai-elements-intro">
+            Only the elements you check are transmitted to the AI and can be created. Non-installed
+            elements are marked as unavailable — the AI can only use them if you check them (and the
+            switch above is ON).
+        </p>
+        @if (elementsLoading) {
+            <div class="cb-ai-elements-loading">
+                <p-progressspinner [style]="{ width: '32px', height: '32px' }" strokeWidth="4" />
+            </div>
+        } @else {
+            <div class="cb-ai-elements-groups">
+                <section class="cb-ai-elements-group">
+                    <h4 class="cb-ai-elements-group-title">Widgets</h4>
+                    <div class="cb-ai-elements-list">
+                        @for (w of widgetElements; track w.id) {
+                            <label
+                                class="cb-ai-elements-item"
+                                [class.cb-ai-elements-item--unavailable]="!w.available"
+                                [attr.title]="w.available ? w.name : w.name + ' (not installed)'">
+                                <input
+                                    type="checkbox"
+                                    class="cb-ai-elements-check"
+                                    [checked]="isElementChecked('widgets', w.id)"
+                                    (change)="toggleElement('widgets', w.id, $event)" />
+                                <span class="cb-ai-elements-name">{{ w.name }}</span>
+                                <span
+                                    class="cb-ai-elements-badge"
+                                    [class.cb-ai-elements-badge--available]="w.available"
+                                    [class.cb-ai-elements-badge--unavailable]="!w.available">
+                                    {{ w.available ? 'Installed' : 'Not installed' }}
+                                </span>
+                            </label>
+                        }
+                    </div>
+                </section>
+                <section class="cb-ai-elements-group">
+                    <h4 class="cb-ai-elements-group-title">Workflow nodes</h4>
+                    <div class="cb-ai-elements-list">
+                        @for (n of nodeElements; track n.id) {
+                            <label
+                                class="cb-ai-elements-item"
+                                [class.cb-ai-elements-item--unavailable]="!n.available"
+                                [attr.title]="n.available ? n.name : n.name + ' (not installed)'">
+                                <input
+                                    type="checkbox"
+                                    class="cb-ai-elements-check"
+                                    [checked]="isElementChecked('nodes', n.id)"
+                                    (change)="toggleElement('nodes', n.id, $event)" />
+                                <span class="cb-ai-elements-name">{{ n.name }}</span>
+                                <span
+                                    class="cb-ai-elements-badge"
+                                    [class.cb-ai-elements-badge--available]="n.available"
+                                    [class.cb-ai-elements-badge--unavailable]="!n.available">
+                                    {{ n.available ? 'Installed' : 'Not installed' }}
+                                </span>
+                            </label>
+                        }
+                    </div>
+                </section>
+                <section class="cb-ai-elements-group">
+                    <h4 class="cb-ai-elements-group-title">Workflow triggers</h4>
+                    <div class="cb-ai-elements-list">
+                        @for (t of triggerElements; track t.id) {
+                            <label
+                                class="cb-ai-elements-item"
+                                [class.cb-ai-elements-item--unavailable]="!t.available"
+                                [attr.title]="t.available ? t.name : t.name + ' (not installed)'">
+                                <input
+                                    type="checkbox"
+                                    class="cb-ai-elements-check"
+                                    [checked]="isElementChecked('triggers', t.id)"
+                                    (change)="toggleElement('triggers', t.id, $event)" />
+                                <span class="cb-ai-elements-name">{{ t.name }}</span>
+                                <span
+                                    class="cb-ai-elements-badge"
+                                    [class.cb-ai-elements-badge--available]="t.available"
+                                    [class.cb-ai-elements-badge--unavailable]="!t.available">
+                                    {{ t.available ? 'Installed' : 'Not installed' }}
+                                </span>
+                            </label>
+                        }
+                    </div>
+                </section>
+            </div>
+            <div class="cb-ai-elements-actions">
+                <p-button
+                    label="Check all"
+                    icon="pi pi-check-square"
+                    severity="secondary"
+                    size="small"
+                    [outlined]="true"
+                    (onClick)="checkAllElements()"
+                    title="Check every widget, node and trigger" />
+                <p-button
+                    label="Check installed only"
+                    icon="pi pi-check-circle"
+                    severity="secondary"
+                    size="small"
+                    [outlined]="true"
+                    (onClick)="checkAvailableElements()"
+                    title="Check only the elements that are installed on this system" />
+            </div>
+        }
+    </div>
+</p-dialog>
+}
 
 <!-- Toast — fixed top-right of the whole window, stays until the user dismisses it (X). -->
 @if (toastMessage) {
@@ -361,6 +512,7 @@
     [visible]="true"
     (visibleChange)="onChatVisibleChange($event)"
     (onResizeEnd)="onChatResizeEnd()"
+    (onMaximize)="onChatMaximize($event)"
     [modal]="true"
     [draggable]="false"
     [resizable]="true"

@@ -1342,6 +1342,8 @@ internal object PromptLoader {
     val triggers =
         map.entries
             .filter { it.key.startsWith("compact.formcycle_workflow_nodes.trigger_types.") }
+            // "Nicht installierte Elemente erstellen": skip triggers not in the allowed set.
+            .filter { FormcycleElementFilter.isTriggerAllowed(it.key.substringAfterLast('.')) }
             .sortedBy { it.key }
     if (triggers.isNotEmpty()) {
       sb.append("\n## Trigger Types\n")
@@ -1350,6 +1352,8 @@ internal object PromptLoader {
     val nodes =
         map.entries
             .filter { it.key.startsWith("compact.formcycle_workflow_nodes.node_types.") }
+            // "Nicht installierte Elemente erstellen": skip nodes not in the allowed set.
+            .filter { FormcycleElementFilter.isNodeAllowed(it.key.substringAfterLast('.')) }
             .sortedBy { it.key }
     if (nodes.isNotEmpty()) {
       sb.append("\n## Node Types\n")
@@ -1383,6 +1387,8 @@ internal object PromptLoader {
     if (nodeNames.isNotEmpty()) {
       val all = loadSectionMap(em, "formcycle.workflow_nodes.node_types.")
       for (id in nodeNames) {
+        // "Nicht installierte Elemente erstellen": skip requested nodes not in the allowed set.
+        if (!FormcycleElementFilter.isNodeAllowed(id)) continue
         val n = norm(id)
         if (n.isEmpty()) continue
         val content =
@@ -1400,6 +1406,8 @@ internal object PromptLoader {
     if (triggerNames.isNotEmpty()) {
       val all = loadSectionMap(em, "formcycle.workflow_nodes.trigger_types.")
       for (id in triggerNames) {
+        // "Nicht installierte Elemente erstellen": skip requested triggers not in the allowed set.
+        if (!FormcycleElementFilter.isTriggerAllowed(id)) continue
         val n = norm(id)
         if (n.isEmpty()) continue
         val content =

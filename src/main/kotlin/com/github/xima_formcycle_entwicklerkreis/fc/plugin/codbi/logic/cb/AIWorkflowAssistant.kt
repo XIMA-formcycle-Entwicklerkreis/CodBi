@@ -13,6 +13,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.lla
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonParser
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
@@ -59,13 +60,47 @@ class AIWorkflowAssistant : IPluginServletAction {
     // Apply per-user CodBi element visibility for the whole request so every prompt transmitted to
     // the AI omits the elements hidden for the current user.
     return CodBiElementAccess.runForUser(resolveRequestUsername(params)) {
-      val action =
-          params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
-      when (action) {
-        "Models" -> handleModels()
-        "Run" -> handleRun(params)
-        else -> jsonResponse("""{"error":"Unknown action"}""")
+      // "Nicht installierte Elemente erstellen": when the frontend sends the checked widget / node
+      // /
+      // trigger lists, restrict the transmitted prompt sections to exactly those (mirrors
+      // AICodBiAssistant) so the AI is never told about a node the user disabled.
+      FormcycleElementFilter.runForRequest(
+          parseAllowedElements(params, "allowedWidgets"),
+          parseAllowedElements(params, "allowedNodes"),
+          parseAllowedElements(params, "allowedTriggers")) {
+            val action =
+                params.headerMap.entries
+                    .find { it.key.equals("X-Action", ignoreCase = true) }
+                    ?.value
+            when (action) {
+              "Models" -> handleModels()
+              "Run" -> handleRun(params)
+              else -> jsonResponse("""{"error":"Unknown action"}""")
+            }
+          }
+    }
+  }
+
+  /**
+   * Parses an `allowed*` request parameter (JSON array or CSV) into a normalized identifier set, or
+   * `null` when the parameter is absent (meaning "no restriction").
+   */
+  private fun parseAllowedElements(params: IPluginServletActionParams, key: String): Set<String>? {
+    val raw = params.requestParameters[key]?.firstOrNull()?.trim()
+    if (raw.isNullOrBlank()) return null
+    return try {
+      val parsed = JsonParser.parseString(raw)
+      if (parsed.isJsonArray) {
+        parsed.asJsonArray
+            .mapNotNull { if (it.isJsonNull) null else it.asString }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+      } else {
+        raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
       }
+    } catch (_: Exception) {
+      raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     }
   }
 
@@ -339,7 +374,10 @@ class AIWorkflowAssistant : IPluginServletAction {
       requestedNodes: List<String> = emptyList(),
       requestedTriggers: List<String> = emptyList()
   ): String {
-    val template = loadWorkflowTaskInstruction() ?: ""
+    // "Nicht installierte Elemente erstellen": the template embeds hard-coded, node-specific
+    // instruction blocks (e.g. the AKDB ePayBL payment block); strip those whose node is not
+    // allowed so the AI is never told to create a node that is filtered out of the references.
+    val template = FormcycleElementFilter.scrubNodeProse(loadWorkflowTaskInstruction() ?: "")
     if (template.isBlank()) return loadFallbackPrompt("codbi.fallback_workflow")
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     val general =
@@ -527,13 +565,47 @@ class AIWorkflowAssistant : IPluginServletAction {
     return try {
       @Suppress("UNCHECKED_CAST")
       val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any>
-      if ((obj?.get("status") as? String) != "need_workflow_node_details") {
-        return null
+      if (obj == null) return null
+      // Strict form: the prompt asks for the full {"status":"need_workflow_node_details",...}.
+      if ((obj["status"] as? String) == "need_workflow_node_details") {
+        val nodesArr = obj["nodes"] as? List<*> ?: emptyList<Any>()
+        val nodes = nodesArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+        val triggersArr = obj["triggers"] as? List<*> ?: emptyList<Any>()
+        val triggers = triggersArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+        return WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
       }
-      val nodesArr = obj["nodes"] as? List<*> ?: emptyList<Any>()
-      val nodes = nodesArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
-      val triggersArr = obj["triggers"] as? List<*> ?: emptyList<Any>()
-      val triggers = triggersArr.mapNotNull { (it as? String)?.trim() }.filter { it.isNotEmpty() }
+      // Tolerant form — many models omit the "status" field and return only
+      // {"nodes":[...],"triggers":[...]}. Treat an object as a details request when it is clearly a
+      // list of node/trigger names and NOT a workflow task (a task object carries keys like
+      // nodeType/triggerType/taskName/nodeParams/...).
+      val looksLikeTask =
+          listOf(
+                  "nodeType",
+                  "triggerType",
+                  "taskName",
+                  "taskDescription",
+                  "nodeParams",
+                  "triggerParams",
+                  "operation",
+                  "targetNodeId",
+                  "chainedNodes",
+                  "endpointState",
+                  "endpointType",
+                  "stateProperties",
+                  "_childNodes",
+                  "_handlerChildNodes",
+                  "_cases")
+              .any { obj.containsKey(it) }
+      if (looksLikeTask) return null
+      val nodesArr = obj["nodes"] as? List<*>
+      val triggersArr = obj["triggers"] as? List<*>
+      val nodes =
+          nodesArr?.mapNotNull { (it as? String)?.trim() }?.filter { it.isNotEmpty() }
+              ?: emptyList()
+      val triggers =
+          triggersArr?.mapNotNull { (it as? String)?.trim() }?.filter { it.isNotEmpty() }
+              ?: emptyList()
+      if (nodes.isEmpty() && triggers.isEmpty()) return null
       WorkflowDetailsSignal(nodes = nodes, triggers = triggers)
     } catch (_: Exception) {
       null

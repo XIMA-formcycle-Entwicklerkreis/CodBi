@@ -14,6 +14,14 @@ Examples (ILLUSTRATIVE ONLY — the user may phrase the same intent in ANY langu
 - "Sende eine E-Mail" / "send an email" → workflow
 - "Datei herunterladen" / "file download" when combined with "submit" → workflow
 
+CRITICAL — PAYMENT / ORDER FORMS: when the user asks to BUILD a payment, order or fee form
+("Bezahlformular", "Bestellformular", "Zahlung", "Gebühr bezahlen", "ePayment", "ePayBL",
+"Kaufpreis", "parking permit for a fee", an order/payment page with order items and a buy button),
+the request is ALWAYS "both". A payment form is only complete with the accompanying ePayBL payment
+workflow (the PaymentInitPlugin node) plus notification emails for successful and failed payment —
+that automation is a WORKFLOW change on top of the FORM structure change. NEVER classify such a
+request as plain "form" — otherwise the workflow would never be built.
+
 CRITICAL — Decide by INTENT, not by matching these example words. The same intent can be expressed in
 any language. If the request changes form structure, applies CodBi functionalities, or toggles standard
 configurations → "form". If it creates/modifies workflow automation (emails, state changes, triggers,

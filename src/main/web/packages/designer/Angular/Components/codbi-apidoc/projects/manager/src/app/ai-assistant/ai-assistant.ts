@@ -152,6 +152,32 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** When true, the AI names generated form fields with the Bürgerservice technical IDs
    *  (BundID/BayernID auto-fill compatible) instead of freely-chosen names. Defaults to OFF. */
   useBuergerserviceNaming = false;
+  /** When true, the AI may create ANY Formcycle widget / workflow node / trigger — including ones
+   *  that are NOT installed on this system. When OFF (default), only the elements the user
+   *  explicitly allowed (see the element picker dialog) are transmitted to the AI. */
+  allowUninstalledElements = false;
+  /** Whether the element-picker dialog is open. */
+  elementSettingsVisible = false;
+  /** True while the element catalog (widgets/nodes/triggers + availability) is being loaded. */
+  elementsLoading = false;
+  /** In-flight catalog load promise so concurrent callers share one request and can await it. */
+  private elementsLoadPromise: Promise<void> | null = null;
+  /** The known Formcycle widgets with their installed-status (from the backend). */
+  widgetElements: Array<{ id: string; name: string; available: boolean }> = [];
+  /** The known Formcycle workflow nodes with their installed-status (from the backend). */
+  nodeElements: Array<{ id: string; name: string; available: boolean }> = [];
+  /** The known Formcycle workflow triggers with their installed-status (from the backend). */
+  triggerElements: Array<{ id: string; name: string; available: boolean }> = [];
+  /** Widget identifiers the user allows the AI to use (persisted). Empty = nothing allowed. */
+  private allowedWidgets = new Set<string>();
+  /** Workflow-node identifiers the user allows the AI to use (persisted). */
+  private allowedNodes = new Set<string>();
+  /** Workflow-trigger identifiers the user allows the AI to use (persisted). */
+  private allowedTriggers = new Set<string>();
+  /** True once the user has configured the allowed-element sets (opened the picker / toggled the
+   *  switch / changed a check). Until then the current "everything allowed" behaviour is kept — no
+   *  allowed lists are sent to the backend. */
+  private elementsConfigured = false;
   /** Estimated tokens used by the most recent inference (returned by the backend). */
   lastTokens = 0;
   /** Accumulated token total for the current session. */
@@ -244,6 +270,16 @@ export class AiAssistant implements OnInit, OnDestroy {
   private readonly USE_CODBI_KEY = "codbi-ai-use-codbi";
   /** localStorage key remembering the Bürgerservice field-naming switch state. */
   private readonly USE_BUERGERSERVICE_NAMING_KEY = "codbi-ai-use-buergerservice-naming";
+  /** localStorage key remembering the "Nicht installierte Elemente erstellen" switch state. */
+  private readonly ALLOW_UNINSTALLED_KEY = "codbi-ai-allow-uninstalled";
+  /** localStorage key remembering the user's allowed-widget checks. */
+  private readonly ALLOWED_WIDGETS_KEY = "codbi-ai-allowed-widgets";
+  /** localStorage key remembering the user's allowed-workflow-node checks. */
+  private readonly ALLOWED_NODES_KEY = "codbi-ai-allowed-nodes";
+  /** localStorage key remembering the user's allowed-workflow-trigger checks. */
+  private readonly ALLOWED_TRIGGERS_KEY = "codbi-ai-allowed-triggers";
+  /** localStorage key remembering whether the allowed-element sets have been configured. */
+  private readonly ELEMENTS_CONFIGURED_KEY = "codbi-ai-elements-configured";
   /** Whether the current user is allowed to sync the API-Documentation (Prompt Manager visibility). */
   syncAllowed = false;
   /** Cookie name for persisting the selected AI model across page reloads. */
@@ -283,12 +319,15 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.startSpeechWhenReady();
   };
 
-  /** Persists the chat conversation on ANY page unload, so it survives a reload that is not routed
-   *  through the explicit persistPendingChat() calls in the reload paths (e.g. Formcycle's own
-   *  publish-reload). */
+  /** Persists the chat conversation and the dialogs' maximized state on ANY page unload, so they
+   *  survive a reload that is not routed through the explicit persistPendingChat() calls in the
+   *  reload paths (e.g. Formcycle's own publish-reload). Without this, maximizing the dialog and
+   *  then reloading the form would reopen the dialog at its pre-maximize size. */
   private readonly beforeUnloadHandler = (): void => {
     this.persistPendingChat();
     this.persistChatSession();
+    this.persistMaximized();
+    this.persistChatMaximized();
   };
 
   /** Focuses the prompt textarea once the dialog is visible (dialog opening is async). */
@@ -431,7 +470,6 @@ export class AiAssistant implements OnInit, OnDestroy {
   openLog(elements: string[] = []): void {
     // Explicit request to show the log/dialog — an earlier dismissal must not block this open.
     this.dialogDismissed = false;
-    console.log("[AICodBiAssistant] openLog called", { models: this.models.length, visible: this.visible, elements });
     // The change-log panel unfolds inside the assistant dialog, so make sure the dialog is visible
     // and the model list is populated (e.g. right after a workflow-triggered page reload).
     if (this.models.length === 0) {
@@ -521,9 +559,6 @@ export class AiAssistant implements OnInit, OnDestroy {
     const min = Math.round(w * AiAssistant.LOG_PANE_MIN_RATIO);
     const max = Math.max(min, Math.round(w * (1 - AiAssistant.LOG_PANE_MIN_RATIO) - 8));
     const result = Math.round(Math.min(Math.max(width, min), max));
-    console.log(
-      `[AICodBiAssistant] clampLogPanelWidth width=${Math.round(width)} refWidth=${refWidth ?? "actual"} actualWidth=${actual} dialogWidth=${this.dialogWidth} -> min=${min} max=${max} result=${result}`,
-    );
     return result;
   }
 
@@ -539,7 +574,6 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Re-opens the change-log panel when the user left it open the last time. */
   private restoreLogOpenState(): void {
     const stored = localStorage.getItem(this.LOG_PANEL_OPEN_KEY);
-    console.log("[AICodBiAssistant] restoreLogOpenState: stored =", stored, "models =", this.models.length);
     try {
       if (stored === "open") {
         this.openLog();
@@ -569,7 +603,6 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  event) — make sure the assistant dialog is visible, widened to the right edge and the panel is
    *  unfolded. The log data is already loaded by the opening component, so it is NOT re-opened. */
   onLogOpened(): void {
-    console.log("[AICodBiAssistant] onLogOpened fired (log panel emitted opened)", { showLog: this.showLog });
     this.open(); //this.visible = true;
     this.cdr.markForCheck();
     const show = (attempt: number): void => {
@@ -613,34 +646,23 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  and re-clamps the change-log panel so both sides stay at least 25% of the dialog width. Runs
    *  deferred so the viewport guard (which caps the dialog width on resize) has already applied. */
   private updatePanelWidthsForViewport(): void {
-    console.log(
-      `[AICodBiAssistant] updatePanelWidthsForViewport showLog=${this.showLog} vw=${window.innerWidth} dialogWidth=${this.dialogWidth} logPanelWidth=${this.logPanelWidth}`,
-    );
     if (!this.showLog) return;
     setTimeout(() => {
       const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
       if (!el) {
-        console.log("[AICodBiAssistant] updatePanelWidthsForViewport: dialog element NOT found");
         return;
       }
       const actualWidth = Math.round(el.getBoundingClientRect().width);
-      console.log(
-        `[AICodBiAssistant] updatePanelWidthsForViewport: actualWidth=${actualWidth} oldDialogWidth=${this.dialogWidth} oldLogPanelWidth=${this.logPanelWidth}`,
-      );
       if (actualWidth > 0) {
         this.dialogWidth = actualWidth;
       }
       this.logPanelWidth = this.clampLogPanelWidth(this.logPanelWidth);
-      console.log(
-        `[AICodBiAssistant] updatePanelWidthsForViewport: -> dialogWidth=${this.dialogWidth} logPanelWidth=${this.logPanelWidth}`,
-      );
       this.applyWatermarkPosition();
       this.cdr.markForCheck();
     }, 0);
   }
 
   private readonly onWindowResize = (): void => {
-    console.log(`[AICodBiAssistant] onWindowResize vw=${window.innerWidth} showLog=${this.showLog}`);
     this.updatePanelWidthsForViewport();
     this.updateFooterLayout();
   };
@@ -653,9 +675,6 @@ export class AiAssistant implements OnInit, OnDestroy {
    */
   private expandAndUnfoldLog(elements: string[]): void {
     const expandAndShow = (attempt: number): void => {
-      console.log(
-        `[AICodBiAssistant] expandAndShow attempt=${attempt} visible=${this.visible} showLog=${this.showLog} models=${this.models.length}`,
-      );
       if (this.expandDialogForLog()) {
         // Never let the panel width leave either side below 25% of the actual dialog width.
         this.logPanelWidth = this.clampLogPanelWidth(this.logPanelWidth);
@@ -691,7 +710,6 @@ export class AiAssistant implements OnInit, OnDestroy {
   private expandDialogForLog(): boolean {
     const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
     if (!el) {
-      console.log("[AICodBiAssistant] expandDialogForLog: dialog element NOT found");
       return false;
     }
     // Only measure/widen a dialog that is actually visible. When the assistant auto-opens right
@@ -701,22 +719,12 @@ export class AiAssistant implements OnInit, OnDestroy {
     // render the change-log panel before it is ready — leaving an empty right side. Return false so
     // the caller retries once the dialog is really on screen.
     const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
-    const maskDisplay = mask ? getComputedStyle(mask).display : "no-mask";
     const visible = mask ? getComputedStyle(mask).display !== "none" : el.offsetParent !== null;
     // Neutralize any scale/translate transform (e.g. the Formcycle designer's zoom) BEFORE measuring,
     // so rect.left/top reflect the real (unscaled) position — otherwise the transform offsets the
     // measurement and the dialog is pushed further off-screen.
     el.style.transform = "none";
     const rect = el.getBoundingClientRect();
-    console.log("[AICodBiAssistant] expandDialogForLog:", {
-      maskDisplay,
-      visible,
-      rectW: Math.round(rect.width),
-      rectH: Math.round(rect.height),
-      rectL: Math.round(rect.left),
-      rectT: Math.round(rect.top),
-      showLog: this.showLog,
-    });
     if (!visible) return false;
     if (rect.width < 50 || rect.height < 50) return false;
     // The dialog must be wide enough for both panes. If its current left edge leaves too little
@@ -729,13 +737,6 @@ export class AiAssistant implements OnInit, OnDestroy {
       this.clampLogPanelWidth(this.logPanelWidth, window.innerWidth) + AiAssistant.LOG_PANEL_MAIN_MIN_WIDTH + 8;
     const left = Math.max(0, Math.min(rect.left, Math.max(0, Math.round(window.innerWidth - minTotal))));
     const dialogWidth = Math.max(620, Math.round(window.innerWidth - left));
-    console.log("[AICodBiAssistant] expandDialogForLog computed:", {
-      windowInnerWidth: window.innerWidth,
-      minTotal,
-      left,
-      dialogWidth,
-      logPanelWidth: this.logPanelWidth,
-    });
     el.style.position = "fixed";
     el.style.transform = "none";
     el.style.left = `${left}px`;
@@ -793,6 +794,22 @@ export class AiAssistant implements OnInit, OnDestroy {
     } catch {
       // ignore storage errors
     }
+    // Restore the persisted "Nicht installierte Elemente erstellen" switch state and the user's
+    // per-element allowed sets (the element picker). The switch itself only resets the checks to a
+    // preset; manual per-element changes persist until the switch is toggled again.
+    try {
+      const savedAllow = localStorage.getItem(this.ALLOW_UNINSTALLED_KEY);
+      if (savedAllow !== null) {
+        this.allowUninstalledElements = savedAllow === "1" || savedAllow === "true";
+      }
+    } catch {
+      // ignore storage errors
+    }
+    this.restoreAllowedElementSets();
+    // The switch defaults OFF, so the element filter is active from the start: load the catalog
+    // (with availability) once and establish the baseline checks (installed only) so the very first
+    // run already transmits only the allowed elements — no need to open the picker first.
+    void this.ensureElementsLoaded();
     document.addEventListener("codbi:ai-assistant:open", this.openHandler);
     document.addEventListener("codbi:ai-assistant:speech", this.speechHandler);
     // Persist the chat before ANY reload so it re-opens afterwards (our own reload or Formcycle's).
@@ -834,7 +851,6 @@ export class AiAssistant implements OnInit, OnDestroy {
     //     within the last few minutes (see checkSensitiveAutoOpen).
     try {
       const pendingSensitive = localStorage.getItem("codbi-log-sensitive-elements");
-      console.log("[AICodBiAssistant] ngOnInit: pending sensitive highlight =", pendingSensitive);
       if (pendingSensitive) {
         localStorage.removeItem("codbi-log-sensitive-elements");
         let elements: string[] = [];
@@ -846,13 +862,11 @@ export class AiAssistant implements OnInit, OnDestroy {
         } catch {
           // ignore malformed payload
         }
-        console.log("[AICodBiAssistant] ngOnInit: opening change log with", JSON.stringify(elements));
         if (elements.length > 0) {
           this.openLog(elements);
         }
       } else {
         const pendingBlocked = localStorage.getItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY);
-        console.log("[AICodBiAssistant] ngOnInit: pending blocked SQL reveal =", pendingBlocked);
         if (pendingBlocked) {
           // The log component consumes the key and reveals the blocked SQL nodes (error icons).
           this.openLog([]);
@@ -941,11 +955,6 @@ export class AiAssistant implements OnInit, OnDestroy {
 
   /** Restores the remembered dialog position/size once it has rendered (best effort — see ngOnInit). */
   onDialogShow(): void {
-    const showElapsed = this.lastShowRequestedAt ? performance.now() - this.lastShowRequestedAt : -1;
-    console.log(`[AICodBiAssistant] onDialogShow fired after ${Math.round(showElapsed)}ms`, {
-      showLog: this.showLog,
-      dialogWidth: this.dialogWidth,
-    });
     const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
     if (el) {
       // A maximized dialog fills the viewport — never reset its width.
@@ -998,12 +1007,19 @@ export class AiAssistant implements OnInit, OnDestroy {
     setTimeout(() => tryRestore(0), 150);
   }
 
-  /** Persists the current maximized state (reads the rendered `p-dialog-maximized` class so it is
-   *  robust against any PrimeNG internal reset), so a dialog closed while maximized reopens
-   *  maximized. */
-  private persistMaximized(): void {
+  /** Persists the assistant dialog's maximized state the moment PrimeNG toggles it (the (onMaximize)
+   *  event fires on BOTH maximize and restore), so a form reload right after maximizing reopens the
+   *  dialog maximized — not just a close-while-maximized. */
+  onDialogMaximize(event: { maximized: boolean }): void {
+    this.persistMaximized(event.maximized);
+  }
+
+  /** Persists the current maximized state, so a dialog closed or reloaded while maximized reopens
+   *  maximized. Reads the rendered `p-dialog-maximized` class (robust against any PrimeNG internal
+   *  reset) unless an explicit [maximized] value is supplied from PrimeNG's (onMaximize) event. */
+  private persistMaximized(maximized?: boolean): void {
     const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
-    const isMaximized = !!el?.classList.contains("p-dialog-maximized");
+    const isMaximized = maximized ?? !!el?.classList.contains("p-dialog-maximized");
     try {
       localStorage.setItem(AiAssistant.MAXIMIZED_KEY, isMaximized ? "1" : "0");
     } catch {
@@ -1041,10 +1057,19 @@ export class AiAssistant implements OnInit, OnDestroy {
     setTimeout(() => tryRestore(0), 150);
   }
 
-  /** Persists the chat popup's current maximized state so it reopens maximized. */
-  private persistChatMaximized(): void {
+  /** Persists the chat popup's maximized state the moment PrimeNG toggles it (the (onMaximize)
+   *  event fires on BOTH maximize and restore), so a form reload right after maximizing reopens the
+   *  popup maximized — not just a close-while-maximized. */
+  onChatMaximize(event: { maximized: boolean }): void {
+    this.persistChatMaximized(event.maximized);
+  }
+
+  /** Persists the chat popup's current maximized state so it reopens maximized. Reads the rendered
+   *  `p-dialog-maximized` class (robust against any PrimeNG internal reset) unless an explicit
+   *  [maximized] value is supplied from PrimeNG's (onMaximize) event. */
+  private persistChatMaximized(maximized?: boolean): void {
     const el = document.querySelector(`.${AiAssistant.CHAT_DIALOG_STYLE_CLASS}`) as HTMLElement | null;
-    const isMaximized = !!el?.classList.contains("p-dialog-maximized");
+    const isMaximized = maximized ?? !!el?.classList.contains("p-dialog-maximized");
     try {
       localStorage.setItem(AiAssistant.CHAT_MAXIMIZED_KEY, isMaximized ? "1" : "0");
     } catch {
@@ -1134,12 +1159,6 @@ export class AiAssistant implements OnInit, OnDestroy {
           } catch {
             // ignore storage errors
           }
-          console.log(
-            "[AICodBiAssistant] checkSensitiveAutoOpen: opening change log with",
-            JSON.stringify(unacknowledged),
-            "| blockedSql =",
-            JSON.stringify(blockedUsed),
-          );
           this.openLog(unacknowledged);
         },
         error: () => {
@@ -1191,7 +1210,6 @@ export class AiAssistant implements OnInit, OnDestroy {
         openMask.style.display = "";
         openMask.style.pointerEvents = "";
       }
-      console.log("[AICodBiAssistant] reopen: dialog element ALREADY mounted — restoring display");
       this.dialogHidden = false;
       this.dialogDismissed = false;
       this.lastOpenedAt = Date.now();
@@ -1221,7 +1239,6 @@ export class AiAssistant implements OnInit, OnDestroy {
       this.dialogDismissed = false;
       this.cdr.markForCheck();
     }
-    console.log("[AICodBiAssistant] reopen: dialog element NOT mounted — creating fresh");
     // Remember when the dialog was opened so openHandler's toggle only closes it on a deliberate
     // later ALT+A press, never on a stray second open event right after opening.
     this.lastOpenedAt = Date.now();
@@ -1332,6 +1349,266 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
+  /** Localized label for the "Nicht installierte Elemente erstellen" switch. */
+  get allowUninstalledSwitchLabel(): string {
+    const lang = (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage;
+    switch (lang) {
+      case "de":
+        return "Nicht installierte Elemente erstellen";
+      case "it":
+        return "Crea elementi non installati";
+      case "nl":
+        return "Niet-geïnstalleerde elementen maken";
+      default:
+        return "Create non-installed elements";
+    }
+  }
+
+  /**
+   * Persists the "Nicht installierte Elemente erstellen" switch state and — because toggling the
+   * switch REPLACES the current per-element settings with a preset — also resets the checks:
+   * turning the switch ON checks every element, turning it OFF checks only the installed ones.
+   */
+  onAllowUninstalledElementsChange(use: boolean): void {
+    this.allowUninstalledElements = use;
+    this.markElementsConfigured();
+    try {
+      localStorage.setItem(this.ALLOW_UNINSTALLED_KEY, use ? "1" : "0");
+    } catch {
+      // ignore storage errors
+    }
+    // Ensure the catalog is loaded (fetching it if needed) so the preset can be applied — otherwise
+    // an empty allowed-set would filter EVERY element out on the next run.
+    void this.ensureElementsLoaded().then(() => this.applySwitchPreset());
+  }
+
+  /** Opens the element-picker dialog, loading the catalog (with availability) if not loaded yet. */
+  openElementSettings(): void {
+    this.elementSettingsVisible = true;
+    // Opening the dialog alone does NOT reset the user's per-element settings — only toggling the
+    // switch does. On the very first use the catalog load establishes the baseline (see
+    // ensureElementsLoaded), afterwards the persisted manual checks are preserved.
+    void this.ensureElementsLoaded();
+  }
+
+  /** Closes the element-picker dialog (visibility changes). */
+  onElementSettingsVisibleChange(visible: boolean): void {
+    this.elementSettingsVisible = visible;
+  }
+
+  /**
+   * Loads the catalog of all known Formcycle widgets / workflow nodes / workflow triggers together
+   * with their installed-status from the backend (once), then invokes [onLoaded]. When the user has
+   * never configured the allowed sets yet, the loaded catalog also establishes the baseline from the
+   * current switch state (ON → everything checked; OFF → installed only).
+   */
+  private ensureElementsLoaded(): Promise<void> {
+    if (this.widgetElements.length > 0 || this.nodeElements.length > 0) {
+      return Promise.resolve(); // already loaded
+    }
+    if (this.elementsLoadPromise) {
+      return this.elementsLoadPromise; // a load is already in flight — await it
+    }
+    this.elementsLoading = true;
+    this.elementsLoadPromise = new Promise<void>((resolve) => {
+      getJQuery().ajax({
+        url: `${this.baseUrl}plugin?name=CodBi_AICodBiAssistant`,
+        type: "GET",
+        headers: { "X-Action": "AvailableElements" },
+        success: (response: unknown) => {
+          this.elementsLoading = false;
+          this.elementsLoadPromise = null;
+          const payload = (response ?? {}) as {
+            widgets?: Array<{ id?: unknown; name?: unknown; available?: unknown }>;
+            nodes?: Array<{ id?: unknown; name?: unknown; available?: unknown }>;
+            triggers?: Array<{ id?: unknown; name?: unknown; available?: unknown }>;
+          };
+          this.widgetElements = this.normalizeElementList(payload.widgets);
+          this.nodeElements = this.normalizeElementList(payload.nodes);
+          this.triggerElements = this.normalizeElementList(payload.triggers);
+          // First-ever use (no persisted settings): establish the baseline from the switch state — a
+          // fresh user with the switch ON keeps the current "everything allowed" behaviour, a user
+          // who turned it OFF starts with only the installed elements checked.
+          if (!this.elementsConfigured) {
+            this.applySwitchPreset();
+          }
+          this.cdr.markForCheck();
+          resolve();
+        },
+        error: () => {
+          this.elementsLoading = false;
+          this.elementsLoadPromise = null;
+          // Fall back to "everything allowed" (current behaviour) when the catalog cannot be loaded:
+          // keep the element lists empty AND reset the configured flag so no allowed-lists are sent
+          // (an empty list would filter every element out on the next run).
+          this.widgetElements = [];
+          this.nodeElements = [];
+          this.triggerElements = [];
+          this.elementsConfigured = false;
+          try {
+            localStorage.removeItem(this.ELEMENTS_CONFIGURED_KEY);
+          } catch {
+            // ignore storage errors
+          }
+          this.cdr.markForCheck();
+          resolve();
+        },
+      });
+    });
+    return this.elementsLoadPromise;
+  }
+
+  /**
+   * Applies the current switch state as the checked-set preset: switch ON → check every element;
+   * switch OFF → check only the installed (available) ones. This is what REPLACES the user's manual
+   * per-element settings whenever the switch is toggled.
+   */
+  private applySwitchPreset(): void {
+    if (this.allowUninstalledElements) {
+      this.checkAllElements();
+    } else {
+      this.checkAvailableElements();
+    }
+  }
+
+  /** Maps the backend catalog entries to the frontend shape ({id, name, available}). */
+  private normalizeElementList(
+    list: Array<{ id?: unknown; name?: unknown; available?: unknown }> | undefined,
+  ): Array<{ id: string; name: string; available: boolean }> {
+    return (list ?? [])
+      .map((e) => ({
+        id: String(e.id ?? "").trim(),
+        name: String(e.name ?? e.id ?? "").trim(),
+        available: e.available === true,
+      }))
+      .filter((e) => e.id.length > 0);
+  }
+
+  /** Whether the given element (by category + id) is currently checked (allowed). */
+  isElementChecked(category: "widgets" | "nodes" | "triggers", id: string): boolean {
+    const set = this.allowedSetFor(category);
+    return set.has(id);
+  }
+
+  /** Toggles an element's checked state and persists the change. */
+  toggleElement(category: "widgets" | "nodes" | "triggers", id: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement | null)?.checked ?? false;
+    this.markElementsConfigured();
+    const set = this.allowedSetFor(category);
+    if (checked) {
+      set.add(id);
+    } else {
+      set.delete(id);
+    }
+    this.persistAllowedElementSets();
+  }
+
+  /** Checks every widget, node and trigger (the "switch ON" preset). */
+  checkAllElements(): void {
+    this.markElementsConfigured();
+    this.widgetElements.forEach((e) => this.allowedWidgets.add(e.id));
+    this.nodeElements.forEach((e) => this.allowedNodes.add(e.id));
+    this.triggerElements.forEach((e) => this.allowedTriggers.add(e.id));
+    this.persistAllowedElementSets();
+  }
+
+  /** Checks only the installed (available) widgets, nodes and triggers (the "switch OFF" preset). */
+  checkAvailableElements(): void {
+    this.markElementsConfigured();
+    this.widgetElements.forEach((e) => {
+      if (e.available) this.allowedWidgets.add(e.id);
+      else this.allowedWidgets.delete(e.id);
+    });
+    this.nodeElements.forEach((e) => {
+      if (e.available) this.allowedNodes.add(e.id);
+      else this.allowedNodes.delete(e.id);
+    });
+    this.triggerElements.forEach((e) => {
+      if (e.available) this.allowedTriggers.add(e.id);
+      else this.allowedTriggers.delete(e.id);
+    });
+    this.persistAllowedElementSets();
+  }
+
+  /** The allowed set for the given element category. */
+  private allowedSetFor(category: "widgets" | "nodes" | "triggers"): Set<string> {
+    switch (category) {
+      case "widgets":
+        return this.allowedWidgets;
+      case "nodes":
+        return this.allowedNodes;
+      default:
+        return this.allowedTriggers;
+    }
+  }
+
+  /** Restores the persisted per-element allowed sets from localStorage. */
+  private restoreAllowedElementSets(): void {
+    this.allowedWidgets = this.readAllowedSet(this.ALLOWED_WIDGETS_KEY);
+    this.allowedNodes = this.readAllowedSet(this.ALLOWED_NODES_KEY);
+    this.allowedTriggers = this.readAllowedSet(this.ALLOWED_TRIGGERS_KEY);
+    try {
+      this.elementsConfigured = localStorage.getItem(this.ELEMENTS_CONFIGURED_KEY) === "1";
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** Marks the allowed-element sets as user-configured (persisted), so they are sent on each run. */
+  private markElementsConfigured(): void {
+    this.elementsConfigured = true;
+    try {
+      localStorage.setItem(this.ELEMENTS_CONFIGURED_KEY, "1");
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** Reads a persisted allowed set (JSON array) from localStorage. */
+  private readAllowedSet(key: string): Set<string> {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return new Set<string>();
+      const arr = JSON.parse(raw) as unknown;
+      if (!Array.isArray(arr)) return new Set<string>();
+      return new Set(arr.filter((v): v is string => typeof v === "string" && v.length > 0));
+    } catch {
+      return new Set<string>();
+    }
+  }
+
+  /** Persists the per-element allowed sets to localStorage. */
+  private persistAllowedElementSets(): void {
+    try {
+      localStorage.setItem(this.ALLOWED_WIDGETS_KEY, JSON.stringify([...this.allowedWidgets]));
+      localStorage.setItem(this.ALLOWED_NODES_KEY, JSON.stringify([...this.allowedNodes]));
+      localStorage.setItem(this.ALLOWED_TRIGGERS_KEY, JSON.stringify([...this.allowedTriggers]));
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  /** Adds the checked (allowed) element lists to the phase-2 request so the backend filters the
+   *  transmitted widget/node/trigger reference sections accordingly. When the switch is ON the AI may
+   *  create anything (no lists are sent → no restriction); when it is OFF only the checked elements
+   *  are transmitted. The lists are only sent once the catalog is loaded so they are meaningful. */
+  private appendAllowedElements(data: Record<string, string>): void {
+    // Switch ON = current behaviour: the AI may create any node and any widget — no filtering.
+    if (this.allowUninstalledElements) return;
+    const catalogLoaded =
+      this.widgetElements.length > 0 || this.nodeElements.length > 0 || this.triggerElements.length > 0;
+    if (!catalogLoaded) return;
+    // Switch OFF: only AVAILABLE (installed) elements may be transmitted. A checked non-installed
+    // element (e.g. the ePayBL node) is only usable when the switch is ON — so even a stale or
+    // manual check of an unavailable element is NOT sent while the switch is OFF. This is the
+    // actual guarantee behind "Nicht installierte Elemente erstellen".
+    const availableOnly = (list: Array<{ id: string; available: boolean }>, set: Set<string>): string[] =>
+      [...set].filter((id) => list.some((e) => e.id === id && e.available));
+    data["allowedWidgets"] = JSON.stringify(availableOnly(this.widgetElements, this.allowedWidgets));
+    data["allowedNodes"] = JSON.stringify(availableOnly(this.nodeElements, this.allowedNodes));
+    data["allowedTriggers"] = JSON.stringify(availableOnly(this.triggerElements, this.allowedTriggers));
+  }
+
   private loadModelsAndOpen(): void {
     if (this.models.length === 0) {
       this.restoreCachedModels();
@@ -1342,6 +1619,8 @@ export class AiAssistant implements OnInit, OnDestroy {
       if (!this.dialogDismissed) {
         this.visible = true;
         this.forceAssistantOnScreen();
+        // Re-maximize the dialog when it was closed/reloaded while maximized.
+        this.restoreMaximized();
         // Re-open the change-log panel if the user left it open the last time (persisted).
         this.restoreLogOpenState();
       }
@@ -1372,6 +1651,8 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.visible = true;
           this.forceAssistantOnScreen();
           if (this.errorText) this.showToast(this.errorText);
+          // Re-maximize the dialog when it was closed/reloaded while maximized.
+          this.restoreMaximized();
           // Re-open the change-log panel if the user left it open the last time (persisted).
           this.restoreLogOpenState();
         }
@@ -1476,9 +1757,6 @@ export class AiAssistant implements OnInit, OnDestroy {
         closeMask.style.display = "none";
         closeMask.style.pointerEvents = "none";
       }
-      console.log("[AICodBiAssistant] close: hid dialog via display:none (kept mounted)");
-    } else {
-      console.log("[AICodBiAssistant] close: dialog element already removed by PrimeNG");
     }
     // Remember the maximized state so a dialog closed while maximized reopens maximized.
     this.persistMaximized();
@@ -1891,12 +2169,11 @@ export class AiAssistant implements OnInit, OnDestroy {
     return this.clarificationFile ? this.clarificationFile.name : "Attach a document";
   }
 
-  /** Whether the clarification can be submitted (a combined answer was typed/voiced, or every
-   *  question got a quick multiple-choice answer). */
+  /** Whether the clarification can be submitted. Enabled whenever questions are pending, so the user
+   *  can skip optional questions (e.g. "don't answer if … is not wished") without being forced to
+   *  type a placeholder — answers given via quick options, voice or the text field are all optional. */
   get clarificationReady(): boolean {
-    if (this.pendingClarification.length === 0) return false;
-    const hasCombined = (this.clarificationAnswerText ?? "").trim().length > 0;
-    return hasCombined || this.pendingClarification.every((q) => (this.clarificationOption[q.id] ?? []).length > 0);
+    return this.pendingClarification.length > 0;
   }
 
   /** Handles manual dismissal of the popup (X / Escape) without answering. */
@@ -2324,7 +2601,6 @@ export class AiAssistant implements OnInit, OnDestroy {
           clarificationHistory: this.clarificationHistory,
         }),
       );
-      console.log("[AICodBiAssistant] persistPendingChat: saved", this.chatMessages.length, "message(s)");
     } catch {
       // ignore storage errors
     }
@@ -2393,11 +2669,6 @@ export class AiAssistant implements OnInit, OnDestroy {
           (t) => t && typeof t.question === "string" && typeof t.answer === "string",
         );
       }
-      console.log(
-        "[AICodBiAssistant] restorePendingChat: restoring",
-        messages.length,
-        "message(s) and reopening the chat",
-      );
       // Keep the pending key until the chat dialog has actually been rendered — if the component is
       // (re)created or the view renders late, a later attempt must still be able to restore it.
       // Once on screen, the key is cleared so a normal next page load does not re-open a stale chat.
@@ -2470,11 +2741,22 @@ export class AiAssistant implements OnInit, OnDestroy {
     // ImageProcessingService on the backend — no Jetty URL-encoded size limit issues.
     const imageParams = await this.buildImageParams();
 
+    // Ensure the element catalog is loaded so the phase-1 (intent classification) AND phase-2
+    // requests both carry the allowed widget/node/trigger lists — otherwise the "Nicht installierte
+    // Elemente erstellen" filter would be inactive and non-installed elements would leak through.
+    await this.ensureElementsLoaded();
+
+    const phase1Data: Record<string, string> = {
+      prompt,
+      useCodbi: String(this.useCodbi),
+      askAllQuestions: String(this.askAllQuestions),
+      useBuergerserviceNaming: String(this.useBuergerserviceNaming),
+    };
+    this.appendAllowedElements(phase1Data);
     const phase1Form = new FormData();
-    phase1Form.append("prompt", prompt);
-    phase1Form.append("useCodbi", String(this.useCodbi));
-    phase1Form.append("askAllQuestions", String(this.askAllQuestions));
-    phase1Form.append("useBuergerserviceNaming", String(this.useBuergerserviceNaming));
+    for (const [key, value] of Object.entries(phase1Data)) {
+      phase1Form.append(key, value);
+    }
     for (const { name, dataUrl } of imageParams) {
       phase1Form.append(`codbi-base64:${name}`, dataUrl);
     }
@@ -2578,6 +2860,9 @@ export class AiAssistant implements OnInit, OnDestroy {
       // "earlier chat turns" context label) to match the UI.
       lang: (window as unknown as { XFC_METADATA?: { currentLanguage?: string } })?.XFC_METADATA?.currentLanguage ?? "",
     };
+    // The checked Formcycle elements (widgets / nodes / triggers) that may be transmitted to the
+    // AI, when the user has configured them via the element picker.
+    this.appendAllowedElements(data);
     // Chat popup turns are sent as a normal phase-2 run flagged with chatMode + the conversation
     // history; the backend decides whether to answer only or also execute instructions.
     if (chatOptions?.chatMode) {
@@ -2691,7 +2976,6 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.chatLoading = false;
         }
         const p2 = phase2Response as Record<string, unknown> | null;
-        console.log("[AICodBiAssistant] Phase 2 response:", JSON.stringify(p2));
 
         if (!p2 || typeof p2 !== "object") {
           this.failRun("Unexpected response from server.", chatOptions);
@@ -2740,14 +3024,6 @@ export class AiAssistant implements OnInit, OnDestroy {
           : [];
         const hasWorkflowReload =
           typeof p2["workflowMessage"] === "string" && (p2["workflowMessage"] as string).length > 0;
-        console.log(
-          "[AICodBiAssistant] run: sensitiveElements =",
-          JSON.stringify(sensitive),
-          "| blockedSqlElements =",
-          JSON.stringify(blockedSql),
-          "| hasWorkflowReload =",
-          hasWorkflowReload,
-        );
         // Form-only run (no page reload) with sensitive elements: the change-log side panel is
         // unfolded (automatic popup) inside the form-only branch below, AFTER the form changes have
         // been applied and the assistant has been closed — otherwise the close would hide it.
@@ -2863,13 +3139,6 @@ export class AiAssistant implements OnInit, OnDestroy {
             // Notify the workflow UI that the form changed so its trigger button dropdown
             // refreshes immediately (same event the designer fires on manual property edits).
             Callbacks["persist-changed"].fire();
-            // --- DIAGNOSTIC: codbi-prop-enable persistence after inference-driven form load ---
-            console.log(
-              "[AICodBiAssistant] formJsonToLoad codbi-prop-enable =",
-              formJsonToLoad["codbi-prop-enable"],
-              "| has formI18n =",
-              formJsonToLoad["formI18n"] != null,
-            );
             // Patch the LIVE designer model so Formcycle reads the "CodBi" enable checkbox
             // correctly after the inference-driven form load. loadPersistJson drops the
             // top-level codbi-prop-enable from the live model; getFormPropertyValueForCurrentLang
@@ -2889,12 +3158,6 @@ export class AiAssistant implements OnInit, OnDestroy {
                 liveI18n[liveLang] = liveI18n[liveLang] ?? {};
                 liveI18n[liveLang]["codbi-prop-enable"] = enableValue;
               }
-              console.log(
-                "[AICodBiAssistant] live persist codbi-prop-enable =",
-                enableValue,
-                "| liveLang =",
-                String(liveLang ?? "n/a"),
-              );
               setTimeout(() => {
                 const cb = document.querySelector("#form-codbi-prop-enable-input") as HTMLInputElement | null;
                 if (cb) {
@@ -2902,12 +3165,7 @@ export class AiAssistant implements OnInit, OnDestroy {
                   if (cb.checked !== shouldCheck) {
                     cb.checked = shouldCheck;
                     cb.dispatchEvent(new Event("change", { bubbles: true }));
-                    console.log("[AICodBiAssistant] set #form-codbi-prop-enable-input checked =", shouldCheck);
                   }
-                } else {
-                  console.log(
-                    "[AICodBiAssistant] #form-codbi-prop-enable-input NOT found (CheckboxEditor not rendered)",
-                  );
                 }
               }, 400);
             }
@@ -2928,17 +3186,6 @@ export class AiAssistant implements OnInit, OnDestroy {
               const liveI18n = (lp?.["formI18n"] as Record<string, Record<string, unknown>> | undefined)?.[
                 String(ll ?? "default")
               ];
-              const cb = document.querySelector("#form-codbi-prop-enable-input") as HTMLInputElement | null;
-              console.log(
-                "[AICodBiAssistant] after loadPersistJson: readBack =",
-                readBack,
-                "| liveTopEnable =",
-                lp?.["codbi-prop-enable"],
-                "| liveI18nEnable =",
-                liveI18n?.["codbi-prop-enable"],
-                "| checkboxDomChecked =",
-                cb ? cb.checked : "no-el",
-              );
             }, 900);
             // Apply updated CodBi standard configurations if returned by the backend
             if (typeof p2["standards"] === "string") {
@@ -2955,7 +3202,6 @@ export class AiAssistant implements OnInit, OnDestroy {
                 if (persist?.formI18n != null && lang != null) {
                   (persist.formI18n[lang] as Record<string, unknown>) ??= {};
                   (persist.formI18n[lang] as Record<string, unknown>)["codbi-prop-standards"] = newStandards;
-                  console.log("[AICodBiAssistant] persist.formI18n[%s][codbi-prop-standards] = %s", lang, newStandards);
                 }
               }
 
@@ -3039,13 +3285,6 @@ export class AiAssistant implements OnInit, OnDestroy {
             if (blockedSql.length > 0) {
               localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedSql));
             }
-            console.log(
-              "[AICodBiAssistant] doReload: persisted sensitive elements =",
-              JSON.stringify(sensitive),
-              "| blockedSqlElements =",
-              JSON.stringify(blockedSql),
-              "| reloading now",
-            );
             // Persist the chat conversation so the chat popup re-opens after the reload.
             this.persistPendingChat();
             window.location.reload();
@@ -3081,11 +3320,6 @@ export class AiAssistant implements OnInit, OnDestroy {
                     const i18n = persist2["formI18n"] as Record<string, Record<string, unknown>>;
                     i18n[lang2] = i18n[lang2] ?? {};
                     i18n[lang2]["codbi-prop-standards"] = stdVal;
-                    console.log(
-                      "[AICodBiAssistant] (pre-publish) persist.formI18n[%s][codbi-prop-standards] = %s",
-                      lang2,
-                      stdVal,
-                    );
                   }
                   // Patch 2: update persist.persist (the cached serialised JSON string).
                   // publish() reads directly from this string when serialising the form to
@@ -3154,11 +3388,6 @@ export class AiAssistant implements OnInit, OnDestroy {
                 const i18n = persist2["formI18n"] as Record<string, Record<string, unknown>>;
                 i18n[lang2] = i18n[lang2] ?? {};
                 i18n[lang2]["codbi-prop-standards"] = stdVal;
-                console.log(
-                  "[AICodBiAssistant] (form-only) persist.formI18n[%s][codbi-prop-standards] = %s",
-                  lang2,
-                  stdVal,
-                );
               }
               // Patch 2: update persist.persist (the cached serialised JSON string)
               if (persist2 != null && typeof persist2["persist"] === "string") {

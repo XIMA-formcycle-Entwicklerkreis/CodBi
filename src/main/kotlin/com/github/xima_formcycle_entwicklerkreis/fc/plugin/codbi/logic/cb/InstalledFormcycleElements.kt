@@ -37,6 +37,65 @@ internal object InstalledFormcycleElements {
     }
   }
 
+  /**
+   * FORMCYCLE's standard widget classes. These ship with EVERY Formcycle installation — they are
+   * built into Formcycle itself and are NOT provided by an optional widget plugin. They are
+   * therefore always "installed" and must never be reported as unavailable, even when the plugin
+   * registry ([detectWidgets], which only enumerates plugin-provided widgets) does not list them.
+   *
+   * Plugin-provided widgets (e.g. XCaptcha, XFormula, XRating, XSignature, XBsLogin,
+   * XNavigationBar, XLanguageSwich, XAppointment, XDatalistAdvanced, ...) are intentionally NOT in
+   * this set — those are only installed when the corresponding widget plugin is present and are
+   * detected via [detectWidgets].
+   */
+  val CORE_WIDGETS: Set<String> =
+      setOf(
+          "XTextField",
+          "XTextArea",
+          "XUpload",
+          "XSelect",
+          "XCheckbox",
+          "XButtonList",
+          "XSpan",
+          "XImage",
+          "XFieldSet",
+          "XContainer",
+          "XContainerInvisible",
+          "XLine",
+          "XSpacer",
+          "XPage",
+          "XHeader",
+          "XFooter",
+      )
+
+  /** Normalizes an element identifier for matching (lowercase, non-alphanumeric removed). */
+  private fun normalize(id: String): String = id.trim().lowercase().replace(Regex("[^a-z0-9]"), "")
+
+  private val coreWidgetsNormalized: Set<String> =
+      CORE_WIDGETS.mapTo(mutableSetOf()) { normalize(it) }
+
+  /**
+   * Whether [id] is one of FORMCYCLE's standard, always-installed widget classes (e.g.
+   * `XTextField`). Core widgets are built into Formcycle, so they are available regardless of the
+   * plugin-registry detection result.
+   */
+  fun isCoreWidget(id: String?): Boolean {
+    if (id.isNullOrBlank()) return false
+    val n = normalize(id)
+    return n.isNotEmpty() && n in coreWidgetsNormalized
+  }
+
+  /**
+   * Whether [id] is a FORMCYCLE **built-in** workflow node or trigger type. All built-in node and
+   * trigger types use the `FC_` prefix (FC_EMAIL, FC_MANUAL, FC_FORM_SUBMIT_BUTTON, ...) and are
+   * built into Formcycle, hence always installed. Plugin-provided node/trigger types use a
+   * fully-qualified class name or a plugin-specific name (e.g. `PostboxPlugin`,
+   * `RemotePrintService`) and never start with `FC_` — those are only available when positively
+   * detected.
+   */
+  fun isCoreWorkflowType(id: String?): Boolean =
+      !id.isNullOrBlank() && id.trim().startsWith("FC_", ignoreCase = true)
+
   private val cache = ConcurrentHashMap<String, Snapshot>()
 
   /**
@@ -344,6 +403,9 @@ internal object InstalledFormcycleElements {
   /**
    * Invokes `getAllKnown(...)` on a registry. Prefers a one-argument `getAllKnown` whose parameter
    * is assignable from the mandant's actual class, then falls back to the no-arg `getAllKnown()`.
+   * Exceptions are logged (with the underlying cause) instead of being swallowed, so an unexpected
+   * registry failure is visible in the server log rather than silently marking every node/trigger
+   * as unavailable.
    */
   private fun invokeGetAllKnown(registry: Any, mandant: Any): Collection<*>? {
     val oneArg =
@@ -351,12 +413,28 @@ internal object InstalledFormcycleElements {
             .filter { it.name == "getAllKnown" && it.parameterCount == 1 }
             .firstOrNull { it.parameterTypes[0].isAssignableFrom(mandant.javaClass) }
     if (oneArg != null) {
-      return runCatching { oneArg.invoke(registry, mandant) as? Collection<*> }.getOrNull()
+      return try {
+        oneArg.invoke(registry, mandant) as? Collection<*>
+      } catch (e: Exception) {
+        logger.warn(
+            "[InstalledFormcycleElements] getAllKnown({}) invocation failed on {}: {}",
+            oneArg.parameterTypes[0].name,
+            registry.javaClass.name,
+            e.message,
+            e)
+        null
+      }
     }
-    return runCatching {
-          registry.javaClass.getMethod("getAllKnown").invoke(registry) as? Collection<*>
-        }
-        .getOrNull()
+    return try {
+      registry.javaClass.getMethod("getAllKnown").invoke(registry) as? Collection<*>
+    } catch (e: Exception) {
+      logger.warn(
+          "[InstalledFormcycleElements] getAllKnown() invocation failed on {}: {}",
+          registry.javaClass.name,
+          e.message,
+          e)
+      null
+    }
   }
 
   /**

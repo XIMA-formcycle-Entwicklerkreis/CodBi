@@ -42,14 +42,30 @@ import java.util.concurrent.TimeUnit
  * low-maintenance approach for high-speed, internalized workflows.
  *
  * ## Plugin Properties
- * |Property                  |Type|Default |Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
- * |--------------------------|----|--------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
- * |`AI_CachedImageExpiration`|Long|`600000`|Time in ms before a cached image expires and is purged by the janitor                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
- * |`AI_Log_SensitiveElements`|CSV |`(none)`|Comma-separated names of CodBi elements (functionalities, EPs, standard configurations/classes/globals) that are considered **sensitive**. Every occurrence of such an element in the AI change log is marked with an **always-on red border**; additionally, when the last inference used one of them, the change-log dialog opens automatically with those elements marked with a lightning icon (temporary). Re-read on every log load, so configuration changes take effect the next time the change log is opened.|
+ * |Property                        |Type  |Default |Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+ * |--------------------------------|------|--------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+ * |`AI_CachedImageExpiration`      |Long  |`600000`|Time in ms before a cached image expires and is purged by the janitor                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+ * |`AI_Log_SensitiveElements`      |CSV   |`(none)`|Comma-separated names of CodBi elements (functionalities, EPs, standard configurations/classes/globals) that are considered **sensitive**. Every occurrence of such an element in the AI change log is marked with an **always-on red border**; additionally, when the last inference used one of them, the change-log dialog opens automatically with those elements marked with a lightning icon (temporary). Re-read on every log load, so configuration changes take effect the next time the change log is opened.          |
+ * |`AI_FormAssistant_Matomo_URL`   |String|`(none)`|Base URL of the Matomo server used to answer statistics questions about the current form (e.g. `https://matomo.example/matomo`). Together with `AI_FormAssistant_Matomo_APIKey` this lets the AI assistant fetch and interpret the current form's Matomo usage statistics (page views, bounce/exit rates, field timings/corrections, top forms ranking) when the user asks about them or asks for an optimization analysis. When it is not set, the AI tells the user that the administrator has to define the plugin properties.|
+ * |`AI_FormAssistant_Matomo_APIKey`|String|`(none)`|Matomo `token_auth` API key for the server configured in `AI_FormAssistant_Matomo_URL`. Required together with the URL for the AI to be able to query statistics of the current form.                                                                                                                                                                                                                                                                                                                                            |
  */
 abstract class AI : CodBi(), IPluginServletAction {
   // region Shared Concurrency Control
   companion object {
+    /**
+     * Base URL of the Matomo server used to answer statistics questions about the current form
+     * (e.g. `https://matomo.example/matomo`). Configured via the plugin property
+     * `AI_FormAssistant_Matomo_URL`. When blank, the AI tells the user that the administrator has
+     * to define the plugin properties before statistics can be queried.
+     */
+    @Volatile @JvmStatic var matomoUrl: String? = null
+
+    /**
+     * Matomo `token_auth` API key for the server configured via [matomoUrl]. Configured via the
+     * plugin property `AI_FormAssistant_Matomo_APIKey`.
+     */
+    @Volatile @JvmStatic var matomoApiKey: String? = null
+
     /**
      * Shared semaphore that limits concurrent **local** AI inferences across all modules (LLAMA,
      * Tesseract, Whisper). Configured via `AI_LLAMA_ENGINE_MaxConcurrent` (default 2).
@@ -248,6 +264,19 @@ abstract class AI : CodBi(), IPluginServletAction {
       logSensitiveElements =
           csv.split(",").map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
     }
+
+    // Matomo statistics backend for the AI assistant (see MatomoStats). The values are re-read on
+    // every plugin (re-)initialization, so configuration changes take effect on the next request.
+    configData.properties
+        .getProperty("AI_FormAssistant_Matomo_URL")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { matomoUrl = it }
+    configData.properties
+        .getProperty("AI_FormAssistant_Matomo_APIKey")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { matomoApiKey = it }
 
     if (!expirationValue.isNullOrBlank()) {
       expirationValue.toLongOrNull()?.let {

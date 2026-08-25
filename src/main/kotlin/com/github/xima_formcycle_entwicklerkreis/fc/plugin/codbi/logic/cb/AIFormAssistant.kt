@@ -91,9 +91,21 @@ class AIFormAssistant : IPluginServletAction {
     }
   }
 
-  /** Reads the CodBi element-access plugin properties (idempotent). */
+  /** Reads the CodBi element-access + Matomo statistics plugin properties (idempotent). */
   override fun initialize(configData: IPluginInitializeData) {
     CodBiElementAccess.initialize(configData.properties)
+    // Matomo statistics backend for the AI assistant (see MatomoStats). Re-read on every plugin
+    // re-initialization, so configuration changes take effect on the next request.
+    configData.properties
+        .getProperty("AI_FormAssistant_Matomo_URL")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { AI.matomoUrl = it }
+    configData.properties
+        .getProperty("AI_FormAssistant_Matomo_APIKey")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { AI.matomoApiKey = it }
   }
 
   /** Resolves the login name of the authenticated user, or `null` when it cannot be determined. */

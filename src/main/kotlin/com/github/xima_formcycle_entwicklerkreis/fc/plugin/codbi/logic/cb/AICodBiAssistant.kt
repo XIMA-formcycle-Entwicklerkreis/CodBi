@@ -152,8 +152,12 @@ class AICodBiAssistant : IPluginServletAction {
           "[AICodBiAssistant] Installed-trigger detection returned no triggers — no workflow trigger is allowed by default")
     }
     // Installed widget names keyed by their normalized id, so the dialog can show the real widget
-    // class name (e.g. "XTextField") instead of the derived prompt display name.
-    val installedWidgetNames = snapshot.widgets.associateBy { normalize(it) }
+    // class name (e.g. "XTextField") instead of the derived prompt display name. The standard,
+    // always-installed widget classes are included so the core widgets show their proper class
+    // name even though they are not returned by the (plugin-only) widget registry.
+    val installedWidgetNames =
+        snapshot.widgets.associateBy { normalize(it) } +
+            InstalledFormcycleElements.CORE_WIDGETS.associateBy { normalize(it) }
     val em = emf.createEntityManager()
     try {
       val widgets = JsonArray()
@@ -164,10 +168,15 @@ class AICodBiAssistant : IPluginServletAction {
         val o = JsonObject()
         o.addProperty("id", id)
         o.addProperty("name", installedWidgetNames[normalize(id)] ?: prettifyElementId(id))
-        // Widgets stay fail-open: when widget detection is empty (registry unavailable) every
-        // widget
-        // is shown as available so normal form building is not blocked by a detection hiccup.
-        o.addProperty("available", snapshot.widgets.isEmpty() || isInstalled(id, snapshot.widgets))
+        // Standard (built-in) widgets are ALWAYS installed and therefore always available. The
+        // plugin-provided widgets are available when positively detected. Widgets stay fail-open:
+        // when plugin-widget detection is empty (registry unavailable) every widget is shown as
+        // available so normal form building is not blocked by a detection hiccup.
+        o.addProperty(
+            "available",
+            InstalledFormcycleElements.isCoreWidget(id) ||
+                snapshot.widgets.isEmpty() ||
+                isInstalled(id, snapshot.widgets))
         widgets.add(o)
       }
       val nodes = JsonArray()
@@ -180,13 +189,22 @@ class AICodBiAssistant : IPluginServletAction {
           val o = JsonObject()
           o.addProperty("id", id)
           o.addProperty("name", r.displayName?.takeIf { it.isNotBlank() } ?: prettifyElementId(id))
-          o.addProperty("available", isInstalled(id, snapshot.triggers))
+          // Built-in FC_* triggers are always installed; plugin triggers are available only when
+          // positively detected (fail-closed when the registry is unavailable).
+          o.addProperty(
+              "available",
+              InstalledFormcycleElements.isCoreWorkflowType(id) ||
+                  isInstalled(id, snapshot.triggers))
           triggers.add(o)
         } else if (key.contains(".node_types.")) {
           val o = JsonObject()
           o.addProperty("id", id)
           o.addProperty("name", r.displayName?.takeIf { it.isNotBlank() } ?: prettifyElementId(id))
-          o.addProperty("available", isInstalled(id, snapshot.nodes))
+          // Built-in FC_* nodes are always installed; plugin nodes are available only when
+          // positively detected (fail-closed when the registry is unavailable).
+          o.addProperty(
+              "available",
+              InstalledFormcycleElements.isCoreWorkflowType(id) || isInstalled(id, snapshot.nodes))
           nodes.add(o)
         }
       }
@@ -236,9 +254,21 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
-  /** Reads the CodBi element-access plugin properties (idempotent). */
+  /** Reads the CodBi element-access + Matomo statistics plugin properties (idempotent). */
   override fun initialize(configData: IPluginInitializeData) {
     CodBiElementAccess.initialize(configData.properties)
+    // Matomo statistics backend for the AI assistant (see MatomoStats). Re-read on every plugin
+    // re-initialization, so configuration changes take effect on the next request.
+    configData.properties
+        .getProperty("AI_FormAssistant_Matomo_URL")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { AI.matomoUrl = it }
+    configData.properties
+        .getProperty("AI_FormAssistant_Matomo_APIKey")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?.let { AI.matomoApiKey = it }
   }
 
   /**
@@ -689,6 +719,18 @@ class AICodBiAssistant : IPluginServletAction {
     // the numbered list the AI gave in the chat popup instead of being asked again.
     val chatContext = buildChatContext(chatTurns)
     var pendingChatAnswer: String? = null
+    // User context + form key are needed so the chat AI can request the current form's Matomo
+    // statistics (the backend resolves the form title and queries the Matomo server configured via
+    // the AI_FormAssistant_Matomo_* plugin properties).
+    val userContextForChat =
+        try {
+          getUserContext(params)
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] Could not resolve user context for chat/statistics: {}",
+              e.message)
+          null
+        }
     val chatAnswerResult =
         try {
           produceChatAnswer(
@@ -699,11 +741,17 @@ class AICodBiAssistant : IPluginServletAction {
               completeFormJson,
               completeWorkflowJson,
               chatTurns,
-              clarificationContext)
+              clarificationContext,
+              formKey,
+              userContextForChat)
         } catch (e: Exception) {
           logger.warn("[AICodBiAssistant] Chat answer pass failed: {}", e.message)
           null
         }
+    // Matomo statistics fetched during the chat pass (the AI requested them for an analysis /
+    // optimisation question). They are reused by the form-modification pass below so an
+    // "analyse and optimise" instruction also sees the statistics.
+    val matomoStatsContext = chatAnswerResult?.matomoStatsContext
     if (chatAnswerResult != null && !chatAnswerResult.hasInstructions) {
       // Answer-only: respond to the user's question OR acknowledge a neutral message ("ok" — in any
       // phrasing, classified by the AI) WITHOUT modifying the form or workflow — a request that
@@ -881,7 +929,8 @@ class AICodBiAssistant : IPluginServletAction {
                 useBuergerserviceNaming,
                 clarificationContext,
                 chatContext,
-                changeHistoryContext)
+                changeHistoryContext,
+                matomoStatsContext)
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
             return jsonResponse("""{"error":${gson.toJson("Form AI error: ${e.message}")}}""")
@@ -1184,7 +1233,8 @@ class AICodBiAssistant : IPluginServletAction {
       useBuergerserviceNaming: Boolean = false,
       clarificationContext: String? = null,
       chatContext: String? = null,
-      changeHistoryContext: String? = null
+      changeHistoryContext: String? = null,
+      matomoStatsContext: String? = null
   ): Triple<String, String?, TokenUsage> {
     // Rough token estimate for this run (input = prompts, output = completions), returned to the
     // frontend so the assistant can show the last inference and the current session total.
@@ -1237,6 +1287,14 @@ class AICodBiAssistant : IPluginServletAction {
               "\"ts\", username, or the listed form/workflow changes) and APPLY the same changes to " +
               "the CURRENT form, adapting names as needed. Do NOT ask the user which changes were " +
               "requested — the change log is authoritative."
+    }
+    // Matomo statistics fetched during the chat pass (the AI requested them for an
+    // "analyse the form" / optimisation request that also contains change instructions). Injecting
+    // them here lets the form AI base its optimisations on the real usage data.
+    if (!matomoStatsContext.isNullOrBlank()) {
+      effectiveSystemPrompt +=
+          "\n\n## MATOMO STATISTICS OF THE CURRENT FORM (use this data for the requested analysis / optimisation)\n\n" +
+              matomoStatsContext
     }
     val imageHint =
         if (imageParts.isNotEmpty()) {
@@ -11748,13 +11806,18 @@ class AICodBiAssistant : IPluginServletAction {
 
   /**
    * Result of the AI's classification of a chat/run prompt: question and/or instructions + answer.
+   *
+   * [matomoStatsContext] carries the current form's Matomo statistics when the AI requested them
+   * during the chat pass (see [produceChatAnswer]) — it is reused by the form-modification pass so
+   * an "analyse and optimise" instruction also sees the statistics.
    */
   private data class ChatAnswer(
       val hasQuestion: Boolean,
       val hasInstructions: Boolean,
       val answer: String,
       val tokensIn: Int = 0,
-      val tokensOut: Int = 0
+      val tokensOut: Int = 0,
+      val matomoStatsContext: String? = null
   )
 
   /** Reads the `chatHistory` request param (JSON array of {user, assistant} turns). */
@@ -11809,9 +11872,36 @@ class AICodBiAssistant : IPluginServletAction {
       completeFormJson: String?,
       completeWorkflowJson: String?,
       chatTurns: List<ChatTurn>,
-      clarificationContext: String
+      clarificationContext: String,
+      formKey: String?,
+      userContext: Any?
   ): ChatAnswer? {
-    val system = buildString {
+    // Matomo statistics of the current form. When the AI requests them
+    // ({"status":"need_matomo_stats"}), they are fetched ONCE from the Matomo server (plugin
+    // properties AI_FormAssistant_Matomo_URL / AI_FormAssistant_Matomo_APIKey) and injected into
+    // the
+    // next round's system prompt. When the properties are not configured, the injected context
+    // tells
+    // the AI to inform the user that the administrator has to define them.
+    var matomoStatsContext: String? = null
+    var statsFetched = false
+    var tokensIn = 0
+    var tokensOut = 0
+
+    fun runCall(system: String): String {
+      val messagesJson = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(system)}},""")
+        append("""{"role":"user","content":${gson.toJson(prompt)}}""")
+        append("]")
+      }
+      val raw = instance.performFormAssist(modelId, messagesJson)
+      tokensIn += estimateTokens(messagesJson)
+      tokensOut += estimateTokens(raw)
+      return raw
+    }
+
+    fun buildSystem(): String = buildString {
       append(loadPromptWithClasspathFallback("codbi.chat_system_prompt") ?: "")
       append(
           renderChatContext(
@@ -11820,35 +11910,49 @@ class AICodBiAssistant : IPluginServletAction {
               completeWorkflowJson,
               buildChatContext(chatTurns),
               clarificationContext))
+      if (!matomoStatsContext.isNullOrBlank()) {
+        append("\n\n## MATOMO STATISTICS OF THE CURRENT FORM\n\n").append(matomoStatsContext)
+      }
     }
-    val messagesJson = buildString {
-      append("[")
-      append("""{"role":"system","content":${gson.toJson(system)}},""")
-      append("""{"role":"user","content":${gson.toJson(prompt)}}""")
-      append("]")
-    }
+
     return try {
-      val firstRaw = instance.performFormAssist(modelId, messagesJson)
-      parseChatAnswerRaw(firstRaw, messagesJson)?.let {
-        return it
+      var currentSystem = buildSystem()
+      // Up to two rounds: round 1 without statistics; when the AI requests them, round 2 carries
+      // the statistics in the system prompt. Each round performs the normal first call + strict
+      // retry so the original behavior is preserved for every non-statistics turn.
+      for (round in 0 until 2) {
+        currentSystem = buildSystem()
+        val raw = runCall(currentSystem)
+        val cleaned = extractJson(stripThinkTags(raw)).trim()
+        if (isNeedMatomoStatsRequest(cleaned)) {
+          if (!statsFetched) {
+            statsFetched = true
+            matomoStatsContext = fetchMatomoStatsContext(formKey, userContext)
+            logger.info(
+                "[AICodBiAssistant] AI requested Matomo statistics; context length={}",
+                matomoStatsContext?.length ?: 0)
+            continue
+          }
+          // Statistics were already provided but the model still asks — fall through to the normal
+          // envelope parsing / strict retry below so the run does not loop forever.
+        }
+        parseChatAnswerRaw(raw, currentSystem)?.let { answer ->
+          return answer.copy(
+              tokensIn = tokensIn, tokensOut = tokensOut, matomoStatsContext = matomoStatsContext)
+        }
+        // The first response was not the structured envelope — retry once with a strict instruction
+        // so the model emits ONLY the raw JSON object.
+        val strictSystem =
+            currentSystem + "\n\n" + (loadPromptWithClasspathFallback("codbi.retry_chat") ?: "")
+        val retryRaw = runCall(strictSystem)
+        parseChatAnswerRaw(retryRaw, strictSystem)?.let { answer ->
+          return answer.copy(
+              tokensIn = tokensIn, tokensOut = tokensOut, matomoStatsContext = matomoStatsContext)
+        }
+        break
       }
-      // The first response was not the structured envelope — retry once with a strict instruction
-      // so
-      // the model emits ONLY the raw JSON object.
-      val strictSystem =
-          system + "\n\n" + (loadPromptWithClasspathFallback("codbi.retry_chat") ?: "")
-      val retryMessages = buildString {
-        append("[")
-        append("""{"role":"system","content":${gson.toJson(strictSystem)}},""")
-        append("""{"role":"user","content":${gson.toJson(prompt)}}""")
-        append("]")
-      }
-      val secondRaw = instance.performFormAssist(modelId, retryMessages)
-      parseChatAnswerRaw(secondRaw, retryMessages)?.let {
-        return it
-      }
-      // Last resort: classification failed twice. Use a minimal question heuristic so a question
-      // still receives an answer-only response instead of being misrouted to the form AI.
+      // Last resort: classification failed. Use a minimal question heuristic so a question still
+      // receives an answer-only response instead of being misrouted to the form AI.
       val looksLikeQuestion =
           prompt.contains("?") ||
               QUESTION_STARTERS.any { prompt.trimStart().startsWith(it, ignoreCase = true) }
@@ -11862,8 +11966,9 @@ class AICodBiAssistant : IPluginServletAction {
               if (looksLikeQuestion)
                   "Ich konnte deine Frage nicht zuordnen. Bitte formuliere sie um."
               else "",
-          tokensIn = estimateTokens(messagesJson) + estimateTokens(retryMessages),
-          tokensOut = estimateTokens(firstRaw) + estimateTokens(secondRaw))
+          tokensIn = tokensIn,
+          tokensOut = tokensOut,
+          matomoStatsContext = matomoStatsContext)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Chat answer pass failed: {}", e.message)
       null
@@ -11887,6 +11992,52 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Could not parse chat answer: {}", e.message)
       null
+    }
+  }
+
+  /**
+   * True when the AI's JSON response asks for the current form's Matomo statistics — the signal the
+   * chat system prompt teaches the AI to emit instead of a regular answer when the user asks about
+   * the form's usage / statistics or asks for an optimisation analysis. The backend then fetches
+   * the statistics and re-runs the chat call with them in the system prompt.
+   */
+  private fun isNeedMatomoStatsRequest(cleaned: String): Boolean {
+    return try {
+      JsonParser.parseString(cleaned).asJsonObject.get("status")?.asString == "need_matomo_stats"
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  /**
+   * Resolves the current form's title and queries the Matomo server (plugin properties
+   * `AI_FormAssistant_Matomo_URL` / `AI_FormAssistant_Matomo_APIKey`) for its statistics. Returns a
+   * non-null text for the AI: either the statistics summary, or — when the properties are not
+   * configured or the query failed — an instruction telling the AI how to inform the user.
+   */
+  private fun fetchMatomoStatsContext(formKey: String?, userContext: Any?): String? {
+    val title =
+        if (!formKey.isNullOrBlank() && userContext != null) {
+          try {
+            resolveCurrentFormTitle(userContext, formKey)
+          } catch (e: Exception) {
+            logger.warn(
+                "[AICodBiAssistant] Could not resolve form title for Matomo statistics: {}",
+                e.message)
+            null
+          }
+        } else null
+    val stats = MatomoStats.queryFormStats(title)
+    if (stats != null) return stats
+    return if (MatomoStats.isConfigured()) {
+      "The statistics of the current form could not be retrieved from Matomo (the form was not " +
+          "found in the tracking data, or the Matomo query failed). Tell the user that no " +
+          "statistics are available for this form right now."
+    } else {
+      "The Matomo statistics are NOT available because the administrator has NOT configured the " +
+          "plugin properties. Tell the user that the administrator has to define the plugin " +
+          "properties \"AI_FormAssistant_Matomo_URL\" and \"AI_FormAssistant_Matomo_APIKey\" in " +
+          "order for the statistics of the current form to be queried."
     }
   }
 

@@ -3376,7 +3376,10 @@ export class AiAssistant implements OnInit, OnDestroy {
           }, 1500);
         } else if (hasFormJson) {
           // Form only: wait for async rendering to complete (same as "both"), then patch
-          // everything exactly as the "both" flow does to ensure standards stick.
+          // everything exactly as the "both" flow does to ensure standards stick, and PUBLISH the
+          // form to the server so the AI-generated widgets are persisted even when no workflow is
+          // generated (previously the widgets only lived in the browser until a manual save).
+          // NOTE: designer.save() downloads a local file — designer.publish() saves to the server.
           const dSave = designer as unknown as Record<string, unknown>;
           const doPatch = (): void => {
             if (typeof p2["standards"] === "string") {
@@ -3408,30 +3411,42 @@ export class AiAssistant implements OnInit, OnDestroy {
                 cpd2.setStandardsValue(stdVal);
               }
             }
-            this.close(); //this.visible = false;
-            this.cdr.markForCheck();
-            // Form-only flow has no page reload, so PrimeNG's modal mask would otherwise linger and
-            // keep the background darkened. close() already hides the mask via display:none (the
-            // dialog is kept mounted), so only strip a mask that is genuinely orphaned — removing a
-            // mounted mask would destroy the dialog and force a slow fresh recreate on the next open.
-            setTimeout(() => {
-              if (!document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`)) {
-                this.removeOverlayMask(".cb-ai-assistant-mask");
+            // AUTO-SAVE: publish the form to the server exactly like the "both" flow does before its
+            // reload, so the generated widgets survive a page reload without a manual save. publish()
+            // reads the serialised persist (which was patched above) and returns a promise; the
+            // dialog is closed only after the save completes so the state is not torn down mid-save.
+            const afterSave = (): void => {
+              this.close(); //this.visible = false;
+              this.cdr.markForCheck();
+              // Form-only flow has no page reload, so PrimeNG's modal mask would otherwise linger and
+              // keep the background darkened. close() already hides the mask via display:none (the
+              // dialog is kept mounted), so only strip a mask that is genuinely orphaned — removing a
+              // mounted mask would destroy the dialog and force a slow fresh recreate on the next open.
+              setTimeout(() => {
+                if (!document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`)) {
+                  this.removeOverlayMask(".cb-ai-assistant-mask");
+                }
+              }, 0);
+              // Automatic popup: after the form changes are applied (assistant closed), unfold the
+              // change-log side panel again if the last inference used sensitive elements that are not
+              // marked as checked yet, or generated destructive SQL that was blocked. openLog
+              // re-opens the dialog, so it stays visible with the log.
+              if (blockedSql.length > 0) {
+                try {
+                  localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedSql));
+                } catch {
+                  // ignore storage errors
+                }
               }
-            }, 0);
-            // Automatic popup: after the form changes are applied (assistant closed), unfold the
-            // change-log side panel again if the last inference used sensitive elements that are not
-            // marked as checked yet, or generated destructive SQL that was blocked. openLog
-            // re-opens the dialog, so it stays visible with the log.
-            if (blockedSql.length > 0) {
-              try {
-                localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedSql));
-              } catch {
-                // ignore storage errors
+              if (sensitive.length > 0 || blockedSql.length > 0) {
+                this.openLog(sensitive);
               }
-            }
-            if (sensitive.length > 0 || blockedSql.length > 0) {
-              this.openLog(sensitive);
+            };
+            if (typeof dSave["publish"] === "function") {
+              (dSave["publish"] as () => Promise<void>).call(designer).then(afterSave).catch(afterSave);
+            } else {
+              // Older designer without a publish() API — nothing to persist automatically.
+              afterSave();
             }
           };
           const waitUntilReady = (): Promise<void> =>

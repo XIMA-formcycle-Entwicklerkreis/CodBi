@@ -765,8 +765,12 @@ class AICodBiAssistant : IPluginServletAction {
       val answerText =
           chatAnswerResult.answer.ifBlank { localize("codbi.chat.ackNeutral", uiLocale, "✅ Okay.") }
       logger.info("[AICodBiAssistant] Answer-only chat turn (no form/workflow changes)")
+      // Structured statistics (e.g. the Matomo summary) attached to the answer so the chat bubble
+      // can
+      // render charts from it. null when the AI did not request statistics for this turn.
+      val matomoStatsJson = parseStatsJson(chatAnswerResult.matomoStatsContext)
       return jsonResponse(
-          """{"intent":${gson.toJson(intent)},"chatAnswer":${gson.toJson(answerText)},"hasQuestion":${chatAnswerResult.hasQuestion},"tokens":${chatAnswerResult.tokensIn + chatAnswerResult.tokensOut},"tokensIn":${chatAnswerResult.tokensIn},"tokensOut":${chatAnswerResult.tokensOut},"cost":${chatCost ?: "null"},"currency":${gson.toJson(chatPrice?.currency)}}""")
+          """{"intent":${gson.toJson(intent)},"chatAnswer":${gson.toJson(answerText)},"hasQuestion":${chatAnswerResult.hasQuestion},"tokens":${chatAnswerResult.tokensIn + chatAnswerResult.tokensOut},"tokensIn":${chatAnswerResult.tokensIn},"tokensOut":${chatAnswerResult.tokensOut},"cost":${chatCost ?: "null"},"currency":${gson.toJson(chatPrice?.currency)},"matomoStats":${matomoStatsJson ?: "null"}}""")
     }
     if (chatAnswerResult != null && chatAnswerResult.hasQuestion) {
       pendingChatAnswer = chatAnswerResult.answer
@@ -1081,6 +1085,11 @@ class AICodBiAssistant : IPluginServletAction {
     }
     if (pendingChatAnswer != null) {
       result.append(""","hasQuestion":true,"chatAnswer":${gson.toJson(pendingChatAnswer)}""")
+      // Attach the structured statistics when the AI requested them (same chart data as the
+      // answer-only response above).
+      parseStatsJson(matomoStatsContext)?.let { stats ->
+        result.append(""","matomoStats":${gson.toJson(stats)}""")
+      }
     }
     result.append("}")
 
@@ -11903,6 +11912,22 @@ class AICodBiAssistant : IPluginServletAction {
 
     fun buildSystem(): String = buildString {
       append(loadPromptWithClasspathFallback("codbi.chat_system_prompt") ?: "")
+      // The FORM STATISTICS (MATOMO) rule is only transmitted when the Matomo plugin properties
+      // (AI_FormAssistant_Matomo_URL / AI_FormAssistant_Matomo_APIKey) are configured. When they
+      // are
+      // not configured, the not-configured prompt tells the AI to inform the user — instead of the
+      // AI replying {"status":"need_matomo_stats"} (which could never be fulfilled).
+      val matomoPromptKey =
+          if (MatomoStats.isConfigured()) "codbi.chat_matomo_configured"
+          else "codbi.chat_matomo_not_configured"
+      loadPromptWithClasspathFallback(matomoPromptKey)
+          ?.takeIf { it.isNotBlank() }
+          ?.let { append("\n\n").append(it.trim()) }
+      // Tell the AI today's date so date-relative statistics questions ("gestern", "diese Woche
+      // Montag", "Montag bis heute") can be resolved to concrete dates and weekdays are correct.
+      append(
+          "\n\nToday's date is ${java.time.LocalDate.now()} " +
+              "(${java.time.LocalDate.now().dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)}).")
       append(
           renderChatContext(
               formStructureContext,
@@ -11924,12 +11949,28 @@ class AICodBiAssistant : IPluginServletAction {
         currentSystem = buildSystem()
         val raw = runCall(currentSystem)
         val cleaned = extractJson(stripThinkTags(raw)).trim()
-        if (isNeedMatomoStatsRequest(cleaned)) {
+        val statsRequest = parseMatomoStatsRequest(cleaned)
+        if (statsRequest != null) {
           if (!statsFetched) {
             statsFetched = true
-            matomoStatsContext = fetchMatomoStatsContext(formKey, userContext)
+            // Safety net: when the AI's signal carries no period/date (e.g. an older installed
+            // prompt that only knows {"status":"need_matomo_stats"}), infer the period from the
+            // user's question so "yesterday" / "this week" queries still return the right slice.
+            val effectiveRequest = inferMatomoPeriod(prompt, statsRequest)
+            val focusedRequest = inferMatomoFocus(prompt, effectiveRequest)
+            matomoStatsContext =
+                fetchMatomoStatsContext(
+                    formKey,
+                    userContext,
+                    focusedRequest.period,
+                    focusedRequest.date,
+                    focusedRequest.dateTo,
+                    focusedRequest.focus)
             logger.info(
-                "[AICodBiAssistant] AI requested Matomo statistics; context length={}",
+                "[AICodBiAssistant] AI requested Matomo statistics (period={}, date={} -> effective {}); context length={}",
+                statsRequest.period,
+                statsRequest.date,
+                effectiveRequest.period,
                 matomoStatsContext?.length ?: 0)
             continue
           }
@@ -11977,12 +12018,21 @@ class AICodBiAssistant : IPluginServletAction {
 
   /**
    * Parses a structured chat-answer response, or null when it is not the expected JSON envelope.
+   *
+   * A response that carries a `"status"` field (e.g. `{"status":"need_matomo_stats"}`) is a backend
+   * SIGNAL, not a chat answer — it is rejected here so it cannot be misread as an empty envelope
+   * (which would surface as a blank "Alles klar." bubble). Such responses fall through to the
+   * strict envelope retry instead.
    */
   private fun parseChatAnswerRaw(raw: String, messagesJson: String): ChatAnswer? {
     return try {
       val cleaned = extractJson(stripThinkTags(raw)).trim()
       logger.info("[AICodBiAssistant] Chat answer response: {}", cleaned)
       val obj = JsonParser.parseString(cleaned).asJsonObject
+      if (obj.has("status")) {
+        logger.info("[AICodBiAssistant] Chat response is a status signal — not an answer envelope")
+        return null
+      }
       ChatAnswer(
           hasQuestion = obj.get("hasQuestion")?.asBoolean ?: false,
           hasInstructions = obj.get("hasInstructions")?.asBoolean ?: false,
@@ -11996,26 +12046,139 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
-   * True when the AI's JSON response asks for the current form's Matomo statistics — the signal the
-   * chat system prompt teaches the AI to emit instead of a regular answer when the user asks about
-   * the form's usage / statistics or asks for an optimisation analysis. The backend then fetches
-   * the statistics and re-runs the chat call with them in the system prompt.
+   * The AI's statistics-request signal:
+   * `{"status":"need_matomo_stats","period":"day"|"week"|"range"|
+   * "month","date":"yesterday"|"today"|"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}`.
+   * `period`/`date`/`dateTo` may be null — the backend then uses sensible defaults (month + today,
+   * yesterday for single-day questions, or the last 7 days for ranges).
    */
-  private fun isNeedMatomoStatsRequest(cleaned: String): Boolean {
+  private data class MatomoStatsRequest(
+      val period: String?,
+      val date: String?,
+      val dateTo: String? = null,
+      val focus: String? = null
+  )
+
+  /**
+   * Parses the AI's JSON response into a [MatomoStatsRequest], or returns null when the response is
+   * NOT a statistics signal — regular answer envelopes are unaffected. The signal is what the chat
+   * system prompt teaches the AI to emit instead of a regular answer when the user asks about the
+   * form's usage / statistics or asks for an optimisation analysis. The backend then fetches the
+   * statistics for the requested period and re-runs the chat call with them in the system prompt.
+   */
+  private fun parseMatomoStatsRequest(cleaned: String): MatomoStatsRequest? {
     return try {
-      JsonParser.parseString(cleaned).asJsonObject.get("status")?.asString == "need_matomo_stats"
+      val obj = JsonParser.parseString(cleaned).asJsonObject
+      if (obj.get("status")?.asString != "need_matomo_stats") return null
+      val period = obj.get("period")?.takeIf { it.isJsonPrimitive }?.asString
+      val date = obj.get("date")?.takeIf { it.isJsonPrimitive }?.asString
+      val dateTo = obj.get("dateTo")?.takeIf { it.isJsonPrimitive }?.asString
+      val focus = obj.get("focus")?.takeIf { it.isJsonPrimitive }?.asString
+      MatomoStatsRequest(period, date, dateTo, focus)
     } catch (_: Exception) {
-      false
+      null
     }
   }
 
   /**
-   * Resolves the current form's title and queries the Matomo server (plugin properties
-   * `AI_FormAssistant_Matomo_URL` / `AI_FormAssistant_Matomo_APIKey`) for its statistics. Returns a
-   * non-null text for the AI: either the statistics summary, or — when the properties are not
-   * configured or the query failed — an instruction telling the AI how to inform the user.
+   * Fills in a missing period/date from the user's question. The AI normally includes the period in
+   * its statistics signal (taught by the bundled prompt); this is a defensive fallback for older
+   * installed prompts that only emit `{"status":"need_matomo_stats"}`. When the AI already chose a
+   * period, it is respected unchanged. German/English weekday names and "bis" (e.g. "Montag bis
+   * heute") are resolved against today's date.
    */
-  private fun fetchMatomoStatsContext(formKey: String?, userContext: Any?): String? {
+  private fun inferMatomoPeriod(prompt: String, request: MatomoStatsRequest): MatomoStatsRequest {
+    val text = prompt.lowercase()
+    val today = java.time.LocalDate.now()
+    val weekday = WEEKDAY_NAMES.firstOrNull { (name, _) -> text.contains(name) }
+    // A weekday + "bis" + heute/gestern is an unambiguous date range (e.g. "von Montag bis
+    // einschließlich heute"). Checked FIRST and overriding whatever the AI signaled — "week" would
+    // wrongly return the last 7 days, not "this week's Monday until today".
+    if (weekday != null &&
+        text.contains("bis") &&
+        (text.contains("heute") ||
+            text.contains("today") ||
+            text.contains("gestern") ||
+            text.contains("yesterday"))) {
+      val daysSinceStart = (today.dayOfWeek.value - weekday.second.value + 7) % 7
+      val start = today.minusDays(daysSinceStart.toLong())
+      val end =
+          if (text.contains("gestern") || text.contains("yesterday")) today.minusDays(1) else today
+      if (start.isBefore(end)) {
+        return MatomoStatsRequest("range", start.toString(), end.toString())
+      }
+    }
+    if (request.period != null) return request
+    val isoDates = Regex("\\d{4}-\\d{2}-\\d{2}").findAll(text).map { it.value }.toList()
+    if (isoDates.size >= 2) return MatomoStatsRequest("range", isoDates[0], isoDates[1])
+    if (isoDates.size == 1) return MatomoStatsRequest("day", isoDates[0])
+    if (weekday != null) {
+      // A single weekday ("am Montag") -> this week's occurrence; if it lies in the future, use the
+      // previous week.
+      val daysSinceStart = (today.dayOfWeek.value - weekday.second.value + 7) % 7
+      val start = today.minusDays(daysSinceStart.toLong())
+      val single = if (start.isAfter(today)) start.minusWeeks(1) else start
+      return MatomoStatsRequest("day", single.toString())
+    }
+    return when {
+      text.contains("gestern") || text.contains("yesterday") ->
+          MatomoStatsRequest("day", "yesterday")
+      text.contains("heute") || text.contains("today") -> MatomoStatsRequest("day", "today")
+      text.contains("woche") ||
+          text.contains("week") ||
+          text.contains("7 tage") ||
+          text.contains("7 tagen") ||
+          text.contains("sieben tag") -> MatomoStatsRequest("week", null)
+      text.contains("monat") ||
+          text.contains("month") ||
+          text.contains("30 tage") ||
+          text.contains("30 tagen") -> MatomoStatsRequest("month", null)
+      else -> request
+    }
+  }
+
+  /**
+   * Fills in a missing focus from the user's question. Questions about ALL forms (e.g. "how often
+   * were all forms called in total?", "wie oft wurden alle Formulare insgesamt aufgerufen?") set
+   * focus "all_forms" so the backend omits the per-field analytics of the current form (which is
+   * irrelevant noise for such questions). The AI's explicit focus wins.
+   */
+  private fun inferMatomoFocus(prompt: String, request: MatomoStatsRequest): MatomoStatsRequest {
+    if (request.focus != null) return request
+    val text = prompt.lowercase()
+    val mentionsForms =
+        text.contains("formular") ||
+            text.contains("form ") ||
+            text.contains(" forms") ||
+            text.contains(" formular")
+    val allForms =
+        text.contains("alle formular") ||
+            text.contains("all form") ||
+            text.contains("alle aufrufe") ||
+            text.contains("alle aufgeruf") ||
+            (mentionsForms &&
+                (text.contains("alle ") ||
+                    text.contains("all ") ||
+                    text.contains("insgesamt") ||
+                    text.contains("in total")))
+    return if (allForms) request.copy(focus = "all_forms") else request
+  }
+
+  /**
+   * Resolves the current form's title and queries the Matomo server (plugin properties
+   * `AI_FormAssistant_Matomo_URL` / `AI_FormAssistant_Matomo_APIKey`) for its statistics,
+   * restricted to the requested [period] (day / week / month) and [date]. Returns a non-null text
+   * for the AI: either the statistics summary, or — when the properties are not configured or the
+   * query failed — an instruction telling the AI how to inform the user.
+   */
+  private fun fetchMatomoStatsContext(
+      formKey: String?,
+      userContext: Any?,
+      period: String? = null,
+      date: String? = null,
+      dateTo: String? = null,
+      focus: String? = null
+  ): String? {
     val title =
         if (!formKey.isNullOrBlank() && userContext != null) {
           try {
@@ -12027,7 +12190,7 @@ class AICodBiAssistant : IPluginServletAction {
             null
           }
         } else null
-    val stats = MatomoStats.queryFormStats(title)
+    val stats = MatomoStats.queryFormStats(title, period, date, dateTo, focus)
     if (stats != null) return stats
     return if (MatomoStats.isConfigured()) {
       "The statistics of the current form could not be retrieved from Matomo (the form was not " +
@@ -12041,9 +12204,46 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
+  /**
+   * Parses a Matomo statistics context (a JSON string produced by [MatomoStats.queryFormStats])
+   * into a [JsonObject] so the chat response can embed the structured data for the frontend charts.
+   * Returns null when the context is blank or not valid JSON — the response then omits the chart
+   * data.
+   */
+  private fun parseStatsJson(ctx: String?): JsonObject? {
+    if (ctx.isNullOrBlank()) return null
+    return try {
+      val parsed = JsonParser.parseString(ctx)
+      if (parsed.isJsonObject) parsed.asJsonObject else null
+    } catch (e: Exception) {
+      null
+    }
+  }
+
   // endregion Form Chat
 
   companion object {
+    /**
+     * German/English weekday names mapped to their day-of-week, used by [inferMatomoPeriod] to
+     * resolve "Montag"/"Monday" to concrete dates.
+     */
+    private val WEEKDAY_NAMES =
+        listOf(
+            "montag" to java.time.DayOfWeek.MONDAY,
+            "dienstag" to java.time.DayOfWeek.TUESDAY,
+            "mittwoch" to java.time.DayOfWeek.WEDNESDAY,
+            "donnerstag" to java.time.DayOfWeek.THURSDAY,
+            "freitag" to java.time.DayOfWeek.FRIDAY,
+            "samstag" to java.time.DayOfWeek.SATURDAY,
+            "sonntag" to java.time.DayOfWeek.SUNDAY,
+            "monday" to java.time.DayOfWeek.MONDAY,
+            "tuesday" to java.time.DayOfWeek.TUESDAY,
+            "wednesday" to java.time.DayOfWeek.WEDNESDAY,
+            "thursday" to java.time.DayOfWeek.THURSDAY,
+            "friday" to java.time.DayOfWeek.FRIDAY,
+            "saturday" to java.time.DayOfWeek.SATURDAY,
+            "sunday" to java.time.DayOfWeek.SUNDAY)
+
     /** Fallback question starters used ONLY when the AI chat classification fails (last resort). */
     private val QUESTION_STARTERS =
         listOf(

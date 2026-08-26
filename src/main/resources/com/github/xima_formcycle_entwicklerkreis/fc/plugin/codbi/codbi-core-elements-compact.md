@@ -93,6 +93,7 @@ Applicable on a text input that should autocomplete entries from an LDAP directo
 Applicable on any form to add Matomo/Piwik analytics event tracking.
 REQUIRES: the Matomo site/tracking ID — ask the user when it is not derivable.
 Matomo server URL: NEVER ask the user for it. If the user's request specifies a URL, use that URL. Otherwise the URL is taken automatically from the server-side plugin configuration (Matomo_URL property) and must NOT be requested.
+{{MATOMO_STATS_RULE}}
 
 ### Media.Image.Cropper
 TWO DISTINCT USES — pick by the request, NEVER apply both:

@@ -31,6 +31,10 @@ import {
   type DialogPosition,
 } from "../dialog-position";
 import { markdownToHtml } from "./markdown";
+// chart.js is imported as the auto-registered bundle ("chart.js/auto") so all chart types and
+// controllers are available without manual registration; it is bundled into cb-manager.js.
+import Chart from "chart.js/auto";
+import type { ChartConfiguration } from "chart.js";
 // #endregion Imports
 
 // #region Interfaces
@@ -92,13 +96,30 @@ interface ChatRunOptions {
 }
 
 /** One bubble in the Form Assistant Chat. `view` selects the per-bubble rendering — it defaults to
- *  Markdown, so AI answers are shown formatted; the user can switch a bubble to raw plain text. */
+ *  Markdown, so AI answers are shown formatted; the user can switch a bubble to raw plain text.
+ *  When the answer carries structured statistics (e.g. the Matomo summary) they are rendered as
+ *  Chart.js charts below the text bubble. */
 interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   /** Per-bubble view: "markdown" (default) renders the text, "plain" shows the raw text. */
   view?: "markdown" | "plain";
+  /** True while the raw Matomo statistics JSON of this bubble is expanded (transient, not persisted). */
+  showRaw?: boolean;
+  /** Structured statistics (e.g. the Matomo summary) attached to this answer — rendered as charts. */
+  matomoStats?: Record<string, unknown> | null;
+  /** Canvas id of the "most called forms" chart (present when matomoStats is attached). */
+  chartId?: string;
+  /** Canvas id of the "field usage" chart (present when matomoStats is attached). */
+  fieldsChartId?: string;
+  /** Canvas id of the "last 7 days" trend chart (present when matomoStats is attached). */
+  trendChartId?: string;
+  /** Canvas id of the single-day chart (present when matomoStats is attached). */
+  dayChartId?: string;
 }
+
+/** Chart.js types offered by the statistics-card toolbar. */
+type StatsChartType = "bar" | "line" | "doughnut";
 // #endregion Interfaces
 
 /**
@@ -393,6 +414,13 @@ export class AiAssistant implements OnInit, OnDestroy {
   chatVisible = false;
   /** The conversation shown in the chat popup (user + assistant messages). */
   chatMessages: Array<ChatMessage> = [];
+  /** Live Chart.js instances keyed by their canvas id, so charts can be destroyed when the chat
+   *  dialog closes (its DOM — and therefore the canvases — is removed) and re-created on reopen. */
+  private readonly chatCharts = new Map<string, Chart>();
+  /** Monotonic counter for generating unique chart canvas ids. */
+  private chatChartSeq = 0;
+  /** Chart type the user selected per statistics bubble (keyed by the message's primary chart id). */
+  private readonly chatChartTypes = new Map<string, StatsChartType>();
   /** Cache of rendered Markdown (keyed by message text) so unchanged bubbles are not re-parsed on
    *  every change-detection cycle. */
   private readonly markdownCache = new Map<string, string>();
@@ -406,6 +434,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   private chatDraft = "";
   /** Index of the chat message whose copy button currently shows the "copied" state (-1 = none). */
   copiedChatIndex = -1;
+  /** Index of the chat message whose raw-Matomo-JSON copy button shows "copied" (-1 = none). */
+  copiedRawIndex = -1;
   /** True while the "copy ALL questions" button in the clarification dialog shows the copied check. */
   clarificationCopiedAll = false;
   /** Id of the clarification question whose copy button currently shows the copied check. */
@@ -886,6 +916,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     window.removeEventListener("beforeunload", this.beforeUnloadHandler);
     window.removeEventListener("resize", this.onWindowResize);
     this.stopSpeech();
+    this.destroyChatCharts();
     this.dragCleanup?.();
     this.dragCleanup = null;
     this.chatDragCleanup?.();
@@ -2319,8 +2350,10 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
-  /** Opens the chat popup, optionally appending an assistant answer to the conversation. */
-  openChat(answer?: string): void {
+  /** Opens the chat popup, optionally appending an assistant answer to the conversation. When the
+   *  answer carries structured statistics (e.g. the Matomo summary), chart canvases are attached to
+   *  the bubble and rendered once the dialog is visible. */
+  openChat(answer?: string, stats?: unknown | null): void {
     // Restore the in-session conversation when the component was re-created (e.g. host re-mount),
     // so closing and reopening the chat keeps the bubbles.
     if (this.chatMessages.length === 0) {
@@ -2329,7 +2362,16 @@ export class AiAssistant implements OnInit, OnDestroy {
     if (answer && answer.trim()) {
       const last = this.chatMessages[this.chatMessages.length - 1];
       if (!(last && last.role === "assistant" && last.text === answer)) {
-        this.chatMessages.push({ role: "assistant", text: answer });
+        const msg: ChatMessage = { role: "assistant", text: answer };
+        const s = stats && typeof stats === "object" ? (stats as Record<string, unknown>) : null;
+        if (s) {
+          msg.matomoStats = s;
+          msg.chartId = `cb-ai-chart-forms-${Date.now()}-${this.chatChartSeq++}`;
+          msg.fieldsChartId = `cb-ai-chart-fields-${Date.now()}-${this.chatChartSeq++}`;
+          msg.trendChartId = `cb-ai-chart-trend-${Date.now()}-${this.chatChartSeq++}`;
+          msg.dayChartId = `cb-ai-chart-day-${Date.now()}-${this.chatChartSeq++}`;
+        }
+        this.chatMessages.push(msg);
       }
     }
     this.chatVisible = true;
@@ -2371,6 +2413,9 @@ export class AiAssistant implements OnInit, OnDestroy {
     }, 0);
     this.scrollChatToBottom();
     this.persistChatSession();
+    // Create the Chart.js instances for any bubble that carries statistics once the dialog (and its
+    // canvases) has rendered. The retry loop handles the async dialog render.
+    this.renderChatCharts();
     this.cdr.markForCheck();
   }
 
@@ -2385,6 +2430,9 @@ export class AiAssistant implements OnInit, OnDestroy {
       saveDialogPosition("codbi-dialog-chat-position", p);
     }
     this.chatVisible = false;
+    // The chat dialog's DOM (including the chart canvases) is destroyed when it closes — drop the
+    // cached Chart.js instances so they are re-created on reopen.
+    this.destroyChatCharts();
     // Remember the maximized state so a chat closed while maximized reopens maximized.
     this.persistChatMaximized();
     // Keep the conversation for this session (sessionStorage) so reopening shows the bubbles.
@@ -2442,6 +2490,246 @@ export class AiAssistant implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
+  /** Toggles the raw Matomo statistics JSON view of a bubble (only bubbles carrying matomoStats). */
+  toggleRawStats(index: number): void {
+    const msg = this.chatMessages[index];
+    if (!msg) return;
+    msg.showRaw = !msg.showRaw;
+    this.cdr.markForCheck();
+  }
+
+  /** The sanitized Matomo request(s) the backend sent, pretty-printed (empty when none were made). */
+  rawStatsRequests(stats: Record<string, unknown> | null | undefined): string {
+    if (!stats) return "";
+    const reqs = stats["matomoRequests"];
+    return Array.isArray(reqs) && reqs.length > 0 ? JSON.stringify(reqs, null, 2) : "";
+  }
+
+  /** The statistics response the backend received from Matomo, pretty-printed (minus the requests). */
+  rawStatsResponse(stats: Record<string, unknown> | null | undefined): string {
+    if (!stats) return "";
+    const { matomoRequests: _requests, ...rest } = stats;
+    return JSON.stringify(rest, null, 2);
+  }
+
+  /**
+   * Destroys all live Chart.js instances. Called when the chat dialog closes (its DOM — including the
+   * chart canvases — is removed) and when the component is destroyed, so no stale chart keeps
+   * referencing a detached canvas.
+   */
+  private destroyChatCharts(): void {
+    this.chatCharts.forEach((chart) => chart.destroy());
+    this.chatCharts.clear();
+  }
+
+  /**
+   * Creates the Chart.js instances for every chat bubble that carries statistics. The chat dialog
+   * renders asynchronously, so the canvases may not exist on the first attempt — the method retries
+   * (bounded) until they are found or the data yields no chart.
+   */
+  private renderChatCharts(attempt = 0): void {
+    let pending = 0;
+    for (const m of this.chatMessages) {
+      if (!m.matomoStats) continue;
+      const kinds: Array<[string | undefined, "forms" | "fields" | "trend" | "day"]> = [
+        [m.chartId, "forms"],
+        [m.fieldsChartId, "fields"],
+        [m.trendChartId, "trend"],
+        [m.dayChartId, "day"],
+      ];
+      let messagePending = false;
+      let anyCanvasRemaining = false;
+      let statsEl: HTMLElement | null = null;
+      for (const [id, kind] of kinds) {
+        if (!id) continue;
+        if (this.chatCharts.has(id)) {
+          // Already rendered in a previous pass — its canvas is still present.
+          anyCanvasRemaining = true;
+          continue;
+        }
+        const canvas = document.getElementById(id) as HTMLCanvasElement | null;
+        if (!canvas) {
+          // The dialog has not laid out yet — retry in a later pass.
+          messagePending = true;
+          pending++;
+          continue;
+        }
+        if (!statsEl) statsEl = canvas.closest(".cb-ai-chat-stats") as HTMLElement | null;
+        const type = m.chartId ? this.currentChartType(m.chartId) : "bar";
+        const chart = this.buildStatsChart(canvas, m.matomoStats, kind, type);
+        if (chart) {
+          this.chatCharts.set(id, chart);
+          anyCanvasRemaining = true;
+        } else {
+          // The data yields no chart for this canvas (e.g. no tracked forms) — drop the empty canvas.
+          canvas.remove();
+        }
+      }
+      // Hide the whole stats card only once every chart has been attempted and none could be
+      // rendered (so a still-pending async render never collapses it prematurely).
+      if (!messagePending && statsEl && !anyCanvasRemaining) {
+        statsEl.style.display = "none";
+      }
+    }
+    if (pending > 0 && attempt < 15) setTimeout(() => this.renderChatCharts(attempt + 1), 100);
+  }
+
+  /**
+   * Builds one Chart.js instance for a statistics object (e.g. the Matomo summary JSON) on the given
+   * canvas. `kind` selects the data source ("forms" / "fields" / "trend" / "day"), `type` the chart
+   * type (bar / line / doughnut). Returns null when the requested chart cannot be derived from the
+   * data — the canvas then stays empty.
+   */
+  private buildStatsChart(
+    canvas: HTMLCanvasElement,
+    stats: Record<string, unknown>,
+    kind: "forms" | "fields" | "trend" | "day",
+    type: StatsChartType,
+  ): Chart | null {
+    const palette = [
+      "#2563eb",
+      "#e67e22",
+      "#16a34a",
+      "#8b5cf6",
+      "#0ea5e9",
+      "#ef4444",
+      "#f59e0b",
+      "#14b8a6",
+      "#ec4899",
+      "#64748b",
+    ];
+    const labelFor = (r: Record<string, unknown>): string => {
+      const raw = String(r["title"] ?? r["label"] ?? r["name"] ?? "?");
+      return raw.length > 30 ? `${raw.slice(0, 29)}…` : raw;
+    };
+    const num = (v: unknown): number => {
+      if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+      if (typeof v === "string") {
+        const n = Number(v.replace(/,/g, ".").replace("%", ""));
+        return Number.isFinite(n) ? n : 0;
+      }
+      return 0;
+    };
+    const trendDateLabel = (r: Record<string, unknown>): string => {
+      const wd = String(r["weekdayDe"] ?? r["weekday"] ?? "");
+      const m = String(r["date"] ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${wd} ${m[3]}.${m[2]}.` : String(r["date"] ?? "");
+    };
+
+    let labels: string[] = [];
+    let values: number[] = [];
+    let colors: string[] = [];
+    let label = "Page views";
+
+    if (kind === "forms") {
+      const rows = stats["top10MostCalledForms"] as Array<Record<string, unknown>> | undefined;
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+      // Most-called forms by page views, ascending so the biggest sits on top.
+      const sorted = [...rows].sort((a, b) => num(a["nb_hits"]) - num(b["nb_hits"]));
+      labels = sorted.map(labelFor);
+      values = sorted.map((r) => num(r["nb_hits"]));
+      colors = sorted.map((_, i) => palette[i % palette.length]);
+    } else if (kind === "day") {
+      const day = stats["day"] as Record<string, unknown> | undefined;
+      if (!day || typeof day !== "object") return null;
+      const wd = String(day["weekdayDe"] ?? day["weekday"] ?? "");
+      labels = [`${wd} ${String(day["date"] ?? "")}`.trim()];
+      values = [num(day["nb_hits"])];
+      colors = [palette[0]];
+    } else if (kind === "trend") {
+      const rows = stats["dailyTrend"] as Array<Record<string, unknown>> | undefined;
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+      labels = rows.map(trendDateLabel);
+      values = rows.map((r) => num(r["nb_hits"]));
+      colors = [palette[0]];
+      label = "Page views per day";
+    } else {
+      const fieldAnalytics = (stats["fieldAnalytics"] as Record<string, unknown> | undefined) ?? {};
+      const rows = Array.isArray(fieldAnalytics["mostUsedFields"])
+        ? (fieldAnalytics["mostUsedFields"] as Array<Record<string, unknown>>)
+        : [];
+      if (rows.length === 0) return null;
+      labels = rows.map(labelFor);
+      values = rows.map((r) => {
+        for (const [key, value] of Object.entries(r)) {
+          if (key === "label" || key === "name" || key === "rank") continue;
+          const n = num(value);
+          if (n > 0) return n;
+        }
+        return 0;
+      });
+      colors = values.map((_, i) => palette[i % palette.length]);
+      label = "Field usage";
+    }
+
+    const dataset: Record<string, unknown> = {
+      label,
+      data: values,
+      backgroundColor: type === "line" ? `${palette[0]}33` : colors,
+    };
+    if (type === "line") {
+      dataset["borderColor"] = palette[0];
+      dataset["tension"] = 0.25;
+      dataset["fill"] = true;
+      dataset["pointRadius"] = 3;
+    } else if (type === "doughnut") {
+      dataset["borderWidth"] = 1;
+    } else {
+      dataset["borderRadius"] = 4;
+    }
+
+    // The config is intentionally assembled dynamically (type + conditional options), so it is cast
+    // via `unknown` — Chart.js's strict per-type config generics reject the union shape directly.
+    const config = {
+      type,
+      data: { labels, datasets: [dataset] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        ...(type === "doughnut"
+          ? { plugins: { legend: { position: "right" as const } } }
+          : { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }),
+        ...(type === "bar" && kind === "forms" ? { indexAxis: "y" as const } : {}),
+      },
+    } as unknown as ChartConfiguration;
+    return new Chart(canvas, config);
+  }
+
+  /** The chart types offered in the statistics-card toolbar (Bar / Line / Donut). */
+  chartTypeOptions: Array<StatsChartType> = ["bar", "line", "doughnut"];
+
+  /** English label for a chart-type toolbar button. */
+  chartTypeLabel(t: StatsChartType): string {
+    switch (t) {
+      case "line":
+        return "Line";
+      case "doughnut":
+        return "Donut";
+      default:
+        return "Bar";
+    }
+  }
+
+  /** The chart type currently selected for a statistics bubble (default "bar"). */
+  currentChartType(chartId: string): StatsChartType {
+    return this.chatChartTypes.get(chartId) ?? "bar";
+  }
+
+  /** Switches the chart type of a statistics bubble and re-renders all its charts. */
+  switchChartType(chartId: string, type: StatsChartType): void {
+    this.chatChartTypes.set(chartId, type);
+    const msg = this.chatMessages.find((m) => m.chartId === chartId);
+    if (msg) {
+      for (const id of [msg.chartId, msg.fieldsChartId, msg.trendChartId, msg.dayChartId]) {
+        if (!id) continue;
+        this.chatCharts.get(id)?.destroy();
+        this.chatCharts.delete(id);
+      }
+    }
+    this.renderChatCharts();
+    this.cdr.markForCheck();
+  }
+
   /**
    * Copies a chat message's text to the clipboard and briefly shows a "copied" state on its button.
    * Falls back to the legacy execCommand path when the async Clipboard API is unavailable.
@@ -2470,6 +2758,43 @@ export class AiAssistant implements OnInit, OnDestroy {
         done();
       } catch {
         window.prompt("Copy message", text);
+      }
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  /** Copies the complete raw Matomo JSON (requests + response) to the clipboard in one click. */
+  copyRawStats(index: number): void {
+    const msg = this.chatMessages[index];
+    if (!msg?.matomoStats) return;
+    const text = JSON.stringify(msg.matomoStats, null, 2);
+    const done = (): void => {
+      this.copiedRawIndex = index;
+      this.cdr.markForCheck();
+      setTimeout(() => {
+        if (this.copiedRawIndex === index) {
+          this.copiedRawIndex = -1;
+          this.cdr.markForCheck();
+        }
+      }, 1600);
+    };
+    const fallback = (): void => {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        done();
+      } catch {
+        window.prompt("Copy Matomo data", text);
       }
     };
     if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
@@ -2632,9 +2957,21 @@ export class AiAssistant implements OnInit, OnDestroy {
       const parsed: unknown = JSON.parse(raw);
       const obj = parsed as { messages?: unknown; clarificationHistory?: unknown } | null;
       const messages = Array.isArray(obj?.messages)
-        ? (obj.messages as Array<{ role?: unknown; text?: unknown }>)
-            .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string")
-            .map((m) => ({ role: m.role as "user" | "assistant", text: m.text as string }))
+        ? (obj.messages as Array<Record<string, unknown>>)
+            .filter((m) => m && (m["role"] === "user" || m["role"] === "assistant") && typeof m["text"] === "string")
+            .map((m) => {
+              const msg: ChatMessage = { role: m["role"] as "user" | "assistant", text: m["text"] as string };
+              // Re-attach statistics so the bubble's charts are re-created on reopen; fresh canvas
+              // ids are generated because the previous canvases died with the closed dialog.
+              if (m["matomoStats"] && typeof m["matomoStats"] === "object") {
+                msg.matomoStats = m["matomoStats"] as Record<string, unknown>;
+                msg.chartId = `cb-ai-chart-forms-${Date.now()}-${this.chatChartSeq++}`;
+                msg.fieldsChartId = `cb-ai-chart-fields-${Date.now()}-${this.chatChartSeq++}`;
+                msg.trendChartId = `cb-ai-chart-trend-${Date.now()}-${this.chatChartSeq++}`;
+                msg.dayChartId = `cb-ai-chart-day-${Date.now()}-${this.chatChartSeq++}`;
+              }
+              return msg;
+            })
         : [];
       if (messages.length === 0) return false;
       this.chatMessages = messages;
@@ -2653,13 +2990,25 @@ export class AiAssistant implements OnInit, OnDestroy {
       const raw = localStorage.getItem(AiAssistant.PENDING_CHAT_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as {
-        messages?: Array<{ role: "user" | "assistant"; text: string }>;
+        messages?: Array<ChatMessage>;
         clarificationHistory?: Array<ClarificationTurn>;
       };
       if (!Array.isArray(parsed?.messages) || parsed.messages.length === 0) return;
-      const messages = parsed.messages.filter(
-        (m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string",
-      );
+      const messages = parsed.messages
+        .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string")
+        .map((m) => {
+          const msg: ChatMessage = { role: m.role, text: m.text };
+          // Re-attach statistics so the bubble's charts are re-created after the reload; fresh
+          // canvas ids are generated because the previous canvases died with the old page.
+          if (m.matomoStats && typeof m.matomoStats === "object") {
+            msg.matomoStats = m.matomoStats;
+            msg.chartId = `cb-ai-chart-forms-${Date.now()}-${this.chatChartSeq++}`;
+            msg.fieldsChartId = `cb-ai-chart-fields-${Date.now()}-${this.chatChartSeq++}`;
+            msg.trendChartId = `cb-ai-chart-trend-${Date.now()}-${this.chatChartSeq++}`;
+            msg.dayChartId = `cb-ai-chart-day-${Date.now()}-${this.chatChartSeq++}`;
+          }
+          return msg;
+        });
       if (messages.length === 0) return;
       this.chatMessages = messages;
       // Also restore the clarification answers (e.g. email sender/subject) so a new instruction
@@ -3053,6 +3402,12 @@ export class AiAssistant implements OnInit, OnDestroy {
         // This runs for ALL branches — the popup stays open while the form changes are applied, or
         // the conversation is persisted and the popup re-opens after a workflow-triggered reload.
         const chatAnswer = typeof p2["chatAnswer"] === "string" ? (p2["chatAnswer"] as string) : null;
+        // Structured statistics (e.g. the Matomo summary) embedded by the backend — attached to the
+        // answer bubble so it is rendered as a chart.
+        const matomoStats =
+          p2["matomoStats"] != null && typeof p2["matomoStats"] === "object"
+            ? (p2["matomoStats"] as Record<string, unknown>)
+            : null;
         const hasChat = chatAnswer !== null && chatAnswer.trim().length > 0;
         if (hasChat) {
           // A question typed into the FORM ASSISTANT prompt (non-chat mode) must appear as a user
@@ -3065,7 +3420,7 @@ export class AiAssistant implements OnInit, OnDestroy {
               this.chatMessages.push({ role: "user", text: currentPrompt });
             }
           }
-          this.openChat(chatAnswer as string);
+          this.openChat(chatAnswer as string, matomoStats);
         } else if (chatOptions?.chatMode) {
           // A pure instruction chat turn gets an acknowledgment bubble so the conversation stays
           // coherent (see chatAckText). This bubble is also persisted across workflow reloads.

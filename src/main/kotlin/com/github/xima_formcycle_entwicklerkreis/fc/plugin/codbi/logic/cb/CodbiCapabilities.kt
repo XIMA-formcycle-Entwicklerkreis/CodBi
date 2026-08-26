@@ -27,9 +27,53 @@ internal object CodbiCapabilities {
   @Volatile private var detailsIndexBuiltAt: Long = 0L
   private const val CACHE_TTL_MS = 5 * 60 * 1000L
 
+  /**
+   * Placeholder inside the bundled condensed elements reference ([codbi-core-elements-compact.md])
+   * that is replaced at build time with the conditional Matomo-statistics rule: the
+   * `need_matomo_stats` signal only when the Matomo plugin properties are configured, otherwise the
+   * instruction to inform the user that the administrator has to define the plugin properties.
+   */
+  private const val MATOMO_STATS_RULE_PLACEHOLDER = "{{MATOMO_STATS_RULE}}"
+
   /** Returns the default capabilities section (elements only). */
   fun buildSection(): String {
-    return buildSectionBase() + localCondensedSection()
+    return resolveMatomoStatsRule(buildSectionBase() + localCondensedSection())
+  }
+
+  /**
+   * Replaces the `{{MATOMO_STATS_RULE}}` placeholder (if present) with the Matomo-statistics rule
+   * that matches the current plugin configuration: the full `need_matomo_stats` rule when the
+   * plugin properties are configured, or the "properties must be configured" instruction when they
+   * are not.
+   */
+  private fun resolveMatomoStatsRule(text: String): String {
+    if (!text.contains(MATOMO_STATS_RULE_PLACEHOLDER)) return text
+    val key =
+        if (MatomoStats.isConfigured()) "codbi.matomo_stats_configured"
+        else "codbi.matomo_stats_not_configured"
+    val rule = loadMatomoStatsRule(key) ?: ""
+    return text.replace(MATOMO_STATS_RULE_PLACEHOLDER, rule)
+  }
+
+  /**
+   * Loads the [key] prompt (DB first, classpath fallback) for the Matomo-statistics rule, RAW
+   * (without placeholder resolution). The matomo prompts carry no `{{...}}` placeholders, and
+   * running [PromptLoader.resolvePlaceholders] here would re-enter [buildSection] (its eager
+   * replacement of `{{CODBI_ELEMENTS_SECTION}}`) → infinite recursion → StackOverflowError.
+   */
+  private fun loadMatomoStatsRule(key: String): String? {
+    val em = CodbiEntities.entityManagerFactory?.createEntityManager()
+    if (em != null) {
+      try {
+        val db = PromptLoader.loadPrompt(em, key)
+        if (db != null) return db
+      } catch (e: Exception) {
+        logger.warn("[CodbiCapabilities] Failed to load prompt '{}': {}", key, e.message)
+      } finally {
+        em.close()
+      }
+    }
+    return PromptLoader.loadPromptFromClasspath(key)
   }
 
   /** Returns the full compact API section (elements + parameters + classes). */

@@ -537,30 +537,115 @@
             @for (m of chatMessages; track $index) {
                 <div class="cb-ai-chat-msg" [class.cb-ai-chat-msg--user]="m.role === 'user'">
                     <div class="cb-ai-chat-actions">
-                        <button
-                            type="button"
-                            class="cb-ai-chat-view"
-                            [class.cb-ai-chat-view--plain]="m.view === 'plain'"
-                            [title]="m.view === 'plain' ? 'Show rendered Markdown' : 'Show plain text'"
-                            (click)="toggleChatMessageView($index)"
-                            aria-label="Switch between rendered Markdown and plain text view">
-                            <i [class]="m.view === 'plain' ? 'pi pi-eye' : 'pi pi-code'" aria-hidden="true"></i>
-                        </button>
-                        <button
-                            type="button"
-                            class="cb-ai-chat-copy"
-                            [class.cb-ai-chat-copy--copied]="copiedChatIndex === $index"
-                            [title]="copiedChatIndex === $index ? 'Copied' : 'Copy message'"
-                            (click)="copyChatMessage(m.text, $index)"
-                            aria-label="Copy message">
-                            <i [class]="copiedChatIndex === $index ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
-                        </button>
+                        <div class="cb-ai-chat-actions-row">
+                            <button
+                                type="button"
+                                class="cb-ai-chat-view"
+                                [class.cb-ai-chat-view--plain]="m.view === 'plain'"
+                                [title]="m.view === 'plain' ? 'Show rendered Markdown' : 'Show plain text'"
+                                (click)="toggleChatMessageView($index)"
+                                aria-label="Switch between rendered Markdown and plain text view">
+                                <i [class]="m.view === 'plain' ? 'pi pi-eye' : 'pi pi-code'" aria-hidden="true"></i>
+                            </button>
+                            <button
+                                type="button"
+                                class="cb-ai-chat-copy"
+                                [class.cb-ai-chat-copy--copied]="copiedChatIndex === $index"
+                                [title]="copiedChatIndex === $index ? 'Copied' : 'Copy message'"
+                                (click)="copyChatMessage(m.text, $index)"
+                                aria-label="Copy message">
+                                <i [class]="copiedChatIndex === $index ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                        @if (m.matomoStats) {
+                            <button
+                                type="button"
+                                class="cb-ai-chat-raw-btn"
+                                [class.cb-ai-chat-raw-btn--open]="m.showRaw === true"
+                                [title]="m.showRaw ? 'Hide raw Matomo data' : 'Show raw Matomo data'"
+                                (click)="toggleRawStats($index)"
+                                aria-label="Toggle raw Matomo data">
+                                <i class="pi pi-database" aria-hidden="true"></i>
+                            </button>
+                        }
                     </div>
-                    @if (m.view === 'plain') {
-                        <div class="cb-ai-chat-bubble">{{ m.text }}</div>
-                    } @else {
-                        <div class="cb-ai-chat-bubble cb-ai-chat-bubble--markdown" [innerHTML]="markdownHtml(m.text)"></div>
-                    }
+                    <div class="cb-ai-chat-main">
+                        @if (m.view === 'plain') {
+                            <div class="cb-ai-chat-bubble">{{ m.text }}</div>
+                        } @else {
+                            <div class="cb-ai-chat-bubble cb-ai-chat-bubble--markdown" [innerHTML]="markdownHtml(m.text)"></div>
+                        }
+                        @if (m.role === 'assistant' && m.matomoStats) {
+                            <div class="cb-ai-chat-stats">
+                                <div class="cb-ai-chart-toolbar" role="group" aria-label="Chart type">
+                                    @for (t of chartTypeOptions; track t) {
+                                        <button
+                                            type="button"
+                                            class="cb-ai-chart-type"
+                                            [class.cb-ai-chart-type--active]="m.chartId && currentChartType(m.chartId) === t"
+                                            (click)="switchChartType(m.chartId!, t)"
+                                            [disabled]="!m.chartId">
+                                            {{ chartTypeLabel(t) }}
+                                        </button>
+                                    }
+                                </div>
+                                @if (m.chartId) {
+                                    <div class="cb-ai-chart-wrap">
+                                        <canvas
+                                            [id]="m.chartId"
+                                            class="cb-ai-chart-canvas"
+                                            aria-label="Most called forms (last 30 days)"></canvas>
+                                    </div>
+                                }
+                                @if (m.fieldsChartId) {
+                                    <div class="cb-ai-chart-wrap">
+                                        <canvas
+                                            [id]="m.fieldsChartId"
+                                            class="cb-ai-chart-canvas"
+                                            aria-label="Field usage"></canvas>
+                                    </div>
+                                }
+                                @if (m.trendChartId) {
+                                    <div class="cb-ai-chart-wrap">
+                                        <canvas
+                                            [id]="m.trendChartId"
+                                            class="cb-ai-chart-canvas"
+                                            aria-label="Page views over the last 7 days"></canvas>
+                                    </div>
+                                }
+                                @if (m.dayChartId) {
+                                    <div class="cb-ai-chart-wrap">
+                                        <canvas
+                                            [id]="m.dayChartId"
+                                            class="cb-ai-chart-canvas"
+                                            aria-label="Page views on the requested day"></canvas>
+                                    </div>
+                                }
+                                @if (m.showRaw && m.matomoStats) {
+                                    <div class="cb-ai-chat-raw-wrap">
+                                        <div class="cb-ai-chat-raw-header">
+                                            <span class="cb-ai-chat-raw-title">Raw Matomo data</span>
+                                            <button
+                                                type="button"
+                                                class="cb-ai-chat-raw-copy"
+                                                [class.cb-ai-chat-raw-copy--copied]="copiedRawIndex === $index"
+                                                (click)="copyRawStats($index)"
+                                                title="Copy the full Matomo JSON (requests + response)">
+                                                <i [class]="copiedRawIndex === $index ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
+                                                <span>{{ copiedRawIndex === $index ? 'Copied' : 'Copy JSON' }}</span>
+                                            </button>
+                                        </div>
+                                        @if (rawStatsRequests(m.matomoStats)) {
+                                            <div class="cb-ai-chat-raw-label">Matomo request(s)</div>
+                                            <pre class="cb-ai-chat-raw">{{ rawStatsRequests(m.matomoStats) }}</pre>
+                                        }
+                                        <div class="cb-ai-chat-raw-label">Matomo response</div>
+                                        <pre class="cb-ai-chat-raw">{{ rawStatsResponse(m.matomoStats) }}</pre>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
                 </div>
             }
             @if (chatLoading) {

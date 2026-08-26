@@ -3,11 +3,15 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLEncoder
+import java.time.LocalDate
+import java.time.format.TextStyle
+import java.util.Locale
 import org.slf4j.LoggerFactory
 
 /**
@@ -37,38 +41,147 @@ object MatomoStats {
   private val logger = LoggerFactory.getLogger(MatomoStats::class.java)
   private val gson: Gson = GsonBuilder().create()
 
+  /**
+   * Per-thread collector of the sanitized Matomo API requests made during the current statistics
+   * query — lets the assistant show "what was sent to Matomo" alongside the received response. The
+   * auth token is never recorded.
+   */
+  private val activeRequests = ThreadLocal<MutableList<JsonObject>>()
+
   /** True when both the Matomo URL and the API key are configured. */
   @JvmStatic
   fun isConfigured(): Boolean = !AI.matomoUrl.isNullOrBlank() && !AI.matomoApiKey.isNullOrBlank()
 
   /**
-   * Queries the Matomo server for the statistics of the form whose title matches [formTitle] and
-   * returns a compact JSON summary for the AI. Returns `null` when the plugin properties are not
-   * configured, when the form cannot be identified, or when the query fails.
+   * Queries the Matomo server for the statistics of the form whose title matches [formTitle],
+   * restricted to the requested [period] ("day" / "week" / "range" / "month", default "month") and
+   * [date]/[dateTo] ("yesterday", "today", ISO dates — for "range", two ISO dates mark start and
+   * end), and returns a compact JSON summary for the AI. [focus] ("current_form" / "all_forms")
+   * controls whether the per-field analytics of the current form are included for month queries.
+   * Returns `null` when the plugin properties are not configured, when the form cannot be
+   * identified, or when the query fails.
    */
   @JvmStatic
-  fun queryFormStats(formTitle: String?): String? {
+  fun queryFormStats(
+      formTitle: String?,
+      period: String? = null,
+      date: String? = null,
+      dateTo: String? = null,
+      focus: String? = null
+  ): String? {
     val baseUrl = AI.matomoUrl?.trim()?.trimEnd('/')
     val token = AI.matomoApiKey?.trim()
     if (baseUrl.isNullOrBlank() || token.isNullOrBlank()) return null
     if (formTitle.isNullOrBlank()) return null
+    val resolvedPeriod =
+        when (period?.trim()?.lowercase()) {
+          "day" -> "day"
+          "week" -> "week"
+          "range" -> "range"
+          else -> "month"
+        }
+    val resolvedDate =
+        date?.trim()?.takeIf { it.isNotBlank() }
+            ?: if (resolvedPeriod == "day") "yesterday" else "today"
+    val resolvedDateTo = dateTo?.trim()?.takeIf { it.isNotBlank() }
+    val resolvedFocus = focus?.trim()?.lowercase()
     return try {
+      activeRequests.set(mutableListOf())
       val root = JsonObject()
       root.addProperty("formTitle", formTitle)
-      root.addProperty("period", "month")
-      root.addProperty("periodLabel", "last 30 days")
+      root.addProperty("period", resolvedPeriod)
       root.addProperty(
           "note",
           "Statistics come from the Matomo server configured via the plugin properties AI_FormAssistant_Matomo_URL and AI_FormAssistant_Matomo_APIKey.")
-
-      // 1. All page titles (forms) across every site — used for the overall ranking ("top 10 most
-      //    called forms") and for matching the current form.
-      val pageTitles = apiCall(baseUrl, token, "Actions.getPageTitles", "all", "month", "today")
-      val entries = flattenEntries(pageTitles)
       val normalizedTitle = normalize(formTitle)
-      val ranked = JsonArray()
-      var match: JsonObject? = null
-      for ((i, obj) in entries.sortedByDescending { pageValue(it, "nb_hits") }.withIndex()) {
+      when (resolvedPeriod) {
+        "day" -> addDayStats(root, baseUrl, token, normalizedTitle, resolvedDate)
+        "week" -> addWeekStats(root, baseUrl, token, normalizedTitle)
+        "range" ->
+            addRangeStats(root, baseUrl, token, normalizedTitle, resolvedDate, resolvedDateTo)
+        else -> addMonthStats(root, baseUrl, token, normalizedTitle, resolvedFocus)
+      }
+      // The exact (sanitized) requests sent to Matomo, for the assistant's raw-data view.
+      val recorded = activeRequests.get()
+      if (!recorded.isNullOrEmpty()) {
+        root.add("matomoRequests", JsonArray().also { arr -> for (r in recorded) arr.add(r) })
+      }
+      gson.toJson(root)
+    } catch (e: Exception) {
+      logger.warn("[MatomoStats] queryFormStats failed: {}", e.message)
+      null
+    } finally {
+      activeRequests.remove()
+    }
+  }
+
+  /**
+   * Month statistics (default): ranks ALL tracked forms across every site by their monthly views
+   * (the FormAnalytics plugin is where the actual per-form view counts live —
+   * `Actions.getPageTitles` is often empty for these forms), exposes the top 10, aggregates the
+   * totals (`allFormsTotal`), matches the current form, and — unless [focus] is "all_forms" — adds
+   * the FormAnalytics per-field/site-level data of the current form. This is the "last 30 days" /
+   * "most called forms" view.
+   */
+  private fun addMonthStats(
+      root: JsonObject,
+      baseUrl: String,
+      token: String,
+      normalizedTitle: String,
+      focus: String?
+  ) {
+    root.addProperty("periodLabel", "last 30 days")
+    // Standard page titles (best effort): their page-level metrics (nb_hits, bounce/exit rate, ...)
+    // are merged into the ranking when the forms are also tracked as standard page views.
+    val pageEntries =
+        flattenEntries(apiCall(baseUrl, token, "Actions.getPageTitles", "all", "month", "today"))
+    val pageByTitle = HashMap<String, JsonObject>()
+    for (p in pageEntries) {
+      val label = p.get("label")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      pageByTitle[normalize(label)] = p
+    }
+    // All tracked forms across every site (FormAnalytics.getSummary) — the authoritative list.
+    val allForms = collectAllForms(baseUrl, token)
+
+    val ranked = JsonArray()
+    var match: JsonObject? = null
+    var totalViews = 0.0
+    var totalStarters = 0.0
+    var totalSubmitters = 0.0
+
+    if (allForms.isNotEmpty()) {
+      for ((i, obj) in
+          allForms.sortedByDescending { pageValue(it, "nb_form_viewers") }.withIndex()) {
+        val label = obj.get("label")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        val keep = JsonObject()
+        keep.addProperty("rank", i + 1)
+        keep.addProperty("title", label)
+        keep.addProperty("siteId", obj.get("siteId")?.takeIf { it.isJsonPrimitive }?.asString)
+        keep.addProperty(
+            "idsiteform", obj.get("idsiteform")?.takeIf { it.isJsonPrimitive }?.asString)
+        keep.addProperty("nb_views", pageValue(obj, "nb_form_viewers"))
+        keep.addProperty("nb_starters", pageValue(obj, "nb_form_starters"))
+        keep.addProperty("nb_submitters", pageValue(obj, "nb_form_submitters"))
+        keep.addProperty("nb_conversions", pageValue(obj, "nb_form_conversions"))
+        // Enrich with standard page metrics when the form is also tracked as a page title.
+        pageByTitle[normalize(label)]?.let { page ->
+          keep.addProperty("nb_hits", pageValue(page, "nb_hits"))
+          keep.addProperty("nb_visits", pageValue(page, "nb_visits"))
+          keep.addProperty("bounce_rate", pageValue(page, "bounce_rate"))
+          keep.addProperty("exit_rate", pageValue(page, "exit_rate"))
+        }
+        ranked.add(keep)
+        totalViews += pageValue(obj, "nb_form_viewers")
+        totalStarters += pageValue(obj, "nb_form_starters")
+        totalSubmitters += pageValue(obj, "nb_form_submitters")
+        if (match == null && matches(label, normalizedTitle)) {
+          keep.addProperty("isCurrentForm", true)
+          match = keep
+        }
+      }
+    } else if (pageEntries.isNotEmpty()) {
+      // Fallback: only standard page titles are available.
+      for ((i, obj) in pageEntries.sortedByDescending { pageValue(it, "nb_hits") }.withIndex()) {
         val label = obj.get("label")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
         val keep = JsonObject()
         keep.addProperty("rank", i + 1)
@@ -77,46 +190,282 @@ object MatomoStats {
         keep.addProperty("nb_visits", pageValue(obj, "nb_visits"))
         keep.addProperty("bounce_rate", pageValue(obj, "bounce_rate"))
         keep.addProperty("exit_rate", pageValue(obj, "exit_rate"))
-        keep.addProperty("avg_time_on_page_seconds", pageValue(obj, "avg_time_on_page"))
-        keep.addProperty("avg_page_load_time_seconds", pageValue(obj, "avg_page_load_time"))
         ranked.add(keep)
+        totalViews += pageValue(obj, "nb_hits")
         if (match == null && matches(label, normalizedTitle)) {
           keep.addProperty("isCurrentForm", true)
           match = keep
         }
       }
-      root.add("allFormsRanked", ranked)
-      root.add(
-          "top10MostCalledForms",
-          JsonArray().also { arr ->
-            for (el in ranked) {
-              if (arr.size() >= 10) break
-              arr.add(el)
-            }
-          })
+    }
 
-      if (match == null) {
-        root.addProperty("thisFormFound", false)
-        root.addProperty(
-            "hint",
-            "The current form could not be matched to any tracked form/page title in Matomo (no " +
-                "tracking data, or the tracked page title differs from the form title).")
-      } else {
-        root.addProperty("thisFormFound", true)
-        root.add("thisForm", match)
-      }
+    root.add("allFormsRanked", ranked)
+    root.add(
+        "top10MostCalledForms",
+        JsonArray().also { arr ->
+          for (el in ranked) {
+            if (arr.size() >= 10) break
+            arr.add(el)
+          }
+        })
+    root.add(
+        "allFormsTotal",
+        JsonObject().also { t ->
+          t.addProperty("forms", ranked.size())
+          t.addProperty("nb_views", totalViews)
+          t.addProperty("nb_starters", totalStarters)
+          t.addProperty("nb_submitters", totalSubmitters)
+        })
 
-      // 2. FormAnalytics plugin data (best effort, per site): per-field analytics plus the
-      //    site-level overview / live reports. Merged as additional top-level keys.
+    if (match == null) {
+      root.addProperty("thisFormFound", false)
+      root.addProperty(
+          "hint",
+          "The current form could not be matched to any tracked form/page title in Matomo (no " +
+              "tracking data, or the tracked page title differs from the form title).")
+    } else {
+      root.addProperty("thisFormFound", true)
+      root.add("thisForm", match)
+    }
+
+    // Per-field analytics of the CURRENT form — only when the question targets the current form
+    // (focus "all_forms" asks about all forms, so per-field data is irrelevant noise).
+    if (focus != "all_forms") {
       val pluginData = queryFormAnalytics(baseUrl, token, normalizedTitle)
       if (pluginData != null) {
         for ((key, value) in pluginData.entrySet()) root.add(key, value)
       }
+    }
+  }
 
-      gson.toJson(root)
-    } catch (e: Exception) {
-      logger.warn("[MatomoStats] queryFormStats failed: {}", e.message)
-      null
+  /**
+   * Collects every tracked form across all accessible sites together with its monthly view/start/
+   * submit counts (via `FormAnalytics.getSummary`, flat=1). Each row is tagged with its `siteId`.
+   * Best-effort: sites without the FormAnalytics plugin or failed calls are skipped.
+   */
+  private fun collectAllForms(baseUrl: String, token: String): List<JsonObject> {
+    val out = mutableListOf<JsonObject>()
+    val sites =
+        apiCall(baseUrl, token, "SitesManager.getAllSites", null) as? JsonArray ?: return out
+    for (site in sites) {
+      if (!site.isJsonObject) continue
+      val siteId =
+          site.asJsonObject.get("idsite")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      val rows =
+          flattenEntries(
+              apiCall(
+                  baseUrl,
+                  token,
+                  "FormAnalytics.getSummary",
+                  siteId,
+                  "month",
+                  "today",
+                  null,
+                  mapOf("flat" to "1")))
+      for (r in rows) {
+        val label = r.get("label")?.takeIf { it.isJsonPrimitive }?.asString
+        if (label.isNullOrBlank()) continue
+        r.addProperty("siteId", siteId)
+        out.add(r)
+      }
+    }
+    return out
+  }
+
+  /**
+   * Week statistics: the per-day page views of the current form over the last 7 days (`dailyTrend`,
+   * days without tracked visits filled with 0), a derived `yesterday` entry, and a `weekSummary`
+   * aggregate.
+   */
+  private fun addWeekStats(
+      root: JsonObject,
+      baseUrl: String,
+      token: String,
+      normalizedTitle: String
+  ) {
+    val todayDate = LocalDate.now()
+    buildDailyTrend(
+        root,
+        baseUrl,
+        token,
+        normalizedTitle,
+        todayDate.minusDays(6),
+        todayDate,
+        "last 7 days",
+        includeYesterday = true)
+  }
+
+  /**
+   * Custom date-range statistics (`period=range`): the per-day page views of the current form over
+   * an arbitrary [fromIso]..[toIso] range (e.g. "Montag bis heute"). When the range is missing or
+   * invalid, falls back to the last 7 days.
+   */
+  private fun addRangeStats(
+      root: JsonObject,
+      baseUrl: String,
+      token: String,
+      normalizedTitle: String,
+      fromIso: String?,
+      toIso: String?
+  ) {
+    val from = fromIso?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val to = toIso?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    val today = LocalDate.now()
+    val (effectiveFrom, effectiveTo) =
+        when {
+          from != null && to != null && !to.isBefore(from) -> from to to
+          else -> (today.minusDays(6)) to today
+        }
+    buildDailyTrend(
+        root,
+        baseUrl,
+        token,
+        normalizedTitle,
+        effectiveFrom,
+        effectiveTo,
+        "$effectiveFrom to $effectiveTo",
+        includeYesterday =
+            !effectiveFrom.isAfter(today.minusDays(1)) && !effectiveTo.isBefore(today.minusDays(1)))
+  }
+
+  /**
+   * Builds a per-day `dailyTrend` for [from]..[to] (zero-filled, each entry with correct `weekday`
+   * / `weekdayDe` labels), a `weekSummary` aggregate, and — when [includeYesterday] — a `yesterday`
+   * entry. Queries Matomo with `period=day&date=<from>,<to>`.
+   */
+  private fun buildDailyTrend(
+      root: JsonObject,
+      baseUrl: String,
+      token: String,
+      normalizedTitle: String,
+      from: LocalDate,
+      to: LocalDate,
+      periodLabel: String,
+      includeYesterday: Boolean
+  ) {
+    root.addProperty("periodLabel", periodLabel)
+    val dailyRaw = apiCall(baseUrl, token, "Actions.getPageTitles", "all", "day", "$from,$to")
+    if (dailyRaw == null) {
+      root.addProperty("thisFormFound", false)
+      root.addProperty(
+          "hint",
+          "The daily statistics for the requested period could not be retrieved from Matomo.")
+      return
+    }
+    val dailyByDate = flattenDaily(dailyRaw)
+    val trend = JsonArray()
+    var totalHits = 0.0
+    var totalVisits = 0.0
+    var date = from
+    while (!date.isAfter(to)) {
+      val iso = date.toString()
+      val row =
+          dailyByDate[iso]?.firstOrNull { obj ->
+            matches(
+                obj.get("label")?.takeIf { it.isJsonPrimitive }?.asString ?: "", normalizedTitle)
+          }
+      val hits = row?.let { pageValue(it, "nb_hits") } ?: 0.0
+      val visits = row?.let { pageValue(it, "nb_visits") } ?: 0.0
+      val o = JsonObject()
+      o.addProperty("date", iso)
+      o.addProperty("weekday", date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
+      o.addProperty("weekdayDe", date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.GERMAN))
+      o.addProperty("nb_hits", hits)
+      o.addProperty("nb_visits", visits)
+      trend.add(o)
+      totalHits += hits
+      totalVisits += visits
+      date = date.plusDays(1)
+    }
+    root.add("dailyTrend", trend)
+    if (includeYesterday) {
+      val yesterdayIso = LocalDate.now().minusDays(1).toString()
+      val yesterdayRow =
+          trend.firstOrNull {
+            it.isJsonObject && it.asJsonObject.get("date")?.asString == yesterdayIso
+          }
+      if (yesterdayRow != null) root.add("yesterday", yesterdayRow.asJsonObject)
+    }
+    val summary = JsonObject()
+    summary.addProperty("days", trend.size())
+    summary.addProperty("nb_hits", totalHits)
+    summary.addProperty("nb_visits", totalVisits)
+    root.add("weekSummary", summary)
+    val anyHit = trend.any { it.isJsonObject && pageValue(it.asJsonObject, "nb_hits") > 0 }
+    root.addProperty("thisFormFound", anyHit)
+    if (!anyHit) {
+      root.addProperty(
+          "hint",
+          "The current form had no tracked visits in the requested period, or its tracked page " +
+              "title differs from the form title.")
+    }
+  }
+
+  /**
+   * Single-day statistics: the current form's metrics on [date] ("yesterday", "today", or an ISO
+   * date) plus a compact ranking of the most-called forms on that day (`topFormsDay`).
+   */
+  private fun addDayStats(
+      root: JsonObject,
+      baseUrl: String,
+      token: String,
+      normalizedTitle: String,
+      date: String
+  ) {
+    val dayDate =
+        if (date == "today" || date == "yesterday" || DATE_KEY.matches(date)) date else "yesterday"
+    root.addProperty("periodLabel", dayDate)
+    val pageTitles = apiCall(baseUrl, token, "Actions.getPageTitles", "all", "day", dayDate)
+    val entries = flattenEntries(pageTitles)
+    val ranked = JsonArray()
+    var match: JsonObject? = null
+    for ((i, obj) in entries.sortedByDescending { pageValue(it, "nb_hits") }.withIndex()) {
+      val label = obj.get("label")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      val keep = JsonObject()
+      keep.addProperty("rank", i + 1)
+      keep.addProperty("title", label)
+      keep.addProperty("nb_hits", pageValue(obj, "nb_hits"))
+      keep.addProperty("nb_visits", pageValue(obj, "nb_visits"))
+      keep.addProperty("bounce_rate", pageValue(obj, "bounce_rate"))
+      keep.addProperty("exit_rate", pageValue(obj, "exit_rate"))
+      keep.addProperty("avg_time_on_page_seconds", pageValue(obj, "avg_time_on_page"))
+      ranked.add(keep)
+      if (match == null && matches(label, normalizedTitle)) {
+        keep.addProperty("isCurrentForm", true)
+        match = keep
+      }
+    }
+    root.add(
+        "topFormsDay",
+        JsonArray().also { arr ->
+          for (el in ranked) {
+            if (arr.size() >= 10) break
+            arr.add(el)
+          }
+        })
+    if (match == null) {
+      root.addProperty("thisFormFound", false)
+      root.addProperty(
+          "hint",
+          "The current form could not be matched to any tracked form/page title in Matomo for " +
+              "$dayDate (no tracking data that day, or the tracked page title differs from the form title).")
+    } else {
+      root.addProperty("thisFormFound", true)
+      match.addProperty("date", dayDate)
+      val resolvedIso =
+          when (dayDate) {
+            "today" -> LocalDate.now().toString()
+            "yesterday" -> LocalDate.now().minusDays(1).toString()
+            else -> dayDate
+          }
+      val actualDate = runCatching { LocalDate.parse(resolvedIso) }.getOrNull()
+      if (actualDate != null) {
+        match.addProperty(
+            "weekday", actualDate.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.ENGLISH))
+        match.addProperty(
+            "weekdayDe", actualDate.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.GERMAN))
+      }
+      root.add("day", match)
     }
   }
 
@@ -287,6 +636,25 @@ object MatomoStats {
       if (!idForm.isNullOrBlank()) params.add("idForm=${urlEncode(idForm)}")
       for ((key, value) in extra) params.add("${urlEncode(key)}=${urlEncode(value)}")
       val body = params.joinToString("&")
+      // Record the sanitized request (never the token) so the assistant can show what was sent.
+      activeRequests
+          .get()
+          ?.add(
+              JsonObject().also { req ->
+                req.addProperty("endpoint", "$baseUrl/index.php")
+                req.addProperty("method", method)
+                req.addProperty("period", period)
+                req.addProperty("date", date)
+                req.addProperty("idSite", idSite)
+                req.addProperty("idForm", idForm)
+                if (extra.isNotEmpty()) {
+                  req.add(
+                      "extra",
+                      JsonObject().also { e ->
+                        for ((key, value) in extra) e.addProperty(key, value)
+                      })
+                }
+              })
       val connection = URI("$baseUrl/index.php").toURL().openConnection() as HttpURLConnection
       connection.requestMethod = "POST"
       connection.doOutput = true
@@ -365,6 +733,46 @@ object MatomoStats {
     }
     return out
   }
+
+  /**
+   * Flattens a daily Matomo report (`period=day&date=last7`) into a map keyed by the ISO date. The
+   * API returns several shapes: `{date: [...]}`, `{date: {"rows":[...]}}`, or — for `idSite=all` —
+   * `{siteId: {date: [...]}}`. Only rows under an ISO date key (`YYYY-MM-DD`) are collected, so
+   * numeric site ids never become dates. Returns an empty map when nothing can be parsed.
+   */
+  private fun flattenDaily(parsed: Any?): Map<String, List<JsonObject>> {
+    val out = LinkedHashMap<String, MutableList<JsonObject>>()
+    fun collect(el: JsonElement?, currentDate: String?) {
+      when (el) {
+        is JsonObject -> {
+          val rows = el.get("rows")
+          if (rows is JsonArray) {
+            if (currentDate != null) {
+              val list = out.getOrPut(currentDate) { mutableListOf() }
+              for (r in rows) if (r.isJsonObject) list.add(r.asJsonObject)
+            }
+          } else {
+            for ((key, value) in el.entrySet()) {
+              val date = if (DATE_KEY.matches(key)) key else currentDate
+              collect(value, date)
+            }
+          }
+        }
+        is JsonArray -> {
+          if (currentDate != null) {
+            val list = out.getOrPut(currentDate) { mutableListOf() }
+            for (r in el) if (r.isJsonObject) list.add(r.asJsonObject)
+          }
+        }
+        else -> {}
+      }
+    }
+    collect(parsed as? JsonElement, null)
+    return out
+  }
+
+  /** Matches Matomo's ISO date keys (`YYYY-MM-DD`) inside daily reports. */
+  private val DATE_KEY = Regex("^\\d{4}-\\d{2}-\\d{2}$")
 
   /** Lowercases and strips umlauts/punctuation so "Straße" matches "strasse". */
   private fun normalize(str: String): String =

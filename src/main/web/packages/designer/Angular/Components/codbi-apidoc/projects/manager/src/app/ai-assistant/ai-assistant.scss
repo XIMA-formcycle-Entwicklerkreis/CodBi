@@ -1455,8 +1455,50 @@ cb-ai-assistant {
 .cb-ai-chat-actions {
     flex: 0 0 auto;
     display: inline-flex;
+    flex-direction: column;
     align-items: flex-start;
     gap: 0.25rem;
+}
+
+/* Horizontal row holding the view-toggle + copy buttons; the raw-data button sits below it. */
+.cb-ai-chat-actions-row {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.25rem;
+}
+
+/* Raw-data button on statistics bubbles — reveals the complete JSON returned by Matomo. */
+.cb-ai-chat-raw-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.6rem;
+    height: 1.6rem;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #0ea5e9;
+    cursor: pointer;
+    opacity: 0.4;
+    transition: opacity 0.15s, color 0.15s, background-color 0.15s;
+
+    &:hover,
+    &:focus-visible {
+        opacity: 1;
+        background: #e0f2fe;
+        color: #0369a1;
+    }
+
+    &--open {
+        opacity: 1;
+        background: #bae6fd;
+        color: #0369a1;
+    }
+
+    .pi {
+        font-size: 0.85rem;
+    }
 }
 
 /* View-toggle button on each chat bubble (Markdown <-> plain text). Mirror of the copy button:
@@ -1531,8 +1573,24 @@ cb-ai-assistant {
     }
 }
 
-.cb-ai-chat-bubble {
+/* Column wrapper inside a chat message: stacks the text bubble and any statistics chart vertically,
+   while the action buttons stay in the flex row next to it. The bubble's max-width is applied here
+   (100% of the wrapper) so the stats card shares the same width as its bubble. */
+.cb-ai-chat-main {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     max-width: 85%;
+    min-width: 0;
+    gap: 0.35rem;
+}
+
+.cb-ai-chat-msg--user .cb-ai-chat-main {
+    align-items: flex-end;
+}
+
+.cb-ai-chat-bubble {
+    max-width: 100%;
     padding: 0.5rem 0.75rem;
     border-radius: 12px;
     background: #f1f5f9;
@@ -1541,11 +1599,180 @@ cb-ai-assistant {
     line-height: 1.4;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
+    /* Slight 3D lift: a soft drop shadow under the bubble. */
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.18), 0 1px 2px rgba(15, 23, 42, 0.12);
 
     &--typing {
         color: #64748b;
         font-style: italic;
+        box-shadow: none;
     }
+}
+
+/* Statistics card below the assistant bubble (e.g. the Matomo charts). Rendered as a light card so
+   the chart canvases stand out from the bubble background. Its height is capped at 25em — the
+   charts adapt to the available height instead of growing to tenths of a page. */
+.cb-ai-chat-stats {
+    width: 100%;
+    max-height: 25em;
+    /* Flex column: each chart wrap is a flex item that shares the available height (and shrinks
+       when content would exceed the cap), so the graphs adapt without vertical scrolling. */
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    overflow: hidden;
+    padding: 0.5rem;
+    border-radius: 10px;
+    background: #ffffff;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+}
+
+/* Segmented control on the statistics card to switch the chart type (Bar / Line / Donut). */
+.cb-ai-chart-toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.cb-ai-chart-type {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.6rem;
+    border: none;
+    border-radius: 999px;
+    /* 3D look: dark-orange pill with a soft drop shadow. */
+    background: #d97706;
+    color: #fff;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(146, 64, 14, 0.5);
+    transition:
+        transform 0.25s ease,
+        box-shadow 0.25s ease,
+        background-color 0.25s ease;
+
+    /* Hover: grow and cast a big dark-orange glow (2em shadow). */
+    &:hover,
+    &:focus-visible {
+        transform: scale(1.15);
+        background: #ea580c;
+        box-shadow: 0 0 2em rgba(234, 88, 12, 0.85);
+    }
+
+    /* Pressed: shrink. */
+    &:active {
+        transform: scale(0.9);
+        box-shadow: 0 1px 2px rgba(146, 64, 14, 0.45);
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: default;
+        transform: none;
+        box-shadow: none;
+    }
+
+    /* The currently selected chart type is a darker orange. */
+    &--active {
+        background: #b45309;
+
+        &:hover,
+        &:focus-visible {
+            background: #c2410c;
+        }
+    }
+}
+
+/* Each chart sits in its own flex item so chart.js (responsive + maintainAspectRatio:false) can
+   fill that item's box. Charts keep their natural height; when the card's content would exceed the
+   25em cap they shrink (flex-shrink) instead of growing the page or scrolling. */
+.cb-ai-chart-wrap {
+    flex: 0 1 auto;
+    min-height: 0;
+    height: 190px;
+    position: relative;
+    width: 100%;
+}
+
+.cb-ai-chart-wrap .cb-ai-chart-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* Collapsible raw JSON view — the complete Matomo statistics as returned by the backend. */
+/* Collapsible raw view — the exact Matomo request(s) and the received response. The wrapper is
+   bounded and scrolls internally so the graph card itself never scrolls. */
+.cb-ai-chat-raw-wrap {
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: 240px;
+    overflow: auto;
+    margin: 0;
+}
+
+.cb-ai-chat-raw-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
+.cb-ai-chat-raw-title {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+}
+
+.cb-ai-chat-raw-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+
+    &:hover,
+    &:focus-visible {
+        background: #e2e8f0;
+    }
+
+    &--copied {
+        background: #dcfce7;
+        border-color: #16a34a;
+        color: #166534;
+    }
+}
+
+.cb-ai-chat-raw-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #94a3b8;
+    margin: 0.4rem 0 0.25rem;
+}
+
+.cb-ai-chat-raw {
+    width: 100%;
+    margin: 0;
+    padding: 0.5rem;
+    border-radius: 8px;
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 0.72rem;
+    line-height: 1.45;
+    white-space: pre;
 }
 
 /* Rendered-Markdown bubble (default view): the HTML produced by markdown.ts is laid out normally

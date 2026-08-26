@@ -183,7 +183,7 @@ when CodBi searches within the shared parent container.
     "name": "spLog<Name>",
     "id": "xi-log-<name>",
     "rtevalue": "<short label>",
-    "invisible": "1"
+    "ishidden": "1"
   },
   "attributes": [
     { "text": "data-cb-func", "value": "Sys.Log.Console" },

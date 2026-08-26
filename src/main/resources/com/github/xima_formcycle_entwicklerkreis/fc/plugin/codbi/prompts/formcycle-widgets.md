@@ -67,7 +67,7 @@ Template:
 
 File upload / file download field.
 
-CRITICAL — when the upload is for an image/ID card WITH a cropper ("Bild-Cropper", "with crop", "Personalausweis ... mit Bild-Cropper"), the XUpload MUST carry data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) — an upload without the cropper is WRONG.
+CRITICAL — TWO DISTINCT USES: (a) when the upload itself must crop the selected image/ID card ("Bild-Cropper", "with crop", "Personalausweis ... mit Bild-Cropper"), the XUpload MUST carry data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) — an upload without the cropper is WRONG. (b) A "Fotocropper-Board" / "Bild-Cropper vor dem Upload X" (a full photo-cropper setup placed BEFORE an upload) is a SEPARATE complete CodBi_Fotocropper group (wrapper CodBi_Fotocropper + CodBi_Fotocropper_Board + CodBi_Fotocropper_Uploader + CodBi_Fotocropper_Update + CodBi_Fotocropper_ImageURL + CodBi_Fotocropper_Foto); the referenced upload itself then gets NO data-cb-func="Media.Image.Cropper".
 
 Template:
 ```json

@@ -11,6 +11,12 @@ Run each scenario in **German and English** — label/endpoint language is part 
 observe **both stages**: (1) the details request (`need_form_widget_details` / `need_workflow_node_details`)
 and (2) the final JSON after the server supplies the schemas.
 
+**Paste prompts as PLAIN TEXT** — strip the leading `>` blockquote markers and any `\r\n` when copying
+a scenario into the AI chat. A `>`-prefixed message looks like a quoted citation, so the chat pass
+answers with `hasInstructions=false` → “Answer-only chat turn (no form/workflow changes)” → the AI just
+replies “ok” and builds NOTHING (observed 2026-08-26 with the FS07 DE prompt pasted with `>` markers).
+The blockquote is only a plan-file formatting convention, not part of the prompt.
+
 ---
 
 ## 0. Shared test form & environment
@@ -358,24 +364,55 @@ CodBi_Currency, XFieldSet panel, XLine, XSpacer.
 HTML.Text.Injector, HTML.Text.Mapper, XCheckbox, XDatalistAdvanced, XTextfieldAdvanced.
 
 **Prompt (DE):**
-> Erstelle ein mehrsprachiges Formular: einen Sprachumschalter, eine Formcycle-Navbar, einen
-> unsichtbaren Container mit zwei versteckten JSON-Feldern, ein filterbares Auswahlfeld „Stadt“
-> (Datalist) und ein filterbares Textfeld „Kunde“. Injiziere den Text „hallo“ in die CSS-Klasse des
-> Feldes `tfVorname` und mappe Objekt-Eigenschaften in ein Text-Template im Feld `tfNachricht`.
-> Logge den Wert von `tfMail` in die Konsole.
+Erstelle ein mehrsprachiges Formular: einen Sprachumschalter, eine Formcycle-Navbar, einen
+unsichtbaren Container mit zwei versteckten JSON-Feldern, ein filterbares Auswahlfeld „Stadt“
+(Datalist) und ein filterbares Textfeld „Kunde“. Injiziere den Text „hallo“ in die CSS-Klasse des
+Feldes `tfVorname`. Lege im Feld `tfNachricht` ein Text-Template an und mappe darin
+Objekt-Eigenschaften hinein, z. B. „Hallo [(vorname)] [(nachname)], Ihre E-Mail ist [(mail)].“
+Die beiden JSON-Felder fülle bitte wie folgt: `tfJSONPerson` speichert ein Objekt aus
+`tfVorname`, `tfNachname` und `tfMail` (Eigenschaften `vorname`, `nachname`, `mail`),
+`tfJSONZeilen` speichert die Zeilen der Wiederholgruppe `divRepeat` als JSON-Array
+(Eigenschaften `name`, `data`). Logge den Wert von `tfMail` in die Konsole. Das Formular soll auch
+eine zweite Seite mit einem Button um auf die vorherige Seite zu gelangen haben.
 
 **Prompt (EN):**
 > Create a multi-language form: a language switcher, a Formcycle navbar, an invisible container
 > with two hidden JSON fields, a filterable select field "City" (datalist) and a filterable text
-> field "Customer". Inject the text "hello" into the CSS class of the `tfVorname` field and map
-> object properties into a text template in the `tfNachricht` field. Log the value of `tfMail` to
-> the console.
+> field "Customer". Inject the text "hello" into the CSS class of the `tfVorname` field. Create a
+> text template in the `tfNachricht` field and map object properties into it, e.g. "Hello
+> [(vorname)] [(nachname)], your e-mail is [(mail)]." Fill the two JSON fields as follows:
+> `tfJSONPerson` stores an object built from `tfVorname`, `tfNachname` and `tfMail` (properties
+> `vorname`, `nachname`, `mail`); `tfJSONZeilen` stores the rows of the repeatable container
+> `divRepeat` as a JSON array (properties `name`, `data`). Log the value of `tfMail` to the console.
+> The form should also have a second page with a button to go back to the previous page.
 
 **Verify:**
-- [ ] XLanguageSwich; XNavigationBar; XContainerInvisible holding the two JSON.SET hidden fields.
+- [ ] XLanguageSwich; XNavigationBar emitted EXACTLY once and visible on the FIRST page — never referenced from two pages (the server drops the duplicate parentid, so page 1 ends up WITHOUT the navbar); XContainerInvisible holding the two hidden JSON fields `tfJSONPerson` + `tfJSONZeilen`.
+- [ ] The two JSON fields are hidden `data-cb-func="JSON.SET"` fields (`invisible="1"` + derivation params) — NOT XFormula with `xformula_value` (FAIL). `tfJSONPerson` derives `{vorname, nachname, mail}` from `tfVorname`/`tfNachname`/`tfMail`; `tfJSONZeilen` derives the array from `divRepeat`'s rows (`name`/`data`).
+- [ ] `CodBi_People_Name` on `tfVorname` AND `tfNachname` (the `People` standard is active in the shared test form).
 - [ ] XDatalistAdvanced + XTextfieldAdvanced (DS widgets).
-- [ ] HTML.Text.Injector (Placeholder/Property/Replacement) on `tfVorname`; HTML.Text.Mapper (Property + Replacements) on `tfNachricht`.
-- [ ] Invisible XSpan with `data-cb-Data="SYS.Log.Console > { V > tfMail }"` (or equivalent reference).  
+- [ ] `tfVorname`: HTML.Text.Injector (Placeholder/Property/Replacement, `property="className"`, replacement `hallo`). `tfNachricht`: HTML.Text.Mapper with `data-cb-replacements` + `data-cb-property`; the template text with the `[(vorname)]`/`[(nachname)]`/`[(mail)]` placeholders lives in the field VALUE (rtevalue). NEVER emit `data-cb-Template` — that attribute does not exist.
+- [ ] Invisible XSpan with `data-cb-Data="SYS.Log.Console > { V > tfMail }"` (or equivalent reference).
+
+**Known trap — JSON fields as XFormula, invented data-cb-Template, duplicated navbar, missing People classes (2026-08-26):**
+The prompt intentionally stays user-level — it does NOT name `CodBi_People_*`, `JSON.SET`, `data-cb-*`
+or widget-placement rules. The AI MUST derive the standard classes and the wiring from its built-in
+CodBi rules (compact API), not from the prompt. A real run of FS07 still produced four FAILs:
+(1) `tfJSONPerson`/`tfJSONZeilen` were emitted as XFormula with `xformula_value` instead of hidden
+`JSON.SET` fields — hidden JSON fields MUST carry `data-cb-func="JSON.SET"` + derivation params, never
+`xformula_value`.
+(2) `tfNachricht` got a nonexistent `data-cb-Template` attribute. The mapper template with the
+`[(property)]` placeholders must be in the field's VALUE; the wiring is `data-cb-func="HTML.Text.Mapper"`
++ `data-cb-replacements` + `data-cb-property` (HTML.Text.Injector, by contrast, uses
+`data-cb-replacement` + `data-cb-placeholder`).
+(3) `navBar` (XNavigationBar) was referenced from BOTH pages; the server normalized it to page 2 only,
+so page 1 rendered WITHOUT the navbar. Emit it exactly once on the first page.
+(4) `tfVorname`/`tfNachname` carried no People classes — with the `People` standard active the name
+fields need `CodBi_People_Name`.
+(5) When the prompt is pasted WITH the leading `>` blockquote markers, the chat pass answers
+`hasInstructions=false` and the assistant returns an answer-only „ok“ turn — no form changes at all.
+Paste the prompt as plain text (no `>`, no `\r\n`); the answer-only symptom is a paste artifact, not
+a prompt bug.
 
 **Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS07. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
 

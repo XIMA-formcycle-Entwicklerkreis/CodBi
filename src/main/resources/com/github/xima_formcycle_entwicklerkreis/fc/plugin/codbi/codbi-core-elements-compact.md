@@ -29,7 +29,7 @@ For a date range (start/minimum + end/maximum date, e.g. 'Kursbeginn'/'Kursende'
 ### Date.Min
 Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates).
 REQUIRES: data-cb-minimum (digit string) + data-cb-unit (d/w/m/y, default y). For a FUTURE minimum ("at least tomorrow", "no past dates") also set data-cb-reverse=true (e.g. minimum=1, unit=d, reverse=true = tomorrow or later).
-BIRTH-DATE FIELDS (Geburtsdatum, Geburtstag, birth date, birthday): NEVER apply data-cb-reverse=true / a FUTURE Date.Min / "Mindestdatum heute oder morgen" to a birth-date field — a birth date lies in the PAST. A constraint like "keine Vergangenheitsdaten"/"no past dates"/"no future dates" on a birth date means NO FUTURE DATES → the ONLY valid CodBi behavior is the CodBi_NoFutureDate class (max = today; today itself is a valid birth date). Do NOT add Date.Min and do NOT add any weekend restriction. A PAST minimum (e.g. "mindestens 18 Jahre" → minimum=18, unit=y, NO reverse) is valid only when an age limit is requested.
+BIRTH-DATE FIELDS (Geburtsdatum, Geburtstag, birth date, birthday): NEVER apply data-cb-reverse=true / a FUTURE Date.Min / "Mindestdatum heute oder morgen" to a birth-date field — a birth date lies in the PAST, so ALWAYS apply the CodBi_NoFutureDate class to it (even without an explicit "no future dates" constraint). A constraint like "keine Vergangenheitsdaten"/"no past dates"/"no future dates" on a birth date means NO FUTURE DATES → the ONLY valid CodBi behavior is the CodBi_NoFutureDate class (max = today; today itself is a valid birth date). Do NOT add Date.Min and do NOT add any weekend restriction. A PAST minimum (e.g. "mindestens 18 Jahre" → minimum=18, unit=y, NO reverse) is valid only when an age limit is requested.
 
 ### Date.NoWeekends
 Applicable on a XTextField of type 'date' to disallow weekend dates. NEVER apply to a BIRTH-DATE field (Geburtsdatum, Geburtstag, birth date, birthday) — people can be born on any weekday, so a "keine Wochenenden"/"no weekends" constraint on a birth date must be IGNORED (apply nothing, ask nothing). There is NO "CodBi_NoWeekends" class — never invent it. Only meaningful for future-dated/booking-type dates (course date, appointment, delivery).
@@ -76,12 +76,12 @@ Applicable on any element to map object properties to named placeholders in a te
 REQUIRES: the object source and the text template with placeholders — ask the user when missing.
 
 ### JSON.SET
-Applicable on a hidden field to store a JSON-serialized value derived from another element — ONLY with hard-coded values, NEVER with live field values. Apply data-cb-func="JSON.SET" to a hidden XTextField/XTextArea with `invisible="1"` and set the three parameters:
+Applicable on a hidden field to store a JSON-serialized value derived from another element — ONLY with hard-coded values, NEVER with live field values. Apply data-cb-func="JSON.SET" to a hidden XTextField/XTextArea with `ishidden="1"` (the Formcycle hide property — NOT `invisible`) and set the three parameters:
 - data-cb-property: the name of the property to set.
 - data-cb-path: a regular JavaScript path in dot notation (plain `x`, dotted `x.y.z`, empty method call `x()`, index access `x[0]`) leading from the property in data-cb-property onward. This is a SINGLE path — NEVER a CSV list of field names (`data-cb-path="tfVorname,tfNachname"` is WRONG).
 - data-cb-toset: the plain value to assign. To assign a JSON object literal, prefix it with `^` so its commas are NOT treated as CSV separators by CodBi (e.g. data-cb-toset="^{firstname:..., lastname:...}").
-CRITICAL — data-cb-property/data-cb-toset do NOT support field placeholders, so JSON.SET can NEVER build JSON from the RUNTIME values of other form fields. For a hidden field that stores the JSON of OTHER FIELDS' values (e.g. "verstecktes Feld, das das JSON aus tfVorname/tfNachname speichert") DO NOT use JSON.SET — create a Formcycle CALCULATION field (XFormula, read-only, formula in xformula_value) that builds the JSON, and mark it invisible="1". The xformula_value builds the JSON string EXACTLY as written using [%fieldName%] placeholders — e.g. xformula_value = {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"} — do NOT use JSON.stringify and do NOT reference bare field names ([%name%] is replaced by the field's runtime value).
-REQUIRES: data-cb-property, data-cb-path and data-cb-toset plus the hidden (`invisible`=1) flag. YOU MUST request the full details for this element (add "JSON.SET" to the "elements" array of your {"status":"need_codbi_details",...} request) before building it — never build it from this condensed text alone.
+CRITICAL — data-cb-property/data-cb-toset do NOT support field placeholders, so JSON.SET can NEVER build JSON from the RUNTIME values of other form fields. For a hidden field that stores the JSON of OTHER FIELDS' values (e.g. "verstecktes Feld, das das JSON aus tfVorname/tfNachname speichert") DO NOT use JSON.SET — create a Formcycle CALCULATION field (XFormula, read-only, formula in xformula_value) that builds the JSON, and mark it ishidden="1". The xformula_value builds the JSON string EXACTLY as written using [%fieldName%] placeholders — e.g. xformula_value = {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"} — do NOT use JSON.stringify and do NOT reference bare field names ([%name%] is replaced by the field's runtime value).
+REQUIRES: data-cb-property, data-cb-path and data-cb-toset plus the hidden (`ishidden`=1) flag. YOU MUST request the full details for this element (add "JSON.SET" to the "elements" array of your {"status":"need_codbi_details",...} request) before building it — never build it from this condensed text alone.
 
 ### LDAP.Autocomplete.Set
 Applicable on form fields that should be auto-filled from a selected LDAP directory match.
@@ -95,7 +95,9 @@ REQUIRES: the Matomo site/tracking ID — ask the user when it is not derivable.
 Matomo server URL: NEVER ask the user for it. If the user's request specifies a URL, use that URL. Otherwise the URL is taken automatically from the server-side plugin configuration (Matomo_URL property) and must NOT be requested.
 
 ### Media.Image.Cropper
-Applicable on an XUpload field for images; adds an interactive crop dialog before upload. CRITICAL — apply to the XUpload whenever the request asks for an upload with a cropper ("Bild-Cropper", "with crop", "Upload-Feld für den Personalausweis mit Bild-Cropper"): set data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) on that XUpload. NEVER omit it.
+TWO DISTINCT USES — pick by the request, NEVER apply both:
+- (a) CROP DIALOG ON THE UPLOAD: an upload for an image/ID card with a cropper ("Bild-Cropper", "with crop", "Upload-Feld für den Personalausweis mit Bild-Cropper") → set data-cb-func="Media.Image.Cropper" (or a CodBi_Fotocropper_* class) on that XUpload. NEVER omit it.
+- (b) FOTOCROPPER BOARD / "Fotocropper-Board" / "Bild-Cropper vor dem Upload X" (a full photo-cropper setup placed BEFORE an upload) → build the COMPLETE `CodBi_Fotocropper` group (see the Fotocropper section below) BEFORE the referenced upload; the referenced upload itself gets NO cropper functionality. NEVER an empty board and NEVER a bare data-cb-func="Media.Image.Cropper" on the target upload (Media.Image.Cropper needs the Container/File/Updater/ImageURL/Target selectors, which only the full CodBi_Fotocropper group provides).
 
 ### MEDIA.INPUT.SPEECH
 Applicable on a text input field to enable speech-to-text dictation via the Web Speech API.
@@ -116,7 +118,7 @@ Applicable for debugging; logs CodBi runtime data to the browser developer conso
     "name": "spLog<Name>",
     "id": "xi-log-<name>",
     "rtevalue": "<short label>",
-    "invisible": "1"
+    "ishidden": "1"
   },
   "attributes": [
     { "text": "data-cb-func", "value": "Sys.Log.Console" },
@@ -303,20 +305,32 @@ For building/house numbers.
 
 ## Fotocropper
 
+A "Fotocropper-Board" / "Bild-Cropper" (a full photo-cropper setup placed before an upload) is ONE COMPLETE group of tagged elements — the People standard registers Media.Image.Cropper on the `.CodBi_Fotocropper` target with Container/File/Updater/ImageURL/Target selectors. ALWAYS include "CodBi_Fotocropper" in the details request's "elements" array AND build ALL of these BEFORE the referenced upload (the upload itself gets NO cropper functionality):
+- wrapper container `CodBi_Fotocropper` (the standard's targets selector),
+- board container `CodBi_Fotocropper_Board` (the cropper preview board / UI container),
+- upload `CodBi_Fotocropper_Uploader` (an XUpload — the file input to pick the image),
+- update control `CodBi_Fotocropper_Update` (an XButtonList button — applies the crop),
+- hidden receiver `CodBi_Fotocropper_ImageURL` (an XTextField, MUST be `ishidden="1"` — the Formcycle hide property (renders `xm-hidden`, stays in the DOM so the cropper can write to it); a VISIBLE picture-URL field is a FAIL — `invisible` is NOT a Formcycle property),
+- photo display `CodBi_Fotocropper_Foto` (an XImage — shows the cropped photo).
+FAIL: an EMPTY container with only `CodBi_Fotocropper_Board`, a missing `CodBi_Fotocropper_*` class on ANY of the six elements (e.g. the XUpload without `CodBi_Fotocropper_Uploader`, or the update XButtonList without `CodBi_Fotocropper_Update` — an untagged upload/button makes the standard's File/Updater selectors find nothing and the untagged button renders as a stray), a `CodBi_Fotocropper_ImageURL` field that is NOT `ishidden="1"` (a VISIBLE picture-URL field), or a bare `data-cb-func="Media.Image.Cropper"` on the target upload — none renders a cropper. There is NO `XImageCropper`/`XCanvasCropper` widget type (never invent or ask for one).
+
+### CodBi_Fotocropper
+CSS class for the container element of a photo cropper setup — the wrapper that triggers the People fotocropper standard.
+
 ### CodBi_Fotocropper_Board
-CSS class for the Fotocropper image board.
+CSS class for the container element that holds the cropper preview board (the cropper UI container inside the `CodBi_Fotocropper` wrapper).
 
 ### CodBi_Fotocropper_Uploader
-CSS class for the Fotocropper uploader.
+CSS class for the file upload (XUpload) element of the photo cropper.
 
 ### CodBi_Fotocropper_Update
-CSS class for the Fotocropper update control.
+CSS class for the update button (XButtonList) element of the photo cropper.
 
 ### CodBi_Fotocropper_ImageURL
-CSS class for the Fotocropper image URL input.
+CSS class for a hidden field (XTextField, invisible) that receives the cropped image URL/data.
 
 ### CodBi_Fotocropper_Foto
-CSS class for the Fotocropper photo display.
+CSS class for the target image element (XImage) that shows the cropped photo.
 
 ## OpenPLZ Select
 
@@ -332,7 +346,7 @@ REQUIRES: which currency (e.g. EUR) / the currency global variable value — ask
 ## Appointments
 
 ### CodBi_NoFutureDate
-For date fields that must not allow future dates (maximum = today — the current date itself is a valid value) — e.g. a birth-date field under a "keine zukünftigen Daten" / "no future dates" requirement.
+For date fields that must not allow future dates (maximum = today — the current date itself is a valid value). MANDATORY on EVERY birth-date field (Geburtsdatum/Geburtstag/birth date — a future birth date is invalid), even without an explicit "keine zukünftigen Daten"/"no future dates" requirement; also apply when such a constraint is stated.
 
 ### CodBi_DateFrame_N_Begin / CodBi_DateFrame_N_End
 For date ranges (N=1-5): CodBi_DateFrame_N_Begin on the START date field AND CodBi_DateFrame_N_End on the END date field (SAME N — BOTH fields get their own class; NO combined ..._Begin_End class; only on the two date fields, never on a container). Do NOT also add data-cb-func=date.frame.

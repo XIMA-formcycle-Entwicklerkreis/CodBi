@@ -13,11 +13,12 @@ CRITICAL: NEVER invent CSS class names. If a CSS class is not in the list below,
 
 ## Application Rules
 
-a) Apply AT MOST ONE CSS class per field — do NOT stack multiple classes on the same element.
+a) MULTIPLE CSS classes MAY be applied to one field when each matches a distinct purpose (e.g. CodBi_People_PLZ + CodBi_OpenPLZ_AC_SET_PLZ on a PLZ field, or CodBi_People_Name + a user-requested class like "hallo"). Classes are ADDITIVE — never remove an existing class to add another.
 b) Only apply a CSS class when it has an EXACT match to the field's purpose. If no class matches, use data-cb-func.
 c) For Time/Date frame ranges: When a CodBi_TimeFrame_N_Begin/End or CodBi_DateFrame_N_Begin/End CSS class exists (N=1-5), use it. FALLBACK: If all 5 numbers are already used, use data-cb-func=time.frame (or date.frame). When using a frame CSS class, do NOT add data-cb-func=time.frame or data-cb-func=date.frame — that would be redundant. However, you MAY add data-cb-func for a DIFFERENT functionality (e.g. CodBi_DateFrame_1_Begin + data-cb-func=date.noweekends is valid).
 c2) FRAME CLASSES ARE PER-FIELD AND ONLY "..._Begin"/"..._End" EXIST — There is NO "CodBi_DateFrame_N_Begin_End" / "CodBi_TimeFrame_N_Begin_End" combined class; NEVER invent it. Apply "CodBi_DateFrame_N_Begin" (or TimeFrame) to the START/minimum date field AND "CodBi_DateFrame_N_End" (or TimeFrame) to the END/maximum date field — BOTH fields get their own class (Begin on the start field, End on the end field). Apply these classes ONLY to the two date XTextField fields, NEVER to a container/fieldset/XFieldSet/panel.
 d) NUMBERING — When creating frame CSS classes, scan the existing form items for which frame numbers N (1-5) are already in use. Use the lowest unused N for each new pair. If all 5 numbers are taken, fall back to data-cb-func. TIME-EQUALITY CHOICE: for a TIME range that must NOT allow an equal start/end time (e.g. "nicht gleich", "strictly after", the end must differ from the start), use frame 4 or 5 (`CodBi_TimeFrame_4/5_Begin`, which forbid equality); otherwise prefer the lowest unused N (frames 1-3 allow start == end). DateFrame frames 1-5 all allow start == end; the equality distinction only matters for TimeFrame.
+d2) FRAME CLASSES ARE DERIVED, NEVER ASKED — when the user requests a date/time range ('Datumsbereich 1 (Beginn/Ende)', 'Zeitbereich 1 (Beginn/Ende)', 'Kursbeginn'/'Kursende', 'Beginn'/'Ende', 'Von'/'Bis'), NEVER ask which CSS classes to use and NEVER key the numbering off a literal number in the label — 'Zeitbereich 1'/'Datumsbereich 1' is a RANGE NAME, not "use frame 1". Apply the proper frame classes to EVERY begin/end pair: BOTH fields get their own class (Begin on the START field, End on the END field, SAME N) using the LOWEST unused N per rule d.
 e) Do NOT use CodBi_People_Alphanumeric on street names, localities, or other non-alphanumeric-code fields.
 f) REDUNDANCY RULE: When a field's datatype already triggers a Holistic.Cleave.* standard (datatype="phone" → Cleave.Phone, "plzDE" → Cleave.PLZ, "dateDE"/"time" → Cleave.Date/Time), do NOT apply the equivalent People CSS class.
 g) Street names and locality/city names have no dedicated People CSS class — leave them without a CSS class.
@@ -50,20 +51,34 @@ For building/house numbers.
 
 ## Fotocropper
 
+The Fotocropper is NOT a separate widget type — there is NO `XImageCropper` / `XCanvasCropper` widget (they are not formcycle types; NEVER offer them as a choice and NEVER list them in a details request's "widgets" array). NEVER ask which widget type the Fotocropper board / image cropper should have — build it directly.
+
+COMPLETE GROUP REQUIRED (People standard) — a "Fotocropper-Board" / "Bild-Cropper" request (e.g. 'Füge ein Fotocropper-Board und einen Bild-Cropper vor dem Upload `fdDatei` hinzu') is built as ONE full group of tagged elements. The People standard registers `Media.Image.Cropper` on the `.CodBi_Fotocropper` target with Container/File/Updater/ImageURL/Target selectors, so the AI MUST create ALL of these BEFORE the referenced upload (the upload itself gets NO cropper functionality):
+- wrapper container `CodBi_Fotocropper` (the standard's targets selector),
+- board container `CodBi_Fotocropper_Board` (the cropper preview board / UI container),
+- upload `CodBi_Fotocropper_Uploader` (an XUpload — the file input to pick the image),
+- update control `CodBi_Fotocropper_Update` (an XButtonList button — applies the crop),
+- hidden receiver `CodBi_Fotocropper_ImageURL` (an XTextField, MUST be `ishidden="1"` — the Formcycle hide property (renders `xm-hidden`, stays in the DOM so the cropper can write to it); a VISIBLE picture-URL field is a FAIL — `invisible` is NOT a Formcycle property),
+- photo display `CodBi_Fotocropper_Foto` (an XImage — shows the cropped photo).
+FAIL: an EMPTY container with only `CodBi_Fotocropper_Board`, a `CodBi_Fotocropper_*` class MISSING on ANY of the six elements (e.g. the XUpload without `CodBi_Fotocropper_Uploader`, or the update XButtonList without `CodBi_Fotocropper_Update` — an untagged upload/button makes the standard's File/Updater selectors find nothing and the untagged button renders as a stray), a `CodBi_Fotocropper_ImageURL` field that is NOT `ishidden="1"` (a VISIBLE picture-URL field), or a bare `data-cb-func="Media.Image.Cropper"` on the target upload without the Container/File/Updater/ImageURL/Target parameters — none renders a cropper. (The DIFFERENT FS02-style case 'Upload-Feld für den Personalausweis mit Bild-Cropper' — a crop dialog ON the upload — DOES use `data-cb-func="Media.Image.Cropper"` on that XUpload.)
+
+### CodBi_Fotocropper
+CSS class for the container element of a photo cropper setup — the wrapper that triggers the People fotocropper standard.
+
 ### CodBi_Fotocropper_Board
-CSS class for the Fotocropper image board.
+CSS class for the container element that holds the cropper preview board (the cropper UI container inside the `CodBi_Fotocropper` wrapper).
 
 ### CodBi_Fotocropper_Uploader
-CSS class for the Fotocropper uploader.
+CSS class for the file upload (XUpload) element of the photo cropper.
 
 ### CodBi_Fotocropper_Update
-CSS class for the Fotocropper update control.
+CSS class for the update button (XButtonList) element of the photo cropper.
 
 ### CodBi_Fotocropper_ImageURL
-CSS class for the Fotocropper image URL input.
+CSS class for a hidden field (XTextField, invisible) that receives the cropped image URL/data.
 
 ### CodBi_Fotocropper_Foto
-CSS class for the Fotocropper photo display.
+CSS class for the target image element (XImage) that shows the cropped photo.
 
 ## OpenPLZ Select
 
@@ -78,7 +93,7 @@ For money/currency fields.
 ## Appointments
 
 ### CodBi_NoFutureDate
-For date fields that should not allow future dates (maximum = today). Apply it to a date field that must not allow future dates — e.g. a birth-date field under a "keine zukünftigen Daten" / "no future dates" requirement.
+For date fields that must not allow future dates (maximum = today — the current date itself is a valid value). MANDATORY on EVERY birth-date field (Geburtsdatum/Geburtstag/birth date — a future birth date is invalid), even without an explicit "keine zukünftigen Daten"/"no future dates" requirement; also apply when such a constraint is stated.
 
 ### CodBi_DateFrame_N_Begin / CodBi_DateFrame_N_End
 For date ranges (N=1-5): apply `CodBi_DateFrame_N_Begin` to the START/minimum date field AND `CodBi_DateFrame_N_End` to the END/maximum date field (SAME N — BOTH fields get their own class). There is NO combined `CodBi_DateFrame_N_Begin_End` class — never invent it. Apply these classes ONLY to the two date XTextField fields, NEVER to a container/fieldset. When using these classes, do NOT also add data-cb-func=date.frame (that would be redundant); you MAY add data-cb-func for a DIFFERENT functionality. All 5 DateFrame frames ALLOW the start and end date to be EQUAL (a same-day range is valid — the begin date may equal the end date).

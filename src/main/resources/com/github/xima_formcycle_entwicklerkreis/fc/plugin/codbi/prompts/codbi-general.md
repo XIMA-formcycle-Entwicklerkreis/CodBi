@@ -11,10 +11,45 @@ For EVERY field you create or modify, apply CodBi behavior with EXACTLY ONE of t
 
 CRITICAL:
 - NEVER invent CSS class names. If a class is not in the reference list, it does NOT exist — use data-cb-func instead.
-- Apply AT MOST ONE CSS class per field — do NOT stack multiple classes on the same element.
+- MULTIPLE CSS classes MAY be applied to one field when each matches a distinct purpose (e.g. CodBi_People_PLZ for input formatting AND CodBi_OpenPLZ_AC_SET_PLZ for autocomplete on the same PLZ field, or CodBi_People_Name together with a user-requested class like "hallo"). Classes are ADDITIVE — never remove an existing class to add another; add to the "cssclasses" array.
 - Only apply a CSS class when it EXACTLY matches the field's purpose. If no class matches, use data-cb-func.
 - ADDRESS GROUPS (postal code, locality/city, street, building number) MUST be tagged with the OpenPLZ classes: CodBi_OpenPLZ_AC_SET_PLZ on the postal code field, CodBi_OpenPLZ_AC_SET_Locality on the locality/city field, CodBi_OpenPLZ_AC_SET_Street on the street field, CodBi_OpenPLZ_AC_SET_BuildingNumber on the building number field — the server then configures OpenPLZ.Autocomplete automatically.
 - If the request wants German autocomplete for street / house number ("PLZ/Ort/Straße/Hausnummer sollen sich ... befüllen" / "ZIP/city/street/house number ... autofill") but the requested field list does not contain street / house-number fields, CREATE them in the address group's fieldset and tag them with the OpenPLZ classes: `tfStrasse` (label "Straße") + `CodBi_OpenPLZ_AC_SET_Street` and `tfHausnummer` (label "Hausnummer") + `CodBi_OpenPLZ_AC_SET_BuildingNumber`. Never skip the street / house-number parts just because the master-data field list omitted them — missing any address part is a FAIL.
+
+## MANDATORY PEOPLE STANDARD CLASSES (person fields)
+
+The People standard is active by default in the shared form. Apply the CodBi_People_* classes to
+EVERY person field you create or modify — a missing class is a FAIL:
+- First-name/last-name/name field (Vorname, Nachname, Name, "First name", "Last name", ...) →
+  cssclasses=["CodBi_People_Name"]; a first name AND a last name EACH get their own CodBi_People_Name.
+- E-Mail/email field → cssclasses=["CodBi_People_Mail"].
+- German PLZ/postal-code field → cssclasses=["CodBi_People_PLZ"].
+- Telefon/phone field → cssclasses=["CodBi_People_Phone"].
+Classes are additive: a user-requested class (e.g. "hallo") and a CodBi_People_* class coexist in the
+same "cssclasses" array; a field may also carry several CodBi classes for different purposes (e.g.
+CodBi_People_PLZ + CodBi_OpenPLZ_AC_SET_PLZ).
+
+## HTML.Text.Mapper EXACT WIRING
+
+To map object properties into a text template: data-cb-func="HTML.Text.Mapper" with
+data-cb-replacements (the object whose property values fill the placeholders) + data-cb-property (the
+element property holding the TEMPLATE, e.g. "value"/"rtevalue"). The TEMPLATE with the [(property)]
+placeholders (e.g. "Hello [(vorname)] [(nachname)]") goes INTO the field's OWN content property —
+NEVER into a separate attribute. There is NO data-cb-Template attribute; emitting one is a FAIL.
+
+## NAVBAR / LANGUAGE SWITCH PLACEMENT
+
+Create the Formcycle navbar (XNavigationBar) and the language switcher (XLanguageSwich) EXACTLY ONCE
+each and list them ONLY in the HEADER's (XHeader) "elements" array — they must NOT appear in ANY
+page's "elements" array. Listing the SAME element in the header AND a page makes the server resolve it
+to the PAGE (last parent wins), so the navbar is misplaced on the page instead of the header. Never
+create two XNavigationBar/XLanguageSwich items.
+
+## EXACT WIDGET className CASING
+
+Use "XDatalistAdvanced" (lowercase "l") for the filterable datalist select and "XtextfieldAdvanced"
+(lowercase "f") for the filterable/autocomplete text field — "XDataListAdvanced", "XTextFieldAdvanced"
+and other casing variants do NOT exist and are dropped by the server.
 
 ## _codbiApplicability Report
 
@@ -52,8 +87,9 @@ You initially receive a CONDENSED reference: the CodBi Core Elements list (names
 - Omit a field when you need nothing from it; if you need neither, return the normal form JSON instead of a details request.
 - MANDATORY — ALWAYS include these functionality IDs in "elements" when the request matches, EVEN IF the condensed entry already looks complete (you still need their exact TSDoc to build them; omitting any of them is a FAIL):
   - "AI.LLAMA.CHAT" — the request asks for an "AI chat"/"KI-Chat"/"KI-Assistent"/chatbot container. You must then build the FULL chat widget (never an empty container / placeholder span).
-  - "JSON.SET" — the request asks to store/combine other fields' values as JSON in a hidden field (e.g. "JSON aus tfVorname/tfNachname"). JSON.SET cannot interpolate field values (no placeholders in data-cb-property/data-cb-toset), so for a hidden field holding the JSON of OTHER FIELDS create a Formcycle CALCULATION field (XFormula, read-only, xformula_value builds the JSON) with invisible="1"; the xformula_value writes the JSON literally with [%field%] placeholders (e.g. {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"}) — no JSON.stringify, no bare field names. Use JSON.SET only for hard-coded values (data-cb-property + data-cb-path as a single JS dot path + data-cb-toset, "^"-prefixed for a JSON object literal).
+  - "JSON.SET" — the request asks to store/combine other fields' values as JSON in a hidden field (e.g. "JSON aus tfVorname/tfNachname"). JSON.SET cannot interpolate field values (no placeholders in data-cb-property/data-cb-toset), so for a hidden field holding the JSON of OTHER FIELDS create a Formcycle CALCULATION field (XFormula, read-only, xformula_value builds the JSON) with ishidden="1" (the Formcycle hide property — NOT invisible); the xformula_value writes the JSON literally with [%field%] placeholders (e.g. {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"}) — no JSON.stringify, no bare field names. Use JSON.SET only for hard-coded values (data-cb-property + data-cb-path as a single JS dot path + data-cb-toset, "^"-prefixed for a JSON object literal).
   - "HTML.Input.TinyMCE" — the request asks for a rich-text editor ("Rich-Text-Editor") on a textarea. You must then apply it with data-cb-plugins and data-cb-toolbar.
+  - "CodBi_Fotocropper" — the request asks for a "Fotocropper-Board" / "Bild-Cropper" / photo-cropper setup. You must then build the COMPLETE group (wrapper `CodBi_Fotocropper` + `CodBi_Fotocropper_Board` + `CodBi_Fotocropper_Uploader` + `CodBi_Fotocropper_Update` + `CodBi_Fotocropper_ImageURL` + `CodBi_Fotocropper_Foto`) before the referenced upload — never an empty board.
 
 ## CRITICAL — Use the user's clarification answers VERBATIM
 
@@ -66,11 +102,11 @@ Only when the user answered "du entscheidest" / "you decide" may you choose a se
 
 ## CRITICAL — Birth-date fields (Geburtsdatum / birth date)
 
-A birth-date field (labels "Geburtsdatum", "Geburtstag", "birth date", "date of birth", "birthday") ALWAYS lies in the PAST. NEVER apply to it:
+A birth-date field (labels "Geburtsdatum", "Geburtstag", "birth date", "date of birth", "birthday") ALWAYS lies in the PAST — a birth date can never be in the future. **MANDATORY — apply the `CodBi_NoFutureDate` class to EVERY birth-date field** (max = today; **the current date itself is a VALID value** — a person born today is a valid birth date), EVEN when the prompt does NOT explicitly say "no future dates" (e.g. a plain "Geburtsdatum (deutsche Validierung)" still gets `CodBi_NoFutureDate`). NEVER apply to it:
 - a FUTURE `Date.Min` (`data-cb-reverse=true`, "heute"/"morgen") — never ask "Mindestdatum heute oder morgen?" for a birth-date field;
 - `Date.NoWeekends` or any weekend-restriction class (there is NO `CodBi_NoWeekends` class — never invent it).
 
-A constraint like "keine Vergangenheitsdaten"/"no past dates"/"no future dates" on a birth date means **NO FUTURE DATES** → apply ONLY the `CodBi_NoFutureDate` class (max = today; **the current date itself is a VALID value** — a person born today is a valid birth date). Do NOT add `Date.Min` and do NOT add any weekend restriction. A `Date.Min` on a birth date is valid ONLY as a PAST minimum (e.g. "mindestens 18 Jahre" → `data-cb-minimum=18, unit=y`, no `reverse`) and only when an age limit is requested.
+A constraint like "keine Vergangenheitsdaten"/"no past dates"/"no future dates" on a birth date also means **NO FUTURE DATES** → the `CodBi_NoFutureDate` class (already applied). Do NOT add `Date.Min` and do NOT add any weekend restriction. A `Date.Min` on a birth date is valid ONLY as a PAST minimum (e.g. "mindestens 18 Jahre" → `data-cb-minimum=18, unit=y`, no `reverse`) and only when an age limit is requested.
 
 ## CRITICAL — Print removal / hiding data when printing (Print.Remove)
 
@@ -86,6 +122,11 @@ The CSS class is the STANDARD for print removal — use the CodBi_Print_Remove_*
 - `CodBi_Print_Remove_PrintOnly` — for print-only elements (e.g. buttons/controls that only work on screen).
 
 Use `data-cb-func="Print.Remove"` ONLY for the special case where the prompt specifies a parameter for the functionality — e.g. `DocumentSelector` (a dot-prefixed CSS-class selector of the section/container to remove, such as `.divPrintSection`) or `ParentalLevel` (how many ancestors to climb up to). Print.Remove is NOT normalized server-side — the AI's choice (class vs. functionality) reaches the designer unchanged. A verification check that finds the class (or the functionality with its parameter) on the requested field counts as applied.
+
+NEVER ask the user how to hide an element on print — NEVER offer `print:hidden` / `CodBi_NoPrint` (neither is a CodBi class; do not invent them). Decide it yourself:
+- When the CodBi switch is ON, ALWAYS apply the CodBi_Print_Remove_* CSS class (`CodBi_Print_Remove_Tagged` for a single field, `CodBi_Print_Remove_Parent` for a whole container/section, `CodBi_Print_Remove_PrintOnly` for print-only controls).
+- When the CodBi switch is OFF, use Formcycle's per-element print property instead of a CodBi class.
+This is never a clarification question.
 
 ## Critial — Form Chatbot Plugin vs CodBi AI Chat
 
@@ -110,6 +151,38 @@ When the request asks for a BundID/Bürgerkonto login button together with an up
 - The XSignature element when a signature field is requested.
 
 **PLACE every created element**: add each widget to the target page's/container's `elements` array AND set its `properties.parentid` to that page/container's name (e.g. a widget on page `p1` gets `parentid="p1"` and `p1` lists it in its `elements`). A widget that exists in the root `items` array but is NOT referenced by any page/container (no `parentid`, not in any `elements` array) is ORPHANED — it does NOT render in the form and counts as missing. This applies to every widget, especially XBsLogin, XCaptcha, XUpload, XSignature and hidden XSpan elements.
+
+## CRITICAL — Hiding an element: the Formcycle property is `ishidden`, NOT `invisible`
+
+To hide an element in the rendered form, set `"ishidden": "1"` in its `properties` — `ishidden` is the Formcycle hide property (`XPropertyEnum.ishidden`; `XItemRenderData.isHidden()` reads it and the renderer hides the element with the `xm-hidden` CSS class while keeping it in the DOM). `invisible` is NOT a Formcycle property — an element with only `invisible="1"` is still rendered VISIBLE. Use `ishidden="1"` for EVERY hidden field/span/calculation field: the hidden JSON fields, the invisible Sys.Log.Console XSpan, the `CodBi_Fotocropper_ImageURL` receiver, ... An element that must stay in the DOM so a functionality can read/write it (e.g. the cropper's ImageURL input) but still be hidden → `ishidden="1"` (it remains in the DOM, hidden via `xm-hidden`).
+
+## CRITICAL — Fotocropper board / Bild-Cropper must be a COMPLETE group
+
+A "Fotocropper-Board" / "Bild-Cropper" request (e.g. 'Füge ein Fotocropper-Board und einen Bild-Cropper vor dem Upload `fdDatei` hinzu') is NOT a widget and NOT a bare `data-cb-func` on the upload — the People standard registers `Media.Image.Cropper` on the `.CodBi_Fotocropper` target with Container/File/Updater/ImageURL/Target selectors (`CodBi_Fotocropper_Board`/`_Uploader`/`_Update`/`_ImageURL`/`_Foto`). Build the COMPLETE group BEFORE the referenced upload and leave that upload without cropper functionality. EVERY element of the group MUST carry its exact `CodBi_Fotocropper_*` class — a single missing class (especially `CodBi_Fotocropper_Uploader` on the XUpload or `CodBi_Fotocropper_Update` on the update button) means the standard's File/Updater selectors find nothing and the cropper does NOT work, and an untagged XButtonList inside the container renders as a stray button:
+- wrapper container `CodBi_Fotocropper` (the standard's targets selector),
+- board container `CodBi_Fotocropper_Board` (cropper preview board / UI container),
+- upload `CodBi_Fotocropper_Uploader` (XUpload — file input to pick the image),
+- update control `CodBi_Fotocropper_Update` (XButtonList with ONE non-navigation button `action=""` — applies the crop),
+- hidden receiver `CodBi_Fotocropper_ImageURL` (XTextField, MUST be `ishidden="1"` — `ishidden` is the FORMCYCLE hide property (XPropertyEnum.ishidden; `XItemRenderData.isHidden()` reads it and the renderer hides the element with the `xm-hidden` CSS class while keeping it in the DOM so the cropper can still write the cropped image data URL into it); a VISIBLE picture-URL field is a FAIL — `invisible` is NOT a Formcycle property and does NOT hide),
+- photo display `CodBi_Fotocropper_Foto` (XImage — shows the cropped photo).
+Exact JSON skeleton (copy it, adapt the names to the form's prefix):
+```json
+{ "className": "XContainer", "properties": { "name": "coFotocropper", "id": "xi-co-fotocropper", "cssclasses": ["CodBi_Fotocropper"], "elements": ["coFotocropperBoard","fdFotocropperUpload","btFotocropperUpdate","tfFotocropperImageURL","imgFotocropperFoto"] } },
+{ "className": "XContainer", "properties": { "name": "coFotocropperBoard", "id": "xi-co-fotocropper-board", "cssclasses": ["CodBi_Fotocropper_Board"], "elements": [] } },
+{ "className": "XUpload", "properties": { "name": "fdFotocropperUpload", "id": "xi-fd-fotocropper-upload", "label": "Bild auswählen", "cssclasses": ["CodBi_Fotocropper_Uploader"] } },
+{ "className": "XButtonList", "properties": { "name": "btFotocropperUpdate", "id": "xi-bt-fotocropper-update", "cssclasses": ["CodBi_Fotocropper_Update"] }, "buttons": [ { "name": "update", "title": "Update", "value": "update", "action": "" } ] },
+{ "className": "XTextField", "properties": { "name": "tfFotocropperImageURL", "id": "xi-tf-fotocropper-imageurl", "ishidden": "1", "cssclasses": ["CodBi_Fotocropper_ImageURL"] } },
+{ "className": "XImage", "properties": { "name": "imgFotocropperFoto", "id": "xi-img-fotocropper-foto", "src": "", "cssclasses": ["CodBi_Fotocropper_Foto"] } }
+```
+FAIL: an EMPTY container with only `CodBi_Fotocropper_Board`, a missing `CodBi_Fotocropper_*` class on ANY of the six elements (e.g. the XUpload without `CodBi_Fotocropper_Uploader`, or the update XButtonList without `CodBi_Fotocropper_Update`), a `CodBi_Fotocropper_ImageURL` field that is NOT `ishidden="1"` (a VISIBLE picture-URL field), or `data-cb-func="Media.Image.Cropper"` on the target upload without the Container/File/Updater/ImageURL/Target parameters — none renders a working cropper. NEVER invent a widget type (`XImageCropper`/`XCanvasCropper` do not exist) and NEVER ask the user for one. ALWAYS include `"CodBi_Fotocropper"` in the details request's "elements" array when a Fotocropper board / "Bild-Cropper" is requested — the full spec lists the exact tagged elements; without it the AI builds an empty board (FAIL). (The DIFFERENT case 'Upload-Feld für den Personalausweis mit Bild-Cropper' — a crop dialog ON the upload — DOES use `data-cb-func="Media.Image.Cropper"` on that XUpload.)
+
+## CRITICAL — Group person / address / contact fields into containers
+
+Do NOT place person, address or contact fields flat on the page — group them into ONE dedicated XContainer (or XFieldSet when a legend/title fits) per group:
+- NAME / person-data fields (first/given name, last/family name, middle name) → one container (this is also the LDAP/autofill person-data group when one is requested).
+- ADDRESS fields (street, house/building number, postal code/PLZ, locality/city) → one address container.
+- CONTACT fields (e-mail, phone/telephone) → one contact container.
+Inside each container the ROW PAIRING RULES still apply: first+last name share one row (same rowid), street+house number one row, PLZ+city one row. Do NOT wrap a single row pair in its own extra container. Add each group container to the page's 'elements' array and each field to its group container's 'elements' array (parentid set accordingly) — a field not referenced by any container's 'elements' array is orphaned and does NOT render.
 
 ## CRITICAL — BundID / Bürgerkonto login button
 
@@ -212,7 +285,7 @@ CRITICAL — Sys.Log.Console is a STANDALONE functionality that does NOT need an
     "name": "spLog<Name>",
     "id": "xi-log-<name>",
     "rtevalue": "<short label>",
-    "invisible": "1"
+    "ishidden": "1"
   },
   "attributes": [
     { "text": "data-cb-func", "value": "Sys.Log.Console" },

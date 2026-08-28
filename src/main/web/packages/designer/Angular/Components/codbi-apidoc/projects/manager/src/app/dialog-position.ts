@@ -315,10 +315,15 @@ function onGlobalMouseDown(e: MouseEvent): void {
   // .p-dialog-maximize-icon / .p-dialog-header-close-icon classes no longer exist) plus the injected
   // .cb-dialog-transparency-switch — match all of them so clicking close on a snapped/docked dialog
   // closes it on the FIRST click instead of starting an un-dock drag.
+  // The AI clarification dialog's copy-all button (.cb-ai-clarification-copy) also lives inside its
+  // custom draggable header (.cb-ai-clarification-header is a move-drag handle); without excluding
+  // it, clicking "copy all questions" on a snapped/docked dialog starts a drag session and un-snaps
+  // the dialog instead of copying the questions.
   if (
     target?.closest(
       ".p-dialog-header-icon, .p-dialog-maximize-icon, .p-dialog-header-close-icon, " +
-        ".p-dialog-maximize-button, .p-dialog-close-button, .cb-dialog-transparency-switch",
+        ".p-dialog-maximize-button, .p-dialog-close-button, .cb-dialog-transparency-switch, " +
+        ".cb-ai-clarification-copy",
     )
   ) {
     return;

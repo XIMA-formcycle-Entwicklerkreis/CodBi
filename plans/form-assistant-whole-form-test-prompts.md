@@ -499,7 +499,7 @@ Holistic.Media.Input.Speech.Whisper, CodBi_XCL_Speech, DQ.Table.View (already pr
 
 **Prompt (DE):**
 > Wende die Standard-CSS auf das Formular an, aktiviere Matomo-Tracking global, aktiviere
-> Spracheingabe auf allen Textfeldern und zusätzlich die Whisper-Spracheingabe auf allen Feldern.
+> Spracheingabe auf allen Textfeldern. Füge ein Eingabefeld für den Vornamen ein.
 
 **Prompt (EN):**
 > Apply the standard CSS to the form, enable Matomo tracking globally, enable speech input on all
@@ -525,8 +525,7 @@ Holistic.Media.Input.Speech.Whisper, CodBi_XCL_Speech, DQ.Table.View (already pr
 **Prompt (DE):**
 > Beim Klick auf den Senden-Button: schreibe eine Info-Logmeldung „Vorgang gestartet“, setze den
 > Status auf „Eingegangen“ und sende eine Bestätigungsmail an `[%tfMail%]` von
-> office@ansbach.de mit dem Betreff „Eingang“. Danach den Prozess beenden, ohne den Status zu
-> ändern.
+> office@ansbach.de mit dem Betreff „Eingang“. Danach den Prozess beenden, mit dem Status "Eingegangen".
 
 **Prompt (EN):**
 > On click of the submit button: write an info log message "Process started", set the state to
@@ -537,6 +536,14 @@ Holistic.Media.Input.Speech.Whisper, CodBi_XCL_Speech, DQ.Table.View (already pr
 - [ ] Trigger `FC_FORM_SUBMIT_BUTTON` with `triggerParams.buttonName`=`btnZwolf`; single JSON object.
 - [ ] Node order: FC_LOG_ENTRY → FC_CHANGE_STATE → FC_EMAIL (from literal `office@ansbach.de`, to `[%tfMail%]`, subject `Eingang`) → FC_RETURN (`endpointType=FC_RETURN`, `endpointState=""`).
 - [ ] `taskName` + `endpointState` in the prompt's language (`Empfangen`/`Eingegangen` for DE, `Received` for EN).
+
+**Known traps & backend normalizations (fixed 2026-08-27, tested with the variant „… beenden, MIT dem Status 'Eingegangen'“):**
+- **Single endpoint per lane:** Formcycle allows only ONE endpoint per main line and it must be the LAST node. The backend reorders the lane so non-terminal actions come first and a terminal node (`FC_CHANGE_STATE`/`FC_RETURN`/`FC_DELETE_FORM_RECORD`/`FC_QUEUE_TASK`) is always LAST (single endpoint) — no duplicate/mid-lane endpoint, no greyed-out tail. Expected with-status order: `FC_LOG_ENTRY → FC_EMAIL → FC_CHANGE_STATE` (endpoint, status `Eingegangen`).
+- **`endpointType:"FC_RETURN"` with a non-empty `endpointState` is normalized to `FC_CHANGE_STATE`**, so „Prozess beenden, MIT dem Status X“ actually sets the status.
+- **Sequential actions must be in TOP-LEVEL `chainedNodes`:** the backend now accepts the follow-up actions under ANY of the three placements the AI has used — top-level `chainedNodes`, the main node's `_childNodes`, or the main node's `nodeParams.chainedNodes` — and turns them into real lane nodes for non-branch nodes (previously any of these could be silently dropped, e.g. `FC_EMAIL` after `FC_LOG_ENTRY`). `_childNodes` remains branch-only for condition/loop/switch/experiment nodes. FC_EMAIL content is accepted under both `body` and `message`.
+- **FC_EMAIL body must never be empty:** the prompt requires the AI to always derive a sensible confirmation body from the request (subject/purpose/fields) in the prompt's language, or ask via clarification when it cannot be derived; as a backend safety net, an FC_EMAIL with both `body` and `message` empty gets a derived default confirmation text (language matched to the subject).
+- **Missing submit button + trigger binding:** the backend ensures the submit button BEFORE the workflow AI runs, so the AI sees `btnSenden` in the FORM ELEMENTS and sets `triggerParams.buttonName` itself (the trigger is bound to that button at generation time — the cleaner order). As a safety net it also re-ensures and, if a trigger still has an empty `buttonName`, binds it to the ensured button afterwards. The button is a „Senden“ XButtonList (`action.page="submit"`, named after `triggerParams.buttonName` when set, else `btnSenden`) referenced from its page's `properties.elements` array (Formcycle only renders children listed there — `parentid` alone leaves it invisible); an existing orphaned submit button is repaired the same way, and the updated form is returned for publish.
+- **GENERAL orphan repair (auto, not just the submit button):** Formcycle renders a child ONLY when its container's `properties.elements` array lists it — an element present in the flat `items` array with a `parentid` but missing from that array is published but useless (invisible). The backend now auto-re-references ANY such orphaned element from its container every time a form is processed (form/“both” runs after the final structure normalization, and workflow-only runs that touch the form for the submit button). This makes orphaned elements (including previously auto-added buttons) visible again without manual editing.
 
 **Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS01. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
 
@@ -564,6 +571,12 @@ FC_EMAIL, FC_INVITATION_SENT, FC_INVITATION_ERROR.
 - [ ] Lane 1: FC_FORM_SUBMIT_BUTTON → FC_DOI_INIT with success+failure page, sender, subject, recipient.
 - [ ] Lane 2: FC_DOI_VERIFIED → FC_CHANGE_STATE → FC_EMAIL welcome; optional third lane/branch for FC_INVITATION_ERROR (→ FC_LOG_ENTRY).
 - [ ] No FC_EMAIL used for the DOI invitation itself.
+
+**Known trap — FC_DOI_INIT params & failure handling (fixed 2026-08-27):**
+The AI must emit `to`/`from`/`body` (NOT `recipient`/`sender`) for FC_DOI_INIT, and `successPage`/`failurePage` must be the NAMES of existing ABSCHLUSSSEITEN (never a UUID or URL). The backend now maps `recipient`→`to` and `sender`→`from`, derives a non-empty default body when blank, and resolves `successPage`→`doiSuccessTemplate` as well as `failurePage`→`doiFailTemplate`. Failure handling ("wenn das Einladungsmail fehlschlägt") is a SEPARATE lane with trigger FC_INVITATION_ERROR → FC_LOG_ENTRY — it must NOT be placed in `_handlerChildNodes` of FC_DOI_INIT (those are not created as nodes for this node type).
+
+**Known trap — clarification must not ask for "target URLs" (fixed 2026-08-27):**
+For success/failure Abschlussseiten (FC_DOI_INIT successPage/failurePage, FC_SHOW_TEMPLATE) the AI used to ask „Bitte geben Sie die Ziel‑URL bzw. den Seitennamen …“ — a target URL is wrong (an Abschlussseite is a Formcycle page, not a URL). The clarification prompt now injects the AVAILABLE ABSCHLUSSSEITEN of the workflow version (fetched before the clarification round) and instructs the AI to offer them BY NAME as multiple-choice options, never asking for a URL or a free-text identifier; when a suitable page is already available/evident, it is used without asking.
 
 **Verification prompt to copy (DE):** Prüfe den aktuellen Workflow anhand der obigen `Verify:`-Checkliste von WS02. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Trigger, Knoten, `_childNodes`, Chain-Knoten, `endpointState`/`endpointType`.
 

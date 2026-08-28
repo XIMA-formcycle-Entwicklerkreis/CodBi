@@ -1449,6 +1449,32 @@ class AIFormAssistant : IPluginServletAction {
         props.remove(key)
       }
     }
+    // Holistic.* names (e.g. "Holistic.CSS.Standard", "Holistic.Matomo.Tracking", "Holistic.Media
+    // .Input.Speech") are CodBi STANDARD CONFIGURATION ids, NOT per-widget CSS classes. They are
+    // activated at the FORM level via the CodBi section of the form properties (the
+    // codbi-prop-standards CSV). Placing them on an element's cssclasses would leave a bogus CSS
+    // class on the widget, so strip them whenever the AI wrongly applied them as classes.
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val cssClasses = props.getAsJsonArray("cssclasses") ?: continue
+      var removed = false
+      val kept = JsonArray()
+      for (i in 0 until cssClasses.size()) {
+        val c = cssClasses.get(i)
+        if (c.isJsonPrimitive && c.asString.startsWith("Holistic.")) {
+          removed = true
+          continue
+        }
+        kept.add(c)
+      }
+      if (removed) {
+        props.add("cssclasses", kept)
+        logger.info(
+            "[AIFormAssistant] Stripped Holistic.* standard-config classes from '{}' (activated via codbi-prop-standards, not as widget CSS)",
+            props.get("name")?.asString ?: "<unknown>")
+      }
+    }
     return gson.toJson(result)
   }
 

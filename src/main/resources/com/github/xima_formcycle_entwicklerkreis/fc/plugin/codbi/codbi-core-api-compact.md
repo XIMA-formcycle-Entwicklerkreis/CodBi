@@ -405,14 +405,14 @@ Set data-cb-func="Sys.Log.Console" on it.
 - Financial: Registers standard configurations specific to finances.
   - .CodBi_Currency: The HTMLInputElement s tagged with this class will be formatted for Currencies using Cleave.
   - .CodBi_TRANS_NTW: Applies 'Financial' behavior to elements tagged with '.CodBi_TRANS_NTW'.
-- Holistic.CSS.Standard: Registers a standard configuration that applies a standard CSS onto the form.
+- Holistic.CSS.Standard: FORM-LEVEL standard configuration. Activated by reporting {"id":"Holistic.CSS.Standard","targets":[]} in _codbiApplicability.applied (empty targets) — do NOT add any CSS class to an element.
   - Classes: none.
-- Holistic.Matomo.Tracking: Registers a standard configurations using the functionality.
+- Holistic.Matomo.Tracking: FORM-LEVEL standard configuration that activates Matomo/Piwik tracking for the form. Activated by reporting {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied (empty targets) — do NOT add any CSS class to an element.
   - Classes: none.
-- Holistic.Media.Input.Speech: Registers a standard configuration that applies Speech-to-Text onto every.
-  - .CodBi_XCL_Speech: Applies 'Holistic.Media.Input.Speech' behavior to elements tagged with '.CodBi_XCL_Speech'.
-- Holistic.Media.Input.Speech.Whisper: Registers a standard configuration that applies Whisper Speech-to-Text onto every.
-  - .CodBi_XCL_Speech_Whisper: Applies 'Holistic.Media.Input.Speech.Whisper' behavior to elements tagged with '.CodBi_XCL_Speech_Whisper'.
+- Holistic.Media.Input.Speech: FORM-LEVEL standard configuration that applies Speech-to-Text onto EVERY text field. Activated by reporting {"id":"Holistic.Media.Input.Speech","targets":[]} in _codbiApplicability.applied (empty targets). Do NOT enable it by placing a class on a field.
+  - .CodBi_XCL_Speech: EXCLUSION class (XCL) — EXCLUDES that one field from the global Holistic.Media.Input.Speech standard via a CSS :not() selector. NEVER use it to request/enable speech on a field.
+- Holistic.Media.Input.Speech.Whisper: FORM-LEVEL standard configuration that applies Whisper Speech-to-Text onto EVERY text field. Activated by reporting {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} in _codbiApplicability.applied (empty targets). Do NOT enable it by placing a class on a field.
+  - .CodBi_XCL_Speech_Whisper: EXCLUSION class (XCL) — EXCLUDES that one field from the global Holistic.Media.Input.Speech.Whisper standard via a CSS :not() selector. NEVER use it to request/enable speech on a field.
 - LDAP.Autofill: Registers standard configurations specific to LDAP-Autocompletion in HTMLInputElement s.
   - .CodBi_LDAP_AC_Account: This class matches the common LDAP-Property sAMAccountName.
   - .CodBi_LDAP_AC_CommonName: This class matches the common LDAP-Property cn.

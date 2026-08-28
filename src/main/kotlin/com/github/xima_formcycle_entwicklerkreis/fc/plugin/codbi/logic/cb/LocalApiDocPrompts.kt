@@ -209,6 +209,29 @@ internal object LocalApiDocPrompts {
 
   /** Builds the standard configuration usage hint (see [buildUsageHint]). */
   private fun buildStandardConfigUsageHint(element: JsonObject, name: String): String {
+    // Holistic.* are FORM-LEVEL standard configurations: they are activated by reporting them in
+    // _codbiApplicability.applied with "targets":[], which the server stores into the form's CodBi
+    // section (codbi-prop-standards). They must NEVER be applied by placing a CSS class on an
+    // element, and their bare id must NEVER be used as a data-cb-func or cssclasses entry.
+    if (name.startsWith("Holistic.")) {
+      val globals0 =
+          element.get("globals")?.takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
+      val globalNames0 = globals0.entrySet().map { it.key }
+      val globalNote0 =
+          if (globalNames0.isEmpty()) ""
+          else
+              " It also declares global variable(s): ${globalNames0.joinToString(", ")}. When the user sets a value for one of them, write it into the form's TOP-LEVEL \"variables\" array as {\"name\":\"<VarName>\",\"aliasname\":\"<VarName>\",\"serveronly\":false,\"value\":\"<value>\"} — never as a data-cb-* attribute."
+      var exclusionNote = ""
+      // The speech standards record EXCLUSION classes (they carry the "XCL" = eXCLusion prefix):
+      // CodBi_XCL_Speech / CodBi_XCL_Speech_Whisper EXCLUDE a single field from the FORM-LEVEL
+      // speech standard via a CSS :not() selector. They do NOT enable speech and must never be
+      // placed to request speech input.
+      if (name == "Holistic.Media.Input.Speech" || name == "Holistic.Media.Input.Speech.Whisper") {
+        exclusionNote =
+            " NOTE: the CSS classes listed on this standard (CodBi_XCL_Speech / CodBi_XCL_Speech_Whisper) are EXCLUSION classes — they REMOVE a single field from the global speech standard. To ENABLE speech-on-all-text-fields, ONLY report this standard in _codbiApplicability.applied; do NOT put any class on an element."
+      }
+      return "This is a CodBi Standard Configuration applied at the FORM level. To activate it, include {\"id\":\"$name\",\"targets\":[]} in the top-level _codbiApplicability \"applied\" array (empty targets). Do NOT add any CSS class to an element and do NOT set data-cb-func to \"$name\" to apply it.$exclusionNote$globalNote0"
+    }
     val classes = element.get("classes")?.takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
     val classNames = classes.entrySet().map { it.key }
     val classPrompts =

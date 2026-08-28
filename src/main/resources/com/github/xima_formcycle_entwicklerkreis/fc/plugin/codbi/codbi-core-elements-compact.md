@@ -266,17 +266,16 @@ This Element-Placeholder acquires a value from window.codbiSettings.gv.
 ## Standard Configurations
 
 ### Holistic.CSS.Standard
-Registers a standard configuration that applies a standard CSS onto the form.
+FORM-LEVEL standard configuration. Activated by reporting {"id":"Holistic.CSS.Standard","targets":[]} in _codbiApplicability.applied (empty targets) — do NOT add a CSS class to any element.
 
 ### Holistic.Matomo.Tracking
-Registers a standard configurations using the functionality.
-REQUIRES: the Matomo tracking ID (global variable value) — ask the user when missing.
+FORM-LEVEL standard configuration that activates Matomo/Piwik tracking for the form. Activated by reporting {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied (empty targets) — do NOT add a CSS class to any element. Requires the Matomo tracking ID (from the server-side Matomo plugin configuration); ask the user only when no SiteID is derivable.
 
 ### Holistic.Media.Input.Speech
-Registers a standard configuration that applies Speech-to-Text onto every.
+FORM-LEVEL standard configuration that applies Speech-to-Text onto EVERY text field. Activated by reporting {"id":"Holistic.Media.Input.Speech","targets":[]} in _codbiApplicability.applied — do NOT add a CSS class to any element to enable it.
 
 ### Holistic.Media.Input.Speech.Whisper
-Registers a standard configuration that applies Whisper Speech-to-Text onto every.
+FORM-LEVEL standard configuration that applies Whisper Speech-to-Text onto EVERY text field. Activated by reporting {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} in _codbiApplicability.applied — do NOT add a CSS class to any element to enable it.
 
 ## People
 
@@ -469,7 +468,7 @@ Apply to the BUILDING NUMBER field of an address group to enable OpenPLZ autocom
 ## Holistic CSS Classes
 
 ### CodBi_XCL_Speech
-CSS class for speech-to-text.
+EXCLUSION class (XCL prefix). While the FORM-LEVEL Holistic.Media.Input.Speech standard is active (speech on all text fields), this class EXCLUDES THIS ONE FIELD from speech via a CSS `:not(.CodBi_XCL_Speech)` selector. NEVER place it to REQUEST/ENABLE speech on a field — it does the opposite.
 
 ### CodBi_XCL_Speech_Whisper
-CSS class for Whisper speech-to-text.
+EXCLUSION class (XCL prefix). While the FORM-LEVEL Holistic.Media.Input.Speech.Whisper standard is active, this class EXCLUDES THIS ONE FIELD from Whisper speech via a CSS `:not(.CodBi_XCL_Speech_Whisper)` selector. NEVER place it to REQUEST/ENABLE speech on a field — it does the opposite.

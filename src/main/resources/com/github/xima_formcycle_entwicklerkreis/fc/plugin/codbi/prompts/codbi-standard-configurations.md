@@ -228,10 +228,14 @@ Apply to the BUILDING NUMBER field of an address group to enable OpenPLZ autocom
 ## Holistic CSS Classes
 
 ### CodBi_XCL_Speech
-CSS class for speech-to-text.
+EXCLUSION class (XCL prefix). When the FORM-LEVEL Holistic.Media.Input.Speech standard is active (speech on all text fields), this class EXCLUDES THIS ONE FIELD from speech via a CSS `:not(.CodBi_XCL_Speech)` selector. NEVER place it to REQUEST/ENABLE speech on a field — it does the opposite.
 
 ### CodBi_XCL_Speech_Whisper
-CSS class for Whisper speech-to-text.
+EXCLUSION class (XCL prefix). When the FORM-LEVEL Holistic.Media.Input.Speech.Whisper standard is active, this class EXCLUDES THIS ONE FIELD from Whisper speech via a CSS `:not(.CodBi_XCL_Speech_Whisper)` selector. NEVER place it to REQUEST/ENABLE speech on a field — it does the opposite.
+
+## Speech Input Activation (HOLISTIC.MEDIA.INPUT.SPEECH)
+
+To ENABLE speech-to-text input on ALL text fields (a HOLISTIC standard configuration), do NOT place any CSS class on any element. Instead include {"id":"Holistic.Media.Input.Speech","targets":[]} in _codbiApplicability.applied (and likewise {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} for Whisper) — the server reads this and activates the standard configuration, which applies speech to every text field at render time.
 
 ## Matomo Tracking Activation
 
@@ -243,8 +247,17 @@ Only apply Matomo.Tracking functionality with data-cb-SiteID when a SiteID IS ex
 
 The following standard configurations are activated by the server (system applications) rather than through CSS classes on form elements. Each one can be deactivated in the Prompt Manager if it should not be applied.
 
+### Holistic.CSS.Standard
+Server-side standard configuration that applies the standard CodBi CSS onto the form. Activated by reporting {"id":"Holistic.CSS.Standard","targets":[]} in _codbiApplicability.applied (e.g. when the user says "Wende die Standard-CSS auf das Formular an"). Never place it as a CSS class on any element.
+
 ### Holistic.Matomo.Tracking
 Server-side standard configuration that activates Matomo/Piwik analytics tracking for the form. It is triggered when the AI reports {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied (e.g. when the user says "Matomo-Tracking aktivieren" without an explicit SiteID). Uses the Matomo_SiteID / Matomo_URL plugin configuration.
+
+### Holistic.Media.Input.Speech
+Server-side standard configuration that applies Speech-to-Text onto EVERY text field. Activated by reporting {"id":"Holistic.Media.Input.Speech","targets":[]} in _codbiApplicability.applied. Never place a CSS class on an element to enable it.
+
+### Holistic.Media.Input.Speech.Whisper
+Server-side standard configuration that applies Whisper Speech-to-Text onto EVERY text field. Activated by reporting {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} in _codbiApplicability.applied. Never place a CSS class on an element to enable it.
 
 ### Holistic.Cleave.Date
 Server-side standard configuration that applies Cleave-based input formatting to date fields (datatype starting with "date"). The server activates it automatically based on the field datatypes present in the form.

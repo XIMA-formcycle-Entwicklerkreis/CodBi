@@ -825,6 +825,19 @@ class AICodBiAssistant : IPluginServletAction {
     var formListAttempted = false
     val historyLoadedFormKeys = mutableSetOf<String>()
     var clarification: ClarificationRequest? = null
+    // Inject the workflow version's AVAILABLE ABSCHLUSSSEITEN (completion pages) into the
+    // clarification prompt, so when the request needs a success/failure Abschlussseite (e.g.
+    // FC_DOI_INIT successPage/failurePage) the AI offers them BY NAME as options instead of asking
+    // for a target URL / free-text page identifier.
+    val clarificationCompletionPages: String? =
+        if (intent == "workflow" || intent == "both") {
+          params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()?.let { wid ->
+            fetchCompletionPages(getUserContext(params), wid)
+          }
+        } else null
+    logger.info(
+        "[AICodBiAssistant] Clarification Abschlussseiten loaded: {} chars",
+        clarificationCompletionPages?.length ?: 0)
     for (round in 0 until 5) {
       val check =
           try {
@@ -843,7 +856,8 @@ class AICodBiAssistant : IPluginServletAction {
                 currentFormTitle,
                 useCodbi,
                 askAllQuestions,
-                imageParts)
+                imageParts,
+                clarificationCompletionPages)
           } catch (e: Exception) {
             logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
             null
@@ -974,7 +988,19 @@ class AICodBiAssistant : IPluginServletAction {
                 if (normalizeFinalFormStructure(obj)) gson.toJson(obj) else restoredJson
               }
               .getOrDefault(restoredJson)
-      result.append(""","formJson":$resolvedFormJson""")
+      // Auto-repair ANY orphaned element: an element that exists in the flat "items" array with a
+      // "parentid" but is missing from its container's "properties.elements" array is published but
+      // never rendered by Formcycle (useless). Re-reference every such element from its container
+      // so
+      // the final form is structurally consistent before it is emitted.
+      val orphanRepairedForm = resolvedFormJson?.let { repairOrphanedFormElements(it) }
+      if (orphanRepairedForm != null) {
+        resolvedFormJson = orphanRepairedForm
+      }
+      // NOTE: `formJson` is deliberately NOT appended here. It is emitted AFTER the workflow step
+      // below, so a workflow triggered by FC_FORM_SUBMIT_BUTTON can first add a missing submit
+      // button to the form JSON (see ensureSubmitButtonInForm). JSON key order is irrelevant, so
+      // moving the emit does not change the response semantics.
       result.append(""","tokens":$runTokens""")
       // Auto-manage Holistic.Cleave.* standard configurations based on field types in the form.
       // Only performed when the frontend could read the current standards from the DOM
@@ -1003,6 +1029,32 @@ class AICodBiAssistant : IPluginServletAction {
         latestFormElements = extractFormElementsFromJson(resolvedFormJson) ?: latestFormElements
         logger.info(
             "[AICodBiAssistant] Updated form elements for workflow AI: {}", latestFormElements)
+      }
+    }
+
+    // Create the submit button BEFORE the workflow AI runs, so the AI sees it in the FORM ELEMENTS
+    // and sets triggerParams.buttonName itself — the trigger is then bound to that button directly
+    // at generation time (the cleaner order) instead of the workflow being created with an empty
+    // buttonName and the trigger being fixed up afterwards. Applies to "workflow" (uses the persist
+    // the frontend always sends) and "both" (uses the freshly modified form).
+    if (intent == "workflow" || intent == "both") {
+      val sourceForEnsure =
+          resolvedFormJson
+              ?: params.requestParameters["persist"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+      if (sourceForEnsure != null) {
+        // Ensure ANY submit button exists — the AI will pick its name (btnSenden) from the form
+        // elements. "btnSenden" is only added when the form has no submit button at all.
+        val ensured = ensureSubmitButtonInForm(sourceForEnsure, "")
+        if (ensured != null && ensured != sourceForEnsure) {
+          if (resolvedFormJson == null) {
+            // Workflow-only run: keep the original form for the change-log diff.
+            persistJson = sourceForEnsure
+          }
+          resolvedFormJson = ensured
+          latestFormElements = extractFormElementsFromJson(ensured) ?: latestFormElements
+          logger.info(
+              "[AICodBiAssistant] Ensured submit button 'btnSenden' BEFORE the workflow AI so the trigger can bind to it")
+        }
       }
     }
 
@@ -1045,6 +1097,64 @@ class AICodBiAssistant : IPluginServletAction {
       result.append(""","workflowMessage":${gson.toJson(workflowMessage)}""")
     }
 
+    // A workflow triggered by the form's submit button (FC_FORM_SUBMIT_BUTTON) is only reachable
+    // when the form actually HAS a submit button. The workflow AI does not inspect the form (intent
+    // classification and workflow generation run on the prompt text + form elements only), so it
+    // can build an FC_FORM_SUBMIT_BUTTON lane while the form has no way to submit — the user could
+    // then never trigger it. When that happens, add a "Senden" submit button to the form and return
+    // the updated `formJson` so the frontend publishes the form together with the workflow (the
+    // frontend already handles a `formJson` + `workflowMessage` response: it publishes the form and
+    // reloads the designer).
+    val submitButtonName = workflowSubmitButtonName(workflowNodes)
+    if (submitButtonName != null) {
+      // resolvedFormJson is set for "form"/"both" runs; for a workflow-only run read the persist
+      // the frontend always sends alongside workflowVersionId.
+      val sourceFormJson =
+          resolvedFormJson
+              ?: params.requestParameters["persist"]?.firstOrNull()?.takeIf { it.isNotBlank() }
+      if (sourceFormJson != null) {
+        var currentForm = sourceFormJson
+        // 1) Ensure the submit button exists / is reachable for FC_FORM_SUBMIT_BUTTON lanes.
+        val ensuredFormJson = ensureSubmitButtonInForm(currentForm, submitButtonName)
+        if (ensuredFormJson != null && ensuredFormJson != currentForm) {
+          currentForm = ensuredFormJson
+        }
+        // 2) Auto-repair ANY orphaned element (not just the submit button): an element present in
+        //    the flat "items" array but missing from its container's "properties.elements" array is
+        //    published but never rendered — re-reference it so it becomes visible.
+        val orphanRepaired = repairOrphanedFormElements(currentForm)
+        if (orphanRepaired != null && orphanRepaired != currentForm) {
+          currentForm = orphanRepaired
+        }
+        // 3) The workflow AI leaves `triggerParams:{}` (fires on ANY button) when the form had no
+        //    submit button at generation time. Now that a concrete button is ensured, explicitly
+        //    bind the FC_FORM_SUBMIT_BUTTON trigger(s) to it so the designer shows the button
+        //    selected instead of "any button".
+        val effectiveButtonName = if (submitButtonName.isBlank()) "btnSenden" else submitButtonName
+        workflowVersionId?.let { wid ->
+          bindSubmitTriggerToButton(getUserContext(params), wid, effectiveButtonName)
+        }
+        if (currentForm != sourceFormJson) {
+          if (resolvedFormJson == null) {
+            // Workflow-only run: remember the original form for the change-log diff.
+            persistJson = sourceFormJson
+          }
+          resolvedFormJson = currentForm
+          logger.info(
+              "[AICodBiAssistant] Form adjusted for FC_FORM_SUBMIT_BUTTON workflow — submit button '{}' ensured and/or orphaned elements repaired",
+              effectiveButtonName)
+        }
+      }
+    }
+    // Emit the (possibly adjusted) form JSON here, after the workflow step — see the NOTE above the
+    // form-modification block. For "workflow"-only runs formJson is emitted ONLY when the form was
+    // actually changed (submit button ensured and/or orphaned elements repaired; resolvedFormJson
+    // is
+    // null otherwise), so a form is never echoed back without a change.
+    if (resolvedFormJson != null) {
+      result.append(""","formJson":$resolvedFormJson""")
+    }
+
     // Resolve the selected model's pricing and compute the estimated cost of this run from the
     // accumulated input/output tokens. `null` when no price is configured for the model.
     val modelPrice = instance.priceForModel(modelId)
@@ -1053,13 +1163,11 @@ class AICodBiAssistant : IPluginServletAction {
 
     // Compute the change description — used both for the change-log record and to detect whether
     // any configured "sensitive" CodBi element (AI_Log_SensitiveElements) was used by this run.
+    // The guard covers "form"/"both" runs AND workflow-only runs where a missing submit button was
+    // added (both persistJson and resolvedFormJson are then non-null).
     var formChanges: JsonObject? = null
-    if (intent == "form" || intent == "both") {
-      val before = persistJson
-      val after = resolvedFormJson
-      if (before != null && after != null) {
-        formChanges = AiAssistantLog.computeFormChanges(before, after)
-      }
+    if (persistJson != null && resolvedFormJson != null) {
+      formChanges = AiAssistantLog.computeFormChanges(persistJson, resolvedFormJson)
     }
     val sensitiveUsed =
         formChanges?.let { AiAssistantLog.usedSensitiveElements(it, AI.logSensitiveElements) }
@@ -3712,6 +3820,12 @@ class AICodBiAssistant : IPluginServletAction {
     // NOTE: baseObj is read from the result again here (not the one declared inside the
     // `if (originalItems != null)` block above, which is out of scope at this point).
     applyOpenPlzAddressClasses(resultItems, result.getAsJsonObject("base"))
+    // Holistic.* names (e.g. "Holistic.CSS.Standard", "Holistic.Matomo.Tracking", "Holistic.Media
+    // .Input.Speech") are CodBi STANDARD CONFIGURATION ids, NOT per-widget CSS classes. They are
+    // activated at the FORM level via the CodBi section of the form properties (the
+    // codbi-prop-standards CSV). Placing them on an element's cssclasses would leave a bogus CSS
+    // class on the widget, so strip them whenever the AI wrongly applied them as classes.
+    stripHolisticStandardClasses(resultItems)
     // CSS class names from the AI are passed through unchanged (no whitelist/validation) — they
     // reach the designer as-is. AI-generated CSS *code* is already removed via STRIPPED_FIELDS /
     // STRIPPED_ITEM_PROPS, so only class names can ever be taken over, never code.
@@ -4097,6 +4211,41 @@ class AICodBiAssistant : IPluginServletAction {
     return value.replace(Regex("\\\\u([0-9a-fA-F]{4})")) { matchResult ->
       val hex = matchResult.groupValues[1]
       Integer.parseInt(hex, 16).toChar().toString()
+    }
+  }
+
+  /**
+   * Strips any `Holistic.*` entry from every item's `cssclasses` array. `Holistic.*` names are
+   * CodBi Standard Configuration ids (e.g. `Holistic.CSS.Standard`, `Holistic.Matomo.Tracking`,
+   * `Holistic.Media.Input.Speech`, `Holistic.Cleave.Date`) that are activated at the FORM level via
+   * the CodBi section of the form properties (the `codbi-prop-standards` CSV). They must never be
+   * placed on an element's `cssclasses`, because Formcycle would then render a bogus, non-existent
+   * CSS class on the widget. See `computeUpdatedStandards` for how the actual standard activation
+   * is derived (Mechanisms 1–3), which does NOT depend on these classes being present here.
+   *
+   * @param resultItems The flat `items` array of the form JSON to scan in place.
+   */
+  private fun stripHolisticStandardClasses(resultItems: JsonArray) {
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val cssClasses = props.getAsJsonArray("cssclasses") ?: continue
+      var removed = false
+      val kept = JsonArray()
+      for (i in 0 until cssClasses.size()) {
+        val c = cssClasses.get(i)
+        if (c.isJsonPrimitive && c.asString.startsWith("Holistic.")) {
+          removed = true
+          continue
+        }
+        kept.add(c)
+      }
+      if (removed) {
+        props.add("cssclasses", kept)
+        logger.info(
+            "[AICodBiAssistant] Stripped Holistic.* standard-config classes from '{}' (activated via codbi-prop-standards, not as widget CSS)",
+            props.get("name")?.asString ?: "<unknown>")
+      }
     }
   }
 
@@ -7209,11 +7358,50 @@ class AICodBiAssistant : IPluginServletAction {
       createChildSeq(2, "Handler", handlerNodes)
     }
 
+    // Formcycle renders a workflow lane as ONE main line with EXACTLY ONE endpoint (Endpunkt) and
+    // that endpoint must be the LAST node. Node types that transition the record to a terminal
+    // state — FC_CHANGE_STATE, FC_RETURN, FC_DELETE_FORM_RECORD, FC_QUEUE_TASK — are rendered with
+    // an endpoint marker, so placing any of them in the MIDDLE of a lane breaks the lane: Formcycle
+    // treats the first such node as the endpoint and greys out / disconnects everything after it.
+    // The AI frequently emits a state change (FC_CHANGE_STATE) as an ordinary chained node AND a
+    // separate endpoint (endpointState/endpointType) — exactly the invalid double-endpoint seen in
+    // practice. Reorder the chained nodes so the terminal node is always LAST (and only ONE
+    // terminal node remains); the trailing terminal node then serves as the lane's single endpoint
+    // and the endpoint-creation logic below (which already skips a trailing FC_CHANGE_STATE /
+    // FC_RETURN / FC_DELETE_FORM_RECORD / FC_QUEUE_TASK) does not append a duplicate.
+    // Node types that consume `_childNodes` with a STRUCTURED meaning (condition/loop branches,
+    // switch cases, try-catch-finally) — their `_childNodes` are created as branch children by the
+    // code above, never as sequential lane nodes.
+    val mainNodeHasStructuredChildren = spec.nodeType in NODE_TYPES_WITH_STRUCTURED_CHILDREN
+    // Sequential action nodes the AI sometimes places INSIDE the MAIN node's params instead of the
+    // top-level "chainedNodes" — under either the "_childNodes" or the "chainedNodes" key (a common
+    // model inconsistency, e.g. FC_LOG_ENTRY → FC_EMAIL). For non-branch nodes these are ordinary
+    // follow-up actions and must become REAL lane nodes — otherwise they are silently dropped (only
+    // branch/loop/switch/experiment nodes interpret "_childNodes" structurally).
+    @Suppress("UNCHECKED_CAST")
+    val embeddedChildNodes =
+        if (mainNodeHasStructuredChildren) null
+        else (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+    @Suppress("UNCHECKED_CAST")
+    val embeddedChainedNodes =
+        if (mainNodeHasStructuredChildren) null
+        else (spec.nodeParams["chainedNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+    val embeddedSequentialNodes: List<Map<String, Any>>? =
+        when {
+          embeddedChildNodes != null && embeddedChainedNodes != null ->
+              embeddedChildNodes + embeddedChainedNodes
+          embeddedChildNodes != null -> embeddedChildNodes
+          else -> embeddedChainedNodes
+        }
+    val mergedChainedNodes =
+        if (embeddedSequentialNodes == null) spec.chainedNodes
+        else (embeddedSequentialNodes + (spec.chainedNodes ?: emptyList())).ifEmpty { null }
+    val orderedChainedNodes = reorderChainedNodesForSingleEndpoint(mergedChainedNodes)
     // Process chained nodes (sequential actions in the same task)
-    if (spec.chainedNodes != null && spec.chainedNodes.isNotEmpty()) {
+    if (orderedChainedNodes != null && orderedChainedNodes.isNotEmpty()) {
       var prevNodeUuid = actionNode.javaClass.getMethod("getUUIDObject").invoke(actionNode) as UUID
       var prevTaskUuid = task.javaClass.getMethod("getUUIDObject").invoke(task) as UUID
-      for ((chainIdx, chainSpecMap) in spec.chainedNodes.withIndex()) {
+      for ((chainIdx, chainSpecMap) in orderedChainedNodes.withIndex()) {
         val chainSpec = gson.fromJson(gson.toJson(chainSpecMap), WorkflowTaskSpec::class.java)
         val chainNode = workflowNodeClass.getDeclaredConstructor().newInstance()
         val chainNodeName = deriveNodeName(chainSpec)
@@ -7294,8 +7482,11 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
-    // Determine the last action node in the lane (check chained nodes, fallback to main node)
-    val lastNodeType = spec.chainedNodes?.lastOrNull()?.get("nodeType") as? String ?: spec.nodeType
+    // Determine the last action node in the lane (check chained nodes, fallback to main node).
+    // Uses the reordered chain so a terminal node (FC_CHANGE_STATE / FC_RETURN / ...) that was
+    // moved to the end correctly suppresses the separate endpoint node below.
+    val lastNodeType =
+        orderedChainedNodes?.lastOrNull()?.get("nodeType") as? String ?: spec.nodeType
     // Endpoint node: every workflow lane requires a final endpoint (Endpunkt) that
     // sets the form record to its terminal status (FC_CHANGE_STATE) or simply ends
     // the process (FC_RETURN). Skip when:
@@ -7307,7 +7498,13 @@ class AICodBiAssistant : IPluginServletAction {
         topLevelChildNodes != null &&
             spec.endpointType.ifBlank { "FC_CHANGE_STATE" } != "FC_CHANGE_STATE" &&
             spec.endpointType != "FC_RETURN"
-    val effectiveEndpointType = spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
+    // "FC_RETURN" with a non-empty endpointState is a contradiction (FC_RETURN ends the process
+    // WITHOUT a state transition, so the requested status would never be set). The user's intent is
+    // the status change ("… beenden, MIT dem Status X"), so normalize it to FC_CHANGE_STATE — the
+    // status transition then becomes the lane's endpoint.
+    val effectiveEndpointType =
+        if (spec.endpointType == "FC_RETURN" && spec.endpointState.isNotBlank()) "FC_CHANGE_STATE"
+        else spec.endpointType.ifBlank { "FC_CHANGE_STATE" }
     if (lastNodeType != "FC_CHANGE_STATE" &&
         lastNodeType != "FC_DELETE_FORM_RECORD" &&
         lastNodeType != "FC_QUEUE_TASK" &&
@@ -7598,6 +7795,462 @@ class AICodBiAssistant : IPluginServletAction {
         workflowVersionId)
 
     return "Workflow task '${spec.taskName}' created: ${spec.triggerType} â†’ ${spec.nodeType}"
+  }
+
+  /**
+   * Node types that Formcycle renders with an endpoint marker on the lane's main line. Formcycle
+   * allows EXACTLY ONE such endpoint per lane and it must be the LAST node; a mid-line endpoint
+   * greys out and disconnects every node after it.
+   */
+  private val TERMINAL_WORKFLOW_NODE_TYPES =
+      setOf("FC_CHANGE_STATE", "FC_RETURN", "FC_DELETE_FORM_RECORD", "FC_QUEUE_TASK")
+
+  /**
+   * Node types whose `_childNodes` have a STRUCTURED meaning (condition/loop branches, switch
+   * cases, try-catch-finally) and are therefore created as real branch children — NOT as sequential
+   * lane nodes. For every other node type, `_childNodes` is treated as an ordinary list of
+   * follow-up actions (see [createWorkflowTask]).
+   */
+  private val NODE_TYPES_WITH_STRUCTURED_CHILDREN =
+      setOf(
+          "de.xima.fc.plugin.bs.auth.plugin.node.CheckTrustLevelPlugin",
+          "FC_MULTIPLE_CONDITION",
+          "FC_FOR_EACH_LOOP",
+          "FC_WHILE_LOOP",
+          "FC_DO_UNTIL_LOOP",
+          "FC_WITH_FORM_ELEMENT_CONTEXT",
+          "FC_SWITCH",
+          "FC_EXPERIMENT")
+
+  /**
+   * Normalizes the AI's chained node order so a lane contains exactly ONE terminal endpoint node
+   * and it is the LAST node. See [createWorkflowTask] for why this is required. Non-terminal nodes
+   * keep their relative order and come first; among the terminal nodes only the last one is kept
+   * (the final status transition wins, so multiple stacked endpoint markers are collapsed into a
+   * single one). Returns the reordered list, or the original input when no reordering is needed.
+   */
+  private fun reorderChainedNodesForSingleEndpoint(
+      chainedNodes: List<Map<String, Any>>?
+  ): List<Map<String, Any>>? {
+    if (chainedNodes == null || chainedNodes.isEmpty()) return chainedNodes
+    val terminal = mutableListOf<Map<String, Any>>()
+    val regular = mutableListOf<Map<String, Any>>()
+    for (node in chainedNodes) {
+      val type = (node["nodeType"] as? String)?.uppercase() ?: ""
+      if (type in TERMINAL_WORKFLOW_NODE_TYPES) terminal.add(node) else regular.add(node)
+    }
+    if (terminal.isEmpty()) return chainedNodes
+    // Keep only the LAST terminal node: it becomes the lane's single endpoint. Earlier terminal
+    // nodes would stack a second endpoint marker onto the lane and break it the same way a
+    // mid-line endpoint does.
+    val singleTerminal = listOf(terminal.last())
+    val reordered = regular + singleTerminal
+    if (reordered != chainedNodes) {
+      val droppedTypes =
+          terminal.dropLast(1).joinToString(", ") { n -> (n["nodeType"] as? String) ?: "?" }
+      logger.info(
+          "[AICodBiAssistant] Reordered chained nodes for a single endpoint: {} terminal node(s) moved to the end{} (lane must end with exactly one endpoint)",
+          terminal.size,
+          if (droppedTypes.isBlank()) ""
+          else "; dropped redundant earlier terminal node(s): $droppedTypes")
+    }
+    return reordered
+  }
+
+  /**
+   * Returns the name of the submit button that must exist for the workflow(s) the AI just created
+   * to be reachable, or `null` when no lane is triggered by the form's submit button. Uses the
+   * trigger's explicit `buttonName` when the AI specified one (so that exact button is ensured),
+   * otherwise `""` which means "ensure ANY submit button exists" (an FC_FORM_SUBMIT_BUTTON trigger
+   * with an empty buttonName fires on any submit button).
+   */
+  private fun workflowSubmitButtonName(workflowNodes: JsonArray?): String? {
+    if (workflowNodes == null) return null
+    var hasSubmitTrigger = false
+    var explicitName: String? = null
+    for (el in workflowNodes) {
+      if (!el.isJsonObject) continue
+      val trigger = el.asJsonObject.getAsJsonObject("trigger") ?: continue
+      if (trigger.get("type")?.asString != "FC_FORM_SUBMIT_BUTTON") continue
+      hasSubmitTrigger = true
+      val params = trigger.get("params")?.takeIf { it.isJsonObject }?.asJsonObject
+      val name = params?.get("buttonName")?.takeIf { it.isJsonPrimitive }?.asString
+      if (!name.isNullOrBlank() && explicitName == null) explicitName = name
+    }
+    return if (hasSubmitTrigger) (explicitName ?: "") else null
+  }
+
+  /**
+   * Ensures the given Formcycle persist JSON contains a submit button that satisfies
+   * [requestedName]: when non-blank, a submit button with EXACTLY that technical name must exist;
+   * when blank, any submit button is sufficient. A submit button is an XButtonList entry whose
+   * `action.page` equals `"submit"`.
+   * - When the requirement is already met, returns `null` (no change).
+   * - When a same-named button exists but is not a submit button, it is upgraded in place
+   *   (`action.page="submit"`), so a named trigger becomes reachable without a duplicate name.
+   * - Otherwise the submit button is appended to an existing XButtonList, or — when the form has no
+   *   XButtonList at all — a new XButtonList holding the submit button is created on the last page.
+   *
+   * Returns the modified form JSON, or `null` when nothing changed / the JSON could not be parsed.
+   */
+  private fun ensureSubmitButtonInForm(formJson: String, requestedName: String): String? {
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return null
+      var firstListProps: JsonObject? = null
+
+      // Pass 1: already submittable? Remember the first XButtonList; upgrade a same-named
+      // non-submit button in place; repair an existing submit button that is present in the flat
+      // "items" array but NOT referenced by its container's "properties.elements" array (such an
+      // orphaned button is published but never rendered by Formcycle).
+      for (el in items) {
+        if (!el.isJsonObject) continue
+        if (el.asJsonObject.get("className")?.asString != "XButtonList") continue
+        val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+        if (firstListProps == null) firstListProps = props
+        val buttons = props.getAsJsonArray("buttons") ?: continue
+        for (btn in buttons) {
+          if (!btn.isJsonObject) continue
+          val btnObj = btn.asJsonObject
+          val action = btnObj.getAsJsonObject("action")
+          val page = action?.get("page")?.takeIf { it.isJsonPrimitive }?.asString
+          val name = btnObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+          val isSubmit = page.equals("submit", ignoreCase = true)
+          if (isSubmit && (requestedName.isBlank() || name == requestedName)) {
+            val parentId = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+            val repaired =
+                referenceButtonInContainer(
+                    items, parentId, name ?: requestedName.ifBlank { "btnSenden" })
+            if (repaired) {
+              logger.info(
+                  "[AICodBiAssistant] Repaired orphaned submit button '{}' — added it to its container's properties.elements",
+                  name ?: requestedName)
+              return gson.toJson(root)
+            }
+            return null
+          }
+          // A same-named button exists but is NOT a submit button -> upgrade it in place.
+          if (requestedName.isNotBlank() && name == requestedName && !isSubmit && action != null) {
+            action.addProperty("page", "submit")
+            if ((action.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: "").isBlank()) {
+              action.addProperty("value", "Senden")
+            }
+            if ((btnObj.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: "").isBlank()) {
+              btnObj.addProperty("value", "Senden")
+            }
+            logger.info(
+                "[AICodBiAssistant] Upgraded existing button '{}' to submit (action.page='submit')",
+                requestedName)
+            return gson.toJson(root)
+          }
+        }
+      }
+
+      // Pass 2: no matching submit button — build one and add it.
+      val buttonName = requestedName.ifBlank { "btnSenden" }
+      val btn = JsonObject()
+      btn.addProperty("name", buttonName)
+      btn.addProperty("title", "")
+      btn.addProperty("value", "Senden")
+      val action = JsonObject()
+      action.addProperty("customAction", "")
+      action.addProperty("customClassNames", "")
+      action.addProperty("displayName", "Senden")
+      action.addProperty("optionId", "")
+      action.addProperty("check", false)
+      action.addProperty("page", "submit")
+      action.addProperty("value", "Senden")
+      btn.add("action", action)
+
+      val targetProps = firstListProps
+      if (targetProps != null) {
+        // Append to an existing XButtonList (keeps the correct parentid / page structure).
+        val buttons =
+            targetProps.getAsJsonArray("buttons")
+                ?: JsonArray().also { targetProps.add("buttons", it) }
+        if (buttons.none {
+          it.isJsonObject && it.asJsonObject.get("name")?.asString == buttonName
+        }) {
+          buttons.add(btn)
+        }
+        logger.info(
+            "[AICodBiAssistant] Added submit button '{}' to existing XButtonList '{}'",
+            buttonName,
+            targetProps.get("name")?.asString ?: "<unnamed>")
+      } else {
+        // No XButtonList at all -> create a new one on the last page of the form.
+        val pageId = findLastPageId(items)
+        val props = JsonObject()
+        props.addProperty("name", buttonName)
+        props.addProperty("id", uniqueFormItemId(items, "xi-${buttonName.lowercase()}"))
+        props.addProperty("title", "")
+        props.addProperty("label", "")
+        if (pageId != null) props.addProperty("parentid", pageId)
+        val buttons = JsonArray()
+        buttons.add(btn)
+        props.add("buttons", buttons)
+        val newItem = JsonObject()
+        newItem.addProperty("className", "XButtonList")
+        newItem.add("properties", props)
+        items.add(newItem)
+        // Formcycle renders a child element only when its container lists it in the container's
+        // "properties.elements" array (parentid alone is NOT enough). Add the new button's name to
+        // the target page's "elements" array so it actually appears on that page.
+        if (pageId != null) {
+          for (el in items) {
+            if (!el.isJsonObject) continue
+            if (el.asJsonObject.get("className")?.asString != "XPage") continue
+            val pageProps = el.asJsonObject.getAsJsonObject("properties") ?: continue
+            val id = pageProps.get("id")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+            if (id != pageId) continue
+            val pageElements =
+                pageProps.getAsJsonArray("elements")
+                    ?: JsonArray().also { pageProps.add("elements", it) }
+            if (pageElements.none { it.isJsonPrimitive && it.asString == buttonName }) {
+              pageElements.add(buttonName)
+            }
+            break
+          }
+        }
+        logger.info(
+            "[AICodBiAssistant] Created new XButtonList '{}' with submit button (parentid={}, page elements={})",
+            buttonName,
+            pageId ?: "<none>",
+            if (pageId != null) "referenced" else "no page found")
+      }
+      gson.toJson(root)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] ensureSubmitButtonInForm failed: {}", e.message)
+      null
+    }
+  }
+
+  /** Returns the `id` of the last XPage in the form (the natural place for the submit button). */
+  private fun findLastPageId(items: JsonArray): String? {
+    var lastPageId: String? = null
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      if (el.asJsonObject.get("className")?.asString != "XPage") continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val id = props.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+      if (!id.isNullOrBlank()) lastPageId = id
+    }
+    return lastPageId
+  }
+
+  /**
+   * Ensures the container whose `id` equals [parentId] lists [buttonName] in its
+   * `properties.elements` array. Formcycle renders a child element ONLY when its container
+   * references it there — a button that exists in the flat `items` array but is missing from its
+   * page's `elements` array is published but never rendered (orphaned). Returns `true` when the
+   * reference was missing and has been added (the form must be re-serialized), `false` when it was
+   * already present, the parent could not be found, or [parentId] is blank.
+   */
+  private fun referenceButtonInContainer(
+      items: JsonArray,
+      parentId: String?,
+      buttonName: String
+  ): Boolean {
+    if (parentId.isNullOrBlank() || buttonName.isBlank()) return false
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val id = props.get("id")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      if (id != parentId) continue
+      val elements =
+          props.getAsJsonArray("elements") ?: JsonArray().also { props.add("elements", it) }
+      if (elements.none { it.isJsonPrimitive && it.asString == buttonName }) {
+        elements.add(buttonName)
+        logger.info(
+            "[AICodBiAssistant] Referenced submit button '{}' from container '{}' (properties.elements)",
+            buttonName,
+            parentId)
+        return true
+      }
+      return false
+    }
+    return false
+  }
+
+  /**
+   * Auto-repairs orphaned form elements. Formcycle renders a child element ONLY when its container
+   * lists it in the container's `properties.elements` array. An element that exists in the flat
+   * `items` array with a `parentid` but is missing from that array is published but never rendered
+   * — completely useless. This scans every container (XPage, XFieldSet, XContainer,
+   * XContainerInvisible, XHeader, XFooter), then re-adds the `name` of every child item that
+   * references one of them as its parent but is not listed. Returns the re-serialized form when at
+   * least one orphan was repaired, otherwise `null`.
+   */
+  private fun repairOrphanedFormElements(formJson: String): String? {
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return null
+      val containerClasses =
+          setOf("XPage", "XFieldSet", "XContainer", "XContainerInvisible", "XHeader", "XFooter")
+      // Container id -> (its properties, className), so children can be re-referenced in one pass.
+      val containerById = mutableMapOf<String, Pair<JsonObject, String>>()
+      for (el in items) {
+        if (!el.isJsonObject) continue
+        val obj = el.asJsonObject
+        val cls = obj.get("className")?.asString ?: continue
+        if (cls !in containerClasses) continue
+        val props = obj.getAsJsonObject("properties") ?: continue
+        val id = props.get("id")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        containerById[id] = props to cls
+      }
+      var changed = false
+      for (el in items) {
+        if (!el.isJsonObject) continue
+        val obj = el.asJsonObject
+        val cls = obj.get("className")?.asString ?: continue
+        if (cls in containerClasses) continue
+        val props = obj.getAsJsonObject("properties") ?: continue
+        val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        val parentId = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        val (parentProps, _) = containerById[parentId] ?: continue
+        val elements =
+            parentProps.getAsJsonArray("elements")
+                ?: JsonArray().also { parentProps.add("elements", it) }
+        if (elements.none { it.isJsonPrimitive && it.asString == name }) {
+          elements.add(name)
+          changed = true
+          logger.info(
+              "[AICodBiAssistant] Repaired orphaned element '{}' (className={}) — added it to container '{}' properties.elements",
+              name,
+              cls,
+              parentId)
+        }
+      }
+      if (changed) gson.toJson(root) else null
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] repairOrphanedFormElements failed: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Last-resort email body used when the AI left the FC_EMAIL body (and message) empty. Picks a
+   * short confirmation text in the subject's language (the AI should normally derive a proper body
+   * itself; this only guarantees the email node is never blank).
+   */
+  private fun defaultEmailBody(subject: String): String {
+    val german =
+        subject.contains('ä') ||
+            subject.contains('ö') ||
+            subject.contains('ü') ||
+            subject.contains('ß') ||
+            Regex("(?i)(eingang|bestätig|bestätigung|empfangen|antwort|vielen|dank|ihr)")
+                .containsMatchIn(subject)
+    val text =
+        if (german) "Ihr Formular wurde erfolgreich übermittelt."
+        else "Your form has been submitted successfully."
+    logger.info(
+        "[AICodBiAssistant] FC_EMAIL body was empty — derived default body ('{}', subject='{}')",
+        text,
+        subject)
+    return "<p>$text</p>"
+  }
+
+  /**
+   * Binds every `FC_FORM_SUBMIT_BUTTON` trigger of [workflowVersionId] that currently has an EMPTY
+   * `buttonName` to [buttonName]. When the AI leaves `triggerParams:{}` (fires on any submit
+   * button) but the backend then ensures a concrete submit button (`btnSenden`), the trigger is
+   * explicitly "selected" to that button so the designer shows it bound. Triggers that already name
+   * a specific button are left untouched. Best-effort (reflection-based); failures are only logged.
+   */
+  private fun bindSubmitTriggerToButton(
+      userContext: Any,
+      workflowVersionId: Long,
+      buttonName: String
+  ) {
+    if (buttonName.isBlank()) return
+    try {
+      val entityContextFactoryClass = Class.forName("de.xima.fc.jpa.context.EntityContextFactory")
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val entityContext =
+          entityContextFactoryClass.getMethod("newEntityContext", ucClass).invoke(null, userContext)
+      try {
+        val em = entityContext.javaClass.getMethod("getEm").invoke(entityContext)
+        val jpql =
+            "SELECT t FROM de.xima.fc.entities.WorkflowTrigger t " +
+                "JOIN t.task wta JOIN wta.process wp JOIN wp.version wv " +
+                "WHERE wv.id = :versionId"
+        val query = em.javaClass.getMethod("createQuery", String::class.java).invoke(em, jpql)
+        query.javaClass
+            .getMethod("setParameter", String::class.java, Any::class.java)
+            .invoke(query, "versionId", workflowVersionId)
+        @Suppress("UNCHECKED_CAST")
+        val resultList =
+            query.javaClass.getMethod("getResultList").invoke(query) as? List<*> ?: emptyList<Any>()
+        val workflowTriggerClass = Class.forName("de.xima.fc.entities.WorkflowTrigger")
+        val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+        val workflowTriggerApi = apiProviderClass.getField("WORKFLOW_TRIGGER_API").get(null)
+        val updateMethod =
+            workflowTriggerApi.javaClass.getMethod(
+                "update",
+                ucClass,
+                Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity"))
+        var updated = 0
+        for (entity in resultList) {
+          if (entity == null) continue
+          val type =
+              runCatching { entity.javaClass.getMethod("getType").invoke(entity) as? String }
+                  .getOrNull()
+          if (type != "FC_FORM_SUBMIT_BUTTON") continue
+          val paramsStr =
+              runCatching {
+                    entity.javaClass.getMethod("getCustomParameters").invoke(entity) as? String
+                  }
+                  .getOrElse {
+                    runCatching {
+                          entity.javaClass.getMethod("getCustomParams").invoke(entity) as? String
+                        }
+                        .getOrNull()
+                  } ?: "{}"
+          val params =
+              runCatching { JsonParser.parseString(paramsStr).asJsonObject }.getOrNull()
+                  ?: JsonObject()
+          val current = params.get("buttonName")?.takeIf { it.isJsonPrimitive }?.asString
+          if (!current.isNullOrBlank()) continue // already bound to a specific button
+          params.addProperty("buttonName", buttonName)
+          val newJson = params.toString()
+          workflowTriggerClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(entity, newJson)
+          updateMethod.invoke(workflowTriggerApi, userContext, entity)
+          updated++
+          logger.info(
+              "[AICodBiAssistant] Bound FC_FORM_SUBMIT_BUTTON trigger (type={}) to submit button '{}'",
+              type,
+              buttonName)
+        }
+        logger.info(
+            "[AICodBiAssistant] bindSubmitTriggerToButton: updated {} trigger(s) to button '{}'",
+            updated,
+            buttonName)
+      } finally {
+        runCatching { entityContext.javaClass.getMethod("close").invoke(entityContext) }
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] bindSubmitTriggerToButton failed: {}", e.message)
+    }
+  }
+
+  /**
+   * Returns [baseId] when no existing item uses it, otherwise a numeric-suffixed unique variant.
+   */
+  private fun uniqueFormItemId(items: JsonArray, baseId: String): String {
+    val used = mutableSetOf<String>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val id = props.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+      if (!id.isNullOrBlank()) used.add(id)
+    }
+    if (baseId !in used) return baseId
+    var i = 2
+    while ("$baseId-$i" in used) i++
+    return "$baseId-$i"
   }
 
   private fun fixProcOrderIndex(savedTask: Any, mainProcess: Any, userContext: Any) {
@@ -8563,7 +9216,12 @@ class AICodBiAssistant : IPluginServletAction {
       "FC_EMAIL" -> {
         val to = spec.nodeParams["to"] as? String ?: ""
         val subject = spec.nodeParams["subject"] as? String ?: ""
-        val body = spec.nodeParams["body"] as? String ?: ""
+        // Some models emit the mail body under "message" instead of "body" — accept both, and as a
+        // last resort derive a sensible default body so the email node is never left empty.
+        val body =
+            (spec.nodeParams["body"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (spec.nodeParams["message"] as? String)?.takeIf { it.isNotBlank() }
+                ?: defaultEmailBody(subject)
         val from = spec.nodeParams["from"] as? String ?: ""
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
@@ -8586,18 +9244,41 @@ class AICodBiAssistant : IPluginServletAction {
         """{"name":${gson.toJson(nodeName)},"to":$toJson,"cc":[],"bcc":[],"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":${gson.toJson(bodyFormatType)},"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)}$multiFileJson}"""
       }
       "FC_DOI_INIT" -> {
-        val to = spec.nodeParams["to"] as? String ?: ""
+        // The AI often emits the recipient/sender under "recipient"/"sender" instead of "to"/"from"
+        // — accept both.
+        val to =
+            (spec.nodeParams["to"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (spec.nodeParams["recipient"] as? String)
+                ?: ""
         val subject = spec.nodeParams["subject"] as? String ?: ""
-        val body = spec.nodeParams["body"] as? String ?: ""
-        val from = spec.nodeParams["from"] as? String ?: ""
+        // Accept "body"/"message"; as a last resort derive a short default so the invitation text
+        // is never empty.
+        val body =
+            (spec.nodeParams["body"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (spec.nodeParams["message"] as? String)?.takeIf { it.isNotBlank() }
+                ?: defaultEmailBody(subject)
+        val from =
+            (spec.nodeParams["from"] as? String)?.takeIf { it.isNotBlank() }
+                ?: (spec.nodeParams["sender"] as? String)
+                ?: ""
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
+        val successPage = spec.nodeParams["successPage"] as? String ?: ""
         val failurePage = spec.nodeParams["failurePage"] as? String ?: ""
         val toJson = if (to.isNotBlank()) "[${gson.toJson(to)}]" else "[]"
         logger.info(
-            "[AICodBiAssistant] buildNodeParams FC_DOI_INIT: failurePage='{}', workflowVersion=null?{}, userContext=null?{}",
+            "[AICodBiAssistant] buildNodeParams FC_DOI_INIT: successPage='{}', failurePage='{}', workflowVersion=null?{}, userContext=null?{}",
+            successPage,
             failurePage,
             workflowVersion == null,
             userContext == null)
+        val successPageJson =
+            if (successPage.isNotBlank() && workflowVersion != null && userContext != null) {
+              val uuid = resolveCompletionPageUuid(userContext, workflowVersion, successPage)
+              if (uuid != null) {
+                val uuidStr = uuid.toString()
+                ""","doiSuccessTemplate":{"entityClass":"TextTemplate","id":${gson.toJson(uuidStr)},"type":"TextTemplate","uuid":${gson.toJson(uuidStr)}}"""
+              } else ""","doiSuccessTemplate":null"""
+            } else ""","doiSuccessTemplate":null"""
         val failurePageJson =
             if (failurePage.isNotBlank() && workflowVersion != null && userContext != null) {
               val uuid = resolveCompletionPageUuid(userContext, workflowVersion, failurePage)
@@ -8618,7 +9299,7 @@ class AICodBiAssistant : IPluginServletAction {
               ""","doiFailTemplate":null"""
             }
         val resultJson =
-            """{"name":${gson.toJson(nodeName)},"to":$toJson,"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)},"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":"HTML"$failurePageJson}"""
+            """{"name":${gson.toJson(nodeName)},"to":$toJson,"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)},"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":"HTML"$successPageJson$failurePageJson}"""
         logger.info("[AICodBiAssistant] buildNodeParams FC_DOI_INIT: final JSON={}", resultJson)
         resultJson
       }
@@ -11216,7 +11897,8 @@ class AICodBiAssistant : IPluginServletAction {
       currentFormKey: String?,
       currentFormTitle: String?,
       useCodbi: Boolean,
-      askAllQuestions: Boolean
+      askAllQuestions: Boolean,
+      completionPages: String? = null
   ): String {
     val action =
         when (intent) {
@@ -11305,6 +11987,15 @@ class AICodBiAssistant : IPluginServletAction {
             "\nYou ALREADY have the PRIOR CHANGE HISTORY above (with the schema). Do NOT request the change history again — " +
                 "interpret it and decide whether you still need information from the user.\n"
           }
+      val completionPagesBlock =
+          if (!completionPages.isNullOrBlank()) {
+            "\nAVAILABLE ABSCHLUSSSEITEN (completion pages) for this workflow — when the request needs a success/failure " +
+                "Abschlussseite (e.g. FC_DOI_INIT successPage/failurePage, FC_SHOW_TEMPLATE), ask the user to PICK ONE BY " +
+                "NAME from this list (offer the names as multiple-choice options). NEVER ask for a target URL/\"Ziel-URL\" " +
+                "and NEVER ask for a free-text page identifier:\n" +
+                completionPages +
+                "\n"
+          } else ""
       return template
           .replace("{{ACTION}}", action)
           .replace("{{USER_REQUEST}}", gson.toJson(prompt))
@@ -11316,7 +12007,7 @@ class AICodBiAssistant : IPluginServletAction {
           .replace("{{CHAT_HISTORY}}", chatHistoryBlock)
           .replace("{{CHANGE_HISTORY_BLOCK}}", changeHistoryBlock)
           .replace("{{FORM_LIST_BLOCK}}", formListBlock)
-          .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus)
+          .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus) + completionPagesBlock
     }
     // No prompt text is embedded in the backend: the clarification prompt is sourced exclusively
     // from
@@ -11772,7 +12463,8 @@ class AICodBiAssistant : IPluginServletAction {
       currentFormTitle: String?,
       useCodbi: Boolean,
       askAllQuestions: Boolean,
-      imageParts: List<String>
+      imageParts: List<String>,
+      completionPages: String? = null
   ): ClarificationCheck? {
     val system =
         buildClarificationSystemPrompt(
@@ -11787,7 +12479,8 @@ class AICodBiAssistant : IPluginServletAction {
             formKey,
             currentFormTitle,
             useCodbi,
-            askAllQuestions)
+            askAllQuestions,
+            completionPages)
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(system)}},""")

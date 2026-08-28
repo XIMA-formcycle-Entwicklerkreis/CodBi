@@ -33,6 +33,7 @@ Example of when to use an array: "Send a DOI invitation when the form is submitt
 Do NOT use an array for setting a form record status — the status transition (endpointState) is automatically added as the bottommost node of EVERY lane.
 
 CHAINED NODES ("chainedNodes" field) — For sequential actions where the second action processes the first action's output (e.g. decode Base64 then download the result), add a "chainedNodes" array inside a single task spec. Each entry has "nodeType" and "nodeParams". Use "%prev%" to reference the preceding node's UUID.
+CRITICAL — SEQUENTIAL FOLLOW-UP ACTIONS MUST GO IN TOP-LEVEL "chainedNodes" (a sibling of "nodeType"/"nodeParams"), NEVER in "_childNodes" and NEVER inside "nodeParams". "_childNodes" is ONLY the YES-branch of conditional/loop/switch/experiment nodes (FC_MULTIPLE_CONDITION, FC_FOR_EACH_LOOP, FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, FC_WITH_FORM_ELEMENT_CONTEXT, FC_SWITCH, FC_EXPERIMENT, CheckTrustLevelPlugin). Putting a plain follow-up action (e.g. FC_EMAIL after FC_LOG_ENTRY) into "_childNodes" or "nodeParams.chainedNodes" of a NON-branch node DROPS that action — it is never created. Use TOP-LEVEL "chainedNodes" for such sequential actions. FC_EMAIL content goes into "body" (never "message"). Also, endpointType "FC_RETURN" is ONLY valid with endpointState "" (empty); when the process must end WITH a status, use endpointType "FC_CHANGE_STATE" and set endpointState to that status.
 
 LOOP CHILD NODE PLACEMENT (CRITICAL — applies to FC_FOR_EACH_LOOP, FC_WHILE_LOOP, FC_DO_UNTIL_LOOP, and any conditional/scoping node with children):
 - The actions that must run ONCE PER ITERATION (per row / per item) MUST be placed INSIDE the loop node's nodeParams."_childNodes" array, each as an object with "nodeType" and "nodeParams".
@@ -133,6 +134,11 @@ EXAMPLE (note: technicalId values are arbitrary — use them verbatim):
 ### FC_FORM_SUBMIT_BUTTON
 Fires when a submit button is clicked.
 - triggerParams: {"buttonName":"<technical name>"} or {} for any button
+- The form must actually have a submit button (an XButtonList button with action.page "submit") for
+  this trigger to fire. When the FORM ELEMENTS list shows no submit button (no BUTTON with
+  actionPage "submit" / "submitNoCheck") and the user only describes actions "beim Klick auf den
+  Senden-Button" without naming an existing button, still build the lane with triggerParams:{} —
+  the backend automatically adds a "Senden" submit button to the form so the lane is reachable.
 
 ### FC_QUALIFIED_FORM_SUBMIT_BUTTON
 Fires when a qualified (electronic signature) submit button is clicked.
@@ -209,6 +215,7 @@ Sends an email.
 - CRITICAL — VALUES & ONE-TO-ONE RULE (applies to EVERY node parameter, not just email): "to"/"from"/"subject" (and any other parameter) take the clarified values LITERALLY — never create a form field to hold a clarified/literal value and never reference such a literal via [%…%] (a [%…%] placeholder is valid ONLY for a REAL form field the end user fills in at runtime). A "create a field" answer applies ONLY to the ONE value it names (e.g. "Erstelle ein E-Mail-Feld für den Kunden" → the customer's email input field); the OTHER literals in the same answer (sender, subject, an address like "X@d.de") are STILL written directly into the node. NEVER emit a field whose placeholder is a literal value you already know.
 - CRITICAL — SENDER: if the user provided (or clarified) a sender address, put that EXACT literal address in "from" (e.g. "from":"office@example.de"). NEVER replace a user-provided sender with [%\$DEFAULT_MAIL_SENDER%] or [%\$CLIENT_MAIL_SENDER%] — those server-default variables are ONLY for when the user truly never named a sender. The USER CLARIFICATION section is authoritative for the sender: an address the user answered in clarification is a provided sender and MUST be used literally.
 - CRITICAL — "from" (the sender address) is REQUIRED for every FC_EMAIL node. NEVER output "from":"" — if the user did not specify a sender, use [%\$DEFAULT_MAIL_SENDER%] (or ask via clarification before generating the email node). An FC_EMAIL without a sender is invalid.
+- CRITICAL — "body" is REQUIRED and must NEVER be empty/null. Derive a sensible confirmation/notification text from the request (the subject, purpose, and available form fields) in the prompt's language when the user did not state a body — e.g. for a Bestätigungsmail with subject "Eingang" write a short HTML confirmation such as "<p>Ihr Formular wurde erfolgreich übermittelt.</p>" (embed [%fieldname%] placeholders where relevant). If the body genuinely cannot be derived, ask via clarification BEFORE emitting the FC_EMAIL. NEVER emit "body":"".
 - Do NOT include bodyFormatType — it is always set to HTML automatically.
 - CRITICAL — Do NOT include "files", "attachments", or any file-related fields in FC_EMAIL nodeParams unless the user explicitly specified files to attach. Empty arrays cause validation errors.
 
@@ -216,7 +223,9 @@ Sends an email.
 Sends a double opt-in invitation email with DOI confirmation link. This is the CORRECT node type for double opt-in invitations, NOT FC_EMAIL.
 - CRITICAL — The email BODY MUST include the verification link as HTML: <a href="[%\$FORM_VERIFY_LINK%]">E-Mail-Adresse bestätigen</a> (or equivalent in the user's language). The placeholder [%\$FORM_VERIFY_LINK%] is automatically resolved by FORMCYCLE at runtime — use it exactly as shown.
 - Use together with trigger FC_DOI_VERIFIED.
-- nodeParams: {"to":"<recipient address>","subject":"<subject>","body":"<HTML body>","from":"<sender address>","senderName":"<sender name>","failurePage":"<name of the Abschlussseite to display if the DOI verification fails — MUST be one of the AVAILABLE ABSCHLUSSSEITEN listed in the prompt>"}
+- nodeParams: {"to":"<recipient address (use the key 'to', NEVER 'recipient')>","subject":"<subject>","body":"<HTML body — REQUIRED and never empty; derive a short invitation text in the prompt's language if not stated>","from":"<sender address (use the key 'from', NEVER 'sender')>","senderName":"<sender display name, optional>","successPage":"<name of the Abschlussseite to display after the DOI invitation is sent — MUST be one of the AVAILABLE ABSCHLUSSSEITEN listed in the prompt>","failurePage":"<name of the Abschlussseite to display if the DOI verification fails — MUST be one of the AVAILABLE ABSCHLUSSSEITEN listed in the prompt>"}
+- CRITICAL — successPage/failurePage MUST be the NAMES of existing ABSCHLUSSSEITEN from the AVAILABLE ABSCHLUSSSEITEN list — NEVER a UUID and NEVER a URL. If the list has no suitable page, ask via clarification BEFORE emitting the node.
+- CRITICAL — DO NOT put failure-handling actions into "_childNodes"/"_handlerChildNodes" of FC_DOI_INIT (they are not created there). "Wenn das Einladungsmail fehlschlägt …" is a SEPARATE lane with trigger FC_INVITATION_ERROR (→ e.g. FC_LOG_ENTRY).
 - CRITICAL — This is the CORRECT node type for double opt-in invitations, NOT FC_EMAIL. The DOI system automatically adds the confirmation link to the email.
 
 ### FC_CHANGE_FORM_RECORD_CHAT_ACTIVENESS
@@ -649,6 +658,9 @@ ALTERNATIVE: "FC_RETURN" — creates a return endpoint that simply ends the work
 
 CRITICAL — If the user says "set status to <XYZ>" or "das Formular auf den Status <XYZ> setzen", use EXACTLY the status name the user specified in their prompt. Do NOT pick a different status from the available list below. The user's requested status name may be new or different from existing ones. This is NOT a separate action or lane. Simply set endpointState to the user's specified status name. The status transition is automatically created as the bottommost node of the lane.
 Exception: if nodeType is "FC_CHANGE_STATE", the state change IS the endpoint; set endpointState to the same value as nodeParams.stateName.
+NOTE — A status is a FORMCYCLE RECORD STATE, NOT a form field: NEVER ask which form field holds the status, NEVER create a status form field, and NEVER use a [%…%] placeholder as the status/state value (it does NOT resolve there). The status value is a literal name. When the user wants the process to END without changing the status ("Prozess beenden", "ohne den Status zu ändern"), use endpointType "FC_RETURN" with endpointState "".
+FC_LOG_ENTRY — nodeParams.message is literal log TEXT (e.g. "Vorgang gestartet"), not a status and not a form-field lookup.
+CRITICAL — A lane has EXACTLY ONE endpoint and it is the LAST node on the main line. NEVER emit BOTH a state change (FC_CHANGE_STATE) as an ordinary chained/mid node AND a separate endpoint with endpointType "FC_CHANGE_STATE": Formcycle renders the FIRST state change as the endpoint and greys out / disconnects everything after it, so the later actions never run. Put non-terminal actions first and the status transition LAST — either as the final chained FC_CHANGE_STATE node (then set endpointState to the same status and it becomes the endpoint), or purely via endpointState/endpointType WITHOUT any chained FC_CHANGE_STATE. Never use FC_CHANGE_STATE, FC_RETURN, FC_DELETE_FORM_RECORD or FC_QUEUE_TASK as a MID-chain node.
 
 STATE PROPERTIES ("stateProperties" field — optional):
 If the user specifies additional requirements for the endpoint state, include a 'stateProperties' object.

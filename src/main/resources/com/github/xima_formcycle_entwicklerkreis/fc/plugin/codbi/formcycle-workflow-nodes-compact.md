@@ -52,6 +52,16 @@ REQUIRED: the target state (status) the record should be set to.
 ### FC_POST_REQUEST
 FC_POST_REQUEST — Sends an HTTP request (webhook, REST API call).
 REQUIRED: URL and HTTP method (GET/POST/PUT/DELETE/...). Ask for them when not provided.
+CRITICAL — BODY vs. PARAMETERS are mutually exclusive: the node sends EITHER a "body" OR named
+"requestParameters", NEVER both. When the user asks for a POST body AND named parameters, clarify
+that the parameters shall be sent as HTTP headers instead (with a prefix like "X-"). Offer ONLY
+feasible options (all-in-one body, or parameters as headers + body, or form-data parameters only) —
+NEVER offer the impossible "requestParameters + separate body" combination, not even as a default
+choice or with a "(nicht möglich)" remark.
+MANDATORY — a clarified success and/or failure Abschlussseite MUST be rendered as FC_SHOW_TEMPLATE
+nodes (success before the endpoint, failure in the "_handlerChildNodes" of an FC_EXPERIMENT wrapping
+the request). When BOTH pages are named, nodeType MUST be "FC_EXPERIMENT" — a bare FC_POST_REQUEST
+without FC_SHOW_TEMPLATE nodes is a HARD ERROR.
 ### FC_CHANGE_FORM_VALUE
 FC_CHANGE_FORM_VALUE — Sets the value of one or more form fields.
 REQUIRED: which field(s) (technicalId) and the value(s) to set.
@@ -127,6 +137,10 @@ REQUIRED: the target form and the field mapping.
 ### FC_SHOW_TEMPLATE
 FC_SHOW_TEMPLATE — Renders an HTML template to the user.
 REQUIRED: the HTML template to render.
+USED FOR ABSCHLUSSSEITEN — the SUCCESS page of a submission goes here as the LAST node before the
+endpoint (top-level "chainedNodes", or inside "_childNodes" after the main action); the FAILURE page
+goes into the "_handlerChildNodes" of an FC_EXPERIMENT wrapping the main action.
+nodeParams: {"htmlTemplate":"<EXACT template/Abschlussseite name from the AVAILABLE list>"}.
 ### FC_DELETE_ATTACHMENT
 FC_DELETE_ATTACHMENT — Deletes attachments from the specified upload fields.
 REQUIRED: the upload field(s) whose attachments should be deleted.
@@ -177,6 +191,10 @@ FC_SWITCH — Switches execution based on the value of a form field (switch/case
 REQUIRED: the field to switch on and the case values/branches.
 ### FC_EXPERIMENT
 FC_EXPERIMENT — Wraps an action with error handling (try-catch-finally pattern).
+USED FOR ABSCHLUSSSEITEN — when a failure Abschlussseite is clarified, nodeType MUST be
+FC_EXPERIMENT: "_childNodes" = [main action, then the SUCCESS page as FC_SHOW_TEMPLATE];
+"_handlerChildNodes" = [the FAILURE page as FC_SHOW_TEMPLATE]. endpointState/endpointType stay at
+the top level.
 ### FC_FOR_EACH_LOOP
 FC_FOR_EACH_LOOP — Iterates over items and executes child nodes for each item.
 REQUIRED: the item source to iterate over.

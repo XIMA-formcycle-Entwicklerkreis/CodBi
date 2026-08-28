@@ -107,9 +107,19 @@ Example for Ja/Nein as RADIO BUTTONS (honor the clarified control type):
 
 Checkbox (note: lowercase 'b').
 
-Template:
+CRITICAL — UNCHECKED BY DEFAULT: A checkbox must NEVER be initially checked unless the user
+explicitly asks for a pre-checked box ("vorausgewählt", "standardmäßig aktiviert", "initially
+checked", "pre-checked", "standardmäßig angehakt", …). The INITIAL checked state is controlled by the
+"checkedvalue" property — NOT by "value" (a "value" key on a checkbox is ignored by formcycle).
+Formcycle renders the box CHECKED when "checkedvalue" is "1", and UNCHECKED when "checkedvalue" is ""
+(empty string) — so for an initially-unchecked box ALWAYS set `"checkedvalue":""` (empty string).
+Only set `"checkedvalue":"1"` AND `"value":"1"` together when the user EXPLICITLY requested a
+pre-checked box. "checkboxvalue" is the value submitted when the user ticks the box at runtime (the
+input's value attribute; default "on", "1" is also valid) and does NOT affect the initial state.
+
+Template (initially UNCHECKED):
 ```json
-{"className":"XCheckbox","properties":{"name":"cbExample","id":"xi-cb-example","label":"Example","required":"0","checkboxvalue":"1","checkedvalue":"1"}}
+{"className":"XCheckbox","properties":{"name":"cbExample","id":"xi-cb-example","label":"Example","required":"0","checkboxvalue":"1","checkedvalue":""}}
 ```
 
 ## XButtonList

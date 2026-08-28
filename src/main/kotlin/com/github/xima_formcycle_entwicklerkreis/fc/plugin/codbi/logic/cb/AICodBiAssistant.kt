@@ -695,6 +695,11 @@ class AICodBiAssistant : IPluginServletAction {
     var resolvedFormJson: String? = null
     var workflowVersionId: Long? = null
     var workflowNodes: JsonArray? = null
+    // True when the FORM AI explicitly signaled a full removal: the user asked (in ANY language /
+    // phrasing) to delete all elements / empty the form, and the AI emitted the top-level
+    // "_removeAll":true marker. The backend then keeps the structural skeleton (page/header/footer)
+    // and removes all orphaned workflow paths.
+    var removeAllRequested = false
     // Technical name/key of the form being edited (explicit request param, or derived from the
     // persist JSON metadata). Used to scope the change log to the currently edited form.
     var formKey: String? =
@@ -838,6 +843,12 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] Clarification Abschlussseiten loaded: {} chars",
         clarificationCompletionPages?.length ?: 0)
+    // Form GLOBAL variables, so the clarification AI knows they exist and does not ask whether to
+    // create hidden fields for them (they are variables, referenced via [%variableName%]).
+    val clarificationFormVariables =
+        extractFormVariablesFromJson(params.requestParameters["persist"]?.firstOrNull())
+    logger.info(
+        "[AICodBiAssistant] Clarification form variables: {}", clarificationFormVariables ?: "none")
     for (round in 0 until 5) {
       val check =
           try {
@@ -857,7 +868,8 @@ class AICodBiAssistant : IPluginServletAction {
                 useCodbi,
                 askAllQuestions,
                 imageParts,
-                clarificationCompletionPages)
+                clarificationCompletionPages,
+                clarificationFormVariables)
           } catch (e: Exception) {
             logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
             null
@@ -972,6 +984,23 @@ class AICodBiAssistant : IPluginServletAction {
         return jsonResponse(
             """{"error":${gson.toJson("The AI did not return a valid form JSON: ${formJson.take(300)}")}}""")
       }
+      // "Remove everything" signal: the AI emits the top-level "_removeAll":true marker when the
+      // user
+      // asked (in ANY language / phrasing) to delete all elements / empty the form. The backend
+      // then
+      // removes all orphaned workflow paths. Language-agnostic because the AI decides, not a
+      // keyword
+      // list.
+      removeAllRequested =
+          runCatching {
+                val o = formParsed.asJsonObject
+                o.get("_removeAll")?.takeIf { it.isJsonPrimitive }?.asBoolean == true
+              }
+              .getOrDefault(false)
+      if (removeAllRequested) {
+        logger.info(
+            "[AICodBiAssistant] AI signaled '_removeAll' — form content emptied (skeleton kept, workflows removed)")
+      }
       // Auto-resolve appointment plan names to UUIDs for XAppointment elements, neutralize
       // destructive SQL the AI may have placed into a button's customAction (form-level injection),
       // and keep the form's pages when the AI was asked to remove widgets/workflows (not pages).
@@ -996,6 +1025,18 @@ class AICodBiAssistant : IPluginServletAction {
       val orphanRepairedForm = resolvedFormJson?.let { repairOrphanedFormElements(it) }
       if (orphanRepairedForm != null) {
         resolvedFormJson = orphanRepairedForm
+      }
+      // The "_removeAll" marker is an instruction to the backend, not a form element — strip it
+      // from
+      // the emitted form JSON so it is never published.
+      if (removeAllRequested && resolvedFormJson != null) {
+        resolvedFormJson =
+            runCatching {
+                  val o = JsonParser.parseString(resolvedFormJson).asJsonObject
+                  o.remove("_removeAll")
+                  gson.toJson(o)
+                }
+                .getOrDefault(resolvedFormJson)
       }
       // NOTE: `formJson` is deliberately NOT appended here. It is emitted AFTER the workflow step
       // below, so a workflow triggered by FC_FORM_SUBMIT_BUTTON can first add a missing submit
@@ -1029,6 +1070,30 @@ class AICodBiAssistant : IPluginServletAction {
         latestFormElements = extractFormElementsFromJson(resolvedFormJson) ?: latestFormElements
         logger.info(
             "[AICodBiAssistant] Updated form elements for workflow AI: {}", latestFormElements)
+      }
+    }
+
+    // "Delete everything": the FORM AI signaled "_removeAll" (any language), so every workflow path
+    // (lane + trigger) is now orphaned — its trigger button and the referenced form fields are
+    // gone.
+    // Remove all workflow paths instead of leaving dead lanes behind. A "form"-classified run does
+    // not go through runWorkflowCreation, so this is the only place such paths get cleaned up. (The
+    // structural skeleton — first page, header, footer — is always kept by
+    // restorePagesUnlessRequested
+    // and must NOT block this cleanup.)
+    if (intent == "form" && removeAllRequested) {
+      val wfVid = params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()
+      if (wfVid != null) {
+        try {
+          val wfCleanup = removeAllWorkflowPaths(params, wfVid)
+          if (wfCleanup.isNotBlank()) {
+            logger.info("[AICodBiAssistant] Form emptied — {}", wfCleanup)
+          }
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] Could not remove workflow paths after emptying the form: {}",
+              e.message)
+        }
       }
     }
 
@@ -2996,6 +3061,35 @@ class AICodBiAssistant : IPluginServletAction {
             props.get("name")?.asString)
       }
     }
+
+    // 5) Normalize XCheckbox initial state: a checkbox must NOT be checked initially unless the
+    // user explicitly requested it. ROOT CAUSE (verified by decompiling formcycle's XCheckbox):
+    // the initial checked state is driven by the "checkedvalue" property, NOT by "value" (which is
+    // not even a real XCheckbox property). renderItem does:
+    //   String v = renderData.value.getSingle();
+    //   if (v == null) v = getDefaultCheckedValue();   // reads "checkedvalue"
+    //   if (isNotEmpty(v)) setAttribute("checked");
+    // getDefaultCheckedValue() returns "1" when checkedvalue == "1" (→ box CHECKED), null when
+    // checkedvalue is non-empty but != "1", and "" (empty) when checkedvalue is empty (→
+    // UNCHECKED).
+    // The AI frequently emits "checkedvalue":"1" (the formcycle default) for boxes the user wants
+    // initially unchecked, which renders the box CHECKED. Force "checkedvalue" to "" unless the AI
+    // explicitly marked a pre-checked box via a non-empty "value" (the prompt instructs the AI to
+    // emit "value":"1" together with "checkedvalue":"1" ONLY for a deliberately pre-checked box).
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val o = el.asJsonObject
+      if (o.get("className")?.asString != "XCheckbox") continue
+      val props = o.getAsJsonObject("properties") ?: continue
+      val checkedValue = props.get("checkedvalue")?.takeIf { it.isJsonPrimitive }?.asString
+      val explicitValue = props.get("value")?.takeIf { it.isJsonPrimitive }?.asString
+      if (checkedValue == "1" && explicitValue.isNullOrBlank()) {
+        props.addProperty("checkedvalue", "")
+        logger.info(
+            "[AICodBiAssistant] Normalized XCheckbox '{}': checkedvalue='' (initially unchecked)",
+            props.get("name")?.asString)
+      }
+    }
   }
 
   /**
@@ -4198,6 +4292,34 @@ class AICodBiAssistant : IPluginServletAction {
         resultVars.add(aiVar)
         byName[name] = aiVar
       }
+    }
+  }
+
+  /**
+   * Extracts the form's FORM / GLOBAL VARIABLES (the top-level `variables` array of the persist
+   * JSON) as a compact, human-readable listing — e.g. `Form variables: Zielseite, Zielcontainer`.
+   * Formcycle global variables are form-level entries `{ "name": ..., "value": ... }`; their value
+   * is referenced elsewhere (form fields, workflow node params such as FC_POST_REQUEST) with the
+   * same placeholder syntax as form fields: `[%variableName%]`. The workflow AI needs this so it
+   * knows such variables exist and does not ask the user whether to create hidden form fields for
+   * them.
+   */
+  private fun extractFormVariablesFromJson(formJson: String?): String? {
+    if (formJson.isNullOrBlank()) return null
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val variables = root.get("variables")?.takeIf { it.isJsonArray }?.asJsonArray ?: return null
+      val names = mutableListOf<String>()
+      for (el in variables) {
+        if (!el.isJsonObject) continue
+        val name = el.asJsonObject.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        if (name.isNotBlank()) names.add(name)
+      }
+      if (names.isEmpty()) null else names.joinToString(", ")
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] Failed to extract form variables from form JSON: {}", e.message)
+      null
     }
   }
 
@@ -5693,6 +5815,9 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] DEBUG setup failed: ${e.message}")
     }
+    // DIAGNOSTIC: dump the DECRYPTED params + version of every FC_POST_REQUEST node so we can
+    // compare an AI-created node with a manually-created one.
+    logPostRequestNodeStates(userContext)
     val workflowStatesJson = fetchWorkflowStates(userContext, workflowVersionId)
     logger.debug(
         "[AICodBiAssistant] runWorkflowCreation: workflowStates={}",
@@ -5725,6 +5850,12 @@ class AICodBiAssistant : IPluginServletAction {
     var requestedTriggers = emptyList<String>()
     val repeatableContainers =
         buildRepeatableContainersContext(params.requestParameters["persist"]?.firstOrNull())
+    // Form/global variables of the form (top-level "variables" array) — the workflow AI needs these
+    // so it can reference a form variable's value with [%variableName%] and does NOT ask whether to
+    // create hidden form fields for variables that already exist.
+    val formVariables =
+        extractFormVariablesFromJson(params.requestParameters["persist"]?.firstOrNull())
+    logger.info("[AICodBiAssistant] runWorkflowCreation: formVariables={}", formVariables)
     var systemPrompt =
         buildWorkflowSystemPrompt(
             formElements,
@@ -5740,7 +5871,8 @@ class AICodBiAssistant : IPluginServletAction {
             requestedTriggers,
             clarificationContext,
             chatContext,
-            changeHistoryContext)
+            changeHistoryContext,
+            formVariables)
 
     var messagesJson = buildString {
       append("[")
@@ -5777,7 +5909,8 @@ class AICodBiAssistant : IPluginServletAction {
               requestedTriggers,
               clarificationContext,
               chatContext,
-              changeHistoryContext)
+              changeHistoryContext,
+              formVariables)
       messagesJson = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -5850,7 +5983,8 @@ class AICodBiAssistant : IPluginServletAction {
                 requestedTriggers,
                 clarificationContext,
                 chatContext,
-                changeHistoryContext)
+                changeHistoryContext,
+                formVariables)
         messagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -6025,7 +6159,9 @@ class AICodBiAssistant : IPluginServletAction {
         nodeLog.add(path)
         continue
       }
-      val pathName = spec.taskName.trim().takeIf { it.isNotEmpty() } ?: deriveNodeName(spec)
+      val pathName =
+          spec.taskName.trim().takeIf { it.isNotEmpty() }?.let { sanitizeWorkflowName(it) }
+              ?: deriveNodeName(spec)
       path.addProperty("name", pathName)
 
       // Trigger — the workflow trigger the AI chose for this path.
@@ -6091,7 +6227,8 @@ class AICodBiAssistant : IPluginServletAction {
       requestedTriggers: List<String> = emptyList(),
       clarificationContext: String? = null,
       chatContext: String? = null,
-      changeHistoryContext: String? = null
+      changeHistoryContext: String? = null,
+      formVariables: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -6130,7 +6267,8 @@ class AICodBiAssistant : IPluginServletAction {
           clarificationContext = clarificationContext,
           chatContext = chatContext,
           changeHistoryContext = changeHistoryContext,
-          changeLogSchema = loadChangeLogSchema())
+          changeLogSchema = loadChangeLogSchema(),
+          formVariables = formVariables)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to build workflow system prompt", e)
       return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -6452,6 +6590,140 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Removes EVERY workflow path (task lane + its trigger + the full node tree) of the given
+   * workflow version. Used when the form is emptied ("Lösche alle Elemente" / "delete all
+   * elements"): every lane becomes orphaned because its trigger button and referenced form fields
+   * are gone. Mirrors the deletion pattern of [removeWorkflowNode] (detach task from root node +
+   * trigger, delete nodes bottom-up via the entity API, then delete trigger + task) but iterates
+   * over ALL tasks of the version.
+   */
+  private fun removeAllWorkflowPaths(
+      params: IPluginServletActionParams,
+      workflowVersionId: Long
+  ): String {
+    val userContext = getUserContext(params)
+    val em = formcycleEntityManager(userContext) ?: return ""
+    val rows =
+        runJpqlOn(
+            em,
+            "SELECT t.id FROM de.xima.fc.entities.WorkflowTask t " +
+                "JOIN t.process wp JOIN wp.version wv WHERE wv.id = :vid",
+            "vid",
+            workflowVersionId)
+    val taskIds = rows.mapNotNull { (it as? Number)?.toLong() }
+    if (taskIds.isEmpty()) return ""
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
+      val workflowTaskApi = apiProviderClass.getField("WORKFLOW_TASK_API").get(null)
+      val workflowTriggerApi = apiProviderClass.getField("WORKFLOW_TRIGGER_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val iTransferableEntityClass =
+          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+      val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
+      val workflowTaskClass = Class.forName("de.xima.fc.entities.WorkflowTask")
+      val workflowTriggerClass = Class.forName("de.xima.fc.entities.WorkflowTrigger")
+      val getByIdTaskMethod =
+          workflowTaskApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      val updateTaskMethod =
+          workflowTaskApi.javaClass.getMethod("update", ucClass, iTransferableEntityClass)
+      val deleteNodeMethod =
+          workflowNodeApi.javaClass.getMethod("deleteById", ucClass, Long::class.javaObjectType)
+      val deleteTriggerMethod =
+          workflowTriggerApi.javaClass.getMethod("deleteById", ucClass, Long::class.javaObjectType)
+      val deleteTaskMethod =
+          workflowTaskApi.javaClass.getMethod("deleteById", ucClass, Long::class.javaObjectType)
+
+      var removed = 0
+      for (taskId in taskIds) {
+        try {
+          var triggerId: Long? = null
+          try {
+            triggerId = workflowTaskTriggerId(em, taskId)
+          } catch (_: Exception) {}
+          // Collect the whole node tree of the task (root + descendants).
+          val idsToDelete = mutableListOf<Long>()
+          val rootNodeId =
+              try {
+                workflowTaskRootNodeId(em, taskId)
+              } catch (_: Exception) {
+                null
+              }
+          if (rootNodeId != null) {
+            val queue = ArrayDeque<Long>()
+            queue.add(rootNodeId)
+            while (queue.isNotEmpty()) {
+              val pid = queue.removeFirst()
+              idsToDelete.add(pid)
+              for (childRef in childWorkflowNodeRefs(em, pid)) {
+                (childRef[0] as? Number)?.toLong()?.let { queue.add(it) }
+              }
+            }
+          }
+          // Detach the task from its root node + trigger so node deletion is not blocked by FKs.
+          try {
+            val taskEntity =
+                getByIdTaskMethod.invoke(workflowTaskApi, userContext, taskId) ?: continue
+            workflowTaskClass
+                .getMethod("setRootNode", workflowNodeClass)
+                .invoke(taskEntity, *arrayOfNulls<Any>(1))
+            workflowTaskClass
+                .getMethod("setTrigger", workflowTriggerClass)
+                .invoke(taskEntity, *arrayOfNulls<Any>(1))
+            updateTaskMethod.invoke(workflowTaskApi, userContext, taskEntity)
+          } catch (e: Exception) {
+            logger.warn(
+                "[AICodBiAssistant] removeAllWorkflowPaths: detach failed for task {}: {}",
+                taskId,
+                e.message)
+          }
+          // Delete the nodes bottom-up.
+          for (id in idsToDelete.reversed()) {
+            try {
+              deleteNodeMethod.invoke(workflowNodeApi, userContext, id)
+            } catch (e: Exception) {
+              logger.warn(
+                  "[AICodBiAssistant] removeAllWorkflowPaths: node delete failed id={}: {}",
+                  id,
+                  e.message)
+            }
+          }
+          // Delete the trigger and then the task.
+          if (triggerId != null) {
+            try {
+              deleteTriggerMethod.invoke(workflowTriggerApi, userContext, triggerId)
+            } catch (_: Exception) {}
+          }
+          try {
+            deleteTaskMethod.invoke(workflowTaskApi, userContext, taskId)
+            removed++
+          } catch (e: Exception) {
+            logger.warn(
+                "[AICodBiAssistant] removeAllWorkflowPaths: task delete failed {}: {}",
+                taskId,
+                e.message)
+          }
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] removeAllWorkflowPaths: task {} failed: {}", taskId, e.message)
+        }
+      }
+      if (removed > 0) {
+        touchWorkflowVersion(userContext, workflowVersionId)
+        logger.info(
+            "[AICodBiAssistant] removeAllWorkflowPaths: removed {} workflow path(s) after form empty",
+            removed)
+        " Removed all $removed workflow path(s) (the form was emptied)."
+      } else {
+        ""
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] removeAllWorkflowPaths failed: {}", e.message)
+      ""
+    }
+  }
+
+  /**
    * Obtains a FORMCYCLE-managed EntityManager (via EntityContextFactory) that has all FormCycle
    * entities registered — the CodBi plugin's own EntityManagerFactory does NOT know them.
    */
@@ -6736,6 +7008,7 @@ class AICodBiAssistant : IPluginServletAction {
         workflowNodeClass
             .getMethod("setCustomParameters", String::class.java)
             .invoke(node, nodeParamsJson)
+        stampCustomParamsVersion(workflowNodeClass, node)
       }
       workflowNodeApi.javaClass
           .getMethod("update", ucClass, iTransferableEntityClass)
@@ -6779,6 +7052,79 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Stamps a workflow element's custom-parameters version exactly like formcycle's own node
+   * builders do. The value MUST equal the current formcycle node-handler version ("8.5.3" — the
+   * formcycle release version, verified via the persisted customParamsVer='8.5.3' on a manually
+   * created FC_POST_REQUEST node and its decrypted "$version":"8.5.3"). Without this,
+   * WorkflowCustomParametersHelper.updateCustomParams() sees a mismatching version on every load
+   * and runs the node handler's updateCustomParams() migration — for FC_POST_REQUEST that
+   * re-derives httpRequestType and resets "CUSTOM" to the DYNAMIC default ("Automatisch gemäß
+   * Inhalt"). Matching formcycle's "8.5.3" makes the version check pass so the migration is
+   * skipped.
+   */
+  private fun stampCustomParamsVersion(cls: Class<*>, element: Any) {
+    try {
+      cls.getMethod("setCustomParametersVersion", String::class.java).invoke(element, "8.5.3")
+      val name =
+          try {
+            element.javaClass.getMethod("getName").invoke(element) as? String
+          } catch (_: Exception) {
+            null
+          }
+      logger.info(
+          "[AICodBiAssistant] Stamped customParametersVersion='8.5.3' on {} '{}'",
+          cls.simpleName,
+          name ?: "?")
+    } catch (_: Exception) {
+      logger.debug("[AICodBiAssistant] No setCustomParametersVersion on {}", cls.simpleName)
+    }
+  }
+
+  /**
+   * DIAGNOSTIC: logs the DECRYPTED custom parameters and the customParametersVersion of every
+   * FC_POST_REQUEST node (AI-created AND manually-created) via the entity API, so an AI-created
+   * node can be compared with a manually-created one to find why the designer shows "Automatisch
+   * gemäß Inhalt" (DYNAMIC) although the persisted httpRequestType is "CUSTOM".
+   */
+  private fun logPostRequestNodeStates(userContext: Any) {
+    try {
+      val em = formcycleEntityManager(userContext) ?: return
+      val rows =
+          runJpqlOn(
+              em,
+              "SELECT n.id FROM de.xima.fc.entities.WorkflowNode n WHERE n.type = 'FC_POST_REQUEST'",
+              null,
+              null)
+      if (rows.isEmpty()) return
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val getByIdMethod =
+          workflowNodeApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      for (row in rows) {
+        val id = (row as? Number)?.toLong() ?: continue
+        try {
+          val node = getByIdMethod.invoke(workflowNodeApi, userContext, id) ?: continue
+          val name = node.javaClass.getMethod("getName").invoke(node) as? String
+          val ver = node.javaClass.getMethod("getCustomParametersVersion").invoke(node) as? String
+          val params = node.javaClass.getMethod("getCustomParameters").invoke(node) as? String
+          logger.info(
+              "[AICodBiAssistant] DIAG FC_POST_REQUEST id={} name='{}' customParamsVer='{}' customParams={}",
+              id,
+              name,
+              ver,
+              params)
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] DIAG: could not read FC_POST_REQUEST node {}: {}", id, e.message)
+        }
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] DIAG logPostRequestNodeStates failed: {}", e.message)
+    }
+  }
+
+  /**
    * Creates a new workflow task in the active WorkflowVersion of the given project using
    * FORMCYCLE's entity API via reflection. (Mirrors AIWorkflowAssistant.createWorkflowTask.)
    */
@@ -6817,6 +7163,7 @@ class AICodBiAssistant : IPluginServletAction {
       workflowTriggerClass
           .getMethod("setCustomParameters", String::class.java)
           .invoke(trigger, triggerParamsJson)
+      stampCustomParamsVersion(workflowTriggerClass, trigger)
     }
 
     val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
@@ -6864,13 +7211,14 @@ class AICodBiAssistant : IPluginServletAction {
       workflowNodeClass
           .getMethod("setCustomParameters", String::class.java)
           .invoke(actionNode, nodeParamsJson)
+      stampCustomParamsVersion(workflowNodeClass, actionNode)
     }
 
     val workflowTaskClass = Class.forName("de.xima.fc.entities.WorkflowTask")
     val task = workflowTaskClass.getDeclaredConstructor().newInstance()
     workflowTaskClass
         .getMethod("setName", String::class.java)
-        .invoke(task, spec.taskName.ifBlank { "AI-generated task" })
+        .invoke(task, sanitizeWorkflowName(spec.taskName).ifBlank { "AI-generated task" })
     workflowTaskClass
         .getMethod("setDescription", String::class.java)
         .invoke(task, spec.taskDescription ?: "")
@@ -6961,6 +7309,7 @@ class AICodBiAssistant : IPluginServletAction {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(childNode, childParamsJson)
+          stampCustomParamsVersion(workflowNodeClass, childNode)
         }
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
         workflowNodeClass
@@ -6981,6 +7330,7 @@ class AICodBiAssistant : IPluginServletAction {
             workflowNodeClass
                 .getMethod("setCustomParameters", String::class.java)
                 .invoke(savedChildNode, resolvedJson)
+            stampCustomParamsVersion(workflowNodeClass, savedChildNode)
             // Persist the change to database - use update API to ensure it's saved
             try {
               val updateNodeMethod =
@@ -7012,6 +7362,7 @@ class AICodBiAssistant : IPluginServletAction {
             workflowNodeClass
                 .getMethod("setCustomParameters", String::class.java)
                 .invoke(savedChildNode, resolvedJson)
+            stampCustomParamsVersion(workflowNodeClass, savedChildNode)
             // Persist the change to database
             try {
               val updateNodeMethod =
@@ -7142,6 +7493,7 @@ class AICodBiAssistant : IPluginServletAction {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(endpointNode, epJson)
+          stampCustomParamsVersion(workflowNodeClass, endpointNode)
         }
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
         workflowNodeClass
@@ -7201,6 +7553,7 @@ class AICodBiAssistant : IPluginServletAction {
               workflowNodeClass
                   .getMethod("setCustomParameters", String::class.java)
                   .invoke(childNode, childParamsJson)
+              stampCustomParamsVersion(workflowNodeClass, childNode)
             }
             workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
             workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(childNode, savedSeq)
@@ -7224,6 +7577,7 @@ class AICodBiAssistant : IPluginServletAction {
             .getMethod("setUUIDObject", UUID::class.java)
             .invoke(defNode, UUID.randomUUID())
         workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(defNode, "{}")
+        stampCustomParamsVersion(workflowNodeClass, defNode)
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(defNode, savedTask)
         workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(defNode, savedActionNode)
         val savedDefNode = createNodeMethod.invoke(workflowNodeApi, userContext, defNode)
@@ -7266,6 +7620,7 @@ class AICodBiAssistant : IPluginServletAction {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(caseNode, caseParamsJson)
+          stampCustomParamsVersion(workflowNodeClass, caseNode)
           workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(caseNode, savedTask)
           workflowNodeClass
               .getMethod("setParent", workflowNodeClass)
@@ -7339,6 +7694,7 @@ class AICodBiAssistant : IPluginServletAction {
                   workflowNodeClass
                       .getMethod("setCustomParameters", String::class.java)
                       .invoke(childNode, childParamsJson)
+                  stampCustomParamsVersion(workflowNodeClass, childNode)
                 }
                 workflowNodeClass
                     .getMethod("setTask", workflowTaskClass)
@@ -7434,6 +7790,7 @@ class AICodBiAssistant : IPluginServletAction {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(chainNode, chainParamsJson)
+          stampCustomParamsVersion(workflowNodeClass, chainNode)
         }
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(chainNode, savedTask)
         workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(chainNode, savedRootNode)
@@ -7765,6 +8122,7 @@ class AICodBiAssistant : IPluginServletAction {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(endpointNode, endpointParamsJson)
+          stampCustomParamsVersion(workflowNodeClass, endpointNode)
           workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
           workflowNodeClass
               .getMethod("setParent", workflowNodeClass)
@@ -8217,6 +8575,7 @@ class AICodBiAssistant : IPluginServletAction {
           workflowTriggerClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(entity, newJson)
+          stampCustomParamsVersion(workflowTriggerClass, entity)
           updateMethod.invoke(workflowTriggerApi, userContext, entity)
           updated++
           logger.info(
@@ -8727,10 +9086,19 @@ class AICodBiAssistant : IPluginServletAction {
       nodeType: String = spec.nodeType
   ): String? {
     val base = buildNodeParamsJson(spec, workflowVersion, userContext) ?: return null
-    val icon = resolveNodeIconJson(nodeType) ?: return base
     return try {
       val obj = gson.fromJson(base, JsonObject::class.java)
-      obj.add("icon", JsonParser.parseString(icon))
+      // Match formcycle's own node serialization: stamp the params-schema version key so
+      // WorkflowCustomParametersHelper.updateCustomParams() (which checks "$version" in the params
+      // JSON) skips the node-handler migration — for FC_POST_REQUEST that migration would otherwise
+      // re-derive httpRequestType to DYNAMIC ("Automatisch gemäß Inhalt") instead of keeping
+      // "CUSTOM". "8.5.3" is the current formcycle node-handler version (verified from a manually
+      // created node's decrypted "$version":"8.5.3"); it MUST match the formcycle release version.
+      // The entity-level customParametersVersion="8.5.3" (stampCustomParamsVersion) covers the
+      // entity-based path; this covers the JSON-based path. The runtime ignores the extra
+      // "$version" key (fastjson maps only the FcHttpRequestProps fields).
+      obj.addProperty("\$version", "8.5.3")
+      resolveNodeIconJson(nodeType)?.let { obj.add("icon", JsonParser.parseString(it)) }
       obj.toString()
     } catch (_: Exception) {
       base
@@ -8749,10 +9117,11 @@ class AICodBiAssistant : IPluginServletAction {
       userContext: Any?
   ): String? {
     val base = buildTriggerParamsJson(spec, workflowVersion, userContext) ?: return null
-    val icon = resolveTriggerIconJson(spec.triggerType) ?: return base
     return try {
       val obj = gson.fromJson(base, JsonObject::class.java)
-      obj.add("icon", JsonParser.parseString(icon))
+      // Same params-schema version stamp as the nodes (see buildNodeParamsJsonWithIcon).
+      obj.addProperty("\$version", "8.5.3")
+      resolveTriggerIconJson(spec.triggerType)?.let { obj.add("icon", JsonParser.parseString(it)) }
       obj.toString()
     } catch (_: Exception) {
       base
@@ -8856,11 +9225,12 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
-   * Guardrail for the form AI: when the AI was asked to REMOVE widgets/workflows (not pages), it
-   * must not delete the form's pages (XPage elements). The model occasionally drops all pages but
-   * the first while removing widgets. This re-inserts any XPage that existed before but is missing
-   * from the AI's output — as an empty page (its widgets were removed) — UNLESS the prompt
-   * explicitly asks to remove/delete pages.
+   * Guardrail for the form AI: the STRUCTURAL SKELETON of a form — the first page (XPage), the
+   * header (XHeader) and the footer (XFooter) — must ALWAYS be present, even when everything else
+   * is removed ("Lösche alle Elemente"). The model occasionally drops them together with the
+   * widgets. This re-inserts any XPage / XHeader / XFooter that existed before but is missing from
+   * the AI's output (pages as empty pages, header/footer as-is) — UNLESS the prompt explicitly asks
+   * to remove/delete pages.
    */
   private fun restorePagesUnlessRequested(
       formJson: String,
@@ -8884,30 +9254,37 @@ class AICodBiAssistant : IPluginServletAction {
       val beforeItems =
           before.get("items")?.takeIf { it.isJsonArray }?.asJsonArray ?: return formJson
       val afterItems = after.get("items")?.takeIf { it.isJsonArray }?.asJsonArray ?: return formJson
-      val afterPageNames = mutableSetOf<String>()
+      val structural = setOf("XPage", "XHeader", "XFooter")
+      val afterNames = mutableSetOf<String>()
       for (el in afterItems) {
-        if (el.isJsonObject && el.asJsonObject.get("className")?.asString == "XPage") {
+        if (el.isJsonObject && el.asJsonObject.get("className")?.asString in structural) {
           el.asJsonObject.get("properties")?.asJsonObject?.get("name")?.asString?.let {
-            afterPageNames.add(it)
+            afterNames.add(it)
           }
         }
       }
       var changed = false
-      for (page in beforeItems) {
-        if (!page.isJsonObject || page.asJsonObject.get("className")?.asString != "XPage") continue
+      for (item in beforeItems) {
+        if (!item.isJsonObject) continue
+        val cls = item.asJsonObject.get("className")?.asString ?: continue
+        if (cls !in structural) continue
         val props =
-            page.asJsonObject.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject
+            item.asJsonObject.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject
                 ?: continue
-        val pageName = props.get("name")?.asString ?: continue
-        if (pageName in afterPageNames) continue
-        val restored = page.asJsonObject.deepCopy()
+        val itemName = props.get("name")?.asString ?: continue
+        if (itemName in afterNames) continue
+        val restored = item.asJsonObject.deepCopy()
+        // The skeleton shells are re-inserted EMPTY — any elements they contained (logo, links,
+        // widgets inside the header/footer/page) were removed along with everything else and must
+        // not be resurrected.
         restored.get("properties")?.asJsonObject?.remove("elements")
         restored.get("properties")?.asJsonObject?.add("elements", JsonArray())
         afterItems.add(restored)
         changed = true
         logger.info(
-            "[AICodBiAssistant] Restored page '{}' the AI dropped (prompt did not ask to remove pages)",
-            pageName)
+            "[AICodBiAssistant] Restored {} '{}' the AI dropped (structural skeleton is always kept)",
+            cls,
+            itemName)
       }
       if (changed) after.toString() else formJson
     } catch (e: Exception) {
@@ -9329,6 +9706,21 @@ class AICodBiAssistant : IPluginServletAction {
               """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
             } ?: emptyList()
         val headersJson = "[${headers.joinToString(",")}]"
+        // Named request parameters the user specified for the POST/form-data body. The AI emits
+        // them
+        // as {"name":...,"value":...} (the Formcycle placeholder syntax [%var%] is used to
+        // reference
+        // form fields AND form/global variables, e.g. "Seite" -> "[%Zielseite%]").
+        @Suppress("UNCHECKED_CAST")
+        val requestParameters =
+            (spec.nodeParams["requestParameters"] as? List<*>)
+                ?.filterIsInstance<Map<*, *>>()
+                ?.mapNotNull { p ->
+                  val name = p["name"] as? String ?: return@mapNotNull null
+                  val value = p["value"] as? String ?: ""
+                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)},"deletable":true,"required":false,"nameEditable":true,"valueEditable":true}"""
+                } ?: emptyList()
+        val requestParametersJson = "[${requestParameters.joinToString(",")}]"
         // Map contentType to httpRequestType enum:
         //   CUSTOM â€“ for JSON/PLAIN_TEXT/XML (body provided as customBodyContent)
         //   FORM_DATA â€“ for FORM_DATA (key-value pairs in requestParameters)
@@ -9336,17 +9728,31 @@ class AICodBiAssistant : IPluginServletAction {
         val asResponsePage = spec.nodeParams["asResponsePage"] as? Boolean ?: false
         val treat4xxAsNormal = spec.nodeParams["treat4xxAsNormal"] as? Boolean ?: false
         val treat5xxAsNormal = spec.nodeParams["treat5xxAsNormal"] as? Boolean ?: false
+        // The formcycle HTTP request node is MODE-EXCLUSIVE: it sends EITHER named request
+        // parameters (httpRequestType FORM_DATA) OR a raw body (httpRequestType CUSTOM), never
+        // both.
+        // When the AI provided BOTH a "body" AND "requestParameters", one of them would be silently
+        // dropped depending on the derived mode — surface that here instead of losing data
+        // silently.
+        if (body.isNotBlank() && requestParameters.isNotEmpty()) {
+          logger.warn(
+              "[AICodBiAssistant] buildNodeParams FC_HTTP_REQUEST: AI provided BOTH 'body' and 'requestParameters' — " +
+                  "the formcycle HTTP request node cannot send both simultaneously (mode is FORM_DATA or CUSTOM, not both). " +
+                  "The '{}' mode will be used; the other input is dropped. The clarification prompt instructs the AI to " +
+                  "ask the user whether the parameters should be sent as HTTP headers instead.",
+              if (contentType == "FORM_DATA") "FORM_DATA" else "CUSTOM")
+        }
         val httpRequestType =
             when {
               method == "GET" || method == "DELETE" || method == "HEAD" || method == "OPTIONS" ->
                   "URL"
-              contentType == "FORM_DATA" -> "FORM_DATA"
+              contentType == "FORM_DATA" || requestParameters.isNotEmpty() -> "FORM_DATA"
               body.isBlank() -> "URL" // POST with no body content â†’ use URL type
               else -> "CUSTOM" // JSON, PLAIN_TEXT, XML â†’ custom body content
             }
         val nodeParamsJson =
             if (httpRequestType == "FORM_DATA") {
-              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":[],"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
+              """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"FORM_DATA","sendAllFormValues":false,"requestParameters":$requestParametersJson,"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
             } else if (httpRequestType == "URL") {
               """{"name":${gson.toJson(nodeName)},"postUrl":${gson.toJson(url)},"httpVerb":${gson.toJson(method)},"httpRequestType":"URL","sendAllFormValues":false,"headerParameters":$headersJson,"allowInvalidCertificates":false,"asResponsePage":$asResponsePage,"treat4xxAsNormal":$treat4xxAsNormal,"treat5xxAsNormal":$treat5xxAsNormal}"""
             } else {
@@ -11342,7 +11748,7 @@ class AICodBiAssistant : IPluginServletAction {
   private fun deriveNodeName(spec: WorkflowTaskSpec): String {
     val raw = spec.taskName.trim()
     if (raw.isNotBlank() && !raw.equals("AI-generated task", ignoreCase = true)) {
-      return raw
+      return sanitizeWorkflowName(raw)
     }
     val result =
         when (spec.nodeType) {
@@ -11433,9 +11839,23 @@ class AICodBiAssistant : IPluginServletAction {
           "FC_EMPTY" -> "Empty placeholder"
           else -> spec.nodeType
         }
-    // Sanitize: only allow letters, numbers, spaces, hyphens, underscores, parentheses
-    return result.replace(Regex("[^a-zA-Z0-9 _\\-()]"), "").trim().ifBlank { spec.nodeType }
+    return sanitizeWorkflowName(result).ifBlank { spec.nodeType }
   }
+
+  /**
+   * Sanitizes a workflow task / node / action name so it only contains characters FORMCYCLE accepts
+   * for names. Formcycle rejects names containing e.g. dots ('.'), slashes or other punctuation —
+   * the error message is: "Der Name darf nur Zahlen, Buchstaben sowie Leerzeichen, Bindestriche
+   * (-), runde Klammern sowie Unterstriche (_) enthalten." AI-generated names frequently embed URLs
+   * or hostnames (e.g. "HTTP-Request an intranet.stadtverwaltung.loc senden"), whose dots would
+   * make the persisted workflow invalid, so every AI-provided taskName must be sanitized here
+   * before it is written to the WorkflowTask / WorkflowNode.
+   */
+  private fun sanitizeWorkflowName(name: String): String =
+      // \p{L} = any Unicode letter (keeps German umlauts ä/ö/ü/ß and other European letters),
+      // \p{N} = any Unicode digit. Formcycle accepts letters/numbers/spaces/hyphens/parentheses/
+      // underscores and rejects punctuation like dots, slashes, colons etc.
+      name.replace(Regex("[^\\p{L}\\p{N} _\\-()]"), "").trim()
 
   // region Data Classes
 
@@ -11898,7 +12318,8 @@ class AICodBiAssistant : IPluginServletAction {
       currentFormTitle: String?,
       useCodbi: Boolean,
       askAllQuestions: Boolean,
-      completionPages: String? = null
+      completionPages: String? = null,
+      formVariables: String? = null
   ): String {
     val action =
         when (intent) {
@@ -11996,6 +12417,12 @@ class AICodBiAssistant : IPluginServletAction {
                 completionPages +
                 "\n"
           } else ""
+      val formVariablesBlock =
+          if (!formVariables.isNullOrBlank()) {
+            "\nFORM GLOBAL VARIABLES (Formularvariablen) exist on this form (NOT form fields): $formVariables. " +
+                "These are referenced at runtime with [%variableName%]. NEVER ask whether they exist / are to be created, " +
+                "and NEVER offer to create hidden form fields for them — use the [%variableName%] placeholder directly.\n"
+          } else ""
       return template
           .replace("{{ACTION}}", action)
           .replace("{{USER_REQUEST}}", gson.toJson(prompt))
@@ -12007,7 +12434,9 @@ class AICodBiAssistant : IPluginServletAction {
           .replace("{{CHAT_HISTORY}}", chatHistoryBlock)
           .replace("{{CHANGE_HISTORY_BLOCK}}", changeHistoryBlock)
           .replace("{{FORM_LIST_BLOCK}}", formListBlock)
-          .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus) + completionPagesBlock
+          .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus) +
+          completionPagesBlock +
+          formVariablesBlock
     }
     // No prompt text is embedded in the backend: the clarification prompt is sourced exclusively
     // from
@@ -12106,7 +12535,8 @@ class AICodBiAssistant : IPluginServletAction {
       clarificationContext: String?,
       chatContext: String?,
       changeHistoryContext: String?,
-      changeLogSchema: String
+      changeLogSchema: String,
+      formVariables: String? = null
   ): String {
     var out =
         template
@@ -12122,6 +12552,7 @@ class AICodBiAssistant : IPluginServletAction {
     out =
         applyWorkflowSection(out, "NEED_FORM_DATA", if (formContext.isNullOrBlank()) " " else null)
     out = applyWorkflowSection(out, "FORM_ELEMENTS", formContext)
+    out = applyWorkflowSection(out, "FORM_VARIABLES", formVariables)
     out = applyWorkflowSection(out, "REPEATABLE_CONTAINERS", repeatableContainers)
     out = applyWorkflowSection(out, "COMPLETION_PAGES", completionPages)
     out = applyWorkflowSection(out, "HTML_TEMPLATES", htmlTemplates)
@@ -12464,7 +12895,8 @@ class AICodBiAssistant : IPluginServletAction {
       useCodbi: Boolean,
       askAllQuestions: Boolean,
       imageParts: List<String>,
-      completionPages: String? = null
+      completionPages: String? = null,
+      formVariables: String? = null
   ): ClarificationCheck? {
     val system =
         buildClarificationSystemPrompt(
@@ -12480,7 +12912,8 @@ class AICodBiAssistant : IPluginServletAction {
             currentFormTitle,
             useCodbi,
             askAllQuestions,
-            completionPages)
+            completionPages,
+            formVariables)
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(system)}},""")

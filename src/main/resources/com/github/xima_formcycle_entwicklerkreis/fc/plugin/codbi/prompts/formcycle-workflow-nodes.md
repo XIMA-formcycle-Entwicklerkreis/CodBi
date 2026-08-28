@@ -239,9 +239,10 @@ Changes the form record state.
 ### FC_POST_REQUEST
 Sends an HTTP request (webhook, REST API call). ALL nodeParams fields are optional unless marked REQUIRED:
 - REQUIRED: "url":"<target URL — must be set to the exact URL from the user's prompt>"
-- "method":"POST|GET|PUT|DELETE|PATCH" (default POST)
+- "method":"POST|GET|PUT|DELETE|PATCH" (default POST — do NOT ask the user for the method unless the prompt leaves it genuinely ambiguous; a submit-triggered request with named parameters defaults to POST)
 - "body":"<request body, supports [%placeholder%] to reference form field values>"
-- "contentType":"JSON|PLAIN_TEXT|XML|FORM_DATA" (default JSON)
+- "contentType":"JSON|PLAIN_TEXT|XML|FORM_DATA" (default JSON; use FORM_DATA when the user provides NAMED request parameters)
+- "requestParameters":[{"name":"<parameter name>","value":"<value>"},...] — for FORM_DATA / named POST parameters. Each "value" supports [%placeholder%] to reference a form field OR a form GLOBAL VARIABLE (Formularvariable) by its name, e.g. "Seite" = the content of variable "Zielseite" → {"name":"Seite","value":"[%Zielseite%]"}. NEVER create hidden form fields for existing global variables — reference them with [%variableName%] directly.
 - "headers":[{"name":"<header>","value":"<value>"},...] (optional)
 - "sendAllFormValues":<true|false> (optional, default false) — send all form field values as request parameters
 - "allowInvalidCertificates":<true|false> (optional, default false) — accept self-signed/invalid SSL certificates
@@ -255,6 +256,40 @@ Sends an HTTP request (webhook, REST API call). ALL nodeParams fields are option
 - "connectTimeoutSeconds":<number> (optional, default 30)
 - "readTimeoutMinutes":<number> (optional, default 5)
 - The httpRequestType is automatically derived from contentType: "CUSTOM" for JSON|PLAIN_TEXT|XML, "FORM_DATA" for FORM_DATA, "URL" when no body is needed (GET/DELETE/OPTIONS or POST with empty body).
+
+MUTUALLY EXCLUSIVE — BODY vs. NAMED PARAMETERS (CRITICAL): The formcycle HTTP request node sends EITHER
+a request body ("body" → httpRequestType CUSTOM) OR named parameters ("requestParameters" →
+httpRequestType FORM_DATA), NEVER both at the same time. When the user asks to send BOTH a body AND
+named parameters in one request, do NOT silently drop one of them and do NOT invent a mixed request —
+the node cannot represent it. Tell the user (in the user's language) that the HTTP request node
+cannot send a body and named parameters simultaneously, and ASK (clarification) whether the named
+parameters should be sent as HTTP HEADERS instead (they can always be combined with a body via
+"headers"). CRITICAL — the clarification MUST offer ONLY feasible options: (1) all data combined in
+ONE body (e.g. a JSON body containing the values AND the HTML), (2) named values as HTTP headers plus
+the body as request body, or (3) named form-data parameters only (no body). NEVER offer the impossible
+combination "named requestParameters AND a separate body in the same request" as a selectable option —
+not even as a first/default choice and NOT with a remark like "(nicht möglich)". NEVER emit nodeParams
+with both "body" and "requestParameters".
+NO BODY → NO HEADERS QUESTION: when the request has NO body (only named/URL parameters), do NOT ask
+anything about headers or prefixes — send the named parameters directly as "requestParameters"
+(httpRequestType FORM_DATA).
+CRITICAL — ASK ABOUT THE "X-" HEADER PREFIX (only when body AND named params): whenever the user wants
+an HTTP request combining a body with named parameters — i.e. the "named values as HTTP HEADERS" path —
+you MUST ask a SEPARATE question whether the HTTP header parameter names shall be prefixed with "X-"
+(e.g. "X-Seite" instead of "Seite") — multiSelect=false, options like ["Ja, mit 'X-'-Präfix", "Nein,
+ohne Präfix"]. NEVER silently pick a prefix and NEVER silently omit one; build the header names EXACTLY
+as the user chose. When the user delegates/leaves it to you, use the "X-" prefix as the safe default
+(custom headers, avoids collisions with standard HTTP headers). Examples:
+{"name":"X-Seite","value":"[%Zielseite%]"} (prefixed) vs {"name":"Seite","value":"[%Zielseite%]"}
+(plain). When the request has NO body, this question is NOT asked.
+
+SUCCESS / FAILURE ABSCHLUSSSEITE — when the user clarified (or requested) a success Abschlussseite and/or
+a failure Abschlussseite for the submission (e.g. "Erfolgsseite X", "Fehlerseite Y"), the workflow MUST
+render them with FC_SHOW_TEMPLATE nodes:
+- SUCCESS page: chain an FC_SHOW_TEMPLATE node (nodeParams {"htmlTemplate":"<success Abschlussseite name>"}) as the LAST node before the endpoint (top-level "chainedNodes" of the FC_POST_REQUEST task, or the final chained node) so the success page is displayed right before the endpoint.
+- FAILURE page: wrap the FC_POST_REQUEST in an FC_EXPERIMENT (try-catch): the FC_POST_REQUEST goes into "_childNodes", and the failure Abschlussseite FC_SHOW_TEMPLATE goes into "_handlerChildNodes" — so the failure page is shown when the HTTP request throws. NEVER emit a workflow with only the success page while the user also clarified a failure page, and never answer the Abschlussseite clarification without building the corresponding FC_SHOW_TEMPLATE nodes.
+- CONCRETE EXAMPLE — "On submit, POST the JSON body [%taInhalt%] to the Intranet; on success show Abschlussseite 'Senden erfolgreich', on error show 'Senden fehlgeschlagen'" (success page sits inside "_childNodes" AFTER the FC_POST_REQUEST, failure page in "_handlerChildNodes"):
+  {"taskName":"HTTP-Request mit Abschlussseiten senden","triggerType":"FC_FORM_SUBMIT_BUTTON","triggerParams":{},"nodeType":"FC_EXPERIMENT","nodeParams":{"_childNodes":[{"nodeType":"FC_POST_REQUEST","taskName":"HTTP-Request an das Intranet senden","nodeParams":{"url":"https://intranet.stadtverwaltung.loc/endpoint","method":"POST","contentType":"JSON","body":"[%taInhalt%]","headers":[{"name":"Content-Type","value":"application/json"}]}},{"nodeType":"FC_SHOW_TEMPLATE","taskName":"Abschlussseite Erfolg anzeigen","nodeParams":{"htmlTemplate":"Senden erfolgreich"}}],"_handlerChildNodes":[{"nodeType":"FC_SHOW_TEMPLATE","taskName":"Abschlussseite Fehler anzeigen","nodeParams":{"htmlTemplate":"Senden fehlgeschlagen"}}]},"endpointState":"Received","endpointType":"FC_CHANGE_STATE"}
 
 ### FC_CHANGE_FORM_VALUE
 Sets the value of one or more form fields.

@@ -46,6 +46,25 @@ class AIWorkflowAssistant : IPluginServletAction {
   private val logger = LoggerFactory.getLogger(AIWorkflowAssistant::class.java)
   private val gson: Gson = GsonBuilder().create()
 
+  /**
+   * Stamps a workflow element's custom-parameters version exactly like formcycle's own node
+   * builders do. The value MUST equal the current formcycle node-handler version ("8.5.3" — the
+   * formcycle release version, verified via the persisted customParamsVer='8.5.3' on a manually
+   * created FC_POST_REQUEST node and its decrypted "$version":"8.5.3"). Without this,
+   * WorkflowCustomParametersHelper.updateCustomParams() sees a mismatching version on every load
+   * and runs the node handler's updateCustomParams() migration — for FC_POST_REQUEST that
+   * re-derives httpRequestType and resets "CUSTOM" to the DYNAMIC default ("Automatisch gemäß
+   * Inhalt"). Matching formcycle's "8.5.3" makes the version check pass so the migration is
+   * skipped.
+   */
+  private fun stampCustomParamsVersion(cls: Class<*>, element: Any) {
+    try {
+      cls.getMethod("setCustomParametersVersion", String::class.java).invoke(element, "8.5.3")
+    } catch (_: Exception) {
+      logger.debug("[AIWorkflowAssistant] No setCustomParametersVersion on {}", cls.simpleName)
+    }
+  }
+
   override fun getName(): String = "CodBi_AIWorkflowAssistant"
 
   companion object {
@@ -668,6 +687,7 @@ class AIWorkflowAssistant : IPluginServletAction {
       workflowTriggerClass
           .getMethod("setCustomParameters", String::class.java)
           .invoke(trigger, triggerParamsJson)
+      stampCustomParamsVersion(workflowTriggerClass, trigger)
     }
 
     // 6. Create root WorkflowNode — FORMCYCLE requires the root to be of type SEQUENCE.
@@ -716,6 +736,7 @@ class AIWorkflowAssistant : IPluginServletAction {
       workflowNodeClass
           .getMethod("setCustomParameters", String::class.java)
           .invoke(actionNode, nodeParamsJson)
+      stampCustomParamsVersion(workflowNodeClass, actionNode)
     }
 
     // 7. Create WorkflowTask — do NOT set trigger/rootNode yet (circular FK dependency:
@@ -827,6 +848,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(childNode, childParamsJson)
+          stampCustomParamsVersion(workflowNodeClass, childNode)
         }
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
         workflowNodeClass
@@ -844,6 +866,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             workflowNodeClass
                 .getMethod("setCustomParameters", String::class.java)
                 .invoke(savedChildNode, resolvedJson)
+            stampCustomParamsVersion(workflowNodeClass, savedChildNode)
             // Persist the change to database
             try {
               val updateNodeMethod =
@@ -873,6 +896,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             workflowNodeClass
                 .getMethod("setCustomParameters", String::class.java)
                 .invoke(savedChildNode, resolvedJson)
+            stampCustomParamsVersion(workflowNodeClass, savedChildNode)
             // Persist the change to database
             try {
               val updateNodeMethod =
@@ -1004,6 +1028,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(endpointNode, epJson)
+          stampCustomParamsVersion(workflowNodeClass, endpointNode)
         }
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
         workflowNodeClass
@@ -1061,6 +1086,7 @@ class AIWorkflowAssistant : IPluginServletAction {
               workflowNodeClass
                   .getMethod("setCustomParameters", String::class.java)
                   .invoke(childNode, childParamsJson)
+              stampCustomParamsVersion(workflowNodeClass, childNode)
             }
             workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(childNode, savedTask)
             workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(childNode, savedSeq)
@@ -1084,6 +1110,7 @@ class AIWorkflowAssistant : IPluginServletAction {
             .getMethod("setUUIDObject", UUID::class.java)
             .invoke(defNode, UUID.randomUUID())
         workflowNodeClass.getMethod("setCustomParameters", String::class.java).invoke(defNode, "{}")
+        stampCustomParamsVersion(workflowNodeClass, defNode)
         workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(defNode, savedTask)
         workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(defNode, savedActionNode)
         val savedDefNode = createNodeMethod.invoke(workflowNodeApi, userContext, defNode)
@@ -1126,6 +1153,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(caseNode, caseParamsJson)
+          stampCustomParamsVersion(workflowNodeClass, caseNode)
           workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(caseNode, savedTask)
           workflowNodeClass
               .getMethod("setParent", workflowNodeClass)
@@ -1196,6 +1224,7 @@ class AIWorkflowAssistant : IPluginServletAction {
                   workflowNodeClass
                       .getMethod("setCustomParameters", String::class.java)
                       .invoke(childNode, childParamsJson)
+                  stampCustomParamsVersion(workflowNodeClass, childNode)
                 }
                 workflowNodeClass
                     .getMethod("setTask", workflowTaskClass)
@@ -1476,6 +1505,7 @@ class AIWorkflowAssistant : IPluginServletAction {
           workflowNodeClass
               .getMethod("setCustomParameters", String::class.java)
               .invoke(endpointNode, endpointParamsJson)
+          stampCustomParamsVersion(workflowNodeClass, endpointNode)
           workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(endpointNode, savedTask)
           workflowNodeClass
               .getMethod("setParent", workflowNodeClass)

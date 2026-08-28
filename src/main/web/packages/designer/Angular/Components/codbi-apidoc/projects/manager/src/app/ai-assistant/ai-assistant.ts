@@ -372,7 +372,17 @@ export class AiAssistant implements OnInit, OnDestroy {
       if (!this.clarificationVisible) return;
       const el = document.querySelector<HTMLElement>(".cb-ai-clarification-text");
       if (el) {
-        el.focus();
+        // Focus the answer textarea WITHOUT scrolling it into view. The textarea sits at the very
+        // bottom of the popup (below ALL questions), so a plain el.focus() makes the browser scroll
+        // the dialog's scroll container (.p-dialog-content) down and the popup opens showing the
+        // LAST question instead of the first.
+        el.focus({ preventScroll: true });
+        // Open the popup scrolled to the TOP so the first question is always visible, even when the
+        // question list is taller than the dialog and a previous open left it scrolled down.
+        const container = document.querySelector<HTMLElement>(
+          `.${AiAssistant.CLARIFICATION_DIALOG_STYLE_CLASS} .p-dialog-content`,
+        );
+        if (container) container.scrollTop = 0;
         return;
       }
       if (attempt < 20) setTimeout(() => tryFocus(attempt + 1), 100);

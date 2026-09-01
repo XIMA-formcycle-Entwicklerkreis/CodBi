@@ -66,9 +66,20 @@ Fetches content from a URL. Use for any prompt asking to retrieve web content.
 
 Queries the DOM for a CSS selector. The CSS selector from the prompt (dot-prefixed class name) is the parameter.
 
-## V
+## V (global variables)
 
-Resolves a global variable by name. Example: "{ V > BayVIS_WeitereAnsprechpartner }"
+Resolves a global variable's value by name. IMPORTANT: V returns the variable's RAW string value exactly as stored — it does NOT re-resolve EP expressions. So a variable whose "value" is itself an EP (e.g. "{ BayVIS.Ansprechpartner.Details > ... }") comes back as that literal text and FAILS when used as BayVIS input. Example: "{ V > BayVIS_WeitereAnsprechpartner }".
+
+WHEN THE USER ASKS TO STORE A VALUE AS A GLOBAL VARIABLE ("als globale Variable hinterlegen", "in einer globalen Variable speichern", "store in a global variable", "globale Variable anlegen"), HOW the V EP is used depends on the intent:
+1. CREATE the global variable in the form's top-level "variables" array. Its "value" holds either:
+   - a PLAIN TEXT/data value to be displayed directly (e.g. a header text that should be changeable via the variable), or
+   - when the intent is to RETRIEVE data from an EP such as BayVIS — the PLAIN IDENTIFIER that locates the data: the NAME string, e.g. {"name":"SALVATORE_CALLARI_CONTACT","aliasname":"SALVATORE_CALLARI_CONTACT","serveronly":false,"value":"Salvatore Callari"} (or a numeric ID). The "value" must contain NO "{" / "}" — never an EP expression (rule 4), never the whole Details chain.
+2. REFERENCE it with V, matching the intent:
+   - PLAIN TEXT/data to show directly: the STANDALONE "{ V > <NAME> }" is correct — it injects the variable's value (e.g. a changeable header text).
+   - RETRIEVE data from an EP (BayVIS): NEST the V EP INSIDE the data EP, e.g. "{ BayVIS.Ansprechpartner.Details > { V > SALVATORE_CALLARI_CONTACT } ; <property> }". Here V is the INPUT to the outer BayVIS EP — a standalone "{ V > <NAME> }" would only inject the raw identifier string, not the fetched BayVIS data. Use the standalone form only when the variable already holds the text to display.
+3. NEVER reference CodBi EP data with Formcycle's "[%$NAME%]" placeholder — that is resolved server-side at submit time and cannot run a client-side EP. Use "{ V > <NAME> }".
+4. NEVER store the full BayVIS data EP (e.g. "{ BayVIS.Ansprechpartner.Details > ... }") as the variable's "value" and NEVER reference it with a standalone "{ V > <NAME> }" — the variable holds the IDENTIFIER only; the data fetch lives in the element's replacement, reading the identifier via V inside the BayVIS EP.
+5. NEVER put a bare name into a BayVIS Directory/Details EP's parameter directly — use the correct ID → Details chain (see BayVIS EPs below).
 
 ## I
 
@@ -96,7 +107,30 @@ EP names use dots and are case-sensitive: OpenPLZ.Localities (NOT "openplz.local
 
 ## BayVIS EPs
 
-BayVIS Detail EPs expect NUMERIC IDs, not names. The ID-resolver EPs take plain STRING names. The directory EPs REQUIRE a property name parameter.
+SYNTAX: `>` introduces the FIRST parameter of an EP; every further parameter is separated by `;` (NEVER by `>`). A nested `{ ... }` EP is resolved first and its result becomes that parameter.
+
+BayVIS has THREE kinds of EPs — never confuse them:
+1. **Directory EPs** (`BayVIS.Behoerden`, `BayVIS.Ansprechpartner`) — REQUIRE a property-name parameter and return that column for the whole directory.
+2. **ID-resolver EPs** (`BayVIS.Behoerden.ID`, `BayVIS.Ansprechpartner.ID`) — take a plain STRING name and return the matching numeric ID(s) as an ARRAY.
+3. **Details EPs** (`BayVIS.Behoerden.Details`, `BayVIS.Ansprechpartner.Details`, `BayVIS.Behoerden.Details.Gebaeude`, `BayVIS.Behoerden.Gebaeude.ID`) — take NUMERIC IDs ONLY, never names.
+
+CRITICAL — TO GET DETAILS FOR A NAMED PERSON OR AUTHORITY, ALWAYS CHAIN NAME → ID → DETAILS (nest the EPs; the inner EP is resolved first):
+- NEVER pass a person's name to `BayVIS.Ansprechpartner` — its only parameter is a PROPERTY name (e.g. `nachname`, `email`). `{ BayVIS.Ansprechpartner > Salvatore Callari }` is INVALID and rejected.
+- NEVER pass an authority/office name (e.g. "Amt 44") to `BayVIS.Behoerden.Details`, `BayVIS.Behoerden.Details.Gebaeude` or `BayVIS.Behoerden.Gebaeude.ID` — they take NUMERIC IDs only. `{ BayVIS.Behoerden.Details > Amt 44 }` is INVALID.
+- Resolve the name to an ID with the matching `.ID` EP. The `.ID` EPs return an ARRAY, so pick one element with the I (index) EP: { I > 0 ; <array EP> }.
+
+Authoritative examples:
+- Contact details from a global variable holding the contact ID: { BayVIS.Ansprechpartner.Details > { V > BayVIS_WeitereAnsprechpartner } }
+- First contact matching a name: { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } }
+- Contact property by name: { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } ; nachname }
+- Authority property by name: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; bezeichnung }
+- Building IDs of an authority by name (returns an ARRAY): { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } } }
+- Building details of an authority (authority ID and building ID are separate `;` parameters, BOTH resolved via I): { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } } } } }
+- First building's street of an authority by name: { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > Amt 44 } } } } ; hausanschriftStrasse }
+- Combine two EP results into one text with Data.Join: { Data.Join > { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > { V > BayVIS_Hauptansprechpartner } } } } ; { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } } } } } }
+- Contact data stored as a GLOBAL VARIABLE and displayed in an XSpan ("Kontaktdaten von ... als globale Variable hinterlegen"): add {"name":"SALVATORE_CALLARI_CONTACT","aliasname":"SALVATORE_CALLARI_CONTACT","serveronly":false,"value":"Salvatore Callari"} to the top-level "variables" array (the value is the PLAIN NAME — never an EP expression, never the whole Details chain), then wire the XSpan with data-cb-func="HTML.Text.Injector", data-cb-property="innerHTML", data-cb-replacement="{ BayVIS.Ansprechpartner.Details > { V > SALVATORE_CALLARI_CONTACT } }", data-cb-placeholder="[[INJECTOR_REPLACEMENT]]" and put "[[INJECTOR_REPLACEMENT]]" in its rtevalue. The V EP is NESTED inside BayVIS.Ansprechpartner.Details — never a standalone "{ V > SALVATORE_CALLARI_CONTACT }", and never store "{ BayVIS.Ansprechpartner.Details > ... }" in the variable.
+- Building details stored as a GLOBAL VARIABLE and displayed in an XSpan ("Details zum Gebäude ... als globale Variable hinterlegen"): add {"name":"BUILDING_AMT44","aliasname":"BUILDING_AMT44","serveronly":false,"value":"Amt 44"} to the "variables" array (the PLAIN authority name — no "{" / "}"), then wire the XSpan with data-cb-func="HTML.Text.Injector", data-cb-property="innerHTML", data-cb-replacement="{ BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > { V > BUILDING_AMT44 } } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > { V > BUILDING_AMT44 } } } } } }", data-cb-placeholder="[[INJECTOR_REPLACEMENT]]" and put "[[INJECTOR_REPLACEMENT]]" in its rtevalue. BayVIS.Behoerden.Details.Gebaeude REQUIRES BOTH the authority ID AND the building ID — never emit it with only one parameter.
+- CORRECT vs WRONG (global variable for BayVIS data): CORRECT — variable {"name":"SALVATORE_CALLARI_CONTACT","aliasname":"SALVATORE_CALLARI_CONTACT","serveronly":false,"value":"Salvatore Callari"} + replacement "{ BayVIS.Ansprechpartner.Details > { V > SALVATORE_CALLARI_CONTACT } }". WRONG — variable {"name":"SALVATORE_CALLARI_CONTACT","aliasname":"SALVATORE_CALLARI_CONTACT","serveronly":false,"value":"{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } }"} + replacement "{ V > SALVATORE_CALLARI_CONTACT }" — the full data EP sits in the variable and the standalone V only prints that raw EP text (V does NOT re-resolve), so NO BayVIS data is fetched.
 
 ### BayVIS.Behoerden
 
@@ -106,32 +140,32 @@ Valid property values: behoerdenart, behoerdengruppe, bezeichnung, email, id, so
 
 ### BayVIS.Behoerden.ID
 
-ID-resolver EP — takes a plain STRING authority name and returns the numeric ID. Example: { BayVIS.Behoerden.ID > <authority name> }.
+ID-resolver EP — takes a plain STRING authority name and returns an ARRAY of matching numeric IDs. To get a single ID: { I > 0 ; { BayVIS.Behoerden.ID > <authority name> } }.
 
 ### BayVIS.Behoerden.Details
 
-Takes a NUMERIC authority ID. Returns authority METADATA (name, email, type), NOT building addresses. For BUILDING details use BayVIS.Behoerden.Details.Gebaeude.
+Takes a NUMERIC authority ID (NOT a name). Returns authority METADATA (name, email, type), NOT building addresses. For BUILDING details use BayVIS.Behoerden.Details.Gebaeude.
 
-Also accepts an OPTIONAL second parameter: a property name to extract just that specific field.
+Also accepts an OPTIONAL second parameter (separated by `;`) — a property name to extract just that specific field: { BayVIS.Behoerden.Details > <authority ID> ; bezeichnung }.
 
 ### BayVIS.Behoerden.Details.Gebaeude
 
-Takes TWO numeric parameters: param 1 = authority ID, param 2 = building ID. To look up building details by authority name, chain BOTH IDs.
+Takes TWO NUMERIC parameters separated by `;`: param 1 = authority ID, param 2 = building ID. An optional third `;` parameter is a property to extract (e.g. hausanschriftStrasse). Obtain a building ID from the Gebaeude.ID EP (optionally via { I > 0 ; ... } to pick the first).
 
 ### BayVIS.Behoerden.Gebaeude.ID
 
-Takes NUMERIC IDs.
+Takes a NUMERIC authority ID and returns an ARRAY of its building IDs. By authority name: { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > <authority name> } }. To pick one building: { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > <authority ID> } }.
 
 ### BayVIS.Ansprechpartner
 
-Directory EP — REQUIRES a property name parameter: { BayVIS.Ansprechpartner > nachname } (not bare { BayVIS.Ansprechpartner }).
+Directory EP — REQUIRES a property name parameter: { BayVIS.Ansprechpartner > nachname } (not bare { BayVIS.Ansprechpartner }, and NEVER a person's name).
 
 Valid property values: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, sortierreihenfolge, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId.
 
 ### BayVIS.Ansprechpartner.ID
 
-ID-resolver EP — takes a plain STRING contact name and returns the numeric ID. Example: { BayVIS.Ansprechpartner.ID > <contact name> }.
+ID-resolver EP — takes a plain STRING contact name and returns an ARRAY of matching numeric IDs. First hit: { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } }.
 
 ### BayVIS.Ansprechpartner.Details
 
-Takes a NUMERIC contact ID.
+Takes a NUMERIC contact ID (NOT a name); an optional second `;` parameter is a property. Resolve the name first, then fetch: { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > <contact name> } } ; <property> }.

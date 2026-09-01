@@ -212,10 +212,6 @@ class StructuredDataStoreAction : IPluginServletAction {
       "RETRIEVE" -> {
         loadDataFromFile()
 
-        LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-            .info(
-                "[[ CodBi / LocalAPIDoc ] RETRIEVE by user '$currentUser' — documentation length=${documentation.length}, isEmpty=${documentation.isEmpty()} ]")
-
         lock.read {
           servletResponse.value =
               if (documentation.isEmpty())
@@ -440,15 +436,9 @@ class StructuredDataStoreAction : IPluginServletAction {
               .setParameter("key", key)
               .resultList
 
-      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .info("[[ CodBi / LocalAPIDoc ] dbLoad('$key') — resultCount=${results.size} ]")
-
       if (results.isEmpty()) return null
 
       val value = results[0]
-
-      LoggerFactory.getLogger(CodbiFormResourcesPlugin::class.java)
-          .info("[[ CodBi / LocalAPIDoc ] dbLoad('$key') — valueLength=${value?.length ?: -1} ]")
 
       return value
     } catch (X: Exception) {

@@ -13,6 +13,7 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
@@ -49,6 +50,17 @@ class CodBiBayVISAuskunftBehoerdendetailsAction : IPluginServletAction {
   private val cacheLock = Any()
 
   /**
+   * Percent-encodes a value for use as a URL path segment (spaces become %20, not '+'; other
+   * reserved characters are escaped). Guards against a raw request value (e.g. an AI-generated "Amt
+   * 44") producing an invalid URI.
+   *
+   * @param value The raw value to encode.
+   * @return The percent-encoded path segment.
+   */
+  private fun pathSegment(value: String): String =
+      URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20")
+
+  /**
    * Retrieves the contact details from the BayVIS-API storing the result into the [buffer] and
    * updating the [lastContact].
    *
@@ -60,7 +72,7 @@ class CodBiBayVISAuskunftBehoerdendetailsAction : IPluginServletAction {
     var statusCode: Int
 
     try {
-      val url: URL = URI(url + id).toURL()
+      val url: URL = URI(url + pathSegment(id)).toURL()
       val connection = url.openConnection() as HttpURLConnection
 
       connection.setRequestMethod("GET")

@@ -10,6 +10,7 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEntities
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.Standard
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.repairAiJson
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -349,7 +350,31 @@ class AIWorkflowAssistant : IPluginServletAction {
     val safeCleaned = cleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
     val taskSpec =
         try {
-          gson.fromJson(safeCleaned, WorkflowTaskSpec::class.java).also { spec ->
+          // The model occasionally drops a `{` between two chained node objects (which produced
+          // "Unterminated array ... chainedNodes[2]"), or emits a stray escaped quote / trailing
+          // comma. Repair the common LLM slips and retry before giving up, so a single bad token
+          // does not fail the whole workflow build.
+          var parseable = safeCleaned
+          try {
+            JsonParser.parseString(parseable)
+          } catch (first: Exception) {
+            val repaired = repairAiJson(parseable)
+            if (repaired != parseable) {
+              logger.warn(
+                  "[AIWorkflowAssistant] AI returned invalid JSON; repaired malformed tokens ({} -> {} chars)",
+                  parseable.length,
+                  repaired.length)
+              parseable = repaired
+              try {
+                JsonParser.parseString(parseable)
+              } catch (_: Exception) {
+                throw first
+              }
+            } else {
+              throw first
+            }
+          }
+          gson.fromJson(parseable, WorkflowTaskSpec::class.java).also { spec ->
             if (spec.nodeType == "FC_DOI_INIT") {
               logger.info(
                   "[AIWorkflowAssistant] DOI workflow task spec: nodeType=FC_DOI_INIT, failurePage='{}', all nodeParams keys={}",

@@ -3253,6 +3253,17 @@ export class AiAssistant implements OnInit, OnDestroy {
         return;
       }
       data["persist"] = innerJson;
+      // Send the FORM ELEMENTS (technicalId, displayText, and for XSelect the options as
+      // {text,value}) for form-only runs too — the clarification AI needs the option values to
+      // resolve which value a selected option like "Ja" maps to (e.g. "nur erscheint, wenn 'Ja'
+      // gewählt wurde") instead of asking the user. Previously this list was only sent for
+      // workflow/both runs; the backend also derives it from `persist` as a fallback.
+      try {
+        const formJson = JSON.parse(innerJson) as { items?: Array<Record<string, unknown>> };
+        data["formElements"] = JSON.stringify(this.extractFormElements(formJson.items ?? []));
+      } catch {
+        // formElements will be absent; backend will proceed without them
+      }
       // Read current CodBi standards from the MultiSelect editor DOM or fallback to form property model.
       const standardsContainer = document.getElementById("CodBi_Standardslisting");
       const storedStandards = designer?.getFormPropertyValueForCurrentLang("codbi-prop-standards");

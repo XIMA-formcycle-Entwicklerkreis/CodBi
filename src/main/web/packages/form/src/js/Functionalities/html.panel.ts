@@ -43,6 +43,8 @@ export class HTML_Panel {
   public static invalidElements: Array<HTMLElement> = new Array<HTMLElement>();
   /** States whether the validator algorithm has already been registered. */
   public static validatorRegistered = false;
+  /** States whether a form submission attempt is currently in progress. */
+  public static submissionInProgress = false;
   /**
    * Unfolds all HTML-Panels that are ancestors of the specified {@link Element } by simulating a click on their
    * header if they're folded.
@@ -590,6 +592,23 @@ export class HTML_Panel {
       // #endregion Required fields handling (validation handling).
       // #region Prevent form submission as long as there're invalid fields.
       getXUtil().on("submit", (params) => {
+        // A submission attempt is in progress. This gates the validator "begin" handling so that
+        // panels are only unfolded for missing required fields on an actual submit — never when a
+        // field merely loses focus (blur) while the user is still filling out the form.
+        HTML_Panel.submissionInProgress = true;
+        // Reset once the current synchronous submission flow (incl. any following validation) is done.
+        setTimeout(() => {
+          HTML_Panel.submissionInProgress = false;
+        }, 0);
+        // #region Diagnostic logging (temporary).
+        const submitParams = params as { submissionBlocked?: boolean };
+        window.codbi?.reportInfo?.(
+          `HTML.Panel submit handler: submissionBlocked=${submitParams.submissionBlocked}, ` +
+            `aria-required=${document.querySelectorAll('[aria-required="true"]').length}, ` +
+            `aria-invalid=${document.querySelectorAll('[aria-invalid="true"]').length}, ` +
+            `folded-panels=${document.querySelectorAll(".CodBi.--HTML_Panel.--folded").length}`,
+        );
+        // #endregion Diagnostic logging (temporary).
         // #region Untag missing required fields.
         for (const untag of document.querySelectorAll(".CodBi_HTML_Panel_MissingRequiredField")) {
           untag.classList.remove("CodBi_HTML_Panel_MissingRequiredField");
@@ -684,11 +703,24 @@ export class HTML_Panel {
 
         let reallyInvalid = false;
 
-        for (const candidate of document.querySelectorAll('[ aria-required = "true"]')) {
-          if (
-            (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value === "" ||
-            (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value === undefined
-          ) {
+        // Handle every field that must block submission:
+        //  - required fields that are empty, and
+        //  - any field currently marked invalid (e.g. failed format/regex validation).
+        // Fields inside folded panels are skipped by the Formcycle validator (they are hidden), so
+        // they have to be inspected proactively here — otherwise a folded panel containing an invalid
+        // field would let the form slip through.
+        for (const candidate of document.querySelectorAll('[ aria-required = "true"], [ aria-invalid = "true" ]')) {
+          const candidateValue = (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
+          const isEmptyRequired =
+            candidate.getAttribute("aria-required") === "true" &&
+            (candidateValue === "" || candidateValue === undefined);
+          const isMarkedInvalid = candidate.getAttribute("aria-invalid") === "true";
+
+          if (!isEmptyRequired && !isMarkedInvalid) {
+            continue;
+          }
+
+          if (isEmptyRequired) {
             // #region Check if the field belongs to a required group that is already satisfied.
             const candidateId = candidate.getAttribute("id");
             if (candidateId && elementToGroup[candidateId]) {
@@ -699,36 +731,53 @@ export class HTML_Panel {
               }
             }
             // #endregion Check if the field belongs to a required group that is already satisfied.
-            HTML_Panel.unfoldPanelAncestors(candidate as HTMLElement);
+          }
 
-            if (!isDisplayNone(candidate as HTMLElement)) {
-              let checkedSelection = false;
+          // Skip fields that are hidden by a Formcycle property (e.g. hidden-if / conditional) and are
+          // NOT inside a folded panel. Such a field is intentionally not required — Formcycle handles
+          // it — so it must NOT block submission. A folded panel, by contrast, only collapses the UI:
+          // its mandatory fields are still expected to be filled and therefore DO block submission.
+          if (isDisplayNone(candidate as HTMLElement) && !hasFoldedPanelAncestor(candidate as HTMLElement)) {
+            continue;
+          }
 
-              if (candidate.classList.contains("XSelect")) {
-                for (const option of candidate.querySelectorAll("input")) {
-                  if (option.checked === true) {
-                    checkedSelection = true;
-                  }
-                }
-              }
+          // A field that is empty-required or invalid and is either visible or sits inside a folded
+          // panel must block submission. Folded-panel fields are skipped by the Formcycle validator
+          // (they are hidden), so without this proactive check such a field would slip through and
+          // the form would be sent.
+          HTML_Panel.unfoldPanelAncestors(candidate as HTMLElement);
 
-              if (!checkedSelection) {
-                // #region Determine and go to page.
-                const pageName = HTML_Panel.determinePage(candidate as HTMLElement)?.getAttribute("data-xn");
+          let checkedSelection = false;
 
-                if (pageName) {
-                  gotoPage(pageName);
-                  candidate.scrollIntoView({ behavior: "smooth", block: toLoad.scrollblock as ScrollLogicalPosition });
-                }
-                // #endregion Determine and go to page.
-                (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).focus();
-
-                (candidate as HTMLElement).classList.add("CodBi_HTML_Panel_MissingRequiredField");
-
-                window.codbi.triggers?.invalidSubmission?.();
-                return { preventSubmission: true };
+          // A required XSelect only counts as missing when none of its options is selected.
+          if (candidate.classList.contains("XSelect") && isEmptyRequired) {
+            for (const option of candidate.querySelectorAll("input")) {
+              if (option.checked === true) {
+                checkedSelection = true;
               }
             }
+          }
+
+          if (!checkedSelection) {
+            // #region Determine and go to page.
+            const pageName = HTML_Panel.determinePage(candidate as HTMLElement)?.getAttribute("data-xn");
+
+            if (pageName) {
+              gotoPage(pageName);
+              candidate.scrollIntoView({ behavior: "smooth", block: toLoad.scrollblock as ScrollLogicalPosition });
+            }
+            // #endregion Determine and go to page.
+            (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).focus();
+
+            (candidate as HTMLElement).classList.add("CodBi_HTML_Panel_MissingRequiredField");
+
+            window.codbi.triggers?.invalidSubmission?.();
+            window.codbi?.reportInfo?.(
+              `HTML.Panel submit handler: blocking submission for field ${
+                (candidate as HTMLElement).getAttribute("data-name") ?? (candidate as HTMLElement).id
+              } (requiredEmpty=${isEmptyRequired}, invalid=${isMarkedInvalid}, displayNone=${isDisplayNone(candidate as HTMLElement)})`,
+            );
+            return { preventSubmission: true };
           }
         }
 
@@ -777,6 +826,39 @@ export class HTML_Panel {
               HTML_Panel.invalidElements = HTML_Panel.invalidElements.filter((candidate) => candidate !== item);
             }
           }
+
+          // A field inside a folded panel is skipped by the Formcycle validator (it is hidden), so
+          // its invalidity is never reported via invalidElements and the form would be submitted.
+          // Force the whole validation to fail (= blocks submission) whenever such a field is invalid.
+          // Only FOLDED panels force this failure — a field hidden by a Formcycle property is
+          // intentionally not required and must not block submission.
+          // Only do this during an actual submission attempt (submissionInProgress) — never while the
+          // user is still filling out the form, e.g. when a field merely loses focus (blur). Otherwise
+          // the accordion would auto-open a folded panel containing a missing required field and close
+          // the panel the user is currently working in.
+          if (data.type === "main" && HTML_Panel.submissionInProgress) {
+            for (const candidate of document.querySelectorAll('[ aria-required = "true"], [ aria-invalid = "true" ]')) {
+              const candidateValue = (candidate as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value;
+              const isEmptyRequired =
+                candidate.getAttribute("aria-required") === "true" &&
+                (candidateValue === "" || candidateValue === undefined);
+              const isInvalid = candidate.getAttribute("aria-invalid") === "true";
+
+              if (!isEmptyRequired && !isInvalid) {
+                continue;
+              }
+
+              if (hasFoldedPanelAncestor(candidate as HTMLElement)) {
+                HTML_Panel.unfoldPanelAncestors(candidate as HTMLElement);
+                window.codbi?.reportInfo?.(
+                  `HTML.Panel validator: forcing validation failure for hidden/folded field ${
+                    candidate.getAttribute("data-name") ?? candidate.id
+                  }`,
+                );
+                return { valid: false };
+              }
+            }
+          }
         });
       }
       // #endregion Handle unfolding of panels containing invalid fields.
@@ -820,6 +902,23 @@ function isClassInBetween(suspect: string, start: HTMLElement, end: HTMLElement)
 function isDisplayNone(suspect: HTMLElement) {
   while (suspect !== null) {
     if (suspect.style.display === "none") {
+      return true;
+    }
+    // biome-ignore lint/style/noParameterAssign:
+    suspect = suspect.parentElement;
+  }
+
+  return false;
+}
+/**
+ * Determines whether the **suspect** {@link HTMLElement } or one of its ancestors is a folded HTML-Panel.
+ *
+ * @param suspect The {@link HTMLElement } to check.
+ *
+ * @returns **TRUE** if the **suspect** {@link HTMLElement } is nested inside a folded panel, otherwise **FALSE**. */
+function hasFoldedPanelAncestor(suspect: HTMLElement) {
+  while (suspect !== null) {
+    if ((suspect as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded) {
       return true;
     }
     // biome-ignore lint/style/noParameterAssign:

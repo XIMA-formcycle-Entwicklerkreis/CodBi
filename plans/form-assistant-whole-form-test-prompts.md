@@ -34,6 +34,7 @@ DataQuery `HolaQuery` configured on the server.
 - [ ] CSS-Selector parameters use the target element's `name` with a dot prefix (`.tfDatumEnde`), **never** `#`-IDs. Element `name`s themselves NEVER carry a dot (`tfVorname`, not `.tfVorname`) — only CSS-selector PARAMETERS (e.g. `data-cb-maxfield`, `data-cb-field`) are dot-prefixed.
 - [ ] Labels/placeholders in the prompt's language (DE prompt → German labels).
 - [ ] **Checkbox initial state (fixed 2026-08-28, root cause corrected):** an XCheckbox is UNCHECKED by default — `"checkedvalue":""` (empty string) must be set in its `properties` (a `"value"` key is ignored by formcycle; the INITIAL state is driven by `checkedvalue`, so `"checkedvalue":"1"` renders the box CHECKED). Never emit `"checkedvalue":"1"` unless the user explicitly asked for a pre-checked box ("vorausgewählt"/"initially checked" — then emit `"checkedvalue":"1"` together with `"value":"1"`). A generated checkbox that renders initially checked without such a request is a FAIL. The backend sanitizer also forces `checkedvalue:""` for any XCheckbox that carries `checkedvalue:"1"` without an explicit non-empty `value`.
+- [ ] **Option-gated conditional visibility — "nur erscheint, wenn '<Option>' gewählt ist" (fixed 2026-08-30):** when a field (e.g. an upload) shall only appear while a specific option of an XSelect/radio is selected, the correct inverse is `hiddenifcomp="2"` (NOT_EQUAL) with `hiddenifvalue=<the chosen option's value>` (e.g. `hiddenifcomp="2"`, `hiddenifvalue="yes"`). An XSelect CAN have an initial `value` preset in the form data (verified in the formcycle JAR — XSelect implements IXValuableItem), but need not; when none is set it starts EMPTY. So the select has THREE states (chosen option, opposite option, empty) and a `hiddenif` carries only ONE comparison value — `value != "yes"` is TRUE for both empty and "no", so NOT_EQUAL to the CHOSEN option is the single constraint that hides the field in every non-chosen state. NEVER hide via `hiddenifcomp="1"` (EQUAL) with `hiddenifvalue=<the OPPOSITE option>` (e.g. `"no"`) — hiding only on equality to "no" leaves the field VISIBLE while nothing is selected (empty is a separate state, not the value "no"). NEVER `hiddenifcomp="0"` (MANDATORY, hidden when the field HAS any value) — it hides even when "Ja"/"yes" is chosen. NEVER `hiddenifcomp="9"` (EMPTY) alone — it hides only the empty state, not the opposite option. The option's value is read from the FORM ELEMENTS list (e.g. `{text:"Ja", value:"Ja"}` / `{text:"Ja", value:"yes"}`). PLACEMENT — the condition goes DIRECTLY on the field itself; do NOT create a wrapping container just to hold the show/hide condition when the prompt did not ask for one. If a container ALREADY exists around the field, the condition must be placed on that CONTAINER (otherwise the empty container remains visible and the field still shows). The backend safety net moves a field-level `hiddenif` onto its single-child wrapping container when the AI creates one (observed 2026-08-30: the AI wrapped the upload in `coUploadConditional` unprompted and put the condition on the XUpload, leaving the container visible).
 
 **Global checks for every whole-workflow scenario:**
 - [ ] Details request lists every trigger **and** node used (incl. condition/loop/container nodes).
@@ -418,6 +419,83 @@ a prompt bug.
 **Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS07. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
 
 **Verification prompt to copy (EN):** Check the current form against the FS07 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
+
+### FS07a — Display "the details" of an EP-resolved object (BayVIS person) with HTML.Text.Mapper
+
+**Elements covered:** HTML.Text.Mapper, XTextArea/XSpan, BayVIS.Ansprechpartner.Details (EP),
+mapping the EP's returned object's properties into the template.
+
+**Prompt (DE):**
+> Zeige die Details der Person „Salvatore Callari“ aus BayVIS in einem Textbereich an. Suche die
+> Person über BayVIS und bilde die zurückgelieferten Objekt-Eigenschaften in den Text ab, z. B.
+> Name, Vorname und E-Mail-Adresse.
+
+**Prompt (EN):**
+> Display the details of the person "Salvatore Callari" from BayVIS in a text area. Look up the
+> person via BayVIS and map the returned object's properties into the text, e.g. name, first name
+> and e-mail address.
+
+**Verify:**
+- [ ] The person-search EP is resolved correctly: `data-cb-replacements="{ BayVIS.Ansprechpartner.Details > ... ; <property> }"` (with `{ I > 0 ; { BayVIS.Ansprechpartner.ID > ... } }` / `{ V > <NAME> }` as needed) — the EP is correct and feeds the mapper's `data-cb-replacements`.
+- [ ] `data-cb-func="HTML.Text.Mapper"` with `data-cb-replacements` + `data-cb-property` (value/rtevalue).
+- [ ] The field's **TEXT TEMPLATE** uses the mapper's `[(property)]` placeholder syntax naming the **ACTUAL properties of the EP's result object** (from its TSDoc — a property name wrapped in `[(...)]`, e.g. `[(name)] [(vorname)] [(nachname)] [(mail)]`) inside the field's own content property (value/rtevalue).
+- [ ] **FAIL if any of:** the template contains the standard injector placeholder `[[INJECTOR_REPLACEMENT]]`, a bare raw EP string, or a generic literal — the requested "details" MUST be rendered as `[(property)]` placeholders referencing the EP object's properties, NOT the standard placeholder.
+
+**Known trap (2026-08-31, root cause fixed in the CodBi prompt wiring docs):** the AI correctly
+resolved the BayVIS person EP, but wrote the standard HTML.Text.Injector placeholder into the field's
+text instead of mapping the EP's object properties with `[(property)]`. When `data-cb-replacements` is
+fed by an EP returning an OBJECT, the placeholders MUST be `[(property)]` naming that object's actual
+properties; the standard injector placeholder only applies to the whole-EP-string HTML.Text.Injector
+flow, never to an object-details mapper template.
+
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS07a. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS07a `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
+
+### FS07b — Intro descriptions placed BEFORE the first elements (ordering)
+
+**Elements covered:** XSpan/XTextArea description texts, element ORDER inside the page's and each
+container's `elements` array (insertion at position 0), preserving the relative order of existing items.
+
+**Prompt (DE):**
+> Verfasse zu jedem Container eine kurze Beschreibung und setze sie VOR das erste Element des
+> Containers. Erstelle außerdem eine kurze Beschreibung über das Formular und füge sie auf der ersten
+> Seite GANZ AM ANFANG ein.
+
+**Prompt (EN):**
+> Write a short description for each container and place it BEFORE the first element of that
+> container. Also create a short description about the form and insert it at the VERY BEGINNING of
+> the first page.
+
+**Verify:**
+- [ ] Each container gets ONE new description text element (XSpan/XTextArea), and its `name` is INSERTED at POSITION 0 of that container's `properties.elements` array (APPENDED → FAIL), so it renders before the container's first existing field.
+- [ ] The form-level description element is INSERTED at POSITION 0 of the FIRST page's `properties.elements` array (and that page's parentid), so it renders at the very top of page 1 — NOT appended after all other page-1 elements.
+- [ ] ALL existing elements of every container/page keep their ORIGINAL relative order — only the new intro element(s) move to the front; nothing else is reordered, removed or renamed.
+- [ ] Each description is meaningful, non-empty text in the prompt's language; each new element is present in the root `items` array AND referenced by its parent's `elements` (no orphans).
+
+**Known trap 1 — appending to `elements` (2026-08-31, fixed in the prompt wiring docs):** the AI created
+the requested descriptions but always APPENDED them to the END of the page's/container's `elements`
+array, because the "preserve existing items / never reorder" rule made appending look like the only safe
+option — even though the user explicitly asked for "before the first element" / "ganz am Anfang". Correct
+behavior: a requested intro/description element is INSERTED at POSITION 0 of the target container's/page's
+elements array (it renders first), while every other existing element keeps its relative order.
+
+**Known trap 2 — designer still showed them at the end even with `elements` at POSITION 0 (2026-08-31,
+root cause fixed server-side in `reorderItemsByTreeOrder`):** the JSON's `elements` array carried the new
+description spans at position 0, yet in the DESIGNER they rendered at the bottom of each fieldset.
+Cause: Formcycle's designer renders a container's children in the order the items appear in the FLAT
+`items` array — the `elements` array alone does not move them — and the AI always APPENDS newly created
+widgets at the END of `items`. Fix: the server now reorders `items` into depth-first tree order
+(`normalizeFinalFormStructure` → `reorderItemsByTreeOrder` in
+[`AICodBiAssistant.kt`](../src/main/kotlin/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/logic/cb/AICodBiAssistant.kt:9492))
+so a description's position in `items` matches its position in the parent's `elements` array (root items
+keep their relative order; nothing is dropped or renamed). Verify by checking the FINAL form's `items`
+array order, not just the `elements` arrays — the description spans must sit between their container and
+the container's first real field.
+
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS07b. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und die Reihenfolge im `elements`-Array.
+
+**Verification prompt to copy (EN):** Check the current form against the FS07b `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and the ORDER of the `elements` array.
 
 ### FS08 — Autocomplete, cropper and print layout (CSS-class heavy)
 

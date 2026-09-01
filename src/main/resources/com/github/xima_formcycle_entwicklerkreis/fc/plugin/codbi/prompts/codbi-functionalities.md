@@ -77,6 +77,28 @@ Supports arithmetic directly — do NOT wrap it in Date.Arithmetic. Use "{ Date.
 
 Turns a date string into a Date object. Use for any prompt about converting/parsing a date string. Example: "{ Date.FromString > 01.12.1978 }". Optional second param sets the format.
 
+## Date.Time.Join
+
+Applicable on an XTextField that shall RECEIVE the COMBINED value of a date field and a time field (e.g. "ein verstecktes Feld mit der Kombination aus Datums- und Zeitfeld", "combine date and time into one field", "Datum und Uhrzeit zusammenführen", an appointment/event start date-time). The receiver may be a normal visible XTextField or a hidden one — mark it `ishidden="1"` ONLY when the user explicitly asks for a hidden field. The receiver updates whenever the date or the time field changes.
+
+CRITICAL — USE Date.Time.Join, NOT a calculation field: when the request asks to combine/join a DATE field and a TIME field into ONE value, do NOT create a Formcycle CALCULATION field (XFormula) for it — Date.Time.Join is the dedicated functionality for exactly this. A calculation field is for arithmetics/JSON (see JSON.SET); joining a date and a time is NOT a formula. So a generic "hidden field that combines other fields' values" is a calculation field ONLY when it is about JSON/arithmetic — a date+time combination MUST use Date.Time.Join.
+
+WIRING (all fields must lie in the SAME container):
+- DATE source field A → cssclasses=["CodBi_Date_Time_Join_Date"]
+- TIME source field B → cssclasses=["CodBi_Date_Time_Join_Time"]
+- RECEIVER field C (an XTextField; set ishidden="1" ONLY when the user asked for a hidden field, otherwise leave it visible) → data-cb-func="Date.Time.Join" (use a SEPARATE field as receiver so it does not become its own source)
+
+OPTIONAL params on the receiver (lowercase data-cb-* attributes):
+- data-cb-datefield / data-cb-timefield: dot-prefixed `name` CSS-selectors of the source fields; take precedence over the CSS classes. REQUIRED when there are MULTIPLE date/time pairs in the same container (otherwise the first pair's fields are resolved for every receiver).
+- data-cb-tomillis="true": write the epoch milliseconds instead of the string representation.
+- data-cb-divisor="<number>": divide the epoch milliseconds by this number and floor them (takes precedence over ToMillis).
+
+Default output format: DD.MM.YYYY HH:mm.
+
+TRIGGER — MILLISECONDS ("Millisekunden" / "milliseconds" / "epoch ms" / "die kombinierten Zeitfelder sollen die Millisekunden enthalten"): set `data-cb-tomillis="true"` on the Date.Time.Join receiver field(s). This applies BOTH when creating the field AND when a follow-up request asks to change EXISTING combined fields to milliseconds — add/update `data-cb-tomillis="true"` on each existing Date.Time.Join receiver (keep data-cb-func, data-cb-datefield, data-cb-timefield). Use `data-cb-divisor` only when a scaled/floored value is requested.
+
+TRIGGER — DIVISOR ("geteilt durch X" / "divided by X" / "durch 1000" / "Millisekunden geteilt durch tausend"): set `data-cb-divisor="X"` on the Date.Time.Join receiver field(s) (e.g. "geteilt durch tausend" → `data-cb-divisor="1000"`). This is a FORM MODIFICATION (hasInstructions=true) — do NOT answer with a how-to and do NOT suggest a formula field (XFormula) or a script. Add/update `data-cb-divisor="X"` on each existing Date.Time.Join receiver (keep data-cb-func, data-cb-datefield, data-cb-timefield, and data-cb-tomillis if present). `data-cb-divisor` divides the epoch milliseconds by X and floors them — it takes precedence over `data-cb-tomillis`.
+
 ## Form.Navigator
 
 Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.
@@ -144,7 +166,7 @@ Applicable on any element to wrap it in a collapsible accordion/panel widget.
 
 PREFER THE STANDARD CSS CLASSES (see UI.Panels) — they need NO data-cb-* parameters and cover the common panel/accordion cases. Choose the class by what the prompt says about the panel:
 - A single standalone collapsible panel ("Standard-Panel" / "aufklappbares Panel" / "collapsible panel") on a fieldset → CSS class CodBi_HTML_Panel_Standard on the XFieldSet; the fieldset's 'legend' becomes the panel title. Apply this to EVERY standalone panel fieldset — e.g. the event-registration fieldset "Veranstaltung".
-- Multiple collapsible sections where ONLY ONE may be open at a time (accordion / mutually exclusive) → put the accordion membership class CodBi_Accordion_A (or B/C/D — pick ONE letter) on the CONTAINER that wraps the sections (an XContainer; the container is NOT a panel and gets NO panel type class). Then put a panel type class (CodBi_HTML_Panel_Standard for top-level panels, Flat/Minimal for nested levels) on EVERY member XFieldSet INSIDE that container. The accordion class alone only says which group a panel belongs to — it does NOT make anything collapsible, so the panel type class is REQUIRED on every member. EXPLICIT STRUCTURE for an accordion with three panels: a wrapper XContainer cssclasses=["CodBi_Accordion_A"] (NO panel class on it) containing three XFieldSet members each cssclasses=["CodBi_HTML_Panel_Standard"] with legend="<panel title>". The real classes are ONLY CodBi_Accordion_A, CodBi_Accordion_B, CodBi_Accordion_C and CodBi_Accordion_D — there is NO class 'CodBi_Accordion_A_B_C_D'; NEVER apply it. The accordion keeps exactly one member open. Panels default to UNFOLDED (open), so the member that must be open at the start (e.g. "am Anfang ... aufgeklappt") needs NO data-cb-folded; set data-cb-folded="true" on every OTHER member that shall start folded/closed. NEVER use data-cb-open — that parameter does not exist.
+- Multiple collapsible sections where ONLY ONE may be open at a time (accordion / mutually exclusive) → put the accordion membership class CodBi_Accordion_A (or B/C/D — pick ONE letter) on the CONTAINER that wraps the sections (an XContainer; the container is NOT a panel and gets NO panel type class). Then put a panel type class (CodBi_HTML_Panel_Standard for top-level panels, Flat/Minimal for nested levels) on EVERY member XFieldSet INSIDE that container. The accordion class alone only says which group a panel belongs to — it does NOT make anything collapsible, so the panel type class is REQUIRED on every member. EXPLICIT STRUCTURE for an accordion with three panels: a wrapper XContainer cssclasses=["CodBi_Accordion_A"] (NO panel class on it) containing three XFieldSet members each cssclasses=["CodBi_HTML_Panel_Standard"] with legend="<panel title>". The real classes are ONLY CodBi_Accordion_A, CodBi_Accordion_B, CodBi_Accordion_C and CodBi_Accordion_D — there is NO class 'CodBi_Accordion_A_B_C_D'; NEVER apply it. The accordion keeps exactly one member open. Panels default to UNFOLDED (open), so the member that must be open at the start (e.g. "am Anfang ... aufgeklappt") needs NO data-cb-folded; set data-cb-folded="true" on every OTHER member that shall start folded/closed. NEVER use data-cb-open — that parameter does not exist. To make panels START FOLDED globally (e.g. 'alle Panels bis auf das Erste zugeklappt' / 'collapsed by default'), set the form-level GLOBAL VARIABLE HTML_PANEL_FOLDED to true (add {"name":"HTML_PANEL_FOLDED","aliasname":"HTML_PANEL_FOLDED","serveronly":false,"value":"true"} to the top-level 'variables' array — every panel then starts folded) and set data-cb-folded="false" on each panel that must remain OPEN at the start (e.g. the first one); the per-element parameter overrides the global default. NEVER use the native XFieldSet 'collapsed' property — that is the wrong mechanism and does not fold a CodBi panel.
 - A panel that must NOT join the accordion behavior → CSS class CodBi_HTML_Panel_NoCordion on that panel.
 - Panels by NESTING DEPTH → CodBi_HTML_Panel_Standard at the top (1st level), CodBi_HTML_Panel_Flat for a panel nested inside a panel (2nd level), CodBi_HTML_Panel_Minimal for a panel two levels deep (3rd level); deeper levels repeat Standard → Flat → Minimal.
 - An index-like panel (like a book index / table of contents, numbered unfoldable sections e.g. "1. Your Info, 2. Describe Your Issue, 3. Upload Files") → CodBi_HTML_Panel_Index.
@@ -198,7 +220,26 @@ CORRECT full example — an XSpan that displays the EP result (the `rtevalue` MU
 ## HTML.Text.Mapper
 
 Applicable on any element to map object properties to named placeholders in a text template.
-**REQUIRES**: the object source and the text template with placeholders — ask the user when missing.
+The placeholder syntax is a PROPERTY name wrapped in "[(...)]" (from the TSDoc) — e.g. `[(name)]`,
+`[(vorname)]`, `[(nachname)]`, `[(mail)]`. Set `data-cb-func="HTML.Text.Mapper"` with:
+- `data-cb-replacements`: the object (or array of objects) whose property VALUES fill the placeholders.
+  This may be a literal object OR an EP placeholder that resolves to an object (e.g.
+  `{ BayVIS.Ansprechpartner.Details > ... ; ... }`).
+- `data-cb-property`: which property of the element holds the TEMPLATE — on an XTextField/XTextArea the
+  template lives in its `value`/`rtevalue` property.
+- `data-cb-css`: optional CSS applied after the replacement.
+The TEMPLATE with the `[(property)]` placeholders goes INTO the field's OWN content property
+(value/rtevalue) — NEVER into a separate attribute; there is NO `data-cb-Template` attribute and
+emitting one is a FAIL.
+CRITICAL — when `data-cb-replacements` is fed by an EP that returns an OBJECT (e.g. BayVIS
+person/authority details), the placeholders MUST be `[(property)]` naming the ACTUAL properties of that
+EP's result object (e.g. `[(name)]`, `[(vorname)]`, `[(nachname)]`, `[(mail)]`, `[(telefon)]`, ...) — NEVER
+the HTML.Text.Injector placeholder `[[INJECTOR_REPLACEMENT]]` and NEVER a bare raw EP string. Each
+`[(property)]` is replaced at runtime by the corresponding property of the object the EP produced. When
+the user asks to display "the details" of a resolved object (a person, an authority, ...), render the
+requested properties as `[(property)]` placeholders in the template text — do not put a
+generic/standard placeholder into the field's content.
+**REQUIRES**: the object source (data-cb-replacements) and the text template with placeholders.
 
 ## HTML.Select.Favorites
 
@@ -210,7 +251,7 @@ Applicable on a hidden field to store a JSON-serialized value derived from anoth
 - data-cb-property: the name of the property to set.
 - data-cb-path: a regular JavaScript path in dot notation (plain `x`, dotted `x.y.z`, empty method call `x()`, index access `x[0]`) leading from the property in data-cb-property onward. This is a SINGLE path — NEVER a CSV list of field names (`data-cb-path="tfVorname,tfNachname"` is WRONG).
 - data-cb-toset: the plain value to assign. To assign a JSON object literal, prefix it with `^` so its commas are NOT treated as CSV separators by CodBi (e.g. data-cb-toset="^{firstname:..., lastname:...}").
-CRITICAL — data-cb-property/data-cb-toset do NOT support field placeholders, so JSON.SET can NEVER build JSON from the RUNTIME values of other form fields. For a hidden field that stores the JSON of OTHER FIELDS' values (e.g. "verstecktes Feld, das das JSON aus tfVorname/tfNachname speichert") DO NOT use JSON.SET — create a Formcycle CALCULATION field (XFormula, read-only, formula in xformula_value) that builds the JSON, and mark it ishidden="1". The xformula_value builds the JSON string EXACTLY as written using [%fieldName%] placeholders — e.g. xformula_value = {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"} — do NOT use JSON.stringify and do NOT reference bare field names ([%name%] is replaced by the field's runtime value).
+CRITICAL — data-cb-property/data-cb-toset do NOT support field placeholders, so JSON.SET can NEVER build JSON from the RUNTIME values of other form fields. For a hidden field that stores the JSON of OTHER FIELDS' values (e.g. "verstecktes Feld, das das JSON aus tfVorname/tfNachname speichert") DO NOT use JSON.SET — create a Formcycle CALCULATION field (XFormula, read-only, formula in xformula_value) that builds the JSON, and mark it ishidden="1" when the prompt intends a hidden field (as in this example) — a calculation field is NOT required to be hidden and may also be left visible. The xformula_value builds the JSON string EXACTLY as written using [%fieldName%] placeholders — e.g. xformula_value = {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"} — do NOT use JSON.stringify and do NOT reference bare field names ([%name%] is replaced by the field's runtime value).
 NEVER emit an XTextField/XTextArea with data-cb-func="JSON.SET" WITHOUT `ishidden="1"` and WITHOUT the three derivation parameters.
 **REQUIRES**: data-cb-property, data-cb-path and data-cb-toset plus the hidden (`ishidden`=1) flag — derive them from the request; ask the user only when they cannot be derived.
 

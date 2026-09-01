@@ -163,9 +163,13 @@
     "HTML.Text.Mapper": {
       "id": "HTML.Text.Mapper",
       "type": "functionality",
-      "summary": "Applicable on any element to map object properties to named placeholders in a text template.",
-      "tsdoc": "Provides the {@link HTML_Text_Mapper.functionality }.",
-      "parameters": {},
+      "summary": "Applicable on any element to map object properties to named placeholders in a text template. The placeholder syntax is a PROPERTY name wrapped in \"[(...)]\" (e.g. [(name)], [(vorname)], [(nachname)], [(mail)]). data-cb-replacements is the object (or array of objects) whose property values fill the [(property)] placeholders and may be a literal object OR an EP placeholder that resolves to an object (e.g. \"{ BayVIS.Ansprechpartner.Details > ... ; ... }\"). CRITICAL — when data-cb-replacements is fed by an EP that returns an OBJECT, the template MUST use [(property)] placeholders naming the ACTUAL properties of that EP's result object — NEVER the HTML.Text.Injector placeholder \"[[INJECTOR_REPLACEMENT]]\" and NEVER a bare raw EP string. data-cb-property holds the TEMPLATE (on an XTextField/XTextArea the template lives in its value/rtevalue property).",
+      "tsdoc": "Provides the {@link HTML_Text_Mapper.functionality }. This functionality maps the properties of an object to the placeholders in a string replacing their occurrences. The placeholders syntax is: Property-Name surrounded by \"[(\" and \")]\" (e.g. [(propertyName)]). Config Parameter: Replacements — the object containing the properties which's values will be used to replace the placeholders (may be an EP placeholder resolving to an object); Property — the property of the tagged object that contains the string to replace the placeholders in; CSS — the CSS-Rules to apply onto the Element \"toProcess\" when replacement has been completed.",
+      "parameters": {
+        "Replacements": "The object (or array of objects) whose property values fill the [(property)] placeholders. May be a literal object OR an EP placeholder resolving to an object.",
+        "Property": "The property of the tagged element that holds the placeholders to replace (the text template).",
+        "CSS": "The CSS-Rules to apply onto the Element \"toProcess\" when replacement has been completed."
+      },
       "classDescriptions": {}
     },
     "JSON.SET": {

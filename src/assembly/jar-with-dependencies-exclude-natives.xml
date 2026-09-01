@@ -15,6 +15,9 @@
             <scope>runtime</scope>
             <unpackOptions>
                 <excludes>
+                    <!-- Exclude Guava (com.google.common). formcycle provides its own Guava at runtime;
+                         bundling a second copy clashes with Tomcat's ParallelWebappClassLoader. -->
+                    <exclude>com/google/common/**</exclude>
                     <!-- Exclude the root "native/" payload from ALL dependencies (tokenizers, etc.). -->
                     <exclude>native/**</exclude>
                     <!-- Exclude Tesseract language/model data (downloaded at runtime by Tesseract.kt). -->
@@ -34,6 +37,9 @@
             <directory>${project.build.outputDirectory}</directory>
             <outputDirectory>/</outputDirectory>
             <excludes>
+                <!-- Exclude Guava (com.google.common). formcycle provides its own Guava at runtime;
+                     bundling a second copy clashes with Tomcat's ParallelWebappClassLoader. -->
+                <exclude>com/google/common/**</exclude>
                 <exclude>native/**</exclude>
                 <exclude>tessdata/**</exclude>
                 <exclude>**/*.traineddata</exclude>

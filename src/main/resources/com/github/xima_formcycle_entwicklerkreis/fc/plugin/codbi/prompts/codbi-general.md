@@ -2,6 +2,30 @@
 
 Cross-cutting CodBi rules that apply to multiple categories.
 
+## BayVIS EPs + Global Variables (V) — CRITICAL RULES (always apply)
+
+EP SYNTAX: `>` introduces the FIRST parameter; further parameters are separated by `;` (never by `>`). A nested `{ ... }` EP is resolved first and its result becomes that parameter.
+
+BayVIS has THREE EP kinds — never confuse them:
+1. **Directory EPs** (`BayVIS.Behoerden`, `BayVIS.Ansprechpartner`) — take a PROPERTY name (e.g. `bezeichnung`, `nachname`, `email`). NEVER a person's or office's name.
+2. **ID-resolver EPs** (`BayVIS.Behoerden.ID`, `BayVIS.Ansprechpartner.ID`) — take a plain STRING name and return the matching numeric ID(s) as an ARRAY.
+3. **Details EPs** (`BayVIS.Behoerden.Details`, `BayVIS.Ansprechpartner.Details`, `BayVIS.Behoerden.Details.Gebaeude`, `BayVIS.Behoerden.Gebaeude.ID`) — take NUMERIC IDs ONLY.
+
+TO GET DATA FOR A NAMED PERSON/OFFICE, ALWAYS CHAIN NAME → ID → DETAILS:
+- Contact data by name: { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } ; <property> }
+- Authority data by name: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; <property> }
+- Building data of an authority: { BayVIS.Behoerden.Details.Gebaeude > <authorityId> ; <buildingId> ; <property> } — resolve both IDs, e.g. the building ID via { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > <authorityId> } }.
+NEVER pass a bare name ("Amt 44", "Salvatore Callari") into a Directory/Details EP — it is INVALID and rejected. The `.ID` EPs return an ARRAY — pick one element with { I > 0 ; <array EP> }.
+
+GLOBAL VARIABLES — when the user says "als globale Variable hinterlegen" / "store in a global variable" / "globale Variable anlegen":
+1. Create the variable in the top-level "variables" array: {"name":"<NAME>","aliasname":"<NAME>","serveronly":false,"value":"<VALUE>"}.
+2. CRITICAL — the "value" holds the PLAIN IDENTIFIER: the NAME string that locates the data ("Salvatore Callari", "Amt 44"), or plain text to display. It must NEVER be an EP expression and NEVER the whole Details chain — the V EP returns the variable's raw string as-is and does NOT re-resolve it, so an EP stored in the variable is printed/passed literally and FAILS. Store the identifier once; the data fetch happens in the element's replacement (step 3).
+3. Reference it with V — { V > <NAME> } — NESTED inside the BayVIS data EP when fetching. NEVER a standalone { V > <NAME> } for BayVIS data (it only injects the raw identifier string, not fetched data). Use standalone V ONLY when the variable already holds the text to display:
+   - Contact by name: { BayVIS.Ansprechpartner.Details > { V > <NAME> } ; <property> }  (Details resolves the name → ID itself)
+   - Authority by name: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > { V > <NAME> } } } ; <property> }  (Behoerden.Details does NOT resolve names — you must)
+   - Building of an authority: { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > { V > <NAME> } } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > { V > <NAME> } } } } } ; <property> }  (BOTH the authority ID AND the building ID are required)
+4. NEVER use Formcycle's "[%$NAME%]" placeholder for CodBi EP data — that is resolved server-side at submit time and cannot run a client-side EP.
+
 ## CSS Classes vs data-cb-func (TWO-OPTION RULE)
 
 For EVERY field you create or modify, apply CodBi behavior with EXACTLY ONE of two options:
@@ -33,9 +57,20 @@ CodBi_People_PLZ + CodBi_OpenPLZ_AC_SET_PLZ).
 
 To map object properties into a text template: data-cb-func="HTML.Text.Mapper" with
 data-cb-replacements (the object whose property values fill the placeholders) + data-cb-property (the
-element property holding the TEMPLATE, e.g. "value"/"rtevalue"). The TEMPLATE with the [(property)]
-placeholders (e.g. "Hello [(vorname)] [(nachname)]") goes INTO the field's OWN content property —
-NEVER into a separate attribute. There is NO data-cb-Template attribute; emitting one is a FAIL.
+element property holding the TEMPLATE, e.g. "value"/"rtevalue"). The TSDoc placeholder syntax is a
+PROPERTY name wrapped in "[(...)]" (e.g. [(name)], [(vorname)], [(nachname)], [(mail)]). The TEMPLATE
+with the [(property)] placeholders (e.g. "Hello [(vorname)] [(nachname)]") goes INTO the field's OWN
+content property — NEVER into a separate attribute. There is NO data-cb-Template attribute; emitting
+one is a FAIL.
+
+CRITICAL — data-cb-replacements may be an EP placeholder that resolves to an OBJECT (e.g.
+"{ BayVIS.Ansprechpartner.Details > ... ; ... }"). In that case the placeholders MUST be [(property)]
+using the ACTUAL property names of that EP's result object (e.g. [(name)], [(vorname)], [(nachname)],
+[(mail)], ...) — NEVER the HTML.Text.Injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare
+raw EP string. Each [(property)] is replaced at runtime by the corresponding property of the object the
+EP produced. When the user asks to display "the details" of a resolved object (a person, an authority,
+...), render the requested properties as [(property)] placeholders in the template text — do not put a
+generic/standard placeholder into the field's content.
 
 ## NAVBAR / LANGUAGE SWITCH PLACEMENT
 
@@ -87,7 +122,8 @@ You initially receive a CONDENSED reference: the CodBi Core Elements list (names
 - Omit a field when you need nothing from it; if you need neither, return the normal form JSON instead of a details request.
 - MANDATORY — ALWAYS include these functionality IDs in "elements" when the request matches, EVEN IF the condensed entry already looks complete (you still need their exact TSDoc to build them; omitting any of them is a FAIL):
   - "AI.LLAMA.CHAT" — the request asks for an "AI chat"/"KI-Chat"/"KI-Assistent"/chatbot container. You must then build the FULL chat widget (never an empty container / placeholder span).
-  - "JSON.SET" — the request asks to store/combine other fields' values as JSON in a hidden field (e.g. "JSON aus tfVorname/tfNachname"). JSON.SET cannot interpolate field values (no placeholders in data-cb-property/data-cb-toset), so for a hidden field holding the JSON of OTHER FIELDS create a Formcycle CALCULATION field (XFormula, read-only, xformula_value builds the JSON) with ishidden="1" (the Formcycle hide property — NOT invisible); the xformula_value writes the JSON literally with [%field%] placeholders (e.g. {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"}) — no JSON.stringify, no bare field names. Use JSON.SET only for hard-coded values (data-cb-property + data-cb-path as a single JS dot path + data-cb-toset, "^"-prefixed for a JSON object literal).
+  - "JSON.SET" — the request asks to store/combine other fields' values as JSON in a hidden field (e.g. "JSON aus tfVorname/tfNachname"). JSON.SET cannot interpolate field values (no placeholders in data-cb-property/data-cb-toset), so for a hidden field holding the JSON of OTHER FIELDS create a Formcycle CALCULATION field (XFormula, read-only, xformula_value builds the JSON); mark it ishidden="1" (the Formcycle hide property — NOT invisible) ONLY when the prompt intends a hidden field (as in these examples), otherwise leave it visible; the xformula_value writes the JSON literally with [%field%] placeholders (e.g. {"vorname":"[%tfVorname%]","nachname":"[%tfNachname%]"}) — no JSON.stringify, no bare field names. Use JSON.SET only for hard-coded values (data-cb-property + data-cb-path as a single JS dot path + data-cb-toset, "^"-prefixed for a JSON object literal).
+  - "Date.Time.Join" — the request asks to combine a DATE field and a TIME field into ONE value (e.g. "verstecktes Feld mit der Kombination aus Datums- und Zeitfeld", "combine date and time into one field", "Datum und Uhrzeit zusammenführen"). This is NOT a calculation field (XFormula): create an XTextField receiver with data-cb-func="Date.Time.Join" (mark it ishidden="1" ONLY when the user asked for a hidden field, otherwise leave it visible), tag the DATE field of that container with cssclasses=["CodBi_Date_Time_Join_Date"] and the TIME field with cssclasses=["CodBi_Date_Time_Join_Time"] (all three in the SAME container). Do NOT model this as JSON.SET or an XFormula. MILLISECONDS ("Millisekunden"/"milliseconds"): when the user asks the combined field(s) to contain milliseconds, set data-cb-tomillis="true" on the Date.Time.Join receiver(s) — also when a follow-up changes an EXISTING combined field (add/update the attribute, keep data-cb-func and the date/time selectors). DIVISOR ("geteilt durch X"/"divided by X"/"Millisekunden geteilt durch tausend"): set data-cb-divisor="X" on the receiver(s) (e.g. "durch tausend" → data-cb-divisor="1000") — this is a FORM MODIFICATION, not a how-to answer; also when a follow-up changes an EXISTING combined field.
   - "HTML.Input.TinyMCE" — the request asks for a rich-text editor ("Rich-Text-Editor") on a textarea. You must then apply it with data-cb-plugins and data-cb-toolbar.
   - "CodBi_Fotocropper" — the request asks for a "Fotocropper-Board" / "Bild-Cropper" / photo-cropper setup. You must then build the COMPLETE group (wrapper `CodBi_Fotocropper` + `CodBi_Fotocropper_Board` + `CodBi_Fotocropper_Uploader` + `CodBi_Fotocropper_Update` + `CodBi_Fotocropper_ImageURL` + `CodBi_Fotocropper_Foto`) before the referenced upload — never an empty board.
 
@@ -271,6 +307,22 @@ A Standard Configuration (system or custom, defined in the local API doc manager
 - `name` is the exact global-variable name from the standard configuration. `aliasname` is usually identical to `name`. `serveronly` is `false` for user-facing variables. `value` is the value the user requested.
 - NEVER store a global variable as a `data-cb-*` attribute on an element, and NEVER as `data-cb-func`.
 - Preserve all pre-existing entries in the `variables` array that the user did not change; only add or update the entry whose `name` matches the requested global variable.
+
+## CRITICAL — PANELS STARTING FOLDED / COLLAPSED (data-cb-folded + the HTML_PANEL_FOLDED global)
+
+CodBi panels (UI.Panels classes CodBi_HTML_Panel_Standard/Flat/Index/Minimal, CodBi_Accordion members, or data-cb-func=html.panel) default to UNFOLDED (open). When the prompt says panels shall START folded/collapsed ("zugeklappt", "eingeklappt", "anfangs zugeklappt", "collapsed by default", "closed by default", "alle Panels bis auf das Erste zugeklappt"), do the following:
+- Set the form-level GLOBAL VARIABLE **HTML_PANEL_FOLDED** to **true** → ALL panels then start folded. Write it into the form's TOP-LEVEL `variables` array as `{ "name": "HTML_PANEL_FOLDED", "aliasname": "HTML_PANEL_FOLDED", "serveronly": false, "value": "true" }`.
+- Set **data-cb-folded="false"** on EVERY panel that must remain OPEN at the start (e.g. the FIRST panel) — the per-element attribute overrides the global default. The remaining panels get NO data-cb-folded; they inherit the global and start folded.
+- NEVER set the Formcycle XFieldSet **"collapsed"** property — it is NOT a real Formcycle property (it is ignored and never folds a CodBi panel). The correct mechanism is data-cb-folded + the HTML_PANEL_FOLDED global.
+- Worked example — prompt "Alle Panels, bis auf das Erste, sollen anfang zugeklappt sein." for the accordion CodBi_Accordion_A with members fsInhalt (first), fsKommentarSichtitel, fsVeroeffentlichung: the top-level `variables` array gets `{"name":"HTML_PANEL_FOLDED","aliasname":"HTML_PANEL_FOLDED","serveronly":false,"value":"true"}`; the FIRST member fsInhalt (CodBi_HTML_Panel_Standard) gets `"attributes":[{"text":"data-cb-folded","value":"false"}]`; the OTHER members get NO data-cb-folded and start folded via the global. NEVER emit "collapsed" on any element.
+
+## CRITICAL — PRESERVE EXISTING ATTRIBUTES / FUNCTIONALITIES
+
+When you modify a form, KEEP every existing element's `attributes` array (the data-cb-func / data-cb-* entries such as HTML.Input.TinyMCE, HTML.Input.Cleave, HTML.Input.REGEX, Date.Min, OpenPLZ.Autocomplete) EXACTLY as it is unless the user EXPLICITLY asks to remove or change that functionality. A request to change something unrelated (e.g. a panel title or numbering) NEVER authorizes removing another field's functionality — only touch the properties/attributes the request actually targets.
+
+## CRITICAL — MOVING ELEMENTS PRESERVES EVERYTHING ELSE
+
+When the prompt asks to MOVE an element (e.g. the submit button / a checkbox to the bottom of the form, out of a container), only re-parent THAT element: remove its name from the OLD parent's 'elements' array, add it to the NEW parent's (e.g. the page's) 'elements' array, and set its properties.parentid to the new parent's name. NEVER remove, drop, or empty any OTHER container/fieldset/panel while moving — an untouched container (e.g. a "Veröffentlichung" panel) and all its children must stay exactly as they are. Omitting an existing element from your output is treated as a removal, so every untouched element must remain in the output.
 
 ## CodBi CANDIDATE REVIEW
 

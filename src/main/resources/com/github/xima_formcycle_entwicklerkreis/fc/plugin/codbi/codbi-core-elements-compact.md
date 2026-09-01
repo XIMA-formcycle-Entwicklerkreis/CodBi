@@ -34,6 +34,9 @@ BIRTH-DATE FIELDS (Geburtsdatum, Geburtstag, birth date, birthday): NEVER apply 
 ### Date.NoWeekends
 Applicable on a XTextField of type 'date' to disallow weekend dates. NEVER apply to a BIRTH-DATE field (Geburtsdatum, Geburtstag, birth date, birthday) — people can be born on any weekday, so a "keine Wochenenden"/"no weekends" constraint on a birth date must be IGNORED (apply nothing, ask nothing). There is NO "CodBi_NoWeekends" class — never invent it. Only meaningful for future-dated/booking-type dates (course date, appointment, delivery).
 
+### Date.Time.Join
+Joins the Date of a date-HTMLInputElement with the time of a time-HTMLInputElement.
+
 ### Form.Navigator
 Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms. PLACEMENT — the navigator must be reachable on EVERY page: create a SEPARATE XContainer (div) and place it inside the form's XHeader or XFooter when one exists; only when there is NO header/footer add it to EVERY page's elements array. NEVER place it on only one page.
 
@@ -73,7 +76,15 @@ YOU MUST request the full details for this element (add "HTML.Text.Injector" to 
 
 ### HTML.Text.Mapper
 Applicable on any element to map object properties to named placeholders in a text template.
-REQUIRES: the object source and the text template with placeholders — ask the user when missing.
+Placeholder syntax is a PROPERTY name wrapped in "[(...)]" (e.g. [(name)], [(vorname)], [(nachname)],
+[(mail)]). data-cb-replacements is the object (or array of objects) whose property values fill the
+[(property)] placeholders and may be an EP placeholder resolving to an object (e.g.
+"{ BayVIS.Ansprechpartner.Details > ... ; ... }"). CRITICAL — when data-cb-replacements is fed by an
+EP that returns an OBJECT, use [(property)] placeholders naming the ACTUAL properties of that EP's
+result object — NEVER the injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare raw EP
+string. The template with the [(property)] placeholders lives in the field's own value/rtevalue
+(data-cb-property).
+REQUIRES: the object source (data-cb-replacements) and the text template with placeholders.
 
 ### JSON.SET
 Applicable on a hidden field to store a JSON-serialized value derived from another element — ONLY with hard-coded values, NEVER with live field values. Apply data-cb-func="JSON.SET" to a hidden XTextField/XTextArea with `ishidden="1"` (the Formcycle hide property — NOT `invisible`) and set the three parameters:

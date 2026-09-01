@@ -2264,7 +2264,10 @@ describe("HTML_Panel submit handler branches", () => {
     expect(results[results.length - 1].preventSubmission).toBe(false);
   });
 
-  it("submit skips hidden required fields (display:none)", () => {
+  it("submit allows hidden required fields (display:none via Formcycle property)", () => {
+    // A required field hidden by a Formcycle property (display:none, not inside a folded panel) is
+    // intentionally not required — Formcycle handles it. It must NOT block submission; only fields
+    // inside a folded panel block.
     const fieldset = createPanelWithRequired({ hidden: true });
     fieldset.scrollIntoView = jest.fn();
 

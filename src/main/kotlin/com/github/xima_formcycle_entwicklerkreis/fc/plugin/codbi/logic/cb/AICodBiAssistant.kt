@@ -13,6 +13,7 @@ import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.CodbiEnti
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.Standard
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ExternalAiHttpException
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.ImageProcessingService
+import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.repairAiJson
 import com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons.stripThinkTags
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -66,6 +67,18 @@ class AICodBiAssistant : IPluginServletAction {
   private val logger = LoggerFactory.getLogger(AICodBiAssistant::class.java)
   private val gson: Gson = GsonBuilder().create()
 
+  /**
+   * Maximum additional detail-reruns for form modification. Configurable via
+   * `AI_FormAssistant_MaxFormReruns`.
+   */
+  private var maxFormReruns: Int = MAX_FORM_RERUNS
+
+  /**
+   * Per-specialist overrides of [maxFormReruns], keyed by lowercase specialist name. Configurable
+   * via `AI_FormAssistant_MaxFormReruns_<name>`.
+   */
+  private val specialistMaxFormReruns = mutableMapOf<String, Int>()
+
   override fun getName(): String = "CodBi_AICodBiAssistant"
 
   override fun execute(params: IPluginServletActionParams): IPluginServletActionRetVal {
@@ -78,13 +91,6 @@ class AICodBiAssistant : IPluginServletAction {
       val allowedWidgets = parseAllowedElements(params, "allowedWidgets")
       val allowedNodes = parseAllowedElements(params, "allowedNodes")
       val allowedTriggers = parseAllowedElements(params, "allowedTriggers")
-      // Diagnostic: -1 = parameter absent (no restriction); >= 0 = the filter is active with that
-      // many allowed elements. Helps verify the frontend transmits the allowed lists.
-      logger.info(
-          "[AICodBiAssistant] Element filter: widgets={} nodes={} triggers={} (null = no restriction)",
-          allowedWidgets?.size ?: -1,
-          allowedNodes?.size ?: -1,
-          allowedTriggers?.size ?: -1)
       FormcycleElementFilter.runForRequest(allowedWidgets, allowedNodes, allowedTriggers) {
         val action =
             params.headerMap.entries.find { it.key.equals("X-Action", ignoreCase = true) }?.value
@@ -269,6 +275,30 @@ class AICodBiAssistant : IPluginServletAction {
         ?.trim()
         ?.takeIf { it.isNotBlank() }
         ?.let { AI.matomoApiKey = it }
+    // Maximum number of additional detail-reruns for form modification. Re-read on every plugin
+    // re-initialization, so configuration changes take effect on the next request.
+    configData.properties
+        .getProperty("AI_FormAssistant_MaxFormReruns")
+        ?.trim()
+        ?.toIntOrNull()
+        ?.takeIf { it >= 0 }
+        ?.let { maxFormReruns = it }
+    // Per-specialist overrides of the rerun budget:
+    // `AI_FormAssistant_MaxFormReruns_<specialistName>`
+    // (e.g. `AI_FormAssistant_MaxFormReruns_cerebras`) wins over the global
+    // `AI_FormAssistant_MaxFormReruns` for that specialist model.
+    specialistMaxFormReruns.clear()
+    for (key in configData.properties.stringPropertyNames()) {
+      if (!key.startsWith("AI_FormAssistant_MaxFormReruns_")) continue
+      val specialistName = key.removePrefix("AI_FormAssistant_MaxFormReruns_").trim().lowercase()
+      if (specialistName.isEmpty()) continue
+      configData.properties
+          .getProperty(key)
+          ?.trim()
+          ?.toIntOrNull()
+          ?.takeIf { it >= 0 }
+          ?.let { specialistMaxFormReruns[specialistName] = it }
+    }
   }
 
   /**
@@ -455,64 +485,17 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
-  /** True after the first schema dump has been logged. */
-  private var schemaDumped = false
-
   /**
    * Scans the form JSON for XAppointment elements that have an "appointmentPlan" (human-readable
    * schedule name) but no "appointmentTemplate" (UUID). Resolves the name to a UUID by querying the
    * FORMCYCLE appointment_plan database table and injects the "appointmentTemplate" property.
    */
   private fun resolveAppointmentPlans(formJson: String): String {
-    logger.info(
-        "[AICodBiAssistant] resolveAppointmentPlans called with formJson length={}",
-        formJson.length)
     val emf =
         CodbiEntities.entityManagerFactory
             ?: return formJson.also {
               logger.info("[AICodBiAssistant] resolveAppointmentPlans: no EntityManagerFactory")
             }
-    // Dump schema info once on first call for debugging
-    if (!schemaDumped) {
-      schemaDumped = true
-      try {
-        val em = emf.createEntityManager()
-        try {
-          val tq =
-              em.createNativeQuery(
-                  "SELECT table_name FROM information_schema.tables WHERE table_type = 'BASE TABLE' AND table_schema NOT IN ('information_schema', 'pg_catalog', 'mysql') ORDER BY table_name")
-          logger.info("[AICodBiAssistant] All database tables: {}", tq.resultList)
-          // Also dump APPOINTMENT_TEMPLATE columns
-          try {
-            val colQ =
-                em.createNativeQuery(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'APPOINTMENT_TEMPLATE' ORDER BY ordinal_position")
-            logger.info("[AICodBiAssistant] APPOINTMENT_TEMPLATE columns: {}", colQ.resultList)
-          } catch (_: Exception) {
-            logger.warn("[AICodBiAssistant] Could not query APPOINTMENT_TEMPLATE columns")
-          }
-          // Sample first row
-          try {
-            val sampleQ =
-                em.createNativeQuery("SELECT * FROM APPOINTMENT_TEMPLATE FETCH FIRST 1 ROWS ONLY")
-            logger.info(
-                "[AICodBiAssistant] APPOINTMENT_TEMPLATE sample row: {}", sampleQ.resultList)
-          } catch (_: Exception) {
-            try {
-              val sampleQ2 = em.createNativeQuery("SELECT * FROM APPOINTMENT_TEMPLATE LIMIT 1")
-              logger.info(
-                  "[AICodBiAssistant] APPOINTMENT_TEMPLATE sample row: {}", sampleQ2.resultList)
-            } catch (_: Exception) {
-              logger.warn("[AICodBiAssistant] Could not sample APPOINTMENT_TEMPLATE")
-            }
-          }
-        } finally {
-          em.close()
-        }
-      } catch (e: Exception) {
-        logger.warn("[AICodBiAssistant] Failed to dump schema: ${e.message}")
-      }
-    }
     return try {
       val root = JsonParser.parseString(formJson).asJsonObject
       val items =
@@ -521,31 +504,19 @@ class AICodBiAssistant : IPluginServletAction {
                 logger.info(
                     "[AICodBiAssistant] resolveAppointmentPlans: no items array in formJson")
               }
-      logger.info("[AICodBiAssistant] resolveAppointmentPlans: scanning {} items", items.size())
       var changed = false
       for (i in 0 until items.size()) {
         val item = items[i].asJsonObject
         val className = item.get("className")?.asString ?: continue
         if (className != "XAppointment") continue
         val props = item.getAsJsonObject("properties") ?: continue
-        logger.info(
-            "[AICodBiAssistant] resolveAppointmentPlans: found XAppointment '{}', props keys: {}",
-            props.get("name")?.asString,
-            props.keySet())
         if (props.has("appointmentTemplate")) {
-          logger.info(
-              "[AICodBiAssistant] resolveAppointmentPlans: XAppointment already has appointmentTemplate, skipping")
           continue
         }
         val planName = props.get("appointmentPlan")?.asString
         if (planName == null) {
-          logger.info(
-              "[AICodBiAssistant] resolveAppointmentPlans: XAppointment has no appointmentPlan, skipping")
           continue
         }
-        logger.info(
-            "[AICodBiAssistant] Found XAppointment with appointmentPlan='{}' â€” resolving...",
-            planName)
         val em = emf.createEntityManager()
         try {
           val query =
@@ -555,10 +526,6 @@ class AICodBiAssistant : IPluginServletAction {
           if (result.isNotEmpty()) {
             props.addProperty("appointmentTemplate", result[0].toString())
             changed = true
-            logger.info(
-                "[AICodBiAssistant] Resolved appointment plan '{}' to UUID '{}'",
-                planName,
-                result[0])
           } else {
             logger.warn(
                 "[AICodBiAssistant] Appointment plan '{}' not found â€” query returned no rows",
@@ -664,7 +631,14 @@ class AICodBiAssistant : IPluginServletAction {
     result.append(""""intent":${gson.toJson(intent)}""")
     // For "both" intent: form elements are updated after form modification so the workflow AI
     // sees buttons/fields that were just created by the form AI (not just the pre-existing ones).
-    var latestFormElements: String? = params.requestParameters["formElements"]?.firstOrNull()
+    // Safety net: when the frontend did not send the explicit `formElements` list (e.g. an older
+    // frontend, or extraction failed client-side), derive it from the persist JSON so the
+    // clarification AI still receives every XSelect's options as {text, value} — without them it
+    // cannot resolve which value an option like "Ja" maps to and wrongly asks the user (e.g.
+    // "Welcher Wert wird verwendet, wenn 'Ja' gewählt wird?").
+    var latestFormElements: String? =
+        params.requestParameters["formElements"]?.firstOrNull()
+            ?: extractFormElementsFromJson(params.requestParameters["persist"]?.firstOrNull() ?: "")
     // Structural form context (pages, fieldsets, containers and their titles) derived from the
     // persist JSON, so the clarification AI can resolve references to existing elements (e.g. "the
     // two fieldsets on the first page") WITHOUT asking the user which elements are meant.
@@ -769,7 +743,6 @@ class AICodBiAssistant : IPluginServletAction {
       // "okay" so the chat shows a sensible bubble instead of nothing.
       val answerText =
           chatAnswerResult.answer.ifBlank { localize("codbi.chat.ackNeutral", uiLocale, "✅ Okay.") }
-      logger.info("[AICodBiAssistant] Answer-only chat turn (no form/workflow changes)")
       // Structured statistics (e.g. the Matomo summary) attached to the answer so the chat bubble
       // can
       // render charts from it. null when the AI did not request statistics for this turn.
@@ -1057,11 +1030,6 @@ class AICodBiAssistant : IPluginServletAction {
         val updatedStandards =
             computeUpdatedStandards(
                 resolvedFormJson, currentStandards, aiSetStandards, applicabilityReport)
-        logger.info(
-            "[AICodBiAssistant] Computed updated standards: current='{}', aiSet='{}', result='{}'",
-            currentStandards,
-            aiSetStandards,
-            updatedStandards)
         result.append(""","standards":${gson.toJson(updatedStandards)}""")
       }
       // For "both" intent: extract up-to-date form elements from the newly modified form JSON
@@ -1237,16 +1205,11 @@ class AICodBiAssistant : IPluginServletAction {
     val sensitiveUsed =
         formChanges?.let { AiAssistantLog.usedSensitiveElements(it, AI.logSensitiveElements) }
             ?: emptyList()
-    logger.info(
-        "[AICodBiAssistant] Sensitive elements used: {} (configured: {})",
-        sensitiveUsed,
-        AI.logSensitiveElements)
     // Destructive SQL statements the AI generated that were blocked by the backend sanitizer. Like
     // sensitive elements, these make the frontend auto-open the change log (with an error icon) so
     // the user sees that the destructive statement was NOT persisted.
     val blockedSqlUsed =
         workflowNodes?.let { AiAssistantLog.blockedSqlNodeLabels(it) } ?: emptyList()
-    logger.info("[AICodBiAssistant] Blocked SQL statements: {}", blockedSqlUsed)
 
     result.append(
         ""","tokensIn":$tokensIn,"tokensOut":$tokensOut,"cost":${runCost ?: "null"},"currency":${gson.toJson(runCurrency)}""")
@@ -1365,8 +1328,10 @@ class AICodBiAssistant : IPluginServletAction {
       append("]")
     }
 
-    logger.info(
-        "[AICodBiAssistant] Phase-1 messages sent to AI (model={}): {}", modelId, messagesJson)
+    logger.debug(
+        "[AICodBiAssistant] Phase-1 messages sent to AI (model={}): {}",
+        modelId,
+        compactJsonForLog(messagesJson))
     val rawResponse = instance.performFormAssist(modelId, messagesJson)
     // Report the estimated tokens consumed by the classification call so the frontend token
     // counter reflects every inference, not just the phase-2 modifications.
@@ -1526,6 +1491,20 @@ class AICodBiAssistant : IPluginServletAction {
     tokensIn += estimateTokens(messagesJson)
     tokensOut += estimateTokens(rawResponse)
     var cleaned = extractJson(stripThinkTags(rawResponse))
+
+    // Resolve the maximum detail-rerun count for the current model: a per-specialist override
+    // (`AI_FormAssistant_MaxFormReruns_<name>`) wins over the global
+    // `AI_FormAssistant_MaxFormReruns`.
+    val effectiveMaxFormReruns =
+        when {
+          modelId.startsWith("ext-specialist:") ->
+              specialistMaxFormReruns[modelId.removePrefix("ext-specialist:").lowercase()]
+                  ?: maxFormReruns
+          modelId.startsWith("specialist:") ->
+              specialistMaxFormReruns[modelId.removePrefix("specialist:").lowercase()]
+                  ?: maxFormReruns
+          else -> maxFormReruns
+        }
 
     fun rerunWithCodbiDetails(
         requested: List<String>,
@@ -1788,12 +1767,15 @@ class AICodBiAssistant : IPluginServletAction {
       tokensIn += estimateTokens(retryMessagesJson)
       tokensOut += estimateTokens(retryRaw)
       val pass2Cleaned = extractJson(stripThinkTags(retryRaw))
-      logger.info("[AICodBiAssistant] Pass-{} raw result: {}", rerunCount + 2, pass2Cleaned)
+      logger.info(
+          "[AICodBiAssistant] Pass-{} raw result: {}",
+          rerunCount + 2,
+          compactJsonForLog(pass2Cleaned))
       // The AI may ask for even MORE details in the rerun (a second `need_codbi_details`, e.g. for
       // widget types it only names in pass-2). Loop once more with the new request so the widgets
       // the user asked for are not silently dropped. Bounded by [MAX_FORM_RERUNS] to avoid looping
       // indefinitely when the model keeps requesting details.
-      if (rerunCount < MAX_FORM_RERUNS) {
+      if (rerunCount < effectiveMaxFormReruns) {
         val pass2Details = extractCodbiDetailsRequest(pass2Cleaned)
         if (pass2Details != null) {
           logger.info(
@@ -1821,7 +1803,12 @@ class AICodBiAssistant : IPluginServletAction {
         val finalUserContent =
             "Original user request: $prompt\n\n" +
                 "Complete current form (IPersistJson):\n${slimPersistJson(formBase)}\n\n" +
-                "Return the COMPLETE modified form JSON with ALL items now."
+                "Return the COMPLETE modified form JSON with ALL items now. " +
+                "CRITICAL — PRESERVE EVERY EXISTING ELEMENT: every element that exists in the form " +
+                "above must remain in your output, unchanged and in its original container, plus only " +
+                "the additions/modifications the user requested. Never omit, drop, or remove an " +
+                "existing element or functionality that the user did not explicitly ask to remove — " +
+                "an omitted existing element is lost from the published form (data loss = FAIL)."
         val finalMessagesJson =
             "[{\"role\":\"system\",\"content\":${gson.toJson(finalSystemPrompt)}}," +
                 "{\"role\":\"user\",\"content\":${gson.toJson(finalUserContent)}}]"
@@ -1829,7 +1816,8 @@ class AICodBiAssistant : IPluginServletAction {
         tokensIn += estimateTokens(finalMessagesJson)
         tokensOut += estimateTokens(finalRaw)
         val finalCleaned = extractJson(stripThinkTags(finalRaw))
-        logger.info("[AICodBiAssistant] Final forced pass raw result: {}", finalCleaned)
+        logger.info(
+            "[AICodBiAssistant] Final forced pass raw result: {}", compactJsonForLog(finalCleaned))
         // Only use the final result if it actually produced a form; otherwise keep the previous
         // spliced result so a bare details request is never substituted for the form.
         if (extractCodbiDetailsRequest(finalCleaned) == null) {
@@ -1936,7 +1924,7 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
-    logger.debug("[AICodBiAssistant] Form AI response: {}", cleaned)
+    logger.debug("[AICodBiAssistant] Form AI response: {}", compactJsonForLog(cleaned))
 
     val (sanitizedCleaned, applicabilityReport) = extractAndStripCodbiApplicability(cleaned)
     if (!applicabilityReport.isNullOrBlank()) {
@@ -1987,30 +1975,6 @@ class AICodBiAssistant : IPluginServletAction {
                 gson.toJson(obj)
               }
               .getOrDefault(restored)
-      // Log item names in the final form JSON to debug missing elements
-      try {
-        val root = JsonParser.parseString(finalForm).asJsonObject
-        val names =
-            root.getAsJsonArray("items")?.mapNotNull { el ->
-              el.takeIf { it.isJsonObject }
-                  ?.asJsonObject
-                  ?.getAsJsonObject("properties")
-                  ?.get("name")
-                  ?.asString
-            } ?: emptyList()
-        val pageElements =
-            root
-                .getAsJsonArray("items")
-                ?.firstOrNull {
-                  it.isJsonObject && it.asJsonObject.get("className")?.asString == "XPage"
-                }
-                ?.asJsonObject
-                ?.getAsJsonObject("properties")
-                ?.getAsJsonArray("elements")
-                ?.mapNotNull { it.takeIf { it.isJsonPrimitive }?.asString } ?: emptyList()
-        logger.info("[AICodBiAssistant] Final form item names ({}): {}", names.size, names)
-        logger.info("[AICodBiAssistant] First page elements: {}", pageElements)
-      } catch (_: Exception) {}
       Triple(finalForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
     } catch (_: Exception) {
       logger.warn("[AICodBiAssistant] Form AI returned unparseable response: {}", sanitizedCleaned)
@@ -2174,6 +2138,21 @@ class AICodBiAssistant : IPluginServletAction {
             "keine funktionalitaet anwendbar",
             "nichts anwendbar")
     return patterns.any { text.contains(it) }
+  }
+
+  /**
+   * Minifies a JSON string to a single line for compact log output, so a pretty-printed AI
+   * form/workflow response does not waste dozens of log lines. When the input cannot be parsed as
+   * JSON (e.g. prose or a partially-repaired fragment) its whitespace is collapsed instead, so
+   * logging never fails and never spans many lines.
+   */
+  private fun compactJsonForLog(json: String): String {
+    if (json.isBlank()) return json
+    return try {
+      gson.toJson(JsonParser.parseString(json))
+    } catch (_: Exception) {
+      json.replace(Regex("\\s+"), " ").trim()
+    }
   }
 
   /**
@@ -2752,87 +2731,14 @@ class AICodBiAssistant : IPluginServletAction {
           "css",
           "formI18n",
           "i18n",
-          "viewstatus",
-          "viewusergroup",
-          "readonly_viewstatus",
-          "readonly_viewusergroup",
-          "statusdependent",
-          "readonly_statusdependent",
-          "usergrouppendent",
-          "readonly_usergrouppendant",
-          // Attributes â€” stripped to prevent stale data-cb-* entries from surviving when items
-          // are restored in restoreStrippedFields. The AI always outputs fresh data-cb-* as
-          // direct property keys, which are converted to the proper attributes array at the end
-          // of restoreStrippedFields.
-          "attributes",
-          "print_hide",
-          "print_size",
-          "print_text_only",
-          "print_break",
-          "print_border",
           "backgroundcolor",
-          "helptext",
-          "comment",
           "pdfImporterId",
-          // "rowid" is intentionally NOT stripped: it groups sibling fields into ONE row
-          // (Formcycle renders a "xm-form-row" div for every distinct non-empty rowid). The AI
-          // sets it on new fields to place them side by side, and existing row groupings are
-          // shown to the AI as examples in the slim JSON.
-          "computedwidth",
-          "maxwidth",
-          "minwidth",
-          // Number formatting â€” display-only, ~15 fields per XTextField; AI doesn't need them,
-          // restoreStrippedFields re-applies them from the original for existing items.
-          "numberFormatDigitGroupMode",
-          "numberFormatInlineUnitSign",
-          "numberFormatDigitGroupSeparator",
-          "numberFormatNegativeSign",
-          "numberFormatUnitSignPlacement",
-          "numberFormatDecimalPlaces",
-          "numberFormatSignumSignPlacement",
-          "numberFormatShowPositiveSign",
-          "numberFormatEmptyMode",
-          "numberFormatPositiveSign",
-          "numberFormatDecimalPaddingMode",
-          "numberFormatRoundingMode",
-          "numberFormatLeadingZeroMode",
-          "numberFormatChangeValueOnWheel",
-          "numberFormatDecimalSeparator",
-          // Input constraints â€” AI creates fields from templates; defaults are fine for new
-          // items.
-          "maxlength",
-          "minlength",
-          "mask",
-          "autocomplete",
-          "datepicker",
-          "unitwidth",
-          // Layout â€” AI uses item templates which have FORMCYCLE defaults.
-          "labeldir",
-          "labelwidth",
-          "flex",
-          "height",
-          // Dynamic/repeatable â€” visible to AI so it can create repeatable containers.
-          // AI can set dynamic=1 with
-          // dynamicMinSize/MaxSize/AddText/DeleteText/HideButtons/Trigger.
-          // Conditional visibility/readonly â€” AI doesn't generate these; restored for originals.
-          "readonlyifclear",
-          "readonlyifmode",
-          "readonlyifcomp",
-          "requiredifcomp",
-          "hiddenifclear",
-          "hiddenifcomp",
-          // Workflow-status / user-group visibility â€” stripped from slim JSON so the AI starts
-          // fresh (no copy-paste from existing items), but validated and re-applied for new
-          // AI-created items via sanitizeVisibilityProp(). Existing items still restore from
-          // the original.
-          "viewstatus",
-          "viewusergroup",
-          "readonly_viewstatus",
-          "readonly_viewusergroup",
-          "statusdependent",
-          "readonly_statusdependent",
-          "usergrouppendent",
-          "readonly_usergrouppendant",
+          // Everything else — visibility/access control, print directives, sizing, number
+          // formatting, input constraints, layout, conditional visibility, helptext, comment, and
+          // the CodBi "attributes" (data-cb-*) — is intentionally KEPT in the slim JSON sent to
+          // the AI so it sees the full existing configuration and preserves it when rebuilding the
+          // form. Stale data-cb-* entries from a previous run are still purged from the attributes
+          // array during the restore/normalization in restoreStrippedFields.
       )
 
   /**
@@ -3192,11 +3098,6 @@ class AICodBiAssistant : IPluginServletAction {
   private fun slimPersistJson(json: String): String {
     val root = JsonParser.parseString(json).asJsonObject
     for (field in STRIPPED_FIELDS) root.remove(field)
-    // Remove XFooter â€” structural chrome the AI must not see or modify; restored automatically
-    root.getAsJsonArray("items")?.let { arr ->
-      arr.firstOrNull { it.isJsonObject && it.asJsonObject.get("className")?.asString == "XFooter" }
-          ?.let { arr.remove(it) }
-    }
     root.getAsJsonArray("items")?.forEach { el ->
       if (!el.isJsonObject) return@forEach
       val props = el.asJsonObject.getAsJsonObject("properties") ?: return@forEach
@@ -3211,12 +3112,6 @@ class AICodBiAssistant : IPluginServletAction {
               }
               .map { it.key }
       for (key in emptyKeys) props.remove(key)
-      // Strip action objects from XButtonList buttons so the AI cannot copy existing page values
-      if (el.asJsonObject.get("className")?.asString == "XButtonList") {
-        props.getAsJsonArray("buttons")?.forEach { btn ->
-          if (btn.isJsonObject) btn.asJsonObject.remove("action")
-        }
-      }
     }
     return gson.toJson(root)
   }
@@ -3453,11 +3348,6 @@ class AICodBiAssistant : IPluginServletAction {
             for ((key, value) in validatedVisibility) props.add(key, value)
             // Restore conditional-hidden properties that the AI set on this new item.
             for ((key, value) in hiddenConditions) {
-              logger.info(
-                  "[AICodBiAssistant] Preserving hidden condition '{}'='{}' on new item '{}'",
-                  key,
-                  value,
-                  props.get("name")?.asString ?: props.get("id")?.asString ?: "<unknown>")
               props.addProperty(key, value)
             }
           }
@@ -3605,6 +3495,16 @@ class AICodBiAssistant : IPluginServletAction {
         }
         val restoredRefs = mutableMapOf<String, MutableSet<String>>()
         val itemsToAdd = mutableListOf<JsonObject>()
+        // Names referenced by ANY container's elements array in the result (before restoration).
+        // Used to distinguish a deliberate MOVE (the item exists and is referenced by another
+        // container) from an accidental drop (the item is orphaned or gone).
+        val referencedResultNames = mutableSetOf<String>()
+        for (el in resultItems) {
+          if (!el.isJsonObject) continue
+          el.asJsonObject.getAsJsonObject("properties")?.getAsJsonArray("elements")?.forEach { e ->
+            if (e.isJsonPrimitive) referencedResultNames.add(e.asString)
+          }
+        }
         for (el in resultItems) {
           if (!el.isJsonObject) continue
           val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
@@ -3628,8 +3528,14 @@ class AICodBiAssistant : IPluginServletAction {
             if (childName !in resultNames) missing.add(childName)
           }
           if (missing.isEmpty()) continue
-          restoredRefs.getOrPut(cname) { mutableSetOf() }.addAll(missing)
           for (childName in missing) {
+            // If the child item still exists in the result AND is referenced by another container,
+            // the AI deliberately MOVED it (re-parented it) — do NOT restore it to this original
+            // container; the placement normalization below derives its real parent from where it
+            // is actually referenced. Only restore children that were truly dropped (item gone) or
+            // are orphaned in the result.
+            if (childName in resultItemNames && childName in referencedResultNames) continue
+            restoredRefs.getOrPut(cname) { mutableSetOf() }.add(childName)
             if (childName !in resultItemNames) {
               originalItemBy[childName]?.let { itemsToAdd.add(it) }
             }
@@ -3648,10 +3554,6 @@ class AICodBiAssistant : IPluginServletAction {
             for (childName in missing) {
               resultElems.add(childName)
             }
-            logger.info(
-                "[AICodBiAssistant] Restored {} dropped child reference(s) of container '{}'",
-                missing.size,
-                cname)
           }
           for (item in itemsToAdd) resultItems.add(item)
         }
@@ -3763,7 +3665,6 @@ class AICodBiAssistant : IPluginServletAction {
         // the form renders.
         if (parentId != null && props.get("parentid")?.asString != parentId) {
           props.addProperty("parentid", parentId)
-          logger.info("[AICodBiAssistant] Normalized parentid of '{}' to '{}'", name, parentId)
         }
       }
       for (el in resultItems) {
@@ -4252,6 +4153,59 @@ class AICodBiAssistant : IPluginServletAction {
               props.get("name")?.asString ?: "<unknown>")
         }
       }
+      // OPTION-GATED CONTAINER — the AI often puts the hiddenif on the inner FIELD (e.g. the
+      // XUpload)
+      // instead of on the wrapping XContainer, leaving the empty container VISIBLE so the upload
+      // keeps showing even though the condition exists. Per the CodBi rule the CONTAINER is the
+      // target of conditional visibility. As a safety net, when a container holds exactly ONE child
+      // and that child carries a hiddenif condition (hiddenif + hiddenifcomp + hiddenifvalue) while
+      // the container has none, MOVE the condition to the container and drop it from the child.
+      val itemByName = mutableMapOf<String, JsonObject>()
+      for (el in resultItems) {
+        if (!el.isJsonObject) continue
+        val name =
+            el.asJsonObject
+                .getAsJsonObject("properties")
+                ?.get("name")
+                ?.takeIf { it.isJsonPrimitive }
+                ?.asString ?: continue
+        itemByName[name] = el.asJsonObject
+      }
+      for (el in resultItems) {
+        if (!el.isJsonObject) continue
+        val container = el.asJsonObject
+        if (container.get("className")?.asString != "XContainer" &&
+            container.get("className")?.asString != "XContainerInvisible" &&
+            container.get("className")?.asString != "XFieldSet") {
+          continue
+        }
+        val cProps = container.getAsJsonObject("properties") ?: continue
+        val elements = cProps.getAsJsonArray("elements") ?: continue
+        if (elements.size() != 1) continue // only single-child wrappers
+        val childName = elements.get(0).takeIf { it.isJsonPrimitive }?.asString ?: continue
+        val child = itemByName[childName] ?: continue
+        val childProps = child.getAsJsonObject("properties") ?: continue
+        val childHiddenIf = childProps.get("hiddenif")?.takeIf { it.isJsonPrimitive }?.asString
+        // The child has a real hidden condition (a controlling ID) and the container has none.
+        if (childHiddenIf.isNullOrBlank()) continue
+        if (cProps.has("hiddenif") &&
+            cProps.get("hiddenif")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true) {
+          continue
+        }
+        // Move the FULL condition (hiddenif, hiddenifcomp, hiddenifvalue, hiddenifclear) — the
+        // controlling ID, the EConditionType code AND the comparison value must travel together,
+        // otherwise the container gets a condition with no value to compare against.
+        for (key in setOf("hiddenif", "hiddenifcomp", "hiddenifvalue", "hiddenifclear")) {
+          val v = childProps.get(key)
+          if (v != null) cProps.add(key, v.deepCopy())
+          childProps.remove(key)
+        }
+        logger.info(
+            "[AICodBiAssistant] Moved hidden condition (hiddenif='{}') from leaf '{}' to wrapping container '{}'",
+            childHiddenIf,
+            childName,
+            cProps.get("name")?.asString ?: cProps.get("id")?.asString ?: "<unknown>")
+      }
     } catch (_: Exception) {
       /* non-critical â€” skip normalization on error */
     }
@@ -4430,6 +4384,7 @@ class AICodBiAssistant : IPluginServletAction {
           "CodBi_TimeFrame_" to "Appointments",
           "CodBi_NoFutureDate" to "Appointments",
           "CodBi_Holidays_" to "Appointments",
+          "CodBi_Date_Time_Join_" to "Appointments",
           // LDAP.Autofill standard
           "CodBi_LDAP_" to "LDAP.Autofill",
           // AI standard
@@ -5884,7 +5839,8 @@ class AICodBiAssistant : IPluginServletAction {
     tokensIn += estimateTokens(messagesJson)
     tokensOut += estimateTokens(pass1Raw)
     var cleaned = extractJson(stripThinkTags(pass1Raw))
-    logger.info("[AICodBiAssistant] Workflow AI pass-1 raw response: {}", cleaned)
+    logger.info(
+        "[AICodBiAssistant] Workflow AI pass-1 raw response: {}", compactJsonForLog(cleaned))
 
     val workflowDetails = extractWorkflowDetailsRequest(cleaned)
     if (workflowDetails != null) {
@@ -5921,7 +5877,8 @@ class AICodBiAssistant : IPluginServletAction {
       tokensIn += estimateTokens(messagesJson)
       tokensOut += estimateTokens(pass2Raw)
       cleaned = extractJson(stripThinkTags(pass2Raw))
-      logger.info("[AICodBiAssistant] Workflow AI pass-2 raw response: {}", cleaned)
+      logger.info(
+          "[AICodBiAssistant] Workflow AI pass-2 raw response: {}", compactJsonForLog(cleaned))
     }
 
     // Replace symbolic "$ROOT" breakTarget with a safe UUID placeholder before JSON parsing
@@ -6034,11 +5991,35 @@ class AICodBiAssistant : IPluginServletAction {
     //     to the WorkflowTaskSpec defaults and the task would be created without its properties).
     val taskSpecs: List<WorkflowTaskSpec> =
         try {
-          val parsed = JsonParser.parseString(safeCleaned)
+          // The model occasionally emits malformed JSON — most often a dropped `{` between two
+          // chained node objects (which produced "Unterminated array ... chainedNodes[2]"), but
+          // also a stray escaped quote or a trailing comma. Repair the common LLM slips and retry
+          // so a single bad token does not lose the whole workflow build.
+          var parseable = safeCleaned
+          val parsed =
+              try {
+                JsonParser.parseString(parseable)
+              } catch (first: Exception) {
+                val repaired = repairAiJson(parseable)
+                if (repaired != parseable) {
+                  logger.warn(
+                      "[AICodBiAssistant] Workflow AI returned invalid JSON; repaired malformed tokens ({} -> {} chars)",
+                      parseable.length,
+                      repaired.length)
+                  parseable = repaired
+                  try {
+                    JsonParser.parseString(parseable)
+                  } catch (_: Exception) {
+                    throw first
+                  }
+                } else {
+                  throw first
+                }
+              }
           val specs: List<WorkflowTaskSpec> =
               when {
                 parsed.isJsonArray ->
-                    gson.fromJson(safeCleaned, Array<WorkflowTaskSpec>::class.java).toList()
+                    gson.fromJson(parseable, Array<WorkflowTaskSpec>::class.java).toList()
                 parsed.isJsonObject -> {
                   val obj = parsed.asJsonObject
                   val tasksArray =
@@ -6069,7 +6050,7 @@ class AICodBiAssistant : IPluginServletAction {
                     if (!describesTask) {
                       emptyList()
                     } else {
-                      listOf(gson.fromJson(safeCleaned, WorkflowTaskSpec::class.java))
+                      listOf(gson.fromJson(parseable, WorkflowTaskSpec::class.java))
                     }
                   }
                 }
@@ -6100,9 +6081,14 @@ class AICodBiAssistant : IPluginServletAction {
     }
 
     // Apply the delta operations: each spec may be a create, remove or replace (see
-    // WorkflowTaskSpec). createWorkflowTask is kept for backward compatibility.
-    val results = taskSpecs.map { spec -> applyWorkflowOperation(workflowVersionId, spec, params) }
-    val combinedResult = results.joinToString(" | ")
+    // WorkflowTaskSpec). createWorkflowTask is kept for backward compatibility. Error-handling
+    // lanes (FC_CATCH_ERROR) whose HTTP node is already wrapped in an existing FC_EXPERIMENT are
+    // folded into that experiment's handler path instead of spawning a second lane.
+    val (specsToApply, foldMessages) =
+        foldErrorLanesIntoExperiments(taskSpecs, existingWorkflowNodes, workflowVersionId, params)
+    val results =
+        specsToApply.map { spec -> applyWorkflowOperation(workflowVersionId, spec, params) }
+    val combinedResult = (foldMessages + results).joinToString(" | ")
     // Safety net: remove any workflow lane (task) that now has no nodes left, so no empty lanes
     // remain after the AI removed paths.
     val laneCleanup = cleanupEmptyWorkflowTasks(userContext, workflowVersionId)
@@ -6995,6 +6981,81 @@ class AICodBiAssistant : IPluginServletAction {
               .invoke(workflowNodeApi, userContext, nodeId)
               ?: return "WorkflowNode $nodeId not found — nothing to replace."
 
+      // A "replace" may carry chainedNodes (top-level or embedded in nodeParams — a common AI
+      // inconsistency). This is the taught pattern for adding error handling INTO an existing
+      // workflow path (e.g. an FC_EXPERIMENT handler SEQUENCE) without creating a second lane. It
+      // is interpreted as "replace this node with the chained nodes at the same level": the target
+      // is converted IN PLACE into the FIRST chained node, and the remaining chained nodes are
+      // created as SIBLINGS right after it under the same parent — no extra SEQUENCE wrapper is
+      // created, so the designer shows a normal sequence without extra connection knobs.
+      val chainedNodes =
+          (spec.chainedNodes ?: (spec.nodeParams["chainedNodes"] as? List<Map<String, Any>>))
+              ?.ifEmpty { null }
+      if (chainedNodes != null) {
+        val replaced = mutableListOf<String>()
+        val firstSpec =
+            chainedNodes.firstOrNull()?.let { cs ->
+              gson.fromJson(gson.toJson(cs), WorkflowTaskSpec::class.java)
+            }
+        if (firstSpec != null) {
+          val firstName = deriveNodeName(firstSpec)
+          workflowNodeClass
+              .getMethod("setType", String::class.java)
+              .invoke(node, firstSpec.nodeType)
+          if (firstName.isNotBlank()) {
+            workflowNodeClass.getMethod("setName", String::class.java).invoke(node, firstName)
+          }
+          val firstParams =
+              buildNodeParamsJsonWithIcon(
+                  firstSpec, workflowVersion, userContext, firstSpec.nodeType)
+          if (firstParams != null) {
+            workflowNodeClass
+                .getMethod("setCustomParameters", String::class.java)
+                .invoke(node, firstParams)
+            stampCustomParamsVersion(workflowNodeClass, node)
+          }
+          workflowNodeApi.javaClass
+              .getMethod("update", ucClass, iTransferableEntityClass)
+              .invoke(workflowNodeApi, userContext, node)
+          replaced.add("${firstSpec.nodeType} '${sanitizeWorkflowName(firstName)}'")
+        }
+        val restSpecs =
+            chainedNodes.drop(1).map { cs ->
+              gson.fromJson(gson.toJson(cs), WorkflowTaskSpec::class.java)
+            }
+        if (restSpecs.isNotEmpty()) {
+          val parent =
+              try {
+                node.javaClass.getMethod("getParent").invoke(node)
+              } catch (_: Exception) {
+                null
+              }
+          val parentTask =
+              if (parent == null) null
+              else
+                  try {
+                    parent.javaClass.getMethod("getTask").invoke(parent)
+                  } catch (_: Exception) {
+                    null
+                  }
+          if (parent != null && parentTask != null) {
+            replaced.addAll(
+                createChildNodesUnderExisting(
+                    parent, parentTask, workflowVersion, userContext, restSpecs))
+          } else {
+            logger.warn(
+                "[AICodBiAssistant] replaceWithChainedNodes: no parent/task for node {} — chained nodes beyond the first were not created",
+                nodeId)
+          }
+        }
+        if (replaced.isEmpty()) return "Replace of node $nodeId produced no chained nodes."
+        logger.info(
+            "[AICodBiAssistant] Replaced node {} with chained nodes (no extra SEQUENCE): {}",
+            nodeId,
+            replaced.joinToString(", "))
+        return "Replaced node $nodeId with ${replaced.joinToString(", ")} (kept its workflow path)"
+      }
+
       val newName = deriveNodeName(spec)
       val nodeParamsJson =
           buildNodeParamsJsonWithIcon(spec, workflowVersion, userContext, spec.nodeType)
@@ -7049,6 +7110,140 @@ class AICodBiAssistant : IPluginServletAction {
       }
       else -> createWorkflowTask(workflowVersionId, spec, params)
     }
+  }
+
+  /**
+   * Creates one or more workflow ACTION nodes as direct children of an existing node. Used to fold
+   * an AI error-mail lane (trigger FC_CATCH_ERROR) into an existing FC_EXPERIMENT's handler
+   * SEQUENCE. The new nodes inherit the parent's task, so no new lane/trigger is created.
+   */
+  private fun insertNodesUnderExistingParent(
+      userContext: Any,
+      workflowVersionId: Long,
+      parentNodeId: Long,
+      nodeSpecs: List<WorkflowTaskSpec>
+  ): String {
+    try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val getNodeById =
+          workflowNodeApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      val parentNode =
+          getNodeById.invoke(workflowNodeApi, userContext, parentNodeId)
+              ?: return "Cannot insert error nodes: handler node $parentNodeId not found."
+      val parentTask =
+          try {
+            parentNode.javaClass.getMethod("getTask").invoke(parentNode)
+          } catch (_: Exception) {
+            null
+          } ?: return "Cannot insert error nodes: no task for handler node $parentNodeId."
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId)
+              ?: return "Cannot insert error nodes: WorkflowVersion $workflowVersionId not found."
+      val created =
+          createChildNodesUnderExisting(
+              parentNode, parentTask, workflowVersion, userContext, nodeSpecs)
+      if (created.isEmpty()) return "No insertable error nodes in the FC_CATCH_ERROR lane."
+      logger.info(
+          "[AICodBiAssistant] Inserted into FC_EXPERIMENT handler path {}: {}",
+          parentNodeId,
+          created.joinToString(", "))
+      return "Inserted error handling into the existing FC_EXPERIMENT handler path (no new lane): " +
+          created.joinToString(", ")
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] insertNodesUnderExistingParent failed: {}", e.message)
+      return "Could not insert into FC_EXPERIMENT handler path: ${e.message}"
+    }
+  }
+
+  /**
+   * Creates the given action node specs as direct children of an existing parent workflow node,
+   * inheriting the parent's task (so no new lane/trigger is created). Terminal/endpoint node types
+   * (FC_RETURN, FC_CHANGE_STATE, ...) are skipped because the surrounding path already ends at its
+   * endpoint. Returns the created node descriptions.
+   */
+  private fun createChildNodesUnderExisting(
+      parentNode: Any,
+      parentTask: Any,
+      workflowVersion: Any,
+      userContext: Any,
+      nodeSpecs: List<WorkflowTaskSpec>
+  ): List<String> {
+    val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+    val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
+    val ucClass = Class.forName("de.xima.fc.user.UserContext")
+    val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
+    val workflowTaskClass = Class.forName("de.xima.fc.entities.WorkflowTask")
+    val iTransferableEntityClass =
+        Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+    val createNodeMethod =
+        workflowNodeApi.javaClass.getMethod("create", ucClass, iTransferableEntityClass)
+    val terminalTypes =
+        setOf("FC_RETURN", "FC_CHANGE_STATE", "FC_DELETE_FORM_RECORD", "FC_QUEUE_TASK")
+    val created = mutableListOf<String>()
+    for (spec in nodeSpecs) {
+      val type = spec.nodeType ?: continue
+      if (type.isBlank() || type in terminalTypes) continue
+      val node = workflowNodeClass.getDeclaredConstructor().newInstance()
+      val name = deriveNodeName(spec)
+      workflowNodeClass.getMethod("setName", String::class.java).invoke(node, name)
+      workflowNodeClass.getMethod("setType", String::class.java).invoke(node, type)
+      workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(node, true)
+      workflowNodeClass.getMethod("setUUIDObject", UUID::class.java).invoke(node, UUID.randomUUID())
+      val nodeParamsJson = buildNodeParamsJsonWithIcon(spec, workflowVersion, userContext, type)
+      if (nodeParamsJson != null) {
+        workflowNodeClass
+            .getMethod("setCustomParameters", String::class.java)
+            .invoke(node, nodeParamsJson)
+        stampCustomParamsVersion(workflowNodeClass, node)
+      }
+      workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(node, parentTask)
+      workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(node, parentNode)
+      val saved = createNodeMethod.invoke(workflowNodeApi, userContext, node)
+      fixParentOrderIndex(saved, parentNode, userContext)
+      created.add("$type '${sanitizeWorkflowName(name)}'")
+    }
+    return created
+  }
+
+  /**
+   * Re-routes AI error-handling lanes (trigger FC_CATCH_ERROR) into an existing FC_EXPERIMENT's
+   * handler path when the HTTP/action node the user wants error handling for is already wrapped in
+   * such an experiment. Keeps ONE lane/trigger instead of adding a second, separately-triggered
+   * path. Falls back to the original specs when no suitable experiment exists.
+   */
+  private fun foldErrorLanesIntoExperiments(
+      specs: List<WorkflowTaskSpec>,
+      existingWorkflowNodesJson: String?,
+      workflowVersionId: Long,
+      params: IPluginServletActionParams
+  ): Pair<List<WorkflowTaskSpec>, List<String>> {
+    val toFold =
+        specs.filter { spec ->
+          val creating =
+              spec.operation.isBlank() || spec.operation.equals("create", ignoreCase = true)
+          creating && spec.triggerType.equals("FC_CATCH_ERROR", ignoreCase = true)
+        }
+    if (toFold.isEmpty()) return specs to emptyList()
+    val handlerSequenceId =
+        findExperimentHandlerSequenceId(existingWorkflowNodesJson) ?: return specs to emptyList()
+    val userContext = getUserContext(params)
+    val remaining = specs.filter { spec -> toFold.none { it === spec } }
+    val messages =
+        toFold.map { spec ->
+          val nodesToInsert =
+              listOf(spec) +
+                  (spec.chainedNodes?.map { cs ->
+                    gson.fromJson(gson.toJson(cs), WorkflowTaskSpec::class.java)
+                  } ?: emptyList())
+          insertNodesUnderExistingParent(
+              userContext, workflowVersionId, handlerSequenceId, nodesToInsert)
+        }
+    return remaining to messages
   }
 
   /**
@@ -9309,9 +9504,10 @@ class AICodBiAssistant : IPluginServletAction {
    */
   private fun normalizeFinalFormStructure(root: JsonObject): Boolean {
     val reordered = movePagesBeforeFooter(root)
+    val treeOrdered = reorderItemsByTreeOrder(root)
     val labeled = applyPageLabelsFromNavigator(root)
     val checked = ensureNextPageValidation(root)
-    return reordered || labeled || checked
+    return reordered || treeOrdered || labeled || checked
   }
 
   /**
@@ -9355,6 +9551,94 @@ class AICodBiAssistant : IPluginServletAction {
     }
     root.add("items", reordered)
     logger.info("[AICodBiAssistant] Reordered items so all pages render in front of the footer")
+    return true
+  }
+
+  /**
+   * Reorders the flat `items` array into depth-first tree order so that every container's children
+   * appear in the same relative order as the container's `properties.elements` array.
+   *
+   * WHY: Formcycle's designer renders a container's children in the order the items appear in the
+   * flat `items` array — the `elements` array alone does not move them (see
+   * [movePagesBeforeFooter], which reorders `items` so pages render in front of the footer). The
+   * AI, however, APPENDS newly created widgets (e.g. intro/description XSpans) at the END of the
+   * `items` array even when it correctly inserts their name at POSITION 0 of a fieldset's
+   * `elements` array. Result: the description renders at the BOTTOM of the fieldset in the designer
+   * despite the intended "before the first element" placement. Reordering the `items` array into
+   * tree order makes the designer show exactly what the `elements` arrays specify (description
+   * first, existing fields in their original relative order).
+   *
+   * Root items (pages, header, footer, standalone items) keep their current relative order; only
+   * the position of their descendants is derived from the containers' `elements` arrays. Returns
+   * true when the `items` array changed.
+   */
+  private fun reorderItemsByTreeOrder(root: JsonObject): Boolean {
+    val items = root.getAsJsonArray("items") ?: return false
+    val itemByName = mutableMapOf<String, JsonObject>()
+    val childrenOf = mutableMapOf<String, List<String>>() // container name -> ordered child names
+    val childNames = mutableSetOf<String>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val obj = el.asJsonObject
+      val props = obj.getAsJsonObject("properties") ?: continue
+      val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      itemByName[name] = obj
+      val elements = props.get("elements")?.takeIf { it.isJsonArray }?.asJsonArray
+      if (elements != null) {
+        val names = elements.mapNotNull { e -> if (e.isJsonPrimitive) e.asString else null }
+        childrenOf[name] = names
+        childNames.addAll(names)
+      }
+    }
+    // Root items are those not referenced as a child by any container (plus any item without a
+    // name). They keep their current relative order.
+    val roots = mutableListOf<JsonObject>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties")
+      val name = props?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+      if (name == null || name !in childNames) roots.add(el.asJsonObject)
+    }
+    val consumed = java.util.IdentityHashMap<JsonObject, Boolean>()
+    val reordered = JsonArray()
+    fun emitItem(item: JsonObject) {
+      if (consumed.containsKey(item))
+          return // already emitted (guards against duplicate refs/cycles)
+      consumed[item] = true
+      reordered.add(item)
+      val props = item.getAsJsonObject("properties") ?: return
+      val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: return
+      for (childName in childrenOf[name] ?: emptyList()) {
+        itemByName[childName]?.let { emitItem(it) }
+      }
+    }
+    for (rootItem in roots) emitItem(rootItem)
+    // Safety net: append any item that was not reached through the tree (unreachable / not a root)
+    // in its original order, so no item is ever dropped.
+    for (el in items) {
+      if (el.isJsonObject) {
+        val obj = el.asJsonObject
+        if (!consumed.containsKey(obj)) {
+          reordered.add(obj)
+          consumed[obj] = true
+        }
+      } else {
+        reordered.add(el)
+      }
+    }
+    if (reordered.size() == items.size()) {
+      var same = true
+      for (i in 0 until items.size()) {
+        if (items.get(i) !== reordered.get(i)) {
+          same = false
+          break
+        }
+      }
+      if (same) return false
+    }
+    root.add("items", reordered)
+    logger.info(
+        "[AICodBiAssistant] Reordered items into tree order so intro/description elements render in their elements-array position")
     return true
   }
 
@@ -11402,89 +11686,6 @@ class AICodBiAssistant : IPluginServletAction {
     return text.substring(start)
   }
 
-  /**
-   * Repairs common malformations LLMs produce in JSON, so a single bad token does not lose the
-   * whole build. Only invoked when the initial parse fails. Handles:
-   * - stray `\"` used as string delimiters around a value (e.g. `"unit": \"€\"` instead of `"unit":
-   *   "€"` — the model escaped the surrounding quotes of a value containing a special character);
-   * - trailing commas before `}`/`]` (`"a":1,}`).
-   */
-  private fun repairAiJson(raw: String): String {
-    if (raw.isBlank()) return raw
-    val sb = StringBuilder(raw.length)
-    var inString = false
-    var i = 0
-    val n = raw.length
-    fun skipWs(from: Int): Int {
-      var j = from
-      while (j < n && (raw[j] == ' ' || raw[j] == '\t' || raw[j] == '\r' || raw[j] == '\n')) j++
-      return j
-    }
-    while (i < n) {
-      val c = raw[i]
-      if (inString) {
-        if (c == '\\' && i + 1 < n) {
-          val nxt = raw[i + 1]
-          if (nxt == '"') {
-            // A backslash-quote inside a string: if it closes a value (followed by `,`/`}`/`]`/`:`
-            // or end of input), the model meant it as a plain closing quote; otherwise it is a
-            // legitimate escape and stays verbatim.
-            val after = skipWs(i + 2)
-            val closesValue =
-                after >= n ||
-                    raw[after] == ',' ||
-                    raw[after] == '}' ||
-                    raw[after] == ']' ||
-                    raw[after] == ':'
-            if (closesValue) {
-              sb.append('"')
-              inString = false
-            } else {
-              sb.append(c).append(nxt)
-            }
-            i += 2
-          } else {
-            // Other escape sequences (\\n, \\u..., \\/, ...): keep verbatim.
-            sb.append(c).append(nxt)
-            i += 2
-          }
-        } else if (c == '"') {
-          sb.append(c)
-          inString = false
-          i++
-        } else {
-          sb.append(c)
-          i++
-        }
-      } else {
-        if (c == '"') {
-          sb.append(c)
-          inString = true
-          i++
-        } else if (c == '\\' && i + 1 < n && raw[i + 1] == '"') {
-          // Stray `\"` outside a string: treat it as a plain opening quote (the model escaped the
-          // delimiter instead of writing a plain `"`).
-          sb.append('"')
-          inString = true
-          i += 2
-        } else if (c == ',') {
-          val after = skipWs(i + 1)
-          if (after < n && (raw[after] == '}' || raw[after] == ']')) {
-            // Trailing comma before a closing brace/bracket: drop the comma.
-            i++
-          } else {
-            sb.append(c)
-            i++
-          }
-        } else {
-          sb.append(c)
-          i++
-        }
-      }
-    }
-    return sb.toString()
-  }
-
   private fun jsonResponse(json: String): IPluginServletActionRetVal =
       PluginServletActionRetVal(ServletResponse(EResponseType.JSON, json))
 
@@ -13153,7 +13354,7 @@ class AICodBiAssistant : IPluginServletAction {
   private fun parseChatAnswerRaw(raw: String, messagesJson: String): ChatAnswer? {
     return try {
       val cleaned = extractJson(stripThinkTags(raw)).trim()
-      logger.info("[AICodBiAssistant] Chat answer response: {}", cleaned)
+      logger.debug("[AICodBiAssistant] Chat answer response: {}", compactJsonForLog(cleaned))
       val obj = JsonParser.parseString(cleaned).asJsonObject
       if (obj.has("status")) {
         logger.info("[AICodBiAssistant] Chat response is a status signal — not an answer envelope")
@@ -13410,11 +13611,11 @@ class AICodBiAssistant : IPluginServletAction {
             "ich würde gerne wissen")
 
     /**
-     * Maximum number of additional detail-reruns after the initial form pass. When the AI keeps
-     * answering `need_codbi_details` (e.g. a small model that first asks for CodBi details, then
-     * asks again for specific widget types), `rerunWithCodbiDetails` loops up to this many extra
-     * times with the newly requested elements/widgets before giving up and splicing the last
-     * result.
+     * Default maximum number of additional detail-reruns after the initial form pass (overridable
+     * via the plugin property `AI_FormAssistant_MaxFormReruns`). When the AI keeps answering
+     * `need_codbi_details` (e.g. a small model that first asks for CodBi details, then asks again
+     * for specific widget types), `rerunWithCodbiDetails` loops up to this many extra times with
+     * the newly requested elements/widgets before giving up and splicing the last result.
      */
     private const val MAX_FORM_RERUNS = 2
 

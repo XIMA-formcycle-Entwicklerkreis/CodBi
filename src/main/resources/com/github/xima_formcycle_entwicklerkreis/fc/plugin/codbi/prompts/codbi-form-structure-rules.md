@@ -36,3 +36,21 @@ A request (email, list, description, mail thread, ...) can contain MANY fields. 
 - A given/family name pair ("Name, Vorname") → two XTextFields on the SAME row (same 'rowid', see ROW PAIRING RULES).
 - Add every created field to its page's/container's 'elements' array so it actually appears on the form.
 - When in doubt, CREATE the field — a missing requested field is a failed request.
+
+PANEL FOLDING RULES (start folded/collapsed — "zugeklappt", "eingeklappt", "anfangs zugeklappt", "collapsed by default"):
+- CodBi panels (UI.Panels classes / accordion members) default to UNFOLDED. To make panels START FOLDED, set the form-level GLOBAL VARIABLE HTML_PANEL_FOLDED to true (top-level 'variables' array: {"name":"HTML_PANEL_FOLDED","aliasname":"HTML_PANEL_FOLDED","serveronly":false,"value":"true"}) — ALL panels then start folded.
+- Set data-cb-folded="false" on EVERY panel that must stay OPEN at the start (e.g. the FIRST panel) — the per-element attribute overrides the global default. The other panels get NO data-cb-folded and start folded via the global.
+- NEVER set the XFieldSet "collapsed" property — it is not a real Formcycle property, it is ignored, and it never folds a CodBi panel. The correct mechanism is data-cb-folded + the HTML_PANEL_FOLDED global.
+- Example — "Alle Panels, bis auf das Erste, sollen anfang zugeklappt sein.": the top-level 'variables' array gets HTML_PANEL_FOLDED=true; the FIRST panel (e.g. fsInhalt) gets "attributes":[{"text":"data-cb-folded","value":"false"}]; the remaining panels start folded via the global.
+
+PRESERVE EXISTING ELEMENTS & FUNCTIONALITIES — ABSOLUTE RULE (never remove what the user did NOT ask to remove):
+- **You MUST output the COMPLETE form: EVERY existing element from the input form must appear in your output** (same `name`, `id`, `className`, `properties`, `attributes`) and stay in its original container — even when the request does not mention it. Only elements the user EXPLICITLY asked to remove may be omitted.
+- Omitting ANY existing element/container/functionality from your output is interpreted as a REMOVAL — the element is then LOST from the published form. That is data loss and an absolute FAIL. Before finalizing, mentally diff your output against the input form and confirm no existing element is missing.
+- KEEP every existing element and every property AND every `attributes` entry it has, UNLESS the user EXPLICITLY asks to remove or change it. Never drop an existing data-cb-func / data-cb-* functionality (e.g. HTML.Input.TinyMCE rich-text editor, HTML.Input.Cleave masking, HTML.Input.REGEX, OpenPLZ.Autocomplete) from a field you are not asked to change — a missing functionality is a FAIL.
+- When the request targets ONLY some elements/properties (e.g. numbering the panel titles → the panels' 'legend' property), modify ONLY those; every other element keeps its properties AND its 'attributes' exactly as in the input form.
+- NEVER interpret a change request for one thing (e.g. a title/label/number) as permission to strip other functionality (e.g. a rich-text editor or a formatter) from that or any other element.
+
+MOVING ELEMENTS (e.g. "den Senden-Button und die Checkbox nach unten ans Formularende verschieben, nicht in einen Container" / "move X to the bottom of the form, out of the container"):
+- Moving an element ONLY re-parents THAT element: remove JUST its name from the OLD parent's 'elements' array, add it to the NEW parent's (e.g. the page's) 'elements' array, and set its properties.parentid to the new parent's name.
+- NEVER remove, drop, or empty any OTHER container/fieldset/panel while moving something — an untouched container (e.g. the "Veröffentlichung" panel) stays exactly as it is, with all its children and its place in its parent's 'elements' array. Omitting an existing element/container from your output is interpreted as a REMOVAL, so every untouched element must remain in the output.
+- Keep the moved element's own properties and attributes (e.g. the button's action, the checkbox's label) unchanged.

@@ -9,9 +9,11 @@ describe("HTML_Panel functionality — deep coverage", () => {
     (globalThis as any).xm_validator = { on: jest.fn() };
     (globalThis as any).gotoPage = jest.fn();
     document.body.innerHTML = "";
+    TestState.xUtilCallbacks.clear();
     HTML_Panel = (await import("../../src/js/Functionalities/html.panel.js")).HTML_Panel;
     HTML_Panel.invalidElements = [];
     HTML_Panel.validatorRegistered = false;
+    HTML_Panel.submissionInProgress = false;
     HTML_Panel.mapHeaderAfterElements.clear();
   });
 
@@ -489,6 +491,249 @@ describe("HTML_Panel functionality — deep coverage", () => {
       }
 
       expect(result).toEqual(expect.objectContaining({ preventSubmission: true }));
+    });
+
+    it("prevents submission when an invalid (aria-invalid) field is inside a folded panel", () => {
+      const { panel } = createPanelDOM();
+      const input = document.createElement("input") as HTMLInputElement;
+      input.setAttribute("aria-invalid", "true");
+      input.setAttribute("data-name", "fieldFmt");
+      input.value = "bad-format-value";
+      panel.appendChild(input);
+
+      HTML_Panel.functionality({ folded: "true" }, panel);
+
+      // The Formcycle validator skips fields inside folded (hidden) panels, so
+      // invalidElements stays empty and only the proactive submit-check can catch it.
+      HTML_Panel.invalidElements = [];
+
+      const submitCallbacks = TestState.xUtilCallbacks.get("submit");
+      let result: any;
+      if (submitCallbacks) {
+        for (const cb of submitCallbacks) {
+          result = cb({});
+        }
+      }
+
+      expect(result).toEqual(expect.objectContaining({ preventSubmission: true }));
+      // The folded panel must have been unfolded so the user can see the invalid field.
+      expect(panel.classList.contains("--folded")).toBe(false);
+    });
+
+    it("prevents submission when an invalid (aria-invalid) field is inside a folded accordion panel", () => {
+      const wrap = document.createElement("div");
+      wrap.id = "accordionWrap";
+      document.body.appendChild(wrap);
+
+      // Panel P (folded) containing an invalid field.
+      const panelP = document.createElement("div");
+      panelP.id = "panelP";
+      const hdrWrapP = document.createElement("div");
+      const headerP = document.createElement("div");
+      headerP.classList.add("CodBi_HTML_Panel_Header");
+      hdrWrapP.appendChild(headerP);
+      panelP.appendChild(hdrWrapP);
+      const input = document.createElement("input") as HTMLInputElement;
+      input.setAttribute("aria-invalid", "true");
+      input.setAttribute("data-name", "fieldP");
+      input.value = "bad-format-value";
+      panelP.appendChild(input);
+      wrap.appendChild(panelP);
+
+      // Panel Q (unfolded) valid.
+      const panelQ = document.createElement("div");
+      panelQ.id = "panelQ";
+      const hdrWrapQ = document.createElement("div");
+      const headerQ = document.createElement("div");
+      headerQ.classList.add("CodBi_HTML_Panel_Header");
+      hdrWrapQ.appendChild(headerQ);
+      panelQ.appendChild(hdrWrapQ);
+      const inputQ = document.createElement("input") as HTMLInputElement;
+      inputQ.setAttribute("aria-required", "true");
+      inputQ.value = "ok";
+      panelQ.appendChild(inputQ);
+      wrap.appendChild(panelQ);
+
+      HTML_Panel.functionality({ folded: "true", accordion: "grp1" }, panelP);
+      HTML_Panel.functionality({ folded: "false", accordion: "grp1" }, panelQ);
+
+      HTML_Panel.invalidElements = [];
+
+      const submitCallbacks = TestState.xUtilCallbacks.get("submit");
+      let result: any;
+      if (submitCallbacks) {
+        for (const cb of submitCallbacks) {
+          result = cb({});
+        }
+      }
+
+      expect(result).toEqual(expect.objectContaining({ preventSubmission: true }));
+      expect((panelP as any).CodBi_HTML_Panel_Folded).toBe(false);
+    });
+
+    it("prevents submission when a folded panel's field stays hidden after unfold (hidden ancestor wrapper)", () => {
+      // Simulates a FormCycle ancestor (e.g. an outer container) that keeps `display:none` even
+      // though the CodBi panel itself is unfolded. Such a field must still block submission,
+      // otherwise it would slip through and the form would be sent.
+      const outerHidden = document.createElement("div");
+      outerHidden.id = "outerHidden";
+      outerHidden.style.display = "none";
+      document.body.appendChild(outerHidden);
+
+      const panel = document.createElement("div");
+      panel.id = "panelHidden";
+      const headerContainer = document.createElement("div");
+      const header = document.createElement("div");
+      header.classList.add("CodBi_HTML_Panel_Header");
+      header.textContent = "Panel Title";
+      headerContainer.appendChild(header);
+      panel.appendChild(headerContainer);
+      const input = document.createElement("input") as HTMLInputElement;
+      input.setAttribute("aria-required", "true");
+      input.setAttribute("data-name", "fieldHidden");
+      input.value = "";
+      panel.appendChild(input);
+      outerHidden.appendChild(panel);
+
+      HTML_Panel.functionality({ folded: "true" }, panel);
+
+      HTML_Panel.invalidElements = [];
+
+      const submitCallbacks = TestState.xUtilCallbacks.get("submit");
+      let result: any;
+      if (submitCallbacks) {
+        for (const cb of submitCallbacks) {
+          result = cb({});
+        }
+      }
+
+      expect(result).toEqual(expect.objectContaining({ preventSubmission: true }));
+      expect((panel as any).CodBi_HTML_Panel_Folded).toBe(false);
+    });
+
+    it("allows submission when an empty required field is hidden by a Formcycle property (not in a folded panel)", () => {
+      // A required field hidden by a Formcycle property (display:none, no folded-panel ancestor) is
+      // intentionally not required — Formcycle handles it — so it must NOT block submission. Only
+      // fields inside a folded panel block submission.
+      const wrapper = document.createElement("div");
+      wrapper.id = "hiddenWrap";
+      wrapper.style.display = "none";
+      document.body.appendChild(wrapper);
+
+      const input = document.createElement("input") as HTMLInputElement;
+      input.setAttribute("aria-required", "true");
+      input.setAttribute("data-name", "fieldHiddenPlain");
+      input.value = "";
+      wrapper.appendChild(input);
+
+      // Register the handlers via a regular (unfolded) panel.
+      const { panel } = createPanelDOM();
+      HTML_Panel.functionality({ folded: "false" }, panel);
+
+      HTML_Panel.invalidElements = [];
+
+      const submitCallbacks = TestState.xUtilCallbacks.get("submit");
+      let result: any;
+      if (submitCallbacks) {
+        for (const cb of submitCallbacks) {
+          result = cb({});
+        }
+      }
+      expect(result).toEqual(expect.objectContaining({ preventSubmission: false }));
+
+      // The validator hook must NOT force a validation failure for a property-hidden (non-folded)
+      // field either. It only acts while a submission is in progress, so set the flag first.
+      const beginCalls = (globalThis as any).xm_validator.on.mock.calls.filter((call: any) => call[0] === "begin");
+      expect(beginCalls.length).toBeGreaterThan(0);
+      const beginCallback = beginCalls[beginCalls.length - 1][1];
+      HTML_Panel.submissionInProgress = true;
+      const vResult = beginCallback({ items: [], silent: false, type: "main" });
+      expect(vResult).toBeUndefined();
+    });
+
+    it("blocks submission for a folded-panel mandatory field but allows a property-hidden one", () => {
+      // Regression: a mandatory field in a folded panel must block submission (and the panel is
+      // unfolded so the user can see it), while a mandatory field hidden by a Formcycle property
+      // (display:none, no folded ancestor) must NOT block submission.
+      const { panel: foldedPanel } = createPanelDOM();
+      const foldedInput = document.createElement("input") as HTMLInputElement;
+      foldedInput.setAttribute("aria-required", "true");
+      foldedInput.setAttribute("data-name", "fieldFoldedSubmit");
+      foldedInput.value = "";
+      foldedPanel.appendChild(foldedInput);
+      HTML_Panel.functionality({ folded: "true" }, foldedPanel);
+
+      const hidden = document.createElement("div");
+      hidden.style.display = "none";
+      document.body.appendChild(hidden);
+      const hiddenInput = document.createElement("input") as HTMLInputElement;
+      hiddenInput.setAttribute("aria-required", "true");
+      hiddenInput.setAttribute("data-name", "fieldHiddenSubmit");
+      hiddenInput.value = "";
+      hidden.appendChild(hiddenInput);
+
+      HTML_Panel.invalidElements = [];
+
+      const submitCallbacks = TestState.xUtilCallbacks.get("submit");
+      let result: any;
+      if (submitCallbacks) {
+        for (const cb of submitCallbacks) {
+          result = cb({});
+        }
+      }
+      // The folded mandatory field must block submission and the panel must be unfolded.
+      expect(result).toEqual(expect.objectContaining({ preventSubmission: true }));
+      expect((foldedPanel as any).CodBi_HTML_Panel_Folded).toBe(false);
+    });
+
+    it("validator begin forces validation failure for an invalid field in a folded panel", () => {
+      // The Formcycle validator skips fields inside folded (hidden) panels, so the form would be
+      // submitted. The validator's "begin" callback must force the whole validation to fail
+      // (which blocks submission) and unfold the panel so the user can see the invalid field.
+      const { panel } = createPanelDOM();
+      const input = document.createElement("input") as HTMLInputElement;
+      input.setAttribute("aria-required", "true");
+      input.setAttribute("data-name", "fieldFolded");
+      input.value = "";
+      panel.appendChild(input);
+
+      HTML_Panel.functionality({ folded: "true" }, panel);
+
+      const beginCalls = (globalThis as any).xm_validator.on.mock.calls.filter((call: any[]) => call[0] === "begin");
+      expect(beginCalls.length).toBeGreaterThan(0);
+      const beginCallback = beginCalls[beginCalls.length - 1][1];
+
+      // Only an actual submission (flag set by the submit handler) triggers the unfold/force-fail.
+      HTML_Panel.submissionInProgress = true;
+      const result = beginCallback({ items: [], silent: false, type: "main" });
+
+      expect(result).toEqual({ valid: false });
+      expect((panel as any).CodBi_HTML_Panel_Folded).toBe(false);
+    });
+
+    it("validator begin does NOT unfold a folded panel when no submission is in progress (blur)", () => {
+      // Regression: while the user is filling out the form, blurring a field in another panel runs a
+      // "main" validation. A mandatory-but-empty field inside a folded first panel must NOT cause
+      // that panel to auto-open (which would close the accordion panel the user is working in).
+      const { panel } = createPanelDOM();
+      const input = document.createElement("input") as HTMLInputElement;
+      input.setAttribute("aria-required", "true");
+      input.setAttribute("data-name", "fieldFoldedBlur");
+      input.value = "";
+      panel.appendChild(input);
+
+      HTML_Panel.functionality({ folded: "true" }, panel);
+      HTML_Panel.submissionInProgress = false; // blur scenario — no submission is in progress.
+
+      const beginCalls = (globalThis as any).xm_validator.on.mock.calls.filter((call: any[]) => call[0] === "begin");
+      expect(beginCalls.length).toBeGreaterThan(0);
+      const beginCallback = beginCalls[beginCalls.length - 1][1];
+
+      const result = beginCallback({ items: [], silent: false, type: "main" });
+
+      // The panel must stay folded and no validation failure may be forced.
+      expect(result).toBeUndefined();
+      expect((panel as any).CodBi_HTML_Panel_Folded).toBe(true);
     });
   });
 

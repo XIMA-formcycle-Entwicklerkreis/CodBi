@@ -873,43 +873,14 @@ class AIFormAssistant : IPluginServletAction {
           "css",
           "formI18n",
           "i18n",
-          "viewstatus",
-          "viewusergroup",
-          "readonly_viewstatus",
-          "readonly_viewusergroup",
-          "statusdependent",
-          "readonly_statusdependent",
-          "usergrouppendent",
-          "readonly_usergrouppendant",
-          // Attributes — stripped to prevent stale data-cb-* entries from surviving when items
-          // are restored in restoreStrippedFields. The AI always outputs fresh data-cb-* as
-          // direct property keys, which are converted to the proper attributes array at the end
-          // of restoreStrippedFields.
-          "attributes",
-          "print_hide",
-          "print_size",
-          "print_text_only",
-          "print_break",
           "backgroundcolor",
-          "helptext",
-          "comment",
           "pdfImporterId",
-          "rowid",
-          "computedwidth",
-          "maxwidth",
-          "minwidth",
-          // Workflow-status / user-group visibility — stripped from slim JSON so the AI starts
-          // fresh (no copy-paste from existing items), but validated and re-applied for new
-          // AI-created items via sanitizeVisibilityProp(). Existing items still restore from
-          // the original.
-          "viewstatus",
-          "viewusergroup",
-          "readonly_viewstatus",
-          "readonly_viewusergroup",
-          "statusdependent",
-          "readonly_statusdependent",
-          "usergrouppendent",
-          "readonly_usergrouppendant",
+          // Everything else — visibility/access control, print directives, sizing, layout (incl.
+          // rowid), helptext, comment, and the CodBi "attributes" (data-cb-*) — is intentionally
+          // KEPT in the slim JSON sent to the AI so it sees the full existing configuration and
+          // preserves it when rebuilding the form. Stale data-cb-* entries from a previous run are
+          // still purged from the attributes array during the restore/normalization in
+          // restoreStrippedFields.
       )
 
   /**
@@ -983,12 +954,6 @@ class AIFormAssistant : IPluginServletAction {
               }
               .map { it.key }
       for (key in emptyKeys) props.remove(key)
-      // Strip action objects from XButtonList buttons so the AI cannot copy existing page values
-      if (el.asJsonObject.get("className")?.asString == "XButtonList") {
-        props.getAsJsonArray("buttons")?.forEach { btn ->
-          if (btn.isJsonObject) btn.asJsonObject.remove("action")
-        }
-      }
     }
     return gson.toJson(root)
   }
@@ -1336,7 +1301,6 @@ class AIFormAssistant : IPluginServletAction {
         // the form renders.
         if (parentId != null && props.get("parentid")?.asString != parentId) {
           props.addProperty("parentid", parentId)
-          logger.info("[AIFormAssistant] Normalized parentid of '{}' to '{}'", name, parentId)
         }
       }
       for (el in resultItems) {
@@ -1474,6 +1438,60 @@ class AIFormAssistant : IPluginServletAction {
             "[AIFormAssistant] Stripped Holistic.* standard-config classes from '{}' (activated via codbi-prop-standards, not as widget CSS)",
             props.get("name")?.asString ?: "<unknown>")
       }
+    }
+    // OPTION-GATED CONTAINER — the AI often puts the hiddenif on the inner FIELD (e.g. the XUpload)
+    // instead of on the wrapping XContainer, leaving the empty container VISIBLE so the upload
+    // keeps showing even though the condition exists. Per the CodBi rule the CONTAINER is the
+    // target of conditional visibility. As a safety net, when a container holds exactly ONE child
+    // and that child carries a hiddenif condition (hiddenif + hiddenifcomp + hiddenifvalue +
+    // hiddenifclear) while the container has none, MOVE the condition to the container and drop it
+    // from the child.
+    try {
+      val itemByName = mutableMapOf<String, JsonObject>()
+      for (el in resultItems) {
+        if (!el.isJsonObject) continue
+        val name =
+            el.asJsonObject
+                .getAsJsonObject("properties")
+                ?.get("name")
+                ?.takeIf { it.isJsonPrimitive }
+                ?.asString ?: continue
+        itemByName[name] = el.asJsonObject
+      }
+      for (el in resultItems) {
+        if (!el.isJsonObject) continue
+        val container = el.asJsonObject
+        if (container.get("className")?.asString != "XContainer" &&
+            container.get("className")?.asString != "XContainerInvisible" &&
+            container.get("className")?.asString != "XFieldSet") {
+          continue
+        }
+        val cProps = container.getAsJsonObject("properties") ?: continue
+        val elements = cProps.getAsJsonArray("elements") ?: continue
+        if (elements.size() != 1) continue // only single-child wrappers
+        val childName = elements.get(0).takeIf { it.isJsonPrimitive }?.asString ?: continue
+        val child = itemByName[childName] ?: continue
+        val childProps = child.getAsJsonObject("properties") ?: continue
+        val childHiddenIf = childProps.get("hiddenif")?.takeIf { it.isJsonPrimitive }?.asString
+        // The child has a real hidden condition (a controlling ID) and the container has none.
+        if (childHiddenIf.isNullOrBlank()) continue
+        if (cProps.has("hiddenif") &&
+            cProps.get("hiddenif")?.takeIf { it.isJsonPrimitive }?.asString?.isNotBlank() == true) {
+          continue
+        }
+        for (key in setOf("hiddenif", "hiddenifcomp", "hiddenifvalue", "hiddenifclear")) {
+          val v = childProps.get(key)
+          if (v != null) cProps.add(key, v.deepCopy())
+          childProps.remove(key)
+        }
+        logger.info(
+            "[AIFormAssistant] Moved hidden condition (hiddenif='{}') from leaf '{}' to wrapping container '{}'",
+            childHiddenIf,
+            childName,
+            cProps.get("name")?.asString ?: cProps.get("id")?.asString ?: "<unknown>")
+      }
+    } catch (_: Exception) {
+      /* non-critical — skip normalization on error */
     }
     return gson.toJson(result)
   }

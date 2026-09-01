@@ -64,6 +64,11 @@ when CodBi searches within the shared parent container.
   - Unit: A string -character specifying what unit Minimum is of.
 - Date.NoWeekends: Applicable on a XTextField of type 'date' to disallow weekend dates.
   - MsgNoWeekends: The optional string to be shown when a weekend is entered.
+- Date.Time.Join: Joins the Date of a date-HTMLInputElement with the time of a time-HTMLInputElement.
+  - DateField: The optional CSS-Selector selecting the HTMLInputElement that provides the Date .
+  - Divisor: The optional number the combined Date 's `.getTime()`-milliseconds are divided by.
+  - TimeField: The optional CSS-Selector selecting the HTMLInputElement that provides the time.
+  - ToMillis: The optional boolean specifying whether the tagged HTMLInputElement shall receive.
 - Form.Navigator: Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.
   - CSSBlockedNavButton: Configures 'CSSBlockedNavButton' for this functionality.
   - CSSHoverNavButtons: Configures 'CSSHoverNavButtons' for this functionality.
@@ -126,7 +131,7 @@ when CodBi searches within the shared parent container.
   - Placeholder: Specifies the string that shall be replaced within the.
   - Property: Specifies which property of the Element "toProcess" shall receive the "Replacement".
   - Replacement: The string to replace all occurrences of the specified "Placeholder" or at the end of the.
-- HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template.
+- HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template. Placeholder syntax is a PROPERTY name wrapped in "[(...)]" (e.g. [(name)], [(vorname)], [(nachname)], [(mail)]). data-cb-replacements is the object (or array of objects) whose property values fill the [(property)] placeholders and may be an EP placeholder resolving to an object (e.g. "{ BayVIS.Ansprechpartner.Details > ... ; ... }"). CRITICAL — when data-cb-replacements is fed by an EP that returns an OBJECT, use [(property)] placeholders naming the ACTUAL properties of that EP's result object — NEVER the injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare raw EP string. The template with the [(property)] placeholders lives in the field's own value/rtevalue (data-cb-property).
   - CSS: Configures 'CSS' for this functionality.
   - Property: Configures 'Property' for this functionality.
   - Replacements: Configures 'Replacements' for this functionality.
@@ -375,6 +380,8 @@ Set data-cb-func="Sys.Log.Console" on it.
   - .AI_LLAMA_TXTQA_Source: Applies 'AI' behavior to elements tagged with '.AI_LLAMA_TXTQA_Source'.
   - .AI_OCR_Receiver: Applies 'AI' behavior to elements tagged with '.AI_OCR_Receiver'.
 - Appointments: Registers standard configurations specific to appointment arrangements.
+  - .CodBi_Date_Time_Join_Date: Tags the date HTMLInputElement of a date/time pair.
+  - .CodBi_Date_Time_Join_Time: Tags the time HTMLInputElement of a date/time pair.
   - .CodBi_DateFrame_1_Begin: The HTMLInputElement s tagged with these classes will be configured to not allow entering a date in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector "MaxField" points to.
   - .CodBi_DateFrame_1_End: The HTMLInputElement s tagged with these classes will be configured to not allow entering a date in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector "MaxField" points to.
   - .CodBi_DateFrame_2_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_DateFrame_2_Begin'.

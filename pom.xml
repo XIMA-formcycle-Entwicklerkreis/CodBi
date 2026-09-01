@@ -298,6 +298,17 @@
 			<scope>provided</scope>
 		</dependency>
 
+		<!-- Guava is provided by formcycle (FC 8.5.x ships Guava 33.x) and MUST NOT be bundled into
+		     the plugin JAR. A second Guava inside the plugin's classloader clashes with the one
+		     already loaded by Tomcat's ParallelWebappClassLoader (ClassCastException/LinkageError
+		     during plugin initialization). Scope "provided" keeps it on the compile classpath but
+		     out of the fat JAR; the version is inherited from the imported de.xima.fc:fc BOM. -->
+		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+			<scope>provided</scope>
+		</dependency>
+
 		<!-- JUnit for unit tests -->
 		<dependency>
 			<groupId>org.junit.jupiter</groupId>

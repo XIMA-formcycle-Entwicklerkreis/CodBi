@@ -19,7 +19,20 @@
  *
  * - **CodBi_Holidays_Listing**
  *   The {@link HTMLSelectElement } tagged with this class, will be filled with all holidays for the current
- *   and next years for the state specified in the global variable **CodBi_Holidays_States**. */
+ *   and next years for the state specified in the global variable **CodBi_Holidays_States**.
+ *
+ * - **CodBi_Date_Time_Join_Date**
+ *  Tags the date {@link HTMLInputElement } of a date/time pair. Together with the
+ *  **CodBi_Date_Time_Join_Time**-class the tagged fields act as the source for the **Date.Time.Join**
+ *  functionality: the {@link HTMLInputElement } tagged with `data-cb-func="Date.Time.Join"` receives the
+ *  combined date + time. The date- and time-fields are resolved within the same container as the tagged
+ *  {@link HTMLInputElement }.
+ * - **CodBi_Date_Time_Join_Time**
+ *  Tags the time {@link HTMLInputElement } of a date/time pair. Together with the
+ *  **CodBi_Date_Time_Join_Date**-class the tagged fields act as the source for the **Date.Time.Join**
+ *  functionality: the {@link HTMLInputElement } tagged with `data-cb-func="Date.Time.Join"` receives the
+ *  combined date + time. The date- and time-fields are resolved within the same container as the tagged
+ *  {@link HTMLInputElement }. */
 export function loadConfig(): void {
   // #region .CodBi_NoFutureDate
   window.codbi.loadConfig({

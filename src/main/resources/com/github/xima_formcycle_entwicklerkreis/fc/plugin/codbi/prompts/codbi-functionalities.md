@@ -99,6 +99,22 @@ TRIGGER — MILLISECONDS ("Millisekunden" / "milliseconds" / "epoch ms" / "die k
 
 TRIGGER — DIVISOR ("geteilt durch X" / "divided by X" / "durch 1000" / "Millisekunden geteilt durch tausend"): set `data-cb-divisor="X"` on the Date.Time.Join receiver field(s) (e.g. "geteilt durch tausend" → `data-cb-divisor="1000"`). This is a FORM MODIFICATION (hasInstructions=true) — do NOT answer with a how-to and do NOT suggest a formula field (XFormula) or a script. Add/update `data-cb-divisor="X"` on each existing Date.Time.Join receiver (keep data-cb-func, data-cb-datefield, data-cb-timefield, and data-cb-tomillis if present). `data-cb-divisor` divides the epoch milliseconds by X and floors them — it takes precedence over `data-cb-tomillis`.
 
+## Date.Time.Join.Span
+
+Applicable on the CONTAINER that holds the four fields (an XContainer/XFieldSet) to validate a BEGIN date+time pair against an END date+time pair (e.g. "Beginn darf nicht nach dem Ende liegen, Datum und Uhrzeit zusammen", "end must be after begin considering date AND time", "the span must not be empty/negative", a non-empty appointment/event span). USE it instead of Date.Frame/Time.Frame whenever BOTH dates AND times matter together — Date.Frame/Time.Frame compare the dates or the times SEPARATELY and cannot catch a begin time after the end time on the same day. USE it instead of Date.Time.Join (which only merges one pair into a value). The tagged element is the scope in which the fields are searched: the CSS-Classes are looked up within it, and the CSS-Selector-Parameters first within it, then across the whole document. The Parameters take precedence over the Classes and are REQUIRED when more than one span exists in the form or when fields lie outside the tagged element. If any of the four fields cannot be resolved, the functionality silently does nothing (no exception is thrown).
+
+WIRING:
+- Tag the CONTAINER holding the four fields (an XContainer/XFieldSet div) → `data-cb-func="Date.Time.Join.Span"`
+- BEGIN DATE field A → tag with `CodBi_Date_Time_Join_Span_Begin` OR reference via `data-cb-Begin` (dot-prefixed `name` CSS-selector; takes precedence)
+- BEGIN TIME field B → tag with `CodBi_Date_Time_Join_Span_Begin_Time` OR reference via `data-cb-BeginTime`
+- END DATE field C → tag with `CodBi_Date_Time_Join_Span_End` OR reference via `data-cb-End`
+- END TIME field D → tag with `CodBi_Date_Time_Join_Span_End_Time` OR reference via `data-cb-EndTime`
+- For fields in DIFFERENT containers (outside the tagged element) or for MULTIPLE spans, provide the four `data-cb-*` selectors on the tagged container.
+
+NESTING — you MAY tag more than one container with `data-cb-func="Date.Time.Join.Span"`; each tagged container is processed independently with its own scope. When a tagged container is NESTED inside another tagged container, the OUTER container's CSS-Class lookup automatically SKIPS fields that lie within an element whose `data-cb-func` contains `Date.Time.Join.Span` (case-insensitive) — so the outer span never resolves the inner span's fields by class. You only need the `data-cb-*` selectors when fields lie OUTSIDE the tagged container (different containers / multiple sibling spans) or to disambiguate.
+
+The begin datetime = A + B, the end datetime = C + D. Whenever one of the four fields changes, both datetimes are compared. If the joined end datetime is lower or equal to the joined begin datetime (or, equivalently, the joined begin datetime is higher or equal to the joined end datetime — equality is NOT permitted), the field that just changed is invalidated with the `data-cb-msginvalid` message. Exactly one field (either the date- or the time-field) is invalidated at a time. Once the span is valid again, all four error messages are removed.
+
 ## Form.Navigator
 
 Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.

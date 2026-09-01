@@ -24,6 +24,10 @@
     "CodBi_TimeFrame_5_End": "Apply to the END time field of a fifth time range pair.",
     "CodBi_Date_Time_Join_Date": "Apply to the DATE input field of a date/time pair. The input field tagged with the Date.Time.Join functionality will receive the combined date + time.",
     "CodBi_Date_Time_Join_Time": "Apply to the TIME input field of a date/time pair. The input field tagged with the Date.Time.Join functionality will receive the combined date + time.",
+    "CodBi_Date_Time_Join_Span_Begin": "Apply to the BEGIN date input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-Begin parameter takes precedence.",
+    "CodBi_Date_Time_Join_Span_Begin_Time": "Apply to the BEGIN time input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-BeginTime parameter takes precedence.",
+    "CodBi_Date_Time_Join_Span_End": "Apply to the END date input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-End parameter takes precedence.",
+    "CodBi_Date_Time_Join_Span_End_Time": "Apply to the END time input field of a date/time span. Referenced by the Date.Time.Join.Span functionality; the data-cb-EndTime parameter takes precedence.",
     "CodBi_Holidays_Listing": "Apply to an XSelect that should be filled with holidays for current and next years. The state is specified in global variable CodBi_Holidays_States."
   },
   "globals": {

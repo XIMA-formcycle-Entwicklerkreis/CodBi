@@ -32,7 +32,15 @@
  *  **CodBi_Date_Time_Join_Date**-class the tagged fields act as the source for the **Date.Time.Join**
  *  functionality: the {@link HTMLInputElement } tagged with `data-cb-func="Date.Time.Join"` receives the
  *  combined date + time. The date- and time-fields are resolved within the same container as the tagged
- *  {@link HTMLInputElement }. */
+ *  {@link HTMLInputElement }.
+ * - **CodBi_Date_Time_Join_Span_Begin / CodBi_Date_Time_Join_Span_Begin_Time / CodBi_Date_Time_Join_Span_End /
+ *  CodBi_Date_Time_Join_Span_End_Time**
+ *  Tag the begin date-, begin time-, end date- and end time-{@link HTMLInputElement } of a date/time span. Together
+ *  they act as the source for the **Date.Time.Join.Span** functionality: the container holding them is tagged with
+ *  `data-cb-func="Date.Time.Join.Span"` (the tagged element is the scope the classes are searched in) to ensure the
+ *  joined end datetime is strictly higher than the joined begin datetime. The optional `data-cb-Begin` (etc.)
+ *  CSS-Selector-Parameters take precedence over the classes and are required when more than one span exists within the
+ *  form. */
 export function loadConfig(): void {
   // #region .CodBi_NoFutureDate
   window.codbi.loadConfig({

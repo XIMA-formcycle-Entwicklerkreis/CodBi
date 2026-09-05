@@ -9,9 +9,6 @@ NEVER use an ID selector (# prefix, e.g., '#xi-tf-interviewbis'), because
 element IDs are mangled in repeatable containers; only properties.name-based selectors work reliably
 when CodBi searches within the shared parent container.
 
-## FORMCYCLE Form Elements
-- XAppointment: Appointment finder / Terminfinder. When the prompt says "Terminfinder für X", set property "appointmentPlan":"X" (e.g., "appointmentPlan":"ddd"). The backend auto-resolves the plan name to the UUID for "appointmentTemplate". Other properties: dateFormat="dd.mm.yy", required="0", closeable="0", showUntil="0", showCapacity="0".
-
 ## Functionalities
 
 - AI.LLAMA.CHAT: Applicable on a container element to embed an AI chat widget (requires a locally running LLAMA server via CodBi settings).
@@ -36,6 +33,56 @@ when CodBi searches within the shared parent container.
   - VoiceSendHotkey: Configures 'VoiceSendHotkey' for this functionality.
   - WaitingText: Configures 'WaitingText' for this functionality.
   - WelcomeText: Configures 'WelcomeText' for this functionality.
+- AI.LLAMA.STANDARD.QA: The Unique session ID generated on page load â€” ensures each session gets its own llama-server slot and thus.
+  - AIHint: Configures 'AIHint' for this functionality.
+  - CaseInsensitive: Configures 'CaseInsensitive' for this functionality.
+  - FilterResults: Configures 'FilterResults' for this functionality.
+  - InternetAccess: Configures 'InternetAccess' for this functionality.
+  - Location: Configures 'Location' for this functionality.
+  - MaxPages: Configures 'MaxPages' for this functionality.
+  - MaxPixelSize: Configures 'MaxPixelSize' for this functionality.
+  - MaxThinkingTokens: Configures 'MaxThinkingTokens' for this functionality.
+  - Mode: Configures 'Mode' for this functionality.
+  - PositiveResponse: Configures 'PositiveResponse' for this functionality.
+  - Question: Configures 'Question' for this functionality.
+  - QuestionRoot: Configures 'QuestionRoot' for this functionality.
+  - QueueBadge: Configures 'QueueBadge' for this functionality.
+  - QueueText: Configures 'QueueText' for this functionality.
+  - ResponseLanguage: Configures 'ResponseLanguage' for this functionality.
+  - Rotation: Configures 'Rotation' for this functionality.
+  - Specialist: Configures 'Specialist' for this functionality.
+  - Thinking: Configures 'Thinking' for this functionality.
+  - VerifyCheckboxLabel: Configures 'VerifyCheckboxLabel' for this functionality.
+  - VerifyErrorText: Configures 'VerifyErrorText' for this functionality.
+- AI.LLAMA.STANDARD.TXTQA: Unique session ID generated on page load â€” ensures each session gets its own llama-server slot.
+  - AIHint: Configures 'AIHint' for this functionality.
+  - debounce: Configures 'debounce' for this functionality.
+  - FilterResults: Configures 'FilterResults' for this functionality.
+  - inferencedelay: Configures 'inferencedelay' for this functionality.
+  - language: Configures 'language' for this functionality.
+  - Location: Configures 'Location' for this functionality.
+  - QuestionRoot: Configures 'QuestionRoot' for this functionality.
+  - QueueBadge: Configures 'QueueBadge' for this functionality.
+  - QueueText: Configures 'QueueText' for this functionality.
+  - ResponseLanguage: Configures 'ResponseLanguage' for this functionality.
+  - Specialist: Configures 'Specialist' for this functionality.
+  - useinternet: Configures 'useinternet' for this functionality.
+- AI.LLAMA.STANDARD.TXTVERIFY: The Unique session ID generated on page load â€” ensures each session gets its own llama-server slot and thus.
+  - CaseInsensitive: Configures 'CaseInsensitive' for this functionality.
+  - FilterResults: Configures 'FilterResults' for this functionality.
+  - InternetAccess: Configures 'InternetAccess' for this functionality.
+  - Language: Configures 'Language' for this functionality.
+  - MaxThinkingTokens: Configures 'MaxThinkingTokens' for this functionality.
+  - PositiveResponse: Configures 'PositiveResponse' for this functionality.
+  - Question: Configures 'Question' for this functionality.
+  - QuestionRoot: Configures 'QuestionRoot' for this functionality.
+  - QueueBadge: Configures 'QueueBadge' for this functionality.
+  - QueueText: Configures 'QueueText' for this functionality.
+  - ResponseLanguage: Configures 'ResponseLanguage' for this functionality.
+  - Specialist: Configures 'Specialist' for this functionality.
+  - Thinking: Configures 'Thinking' for this functionality.
+  - VerifyCheckboxLabel: Configures 'VerifyCheckboxLabel' for this functionality.
+  - VerifyErrorText: Configures 'VerifyErrorText' for this functionality.
 - AI.OCR: Applicable on an XUpload field to extract and return text from uploaded images or PDFs via OCR.
   - Field: CSS-Class-Selector for the field receiving the OCR output (e.g., '.tfExtractedText'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - FieldPattern_: Configures 'FieldPattern_' for this functionality.
@@ -51,40 +98,59 @@ when CodBi searches within the shared parent container.
   - RegExFlags: Configures 'RegExFlags' for this functionality.
   - Separator: Configures 'Separator' for this functionality.
   - WrongFileMessage: Configures 'WrongFileMessage' for this functionality.
-- Date.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'date' when there is a second related end date field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end date element.
+- Date.Frame: For a date range (start/minimum + end/maximum date, e.g. 'Kursbeginn'/'Kursende', 'Start'/'End', 'Von'/'Bis'). A two-field date RANGE is ALWAYS Date.Frame — do NOT model a range as a mere Date.Min. PREFER the standard CSS classes: apply CodBi_DateFrame_N_Begin to the START date field AND CodBi_DateFrame_N_End to the END date field (SAME N — BOTH fields get their own class; there is NO combined CodBi_DateFrame_N_Begin_End class; these classes go ONLY on the two date XTextField fields, never on a container/fieldset). FALLBACK when the classes cannot be used: data-cb-func=date.frame on the BEGIN field only with data-cb-maxfield = dot-prefixed END field name (e.g. .tfKursende) — do NOT put the functionality on the end date element. A Date.Min may be ADDED to the start field, but the range itself still requires the Begin/End frame classes on BOTH fields.
   - EqualityPermitted: A boolean indicating whether equality between minimum and maximum dates is allowed.
   - MaxField: CSS-Class-Selector for the max date input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
   - MsgMaxInvalid: The string to show as the error message when the maximumHTMLInputElement 's value is before.
   - MsgMinInvalid: The string to show as the error message when the minimum-HTMLInputElement 's value is after.
-- Date.Min: Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates). REQUIRED Minimum — never emit Date.Min without it.
-  - REQUIRED Minimum: The amount of years/months/weeks/days (depending on the Unit set) relative to today, as a digit string. For a FUTURE minimum ("at least tomorrow", "from tomorrow on", "no past dates") set Reverse=TRUE, e.g. Minimum=1, Unit=d, Reverse=true = tomorrow or later; Minimum=0, Unit=d, Reverse=true = today or later.
+- Date.Min: Applicable on a XTextField of type 'date' to enforce a minimum allowed date (e.g. prevent past dates). BIRTH-DATE FIELDS (Geburtsdatum, Geburtstag, birth date, birthday): NEVER apply data-cb-reverse=true / a FUTURE Date.Min / 'Mindestdatum heute oder morgen' to a birth-date field — a birth date lies in the PAST. A constraint like 'keine Vergangenheitsdaten'/'no past dates'/'no future dates' on a birth date means NO FUTURE DATES → the ONLY valid CodBi behavior is the CodBi_NoFutureDate class (max = today). Do NOT add Date.Min and do NOT add any weekend restriction. A PAST minimum (e.g. 'mindestens 18 Jahre' → minimum=18, unit=y, NO reverse) is valid only when an age limit is requested.
   - Delimiter: The string separating the day, month & year.
+  - Minimum: The amount of years/months/weeks (depending on the Unit set) in the past the tagged.
   - MsgHigher: The error message to show if the "minimum" is not enough years in the past or the corresponding.
   - Reverse: Reverse the logic of this functionality in order to permit Date s up to a certain one (defaults to: FALSE).
   - Unit: A string -character specifying what unit Minimum is of.
-- Date.NoWeekends: Applicable on a XTextField of type 'date' to disallow weekend dates.
+- Date.NoWeekends: Applicable on a XTextField of type 'date' to disallow weekend dates. NEVER apply to a BIRTH-DATE field (Geburtsdatum, Geburtstag, birth date, birthday) — people can be born on any weekday, so a 'keine Wochenenden'/'no weekends' constraint on a birth date must be IGNORED (apply nothing, ask nothing). Only meaningful for future-dated/booking-type dates (course date, appointment, delivery).
   - MsgNoWeekends: The optional string to be shown when a weekend is entered.
+- Date.Time.Join.Span: Connects four HTMLInputElement s (a begin date-, a begin time-, an end date- and an end time-field) to.
+  - Begin: The optional CSS-Selector selecting the HTMLInputElement that provides the begin Date .
+  - BeginTime: The optional CSS-Selector selecting the HTMLInputElement that provides the begin time.
+  - End: The optional CSS-Selector selecting the HTMLInputElement that provides the end Date .
+  - EndTime: The optional CSS-Selector selecting the HTMLInputElement that provides the end time.
+  - MsgInvalid: The optional string to show as the error message when the joined end datetime is lower or equal to the.
 - Date.Time.Join: Joins the Date of a date-HTMLInputElement with the time of a time-HTMLInputElement.
   - DateField: The optional CSS-Selector selecting the HTMLInputElement that provides the Date .
   - Divisor: The optional number the combined Date 's `.getTime()`-milliseconds are divided by.
   - TimeField: The optional CSS-Selector selecting the HTMLInputElement that provides the time.
   - ToMillis: The optional boolean specifying whether the tagged HTMLInputElement shall receive.
-- Date.Time.Join.Span: Validates that the joined end datetime (End + EndTime) is higher than the joined begin datetime (Begin + BeginTime). All four fields may either be designated via the optional CSS-Selector-Parameters or, if those aren't set, via the CSS-Classes they're tagged with (CodBi_Date_Time_Join_Span_Begin, CodBi_Date_Time_Join_Span_Begin_Time, CodBi_Date_Time_Join_Span_End, CodBi_Date_Time_Join_Span_End_Time) — the Parameters take precedence over the Classes and are REQUIRED when more than one span exists in the form. The tagged element (the container holding the four fields) is the scope in which the fields are searched: the CSS-Classes are looked up within the tagged element (skipping fields inside a nested element tagged with Date.Time.Join.Span), and the CSS-Selector-Parameters first within it, then across the whole document (the begin and end fields may thus reside in different containers). If any of the four fields cannot be resolved, the functionality simply does not take effect (no exception is thrown). When the joined end datetime is lower or equal to the joined begin datetime (equality is NOT permitted), the date- or time-field that just changed is invalidated.
-  - Begin: The optional CSS-Selector selecting the HTMLInputElement that provides the begin Date (takes precedence over the CodBi_Date_Time_Join_Span_Begin-CSS-Class).
-  - BeginTime: The optional CSS-Selector selecting the HTMLInputElement that provides the begin time (takes precedence over the CodBi_Date_Time_Join_Span_Begin_Time-CSS-Class).
-  - End: The optional CSS-Selector selecting the HTMLInputElement that provides the end Date (takes precedence over the CodBi_Date_Time_Join_Span_End-CSS-Class).
-  - EndTime: The optional CSS-Selector selecting the HTMLInputElement that provides the end time (takes precedence over the CodBi_Date_Time_Join_Span_End_Time-CSS-Class).
-  - MsgInvalid: The optional string to show when the joined end datetime is lower or equal to the joined begin datetime (defaults to "The end datetime must be strictly after the begin datetime.").
-- Form.Navigator: Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms.
+- DQ.Table.View: The string displayed as the column's header (in the table as well as in the Excel-file).
+  - Centered: Configures 'Centered' for this functionality.
+  - Columns: Configures 'Columns' for this functionality.
+  - CSS: Configures 'CSS' for this functionality.
+  - DataQuery: Configures 'DataQuery' for this functionality.
+  - ExcludeColumns: Configures 'ExcludeColumns' for this functionality.
+  - ExportButton: Configures 'ExportButton' for this functionality.
+  - FileName: Configures 'FileName' for this functionality.
+  - SheetName: Configures 'SheetName' for this functionality.
+- Form.Navigator: Applicable on forms with 2 or more pages (multi-step forms); adds a navigation progress bar or breadcrumb tabs. Do NOT apply to single-page forms. PLACEMENT — the navigator must be reachable on EVERY page: create a SEPARATE XContainer (div) and place it inside the form's XHeader or XFooter when one exists; only when there is NO header/footer add it to EVERY page's elements array. NEVER place it on only one page.
   - CSSBlockedNavButton: Configures 'CSSBlockedNavButton' for this functionality.
   - CSSHoverNavButtons: Configures 'CSSHoverNavButtons' for this functionality.
   - CSSNavButtons: Configures 'CSSNavButtons' for this functionality.
   - Preview: Configures 'Preview' for this functionality.
-- HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements). USE when the request asks to style/color the form ("eigenes CSS", "rote Überschriften", "red headings", custom colors) — emit data-cb-func="HTML.CSS" with data-cb-css = the derived CSS text (e.g. "rote Überschriften" → data-cb-css="h1 {color:red;}"). NEVER just invent/apply a CSS class name instead of emitting the HTML.CSS functionality with the actual CSS text.
+- Google.Website.Translator: The Google Website-Translator element-id.
+  - AutoLoad: The optional boolean stating whether the Google translation-script shall be loaded.
+  - Inline: The optional boolean stating whether the widget shall be shown inline within the tagged.
+  - Lang: The optional string containing the ISO-639 language-code to use as the initial language of.
+- HTML.CSS: Applicable on any element to inject custom CSS text into the page (with optional placeholder replacements).
   - CSS: The CSS to inject (when used in CodBi-Standard-Configuration) or the result of an.
   - Darkmode: The Darkmode-Replacements that will replace all placeholders ending with "_DM" in the.
   - Destination: CSS-Class-Selector of the destination element (e.g., '.tfHeadline'). Use a dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Replacements: An Array < string > of two elements each that are separated by a "|".
+- HTML.Input.Blacklist: The Functionality defines a blacklist of values that may not be the value of an HTMLInputElement.
+  - List: Contains a string - CSV of forbidden values.
+  - Postfix: The string to show after List when displaying an errormessage.
+  - Prefix: The string to show before listing all the values in "List" when displaying an errormessage.
+  - Separator: The string to be shown in between each element of the List when displaying an errormessage.
+  - ShowBlacklist: Whether to show the List in the errormessage or not (true/false).
 - HTML.Input.Cleave: Applicable on a XTextField to apply input masking/formatting (credit card, phone, IBAN, date, etc.) via Cleave.js.
   - Config: The CleaveOptions to set instead of the other shorthand parameter.
   - Date: The CleaveOptions.date .
@@ -92,7 +158,9 @@ when CodBi searches within the shared parent container.
   - DateMin: The CleaveOptions.dateMin .
   - DatePattern: The CleaveOptions.datePattern .
   - Delimiter: The CleaveOptions.delimiter .
-- HTML.Input.REGEX: Applicable on a XTextField to validate, reformat, or RESTRICT input against a regular expression pattern. USE when the user asks to disallow/block certain characters (e.g. "nicht erlaubt: e$%") — set data-cb-keyexpression to the negated character class "[^e$%]" to block those keystrokes and data-cb-expression to "^[^e$%]*$" for whole-value validation.
+- HTML.Input.NoAutocomplete: This functionality deactivates the autocomplete for the provided HTMLInputElement .
+  - Parameters: none.
+- HTML.Input.REGEX: Applicable on a XTextField to validate or reformat the typed value against a regular expression pattern.
   - ErrorPostfix: The final part of the error message string displayed after to the "expression".
   - ErrorPrefix: The first part of the error message string displayed prior to the "expression".
   - ExposeExpression: Will expose the "expression" within the errormessage if set to TRUE (case insensitive).
@@ -100,12 +168,27 @@ when CodBi searches within the shared parent container.
   - Flags: The RegExp - flags string used to create the "expression" (defaults to "g").
   - KeyExpression: The RegExp - string the individual keystrokes have to comply to.
   - KeyFlags: The RegExp - flags string used to create the "keyexpression" (defaults to "g").
-- HTML.Input.TinyMCE: Applicable on a XTextArea to turn it into a TinyMCE rich-text (WYSIWYG) editor. USE whenever the user asks for a "rich text editor", "WYSIWYG", or rich/formatted text entry for a multi-line text field — apply data-cb-func="HTML.Input.TinyMCE" on the XTextArea.
-  - Plugins: A CSV of TinyMCE plugin names to load (e.g. "advlist, autolink, lists, link, image, table, code").
-  - Toolbar: The TinyMCE toolbar string (e.g. "undo redo | blocks | bold italic | bullist numlist | link image | code").
-  - ResourceURL: Base URL of the TinyMCE distribution (optional; omit to use the bundled default).
-  - UploadURL / UploadImageURL / UploadFieldName: Server endpoints for file/image upload (optional).
-- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. PREFER the standard CSS classes (see UI.Panels): CodBi_HTML_Panel_Standard for a standalone panel (XFieldSet + "legend" as title — a plain one without a specific title uses legend="Panel"), CodBi_Accordion_A/B/C/D on the CONTAINER wrapping the collapsible sections (pick ONE single letter; there is NO 'CodBi_Accordion_A_B_C_D' class) — together with a panel type class (Standard/Flat/Index/Minimal) on EVERY member XFieldSet inside, because the accordion class alone is NOT collapsible; panels default to open, so only the members that shall start folded get data-cb-folded="true" (NEVER data-cb-open) — when several sections must be collapsible with ONLY ONE open at a time (accordion), CodBi_HTML_Panel_NoCordion to exclude a panel from an accordion, and Flat/Index/Minimal for visual variants. MUTUALLY EXCLUSIVE: NEVER combine a UI.Panels standard class with data-cb-func=html.panel on the SAME element — the classes already apply HTML.Panel, so use exactly ONE of the two. CRITICAL: these classes ONLY work on XFieldSet (fieldset), NOT on XContainer/XContainerInvisible. Use data-cb-func=html.panel ONLY when no standard class fits (e.g. a collapsible panel on a container); then data-cb-generateheader="true" and data-cb-autoheadertitle="<title>" are MANDATORY, plus data-cb-accordion="true" + data-cb-folded for a manually built accordion (exactly one member open initially).
+- HTML.Input.TinyMCE: MANDATORY — it is INVALID to apply HTML.Input.TinyMCE with only data-cb-func and WITHOUT both data-cb-plugins and data-cb-toolbar. Whenever you apply data-cb-func=HTML.Input.TinyMCE to a XTextArea, ALWAYS also emit data-cb-plugins and data-cb-toolbar. For a message/story: data-cb-plugins="advlist, autolink, lists, link, image, media, charmap" and data-cb-toolbar="undo redo | blocks | bold italic underline | bullist numlist | link image media" (do NOT include the raw-HTML 'code' option unless the field is explicitly for HTML source).
+  - Plugins: Configures 'Plugins' for this functionality.
+  - RenderToPdf: Configures 'RenderToPdf' for this functionality.
+  - ResourceURL: Configures 'ResourceURL' for this functionality.
+  - StripPort: Configures 'StripPort' for this functionality.
+  - Toolbar: Configures 'Toolbar' for this functionality.
+  - UploadFieldName: Configures 'UploadFieldName' for this functionality.
+  - UploadImageURL: Configures 'UploadImageURL' for this functionality.
+  - UploadURL: Configures 'UploadURL' for this functionality.
+- HTML.Input.Trans.Capital: Gets the transformer that converts the input to capitalized words.
+  - Parameters: none.
+- HTML.Input.Trans.NTW: Turns a number into its word representation, separating each digit with a dash.
+  - NumberWords: The Array of string s representing the word for each digit from 0 to 9.
+  - PostFix: The string that shall be appended to the result.
+  - PreFix: The string that shall be prepended to the result.
+- HTML.Input.Trans.RegEx: Get the actual transformer that does a String.replace with the toLoad.extractor and.
+  - Extractor: The string representing the regular expression to extract the values to be replaced.
+  - Replacements: The string representing the replacement value.
+- HTML.Panel.Accordion: Applicable on a container (XContainer/XFieldSet) that wraps multiple collapsible panels. Joins all child panels with the .CodBi.--HTML_Panel class into an accordion group where only one panel can be open at a time. Set the data-cb-Accordion parameter to a unique group name.
+  - Accordion: Configures 'Accordion' for this functionality.
+- HTML.Panel: Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: 'Standard-Panel' and 'aufklappbares/collapsible panel' on a fieldset = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property (preferred). Use data-cb-func=html.panel only on a container (not a fieldset).
   - Accordion: Configures 'Accordion' for this functionality.
   - AutoHeaderLevel: Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,.
   - AutoHeaderTitle: The string the automatically generated header shall display.
@@ -130,17 +213,29 @@ when CodBi searches within the shared parent container.
   - Scroll: Configures 'Scroll' for this functionality.
   - ScrollBlock: Defines the logical position to scroll to when the panel.
   - ScrollToTop: Configures 'ScrollToTop' for this functionality.
-- HTML.SETAttribute: Applicable on any element to dynamically set one or more HTML attributes on it, including CSS styling via the "style" attribute (e.g. opacity). USE when the user asks to set an attribute or visual/CSS style of an element (e.g. title, placeholder, opacity).
-  - Name: The name of the attribute to set (e.g. "title", "style" for CSS styling, "readonly", "disabled").
-  - ToSet: The string to set the attribute to (e.g. "Holla die Waldfee", "opacity: 0.5").
-- HTML.Text.Injector: Applicable on XTextField/XTextArea or XSpan to inject a dynamic text value into the element's value. CRITICAL WIRING — data-cb-replacement only reaches the field value when BOTH are set: (1) data-cb-property MUST be "value" on XTextField/XTextArea and "innerHTML" on XSpan; (2) the data-cb-placeholder (default "[[INJECTOR_REPLACEMENT]]") MUST also be placed inside the field's OWN content property — on XTextField/XTextArea in its "value" property (e.g. "value":"[[INJECTOR_REPLACEMENT]]"), on XSpan in its "rtevalue" property — otherwise data-cb-replacement never reaches the value. data-cb-func stays "HTML.Text.Injector" (the FUNCTIONALITY name, never an EP name).
+- HTML.Select.Favorites: Rearranges the HTMLOptionElement within the HTMLSelectElement "toProcess" in order to place the.
+  - Divider: Specifies the divider's text-content.
+  - DividerTarget: Specifies the HTMLOptionElement to select when the.
+  - Favorites: Specifies the HTMLOptionElements that shall be shown before all other ones.
+  - InitialElement: Specifies the HTMLOptionElement that shall be selected when the form is loaded.
+- HTML.Select.Injection: This functionality populates a HTMLSelectElement by generating HTMLOptionElement for each.
+  - ReClean: An optional boolean specifying whether to clean the HTMLSelectElement prior to.
+  - TextProperty: Configures 'TextProperty' for this functionality.
+  - TitleProperty: The optional property to retrieve from the Array passed to the Values to use it as.
+  - Titles: The optional "title"-attributes that shall be set on the HTMLOptionElement s.
+  - ValueProperty: The optional property to retrieve from the Array passed to the Values to use it as.
+  - Values: The HTMLElement.innerHTML s the generated HTMLOptionElement shall have.
+- HTML.SETAttribute: Applicable on any element to dynamically set one or more HTML attributes on it.
+  - Name: The name of the attribute to set.
+  - ToSet: The string to set the attribute to.
+- HTML.Text.Injector: Applicable on XTextField/XTextArea or XSpan to inject a dynamic text value into the element's value. CRITICAL WIRING — data-cb-replacement only reaches the field value when BOTH are set: (1) data-cb-property MUST be set to 'value' on XTextField/XTextArea and 'innerHTML' on XSpan, AND (2) the data-cb-placeholder (default '[[INJECTOR_REPLACEMENT]]') MUST be placed inside the OWN value property of the field (XTextField/XTextArea) or its rtevalue property (XSpan) — e.g. 'value':'[[INJECTOR_REPLACEMENT]]' — otherwise data-cb-replacement never reaches the value. data-cb-func stays 'HTML.Text.Injector' (the FUNCTIONALITY name, never an EP name). To show SEVERAL related BayVIS values together in one place (e.g. a header with an employee's name + phone + e-mail), NEVER create one Injector element per value - use ONE HTML.Text.Mapper whose data-cb-replacements fetches the needed detail object once and whose single template holds all [(property)] placeholders (ONE resolution instead of N).
   - Placeholder: Specifies the string that shall be replaced within the.
   - Property: Specifies which property of the Element "toProcess" shall receive the "Replacement".
   - Replacement: The string to replace all occurrences of the specified "Placeholder" or at the end of the.
-- HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template. Placeholder syntax is a PROPERTY name wrapped in "[(...)]" (e.g. [(name)], [(vorname)], [(nachname)], [(mail)]). data-cb-replacements is the object (or array of objects) whose property values fill the [(property)] placeholders and may be an EP placeholder resolving to an object (e.g. "{ BayVIS.Ansprechpartner.Details > ... ; ... }"). CRITICAL — when data-cb-replacements is fed by an EP that returns an OBJECT, use [(property)] placeholders naming the ACTUAL properties of that EP's result object — NEVER the injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare raw EP string. The template with the [(property)] placeholders lives in the field's own value/rtevalue (data-cb-property).
-  - CSS: Configures 'CSS' for this functionality.
-  - Property: Configures 'Property' for this functionality.
-  - Replacements: Configures 'Replacements' for this functionality.
+- HTML.Text.Mapper: Applicable on any element to map object properties to named placeholders in a text template. Placeholder syntax is a PROPERTY name wrapped in "[(...)]" (e.g. [(name)], [(vorname)], [(nachname)], [(mail)]). data-cb-replacements is the object (or array of objects) whose property values fill the [(property)] placeholders and may be an EP placeholder resolving to an object (e.g. "{ BayVIS.Ansprechpartner.Details > ... ; ... }"). CRITICAL — when data-cb-replacements is fed by an EP that returns an OBJECT, use [(property)] placeholders naming the ACTUAL properties of that EP's result object — NEVER the injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare raw EP string. The text template with the [(property)] placeholders lives in the field's OWN content property (value/rtevalue via data-cb-property); there is NO data-cb-Template attribute. SEVERAL BAYVIS VALUES SHOWN TOGETHER - to display a person's contact block in ONE place (e.g. a header with employee Salvatore Callari's name + e-mail + phone) do NOT create one element per value; fetch his ONE detail object with data-cb-replacements = { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } } (NO Data.Join) and map every requested value to a [(property)] placeholder naming the person object's REAL properties (vorname, nachname, email, zimmer, apEmail, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl). A person's phone is NOT a single property - it is split into the apTelefon* parts (there is no phone/telefon property), so compose the phone from them. NEVER read a person's phone from BayVIS.Behoerden.Details - the authority object has NO phone and NO postal address (only bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, ...); postal addresses live on BayVIS.Behoerden.Details.Gebaeude. Data.Join is needed only when the values genuinely come from DIFFERENT detail objects (e.g. a building address + a person). A single Mapper element resolves ONCE; N Injector elements each resolve their own EP (N requests). data-cb-property is REQUIRED and names the RUNTIME property receiving the mapped text: 'innerHTML' on an XSpan (template stored in the XSpan's Formcycle rtevalue) and 'value' on an XTextArea/XTextField (template stored in the field's Formcycle value) - never 'rtevalue' (Formcycle JSON storage key only, not a runtime DOM property). BayVIS.Behoerden.* may ONLY be used when the request NAMES a Behörde/authority - NEVER invent an authority name: 'BayVIS' is the system/data source, not an authority, so { BayVIS.Behoerden.ID > Bayvis } cannot resolve. A person-only request (an employee's name, no Behörde named) uses BayVIS.Ansprechpartner.Details alone. NEVER fill a BayVIS-derived contact field with invented literal text (e.g. 'Bayvis Straße 1', 'kontakt@bayvis.de', '+49 30 12345678') - the person's real e-mail/phone/name are mapped from { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > <name> } } } via [(email)]/[(apEmail)], the apTelefon* parts and [(vorname)] [(nachname)] placeholders; hard-coding made-up contact values is a FAIL. A person's FULL record - name AND all contact data (email/apEmail, phone parts apTelefon*) - is BayVIS.Ansprechpartner.Details; BayVIS.Behoerden.Details carries NONE of a person's data and is only for an authority the request names.
+  - CSS: The CSS-Rules to apply onto the tagged element when replacement has been completed.
+  - Property: The property of the tagged element that holds the text template with the [(property)] placeholders. REQUIRED - data-cb-property names the RUNTIME property of the tagged element into which the mapped text is written and where the template is read from: 'innerHTML' on an XSpan (its template text is stored in the XSpan's Formcycle rtevalue property) and 'value' on an XTextArea/XTextField (template stored in the field's Formcycle value property). WITHOUT data-cb-property the mapper does not know which property to set on the target element. Never 'rtevalue' as the value - rtevalue is only the Formcycle JSON storage key of an XSpan's content, not a runtime DOM property. There is NO data-cb-Template attribute.
+  - Replacements: The object (or array of objects) whose property VALUES fill the [(property)] placeholders. May be a literal object OR an EP placeholder that resolves to an object (e.g. "{ BayVIS.Ansprechpartner.Details > ... ; ... }"). When fed by an EP returning an OBJECT, the placeholders MUST be [(property)] naming the ACTUAL properties of that EP's result object — NEVER the injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare raw EP string. USE MAPPER (NOT Injector) for OBJECT data such as BayVIS Details results (which return a JSON object like {vorname, nachname, ...}) — Injector injects only ONE plain string. A single Ansprechpartner whose ID is in a GLOBAL VARIABLE is fetched as { BayVIS.Ansprechpartner.Details > { V > <NAME> } } with NO { I > 0 ; ... } — the I/index EP is ONLY for ARRAYS (e.g. the array returned by BayVIS.Ansprechpartner.ID). SEVERAL BAYVIS VALUES SHOWN TOGETHER - when the requested contact block belongs to ONE person (e.g. a header with employee Salvatore Callari's name + e-mail + phone) use this data-cb-replacements = { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } } (NO Data.Join) and map every value to a [(property)] placeholder naming the person object's REAL properties; the phone is NOT a single property but the four apTelefon* parts (apTelefonLandvorwahl / apTelefonOrtsvorwahl / apTelefonAnlage / apTelefonDurchwahl) - there is no phone/telefon property, and BayVIS.Behoerden.Details has NO phone/postal address. Only combine genuinely different detail objects (e.g. a building address + a person) with Data.Join. Do NOT create one HTML.Text.Injector element per value (each resolves its own EP separately). data-cb-property must ALSO be set on the tagged element - it names the RUNTIME property receiving the mapped text ('innerHTML' on an XSpan, 'value' on an XTextArea/XTextField; never 'rtevalue'). Only use BayVIS.Behoerden.* when the prompt names a real Behörde/authority - never invent one ('BayVIS' is the system, not an authority); a person-only request (employee name, no Behörde) uses BayVIS.Ansprechpartner.Details alone. NEVER write invented literal contact data (e.g. 'Bayvis Straße 1', 'kontakt@bayvis.de', '+49 30 12345678') - map the person's real e-mail/phone/name with [(property)] placeholders from that single Details EP instead.
 - JSON.SET: Applicable on a hidden field to store a JSON-serialized value derived from another element.
   - Path: The dotted path string leading to the object, starting from the.
   - Property: The name of the property to set.
@@ -157,7 +252,7 @@ when CodBi searches within the shared parent container.
 - Matomo.Tracking: Applicable on any form to add Matomo/Piwik analytics event tracking.
   - ImageURL: Configures 'ImageURL' for this functionality.
   - SiteID: The ID of the Matomo-Project-Site that shall be used for tracking.
-  - URL: The URL of the Matomo-Server that shall track the tagged form. Never a required value — use the URL from the user's request if provided; otherwise it is taken automatically from the server-side plugin configuration (Matomo_URL property) and must NOT be requested.
+  - URL: The URL of the Matomo-Server that shall track the tagged form.
 - Media.Image.Cropper: Applicable on an XUpload field for images; adds an interactive crop dialog before upload.
   - AspectRatio: The optional cropper's aspect-ratio to retain (e.g.
   - Container: CSS-Class-Selector for the container element (e.g., '.divCropperBoard'). Use dot-prefixed class selector. Do NOT use an ID selector.
@@ -171,7 +266,23 @@ when CodBi searches within the shared parent container.
   - Placeholder: Configures 'Placeholder' for this functionality.
   - ShowHint: Configures 'ShowHint' for this functionality.
   - VoiceHotkey: Configures 'VoiceHotkey' for this functionality.
+- Media.Input.Speech.Whisper: Applicable on a text input field or textarea to enable speech-to-text dictation via a self-hosted Whisper model on the Formcycle server. DSGVO/GDPR-compliant as no audio data leaves the server.
+  - Language: Configures 'Language' for this functionality.
+  - Placeholder: Configures 'Placeholder' for this functionality.
+  - ShowHint: Configures 'ShowHint' for this functionality.
+  - VoiceHotkey: Configures 'VoiceHotkey' for this functionality.
+- Media.MultipleUpload: Provides the HTML_Select_Injection.functionality .
+  - Maximum: The number of files that may be uploaded.
+  - PostfixTooMany: The message that is displayed after the Maximum if too many files were selected.
+  - PrefixTooMany: The message that is displayed before the Maximum if too many files were selected.
+- OnChange.Conditional: This functionality applies a certain functionality onto the object toProcess depending on whether.
+  - Candidate: The Element where to get the value to be compared or a CSS-Selector.
+  - DateFormat: A optional string specifying the format the candidate is of.
+  - Mode: Defines the mode of comparison to apply onto the HTMLInputElement 's value and the "reference" value.
+  - Reference: The value the HTMLInputElement 's value shall be compared with.
+  - Target: The Element where to apply one of the specified functionalities depending on whether the.
 - OpenPLZ.Autocomplete: Applicable on every XTextField (input type=text) within a group of related address fields (postal code, locality/city, street, building number). Tag EACH address field with this functionality and set its own parameters individually. For every tagged field: set TargetData to match its type (Localities, PostalCodes, or Streets), set Country. On the STREET field only: set DependentPLZ to reference the postal code field and DependentLocality to reference the locality/city field. On the POSTAL CODE and LOCALITY fields: set Dependent as the CSS class selector of the corresponding field that gets filled automatically (e.g., on a postal code field set Dependent to the locality field, on a locality field set Dependent to the postal code field). On POSTAL CODE and LOCALITY fields: set FocusOnAutocomplete to the street field. On the STREET field: set FocusOnAutocomplete to the building number field, if one exists.
+  - AllowedValues: Configures 'AllowedValues' for this functionality.
   - AllowEmpty: If set to 'true', an empty input value won't trigger an error message.
   - Country: Country code for address data: de (Germany), at (Austria), li (Liechtenstein), ch (Switzerland), or en (England).
   - CSSProposals: CSS style for the proposals popup appearing when there are multiple matches.
@@ -181,39 +292,17 @@ when CodBi searches within the shared parent container.
   - FocusOnAutocomplete: CSS-Class-Selector of the field to focus after an autocomplete selection. On POSTAL CODE and LOCALITY fields: set to the street field (e.g., '.tfStreet'). On the STREET field: set to the building number field if one exists (e.g., '.tfBuildingNumber'). Do NOT use an ID selector.
   - MsgNotKnown: Message to show when the entered value is not found in the OpenPLZ database.
   - TargetData: Defines what type of data is being autocompleted: 'Localities' (city/town), 'PostalCodes' (ZIP/PLZ), or 'Streets'. Pick the one that matches the tagged field's purpose.
-- Print.Remove: Applicable on any element that should be invisible when the form is printed. STANDARD: use the CodBi_Print_Remove_* CSS classes (Tagged / Parent / PrintOnly). Use this functionality ONLY when a parameter is needed — e.g. DocumentSelector (a dot-prefixed CSS-class selector of the section to remove) or ParentalLevel.
+- Print.Remove: Applicable on any element that should be invisible when the form is printed.
   - DocumentSelector: CSS-Class-Selector for the element to remove (e.g., '.divPrintSection'). Use dot-prefixed class selector based on the target element's name. Do NOT use an ID selector.
   - Invert: Specifies whether this functionality shall be inverted, e.g.
   - ParentalLevel: The number of elements to climb up the HTMLElement.parentElement -Tree to get to.
-- Sys.Log.Console: Applicable for debugging; logs CodBi runtime data to the browser developer console. STANDALONE — when the prompt asks to log something to the console, create a NEW invisible XSpan (the plain-text/HTML element of Formcycle — NEVER invent class names like "XText" or "XButton"; XTextField is an INPUT element, not plain text; the log output "XItem missing 'XText' using XDefault" proves invented names do NOT render) at the top of the first page. List it as a separate item in the root "items" array with EXACTLY this shape:
-
-```
-{
-  "className": "XSpan",
-  "properties": {
-    "name": "spLog<Name>",
-    "id": "xi-log-<name>",
-    "rtevalue": "<short label>",
-    "ishidden": "1"
-  },
-  "attributes": [
-    { "text": "data-cb-func", "value": "Sys.Log.Console" },
-    { "text": "data-cb-Data", "value": "SYS.Log.Console > <what shall be logged>" }
-  ]
-}
-```
-
-Set data-cb-func="Sys.Log.Console" on it.
-  - DATA: The data to log to the console. MUST start with the literal prefix "SYS.Log.Console > " followed by the text describing what shall be logged (e.g. "SYS.Log.Console > Log the details of the planet Pluto with a saturation of .5"). Do NOT use an element-placeholder expression as the whole value.
-- DQ.Table.View: Applicable on a container element (e.g. XContainer/XContainerInvisible) to display the result of a Formcycle DataQuery in an injected HTML table and to enable exporting that table to an Excel file (.xlsx). USE whenever the user asks to show/view/display the data or the columns of a DataQuery/datasource/query as a table (e.g. "add a table that views the columns Alter, Name of HolaQuery", "zeige die Spalten Alter, Name der Abfrage HolaQuery als Tabelle") and/or to export it to Excel — apply data-cb-func="DQ.Table.View" on the container. Use the DataQuery name given by the user AS-IS (do NOT ask whether it exists or for its technical ID). The Excel export uses the SheetJS library that is bundled with the CodBi plugin and served from the plugin's Resource servlet (loaded on demand, like TinyMCE).
-  - Columns: **REQUIRED** — a CSV defining the columns to show, each column is `label;datacolumn;jsonFlag` with an optional fourth entry `;width` (columns separated by `,`, entries separated by `;`). E.g. `Alter;Alter,Name;Name,Details;Details;true` or `Anrede;Anrede;false,Unternehmen;Unternehmen;false;25`. `label` is the displayed header, `datacolumn` is the exact column name in the DataQuery result, `jsonFlag` (`true`/`1`/`yes`) marks a column as containing JSON so its cells show a maximizable JSON viewer (`false`/`0`/`no` for plain columns; a plain number in this position is treated as the legacy width), `width` (optional) sets the column width (characters in the Excel file, pixels on screen).
-  - DataQuery: **REQUIRED** — the name of the Formcycle DataQuery on the server whose result shall be shown (e.g. `HolaQuery` or `INHALT.Eigentuemerdialog_Dezember_2025`). Executed via `$.xutil.getDataQuery`.
-  - CSS: An optional string of one or more (space separated) CSS classes applied to BOTH the tagged container and the injected table.
-  - FileName: The name of the exported Excel file WITHOUT extension (the extension is always `.xlsx`). Defaults to `Export`.
-  - SheetName: The name of the worksheet within the exported Excel file. Defaults to `sheet1`.
-  - ExportButton: An optional CSS selector of an existing `<button>`/`<a>` that shall trigger the export. If omitted (or no matching element is found) the table is rendered WITHOUT any export button — the Excel export is then simply not available.
-  - Centered: Whether the content of the table cells (`<td>`s) is centered. Defaults to `true`; set to `false`/`0`/`no` to keep the cells left-aligned.
-  - ExcludeColumns: An optional CSV of column names (matched against the column's `label` or `datacolumn`) to EXCLUDE from the Excel-export — those columns stay visible in the table but are omitted from the exported `.xlsx`. E.g. `Nachricht,Wichtige_Hinweise`.
+- Security.Captcha.Google: This functionality needs a site key that can be obtained at https://developers.google.com/recaptcha and.
+  - DataCallback: The optional global callback method for when the captcha provides a result.
+  - DataCallbackCode: Optional code to be executed when the captcha provides a result.
+  - Script: The Google ReCaptcha script's address.
+  - SiteKey: The sitekey received from https://developers.google.com/recaptcha.
+- Sys.Log.Console: Applicable for debugging; logs CodBi runtime data to the browser developer console.
+  - Parameters: none.
 - Time.Frame: Applicable ONLY on the BEGIN (minimum) XTextField of type 'time' when there is a second related end time field. The end field is referenced via the 'MaxField' parameter. Do NOT put this functionality on the end time element.
   - EqualityPermitted: Configures 'EqualityPermitted' for this functionality.
   - MaxField: CSS-Class-Selector for the max time input (e.g., '.tfInterviewBis'). Use the target element's name as a dot-prefixed CSS class. Do NOT use an ID selector (hash prefix), as IDs break in repeatable containers.
@@ -222,38 +311,35 @@ Set data-cb-func="Sys.Log.Console" on it.
 
 ## Element Placeholders (EPs)
 
-- AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question. USE THIS EP when the prompt asks to get/retrieve/ask the AI for information (weather, data, answers, etc.) via an AI query.
-  - Param[1]: The question to ask the AI (e.g., "Wie wird das Wetter morgen?").
-  - Param[2]: UseInternet — `"true"` to enable Brave Search internet access. Default: `"false"`.
-  - Param[3]: Location — `"true"` to enable geolocation access. Default: `"false"`.
-  - Param[4]: Language — Language for the AI response (e.g., "German", "English").
-  - Param[5]: ResponseLanguage — Two-letter ISO 639-1 code (e.g., "de", "fr").
-  - Param[6]: Specialist — Name of a specialist model (optional).
-  - Param[7]: FilterResults — `"true"` to enable PII filtering. Default: `"false"`.
-  - Param[8]: JsonParse — `"true"` to parse the AI response as JSON. Default: `"false"`.
-  - CRITICAL: Unused optional parameters MUST be passed as empty strings using trailing semicolons. Example: "{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }" — the 6 empty params after "true" are params 3-8 set to empty strings. Do NOT omit trailing semicolons for unused params.
-  - Correct example for weather: "{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }".
-  - Use Sys.Log.Console with data-cb-Data set to this EP when the prompt asks to output the AI response to the console.
-- BayVIS.Ansprechpartner.Details: Retrieves details of a specific BAVARIAN government contact from the BayVIS (Bayerisches Verwaltungsinformationssystem) servlet. CRITICAL: BayVIS queries **Bavarian government authorities/offices/contacts** (Behörden) — their addresses, buildings, contact persons. It is NOT for geographic/political subdivisions like cantons, districts, federal states, municipalities. For geographic subdivisions across multiple countries (de, at, ch, li, en) use OpenPLZ with FederalStates, Cantons, Districts, Municipalities instead.
-  - Param[1]: The ID of the contact whose details are to be retrieved.
-  - Param[2]: An optional property of the contact (e.g., "email", "vorname", "nachname", "funktion").
-- BayVIS.Ansprechpartner.ID: Retrieves the BayVIS contact ID by first & last name (case-insensitive). CRITICAL: BayVIS is for **Bavarian government contacts** — NOT for geographic subdivisions (cantons, districts, federal states). For those use OpenPLZ.
-  - Param[1]: The first and last name separated by a space (e.g., "Salvatore Callari").
-- BayVIS.Ansprechpartner: Retrieves the whole BayVIS authority directory or a specified detail. CRITICAL: BayVIS is for **Bavarian government contacts** — NOT for geographic/political subdivisions.
-  - Param[1]: A property of the contact directory (e.g., "bezeichnung", "vorname", "nachname", "email").
-- BayVIS.Behoerden.Details.Gebaeude: Retrieves details of a Bavarian authority's building by authority ID and building ID. CRITICAL: BayVIS is for **Bavarian government authorities/offices** — NOT for geographic subdivisions like cantons, districts, Bundesländer. For those use OpenPLZ.
+- AI.LLAMA.STD.QA: This Element-Placeholder acquires the AI response to a question.
+  - Param[1]: The question to ask the AI.
+  - Param[2]: UseInternet â€” `"true"` to enable Brave Search internet access.
+  - Param[3]: Location â€” `"true"` to enable geolocation access.
+  - Param[4]: Language â€” Language for the AI response (e.g.
+  - Param[5]: ResponseLanguage â€” Two-letter ISO 639-1 code (e.g.
+  - Param[6]: Specialist â€” Name of a specialist model registered via `AI_LLAMA_STD_SPECIALIST_XXX`.
+  - Param[7]: FilterResults â€” `"true"` to enable PII filtering on Brave Search queries.
+  - Param[8]: JsonParse â€” `"true"` to parse the AI response as JSON.
+- BayVIS.Ansprechpartner.Details: This Element-Placeholder retrieves details of a specific contact from the corresponding CodBi-Plugin servlet.
+  - Param[1]: The ID of the contact who's details are to be retrieved.
+  - Param[2]: An optional property of the contact, like e.g.
+- BayVIS.Ansprechpartner.ID: This Element-Placeholder retrieves the ID of a contact by first- & last-name (order insensitive).
+  - Param[1]: The first- and last-name separated by a space (order- & case-insensitive).
+- BayVIS.Ansprechpartner: This Element-Placeholder retrieves either the whole BayVIS Authority Directory or a specified detail of it from.
+  - Param[1]: A property of the directory, for example "bezeichnung".
+- BayVIS.Behoerden.Details.Gebaeude: This Element-Placeholder retrieves the details of an authority's building specified by the provided ID from the.
   - Param[1]: The ID of the authority to retrieve.
   - Param[2]: The building's ID.
-  - Param[3]: An optional property to extract (e.g., "bezeichnung", "hausanschriftStrasse").
-- BayVIS.Behoerden.Details: Retrieves details of a Bavarian authority by its ID from the BayVIS servlet. CRITICAL: BayVIS is for **Bavarian government authorities/offices** (e.g., "Amt für Digitales", "Landratsamt München"). It is NOT for geographic/political subdivisions (cantons, districts, Bundesländer, municipalities). For Swiss cantons/districts use OpenPLZ with Cantons/Districts; for German Bundesländer use OpenPLZ with FederalStates.
+  - Param[3]: A property of the directory, like e.g.
+- BayVIS.Behoerden.Details: This Element-Placeholder retrieves the details of an authority specified by the provided ID from the corresponding.
   - Param[1]: The ID of the authority to retrieve.
-  - Param[2]: An optional property of the authority (e.g., "bezeichnung", "email", "behoerdenart").
-- BayVIS.Behoerden.Gebaeude.ID: Retrieves the building IDs of a Bavarian authority by authority ID. CRITICAL: BayVIS is for **Bavarian government authorities/offices** — NOT for geographic subdivisions.
+  - Param[2]: An optional property of the directory, like e.g.
+- BayVIS.Behoerden.Gebaeude.ID: This Element-Placeholder retrieves the IDs of authoritie's buildings by the.
   - Param[1]: The ID of the authority to retrieve.
-- BayVIS.Behoerden.ID: Retrieves Bavarian authority IDs by their name/bezeichnung (case-insensitive). CRITICAL: BayVIS is for **Bavarian government authorities/offices** (e.g., "Amt für Digitales"). It is NOT for geographic/political subdivisions (cantons, districts, Bundesländer). For those use OpenPLZ.
-  - Param[1]: The name of the authority to retrieve (e.g., "Amt für Digitales").
-- BayVIS.Behoerden: Retrieves the whole BayVIS authority directory or a specified detail. CRITICAL: BayVIS is for **Bavarian government authorities/offices** — NOT for geographic/political subdivisions.
-  - Param[1]: A property of the authority directory (e.g., "bezeichnung", "behoerdenart").
+- BayVIS.Behoerden.ID: This Element-Placeholder retrieves the IDs of authorities by their "bezeichnung" (case insensitive).
+  - Param[1]: The Name of the authority to retrieve.
+- BayVIS.Behoerden: This Element-Placeholder retrieves the either the wholeBayVIS Authority Directory or a specified detail of it from.
+  - Param[1]: An property of the directory, for example "bezeichnung".
 - Data.CSV: This Element Placeholder turns a CSV-String into an Array < string >.
   - Param[1]: The CSV-String to convert.
 - Data.Join: Joins the properties of multiple object s into one.
@@ -267,99 +353,67 @@ Set data-cb-func="Sys.Log.Console" on it.
 - Date.FromString: This Element-Placeholder turns a String into a Date .
   - Param[1]: The String to turn to a Date.
   - Param[2]: An optional dateformat string like YYYY/MM/DD, for example.
-- Date.Holidays: Retrieves GERMAN holidays ("Feiertage") for the requested years/states from API-Feiertage.de. The EP id is ALWAYS `Date.Holidays` — NEVER invent or translate it (there is NO `Feiertage` EP). THE YEAR CANNOT BE GIVEN AS AN EXPLICIT NUMBER (e.g. `2026` — it is NOT a year token) — the code only recognizes `THIS_YEAR` (current year) and `THIS_YEAR +/- N` (relative to the current year, e.g. `THIS_YEAR + 1` = next year); any other token is treated as a German state abbreviation. Parameters (order/case-insensitive): `THIS_YEAR` (with optional +/- arithmetic), a German state abbreviation (bw, by, be, bb, hb, hh, he, mv, ni, nw, rp, sl, sn, st, sh, th), `Friedensfest` (Augsburg), `KATHOLISCH`. Examples: 'Feiertage dieses Jahr' → `{ Date.Holidays > THIS_YEAR }`; 'Feiertage nächstes Jahr' → `{ Date.Holidays > THIS_YEAR + 1 }`; 'Feiertage Bayern dieses Jahr' → `{ Date.Holidays > by ; THIS_YEAR }`. MULTIPLE year tokens are allowed in ONE invocation (parameters separated by `;`): 'Feiertage dieses und nächstes Jahr' → `{ Date.Holidays > THIS_YEAR ; THIS_YEAR + 1 }`.
+- Date.Holidays: The requested years.
   - Parameters: none.
 - Date.Today: Uses processArithmeticParams to modify the Date of today according to the arithmetic operations.
   - Param[1]: "NOW" to retrieve the current date, or an arithmetic operation like "+1d" (add days), "-1m" (subtract months), "+1y" (add years).
   - Param[2]: Additional arithmetic operation (optional), e.g.
 - Date.Weekends: This Element-Placeholder Registers the "Date.Weekend"-EP along with a necessary CSS-Injection in the Document.head .
   - Parameters: none.
-- DOM.Query: This Element-Placeholder queries an Element via a CSS-Selector. Returns only the FIRST matching element (uses querySelector, not querySelectorAll). When the prompt asks for a specific index (e.g. "element in Index 0", "first element", "zweites Element"), chain with the I EP: "{ I > 0 ; { DOM.Query > .p1 } }" retrieves the element at the specified index.
-  - Param[1]: **REQUIRED** — The CSS-Selector string targeting the desired Element (e.g., ".p1", ".tfName", ".taAddress"). Use the dot-prefixed class name of the target element; do NOT use an ID selector.
-- F: Finds objects within an Array that have a specific property with an EXACT value (strict equality ===). CRITICAL: F does EXACT MATCH, not regex. Use F when the prompt asks to filter by a specific value like postalCode="91522". Do NOT use OpenPLZ Param[3] (regex) for exact value filtering — use F instead.
-  - Param[1]: **REQUIRED** — The name of the property to look for (e.g., "postalCode").
-  - Param[2]: **REQUIRED** — The EXACT value the property must have (e.g., "91522"). Uses strict equality (===).
-  - Param[3]: **REQUIRED** — The Array of objects to scan — typically a nested EP that returns an array of objects.
-  - Correct example: "{ F > postalCode ; 91522 ; { sorted > { unique > { openplz.localities > de ; ^a.* }; name }; name } }" — gets all German cities starting with "a", deduplicates by name, sorts by name, then filters to only those with exact postalCode "91522".
-  - WRONG (do NOT generate): "{ OpenPLZ.Localities > de ; ^An ; 91522 }" alone when the prompt asks for exact postalCode matching — use F EP instead for exact match.
-- I: This Element-Placeholder acquires an element at a specific index from an Array. When chained with DOM.Query (e.g. "{ I > 0 ; { DOM.Query > .p1 } }"), it picks the element at the given index from an EP result. If the EP result is not an array (e.g. DOM.Query returns a single element), only index 0 works (pass-through); for higher indices the EP result must be an array.
-  - Param[1]: **REQUIRED** — The 0-based index of the element to retrieve (e.g., "0" for first, "1" for second).
-  - Param[2]: The Array (or single element) to retrieve from — typically a nested EP like DOM.Query.
+- DOM.Query: This Element-Placeholder queries an Element .
+  - Parameters: none.
+- F: Finds the objects within an Array that have a specific property with a specific value.
+  - Param[1]: The name of the property to look for.
+  - Param[2]: The value the property to look for has to have.
+  - Param[3]: The Array of objects to scan.
+- I: This Element-Placeholder acquires a specific element.
+  - Parameters: none.
 - JSON.Path: This Element-Placeholder retrieves an Object at a specific path out of the one given in the.
-  - Param[1]: **REQUIRED** — The Object to retrieve the requested one from.
-  - Param[2]: **REQUIRED** — The dotted path leading to the requested one.
-  - CRITICAL — F EXCEPTION: When F (Find) is used for exact property filtering, F MUST be the outermost EP. Do NOT wrap F in JSON.Path — doing so would break F's parameter structure. F already returns the filtered objects. Correct: "{ F > postalCode ; 91522 ; { sorted > ... } }". WRONG: "{ JSON.Path > { F > ... } ; name }".
-- LDAP.Find: Connects to an LDAP directory and returns an Array<object> of matching user entries. Each entry contains properties like givenName, sn, mail, title, department, telephoneNumber, sAMAccountName, cn, displayName. CRITICAL: returns an ARRAY — use I (indexer) to get a single element, then JSON.Path to extract a property. Do NOT try to pass a property name like "mail" as the mode — use JSON.Path for property extraction.
-  - Param[1]: **REQUIRED** — The filter mode — MUST be "AND" (all conditions must match) or "OR" (any condition matches). CRITICAL: no other values are accepted. Do NOT use "search", "mail", or any property name here.
-  - Param[2]: **REQUIRED** — The LDAP conditions separated by |. Format: "property=value" pairs (e.g., "sn=Callari | givenName=Salvatore"). Supported properties: givenName, sn, mail, title, department, telephoneNumber, sAMAccountName, cn, displayName.
-  - Param[3]: Optional — the URL to a Formcycle-LDAP-Query to use (defaults to LDAP_URL from CodBi Settings).
-  - Returns: Array<object> — NOT a single value. Each object has all LDAP properties. To extract a specific property (e.g., mail), nest this EP inside I (to get the first array element) and then inside JSON.Path (to extract the property).
-  - Correct usage example: "{ json.path > { i > 0 ; { LDAP.Find > AND; sn=Callari | givenName=Salvatore }}; mail }" — first resolves LDAP.Find to get the array, then I to get element 0, then JSON.Path to extract "mail".
-  - WRONG (do NOT generate): "{ LDAP.Find > mail ; sn=Callari }" — "mail" is not a valid mode; LDAP.Find cannot select which property to return.
-  - WRONG (do NOT generate): "{ LDAP.Find > AND; sn=Callari }" alone — this returns Array<object>, not a string. Missing I and JSON.Path nesting.
+  - Param[1]: The Object to retrieve the requested one from.
+  - Param[2]: The dotted path leading to the requested one.
+- LDAP.Find: This Elementplaceholder connects via a default (LDAP_URL in CodBi Settings) or an optionally specified.
+  - Param[1]: The mode to use for the filter.
+  - Param[2]: The LDAP conditions (like sn = Doe) separated by | (like sn = Doe | givenName = John).
+  - Param[3]: The optional URL to a Formcycle-LDAP-Query (which's content is (?(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*)(?*))) to use.
 - Net.URL: This Element-Placeholder retrieves the content of a URL.
   - Parameters: none.
-- OpenPLZ.Localities: Searches for localities (cities/towns) via the OpenPLZ API. USE THIS EP when the prompt asks for cities, towns, localities, places, or municipalities by name or postal code. Returns Array<object> with properties like "name", "postalCode", "locality", "canton", "state". Use JSON.Path to extract a specific property.
-  - Param[1]: **REQUIRED** — Country code — "de" (Germany), "en" (England), "at" (Austria), "li" (Liechtenstein), "ch" (Switzerland). Falls back to OpenPLZ_Country config or "de" if empty.
-  - Param[2]: **REQUIRED** (unless only a postal-code search is intended via Param[3]) — POSIX regular expression for the locality name. CRITICAL: This is a REGEX PATTERN, not a plain text search. For "starts with" queries you MUST use the ^ anchor. Examples: "^An" for names starting with "An", "^München" for names starting with "München", "berg$" for names ending with "berg", ".*burg.*" for names containing "burg".
-  - Param[3]: POSIX regular expression for the postal code (e.g., "80.*" for Munich-area codes). CRITICAL: This is a REGEX pattern — use it for pattern-based filtering only. When the prompt asks for an EXACT postal code match (e.g., "postalCode = 91522"), use the F (Find) EP instead for exact equality: "{ F > postalCode ; 91522 ; { OpenPLZ.Localities > de ; ^An } }".
-  - Param[4]: Optional number of pages to load (more pages = more results).
-  - CRITICAL: Returns Array<object>. To extract just the names: "{ json.path > { OpenPLZ.Localities > de ; München } ; name }".
-  - DEDUPLICATION HINT: When the prompt asks for a list of names (e.g., "all cities in Germany") without requesting additional distinguishing properties (like postalCode), the same name may appear multiple times with different postal codes. In such cases, wrap with Unique to eliminate duplicates: "{ Unique > { OpenPLZ.Localities > de ; .* } ; name }" — this returns each city name only once. Only omit Unique if the user explicitly asks for postal codes or other distinguishing properties alongside names.
-  - CORRECT for cities starting with "An": "{ json.path > { OpenPLZ.Localities > de ; ^An } ; name }" — searches for locality names starting with "An" in Germany.
-  - WRONG (do NOT generate): "{ OpenPLZ.TextSearch > de ; An }" for city queries — use OpenPLZ.Localities instead. TextSearch is for general mixed-content searches, not for specific locality lookups.
-- OpenPLZ.OrganizationalUnits: Retrieves administrative organizational units (FederalStates, Cantons, Provinces, Municipalities, Districts) via the OpenPLZ API. Returns Array<object> with properties like "name", "officialKey", "type". Use JSON.Path to extract a specific property.
-  - Param[1]: Country code — "de", "en", "at", "li", "ch". Falls back to OpenPLZ_Country config or "de".
-  - Param[2]: The organizational unit type to retrieve — e.g., "FederalStates", "FederalProvinces", "Cantons", "Municipalities", "Districts".
-  - Param[3]: Optional official key of a parent unit to filter by (e.g., canton key "19" to get districts within that canton).
-  - Param[4]: Optional sub-detail to fetch (e.g., "Municipalities" to get municipalities within a district, or "Districts" to get districts within a canton).
-  - Param[5]: Optional number of pages to load.
-  - DEDUPLICATION HINT: When the prompt asks for a list of names without distinguishing properties, same names may appear multiple times (e.g., same city name in different states). Wrap with Unique: "{ Unique > { OpenPLZ.OrganizationalUnits > de ; Municipalities } ; name }".
-- OpenPLZ.Streets: Searches for streets via the OpenPLZ API. Returns Array<object> with properties like "name", "postalCode", "locality", "city". Use JSON.Path to extract a specific property (e.g., "name"). **ALWAYS THREE parameters**: country, street-name regex, postal-code/city regex — the EP requires all three.
-  - Param[1]: Country code — "de", "en", "at", "li", "ch". Leave EMPTY to default to OpenPLZ_Country config or "de".
-  - Param[2]: **REQUIRED** — POSIX regular expression for the street name (e.g., "Hauptstr.*", "Karolinen"). For a postal-code-only search ("Straßen in 91522") use ".*" (any street).
-  - Param[3]: POSIX regular expression for the postal code (e.g., "8033[1-9]", "91522").
-  - Param[4]: POSIX regular expression for the city name (used when Param[3] is empty).
-  - Param[5]: Optional number of pages to load.
-  - CRITICAL — ALWAYS THREE parameters: "{ OpenPLZ.Streets > ; .* ; 91522 }" (empty country → "de", ".*" = any street, "91522" = postal code) or "{ OpenPLZ.Streets > de ; Karolinen ; 91522 }". NEVER emit "{ OpenPLZ.Streets > de ; 91522 }" (only two parameters) — the postal code would land in the street-name slot and the search fails.
-  - CRITICAL: Returns Array<object>. To extract just street names: "{ json.path > { OpenPLZ.Streets > de ; Karolinen ; 91522 } ; name }".
-  - DEDUPLICATION HINT: If the prompt asks for street names only (no postal codes or cities), same street names may appear in different locations. Wrap with Unique: "{ Unique > { JSON.Path > { OpenPLZ.Streets > de ; Hauptstr } ; name } ; name }" — but since Unique handles property paths internally, prefer: "{ Unique > { OpenPLZ.Streets > de ; Hauptstr } ; name }".
-- OpenPLZ.TextSearch: Performs a full text search across ALL OpenPLZ data (localities, streets, POIs, etc.) in one query. USE ONLY for mixed/generic searches where you don't know the data type. Returns Array<object>. The search term combines ALL criteria into one parameter. Use JSON.Path to extract a specific property.
-  - Param[1]: **REQUIRED** — Country code — MUST be "de" (Germany), "en" (England), "at" (Austria), "li" (Liechtenstein), or "ch" (Switzerland). Falls back to OpenPLZ_Country config or "de". CRITICAL: This is the COUNTRY, NOT a postal code. Do NOT put a postal code here.
-  - Param[2]: **REQUIRED** — The full search query combining ALL criteria in one string — e.g., "91522 Karolinen" searches for "Karolinen" with postal code "91522". Also accepts a single term like "Karolinen" or "Berlin". CRITICAL: do NOT split postal code and name into separate parameters — put them together in Param[2].
-  - Param[3]: Optional number of pages to load.
-  - DEDUPLICATION HINT: Same logic applies — wrap with Unique when extracting a single property that may have duplicates.
-  - Correct example: "{ OpenPLZ.TextSearch > de ; 91522 Karolinen }" — searches for "Karolinen" with PLZ 91522 in Germany.
-  - WRONG (do NOT generate): "{ OpenPLZ.TextSearch > 91522 ; Karolinen }" — "91522" is NOT a valid country code.
-  - CRITICAL — USE THE CORRECT SPECIALIZED EP INSTEAD: When the prompt specifically asks for cities/localities, use OpenPLZ.Localities instead of TextSearch. When the prompt specifically asks for streets, use OpenPLZ.Streets instead. TextSearch is only for mixed/generic searches where the data type is unclear.
-- OpenPLZ: Base EP for querying administrative divisions (FederalStates, FederalProvinces, Cantons, Districts, Municipalities) via the OpenPLZ REST API (https://www.openplzapi.org/). Covers Germany (de), Switzerland (ch), Austria (at), Liechtenstein (li), England (en). PARAMETER ORDER is always: country → unit to retrieve → parent officialKey → sub-detail. Returns Array<object> where each object has properties like "name", "officialKey", "type", "postalCode", "locality", etc. Use JSON.Path to extract specific properties from the results.
-  - Param[1]: **REQUIRED** — Country code — MUST be "de" (Germany), "en" (England), "at" (Austria), "li" (Liechtenstein), or "ch" (Switzerland). Falls back to OpenPLZ_Country config or "de" if empty.
-  - Param[2]: **REQUIRED** — The organizational unit to retrieve — e.g., "FederalStates", "FederalProvinces", "Cantons", "Districts", "Municipalities". CRITICAL: This is the MAIN unit type you want in the result. For Swiss cantons use "Cantons"; for German federal states use "FederalStates"; for districts within a canton use "Districts".
-  - Param[3]: The official key of a PARENT unit to filter by. Use this to drill down: e.g., canton key "19" limits results to districts/municipalities within canton 19 (Zurich). Omit to get all units of the type specified in Param[2].
-  - Param[4]: The sub-detail (child unit) to retrieve about the parent identified by Param[3]. CRITICAL: Param[4] describes what CHILD units to fetch for the parent in Param[3]. E.g., Param[2]="Cantons", Param[3]="19", Param[4]="Districts" means: get all DISTRICTS within canton 19. Param[2]="Districts", Param[3]="...", Param[4]="Municipalities" means: get municipalities within that district.
-  - Param[5-8]: Additional search parameters. Format: "key=value" (e.g., "postalCode=8033", "name=Zürich", "locality=...", "searchTerm=...").
-  - Param[9]: Optional number of pages to load.
-  - Returns: Array<object> with properties like "name", "officialKey", "type", "postalCode", "locality", "canton", etc. To extract just one property (e.g., the name), nest this EP inside JSON.Path: "{ json.path > { OpenPLZ > ch ; Cantons ; 19 ; Districts }; name }".
-  - Correct usage examples:
-    - "{ OpenPLZ > ch ; Cantons }" — all Swiss cantons (returns array of objects with names, keys).
-    - "{ OpenPLZ > ch ; Cantons ; 19 ; Districts }" — all districts of canton 19 (Zurich).
-    - "{ json.path > { OpenPLZ > ch ; Cantons ; 19 ; Districts }; name }" — extracts just the "name" property from each district object.
-    - "{ OpenPLZ > de ; FederalStates }" — all German federal states (Bundesländer).
-    - "{ OpenPLZ > de ; FederalStates ; 09 ; Districts }" — all districts (Regierungsbezirke) of Bavaria (key 09).
-    - "{ OpenPLZ > de ; Districts ; 09162 ; Municipalities }" — all municipalities of district München (key 09162).
-  - WRONG (do NOT generate): "{ OpenPLZ > ch ; Districts ; 19 ; Cantons }" — the parameter order is wrong. Param[2] must be the unit you want (Cantons), Param[4] is the sub-detail (Districts). The AI swapped them because it parsed the German genitive "des 19. Distrikts" as the main unit.
-  - IMPORTANT: OpenPLZ returns an array of objects — use JSON.Path to extract a property, or Sys.Log.Console to log to the browser console.
-- Sorted: Sorts an Array by an optional property. CRITICAL: Sorted returns the SORTED ARRAY OF OBJECTS, not extracted property values. To get JUST the sorted property values, extract first with JSON.Path then sort: "{ Sorted > { JSON.Path > { OpenPLZ.Localities > de ; ^An } ; name } }" extracts names, then sorts them as strings. Param[2] is a property name for sorting, NOT a JSON.Path expression — do NOT wrap in JSON.Path when the intent is just to sort objects.
-  - Param[1]: **REQUIRED** — The Array to sort.
-  - Param[2]: The optional name of a property to sort by (e.g., "name", "officialKey"). The EP accesses this property on each element internally — no need for JSON.Path. When the array already contains plain values (e.g., after JSON.Path extraction), omit Param[2] for default string sort.
-  - Correct for sorting objects: "{ Sorted > { OpenPLZ > ch ; Cantons } ; name }" — returns objects sorted by name property.
-  - Correct for extracting + sorting values: "{ Sorted > { JSON.Path > { OpenPLZ.Localities > de ; ^An } ; name } }" — extracts city names, then sorts them. Omit Param[2] since the array is already strings.
-- Unique: Filters an Array, removing duplicate elements. CRITICAL: Unique returns the FILTERED ARRAY OF OBJECTS, not extracted property values. To get UNIQUE property values, extract first with JSON.Path then deduplicate: "{ Unique > { JSON.Path > { OpenPLZ > ch ; Cantons } ; name } }" extracts names, then removes duplicates. Param[2] is a property name for deduplication, NOT a JSON.Path expression — do NOT wrap in JSON.Path when the intent is just to filter objects.
-  - Param[1]: **REQUIRED** — The Array to filter.
-  - Param[2]: The optional name of a property to deduplicate by (e.g., "name", "officialKey"). The EP accesses this property on each element internally — no need for JSON.Path. When the array already contains plain values, omit Param[2].
-  - Correct for deduplicating objects: "{ Unique > { OpenPLZ > ch ; Cantons } ; name }" — removes duplicate cantons by comparing their name property.
-  - Correct for extracting unique values: "{ Unique > { JSON.Path > { OpenPLZ > ch ; Cantons } ; name } }" — extracts canton names, then removes duplicates.
-  - Redundant (avoid): "{ Unique > { JSON.Path > { OpenPLZ > ch ; Cantons } ; name } ; name }" — unnecessary extra "; name" after JSON.Path extraction.
+- OpenPLZ.Localities: An OpenPLZ -Request specialized into searching for localities.
+  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's name.
+  - Param[3]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the locality's postal code.
+  - Param[4]: An Optional number of pages to load.
+- OpenPLZ.OrganizationalUnits: An OpenPLZ -Request specialized into retrieving organizational units.
+  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[2]: The orgaUnit to retrieve (e.g.
+  - Param[3]: The optional key of the state, province or canton to get details of.
+  - Param[4]: The optional detail to fetch about a certain state, province or canton identified by the.
+  - Param[5]: An Optional number of pages to load.
+- OpenPLZ.Streets: An OpenPLZ -Request specialized into searching for streets.
+  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's name.
+  - Param[3]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the street's postal code.
+  - Param[4]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) for the city's name used if the 3rd.
+  - Param[5]: An Optional number of pages to load.
+- OpenPLZ.TextSearch: An OpenPLZ -Request performing a full text-search.
+  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[2]: The [ POSIX RegEx ](https://www.openplzapi.org/de/regex/) term to search for (e.g.
+  - Param[3]: An Optional number of pages to load.
+- OpenPLZ: Retrieves data from the CodBi_OpenPLZ_Verwaltungseinheiten-Servlet according to the parameter specified.
+  - Param[1]: The optional country to retrieve the data of (if not provided either the country specified in.
+  - Param[2]: The orgaUnit to retrieve (e.g.
+  - Param[3]: The optional key of the state, province or canton to get details of.
+  - Param[4]: The optional detail to fetch about a certain state, province or canton identified by the.
+  - Param[5]: There may be up to four parameter passed along the request (e.g.
+  - Param[6]: There may be up to four parameter passed along the request (e.g.
+  - Param[7]: There may be up to four parameter passed along the request (e.g.
+  - Param[8]: There may be up to four parameter passed along the request (e.g.
+  - Param[9]: An Optional number of pages to load.
+- Sorted: An Elementplaceholder sorts the Array passed as the 1st parameter in.
+  - Param[1]: The Array to sort.
+  - Param[2]: The optional name of a property to use to sort elements of the given Array .
+- Unique: An Elementplaceholder filters the Array passed as the 1st parameter from duplicates.
+  - Param[1]: The Array to filter.
+  - Param[2]: The optional name of a property to use to filter out elements of the given Array .
 - V: This Element-Placeholder acquires a global variable's value.
   - Param[1]: The name of the global variable.
   - Param[2]: REPORT if a CodBiError shall be thrown when the global variable isn't.
@@ -387,6 +441,10 @@ Set data-cb-func="Sys.Log.Console" on it.
   - .AI_OCR_Receiver: Applies 'AI' behavior to elements tagged with '.AI_OCR_Receiver'.
 - Appointments: Registers standard configurations specific to appointment arrangements.
   - .CodBi_Date_Time_Join_Date: Tags the date HTMLInputElement of a date/time pair.
+  - .CodBi_Date_Time_Join_Span_Begin: Applies 'Appointments' behavior to elements tagged with '.CodBi_Date_Time_Join_Span_Begin'.
+  - .CodBi_Date_Time_Join_Span_Begin_Time: Applies 'Appointments' behavior to elements tagged with '.CodBi_Date_Time_Join_Span_Begin_Time'.
+  - .CodBi_Date_Time_Join_Span_End: Applies 'Appointments' behavior to elements tagged with '.CodBi_Date_Time_Join_Span_End'.
+  - .CodBi_Date_Time_Join_Span_End_Time: Applies 'Appointments' behavior to elements tagged with '.CodBi_Date_Time_Join_Span_End_Time'.
   - .CodBi_Date_Time_Join_Time: Tags the time HTMLInputElement of a date/time pair.
   - .CodBi_DateFrame_1_Begin: The HTMLInputElement s tagged with these classes will be configured to not allow entering a date in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector "MaxField" points to.
   - .CodBi_DateFrame_1_End: The HTMLInputElement s tagged with these classes will be configured to not allow entering a date in the tagged HTMLInputElement that is higher than the one in the HTMLInputElement the CSS-Selector "MaxField" points to.
@@ -418,14 +476,14 @@ Set data-cb-func="Sys.Log.Console" on it.
 - Financial: Registers standard configurations specific to finances.
   - .CodBi_Currency: The HTMLInputElement s tagged with this class will be formatted for Currencies using Cleave.
   - .CodBi_TRANS_NTW: Applies 'Financial' behavior to elements tagged with '.CodBi_TRANS_NTW'.
-- Holistic.CSS.Standard: FORM-LEVEL standard configuration. Activated by reporting {"id":"Holistic.CSS.Standard","targets":[]} in _codbiApplicability.applied (empty targets) — do NOT add any CSS class to an element.
+- Holistic.CSS.Standard: Registers a standard configuration that applies a standard CSS onto the form.
   - Classes: none.
-- Holistic.Matomo.Tracking: FORM-LEVEL standard configuration that activates Matomo/Piwik tracking for the form. Activated by reporting {"id":"Holistic.Matomo.Tracking","targets":[]} in _codbiApplicability.applied (empty targets) — do NOT add any CSS class to an element.
+- Holistic.Matomo.Tracking: Registers a standard configurations using the functionality.
   - Classes: none.
-- Holistic.Media.Input.Speech: FORM-LEVEL standard configuration that applies Speech-to-Text onto EVERY text field. Activated by reporting {"id":"Holistic.Media.Input.Speech","targets":[]} in _codbiApplicability.applied (empty targets). Do NOT enable it by placing a class on a field.
-  - .CodBi_XCL_Speech: EXCLUSION class (XCL) — EXCLUDES that one field from the global Holistic.Media.Input.Speech standard via a CSS :not() selector. NEVER use it to request/enable speech on a field.
-- Holistic.Media.Input.Speech.Whisper: FORM-LEVEL standard configuration that applies Whisper Speech-to-Text onto EVERY text field. Activated by reporting {"id":"Holistic.Media.Input.Speech.Whisper","targets":[]} in _codbiApplicability.applied (empty targets). Do NOT enable it by placing a class on a field.
-  - .CodBi_XCL_Speech_Whisper: EXCLUSION class (XCL) — EXCLUDES that one field from the global Holistic.Media.Input.Speech.Whisper standard via a CSS :not() selector. NEVER use it to request/enable speech on a field.
+- Holistic.Media.Input.Speech: Registers a standard configuration that applies Speech-to-Text onto every.
+  - .CodBi_XCL_Speech: Applies 'Holistic.Media.Input.Speech' behavior to elements tagged with '.CodBi_XCL_Speech'.
+- Holistic.Media.Input.Speech.Whisper: Registers a standard configuration that applies Whisper Speech-to-Text onto every.
+  - .CodBi_XCL_Speech_Whisper: Applies 'Holistic.Media.Input.Speech.Whisper' behavior to elements tagged with '.CodBi_XCL_Speech_Whisper'.
 - LDAP.Autofill: Registers standard configurations specific to LDAP-Autocompletion in HTMLInputElement s.
   - .CodBi_LDAP_AC_Account: This class matches the common LDAP-Property sAMAccountName.
   - .CodBi_LDAP_AC_CommonName: This class matches the common LDAP-Property cn.
@@ -468,13 +526,13 @@ Set data-cb-func="Sys.Log.Console" on it.
   - .CodBi_Print_Remove_Parent: Applies 'Print.Removal' behavior to elements tagged with '.CodBi_Print_Remove_Parent'.
   - .CodBi_Print_Remove_PrintOnly: Applies 'Print.Removal' behavior to elements tagged with '.CodBi_Print_Remove_PrintOnly'.
   - .CodBi_Print_Remove_Tagged: HTMLElement.remove s the tagged element.
-- UI.Panels: Registers standard configurations providing CodBi-"HTML.Panel"s. USE: prefer these classes for every panel/accordion request (no data-cb-* params needed). CodBi_HTML_Panel_Standard = one standalone collapsible panel (legend = title). CodBi_Accordion_A/B/C/D = multiple collapsible sections where ONLY ONE is open at a time (accordion) — apply ONE single letter (CodBi_Accordion_A, _B, _C or _D; there is NO 'CodBi_Accordion_A_B_C_D' class) to the CONTAINER wrapping the sections (the container is NOT a panel and gets NO panel class), and EVERY member XFieldSet INSIDE it ALSO needs a panel type class (Standard/Flat/Index/Minimal; the accordion class alone is not collapsible); panels default to open, so set data-cb-folded="true" only on the members that shall start folded/closed (NEVER data-cb-open). CodBi_HTML_Panel_NoCordion = a panel inside an accordion that must stay independent (also needs a panel type class). NESTING: Standard at the top (1st level), Flat for nested panels (2nd level), Minimal for panels two levels deep (3rd level); deeper levels repeat Standard → Flat → Minimal. CodBi_HTML_Panel_Index = index-like panel (book-index / table of contents with unfoldable numbered sections, e.g. "1. Your Info, 2. Describe Your Issue, 3. Upload Files"). MUTUALLY EXCLUSIVE: NEVER combine these classes with data-cb-func=html.panel on the SAME element (the classes already apply HTML.Panel — use exactly ONE). Only when none fits (e.g. container panels, custom header/CSS) use data-cb-func=html.panel with data-cb-generateheader="true" + data-cb-autoheadertitle (MANDATORY).
+- UI.Panels: Registers standard configurations providing CodBi-"HTML.Panel"s.
   - .CodBi_Accordion_A: Sets up accordions using the HTML.Panel.Accordion Functionality named either CodBi_Accordion_A, CodBi_Accordion_B, CodBi_Accordion_C or CodBi_Accordion_D depending on the Standardconfiguration-Class used.
   - .CodBi_Accordion_B: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_Accordion_B'.
   - .CodBi_Accordion_C: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_Accordion_C'.
   - .CodBi_Accordion_D: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_Accordion_D'.
-  - .CodBi_HTML_Panel_Flat: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Flat'. Visually flat — good for NESTED panels (2nd nesting level, i.e. a panel inside a Standard panel).
-  - .CodBi_HTML_Panel_Index: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Index'. Index-like panel (book index / table of contents): logical numbered sections, each unfoldable. USE when the page/form is separated into logical sections forming an index (e.g. "1. Your Info, 2. Describe Your Issue, 3. Upload Files").
-  - .CodBi_HTML_Panel_Minimal: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Minimal'. Minimal panel — good for NESTED panels on the 3rd nesting level (inside a Flat panel inside a Standard panel).
+  - .CodBi_HTML_Panel_Flat: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Flat'.
+  - .CodBi_HTML_Panel_Index: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Index'.
+  - .CodBi_HTML_Panel_Minimal: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_Minimal'.
   - .CodBi_HTML_Panel_NoCordion: Applies 'UI.Panels' behavior to elements tagged with '.CodBi_HTML_Panel_NoCordion'.
-  - .CodBi_HTML_Panel_Standard: A panel with shaded gray background for the auto generated \<h2> header that changes the title's color to darkgreen when unfolded. Use at the TOP (1st) nesting level; nested panels rank Standard > Flat > Minimal per level.
+  - .CodBi_HTML_Panel_Standard: A panel with shaded gray background for the auto generated \<h2> header that changes the title's color to darkgreen when unfolded.

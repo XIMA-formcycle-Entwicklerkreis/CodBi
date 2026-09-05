@@ -15,7 +15,9 @@ TO GET DATA FOR A NAMED PERSON/OFFICE, ALWAYS CHAIN NAME → ID → DETAILS:
 - Contact data by name: { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } ; <property> }
 - Authority data by name: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; <property> }
 - Building data of an authority: { BayVIS.Behoerden.Details.Gebaeude > <authorityId> ; <buildingId> ; <property> } — resolve both IDs, e.g. the building ID via { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > <authorityId> } }.
-NEVER pass a bare name ("Amt 44", "Salvatore Callari") into a Directory/Details EP — it is INVALID and rejected. The `.ID` EPs return an ARRAY — pick one element with { I > 0 ; <array EP> }.
+NEVER pass a bare name ("Amt 44", "Salvatore Callari") into a Directory/Details EP — it is INVALID and rejected. The `.ID` EPs return an ARRAY — pick one element with { I > 0 ; <array EP> }. BY CONTRAST, when the details come from an id you ALREADY have as a SINGLE value (e.g. a global variable via V), NO { I > 0 ; ... } is needed — use { BayVIS.Ansprechpartner.Details > { V > <NAME> } } directly. I is ONLY for arrays; a Details EP fed by a single id returns ONE object. And because that object is a JSON OBJECT, display its properties with HTML.Text.Mapper [(property)] placeholders, NOT HTML.Text.Injector.
+
+PERSON'S FULL RECORD = BayVIS.Ansprechpartner.Details — that EP holds a person's name AND all of that person's contact data (email / apEmail and the phone parts apTelefonLandvorwahl / apTelefonOrtsvorwahl / apTelefonAnlage / apTelefonDurchwahl). Whenever the request is about a PERSON/employee (name, phone, e-mail, any contact data) and names NO Behörde, use ONLY { BayVIS.Ansprechpartner.Details > ... <person name> } — BayVIS.Behoerden.Details carries NONE of a person's data (only the authority's own metadata) and is only usable when a Behörde is actually named.
 
 GLOBAL VARIABLES — when the user says "als globale Variable hinterlegen" / "store in a global variable" / "globale Variable anlegen":
 1. Create the variable in the top-level "variables" array: {"name":"<NAME>","aliasname":"<NAME>","serveronly":false,"value":"<VALUE>"}.
@@ -25,6 +27,8 @@ GLOBAL VARIABLES — when the user says "als globale Variable hinterlegen" / "st
    - Authority by name: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > { V > <NAME> } } } ; <property> }  (Behoerden.Details does NOT resolve names — you must)
    - Building of an authority: { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > { V > <NAME> } } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > { V > <NAME> } } } } } ; <property> }  (BOTH the authority ID AND the building ID are required)
 4. NEVER use Formcycle's "[%$NAME%]" placeholder for CodBi EP data — that is resolved server-side at submit time and cannot run a client-side EP.
+
+CRITICAL — A BAYVIS BUILDING ADDRESS HAS NO HOUSE-NUMBER PLACEHOLDER: `BayVIS.Behoerden.Details.Gebaeude` returns ONLY the properties bezeichnung, hausanschriftPLZ, hausanschriftOrt, hausanschriftStrasse, postanschriftPLZ, postanschriftOrt, postanschriftStrasse, logo — there is NO `hausanschriftHausnummer` / `hausnummer` property (hausanschriftStrasse ALREADY contains street + house number, e.g. "Maximilianstraße 1"). NEVER emit [(hausanschriftHausnummer)] or [(hausnummer)] in a building-address template — it cannot be resolved. Render the building's Hausanschrift as "[(hausanschriftStrasse)], [(hausanschriftPLZ)] [(hausanschriftOrt)]".
 
 ## CSS Classes vs data-cb-func (TWO-OPTION RULE)
 
@@ -56,8 +60,7 @@ CodBi_People_PLZ + CodBi_OpenPLZ_AC_SET_PLZ).
 ## HTML.Text.Mapper EXACT WIRING
 
 To map object properties into a text template: data-cb-func="HTML.Text.Mapper" with
-data-cb-replacements (the object whose property values fill the placeholders) + data-cb-property (the
-element property holding the TEMPLATE, e.g. "value"/"rtevalue"). The TSDoc placeholder syntax is a
+data-cb-replacements (the object whose property values fill the placeholders) + data-cb-property (REQUIRED — the RUNTIME property of the target element into which the mapped text is written and where the [(property)] template is read from: "innerHTML" on an XSpan (template stored in the XSpan's Formcycle rtevalue), "value" on an XTextField/XTextArea (template stored in the field's Formcycle value). WITHOUT data-cb-property the mapper does not know which property to set on the target element, so it can never be omitted. NEVER "rtevalue" — rtevalue is only the Formcycle JSON storage key of an XSpan's content, NOT a runtime DOM property). The TSDoc placeholder syntax is a
 PROPERTY name wrapped in "[(...)]" (e.g. [(name)], [(vorname)], [(nachname)], [(mail)]). The TEMPLATE
 with the [(property)] placeholders (e.g. "Hello [(vorname)] [(nachname)]") goes INTO the field's OWN
 content property — NEVER into a separate attribute. There is NO data-cb-Template attribute; emitting
@@ -65,12 +68,16 @@ one is a FAIL.
 
 CRITICAL — data-cb-replacements may be an EP placeholder that resolves to an OBJECT (e.g.
 "{ BayVIS.Ansprechpartner.Details > ... ; ... }"). In that case the placeholders MUST be [(property)]
-using the ACTUAL property names of that EP's result object (e.g. [(name)], [(vorname)], [(nachname)],
-[(mail)], ...) — NEVER the HTML.Text.Injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare
+using the ACTUAL property names of that EP's result object (e.g. [(vorname)], [(nachname)], [(email)],
+[(zimmer)], [(apTelefonDurchwahl)], ...) — NEVER the HTML.Text.Injector placeholder "[[INJECTOR_REPLACEMENT]]" and NEVER a bare
 raw EP string. Each [(property)] is replaced at runtime by the corresponding property of the object the
 EP produced. When the user asks to display "the details" of a resolved object (a person, an authority,
 ...), render the requested properties as [(property)] placeholders in the template text — do not put a
 generic/standard placeholder into the field's content.
+
+USE HTML.Text.MAPPER — NOT HTML.Text.Injector — whenever the data is an OBJECT such as a BayVIS Details result. The BayVIS `.Details` EPs return a JSON OBJECT (e.g. BayVIS.Ansprechpartner.Details returns {vorname, nachname, email, zimmer, apTelefonDurchwahl, ...}); HTML.Text.Injector injects only ONE plain string and is useless for that object. So a single Ansprechpartner (id from a global variable) is fetched with { BayVIS.Ansprechpartner.Details > { V > <NAME> } } — NO { I > 0 ; ... } (I is only for arrays, e.g. the array returned by BayVIS.Ansprechpartner.ID) — and displayed with HTML.Text.Mapper data-cb-replacements="{ BayVIS.Ansprechpartner.Details > { V > <NAME> } }" + [(property)] template placeholders.
+
+SEVERAL BAYVIS VALUES SHOWN TOGETHER → ONE HTML.Text.Mapper, NEVER one HTML.Text.Injector per value: first decide WHERE each requested value actually lives and fetch each DETAIL OBJECT only ONCE. Typical request — "links oben im Header die BayVIS-Kontaktdaten und den Namen des Mitarbeiters Salvatore Callari" — asks for the EMPLOYEE's contact block (his name + e-mail + phone); ALL of those values live on ONE object, so data-cb-replacements is just { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } } (NO Data.Join) and the single template holds the person's REAL [(property)] placeholders, e.g. "[(vorname)] [(nachname)] — [(email)], Tel. 0[(apTelefonOrtsvorwahl)] [(apTelefonDurchwahl)]". A person's phone is NOT one property — BayVIS.Ansprechpartner.Details exposes only apTelefonLandvorwahl / apTelefonOrtsvorwahl / apTelefonAnlage / apTelefonDurchwahl (no "phone"/"telefon" property), so compose the phone from those parts. NEVER take a person's phone/e-mail from BayVIS.Behoerden.Details — the authority object has NO phone and NO postal address (only bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, behoerdeZuordnungen, behoerdenGebaeudeZuordnungen); postal addresses live on BayVIS.Behoerden.Details.Gebaeude (hausanschriftPLZ/hausanschriftOrt/hausanschriftStrasse and postanschrift*). Use Data.Join only when the values genuinely come from DIFFERENT detail objects (e.g. a building address + the contact person): data-cb-replacements="{ Data.Join > { <object1 EP> } ; { <object2 EP> } }" and reference each value by its own object's ACTUAL property name (a later Data.Join object overrides same-named properties). ONE Mapper element resolves its replacements ONCE; N Injector elements each resolve their own EP (N requests) — always prefer the single Mapper. Only a request that NAMES a Behörde/authority may use BayVIS.Behoerden.* — NEVER invent an authority name to make one work: "BayVIS" is the SYSTEM (the data source), not an authority, so { BayVIS.Behoerden.ID > Bayvis } cannot resolve. When the prompt names only a person/employee and no Behörde (e.g. the Salvatore-Callari header request), use ONLY { BayVIS.Ansprechpartner.Details > ... } and NEVER a BayVIS.Behoerden.* EP. NEVER fill a BayVIS-derived contact field with invented literal text (e.g. "Bayvis Straße 1, 12345 Musterstadt", "kontakt@bayvis.de", "+49 30 12345678") — the person's real contact data (e-mail → [(email)], phone → the apTelefon* parts, name → [(vorname)] [(nachname)]) is obtained ONLY from { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > <name> } } } and rendered with [(property)] placeholders; hard-coding made-up values is a FAIL.
 
 ## NAVBAR / LANGUAGE SWITCH PLACEMENT
 

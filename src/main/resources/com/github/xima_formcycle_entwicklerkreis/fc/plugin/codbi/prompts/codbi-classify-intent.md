@@ -10,6 +10,8 @@ Examples (ILLUSTRATIVE ONLY — the user may phrase the same intent in ANY langu
 - "Send an email when the form is submitted" → workflow
 - "Add an upload field and send its content via email after submission" → both
 - "Gib in der Konsole ... aus" / "console output" / "log variable to console" → form
+- "Übersetze das Formular ins Englische" / "translate the whole form into English" / "übersetze alle Felder ins Italienische" → form (translating the form's labels/texts is a form content change — never a workflow and never a chat-only answer)
+- "Lösche alles im Formular" / "remove everything in the form" / "empty the whole form" / "Lösche alle Elemente aus dem Formular" → both (emptying the whole form also clears its attached workflows — NEVER classify such a full form reset as plain "form", otherwise the workflow lanes are left behind)
 - "Erstelle einen Bereich" / "add a panel" → form
 - "Sende eine E-Mail" / "send an email" → workflow
 - "Datei herunterladen" / "file download" when combined with "submit" → workflow

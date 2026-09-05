@@ -233,6 +233,8 @@ CORRECT full example — an XSpan that displays the EP result (the `rtevalue` MU
 {"className":"XSpan","properties":{"name":"spWetterKI","id":"xi-sp-wetter-ki","rtevalue":"[[INJECTOR_REPLACEMENT]]"},"attributes":[{"text":"data-cb-func","value":"HTML.Text.Injector"},{"text":"data-cb-property","value":"innerHTML"},{"text":"data-cb-replacement","value":"{ AI.LLAMA.STD.QA > Wie wird das Wetter morgen?; true;;;;;; }"}]}
 ```
 
+NOTE — HTML.Text.Injector carries a SINGLE plain-string replacement only. To show SEVERAL related BayVIS values together in one place (e.g. a header with an employee's name + phone + e-mail), NEVER create one Injector element per value — use ONE HTML.Text.Mapper whose data-cb-replacements fetches the needed detail object once and whose single template holds all [(property)] placeholders (ONE resolution instead of N).
+
 ## HTML.Text.Mapper
 
 Applicable on any element to map object properties to named placeholders in a text template.
@@ -241,21 +243,25 @@ The placeholder syntax is a PROPERTY name wrapped in "[(...)]" (from the TSDoc) 
 - `data-cb-replacements`: the object (or array of objects) whose property VALUES fill the placeholders.
   This may be a literal object OR an EP placeholder that resolves to an object (e.g.
   `{ BayVIS.Ansprechpartner.Details > ... ; ... }`).
-- `data-cb-property`: which property of the element holds the TEMPLATE — on an XTextField/XTextArea the
-  template lives in its `value`/`rtevalue` property.
+- `data-cb-property` (**REQUIRED**): the RUNTIME property of the target element that receives the mapped text and where the `[(property)]` template is read from — `innerHTML` on an **XSpan** (its template text is stored in the XSpan's Formcycle `rtevalue` property) and `value` on an **XTextField / XTextArea** (template text stored in the field's Formcycle `value` property). WITHOUT `data-cb-property` the mapper does not know which property to set on the target element, so it can never be omitted. NEVER set `data-cb-property` to `rtevalue` — `rtevalue` is only the Formcycle JSON storage key of an XSpan's content, NOT a runtime DOM property of the rendered element (the mapper reads/writes the element's real DOM property `innerHTML` / `value`).
 - `data-cb-css`: optional CSS applied after the replacement.
 The TEMPLATE with the `[(property)]` placeholders goes INTO the field's OWN content property
 (value/rtevalue) — NEVER into a separate attribute; there is NO `data-cb-Template` attribute and
 emitting one is a FAIL.
 CRITICAL — when `data-cb-replacements` is fed by an EP that returns an OBJECT (e.g. BayVIS
 person/authority details), the placeholders MUST be `[(property)]` naming the ACTUAL properties of that
-EP's result object (e.g. `[(name)]`, `[(vorname)]`, `[(nachname)]`, `[(mail)]`, `[(telefon)]`, ...) — NEVER
+EP's result object (e.g. `[(vorname)]`, `[(nachname)]`, `[(email)]`, `[(zimmer)]`, `[(apTelefonDurchwahl)]`, `[(apEmail)]`, ...) — NEVER
 the HTML.Text.Injector placeholder `[[INJECTOR_REPLACEMENT]]` and NEVER a bare raw EP string. Each
 `[(property)]` is replaced at runtime by the corresponding property of the object the EP produced. When
 the user asks to display "the details" of a resolved object (a person, an authority, ...), render the
 requested properties as `[(property)]` placeholders in the template text — do not put a
 generic/standard placeholder into the field's content.
-**REQUIRES**: the object source (data-cb-replacements) and the text template with placeholders.
+
+**USE MAPPER (not Injector) for OBJECT data** — in particular for BayVIS Details results: `BayVIS.Ansprechpartner.Details` / `BayVIS.Behoerden.Details` return a JSON OBJECT (e.g. BayVIS.Ansprechpartner.Details returns `{vorname, nachname, email, zimmer, apTelefonDurchwahl, ...}`, BayVIS.Behoerden.Details returns authority metadata — see the EP reference for exact properties), which HTML.Text.Injector cannot display (it injects only ONE plain STRING). A single Ansprechpartner whose ID is in a GLOBAL VARIABLE is fetched as `{ BayVIS.Ansprechpartner.Details > { V > <NAME> } }` with NO `{ I > 0 ; ... }` — the I/index EP is ONLY for ARRAYS (e.g. the array returned by `BayVIS.Ansprechpartner.ID`); a Details EP fed by a single id already returns ONE object.
+
+SEVERAL BAYVIS VALUES SHOWN TOGETHER → ONE HTML.Text.Mapper, NEVER one HTML.Text.Injector per value: first decide WHERE each requested value actually lives (see the EXACT per-EP property lists in the EP reference) and fetch each DETAIL OBJECT only ONCE. Typical request — "links oben im Header die BayVIS-Kontaktdaten und den Namen des Mitarbeiters Salvatore Callari" — asks for the EMPLOYEE's contact block (his name + e-mail + phone); ALL of those values live on ONE object, so data-cb-replacements is just { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } } (NO Data.Join) and the single template holds the person's REAL [(property)] placeholders, e.g. "[(vorname)] [(nachname)] — [(email)], Tel. 0[(apTelefonOrtsvorwahl)] [(apTelefonDurchwahl)]". A person's phone is NOT one property — BayVIS.Ansprechpartner.Details exposes only apTelefonLandvorwahl / apTelefonOrtsvorwahl / apTelefonAnlage / apTelefonDurchwahl (there is NO "phone"/"telefon" property), so compose the phone from those parts. NEVER take a person's phone/e-mail from BayVIS.Behoerden.Details — the authority object has NO phone and NO postal address (only bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, behoerdeZuordnungen, behoerdenGebaeudeZuordnungen); postal addresses live on BayVIS.Behoerden.Details.Gebaeude (hausanschriftPLZ/hausanschriftOrt/hausanschriftStrasse and postanschrift*). Use Data.Join only when the values genuinely come from DIFFERENT detail objects (e.g. a building address + the contact person): data-cb-replacements="{ Data.Join > { <object1 EP> } ; { <object2 EP> } }" and reference each value by its own object's ACTUAL property name (a later Data.Join object overrides same-named properties). ONE Mapper element resolves its replacements ONCE; N Injector elements each resolve their own EP (N requests) — always prefer the single Mapper. Only a request that NAMES a Behörde/authority may use BayVIS.Behoerden.* — NEVER invent an authority name to make one work: "BayVIS" is the SYSTEM (the data source), not an authority, so { BayVIS.Behoerden.ID > Bayvis } cannot resolve. When the prompt names only a person/employee and no Behörde (e.g. the Salvatore-Callari header request), use ONLY { BayVIS.Ansprechpartner.Details > ... } and NEVER a BayVIS.Behoerden.* EP. NEVER fill a BayVIS-derived contact field with invented literal text (e.g. "Bayvis Straße 1, 12345 Musterstadt", "kontakt@bayvis.de", "+49 30 12345678") — the person's real contact data (e-mail → [(email)], phone → the apTelefon* parts, name → [(vorname)] [(nachname)]) is obtained ONLY from { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > <name> } } } and rendered with [(property)] placeholders; hard-coding made-up values is a FAIL.
+
+**REQUIRES**: `data-cb-property` (the RUNTIME target property — "innerHTML" on an XSpan, "value" on an XTextField/XTextArea), the object source (data-cb-replacements) and the text template with the [(property)] placeholders.
 
 ## HTML.Select.Favorites
 

@@ -461,6 +461,14 @@ export class AiAssistant implements OnInit, OnDestroy {
   private static readonly CHAT_MAXIMIZED_KEY = "codbi-ai-chat-maximized";
   /** localStorage key used to re-open the chat popup after a workflow-triggered reload. */
   private static readonly PENDING_CHAT_KEY = "codbi-pending-chat";
+  /** sessionStorage key written right before a workflow-touching page reload. FORMCYCLE rebuilds its
+   *  session-scoped workflow model LAZILY: after the AI wrote workflow tasks/nodes directly to the
+   *  database and the designer reloaded, the freshly loaded page can still be served the PREVIOUS
+   *  workflow until that rebuild finished — which is why a second manual reload was needed before.
+   *  The marker makes the assistant perform exactly ONE automatic follow-up reload (after the page
+   *  has booted and FORMCYCLE had time to rebuild), so the workflow changes are shown without a
+   *  manual reload. Consumed immediately, so it never loops. */
+  private static readonly WORKFLOW_RELOAD_KEY = "codbi-pending-workflow-reload";
   /** sessionStorage key persisting the current chat conversation within the tab session — survives
    *  closing/reopening the chat and host re-creation, and is cleared automatically when the tab
    *  closes (no DB storage). */
@@ -862,6 +870,11 @@ export class AiAssistant implements OnInit, OnDestroy {
     // not created yet" when the Formcycle designer is not ready on first paint, and an uncaught
     // error in ngOnInit would otherwise prevent the chat from ever being restored.
     this.restorePendingChat();
+    // After a workflow-touching reload, FORMCYCLE rebuilds its session-scoped workflow model lazily.
+    // The freshly loaded page can be served the previous workflow until that rebuild finished, so
+    // issue exactly ONE automatic follow-up reload once the designer is ready — the changes are then
+    // shown without the manual second reload that was needed before.
+    this.scheduleWorkflowRefreshIfPending();
     // Pre-load the AI models so a restored chat can continue immediately without waiting for the
     // assistant dialog to be opened (selectedModel is otherwise null on a fresh page).
     this.ensureModelLoaded();
@@ -3052,6 +3065,64 @@ export class AiAssistant implements OnInit, OnDestroy {
     }
   }
 
+  /** Marks that a workflow-touching reload is about to happen, so the NEXT page load knows to
+   *  perform one automatic follow-up reload once FORMCYCLE has rebuilt its session workflow model. */
+  private markWorkflowReloadPending(): void {
+    try {
+      sessionStorage.setItem(AiAssistant.WORKFLOW_RELOAD_KEY, String(Date.now()));
+    } catch {
+      // ignore storage errors (e.g. blocked storage) — the follow-up reload is skipped then
+    }
+  }
+
+  /**
+   * Runs on EVERY page load. When the previous page wrote [WORKFLOW_RELOAD_KEY] (i.e. a run that
+   * changed the workflow just reloaded the designer), FORMCYCLE rebuilds its session-scoped workflow
+   * model LAZILY: the freshly loaded page can be served the PREVIOUS workflow until that rebuild has
+   * finished — which is why a second manual reload was needed to see the changes. This consumes the
+   * marker and, once the Formcycle designer is ready, performs exactly ONE automatic follow-up
+   * reload after a short grace period, so the (now revalidated) workflow model is displayed without
+   * a manual reload. The marker is consumed BEFORE the follow-up reload, so it cannot loop.
+   */
+  private scheduleWorkflowRefreshIfPending(): void {
+    let pending: string | null = null;
+    try {
+      pending = sessionStorage.getItem(AiAssistant.WORKFLOW_RELOAD_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    if (!pending) return;
+    // Consume the marker now — the follow-up reload below must not trigger another one.
+    try {
+      sessionStorage.removeItem(AiAssistant.WORKFLOW_RELOAD_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    // Ignore stale markers from a long-gone session that were never consumed.
+    const written = Number(pending);
+    if (!Number.isFinite(written) || Date.now() - written > 120_000) return;
+    // Only reload on a page that hosts the Formcycle designer (the reload keeps the same URL, so a
+    // designer page reloads into a designer page). Wait until the designer instance is available and
+    // has booted — only then is its workflow model requested (and thereby revalidated by FORMCYCLE).
+    const doFollowUp = (attempt: number): void => {
+      let ready = false;
+      try {
+        const dg = getDesignerInstance() as unknown as Record<string, unknown> | undefined;
+        ready = !!dg && dg["config"] != null;
+      } catch {
+        ready = false;
+      }
+      if (ready) {
+        // Grace period for FORMCYCLE to finish rebuilding its session workflow model, then reload
+        // exactly once.
+        setTimeout(() => window.location.reload(), 2500);
+        return;
+      }
+      if (attempt < 40) setTimeout(() => doFollowUp(attempt + 1), 150);
+    };
+    setTimeout(() => doFollowUp(0), 600);
+  }
+
   /** Scrolls the chat message list to the newest message. */
   private scrollChatToBottom(): void {
     setTimeout(() => {
@@ -3286,13 +3357,18 @@ export class AiAssistant implements OnInit, OnDestroy {
       }
     }
 
-    // Collect form elements + workflowVersionId (needed for workflow and both)
-    if (intent === "workflow" || intent === "both") {
-      const workflowVersionId =
-        (designer as unknown as Record<string, unknown>)?.["config"] != null
-          ? (designer as unknown as Record<string, Record<string, unknown>>)["config"]["workflowVersionId"]
-          : undefined;
+    // Collect form elements + workflowVersionId. Mandatory for workflow/both runs (creating lanes
+    // needs the workflow). For form-only runs the id is ALSO sent when a workflow exists, so a
+    // whole-form translation can multilingualize the existing consumer-facing mails (the backend
+    // wraps them in an FC_SWITCH on the [%lang%] placeholder when the form AI signals
+    // "_workflowMailLanguages"); it is never a hard requirement there — a form edit without a
+    // workflow still runs normally.
+    const workflowVersionId =
+      (designer as unknown as Record<string, unknown>)?.["config"] != null
+        ? (designer as unknown as Record<string, Record<string, unknown>>)["config"]["workflowVersionId"]
+        : undefined;
 
+    if (intent === "workflow" || intent === "both") {
       if (!workflowVersionId) {
         this.setError("Could not determine the workflow version ID. Make sure a workflow is configured for this form.");
         return;
@@ -3318,6 +3394,11 @@ export class AiAssistant implements OnInit, OnDestroy {
       } catch {
         // formElements will be absent; backend will proceed without them
       }
+    } else if (workflowVersionId) {
+      // Form-only run (incl. whole-form translation): pass the workflow id so the backend can
+      // multilingualize consumer-facing workflow mails after a form translation when the form AI
+      // signals "_workflowMailLanguages". No error when absent — the form edit still runs.
+      data["workflowVersionId"] = String(workflowVersionId);
     }
 
     this.spinnerText = "Executing\u2026";
@@ -3661,7 +3742,10 @@ export class AiAssistant implements OnInit, OnDestroy {
             if (blockedSql.length > 0) {
               localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedSql));
             }
-            // Persist the chat conversation so the chat popup re-opens after the reload.
+            // Persist the chat conversation so the chat popup re-opens after the reload, and mark
+            // that a workflow-touching reload happens so the next page load performs the automatic
+            // follow-up reload (see scheduleWorkflowRefreshIfPending).
+            this.markWorkflowReloadPending();
             this.persistPendingChat();
             window.location.reload();
           };
@@ -3746,7 +3830,10 @@ export class AiAssistant implements OnInit, OnDestroy {
             if (blockedSql.length > 0) {
               localStorage.setItem(AiAssistant.BLOCKED_SQL_STORAGE_KEY, JSON.stringify(blockedSql));
             }
-            // Persist the chat conversation so the chat popup re-opens after the reload.
+            // Persist the chat conversation so the chat popup re-opens after the reload, and mark
+            // that a workflow-touching reload happens so the next page load performs the automatic
+            // follow-up reload (see scheduleWorkflowRefreshIfPending).
+            this.markWorkflowReloadPending();
             this.persistPendingChat();
             window.location.reload();
           }, 1500);

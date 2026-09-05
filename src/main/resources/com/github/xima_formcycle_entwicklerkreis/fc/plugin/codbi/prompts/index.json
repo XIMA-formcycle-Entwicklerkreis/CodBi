@@ -19,6 +19,7 @@
   { "file": "codbi-retry-workflow.md", "key": "codbi.retry_workflow" },
   { "file": "codbi-retry-chat.md", "key": "codbi.retry_chat" },
   { "file": "codbi-form-structure-rules.md", "key": "codbi.form_structure_rules" },
+  { "file": "codbi-workflow-translate-instruction.md", "key": "codbi.workflow_translate_instruction" },
   { "file": "codbi-control-types-rules.md", "key": "codbi.control_types_rules" },
   { "file": "codbi-change-log-schema.md", "key": "codbi.change_log_schema" },
   { "file": "codbi-chat-context-note.md", "key": "codbi.chat_context_note" },

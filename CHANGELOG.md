@@ -59,6 +59,79 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   elements) hides the listed elements for every user NOT listed in `APIDoc_UsersAllowedToSYNC`, while
   any property named `AI_FormAssistant_ForbiddenElements_<username>` (CSV of CodBi elements) hides
   them only for that exact user when that user runs an inference.
+- **Whole-form translation fills the per-language element fields instead of overwriting the base
+  language**: the form AI assistant now teaches "translate the whole form into <language>"
+  requests to add the translations as Formcycle's per-language element map
+  (`properties.i18n[<lang>][<prop>]`, plus the per-option / per-button `i18n` for XSelect options and
+  XButtonList buttons) while leaving every base/default-language text unchanged — mirroring what the
+  designer does when the Form language selector is set to that language. The prompts
+  (`codbi.form_structure_rules` / `codbi-form-structure-rules.md` and `formcycle.general` /
+  `formcycle-general.md`) now document the storage format, and both form assistants
+  (`AICodBiAssistant.kt`, `AIFormAssistant.kt`) no longer discard the AI-emitted `i18n`: a new
+  `mergeItemI18n` restore step merges it with the original item translations so already-translated
+  languages are preserved when a second language is added.
+- **Compact single-line AI JSON in the logs**: every server-side log of the raw AI form/workflow
+  response (including the "AI returned invalid JSON / unparseable response" warning, which printed the
+  whole pretty-printed payload over dozens of lines) is now emitted as one compact line via a shared
+  `compactJsonForLog` helper (shared `AiJsonLogging.kt`, replacing per-class copies) so the logging
+  window shows the complete payload without line-wrapping scroll noise — plus the character count so a
+  truncated (over-length) response is immediately recognizable. The whole-form-translation prompts also
+  instruct the AI to emit compact JSON and never empty `"i18n": {}` maps, keeping large-form outputs
+  within the model's length limit.
+- **Multilingual workflow mails on whole-form translation (`FC_SWITCH` on `[%lang%]`)**: when the form
+  AI translates a whole form into ADDITIONAL languages, it now also emits a structured, language-
+  agnostic marker (`"_workflowMailLanguages": ["<baseCode>", "<addedCode>", ...]`, base language
+  first — same model-declared-signal pattern as `_codbiApplicability`, never a server-side keyword
+  guess). When the marker is present and a workflow version is available, `AICodBiAssistant` runs a
+  dedicated multilingualize pass (`runWorkflowMailMultilingualization`, prompt
+  `codbi.workflow_translate_instruction` / `codbi-workflow-translate-instruction.md`): the AI names the
+  existing **consumer-facing** `FC_EMAIL`/`FC_DOI_INIT` nodes (recipient = a `[%…%]` consumer email
+  field or a DOI invitation; internal/admin/error mails are skipped) and provides the subject/body
+  translation per added language. The backend then wraps each chosen node **in place** into an
+  `FC_SWITCH` with `switchValue="[%lang%]"` (Formcycle's native placeholder for the language the form
+  was filled out in — verified in the official howto
+  `help8.formcycle.eu/…/103000047241-internationalisierung-im-workflow` and against
+  `FcSwitchExecutor`, which resolves the switch value through the condition operand mapper). The
+  original mail stays byte-for-byte on the base-language `FC_SWITCH_CASE` and the trailing
+  `FC_SWITCH_DEFAULT`; every other language gets a clone with translated subject/body/senderName while
+  `to`/`from`/attachments/DOI pages and all placeholders are preserved. The switch keeps the mail's
+  position, so the lane's continuation after it is untouched — no new lane/trigger/endpoint is created,
+  and no submit button or field is added. The marker is stripped from the form before it is saved.
+  Prompt rules were added to both form prompts (`codbi.form_structure_rules`,
+  `formcycle.general`) and registered in `index.json`; covered by the FS12 scenario in the whole-form
+  test-prompts plan.
+  The assistant dialog (`ai-assistant.ts`) now also sends `workflowVersionId` on **form-only** runs
+  when a workflow exists (previously workflow/both only), so the translation run reaches the
+  multilingualize pass; the existing "formJson + workflowMessage" response handling then publishes the
+  translated form and reloads the designer to show the new switch.
+  The multilingualize pass feeds the model only a **condensed candidate list of the FC_EMAIL /
+  FC_DOI_INIT nodes** (id, name, type, params) plus an explicit output rule instead of the whole
+  workflow tree (feeding the full tree made the model echo the workflow back instead of answering the
+  small mails payload, so no switch was created), and **retries once with a strict schema instruction**
+  when the reply contains no usable `targetNodeId`+`translations` entry — the form translation itself
+  is never failed when this optional pass yields nothing. The candidate collector descends through
+  both `children` and the task-level `rootNode` of the workflow-structure JSON (the node tree lives
+  under `rootNode`; without that descent it found zero mail nodes and skipped the wrap — observed
+  "no FC_EMAIL/FC_DOI_INIT node found - nothing to wrap").
+  **Which mails are consumer-facing is the AI's own decision** — no server-side filter is applied (a
+  deterministic filter can never cover every way a mail is destined to the consumer or an internal
+  office). The model must therefore return an explicit `toConsumer` boolean for **EVERY** candidate
+  node in a single pass (verdict + translations together): the runner validates that no candidate is
+  missing a verdict and **retries once with a strict schema instruction** (listing the missed ids)
+  when any candidate lacks a verdict or the reply is unusable; it then wraps ONLY the nodes the model
+  itself marked `toConsumer: true` and leaves internal/back-office/error mails untouched. Live
+  validation had shown the model wrapping almost every mail node (including "Benachrichtigung für die
+  Sachbearbeitung" and "E-Mail an Kasse"); the workflow-translate prompt now gives intent-based
+  guidance (who reads the mail and what it is for) instead of relying on recipient strings or keyword
+  lists.
+- **Whole-form translations never trigger the CodBi "blind" re-evaluation pass**: both form
+  assistants (`AICodBiAssistant`, `AIFormAssistant`) now skip that second pass (which re-sends the
+  whole large form and can exceed the model's output limit → "AI returned invalid JSON") whenever the
+  form-AI response declares the structured `_workflowMailLanguages` translation marker — even when the
+  model omitted `_codbiApplicability` entirely. A whole-form translation only ADDS per-language text
+  fields and never a CodBi element, so the blind CodBi re-evaluation is pointless and harmful for it.
+  The form-AI prompt reminder also now asks the model to emit `_workflowMailLanguages` (base language
+  first) plus `_codbiApplicability.codbiVerdict = "none"` on every whole-form translation.
 
 ### Fixed
 - **Sensitive-element detection missed functionality names**: `AiAssistantLog.usedSensitiveElements`

@@ -36,6 +36,8 @@ DataQuery `HolaQuery` configured on the server.
 - [ ] **Checkbox initial state (fixed 2026-08-28, root cause corrected):** an XCheckbox is UNCHECKED by default — `"checkedvalue":""` (empty string) must be set in its `properties` (a `"value"` key is ignored by formcycle; the INITIAL state is driven by `checkedvalue`, so `"checkedvalue":"1"` renders the box CHECKED). Never emit `"checkedvalue":"1"` unless the user explicitly asked for a pre-checked box ("vorausgewählt"/"initially checked" — then emit `"checkedvalue":"1"` together with `"value":"1"`). A generated checkbox that renders initially checked without such a request is a FAIL. The backend sanitizer also forces `checkedvalue:""` for any XCheckbox that carries `checkedvalue:"1"` without an explicit non-empty `value`.
 - [ ] **Option-gated conditional visibility — "nur erscheint, wenn '<Option>' gewählt ist" (fixed 2026-08-30):** when a field (e.g. an upload) shall only appear while a specific option of an XSelect/radio is selected, the correct inverse is `hiddenifcomp="2"` (NOT_EQUAL) with `hiddenifvalue=<the chosen option's value>` (e.g. `hiddenifcomp="2"`, `hiddenifvalue="yes"`). An XSelect CAN have an initial `value` preset in the form data (verified in the formcycle JAR — XSelect implements IXValuableItem), but need not; when none is set it starts EMPTY. So the select has THREE states (chosen option, opposite option, empty) and a `hiddenif` carries only ONE comparison value — `value != "yes"` is TRUE for both empty and "no", so NOT_EQUAL to the CHOSEN option is the single constraint that hides the field in every non-chosen state. NEVER hide via `hiddenifcomp="1"` (EQUAL) with `hiddenifvalue=<the OPPOSITE option>` (e.g. `"no"`) — hiding only on equality to "no" leaves the field VISIBLE while nothing is selected (empty is a separate state, not the value "no"). NEVER `hiddenifcomp="0"` (MANDATORY, hidden when the field HAS any value) — it hides even when "Ja"/"yes" is chosen. NEVER `hiddenifcomp="9"` (EMPTY) alone — it hides only the empty state, not the opposite option. The option's value is read from the FORM ELEMENTS list (e.g. `{text:"Ja", value:"Ja"}` / `{text:"Ja", value:"yes"}`). PLACEMENT — the condition goes DIRECTLY on the field itself; do NOT create a wrapping container just to hold the show/hide condition when the prompt did not ask for one. If a container ALREADY exists around the field, the condition must be placed on that CONTAINER (otherwise the empty container remains visible and the field still shows). The backend safety net moves a field-level `hiddenif` onto its single-child wrapping container when the AI creates one (observed 2026-08-30: the AI wrapped the upload in `coUploadConditional` unprompted and put the condition on the XUpload, leaving the container visible).
 
+- [ ] **HTML.Text.Mapper wiring (fixed 2026-09-04):** every element with `data-cb-func="HTML.Text.Mapper"` MUST set `data-cb-property` to the RUNTIME property receiving the mapped text — `"innerHTML"` on an XSpan (its template text is stored in the XSpan's Formcycle `rtevalue` property) and `"value"` on an XTextArea / XTextField (template stored in its Formcycle `value` property). A mapper element WITHOUT `data-cb-property`, or with `data-cb-property="rtevalue"`, is a FAIL — `rtevalue` is only the Formcycle JSON storage key of an XSpan's content, NOT a runtime DOM property of the rendered element.
+
 **Global checks for every whole-workflow scenario:**
 - [ ] Details request lists every trigger **and** node used (incl. condition/loop/container nodes).
 - [ ] Single lane → single JSON object; multiple independent lanes → array of objects; each with `taskName`, `taskDescription`, `triggerType`, `triggerParams`, `nodeType`, `nodeParams`, `endpointState`, `endpointType`.
@@ -436,9 +438,9 @@ mapping the EP's returned object's properties into the template.
 > and e-mail address.
 
 **Verify:**
-- [ ] The person-search EP is resolved correctly: `data-cb-replacements="{ BayVIS.Ansprechpartner.Details > ... ; <property> }"` (with `{ I > 0 ; { BayVIS.Ansprechpartner.ID > ... } }` / `{ V > <NAME> }` as needed) — the EP is correct and feeds the mapper's `data-cb-replacements`.
+- [ ] The person-search EP resolves the person's ONE detail OBJECT — `data-cb-replacements="{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > <name> } } }"` (or `{ BayVIS.Ansprechpartner.Details > { V > <NAME> } }` when the id is in a global variable) — WITHOUT a trailing `; <property>` (the mapper needs the whole OBJECT, not an extracted string) — the EP is correct and feeds the mapper's `data-cb-replacements`.
 - [ ] `data-cb-func="HTML.Text.Mapper"` with `data-cb-replacements` + `data-cb-property` (value/rtevalue).
-- [ ] The field's **TEXT TEMPLATE** uses the mapper's `[(property)]` placeholder syntax naming the **ACTUAL properties of the EP's result object** (from its TSDoc — a property name wrapped in `[(...)]`, e.g. `[(name)] [(vorname)] [(nachname)] [(mail)]`) inside the field's own content property (value/rtevalue).
+- [ ] The field's **TEXT TEMPLATE** uses the mapper's `[(property)]` placeholder syntax naming the **ACTUAL properties of the person's Details object** (from its TSDoc — a property name wrapped in `[(...)]`, e.g. `[(vorname)] [(nachname)] [(email)] [(zimmer)]` and the phone parts `[(apTelefonDurchwahl)]` ...) inside the field's own content property (rtevalue on an XSpan / value on an XTextArea, with the matching `data-cb-property`).
 - [ ] **FAIL if any of:** the template contains the standard injector placeholder `[[INJECTOR_REPLACEMENT]]`, a bare raw EP string, or a generic literal — the requested "details" MUST be rendered as `[(property)]` placeholders referencing the EP object's properties, NOT the standard placeholder.
 
 **Known trap (2026-08-31, root cause fixed in the CodBi prompt wiring docs):** the AI correctly
@@ -496,6 +498,38 @@ the container's first real field.
 **Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS07b. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und die Reihenfolge im `elements`-Array.
 
 **Verification prompt to copy (EN):** Check the current form against the FS07b `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and the ORDER of the `elements` array.
+
+### FS07c — BayVIS header contact block of an employee with ONE HTML.Text.Mapper
+
+**Elements covered:** HTML.Text.Mapper, BayVIS.Ansprechpartner.Details (the person's Details EP),
+one display XSpan/XTextArea in the header (the employee's name + phone + e-mail).
+
+**Prompt (DE):**
+> Ich brauch links oben im header die Bayvis Kontaktdaten und den Namen des Mitarbeiter
+> Salvatore Callari.
+
+**Prompt (EN):**
+> I need the BayVIS contact data and the name of the employee Salvatore Callari top-left in the
+> header.
+
+**Verify:**
+- [ ] EXACTLY ONE display element (an XSpan in the header — or an XTextArea) wired with `data-cb-func="HTML.Text.Mapper"` — NOT several `HTML.Text.Injector` elements, one per value (e.g. `{ BayVIS.Behoerden.Details > ... } ; phone`, `; email`, `; name`, ...) — each Injector would re-resolve its own EP replacement in its own pass.
+- [ ] `data-cb-property` is REQUIRED on the mapper element and set to the RUNTIME property receiving the mapped text: `"innerHTML"` on an XSpan (template stored in its Formcycle `rtevalue`) / `"value"` on an XTextArea or XTextField (template stored in its Formcycle `value`). A mapper element without `data-cb-property` or with `data-cb-property="rtevalue"` is a FAIL.
+- [ ] NO `BayVIS.Behoerden.*` EP anywhere when the prompt names no Behörde/authority — this request names only the person Salvatore Callari; "BayVIS" is the SYSTEM (data source), not an authority, so a `{ BayVIS.Behoerden.ID > Bayvis }` chain is a FAIL (it is fabricated and cannot resolve).
+- [ ] `data-cb-replacements` fetches the EMPLOYEE's ONE detail object — `data-cb-replacements="{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } }"` — NO `Data.Join`, because the requested name + phone + e-mail ALL live on that single person object. NEVER `BayVIS.Behoerden.Details` for a person's phone/e-mail (the authority object has NO phone and NO postal address).
+- [ ] The single text template (the element's OWN content property value/rtevalue via `data-cb-property`) holds EVERY requested value as a `[(property)]` placeholder naming a REAL property of the person object (e.g. `[(vorname)] [(nachname)]`, `[(email)]`, phone composed from `0[(apTelefonOrtsvorwahl)] [(apTelefonDurchwahl)]`) — NEVER a non-existent `[(phone)]`/`[(telefon)]` (the phone is split into `apTelefonLandvorwahl` / `apTelefonOrtsvorwahl` / `apTelefonAnlage` / `apTelefonDurchwahl`); no `[[INJECTOR_REPLACEMENT]]`, no raw EP string, no `data-cb-Template` attribute.
+- [ ] NO invented/hard-coded literal contact data: the address/e-mail/phone spans must NOT contain made-up text like `"Bayvis Straße 1, 12345 Musterstadt"`, `"kontakt@bayvis.de"`, `"+49 30 12345678"` — every BayVIS-derived contact value must be wired to the person's EP (`{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } }`) and rendered via `HTML.Text.Mapper` `[(property)]` placeholders (`[(email)]` / the `apTelefon*` phone parts). A contact span filled with invented literal data is a FAIL.
+- [ ] The element is placed in the header: listed in the header's `elements` array with matching `parentid`; no orphan; no value duplicated across several spans.
+
+**Known trap (2026-09-04, root cause fixed in the CodBi prompt wiring docs + generated compact API):** for "links oben im header die Bayvis Kontaktdaten und den Namen des Mitarbeiter Salvatore Callari" the AI emitted FOUR XSpan elements, each wired with `HTML.Text.Injector` re-fetching one property, and — worse — pulled the values from the WRONG source: it read `address`/`email`/`phone` from `BayVIS.Behoerden.Details` and `name` from `BayVIS.Ansprechpartner.Details`. The requested "Kontaktdaten" belong to the EMPLOYEE (Salvatore Callari): his name, e-mail and phone ALL live on `BayVIS.Ansprechpartner.Details` (verified in the BayVIS EP source/TSDoc — properties vorname, nachname, email, zimmer, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId, apEmail and the phone parts apTelefonLandvorwahl / apTelefonOrtsvorwahl / apTelefonAnlage / apTelefonDurchwahl); `BayVIS.Behoerden.Details` is authority metadata (bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, ...) and has NO phone/postal address. A person's phone is NOT a single `[(phone)]` property — there is no phone/telefon placeholder, only the four `apTelefon*` parts. Correct wiring = ONE `HTML.Text.Mapper` element with `data-cb-replacements="{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } }"` (single object → NO `Data.Join`), `data-cb-property` set (innerHTML on an XSpan / value on a text field), and a template holding the real `[(vorname)] [(nachname)] [(email)]` plus the phone built from the `apTelefon*` placeholders → ONE resolution instead of four.
+
+**Known trap 2 (2026-09-04 evening, root cause fixed in the CodBi prompt wiring docs + generated compact API):** even after the first fix the AI still emitted FOUR separate mapper spans and — although the prompt names NO Behörde — wired three of them to a fabricated `BayVIS.Behoerden.Details` with the invented authority name "Bayvis" (`data-cb-replacements="{ BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Bayvis } } }"`, placeholders `[(adresse)]`, `[(email)]`, `[(telefon)]`). "Bayvis" in the user's sentence is just the SYSTEM name ("die BayVIS-Kontaktdaten" = contact data from the BayVIS system), never an authority name — `BayVIS.Behoerden.ID > Bayvis` cannot resolve, and the Behoerden Details object has no `adresse`/`telefon` properties anyway (only metadata; the person's e-mail is `[(email)]` and the phone is the `apTelefon*` parts). Correct behavior: person-only request (no Behörde named) → ONLY `BayVIS.Ansprechpartner.Details` (single fetch), real person placeholders, and no `BayVIS.Behoerden.*` EP.
+
+**Known trap 3 (2026-09-05, root cause fixed in the CodBi prompt wiring docs + generated compact API):** told not to use `BayVIS.Behoerden.Details` and no longer inventing the authority, the AI over-corrected and simply hard-coded FAKE literal contact data into the three "Kontaktdaten" spans — `rtevalue="Bayvis Straße 1, 12345 Musterstadt"`, `rtevalue="kontakt@bayvis.de"`, `rtevalue="+49 30 12345678"` — while only the name span was actually wired (`HTML.Text.Mapper` → `BayVIS.Ansprechpartner.Details`). This is useless because it does not resolve the person's real data at runtime. Correct behavior: EVERY BayVIS-derived contact value of the employee (e-mail → `[(email)]`/`[(apEmail)]`, phone → the `apTelefon*` parts, name → `[(vorname)] [(nachname)]`) is obtained from the person's ONE `{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } }` and mapped with real `[(property)]` placeholders — never written as invented literal text.
+
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS07c. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
+
+**Verification prompt to copy (EN):** Check the current form against the FS07c `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
 
 ### FS08 — Autocomplete, cropper and print layout (CSS-class heavy)
 
@@ -592,6 +626,59 @@ Holistic.Media.Input.Speech.Whisper, CodBi_XCL_Speech, DQ.Table.View (already pr
 **Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS10. Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse — prüfe die tatsächlichen Elemente, `className`, Attribute und `data-cb-*`-Werte.
 
 **Verification prompt to copy (EN):** Check the current form against the FS10 `Verify:` checklist above. Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results — inspect the actual elements, `className`, attributes and `data-cb-*` values.
+
+### FS11 — Translate the whole form into English (per-language `properties.i18n`)
+
+**Elements covered:** any widget with user-visible text — XTextField, XFieldSet legend, XSelect options,
+XButtonList buttons, XSpan text, XTextArea placeholder, XCheckbox, repeatable container add/delete text.
+
+> Prerequisite: run against a form whose base/default language is German (German `label`s inline).
+> This scenario verifies the per-language translation mechanism — the form stays German by default and
+> gets English as a *translation layer*, exactly like typing the translation manually in the designer
+> while the Form language selector is set to English.
+
+**Prompt (DE):**
+> Übersetze das gesamte Formular ins Englische. Die deutschen Beschriftungen sollen erhalten bleiben —
+> füge nur die englischen Übersetzungen als Sprach-Felder hinzu (so wie wenn ich im Designer die
+> Formularsprache auf Englisch stelle und die Übersetzung eintrage).
+
+**Prompt (EN):**
+> Translate the whole form into English. Keep the German labels as they are — only add the English
+> translations as the per-language fields (like entering them manually in the designer with the form
+> language set to English).
+
+**Verify (the form JSON returned by the assistant):**
+- [ ] Every element's base-language value stays byte-for-byte identical: `label`/`legend`/`placeholder`/
+      `rtevalue` etc. still hold the GERMAN text — the AI must NOT have replaced them with English.
+- [ ] Every element that has user-visible text carries a translation map: `"properties"."i18n": { "en": { "label": "<English>", ... } }`
+      (e.g. `{ "name": "tfVorname", "label": "Vorname", "i18n": { "en": { "label": "First name" } } }`).
+- [ ] XSelect options: the `options` array is unchanged (`text`/`value` still German) AND each option
+      object got `"i18n": { "en": { "value": "<English option text>" } }`.
+- [ ] XButtonList buttons: `name`/`value`/`action` unchanged; each button object got
+      `"i18n": { "en": { "value": "<English>", "title": "<English>" } }`.
+- [ ] XFieldSet/XPage `legend`/`header` translated via `properties.i18n.en.legend`; XSpan `rtevalue`
+      via `properties.i18n.en.rtevalue`.
+- [ ] **Every consumer-visible text is covered**, not only labels: XPage `header` (page caption) +
+      `subheader` via `properties.i18n.en.header` / `.subheader`; XNavigationBar `options` step labels
+      per entry (`option.i18n.en.value`); XSelect options per entry (`option.i18n.en.value`);
+      XButtonList buttons per button (`button.i18n.en.value` / `.title`); checkbox/upload labels,
+      XImage `alt`/`title`, dynamic add/delete texts, help texts.
+- [ ] NEVER translated/renamed: every `name`/`id`, `parentid`, `elements` arrays, option `value`,
+      button `name`/`action`, `className`, `cssclasses` (incl. `CodBi_*`), `rowid`, and every
+      `data-cb-func`/`data-cb-*` NAME + TECHNICAL value (EP placeholders, `[%fieldName%]`, hiddenif…).
+- [ ] No elements added/removed/reordered; layout/conditions/functionality untouched.
+
+**In the designer (functional check):** after publishing, set the Form language selector to English →
+the property panel shows the English translations in the translatable editors and the preview shows
+English; set it back to the default language → German labels appear again (base text intact).
+
+**Backend-merge check:** translate the SAME form first to English (FS11) and later to French — the
+English `i18n.en` entries must survive (only `i18n.fr` is added), i.e. the merge in
+`restoreStrippedFields`/`mergeItemI18n` preserves the other languages.
+
+**Verification prompt to copy (DE):** Prüfe das aktuelle Formular anhand der obigen `Verify:`-Checkliste von FS11 (per-language `properties.i18n.en`, Optionen/Buttons per-Objekt-`i18n`, Basis-Sprache unverändert). Bewerte jeden Punkt als `✅ PASS` oder `❌ FAIL`; nenne bei jedem Fehlschlag das Erwartete und das tatsächlich Erzeugte; biete an, die Fehler sofort zu korrigieren. Erfinde keine Ergebnisse.
+
+**Verification prompt to copy (EN):** Check the current form against the FS11 `Verify:` checklist above (per-language `properties.i18n.en`, per-option/per-button `i18n`, base language unchanged). Mark each item `✅ PASS` / `❌ FAIL`; for each failure state the expected vs. the actually generated value; offer to fix them right away. Don't invent results.
 
 ---
 
@@ -1055,3 +1142,55 @@ Reuse the checklist from [`form-assistant-prompt-testing-plan.md`](form-assistan
 For each scenario record: prompt language, details-request present?, details list complete (all
 widgets/triggers/nodes), final JSON valid?, required params present?, structure correct (nesting /
 lanes / order)?, PASS/FAIL + snippet. Re-run after any prompt change (regression).
+
+---
+
+## FS12 — Translate the whole form AND multilingualize its consumer mails (FC_SWITCH on `[%lang%]`)
+
+Cross-cutting scenario for the whole-form translation feature (base form already has a submit lane
+that sends a confirmation mail to the consumer's email field `[%tfMail%]` AND an internal/admin error
+mail to a static address). **Run with an existing workflow version that contains the consumer mail
+lane** so the multilingualize pass has a lane to wrap.
+
+> **Context (verify first, do NOT change the workflow structure by hand):** the form is currently
+> German (base language `de`). Its submit workflow sends a German confirmation mail `Bestätigung` to
+> `[%tfMail%]` on submit (lane: FC_FORM_SUBMIT_BUTTON → FC_EMAIL → FC_CHANGE_STATE „Empfangen") and,
+> on error, an internal mail `Fehler` to `admin@example.de` (trigger FC_CATCH_ERROR). The form has an
+> XLanguageSwich with `de`.
+
+**Prompt (DE):**
+> Übersetze das gesamte Formular ins Englische. Danach sollen auch die E-Mails, die das Formular an
+> den Kunden sendet, in der Sprache versendet werden, in der der Kunde das Formular ausgefüllt hat.
+
+**Prompt (EN):**
+> Translate the whole form into English. Afterwards the mails the form sends to the customer should
+> also be sent in the language the customer filled out the form in.
+
+**Verify (form side):**
+- [ ] The form JSON now carries the per-language translations for `en` (`properties.i18n[en]`,
+      per-option/per-button `i18n`, page header/subheader, navbar options, labels, placeholders,
+      help texts) and the base German texts are unchanged (see FS11 checklist).
+- [ ] The form-AI output contained the structured marker `"_workflowMailLanguages": ["de","en"]`
+      (base language first), and the marker is NOT part of the saved form (server strips it).
+- [ ] `_codbiApplicability.codbiVerdict = "none"` is present (no second CodBi pass).
+- [ ] No field was added/removed/reordered; no submit button was added by the multilingualize step.
+
+**Verify (workflow side — the multilingualize pass):**
+- [ ] The consumer mail node (recipient `[%tfMail%]`) was converted into an `FC_SWITCH` with
+      `switchValue = "[%lang%]"`, sitting at the SAME position in the lane.
+- [ ] The switch has an `FC_SWITCH_CASE` for `de` AND one for `en` (case value = the language code,
+      `matchCondition EQUAL`), plus a trailing `FC_SWITCH_DEFAULT`.
+- [ ] The `de` case and the default branch contain the ORIGINAL German confirmation mail
+      (subject `Bestätigung`); the `en` case contains a translated clone (English subject/body,
+      same `to = [%tfMail%]`, `from`, placeholders).
+- [ ] The nodes that followed the mail in the lane (e.g. the state change / endpoint) are still
+      AFTER the switch — the lane continues unchanged, no new lane/trigger/endpoint was created.
+- [ ] The internal error mail to `admin@example.de` was NOT wrapped (admin/error mail out of scope).
+- [ ] Running the form once in German sends the German mail; filling it in English sends the English
+      mail (record language drives `[%lang%]`).
+
+**Verification prompt to copy (EN):** Check the current form AND its workflow against the FS12
+`Verify:` checklists above (form side and workflow side). Mark each item `✅ PASS` / `❌ FAIL`; for
+each failure state the expected vs. the actually generated value; offer to fix them right away. Don't
+invent results — inspect the actual elements, the workflow nodes (types, customParameters, parent/
+child order, `switchValue`), and confirm `[%lang%]` is used as the switch value.

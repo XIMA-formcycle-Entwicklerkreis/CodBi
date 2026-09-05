@@ -669,6 +669,10 @@ class AICodBiAssistant : IPluginServletAction {
     var resolvedFormJson: String? = null
     var workflowVersionId: Long? = null
     var workflowNodes: JsonArray? = null
+    // Whole-form translation → multilingual workflow mails: the form AI signals this with the
+    // structured top-level "_workflowMailLanguages" marker (see the extraction in the form block
+    // below). Declared here so the multilingualize pass below (after the form block) can read it.
+    var workflowMailLanguages: List<String>? = null
     // True when the FORM AI explicitly signaled a full removal: the user asked (in ANY language /
     // phrasing) to delete all elements / empty the form, and the AI emitted the top-level
     // "_removeAll":true marker. The backend then keeps the structural skeleton (page/header/footer)
@@ -945,17 +949,62 @@ class AICodBiAssistant : IPluginServletAction {
       tokensIn += formTokenUsage.input
       tokensOut += formTokenUsage.output
       runTokens = tokensIn + tokensOut
+      // Whole-form translation → multilingual workflow mails. When the form AI decides a change is
+      // a
+      // whole-form translation of a MULTILINGUAL form, it signals this with the structured
+      // top-level
+      // marker "_workflowMailLanguages" — an array of the language codes the form now supports,
+      // base/
+      // default language first (see the whole-form-translation prompt rules). The marker is
+      // consumed
+      // here and stripped from the emitted form so handleRun can multilingualize the existing
+      // CONSUMER-facing workflow mails with an FC_SWITCH on the "[%lang%]" placeholder (see
+      // runWorkflowMailMultilingualization). Like "_codbiApplicability", this is an AI-declared,
+      // language-agnostic signal — never a server-side keyword guess of the request's intent.
+      workflowMailLanguages =
+          runCatching {
+                val probe = JsonParser.parseString(formJson)
+                if (!probe.isJsonObject) null
+                else {
+                  val marker = probe.asJsonObject.get("_workflowMailLanguages")
+                  if (marker?.isJsonArray != true) null
+                  else
+                      marker.asJsonArray
+                          .mapNotNull { el ->
+                            if (el.isJsonPrimitive && el.asJsonPrimitive.isString)
+                                el.asString.trim()
+                            else null
+                          }
+                          .filter { it.isNotEmpty() }
+                          .distinct()
+                          .ifEmpty { null }
+                }
+              }
+              .getOrNull()
+      var effectiveFormJson = formJson
+      if (workflowMailLanguages != null) {
+        effectiveFormJson =
+            runCatching {
+                  val o = JsonParser.parseString(formJson).asJsonObject
+                  o.remove("_workflowMailLanguages")
+                  gson.toJson(o)
+                }
+                .getOrDefault(formJson)
+        logger.info(
+            "[AICodBiAssistant] Whole-form translation signaled workflow mail multilingualization for languages: {}",
+            workflowMailLanguages.joinToString(", "))
+      }
       // Propagate a form-AI error response unchanged
-      val formParsed = runCatching { JsonParser.parseString(formJson) }.getOrNull()
+      val formParsed = runCatching { JsonParser.parseString(effectiveFormJson) }.getOrNull()
       if (formParsed?.isJsonObject == true && formParsed.asJsonObject.has("error")) {
-        return jsonResponse(formJson)
+        return jsonResponse(effectiveFormJson)
       }
       // If the AI answered with prose instead of form JSON, stop with a clean error instead of
       // embedding the prose into the response (which the frontend would then fail to parse).
       if (formParsed == null) {
         logger.warn("[AICodBiAssistant] Form AI returned non-JSON; aborting run")
         return jsonResponse(
-            """{"error":${gson.toJson("The AI did not return a valid form JSON: ${formJson.take(300)}")}}""")
+            """{"error":${gson.toJson("The AI did not return a valid form JSON: ${effectiveFormJson.take(300)}")}}""")
       }
       // "Remove everything" signal: the AI emits the top-level "_removeAll":true marker when the
       // user
@@ -977,7 +1026,7 @@ class AICodBiAssistant : IPluginServletAction {
       // Auto-resolve appointment plan names to UUIDs for XAppointment elements, neutralize
       // destructive SQL the AI may have placed into a button's customAction (form-level injection),
       // and keep the form's pages when the AI was asked to remove widgets/workflows (not pages).
-      val appointmentResolved = resolveAppointmentPlans(formJson)
+      val appointmentResolved = resolveAppointmentPlans(effectiveFormJson)
       val restoredJson =
           restorePagesUnlessRequested(
               sanitizeFormCustomActions(appointmentResolved), persistJson, prompt)
@@ -1041,15 +1090,15 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
-    // "Delete everything": the FORM AI signaled "_removeAll" (any language), so every workflow path
-    // (lane + trigger) is now orphaned — its trigger button and the referenced form fields are
-    // gone.
-    // Remove all workflow paths instead of leaving dead lanes behind. A "form"-classified run does
-    // not go through runWorkflowCreation, so this is the only place such paths get cleaned up. (The
-    // structural skeleton — first page, header, footer — is always kept by
-    // restorePagesUnlessRequested
-    // and must NOT block this cleanup.)
-    if (intent == "form" && removeAllRequested) {
+    // "Delete everything": the FORM AI signaled "_removeAll" (any language) — the user asked to
+    // empty/delete ALL content of the form. That orphans EVERY workflow path (lane + trigger: its
+    // trigger button and the referenced form fields are gone), so remove ALL workflow paths HERE,
+    // independent of the classified intent (form, both or workflow). For a full form reset the
+    // workflow-creation / submit-button phases below are additionally skipped (see the
+    // !removeAllRequested guards) — nothing new is built on top of an emptied form. (The structural
+    // skeleton — first page, header, footer — is always kept by restorePagesUnlessRequested and
+    // must NOT block this cleanup.)
+    if (removeAllRequested) {
       val wfVid = params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()
       if (wfVid != null) {
         try {
@@ -1065,12 +1114,56 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
+    // Whole-form translation → multilingual workflow mails (form-intent runs). The form AI signaled
+    // "_workflowMailLanguages" (see the marker extraction above). When the workflow version is
+    // known,
+    // run the dedicated multilingualize pass: it wraps every existing CONSUMER-facing FC_EMAIL /
+    // FC_DOI_INIT node into an FC_SWITCH that branches on the "[%lang%]" placeholder (one case per
+    // form
+    // language) — the ORIGINAL mail stays on the base-language and default branches, and a
+    // translated
+    // mail clone is generated for every other language. The pass uses the workflow-node API
+    // directly and
+    // NEVER creates a new lane/trigger/endpoint; nodes that follow the mail in the lane stay after
+    // the
+    // switch, so the lane continues unchanged. The form JSON itself is not modified further (a
+    // translation must not add form elements, so no submit-button auto-ensure runs here).
+    val mailLanguages = workflowMailLanguages
+    if (mailLanguages != null && !removeAllRequested) {
+      val wfVid = params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()
+      if (wfVid != null) {
+        try {
+          val wfMailMessage =
+              runWorkflowMailMultilingualization(
+                  prompt,
+                  mailLanguages,
+                  wfVid,
+                  params,
+                  modelId,
+                  instance,
+                  chatContext,
+                  clarificationContext,
+                  changeHistoryContext)
+          if (wfMailMessage.isNotBlank()) {
+            logger.info("[AICodBiAssistant] Workflow mail multilingualization: {}", wfMailMessage)
+            result.append(""","workflowMessage":${gson.toJson(wfMailMessage)}""")
+          }
+        } catch (e: Exception) {
+          logger.warn("[AICodBiAssistant] Workflow mail multilingualization failed: {}", e.message)
+          result.append(
+              ""","workflowMessage":${gson.toJson("Mail multilingualization failed: ${e.message}")}""")
+        }
+      }
+    }
+
     // Create the submit button BEFORE the workflow AI runs, so the AI sees it in the FORM ELEMENTS
     // and sets triggerParams.buttonName itself — the trigger is then bound to that button directly
     // at generation time (the cleaner order) instead of the workflow being created with an empty
     // buttonName and the trigger being fixed up afterwards. Applies to "workflow" (uses the persist
-    // the frontend always sends) and "both" (uses the freshly modified form).
-    if (intent == "workflow" || intent == "both") {
+    // the frontend always sends) and "both" (uses the freshly modified form). Skipped entirely for
+    // a
+    // full form reset (removeAllRequested): the workflows are removed, nothing is (re)created.
+    if (!removeAllRequested && (intent == "workflow" || intent == "both")) {
       val sourceForEnsure =
           resolvedFormJson
               ?: params.requestParameters["persist"]?.firstOrNull()?.takeIf { it.isNotBlank() }
@@ -1091,7 +1184,7 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
-    if (intent == "workflow" || intent == "both") {
+    if (!removeAllRequested && (intent == "workflow" || intent == "both")) {
       val workflowVersionIdStr =
           params.requestParameters["workflowVersionId"]?.firstOrNull()
               ?: return jsonResponse(
@@ -1472,6 +1565,9 @@ class AICodBiAssistant : IPluginServletAction {
     val userContent =
         "Instruction: $prompt$imageHint$clarificationInstruction\n\nCurrent form (IPersistJson):\n${slimPersistJson(persistJson)}" +
             "\n\nREMINDER: your response MUST include a top-level \"_codbiApplicability\" field as described in the system prompt.\n" +
+            "REMINDER 2: when the request is a WHOLE-FORM TRANSLATION that adds another language, your JSON MUST ALSO end with the " +
+            "top-level \"_workflowMailLanguages\": [\"<baseLanguageCode>\", \"<addedLanguageCode>\", ...] marker (base language first) " +
+            "and set \"_codbiApplicability.codbiVerdict\" to \"none\".\n" +
             "If the user asks to REMOVE/DELETE elements, OMIT them from \"items\" AND list their names in a " +
             "top-level \"_removedItems\": [\"elementName\", ...] array so the server removes them completely " +
             "(including any references in container \"elements\" arrays)."
@@ -1900,7 +1996,18 @@ class AICodBiAssistant : IPluginServletAction {
             val reason =
                 if (!hasApplicabilityField) "omitted _codbiApplicability entirely"
                 else "evaluated CodBi list but found no candidates â€” forcing blind evaluation"
-            if (jsonDeclaresNothingApplies(cleaned) || rawClaimsNothingApplies(rawResponse)) {
+            // A whole-form translation declares the top-level "_workflowMailLanguages" marker
+            // (model-declared, language-agnostic — like "_codbiApplicability"). A translation only
+            // ADDS per-language text fields and never a CodBi element, so the blind CodBi
+            // re-evaluation (which re-sends the whole large form and can exceed the model's output
+            // limit) must never run for it — even when the model omitted "_codbiApplicability"
+            // entirely (see the "AI omitted _codbiApplicability entirely" case below).
+            val declaresWholeFormTranslation =
+                rawResponse.contains("_workflowMailLanguages") ||
+                    cleaned.contains("_workflowMailLanguages")
+            if (declaresWholeFormTranslation ||
+                jsonDeclaresNothingApplies(cleaned) ||
+                rawClaimsNothingApplies(rawResponse)) {
               if (createdWidgets.isNotEmpty()) {
                 // The AI declared no CodBi element applies, but it created new Formcycle widgets
                 // in pass-1 whose exact JSON templates were never provided. Rebuild them via
@@ -1977,7 +2084,10 @@ class AICodBiAssistant : IPluginServletAction {
               .getOrDefault(restored)
       Triple(finalForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
     } catch (_: Exception) {
-      logger.warn("[AICodBiAssistant] Form AI returned unparseable response: {}", sanitizedCleaned)
+      logger.warn(
+          "[AICodBiAssistant] Form AI returned unparseable response ({} chars): {}",
+          sanitizedCleaned.length,
+          compactJsonForLog(sanitizedCleaned))
       Triple(
           """{"error":"AI returned invalid JSON","raw":${gson.toJson(sanitizedCleaned)}}""",
           null,
@@ -2730,15 +2840,29 @@ class AICodBiAssistant : IPluginServletAction {
           "script",
           "css",
           "formI18n",
-          "i18n",
           "backgroundcolor",
           "pdfImporterId",
+          // "formerProps" is the designer's internal "previous properties" snapshot (used for its
+          // change tracking/undo) — it is not form structure. It is large (it repeats almost every
+          // property), the AI does not need it, and models tend to echo it verbatim, roughly
+          // doubling every form payload (a real cause of truncated/invalid output on large forms).
+          // It is stripped from the slim payload and restored from the original item on the way
+          // back;
+          // new items simply start without it (the designer adds its own snapshot).
+          "formerProps",
           // Everything else — visibility/access control, print directives, sizing, number
           // formatting, input constraints, layout, conditional visibility, helptext, comment, and
           // the CodBi "attributes" (data-cb-*) — is intentionally KEPT in the slim JSON sent to
           // the AI so it sees the full existing configuration and preserves it when rebuilding the
           // form. Stale data-cb-* entries from a previous run are still purged from the attributes
           // array during the restore/normalization in restoreStrippedFields.
+          //
+          // NOTE: per-element "i18n" (properties.i18n[lang][prop] — the per-language element
+          // translations) is deliberately NOT stripped here. It is removed from the slim payload in
+          // slimPersistJson only (so a normal edit does not have to copy it), but the restore path
+          // keeps and MERGES any "i18n" the AI emits (see mergeItemI18n) so that a "translate the
+          // whole form into <language>" request can add per-language translations without losing
+          // the translations of the other languages.
       )
 
   /**
@@ -3102,6 +3226,13 @@ class AICodBiAssistant : IPluginServletAction {
       if (!el.isJsonObject) return@forEach
       val props = el.asJsonObject.getAsJsonObject("properties") ?: return@forEach
       for (key in STRIPPED_ITEM_PROPS) props.remove(key)
+      // Per-language element translations ("properties.i18n") are deliberately NOT sent to the AI:
+      // they are per-language display overrides, not form structure. The AI is told the format in
+      // the prompts and emits fresh "i18n" objects for "translate the whole form" requests; the
+      // restore path then merges them with the originals (see mergeItemI18n), so the translations
+      // of other languages are never lost. Not stripping here would also make the AI copy existing
+      // translations onto elements it rebuilds.
+      props.remove("i18n")
       val emptyKeys =
           props
               .entrySet()
@@ -3114,6 +3245,44 @@ class AICodBiAssistant : IPluginServletAction {
       for (key in emptyKeys) props.remove(key)
     }
     return gson.toJson(root)
+  }
+
+  /**
+   * Merges the per-language element translations the AI emitted ("properties.i18n") with the
+   * original item's translations. Formcycle stores per-language translations as
+   * `properties.i18n[<languageCode>][<property>]` (the plain properties keep the base-language
+   * text). A "translate the whole form into <language>" request makes the AI add such an "i18n"
+   * object for the requested language; merging it into the ORIGINAL i18n guarantees that the
+   * translations of every OTHER language (and any property the AI did not touch) are preserved
+   * instead of being overwritten/dropped by the generic stripped-field restore.
+   *
+   * @param resultProps The AI result item's `properties` object (mutated in place).
+   * @param origProps The original item's `properties` object.
+   */
+  private fun mergeItemI18n(resultProps: JsonObject, origProps: JsonObject) {
+    val aiI18n = resultProps.get("i18n")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+    val origI18nEl = origProps.get("i18n")
+    val merged =
+        if (origI18nEl != null && origI18nEl.isJsonObject) origI18nEl.asJsonObject.deepCopy()
+        else JsonObject()
+    for ((lang, langValue) in aiI18n.entrySet()) {
+      if (!langValue.isJsonObject) {
+        // A non-object per-language value is kept verbatim (never corrupt structure).
+        merged.add(lang, langValue.deepCopy())
+        continue
+      }
+      val langObj =
+          merged.get(lang)?.takeIf { it.isJsonObject }?.asJsonObject
+              ?: JsonObject().also { merged.add(lang, it) }
+      for ((prop, propValue) in langValue.asJsonObject.entrySet()) {
+        langObj.add(prop, propValue.deepCopy())
+      }
+    }
+    if (merged.size() == 0) {
+      resultProps.remove("i18n")
+    } else {
+      resultProps.add("i18n", merged)
+    }
   }
 
   /**
@@ -3390,6 +3559,10 @@ class AICodBiAssistant : IPluginServletAction {
         for (entry in origProps.entrySet()) {
           if (!resultProps.has(entry.key)) resultProps.add(entry.key, entry.value)
         }
+        // Merge any per-language translations the AI emitted ("properties.i18n") into the
+        // original item's translations so other languages and untouched properties survive a
+        // "translate the whole form into <language>" request.
+        mergeItemI18n(resultProps, origProps)
         // For XButtonList: restore original action for each existing button by name, since
         // action objects were stripped from slimPersistJson to prevent copy-paste errors.
         // New buttons (no matching name in original) keep the AI's generated action.
@@ -5911,7 +6084,9 @@ class AICodBiAssistant : IPluginServletAction {
       tokensIn += estimateTokens(retryMessagesJson)
       tokensOut += estimateTokens(retryRaw)
       val retryCleaned = extractJson(stripThinkTags(retryRaw))
-      logger.info("[AICodBiAssistant] Workflow AI retry raw response: {}", retryCleaned.take(300))
+      logger.info(
+          "[AICodBiAssistant] Workflow AI retry raw response: {}",
+          compactJsonForLog(retryCleaned).take(600))
       cleaned = retryCleaned
       safeCleaned = retryCleaned.replace("\$ROOT", "00000000-0000-0000-0000-000000000000")
       // The strict retry may answer with the VALID two-pass meta-request
@@ -6189,6 +6364,524 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] Workflow created: {} task(s) â€” {}", results.size, combinedResultFinal)
     return Triple(combinedResultFinal, nodeLog, TokenUsage(tokensIn, tokensOut))
+  }
+
+  /**
+   * Whole-form translation → multilingual workflow mails.
+   *
+   * Called from [handleRun] when the form AI signaled "_workflowMailLanguages" (a whole-form
+   * translation made the form multilingual) and a workflow version is known. Runs ONE focused AI
+   * call (prompt codbi.workflow_translate_instruction) that (a) picks the EXISTING consumer-facing
+   * FC_EMAIL / FC_DOI_INIT nodes from the workflow structure and (b) provides the subject/body
+   * translation for every non-base form language. Each chosen node is then wrapped (see
+   * [multilingualizeMailNode]) into an FC_SWITCH on the "[%lang%]" placeholder — the ORIGINAL mail
+   * stays on the base-language and default branches, the other branches get the translated clones.
+   * No new lane/trigger/endpoint is ever created; nodes that follow the mail in the lane stay after
+   * the switch, so the lane continues exactly as before.
+   */
+  private fun runWorkflowMailMultilingualization(
+      prompt: String,
+      languages: List<String>,
+      workflowVersionId: Long,
+      params: IPluginServletActionParams,
+      modelId: String,
+      instance: Standard,
+      chatContext: String?,
+      clarificationContext: String?,
+      changeHistoryContext: String?
+  ): String {
+    val langs = languages.filter { it.isNotBlank() }.distinct()
+    if (langs.isEmpty()) return ""
+    val userContext = getUserContext(params)
+    val workflowJson =
+        buildWorkflowStructureContext(workflowVersionId, userContext)
+            ?: run {
+              logger.warn(
+                  "[AICodBiAssistant] No workflow context for mail multilingualization (workflowVersion {}).",
+                  workflowVersionId)
+              return ""
+            }
+    val instruction =
+        loadPromptWithClasspathFallback("codbi.workflow_translate_instruction")
+            ?: run {
+              logger.warn(
+                  "[AICodBiAssistant] No codbi.workflow_translate_instruction prompt available — skipping mail multilingualization.")
+              return ""
+            }
+    val baseLanguage = langs.first()
+
+    // Condensed candidate list: ONLY the FC_EMAIL / FC_DOI_INIT mail nodes (id, name, type,
+    // params).
+    // Feeding the whole workflow tree to the model invites it to ECHO the workflow back instead of
+    // answering the small mails payload (observed live: the model returned the full ~36 KB workflow
+    // as its reply, so no switch node was created).
+    //
+    // Whether a mail is consumer-facing is decided by the AI itself (a server-side filter can never
+    // cover every way a mail is destined to the consumer or an internal office): the model must
+    // return an explicit "toConsumer" verdict for EVERY candidate node, and only the nodes the
+    // model
+    // marks true are multilingualized.
+    fun collectMailCandidates(el: JsonElement, out: JsonArray) {
+      if (!el.isJsonObject) return
+      val o = el.asJsonObject
+      val nodeType = o.get("type")?.asString ?: ""
+      if (nodeType == "FC_EMAIL" || nodeType == "FC_DOI_INIT") {
+        val id = o.get("id")?.asString ?: ""
+        if (id.isNotBlank()) {
+          val node = JsonObject()
+          node.addProperty("targetNodeId", id)
+          node.addProperty("name", o.get("name")?.asString ?: "")
+          node.addProperty("type", nodeType)
+          node.addProperty("description", o.get("description")?.asString ?: "")
+          val cp = o.get("customParameters")
+          if (cp != null) node.add("customParameters", cp)
+          out.add(node)
+        }
+      }
+      o.get("children")
+          ?.takeIf { it.isJsonArray }
+          ?.asJsonArray
+          ?.forEach { c -> collectMailCandidates(c, out) }
+      // The workflow structure nests each task's node tree under the task's "rootNode" (SEQUENCE /
+      // action tree), not under a task-level "children" array — descend into it too, otherwise no
+      // FC_EMAIL/FC_DOI_INIT node is ever found (observed: "no FC_EMAIL/FC_DOI_INIT node found").
+      o.get("rootNode")?.takeIf { it.isJsonObject }?.let { collectMailCandidates(it, out) }
+    }
+    val mailCandidates = JsonArray()
+    try {
+      val root = JsonParser.parseString(workflowJson)
+      if (root.isJsonArray) root.asJsonArray.forEach { collectMailCandidates(it, mailCandidates) }
+      else if (root.isJsonObject) collectMailCandidates(root.asJsonObject, mailCandidates)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not collect workflow mail candidates: {}", e.message)
+    }
+    if (mailCandidates.size() == 0) {
+      logger.info(
+          "[AICodBiAssistant] Mail multilingualization: no FC_EMAIL/FC_DOI_INIT node found - nothing to wrap.")
+      return ""
+    }
+    val candidateIds =
+        mailCandidates
+            .mapNotNull { el ->
+              if (el.isJsonObject) {
+                el.asJsonObject.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+              } else {
+                null
+              }
+            }
+            .filter { it.isNotBlank() }
+    val candidatesJson = gson.toJson(mailCandidates)
+    logger.info(
+        "[AICodBiAssistant] Mail multilingualization candidates ({} mail node(s)): {}",
+        mailCandidates.size(),
+        compactJsonForLog(candidatesJson))
+
+    val system = buildString {
+      append(instruction)
+      append("\n\n")
+      append("FORM LANGUAGES (exact language codes; base language first): ")
+      append(langs.joinToString(", "))
+      append(". BASE language '")
+      append(baseLanguage)
+      append("' keeps the ORIGINAL mail text — provide translations ONLY for the other languages.")
+      append(
+          "\n\nCANDIDATE MAIL NODES (JSON) - every FC_EMAIL/FC_DOI_INIT mail node of the workflow. For EACH node decide whether it is CONSUMER-facing and reply with an entry for EVERY node (see the required reply schema below):\n")
+      append(candidatesJson)
+      append(
+          "\n\nOUTPUT RULE: reply with ONLY this JSON - one 'mails' entry per candidate node, no omissions, nothing else:\n" +
+              "{\"mails\":[{\"targetNodeId\":\"<node id from CANDIDATE MAIL NODES>\",\"toConsumer\":true,\"translations\":{\"<languageCode>\":{\"subject\":\"<translated subject>\",\"body\":\"<translated HTML body>\"}}},{\"targetNodeId\":\"<node id>\",\"toConsumer\":false,\"translations\":{}}]}\n" +
+              "'toConsumer' is true ONLY when the mail is sent to the CONSUMER (the person who filled the form): a DOI invitation, or an email addressed to the submitter whose content is a confirmation/invitation/receipt FOR them. It is false for internal/back-office notifications, operator error/alert mails and admin copies — even when such a mail is configured with the submitter's email field as recipient; judge by intent (who reads it and why), never by the recipient string alone.\n" +
+              "Provide 'translations' ONLY for nodes with toConsumer=true (one entry per FORM LANGUAGE except the base language '$baseLanguage'); for toConsumer=false nodes 'translations' is empty {}.")
+    }
+    val contextSuffix =
+        listOfNotNull(
+                chatContext?.takeIf { it.isNotBlank() }?.let { "Earlier chat turns: $it" },
+                clarificationContext
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { "Clarification context: $it" },
+                changeHistoryContext?.takeIf { it.isNotBlank() }?.let { "Change history: $it" })
+            .joinToString("\n")
+    val userContent =
+        buildUserContent(
+            buildString {
+              append(prompt)
+              append(
+                  "\n\nClassify the workflow mail nodes (consumer-facing vs internal) and translate the consumer-facing ones for these form languages.")
+              if (contextSuffix.isNotBlank()) {
+                append("\n\n")
+                append(contextSuffix)
+              }
+            },
+            emptyList())
+    val messagesJson = buildString {
+      append("[")
+      append("""{"role":"system","content":${gson.toJson(system)}},""")
+      append("""{"role":"user","content":${gson.toJson(userContent)}}""")
+      append("]")
+    }
+    val raw = instance.performFormAssist(modelId, messagesJson)
+    var cleaned = extractJson(stripThinkTags(raw))
+    logger.info(
+        "[AICodBiAssistant] Workflow mail multilingualization AI response ({} chars): {}",
+        cleaned.length,
+        compactJsonForLog(cleaned).take(800))
+    fun parseMailTasks(text: String): JsonArray =
+        try {
+          val parsed = JsonParser.parseString(text)
+          when {
+            parsed.isJsonArray -> parsed.asJsonArray
+            parsed.isJsonObject -> {
+              val mails = parsed.asJsonObject.get("mails")
+              if (mails?.isJsonArray == true) mails.asJsonArray else JsonArray()
+            }
+            else -> JsonArray()
+          }
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] Could not parse mail multilingualization AI response: {}",
+              text.take(500))
+          JsonArray()
+        }
+    // The model decides which mails are consumer-facing (no server-side filter — a deterministic
+    // filter can never cover every way a mail is destined to the consumer). It must return an
+    // explicit "toConsumer" verdict for EVERY candidate node; only nodes marked true are wrapped.
+    fun entryVerdict(obj: JsonObject): Boolean? {
+      val v = obj.get("toConsumer")
+      return if (v?.isJsonPrimitive == true && v.asJsonPrimitive.isBoolean) v.asBoolean else null
+    }
+    fun missingVerdictIds(arr: JsonArray): List<String> {
+      val answered = HashSet<String>()
+      for (el in arr) {
+        if (!el.isJsonObject) continue
+        val o = el.asJsonObject
+        val id = o.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+        if (id.isNotBlank() && entryVerdict(o) != null) answered.add(id)
+      }
+      return candidateIds.filterNot { answered.contains(it) }
+    }
+    var mailTasks = parseMailTasks(cleaned)
+    var missing = missingVerdictIds(mailTasks)
+    if (mailTasks.size() == 0 || missing.isNotEmpty()) {
+      // The model ignored the output schema or omitted verdicts for some candidates. Retry ONCE
+      // with
+      // a strict corrective instruction; never fail the (already successful) form translation when
+      // this optional pass still yields no usable verdicts.
+      logger.warn(
+          "[AICodBiAssistant] Mail multilingualization reply missing toConsumer verdicts for {} candidate node(s) ({}) — retrying once with a strict schema instruction",
+          missing.size,
+          compactJsonForLog(cleaned).take(300))
+      val retryUser = buildString {
+        append("Your previous reply did not follow the required format.\n")
+        append("Reply with ONLY this JSON - nothing else:\n")
+        append(
+            "{\"mails\":[{\"targetNodeId\":\"<node id from CANDIDATE MAIL NODES>\",\"toConsumer\":true|false,\"translations\":{}}]}\n")
+        append("Provide ONE 'mails' entry for EVERY node in CANDIDATE MAIL NODES (ids: ")
+        append(candidateIds.joinToString(", "))
+        append(")")
+        if (missing.isNotEmpty()) {
+          append(" — you MISSED a verdict for: ")
+          append(missing.joinToString(", "))
+        }
+        append(
+            ".\nSet 'toConsumer'=true ONLY for mails sent to the CONSUMER (the person who filled the form): DOI invitations, or emails to the submitter whose content is a confirmation/invitation/receipt FOR them. ")
+        append(
+            "It is false for internal/back-office notifications, operator error/alert mails and admin copies — even when the mail is configured with the submitter's email field as recipient; judge by intent (who reads it and why), never by the recipient string alone. ")
+        append(
+            "Provide 'translations' (subject/body per FORM LANGUAGE) ONLY for toConsumer=true nodes, into every language except the base language '$baseLanguage'; for toConsumer=false nodes set \"translations\":{}.")
+      }
+      val retryMessages = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(system)}},""")
+        append("""{"role":"user","content":${gson.toJson(retryUser)}}""")
+        append("]")
+      }
+      val retryRaw = instance.performFormAssist(modelId, retryMessages)
+      cleaned = extractJson(stripThinkTags(retryRaw))
+      logger.info(
+          "[AICodBiAssistant] Workflow mail multilingualization retry response ({} chars): {}",
+          cleaned.length,
+          compactJsonForLog(cleaned).take(800))
+      mailTasks = parseMailTasks(cleaned)
+      missing = missingVerdictIds(mailTasks)
+    }
+    if (mailTasks.size() == 0 || missing.isNotEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Mail multilingualization: AI did not return a toConsumer verdict for every candidate node - leaving the workflow unchanged.")
+      return ""
+    }
+    val consumerChosen = mutableListOf<String>()
+    for (el in mailTasks) {
+      if (!el.isJsonObject) continue
+      val o = el.asJsonObject
+      if (entryVerdict(o) == true) {
+        val id = o.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+        if (id.isNotBlank() && candidateIds.contains(id)) consumerChosen.add(id)
+      }
+    }
+    if (consumerChosen.isEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Mail multilingualization: the AI classified no candidate as consumer-facing - leaving the workflow unchanged.")
+      return ""
+    }
+    logger.info(
+        "[AICodBiAssistant] Mail multilingualization: AI marks {} mail node(s) as consumer-facing: {}",
+        consumerChosen.size,
+        consumerChosen.joinToString(", "))
+    val messages = mutableListOf<String>()
+    val handledNodeIds = mutableSetOf<String>()
+    for (el in mailTasks) {
+      if (!el.isJsonObject) continue
+      val obj = el.asJsonObject
+      if (entryVerdict(obj) != true)
+          continue // wrap ONLY the nodes the AI itself marked consumer-facing
+      val targetId =
+          obj.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+      if (!candidateIds.contains(targetId)) continue
+      if (!handledNodeIds.add(targetId)) continue
+      val translations = linkedMapOf<String, JsonObject>()
+      val trEl = obj.get("translations")
+      if (trEl?.isJsonObject == true) {
+        for ((lang, v) in trEl.asJsonObject.entrySet()) {
+          if (lang.isBlank() || !v.isJsonObject) continue
+          translations[lang] = v.asJsonObject
+        }
+      }
+      if (translations.isEmpty()) continue
+      val result =
+          multilingualizeMailNode(workflowVersionId, targetId, langs, translations, userContext)
+      if (result.isNotBlank()) messages.add(result)
+    }
+    if (messages.isEmpty()) return ""
+    try {
+      touchWorkflowVersion(userContext, workflowVersionId)
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] touchWorkflowVersion after mail multilingualization failed: {}",
+          e.message)
+    }
+    return "Multilingualized consumer mails: " + messages.joinToString(" | ")
+  }
+
+  /**
+   * Wraps ONE existing FC_EMAIL / FC_DOI_INIT node in an FC_SWITCH on the "[%lang%]" placeholder.
+   *
+   * The mail node is converted IN PLACE into the FC_SWITCH (it keeps its position, parent and task,
+   * so the lane's continuation after it is untouched). One FC_SWITCH_CASE child is created per form
+   * language — the base-language case and the trailing FC_SWITCH_DEFAULT keep the ORIGINAL mail
+   * parameters verbatim, every other case gets a clone whose subject/body/senderName come from
+   * [translations]. Each case/default branch contains a SEQUENCE container with one mail node,
+   * mirroring how FC_SWITCH branches are created in createWorkflowTask. No new
+   * lane/trigger/endpoint is created. The default branch is created LAST because the switch
+   * executor falls back to the LAST child when no case matches.
+   */
+  private fun multilingualizeMailNode(
+      workflowVersionId: Long,
+      targetNodeId: String,
+      languages: List<String>,
+      translations: Map<String, JsonObject>,
+      userContext: Any
+  ): String {
+    val nodeId =
+        targetNodeId.trim().toLongOrNull() ?: return "Invalid target mail node id '$targetNodeId'."
+    try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val iTransferableEntityClass =
+          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+      val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
+      val workflowTaskClass = Class.forName("de.xima.fc.entities.WorkflowTask")
+      val getById =
+          workflowNodeApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId)
+              ?: return "WorkflowVersion $workflowVersionId not found for mail multilingualization."
+      val mailNode =
+          getById.invoke(workflowNodeApi, userContext, nodeId)
+              ?: return "WorkflowNode $nodeId not found — nothing to multilingualize."
+      val type = (mailNode.javaClass.getMethod("getType").invoke(mailNode) as? String) ?: ""
+      if (type != "FC_EMAIL" && type != "FC_DOI_INIT") {
+        return "Node $nodeId is '$type', not a consumer mail/DOI node — skipped."
+      }
+      val origName =
+          ((mailNode.javaClass.getMethod("getName").invoke(mailNode) as? String)?.trim()).orEmpty()
+      val origParams =
+          ((mailNode.javaClass.getMethod("getCustomParameters").invoke(mailNode) as? String))
+              .orEmpty()
+      val task =
+          mailNode.javaClass.getMethod("getTask").invoke(mailNode)
+              ?: return "Node $nodeId has no task — skipped."
+
+      // 1) Convert the mail node IN PLACE into the FC_SWITCH (keeps position/parent/task).
+      val switchName = sanitizeWorkflowName("Sprache: ${origName.ifBlank { "Mail" }}")
+      val switchSpec =
+          WorkflowTaskSpec(
+              taskName = switchName,
+              nodeType = "FC_SWITCH",
+              nodeParams = mapOf("switchValue" to "[%lang%]"))
+      val switchParams =
+          buildNodeParamsJsonWithIcon(switchSpec, workflowVersion, userContext, "FC_SWITCH")
+      workflowNodeClass.getMethod("setType", String::class.java).invoke(mailNode, "FC_SWITCH")
+      workflowNodeClass.getMethod("setName", String::class.java).invoke(mailNode, switchName)
+      if (switchParams != null) {
+        workflowNodeClass
+            .getMethod("setCustomParameters", String::class.java)
+            .invoke(mailNode, switchParams)
+        stampCustomParamsVersion(workflowNodeClass, mailNode)
+      }
+      workflowNodeApi.javaClass
+          .getMethod("update", ucClass, iTransferableEntityClass)
+          .invoke(workflowNodeApi, userContext, mailNode)
+      // Re-fetch so the new children attach to the persisted switch node.
+      val switchNode =
+          getById.invoke(workflowNodeApi, userContext, nodeId)
+              ?: return "Could not reload converted switch node $nodeId."
+      val createNode =
+          workflowNodeApi.javaClass.getMethod("create", ucClass, iTransferableEntityClass)
+      val langs = languages.filter { it.isNotBlank() }.distinct()
+      if (langs.isEmpty()) return "No languages for node $nodeId — skipped."
+      val baseLanguage = langs.first()
+
+      // Create a mail clone node (name/type/params) as a child of the given container.
+      fun createMailClone(parent: Any, mailName: String, mailParams: String): String {
+        val mail = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(mail, sanitizeWorkflowName(mailName))
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(mail, type)
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(mail, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(mail, UUID.randomUUID())
+        if (mailParams.isNotBlank()) {
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(mail, mailParams)
+          stampCustomParamsVersion(workflowNodeClass, mail)
+        }
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(mail, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(mail, parent)
+        val saved = createNode.invoke(workflowNodeApi, userContext, mail)
+        fixParentOrderIndex(saved, parent, userContext)
+        return "$type '${sanitizeWorkflowName(mailName)}'"
+      }
+
+      // Create a branch (FC_SWITCH_CASE/FC_SWITCH_DEFAULT) under the switch with a SEQUENCE
+      // container
+      // holding one mail clone — mirrors createWorkflowTask's FC_SWITCH branch structure.
+      fun createBranch(
+          branchType: String,
+          branchName: String,
+          branchParams: String,
+          mailName: String,
+          mailParams: String
+      ) {
+        val branch = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass.getMethod("setName", String::class.java).invoke(branch, branchName)
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(branch, branchType)
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branch, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(branch, UUID.randomUUID())
+        workflowNodeClass
+            .getMethod("setCustomParameters", String::class.java)
+            .invoke(branch, branchParams)
+        stampCustomParamsVersion(workflowNodeClass, branch)
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branch, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(branch, switchNode)
+        val savedBranch = createNode.invoke(workflowNodeApi, userContext, branch)
+        fixParentOrderIndex(savedBranch, switchNode, userContext)
+        val seq = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass.getMethod("setName", String::class.java).invoke(seq, "FcSequenceHandler")
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(seq, "SEQUENCE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(seq, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(seq, UUID.randomUUID())
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(seq, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(seq, savedBranch)
+        val savedSeq = createNode.invoke(workflowNodeApi, userContext, seq)
+        fixParentOrderIndex(savedSeq, savedBranch, userContext)
+        createMailClone(savedSeq, mailName, mailParams)
+      }
+
+      // 2) One FC_SWITCH_CASE per form language. The base-language case and the default fallback
+      // keep
+      //    the ORIGINAL mail verbatim; the other cases carry the translated clones.
+      var caseCount = 0
+      val wrappedLanguages = mutableListOf<String>()
+      for (lang in langs) {
+        val caseValueJson =
+            """{"caseValue":${gson.toJson(lang)},"matchCondition":"EQUAL","variableName":"C1"}"""
+        val caseParams =
+            """{"caseValues":[$caseValueJson],"combinationType":"OR","description":${gson.toJson("Sprache: $lang")}}"""
+        val isBase = lang == baseLanguage
+        val mailName =
+            if (isBase) origName.ifBlank { "Mail" } else "${origName.ifBlank { "Mail" }} ($lang)"
+        val mailParams =
+            if (isBase) origParams
+            else
+                translations[lang]?.let { applyMailTranslationParams(origParams, it) } ?: origParams
+        createBranch("FC_SWITCH_CASE", "FcSwitchCaseHandler", caseParams, mailName, mailParams)
+        wrappedLanguages.add(lang)
+        caseCount++
+      }
+      // 3) FC_SWITCH_DEFAULT branch LAST — the switch executor uses the LAST child when no case
+      //    matches, so the default (original mail) must come after all language cases.
+      createBranch(
+          "FC_SWITCH_DEFAULT",
+          "FcSwitchDefaultHandler",
+          "{}",
+          origName.ifBlank { "Mail" },
+          origParams)
+      logger.info(
+          "[AICodBiAssistant] Wrapped mail node {} into FC_SWITCH on [%lang%] — {} language case(s) + default",
+          nodeId,
+          caseCount)
+      return "wrapped $type '${origName.ifBlank { "Mail" }}' (#$nodeId) into FC_SWITCH on [%lang%] for " +
+          wrappedLanguages.joinToString(", ")
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] multilingualizeMailNode failed for node {}: {}",
+          targetNodeId,
+          e.message)
+      return "Mail multilingualization of node $targetNodeId failed: ${e.message}"
+    }
+  }
+
+  /**
+   * Returns the mail node's customParameters JSON with subject/body/senderName replaced by the AI
+   * translation, keeping every other parameter (to/from/attachments, DOI successPage/failurePage,
+   * placeholders) byte-for-byte. Falls back to the original params verbatim when the stored params
+   * are not editable JSON.
+   */
+  private fun applyMailTranslationParams(origParams: String, translation: JsonObject): String {
+    val params =
+        try {
+          JsonParser.parseString(origParams).asJsonObject
+        } catch (_: Exception) {
+          return origParams
+        }
+    translation
+        .get("subject")
+        ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+        ?.let { params.addProperty("subject", it.asString) }
+    translation
+        .get("body")
+        ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+        ?.let { params.addProperty("body", it.asString) }
+    val sender = translation.get("senderName")
+    if (sender != null) {
+      if (sender.isJsonPrimitive && sender.asJsonPrimitive.isString) {
+        params.addProperty("senderName", sender.asString)
+      } else if (sender.isJsonNull) {
+        params.remove("senderName")
+      }
+    }
+    return params.toString()
   }
 
   /**
@@ -13123,7 +13816,7 @@ class AICodBiAssistant : IPluginServletAction {
     }
     val raw = instance.performFormAssist(modelId, messagesJson)
     val cleaned = extractJson(stripThinkTags(raw)).trim()
-    logger.info("[AICodBiAssistant] Clarification check response: {}", cleaned)
+    logger.info("[AICodBiAssistant] Clarification check response: {}", compactJsonForLog(cleaned))
     if (cleaned.isBlank() || cleaned.equals("NO_CLARIFICATION", ignoreCase = true)) return null
     if (isNeedFormListRequest(cleaned)) return ClarificationCheck(needsFormList = true)
     val (wantsHistory, historyFormKey) = parseHistoryRequest(cleaned)

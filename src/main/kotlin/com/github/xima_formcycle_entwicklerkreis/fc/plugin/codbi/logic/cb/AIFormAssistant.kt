@@ -378,10 +378,13 @@ class AIFormAssistant : IPluginServletAction {
             throw e
           }
       val pass2Cleaned = extractJson(stripThinkTags(retryRaw))
-      logger.info("[AIFormAssistant] Pass-2 raw result: {}", pass2Cleaned)
+      logger.info(
+          "[AIFormAssistant] Pass-2 raw result ({} chars): {}",
+          pass2Cleaned.length,
+          compactJsonForLog(pass2Cleaned))
       // Splice into the form base (the original form when pass-1 was a details request) so new
       // widgets created in pass-2 are preserved in the returned form.
-      return splicePass2IntoPass1(formBase, pass2Cleaned)
+      return stripWorkflowMailLanguagesMarker(splicePass2IntoPass1(formBase, pass2Cleaned))
     }
 
     // Normalize _codbiApplicability before any extraction logic: the AI often puts
@@ -463,7 +466,18 @@ class AIFormAssistant : IPluginServletAction {
           val reason =
               if (!hasApplicabilityField) "omitted _codbiApplicability entirely"
               else "evaluated CodBi list but found no candidates — forcing blind evaluation"
-          if (jsonDeclaresNothingApplies(cleaned) || rawClaimsNothingApplies(withoutThinkTags)) {
+          // A whole-form translation declares the top-level "_workflowMailLanguages" marker
+          // (model-declared, language-agnostic — like "_codbiApplicability"). A translation only
+          // ADDS per-language text fields and never a CodBi element, so the blind CodBi
+          // re-evaluation (which re-sends the whole large form and can exceed the model's output
+          // limit) must never run for it — even when the model omitted "_codbiApplicability"
+          // entirely (see the "omitted _codbiApplicability entirely" reason above).
+          val declaresWholeFormTranslation =
+              withoutThinkTags.contains("_workflowMailLanguages") ||
+                  cleaned.contains("_workflowMailLanguages")
+          if (declaresWholeFormTranslation ||
+              jsonDeclaresNothingApplies(cleaned) ||
+              rawClaimsNothingApplies(withoutThinkTags)) {
             logger.info(
                 "[AIFormAssistant] AI declared/stated no CodBi element applies — skipping blind reconsideration ({})",
                 reason)
@@ -493,10 +507,31 @@ class AIFormAssistant : IPluginServletAction {
       val parsed = JsonParser.parseString(sanitizedCleaned)
       warnUnknownClassNames(parsed)
       val merged = restoreStrippedFields(sanitizedCleaned, persistJson)
-      jsonResponse(merged)
+      jsonResponse(stripWorkflowMailLanguagesMarker(merged))
     } catch (_: Exception) {
       jsonResponse(
           """{"error":"AI returned invalid JSON","raw":${gson.toJson(sanitizedCleaned)}}""")
+    }
+  }
+
+  /**
+   * Removes the top-level "_workflowMailLanguages" marker the form AI emits on a whole-form
+   * translation. This assistant has no workflow access to consume the marker (only the unified
+   * CodBi_AICodBiAssistant multilingualizes the workflow mails), so it must be stripped before the
+   * form is persisted — never store a server-instruction marker as a form property.
+   */
+  private fun stripWorkflowMailLanguagesMarker(formJson: String): String {
+    if (!formJson.contains("_workflowMailLanguages")) return formJson
+    return try {
+      val obj = JsonParser.parseString(formJson).asJsonObject
+      if (obj.has("_workflowMailLanguages")) {
+        obj.remove("_workflowMailLanguages")
+        gson.toJson(obj)
+      } else {
+        formJson
+      }
+    } catch (_: Exception) {
+      formJson
     }
   }
 
@@ -864,17 +899,30 @@ class AIFormAssistant : IPluginServletAction {
 
   /**
    * Item-level property keys that are always stripped from each item's `properties` object before
-   * sending to the AI. These are either styling/print directives, permission conditions, or
-   * per-item i18n overrides — none of which the AI needs to understand form structure.
+   * sending to the AI. These are styling/print directives, permission conditions, and the like —
+   * none of which the AI needs to understand form structure.
+   *
+   * NOTE: per-element "i18n" (properties.i18n[lang][prop] — the per-language element translations)
+   * is deliberately NOT in this set. It is removed from the slim payload in [slimPersistJson] only
+   * (so a normal edit does not have to copy it), but the restore path keeps and MERGES any "i18n"
+   * the AI emits (see [mergeItemI18n]) so a "translate the whole form into <language>" request can
+   * add per-language translations without losing the translations of the other languages.
    */
   private val STRIPPED_ITEM_PROPS =
       setOf(
           "script",
           "css",
           "formI18n",
-          "i18n",
           "backgroundcolor",
           "pdfImporterId",
+          // "formerProps" is the designer's internal "previous properties" snapshot (used for its
+          // change tracking/undo) — it is not form structure. It is large (it repeats almost every
+          // property), the AI does not need it, and models tend to echo it verbatim, roughly
+          // doubling every form payload (a real cause of truncated/invalid output on large forms).
+          // It is stripped from the slim payload and restored from the original item on the way
+          // back;
+          // new items simply start without it (the designer adds its own snapshot).
+          "formerProps",
           // Everything else — visibility/access control, print directives, sizing, layout (incl.
           // rowid), helptext, comment, and the CodBi "attributes" (data-cb-*) — is intentionally
           // KEPT in the slim JSON sent to the AI so it sees the full existing configuration and
@@ -943,6 +991,13 @@ class AIFormAssistant : IPluginServletAction {
       val props = el.asJsonObject.getAsJsonObject("properties") ?: return@forEach
       // Remove known-irrelevant keys
       for (key in STRIPPED_ITEM_PROPS) props.remove(key)
+      // Per-language element translations ("properties.i18n") are deliberately NOT sent to the AI:
+      // they are per-language display overrides, not form structure. The AI is told the format in
+      // the prompts and emits fresh "i18n" objects for "translate the whole form" requests; the
+      // restore path then merges them with the originals (see mergeItemI18n) so the translations
+      // of other languages are never lost. Not stripping here would also make the AI copy existing
+      // translations onto elements it rebuilds.
+      props.remove("i18n")
       // Remove remaining empty strings, empty arrays, and empty objects
       val emptyKeys =
           props
@@ -956,6 +1011,44 @@ class AIFormAssistant : IPluginServletAction {
       for (key in emptyKeys) props.remove(key)
     }
     return gson.toJson(root)
+  }
+
+  /**
+   * Merges the per-language element translations the AI emitted ("properties.i18n") with the
+   * original item's translations. Formcycle stores per-language translations as
+   * `properties.i18n[<languageCode>][<property>]` (the plain properties keep the base-language
+   * text). A "translate the whole form into <language>" request makes the AI add such an "i18n"
+   * object for the requested language; merging it into the ORIGINAL i18n guarantees that the
+   * translations of every OTHER language (and any property the AI did not touch) are preserved
+   * instead of being overwritten/dropped by the generic stripped-field restore.
+   *
+   * @param resultProps The AI result item's `properties` object (mutated in place).
+   * @param origProps The original item's `properties` object.
+   */
+  private fun mergeItemI18n(resultProps: JsonObject, origProps: JsonObject) {
+    val aiI18n = resultProps.get("i18n")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+    val origI18nEl = origProps.get("i18n")
+    val merged =
+        if (origI18nEl != null && origI18nEl.isJsonObject) origI18nEl.asJsonObject.deepCopy()
+        else JsonObject()
+    for ((lang, langValue) in aiI18n.entrySet()) {
+      if (!langValue.isJsonObject) {
+        // A non-object per-language value is kept verbatim (never corrupt structure).
+        merged.add(lang, langValue.deepCopy())
+        continue
+      }
+      val langObj =
+          merged.get(lang)?.takeIf { it.isJsonObject }?.asJsonObject
+              ?: JsonObject().also { merged.add(lang, it) }
+      for ((prop, propValue) in langValue.asJsonObject.entrySet()) {
+        langObj.add(prop, propValue.deepCopy())
+      }
+    }
+    if (merged.size() == 0) {
+      resultProps.remove("i18n")
+    } else {
+      resultProps.add("i18n", merged)
+    }
   }
 
   /**
@@ -1106,6 +1199,10 @@ class AIFormAssistant : IPluginServletAction {
         for (entry in origProps.entrySet()) {
           if (!resultProps.has(entry.key)) resultProps.add(entry.key, entry.value)
         }
+        // Merge any per-language translations the AI emitted ("properties.i18n") into the
+        // original item's translations so other languages and untouched properties survive a
+        // "translate the whole form into <language>" request.
+        mergeItemI18n(resultProps, origProps)
         // For XButtonList: restore original action for each existing button by name, since
         // action objects were stripped from slimPersistJson to prevent copy-paste errors.
         // New buttons (no matching name in original) keep the AI's generated action.

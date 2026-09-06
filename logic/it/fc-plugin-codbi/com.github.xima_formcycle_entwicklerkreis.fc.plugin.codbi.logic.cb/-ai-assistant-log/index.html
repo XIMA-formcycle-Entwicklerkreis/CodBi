@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>AiAssistantLog</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            fc-plugin-codbi
+                    </a>
+            </div>
+            <div class="library-version">
+            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter="fc-plugin-codbi/JVM">JVM</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="fc-plugin-codbi::com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/AiAssistantLog///PointingToDeclaration//967027945">
+  <div class="breadcrumbs"><a href="../../../index.html">fc-plugin-codbi</a><span class="delimiter">/</span><a href="../index.html">com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb</a><span class="delimiter">/</span><span class="current">AiAssistantLog</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>Ai</span><wbr></wbr><span>Assistant</span><wbr></wbr><span><span>Log</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">object </span><a href="index.html">AiAssistantLog</a></div><p class="paragraph">Persiste e carica il registro delle modifiche di ogni inferenza dell'assistente AI CodBi (modulo + flusso di lavoro).</p><p class="paragraph">Ogni &quot;Esecuzione&quot; riuscita di <a href="../-a-i-cod-bi-assistant/index.html">AICodBiAssistant</a> registra una riga nella tabella &quot;codbi_ai_assistant_log&quot; contenente il timestamp, la richiesta dell'utente, l'intento classificato, il modello utilizzato e un file strutturato Descrizione JSON delle modifiche applicate:</p><ul><li><p class="paragraph"><strong>form</strong> – <code class="lang-kotlin">{ &quot;widgetsCreated&quot;: [...], &quot;widgetsRemoved&quot;: [...], &quot;classesSet&quot;: [...], &quot;setattributi&quot;: [...] }</code>. Gli attributi CodBi <code class="lang-kotlin">data-cb-func</code> / <code class="lang-kotlin">data-cb-*</code> sono contrassegnati con <code class="lang-kotlin">kind: &quot;func&quot;</code> / <code class="lang-kotlin">kind: &quot;param&quot;</code> in modo che l'interfaccia utente possa visualizzarli come elementi speciali e apribili che rivelare i parametri CodBi utilizzati da una funzionalità.</p></li><li><p class="paragraph"><strong>flusso di lavoro</strong> – <code class="lang-kotlin">[ { &quot;name&quot;: &quot;...&quot;, &quot;nodeType&quot;: &quot;FC_EMAIL&quot;, &quot;params&quot;: {...} }, ... ]</code> dove ciascuno la voce descrive un nodo del flusso di lavoro e i parametri definiti per esso.</p></li></ul><p class="paragraph">Lo schema della tabella è gestito da CodbiEntities tramite &quot;db/changelog/codbi-ai-assistant-log-changelog.xml&quot;.</p></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="1758134916%2FFunctions%2F967027945" anchor-label="blockedSqlNodeLabels" id="1758134916%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="blocked-sql-node-labels.html"><span>blocked</span><wbr></wbr><span>Sql</span><wbr></wbr><span>Node</span><wbr></wbr><span><span>Labels</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1758134916%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="blocked-sql-node-labels.html"><span class="token function">blockedSqlNodeLabels</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">workflowChanges<span class="token operator">: </span><span data-unresolved-link="com.google.gson/JsonArray///PointingToDeclaration/">JsonArray</span><span class="token operator">?</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Estrae le etichette di tutti i nodi del flusso di lavoro la cui voce del registro delle modifiche è stata contrassegnata come bloccata istruzione SQL distruttiva (<code class="lang-kotlin">params.blockedSql == true</code>). Utilizzato dal frontend per eseguire il rendering di un file icona/messaggio di errore e per aprire automaticamente il registro delle modifiche dopo un'esecuzione SQL distruttiva generata.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="2102686849%2FFunctions%2F967027945" anchor-label="computeFormChanges" id="2102686849%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="compute-form-changes.html"><span>compute</span><wbr></wbr><span>Form</span><wbr></wbr><span><span>Changes</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2102686849%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="compute-form-changes.html"><span class="token function">computeFormChanges</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">beforeJson<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">afterJson<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="com.google.gson/JsonObject///PointingToDeclaration/">JsonObject</span></div><div class="brief "><p class="paragraph">Calcola una descrizione strutturata delle modifiche tra <a href="compute-form-changes.html">beforeJson</a> (il JSON persistente the frontend inviato prima dell'esecuzione dell'IA) e <a href="compute-form-changes.html">afterJson</a> (il formato modificato JSON restituito dall'IA).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="311254133%2FFunctions%2F967027945" anchor-label="extractFormKey" id="311254133%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="extract-form-key.html"><span>extract</span><wbr></wbr><span>Form</span><wbr></wbr><span><span>Key</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="311254133%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="extract-form-key.html"><span class="token function">extractFormKey</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">persistJson<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Estrazione ottimale del nome tecnico/chiave del modulo da un JSON persistente del modulo. Controlla il Prima l'oggetto &quot;metadata&quot; (Formcycle memorizza lì l'identità del modulo), quindi alcuni a livello root candidati. Restituisce &quot;null&quot; quando non viene trovato nulla o non è possibile analizzare il JSON.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="2114952972%2FFunctions%2F967027945" anchor-label="loadChangeHistoryForAi" id="2114952972%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="load-change-history-for-ai.html"><span>load</span><wbr></wbr><span>Change</span><wbr></wbr><span>History</span><wbr></wbr><span>For</span><wbr></wbr><span><span>Ai</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="2114952972%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="load-change-history-for-ai.html"><span class="token function">loadChangeHistoryForAi</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">emf<span class="token operator">: </span><span data-unresolved-link="javax.persistence/EntityManagerFactory///PointingToDeclaration/">EntityManagerFactory</span><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">formKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">limit<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator"> = </span><span class="token constant">20</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Carica le voci recenti del registro delle modifiche del modulo specificato (tra TUTTI gli utenti) come un JSON compatto array per l'inserimento del contesto AI. Utilizzato solo quando l'IA richiede esplicitamente la cronologia delle modifiche perché la richiesta dell'utente si riferisce a lavori precedenti (ad esempio &quot;applica lo stesso della settimana scorsa&quot;).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-827289648%2FFunctions%2F967027945" anchor-label="loadLogs" id="-827289648%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="load-logs.html"><span>load</span><wbr></wbr><span><span>Logs</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-827289648%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="load-logs.html"><span class="token function">loadLogs</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">emf<span class="token operator">: </span><span data-unresolved-link="javax.persistence/EntityManagerFactory///PointingToDeclaration/">EntityManagerFactory</span><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">formKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">limit<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-int/index.html">Int</a><span class="token operator"> = </span>DEFAULT_LIMIT<span class="token punctuation">, </span></span><span class="parameter ">username<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="brief "><p class="paragraph">Carica i record di inferenza più recenti ordinati dal più recente. Solo quando <a href="load-logs.html">formKey</a> non è vuoto vengono restituite le voci di quel modulo (utilizzate dalla finestra di dialogo del registro delle modifiche del designer per mostrare il registro del modulo attualmente in fase di modifica). Restituisce una stringa oggetto JSON <code class="lang-kotlin">{ &quot;entries&quot;: [...], &quot;totals&quot;: { &quot;tokensIn&quot;, &quot;tokensOut&quot;, &quot;costByCurrency&quot;: { &quot;&lt;currency&gt;&quot;: costo } } }</code>. Ogni voce ha la forma <code class="lang-kotlin">{ &quot;id&quot;, &quot;ts&quot;, &quot;formKey&quot;, &quot;prompt&quot;, &quot;intent&quot;, &quot;modelId&quot;, &quot;form&quot;: {...}, &quot;flusso di lavoro&quot;: [...] }</code>. I totali vengono derivati lato server dai token di input/output sommati per modello × il prezzo configurato per 1.000.000 di token (raggruppati per valuta), quindi il costo totale non dipende dalla somma dei costi per voce archiviati.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="991001958%2FFunctions%2F967027945" anchor-label="recordInference" id="991001958%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="record-inference.html"><span>record</span><wbr></wbr><span><span>Inference</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="991001958%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="record-inference.html"><span class="token function">recordInference</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">emf<span class="token operator">: </span><span data-unresolved-link="javax.persistence/EntityManagerFactory///PointingToDeclaration/">EntityManagerFactory</span><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">prompt<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">intent<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">modelId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">formKey<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">workflowVersionId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">formChanges<span class="token operator">: </span><span data-unresolved-link="com.google.gson/JsonObject///PointingToDeclaration/">JsonObject</span><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">workflowChanges<span class="token operator">: </span><span data-unresolved-link="com.google.gson/JsonArray///PointingToDeclaration/">JsonArray</span><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">tokensIn<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">tokensOut<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">cost<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-double/index.html">Double</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">currency<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">username<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">clarification<span class="token operator">: </span><span data-unresolved-link="com.google.gson/JsonArray///PointingToDeclaration/">JsonArray</span><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></div><div class="brief "><p class="paragraph">Inserisce un record di inferenza in &quot;codbi_ai_assistant_log&quot;. <a href="record-inference.html">formKey</a> è il nome/chiave tecnica della forma in cui è stata eseguita l'inferenza; <a href="record-inference.html">formChanges</a> e <a href="record-inference.html">workflowChanges</a> sono archiviati come JSON testo (CLOB). <a href="record-inference.html">tokensIn</a> e <a href="record-inference.html">tokensOut</a> sono l'input (prompt) e l'output stimati gettoni (di completamento); il totale viene memorizzato nella colonna &quot;token&quot;. Restituisce &quot;true&quot; quando si inserisce riuscito.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1896549169%2FFunctions%2F967027945" anchor-label="setSensitiveCheck" id="-1896549169%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="set-sensitive-check.html"><span>set</span><wbr></wbr><span>Sensitive</span><wbr></wbr><span><span>Check</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1896549169%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="set-sensitive-check.html"><span class="token function">setSensitiveCheck</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">emf<span class="token operator">: </span><span data-unresolved-link="javax.persistence/EntityManagerFactory///PointingToDeclaration/">EntityManagerFactory</span><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">entryId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-long/index.html">Long</a><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">elementName<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">username<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token punctuation">, </span></span><span class="parameter ">checked<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a></div><div class="brief "><p class="paragraph">Inserisce o rimuove il controllo di eliminazione degli elementi sensibili per una voce di log/nome elemento/utente. Quando <a href="set-sensitive-check.html">checked</a> è &quot;true&quot; viene aggiunta una riga (l'utente ha spuntato la casella di controllo); quando &quot;falso&quot; il la riga corrispondente viene rimossa (l'utente l'ha deselezionata). Restituisce &quot;true&quot; quando l'operazione ha avuto successo.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1198932227%2FFunctions%2F967027945" anchor-label="usedSensitiveElements" id="-1198932227%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="used-sensitive-elements.html"><span>used</span><wbr></wbr><span>Sensitive</span><wbr></wbr><span><span>Elements</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1198932227%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="used-sensitive-elements.html"><span class="token function">usedSensitiveElements</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">formChanges<span class="token operator">: </span><span data-unresolved-link="com.google.gson/JsonObject///PointingToDeclaration/">JsonObject</span><span class="token punctuation">, </span></span><span class="parameter ">sensitive<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-set/index.html">Set</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin.collections/-list/index.html">List</a><span class="token operator">&lt;</span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">&gt;</span></div><div class="brief "><p class="paragraph">Determina quale dei nomi degli elementi CodBi <strong>sensibili</strong> configurati (sensibile, già minuscolo) sono stati effettivamente utilizzati nella descrizione della modifica specificata (<a href="used-sensitive-elements.html">formChanges</a>). La corrispondenza è senza distinzione tra maiuscole e minuscole e copre:</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

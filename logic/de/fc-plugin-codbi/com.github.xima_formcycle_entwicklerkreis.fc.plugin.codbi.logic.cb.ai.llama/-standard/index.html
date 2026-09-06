@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>Standard</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            fc-plugin-codbi
+                    </a>
+            </div>
+            <div class="library-version">
+            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter="fc-plugin-codbi/JVM">JVM</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="classlike" id="content" pageIds="fc-plugin-codbi::com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama/Standard///PointingToDeclaration//967027945">
+  <div class="breadcrumbs"><a href="../../../index.html">fc-plugin-codbi</a><span class="delimiter">/</span><a href="../index.html">com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama</a><span class="delimiter">/</span><span class="current">Standard</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span><span>Standard</span></span></h1>
+    <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">class </span><a href="index.html">Standard</a> : <a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai/-l-l-a-m-a/index.html">LLAMA</a></div><p class="paragraph">Standard – Allgemeiner GGUF-Modellläufer über den lokalen LLAMA-Server-Prozess. Alle KI-Berechnungen finden statt im externen LLAMA-Server-Prozess. Wenn es OOMs gibt, bleibt die Tomcat-JVM am Leben – nur die LLAMA-Server stirbt.</p><h2 class="">Plugin-Eigenschaften</h2><table><thead><tr><th>Eigenschaft</th><th>Typ</th><th>Standard</th><th>Beschreibung</th></tr></thead><tbody><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">Active_AI</code></td><td>String</td><td>—</td><td>Muss „llama_std“ (lokal) oder „external“ (nur extern) enthalten, um diese Komponente zu aktivieren</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ModelUrl</code></td><td>URL</td><td>Qwen3-VL-2B Q4_K_M HuggingFace</td><td>Download-URL für die GGUF-Modelldatei</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_MmprojUrl</code></td><td>URL</td><td>Qwen3-VL-2B mmproj (bei Verwendung des Standardmodells)</td><td>Download-URL für die Vision-Projektordatei (mmproj). Bei Nur-Text-Modellen weglassen (Sichtfunktionen deaktiviert). Automatische Einstellung bei Verwendung des Standard-VL-Modells</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_MaxPixels</code></td><td>Long</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">3211264</code></td><td>Maximales Pixelbudget für die Bildverkleinerung (min. 3136)</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_MaxUploadBytes</code></td><td>Long</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">52428800</code></td><td>Maximale Rohbildgröße in Bytes vor der Dekodierung (Standard 50 MB, min. 1 MB)</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_MaxTokens</code></td><td>Int</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">2048</code></td><td>Maximal zu generierende Token pro Antwort</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_MaxRAMPercent</code></td><td>Double</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">101.0</code></td><td>RAM-Nutzungsschwellenwert (%) – blockiert Anfragen, wenn sie überschritten werden</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_MaxComputePercent</code></td><td>Double</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">101.0</code></td><td>Rechennutzungsschwellenwert (%) – Gates auf GPU % (CUDA) oder CPU % (Fallback). Blockiert Anfragen bei Überschreitung</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_MaxCPUPercent</code></td><td>Double</td><td>—</td><td>Legacy-Alias für MaxComputePercent (als Fallback akzeptiert)</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_LlamaRelease</code></td><td>String</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">b8175</code></td><td>llama.cpp Release-Tag für Server-Binär-Download</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ServerUrl_&lt;Plattform&gt;</code></td><td>URL</td><td>(automatisch vom Release-Tag)</td><td>Plattformspezifische Überschreibung für die LLAMA-Server-Binär-URL</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_UpdateCheckHours</code></td><td>Long</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">24</code></td><td>Stunden zwischen GitHub-Release-Checks (0 = deaktiviert)</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_NotifyEmail</code></td><td>String</td><td>—</td><td>E-Mail-Adresse für Update-Benachrichtigungen</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ThinkingModelUrl</code></td><td>URL</td><td>—</td><td>Download-URL für ein dediziertes Denkmodell GGUF (optional)</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ThinkingMmprojUrl</code></td><td>URL</td><td>—</td><td>Download-URL für die mmproj-Datei des Denkmodells (optional)</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ExternalUrl</code></td><td>URL</td><td>—</td><td>Basis-URL einer externen OpenAI-kompatiblen API; überschreibt lokales Modell</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ExternalApiKey</code></td><td>String</td><td>—</td><td>API-Schlüssel für die externe AI (als Bearer-Token gesendet)</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ExternalModel</code></td><td>String</td><td>—</td><td>Modellname für die externe API (z. B. gpt-4o, claude-3-opus)</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ExternalNoPrompt</code></td><td>Boolean</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">false</code></td><td>Wenn „true“, werden alle integrierten Systemaufforderungsabschnitte (§1–§6) für die externe KI übersprungen – es werden nur die Benutzernachricht und der Chatverlauf gesendet.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_PromptIdentity</code></td><td>String</td><td>(integriert)</td><td>Überschreiben Sie den Identitäts-/Rollensatz („Sie sind ein hilfreicher Assistent ...“). Verwenden Sie „{date}“ für das heutige Datum, „{time}“ für die aktuelle Uhrzeit.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_PromptLocation</code></td><td>String</td><td>(integriert)</td><td>Überschreiben Sie die Standortkontextanweisung. Verwenden Sie „{location}“ als Platzhalter.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_PromptSearch</code></td><td>String</td><td>(integriert)</td><td>Überschreiben Sie den CALL:search-Anweisungsblock (vor den Beispielen).</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_PromptThinking</code></td><td>String</td><td>(integriert)</td><td>Überschreiben Sie die Denkmodus-Anweisung. Verwenden Sie „{Sprache}“ als Platzhalter.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_PromptNoInternet</code></td><td>String</td><td>(integriert)</td><td>Überschreiben Sie die Warnung „Kein Internetzugang“.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_PromptRules</code></td><td>String</td><td>(integriert)</td><td>Überschreiben Sie die allgemeinen Regeln (Sprache, Maße, Unabhängigkeit).</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_FallbackLocation</code></td><td>String</td><td>—</td><td>Fallback-Standort-String, der verwendet wird, wenn die Geolokalisierung fehlschlägt (z. B. „Ansbach, Nürnberger Straße 32, Bayern, Deutschland“)</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_NominatimDomain</code></td><td>String</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">nominatim.openstreetmap.org</code></td><td>Domäne für Reverse-Geokodierungsanfragen (ohne Pfad).</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_IpGeolocationDomain</code></td><td>String</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">ipwho.is</code></td><td>Domäne für IP-Geolocation-Anfragen (ohne Pfad).</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_BraveSearch_ApiKey</code></td><td>String</td><td>—</td><td>Brave Search API-Schlüssel – aktiviert das Websuchtool für das Modell</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_BraveSearch_MaxResults</code></td><td>Int</td><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">5</code></td><td>Maximale Anzahl von Brave Search-Ergebnissen pro Abfrage (1–20).</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_Language</code></td><td>String</td><td>—</td><td>Zweibuchstabiger ISO 639-1-Code (z. B. „de“, „fr“) – zwingt die KI, in dieser Sprache zu antworten und überspringt die automatische Erkennung. Überschrieben durch die funktionsspezifische Antwortsprache toLoad.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_SPECIALIST_XXX</code></td><td>URL</td><td>—</td><td>Download-URL für ein spezielles GGUF-Modell namens „XXX“. Der Name wird vom Administrator ausgewählt und von der „specialist“-toLoad-Eigenschaft ohne Berücksichtigung der Groß-/Kleinschreibung abgeglichen.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_SPECIALIST_MMProj_XXX</code></td><td>URL</td><td>—</td><td>Download-URL für den multimodalen Projektor (mmproj) des Spezialisten „XXX“. Optional – weglassen, wenn das Spezialistenmodell keine Sichtfähigkeit hat.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_EXT_SPECIALIST_XXX</code></td><td>URL</td><td>—</td><td>Basis-URL einer externen OpenAI-kompatiblen API für einen Spezialisten namens „XXX“. Wird von der toLoad-Eigenschaft „specialist“ ohne Berücksichtigung der Groß- und Kleinschreibung abgeglichen.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_EXT_SPECIALIST_Key_XXX</code></td><td>String</td><td>—</td><td>API-Schlüssel für den externen Spezialisten „XXX“ (als Bearer-Token gesendet). Optional.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_EXT_SPECIALIST_Model_XXX</code></td><td>String</td><td>—</td><td>Modellname für den externen Spezialisten „XXX“ (z. B. „gpt-4o“). Optional – weglassen, um den API-Standard zu verwenden.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_EXT_SPECIALIST_MaxTokens_XXX</code></td><td>Int</td><td>—</td><td>Maximale Ausgabetokens für den Spezialisten „XXX“. Überschreibt „AI_LLAMA_STD_MaxTokens“ nur für diesen Spezialisten. Optional.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ExtraParams</code></td><td>JSON</td><td>—</td><td>Zusätzliche Parameter, die an jeden Vervollständigungsanforderungstext angehängt werden (z. B. <code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">{&quot;top_p&quot;:0.9,&quot;seed&quot;:42}</code>). Die Schlüssel „messages“, „stream“, „model“, „id_slot“ und „logprobs“ werden stillschweigend ignoriert.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_PriceCurrency</code></td><td>String</td><td>—</td><td>ISO 4217-Währungscode (z. B. „EUR“, „USD“) der Preise des <strong>Standard</strong>-Modells. Wenn diese Option nicht aktiviert ist, werden für das Standardmodell keine Kosten angezeigt.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_PricePerMInput</code></td><td>Double</td><td>—</td><td>Preis pro 1.000.000 <strong>Eingabe</strong>-Tokens für das Standardmodell (z. B. „3,00“).</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_PricePerMOutput</code></td><td>Double</td><td>—</td><td>Preis pro 1.000.000 <strong>Output</strong>-Tokens für das Standardmodell (z. B. <code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">15,00</code>).</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ThinkingPriceCurrency</code></td><td>String</td><td>—</td><td>ISO 4217-Währungscode (z. B. „EUR“, „USD“) der Preise des <strong>Thinking</strong>-Modells.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ThinkingPricePerMInput</code></td><td>Double</td><td>—</td><td>Preis pro 1.000.000 <strong>Eingabe</strong>-Tokens für das Denkmodell.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_ThinkingPricePerMOutput</code></td><td>Double</td><td>—</td><td>Preis pro 1.000.000 <strong>Ausgabe</strong>-Tokens für das Denkmodell.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_SPECIALIST_PriceCurrency_XXX</code></td><td>String</td><td>—</td><td>ISO 4217-Währungscode (z. B. „EUR“, „USD“) der Preise des lokalen Spezialisten „XXX“.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_SPECIALIST_PricePerMInput_XXX</code></td><td>Double</td><td>—</td><td>Preis pro 1.000.000 <strong>Eingabe</strong>-Tokens für den lokalen Spezialisten „XXX“.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_SPECIALIST_PricePerMOutput_XXX</code></td><td>Double</td><td>—</td><td>Preis pro 1.000.000 <strong>Output</strong>-Tokens für den lokalen Spezialisten „XXX“.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_EXT_SPECIALIST_PriceCurrency_XXX</code></td><td>String</td><td>—</td><td>ISO 4217-Währungscode (z. B. „EUR“, „USD“) der Preise des externen Spezialisten „XXX“.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_EXT_SPECIALIST_PricePerMInput_XXX</code></td><td>Double</td><td>—</td><td>Preis pro 1.000.000 <strong>Eingabe</strong>-Tokens für den externen Spezialisten „XXX“.</td></tr><tr><td><code class="org.jetbrains.dokka.pages.commenttable@35f35c59 lang-kotlin">AI_LLAMA_STD_EXT_SPECIALIST_PricePerMOutput_XXX</code></td><td>Double</td><td>—</td><td>Preis pro 1.000.000 <strong>Output</strong>-Tokens für den externen Spezialisten „XXX“.</td></tr></tbody></table><h2 class="">Domains zur Whitelist</h2><ul><li><p class="paragraph"><strong>github.com</strong> – LLAMA-Server-Binärversionen und Release-Check-API</p></li><li><p class="paragraph"><strong>api.github.com</strong> – Überprüfung der neuesten Version</p></li><li><p class="paragraph"><strong>objects.githubusercontent.com</strong> – GitHub-Release-Asset-CDN</p></li><li><p class="paragraph"><strong>huggingface.co</strong> – GGUF-Modell und mmproj-Downloads</p></li><li><p class="paragraph"><strong>nominatim.openstreetmap.org</strong> – umgekehrte Geokodierung für den Standortkontext</p></li><li><p class="paragraph"><strong>ipwho.is</strong> – IP-basierter Geolocation-Fallback</p></li><li><p class="paragraph"><strong>api.search.brave.com</strong> – Brave-Websuche (nur wenn „AI_BraveSearch_ApiKey“ konfiguriert ist)</p></li></ul></div></div>
+  </div>
+  <div class="tabbedcontent">
+    <div class="tabs-section" tabs-section="tabs-section"><button class="section-tab" data-active="" data-togglable="CONSTRUCTOR,TYPE,PROPERTY,FUNCTION">Members</button></div>
+    <div class="tabs-section-body">
+      <div data-togglable="CONSTRUCTOR">
+        <h2 class="">Constructors</h2>
+        <div class="table"><a data-name="-1463838181%2FConstructors%2F967027945" anchor-label="Standard" id="-1463838181%2FConstructors%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-togglable="CONSTRUCTOR" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-standard.html"><span><span>Standard</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1463838181%2FConstructors%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">constructor</span><span class="token punctuation">(</span><span class="token punctuation">)</span></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-togglable="TYPE">
+        <h2 class="">Types</h2>
+        <div class="table"><a data-name="-2020159031%2FClasslikes%2F967027945" anchor-label="Companion" id="-2020159031%2FClasslikes%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="-companion/index.html"><span><span>Companion</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-2020159031%2FClasslikes%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">object </span><a href="-companion/index.html">Companion</a></div><div class="brief "><p class="paragraph">Companion for static members.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div data-togglable="FUNCTION">
+        <h2 class="">Functions</h2>
+        <div class="table"><a data-name="969462282%2FFunctions%2F967027945" anchor-label="execute" id="969462282%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="execute.html"><span><span>execute</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="969462282%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="execute.html"><span class="token function">execute</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">params<span class="token operator">: </span><span data-unresolved-link="de.xima.fc.interfaces.plugin.param.servlet/IPluginServletActionParams///PointingToDeclaration/">IPluginServletActionParams</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="de.xima.fc.interfaces.plugin.retval.servlet/IPluginServletActionRetVal///PointingToDeclaration/">IPluginServletActionRetVal</span></div><div class="brief "><p class="paragraph">Leitet eingehende Anfragen an einen von drei Handlern weiter:</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-822774594%2FFunctions%2F967027945" anchor-label="getDescription" id="-822774594%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#1316841682%2FFunctions%2F967027945"><span>get</span><wbr></wbr><span><span>Description</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-822774594%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">fun </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#1316841682%2FFunctions%2F967027945"><span class="token function"><strike>getDescription</strike></span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">fun </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#-336002696%2FFunctions%2F967027945"><span class="token function">getDescription</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">p0<span class="token operator">: </span><a href="https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/util/Locale.html">Locale</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1517511207%2FFunctions%2F967027945" anchor-label="getDisplayName" id="1517511207%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#1517511207%2FFunctions%2F967027945"><span>get</span><wbr></wbr><span>Display</span><wbr></wbr><span><span>Name</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1517511207%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#1517511207%2FFunctions%2F967027945"><span class="token function">getDisplayName</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">p0<span class="token operator">: </span><a href="https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/util/Locale.html">Locale</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1886404065%2FFunctions%2F967027945" anchor-label="getName" id="1886404065%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="get-name.html"><span>get</span><wbr></wbr><span><span>Name</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1886404065%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="get-name.html"><span class="token function">getName</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1866166706%2FFunctions%2F967027945" anchor-label="initialize" id="1866166706%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="initialize.html"><span><span>initialize</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1866166706%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="initialize.html"><span class="token function">initialize</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">configData<span class="token operator">: </span><span data-unresolved-link="de.xima.fc.interfaces.plugin.lifecycle/IPluginInitializeData///PointingToDeclaration/">IPluginInitializeData</span></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Liest alle Plugin-Eigenschaften, lädt bei Bedarf Modelldateien herunter und startet den LLAMA-Server -Prozess und startet den Ressourcenmonitor und den Versionsprüfungs-Daemon.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="824467285%2FFunctions%2F967027945" anchor-label="initPlugin" id="824467285%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#824467285%2FFunctions%2F967027945"><span>init</span><wbr></wbr><span><span>Plugin</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="824467285%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">fun </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#824467285%2FFunctions%2F967027945"><span class="token function"><strike>initPlugin</strike></span></a><span class="token punctuation">(</span><span class="token punctuation">)</span></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1156681902%2FFunctions%2F967027945" anchor-label="install" id="-1156681902%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#-1156681902%2FFunctions%2F967027945"><span><span>install</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1156681902%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">fun </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#-1156681902%2FFunctions%2F967027945"><span class="token function">install</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">p0<span class="token operator">: </span><span data-unresolved-link="de.xima.fc.interfaces.plugin.lifecycle/IPluginInstallData///PointingToDeclaration/">IPluginInstallData</span></span></span><span class="token punctuation">)</span></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1565286453%2FFunctions%2F967027945" anchor-label="priceForModel" id="-1565286453%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="price-for-model.html"><span>price</span><wbr></wbr><span>For</span><wbr></wbr><span><span>Model</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1565286453%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="price-for-model.html"><span class="token function">priceForModel</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">modelId<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb.ai.llama.commons/-model-price/index.html">ModelPrice</a><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Löst den konfigurierten Preis pro 1.000.000 Token für die angegebene Modell-ID auf oder „null“, wenn der Für das Modell ist kein Preis konfiguriert (oder die Konfiguration wurde noch nicht analysiert).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1243717683%2FFunctions%2F967027945" anchor-label="shutdown" id="1243717683%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="shutdown.html"><span><span>shutdown</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1243717683%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="shutdown.html"><span class="token function">shutdown</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">shutdownData<span class="token operator">: </span><span data-unresolved-link="de.xima.fc.interfaces.plugin.lifecycle/IPluginShutdownData///PointingToDeclaration/">IPluginShutdownData</span><span class="token operator">?</span></span></span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Zerstört alle Hintergrundressourcen: Update-Checker, Ressourcenmonitor, Streaming-Sitzungen, denkender Server und der Basisklassen-Serverprozess.</p></div><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">fun </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#-1815281790%2FFunctions%2F967027945"><span class="token function"><strike>shutdown</strike></span></a><span class="token punctuation">(</span><span class="token punctuation">)</span></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="1920422727%2FFunctions%2F967027945" anchor-label="startJanitor" id="1920422727%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/-a-i/start-janitor.html"><span>start</span><wbr></wbr><span><span>Janitor</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="1920422727%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/-a-i/start-janitor.html"><span class="token function">startJanitor</span></a><span class="token punctuation">(</span><span class="token punctuation">)</span></div><div class="brief "><p class="paragraph">Initiiert eine Aufgabe, die nicht verwendete, abgelaufene Bilder (<span data-unresolved-link="com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/AI/msExpirationIDedImages/#/PointingToDeclaration/">msExpirationIDedImages</span>) aus dem entfernt Cache (<span data-unresolved-link="com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/AI/cacheIDedImages/#/PointingToDeclaration/">cacheIDedImages</span>).</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-830511822%2FFunctions%2F967027945" anchor-label="uninstall" id="-830511822%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#-830511822%2FFunctions%2F967027945"><span><span>uninstall</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-830511822%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">fun </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.openPLZ/-cod-bi-open-p-l-z-query-action/index.html#-830511822%2FFunctions%2F967027945"><span class="token function">uninstall</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">p0<span class="token operator">: </span><span data-unresolved-link="de.xima.fc.interfaces.plugin.lifecycle/IPluginUninstallData///PointingToDeclaration/">IPluginUninstallData</span></span></span><span class="token punctuation">)</span></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+<a data-name="-1115964761%2FFunctions%2F967027945" anchor-label="validateConfigurationData" id="-1115964761%2FFunctions%2F967027945" data-filterable-set="fc-plugin-codbi/JVM"></a>
+          <div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM">
+            <div class="main-subrow keyValue ">
+              <div class=""><span class="inline-flex">
+                  <div><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/-a-i/validate-configuration-data.html"><span>validate</span><wbr></wbr><span>Configuration</span><wbr></wbr><span><span>Data</span></span></a></div>
+<span class="anchor-wrapper"><span class="anchor-icon" pointing-to="-1115964761%2FFunctions%2F967027945"></span>
+                    <div class="copy-popup-wrapper "><span class="copy-popup-icon"></span><span>Link copied to clipboard</span></div>
+                  </span></span></div>
+              <div>
+                <div class="title">
+                  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">open </span><span class="token keyword">override </span><span class="token keyword">fun </span><a href="../../com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/-a-i/validate-configuration-data.html"><span class="token function">validateConfigurationData</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">configData<span class="token operator">: </span><span data-unresolved-link="de.xima.fc.interfaces.plugin.lifecycle/IPluginValidationData///PointingToDeclaration/">IPluginValidationData</span></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="de.xima.fc.interfaces.plugin.lifecycle/IPluginInitializeValidationResult///PointingToDeclaration/">IPluginInitializeValidationResult</span><span class="token operator">?</span></div><div class="brief "><p class="paragraph">Lehnt die Installation auf Mandantenebene ab. CodBi muss als <strong>System-Plugin</strong> installiert werden, da es KI-Dienste (Whisper, LLAMA) binden lokale Server-Ports und verwalten schwergewichtige Prozesse würde zu Konflikten führen, wenn sie einmal pro Mandant instanziiert würden.</p></div></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

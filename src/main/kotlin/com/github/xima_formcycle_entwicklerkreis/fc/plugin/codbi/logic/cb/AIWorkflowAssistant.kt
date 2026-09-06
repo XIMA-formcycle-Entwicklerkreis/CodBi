@@ -293,7 +293,11 @@ class AIWorkflowAssistant : IPluginServletAction {
         }
 
     var cleaned = extractJson(stripThinkTags(rawResponse))
-    logger.info("[AIWorkflowAssistant] AI response (phase {}): {}", phase, cleaned)
+    logger.info(
+        "[AIWorkflowAssistant] AI response (phase {}, {} chars): {}",
+        phase,
+        cleaned.length,
+        compactJsonForLog(cleaned))
 
     // Phase 1 only: check if the AI is signalling that it needs more context before answering.
     if (phase == "1") {
@@ -343,7 +347,10 @@ class AIWorkflowAssistant : IPluginServletAction {
               return jsonResponse("""{"error":${gson.toJson("AI error: ${e.message}")}}""")
             }
         cleaned = extractJson(stripThinkTags(rawResponse))
-        logger.info("[AIWorkflowAssistant] AI pass-2 raw response: {}", cleaned)
+        logger.info(
+            "[AIWorkflowAssistant] AI pass-2 raw response ({} chars): {}",
+            cleaned.length,
+            compactJsonForLog(cleaned))
       }
     }
 

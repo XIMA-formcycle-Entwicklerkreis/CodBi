@@ -1,4 +1,7 @@
 // #region Imports
+// #region XIMA
+import { getXUtil } from "@de-xima/fc-form-renderer";
+// #endregion XIMA
 // #region XDBC
 import { DBC } from "xdbc/src/DBC";
 import { INSTANCE } from "xdbc/src/DBC/INSTANCE";
@@ -113,11 +116,18 @@ export class HTML_Input_TinyMCE {
    *                            Falls back to ```UploadURL``` if not set. Used by the ```codbiupload``` toolbar button.
    *  - ```UploadFieldName```:  The name of the form field for the uploaded file (default: ```fileToUpload```).
    *  - ```StripPort```:        If set to **"true"**, the port number (e.g. ```:444```) is removed from the URL
-   *                            returned by the upload server before inserting it into the editor. */
+   *                            returned by the upload server before inserting it into the editor.
+   *  - ```RenderToPdf```:      If set to **"true"**, a ```print```-listener is registered on ```$.xutil``` (via
+   *                            {@link getXUtil }) that replaces the document body with the **plain-text** content of
+   *                            this editor (the HTML markup is stripped) when the form is printed / exported to PDF.
+   *                            The content is wrapped in a ```<div>``` tagged with the CSS-Class
+   *                            ```CodBi_TinyMCE_RenderToPdf```, so a print-stylesheet can target it (e.g.
+   *                            ```white-space: pre-wrap``` to preserve line-breaks/paragraphs). This makes it
+   *                            possible to render the content of an editor that was filled via TinyMCE into a PDF. */
   @DBC.ParamvalueProvider
   public static functionality(
     @TYPE.PRE("string", "plugins :: toolbar :: resourceurl :: uploadurl :: uploadimageurl :: uploadfieldname")
-    @TYPE.PRE("string | boolean", "stripport")
+    @TYPE.PRE("string | boolean", "stripport :: rendertopdf")
     toLoad: { [key: string]: unknown },
 
     @INSTANCE.PRE(HTMLTextAreaElement, undefined, "Is it not a <textarea> that is tagged with this functionality?")
@@ -170,6 +180,11 @@ export class HTML_Input_TinyMCE {
       toLoad.stripport !== undefined &&
       (toLoad.stripport === true || String(toLoad.stripport).toLowerCase() === "true");
     // #endregion Parse upload configuration.
+    // #region Parse "RenderToPdf" flag (render this editor's plain-text content on print/PDF-export).
+    const renderToPdf: boolean =
+      toLoad.rendertopdf !== undefined &&
+      (toLoad.rendertopdf === true || String(toLoad.rendertopdf).toLowerCase() === "true");
+    // #endregion Parse "RenderToPdf" flag (render this editor's plain-text content on print/PDF-export).
     // #region Load TinyMCE (if not already loaded) and initialize the editor.
     HTML_Input_TinyMCE.ensureTinyMCE(resourceURL)
       .then(() => {
@@ -341,6 +356,20 @@ export class HTML_Input_TinyMCE {
               textarea.style.display = "";
             });
             // #endregion Clean up on editor remove.
+            // #region "RenderToPdf": On print, replace the document body with this editor's plain-text content.
+            // Registering per editor (only when the tagged field enables the parameter) mirrors the classic snippet
+            // `$.xutil.on('print', (data) => { document.body.innerHTML = "<div>" + ...textContent + "</div>"; });`
+            // — the HTML content is stripped to its text, so a PDF export contains the editor's text.
+            // The wrapper <div> is tagged with "CodBi_TinyMCE_RenderToPdf" so a print-stylesheet can style it.
+            if (renderToPdf) {
+              getXUtil().on("print", () => {
+                const editorHTML = editor.getContent();
+                const plainText = new DOMParser().parseFromString(editorHTML, "text/html").body.textContent ?? "";
+
+                document.body.innerHTML = `<div class="CodBi_TinyMCE_RenderToPdf">${plainText}</div>`;
+              });
+            }
+            // #endregion "RenderToPdf": On print, replace the document body with this editor's plain-text content.
           },
         });
       })

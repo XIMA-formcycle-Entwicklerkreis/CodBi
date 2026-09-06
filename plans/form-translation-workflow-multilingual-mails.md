@@ -2,6 +2,9 @@
 
 Status: implemented in `AICodBiAssistant` + dialog (`ai-assistant.ts`) + prompts + index.json;
 pending live validation (needs rebuilt plugin + prompt reseed, then the FS12 scenario).
+Follow-up (2026-09-06): a re-run that adds MORE languages now EXTENDS an existing `[%lang%]` mail
+`FC_SWITCH` with the missing language cases (see the "Extend, don't duplicate" bullet below) —
+the mail pass is live, the ending-page wrap stays parked.
 
 ## Goal
 
@@ -114,9 +117,10 @@ Dedicated multilingualize pass (implemented: `runWorkflowMailMultilingualization
   node in place into an `FC_SWITCH` (`switchValue:"[%lang%]"`), creates one `FC_SWITCH_CASE` per
   form language (base = original params verbatim, others = translated clones) plus a trailing
   `FC_SWITCH_DEFAULT` (original mail) — each branch containing a `FcSequenceHandler` SEQUENCE with
-  the mail, mirroring `createWorkflowTask`'s FC_SWITCH shape. The default branch is created LAST
-  because the switch executor falls back to the LAST child when no case matches. The lane's
-  following nodes stay after the switch, so no endpoint is duplicated.
+  the mail, mirroring `createWorkflowTask`'s FC_SWITCH shape. Formcycle requires the
+  `FC_SWITCH_DEFAULT` as the FIRST child (parent_order_idx 0) or the switch is invalid, so the default
+  branch is created first and the language cases follow it. The lane's following nodes stay after the
+  switch, so no endpoint is duplicated.
 
 ## Prompt changes
 
@@ -144,7 +148,8 @@ Dedicated multilingualize pass (implemented: `runWorkflowMailMultilingualization
     auto-ensure / trigger binding ever runs for a translation.
   - New `runWorkflowMailMultilingualization`, `multilingualizeMailNode` and
     `applyMailTranslationParams` (reflection over the Formcycle node API; FC_SWITCH branch shape
-    mirrors `createWorkflowTask`; default branch LAST per the executor's last-child fallback).
+    mirrors `createWorkflowTask`: `FC_SWITCH_DEFAULT` at index 0 = FIRST child, then the language
+    cases). Extension re-runs the order via `ensureSwitchDefaultFirst` (heals default-last switches).
   - The multilingualize runner feeds the model ONLY a **condensed candidate list of the existing
     FC_EMAIL / FC_DOI_INIT nodes** (id, name, type, description, params) plus an explicit "output
     ONLY the mails JSON" rule — not the whole workflow tree (feeding the full tree made the model
@@ -164,6 +169,21 @@ Dedicated multilingualize pass (implemented: `runWorkflowMailMultilingualization
     translate prompt gives intent-based guidance (who reads the mail and what it is for) instead of
     keyword lists or recipient-string heuristics. Motivation (live): the AI alone over-wrapped
     "Benachrichtigung für die Sachbearbeitung", "E-Mail an Kasse" and almost every other FC_EMAIL.
+  - **Re-running a translation on an already-multilingual workflow EXTENDS the existing `[%lang%]`
+    switch instead of wrapping again** (implemented): the candidate collector now emits two kinds —
+    `"MAIL"` (a plain `FC_EMAIL`/`FC_DOI_INIT` to wrap) and `"SWITCH"` (an existing `[%lang%]`
+    `FC_SWITCH` that already carries translated mail clones, reported with its `existingCaseLanguages`,
+    `defaultBranchId` and the first clone's `sourceType`/`sourceParams`) — and it does NOT descend into
+    a handled `[%lang%]` mail switch's subtree (its clones are extended, never re-wrapped). The model
+    is told to translate a SWITCH only into the FORM LANGUAGES missing from its `existingCaseLanguages`
+    (translating from `sourceParams`). The apply loop dispatches per kind: a SWITCH candidate goes to
+    the new `extendMailSwitchNode`, which appends one `FC_SWITCH_CASE` (+ `SEQUENCE` + translated mail
+    clone named "<base> (<lang>)") per added language under the SAME switch and then re-orders the
+    `FC_SWITCH_DEFAULT` to the very end (native `MAX(parent_order_idx)` + `forceChildIndex`) so the
+    executor's last-child fallback still lands on the default branch. Example: a form already carrying
+    a de/it switch, then "Übersetze das Formular ins Englische und Französische." → log
+    `Extended existing FC_SWITCH … with new language case(s): en, fr`, en/fr mail branches before the
+    default, widgets translated to en/fr.
 - `AIFormAssistant.kt`: form-only assistant (no workflow access) — a
   `stripWorkflowMailLanguagesMarker` helper removes the marker from both of its form-output paths,
   so the marker can never be persisted as a form property if that flow's AI emits it.

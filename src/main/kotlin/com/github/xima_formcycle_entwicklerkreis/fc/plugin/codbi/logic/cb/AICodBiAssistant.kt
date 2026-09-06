@@ -924,20 +924,93 @@ class AICodBiAssistant : IPluginServletAction {
       // field)
       // is decided by the AI from the clarificationInstruction prompt text — not by a brittle
       // backend keyword filter that could never cover every phrasing.
+      // Whole-form translation into SEVERAL languages at once ("translate to English and French")
+      // runs as ONE language per AI pass — sequential — so no single response must carry every
+      // translation (an oversized combined output truncates mid-JSON and aborts the run; observed
+      // live). The languages are declared by the AI (planWholeFormTranslation, gated by a cheap
+      // fallback-safe hint); each pass reuses runFormModification on the ORIGINAL persist
+      // restricted
+      // to ONE language, and the per-language i18n is merged into one final form. Only when >= 2
+      // new
+      // languages are planned does this engage; otherwise the normal single pass runs unchanged.
+      val formBaseLang =
+          runCatching {
+                JsonParser.parseString(persistJson).asJsonObject.get("lang")?.asString?.trim()
+              }
+              .getOrNull() ?: "de"
+      val existingFormLangs =
+          (deriveWorkflowMailLanguagesFromForm(persistJson) ?: listOf(formBaseLang))
+              .map { it.lowercase() }
+              .toSet()
+      val translationPlan =
+          runCatching { planWholeFormTranslation(prompt, persistJson, modelId, instance) }
+              .getOrNull() ?: Triple(false, emptyList(), TokenUsage(0, 0))
+      tokensIn += translationPlan.third.input
+      tokensOut += translationPlan.third.output
+      runTokens = tokensIn + tokensOut
+      val plannedNewLangs =
+          translationPlan.second.filter {
+            it.isNotBlank() &&
+                it.lowercase() != formBaseLang.lowercase() &&
+                it.lowercase() !in existingFormLangs
+          }
+      // Base-first full language list when the sequential mode engages (authoritative for the
+      // workflow multilingualize pass below); null = normal single-pass flow.
+      val sequentialFormLanguages: List<String>? =
+          if (translationPlan.first && plannedNewLangs.size >= 2) {
+            (listOf(formBaseLang) + plannedNewLangs).distinct()
+          } else {
+            null
+          }
+      if (sequentialFormLanguages != null) {
+        logger.info(
+            "[AICodBiAssistant] Whole-form translation executes as per-language passes (base first): {}",
+            sequentialFormLanguages.joinToString(", "))
+      }
+      // Repeat whole-form translation: the AI said the request IS a whole-form translation, but
+      // every
+      // named language is ALREADY present on the (already multilingual) form — nothing new to add.
+      // Running the generic full form-rebuild pass here is wasteful AND error-prone (observed live:
+      // the model re-emits the whole already-multilingual form, passes the output-length budget,
+      // truncates and returns invalid JSON). Treat it as a NO-OP on the form; the workflow
+      // multilingualize pass below still runs (it heals FC_SWITCH ordering / verifies the
+      // languages).
+      val repeatTranslationNoop =
+          translationPlan.first && plannedNewLangs.isEmpty() && existingFormLangs.size >= 2
       val (formJson, applicabilityReport, formTokenUsage) =
           try {
-            runFormModification(
-                prompt,
-                persistJson,
-                modelId,
-                instance,
-                imageParts,
-                useCodbi,
-                useBuergerserviceNaming,
-                clarificationContext,
-                chatContext,
-                changeHistoryContext,
-                matomoStatsContext)
+            if (sequentialFormLanguages != null) {
+              runSequentialWholeFormTranslation(
+                  prompt,
+                  persistJson,
+                  plannedNewLangs,
+                  modelId,
+                  instance,
+                  imageParts,
+                  useCodbi,
+                  useBuergerserviceNaming,
+                  clarificationContext,
+                  chatContext,
+                  changeHistoryContext,
+                  matomoStatsContext)
+            } else if (repeatTranslationNoop) {
+              logger.info(
+                  "[AICodBiAssistant] Repeat whole-form translation: every requested language is already on the form — leaving the form unchanged (workflow multilingualize still runs).")
+              Triple(persistJson, null, TokenUsage(0, 0))
+            } else {
+              runFormModification(
+                  prompt,
+                  persistJson,
+                  modelId,
+                  instance,
+                  imageParts,
+                  useCodbi,
+                  useBuergerserviceNaming,
+                  clarificationContext,
+                  chatContext,
+                  changeHistoryContext,
+                  matomoStatsContext)
+            }
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
             return jsonResponse("""{"error":${gson.toJson("Form AI error: ${e.message}")}}""")
@@ -992,6 +1065,33 @@ class AICodBiAssistant : IPluginServletAction {
                 .getOrDefault(formJson)
         logger.info(
             "[AICodBiAssistant] Whole-form translation signaled workflow mail multilingualization for languages: {}",
+            workflowMailLanguages.joinToString(", "))
+      }
+      // Structural fallback: even when the model did not emit the "_workflowMailLanguages" marker,
+      // a
+      // form whose widgets already carry per-language "i18n" for languages different from its base
+      // "lang" is genuinely multilingual — and its workflow mails/ending pages may still lag behind
+      // (e.g. a re-run of "translate to Italian" after the widgets were already translated). Derive
+      // the languages from the form's own i18n (base first) so the multilingualize pass also runs
+      // in
+      // that case. The pass itself is a cheap no-op when there is nothing left to wrap.
+      if (workflowMailLanguages == null) {
+        val derived = deriveWorkflowMailLanguagesFromForm(formJson)
+        if (derived != null) {
+          workflowMailLanguages = derived
+          logger.info(
+              "[AICodBiAssistant] Derived workflow mail languages from the translated form's i18n (base first): {}",
+              derived.joinToString(", "))
+        }
+      }
+      // Sequential multi-language mode: the merged carrier only carries the FIRST pass's marker
+      // (the
+      // model ends each per-language pass with "_workflowMailLanguages" for just that one pass), so
+      // the full base-first language list planned above is authoritative for the workflow passes.
+      if (sequentialFormLanguages != null) {
+        workflowMailLanguages = sequentialFormLanguages
+        logger.info(
+            "[AICodBiAssistant] Sequential whole-form translation workflow languages (base first): {}",
             workflowMailLanguages.joinToString(", "))
       }
       // Propagate a form-AI error response unchanged
@@ -1114,24 +1214,30 @@ class AICodBiAssistant : IPluginServletAction {
       }
     }
 
-    // Whole-form translation → multilingual workflow mails (form-intent runs). The form AI signaled
-    // "_workflowMailLanguages" (see the marker extraction above). When the workflow version is
-    // known,
-    // run the dedicated multilingualize pass: it wraps every existing CONSUMER-facing FC_EMAIL /
-    // FC_DOI_INIT node into an FC_SWITCH that branches on the "[%lang%]" placeholder (one case per
-    // form
-    // language) — the ORIGINAL mail stays on the base-language and default branches, and a
-    // translated
-    // mail clone is generated for every other language. The pass uses the workflow-node API
-    // directly and
-    // NEVER creates a new lane/trigger/endpoint; nodes that follow the mail in the lane stay after
-    // the
-    // switch, so the lane continues unchanged. The form JSON itself is not modified further (a
-    // translation must not add form elements, so no submit-button auto-ensure runs here).
+    // Whole-form translation → multilingual workflow mails AND ending pages (Abschlussseiten). The
+    // form AI signaled "_workflowMailLanguages" (or the structural i18n fallback above derived the
+    // languages). When the workflow version is known, run the dedicated multilingualize passes:
+    //   1. MAILS: wrap every existing CONSUMER-facing FC_EMAIL / FC_DOI_INIT node into an FC_SWITCH
+    //      that branches on the "[%lang%]" placeholder (one case per form language) — the ORIGINAL
+    //      mail stays on the base-language and default branches, a translated mail clone is
+    // generated
+    //      for every other language. Existing [%lang%] mail switches are EXTENDED with the new
+    //      language cases instead of being wrapped again.
+    //   2. ENDING PAGES: wrap every consumer FC_SHOW_TEMPLATE (Abschlussseite) node into an
+    //      [%lang%] FC_SWITCH whose non-base cases reference the ALREADY EXISTING localized page
+    //      named "<base> _CB_<LANG>" (e.g. "… _CB_EN"); when no localization exists the case falls
+    //      back to the ORIGINAL page (never creates a page — server-side creation of
+    // TEMPLATE_CLIENT
+    //      rows is impossible from the plugin).
+    // Both passes use the workflow-node API directly, NEVER create a lane/trigger/endpoint, and
+    // leave
+    // the form JSON itself untouched (a translation must not add form elements, so no submit-button
+    // auto-ensure runs here). Their messages are combined into ONE workflowMessage.
     val mailLanguages = workflowMailLanguages
     if (mailLanguages != null && !removeAllRequested) {
       val wfVid = params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()
       if (wfVid != null) {
+        val wfMultilingualMessages = mutableListOf<String>()
         try {
           val wfMailMessage =
               runWorkflowMailMultilingualization(
@@ -1146,12 +1252,37 @@ class AICodBiAssistant : IPluginServletAction {
                   changeHistoryContext)
           if (wfMailMessage.isNotBlank()) {
             logger.info("[AICodBiAssistant] Workflow mail multilingualization: {}", wfMailMessage)
-            result.append(""","workflowMessage":${gson.toJson(wfMailMessage)}""")
+            wfMultilingualMessages.add(wfMailMessage)
           }
         } catch (e: Exception) {
           logger.warn("[AICodBiAssistant] Workflow mail multilingualization failed: {}", e.message)
+          wfMultilingualMessages.add("Mail multilingualization failed: ${e.message}")
+        }
+        try {
+          val wfEndPageMessage =
+              runEndPageMultilingualization(
+                  prompt,
+                  mailLanguages,
+                  wfVid,
+                  params,
+                  modelId,
+                  instance,
+                  chatContext,
+                  clarificationContext,
+                  changeHistoryContext)
+          if (wfEndPageMessage.isNotBlank()) {
+            logger.info(
+                "[AICodBiAssistant] Workflow ending-page multilingualization: {}", wfEndPageMessage)
+            wfMultilingualMessages.add(wfEndPageMessage)
+          }
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] Workflow ending-page multilingualization failed: {}", e.message)
+          wfMultilingualMessages.add("Ending-page multilingualization failed: ${e.message}")
+        }
+        if (wfMultilingualMessages.isNotEmpty()) {
           result.append(
-              ""","workflowMessage":${gson.toJson("Mail multilingualization failed: ${e.message}")}""")
+              ""","workflowMessage":${gson.toJson(wfMultilingualMessages.joinToString(" | "))}""")
         }
       }
     }
@@ -1452,6 +1583,269 @@ class AICodBiAssistant : IPluginServletAction {
           cleaned)
       "both" to usage
     }
+  }
+
+  /**
+   * Cheap fallback-safe GATE: only decides whether it is worth asking the AI whether a whole-form
+   * translation into MULTIPLE languages was requested (the actual language list and whether it is a
+   * translation are decided by the AI, never by keyword parsing). When the gate returns false the
+   * normal single-pass flow runs unchanged; when it returns true but the AI says "no multi-language
+   * translation", the normal single-pass flow also runs unchanged.
+   */
+  private fun promptHintsTranslation(prompt: String): Boolean {
+    val lower = prompt.lowercase()
+    val hints =
+        listOf(
+            "translate",
+            "translation",
+            "translator",
+            "übersetz",
+            "uebersetz",
+            "uber setz",
+            "tradu",
+            "traduire",
+            "traduc",
+            "vertaal",
+            "vertal",
+            "traduz",
+            "tłumacz",
+            "перевод",
+            "translat",
+            "language",
+            "languages",
+            "sprache",
+            "sprachen",
+            "lingua",
+            "langue",
+            "mehrsprach",
+            "multilingual")
+    return hints.any { lower.contains(it) }
+  }
+
+  /**
+   * Asks the AI (model-declared, never keyword-parsed) whether the request is a whole-form
+   * translation into TWO OR MORE NEW languages and which they are, in request order. Runs ONLY when
+   * [promptHintsTranslation] passes (a fallback-safe gate) — for every other request this returns
+   * immediately without an AI call. Returns (isMultiLanguageTranslation, newLanguageCodesInOrder,
+   * usage). Never throws.
+   */
+  private fun planWholeFormTranslation(
+      prompt: String,
+      persistJson: String?,
+      modelId: String,
+      instance: Standard
+  ): Triple<Boolean, List<String>, TokenUsage> {
+    if (!promptHintsTranslation(prompt)) return Triple(false, emptyList(), TokenUsage(0, 0))
+    val persistRoot =
+        runCatching { JsonParser.parseString(persistJson ?: "").asJsonObject }.getOrNull()
+    val baseLang = persistRoot?.get("lang")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: "de"
+    val existing = deriveWorkflowMailLanguagesFromForm(persistJson ?: "") ?: listOf(baseLang)
+    val system =
+        "You detect whether a request asks to translate the WHOLE form into TWO OR MORE additional languages at once.\n" +
+            "Current form base/default language: '$baseLang'. Languages already present (i18n): ${existing.joinToString(", ")}.\n" +
+            "Reply with ONLY this JSON, nothing else:\n" +
+            "{\"translationRequest\":true,\"addLanguages\":[\"<code>\",\"<code>\"]}\n" +
+            "Rules:\n" +
+            "- translationRequest=true when the request asks to translate the WHOLE form into one or more additional languages (e.g. \"translate to English and French\", \"ins Englische und Französische übersetzen\", \"ins Italienische übersetzen\"). It is ALSO true when those languages are ALREADY present (a repeat translation request) — then addLanguages is empty and translationRequest is still true.\n" +
+            "- translationRequest=false and addLanguages=[] for everything else (partial / field-level translations, non-translation edits, etc.).\n" +
+            "- addLanguages lists ONLY the NEW languages to ADD (those not yet present), in the order the request names them, using Formcycle language codes (de, en, fr, it, nl, de-CH, ...). Never include the base language '$baseLang' or a language already present; leave it empty when every named language is already present."
+    val messagesJson = buildString {
+      append("[")
+      append("""{"role":"system","content":${gson.toJson(system)}},""")
+      append("""{"role":"user","content":${gson.toJson(prompt)}}""")
+      append("]")
+    }
+    return try {
+      val raw = instance.performFormAssist(modelId, messagesJson)
+      val cleaned = extractJson(stripThinkTags(raw))
+      val parsed = runCatching { JsonParser.parseString(cleaned) }.getOrNull()
+      val langs =
+          if (parsed != null && parsed.isJsonObject) {
+            val arr = parsed.asJsonObject.get("addLanguages")
+            if (arr?.isJsonArray == true) {
+              arr.asJsonArray
+                  .mapNotNull { e ->
+                    if (e.isJsonPrimitive && e.asJsonPrimitive.isString) e.asString.trim() else null
+                  }
+                  .filter { it.isNotBlank() }
+                  .distinct()
+            } else emptyList()
+          } else emptyList()
+      val request =
+          if (parsed != null && parsed.isJsonObject) {
+            parsed.asJsonObject
+                .get("translationRequest")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
+                ?.asBoolean == true
+          } else false
+      logger.info(
+          "[AICodBiAssistant] Whole-form translation plan: request={} addLanguages={}",
+          request,
+          langs)
+      Triple(request, langs, TokenUsage(estimateTokens(messagesJson), estimateTokens(raw)))
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] planWholeFormTranslation failed: {}", e.message)
+      Triple(false, emptyList(), TokenUsage(estimateTokens(messagesJson), 0))
+    }
+  }
+
+  /**
+   * Copies the [lang] i18n object present on [source] (its "i18n" member) into [target]'s "i18n",
+   * creating it when absent and merging per-property. No other field is touched.
+   */
+  private fun copyLangI18n(target: JsonObject, source: JsonObject, lang: String) {
+    val sI18n = source.get("i18n")?.takeIf { it.isJsonObject } ?: return
+    val sLang = sI18n.asJsonObject.get(lang)?.takeIf { it.isJsonObject } ?: return
+    val tI18n =
+        target.get("i18n")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: JsonObject().also { target.add("i18n", it) }
+    val tLang =
+        tI18n.get(lang)?.takeIf { it.isJsonObject }?.asJsonObject
+            ?: JsonObject().also { tI18n.add(lang, it) }
+    for ((key, value) in sLang.asJsonObject.entrySet()) {
+      tLang.add(key, value.deepCopy())
+    }
+  }
+
+  /**
+   * Recursively overlays the [lang] i18n of [source] object arrays (options / buttons / any nested
+   * element-like objects carrying their own "i18n") onto the positional counterparts in [target].
+   */
+  private fun overlayNestedI18n(target: JsonObject, source: JsonObject, lang: String) {
+    for ((key, sVal) in source.entrySet()) {
+      if (!sVal.isJsonArray) continue
+      val tVal = target.get(key)
+      if (tVal == null || !tVal.isJsonArray) continue
+      val sArr = sVal.asJsonArray
+      val tArr = tVal.asJsonArray
+      for (i in 0 until minOf(sArr.size(), tArr.size())) {
+        val se = sArr[i]
+        val te = tArr[i]
+        if (se != null && se.isJsonObject && te != null && te.isJsonObject) {
+          copyLangI18n(te.asJsonObject, se.asJsonObject, lang)
+          overlayNestedI18n(te.asJsonObject, se.asJsonObject, lang)
+        }
+      }
+    }
+  }
+
+  /**
+   * Overlays ONE element's [lang] i18n (its properties-level "i18n" AND every nested option/button
+   * "i18n") from [sourceEl] onto [targetEl]. Both derive from the same base form, so matching by
+   * arrays is positional and safe.
+   */
+  private fun overlayElementI18n(targetEl: JsonObject, sourceEl: JsonObject, lang: String) {
+    val tp = targetEl.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+    val sp = sourceEl.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+    copyLangI18n(tp, sp, lang)
+    overlayNestedI18n(tp, sp, lang)
+  }
+
+  /**
+   * Merges a per-language form pass [passRoot] (a full form whose NEW content is the i18n for
+   * [lang]) into [root] (the accumulated final form), copying ONLY that language's i18n from every
+   * matching item plus any form-level i18n. Structural fields of [root] are never replaced.
+   */
+  private fun overlayLanguageI18n(root: JsonObject, passRoot: JsonObject, lang: String) {
+    copyLangI18n(root, passRoot, lang) // form-level i18n (e.g. form title)
+    val tItems = root.getAsJsonArray("items") ?: return
+    val sItems = passRoot.getAsJsonArray("items") ?: return
+    val tById = LinkedHashMap<String, JsonObject>()
+    for (el in tItems) {
+      if (el?.isJsonObject == true) {
+        val o = el.asJsonObject
+        val props = o.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject
+        val id = props?.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+        val name = props?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+        if (!id.isNullOrBlank()) tById[id] = o
+        if (!name.isNullOrBlank() && !tById.containsKey(name)) tById[name] = o
+      }
+    }
+    for (el in sItems) {
+      if (el?.isJsonObject != true) continue
+      val o = el.asJsonObject
+      val props = o.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject
+      val id = props?.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+      val name = props?.get("name")?.takeIf { it.isJsonPrimitive }?.asString
+      val target = tById[id.orEmpty()] ?: tById[name.orEmpty()]
+      if (target != null) overlayElementI18n(target, o, lang)
+    }
+  }
+
+  /**
+   * Whole-form translation into SEVERAL languages at once, executed ONE LANGUAGE PER AI PASS (so no
+   * single response must carry every translation — an oversized combined output truncates and
+   * aborts the run, observed live). Every pass reuses [runFormModification] on the ORIGINAL persist
+   * but with a prompt restricted to ONE language; the per-language i18n is merged into one final
+   * form. Returns the same triple as [runFormModification] (merged form JSON, applicability report,
+   * total usage).
+   */
+  private fun runSequentialWholeFormTranslation(
+      prompt: String,
+      persistJson: String,
+      addLanguages: List<String>,
+      modelId: String,
+      instance: Standard,
+      imageParts: List<String>,
+      useCodbi: Boolean,
+      useBuergerserviceNaming: Boolean,
+      clarificationContext: String?,
+      chatContext: String?,
+      changeHistoryContext: String?,
+      matomoStatsContext: String?
+  ): Triple<String, String?, TokenUsage> {
+    val langs = addLanguages.filter { it.isNotBlank() }.distinct()
+    var tokensIn = 0
+    var tokensOut = 0
+    var mergedRoot: JsonObject? = null
+    var applicabilityReport: String? = null
+    for ((index, lang) in langs.withIndex()) {
+      val singlePrompt =
+          prompt +
+              "\n\nEXECUTION NOTE: your request translates the whole form into several languages. The languages are executed ONE AFTER ANOTHER. In THIS step translate the whole form ONLY into language '$lang'. Do NOT translate into any other language — ignore any other language named above (it is handled in its own step). Add the translations as Formcycle per-language i18n for '$lang' exactly as the form-translation rules require; leave the base/default language and every existing language untouched. When the form is translated into '$lang', end your JSON with the usual top-level marker for the languages you actually produced."
+      val (json, applic, usage) =
+          runFormModification(
+              singlePrompt,
+              persistJson,
+              modelId,
+              instance,
+              imageParts,
+              useCodbi,
+              useBuergerserviceNaming,
+              clarificationContext,
+              chatContext,
+              changeHistoryContext,
+              matomoStatsContext)
+      tokensIn += usage.input
+      tokensOut += usage.output
+      if (applic != null) applicabilityReport = applic
+      val root = runCatching { JsonParser.parseString(json).asJsonObject }.getOrNull()
+      if (root == null) {
+        logger.warn(
+            "[AICodBiAssistant] Sequential whole-form translation pass for '{}' returned non-JSON — aborting.",
+            lang)
+        return Triple(json, applicabilityReport, TokenUsage(tokensIn, tokensOut))
+      }
+      if (root.has("error")) {
+        return Triple(json, applicabilityReport, TokenUsage(tokensIn, tokensOut))
+      }
+      logger.info(
+          "[AICodBiAssistant] Sequential whole-form translation pass {}/{} for language '{}' completed",
+          index + 1,
+          langs.size,
+          lang)
+      if (mergedRoot == null) {
+        mergedRoot = root
+      } else {
+        overlayLanguageI18n(mergedRoot, root, lang)
+      }
+    }
+    val finalJson = mergedRoot?.let { gson.toJson(it) } ?: ""
+    logger.info(
+        "[AICodBiAssistant] Sequential whole-form translation merged {} language(s); final form {} chars",
+        langs.size,
+        finalJson.length)
+    return Triple(finalJson, applicabilityReport, TokenUsage(tokensIn, tokensOut))
   }
 
   // endregion Intent Classification
@@ -5308,6 +5702,312 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * READ-ONLY scan of Formcycle's APIProvider service singletons for anything that looks like the
+   * Abschlussseiten / template management service (name/type heuristics). Logs each candidate with
+   * its class and public methods, so the REAL server service that creates Abschlussseiten can be
+   * identified from the next server log and then invoked. Never writes anything.
+   */
+  private fun scanTemplateServices() {
+    try {
+      val apiClass = Class.forName("de.xima.fc.api.APIProvider")
+      val fields =
+          apiClass.fields.filter { f ->
+            java.lang.reflect.Modifier.isStatic(f.modifiers) &&
+                java.lang.reflect.Modifier.isPublic(f.modifiers)
+          }
+      var candidates = 0
+      for (f in fields) {
+        val value = runCatching { f.get(null) }.getOrNull() ?: continue
+        val typeName = value.javaClass.name
+        val interesting =
+            f.name.contains("TEMPLATE", ignoreCase = true) ||
+                f.name.contains("ABSCHLUSS", ignoreCase = true) ||
+                f.name.contains("CONTENT", ignoreCase = true) ||
+                typeName.contains("Template", ignoreCase = true) ||
+                typeName.contains("Abschluss", ignoreCase = true)
+        if (!interesting) continue
+        candidates++
+        val methods =
+            value.javaClass.methods
+                .sortedBy { it.name }
+                .take(60)
+                .joinToString(" | ") { m ->
+                  m.name +
+                      "(" +
+                      m.parameterTypes.joinToString(",") { it.simpleName } +
+                      "):" +
+                      m.returnType.simpleName
+                }
+        logger.info(
+            "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT TEMPLATE-SERVICE-CANDIDATE field={} class={} methods=[{}]",
+            f.name,
+            typeName,
+            methods)
+      }
+      logger.info(
+          "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT scanned {} APIProvider field(s), {} template-service candidate(s) found",
+          fields.size,
+          candidates)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] scanTemplateServices failed: {}", e.message)
+    }
+  }
+
+  /**
+   * Structural fallback for the multilingualize pass: scans the returned form JSON for per-widget
+   * "i18n" language codes and returns "[baseLang, ...otherLangs]" (base = the top-level "lang",
+   * first) when the form carries at least one non-base language. This lets the workflow mails /
+   * ending pages be multilingualized into languages that are already on the WIDGETS (the workflow
+   * can lag behind — e.g. a re-run of "translate to Italian" after the widgets were already
+   * translated, where the model legitimately emits no "_workflowMailLanguages" marker because it
+   * added no new language). Purely structural — reads the form's own i18n; never a prompt-keyword
+   * guess.
+   */
+  private fun deriveWorkflowMailLanguagesFromForm(formJson: String): List<String>? {
+    val base =
+        try {
+          val o = JsonParser.parseString(formJson).asJsonObject
+          o.get("lang")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+        } catch (_: Exception) {
+          null
+        }
+    val codes = LinkedHashSet<String>()
+    fun scan(el: JsonElement) {
+      when {
+        el.isJsonObject -> {
+          val o = el.asJsonObject
+          val i18n = o.get("i18n")
+          if (i18n?.isJsonObject == true) {
+            for ((k, _) in i18n.asJsonObject.entrySet()) {
+              if (!k.isBlank()) codes.add(k.trim())
+            }
+          }
+          o.entrySet().forEach { scan(it.value) }
+        }
+        el.isJsonArray -> el.asJsonArray.forEach { scan(it) }
+      }
+    }
+    try {
+      scan(JsonParser.parseString(formJson))
+    } catch (_: Exception) {
+      return null
+    }
+    val nonBase = codes.filter { c -> c.isNotBlank() && base?.equals(c, ignoreCase = true) != true }
+    if (nonBase.isEmpty()) return null
+    val langs = listOfNotNull(base) + nonBase
+    return langs.distinct().takeIf { it.size >= 2 }
+  }
+
+  /**
+   * READ-ONLY diagnostic for the Abschlussseiten / ending-page feature. Logs the first table that
+   * looks like the project's Abschlussseiten/template store (all columns, detected content- and
+   * language-column candidates, a project-scoped sample row) and the customParameters of existing
+   * FC_SHOW_TEMPLATE workflow nodes (their htmlTemplate UUID refs) for the given workflow version.
+   * Used to implement per-language ending-page creation against the REAL server schema. Never
+   * throws and never writes anything.
+   */
+  private fun introspectEndPageSchema(userContext: Any, workflowVersionId: Long) {
+    try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val wfVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId) ?: return
+      val project = wfVersion.javaClass.getMethod("getProject").invoke(wfVersion) ?: return
+      val projectId = project.javaClass.getMethod("getId").invoke(project) as? Long ?: return
+      val emf = CodbiEntities.entityManagerFactory ?: return
+      val em = emf.createEntityManager()
+      try {
+        logger.info(
+            "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT project={} workflowVersion={} — probing for the Abschlussseiten/template store",
+            projectId,
+            workflowVersionId)
+        val possibleTables =
+            listOf(
+                "TEMPLATE_CLIENT",
+                "COMPLETION_PAGE",
+                "PROJEKT_ABSCHLUSS_SEITE",
+                "PROJEKTABSCHLUSSSEITE",
+                "PROJECT_COMPLETION_PAGE",
+                "ABSCHLUSS_SEITE",
+                "ABSCHLUSSSEITE",
+                "FORM_COMPLETION_PAGE",
+                "WORKFLOW_COMPLETION_PAGE",
+                "FORM_TEMPLATE",
+                "PROJECT_DOI_DATA",
+                "PROJEKT_ABSCHLUSS",
+                "PROJEKTABSCHLUSS")
+        for (tableName in possibleTables) {
+          try {
+            val colsQ =
+                em.createNativeQuery(
+                    "SELECT column_name, data_type FROM information_schema.columns WHERE UPPER(table_name) = :tbl ORDER BY ordinal_position")
+            colsQ.setParameter("tbl", tableName)
+            val cols = colsQ.resultList
+            if (cols.isEmpty()) continue
+            val names =
+                cols.mapNotNull { row ->
+                  (row as? Array<*>)?.get(0)?.toString()?.uppercase()
+                      ?: (row?.toString()?.uppercase())
+                }
+            val hasName = names.any { it == "NAME" || it == "BEZEICHNUNG" || it == "TITLE" }
+            val hasId = names.any { it == "UUID" || it == "ID" }
+            if (!hasName || !hasId) continue
+            val colList =
+                cols.joinToString(" | ") { row ->
+                  (row as? Array<*>)?.joinToString(":") { c -> c?.toString() ?: "" }
+                      ?: row.toString()
+                }
+            logger.info(
+                "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT FOUND-TABLE '{}' — columns: [{}]",
+                tableName,
+                colList)
+            val contentCandidates =
+                names.filter {
+                  it == "INHALT" ||
+                      it == "CONTENT" ||
+                      it == "HTML" ||
+                      it == "HTMLCONTENT" ||
+                      it == "BODY" ||
+                      it == "TEXT" ||
+                      it == "SOURCE" ||
+                      it == "XML" ||
+                      it.contains("CONTENT") ||
+                      it.contains("INHALT") ||
+                      it.contains("HTML") ||
+                      it.contains("BODY") ||
+                      it.contains("TEXT")
+                }
+            val languageCandidates =
+                names.filter {
+                  it == "LANG" ||
+                      it == "LANGUAGE" ||
+                      it == "LOCALE" ||
+                      it.contains("SPRACH") ||
+                      it.contains("LANG") ||
+                      it.contains("LOCAL")
+                }
+            val projectCol =
+                names.firstOrNull {
+                  it == "PROJECT_ID" ||
+                      it == "PROJEKT_ID" ||
+                      it == "PROJEKTID" ||
+                      it == "FK_PROJEKT"
+                }
+            logger.info(
+                "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT TABLE '{}': projectColumn={}; contentColumnCandidates=[{}]; languageColumnCandidates=[{}]",
+                tableName,
+                projectCol ?: "?",
+                contentCandidates.joinToString(", "),
+                languageCandidates.joinToString(", "))
+            // Sample a project-scoped row (first matching table is enough).
+            val selected =
+                (names.filter {
+                      it == "NAME" ||
+                          it == "BEZEICHNUNG" ||
+                          it == "TITLE" ||
+                          it == "UUID" ||
+                          it == "ID"
+                    } + contentCandidates + languageCandidates + listOfNotNull(projectCol))
+                    .distinct()
+            if (selected.isNotEmpty()) {
+              val selectSql =
+                  if (projectCol != null) {
+                    "SELECT ${selected.joinToString(", ")} FROM $tableName WHERE $projectCol = :pid"
+                  } else {
+                    "SELECT ${selected.joinToString(", ")} FROM $tableName"
+                  }
+              try {
+                val sampleQ = em.createNativeQuery(selectSql)
+                if (projectCol != null) sampleQ.setParameter("pid", projectId)
+                sampleQ.maxResults = 3
+                val rows = sampleQ.resultList
+                if (rows.isNotEmpty()) {
+                  logger.info(
+                      "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT TABLE '{}' sample row(s):",
+                      tableName)
+                  for (row in rows) {
+                    val desc =
+                        if (row is Array<*>) {
+                          row.mapIndexed { i, v ->
+                                "${selected.getOrNull(i) ?: "c$i"}=${truncateCell(v?.toString())}"
+                              }
+                              .joinToString(" | ")
+                        } else {
+                          truncateCell(row.toString())
+                        }
+                    logger.info("[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT   row: {}", desc)
+                  }
+                } else {
+                  logger.info(
+                      "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT TABLE '{}' has no rows for project {}",
+                      tableName,
+                      projectId)
+                }
+              } catch (e: Exception) {
+                logger.warn(
+                    "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT sample select failed on '{}': {}",
+                    tableName,
+                    e.message)
+              }
+            }
+            break
+          } catch (_: Exception) {
+            continue
+          }
+        }
+        // Scan Formcycle's APIProvider for the Abschlussseiten/template management service.
+        try {
+          scanTemplateServices()
+        } catch (e: Exception) {
+          logger.warn("[AICodBiAssistant] Template-service scan skipped: {}", e.message)
+        }
+        // Existing FC_SHOW_TEMPLATE nodes of this workflow version → their htmlTemplate refs.
+        try {
+          val wfColQ =
+              em.createNativeQuery(
+                  "SELECT column_name FROM information_schema.columns WHERE UPPER(table_name) = 'WORKFLOW_NODE'")
+          val wfCols = wfColQ.resultList.map { it.toString().uppercase() }
+          val typeCol = wfCols.firstOrNull { it.contains("TYPE") } ?: "TYPE"
+          val paramCol = wfCols.firstOrNull { it.contains("PARAM") } ?: "CUSTOM_PARAMS"
+          val nodeQ =
+              em.createNativeQuery(
+                  "SELECT id, CAST($paramCol AS VARCHAR(8000)) FROM WORKFLOW_NODE WHERE $typeCol = 'FC_SHOW_TEMPLATE' AND $paramCol IS NOT NULL ORDER BY id")
+          nodeQ.maxResults = 25
+          val nodeRows = nodeQ.resultList
+          logger.info(
+              "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT FC_SHOW_TEMPLATE nodes in workflowVersion {} ({}):",
+              workflowVersionId,
+              nodeRows.size)
+          for (row in nodeRows) {
+            val arr = row as? Array<*>
+            logger.info(
+                "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT   node {} params={}",
+                arr?.get(0)?.toString() ?: "?",
+                truncateCell(arr?.get(1)?.toString(), 800))
+          }
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT FC_SHOW_TEMPLATE scan failed: {}",
+              e.message)
+        }
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] CODBI-END-PAGE-INTROSPECT failed: {}", e.message)
+    }
+  }
+
+  /** Truncates a raw DB cell for readable diagnostic logging. */
+  private fun truncateCell(text: String?, max: Int = 500): String {
+    val s = text ?: ""
+    return if (s.length <= max) s else s.take(max) + "...(" + s.length + " chars)"
+  }
+
+  /**
    * Queries the database for available HTML templates for the given workflow version's project.
    * These are templates stored in TEMPLATE_CLIENT, FORM_TEMPLATE, or similar tables that can be
    * used with the FC_SHOW_TEMPLATE workflow node.
@@ -6410,32 +7110,120 @@ class AICodBiAssistant : IPluginServletAction {
             }
     val baseLanguage = langs.first()
 
-    // Condensed candidate list: ONLY the FC_EMAIL / FC_DOI_INIT mail nodes (id, name, type,
-    // params).
-    // Feeding the whole workflow tree to the model invites it to ECHO the workflow back instead of
-    // answering the small mails payload (observed live: the model returned the full ~36 KB workflow
-    // as its reply, so no switch node was created).
+    // Condensed candidate list of TWO kinds:
+    //  - "MAIL":   a plain FC_EMAIL / FC_DOI_INIT node that is NOT yet inside a [%lang%] switch ->
+    //              to be WRAPPED into a new FC_SWITCH on [%lang%];
+    //  - "SWITCH": an existing FC_SWITCH on [%lang%] that already carries (translated) mail
+    // clone(s)
+    //              -> to be EXTENDED with the missing language cases (added later, e.g. en/fr on
+    // top
+    //              of an earlier de/it switch).
+    // Feeding the whole workflow tree invites the model to ECHO it back instead of answering the
+    // small mails payload (observed live), so only these condensed candidates are sent.
     //
     // Whether a mail is consumer-facing is decided by the AI itself (a server-side filter can never
     // cover every way a mail is destined to the consumer or an internal office): the model must
-    // return an explicit "toConsumer" verdict for EVERY candidate node, and only the nodes the
-    // model
-    // marks true are multilingualized.
+    // return an explicit "toConsumer" verdict for EVERY candidate node.
+    fun collectMailMeta(n: JsonObject, acc: MutableList<JsonObject>) {
+      val t = n.get("type")?.asString ?: ""
+      if (t == "FC_EMAIL" || t == "FC_DOI_INIT") {
+        val cp = n.get("customParameters")
+        val meta = JsonObject()
+        meta.addProperty("type", t)
+        meta.addProperty("name", n.get("name")?.asString ?: "")
+        meta.addProperty("params", cp?.toString() ?: "")
+        acc.add(meta)
+      }
+      n.get("children")
+          ?.takeIf { it.isJsonArray }
+          ?.asJsonArray
+          ?.forEach { c -> if (c.isJsonObject) collectMailMeta(c.asJsonObject, acc) }
+    }
+    fun analyzeLangSwitch(o: JsonObject): JsonObject? {
+      val cp = o.get("customParameters")
+      val switchValue =
+          if (cp != null && cp.isJsonObject) {
+            cp.asJsonObject.get("switchValue")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+          } else {
+            null
+          }
+      if (switchValue != "[%lang%]") return null
+      val id = o.get("id")?.asString ?: return null
+      val children = o.get("children")?.takeIf { it.isJsonArray }?.asJsonArray ?: return null
+      val caseLangs = LinkedHashSet<String>()
+      var defaultId: String? = null
+      val mails = mutableListOf<JsonObject>()
+      for (branch in children) {
+        if (!branch.isJsonObject) continue
+        val b = branch.asJsonObject
+        val bt = b.get("type")?.asString ?: ""
+        if (bt == "FC_SWITCH_CASE") {
+          try {
+            val bcp = b.get("customParameters")
+            if (bcp != null && bcp.isJsonObject) {
+              val cvs = bcp.asJsonObject.get("caseValues")
+              if (cvs?.isJsonArray == true) {
+                for (cv in cvs.asJsonArray) {
+                  if (cv.isJsonObject) {
+                    val v = cv.asJsonObject.get("caseValue")
+                    val s = v?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+                    if (!s.isNullOrBlank()) caseLangs.add(s)
+                  }
+                }
+              }
+            }
+          } catch (_: Exception) {}
+          collectMailMeta(b, mails)
+        } else if (bt == "FC_SWITCH_DEFAULT") {
+          defaultId = b.get("id")?.asString
+          collectMailMeta(b, mails)
+        } else {
+          collectMailMeta(b, mails)
+        }
+      }
+      if (mails.isEmpty() && caseLangs.isEmpty()) return null
+      val meta = JsonObject()
+      meta.addProperty("kind", "SWITCH")
+      meta.addProperty("targetNodeId", id)
+      meta.addProperty("name", o.get("name")?.asString ?: "")
+      val langsArr = JsonArray()
+      caseLangs.forEach { langsArr.add(it) }
+      meta.add("existingCaseLanguages", langsArr)
+      meta.addProperty("defaultBranchId", defaultId ?: "")
+      val src = mails.firstOrNull()
+      meta.addProperty("sourceType", src?.get("type")?.asString ?: "FC_EMAIL")
+      meta.addProperty("sourceName", src?.get("name")?.asString ?: "")
+      meta.addProperty("sourceParams", src?.get("params")?.asString ?: "")
+      return meta
+    }
     fun collectMailCandidates(el: JsonElement, out: JsonArray) {
       if (!el.isJsonObject) return
       val o = el.asJsonObject
       val nodeType = o.get("type")?.asString ?: ""
-      if (nodeType == "FC_EMAIL" || nodeType == "FC_DOI_INIT") {
-        val id = o.get("id")?.asString ?: ""
-        if (id.isNotBlank()) {
-          val node = JsonObject()
-          node.addProperty("targetNodeId", id)
-          node.addProperty("name", o.get("name")?.asString ?: "")
-          node.addProperty("type", nodeType)
-          node.addProperty("description", o.get("description")?.asString ?: "")
-          val cp = o.get("customParameters")
-          if (cp != null) node.add("customParameters", cp)
-          out.add(node)
+      when (nodeType) {
+        "FC_SWITCH" -> {
+          val meta = analyzeLangSwitch(o)
+          if (meta != null) {
+            out.add(meta)
+            // Its mail clones are handled by EXTENDING this switch, never re-wrapped.
+            return
+          }
+        }
+        "FC_EMAIL",
+        "FC_DOI_INIT" -> {
+          val id = o.get("id")?.asString ?: ""
+          if (id.isNotBlank()) {
+            val node = JsonObject()
+            node.addProperty("kind", "MAIL")
+            node.addProperty("targetNodeId", id)
+            node.addProperty("name", o.get("name")?.asString ?: "")
+            node.addProperty("type", nodeType)
+            node.addProperty("description", o.get("description")?.asString ?: "")
+            val cp = o.get("customParameters")
+            if (cp != null) node.add("customParameters", cp)
+            out.add(node)
+          }
+          return
         }
       }
       o.get("children")
@@ -6457,7 +7245,7 @@ class AICodBiAssistant : IPluginServletAction {
     }
     if (mailCandidates.size() == 0) {
       logger.info(
-          "[AICodBiAssistant] Mail multilingualization: no FC_EMAIL/FC_DOI_INIT node found - nothing to wrap.")
+          "[AICodBiAssistant] Mail multilingualization: no consumer mail node or [%lang%] mail switch found - nothing to do.")
       return ""
     }
     val candidateIds =
@@ -6472,9 +7260,9 @@ class AICodBiAssistant : IPluginServletAction {
             .filter { it.isNotBlank() }
     val candidatesJson = gson.toJson(mailCandidates)
     logger.info(
-        "[AICodBiAssistant] Mail multilingualization candidates ({} mail node(s)): {}",
+        "[AICodBiAssistant] Mail multilingualization candidates ({} mail node(s)/switch(es)): {}",
         mailCandidates.size(),
-        compactJsonForLog(candidatesJson))
+        compactJsonForLog(candidatesJson).take(2000))
 
     val system = buildString {
       append(instruction)
@@ -6485,13 +7273,14 @@ class AICodBiAssistant : IPluginServletAction {
       append(baseLanguage)
       append("' keeps the ORIGINAL mail text — provide translations ONLY for the other languages.")
       append(
-          "\n\nCANDIDATE MAIL NODES (JSON) - every FC_EMAIL/FC_DOI_INIT mail node of the workflow. For EACH node decide whether it is CONSUMER-facing and reply with an entry for EVERY node (see the required reply schema below):\n")
+          "\n\nCANDIDATE MAIL NODES (JSON) - each entry is either a plain consumer mail node (\"kind\":\"MAIL\", to be wrapped) or an ALREADY-wrapped mail switch (\"kind\":\"SWITCH\" with its \"existingCaseLanguages\"). For EACH node decide whether it is CONSUMER-facing and reply with an entry for EVERY node (see the required reply schema below):\n")
       append(candidatesJson)
       append(
           "\n\nOUTPUT RULE: reply with ONLY this JSON - one 'mails' entry per candidate node, no omissions, nothing else:\n" +
               "{\"mails\":[{\"targetNodeId\":\"<node id from CANDIDATE MAIL NODES>\",\"toConsumer\":true,\"translations\":{\"<languageCode>\":{\"subject\":\"<translated subject>\",\"body\":\"<translated HTML body>\"}}},{\"targetNodeId\":\"<node id>\",\"toConsumer\":false,\"translations\":{}}]}\n" +
               "'toConsumer' is true ONLY when the mail is sent to the CONSUMER (the person who filled the form): a DOI invitation, or an email addressed to the submitter whose content is a confirmation/invitation/receipt FOR them. It is false for internal/back-office notifications, operator error/alert mails and admin copies — even when such a mail is configured with the submitter's email field as recipient; judge by intent (who reads it and why), never by the recipient string alone.\n" +
-              "Provide 'translations' ONLY for nodes with toConsumer=true (one entry per FORM LANGUAGE except the base language '$baseLanguage'); for toConsumer=false nodes 'translations' is empty {}.")
+              "Provide 'translations' ONLY for nodes with toConsumer=true (one entry per FORM LANGUAGE except the base language '$baseLanguage'); for toConsumer=false nodes 'translations' is empty {}.\n" +
+              "For a candidate with \"kind\":\"SWITCH\", its existing case languages are ALREADY translated — provide 'translations' ONLY for the FORM LANGUAGES that are NOT in its \"existingCaseLanguages\" (translate from the source mail in 'sourceParams').")
     }
     val contextSuffix =
         listOfNotNull(
@@ -6627,13 +7416,23 @@ class AICodBiAssistant : IPluginServletAction {
         "[AICodBiAssistant] Mail multilingualization: AI marks {} mail node(s) as consumer-facing: {}",
         consumerChosen.size,
         consumerChosen.joinToString(", "))
+    fun candidateOf(id: String): JsonObject? =
+        mailCandidates
+            .firstOrNull { c ->
+              c.isJsonObject &&
+                  c.asJsonObject
+                      .get("targetNodeId")
+                      ?.takeIf { it.isJsonPrimitive }
+                      ?.asString
+                      ?.trim() == id
+            }
+            ?.asJsonObject
     val messages = mutableListOf<String>()
     val handledNodeIds = mutableSetOf<String>()
     for (el in mailTasks) {
       if (!el.isJsonObject) continue
       val obj = el.asJsonObject
-      if (entryVerdict(obj) != true)
-          continue // wrap ONLY the nodes the AI itself marked consumer-facing
+      if (entryVerdict(obj) != true) continue
       val targetId =
           obj.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
       if (!candidateIds.contains(targetId)) continue
@@ -6647,8 +7446,38 @@ class AICodBiAssistant : IPluginServletAction {
         }
       }
       if (translations.isEmpty()) continue
+      val cand = candidateOf(targetId)
+      val kind = cand?.get("kind")?.takeIf { it.isJsonPrimitive }?.asString ?: "MAIL"
       val result =
-          multilingualizeMailNode(workflowVersionId, targetId, langs, translations, userContext)
+          if (kind == "SWITCH") {
+            // Extend an ALREADY multilingual [%lang%] switch with the missing language cases
+            // (e.g. add en/fr to a de/it switch) instead of wrapping it again.
+            val existing =
+                (cand
+                        ?.get("existingCaseLanguages")
+                        ?.takeIf { it.isJsonArray }
+                        ?.asJsonArray
+                        ?.mapNotNull { e -> e.takeIf { it.isJsonPrimitive }?.asString?.trim() }
+                        ?.filter { it.isNotBlank() } ?: emptyList())
+                    .toSet()
+            val sourceType = cand?.get("sourceType")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+            val sourceParams =
+                cand?.get("sourceParams")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+            val defaultId =
+                cand?.get("defaultBranchId")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+            val addLangs = langs.filter { it != baseLanguage && it !in existing }
+            extendMailSwitchNode(
+                workflowVersionId,
+                targetId,
+                addLangs,
+                translations,
+                sourceType,
+                sourceParams,
+                defaultId,
+                userContext)
+          } else {
+            multilingualizeMailNode(workflowVersionId, targetId, langs, translations, userContext)
+          }
       if (result.isNotBlank()) messages.add(result)
     }
     if (messages.isEmpty()) return ""
@@ -6671,8 +7500,9 @@ class AICodBiAssistant : IPluginServletAction {
    * parameters verbatim, every other case gets a clone whose subject/body/senderName come from
    * [translations]. Each case/default branch contains a SEQUENCE container with one mail node,
    * mirroring how FC_SWITCH branches are created in createWorkflowTask. No new
-   * lane/trigger/endpoint is created. The default branch is created LAST because the switch
-   * executor falls back to the LAST child when no case matches.
+   * lane/trigger/endpoint is created. The FC_SWITCH_DEFAULT branch is created FIRST (index 0) —
+   * Formcycle requires the default as the first child or the switch is invalid; the language cases
+   * follow it.
    */
   private fun multilingualizeMailNode(
       workflowVersionId: Long,
@@ -6808,11 +7638,19 @@ class AICodBiAssistant : IPluginServletAction {
         createMailClone(savedSeq, mailName, mailParams)
       }
 
-      // 2) One FC_SWITCH_CASE per form language. The base-language case and the default fallback
-      // keep
-      //    the ORIGINAL mail verbatim; the other cases carry the translated clones.
+      // 2) Children: the FC_SWITCH_DEFAULT branch FIRST (index 0) — Formcycle treats the first
+      // child
+      //    as the switch's default and marks the node INVALID when the default is anywhere else —
+      //    then one FC_SWITCH_CASE per form language. The default + base-language case keep the
+      //    ORIGINAL mail verbatim; the other cases carry the translated clones.
       var caseCount = 0
       val wrappedLanguages = mutableListOf<String>()
+      createBranch(
+          "FC_SWITCH_DEFAULT",
+          "FcSwitchDefaultHandler",
+          "{}",
+          origName.ifBlank { "Mail" },
+          origParams)
       for (lang in langs) {
         val caseValueJson =
             """{"caseValue":${gson.toJson(lang)},"matchCondition":"EQUAL","variableName":"C1"}"""
@@ -6829,16 +7667,8 @@ class AICodBiAssistant : IPluginServletAction {
         wrappedLanguages.add(lang)
         caseCount++
       }
-      // 3) FC_SWITCH_DEFAULT branch LAST — the switch executor uses the LAST child when no case
-      //    matches, so the default (original mail) must come after all language cases.
-      createBranch(
-          "FC_SWITCH_DEFAULT",
-          "FcSwitchDefaultHandler",
-          "{}",
-          origName.ifBlank { "Mail" },
-          origParams)
       logger.info(
-          "[AICodBiAssistant] Wrapped mail node {} into FC_SWITCH on [%lang%] — {} language case(s) + default",
+          "[AICodBiAssistant] Wrapped mail node {} into FC_SWITCH on [%lang%] — default first + {} language case(s)",
           nodeId,
           caseCount)
       return "wrapped $type '${origName.ifBlank { "Mail" }}' (#$nodeId) into FC_SWITCH on [%lang%] for " +
@@ -6850,6 +7680,1835 @@ class AICodBiAssistant : IPluginServletAction {
           e.message)
       return "Mail multilingualization of node $targetNodeId failed: ${e.message}"
     }
+  }
+
+  /**
+   * EXTENDS an existing FC_SWITCH on "[%lang%]" (created by an earlier multilingualize run) with
+   * one new FC_SWITCH_CASE + SEQUENCE + mail clone per [addLanguages]. Each new case carries the
+   * ORIGINAL (base-language) mail translated into that language ([translations]); the
+   * FC_SWITCH_DEFAULT branch stays at index 0 (the FIRST child — Formcycle requires the default
+   * first or the switch is invalid). This is what lets adding e.g. English+French LATER extend an
+   * existing de/it consumer-mail switch instead of leaving English/French consumers on the German
+   * (default) mail. Never creates a lane/trigger/ endpoint and never touches the switch's existing
+   * cases.
+   */
+  private fun extendMailSwitchNode(
+      workflowVersionId: Long,
+      targetNodeId: String,
+      addLanguages: List<String>,
+      translations: Map<String, JsonObject>,
+      sourceType: String,
+      sourceParams: String,
+      defaultBranchId: String,
+      userContext: Any
+  ): String {
+    val nodeId =
+        targetNodeId.trim().toLongOrNull()
+            ?: return "Invalid target switch node id '$targetNodeId'."
+    val addLangs = addLanguages.filter { it.isNotBlank() }.distinct()
+    try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val iTransferableEntityClass =
+          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+      val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
+      val workflowTaskClass = Class.forName("de.xima.fc.entities.WorkflowTask")
+      val getById =
+          workflowNodeApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      val switchNode =
+          getById.invoke(workflowNodeApi, userContext, nodeId)
+              ?: return "WorkflowNode $nodeId not found — nothing to extend."
+      val switchType =
+          (switchNode.javaClass.getMethod("getType").invoke(switchNode) as? String) ?: ""
+      if (switchType != "FC_SWITCH") {
+        return "Node $nodeId is '$switchType', not an FC_SWITCH — skipped."
+      }
+      val task =
+          switchNode.javaClass.getMethod("getTask").invoke(switchNode)
+              ?: return "Node $nodeId has no task — skipped."
+      val baseName =
+          ((switchNode.javaClass.getMethod("getName").invoke(switchNode) as? String)?.trim())
+              .orEmpty()
+              .ifBlank { "Mail" }
+      val mailType = if (sourceType.isBlank()) "FC_EMAIL" else sourceType
+      val createNode =
+          workflowNodeApi.javaClass.getMethod("create", ucClass, iTransferableEntityClass)
+
+      fun createMailClone(parent: Any, mailName: String, mailParams: String) {
+        val mail = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(mail, sanitizeWorkflowName(mailName))
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(mail, mailType)
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(mail, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", java.util.UUID::class.java)
+            .invoke(mail, java.util.UUID.randomUUID())
+        if (mailParams.isNotBlank()) {
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(mail, mailParams)
+          stampCustomParamsVersion(workflowNodeClass, mail)
+        }
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(mail, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(mail, parent)
+        val saved = createNode.invoke(workflowNodeApi, userContext, mail)
+        fixParentOrderIndex(saved, parent, userContext)
+      }
+
+      fun createCaseBranch(lang: String, mailName: String, mailParams: String) {
+        val caseValueJson =
+            """{"caseValue":${gson.toJson(lang)},"matchCondition":"EQUAL","variableName":"C1"}"""
+        val caseParams =
+            """{"caseValues":[$caseValueJson],"combinationType":"OR","description":${gson.toJson("Sprache: $lang")}}"""
+        val branch = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(branch, "FcSwitchCaseHandler")
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(branch, "FC_SWITCH_CASE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branch, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", java.util.UUID::class.java)
+            .invoke(branch, java.util.UUID.randomUUID())
+        workflowNodeClass
+            .getMethod("setCustomParameters", String::class.java)
+            .invoke(branch, caseParams)
+        stampCustomParamsVersion(workflowNodeClass, branch)
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branch, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(branch, switchNode)
+        val savedBranch = createNode.invoke(workflowNodeApi, userContext, branch)
+        fixParentOrderIndex(savedBranch, switchNode, userContext)
+        val seq = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass.getMethod("setName", String::class.java).invoke(seq, "FcSequenceHandler")
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(seq, "SEQUENCE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(seq, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", java.util.UUID::class.java)
+            .invoke(seq, java.util.UUID.randomUUID())
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(seq, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(seq, savedBranch)
+        val savedSeq = createNode.invoke(workflowNodeApi, userContext, seq)
+        fixParentOrderIndex(savedSeq, savedBranch, userContext)
+        createMailClone(savedSeq, mailName, mailParams)
+      }
+
+      val addedLangs = mutableListOf<String>()
+      for (lang in addLangs) {
+        val translation = translations[lang] ?: continue
+        val mailParams = applyMailTranslationParams(sourceParams, translation)
+        createCaseBranch(lang, "$baseName ($lang)", mailParams)
+        addedLangs.add(lang)
+      }
+      // Formcycle requires the FC_SWITCH_DEFAULT branch at parent_order_idx 0 (the FIRST child) — a
+      // switch whose default is anywhere else is INVALID. Reorder after appending the new cases
+      // (no-op when the default already is first); this ALSO heals switches generated before this
+      // rule, even when nothing new was added.
+      ensureSwitchDefaultFirst(workflowNodeApi, ucClass, userContext, nodeId)
+      if (addedLangs.isEmpty()) {
+        return "" // every requested language is already present — ordering healed above
+      }
+      logger.info(
+          "[AICodBiAssistant] Extended existing FC_SWITCH {} on [%lang%] with new language case(s): {}",
+          nodeId,
+          addedLangs.joinToString(", "))
+      return "extended FC_SWITCH '#$nodeId' with language case(s): " + addedLangs.joinToString(", ")
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] extendMailSwitchNode failed for node {}: {}", targetNodeId, e.message)
+      return "Extending switch node $targetNodeId failed: ${e.message}"
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Abschlussseiten / ending-page multilingualization (FC_SHOW_TEMPLATE nodes).
+  //
+  // STATUS (2026-09-06): ACTIVE in REUSE-ONLY form. Server-side CREATION of the Abschlussseiten
+  // (HTTP response templates in TEMPLATE_CLIENT) proved impossible from the plugin — no JPA entity
+  // maps TEMPLATE_CLIENT, its TEXTVALUE is encrypted at rest, and no Formcycle API/DAO/service that
+  // creates these pages exists in the published jars nor on APIProvider (only
+  // AppointmentTemplateAPI).
+  // The ACTIVE pass therefore NEVER creates or edits a page: it only wraps a consumer
+  // FC_SHOW_TEMPLATE
+  // node into an FC_SWITCH on [%lang%] and points each non-base case at the ALREADY EXISTING
+  // localized
+  // page whose NAME is "<base> _CB_<LANG>" (e.g. "… _CB_EN"); a language without such a page falls
+  // back to the ORIGINAL page. NAME + UUID are read plain-text from TEMPLATE_CLIENT; the encrypted
+  // TEXTVALUE is never read. The active code lives further below (the reuse-only section):
+  //   listClientTemplates / findLocalizedTemplate / extendEndPageSwitchNode /
+  //   runEndPageMultilingualization  +  multilingualizeEndPageNode / applyEndPageTranslationParams
+  // (which are called by that pass). Everything between this banner and that reuse-only section —
+  // readTemplatePage, tableAnnotationName, discoverTemplateEntityClass, templateEntityClasses,
+  // loadTemplateEntity, setIfPresent, copyScalarProperty, setTemplateText, setNewUuid,
+  // ensureEndPageForLanguage and runEndPageMultilingualizationSuperseded — is the SUPERSEDED
+  // creation-era machinery: inert, never called, kept for reference only.
+  //
+  // An Abschlussseite shown to the consumer is an FC_SHOW_TEMPLATE workflow node whose
+  // customParameters carry an "htmlTemplate" UuidEntityRef to a server-side TEMPLATE_CLIENT row
+  // (columns NAME/UUID/TEXTVALUE HTML, CLIENT_ID, no language column -> one row per language).
+  // The multilingualize wrap converts a consumer FC_SHOW_TEMPLATE node into an FC_SWITCH on
+  // [%lang%]; the FC_SWITCH_DEFAULT (index 0) and the base-language case keep the ORIGINAL page,
+  // every other case's htmlTemplate.uuid is rewritten to the localized "_CB_<LANG>" page (or stays
+  // on
+  // the original when no localization exists yet).
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Reads the DECRYPTED page (NAME + text) of a TEMPLATE_CLIENT row by uuid via the entity API (the
+   * TEXTVALUE column is stored encrypted — a raw native read yields ciphertext, so the content must
+   * be read through the mapped entity's getter).
+   */
+  private fun readTemplatePage(userContext: Any, pageUuid: String): Pair<String, String>? {
+    if (pageUuid.isBlank()) return null
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      val loaded = loadTemplateEntity(em, pageUuid) ?: return null
+      val entity = loaded.first
+      val name =
+          runCatching { entity.javaClass.getMethod("getName").invoke(entity) as? String }
+              .getOrNull() ?: ""
+      var text = ""
+      for (g in
+          listOf(
+              "getTextValue",
+              "getText",
+              "getValue",
+              "getHtml",
+              "getHtmlValue",
+              "getContent",
+              "getTemplateText")) {
+        try {
+          val gm = entity.javaClass.getMethod(g)
+          if (gm.returnType == String::class.java || gm.returnType == CharSequence::class.java) {
+            val v = gm.invoke(entity) as? String
+            if (v != null) {
+              text = v
+              break
+            }
+          }
+        } catch (_: Exception) {}
+      }
+      if (name.isBlank() && text.isEmpty()) return null
+      return name to text
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] readTemplatePage failed for uuid {}: {}", pageUuid, e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Returns the @Table name (case-insensitive) of an entity class via
+   * javax/jakarta.persistence.Table.
+   */
+  private fun tableAnnotationName(javaType: Class<*>): String? {
+    for (ann in javaType.annotations) {
+      val ja = ann as java.lang.annotation.Annotation
+      val annTypeName = ja.annotationType().name
+      if (annTypeName == "javax.persistence.Table" || annTypeName == "jakarta.persistence.Table") {
+        try {
+          val nm = ja.annotationType().getMethod("name").invoke(ja) as? String
+          if (!nm.isNullOrBlank()) return nm
+        } catch (_: Exception) {}
+      }
+    }
+    return null
+  }
+
+  /** Discovers the entity class mapped to the TEMPLATE_CLIENT table via the JPA metamodel. */
+  private fun discoverTemplateEntityClass(em: Any): Class<*>? {
+    return try {
+      val metamodel = em.javaClass.getMethod("getMetamodel").invoke(em)
+      val entities =
+          metamodel.javaClass.getMethod("getEntities").invoke(metamodel) as? Collection<*>
+              ?: return null
+      for (et in entities) {
+        if (et == null) continue
+        try {
+          val javaType = et.javaClass.getMethod("getJavaType").invoke(et) as? Class<*> ?: continue
+          val tableName = tableAnnotationName(javaType)
+          if (tableName != null && tableName.equals("TEMPLATE_CLIENT", ignoreCase = true)) {
+            logger.info(
+                "[AICodBiAssistant] Discovered TEMPLATE_CLIENT entity class {}", javaType.name)
+            return javaType
+          }
+        } catch (_: Exception) {
+          continue
+        }
+      }
+      logger.warn("[AICodBiAssistant] No entity class maps to TEMPLATE_CLIENT in the metamodel")
+      null
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] discoverTemplateEntityClass failed: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Candidate template entity classes for a TEMPLATE_CLIENT row (fallback when no metamodel match).
+   */
+  private fun templateEntityClasses(): List<Class<*>> {
+    val names =
+        listOf(
+            "de.xima.fc.entities.ClientTemplate",
+            "de.xima.fc.entities.TextTemplate",
+            "de.xima.fc.entities.FormTemplate")
+    return names.mapNotNull { n -> runCatching { Class.forName(n) }.getOrNull() }
+  }
+
+  /** Loads the entity instance of a TEMPLATE_CLIENT row by uuid via EntityManager.find. */
+  private fun loadTemplateEntity(em: Any, pageUuid: String): Pair<Any, Class<*>>? {
+    try {
+      val idQ =
+          em.javaClass
+              .getMethod("createNativeQuery", String::class.java)
+              .invoke(em, "SELECT ID FROM TEMPLATE_CLIENT WHERE UUID = :u") as Any
+      val setP = idQ.javaClass.getMethod("setParameter", String::class.java, Any::class.java)
+      setP.invoke(idQ, "u", pageUuid)
+      idQ.javaClass.getMethod("setMaxResults", Int::class.javaPrimitiveType).invoke(idQ, 1)
+      val rows = idQ.javaClass.getMethod("getResultList").invoke(idQ) as List<*>
+      if (rows.isEmpty()) return null
+      val raw = rows[0]
+      val id = (if (raw is Array<*>) raw[0] else raw).toString().toLongOrNull() ?: return null
+      val discovered = discoverTemplateEntityClass(em)
+      val classes =
+          (if (discovered != null) listOf(discovered) else emptyList<Class<*>>()) +
+              templateEntityClasses()
+      val find = em.javaClass.getMethod("find", Class::class.java, Any::class.java)
+      for (clazz in classes.distinct()) {
+        try {
+          val inst = find.invoke(em, clazz, id)
+          if (inst != null) {
+            logger.info(
+                "[AICodBiAssistant] Loaded TEMPLATE_CLIENT entity {} (uuid {})",
+                clazz.name,
+                pageUuid)
+            return inst to clazz
+          }
+        } catch (_: Exception) {
+          continue
+        }
+      }
+      return null
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] loadTemplateEntity failed for uuid {}: {}", pageUuid, e.message)
+      return null
+    }
+  }
+
+  /** Invokes a single-arg setter when present, coercing common types. Returns true when invoked. */
+  private fun setIfPresent(target: Any, setterName: String, value: Any?): Boolean {
+    if (value == null) return false
+    try {
+      val m =
+          target.javaClass.methods.firstOrNull { it.name == setterName && it.parameterCount == 1 }
+              ?: return false
+      val p = m.parameterTypes[0]
+      val v: Any? =
+          when {
+            p.isInstance(value) -> value
+            p == String::class.java -> value.toString()
+            (p == Boolean::class.javaPrimitiveType || p == java.lang.Boolean::class.java) &&
+                value is Boolean -> value
+            (p == Long::class.javaPrimitiveType || p == java.lang.Long::class.java) &&
+                value is Number -> value.toLong()
+            (p == Integer::class.javaPrimitiveType || p == java.lang.Integer::class.java) &&
+                value is Number -> value.toInt()
+            else -> null
+          }
+      if (v != null) {
+        m.invoke(target, v)
+        return true
+      }
+    } catch (_: Exception) {}
+    return false
+  }
+
+  /** Copies one scalar property (getter -> setter) between two objects when both exist. */
+  private fun copyScalarProperty(src: Any, dst: Any, getterName: String, setterName: String) {
+    try {
+      val g =
+          src.javaClass.methods.firstOrNull { it.name == getterName && it.parameterCount == 0 }
+              ?: return
+      val v = g.invoke(src)
+      setIfPresent(dst, setterName, v)
+    } catch (_: Exception) {}
+  }
+
+  /**
+   * Sets the HTML content via the first matching string setter (textValue/text/value/html/content).
+   */
+  private fun setTemplateText(dst: Any, html: String): Boolean {
+    for (setter in
+        listOf("setTextValue", "setText", "setValue", "setHtml", "setHtmlValue", "setContent")) {
+      try {
+        if (setIfPresent(dst, setter, html)) return true
+      } catch (_: Exception) {}
+    }
+    return false
+  }
+
+  /** Sets a fresh UUID via setUuidObject(UUID) / setUuid(UUID|String). Returns true on success. */
+  private fun setNewUuid(dst: Any, uuid: java.util.UUID): Boolean {
+    for (setter in listOf("setUuidObject", "setUuid")) {
+      try {
+        val m =
+            dst.javaClass.methods.firstOrNull { it.name == setter && it.parameterCount == 1 }
+                ?: continue
+        val p = m.parameterTypes[0]
+        if (p == java.util.UUID::class.java) {
+          m.invoke(dst, uuid)
+          return true
+        }
+        if (p == String::class.java) {
+          m.invoke(dst, uuid.toString())
+          return true
+        }
+      } catch (_: Exception) {}
+    }
+    return false
+  }
+
+  /**
+   * Ensures a per-language Abschlussseite exists in TEMPLATE_CLIENT and returns its (uuid, name).
+   * Reuses an existing page whose NAME equals [translatedName] for the same client; otherwise it
+   * CLONES the base page entity (the class that maps to TEMPLATE_CLIENT) via the Formcycle entity
+   * API with rollback + full logging on failure. Never throws.
+   */
+  private fun ensureEndPageForLanguage(
+      userContext: Any,
+      origUuid: String,
+      baseName: String,
+      translatedName: String,
+      translatedHtml: String
+  ): Pair<String, String>? {
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    val tx =
+        try {
+          em.javaClass.getMethod("getTransaction").invoke(em)
+        } catch (_: Exception) {
+          em.close()
+          return null
+        }
+    try {
+      val begin = tx.javaClass.getMethod("begin")
+      val commit = tx.javaClass.getMethod("commit")
+      val rollback = tx.javaClass.getMethod("rollback")
+      val createNQ = em.javaClass.getMethod("createNativeQuery", String::class.java)
+      val persist = em.javaClass.getMethod("persist", Any::class.java)
+      val flush = em.javaClass.getMethod("flush")
+
+      // Original row's CLIENT_ID (for scoping the "exists?" check and the new row).
+      val clientIdQ = createNQ.invoke(em, "SELECT CLIENT_ID FROM TEMPLATE_CLIENT WHERE UUID = :u")
+      clientIdQ.javaClass
+          .getMethod("setParameter", String::class.java, Any::class.java)
+          .invoke(clientIdQ, "u", origUuid)
+      clientIdQ.javaClass
+          .getMethod("setMaxResults", Int::class.javaPrimitiveType)
+          .invoke(clientIdQ, 1)
+      val crows = clientIdQ.javaClass.getMethod("getResultList").invoke(clientIdQ) as List<*>
+      val clientId =
+          if (crows.isEmpty()) null
+          else {
+            val raw = crows[0]
+            ((if (raw is Array<*>) raw[0] else raw)?.toString())?.toLongOrNull()
+          }
+      logger.info(
+          "[AICodBiAssistant] ensureEndPageForLanguage: origUuid={} clientId={} newName='{}'",
+          origUuid,
+          clientId ?: "?",
+          translatedName)
+
+      // Reuse an existing per-language page with the same name (same client) if present.
+      if (clientId != null) {
+        try {
+          val exQ =
+              createNQ.invoke(
+                  em, "SELECT UUID FROM TEMPLATE_CLIENT WHERE CLIENT_ID = :c AND NAME = :n")
+          val sp = exQ.javaClass.getMethod("setParameter", String::class.java, Any::class.java)
+          sp.invoke(exQ, "c", clientId)
+          sp.invoke(exQ, "n", translatedName)
+          exQ.javaClass.getMethod("setMaxResults", Int::class.javaPrimitiveType).invoke(exQ, 1)
+          val erows = exQ.javaClass.getMethod("getResultList").invoke(exQ) as List<*>
+          if (erows.isNotEmpty()) {
+            val raw = erows[0]
+            val u = ((if (raw is Array<*>) raw[0] else raw)?.toString()).orEmpty()
+            if (u.isNotBlank()) {
+              logger.info(
+                  "[AICodBiAssistant] ensureEndPageForLanguage: REUSED existing page '{}' uuid={}",
+                  translatedName,
+                  u)
+              return u to translatedName
+            }
+          }
+        } catch (_: Exception) {}
+      }
+
+      // Load the base page as an entity and clone it.
+      val loaded =
+          loadTemplateEntity(em, origUuid)
+              ?: run {
+                logger.warn(
+                    "[AICodBiAssistant] ensureEndPageForLanguage: could not load base page '{}' ({}) — aborting (no DB write)",
+                    baseName,
+                    origUuid)
+                return null
+              }
+      val (orig, clazz) = loaded
+      begin.invoke(tx)
+      try {
+        val clone = clazz.getDeclaredConstructor().newInstance()
+        // Copy structural/scalar fields from the original (best effort; unknown setters are
+        // skipped).
+        copyScalarProperty(orig, clone, "getType", "setType")
+        copyScalarProperty(orig, clone, "getMsgCode", "setMsgCode")
+        copyScalarProperty(orig, clone, "getDescription", "setDescription")
+        copyScalarProperty(orig, clone, "getFlagSystem", "setFlagSystem")
+        copyScalarProperty(orig, clone, "getFlagDeprecated", "setFlagDeprecated")
+        copyScalarProperty(orig, clone, "getDeletable", "setDeletable")
+        copyScalarProperty(orig, clone, "getDelable", "setDelable")
+        copyScalarProperty(orig, clone, "getClient", "setClient")
+        // Mandatory fields:
+        val nameOk = setIfPresent(clone, "setName", translatedName)
+        val textOk = setTemplateText(clone, translatedHtml)
+        val uuid = java.util.UUID.randomUUID()
+        val uuidOk = setNewUuid(clone, uuid)
+        logger.info(
+            "[AICodBiAssistant] ensureEndPageForLanguage: cloned {} -> nameOk={} textOk={} uuidOk={}",
+            clazz.name,
+            nameOk,
+            textOk,
+            uuidOk)
+        if (!nameOk || !textOk || !uuidOk) {
+          rollback.invoke(tx)
+          logger.warn(
+              "[AICodBiAssistant] ensureEndPageForLanguage: missing mandatory setter (name={} text={} uuid={}) — rolled back, nothing written",
+              nameOk,
+              textOk,
+              uuidOk)
+          return null
+        }
+        persist.invoke(em, clone)
+        try {
+          flush.invoke(em)
+        } catch (_: Exception) {
+          // Some mappings assign the UUID lazily on flush/commit — tolerate.
+        }
+        // Read back the stored uuid.
+        var storedUuid: String? = null
+        for (g in listOf("getUUIDObject", "getUuid")) {
+          try {
+            val gm = clone.javaClass.getMethod(g)
+            val v = gm.invoke(clone)
+            storedUuid =
+                when (v) {
+                  is java.util.UUID -> v.toString()
+                  else -> v?.toString()
+                }
+            if (!storedUuid.isNullOrBlank()) break
+          } catch (_: Exception) {}
+        }
+        commit.invoke(tx)
+        val resultUuid = storedUuid ?: uuid.toString()
+        logger.info(
+            "[AICodBiAssistant] ensureEndPageForLanguage: CREATED page '{}' uuid={} (entity {})",
+            translatedName,
+            resultUuid,
+            clazz.name)
+        return resultUuid to translatedName
+      } catch (e: Exception) {
+        try {
+          rollback.invoke(tx)
+        } catch (_: Exception) {}
+        logger.warn(
+            "[AICodBiAssistant] ensureEndPageForLanguage: creation failed and was rolled back: {}",
+            e.message)
+        return null
+      }
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] ensureEndPageForLanguage failed (orig '{}'): {}", baseName, e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Rewrites the customParameters JSON of an FC_SHOW_TEMPLATE node so its htmlTemplate
+   * UuidEntityRef points at [pageUuid]; every other parameter (including the ref's
+   * entityClass/type) stays as the original. Falls back to the original params verbatim when not
+   * editable JSON.
+   */
+  private fun applyEndPageTranslationParams(origParams: String, pageUuid: String): String {
+    return try {
+      val params = JsonParser.parseString(origParams).asJsonObject
+      val ref = params.getAsJsonObject("htmlTemplate")
+      if (ref != null) {
+        ref.addProperty("uuid", pageUuid)
+        ref.addProperty("id", pageUuid)
+      }
+      params.toString()
+    } catch (_: Exception) {
+      origParams
+    }
+  }
+
+  /**
+   * Wraps ONE FC_SHOW_TEMPLATE node (a consumer Abschlussseite) in place into an FC_SWITCH on
+   * "[%lang%]" — mirrors multilingualizeMailNode. The FC_SWITCH_DEFAULT (index 0) and the base-
+   * language case keep the ORIGINAL node params; every other case gets an FC_SHOW_TEMPLATE clone
+   * whose htmlTemplate.uuid points at [langPages]' page for that language.
+   */
+  private fun multilingualizeEndPageNode(
+      workflowVersionId: Long,
+      targetNodeId: String,
+      languages: List<String>,
+      langPages: Map<String, Pair<String, String>>,
+      userContext: Any
+  ): String {
+    val nodeId =
+        targetNodeId.trim().toLongOrNull()
+            ?: return "Invalid target ending-page node id '$targetNodeId'."
+    try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val iTransferableEntityClass =
+          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+      val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
+      val workflowTaskClass = Class.forName("de.xima.fc.entities.WorkflowTask")
+      val getById =
+          workflowNodeApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId)
+              ?: return "WorkflowVersion $workflowVersionId not found for ending-page multilingualization."
+      val pageNode =
+          getById.invoke(workflowNodeApi, userContext, nodeId)
+              ?: return "WorkflowNode $nodeId not found — nothing to multilingualize."
+      val type = (pageNode.javaClass.getMethod("getType").invoke(pageNode) as? String) ?: ""
+      if (type != "FC_SHOW_TEMPLATE") {
+        return "Node $nodeId is '$type', not an FC_SHOW_TEMPLATE ending-page node — skipped."
+      }
+      val origName =
+          ((pageNode.javaClass.getMethod("getName").invoke(pageNode) as? String)?.trim()).orEmpty()
+      val origParams =
+          ((pageNode.javaClass.getMethod("getCustomParameters").invoke(pageNode) as? String))
+              .orEmpty()
+      val task =
+          pageNode.javaClass.getMethod("getTask").invoke(pageNode)
+              ?: return "Node $nodeId has no task — skipped."
+
+      // 1) Convert the FC_SHOW_TEMPLATE node IN PLACE into the FC_SWITCH.
+      val switchName = sanitizeWorkflowName("Sprache: ${origName.ifBlank { "Endseite" }}")
+      val switchSpec =
+          WorkflowTaskSpec(
+              taskName = switchName,
+              nodeType = "FC_SWITCH",
+              nodeParams = mapOf("switchValue" to "[%lang%]"))
+      val switchParams =
+          buildNodeParamsJsonWithIcon(switchSpec, workflowVersion, userContext, "FC_SWITCH")
+      workflowNodeClass.getMethod("setType", String::class.java).invoke(pageNode, "FC_SWITCH")
+      workflowNodeClass.getMethod("setName", String::class.java).invoke(pageNode, switchName)
+      if (switchParams != null) {
+        workflowNodeClass
+            .getMethod("setCustomParameters", String::class.java)
+            .invoke(pageNode, switchParams)
+        stampCustomParamsVersion(workflowNodeClass, pageNode)
+      }
+      workflowNodeApi.javaClass
+          .getMethod("update", ucClass, iTransferableEntityClass)
+          .invoke(workflowNodeApi, userContext, pageNode)
+      val switchNode =
+          getById.invoke(workflowNodeApi, userContext, nodeId)
+              ?: return "Could not reload converted switch node $nodeId."
+      val createNode =
+          workflowNodeApi.javaClass.getMethod("create", ucClass, iTransferableEntityClass)
+      val langs = languages.filter { it.isNotBlank() }.distinct()
+      if (langs.isEmpty()) return "No languages for node $nodeId — skipped."
+      val baseLanguage = langs.first()
+
+      fun createPageClone(parent: Any, pageName: String, pageParams: String): String {
+        val clone = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(clone, sanitizeWorkflowName(pageName))
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(clone, "FC_SHOW_TEMPLATE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(clone, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", java.util.UUID::class.java)
+            .invoke(clone, java.util.UUID.randomUUID())
+        if (pageParams.isNotBlank()) {
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(clone, pageParams)
+          stampCustomParamsVersion(workflowNodeClass, clone)
+        }
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(clone, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(clone, parent)
+        val saved = createNode.invoke(workflowNodeApi, userContext, clone)
+        fixParentOrderIndex(saved, parent, userContext)
+        return "FC_SHOW_TEMPLATE '${sanitizeWorkflowName(pageName)}'"
+      }
+
+      fun createBranch(
+          branchType: String,
+          branchName: String,
+          branchParams: String,
+          pageName: String,
+          pageParams: String
+      ) {
+        val branch = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass.getMethod("setName", String::class.java).invoke(branch, branchName)
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(branch, branchType)
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branch, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", java.util.UUID::class.java)
+            .invoke(branch, java.util.UUID.randomUUID())
+        workflowNodeClass
+            .getMethod("setCustomParameters", String::class.java)
+            .invoke(branch, branchParams)
+        stampCustomParamsVersion(workflowNodeClass, branch)
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branch, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(branch, switchNode)
+        val savedBranch = createNode.invoke(workflowNodeApi, userContext, branch)
+        fixParentOrderIndex(savedBranch, switchNode, userContext)
+        val seq = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass.getMethod("setName", String::class.java).invoke(seq, "FcSequenceHandler")
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(seq, "SEQUENCE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(seq, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", java.util.UUID::class.java)
+            .invoke(seq, java.util.UUID.randomUUID())
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(seq, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(seq, savedBranch)
+        val savedSeq = createNode.invoke(workflowNodeApi, userContext, seq)
+        fixParentOrderIndex(savedSeq, savedBranch, userContext)
+        createPageClone(savedSeq, pageName, pageParams)
+      }
+
+      // 2) Children: FC_SWITCH_DEFAULT FIRST (index 0 — Formcycle requires the default as the first
+      //    child or the node is INVALID), then one FC_SWITCH_CASE per language. Non-base cases
+      //    reference the per-language page; a language without a localization keeps the original.
+      var caseCount = 0
+      val wrappedLanguages = mutableListOf<String>()
+      createBranch(
+          "FC_SWITCH_DEFAULT",
+          "FcSwitchDefaultHandler",
+          "{}",
+          origName.ifBlank { "Endseite" },
+          origParams)
+      for (lang in langs) {
+        val caseValueJson =
+            """{"caseValue":${gson.toJson(lang)},"matchCondition":"EQUAL","variableName":"C1"}"""
+        val caseParams =
+            """{"caseValues":[$caseValueJson],"combinationType":"OR","description":${gson.toJson("Sprache: $lang")}}"""
+        val isBase = lang == baseLanguage
+        val pageEntry = langPages[lang]
+        val pageName =
+            if (isBase) origName.ifBlank { "Endseite" }
+            else pageEntry?.second ?: origName.ifBlank { "Endseite" }
+        val pageParams =
+            when {
+              isBase -> origParams
+              pageEntry != null -> applyEndPageTranslationParams(origParams, pageEntry.first)
+              else -> origParams
+            }
+        createBranch("FC_SWITCH_CASE", "FcSwitchCaseHandler", caseParams, pageName, pageParams)
+        wrappedLanguages.add(lang)
+        caseCount++
+      }
+      logger.info(
+          "[AICodBiAssistant] Wrapped ending-page node {} into FC_SWITCH on [%lang%] — default first + {} language case(s)",
+          nodeId,
+          caseCount)
+      return "wrapped ending page '${origName.ifBlank { "Endseite" }}' (#$nodeId) into FC_SWITCH on [%lang%] for " +
+          wrappedLanguages.joinToString(", ")
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] multilingualizeEndPageNode failed for node {}: {}",
+          targetNodeId,
+          e.message)
+      return "Ending-page multilingualization of node $targetNodeId failed: ${e.message}"
+    }
+  }
+
+  /**
+   * SUPERSEDED (2026-09-06): this creation-based ending-page pass is NOT called anymore — it tried
+   * to CREATE per-language TEMPLATE_CLIENT pages server-side, which is impossible from the plugin
+   * (no JPA entity maps TEMPLATE_CLIENT, TEXTVALUE is encrypted at rest, no creation API exists).
+   * The ACTIVE reuse-only pass is `runEndPageMultilingualization` below (wraps into an [%lang%]
+   * FC_SWITCH and references ALREADY EXISTING localized pages named "<base> _CB_<LANG>"; falls back
+   * to the original page when no localization exists). This function is kept inert for reference
+   * only.
+   */
+  private fun runEndPageMultilingualizationSuperseded(
+      prompt: String,
+      languages: List<String>,
+      workflowVersionId: Long,
+      params: IPluginServletActionParams,
+      modelId: String,
+      instance: Standard,
+      chatContext: String?,
+      clarificationContext: String?,
+      changeHistoryContext: String?
+  ): String {
+    val langs = languages.filter { it.isNotBlank() }.distinct()
+    if (langs.size < 2) return ""
+    val userContext = getUserContext(params)
+    val workflowJson =
+        buildWorkflowStructureContext(workflowVersionId, userContext)
+            ?: run {
+              logger.warn(
+                  "[AICodBiAssistant] No workflow context for ending-page multilingualization (workflowVersion {}).",
+                  workflowVersionId)
+              return ""
+            }
+    val baseLanguage = langs.first()
+
+    fun collectEndPageCandidates(el: JsonElement, out: JsonArray) {
+      if (!el.isJsonObject) return
+      val o = el.asJsonObject
+      val nodeType = o.get("type")?.asString ?: ""
+      if (nodeType == "FC_SHOW_TEMPLATE") {
+        val id = o.get("id")?.asString ?: ""
+        if (id.isNotBlank()) {
+          var pageUuid: String? = null
+          var pageName: String? = null
+          var pageContent: String? = null
+          try {
+            val cp = o.get("customParameters")
+            if (cp != null && cp.isJsonObject) {
+              val ref = cp.asJsonObject.getAsJsonObject("htmlTemplate")
+              if (ref != null) {
+                pageUuid =
+                    ref.get("uuid")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+                        ?: ref.get("id")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+              }
+            }
+          } catch (_: Exception) {}
+          if (!pageUuid.isNullOrBlank()) {
+            try {
+              val page = readTemplatePage(userContext, pageUuid)
+              if (page != null) {
+                pageName = page.first
+                pageContent = page.second
+              }
+            } catch (_: Exception) {}
+          }
+          val node = JsonObject()
+          node.addProperty("targetNodeId", id)
+          node.addProperty("name", o.get("name")?.asString ?: "")
+          node.addProperty("type", nodeType)
+          node.addProperty("pageUuid", pageUuid ?: "")
+          node.addProperty("pageName", pageName ?: (o.get("name")?.asString ?: ""))
+          if (!pageContent.isNullOrBlank()) {
+            node.addProperty(
+                "pageContent",
+                if (pageContent.length > 12000) pageContent.take(12000) + "...[truncated]"
+                else pageContent)
+          }
+          out.add(node)
+        }
+      }
+      o.get("children")
+          ?.takeIf { it.isJsonArray }
+          ?.asJsonArray
+          ?.forEach { c -> collectEndPageCandidates(c, out) }
+      o.get("rootNode")?.takeIf { it.isJsonObject }?.let { collectEndPageCandidates(it, out) }
+    }
+    val candidates = JsonArray()
+    try {
+      val root = JsonParser.parseString(workflowJson)
+      if (root.isJsonArray) root.asJsonArray.forEach { collectEndPageCandidates(it, candidates) }
+      else if (root.isJsonObject) collectEndPageCandidates(root.asJsonObject, candidates)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not collect ending-page candidates: {}", e.message)
+    }
+    if (candidates.size() == 0) {
+      logger.info(
+          "[AICodBiAssistant] Ending-page multilingualization: no FC_SHOW_TEMPLATE node found - nothing to wrap.")
+      return ""
+    }
+    val candidateIds =
+        candidates
+            .mapNotNull { el ->
+              if (el.isJsonObject) {
+                el.asJsonObject.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+              } else null
+            }
+            .filter { it.isNotBlank() }
+    val candidatesJson = gson.toJson(candidates)
+    logger.info(
+        "[AICodBiAssistant] Ending-page multilingualization candidates ({} node(s)): {}",
+        candidates.size(),
+        compactJsonForLog(candidatesJson).take(1200))
+
+    val system = buildString {
+      append("You are the ENDING-PAGE (Abschlussseite) part of a whole-form translation. ")
+      append(
+          "A whole-form translation just added languages to a form. The form's workflows show the consumer an ending page (Abschlussseite) after submit; this page must be shown in the language the consumer used. ")
+      append(
+          "Formcycle resolves that language through the workflow placeholder [%lang%]. The workflow shows an ending page with an FC_SHOW_TEMPLATE node that references a server-side Abschlussseite (TEMPLATE_CLIENT) by UUID. ")
+      append("\n\nFORM LANGUAGES (base language first): ")
+      append(langs.joinToString(", "))
+      append(". The base language '")
+      append(baseLanguage)
+      append("' keeps the ORIGINAL page; provide translations ONLY for the other languages.")
+      append(
+          "\n\nENDING-PAGE NODES (JSON) - each is one FC_SHOW_TEMPLATE that shows the given page (pageName/pageContent is the page's current text). Decide for EACH node whether it is CONSUMER-facing (the page is shown to the person who filled the form, i.e. the node sits on a path the consumer reaches) and reply with an entry for EVERY node:\n")
+      append(candidatesJson)
+      append(
+          "\n\nOUTPUT RULE: reply with ONLY this JSON - one 'pages' entry per node, no omissions:\n")
+      append(
+          "{\"pages\":[{\"targetNodeId\":\"<id from ENDING-PAGE NODES>\",\"toConsumer\":true,\"translations\":{\"<languageCode>\":{\"content\":\"<translated page HTML, placeholders [%...%]/[%$...%] kept verbatim>\"}}},{\"targetNodeId\":\"<id>\",\"toConsumer\":false,\"translations\":{}}]}\n")
+      append(
+          "The page is internal (toConsumer=false) when it is shown to employees/operators only (e.g. an internal processing/error page inside a back-office lane) even if it is a 'success' page; judge by WHO sees it. Translate the pageContent faithfully into each non-base FORM LANGUAGE and keep the HTML structure and every placeholder unchanged.")
+    }
+    val contextSuffix =
+        listOfNotNull(
+                chatContext?.takeIf { it.isNotBlank() }?.let { "Earlier chat turns: $it" },
+                clarificationContext
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { "Clarification context: $it" },
+                changeHistoryContext?.takeIf { it.isNotBlank() }?.let { "Change history: $it" })
+            .joinToString("\n")
+    val userContent =
+        buildUserContent(
+            buildString {
+              append(prompt)
+              append(
+                  "\n\nClassify the workflow ending-page nodes (consumer-facing vs internal) and translate the consumer-facing ones for these form languages.")
+              if (contextSuffix.isNotBlank()) {
+                append("\n\n")
+                append(contextSuffix)
+              }
+            },
+            emptyList())
+    val messagesJson = buildString {
+      append("[")
+      append("""{"role":"system","content":${gson.toJson(system)}},""")
+      append("""{"role":"user","content":${gson.toJson(userContent)}}""")
+      append("]")
+    }
+    val raw = instance.performFormAssist(modelId, messagesJson)
+    var cleaned = extractJson(stripThinkTags(raw))
+    logger.info(
+        "[AICodBiAssistant] Ending-page multilingualization AI response ({} chars): {}",
+        cleaned.length,
+        compactJsonForLog(cleaned).take(1000))
+    fun parseEntries(text: String): JsonArray =
+        try {
+          val parsed = JsonParser.parseString(text)
+          when {
+            parsed.isJsonArray -> parsed.asJsonArray
+            parsed.isJsonObject -> {
+              val pages = parsed.asJsonObject.get("pages")
+              if (pages?.isJsonArray == true) pages.asJsonArray else JsonArray()
+            }
+            else -> JsonArray()
+          }
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] Could not parse ending-page multilingualization AI response: {}",
+              text.take(500))
+          JsonArray()
+        }
+    fun entryVerdict(obj: JsonObject): Boolean? {
+      val v = obj.get("toConsumer")
+      return if (v?.isJsonPrimitive == true && v.asJsonPrimitive.isBoolean) v.asBoolean else null
+    }
+    fun missingVerdictIds(arr: JsonArray): List<String> {
+      val answered = HashSet<String>()
+      for (el in arr) {
+        if (!el.isJsonObject) continue
+        val o = el.asJsonObject
+        val id = o.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+        if (id.isNotBlank() && entryVerdict(o) != null) answered.add(id)
+      }
+      return candidateIds.filterNot { answered.contains(it) }
+    }
+    var entries = parseEntries(cleaned)
+    var missing = missingVerdictIds(entries)
+    if (entries.size() == 0 || missing.isNotEmpty()) {
+      logger.warn(
+          "[AICodBiAssistant] Ending-page reply missing verdicts for {} candidate node(s) — retrying once",
+          missing.size)
+      val retryUser = buildString {
+        append("Your previous reply did not follow the required format.\n")
+        append("Reply with ONLY this JSON - nothing else:\n")
+        append(
+            "{\"pages\":[{\"targetNodeId\":\"<id from ENDING-PAGE NODES>\",\"toConsumer\":true|false,\"translations\":{}}]}\n")
+        append("Provide ONE 'pages' entry for EVERY node in ENDING-PAGE NODES (ids: ")
+        append(candidateIds.joinToString(", "))
+        append(")")
+        if (missing.isNotEmpty()) {
+          append(" — you MISSED a verdict for: ")
+          append(missing.joinToString(", "))
+        }
+        append(
+            ".\nSet 'toConsumer'=true only for pages shown to the CONSUMER (the person who filled the form). For consumer pages provide 'translations' with 'content' (translated page HTML) per non-base language; for internal pages set \"translations\":{}.")
+      }
+      val retryMessages = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(system)}},""")
+        append("""{"role":"user","content":${gson.toJson(retryUser)}}""")
+        append("]")
+      }
+      val retryRaw = instance.performFormAssist(modelId, retryMessages)
+      cleaned = extractJson(stripThinkTags(retryRaw))
+      entries = parseEntries(cleaned)
+      missing = missingVerdictIds(entries)
+    }
+    if (entries.size() == 0 || missing.isNotEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Ending-page multilingualization: AI did not return a verdict for every ending-page node - leaving the workflow unchanged.")
+      return ""
+    }
+    val consumerChosen = mutableListOf<String>()
+    for (el in entries) {
+      if (!el.isJsonObject) continue
+      val o = el.asJsonObject
+      if (entryVerdict(o) == true) {
+        val id = o.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+        if (candidateIds.contains(id)) consumerChosen.add(id)
+      }
+    }
+    if (consumerChosen.isEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Ending-page multilingualization: the AI classified no ending page as consumer-facing - leaving the workflow unchanged.")
+      return ""
+    }
+    logger.info(
+        "[AICodBiAssistant] Ending-page multilingualization: AI marks {} ending-page node(s) as consumer-facing: {}",
+        consumerChosen.size,
+        consumerChosen.joinToString(", "))
+
+    // For each chosen node: gather the base page (uuid/name) + the model's per-language content,
+    // create/reuse per-language TEMPLATE_CLIENT pages, then wrap the node.
+    val messages = mutableListOf<String>()
+    val handled = mutableSetOf<String>()
+    for (el in entries) {
+      if (!el.isJsonObject) continue
+      val obj = el.asJsonObject
+      if (entryVerdict(obj) != true) continue
+      val targetId =
+          obj.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+      if (!candidateIds.contains(targetId)) continue
+      if (!handled.add(targetId)) continue
+      // find base page info from the candidate list
+      val cand =
+          candidates
+              .firstOrNull { c ->
+                c.isJsonObject &&
+                    c.asJsonObject
+                        .get("targetNodeId")
+                        ?.takeIf { it.isJsonPrimitive }
+                        ?.asString
+                        ?.trim() == targetId
+              }
+              ?.asJsonObject
+      val baseUuid = cand?.get("pageUuid")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+      val baseName = cand?.get("pageName")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+      val trEl = obj.get("translations")
+      if (baseUuid.isBlank() || trEl?.isJsonObject != true) continue
+      val langPages = linkedMapOf<String, Pair<String, String>>()
+      var anyCreated = false
+      for ((lang, v) in trEl.asJsonObject.entrySet()) {
+        if (lang.isBlank() || lang == baseLanguage || !v.isJsonObject) continue
+        val contentEl = v.asJsonObject.get("content")
+        val content =
+            contentEl?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString
+        if (content.isNullOrBlank()) continue
+        val langTag = lang.uppercase()
+        val pageName = "${baseName.ifBlank { "Endseite" }} ($langTag)"
+        val ensured = ensureEndPageForLanguage(userContext, baseUuid, baseName, pageName, content)
+        if (ensured != null) {
+          langPages[lang] = ensured
+          anyCreated = true
+        } else {
+          logger.warn(
+              "[AICodBiAssistant] Ending-page multilingualization: could not ensure page for lang '{}' of node {} — skipping that language.",
+              lang,
+              targetId)
+        }
+      }
+      if (langPages.isEmpty()) continue
+      val result =
+          multilingualizeEndPageNode(workflowVersionId, targetId, langs, langPages, userContext)
+      if (result.isNotBlank()) messages.add(result)
+    }
+    if (messages.isEmpty()) return ""
+    try {
+      touchWorkflowVersion(userContext, workflowVersionId)
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] touchWorkflowVersion after ending-page multilingualization failed: {}",
+          e.message)
+    }
+    return "Multilingualized ending pages: " + messages.joinToString(" | ")
+  }
+
+  // ---------------------------------------------------------------------------
+  // ACTIVE (2026-09-06): reuse-only Abschlussseiten multilingualization. No page is ever created or
+  // edited — every consumer FC_SHOW_TEMPLATE node is wrapped into an [%lang%] FC_SWITCH whose
+  // non-base
+  // cases point at the ALREADY EXISTING localized page "<base> _CB_<LANG>"; a language without such
+  // a
+  // page falls back to the ORIGINAL page. Page NAME + UUID come from TEMPLATE_CLIENT (plain text);
+  // the
+  // encrypted TEXTVALUE is never read. (The creation-based helpers above this block are
+  // superseded.)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Lists every Abschlussseite (TEMPLATE_CLIENT row) of the workflow's owning client as (name,
+   * uuid) pairs via native SQL — NAME and UUID are plain text, so the encrypted TEXTVALUE is never
+   * touched. Returns null when the owning client or the table cannot be resolved (the caller then
+   * safely skips the ending-page pass). Never throws.
+   */
+  private fun listClientTemplates(
+      userContext: Any,
+      workflowVersionId: Long
+  ): List<Pair<String, String>>? {
+    val emf = CodbiEntities.entityManagerFactory ?: return null
+    val em = emf.createEntityManager()
+    try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val workflowVersion =
+          workflowVersionApi.javaClass
+              .getMethod("getById", ucClass, Long::class.javaObjectType)
+              .invoke(workflowVersionApi, userContext, workflowVersionId) ?: return null
+      val project =
+          workflowVersion.javaClass.getMethod("getProject").invoke(workflowVersion) ?: return null
+      var clientId: Long? = null
+      // The Abschlussseiten are scoped by the client/mandant the workflow's project belongs to.
+      for (refGetter in listOf("getClient", "getMandant")) {
+        try {
+          val ref = project.javaClass.getMethod(refGetter).invoke(project) ?: continue
+          val id = ref.javaClass.getMethod("getId").invoke(ref) as? Number ?: continue
+          clientId = id.toLong()
+          break
+        } catch (_: Exception) {}
+      }
+      if (clientId == null) {
+        for (idGetter in listOf("getClientId", "getMandantId")) {
+          try {
+            val v = project.javaClass.getMethod(idGetter).invoke(project) as? Number
+            if (v != null) {
+              clientId = v.toLong()
+              break
+            }
+          } catch (_: Exception) {}
+        }
+      }
+      if (clientId == null) {
+        logger.warn(
+            "[AICodBiAssistant] Ending-page: could not resolve the client id of the workflow's project (workflowVersion {}) — skipping.",
+            workflowVersionId)
+        return null
+      }
+      val createNQ = em.javaClass.getMethod("createNativeQuery", String::class.java)
+      val colsQ =
+          createNQ.invoke(
+              em,
+              "SELECT column_name FROM information_schema.columns WHERE UPPER(table_name) = 'TEMPLATE_CLIENT'")
+      val cols =
+          (colsQ.javaClass.getMethod("getResultList").invoke(colsQ) as? List<*>)
+              ?.map { it.toString().uppercase() }
+              ?.toSet() ?: return null
+      if (!cols.contains("UUID") || !cols.contains("NAME")) {
+        logger.warn(
+            "[AICodBiAssistant] Ending-page: TEMPLATE_CLIENT has no readable UUID/NAME columns — skipping.")
+        return null
+      }
+      val clientCol =
+          when {
+            "CLIENT_ID" in cols -> "CLIENT_ID"
+            "MANDANT_ID" in cols -> "MANDANT_ID"
+            else -> null
+          }
+      if (clientCol == null) {
+        logger.warn(
+            "[AICodBiAssistant] Ending-page: TEMPLATE_CLIENT has no CLIENT_ID/MANDANT_ID column — skipping.")
+        return null
+      }
+      val deprecatedFilter = if ("FLAG_DEPRECATED" in cols) " AND FLAG_DEPRECATED = 0" else ""
+      val sql =
+          "SELECT UUID, NAME FROM TEMPLATE_CLIENT WHERE $clientCol = $clientId$deprecatedFilter ORDER BY NAME"
+      val q = createNQ.invoke(em, sql)
+      val rows = (q.javaClass.getMethod("getResultList").invoke(q) as? List<*>) ?: emptyList<Any>()
+      val out = mutableListOf<Pair<String, String>>()
+      for (row in rows) {
+        val arr = row as? Array<*>
+        if (arr == null || arr.size < 2) continue
+        val uuid = arr[0]?.toString()?.trim().orEmpty()
+        val name = arr[1]?.toString()?.trim().orEmpty()
+        if (uuid.isNotBlank() && name.isNotBlank()) out.add(name to uuid)
+      }
+      logger.info(
+          "[AICodBiAssistant] Ending-page: {} Abschlussseite(s) of client {} — sample: {}",
+          out.size,
+          clientId,
+          out.take(15).joinToString(" | ") { "'${it.first}' -> ${it.second}" })
+      return out
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] listClientTemplates failed: {}", e.message)
+      return null
+    } finally {
+      em.close()
+    }
+  }
+
+  /**
+   * Finds the EXISTING localized Abschlussseite for [baseName] + [langCode] among the enumerated
+   * [templates] using the confirmed naming convention: the localized page NAME = the base page's
+   * NAME plus the marker "_CB_<LANG>" (language code UPPERCASED, region hyphen kept, e.g. base
+   * "Formular versendet" -> "Formular versendet _CB_EN", de-CH -> "_CB_DE-CH"). The marker must be
+   * a whole token, so "de" never matches a "_CB_DE-CH" page when an exact "_CB_DE" page exists.
+   * Returns (name, uuid) or null when no localization exists (the caller then falls back to the
+   * ORIGINAL page).
+   */
+  private fun findLocalizedTemplate(
+      baseName: String,
+      langCode: String,
+      templates: List<Pair<String, String>>
+  ): Pair<String, String>? {
+    val base = baseName.trim()
+    if (base.isBlank() || langCode.isBlank() || templates.isEmpty()) return null
+    val marker = "_CB_" + langCode.trim().uppercase()
+    val lowerMarker = marker.lowercase()
+    val canonicalSpace = "$base $marker".lowercase()
+    val canonicalNone = "$base$marker".lowercase()
+    val candidates =
+        templates.filter { (name, _) ->
+          val n = name.trim()
+          if (!n.startsWith(base, ignoreCase = true)) return@filter false
+          val lower = n.lowercase()
+          if (lower == canonicalSpace || lower == canonicalNone) return@filter true
+          if (!lower.contains(lowerMarker)) return@filter false
+          val idx = lower.indexOf(lowerMarker)
+          val beforeOk = idx == 0 || n[idx - 1] == ' ' || n[idx - 1] == '_'
+          val afterOk = idx + marker.length >= n.length || n[idx + marker.length] == ' '
+          beforeOk && afterOk
+        }
+    if (candidates.isEmpty()) return null
+    val exact =
+        candidates.firstOrNull { (name, _) ->
+          name.trim().equals(canonicalSpace, ignoreCase = true)
+        }
+            ?: candidates.firstOrNull { (name, _) ->
+              name.trim().equals(canonicalNone, ignoreCase = true)
+            }
+    val chosen = exact ?: candidates.minByOrNull { it.first.length }
+    logger.info(
+        "[AICodBiAssistant] Ending-page: localization for base '{}' / marker '{}' -> '{}' ({})",
+        base,
+        marker,
+        chosen?.first,
+        chosen?.second)
+    return chosen
+  }
+
+  /**
+   * EXTENDS an already multilingual [%lang%] ending-page FC_SWITCH with the missing language cases
+   * (added later, e.g. fr on top of an existing de/en ending-page wrap) — mirror of
+   * extendMailSwitchNode, but the per-branch action is an FC_SHOW_TEMPLATE clone whose
+   * htmlTemplate.uuid points at [langPages]' localized page for that language, or stays on the
+   * ORIGINAL page ([sourceParams]) when no localization exists yet. Keeps the FC_SWITCH_DEFAULT at
+   * index 0 (the FIRST child — Formcycle requires the default first or the switch is invalid).
+   */
+  private fun extendEndPageSwitchNode(
+      workflowVersionId: Long,
+      targetNodeId: String,
+      addLanguages: List<String>,
+      langPages: Map<String, Pair<String, String>>,
+      sourceParams: String,
+      defaultBranchId: String,
+      userContext: Any
+  ): String {
+    val nodeId =
+        targetNodeId.trim().toLongOrNull()
+            ?: return "Invalid target ending-page switch node id '$targetNodeId'."
+    val addLangs = addLanguages.filter { it.isNotBlank() }.distinct()
+    try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowNodeApi = apiProviderClass.getField("WORKFLOW_NODE_API").get(null)
+      val ucClass = Class.forName("de.xima.fc.user.UserContext")
+      val iTransferableEntityClass =
+          Class.forName("de.xima.fc.entities.interfaces.ITransferableEntity")
+      val workflowNodeClass = Class.forName("de.xima.fc.entities.WorkflowNode")
+      val workflowTaskClass = Class.forName("de.xima.fc.entities.WorkflowTask")
+      val getById =
+          workflowNodeApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      val switchNode =
+          getById.invoke(workflowNodeApi, userContext, nodeId)
+              ?: return "WorkflowNode $nodeId not found — nothing to extend."
+      val switchType =
+          (switchNode.javaClass.getMethod("getType").invoke(switchNode) as? String) ?: ""
+      if (switchType != "FC_SWITCH") {
+        return "Node $nodeId is '$switchType', not an FC_SWITCH — skipped."
+      }
+      val task =
+          switchNode.javaClass.getMethod("getTask").invoke(switchNode)
+              ?: return "Node $nodeId has no task — skipped."
+      val baseName =
+          ((switchNode.javaClass.getMethod("getName").invoke(switchNode) as? String)?.trim())
+              .orEmpty()
+              .ifBlank { "Endseite" }
+      val createNode =
+          workflowNodeApi.javaClass.getMethod("create", ucClass, iTransferableEntityClass)
+
+      fun createPageClone(parent: Any, pageName: String, pageParams: String) {
+        val clone = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(clone, sanitizeWorkflowName(pageName))
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(clone, "FC_SHOW_TEMPLATE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(clone, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", java.util.UUID::class.java)
+            .invoke(clone, java.util.UUID.randomUUID())
+        if (pageParams.isNotBlank()) {
+          workflowNodeClass
+              .getMethod("setCustomParameters", String::class.java)
+              .invoke(clone, pageParams)
+          stampCustomParamsVersion(workflowNodeClass, clone)
+        }
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(clone, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(clone, parent)
+        val saved = createNode.invoke(workflowNodeApi, userContext, clone)
+        fixParentOrderIndex(saved, parent, userContext)
+      }
+
+      fun createCaseBranch(lang: String, pageName: String, pageParams: String) {
+        val caseValueJson =
+            """{"caseValue":${gson.toJson(lang)},"matchCondition":"EQUAL","variableName":"C1"}"""
+        val caseParams =
+            """{"caseValues":[$caseValueJson],"combinationType":"OR","description":${gson.toJson("Sprache: $lang")}}"""
+        val branch = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(branch, "FcSwitchCaseHandler")
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(branch, "FC_SWITCH_CASE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branch, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", java.util.UUID::class.java)
+            .invoke(branch, java.util.UUID.randomUUID())
+        workflowNodeClass
+            .getMethod("setCustomParameters", String::class.java)
+            .invoke(branch, caseParams)
+        stampCustomParamsVersion(workflowNodeClass, branch)
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branch, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(branch, switchNode)
+        val savedBranch = createNode.invoke(workflowNodeApi, userContext, branch)
+        fixParentOrderIndex(savedBranch, switchNode, userContext)
+        val seq = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass.getMethod("setName", String::class.java).invoke(seq, "FcSequenceHandler")
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(seq, "SEQUENCE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(seq, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", java.util.UUID::class.java)
+            .invoke(seq, java.util.UUID.randomUUID())
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(seq, task)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(seq, savedBranch)
+        val savedSeq = createNode.invoke(workflowNodeApi, userContext, seq)
+        fixParentOrderIndex(savedSeq, savedBranch, userContext)
+        createPageClone(savedSeq, pageName, pageParams)
+      }
+
+      val addedLangs = mutableListOf<String>()
+      for (lang in addLangs) {
+        val localized = langPages[lang]
+        val pageName = localized?.second ?: "$baseName ($lang)"
+        val pageParams =
+            if (localized != null) applyEndPageTranslationParams(sourceParams, localized.first)
+            else sourceParams
+        createCaseBranch(lang, pageName, pageParams)
+        addedLangs.add(lang)
+      }
+      // Formcycle requires the FC_SWITCH_DEFAULT branch at parent_order_idx 0 (the FIRST child) — a
+      // switch whose default is anywhere else is INVALID. Reorder after appending the new cases
+      // (no-op when the default already is first); this ALSO heals switches generated before this
+      // rule, even when nothing new was added.
+      ensureSwitchDefaultFirst(workflowNodeApi, ucClass, userContext, nodeId)
+      if (addedLangs.isEmpty()) {
+        return "" // every requested language is already present — ordering healed above
+      }
+      logger.info(
+          "[AICodBiAssistant] Extended existing ending-page FC_SWITCH {} on [%lang%] with new language case(s): {}",
+          nodeId,
+          addedLangs.joinToString(", "))
+      return "extended ending-page FC_SWITCH '#$nodeId' with language case(s): " +
+          addedLangs.joinToString(", ")
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] extendEndPageSwitchNode failed for node {}: {}",
+          targetNodeId,
+          e.message)
+      return "Extending ending-page switch node $targetNodeId failed: ${e.message}"
+    }
+  }
+
+  /**
+   * AI-driven, REUSE-ONLY multilingualize pass for Abschlussseiten (FC_SHOW_TEMPLATE ending-page
+   * nodes). Mirrors runWorkflowMailMultilingualization: a condensed candidate list of every
+   * FC_SHOW_TEMPLATE node (kind "PAGE", to wrap) plus every already-[%lang%]-wrapped ending-page
+   * switch (kind "SWITCH", to extend) is sent — NEVER the whole tree; the model returns a
+   * toConsumer verdict for EVERY candidate (verdict only — no page content is generated or
+   * invented). The per-language localized page is resolved DETERMINISTICALLY by the backend from
+   * the client's TEMPLATE_CLIENT rows using the "<base> _CB_<LANG>" naming convention; a language
+   * without a localization falls back to the ORIGINAL page. No page is ever created. Never fails
+   * the already-successful form translation.
+   */
+  private fun runEndPageMultilingualization(
+      prompt: String,
+      languages: List<String>,
+      workflowVersionId: Long,
+      params: IPluginServletActionParams,
+      modelId: String,
+      instance: Standard,
+      chatContext: String?,
+      clarificationContext: String?,
+      changeHistoryContext: String?
+  ): String {
+    val langs = languages.filter { it.isNotBlank() }.distinct()
+    if (langs.size < 2) return ""
+    val userContext = getUserContext(params)
+    val templates = listClientTemplates(userContext, workflowVersionId)
+    if (templates.isNullOrEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Ending-page multilingualization: no Abschlussseite could be listed for the workflow's client - nothing to do.")
+      return ""
+    }
+    val workflowJson =
+        buildWorkflowStructureContext(workflowVersionId, userContext)
+            ?: run {
+              logger.warn(
+                  "[AICodBiAssistant] No workflow context for ending-page multilingualization (workflowVersion {}).",
+                  workflowVersionId)
+              return ""
+            }
+    val baseLanguage = langs.first()
+    val nameByUuid = templates.associate { it.second to it.first }
+
+    // Condensed candidate list of TWO kinds:
+    //  - "PAGE":   a plain FC_SHOW_TEMPLATE ending-page node (to be WRAPPED into a new [%lang%]
+    //              switch);
+    //  - "SWITCH": an existing [%lang%] ending-page switch (its clones are EXTENDED, never
+    // re-wrapped).
+    // The model decides consumer-facing per candidate; the backend resolves the per-language page.
+    fun collectPageMeta(n: JsonObject, acc: MutableList<JsonObject>) {
+      val t = n.get("type")?.asString ?: ""
+      if (t == "FC_SHOW_TEMPLATE") {
+        val cp = n.get("customParameters")
+        val meta = JsonObject()
+        meta.addProperty("type", t)
+        meta.addProperty("name", n.get("name")?.asString ?: "")
+        meta.addProperty("params", cp?.toString() ?: "")
+        acc.add(meta)
+      }
+      n.get("children")
+          ?.takeIf { it.isJsonArray }
+          ?.asJsonArray
+          ?.forEach { c -> if (c.isJsonObject) collectPageMeta(c.asJsonObject, acc) }
+    }
+    fun pageRefUuid(o: JsonObject): String? {
+      return try {
+        val cp = o.get("customParameters")
+        if (cp != null && cp.isJsonObject) {
+          val ref = cp.asJsonObject.getAsJsonObject("htmlTemplate")
+          if (ref != null) {
+            ref.get("uuid")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+                ?: ref.get("id")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+          } else {
+            null
+          }
+        } else {
+          null
+        }
+      } catch (_: Exception) {
+        null
+      }
+    }
+    fun pageMetaUuid(p: JsonObject): String {
+      val params = p.get("params")?.asString ?: return ""
+      return try {
+        JsonParser.parseString(params)
+            .asJsonObject
+            .getAsJsonObject("htmlTemplate")
+            .get("uuid")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.trim()
+            .orEmpty()
+      } catch (_: Exception) {
+        ""
+      }
+    }
+    fun analyzePageLangSwitch(o: JsonObject): JsonObject? {
+      val cp = o.get("customParameters")
+      val switchValue =
+          if (cp != null && cp.isJsonObject) {
+            cp.asJsonObject.get("switchValue")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+          } else {
+            null
+          }
+      if (switchValue != "[%lang%]") return null
+      val id = o.get("id")?.asString ?: return null
+      val children = o.get("children")?.takeIf { it.isJsonArray }?.asJsonArray ?: return null
+      val caseLangs = LinkedHashSet<String>()
+      var defaultId: String? = null
+      val pages = mutableListOf<JsonObject>()
+      for (branch in children) {
+        if (!branch.isJsonObject) continue
+        val b = branch.asJsonObject
+        val bt = b.get("type")?.asString ?: ""
+        if (bt == "FC_SWITCH_CASE") {
+          try {
+            val bcp = b.get("customParameters")
+            if (bcp != null && bcp.isJsonObject) {
+              val cvs = bcp.asJsonObject.get("caseValues")
+              if (cvs?.isJsonArray == true) {
+                for (cv in cvs.asJsonArray) {
+                  if (cv.isJsonObject) {
+                    val v = cv.asJsonObject.get("caseValue")
+                    val s = v?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+                    if (!s.isNullOrBlank()) caseLangs.add(s)
+                  }
+                }
+              }
+            }
+          } catch (_: Exception) {}
+          collectPageMeta(b, pages)
+        } else if (bt == "FC_SWITCH_DEFAULT") {
+          defaultId = b.get("id")?.asString
+          collectPageMeta(b, pages)
+        } else {
+          collectPageMeta(b, pages)
+        }
+      }
+      // Only an existing [%lang%] switch that actually carries ending-page clones is a SWITCH
+      // candidate (a [%lang%] MAIL switch is handled by the mail pass and ignored here).
+      if (pages.isEmpty()) return null
+      // Prefer the ORIGINAL page clone (no "_CB_" marker in its resolved name) as the source; the
+      // base-language case references the original page, so its params are reused for new clones.
+      val pagesWithMeta =
+          pages.mapNotNull { p ->
+            val u = pageMetaUuid(p)
+            if (u.isBlank()) null else Triple(p, u, nameByUuid[u])
+          }
+      val originalLike =
+          pagesWithMeta.firstOrNull { (_, _, nm) ->
+            nm == null || !nm.contains("_CB_", ignoreCase = true)
+          }
+      val src = originalLike?.first ?: pages.first()
+      val srcParams = src.get("params")?.asString ?: ""
+      val srcUuid = pageMetaUuid(src)
+      val meta = JsonObject()
+      meta.addProperty("kind", "SWITCH")
+      meta.addProperty("targetNodeId", id)
+      meta.addProperty("name", o.get("name")?.asString ?: "")
+      val langsArr = JsonArray()
+      caseLangs.forEach { langsArr.add(it) }
+      meta.add("existingCaseLanguages", langsArr)
+      meta.addProperty("defaultBranchId", defaultId ?: "")
+      meta.addProperty("sourceParams", srcParams)
+      meta.addProperty("pageUuid", srcUuid)
+      meta.addProperty("pageName", nameByUuid[srcUuid] ?: (src.get("name")?.asString ?: ""))
+      return meta
+    }
+    fun collectCandidates(el: JsonElement, out: JsonArray) {
+      if (!el.isJsonObject) return
+      val o = el.asJsonObject
+      val nodeType = o.get("type")?.asString ?: ""
+      when (nodeType) {
+        "FC_SWITCH" -> {
+          val meta = analyzePageLangSwitch(o)
+          if (meta != null) out.add(meta)
+          // Never descend into a handled [%lang%] switch: mail clones belong to the mail pass and
+          // ending-page clones here are extended, never re-wrapped.
+          return
+        }
+        "FC_SHOW_TEMPLATE" -> {
+          val id = o.get("id")?.asString ?: ""
+          val pageUuid = pageRefUuid(o)
+          if (id.isNotBlank() && !pageUuid.isNullOrBlank()) {
+            val node = JsonObject()
+            node.addProperty("kind", "PAGE")
+            node.addProperty("targetNodeId", id)
+            node.addProperty("name", o.get("name")?.asString ?: "")
+            node.addProperty("type", nodeType)
+            node.addProperty("pageUuid", pageUuid)
+            node.addProperty("pageName", nameByUuid[pageUuid] ?: (o.get("name")?.asString ?: ""))
+            node.addProperty("description", o.get("description")?.asString ?: "")
+            val cp = o.get("customParameters")
+            if (cp != null) node.add("customParameters", cp)
+            out.add(node)
+          }
+          return
+        }
+      }
+      o.get("children")
+          ?.takeIf { it.isJsonArray }
+          ?.asJsonArray
+          ?.forEach { c -> collectCandidates(c, out) }
+      o.get("rootNode")?.takeIf { it.isJsonObject }?.let { collectCandidates(it, out) }
+    }
+    val candidates = JsonArray()
+    try {
+      val root = JsonParser.parseString(workflowJson)
+      if (root.isJsonArray) root.asJsonArray.forEach { collectCandidates(it, candidates) }
+      else if (root.isJsonObject) collectCandidates(root.asJsonObject, candidates)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not collect ending-page candidates: {}", e.message)
+    }
+    if (candidates.size() == 0) {
+      logger.info(
+          "[AICodBiAssistant] Ending-page multilingualization: no consumer ending-page (FC_SHOW_TEMPLATE) node or [%lang%] ending-page switch found - nothing to do.")
+      return ""
+    }
+    val candidateIds =
+        candidates
+            .mapNotNull { el ->
+              if (el.isJsonObject) {
+                el.asJsonObject.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+              } else {
+                null
+              }
+            }
+            .filter { it.isNotBlank() }
+    val candidatesJson = gson.toJson(candidates)
+    logger.info(
+        "[AICodBiAssistant] Ending-page multilingualization candidates ({} node(s)/switch(es)): {}",
+        candidates.size(),
+        compactJsonForLog(candidatesJson).take(2000))
+
+    val system = buildString {
+      append(
+          "You are the ENDING-PAGE (Abschlussseite) part of a whole-form translation. A whole-form translation just added languages to a form. ")
+      append(
+          "The form's workflows show the consumer an ending page (Abschlussseite) after submit; this page must be shown in the language the consumer used. Formcycle resolves that language through the workflow placeholder [%lang%]. ")
+      append(
+          "An ending page is shown by an FC_SHOW_TEMPLATE workflow node that references a server-side Abschlussseite (TEMPLATE_CLIENT) by UUID. A per-language Abschlussseite may already exist on the server — its NAME carries the marker '_CB_<LANG>' (e.g. 'Abschlussseite _CB_EN'); when it does not exist yet, the ORIGINAL page is shown for that language. ")
+      append("You NEVER translate or invent page content and you NEVER create pages.")
+      append("\n\nFORM LANGUAGES (base language first): ")
+      append(langs.joinToString(", "))
+      append(". The base language '")
+      append(baseLanguage)
+      append("' keeps the ORIGINAL page.")
+      append(
+          "\n\nENDING-PAGE NODES (JSON) - each entry is one candidate: \"kind\":\"PAGE\" is a plain FC_SHOW_TEMPLATE ending-page node (to be wrapped into a [%lang%] switch), \"kind\":\"SWITCH\" is an already-multilingual [%lang%] ending-page switch that must only be EXTENDED for the FORM LANGUAGES missing from its \"existingCaseLanguages\". Decide for EACH entry whether it is CONSUMER-facing (the page is shown to the person who filled the form, i.e. the node sits on a path the consumer reaches) and reply with an entry for EVERY node:\n")
+      append(candidatesJson)
+      append(
+          "\n\nOUTPUT RULE: reply with ONLY this JSON - one 'pages' entry per node, no omissions, nothing else:\n")
+      append(
+          "{\"pages\":[{\"targetNodeId\":\"<id from ENDING-PAGE NODES>\",\"toConsumer\":true},{\"targetNodeId\":\"<id>\",\"toConsumer\":false}]}\n")
+      append(
+          "The page is internal (toConsumer=false) when it is shown to employees/operators only (e.g. an internal processing/error page inside a back-office lane) even if it looks like a 'success' page; judge by WHO sees it. You do NOT provide translations or page content.")
+    }
+    val contextSuffix =
+        listOfNotNull(
+                chatContext?.takeIf { it.isNotBlank() }?.let { "Earlier chat turns: $it" },
+                clarificationContext
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { "Clarification context: $it" },
+                changeHistoryContext?.takeIf { it.isNotBlank() }?.let { "Change history: $it" })
+            .joinToString("\n")
+    val userContent =
+        buildUserContent(
+            buildString {
+              append(prompt)
+              append(
+                  "\n\nClassify the workflow ending-page nodes (consumer-facing vs internal) so they can be shown per language.")
+              if (contextSuffix.isNotBlank()) {
+                append("\n\n")
+                append(contextSuffix)
+              }
+            },
+            emptyList())
+    val messagesJson = buildString {
+      append("[")
+      append("""{"role":"system","content":${gson.toJson(system)}},""")
+      append("""{"role":"user","content":${gson.toJson(userContent)}}""")
+      append("]")
+    }
+    val raw = instance.performFormAssist(modelId, messagesJson)
+    var cleaned = extractJson(stripThinkTags(raw))
+    logger.info(
+        "[AICodBiAssistant] Ending-page multilingualization AI response ({} chars): {}",
+        cleaned.length,
+        compactJsonForLog(cleaned).take(1000))
+    fun parseEntries(text: String): JsonArray =
+        try {
+          val parsed = JsonParser.parseString(text)
+          when {
+            parsed.isJsonArray -> parsed.asJsonArray
+            parsed.isJsonObject -> {
+              val pages = parsed.asJsonObject.get("pages")
+              if (pages?.isJsonArray == true) pages.asJsonArray else JsonArray()
+            }
+            else -> JsonArray()
+          }
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] Could not parse ending-page multilingualization AI response: {}",
+              text.take(500))
+          JsonArray()
+        }
+    fun entryVerdict(obj: JsonObject): Boolean? {
+      val v = obj.get("toConsumer")
+      return if (v?.isJsonPrimitive == true && v.asJsonPrimitive.isBoolean) v.asBoolean else null
+    }
+    fun missingVerdictIds(arr: JsonArray): List<String> {
+      val answered = HashSet<String>()
+      for (el in arr) {
+        if (!el.isJsonObject) continue
+        val o = el.asJsonObject
+        val id = o.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+        if (id.isNotBlank() && entryVerdict(o) != null) answered.add(id)
+      }
+      return candidateIds.filterNot { answered.contains(it) }
+    }
+    var entries = parseEntries(cleaned)
+    var missing = missingVerdictIds(entries)
+    if (entries.size() == 0 || missing.isNotEmpty()) {
+      logger.warn(
+          "[AICodBiAssistant] Ending-page reply missing toConsumer verdicts for {} candidate node(s) ({}) — retrying once with a strict schema instruction",
+          missing.size,
+          compactJsonForLog(cleaned).take(300))
+      val retryUser = buildString {
+        append("Your previous reply did not follow the required format.\n")
+        append("Reply with ONLY this JSON - nothing else:\n")
+        append(
+            "{\"pages\":[{\"targetNodeId\":\"<id from ENDING-PAGE NODES>\",\"toConsumer\":true|false}]}\n")
+        append("Provide ONE 'pages' entry for EVERY node in ENDING-PAGE NODES (ids: ")
+        append(candidateIds.joinToString(", "))
+        append(")")
+        if (missing.isNotEmpty()) {
+          append(" — you MISSED a verdict for: ")
+          append(missing.joinToString(", "))
+        }
+        append(
+            ".\nSet 'toConsumer'=true only for pages shown to the CONSUMER (the person who filled the form); false for internal pages shown to employees/operators only.")
+      }
+      val retryMessages = buildString {
+        append("[")
+        append("""{"role":"system","content":${gson.toJson(system)}},""")
+        append("""{"role":"user","content":${gson.toJson(retryUser)}}""")
+        append("]")
+      }
+      val retryRaw = instance.performFormAssist(modelId, retryMessages)
+      cleaned = extractJson(stripThinkTags(retryRaw))
+      logger.info(
+          "[AICodBiAssistant] Ending-page multilingualization retry response ({} chars): {}",
+          cleaned.length,
+          compactJsonForLog(cleaned).take(1000))
+      entries = parseEntries(cleaned)
+      missing = missingVerdictIds(entries)
+    }
+    if (entries.size() == 0 || missing.isNotEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Ending-page multilingualization: AI did not return a verdict for every ending-page node - leaving the workflow unchanged.")
+      return ""
+    }
+    val consumerChosen = mutableListOf<String>()
+    for (el in entries) {
+      if (!el.isJsonObject) continue
+      val o = el.asJsonObject
+      if (entryVerdict(o) == true) {
+        val id = o.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+        if (id.isNotBlank() && candidateIds.contains(id)) consumerChosen.add(id)
+      }
+    }
+    if (consumerChosen.isEmpty()) {
+      logger.info(
+          "[AICodBiAssistant] Ending-page multilingualization: the AI classified no ending page as consumer-facing - leaving the workflow unchanged.")
+      return ""
+    }
+    logger.info(
+        "[AICodBiAssistant] Ending-page multilingualization: AI marks {} ending-page node(s) as consumer-facing: {}",
+        consumerChosen.size,
+        consumerChosen.joinToString(", "))
+    fun candidateOf(id: String): JsonObject? =
+        candidates
+            .firstOrNull { c ->
+              c.isJsonObject &&
+                  c.asJsonObject
+                      .get("targetNodeId")
+                      ?.takeIf { it.isJsonPrimitive }
+                      ?.asString
+                      ?.trim() == id
+            }
+            ?.asJsonObject
+    val messages = mutableListOf<String>()
+    val handledNodeIds = mutableSetOf<String>()
+    for (el in entries) {
+      if (!el.isJsonObject) continue
+      val obj = el.asJsonObject
+      if (entryVerdict(obj) != true) continue
+      val targetId =
+          obj.get("targetNodeId")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+      if (!candidateIds.contains(targetId)) continue
+      if (!handledNodeIds.add(targetId)) continue
+      val cand = candidateOf(targetId) ?: continue
+      val kind = cand.get("kind")?.takeIf { it.isJsonPrimitive }?.asString ?: "PAGE"
+      val pageName = cand.get("pageName")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+      // Deterministically resolve the EXISTING localized page ("<base> _CB_<LANG>") for every
+      // non-base language; a language without a localization gets NO langPages entry and therefore
+      // falls back to the ORIGINAL page (never created).
+      val langPages = linkedMapOf<String, Pair<String, String>>()
+      for (lang in langs) {
+        if (lang.isBlank() || lang == baseLanguage) continue
+        val found = findLocalizedTemplate(pageName, lang, templates)
+        if (found != null) langPages[lang] = found.second to found.first // (uuid, name)
+      }
+      val result =
+          if (kind == "SWITCH") {
+            val existing =
+                (cand
+                        .get("existingCaseLanguages")
+                        ?.takeIf { it.isJsonArray }
+                        ?.asJsonArray
+                        ?.mapNotNull { e -> e.takeIf { it.isJsonPrimitive }?.asString?.trim() }
+                        ?.filter { it.isNotBlank() } ?: emptyList())
+                    .toSet()
+            val sourceParams =
+                cand.get("sourceParams")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+            val defaultId =
+                cand.get("defaultBranchId")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+            val addLangs = langs.filter { it != baseLanguage && it !in existing }
+            extendEndPageSwitchNode(
+                workflowVersionId,
+                targetId,
+                addLangs,
+                langPages,
+                sourceParams,
+                defaultId,
+                userContext)
+          } else {
+            multilingualizeEndPageNode(workflowVersionId, targetId, langs, langPages, userContext)
+          }
+      if (result.isNotBlank()) messages.add(result)
+    }
+    if (messages.isEmpty()) return ""
+    try {
+      touchWorkflowVersion(userContext, workflowVersionId)
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] touchWorkflowVersion after ending-page multilingualization failed: {}",
+          e.message)
+    }
+    return "Multilingualized ending pages: " + messages.joinToString(" | ")
   }
 
   /**
@@ -9714,6 +12373,63 @@ class AICodBiAssistant : IPluginServletAction {
       logger.warn("[AICodBiAssistant] Failed to force parent_order_idx for node $nodeId", e)
     } finally {
       runCatching { entityContext.javaClass.getMethod("close").invoke(entityContext) }
+    }
+  }
+
+  /**
+   * Formcycle requires an FC_SWITCH's FC_SWITCH_DEFAULT branch at parent_order_idx 0 (the FIRST
+   * child); a switch whose default is anywhere else is INVALID. Reorders the direct children of the
+   * switch node with id [switchNodeId] so the default branch is first, keeping every other child in
+   * its current relative order (no-op when the default already is the first child, or when the
+   * switch has no default). Used after appending new language cases AND to heal switches generated
+   * before this rule (also when nothing new is added).
+   */
+  private fun ensureSwitchDefaultFirst(
+      workflowNodeApi: Any,
+      ucClass: Class<*>,
+      userContext: Any,
+      switchNodeId: Long
+  ) {
+    try {
+      val getById =
+          workflowNodeApi.javaClass.getMethod("getById", ucClass, Long::class.javaObjectType)
+      val switchNode = getById.invoke(workflowNodeApi, userContext, switchNodeId) ?: return
+      val emf = CodbiEntities.entityManagerFactory ?: return
+      val em = emf.createEntityManager()
+      try {
+        val createNQ = em.javaClass.getMethod("createNativeQuery", String::class.java)
+        val q =
+            createNQ.invoke(
+                em,
+                "SELECT ID, TYPE FROM workflow_node WHERE parent_id = $switchNodeId ORDER BY parent_order_idx ASC, ID ASC")
+        val rows = (q.javaClass.getMethod("getResultList").invoke(q) as? List<*>) ?: return
+        val items = mutableListOf<Pair<Long, String>>()
+        for (row in rows) {
+          val arr = row as? Array<*>
+          if (arr == null || arr.size < 2) continue
+          val id = arr[0]?.toString()?.toLongOrNull() ?: continue
+          val type = arr[1]?.toString() ?: ""
+          if (id > 0) items.add(id to type)
+        }
+        val defIndex = items.indexOfFirst { it.second == "FC_SWITCH_DEFAULT" }
+        if (defIndex <= 0) return // no default branch, or it already is the first child
+        val defaultEntry = items[defIndex]
+        val ordered = listOf(defaultEntry) + items.filterIndexed { index, _ -> index != defIndex }
+        for ((newIndex, entry) in ordered.withIndex()) {
+          val node = getById.invoke(workflowNodeApi, userContext, entry.first) ?: continue
+          forceChildIndex(node, switchNode, newIndex, userContext)
+        }
+        logger.info(
+            "[AICodBiAssistant] Reordered FC_SWITCH {} children: FC_SWITCH_DEFAULT is now at index 0",
+            switchNodeId)
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] ensureSwitchDefaultFirst failed for switch {}: {}",
+          switchNodeId,
+          e.message)
     }
   }
 

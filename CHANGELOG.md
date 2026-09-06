@@ -92,7 +92,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was filled out in — verified in the official howto
   `help8.formcycle.eu/…/103000047241-internationalisierung-im-workflow` and against
   `FcSwitchExecutor`, which resolves the switch value through the condition operand mapper). The
-  original mail stays byte-for-byte on the base-language `FC_SWITCH_CASE` and the trailing
+  original mail stays byte-for-byte on the base-language `FC_SWITCH_CASE` and the
   `FC_SWITCH_DEFAULT`; every other language gets a clone with translated subject/body/senderName while
   `to`/`from`/attachments/DOI pages and all placeholders are preserved. The switch keeps the mail's
   position, so the lane's continuation after it is untouched — no new lane/trigger/endpoint is created,
@@ -132,6 +132,73 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fields and never a CodBi element, so the blind CodBi re-evaluation is pointless and harmful for it.
   The form-AI prompt reminder also now asks the model to emit `_workflowMailLanguages` (base language
   first) plus `_codbiApplicability.codbiVerdict = "none"` on every whole-form translation.
+- **Later language additions EXTEND an already-multilingual mail `FC_SWITCH` instead of wrapping it
+  again**: when the whole form is translated into languages that a previously created `[%lang%]` mail
+  switch does not cover yet (e.g. "Übersetze das Formular ins Englische und Französische." on a form
+  whose de/it `FC_SWITCH` was built by an earlier run), the mail pass no longer leaves English/French
+  consumers on the German default mail. The candidate collector now feeds the AI two kinds of
+  candidates — `"MAIL"` (a plain `FC_EMAIL`/`FC_DOI_INIT` to wrap) and `"SWITCH"` (an existing
+  `[%lang%]` `FC_SWITCH` already carrying translated mail clones, reported with its
+  `existingCaseLanguages`, `defaultBranchId` and the first clone's type/name/params) — and it does not
+  descend into a handled `[%lang%]` mail switch's subtree, so clones are extended, never re-wrapped.
+  The model is told to translate a SWITCH only into the form languages missing from its
+  `existingCaseLanguages`. The apply loop dispatches per kind: a SWITCH candidate goes to the new
+  `extendMailSwitchNode`, which appends one `FC_SWITCH_CASE` (+ `SEQUENCE` + translated mail clone
+  named "<switch name> (<lang>)") per added language under the SAME switch; the `FC_SWITCH_DEFAULT`
+  stays at index 0 (the FIRST child — Formcycle requires the default as the first branch or the
+  switch is INVALID) via `ensureSwitchDefaultFirst`, which also heals switches that were generated
+  with the default placed last. Verified against the de/it form: a follow-up
+  de→en+fr run now yields `Extended existing FC_SWITCH … with new language case(s): en, fr` with the
+  en/fr branches inserted before the default.
+- **Multilingual Abschlussseiten (ending pages) by REUSE — never created**: the ending-page pass that
+  was parked (server-side creation of TEMPLATE_CLIENT rows is impossible from the plugin: no JPA
+  entity, encrypted `TEXTVALUE`, no creation API) is now active in a reuse-only form. When a whole-form
+  translation adds languages, `AICodBiAssistant` additionally wraps every consumer `FC_SHOW_TEMPLATE`
+  (Abschlussseite) node into an `[%lang%]` `FC_SWITCH` (same trigger/marker and same verdict-only
+  single-pass + strict-retry pattern as the mail pass: the model returns a `toConsumer` verdict per
+  condensed candidate, never the whole tree). Each non-base case points at the **already existing**
+  localized page whose NAME is `<base> _CB_<LANG>` (e.g. `Formular versendet _CB_EN`; `de-CH` →
+  `_CB_DE-CH`) — resolved deterministically by the backend from the client's `TEMPLATE_CLIENT` rows
+  (NAME + UUID are plain text; the encrypted content is never read) via the new
+  `listClientTemplates` / `findLocalizedTemplate`. When no localization exists the case falls back to
+  the **original** page — a page is never created, invented or edited. An already-`[%lang%]`-wrapped
+  ending-page switch is EXTENDED with the missing languages (new `extendEndPageSwitchNode`, mirror of
+  `extendMailSwitchNode`), never double-wrapped. `handleRun` runs the ending-page pass right after the
+  mail pass (both under the same `_workflowMailLanguages` gate + `workflowVersionId`) and emits one
+  combined `workflowMessage`. The obsolete page-creation helpers
+  (`ensureEndPageForLanguage`, `setTemplateText`, `setNewUuid`, `readTemplatePage`, …) are marked
+  SUPERSEDED/inert.
+- **Multi-language whole-form translations run ONE LANGUAGE PER AI PASS (sequential)**: when a request
+  asks to translate the whole form into two or more NEW languages at once ("translate to English and
+  French"), the backend no longer lets a single AI response carry every translation — that oversized
+  output truncated mid-JSON on large forms (observed live at 15587 chars) and aborted the run before
+  the workflow passes. The new `planWholeFormTranslation` (model-declared languages, reached via a
+  cheap fallback-safe hint — the AI decides, never keyword parsing) detects the multi-language case;
+  `runSequentialWholeFormTranslation` then reuses the proven single-language form pipeline
+  (`runFormModification`) once per language on the ORIGINAL persist, each pass restricted to its one
+  language, and merges the per-language i18n (labels/headers/legends/rtevalues plus nested
+  per-option/per-button i18n) into a single final form via `overlayLanguageI18n`. `handleRun` engages
+  this only when ≥2 new languages are planned (otherwise the normal single pass is unchanged), and it
+  overrides the `_workflowMailLanguages` list to the full base-first set so the ONE combined mail +
+  ending-page multilingualization runs afterwards for all languages.
+- **`FC_SWITCH` children obey Formcycle's required layout — default branch at index 0**: a switch node
+  is INVALID in Formcycle unless its `FC_SWITCH_DEFAULT` branch is the FIRST child
+  (parent_order_idx 0); the language `FC_SWITCH_CASE`s follow it. All multilingualize builders now
+  create the default branch first (mails + ending pages), the extenders no longer move the default to
+  the end, and the new `ensureSwitchDefaultFirst` reorders any switch whose default is not the first
+  child — so a re-run of the same translation request also heals switches that earlier runs generated
+  with the default last (observed live: ending-page switch had case(0), case(1), case(2), default(3)
+  and the extended mail switch had its default forced to index 5). The workflow-AI switch builder
+  already followed this convention.
+- **Repeat whole-form translations are form no-ops (no more invalid-JSON aborts)**: when the request is
+  a whole-form translation but EVERY named language is already present on the already-multilingual form
+  (e.g. re-running "Übersetze das Formular ins Englische und Französische." after en+fr were added), the
+  backend no longer re-runs the generic full form-rebuild pass — that pass re-emitted the whole
+  multilingual form, exceeded the output budget and returned truncated, single-quoted invalid JSON
+  (observed live at 17366 chars), aborting the run before the workflow passes. The translation-plan AI
+  now reports `translationRequest=true` even for such repeat requests (with `addLanguages=[]`), and
+  `handleRun` then leaves the form unchanged and still runs the workflow multilingualize (mails +
+  ending pages), which verifies coverage and heals `FC_SWITCH` ordering.
 
 ### Fixed
 - **Sensitive-element detection missed functionality names**: `AiAssistantLog.usedSensitiveElements`

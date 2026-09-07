@@ -914,3 +914,319 @@ cb-ai-assistant-log {
 .cb-log-prompt-text::-webkit-scrollbar-corner {
     background: transparent;
 }
+
+/* --------------------------------------------------------------------------------------------
+   Chat entries in the change log — a chat entry shows the question and the AI's reply (rendered
+   as Markdown with charts), with copy buttons, and the CodBi logo as its topmost icon.
+   -------------------------------------------------------------------------------------------- */
+
+/* Top-level chat node: no per-kind background so the CodBi logo shows cleanly. */
+.cb-log-node__icon--chat {
+    background: transparent;
+}
+
+/* "Reply" child node keeps the CodBi-complementary purple tint. */
+.cb-log-node__icon--reply {
+    background: #ffbb38;
+    color: #4a2c00;
+}
+
+/* The unfolded reply body — a rounded Markdown box with copy + open-viewer buttons. */
+.cb-log-node__reply {
+    position: relative;
+    margin: 4px 0 4px 28px;
+    padding: 8px 10px 8px 10px;
+    background: #f4f8f4;
+    border: 1px solid #dce8dc;
+    border-left: 3px solid #ffbb38;
+    border-radius: 4px;
+    max-height: 34vh;
+    overflow: auto;
+    scrollbar-color: #ffbb38 transparent;
+    scrollbar-width: thin;
+}
+
+.cb-log-node__reply::-webkit-scrollbar {
+    width: 10px;
+}
+.cb-log-node__reply::-webkit-scrollbar-thumb {
+    background: #ffbb38;
+    border-radius: 5px;
+}
+.cb-log-node__reply::-webkit-scrollbar-thumb:hover {
+    background: #ffcd66;
+}
+.cb-log-node__reply::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* Copy + open-viewer buttons on the top-right corner of the unfolded reply body. */
+.cb-log-node__reply-copy,
+.cb-log-node__reply-open {
+    position: absolute;
+    top: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: #5b6472;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.75em;
+    line-height: 1;
+}
+.cb-log-node__reply-copy {
+    right: 4px;
+}
+.cb-log-node__reply-open {
+    right: 28px;
+}
+.cb-log-node__reply-copy:hover,
+.cb-log-node__reply-open:hover {
+    background: #e3e6ea;
+    color: #b45309;
+}
+.cb-log-node__reply-copy i {
+    color: #ffbb38;
+}
+
+/* The rendered Markdown reply (matches the chat bubble's markdown rendering). */
+.cb-log-node__reply-markdown {
+    white-space: normal;
+    min-width: 0;
+    padding-right: 52px;
+    font-size: 0.86em;
+    color: #1f2937;
+
+    > :first-child {
+        margin-top: 0;
+    }
+    > :last-child {
+        margin-bottom: 0;
+    }
+
+    p {
+        margin: 0.4rem 0;
+    }
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        margin: 0.6rem 0 0.3rem;
+        line-height: 1.25;
+        font-weight: 700;
+    }
+    h1 {
+        font-size: 1.15em;
+    }
+    h2 {
+        font-size: 1.08em;
+    }
+    h3 {
+        font-size: 1.02em;
+    }
+    h4,
+    h5,
+    h6 {
+        font-size: 0.98em;
+    }
+    ul,
+    ol {
+        margin: 0.4rem 0;
+        padding-left: 1.4rem;
+    }
+    li {
+        margin: 0.15rem 0;
+    }
+    pre {
+        margin: 0.5rem 0;
+        padding: 0.55rem 0.7rem;
+        border-radius: 8px;
+        background: #0f172a;
+        color: #e2e8f0;
+        max-width: 100%;
+        overflow-x: auto;
+        font-size: 0.82rem;
+        line-height: 1.45;
+    }
+    code {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    }
+    :not(pre) > code {
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+        background: #e2e8f0;
+        color: #b91c1c;
+        font-size: 0.88em;
+        word-break: break-word;
+    }
+    blockquote {
+        margin: 0.5rem 0;
+        padding: 0.3rem 0.8rem;
+        border-left: 3px solid #cbd5e1;
+        color: #475569;
+    }
+    a {
+        color: #2563eb;
+        text-decoration: underline;
+        word-break: break-word;
+    }
+    img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        border-radius: 6px;
+    }
+    hr {
+        border: none;
+        border-top: 1px solid #cbd5e1;
+        margin: 0.6rem 0;
+    }
+    table {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+        border-collapse: collapse;
+        margin: 0.5rem 0;
+        font-size: 0.85em;
+    }
+    th,
+    td {
+        border: 1px solid #cbd5e1;
+        padding: 0.3rem 0.5rem;
+        text-align: left;
+    }
+    th {
+        background: #e2e8f0;
+        font-weight: 600;
+    }
+    .cb-ai-md-raw {
+        font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 0.85em;
+        opacity: 0.85;
+    }
+}
+
+/* --------------------------------------------------------------------------------------------
+   Chat-reply viewer popup — a draggable (via header), resizable dialog showing the Markdown
+   reply and its charts, with copy buttons.
+   -------------------------------------------------------------------------------------------- */
+
+.cb-log-reply-mask {
+    z-index: 2147482000 !important;
+}
+
+.cb-log-reply-dialog {
+    z-index: 2147483000 !important;
+    width: min(760px, calc(100vw - 16px));
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    border: 2px solid #ffbb38 !important;
+    box-shadow:
+        0 8px 32px rgba(255, 187, 56, 0.45),
+        0 2px 8px rgba(255, 187, 56, 0.25) !important;
+}
+
+/* The whole header (logo + title) is draggable — shows the move cursor, like the chat popup. */
+.cb-log-reply-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    cursor: move;
+    user-select: none;
+}
+
+.cb-log-reply-logo {
+    height: 26px;
+    width: auto;
+    display: block;
+    flex-shrink: 0;
+    opacity: 0.92;
+}
+
+.cb-log-reply-title {
+    font-weight: 600;
+    font-size: 1rem;
+    color: #1e293b;
+    flex: 1 1 auto;
+}
+
+.cb-log-reply-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 4px 10px;
+    border: 1px solid #ffbb38;
+    background: #fff7e6;
+    color: #b45309;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.cb-log-reply-copy:hover {
+    background: #ffefc7;
+}
+
+.cb-log-reply-copy--copied {
+    background: #e7f7ec;
+    border-color: #16a34a;
+    color: #15803d;
+}
+
+.cb-log-reply-dialog .p-dialog-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0;
+}
+
+.cb-log-reply-body {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0.9rem 1rem;
+    gap: 0.9rem;
+    overflow: auto;
+    scrollbar-color: #ffbb38 transparent;
+    scrollbar-width: thin;
+}
+
+/* The rendered Markdown reply in the viewer. The surrounding element also carries the
+   `cb-log-node__reply-markdown` class (added in the template), reusing the same element styles
+   as the folded reply markdown; here we only set viewer-specific wrapping. */
+.cb-log-reply-markdown {
+    white-space: normal;
+    min-width: 0;
+}
+
+.cb-log-reply-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    border-top: 1px solid #e3e6ea;
+    padding-top: 0.9rem;
+}
+
+.cb-log-reply-chart-wrap {
+    position: relative;
+    width: 100%;
+    height: 260px;
+}
+
+.cb-log-reply-chart-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+    height: 100% !important;
+}

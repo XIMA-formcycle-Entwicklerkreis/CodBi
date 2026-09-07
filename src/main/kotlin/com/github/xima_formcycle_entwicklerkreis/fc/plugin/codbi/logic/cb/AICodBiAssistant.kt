@@ -751,6 +751,29 @@ class AICodBiAssistant : IPluginServletAction {
       // can
       // render charts from it. null when the AI did not request statistics for this turn.
       val matomoStatsJson = parseStatsJson(chatAnswerResult.matomoStatsContext)
+      // A pure chat turn must STILL be recorded in the change log — unlike the run paths below it
+      // returns immediately here without applying any form/workflow change, so record the question
+      // (the prompt) with the assistant's reply (with its tokens / cost / user) as its own entry.
+      val chatReplyJson = buildChatReplyJson(answerText, matomoStatsJson)
+      try {
+        AiAssistantLog.recordInference(
+            CodbiEntities.entityManagerFactory,
+            prompt,
+            "chat",
+            modelId,
+            formKey,
+            null /* workflowVersionId — a pure chat turn changes neither form nor workflow */,
+            null /* formChanges */,
+            null /* workflowChanges */,
+            chatAnswerResult.tokensIn.toLong(),
+            chatAnswerResult.tokensOut.toLong(),
+            cost = chatCost,
+            currency = chatPrice?.currency,
+            username = currentUsername(params),
+            chatReply = chatReplyJson)
+      } catch (e: Exception) {
+        logger.warn("[AICodBiAssistant] Failed to record chat change log: {}", e.message)
+      }
       return jsonResponse(
           """{"intent":${gson.toJson(intent)},"chatAnswer":${gson.toJson(answerText)},"hasQuestion":${chatAnswerResult.hasQuestion},"tokens":${chatAnswerResult.tokensIn + chatAnswerResult.tokensOut},"tokensIn":${chatAnswerResult.tokensIn},"tokensOut":${chatAnswerResult.tokensOut},"cost":${chatCost ?: "null"},"currency":${gson.toJson(chatPrice?.currency)},"matomoStats":${matomoStatsJson ?: "null"}}""")
     }
@@ -1464,6 +1487,11 @@ class AICodBiAssistant : IPluginServletAction {
                   "codbi.chat.contextLabel", uiLocale, "Earlier chat turns this request refers to:")
           "$prompt\n\n[$contextLabel:]\n$chatContext"
         } else prompt
+    // When this run also produced a chat answer (an "instructions + question" request), attach the
+    // reply to the log entry as well, so the change log shows the answer next to the executed
+    // change.
+    val replyForLog =
+        pendingChatAnswer?.let { buildChatReplyJson(it, parseStatsJson(matomoStatsContext)) }
     try {
       AiAssistantLog.recordInference(
           CodbiEntities.entityManagerFactory,
@@ -1479,7 +1507,8 @@ class AICodBiAssistant : IPluginServletAction {
           cost = runCost,
           currency = runCurrency,
           username = currentUsername(params),
-          clarification = clarificationTurnsToJson(clarificationHistory))
+          clarification = clarificationTurnsToJson(clarificationHistory),
+          chatReply = replyForLog)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to record change log: {}", e.message)
     }
@@ -16954,6 +16983,21 @@ class AICodBiAssistant : IPluginServletAction {
     } catch (e: Exception) {
       null
     }
+  }
+
+  /**
+   * Builds the JSON stored in the change-log `chat_reply` column for a chat answer, so the change
+   * log can render it like the chat reply buttons: the markdown answer text plus (when the AI
+   * fetched statistics for this turn) the structured Matomo data for the charts. Shape:
+   * `{"text":"...","matomoStats":{...}}`.
+   */
+  private fun buildChatReplyJson(answerText: String, matomoStats: JsonObject?): String {
+    val obj = JsonObject()
+    obj.addProperty("text", answerText)
+    if (matomoStats != null) {
+      obj.add("matomoStats", matomoStats)
+    }
+    return gson.toJson(obj)
   }
 
   // endregion Form Chat

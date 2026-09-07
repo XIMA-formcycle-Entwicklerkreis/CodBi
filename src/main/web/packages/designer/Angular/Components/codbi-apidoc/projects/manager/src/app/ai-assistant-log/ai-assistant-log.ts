@@ -16,9 +16,14 @@ import { ProgressSpinner } from "primeng/progressspinner";
 import { TranslocoPipe } from "@ngneat/transloco";
 import { getJQuery } from "@de-xima/fc-form-designer";
 import { getCurrentFormKey } from "../ai-assistant/form-key";
-import { applyDialogPosition } from "../dialog-position";
+import { applyDialogPosition, enableDialogDrag } from "../dialog-position";
+import { markdownToHtml } from "../ai-assistant/markdown";
 import { LogTreeNode } from "./log-tree-node";
 import type { LogNode } from "./log-tree-node";
+// chart.js is imported as the auto-registered bundle ("chart.js/auto") so all chart types and
+// controllers are available without manual registration; it is bundled into cb-manager.js.
+import Chart from "chart.js/auto";
+import type { ChartConfiguration } from "chart.js";
 // #endregion Imports
 
 /**
@@ -72,6 +77,23 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     `${this.baseUrl}plugin?name=Resource&Path=/com/github/xima_formcycle_entwicklerkreis/fc/plugin/codbi/Symbol_CodBi.svg`;
   /** Prompt text of the full-prompt viewer popup — `null` while the popup is closed. */
   activePrompt: string | null = null;
+  /** The chat-reply node currently shown in the draggable Markdown/chart viewer — `null` when closed. */
+  activeChatReply: LogNode | null = null;
+  /** Incremented to give each chat-reply viewer chart canvas a unique id. */
+  private viewerChartSeq = 0;
+  /** Live Chart.js instances of the chat-reply viewer, keyed by their canvas id. */
+  private readonly viewerCharts = new Map<string, Chart>();
+  /** Drag cleanup function for the chat-reply viewer popup. */
+  private chatViewerDragCleanup: (() => void) | null = null;
+  /** Remembered screen position of the chat-reply viewer (draggable popup). */
+  private chatViewerPosition: { left: number; top: number } | null = null;
+  /** True for a short moment after the viewer's reply was copied. */
+  viewerCopied = false;
+  private viewerCopyTimer: number | null = null;
+  /** The plain Markdown text of the reply currently shown in the viewer. */
+  viewText = "";
+  /** The structured statistics of the reply currently shown in the viewer (charts). */
+  viewStats: Record<string, unknown> | null = null;
 
   loading = false;
   errorText: string | null = null;
@@ -154,6 +176,10 @@ export class AiAssistantLog implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     document.removeEventListener("codbi:ai-assistant-log:open", this.openHandler);
+    this.chatViewerDragCleanup?.();
+    this.chatViewerDragCleanup = null;
+    this.viewerCharts.forEach((c) => c.destroy());
+    this.viewerCharts.clear();
   }
   // #endregion Lifecycle
 
@@ -199,6 +225,216 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   onPromptDialogVisibleChange(visible: boolean): void {
     if (!visible) this.activePrompt = null;
     this.cdr.markForCheck();
+  }
+
+  /** Opens the draggable chat-reply viewer for the given reply node (Markdown + charts + copy). */
+  onChatReplyOpen(node: LogNode): void {
+    this.viewText = node.chatReplyText ?? node.value ?? "";
+    this.viewStats = node.chatStats ?? null;
+    this.activeChatReply = node;
+    this.viewerCopied = false;
+    // Register the viewer as draggable/snappable (drag via the header, resizable), like the chat /
+    // prompt-assistant popups, and restore its last remembered position once it has rendered.
+    this.chatViewerDragCleanup?.();
+    this.chatViewerDragCleanup = enableDialogDrag(
+      "cb-log-reply-dialog",
+      "codbi-dialog-log-reply-position",
+      (p) => (this.chatViewerPosition = p),
+    );
+    this.cdr.markForCheck();
+    setTimeout(() => applyDialogPosition("cb-log-reply-dialog", this.chatViewerPosition), 0);
+    // Create the Chart.js instances once the dialog (and its canvases) has rendered.
+    this.renderChatViewerCharts();
+  }
+
+  /** Closes the chat-reply viewer and destroys its charts + drag handler. */
+  onChatReplyVisibleChange(visible: boolean): void {
+    if (!visible) {
+      this.activeChatReply = null;
+      this.chatViewerDragCleanup?.();
+      this.chatViewerDragCleanup = null;
+      this.viewerCharts.forEach((c) => c.destroy());
+      this.viewerCharts.clear();
+    }
+    this.cdr.markForCheck();
+  }
+
+  /** Renders the current chat-reply viewer's text as safe Markdown HTML. */
+  viewerMarkdown(): string {
+    return markdownToHtml(this.viewText);
+  }
+
+  /** Canvas id of one chat-reply viewer chart (matched by [renderChatViewerCharts]). */
+  replyChartCanvasId(kind: "forms" | "fields" | "trend" | "day"): string {
+    const token = this.activeChatReply?.chatViewerToken ?? "cb-log-viewer";
+    return `${token}-${kind}`;
+  }
+
+  /** Copies the current chat-reply viewer's plain Markdown text to the clipboard. */
+  copyViewerReply(): void {
+    const text = this.viewText;
+    if (!text) return;
+    const done = (): void => {
+      this.viewerCopied = true;
+      this.cdr.markForCheck();
+      if (this.viewerCopyTimer !== null) window.clearTimeout(this.viewerCopyTimer);
+      this.viewerCopyTimer = window.setTimeout(() => {
+        this.viewerCopied = false;
+        this.cdr.markForCheck();
+      }, 1500);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard
+        .writeText(text)
+        .then(done)
+        .catch(() => window.prompt("Copy this reply", text));
+    } else {
+      window.prompt("Copy this reply", text);
+    }
+  }
+
+  /** Creates the Chart.js instances for the chat-reply viewer. Retries (bounded) until the dialog
+   *  (and its canvases) has rendered. */
+  private renderChatViewerCharts(attempt = 0): void {
+    if (!this.activeChatReply) return;
+    const stats = this.viewStats;
+    if (!stats) return;
+    const token = this.activeChatReply.chatViewerToken ?? "cb-log-viewer";
+    const kinds: Array<[string, "forms" | "fields" | "trend" | "day"]> = [
+      [`${token}-forms`, "forms"],
+      [`${token}-fields`, "fields"],
+      [`${token}-trend`, "trend"],
+      [`${token}-day`, "day"],
+    ];
+    let pending = 0;
+    for (const [id, kind] of kinds) {
+      if (this.viewerCharts.has(id)) continue;
+      const canvas = document.getElementById(id) as HTMLCanvasElement | null;
+      if (!canvas) {
+        pending++;
+        continue;
+      }
+      const chart = this.buildStatsChart(canvas, stats, kind, "bar");
+      if (chart) {
+        this.viewerCharts.set(id, chart);
+      } else {
+        canvas.remove();
+      }
+    }
+    if (pending > 0 && attempt < 15) setTimeout(() => this.renderChatViewerCharts(attempt + 1), 100);
+  }
+
+  /** Builds one Chart.js instance for a statistics object on the given canvas (same dataset shapes
+   *  as the chat popup: forms / fields / trend / day). Returns null when nothing can be derived. */
+  private buildStatsChart(
+    canvas: HTMLCanvasElement,
+    stats: Record<string, unknown>,
+    kind: "forms" | "fields" | "trend" | "day",
+    type: "bar" | "line" | "doughnut",
+  ): Chart | null {
+    const palette = [
+      "#2563eb",
+      "#e67e22",
+      "#16a34a",
+      "#8b5cf6",
+      "#0ea5e9",
+      "#ef4444",
+      "#f59e0b",
+      "#14b8a6",
+      "#ec4899",
+      "#64748b",
+    ];
+    const labelFor = (r: Record<string, unknown>): string => {
+      const raw = String(r["title"] ?? r["label"] ?? r["name"] ?? "?");
+      return raw.length > 30 ? `${raw.slice(0, 29)}…` : raw;
+    };
+    const num = (v: unknown): number => {
+      if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+      if (typeof v === "string") {
+        const n = Number(v.replace(/,/g, ".").replace("%", ""));
+        return Number.isFinite(n) ? n : 0;
+      }
+      return 0;
+    };
+    const trendDateLabel = (r: Record<string, unknown>): string => {
+      const wd = String(r["weekdayDe"] ?? r["weekday"] ?? "");
+      const m = String(r["date"] ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${wd} ${m[3]}.${m[2]}.` : String(r["date"] ?? "");
+    };
+
+    let labels: string[] = [];
+    let values: number[] = [];
+    let colors: string[] = [];
+    let label = "Page views";
+
+    if (kind === "forms") {
+      const rows = stats["top10MostCalledForms"] as Array<Record<string, unknown>> | undefined;
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+      const sorted = [...rows].sort((a, b) => num(a["nb_hits"]) - num(b["nb_hits"]));
+      labels = sorted.map(labelFor);
+      values = sorted.map((r) => num(r["nb_hits"]));
+      colors = sorted.map((_, i) => palette[i % palette.length]);
+    } else if (kind === "day") {
+      const day = stats["day"] as Record<string, unknown> | undefined;
+      if (!day || typeof day !== "object") return null;
+      const wd = String(day["weekdayDe"] ?? day["weekday"] ?? "");
+      labels = [`${wd} ${String(day["date"] ?? "")}`.trim()];
+      values = [num(day["nb_hits"])];
+      colors = [palette[0]];
+    } else if (kind === "trend") {
+      const rows = stats["dailyTrend"] as Array<Record<string, unknown>> | undefined;
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+      labels = rows.map(trendDateLabel);
+      values = rows.map((r) => num(r["nb_hits"]));
+      colors = [palette[0]];
+      label = "Page views per day";
+    } else {
+      const fieldAnalytics = (stats["fieldAnalytics"] as Record<string, unknown> | undefined) ?? {};
+      const rows = Array.isArray(fieldAnalytics["mostUsedFields"])
+        ? (fieldAnalytics["mostUsedFields"] as Array<Record<string, unknown>>)
+        : [];
+      if (rows.length === 0) return null;
+      labels = rows.map(labelFor);
+      values = rows.map((r) => {
+        for (const [key, value] of Object.entries(r)) {
+          if (key === "label" || key === "name" || key === "rank") continue;
+          const n = num(value);
+          if (n > 0) return n;
+        }
+        return 0;
+      });
+      colors = values.map((_, i) => palette[i % palette.length]);
+      label = "Field usage";
+    }
+
+    const dataset: Record<string, unknown> = {
+      label,
+      data: values,
+      backgroundColor: type === "line" ? `${palette[0]}33` : colors,
+    };
+    if (type === "line") {
+      dataset["borderColor"] = palette[0];
+      dataset["tension"] = 0.25;
+      dataset["fill"] = true;
+      dataset["pointRadius"] = 3;
+    } else if (type === "doughnut") {
+      dataset["borderWidth"] = 1;
+    } else {
+      dataset["borderRadius"] = 4;
+    }
+    const config = {
+      type,
+      data: { labels, datasets: [dataset] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        ...(type === "doughnut"
+          ? { plugins: { legend: { position: "right" as const } } }
+          : { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }),
+        ...(type === "bar" && kind === "forms" ? { indexAxis: "y" as const } : {}),
+      },
+    } as unknown as ChartConfiguration;
+    return new Chart(canvas, config);
   }
 
   /**
@@ -613,6 +849,16 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       const prompt = String(entry["prompt"] ?? "").toLowerCase();
       const model = String(entry["modelId"] ?? "").toLowerCase();
       if (prompt.includes(q) || model.includes(q)) return true;
+      // Chat entries are searchable by their reply text as well.
+      const chatReply = entry["chatReply"] as Record<string, unknown> | undefined;
+      if (chatReply && typeof chatReply === "object") {
+        if (
+          String(chatReply["text"] ?? "")
+            .toLowerCase()
+            .includes(q)
+        )
+          return true;
+      }
       const form = entry["form"] as Record<string, unknown> | undefined;
       if (form) {
         if (this.formMatches(form, q)) return true;
@@ -749,6 +995,48 @@ export class AiAssistantLog implements OnInit, OnDestroy {
     return logs.map((entry, index) => {
       const entryId = `entry-${String(entry["id"] ?? index)}`;
       const prompt = String(entry["prompt"] ?? "");
+      const inferenceTs = this.formatTimestamp(String(entry["ts"] ?? ""));
+      const inferenceUser = String(entry["username"] ?? "");
+      const modelLabel = this.formatModelName(String(entry["modelId"] ?? ""));
+      // The user's AI reply, when this run produced a chat answer: stored as JSON
+      // {"text":"...","matomoStats":{...}}. It is rendered as a Markdown (and charts) reply node.
+      const chatReply = entry["chatReply"];
+      const cr = chatReply && typeof chatReply === "object" ? (chatReply as Record<string, unknown>) : null;
+      // Chat-only entries (a chat question WITHOUT a form/workflow change) render as a dedicated
+      // chat entry whose children are EXACTLY the question and the reply — the reply unfolding
+      // shows it as rendered Markdown (and charts from the attached statistics) with copy buttons,
+      // and the topmost icon is the CodBi logo.
+      if (cr && !entry["form"] && !entry["workflow"]) {
+        const chatChildren: LogNode[] = [
+          {
+            id: `${entryId}-question`,
+            kind: "param-item",
+            label: "Question",
+            value: prompt,
+            multiline: prompt.includes("\n"),
+          },
+          this.buildReplyNode(cr, entryId),
+        ];
+        return {
+          id: entryId,
+          kind: "chat",
+          codbi: true,
+          label: inferenceTs,
+          userLabel: inferenceUser,
+          modelLabel,
+          badge: [
+            this.formatTokenSplit(Number(entry["tokensIn"] ?? 0), Number(entry["tokensOut"] ?? 0)) ||
+              this.formatTokens(Number(entry["tokens"] ?? 0)),
+            this.formatEntryCost(Number(entry["cost"] ?? 0), String(entry["currency"] ?? "")),
+          ]
+            .filter(Boolean)
+            .join(" \u00B7 "),
+          ts: String(entry["ts"] ?? ""),
+          raw: entry,
+          children: chatChildren,
+          expanded: false,
+        };
+      }
       const children: LogNode[] = [
         {
           id: `${entryId}-prompt`,
@@ -758,6 +1046,12 @@ export class AiAssistantLog implements OnInit, OnDestroy {
           expanded: false,
         },
       ];
+      // Mixed "instructions + question" runs keep their normal form/workflow rendering but ALSO
+      // expose the reply (rendered as Markdown / charts), so the log shows both the change AND the
+      // answer.
+      if (cr) {
+        children.push(this.buildReplyNode(cr, entryId));
+      }
       // Show the clarifying questions the AI asked and the answers it received (if any).
       const clarification = entry["clarification"];
       if (Array.isArray(clarification) && clarification.length > 0) {
@@ -771,9 +1065,6 @@ export class AiAssistantLog implements OnInit, OnDestroy {
       if (Array.isArray(workflow) && workflow.length > 0) {
         children.push(this.buildWorkflowNode(workflow as Array<Record<string, unknown>>, entryId));
       }
-      const inferenceTs = this.formatTimestamp(String(entry["ts"] ?? ""));
-      const inferenceUser = String(entry["username"] ?? "");
-      const modelLabel = this.formatModelName(String(entry["modelId"] ?? ""));
       return {
         id: entryId,
         kind: "inference",
@@ -794,6 +1085,26 @@ export class AiAssistantLog implements OnInit, OnDestroy {
         expanded: false,
       };
     });
+  }
+
+  /** Builds a "Reply" tree node from a stored chat reply (JSON {"text":"...","matomoStats":{...}}).
+   *  The node renders the answer as Markdown (with copy buttons) and, when statistics were
+   *  attached, provides the data + canvas token for the draggable chart viewer. */
+  private buildReplyNode(cr: Record<string, unknown>, entryId: string): LogNode {
+    const replyText = String(cr["text"] ?? "");
+    const stats = cr["matomoStats"] as Record<string, unknown> | undefined;
+    const viewerToken = `cb-log-viewer-${Date.now()}-${this.viewerChartSeq++}`;
+    return {
+      id: `${entryId}-reply`,
+      kind: "reply",
+      label: "Reply",
+      value: replyText,
+      chatReplyText: replyText,
+      chatStats:
+        stats && typeof stats === "object" && Object.keys(stats).length > 0 ? (stats as Record<string, unknown>) : null,
+      chatViewerToken: viewerToken,
+      expanded: false,
+    };
   }
 
   /** Turns a stored model id (e.g. "ext-specialist:cerebras") into a readable model name. */

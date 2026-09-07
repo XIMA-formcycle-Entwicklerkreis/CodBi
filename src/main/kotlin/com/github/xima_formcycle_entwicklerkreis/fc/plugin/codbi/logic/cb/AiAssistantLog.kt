@@ -67,7 +67,8 @@ object AiAssistantLog {
       cost: Double? = null,
       currency: String? = null,
       username: String? = null,
-      clarification: JsonArray? = null
+      clarification: JsonArray? = null,
+      chatReply: String? = null
   ): Boolean {
     if (emf == null) return false
     return try {
@@ -89,7 +90,8 @@ object AiAssistantLog {
                 workflowVersionId = workflowVersionId,
                 formChanges = formChanges?.toString(),
                 workflowChanges = workflowChanges?.toString(),
-                clarification = clarification?.takeIf { it.size() > 0 }?.toString()))
+                clarification = clarification?.takeIf { it.size() > 0 }?.toString(),
+                chatReply = chatReply))
         em.transaction.commit()
         true
       } catch (e: Exception) {
@@ -316,6 +318,23 @@ object AiAssistantLog {
                   e.addProperty("clarification", text)
                 }
               }
+          // The AI's chat reply (only set for chat-only turns). Stored as JSON
+          // {"text":"...","matomoStats":{...}} so the frontend can render the reply as Markdown
+          // (and charts from the attached statistics) exactly like the chat reply buttons.
+          entry.chatReply
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                try {
+                  val parsed = JsonParser.parseString(text)
+                  if (parsed.isJsonObject) {
+                    e.add("chatReply", parsed)
+                  } else {
+                    e.addProperty("chatReply", text)
+                  }
+                } catch (_: Exception) {
+                  e.addProperty("chatReply", text)
+                }
+              }
           out.add(e)
         }
         // Total cost per currency derived from summed tokens per model × price per 1M (no per-entry
@@ -424,6 +443,15 @@ object AiAssistantLog {
                   o.add("clarification", JsonParser.parseString(text))
                 } catch (_: Exception) {
                   o.addProperty("clarification", text.take(400))
+                }
+              }
+          entry.chatReply
+              ?.takeIf { it.isNotBlank() }
+              ?.let { text ->
+                try {
+                  o.add("chatReply", JsonParser.parseString(text))
+                } catch (_: Exception) {
+                  o.addProperty("chatReply", text.take(400))
                 }
               }
           arr.add(o)

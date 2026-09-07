@@ -41,5 +41,6 @@ class CodbiAiAssistantLog(
     @Column(name = "workflow_version_id") var workflowVersionId: Long? = null,
     @Lob @Column(name = "form_changes") var formChanges: String? = null,
     @Lob @Column(name = "workflow_changes") var workflowChanges: String? = null,
-    @Lob @Column(name = "clarification") var clarification: String? = null
+    @Lob @Column(name = "clarification") var clarification: String? = null,
+    @Lob @Column(name = "chat_reply") var chatReply: String? = null
 )

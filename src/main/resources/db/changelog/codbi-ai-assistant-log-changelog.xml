@@ -152,4 +152,21 @@
         </rollback>
     </changeSet>
 
+    <changeSet id="codbi-ai-assistant-log-9" author="codbi">
+        <comment>
+            Add a chat_reply column holding the AI's answer to a chat question. When a run is a pure
+            chat turn (no form/workflow change) it is recorded as its own log entry with the user's
+            question in `prompt` and the assistant's reply here, so the change log shows every chat
+            message and its reply with the same tokens/cost columns as the other entries. The reply
+            is stored as JSON {"text":"...","matomoStats":{...}} so the change log can render it as
+            Markdown (and charts from the attached statistics) exactly like the chat reply buttons.
+        </comment>
+        <addColumn tableName="codbi_ai_assistant_log">
+            <column name="chat_reply" type="CLOB"/>
+        </addColumn>
+        <rollback>
+            <dropColumn tableName="codbi_ai_assistant_log" columnName="chat_reply"/>
+        </rollback>
+    </changeSet>
+
 </databaseChangeLog>

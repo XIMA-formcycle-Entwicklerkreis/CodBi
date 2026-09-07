@@ -124,7 +124,11 @@
     @if (!loading) {
         <div class="cb-log-tree">
             @for (node of logs; track trackById($index, node)) {
-                <cb-log-node [node]="node" (sensitiveChecked)="onSensitiveChecked($event)" (promptOpen)="onPromptOpen($event)" />
+                <cb-log-node
+                    [node]="node"
+                    (sensitiveChecked)="onSensitiveChecked($event)"
+                    (promptOpen)="onPromptOpen($event)"
+                    (chatReplyOpen)="onChatReplyOpen($event)" />
             }
         </div>
     }
@@ -153,5 +157,60 @@
         </div>
     </ng-template>
     <pre class="cb-log-prompt-text">{{ activePrompt }}</pre>
+</p-dialog>
+}
+
+<!-- Chat-reply viewer: a top-level popup (like the full-prompt viewer) that shows a chat answer
+     rendered as Markdown — plus any charts from its attached statistics — with copy buttons. Unlike
+     the full-prompt viewer it is draggable (drag via the header) and resizable, exactly like the
+     chat reply popup in the assistant dialog. -->
+@if (activeChatReply !== null) {
+<p-dialog
+    [visible]="true"
+    (visibleChange)="onChatReplyVisibleChange($event)"
+    [modal]="true"
+    [draggable]="false"
+    [resizable]="true"
+    [maximizable]="true"
+    [closeOnEscape]="true"
+    appendTo="body"
+    [baseZIndex]="999999"
+    maskStyleClass="cb-log-reply-mask"
+    styleClass="cb-log-reply-dialog">
+    <ng-template #header>
+        <div class="cb-log-reply-header">
+            <img class="cb-log-reply-logo" [src]="codbiLogoUrl" alt="CodBi" />
+            <span class="cb-log-reply-title">AI Reply</span>
+            <button
+                type="button"
+                class="cb-log-reply-copy"
+                [class.cb-log-reply-copy--copied]="viewerCopied"
+                [title]="viewerCopied ? 'Copied' : 'Copy this reply to the clipboard'"
+                aria-label="Copy reply"
+                (click)="copyViewerReply()">
+                <i [class]="viewerCopied ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
+                <span>{{ viewerCopied ? 'Copied' : 'Copy' }}</span>
+            </button>
+        </div>
+    </ng-template>
+    <div class="cb-log-reply-body">
+        <div class="cb-log-reply-markdown cb-log-node__reply-markdown" [innerHTML]="viewerMarkdown()"></div>
+        @if (viewStats) {
+            <div class="cb-log-reply-stats">
+                <div class="cb-log-reply-chart-wrap">
+                    <canvas [id]="replyChartCanvasId('forms')" class="cb-log-reply-chart-canvas" aria-label="Most called forms"></canvas>
+                </div>
+                <div class="cb-log-reply-chart-wrap">
+                    <canvas [id]="replyChartCanvasId('fields')" class="cb-log-reply-chart-canvas" aria-label="Field usage"></canvas>
+                </div>
+                <div class="cb-log-reply-chart-wrap">
+                    <canvas [id]="replyChartCanvasId('trend')" class="cb-log-reply-chart-canvas" aria-label="Page views over the last 7 days"></canvas>
+                </div>
+                <div class="cb-log-reply-chart-wrap">
+                    <canvas [id]="replyChartCanvasId('day')" class="cb-log-reply-chart-canvas" aria-label="Page views on the requested day"></canvas>
+                </div>
+            </div>
+        }
+    </div>
 </p-dialog>
 }

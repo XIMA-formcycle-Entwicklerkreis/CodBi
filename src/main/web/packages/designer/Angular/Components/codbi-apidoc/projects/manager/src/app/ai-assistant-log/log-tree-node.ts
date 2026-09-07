@@ -7,6 +7,7 @@ import {
   Output,
   ViewEncapsulation,
 } from "@angular/core";
+import { markdownToHtml } from "../ai-assistant/markdown";
 
 /** One node of the change-log tree rendered by the log dialog. */
 export interface LogNode {
@@ -60,6 +61,12 @@ export interface LogNode {
   blockedSql?: boolean;
   /** The statement/DDL reasons that triggered the block (e.g. ["DROP", "TRUNCATE"]). */
   blockedSqlReasons?: string[];
+  /** For a `reply` node: the plain Markdown text of the AI's chat answer. */
+  chatReplyText?: string;
+  /** For a `reply` node: structured statistics (e.g. the Matomo summary) rendered as charts. */
+  chatStats?: Record<string, unknown> | null;
+  /** For a `reply` node: unique token used to build the chart canvas ids in the reply viewer. */
+  chatViewerToken?: string;
   children?: LogNode[];
   expanded?: boolean;
 }
@@ -109,7 +116,7 @@ export interface LogNode {
             <i [class]="iconClass(node.kind)" aria-hidden="true"></i>
           }
         </span>
-        <span class="cb-log-node__label" [class.cb-log-node__label--stacked]="node.kind === 'inference' && !!node.userLabel">
+        <span class="cb-log-node__label" [class.cb-log-node__label--stacked]="(node.kind === 'inference' || node.kind === 'chat') && !!node.userLabel">
           <span
               class="cb-log-node__label-text"
               [class.cb-log-node__label-text--pre]="node.multiline === true">{{ node.label }}</span>
@@ -129,7 +136,7 @@ export interface LogNode {
         @if (node.badge) {
           <span class="cb-log-node__badge" title="Tokens used">{{ node.badge }}</span>
         }
-        @if (node.value && node.kind !== 'prompt') {
+        @if (node.value && node.kind !== 'prompt' && node.kind !== 'reply') {
           @if (node.valueExpanded !== true) {
             <span class="cb-log-node__value">{{ node.value }}</span>
           }
@@ -170,6 +177,16 @@ export interface LogNode {
             <i class="pi pi-download" aria-hidden="true"></i>
           </button>
         }
+        @if (node.kind === 'reply' && (node.chatReplyText || node.chatStats)) {
+          <button
+              type="button"
+              class="cb-log-node__reply-open"
+              title="Open the reply in a draggable Markdown/chart viewer"
+              aria-label="Open the reply in a viewer"
+              (click)="openChatReplyViewer($event)">
+            <i class="pi pi-window-maximize" aria-hidden="true"></i>
+          </button>
+        }
       </summary>
       @if (node.kind === 'prompt' && node.value) {
         <div class="cb-log-node__prompt">
@@ -192,13 +209,35 @@ export interface LogNode {
           <span class="cb-log-node__prompt-text">{{ node.value }}</span>
         </div>
       }
+      @if (node.kind === 'reply' && node.chatReplyText) {
+        <div class="cb-log-node__reply">
+          <button
+              type="button"
+              class="cb-log-node__reply-copy"
+              [attr.title]="replyCopied ? 'Copied' : 'Copy this reply to the clipboard'"
+              aria-label="Copy reply"
+              (click)="copyReply($event)">
+            <i [class]="replyCopied ? 'pi pi-check' : 'pi pi-copy'" aria-hidden="true"></i>
+          </button>
+          <button
+              type="button"
+              class="cb-log-node__reply-open"
+              title="Open the reply in a draggable Markdown/chart viewer"
+              aria-label="Open the reply in a viewer"
+              (click)="openChatReplyViewer($event)">
+            <i class="pi pi-window-maximize" aria-hidden="true"></i>
+          </button>
+          <div class="cb-log-node__reply-markdown" [innerHTML]="markdownReply(node)"></div>
+        </div>
+      }
       @if (node.children?.length) {
         <div class="cb-log-node__children">
           @for (child of node.children; track child.id) {
             <cb-log-node
                 [node]="child"
                 (sensitiveChecked)="sensitiveChecked.emit($event)"
-                (promptOpen)="promptOpen.emit($event)" />
+                (promptOpen)="promptOpen.emit($event)"
+                (chatReplyOpen)="chatReplyOpen.emit($event)" />
           }
         </div>
       }
@@ -218,6 +257,9 @@ export class LogTreeNode {
    *  is rendered once by the parent AiAssistantLog (a proper top-level popup, appended to body) so
    *  it is never positioned relative to this recursive tree node / the scrollable list container. */
   @Output() promptOpen = new EventEmitter<string>();
+  /** Emitted with a chat reply node when the user requests the draggable Markdown/chart viewer. The
+   *  dialog itself is rendered once by the parent AiAssistantLog (a proper top-level popup). */
+  @Output() chatReplyOpen = new EventEmitter<LogNode>();
 
   private readonly baseUrl = `${window.location.href.split("/").slice(0, 4).join("/")}/`;
   /** CodBi logo used as the icon for CodBi CSS class nodes (same resource as the dialog header). */
@@ -233,6 +275,9 @@ export class LogTreeNode {
   /** True for a short moment after the prompt was copied (shows a check icon on the copy button). */
   promptCopied = false;
   private promptCopyTimer: number | null = null;
+  /** True for a short moment after a chat reply was copied (shows a check icon on the copy button). */
+  replyCopied = false;
+  private replyCopyTimer: number | null = null;
 
   onToggle(event: Event): void {
     const details = event.target as HTMLDetailsElement | null;
@@ -256,9 +301,13 @@ export class LogTreeNode {
     this.cdr.markForCheck();
   }
 
-  /** A node is expandable when it has children or renders a prompt body. */
+  /** A node is expandable when it has children or renders a prompt / reply body. */
   isExpandable(node: LogNode): boolean {
-    return !!node.children?.length || (node.kind === "prompt" && !!node.value);
+    return (
+      !!node.children?.length ||
+      (node.kind === "prompt" && !!node.value) ||
+      (node.kind === "reply" && !!node.chatReplyText)
+    );
   }
 
   /** True when the node's value is long enough to warrant an expand/collapse toggle. */
@@ -274,9 +323,10 @@ export class LogTreeNode {
     this.cdr.markForCheck();
   }
 
-  /** True for nodes that belong to a CodBi functionality or CSS class (rendered with the CodBi logo). */
+  /** True for nodes that belong to a CodBi functionality, CSS class, or a chat entry — these are
+   *  rendered with the CodBi logo (a chat entry's topmost icon is the CodBi logo). */
   isCodbiNode(node: LogNode): boolean {
-    return node.codbi === true && (node.kind === "class" || node.kind === "func");
+    return node.codbi === true && (node.kind === "class" || node.kind === "func" || node.kind === "chat");
   }
 
   /** Human-readable message shown on a blocked SQL node (destructive statement replaced by CodBi). */
@@ -361,6 +411,45 @@ export class LogTreeNode {
     }
   }
 
+  /** Renders a chat reply's plain Markdown text as safe HTML for the reply body / viewer. */
+  markdownReply(node: LogNode): string {
+    return markdownToHtml(node.chatReplyText ?? node.value ?? "");
+  }
+
+  /** Requests the parent to open the draggable Markdown/chart viewer for this chat reply. */
+  openChatReplyViewer(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    this.chatReplyOpen.emit(this.node);
+  }
+
+  /** Copies a chat reply's plain Markdown text to the clipboard (with fallback + check feedback). */
+  copyReply(event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    const text = this.node.chatReplyText ?? this.node.value ?? "";
+    if (!text) return;
+    const done = (): void => {
+      this.replyCopied = true;
+      this.cdr.markForCheck();
+      if (this.replyCopyTimer !== null) window.clearTimeout(this.replyCopyTimer);
+      this.replyCopyTimer = window.setTimeout(() => {
+        this.replyCopied = false;
+        this.cdr.markForCheck();
+      }, 1500);
+    };
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      navigator.clipboard
+        .writeText(text)
+        .then(done)
+        .catch(() => {
+          window.prompt("Copy this reply", text);
+        });
+    } else {
+      window.prompt("Copy this reply", text);
+    }
+  }
+
   private withExpanded(node: LogNode, expanded: boolean): LogNode {
     return {
       ...node,
@@ -373,6 +462,10 @@ export class LogTreeNode {
     switch (kind) {
       case "inference":
         return "pi pi-clock";
+      case "chat":
+        return "pi pi-comments";
+      case "reply":
+        return "pi pi-reply";
       case "prompt":
         return "pi pi-comment";
       case "section":

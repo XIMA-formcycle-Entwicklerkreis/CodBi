@@ -8,6 +8,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Chat turns in the change log**: every chat message and its corresponding AI reply are now
+  registered in the change log (`codbi_ai_assistant_log`) just like the other entries, with the same
+  input/output token counts, estimated cost and currency, and the user who ran the turn. A pure chat
+  turn is recorded as its own entry (its own row) even though it changes neither the form nor the
+  workflow — previously answer-only chat messages were never logged. The AI's reply is stored in the
+  new `chat_reply` column (JSON `{"text": "...", "matomoStats": {...}}`). A chat entry shows only the
+  question and the reply; the reply is rendered as Markdown (with copy buttons, and charts when the
+  AI attached statistics) and can be opened in a draggable, resizable viewer, exactly like the chat
+  reply buttons in the assistant popup. The topmost icon of a chat entry is the CodBi logo. Mixed
+  "instruction + question" runs keep their normal form/workflow entry and additionally expose the
+  reply as a Markdown child node. The reply is also included in the change history sent to the AI.
 - **AI pricing**: new plugin properties let administrators configure the cost per 1,000,000 input
   and output tokens **per model**, each with its own ISO 4217 currency (e.g. `EUR`/`USD`) so models
   priced by different providers can use different currencies — `AI_LLAMA_STD_PriceCurrency` /

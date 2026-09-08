@@ -90,6 +90,9 @@ REQUIRED: file name and the content to write.
 ### FC_WRITE_FORM_RECORD_ATTRIBUTES
 FC_WRITE_FORM_RECORD_ATTRIBUTES — Writes custom key-value SERVER attributes to the record (server-side only, read back via [%\$RECORD_ATTR.key%]). It does NOT write to a database table — when the user asks to write into a database/table/column, use FC_SQL_STATEMENT instead.
 REQUIRED: the attribute key(s) and value(s) to write.
+EXACT nodeParams: {"attributes":[{"name":"<key>","value":"<value>"},...]} — optionally "writeAttributesToForm":true. NEVER emit a bare {"attributeKey":...} — the server writes ONLY the "attributes" array.
+READABLE/EMAIL ACCUMULATION (putting ALL rows of a repeatable container into an email body as readable lines): the per-row FC_WRITE_FORM_RECORD_ATTRIBUTES goes INSIDE the FC_FOR_EACH_LOOP's nodeParams._childNodes and its "value" MUST CONCATENATE the previous attribute so rows accumulate — value = "[%\$RECORD_ATTR.<key>%]" + this row's line, e.g. {"attributes":[{"name":"openingHours","value":"[%\$RECORD_ATTR.openingHours%][%selWeekday%]: [%tfFrom%] - [%tfTo%]\n"}]}. WITHOUT that [%\$RECORD_ATTR.<key>%] prefix every row OVERWRITES the attribute and only the LAST row remains; reference the completed [%\$RECORD_ATTR.<key>%] ONCE in the FC_EMAIL body after the loop.
+LIST FC_WRITE_FORM_RECORD_ATTRIBUTES AND FC_FOR_EACH_LOOP IN need_workflow_node_details so you receive their exact schemas.
 ### FC_SQL_STATEMENT
 FC_SQL_STATEMENT — Runs a SQL statement (INSERT/UPDATE/DELETE/SELECT) against a database connection; the ONLY node that writes to or reads from an external database table. USE whenever the user asks to write/save/persist form data into a database/table/column.
 REQUIRED: the database connection/datasource and the SQL text (with [%fieldName%] placeholders).

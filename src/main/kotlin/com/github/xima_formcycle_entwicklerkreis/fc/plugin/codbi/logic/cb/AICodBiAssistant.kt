@@ -735,10 +735,17 @@ class AICodBiAssistant : IPluginServletAction {
     // optimisation question). They are reused by the form-modification pass below so an
     // "analyse and optimise" instruction also sees the statistics.
     val matomoStatsContext = chatAnswerResult?.matomoStatsContext
-    if (chatAnswerResult != null && !chatAnswerResult.hasInstructions) {
-      // Answer-only: respond to the user's question OR acknowledge a neutral message ("ok" — in any
-      // phrasing, classified by the AI) WITHOUT modifying the form or workflow — a request that
-      // already ran must not be re-executed.
+    // Answer-only: respond to the user's question OR acknowledge a neutral message ("ok" — in any
+    // phrasing, classified by the AI) WITHOUT modifying the form or workflow — a request that
+    // already ran must not be re-executed.
+    // A run that carries clarification ANSWERS (clarificationContext non-blank) is a RE-RUN of a
+    // real instruction that was waiting for the user's answers — it MUST proceed to execute the
+    // form/workflow build, never be swallowed by this neutral-chat ack. Without this guard the chat
+    // AI occasionally misclassifies such a re-run as answer-only and the assistant just replies
+    // "Alles klar!" instead of building the form.
+    if (chatAnswerResult != null &&
+        !chatAnswerResult.hasInstructions &&
+        clarificationContext.isNullOrBlank()) {
       val chatPrice = instance.priceForModel(modelId)
       val chatCost =
           chatPrice?.costFor(
@@ -849,6 +856,19 @@ class AICodBiAssistant : IPluginServletAction {
         extractFormVariablesFromJson(params.requestParameters["persist"]?.firstOrNull())
     logger.info(
         "[AICodBiAssistant] Clarification form variables: {}", clarificationFormVariables ?: "none")
+    // The current workflow's existing mail nodes (recipient(s)/subject/sender) — injected into the
+    // clarification prompt so the AI REUSES an address the user references as "the same one a mail
+    // is already sent to" ("die gleiche, an die bereits eine Mail geschickt wird") instead of
+    // re-asking for it. The clarification round otherwise receives NO workflow context at all.
+    val clarificationWorkflowMails: String? =
+        if (intent == "workflow" || intent == "both") {
+          params.requestParameters["workflowVersionId"]?.firstOrNull()?.toLongOrNull()?.let { wid ->
+            fetchWorkflowMailNodesSummary(getUserContext(params), wid)
+          }
+        } else null
+    logger.info(
+        "[AICodBiAssistant] Clarification workflow mail nodes loaded: {} chars",
+        clarificationWorkflowMails?.length ?: 0)
     for (round in 0 until 5) {
       val check =
           try {
@@ -869,7 +889,8 @@ class AICodBiAssistant : IPluginServletAction {
                 askAllQuestions,
                 imageParts,
                 clarificationCompletionPages,
-                clarificationFormVariables)
+                clarificationFormVariables,
+                clarificationWorkflowMails)
           } catch (e: Exception) {
             logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
             null
@@ -1353,6 +1374,7 @@ class AICodBiAssistant : IPluginServletAction {
                 runWorkflowCreation(
                     prompt,
                     latestFormElements,
+                    resolvedFormJson,
                     workflowVersionId,
                     modelId,
                     params,
@@ -2502,6 +2524,9 @@ class AICodBiAssistant : IPluginServletAction {
                 // Belt-and-suspenders: invisible email-config clone fields must not remain in the
                 // form even if the model created them despite the filtered clarification context.
                 dropInvisibleEmailConfigFields(obj)
+                // Formcycle forbids nested repeatable (dynamic) containers — flatten any the AI
+                // created so the form loads in the designer instead of erroring and showing empty.
+                denestRepeatableContainers(obj)
                 gson.toJson(obj)
               }
               .getOrDefault(restored)
@@ -3585,6 +3610,83 @@ class AICodBiAssistant : IPluginServletAction {
       }
       props.add("elements", clean)
     }
+  }
+
+  /**
+   * Formcycle forbids NESTED repeatable (dynamic) containers ("Ein wiederholtes Element darf keine
+   * anderen wiederholten Elemente enthalten" — a dynamic container must not contain another dynamic
+   * container). The form AI occasionally produces such nesting (e.g. a dynamic "weekday" container
+   * whose per-row content again contains a dynamic time-block container). Formcycle cannot express
+   * two repetition levels, so the form would fail to load and the designer would show it empty.
+   *
+   * Before the form reaches the designer, FLATTEN each nested dynamic container: the inner dynamic
+   * container's child fields are pulled up into the OUTER dynamic container (they become one
+   * instance set per outer row) and the inner container item is removed. Every field is preserved;
+   * only the unrepresentable inner repetition collapses into the outer rows. Non-nested dynamic
+   * containers are untouched. Repeats until no nesting remains (flattening can surface a deeper
+   * nested dynamic container).
+   */
+  private fun denestRepeatableContainers(root: JsonObject) {
+    var items = root.getAsJsonArray("items") ?: return
+    var changed: Boolean
+    do {
+      changed = false
+      val byName = mutableMapOf<String, JsonObject>()
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val name =
+            item.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString ?: continue
+        byName[name] = item.asJsonObject
+      }
+      val removed = mutableSetOf<String>()
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val outerProps = item.asJsonObject.getAsJsonObject("properties") ?: continue
+        if (outerProps.get("dynamic")?.asString != "1") continue
+        val elements = outerProps.getAsJsonArray("elements") ?: continue
+        var touched = false
+        val flat = JsonArray()
+        for (ref in elements) {
+          val childName =
+              if (ref.isJsonPrimitive) ref.asString
+              else if (ref.isJsonObject)
+                  ref.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
+              else null
+          val child = childName?.let { byName[it] }
+          val childProps = child?.getAsJsonObject("properties")
+          // A nested dynamic container: pull its children up into this (outer) row and drop it.
+          if (childProps?.get("dynamic")?.asString == "1" && childProps.has("elements")) {
+            childProps.getAsJsonArray("elements")?.forEach { innerRef -> flat.add(innerRef) }
+            removed.add(childName!!)
+            logger.warn(
+                "[AICodBiAssistant] De-nesting repeatable container '{}' inside '{}' (Formcycle forbids nested repeatables) — its fields were merged into the outer row",
+                childName,
+                outerProps.get("name")?.asString ?: "?")
+            touched = true
+          } else {
+            flat.add(ref)
+          }
+        }
+        if (touched) {
+          outerProps.add("elements", flat)
+          changed = true
+        }
+      }
+      if (removed.isNotEmpty()) {
+        val keep = JsonArray()
+        for (item in items) {
+          if (!item.isJsonObject) {
+            keep.add(item)
+            continue
+          }
+          val name = item.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
+          if (name != null && name in removed) continue
+          keep.add(item)
+        }
+        root.add("items", keep)
+        items = keep
+      }
+    } while (changed)
   }
 
   /**
@@ -6480,6 +6582,7 @@ class AICodBiAssistant : IPluginServletAction {
   private fun runWorkflowCreation(
       prompt: String,
       formElements: String?,
+      repeatableFormJson: String? = null,
       workflowVersionId: Long,
       modelId: String,
       params: IPluginServletActionParams,
@@ -6697,6 +6800,18 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] runWorkflowCreation: existingWorkflowNodes={}",
         existingWorkflowNodes ?: "null (none found or query failed)")
+    // Full CURRENT content of the existing nodes (customParameters — e.g. an FC_WRITE_FORM_RECORD_
+    // ATTRIBUTES that accumulates repeatable rows into a server attribute and the FC_EMAIL body
+    // that
+    // references it). The structural list above has no parameters, so the AI cannot correctly
+    // MODIFY
+    // an existing mail/accumulation without this — without it a "add Von/Bis to the opening-hours
+    // mail" replace would flatten the rows into plain first-row fields and invent a hidden helper
+    // field instead of updating the FC_WRITE_FORM_RECORD_ATTRIBUTES accumulation.
+    val existingWorkflowStructure = buildWorkflowStructureContext(workflowVersionId, userContext)
+    logger.info(
+        "[AICodBiAssistant] runWorkflowCreation: existingWorkflowStructure={} chars",
+        existingWorkflowStructure?.length ?: 0)
     // Two-pass workflow flow:
     //   Pass-1 — the AI receives only the condensed workflow-nodes reference. If it needs the exact
     //            triggerParams/nodeParams of specific triggers/nodes it intends to use, it responds
@@ -6705,8 +6820,17 @@ class AICodBiAssistant : IPluginServletAction {
     //            AI produces the final task JSON.
     var requestedNodes = emptyList<String>()
     var requestedTriggers = emptyList<String>()
-    val repeatableContainers =
-        buildRepeatableContainersContext(params.requestParameters["persist"]?.firstOrNull())
+    // The repeatable (dynamic) containers context must come from the CURRENT form. In the "both" /
+    // form-modify flow the form AI has JUST created the dynamic container (e.g. an opening-hours
+    // repeatable group), while the request's original `persist` is stale and does not contain it —
+    // the workflow AI would then never see the container or its row fields and therefore cannot
+    // build the FC_FOR_EACH_LOOP + FC_WRITE_FORM_RECORD_ATTRIBUTES accumulation that an email body
+    // ("die Öffnungszeiten") requires. Prefer the updated form JSON handed over by the caller;
+    // fall back to the request persist for pure workflow-only runs.
+    val repeatableSource =
+        repeatableFormJson?.takeIf { it.isNotBlank() }
+            ?: params.requestParameters["persist"]?.firstOrNull()
+    val repeatableContainers = buildRepeatableContainersContext(repeatableSource)
     // Form/global variables of the form (top-level "variables" array) — the workflow AI needs these
     // so it can reference a form variable's value with [%variableName%] and does NOT ask whether to
     // create hidden form fields for variables that already exist.
@@ -6729,7 +6853,8 @@ class AICodBiAssistant : IPluginServletAction {
             clarificationContext,
             chatContext,
             changeHistoryContext,
-            formVariables)
+            formVariables,
+            existingWorkflowStructure)
 
     var messagesJson = buildString {
       append("[")
@@ -6768,7 +6893,8 @@ class AICodBiAssistant : IPluginServletAction {
               clarificationContext,
               chatContext,
               changeHistoryContext,
-              formVariables)
+              formVariables,
+              existingWorkflowStructure)
       messagesJson = buildString {
         append("[")
         append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -6794,9 +6920,20 @@ class AICodBiAssistant : IPluginServletAction {
     // Also retry when the AI echoed the FORM instead of the workflow task — after the clarification
     // round it sometimes returns the form JSON (an "items" array / no workflow task fields), or an
     // empty JSON array, which would otherwise parse to zero task specs and abort the run.
+    // The model frequently emits structurally broken workflow JSON (e.g. a dropped `{` inside a
+    // nodeParams._childNodes / chainedNodes array). The single-pass token repair below is not
+    // always enough, so a malformed spec is retried ONCE with the strict JSON instruction too —
+    // a second attempt usually yields a valid workflow instead of aborting the whole build.
+    val jsonWellFormed =
+        runCatching {
+              JsonParser.parseString(repairAiJson(safeCleaned))
+              true
+            }
+            .getOrDefault(false)
     if ((!safeCleaned.trim().startsWith("{") && !safeCleaned.trim().startsWith("[")) ||
         isFormShapedWorkflowResponse(safeCleaned) ||
-        isWorkflowEmptyArray(safeCleaned)) {
+        isWorkflowEmptyArray(safeCleaned) ||
+        !jsonWellFormed) {
       logger.warn(
           "[AICodBiAssistant] Workflow AI returned non-task response (prose, form JSON, or empty array) — retrying once with strict JSON instruction: {}",
           safeCleaned.take(300))
@@ -6845,7 +6982,8 @@ class AICodBiAssistant : IPluginServletAction {
                 clarificationContext,
                 chatContext,
                 changeHistoryContext,
-                formVariables)
+                formVariables,
+                existingWorkflowStructure)
         messagesJson = buildString {
           append("[")
           append("""{"role":"system","content":${gson.toJson(systemPrompt)}},""")
@@ -9595,7 +9733,8 @@ class AICodBiAssistant : IPluginServletAction {
       clarificationContext: String? = null,
       chatContext: String? = null,
       changeHistoryContext: String? = null,
-      formVariables: String? = null
+      formVariables: String? = null,
+      existingWorkflowStructure: String? = null
   ): String {
     val em = CodbiEntities.entityManagerFactory?.createEntityManager()
     if (em == null) return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -9617,25 +9756,48 @@ class AICodBiAssistant : IPluginServletAction {
       if (workflowTemplate.isBlank()) {
         return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
       }
-      return renderWorkflowSystemPrompt(
-          workflowTemplate,
-          general = general,
-          workflowReference = workflowReference,
-          pass2 = pass2,
-          formContext = formContext,
-          repeatableContainers = repeatableContainers,
-          completionPages = completionPages,
-          htmlTemplates = htmlTemplates,
-          inboxes = inboxes,
-          messageServices = messageServices,
-          triggers = triggers,
-          workflowStates = workflowStates,
-          existingWorkflowNodes = existingWorkflowNodes,
-          clarificationContext = clarificationContext,
-          chatContext = chatContext,
-          changeHistoryContext = changeHistoryContext,
-          changeLogSchema = loadChangeLogSchema(),
-          formVariables = formVariables)
+      val rendered =
+          renderWorkflowSystemPrompt(
+              workflowTemplate,
+              general = general,
+              workflowReference = workflowReference,
+              pass2 = pass2,
+              formContext = formContext,
+              repeatableContainers = repeatableContainers,
+              completionPages = completionPages,
+              htmlTemplates = htmlTemplates,
+              inboxes = inboxes,
+              messageServices = messageServices,
+              triggers = triggers,
+              workflowStates = workflowStates,
+              existingWorkflowNodes = existingWorkflowNodes,
+              clarificationContext = clarificationContext,
+              chatContext = chatContext,
+              changeHistoryContext = changeHistoryContext,
+              changeLogSchema = loadChangeLogSchema(),
+              formVariables = formVariables)
+      // When the workflow is being MODIFIED (nodes already exist), give the AI the FULL current
+      // content of those nodes (customParameters — incl. an existing
+      // FC_WRITE_FORM_RECORD_ATTRIBUTES
+      // that accumulates the repeatable rows and the FC_EMAIL that references the server
+      // attribute).
+      // The structural node list above has no parameters, so without this the AI cannot see that
+      // the
+      // rows are collected into a server attribute and would flatten the repeatable fields into
+      // plain
+      // first-row placeholders (or invent hidden helper fields) when asked to extend the mail.
+      val structureBlock =
+          if (!existingWorkflowStructure.isNullOrBlank()) {
+            "\n\nEXISTING WORKFLOW STRUCTURE (full current content of the nodes listed above — READ-ONLY reference for modify/replace). It shows exactly what each existing node does TODAY (customParameters): e.g. an FC_WRITE_FORM_RECORD_ATTRIBUTES that accumulates the repeatable-container rows (inside an FC_FOR_EACH_LOOP) into a server attribute [%\$RECORD_ATTR.<key>%], and an FC_EMAIL whose body references that attribute.\n" +
+                "RULES WHEN MODIFYING (replace) AN EMAIL THAT SENDS REPEATABLE-CONTAINER ROWS:\n" +
+                "- The rows MUST stay in the server attribute: also UPDATE the matching FC_WRITE_FORM_RECORD_ATTRIBUTES node (by its numeric id) so its per-row accumulated value includes every field that must appear per row (e.g. add the Von/Bis fields [%tfOpeningStart%] - [%tfOpeningEnd%] to the accumulated line).\n" +
+                "- Keep the FC_EMAIL body referencing the server attribute ([%\$RECORD_ATTR.<key>%]) for the rows — do NOT replace it with plain [%fieldName%] placeholders of repeatable-container fields (those resolve to the FIRST row only).\n" +
+                "- NEVER create hidden form fields / helper fields (e.g. a hidden per-row \"… für Mail\" field) to collect repeatable content — the server attribute is the mechanism.\n" +
+                "EXISTING WORKFLOW STRUCTURE JSON (numeric 'id' values match the node list above):\n" +
+                existingWorkflowStructure +
+                "\n"
+          } else ""
+      return rendered + structureBlock
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] Failed to build workflow system prompt", e)
       return loadPromptWithClasspathFallback("codbi.fallback_workflow") ?: ""
@@ -9676,6 +9838,68 @@ class AICodBiAssistant : IPluginServletAction {
       if (arr.size() == 0) null else gson.toJson(arr)
     } catch (e: Exception) {
       logger.warn("[AICodBiAssistant] fetchExistingWorkflowNodes failed: ${e.message}")
+      null
+    }
+  }
+
+  /**
+   * Compact summary of the mail nodes (FC_EMAIL / FC_DOI_INIT) already present in the workflow of
+   * the given version — id, type, name, recipient(s), subject and sender. This is injected into the
+   * CLARIFICATION prompt so the AI can reuse an address the user references as "the address a mail
+   * is already sent to" / "die gleiche, an die bereits eine Mail geschickt wird" / "wie bei der
+   * letzten Mail" instead of re-asking for it (the clarification round otherwise sees NO workflow
+   * context). Returns null when the workflow has no mail node or cannot be read.
+   */
+  private fun fetchWorkflowMailNodesSummary(userContext: Any, workflowVersionId: Long): String? {
+    val em = formcycleEntityManager(userContext) ?: return null
+    return try {
+      val jpql =
+          "SELECT n.id, n.type, n.name, n.customParameters FROM de.xima.fc.entities.WorkflowNode n " +
+              "JOIN n.task wta JOIN wta.process wp JOIN wp.version wv " +
+              "WHERE wv.id = :vid AND n.type IN ('FC_EMAIL','FC_DOI_INIT') ORDER BY n.id"
+      val results = runJpqlOn(em, jpql, "vid", workflowVersionId)
+      if (results.isEmpty()) return null
+      val arr = com.google.gson.JsonArray()
+      for (row in results) {
+        val cols = row as? Array<*> ?: continue
+        if (cols.size < 4) continue
+        val obj = com.google.gson.JsonObject()
+        obj.addProperty("id", cols[0]?.toString())
+        obj.addProperty("type", cols[1]?.toString() ?: "")
+        obj.addProperty("name", cols[2]?.toString() ?: "")
+        var subject = ""
+        var sender = ""
+        val recipients = StringBuilder()
+        val custom = cols[3]?.toString()
+        if (!custom.isNullOrBlank()) {
+          try {
+            val parsed = JsonParser.parseString(custom).asJsonObject
+            fun readText(key: String): String =
+                parsed.get(key)?.takeIf { it.isJsonPrimitive }?.asString?.takeIf { it.isNotBlank() }
+                    ?: ""
+            subject = readText("subject")
+            sender = readText("from")
+            val toEl = parsed.get("to")
+            if (toEl != null && toEl.isJsonArray) {
+              for (e in toEl.asJsonArray) {
+                if (e.isJsonPrimitive && e.asString.isNotBlank()) {
+                  if (recipients.isNotEmpty()) recipients.append(", ")
+                  recipients.append(e.asString)
+                }
+              }
+            } else if (toEl != null && toEl.isJsonPrimitive && toEl.asString.isNotBlank()) {
+              recipients.append(toEl.asString)
+            }
+          } catch (_: Exception) {}
+        }
+        obj.addProperty("subject", subject)
+        obj.addProperty("sender", sender)
+        obj.addProperty("recipient", recipients.toString())
+        arr.add(obj)
+      }
+      if (arr.size() == 0) null else gson.toJson(arr)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] fetchWorkflowMailNodesSummary failed: ${e.message}")
       null
     }
   }
@@ -11006,6 +11230,52 @@ class AICodBiAssistant : IPluginServletAction {
         }
       }
     }
+
+    // A loop/condition node that sits INSIDE an FC_EXPERIMENT body/handler SEQUENCE, an FC_SWITCH
+    // branch or any other nested SEQUENCE lane must ALSO get its YES-branch SEQUENCE wrapper and
+    // its
+    // per-iteration children. Only the top-level node and chained structured nodes were expanded
+    // before, so such a nested loop was persisted EMPTY and its per-row children — e.g. the
+    // FC_WRITE_FORM_RECORD_ATTRIBUTES that accumulates repeatable rows ("die Öffnungszeiten") into
+    // a
+    // server attribute for the FC_EMAIL body — were silently dropped and the server attribute was
+    // never set. This helper mirrors the top-level/chained handling for every structured child
+    // created inside the lanes below (FC_EXPERIMENT / FC_SWITCH children).
+    fun expandStructuredChildBranches(childSpec: WorkflowTaskSpec, savedNode: Any, depth: Int) {
+      @Suppress("UNCHECKED_CAST")
+      val childNodes =
+          (childSpec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
+      if (childNodes != null &&
+          (childSpec.nodeType == "de.xima.fc.plugin.bs.auth.plugin.node.CheckTrustLevelPlugin" ||
+              childSpec.nodeType == "FC_MULTIPLE_CONDITION" ||
+              childSpec.nodeType == "FC_FOR_EACH_LOOP" ||
+              childSpec.nodeType == "FC_WHILE_LOOP" ||
+              childSpec.nodeType == "FC_DO_UNTIL_LOOP" ||
+              childSpec.nodeType == "FC_WITH_FORM_ELEMENT_CONTEXT")) {
+        logger.info(
+            "[AICodBiAssistant] Creating YES-branch SEQUENCE wrapper for nested child nodeType={}",
+            childSpec.nodeType)
+        val branchSeq = workflowNodeClass.getDeclaredConstructor().newInstance()
+        workflowNodeClass
+            .getMethod("setName", String::class.java)
+            .invoke(branchSeq, "FcSequenceHandler")
+        workflowNodeClass.getMethod("setType", String::class.java).invoke(branchSeq, "SEQUENCE")
+        workflowNodeClass.getMethod("setActive", Boolean::class.java).invoke(branchSeq, true)
+        workflowNodeClass
+            .getMethod("setUUIDObject", UUID::class.java)
+            .invoke(branchSeq, UUID.randomUUID())
+        workflowNodeClass.getMethod("setTask", workflowTaskClass).invoke(branchSeq, savedTask)
+        workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(branchSeq, savedNode)
+        trySetParentOrderIndex(workflowNodeClass, branchSeq, 0)
+        val savedBranchSeq = createNodeMethod.invoke(workflowNodeApi, userContext, branchSeq)
+        verifyChildIndex(savedBranchSeq, savedNode, 0, userContext)
+        logger.info(
+            "[AICodBiAssistant] Created YES-branch SEQUENCE id={} for nested child nodeType={}",
+            savedBranchSeq.javaClass.getMethod("getId").invoke(savedBranchSeq),
+            childSpec.nodeType)
+        processBranchChildren(childSpec, savedBranchSeq, childNodes, depth)
+      }
+    }
     @Suppress("UNCHECKED_CAST")
     val topLevelChildNodes =
         (spec.nodeParams["_childNodes"] as? List<Map<String, Any>>)?.ifEmpty { null }
@@ -11135,6 +11405,10 @@ class AICodBiAssistant : IPluginServletAction {
             workflowNodeClass.getMethod("setParent", workflowNodeClass).invoke(childNode, savedSeq)
             val savedChildNode = createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
             fixParentOrderIndex(savedChildNode, savedSeq, userContext)
+            // The child may itself be a loop/condition node with per-row children (e.g. an
+            // FC_FOR_EACH_LOOP accumulating repeatable rows into a server attribute). Expand them
+            // into a YES-branch SEQUENCE so they are NOT silently dropped.
+            expandStructuredChildBranches(childSpec, savedChildNode, 1)
           }
         }
       }
@@ -11281,6 +11555,11 @@ class AICodBiAssistant : IPluginServletAction {
                 val savedChildNode =
                     createNodeMethod.invoke(workflowNodeApi, userContext, childNode)
                 fixParentOrderIndex(savedChildNode, savedSeq, userContext)
+                // The child may itself be a loop/condition node with per-row children (e.g. an
+                // FC_FOR_EACH_LOOP accumulating repeatable rows into a server attribute inside the
+                // FC_EXPERIMENT Body/Handler lane). Expand them into a YES-branch SEQUENCE so they
+                // are NOT silently dropped — otherwise the server attribute is never set.
+                expandStructuredChildBranches(childSpec, savedChildNode, 1)
               }
             }
           }
@@ -13592,21 +13871,44 @@ class AICodBiAssistant : IPluginServletAction {
         """{"name":${gson.toJson(nodeName)},"description":${gson.toJson(nodeDescription)},"fileName":${gson.toJson(fileName)},"fileContent":${gson.toJson(fileContent)},"contentType":${gson.toJson(contentType)}}"""
       }
       "FC_WRITE_FORM_RECORD_ATTRIBUTES" -> {
-        @Suppress("UNCHECKED_CAST")
-        val attributes =
-            (spec.nodeParams["attributes"] as? List<*>)
-                ?.filterIsInstance<Map<*, *>>()
-                ?.mapNotNull { a ->
-                  val name = a["name"] as? String ?: return@mapNotNull null
-                  val value = a["value"] as? String ?: ""
-                  """{"name":${gson.toJson(name)},"value":${gson.toJson(value)}}"""
-                } ?: emptyList()
+        // Collect every attribute (key -> value) from WHATEVER shape the model emitted:
+        //   - "attributes": [{name,value}, ...]                 (documented schema)
+        //   - "attributes": {name,value}                        (single object instead of a list)
+        //   - single-key convenience: {"attributeKey":k,"value":v} / {"attribute":k,"value":v} /
+        //     {"key":k,"value":v} / {"name":k,"value":v}        (frequently emitted by the AI)
+        // Without this normalization an FC_WRITE_FORM_RECORD_ATTRIBUTES would be created but write
+        // nothing (empty customAttributes), so the server attribute referenced by an email body
+        // ([%$RECORD_ATTR.key%]) would stay empty at runtime.
+        val collected = LinkedHashMap<String, String>()
+        fun addAttribute(name: Any?, value: Any?) {
+          val key = name?.toString()?.takeIf { it.isNotBlank() } ?: return
+          collected.putIfAbsent(key, value?.toString() ?: "")
+        }
+        when (val raw = spec.nodeParams["attributes"]) {
+          is List<*> -> {
+            for (a in raw.filterIsInstance<Map<*, *>>()) {
+              addAttribute(a["name"] ?: a["key"], a["value"])
+            }
+          }
+          is Map<*, *> -> {
+            addAttribute(raw["name"] ?: raw["key"], raw["value"])
+          }
+          else -> {}
+        }
+        addAttribute(
+            spec.nodeParams["attributeKey"]
+                ?: spec.nodeParams["attribute"]
+                ?: spec.nodeParams["key"]
+                ?: spec.nodeParams["name"],
+            spec.nodeParams["value"])
+        val attributesJson =
+            collected.map { (n, v) -> """{"name":${gson.toJson(n)},"value":${gson.toJson(v)}}""" }
         val writeAttributesToForm = spec.nodeParams["writeAttributesToForm"] as? Boolean ?: false
         logger.info(
             "[AICodBiAssistant] buildNodeParams FC_WRITE_FORM_RECORD_ATTRIBUTES: {} attributes, writeAttributesToForm={}",
-            attributes.size,
+            collected.size,
             writeAttributesToForm)
-        """{"name":${gson.toJson(nodeName)},"customAttributes":[${attributes.joinToString(",")}],"writeAttributesToForm":$writeAttributesToForm}"""
+        """{"name":${gson.toJson(nodeName)},"customAttributes":[${attributesJson.joinToString(",")}],"writeAttributesToForm":$writeAttributesToForm}"""
       }
       "FC_PROVIDE_RESOURCE" -> {
         val exportName = spec.nodeParams["exportName"] as? String ?: ""
@@ -14253,9 +14555,16 @@ class AICodBiAssistant : IPluginServletAction {
         // character-separated values), _childNodes.
         val sourceType =
             (spec.nodeParams["sourceType"] as? String ?: "FORM_FIELD_REPETITIONS").uppercase()
+        // Accept every key the model uses for the item source of FORM_FIELD_REPETITIONS: the
+        // documented "fieldTechnicalId" (a field INSIDE the repeatable container), "formFieldName",
+        // or the container-oriented "sourceName"/"containerName" the AI sometimes emits for a
+        // dynamic container (e.g. "coOpeningHours"). Without this the loop's sourceProps would be
+        // built with an empty formFieldName and the loop would never iterate.
         val formFieldName =
             spec.nodeParams["fieldTechnicalId"] as? String
                 ?: spec.nodeParams["formFieldName"] as? String
+                ?: spec.nodeParams["sourceName"] as? String
+                ?: spec.nodeParams["containerName"] as? String
                 ?: ""
         when (sourceType) {
           "CHARACTER_SEPARATED_VALUES" -> {
@@ -15958,7 +16267,8 @@ class AICodBiAssistant : IPluginServletAction {
       useCodbi: Boolean,
       askAllQuestions: Boolean,
       completionPages: String? = null,
-      formVariables: String? = null
+      formVariables: String? = null,
+      workflowMails: String? = null
   ): String {
     val action =
         when (intent) {
@@ -16062,6 +16372,16 @@ class AICodBiAssistant : IPluginServletAction {
                 "These are referenced at runtime with [%variableName%]. NEVER ask whether they exist / are to be created, " +
                 "and NEVER offer to create hidden form fields for them — use the [%variableName%] placeholder directly.\n"
           } else ""
+      val workflowMailsBlock =
+          if (!workflowMails.isNullOrBlank()) {
+            "\nEXISTING WORKFLOW MAIL NODES — the workflow of the current form ALREADY sends these mails " +
+                "(recipient(s), subject, sender). When the user refers to the recipient/sender/subject of an " +
+                "already-sent mail — e.g. \"die gleiche E-Mail-Adresse, an die bereits eine Mail geschickt wird\", " +
+                "\"the same address a mail is already sent to\", \"wie bei der letzten Mail\" — REUSE that value " +
+                "from this list and do NOT ask for it:\n" +
+                workflowMails +
+                "\n"
+          } else ""
       return template
           .replace("{{ACTION}}", action)
           .replace("{{USER_REQUEST}}", gson.toJson(prompt))
@@ -16075,7 +16395,8 @@ class AICodBiAssistant : IPluginServletAction {
           .replace("{{FORM_LIST_BLOCK}}", formListBlock)
           .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus) +
           completionPagesBlock +
-          formVariablesBlock
+          formVariablesBlock +
+          workflowMailsBlock
     }
     // No prompt text is embedded in the backend: the clarification prompt is sourced exclusively
     // from
@@ -16535,7 +16856,8 @@ class AICodBiAssistant : IPluginServletAction {
       askAllQuestions: Boolean,
       imageParts: List<String>,
       completionPages: String? = null,
-      formVariables: String? = null
+      formVariables: String? = null,
+      workflowMails: String? = null
   ): ClarificationCheck? {
     val system =
         buildClarificationSystemPrompt(
@@ -16552,7 +16874,8 @@ class AICodBiAssistant : IPluginServletAction {
             useCodbi,
             askAllQuestions,
             completionPages,
-            formVariables)
+            formVariables,
+            workflowMails)
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(system)}},""")

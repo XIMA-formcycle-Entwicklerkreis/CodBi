@@ -452,21 +452,35 @@
                         </button>
                     </div>
                     @if (q.options && q.options.length > 0) {
-                        <div class="cb-ai-clarification-options">
-                            @for (opt of q.options; track opt) {
-                                <button
-                                    type="button"
-                                    class="cb-ai-clarification-option"
-                                    [class.cb-ai-clarification-option--selected]="isClarificationOptionSelected(q.id, opt)"
-                                    [attr.title]="q.multiSelect ? 'Select all that apply — click again to deselect' : 'Select one option'"
-                                    (click)="selectClarificationOption(q.id, opt)">
-                                    @if (q.multiSelect) {
-                                        <span class="cb-ai-clarification-option__check" aria-hidden="true"></span>
-                                    } @else {
-                                        <span class="cb-ai-clarification-option__radio" aria-hidden="true"></span>
-                                    }
-                                    {{ opt }}
-                                </button>
+                        <div class="cb-ai-clarification-option-area">
+                            @if (q.options.length > 10) {
+                                <input
+                                    type="text"
+                                    class="cb-ai-clarification-option-filter"
+                                    placeholder="Filter options…"
+                                    aria-label="Filter options"
+                                    [ngModel]="clarificationOptionFilter[q.id] || ''"
+                                    (ngModelChange)="setClarificationOptionFilter(q.id, $event)" />
+                            }
+                            <div class="cb-ai-clarification-options">
+                                @for (opt of visibleClarificationOptions(q); track opt) {
+                                    <button
+                                        type="button"
+                                        class="cb-ai-clarification-option"
+                                        [class.cb-ai-clarification-option--selected]="isClarificationOptionSelected(q.id, opt)"
+                                        [attr.title]="q.multiSelect ? 'Select all that apply — click again to deselect' : 'Select one option'"
+                                        (click)="selectClarificationOption(q.id, opt)">
+                                        @if (q.multiSelect) {
+                                            <span class="cb-ai-clarification-option__check" aria-hidden="true"></span>
+                                        } @else {
+                                            <span class="cb-ai-clarification-option__radio" aria-hidden="true"></span>
+                                        }
+                                        {{ opt }}
+                                    </button>
+                                }
+                            </div>
+                            @if (clarificationOptionFilterEmpty(q)) {
+                                <div class="cb-ai-clarification-option-empty">No matching option</div>
                             }
                         </div>
                     }
@@ -642,6 +656,42 @@
                                         <div class="cb-ai-chat-raw-label">Matomo response</div>
                                         <pre class="cb-ai-chat-raw">{{ rawStatsResponse(m.matomoStats) }}</pre>
                                     </div>
+                                }
+                            </div>
+                        }
+                        @if (m.options && m.options.length > 0) {
+                            <div
+                                class="cb-ai-chat-options"
+                                [class.cb-ai-chat-options--answered]="!!m.answeredOption">
+                                @if (chatOffersManyOptions(m)) {
+                                    <input
+                                        type="text"
+                                        class="cb-ai-chat-option-filter"
+                                        placeholder="Filter options…"
+                                        aria-label="Filter options"
+                                        [(ngModel)]="m.optionFilter"
+                                        (ngModelChange)="onChatOptionFilterChanged()"
+                                        (keydown.enter)="onChatOptionFilterEnter(m)" />
+                                }
+                                <div class="cb-ai-chat-option-list">
+                                    @for (opt of visibleChatOptions(m); track opt) {
+                                        <button
+                                            type="button"
+                                            class="cb-ai-chat-option"
+                                            [class.cb-ai-chat-option--selected]="m.answeredOption === opt || chatOptionAutoSelected(m) === opt"
+                                            [class.cb-ai-chat-option--auto]="chatOptionAutoSelected(m) === opt"
+                                            [disabled]="!!m.answeredOption || chatLoading"
+                                            [title]="m.answeredOption ? 'Option already sent' : 'Send this option'"
+                                            (click)="onChatOption(m, opt)">
+                                            {{ opt }}
+                                        </button>
+                                    }
+                                </div>
+                                @if (chatOptionAutoSelected(m) && !m.answeredOption) {
+                                    <div class="cb-ai-chat-option-enter">Press Enter to send “{{ chatOptionAutoSelected(m) }}”</div>
+                                }
+                                @if (chatOptionFilterEmpty(m)) {
+                                    <div class="cb-ai-chat-option-empty">No matching option</div>
                                 }
                             </div>
                         }

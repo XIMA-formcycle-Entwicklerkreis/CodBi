@@ -1609,6 +1609,117 @@ cb-ai-assistant {
     }
 }
 
+/* Quick-reply options below a chat bubble that offers choices. Rendered as selectable chips inside
+   the bubble column (same width as the bubble); once an option was picked the whole group dims. A
+   bubble offering more than 10 options shows a filter field above the chips (see
+   cb-ai-chat-option-filter). */
+.cb-ai-chat-options {
+    width: 100%;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+/* Once one of the bubble's options was sent the whole group is dimmed. */
+.cb-ai-chat-options--answered {
+    opacity: 0.85;
+}
+
+/* Filter field shown only while a bubble offers more than 10 options — narrows the chip list. */
+.cb-ai-chat-option-filter {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    font-family: inherit;
+    outline: none;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+
+    &::placeholder {
+        color: #94a3b8;
+    }
+
+    &:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+    }
+}
+
+.cb-ai-chat-option-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.cb-ai-chat-option {
+    flex: 0 0 auto;
+    padding: 0.3rem 0.75rem;
+    border: 1px solid #bfdbfe;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 0.82rem;
+    line-height: 1.25;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition:
+        background-color 0.15s,
+        border-color 0.15s,
+        color 0.15s,
+        transform 0.1s;
+
+    &:hover:not(:disabled),
+    &:focus-visible:not(:disabled) {
+        background: #dbeafe;
+        border-color: #2563eb;
+    }
+
+    &:active:not(:disabled) {
+        transform: translateY(1px);
+    }
+
+    &--selected {
+        background: #2563eb;
+        border-color: #2563eb;
+        color: #ffffff;
+        cursor: default;
+    }
+
+    /* Auto-selected (exactly one option left through the filter, Enter confirms it): brighter than
+       the plain hover and framed with a ring so it reads as the pending choice. */
+    &--auto:not(:disabled) {
+        background: #3b82f6;
+        border-color: #2563eb;
+        box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.35);
+    }
+
+    &:disabled {
+        opacity: 0.55;
+        cursor: default;
+    }
+}
+
+/* Shown when the bubble's option filter matches nothing. */
+.cb-ai-chat-option-empty {
+    font-size: 0.8rem;
+    font-style: italic;
+    color: #94a3b8;
+}
+
+/* Hint under a bubble's chips while its filter leaves exactly one option (auto-selected). */
+.cb-ai-chat-option-enter {
+    font-size: 0.78rem;
+    font-style: italic;
+    color: #2563eb;
+}
+
 /* Statistics card below the assistant bubble (e.g. the Matomo charts). Rendered as a light card so
    the chart canvases stand out from the bubble background. Its height is capped at 25em — the
    charts adapt to the available height instead of growing to tenths of a page. */
@@ -2007,4 +2118,46 @@ body.cb-dialog-transparent .p-dialog {
 
 .cb-dialog-transparency-switch i {
     font-size: 1rem;
+}
+
+/* A clarification question's option area: when the question offers more than 10 options it shows a
+   filter field above the chips (see cb-ai-clarification-option-filter). */
+.cb-ai-clarification-option-area {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+
+/* Filter field above a clarification question's option chips (>10 options). Light field with a soft
+   orange border so it reads as part of the dark-orange option chips below it. */
+.cb-ai-clarification-option-filter {
+    width: 100%;
+    max-width: 24rem;
+    box-sizing: border-box;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid #fdba74;
+    border-radius: 8px;
+    background: #ffffff;
+    color: #0f172a;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    font-family: inherit;
+    outline: none;
+
+    &::placeholder {
+        color: #94a3b8;
+    }
+
+    &:focus {
+        border-color: darkorange;
+        box-shadow: 0 0 0 2px rgba(255, 140, 0, 0.25);
+    }
+}
+
+/* Shown when a clarification question's option filter matches no option. */
+.cb-ai-clarification-option-empty {
+    font-size: 0.82rem;
+    font-style: italic;
+    color: #64748b;
 }

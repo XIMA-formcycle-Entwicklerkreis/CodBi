@@ -102,6 +102,12 @@ interface ChatRunOptions {
 interface ChatMessage {
   role: "user" | "assistant";
   text: string;
+  /** Optional quick-reply options this bubble offers to select from (rendered as clickable chips). */
+  options?: string[];
+  /** Filter text narrowing the bubble's option chips (only relevant while the bubble has >10 options). */
+  optionFilter?: string;
+  /** Option the user already picked from this bubble — locks the chips so it cannot be sent twice. */
+  answeredOption?: string;
   /** Per-bubble view: "markdown" (default) renders the text, "plain" shows the raw text. */
   view?: "markdown" | "plain";
   /** True while the raw Matomo statistics JSON of this bubble is expanded (transient, not persisted). */
@@ -219,6 +225,10 @@ export class AiAssistant implements OnInit, OnDestroy {
   pendingClarification: ClarificationQuestion[] = [];
   /** Per-question selected options (multi-select — the user may pick several answers). */
   clarificationOption: Record<string, string[]> = {};
+  /** Per-question filter text (only shown while the question offers more than 10 options). */
+  clarificationOptionFilter: Record<string, string> = {};
+  /** Option auto-selected because the filter left exactly one option (single-select questions only). */
+  private clarificationAutoSelected: Record<string, string> = {};
   /** Combined free-text/voice answer covering all questions (single textarea). */
   clarificationAnswerText = "";
   /** File attached to the current clarification answers (optional document). */
@@ -2051,6 +2061,8 @@ export class AiAssistant implements OnInit, OnDestroy {
   private openClarification(questions: ClarificationQuestion[]): void {
     this.pendingClarification = questions;
     this.clarificationOption = {};
+    this.clarificationOptionFilter = {};
+    this.clarificationAutoSelected = {};
     this.clarificationAnswerText = "";
     this.clarificationFile = null;
     this.loading = false;
@@ -2075,6 +2087,8 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  questions ("multiSelect":true) the option is TOGGLED so the user may pick several (e.g. "which
    *  personal data?"). For single-select questions exactly one option is kept (radio behavior). */
   selectClarificationOption(questionId: string, option: string): void {
+    // A manual click takes over from any filter-driven auto-selection of this question.
+    delete this.clarificationAutoSelected[questionId];
     const question = this.pendingClarification.find((q) => q.id === questionId);
     const multiSelect = question?.multiSelect === true;
     const current = this.clarificationOption[questionId] ?? [];
@@ -2091,6 +2105,51 @@ export class AiAssistant implements OnInit, OnDestroy {
   /** Whether [option] is currently selected for [questionId] (multi-select). */
   isClarificationOptionSelected(questionId: string, option: string): boolean {
     return (this.clarificationOption[questionId] ?? []).includes(option);
+  }
+
+  /** The options of a clarification question, reduced by its filter text (case-insensitive). */
+  visibleClarificationOptions(q: ClarificationQuestion): string[] {
+    const options = q.options ?? [];
+    const filter = (this.clarificationOptionFilter[q.id] ?? "").trim().toLocaleLowerCase();
+    if (!filter) return options;
+    return options.filter((o) => o.toLocaleLowerCase().includes(filter));
+  }
+
+  /** True when the question's filter text is set but no option matches it anymore. */
+  clarificationOptionFilterEmpty(q: ClarificationQuestion): boolean {
+    const filter = (this.clarificationOptionFilter[q.id] ?? "").trim();
+    return filter.length > 0 && this.visibleClarificationOptions(q).length === 0;
+  }
+
+  /** Stores the filter text of a question and re-applies any filter-driven auto-selection. */
+  setClarificationOptionFilter(questionId: string, value: string): void {
+    this.clarificationOptionFilter[questionId] = value;
+    const q = this.pendingClarification.find((x) => x.id === questionId);
+    if (q) this.onClarificationOptionFilterChange(q);
+  }
+
+  /**
+   * Recomputes the visible options after the user typed into a question's option filter (the filter
+   * field only appears when the question offers more than 10 options). For single-select questions,
+   * the only remaining option is auto-selected; as soon as more options become visible again the
+   * auto-selection is undone.
+   */
+  private onClarificationOptionFilterChange(q: ClarificationQuestion): void {
+    const visible = this.visibleClarificationOptions(q);
+    if (visible.length === 1 && q.multiSelect !== true) {
+      const auto = visible[0];
+      this.clarificationOption[q.id] = [auto];
+      this.clarificationAutoSelected[q.id] = auto;
+    } else if (this.clarificationAutoSelected[q.id] !== undefined) {
+      // The previously unique match is no longer the only visible option — undo the auto-selection.
+      const auto = this.clarificationAutoSelected[q.id] as string;
+      delete this.clarificationAutoSelected[q.id];
+      const current = this.clarificationOption[q.id] ?? [];
+      if (current.length === 1 && current[0] === auto) {
+        this.clarificationOption[q.id] = [];
+      }
+    }
+    this.cdr.markForCheck();
   }
 
   /**
@@ -2519,6 +2578,66 @@ export class AiAssistant implements OnInit, OnDestroy {
     if (!msg) return;
     msg.showRaw = !msg.showRaw;
     this.cdr.markForCheck();
+  }
+
+  /** True when a chat bubble offers more than 10 options — only then the filter field is shown. */
+  chatOffersManyOptions(m: ChatMessage): boolean {
+    return (m.options?.length ?? 0) > 10;
+  }
+
+  /** The options of a bubble, reduced by its filter text (case-insensitive substring match). */
+  visibleChatOptions(m: ChatMessage): string[] {
+    const options = m.options ?? [];
+    const filter = (m.optionFilter ?? "").trim().toLocaleLowerCase();
+    if (!filter) return options;
+    return options.filter((o) => o.toLocaleLowerCase().includes(filter));
+  }
+
+  /** True when the bubble's option filter text is set but nothing matches any more. */
+  chatOptionFilterEmpty(m: ChatMessage): boolean {
+    const filter = (m.optionFilter ?? "").trim();
+    return filter.length > 0 && this.visibleChatOptions(m).length === 0;
+  }
+
+  /** Marks the current option-filter text as changed so the (OnPush) view re-renders the list. */
+  onChatOptionFilterChanged(): void {
+    this.cdr.markForCheck();
+  }
+
+  /**
+   * Sends one of a chat bubble's quick-reply options as the user's next chat turn. The chips of the
+   * offering bubble are locked (see [answeredOption]) so a choice is never submitted twice.
+   */
+  onChatOption(m: ChatMessage, option: string): void {
+    if (!m || m.answeredOption || this.chatLoading) return;
+    m.answeredOption = option;
+    m.optionFilter = "";
+    this.persistChatSession();
+    const history = this.chatHistoryPayload();
+    this.chatMessages.push({ role: "user", text: option });
+    this.persistChatSession();
+    this.chatLoading = true;
+    this.scrollChatToBottom();
+    this.cdr.markForCheck();
+    this.runChatTurn(option, history);
+  }
+
+  /**
+   * The automatically highlighted option of a bubble: while the filter leaves exactly ONE option
+   * visible (and nothing has been answered yet) that option is treated as selected. As soon as more
+   * options become visible again the auto-selection clears itself — selection purely follows the
+   * filter. Pressing Enter (or clicking the chip) then confirms it.
+   */
+  chatOptionAutoSelected(m: ChatMessage): string | undefined {
+    if (m.answeredOption) return undefined;
+    const visible = this.visibleChatOptions(m);
+    return visible.length === 1 ? visible[0] : undefined;
+  }
+
+  /** Enter in the bubble's option filter sends its automatically selected single option, if any. */
+  onChatOptionFilterEnter(m: ChatMessage): void {
+    const auto = this.chatOptionAutoSelected(m);
+    if (auto) this.onChatOption(m, auto);
   }
 
   /** The sanitized Matomo request(s) the backend sent, pretty-printed (empty when none were made). */
@@ -2984,6 +3103,13 @@ export class AiAssistant implements OnInit, OnDestroy {
             .filter((m) => m && (m["role"] === "user" || m["role"] === "assistant") && typeof m["text"] === "string")
             .map((m) => {
               const msg: ChatMessage = { role: m["role"] as "user" | "assistant", text: m["text"] as string };
+              // Re-attach the bubble's offered quick-reply options and a previous pick.
+              if (Array.isArray(m["options"])) {
+                msg.options = (m["options"] as Array<unknown>).filter((o): o is string => typeof o === "string");
+              }
+              if (typeof m["answeredOption"] === "string") {
+                msg.answeredOption = m["answeredOption"] as string;
+              }
               // Re-attach statistics so the bubble's charts are re-created on reopen; fresh canvas
               // ids are generated because the previous canvases died with the closed dialog.
               if (m["matomoStats"] && typeof m["matomoStats"] === "object") {
@@ -3021,6 +3147,13 @@ export class AiAssistant implements OnInit, OnDestroy {
         .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string")
         .map((m) => {
           const msg: ChatMessage = { role: m.role, text: m.text };
+          // Re-attach the bubble's offered quick-reply options and a previous pick.
+          if (Array.isArray(m.options)) {
+            msg.options = m.options.filter((o): o is string => typeof o === "string");
+          }
+          if (typeof m.answeredOption === "string") {
+            msg.answeredOption = m.answeredOption;
+          }
           // Re-attach statistics so the bubble's charts are re-created after the reload; fresh
           // canvas ids are generated because the previous canvases died with the old page.
           if (m.matomoStats && typeof m.matomoStats === "object") {

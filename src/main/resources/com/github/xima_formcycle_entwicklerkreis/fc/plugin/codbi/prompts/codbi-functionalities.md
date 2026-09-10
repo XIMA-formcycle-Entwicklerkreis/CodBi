@@ -2,6 +2,8 @@
 
 Rules for each CodBi functionality (data-cb-func), their parameters, and application conditions.
 
+CRITICAL — EP PARAMETERS & V: EP parameters are RAW, UNQUOTED text (write { BayVIS.Ansprechpartner.Details > Salvatore Callari }, NEVER { ... > "Salvatore Callari" }). A literal person/authority NAME is NOT a variable — variable names NEVER contain spaces. The V EP takes ONLY a GLOBAL VARIABLE NAME (e.g. SALVATORE_CALLARI_CONTACT, BayVIS_Behoerde); NEVER a name with a space / a quoted person name. { BayVIS.Ansprechpartner.Details > { V > Salvatore Callari } } is WRONG — use { BayVIS.Ansprechpartner.Details > Salvatore Callari } directly. Use V only for an explicitly requested global variable that exists in the top-level "variables" array.
+
 ## GENERIC RULE for all CSS-Selector parameters
 
 When a parameter requires a CSS-Selector referencing another form element, ALWAYS use the target element's properties.name value prefixed with a dot '.' (e.g., '.tfInterviewBis' or '.taAddress'). NEVER use an ID selector (# prefix, e.g., '#xi-tf-interviewbis'), because element IDs are mangled in repeatable containers; only properties.name-based selectors work reliably when CodBi searches within the shared parent container.

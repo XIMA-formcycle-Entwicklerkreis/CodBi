@@ -2,6 +2,8 @@
 
 Cross-cutting CodBi rules that apply to multiple categories.
 
+CRITICAL — EP PARAMETERS, QUOTES & V (applies to EVERY path): (1) EP parameters are RAW, UNQUOTED text — NEVER wrap a parameter in quotes: write { BayVIS.Ansprechpartner.Details > Salvatore Callari } and { BayVIS.Behoerden.ID > Amt für Digitales }, NEVER { ... > "Salvatore Callari" }. (2) A literal person/authority NAME is NOT a variable, and variable names NEVER contain spaces. The V EP takes ONLY a GLOBAL VARIABLE NAME (e.g. SALVATORE_CALLARI_CONTACT, BayVIS_Behoerde) — NEVER a name with a space and NEVER a quoted person name. { BayVIS.Ansprechpartner.Details > { V > "Salvatore Callari" } } and { ... > { V > Salvatore Callari } } are WRONG; the correct form is { BayVIS.Ansprechpartner.Details > Salvatore Callari } (the Details EP resolves the name itself). Use V ONLY when the user explicitly asked for a global variable AND that variable exists in the form's top-level "variables" array.
+
 ## BayVIS EPs + Global Variables (V) — CRITICAL RULES (always apply)
 
 EP SYNTAX: `>` introduces the FIRST parameter; further parameters are separated by `;` (never by `>`). A nested `{ ... }` EP is resolved first and its result becomes that parameter.

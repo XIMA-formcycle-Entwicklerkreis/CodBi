@@ -259,6 +259,12 @@ export class BayVIS_Ansprechpartner_Details {
                   });
               // To prevent overwriting when joining e.g. Behoerden-Details and Gebaeude-Details into one object like
               // when using the Data.Join-Elementplaceholder.
+              // Mirror the country code (Landvorwahl) to its "ap" alias too, so the documented
+              // [(apTelefonLandvorwahl)] placeholder resolves exactly like the other apTelefon* parts
+              // (it was missing before, which left [(apTelefonLandvorwahl)] empty).
+              (result as { apTelefonLandvorwahl: string }).apTelefonLandvorwahl = (
+                result as { telefonLandvorwahl: string }
+              ).telefonLandvorwahl;
               (result as { apTelefonOrtsvorwahl: string }).apTelefonOrtsvorwahl = (
                 result as { telefonOrtsvorwahl: string }
               ).telefonOrtsvorwahl;
@@ -350,6 +356,9 @@ export class BayVIS_Ansprechpartner_Details {
               } = Array.isArray(response.ap) ? response.ap[0] : response.ap;
               // To prevent overwriting when joining e.g. Behoerden-Details and Gebaeude-Details into one object like
               // when using the Data.Join-Elementplaceholder.
+              // Mirror the country code (Landvorwahl) to its "ap" alias too, so the documented
+              // [(apTelefonLandvorwahl)] placeholder resolves exactly like the other apTelefon* parts.
+              resultElement.apTelefonLandvorwahl = resultElement.telefonLandvorwahl;
               resultElement.apTelefonOrtsvorwahl = resultElement.telefonOrtsvorwahl;
               resultElement.apTelefonOrtsvorwahl = resultElement.telefonOrtsvorwahl;
               resultElement.apTelefonAnlage = resultElement.telefonAnlage;

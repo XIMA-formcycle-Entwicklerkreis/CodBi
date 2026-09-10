@@ -22,6 +22,7 @@ Element Placeholders (EPs) can be chained with > syntax to pass one EP's result 
 Example: "{ BayVIS.Ansprechpartner.Details > { V > VariableName } }" first resolves V to get an ID, then fetches the contact details. The inner EP is always resolved first and its result becomes the parameter for the outer EP.
 
 CRITICAL — EP parameter values are raw strings without quotes. Write { BayVIS.Ansprechpartner.ID > Salvatore Callari } NOT { BayVIS.Ansprechpartner.ID > "Salvatore Callari" }. Quotes are part of the EP syntax itself (the { } braces), do NOT add extra quotes around parameter values.
+CRITICAL — A LITERAL NAME IS NOT A VARIABLE: a person's/authority's NAME is NEVER a global variable — variable names NEVER contain spaces. The V EP takes ONLY a GLOBAL VARIABLE NAME (e.g. SALVATORE_CALLARI_CONTACT, BayVIS_Behoerde). NEVER write { BayVIS.Ansprechpartner.Details > { V > "Salvatore Callari" } } or { ... > { V > Salvatore Callari } } — the correct form is { BayVIS.Ansprechpartner.Details > Salvatore Callari } (the Details EP resolves the name itself). V is used ONLY when the user explicitly asked for a global variable AND it exists in the top-level "variables" array.
 
 ## AI.LLAMA.STD.QA
 
@@ -80,6 +81,7 @@ WHEN THE USER ASKS TO STORE A VALUE AS A GLOBAL VARIABLE ("als globale Variable 
 3. NEVER reference CodBi EP data with Formcycle's "[%$NAME%]" placeholder — that is resolved server-side at submit time and cannot run a client-side EP. Use "{ V > <NAME> }".
 4. NEVER store the full BayVIS data EP (e.g. "{ BayVIS.Ansprechpartner.Details > ... }") as the variable's "value" and NEVER reference it with a standalone "{ V > <NAME> }" — the variable holds the IDENTIFIER only; the data fetch lives in the element's replacement, reading the identifier via V inside the BayVIS EP.
 5. NEVER put a bare name into a BayVIS Directory/Details EP's parameter directly — use the correct ID → Details chain (see BayVIS EPs below).
+6. CRITICAL — V resolves ONLY a form GLOBAL VARIABLE (a name from the top-level "variables" array, or a variable you CREATE only on an explicit "globale Variable"/"global variable" request). NEVER pass a PERSON'S/EMPLOYEE'S literal NAME (or an authority's name) to V — e.g. "{ BayVIS.Ansprechpartner.Details > { V > Salvatore Callari } }" is WRONG: "Salvatore Callari" is the person's NAME, not a variable, so V stays unresolved. A person/authority NAMED DIRECTLY in the request ("Salvatore Callari", "der Mitarbeiter Salvatore Callari", a contact name) is resolved via the name → ID → Details chain WITHOUT V: "{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } }" (the .ID EP returns an ARRAY, so { I > 0 ; ... } picks the FIRST match and Details loads that person's object). Use V only as the ID-lookup input when the user EXPLICITLY asked to store the person in a global variable — then V carries the VARIABLE name (whose value holds the person name / numeric ID), e.g. "{ BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > { V > SALVATORE_CALLARI_CONTACT } } } }".
 
 ## I
 
@@ -129,7 +131,8 @@ CRITICAL — TO GET DETAILS FOR A NAMED PERSON OR AUTHORITY, ALWAYS CHAIN NAME �
 Authoritative examples:
 - Contact details from a global variable holding the contact ID: { BayVIS.Ansprechpartner.Details > { V > BayVIS_WeitereAnsprechpartner } }
 - First contact matching a name: { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } }
-- Contact property by name: { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > Salvatore Callari } } ; nachname }
+- Contact by name (CANONICAL — the name goes DIRECTLY into Details, no .ID/I): { BayVIS.Ansprechpartner.Details > Salvatore Callari }
+- Contact property by name: { BayVIS.Ansprechpartner.Details > Salvatore Callari ; nachname }
 - Authority property by name: { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; bezeichnung }
 - Building IDs of an authority by name (returns an ARRAY): { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } } }
 - Building details of an authority (authority ID and building ID are separate `;` parameters, BOTH resolved via I): { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } } } } }
@@ -165,6 +168,17 @@ CRITICAL — THE BUILDING OBJECT HAS NO HOUSE-NUMBER PROPERTY: there is NO `haus
 
 Takes a NUMERIC authority ID and returns an ARRAY of its building IDs. By authority name: { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > <authority name> } }. To pick one building: { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > <authority ID> } }.
 
+CRITICAL — EVERY ADDRESS PLACEHOLDER MUST BE FED BY THE BUILDING EP: any [(hausanschriftStrasse)] / [(hausanschriftPLZ)] / [(hausanschriftOrt)] / [(postanschriftStrasse)] / [(postanschriftPLZ)] / [(postanschriftOrt)] template MUST be resolved by `BayVIS.Behoerden.Details.Gebaeude` (authority ID `;` building ID). NEVER feed an address template with `BayVIS.Behoerden.Details` — that object has NO address properties (only bezeichnungBehoerde, behoerdenart, behoerdengruppe, bezeichnung, email, id, sortierreihenfolge, logo, behoerdeZuordnungen, behoerdenGebaeudeZuordnungen), so [(hausanschriftStrasse)] etc. stay EMPTY. Correct building-address replacement for a NAMED authority ("Amt für Digitales") — use the building EP with BOTH ids and NO direct name into the Details EP:
+{ Data.Join > { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } } } } }
+With a GLOBAL VARIABLE (e.g. BayVIS_Behoerde holding the authority name):
+{ Data.Join > { BayVIS.Behoerden.Details.Gebaeude > { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } ; { BayVIS.Behoerden.Gebaeude.ID > { BayVIS.Behoerden.ID > { V > BayVIS_Behoerde } } } } }
+The Mapper template then uses [(hausanschriftStrasse)], [(hausanschriftPLZ)] [(hausanschriftOrt)] — NEVER [(hausanschriftHausnummer)]. This Data.Join form combines the building object (address) with its resolved building id; it is the standard way to show a Behörde's address.
+
+TWO PARAMETERS ARE MANDATORY for BayVIS.Behoerden.Details.Gebaeude: param 1 = authority ID `;` param 2 = BUILDING ID. A call with ONLY the authority ID is INVALID and returns no building object — the building ID is the SECOND `;` parameter and MUST be resolved with BayVIS.Behoerden.Gebaeude.ID. Also: do NOT join BayVIS.Behoerden.Details (authority metadata — it has NO address) into a building-address Data.Join; join the Gebäude details object with its building-id resolver.
+WRONG (no building ID in the 2nd object AND the 1st object is the wrong EP): { Data.Join > { BayVIS.Behoerden.Details > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } } ; { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } } }
+CORRECT (authority named directly): { Data.Join > { BayVIS.Behoerden.Details.Gebaeude > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } ; { I > 0 ; { BayVIS.Behoerden.Gebaeude.ID > { I > 0 ; { BayVIS.Behoerden.ID > Amt für Digitales } } } } } }
+The Mapper template then uses [(hausanschriftStrasse)], [(hausanschriftPLZ)] [(hausanschriftOrt)] — NEVER [(hausanschriftHausnummer)].
+
 ### BayVIS.Ansprechpartner
 
 Directory EP — REQUIRES a property name parameter: { BayVIS.Ansprechpartner > nachname } (not bare { BayVIS.Ansprechpartner }, and NEVER a person's name).
@@ -177,6 +191,6 @@ ID-resolver EP — takes a plain STRING contact name and returns an ARRAY of mat
 
 ### BayVIS.Ansprechpartner.Details
 
-Takes a NUMERIC contact ID (NOT a name); an optional second `;` parameter is a property. Resolve the name first, then fetch: { BayVIS.Ansprechpartner.Details > { I > 0 ; { BayVIS.Ansprechpartner.ID > <contact name> } } ; <property> }.
+Takes a contact NAME DIRECTLY (unquoted) — the EP resolves the name to the internal ID itself, so a NAMED person needs NO .ID/I chain: { BayVIS.Ansprechpartner.Details > Salvatore Callari } (a numeric contact ID also works; several names/ids may be separated by "/"). An optional second `;` parameter extracts a single property: { BayVIS.Ansprechpartner.Details > Salvatore Callari ; nachname }. Use V ONLY when a form GLOBAL VARIABLE holds the name/id: { BayVIS.Ansprechpartner.Details > { V > <VARIABLE_NAME> } }. NEVER write { BayVIS.Ansprechpartner.Details > { V > Salvatore Callari } } — a literal person name is passed DIRECTLY to Details (not via V, and no { I > 0 ; { ... .ID ... } } wrapper).
 
 Returns a SINGLE JSON OBJECT of that contact with EXACTLY these properties: anrede, vorname, nachname, funktion, stellenbezeichnung, email, website, zimmer, behoerdeId, behoerdeBezeichnung, gebaeudeId, gebaeudeBezeichnung, ansprechpartnerId, apTelefonLandvorwahl, apTelefonOrtsvorwahl, apTelefonAnlage, apTelefonDurchwahl, apEmail. There is NO "phone"/"telefon"/"telephone" property — a person's phone is split across the four apTelefon* parts (Landvorwahl / Ortsvorwahl / Anlage / Durchwahl), so map those parts to render the phone; the person's plain e-mail is "email" (an alias copy "apEmail" also exists). Because it returns ONE object, do NOT wrap it in the I EP unless it is fed by an array-returning inner EP. When the contact ID comes from a SINGLE value (e.g. a global variable), use it directly — { BayVIS.Ansprechpartner.Details > { V > <NAME> } } — NO { I > 0 ; ... }. To display the object's properties in a template use HTML.Text.Mapper with data-cb-replacements and [(property)] placeholders (e.g. [(vorname)] [(nachname)]) — HTML.Text.Injector is only for injecting ONE plain string.

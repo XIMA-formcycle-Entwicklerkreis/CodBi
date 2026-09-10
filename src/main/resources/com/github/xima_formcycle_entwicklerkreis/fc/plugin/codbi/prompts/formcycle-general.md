@@ -2,6 +2,8 @@
 
 Cross-cutting Formcycle rules that apply across widgets and workflow nodes.
 
+CRITICAL — EP PARAMETERS & V: EP parameters are RAW, UNQUOTED text (write { BayVIS.Ansprechpartner.Details > Salvatore Callari }, NEVER { ... > "Salvatore Callari" }). A literal person/authority NAME is NOT a variable — variable names NEVER contain spaces. The V EP takes ONLY a GLOBAL VARIABLE NAME (e.g. SALVATORE_CALLARI_CONTACT, BayVIS_Behoerde); NEVER a name with a space / a quoted person name. { BayVIS.Ansprechpartner.Details > { V > Salvatore Callari } } is WRONG — use { BayVIS.Ansprechpartner.Details > Salvatore Callari } directly. Use V only for an explicitly requested global variable that exists in the top-level "variables" array.
+
 ## Form Structure Rules
 
 - The 'items' array is FLAT at the top level — all form elements live here, including containers, fieldsets, and their children. Each item's unique identifier is stored in 'properties.name' (NOT as a top-level 'name' field — items have no top-level 'name'). Containers and fieldsets reference their children via 'properties.elements', a sub-array of child name strings (NOT the items themselves).

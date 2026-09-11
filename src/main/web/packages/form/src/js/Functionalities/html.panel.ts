@@ -73,6 +73,9 @@ export class HTML_Panel {
    *  - CSSHeaderHover:                   The optional header's CSS:hover (defaults to { scale : 1.1 ;}).
    *  - CSSHeaderActive:                  The optional header's CSS:active (defaults to { scale : .9 ;}).
    *  - CSSHeaderUnfolded:                The optional CSS to be applied onto the header when the panel is unfolded.
+   *  - CSSHeaderFolded:                  The optional CSS to be applied onto the header when the panel is FOLDED —
+   *                                      without it a panel that is (or starts) folded would lose the header look
+   *                                      set via CSSHeaderUnfolded, since that one only applies while unfolded.
    *  - DCSSHeaderUnfolded:               The optional Darkmode CSS to be applied onto the header when the panel is unfolded.
    *  - CSSAnimFadeINPanel:               The optional animation to be applied onto the panel whenever the panel
    *                                      is unfolded.
@@ -128,6 +131,7 @@ export class HTML_Panel {
   public static functionality(
     @TYPE.PRE("string", "autoheadertitle :: autoheadertitlesupplementsspacer :: scrollblock")
     @TYPE.PRE("string | boolean", "folded :: generateheader :: scroll :: scrolltotop")
+    @TYPE.PRE("string", "cssheaderfolded")
     @TYPE.PRE("string | number", "autoheaderlevel")
     @OR.PRE(
       [new EQ("start"), new EQ("center"), new EQ("end"), new EQ("nearest"), new UNDEFINED()],
@@ -272,6 +276,14 @@ export class HTML_Panel {
       // #region Consider initial folding state.
       if ((toProcess as unknown as { [key: string]: unknown }).CodBi_HTML_Panel_Folded) {
         (toProcess as HTMLElement).style.display = "none";
+        // Apply the FOLDED header style so a panel that starts folded keeps the same header look as
+        // an unfolded one (CSSHeaderUnfolded is NOT applied while folded — the header would other-
+        // wise fall back to its bare original style). Falls back to the header's own style.
+        if (toLoad.cssheaderfolded) {
+          header?.setAttribute("style", toLoad.cssheaderfolded as string);
+        } else if (styHeader) {
+          header?.setAttribute("style", styHeader);
+        }
         header?.remove();
         (toProcess as HTMLElement).parentElement?.appendChild(header);
       } else {
@@ -378,6 +390,8 @@ export class HTML_Panel {
 
           if (toLoad.cssheaderunfolded) {
             header.setAttribute("style", toLoad.cssheaderunfolded as string);
+          } else if (styHeader) {
+            header.setAttribute("style", styHeader);
           }
 
           if (headerAfterElement === undefined) {
@@ -444,7 +458,11 @@ export class HTML_Panel {
 
           header.remove();
 
-          if (styHeader) {
+          // On folding, apply the FOLDED header style (CSSHeaderFolded) — CSSHeaderUnfolded must NOT
+          // apply here; fall back to the header's own original style.
+          if (toLoad.cssheaderfolded) {
+            header.setAttribute("style", toLoad.cssheaderfolded as string);
+          } else if (styHeader) {
             header.setAttribute("style", styHeader);
           }
           (toProcess as HTMLElement).parentElement?.appendChild(header);

@@ -80,6 +80,10 @@ To make a field group repeatable (the user can add/duplicate rows via a '+' butt
 
 CRITICAL - NEVER NEST REPEATABLE CONTAINERS. A dynamic container ("dynamic":"1") must NOT contain another dynamic container ("dynamic":"1") — Formcycle rejects such a form ("Ein wiederholtes Element darf keine anderen wiederholten Elemente enthalten"), so the form fails to load and the designer shows it empty. Formcycle has exactly ONE repetition level. If the request implies two repetition levels (e.g. several weekdays/days each with several Von-Bis time blocks, or sections each with several entries), express it with a SINGLE dynamic container whose each row carries a weekday dropdown/select PLUS a FIXED set of the repeated fields (e.g. up to 10 'Von/Bis' time-field pairs; unused ones simply stay empty), or use ONE repeatable row per entry (weekday + one Von/Bis). Never create a second dynamic container inside a dynamic container; a plain (non-dynamic) XContainer nested inside a dynamic container is allowed.
 
+## MAKE EXISTING AREAS/SECTIONS COLLAPSIBLE BY CONVERTING THEM IN PLACE
+
+A request such as "Alle Bereiche im Formular sollen klappbar sein und, bis auf den ersten Bereich, anfangs zugeklappt sein" (or any "make the sections/areas/panels collapsible / aufklappbar / klappbar / accordion" request) targets containers/fieldsets that ALREADY EXIST. Convert each of them IN PLACE: keep the SAME item with the SAME `name` and the SAME `id`, KEEP its `elements` array EXACTLY as it is (every child field name stays in it), and KEEP every child item in your output — only ADD the panel class / folding attribute. Do NOT delete the existing containers and do NOT create new, empty panels. A converted panel MUST still list and contain ALL of its original child fields. Omitting the children, or emitting a panel/fieldset with `"elements": []`, renders an EMPTY form.
+
 ## Server Variables (Placeholders)
 
 AVAILABLE SERVER VARIABLES (system placeholders — use [%\$NAME%] syntax):

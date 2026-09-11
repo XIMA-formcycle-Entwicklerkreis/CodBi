@@ -1924,6 +1924,8 @@ class AIFormAssistant : IPluginServletAction {
       return PromptLoader.resolvePlaceholders(
           taskInstruction +
               "\n\n" +
+              (categories["codbi.form_structure_rules"] ?: "") +
+              "\n\n" +
               (categories["formcycle.general"] ?: "") +
               "\n" +
               "{{FORMCYCLE_WIDGETS_SECTION}}" +
@@ -1987,6 +1989,14 @@ class AIFormAssistant : IPluginServletAction {
       // EP sections are redundant with the targeted details below (or the full reference in the
       // blind case) and would roughly double the token usage when duplicated here.
       val base = CodBiElementAccess.scrub(categories["codbi.general"] ?: "")
+      // Cross-cutting form rules MUST be carried into the pass-2 rerun as well: this apply prompt
+      // is
+      // what REPLACES the full system prompt on pass-2/3/4, and the model actually BUILDS the form
+      // here — without codbi.form_structure_rules (+ formcycle.general) the panel/CSS rules and the
+      // repeatable-container rules are absent in the very pass that emits the attributes.
+      val fc = PromptLoader.loadCategory(em, "formcycle")
+      val formStructureRules = categories["codbi.form_structure_rules"] ?: ""
+      val formcycleGeneral = fc["formcycle.general"] ?: ""
       val codbiPart =
           when {
             requestedIds.isNotEmpty() -> {
@@ -2003,7 +2013,15 @@ class AIFormAssistant : IPluginServletAction {
             else -> PromptLoader.resolvePlaceholders("{{CODBI_FULL_SECTION}}")
           }
       val widgetPart = buildWidgetDetailsSection(em, widgetIds)
-      return base + "\n\n" + codbiPart + "\n\n" + widgetPart
+      return formStructureRules +
+          "\n\n" +
+          formcycleGeneral +
+          "\n\n" +
+          base +
+          "\n\n" +
+          codbiPart +
+          "\n\n" +
+          widgetPart
     } catch (e: Exception) {
       logger.warn("[AIFormAssistant] Failed to load apply prompt", e)
       return loadFallbackPrompt("codbi.fallback_apply")

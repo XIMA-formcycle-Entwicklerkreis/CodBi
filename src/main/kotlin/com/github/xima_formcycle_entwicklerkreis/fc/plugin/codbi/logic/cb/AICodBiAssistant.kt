@@ -4256,6 +4256,95 @@ class AICodBiAssistant : IPluginServletAction {
           for (item in itemsToAdd) resultItems.add(item)
         }
       }
+      // Safety net — never wipe EVERY input field on a non-removal prompt.
+      // Root cause (verified): the two safety nets above only match a container by its NAME. When
+      // the AI REPLACES an existing container with a brand-new panel/fieldset under a NEW name
+      // (e.g. it reads "make all areas collapsible" as "create new panels" instead of "convert the
+      // existing containers in place"), the original container name is gone from the result — so
+      // neither the dropped-item restore nor the child safety net can re-attach its children and
+      // the whole sub-tree is treated as an intentional removal. The form then renders with empty
+      // fieldsets and NO inputs. Guard against that catastrophic outcome: when no removal was
+      // requested and the AI dropped ALL original interactive inputs, restore the missing inputs
+      // together with their missing ancestor containers so a presentation-only edit can never
+      // empty the form.
+      if (!promptRequestsRemoval) {
+        val interactiveClasses =
+            setOf(
+                "XTextField",
+                "XTextfieldAdvanced",
+                "XTextArea",
+                "XSelect",
+                "XCheckbox",
+                "XUpload",
+                "XSignature",
+                "XRating",
+                "XFormula",
+                "XDatalistAdvanced")
+        val resultNamesNow =
+            resultItems
+                .mapNotNull { el ->
+                  if (!el.isJsonObject) null
+                  else el.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
+                }
+                .toMutableSet()
+        val originalInteractiveNames =
+            originalItems
+                .mapNotNull { el ->
+                  if (!el.isJsonObject) null
+                  else {
+                    val o = el.asJsonObject
+                    if (o.get("className")?.asString !in interactiveClasses) null
+                    else o.getAsJsonObject("properties")?.get("name")?.asString
+                  }
+                }
+                .toSet()
+        val missingInteractive = originalInteractiveNames.filter { it !in resultNamesNow }
+        if (originalInteractiveNames.isNotEmpty() &&
+            missingInteractive.size == originalInteractiveNames.size) {
+          val parentOf = mutableMapOf<String, String>()
+          for ((containerName, el) in originalByName) {
+            val elems =
+                el.asJsonObject.getAsJsonObject("properties")?.getAsJsonArray("elements")
+                    ?: continue
+            for (ref in elems) if (ref.isJsonPrimitive) parentOf[ref.asString] = containerName
+          }
+          val toRestore = linkedSetOf<String>()
+          for (n in missingInteractive) {
+            toRestore.add(n)
+            var p = parentOf[n]
+            while (p != null && p !in resultNamesNow) {
+              toRestore.add(p)
+              p = parentOf[p]
+            }
+          }
+          var restored = 0
+          for (n in toRestore) {
+            if (n in resultNamesNow) continue
+            val orig = originalByName[n]?.asJsonObject ?: continue
+            resultItems.add(orig.deepCopy())
+            resultNamesNow.add(n)
+            restored++
+          }
+          if (restored > 0) {
+            // Re-added containers keep their ORIGINAL "elements" array, which may reference items
+            // the AI dropped — prune refs to any name that is not in the final result so no
+            // dangling reference (which renders as loss) remains.
+            for (el in resultItems) {
+              if (!el.isJsonObject) continue
+              val p = el.asJsonObject.getAsJsonObject("properties") ?: continue
+              val elems = p.getAsJsonArray("elements") ?: continue
+              val keep = JsonArray()
+              for (ref in elems) {
+                if (ref.isJsonPrimitive && ref.asString in resultNamesNow) keep.add(ref)
+              }
+              p.add("elements", keep)
+            }
+            logger.warn(
+                "[AICodBiAssistant] Non-removal prompt dropped ALL input fields — restored {} orphaned original item(s) so the form is not emptied",
+                restored)
+          }
+        }
+      }
       val baseObj = result.getAsJsonObject("base")
       val itemToContainerId = mutableMapOf<String, String>()
       for (el in resultItems) {
@@ -4547,6 +4636,7 @@ class AICodBiAssistant : IPluginServletAction {
             "data-cb-cssheaderactive",
             "data-cb-cssheaderhover",
             "data-cb-cssheaderunfolded",
+            "data-cb-cssheaderfolded",
             "data-cb-dcssheaderunfolded")
     for (el in resultItems) {
       if (!el.isJsonObject) continue
@@ -4556,15 +4646,21 @@ class AICodBiAssistant : IPluginServletAction {
       // when a parameter (e.g. DocumentSelector) is required, so the AI's choice reaches the
       // designer unchanged.
       // --- Normalize panels: the UI.Panels standard CSS classes (CodBi_HTML_Panel_* /
-      // CodBi_Accordion_*) ALREADY apply HTML.Panel. If the AI put BOTH a panel class AND
-      // data-cb-func=html.panel on the same element, drop the redundant html.panel (and its
-      // panel-only parameters) — an element uses exactly ONE of the two, never both.
+      // CodBi_Accordion_*) ALREADY apply HTML.Panel — but ONLY on an XFieldSet (the class renders
+      // the fieldset's legend as the panel header). On an XContainer/XContainerInvisible such a
+      // class is INERT (a div has no legend), so there `data-cb-func=html.panel` is the ONLY thing
+      // that makes the container collapsible and must NEVER be treated as redundant: doing so would
+      // strip the panel together with its parameters (generateheader/autoheadertitle/folded/CSS
+      // params) and leave a container that cannot fold at all. Only on an XFieldSet is a panel
+      // class + data-cb-func=html.panel redundant — an element then uses exactly ONE of the two.
       val cssArr = props.getAsJsonArray("cssclasses") ?: JsonArray()
+      val isFieldsetForPanel = el.asJsonObject.get("className")?.asString == "XFieldSet"
       val hasPanelClass =
-          (0 until cssArr.size()).any { i ->
-            val c = cssArr.get(i)
-            c.isJsonPrimitive && panelStandardClassPrefixes.any { c.asString.startsWith(it) }
-          }
+          isFieldsetForPanel &&
+              (0 until cssArr.size()).any { i ->
+                val c = cssArr.get(i)
+                c.isJsonPrimitive && panelStandardClassPrefixes.any { c.asString.startsWith(it) }
+              }
       if (hasPanelClass) {
         var normalizedPanel = false
         // (a) direct data-cb-* properties (the AI's common output form)
@@ -4632,9 +4728,22 @@ class AICodBiAssistant : IPluginServletAction {
           if (props.has("attributes") && props.get("attributes").isJsonArray)
               props.getAsJsonArray("attributes")
           else null
-      // Purge any stale data-cb-* entries from the existing attributes array
-      // (may have been restored from the original form).
+      // Promote every data-cb-* entry of the attributes array to a direct property key BEFORE
+      // purging, so the re-materialization below (which rebuilds the array from the direct
+      // data-cb-* keys) can never lose it. Necessary because the array may have been RESTORED FROM
+      // THE ORIGINAL FORM (line above) when the AI echoed an existing element WITHOUT re-emitting
+      // its "attributes" — in that case nothing was promoted earlier, and the purge would delete
+      // the functionality (e.g. an HTML.CSS element or a data-cb-* CSS parameter) while the element
+      // itself still renders. An existing direct key always wins.
       if (attrs != null && attrs.size() > 0) {
+        for (e in attrs) {
+          if (!e.isJsonObject) continue
+          val t = e.asJsonObject.get("text")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+          if (!t.startsWith("data-cb-")) continue
+          val v = e.asJsonObject.get("value")
+          if (!props.has(t) && v != null && v.isJsonPrimitive) props.add(t, v)
+        }
+        // Purge the now-redundant data-cb-* entries; they are re-added from the direct keys below.
         val filtered = JsonArray()
         for (e in attrs) {
           if (!(e.isJsonObject && e.asJsonObject.get("text")?.isJsonPrimitive == true)) {

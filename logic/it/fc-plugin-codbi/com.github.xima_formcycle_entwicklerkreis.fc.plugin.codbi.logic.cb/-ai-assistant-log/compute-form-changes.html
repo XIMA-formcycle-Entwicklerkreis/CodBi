@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>computeFormChanges</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            fc-plugin-codbi
+                    </a>
+            </div>
+            <div class="library-version">
+            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter="fc-plugin-codbi/JVM">JVM</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="member" id="content" pageIds="fc-plugin-codbi::com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/AiAssistantLog/computeFormChanges/#kotlin.String#kotlin.String/PointingToDeclaration//967027945">
+  <div class="breadcrumbs"><a href="../../../index.html">fc-plugin-codbi</a><span class="delimiter">/</span><a href="../index.html">com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb</a><span class="delimiter">/</span><a href="index.html">AiAssistantLog</a><span class="delimiter">/</span><span class="current">computeFormChanges</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>compute</span><wbr></wbr><span>Form</span><wbr></wbr><span><span>Changes</span></span></h1>
+  </div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="compute-form-changes.html"><span class="token function">computeFormChanges</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">beforeJson<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">afterJson<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></span></span><span class="token punctuation">)</span><span class="token operator">: </span><span data-unresolved-link="com.google.gson/JsonObject///PointingToDeclaration/">JsonObject</span></div><p class="paragraph">Calcola una descrizione strutturata delle modifiche tra <a href="compute-form-changes.html">beforeJson</a> (il JSON persistente the frontend inviato prima dell'esecuzione dell'IA) e <a href="compute-form-changes.html">afterJson</a> (il formato modificato JSON restituito dall'IA).</p><p class="paragraph">Forma del risultato:</p><div class="sample-container"><pre><code class="block lang-kotlin" theme="idea">{<br>  &quot;widgetsCreated&quot;: [ { &quot;name&quot;: &quot;...&quot;, &quot;className&quot;: &quot;XTextField&quot; } ],<br>  &quot;widgetsRemoved&quot;: [ ... ],<br>  &quot;classesSet&quot;: [ { &quot;widget&quot;: &quot;...&quot;, &quot;className&quot;: &quot;...&quot;, &quot;classes&quot;: [&quot;CodBi_...&quot;] } ],<br>  &quot;attributesSet&quot;: [<br>    {<br>      &quot;widget&quot;: &quot;...&quot;,<br>      &quot;className&quot;: &quot;...&quot;,<br>      &quot;attributes&quot;: [<br>        { &quot;name&quot;: &quot;label&quot;, &quot;value&quot;: &quot;...&quot;, &quot;kind&quot;: &quot;attr&quot;, &quot;codbi&quot;: false },<br>        { &quot;name&quot;: &quot;data-cb-func&quot;, &quot;value&quot;: &quot;HTML.CSS&quot;, &quot;kind&quot;: &quot;func&quot;, &quot;codbi&quot;: true,<br>          &quot;params&quot;: [ { &quot;name&quot;: &quot;data-cb-color&quot;, &quot;value&quot;: &quot;red&quot;, &quot;kind&quot;: &quot;param&quot;, &quot;codbi&quot;: true } ] }<br>      ]<br>    }<br>  ]<br>}</code></pre><span class="top-right-position"><span class="copy-icon"></span><div class="copy-popup-wrapper popup-to-left"><span class="copy-popup-icon"></span><span>Content copied to clipboard</span></div></span></div></div></div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

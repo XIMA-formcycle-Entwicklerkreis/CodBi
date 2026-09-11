@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html class="no-js">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" charset="UTF-8">
+    <title>sanitizeQuery</title>
+    <link href="../../../images/logo-icon.svg" rel="icon" type="image/svg">
+    <script>var pathToRoot = "../../../";</script>
+    <script>document.documentElement.classList.replace("no-js","js");</script>
+    <script>const storage = localStorage.getItem("dokka-dark-mode")
+    if (storage == null) {
+        const osDarkSchemePreferred = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (osDarkSchemePreferred === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    } else {
+        const savedDarkMode = JSON.parse(storage)
+        if(savedDarkMode === true) {
+            document.getElementsByTagName("html")[0].classList.add("theme-dark")
+        }
+    }
+    </script>
+<script type="text/javascript" src="https://unpkg.com/kotlin-playground@1/dist/playground.min.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/sourceset_dependencies.js" async="async"></script>
+<link href="../../../styles/style.css" rel="Stylesheet">
+<link href="../../../styles/main.css" rel="Stylesheet">
+<link href="../../../styles/prism.css" rel="Stylesheet">
+<link href="../../../styles/logo-styles.css" rel="Stylesheet">
+<link href="../../../styles/font-jb-sans-auto.css" rel="Stylesheet">
+<script type="text/javascript" src="../../../scripts/clipboard.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/navigation-loader.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/platform-content-handler.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/main.js" defer="defer"></script>
+<script type="text/javascript" src="../../../scripts/prism.js" async="async"></script>
+<script type="text/javascript" src="../../../scripts/symbol-parameters-wrapper_deferred.js" defer="defer"></script>
+</head>
+<body>
+    <div class="root">
+<nav class="navigation" id="navigation-wrapper">
+    <div class="navigation--inner">
+        <div class="navigation-title">
+            <button class="menu-toggle" id="menu-toggle" type="button">toggle menu</button>
+            <div class="library-name">
+                    <a class="library-name--link" href="../../../index.html">
+                            fc-plugin-codbi
+                    </a>
+            </div>
+            <div class="library-version">
+            </div>
+        </div>
+        <div class="filter-section" id="filter-section">
+                <button class="platform-tag platform-selector jvm-like" data-active="" data-filter="fc-plugin-codbi/JVM">JVM</button>
+        </div>
+    </div>
+    <div class="navigation-controls">
+        <button class="navigation-controls--btn navigation-controls--theme" id="theme-toggle-button" type="button">switch theme</button>
+        <div class="navigation-controls--btn navigation-controls--search" id="searchBar" role="button">search in API</div>
+    </div>
+</nav>
+        <div id="container">
+            <div class="sidebar" id="leftColumn">
+                <div class="sidebar--inner" id="sideMenu"></div>
+            </div>
+            <div id="main">
+<div class="main-content" data-page-type="member" id="content" pageIds="fc-plugin-codbi::com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb/BraveSearch/sanitizeQuery/#kotlin.String#kotlin.String?#kotlin.Boolean?/PointingToDeclaration//967027945">
+  <div class="breadcrumbs"><a href="../../../index.html">fc-plugin-codbi</a><span class="delimiter">/</span><a href="../index.html">com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb</a><span class="delimiter">/</span><a href="index.html">BraveSearch</a><span class="delimiter">/</span><span class="current">sanitizeQuery</span></div>
+  <div class="cover ">
+    <h1 class="cover"><span>sanitize</span><wbr></wbr><span><span>Query</span></span></h1>
+  </div>
+  <div class="platform-hinted " data-platform-hinted="data-platform-hinted"><div class="content sourceset-dependent-content" data-active="" data-togglable="fc-plugin-codbi/JVM"><div class="symbol monospace"><span class="token keyword">fun </span><a href="sanitize-query.html"><span class="token function">sanitizeQuery</span></a><span class="token punctuation">(</span><span class="parameters "><span class="parameter ">raw<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token punctuation">, </span></span><span class="parameter ">language<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a><span class="token operator">?</span><span class="token operator"> = </span>null<span class="token punctuation">, </span></span><span class="parameter ">filterOverride<span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-boolean/index.html">Boolean</a><span class="token operator">?</span><span class="token operator"> = </span>null</span></span><span class="token punctuation">)</span><span class="token operator">: </span><a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a></div><p class="paragraph">Bereinigt eine Suchanfrage, indem personenbezogene Daten (PII) und Identifikatoren entfernt werden Das sollte nicht an eine externe Suchmaschine weitergeleitet werden. Dient als zweite Verteidigungsschicht Zusätzlich zu möglichen Anweisungen in der Eingabeaufforderung zum Modell, um sensible Einbeziehungen zu vermeiden Informationen in der Abfrage.</p><p class="paragraph">Streifen:</p><ul><li><p class="paragraph">Seriennummern (<code class="lang-kotlin">S/N...</code>, <code class="lang-kotlin">SN:...</code>, <code class="lang-kotlin">s/n...</code>)</p></li><li><p class="paragraph">Fallbezüge / Aktenzeichen („Az.“, „Az:“, „Aktenzeichen“)</p></li><li><p class="paragraph">Generische alphanumerische IDs, die wie Codes aussehen (6+ Zeichen mit gemischten Buchstaben/Ziffern/Bindestrichen)</p></li><li><p class="paragraph">„es sei denn/außer/nicht“-Klauseln, die sich typischerweise auf bestimmte Personen beziehen</p></li><li><p class="paragraph">E-Mail-Adressen</p></li><li><p class="paragraph">Telefonnummern (internationale und lokale Formate)</p></li><li><p class="paragraph">IBAN, nationale ID-Nummern im SSN-Stil</p></li><li><p class="paragraph">Geburtsdatumsmuster („DOB:“, „Geboren am“, „Geb.“)</p></li><li><p class="paragraph">Straßenadressen (Hausnummer + Straßenname, EN/DE)</p></li><li><p class="paragraph">Nachgestelltes Rauschen (Leerzeichen, Kommas, Punkte)</p></li></ul><p class="paragraph">In „<< WORD >>“ eingeschlossene Wörter umgehen alle Siebregeln und werden wörtlich beibehalten.</p><span class="kdoc-tag"><h4 class="">Return</h4><p class="paragraph">Der santiazed <a href="sanitize-query.html">raw</a>-<a href="https://kotlinlang.org/api/latest/jvm/stdlib/kotlin-stdlib/kotlin/-string/index.html">String</a>.</p></span><h4 class="">Parameters</h4><div class="table"><div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span><span>raw</span></span></u></div></span></div><div><div class="title"><p class="paragraph">The raw query string to sanitize.</p></div></div></div></div><div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span><span>language</span></span></u></div></span></div><div><div class="title"><p class="paragraph">Optional language code (e.g. &quot;en&quot;, &quot;de&quot;) to help with language-specific Muster (z. B. Namenserkennung). Wenn null, werden nur generische Muster angewendet</p></div></div></div></div><div class="table-row" data-filterable-current="fc-plugin-codbi/JVM" data-filterable-set="fc-plugin-codbi/JVM"><div class="main-subrow keyValue "><div class=""><span class="inline-flex"><div><u><span>filter</span><wbr></wbr><span><span>Override</span></span></u></div></span></div><div><div class="title"><p class="paragraph">Per-request override for <a href="filter-results.html">filterResults</a>. When non-null, takes precedence über das globale <a href="filter-results.html">filterResults</a>-Flag.</p></div></div></div></div></div></div></div>
+</div>
+      <div class="footer">
+        <span class="go-to-top-icon"><a href="#content" id="go-to-top-link"></a></span><span>© 2026 Copyright</span><span
+                class="pull-right"><span>Generated by </span><a
+                href="https://github.com/Kotlin/dokka"><span>dokka</span><span class="padded-icon"></span></a></span>
+      </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

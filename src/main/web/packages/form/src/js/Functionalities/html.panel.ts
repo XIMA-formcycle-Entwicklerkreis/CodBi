@@ -13,6 +13,21 @@ import { UNDEFINED } from "xdbc/src/DBC/UNDEFINED";
 import { CodBiError } from "../global-scope";
 // #endregion Imports
 /**
+ * Decodes whitespace escapes in the HTML.Panel header-title separator
+ * (`data-cb-autoheadertitlesupplementsspacer`).
+ *
+ * FORMCYCLE trims surrounding whitespace from custom-element attribute values, so a literal " - "
+ * reaches this component as "-". To still request spaces around the separator, write them escaped:
+ *  - `%20` (URL encoding), e.g. `%20-%20`
+ *  - `\s`  (backslash + s), e.g. `\s-\s`
+ * Both decode to a space, so `%20-%20` renders the header as "Title - 08:00".
+ *
+ * @param value The raw separator value taken from the element's attribute.
+ * @returns The separator with the whitespace escapes decoded. */
+export function decodeSeparatorWhitespaceEscapes(value: string): string {
+  return value.replace(/%20/gi, " ").replace(/\\s/g, " ");
+}
+/**
  * Provides the {@link HTML_Panel.functionality }.
  *
  * @remarks
@@ -101,7 +116,9 @@ export class HTML_Panel {
    *                                      that're supplemented 'cause they're {@link HTMLInputElement.value }s of
    *                                      {@link HTMLInputElement }s tagged with the
    *                                      CSS-Class **CodBi_HTML_Panel_AutoHeaderTitle_Supplement** without any
-   *                                      **XFieldSet**s or **XContainer** in between.
+   *                                      **XFieldSet**s or **XContainer** in between. FORMCYCLE trims surrounding
+   *                                      whitespace from the attribute value, so to include spaces encode them as
+   *                                      `%20` (URL) or `\s`, e.g. `%20-%20` renders as " - ".
    *  - AutoHeaderLevel:                  Which level of enclosing \<h>s the "AutoHeaderTitle" shall have,
    *                                      e.g. to get a \<h1> enclosure the value has to be 1.
    *  - ScrollBlock:                      Defines the logical position to scroll to when the panel
@@ -190,11 +207,18 @@ export class HTML_Panel {
 
       const legend = toProcess.querySelector("legend");
       // #region Autoheader Supplement
-      toLoad.autoheadertitlesuplementsspacer = toLoad.autoheadertitlesuplementsspacer
-        ? (toLoad.autoheadertitlesuplementsspacer as string)
+      // NOTE (regression guard): the parameter/attribute is `autoheadertitlesupplementsspacer`
+      // (double "p" - "supplements"), matching the @TYPE.PRE declaration and the designer property
+      // "AutoHeaderTitleSupplementsSpacer". Do NOT reintroduce the historical typo
+      // `autoheadertitlesuplementsspacer` (single "p"): the loaded key never matched, so the
+      // separator was a silent no-op and the header always fell back to the default " / ".
+      // Decode whitespace escapes (%20 / \s): FORMCYCLE trims surrounding whitespace from the
+      // attribute value, so spaces must be requested in encoded form ("%20-%20" -> " - ").
+      toLoad.autoheadertitlesupplementsspacer = toLoad.autoheadertitlesupplementsspacer
+        ? decodeSeparatorWhitespaceEscapes(toLoad.autoheadertitlesupplementsspacer as string)
         : " / ";
 
-      let autoHeaderTitleSupplement = toLoad.autoheadertitlesuplementsspacer as string;
+      let autoHeaderTitleSupplement = toLoad.autoheadertitlesupplementsspacer as string;
 
       const supplements = toProcess.querySelectorAll(".CodBi_HTML_Panel_AutoHeaderTitle_Supplement");
       const constructHeaderSupplements = () => {
@@ -209,18 +233,18 @@ export class HTML_Panel {
           !isClassInBetween("XContainer", toProcess as HTMLElement, supplements[i] as HTMLElement)
         ) {
           supplements[i].addEventListener("change", (event) => {
-            autoHeaderTitleSupplement = toLoad.autoheadertitlesuplementsspacer as string;
+            autoHeaderTitleSupplement = toLoad.autoheadertitlesupplementsspacer as string;
 
             constructHeaderSupplements();
 
-            header.innerHTML = `${toLoad.autoheaderlevel ? `<h${toLoad.autoheaderlevel}>` : ""}${toLoad.autoheadertitle ? (toLoad.autoheadertitle as string) + (autoHeaderTitleSupplement.length !== (toLoad.autoheadertitlesuplementsspacer as string).length ? autoHeaderTitleSupplement : "") : toProcess.tagName === "FIELDSET" ? (legend.innerHTML + (autoHeaderTitleSupplement.length === (toLoad.autoheadertitlesuplementsspacer as string).length ? "" : autoHeaderTitleSupplement)) : ""}${toLoad.autoheaderlevel ? `</h${toLoad.autoheaderlevel}>` : ""}`;
+            header.innerHTML = `${toLoad.autoheaderlevel ? `<h${toLoad.autoheaderlevel}>` : ""}${toLoad.autoheadertitle ? (toLoad.autoheadertitle as string) + (autoHeaderTitleSupplement.length !== (toLoad.autoheadertitlesupplementsspacer as string).length ? autoHeaderTitleSupplement : "") : toProcess.tagName === "FIELDSET" ? (legend.innerHTML + (autoHeaderTitleSupplement.length === (toLoad.autoheadertitlesupplementsspacer as string).length ? "" : autoHeaderTitleSupplement)) : ""}${toLoad.autoheaderlevel ? `</h${toLoad.autoheaderlevel}>` : ""}`;
           });
         }
       }
 
       constructHeaderSupplements();
 
-      header.innerHTML = `${toLoad.autoheaderlevel ? `<h${toLoad.autoheaderlevel}>` : ""}${toLoad.autoheadertitle ? (toLoad.autoheadertitle as string) + (autoHeaderTitleSupplement.length !== (toLoad.autoheadertitlesuplementsspacer as string).length ? autoHeaderTitleSupplement : "") : toProcess.tagName === "FIELDSET" ? (legend ? toProcess.querySelector("legend")?.innerHTML + (autoHeaderTitleSupplement.length === (toLoad.autoheadertitlesuplementsspacer as string).length ? "" : autoHeaderTitleSupplement) : "") : ""}${toLoad.autoheaderlevel ? `</h${toLoad.autoheaderlevel}>` : ""}`;
+      header.innerHTML = `${toLoad.autoheaderlevel ? `<h${toLoad.autoheaderlevel}>` : ""}${toLoad.autoheadertitle ? (toLoad.autoheadertitle as string) + (autoHeaderTitleSupplement.length !== (toLoad.autoheadertitlesupplementsspacer as string).length ? autoHeaderTitleSupplement : "") : toProcess.tagName === "FIELDSET" ? (legend ? toProcess.querySelector("legend")?.innerHTML + (autoHeaderTitleSupplement.length === (toLoad.autoheadertitlesupplementsspacer as string).length ? "" : autoHeaderTitleSupplement) : "") : ""}${toLoad.autoheaderlevel ? `</h${toLoad.autoheaderlevel}>` : ""}`;
       // #endregion Autoheader Supplement
       if (legend) {
         legend.remove();

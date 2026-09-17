@@ -2085,6 +2085,28 @@ class AIWorkflowAssistant : IPluginServletAction {
    * - `FcChangeStateProps`: field is `targetState: UuidEntityRef{uuid, entityClass}`. We resolve
    *   the state UUID at runtime from WorkflowVersion.getStates().
    */
+  /**
+   * Coerces a workflow node parameter to a single string. The AI sometimes emits a scalar parameter
+   * (e.g. an FC_EMAIL recipient "to") as a JSON ARRAY — `["Amt@Ansbach.de"]` — which a plain `as?
+   * String` cast drops to an empty value (the mail then has NO recipient). Accept both a String and
+   * a List, joining multiple non-blank entries with ", ".
+   */
+  private fun workflowParamString(params: Map<String, Any>, key: String): String =
+      when (val v = params[key]) {
+        is String -> v
+        is List<*> ->
+            v.filterIsInstance<String>()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(", ")
+        is Array<*> ->
+            v.filterIsInstance<String>()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(", ")
+        else -> ""
+      }
+
   private fun buildNodeParamsJson(
       spec: WorkflowTaskSpec,
       workflowVersion: Any? = null,
@@ -2094,10 +2116,10 @@ class AIWorkflowAssistant : IPluginServletAction {
     val nodeDescription = spec.taskDescription ?: ""
     return when (spec.nodeType) {
       "FC_EMAIL" -> {
-        val to = spec.nodeParams["to"] as? String ?: ""
-        val subject = spec.nodeParams["subject"] as? String ?: ""
+        val to = workflowParamString(spec.nodeParams, "to")
+        val subject = workflowParamString(spec.nodeParams, "subject")
         val body = spec.nodeParams["body"] as? String ?: ""
-        val from = spec.nodeParams["from"] as? String ?: ""
+        val from = workflowParamString(spec.nodeParams, "from")
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
         val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
@@ -2120,10 +2142,16 @@ class AIWorkflowAssistant : IPluginServletAction {
         """{"name":${gson.toJson(nodeName)},"to":$toJson,"cc":[],"bcc":[],"subject":${gson.toJson(subject)},"body":${gson.toJson(body)},"plainBody":${gson.toJson(body)},"bodyFormatType":${gson.toJson(bodyFormatType)},"from":${gson.toJson(from)},"senderName":${gson.toJson(senderName)}$multiFileJson}"""
       }
       "FC_DOI_INIT" -> {
-        val to = spec.nodeParams["to"] as? String ?: ""
-        val subject = spec.nodeParams["subject"] as? String ?: ""
+        val to =
+            workflowParamString(spec.nodeParams, "to").ifBlank {
+              workflowParamString(spec.nodeParams, "recipient")
+            }
+        val subject = workflowParamString(spec.nodeParams, "subject")
         val body = spec.nodeParams["body"] as? String ?: ""
-        val from = spec.nodeParams["from"] as? String ?: ""
+        val from =
+            workflowParamString(spec.nodeParams, "from").ifBlank {
+              workflowParamString(spec.nodeParams, "sender")
+            }
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
         val failurePage = spec.nodeParams["failurePage"] as? String ?: ""
         val toJson = if (to.isNotBlank()) "[${gson.toJson(to)}]" else "[]"

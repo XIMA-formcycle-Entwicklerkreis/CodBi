@@ -109,6 +109,8 @@ EP names use dots and are case-sensitive: OpenPLZ.Localities (NOT "openplz.local
 
 ## BayVIS EPs
 
+TERMINOLOGY — “Bayernportal” IS BayVIS: the Bavarian authority/office portal (the “Bayernportal”) is the BayVIS authority directory. “Ämter/Behörden im Bayernportal” (“authorities/offices of the Bayernportal”, “alle Ämter der Stadt”) are the entries of `BayVIS.Behoerden` — to list them ALL in a select use `{ BayVIS.Behoerden > bezeichnung }` (or the standard configuration `CodBi_BayVIS_Auswahl_Behoerden`); never ask the user for the office list.
+
 SYNTAX: `>` introduces the FIRST parameter of an EP; every further parameter is separated by `;` (NEVER by `>`). A nested `{ ... }` EP is resolved first and its result becomes that parameter.
 
 BayVIS has THREE kinds of EPs — never confuse them:

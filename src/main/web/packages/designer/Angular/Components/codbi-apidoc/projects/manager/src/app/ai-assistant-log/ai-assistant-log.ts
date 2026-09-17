@@ -152,6 +152,11 @@ export class AiAssistantLog implements OnInit, OnDestroy {
   @Output() opened = new EventEmitter<void>();
   /** Emitted when the user folds the log panel via its close button. */
   @Output() closed = new EventEmitter<void>();
+  /** Emitted after every change-log (re)load — the initial load, a reopen and the manual Refresh.
+   *  The embedding dialog listens to re-assert its maximized state: PrimeNG can drop the dialog's
+   *  `p-dialog-maximized` class when the log content re-renders, which would shrink the dialog back
+   *  to its non-fullscreen size. */
+  @Output() refreshed = new EventEmitter<void>();
 
   private readonly openHandler = (event: Event): void => {
     const detail = (event as CustomEvent<{ elements?: string[] } | undefined>).detail;
@@ -595,12 +600,14 @@ export class AiAssistantLog implements OnInit, OnDestroy {
             this.emptyLoadRetries = 0;
           }
           this.cdr.markForCheck();
+          this.refreshed.emit();
         },
         error: (xhr: unknown) => {
           this.loading = false;
           const jq = xhr as { responseJSON?: { error?: string }; statusText?: string };
           this.errorText = jq.responseJSON?.error ?? jq.statusText ?? "Failed to load the change log.";
           this.cdr.markForCheck();
+          this.refreshed.emit();
         },
       });
     };

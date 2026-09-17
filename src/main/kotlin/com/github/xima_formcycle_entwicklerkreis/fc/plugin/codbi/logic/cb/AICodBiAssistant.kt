@@ -1143,6 +1143,20 @@ class AICodBiAssistant : IPluginServletAction {
       if (formParsed?.isJsonObject == true && formParsed.asJsonObject.has("error")) {
         return jsonResponse(effectiveFormJson)
       }
+      // The form AI may genuinely need something from the user (e.g. a select's option list it
+      // cannot derive) and answer with a `need_clarification` request instead of a form. Surface it
+      // as the clarification popup — exactly like the dedicated clarification round — so the user
+      // is
+      // asked and the run re-executes with the answers, instead of failing with invalid JSON.
+      val formClarification = parseClarificationRequest(effectiveFormJson)
+      if (formClarification != null) {
+        logger.info(
+            "[AICodBiAssistant] Form pass requested {} clarification question(s): {}",
+            formClarification.questions.size,
+            formClarification.questions.joinToString(" | ") { "Q[${it.id}]: ${it.question}" })
+        return jsonResponse(
+            """{"intent":${gson.toJson(intent)},"clarification":${gson.toJson(formClarification)},"clarificationHistory":${gson.toJson(clarificationTurnsToJson(clarificationHistory))}}""")
+      }
       // If the AI answered with prose instead of form JSON, stop with a clean error instead of
       // embedding the prose into the response (which the frontend would then fail to parse).
       if (formParsed == null) {
@@ -1407,8 +1421,16 @@ class AICodBiAssistant : IPluginServletAction {
     // the updated `formJson` so the frontend publishes the form together with the workflow (the
     // frontend already handles a `formJson` + `workflowMessage` response: it publishes the form and
     // reloads the designer).
-    val submitButtonName = workflowSubmitButtonName(workflowNodes)
-    if (submitButtonName != null) {
+    // A workflow triggered by form buttons (FC_FORM_SUBMIT_BUTTON) is only reachable when the
+    // referenced buttons actually EXIST on the form. The workflow AI does not inspect the form
+    // (intent classification and workflow generation run on the prompt text + form elements only),
+    // so it can build lanes that reference buttons the form does not have — e.g. two lanes for an
+    // approve ("Genehmigen") and reject ("Ablehnen") button. When that happens, ensure EVERY
+    // referenced named button exists on the form (as an XButtonList entry with the correct label
+    // and submit/non-submit semantics) and return the updated `formJson` so the frontend publishes
+    // the form together with the workflow.
+    val requiredButtons = workflowSubmitButtons(workflowNodes)
+    if (requiredButtons != null) {
       // resolvedFormJson is set for "form"/"both" runs; for a workflow-only run read the persist
       // the frontend always sends alongside workflowVersionId.
       val sourceFormJson =
@@ -1416,23 +1438,32 @@ class AICodBiAssistant : IPluginServletAction {
               ?: params.requestParameters["persist"]?.firstOrNull()?.takeIf { it.isNotBlank() }
       if (sourceFormJson != null) {
         var currentForm = sourceFormJson
-        // 1) Ensure the submit button exists / is reachable for FC_FORM_SUBMIT_BUTTON lanes.
-        val ensuredFormJson = ensureSubmitButtonInForm(currentForm, submitButtonName)
+        // 1) Ensure every named button the workflow references exists / is reachable. Each carries
+        //    its submit role (submit vs. inert) derived from the lane, and a German label derived
+        //    from its technical name (btnApprove -> "Genehmigen", btnReject -> "Ablehnen").
+        //    Decision buttons additionally carry a "gate state" (buttonStatus): resolve its NAME to
+        //    the WorkflowState UUID Formcycle stores in the element's "viewstatus" ("Available if")
+        // —
+        //    the designer/backend match the state's UUID, so a plain state name is never selected.
+        val gateStateIds =
+            resolveDecisionGateStateIds(workflowNodes, requiredButtons, workflowVersionId, params)
+        val ensuredFormJson =
+            ensureWorkflowButtonsInForm(currentForm, requiredButtons, gateStateIds)
         if (ensuredFormJson != null && ensuredFormJson != currentForm) {
           currentForm = ensuredFormJson
         }
-        // 2) Auto-repair ANY orphaned element (not just the submit button): an element present in
+        // 2) Auto-repair ANY orphaned element (not just the buttons): an element present in
         //    the flat "items" array but missing from its container's "properties.elements" array is
         //    published but never rendered — re-reference it so it becomes visible.
         val orphanRepaired = repairOrphanedFormElements(currentForm)
         if (orphanRepaired != null && orphanRepaired != currentForm) {
           currentForm = orphanRepaired
         }
-        // 3) The workflow AI leaves `triggerParams:{}` (fires on ANY button) when the form had no
-        //    submit button at generation time. Now that a concrete button is ensured, explicitly
-        //    bind the FC_FORM_SUBMIT_BUTTON trigger(s) to it so the designer shows the button
-        //    selected instead of "any button".
-        val effectiveButtonName = if (submitButtonName.isBlank()) "btnSenden" else submitButtonName
+        // 3) A lane with an EMPTY `triggerParams:{}` (fires on ANY button) means the form had no
+        //    concrete button at generation time. Now that a real submit button is ensured, bind
+        //    such a trigger to it so the designer shows the button selected instead of "any
+        // button".
+        val effectiveButtonName = primarySubmitButtonName(currentForm, requiredButtons)
         workflowVersionId?.let { wid ->
           bindSubmitTriggerToButton(getUserContext(params), wid, effectiveButtonName)
         }
@@ -1443,8 +1474,8 @@ class AICodBiAssistant : IPluginServletAction {
           }
           resolvedFormJson = currentForm
           logger.info(
-              "[AICodBiAssistant] Form adjusted for FC_FORM_SUBMIT_BUTTON workflow — submit button '{}' ensured and/or orphaned elements repaired",
-              effectiveButtonName)
+              "[AICodBiAssistant] Form adjusted for FC_FORM_SUBMIT_BUTTON workflow — buttons '{}' ensured (labels/submit roles/gating) and/or orphaned elements repaired",
+              requiredButtons.joinToString { it.name.ifBlank { "btnSenden" } })
         }
       }
     }
@@ -2033,6 +2064,17 @@ class AICodBiAssistant : IPluginServletAction {
     tokensOut += estimateTokens(rawResponse)
     var cleaned = extractJson(stripThinkTags(rawResponse))
 
+    // The AI occasionally answers pass-1 with a clarifying QUESTION (a `need_clarification` meta
+    // request) instead of the form — e.g. a select whose options it believes it cannot derive. This
+    // is a valid meta response: surface it to the user as the clarification popup (the caller turns
+    // it into the popup) instead of running the CodBi rerun passes on a non-form response.
+    parseClarificationRequest(cleaned)?.let { req ->
+      logger.info(
+          "[AICodBiAssistant] Pass-1 returned a need_clarification request ({} question(s)) — surfacing it to the user",
+          req.questions.size)
+      return Triple(cleaned, null, TokenUsage(tokensIn, tokensOut))
+    }
+
     // Resolve the maximum detail-rerun count for the current model: a per-specialist override
     // (`AI_FormAssistant_MaxFormReruns_<name>`) wins over the global
     // `AI_FormAssistant_MaxFormReruns`.
@@ -2312,6 +2354,20 @@ class AICodBiAssistant : IPluginServletAction {
           "[AICodBiAssistant] Pass-{} raw result: {}",
           rerunCount + 2,
           compactJsonForLog(pass2Cleaned))
+      // The AI sometimes answers a form-build pass with a clarifying QUESTION instead of the form —
+      // either a structured `need_clarification` meta request or loose prose (e.g. when it believes
+      // it cannot derive a select's options). A `need_clarification` request is a valid meta
+      // response
+      // and is surfaced to the user as the clarification popup by the caller; it must never be run
+      // through the CodBi/details logic or spliced into the form.
+      if (parseClarificationRequest(pass2Cleaned) != null) {
+        logger.info(
+            "[AICodBiAssistant] Pass-{} returned a need_clarification request — surfacing it to the user instead of a form",
+            rerunCount + 2)
+        return pass2Cleaned
+      }
+      // Whether pass-2 actually produced JSON (a form) or only prose. Prose is never a form.
+      val pass2IsJson = isJsonObjectOrArray(pass2Cleaned)
       // The AI may ask for even MORE details in the rerun (a second `need_codbi_details`, e.g. for
       // widget types it only names in pass-2). Loop once more with the new request so the widgets
       // the user asked for are not silently dropped. Bounded by [MAX_FORM_RERUNS] to avoid looping
@@ -2329,13 +2385,21 @@ class AICodBiAssistant : IPluginServletAction {
               pass2Details.elements, pass2Details.widgets, useCodbi, rerunCount + 1)
         }
       }
-      // If the AI is STILL asking for details after the rerun budget is exhausted, the last
-      // response carries no "items" and the form would be left unchanged/empty - while a workflow
-      // could still be created from it. Force ONE final pass that forbids a details request and
-      // requires the complete form JSON.
-      if (extractCodbiDetailsRequest(pass2Cleaned) != null) {
-        logger.info(
-            "[AICodBiAssistant] Rerun budget exhausted but AI still requests details - forcing final complete-form pass")
+      // If the AI is STILL asking for details, OR returned only prose (neither a form nor a
+      // clarification request), the last response carries no "items" and the form would be left
+      // unchanged/empty - while a workflow could still be created from it. Force ONE final pass
+      // that
+      // forbids a details request AND any question, and requires the complete form JSON.
+      if (extractCodbiDetailsRequest(pass2Cleaned) != null || !pass2IsJson) {
+        if (!pass2IsJson) {
+          logger.warn(
+              "[AICodBiAssistant] Pass-{} returned non-JSON prose ({} chars) — forcing final complete-form pass",
+              rerunCount + 2,
+              pass2Cleaned.length)
+        } else {
+          logger.info(
+              "[AICodBiAssistant] Rerun budget exhausted but AI still requests details - forcing final complete-form pass")
+        }
         val finalSystemPrompt =
             loadCodbiApplyPrompt(emptyList(), emptyList(), useCodbi, useBuergerserviceNaming) +
                 chatSection +
@@ -2344,7 +2408,8 @@ class AICodBiAssistant : IPluginServletAction {
         val finalUserContent =
             "Original user request: $prompt\n\n" +
                 "Complete current form (IPersistJson):\n${slimPersistJson(formBase)}\n\n" +
-                "Return the COMPLETE modified form JSON with ALL items now. " +
+                "Return the COMPLETE modified form JSON with ALL items now. Do NOT ask the user any " +
+                "question and do NOT return any prose — answer ONLY with the form JSON. " +
                 "CRITICAL — PRESERVE EVERY EXISTING ELEMENT: every element that exists in the form " +
                 "above must remain in your output, unchanged and in its original container, plus only " +
                 "the additions/modifications the user requested. Never omit, drop, or remove an " +
@@ -2359,16 +2424,26 @@ class AICodBiAssistant : IPluginServletAction {
         val finalCleaned = extractJson(stripThinkTags(finalRaw))
         logger.info(
             "[AICodBiAssistant] Final forced pass raw result: {}", compactJsonForLog(finalCleaned))
-        // Only use the final result if it actually produced a form; otherwise keep the previous
-        // spliced result so a bare details request is never substituted for the form.
-        if (extractCodbiDetailsRequest(finalCleaned) == null) {
+        // A final clarification request is surfaced as-is (the caller turns it into the popup).
+        if (parseClarificationRequest(finalCleaned) != null) return finalCleaned
+        // Only use the final result if it actually produced a form; otherwise fall back to the
+        // previous form base so a details request / prose is never substituted for the form.
+        if (isJsonObjectOrArray(finalCleaned) && extractCodbiDetailsRequest(finalCleaned) == null) {
           return splicePass2IntoPass1(formBase, finalCleaned)
         }
         logger.warn(
-            "[AICodBiAssistant] Final forced pass still returned a details request - keeping previous result")
+            "[AICodBiAssistant] Final forced pass still returned no form - keeping the previous form")
+        return formBase
       }
       // Splice into the form base (the original form when pass-1 was a details request) so new
-      // widgets created in pass-2 are preserved in the returned form.
+      // widgets created in pass-2 are preserved in the returned form. When pass-2 returned PROSE
+      // (no JSON at all) keep the previous form instead of corrupting it with non-JSON.
+      if (!pass2IsJson) {
+        logger.warn(
+            "[AICodBiAssistant] Pass-{} returned non-JSON prose — keeping the previous form",
+            rerunCount + 2)
+        return formBase
+      }
       return splicePass2IntoPass1(formBase, pass2Cleaned)
     }
 
@@ -2474,6 +2549,28 @@ class AICodBiAssistant : IPluginServletAction {
           }
         }
       }
+    }
+
+    // Final guard: a pass-2/rerun may have returned a clarification request instead of the form
+    // (surfaced to the user as the popup). It is valid JSON but NOT a form — return it as-is so the
+    // caller can present the questions and re-run with the answers.
+    parseClarificationRequest(cleaned)?.let { req ->
+      logger.info(
+          "[AICodBiAssistant] Form AI requested clarification ({} question(s)) — returning the clarification instead of a form",
+          req.questions.size)
+      return Triple(cleaned, null, TokenUsage(tokensIn, tokensOut))
+    }
+    // If the AI answered with prose instead of form JSON, do not try to parse it as a form — return
+    // a
+    // clean (valid-JSON) error response instead of embedding prose the frontend cannot parse.
+    if (!isJsonObjectOrArray(cleaned)) {
+      logger.warn(
+          "[AICodBiAssistant] Form AI returned non-JSON ({} chars) — aborting form parse",
+          cleaned.length)
+      return Triple(
+          """{"error":"AI returned invalid JSON","raw":${gson.toJson(cleaned)}}""",
+          null,
+          TokenUsage(tokensIn, tokensOut))
     }
 
     logger.debug("[AICodBiAssistant] Form AI response: {}", compactJsonForLog(cleaned))
@@ -2647,9 +2744,11 @@ class AICodBiAssistant : IPluginServletAction {
       @Suppress("UNCHECKED_CAST")
       val obj = gson.fromJson(cleanedJson, Map::class.java) as? Map<String, Any> ?: return false
       if (obj["items"] !is List<*>) return false
-      // A workflow task may legitimately carry a "workflow"/"tasks" wrapper — those are NOT form
-      // responses even if they also contain an items key.
-      if (obj.containsKey("workflow") || obj.containsKey("tasks")) return false
+      // A workflow task may legitimately carry a "workflow"/"tasks"/"operations" wrapper — those
+      // are
+      // NOT form responses even if they also contain an items key.
+      if (obj.containsKey("workflow") || obj.containsKey("tasks") || obj.containsKey("operations"))
+          return false
       true
     } catch (_: Exception) {
       false
@@ -3613,6 +3712,32 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * data-cb-* parameter prefixes that belong ONLY to the HTML.Panel functionality. They are removed
+   * together with a redundant/stale `data-cb-func=html.panel` (see restoreStrippedFields).
+   */
+  private val PANEL_ONLY_PARAM_PREFIXES =
+      listOf(
+          // data-cb-open does NOT exist for HTML.Panel — the AI sometimes invents it to express
+          // "open initially"; the correct parameter is data-cb-folded.
+          "data-cb-open",
+          "data-cb-generateheader",
+          "data-cb-autoheadertitle",
+          "data-cb-autoheaderlevel",
+          "data-cb-autoheadertitlesupplementsspacer",
+          "data-cb-accordion",
+          "data-cb-folded",
+          "data-cb-scroll",
+          "data-cb-scrollblock",
+          "data-cb-scrolltotop",
+          "data-cb-cssafterheader",
+          "data-cb-cssbeforeheader",
+          "data-cb-cssheaderactive",
+          "data-cb-cssheaderhover",
+          "data-cb-cssheaderunfolded",
+          "data-cb-cssheaderfolded",
+          "data-cb-dcssheaderunfolded")
+
+  /**
    * Formcycle forbids NESTED repeatable (dynamic) containers ("Ein wiederholtes Element darf keine
    * anderen wiederholten Elemente enthalten" — a dynamic container must not contain another dynamic
    * container). The form AI occasionally produces such nesting (e.g. a dynamic "weekday" container
@@ -3621,13 +3746,21 @@ class AICodBiAssistant : IPluginServletAction {
    *
    * Before the form reaches the designer, FLATTEN each nested dynamic container: the inner dynamic
    * container's child fields are pulled up into the OUTER dynamic container (they become one
-   * instance set per outer row) and the inner container item is removed. Every field is preserved;
-   * only the unrepresentable inner repetition collapses into the outer rows. Non-nested dynamic
+   * instance set per outer row) and the inner container item is removed. Every promoted field is
+   * also RE-PARENTED to the outer container (its `properties.parentid` is re-pointed), because a
+   * field whose `parentid` still references the removed inner container is published but never
+   * rendered by Formcycle — it looks as if the field was deleted. Every field is preserved; only
+   * the unrepresentable inner repetition collapses into the outer rows. Non-nested dynamic
    * containers are untouched. Repeats until no nesting remains (flattening can surface a deeper
-   * nested dynamic container).
+   * nested dynamic container); a reference to an already-removed repeatable is re-inlined so
+   * nothing is dropped.
    */
   private fun denestRepeatableContainers(root: JsonObject) {
     var items = root.getAsJsonArray("items") ?: return
+    // Removed repeatable child name -> the refs it used to hold, so a DANGLING reference to an
+    // already-removed repeatable (a nesting deeper than two levels) can still be re-inlined rather
+    // than silently dropping its fields.
+    val removedElements = mutableMapOf<String, JsonArray>()
     var changed: Boolean
     do {
       changed = false
@@ -3642,10 +3775,28 @@ class AICodBiAssistant : IPluginServletAction {
       for (item in items) {
         if (!item.isJsonObject) continue
         val outerProps = item.asJsonObject.getAsJsonObject("properties") ?: continue
-        if (outerProps.get("dynamic")?.asString != "1") continue
+        if (!isRepeatableContainer(outerProps)) continue
+        val outerId = outerProps.get("id")?.takeIf { it.isJsonPrimitive }?.asString
         val elements = outerProps.getAsJsonArray("elements") ?: continue
         var touched = false
         val flat = JsonArray()
+        // Append a promoted child to THIS row AND re-point its `parentid` at THIS container. A
+        // promoted field that keeps the removed inner container's id as its `parentid` is published
+        // but never rendered by Formcycle — it looks as if the field was deleted.
+        fun promote(innerRef: JsonElement) {
+          flat.add(innerRef)
+          val innerName =
+              if (innerRef.isJsonPrimitive) innerRef.asString
+              else if (innerRef.isJsonObject)
+                  innerRef.asJsonObject.getAsJsonObject("properties")?.get("name")?.asString
+              else null
+          val innerProps = innerName?.let { byName[it] }?.getAsJsonObject("properties")
+          if (innerProps != null &&
+              outerId != null &&
+              innerProps.get("parentid")?.asString != outerId) {
+            innerProps.addProperty("parentid", outerId)
+          }
+        }
         for (ref in elements) {
           val childName =
               if (ref.isJsonPrimitive) ref.asString
@@ -3655,13 +3806,25 @@ class AICodBiAssistant : IPluginServletAction {
           val child = childName?.let { byName[it] }
           val childProps = child?.getAsJsonObject("properties")
           // A nested dynamic container: pull its children up into this (outer) row and drop it.
-          if (childProps?.get("dynamic")?.asString == "1" && childProps.has("elements")) {
-            childProps.getAsJsonArray("elements")?.forEach { innerRef -> flat.add(innerRef) }
-            removed.add(childName!!)
+          if (childProps != null &&
+              isRepeatableContainer(childProps) &&
+              childProps.has("elements")) {
+            val childSafeName = childName!!
+            val inner = childProps.getAsJsonArray("elements") ?: JsonArray()
+            removedElements[childSafeName] = inner
+            inner.forEach { innerRef -> promote(innerRef) }
+            removed.add(childSafeName)
             logger.warn(
-                "[AICodBiAssistant] De-nesting repeatable container '{}' inside '{}' (Formcycle forbids nested repeatables) — its fields were merged into the outer row",
-                childName,
+                "[AICodBiAssistant] De-nesting repeatable container '{}' inside '{}' (Formcycle forbids nested repeatables) — its fields were merged into the outer row and re-parented",
+                childSafeName,
                 outerProps.get("name")?.asString ?: "?")
+            touched = true
+          } else if (child == null && childName != null && removedElements.containsKey(childName)) {
+            // Deep nesting: the reference points at a repeatable removed in an earlier pass —
+            // inline
+            // the fields it used to hold (and re-parent them) instead of keeping a dangling
+            // reference.
+            removedElements.getValue(childName).forEach { innerRef -> promote(innerRef) }
             touched = true
           } else {
             flat.add(ref)
@@ -3687,6 +3850,22 @@ class AICodBiAssistant : IPluginServletAction {
         items = keep
       }
     } while (changed)
+  }
+
+  /**
+   * True when a container's `properties.dynamic` marks it as a repeatable (dynamic) container. The
+   * flag is normally the string "1", but the AI sometimes emits a JSON boolean or number, so all
+   * truthy spellings count — otherwise such a container would never be de-nested and Formcycle
+   * would reject the whole form (the designer would show it empty).
+   */
+  private fun isRepeatableContainer(props: JsonObject?): Boolean {
+    val flag = props?.get("dynamic") ?: return false
+    if (!flag.isJsonPrimitive) return false
+    val p = flag.asJsonPrimitive
+    if (p.isBoolean) return p.asBoolean
+    if (p.isNumber) return p.asInt == 1
+    val s = p.asString
+    return s == "1" || s.equals("true", ignoreCase = true)
   }
 
   /**
@@ -4608,6 +4787,23 @@ class AICodBiAssistant : IPluginServletAction {
     // codbi-prop-standards CSV). Placing them on an element's cssclasses would leave a bogus CSS
     // class on the widget, so strip them whenever the AI wrongly applied them as classes.
     stripHolisticStandardClasses(resultItems)
+    // UI.Panels PANEL-TYPE classes are FIELDSET-only (they use the fieldset's legend as the header)
+    // —
+    // on an XContainer/XContainerInvisible they are inert. Remove any such leftover (e.g. when the
+    // container was previously a panel and the prompt moved the panel to a new outer wrapper).
+    stripContainerPanelClasses(resultItems)
+    // Deterministic safety net: a `rowid` groups fields into ONE row. The AI sometimes copies the
+    // rowid of a neighbouring field (very often the default "0" of the applicant name pair) onto
+    // unrelated fields, which makes Formcycle render ALL of them in a single row placed in the
+    // FIRST
+    // carrier's container - visually "moving" fields into the wrong section. Repair it here.
+    normalizeRowIds(resultItems)
+    // NOTE: the HTML.Panel auto-header-title spacer (data-cb-autoheadertitlesupplementsspacer) is
+    // deliberately NOT normalized - spaces around the separator may be intentional (" - " vs "-"),
+    // so
+    // the value the AI produced is passed through VERBATIM. The prompt instructs the AI to
+    // reproduce
+    // the separator (including its spacing) exactly as the user specified it.
     // CSS class names from the AI are passed through unchanged (no whitelist/validation) — they
     // reach the designer as-is. AI-generated CSS *code* is already removed via STRIPPED_FIELDS /
     // STRIPPED_ITEM_PROPS, so only class names can ever be taken over, never code.
@@ -4615,29 +4811,10 @@ class AICodBiAssistant : IPluginServletAction {
     // UI.Panels standard CSS classes that ALREADY apply HTML.Panel internally. When one of these is
     // present on an element, data-cb-func=html.panel is redundant and must be removed (see below).
     val panelStandardClassPrefixes = listOf("CodBi_HTML_Panel_", "CodBi_Accordion_")
-    // data-cb-* parameter prefixes that belong ONLY to HTML.Panel (removed together with the
-    // redundant data-cb-func=html.panel).
-    val panelOnlyParamPrefixes =
-        listOf(
-            // data-cb-open does NOT exist for HTML.Panel — the AI sometimes invents it to express
-            // "open initially"; the correct parameter is data-cb-folded.
-            "data-cb-open",
-            "data-cb-generateheader",
-            "data-cb-autoheadertitle",
-            "data-cb-autoheaderlevel",
-            "data-cb-autoheadertitlesupplementsspacer",
-            "data-cb-accordion",
-            "data-cb-folded",
-            "data-cb-scroll",
-            "data-cb-scrollblock",
-            "data-cb-scrolltotop",
-            "data-cb-cssafterheader",
-            "data-cb-cssbeforeheader",
-            "data-cb-cssheaderactive",
-            "data-cb-cssheaderhover",
-            "data-cb-cssheaderunfolded",
-            "data-cb-cssheaderfolded",
-            "data-cb-dcssheaderunfolded")
+    // data-cb-* parameter prefixes that belong ONLY to HTML.Panel — removed together with a
+    // redundant/stale data-cb-func=html.panel (includes the redundant-panel-with-UI.Panels-class
+    // case
+    // below). Defined class-level (PANEL_ONLY_PARAM_PREFIXES) for reuse.
     for (el in resultItems) {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
@@ -4677,7 +4854,7 @@ class AICodBiAssistant : IPluginServletAction {
             props.addProperty("data-cb-func", remaining.joinToString(","))
           }
           props.entrySet().removeIf { (key, _) ->
-            panelOnlyParamPrefixes.any { key.startsWith(it) }
+            PANEL_ONLY_PARAM_PREFIXES.any { key.startsWith(it) }
           }
           normalizedPanel = true
         }
@@ -4707,7 +4884,7 @@ class AICodBiAssistant : IPluginServletAction {
                   kept.add(neo)
                   continue
                 }
-              } else if (panelOnlyParamPrefixes.any { text.startsWith(it) }) {
+              } else if (PANEL_ONLY_PARAM_PREFIXES.any { text.startsWith(it) }) {
                 drop = true
                 changed = true
               }
@@ -4798,6 +4975,16 @@ class AICodBiAssistant : IPluginServletAction {
         props.remove(key)
       }
     }
+    // The AI may have MOVED an element's HTML.Panel onto a NEW outer wrapper container (the prompt
+    // "the weekday container should no longer be the collapsible panel itself, but a container
+    // AROUND the weekday container"). It correctly removes the panel attributes from the inner
+    // container, but the generic restore above re-adds every ORIGINAL property the AI omitted —
+    // including the original "attributes" array — so the inner container gets the panel back and
+    // the
+    // form renders TWO nested collapsible panels. Re-strip the duplicated inner panel here (only
+    // when its parent is an AI-created panel wrapper, so a legitimate pre-existing nested panel is
+    // never touched).
+    stripPanelFromInnerContainerWrappedByNewPanel(resultItems, originalItems)
     // --- Ensure accordion members have a consistent initial folded state ---
     // The accordion membership classes (CodBi_Accordion_A..D) group panels so only one is open at a
     // time. Panels default to unfolded (open). When the model sets the Formcycle "open" property
@@ -5130,6 +5317,265 @@ class AICodBiAssistant : IPluginServletAction {
             props.get("name")?.asString ?: "<unknown>")
       }
     }
+  }
+
+  /**
+   * Removes UI.Panels PANEL-TYPE CSS classes (`CodBi_HTML_Panel_Standard/Flat/Index/Minimal` and
+   * `CodBi_HTML_Panel_NoCordion`) from an **XContainer / XContainerInvisible**. Those classes apply
+   * the HTML.Panel functionality using the fieldset's `legend` as the header, so on a container (a
+   * div without a legend) they are INERT — a vestigial leftover, e.g. when the container was
+   * previously a panel (`data-cb-func=html.panel`) and the prompt moved the panel to a new outer
+   * wrapper. Removing them can never change the rendered behavior of a container. The accordion
+   * membership classes (`CodBi_Accordion_A..D`) DO belong on the wrapping container and are kept.
+   *
+   * @param resultItems The flat `items` array of the form JSON to scan in place.
+   */
+  private fun stripContainerPanelClasses(resultItems: JsonArray) {
+    val fieldsetOnlyPanelClasses =
+        setOf(
+            "CodBi_HTML_Panel_Standard",
+            "CodBi_HTML_Panel_Flat",
+            "CodBi_HTML_Panel_Index",
+            "CodBi_HTML_Panel_Minimal",
+            "CodBi_HTML_Panel_NoCordion")
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val cls = el.asJsonObject.get("className")?.asString ?: continue
+      if (cls != "XContainer" && cls != "XContainerInvisible") continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val cssClasses = props.getAsJsonArray("cssclasses") ?: continue
+      var removed = false
+      val kept = JsonArray()
+      for (i in 0 until cssClasses.size()) {
+        val c = cssClasses.get(i)
+        if (c.isJsonPrimitive && c.asString in fieldsetOnlyPanelClasses) {
+          removed = true
+          continue
+        }
+        kept.add(c)
+      }
+      if (removed) {
+        props.add("cssclasses", kept)
+        logger.info(
+            "[AICodBiAssistant] Stripped fieldset-only panel CSS class from container '{}' (panel classes only work on XFieldSet; inert on a container)",
+            props.get("name")?.asString ?: "<unknown>")
+      }
+    }
+  }
+
+  /**
+   * Removes a DUPLICATED HTML.Panel from an inner container when the AI moved the panel to a NEW
+   * outer wrapper container.
+   *
+   * Use case: the prompt "the weekday container should no longer be the collapsible panel itself,
+   * but a container AROUND the weekday container". The AI correctly creates a new outer XContainer,
+   * attaches the HTML.Panel (`data-cb-func=html.panel` + its parameters) to it, and removes the
+   * panel attributes from the inner weekday container. However, the generic restore in
+   * [restoreStrippedFields] re-adds every ORIGINAL property the AI omitted — including the original
+   * `attributes` array — so the inner container gets the panel back and the form renders TWO nested
+   * collapsible panels.
+   *
+   * This guard removes the panel (`data-cb-func` value `html.panel` plus the panel-only
+   * [PANEL_ONLY_PARAM_PREFIXES] parameters) from the INNER container, but ONLY when its parent
+   * container ALSO carries the panel AND that parent does NOT exist in the original form (i.e. the
+   * AI created it as the new wrapper). Everything else is left untouched, so a legitimate
+   * pre-existing nested panel is never modified.
+   *
+   * @param resultItems The flat `items` array of the merged form JSON (scanned/modified in place).
+   * @param originalItems The `items` array of the ORIGINAL form (used to detect AI-created
+   *   wrappers).
+   */
+  private fun stripPanelFromInnerContainerWrappedByNewPanel(
+      resultItems: JsonArray,
+      originalItems: JsonArray?
+  ) {
+    val originalNames = mutableSetOf<String>()
+    originalItems?.forEach { el ->
+      if (el.isJsonObject) {
+        el.asJsonObject
+            .getAsJsonObject("properties")
+            ?.get("name")
+            ?.takeIf { it.isJsonPrimitive }
+            ?.asString
+            ?.let { originalNames.add(it) }
+      }
+    }
+
+    val panelPropsByName = mutableMapOf<String, JsonObject>()
+    val parentNameByChild = mutableMapOf<String, String>()
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      props.getAsJsonArray("elements")?.forEach { ref ->
+        if (ref.isJsonPrimitive) parentNameByChild[ref.asString] = name
+      }
+      if (hasHtmlPanelFunctionality(props)) panelPropsByName[name] = props
+    }
+
+    for ((innerName, innerProps) in panelPropsByName) {
+      val outerName = parentNameByChild[innerName] ?: continue
+      if (outerName !in panelPropsByName) continue // parent is not a panel
+      if (outerName in originalNames)
+          continue // wrapper existed before — not the "moved panel" case
+      stripHtmlPanelFunctionality(innerProps)
+      logger.info(
+          "[AICodBiAssistant] Removed duplicated html.panel from inner container '{}' (panel moved to new outer wrapper '{}')",
+          innerName,
+          outerName)
+    }
+  }
+
+  /**
+   * Returns `true` when [props] carries an `html.panel` functionality, in either the direct-key
+   * (`properties["data-cb-func"]`) or the `attributes`-array form. A comma-separated `data-cb-func`
+   * list matches only when one of its entries is EXACTLY `html.panel` — a different functionality
+   * whose name merely contains that substring (e.g. `HTML.Panel.Accordion`) must NOT match.
+   */
+  private fun hasHtmlPanelFunctionality(props: JsonObject): Boolean {
+    fun isPanelFunc(v: String?): Boolean =
+        v != null && v.split(",").any { it.trim().equals("html.panel", ignoreCase = true) }
+    if (isPanelFunc(props.get("data-cb-func")?.takeIf { it.isJsonPrimitive }?.asString)) return true
+    val attrs = props.getAsJsonArray("attributes") ?: return false
+    for (e in attrs) {
+      if (!e.isJsonObject) continue
+      val o = e.asJsonObject
+      if (o.get("text")?.asString.equals("data-cb-func", ignoreCase = true)) {
+        if (isPanelFunc(o.get("value")?.takeIf { it.isJsonPrimitive }?.asString)) return true
+      }
+    }
+    return false
+  }
+
+  /**
+   * Removes the `html.panel` functionality from [props]: the `html.panel` entry of any
+   * `data-cb-func` list plus every panel-only [PANEL_ONLY_PARAM_PREFIXES] parameter. Handles both
+   * the direct-key and the `attributes`-array representation. Non-panel `data-cb-*` entries and any
+   * other `data-cb-func` functionalities are preserved.
+   */
+  private fun stripHtmlPanelFunctionality(props: JsonObject) {
+    // (a) direct data-cb-* keys
+    val direct = props.get("data-cb-func")?.takeIf { it.isJsonPrimitive }?.asString
+    if (direct != null) {
+      val remaining =
+          direct
+              .split(",")
+              .map { it.trim() }
+              .filterNot { it.equals("html.panel", ignoreCase = true) }
+      if (remaining.isEmpty()) props.remove("data-cb-func")
+      else props.addProperty("data-cb-func", remaining.joinToString(","))
+    }
+    props.entrySet().removeIf { (key, _) ->
+      PANEL_ONLY_PARAM_PREFIXES.any { key.lowercase().startsWith(it) }
+    }
+    // (b) attributes-array form
+    val attrs = props.getAsJsonArray("attributes") ?: return
+    val kept = JsonArray()
+    for (e in attrs) {
+      if (!e.isJsonObject) {
+        kept.add(e)
+        continue
+      }
+      val o = e.asJsonObject
+      val text = o.get("text")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+      if (text.equals("data-cb-func", ignoreCase = true)) {
+        val v = o.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+        val remaining =
+            v.split(",").map { it.trim() }.filterNot { it.equals("html.panel", ignoreCase = true) }
+        if (remaining.isEmpty()) continue
+        val neo = JsonObject()
+        neo.addProperty("text", "data-cb-func")
+        neo.addProperty("value", remaining.joinToString(","))
+        kept.add(neo)
+      } else if (PANEL_ONLY_PARAM_PREFIXES.any { text.lowercase().startsWith(it) }) {
+        continue
+      } else {
+        kept.add(e)
+      }
+    }
+    props.add("attributes", kept)
+  }
+
+  /**
+   * Removes a `rowid` that would incorrectly merge unrelated fields into one row.
+   *
+   * Formcycle renders every field carrying the same `rowid` together in ONE row (the row is placed
+   * in the container of the first carrier). A `rowid` is therefore only valid for a small set of
+   * DIRECT SIBLINGS in the SAME parent container - the documented PAIRS (first+last name,
+   * street+house number, PLZ+city), i.e. at most TWO fields. When the AI has copied a rowid (very
+   * often the default "0" of the applicant name pair) onto unrelated fields - possibly in other
+   * containers - all those fields collapse into a single row and appear to "move" into the first
+   * carrier's container. This guard keeps a rowid only for ONE container holding exactly two
+   * carriers and removes it from every other carrier, so no unrelated fields are merged.
+   */
+  private fun normalizeRowIds(resultItems: JsonArray) {
+    val carriersByRow = LinkedHashMap<String, MutableList<JsonObject>>()
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val row = props.get("rowid")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+      if (row.isEmpty()) continue
+      carriersByRow.getOrPut(row) { mutableListOf() }.add(props)
+    }
+    for ((row, carriers) in carriersByRow) {
+      val byParent = LinkedHashMap<String, MutableList<JsonObject>>()
+      for (props in carriers) {
+        val parent = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+        byParent.getOrPut(parent) { mutableListOf() }.add(props)
+      }
+      if (byParent.size == 1) {
+        val only = byParent.values.first()
+        // A single container with one rowid: valid for the documented pair (2) or a lone field (1).
+        if (only.size <= 2) continue
+        for (props in only) props.remove("rowid")
+        logger.info(
+            "[AICodBiAssistant] Cleared rowid '{}' on {} field(s) in ONE container - a rowid may only pair TWO fields",
+            row,
+            only.size)
+        continue
+      }
+      // The same rowid is used across MORE THAN ONE container: it can never render as one
+      // consistent
+      // row. Keep it for the first container that holds exactly the two paired fields; every other
+      // carrier is detached. A detached container that ALSO holds a valid pair keeps its pairing -
+      // it
+      // simply gets a FRESH, collision-free rowid (so a legitimately moved field/row is never
+      // split);
+      // a detached group that is not a pair loses its rowid and spans its own line.
+      val keepParent =
+          byParent.entries.firstOrNull { it.value.size == 2 }?.key ?: byParent.keys.first()
+      val usedRowIds = carriersByRow.keys.toMutableSet()
+      var reassigned = 0
+      var cleared = 0
+      for ((parent, group) in byParent) {
+        if (parent == keepParent) continue
+        if (group.size == 2) {
+          val fresh = freshRowId(usedRowIds)
+          usedRowIds.add(fresh)
+          for (props in group) props.addProperty("rowid", fresh)
+          reassigned += group.size
+        } else {
+          for (props in group) {
+            props.remove("rowid")
+            cleared++
+          }
+        }
+      }
+      logger.info(
+          "[AICodBiAssistant] rowid '{}' spanned {} containers - kept it for container '{}', reassigned {} field(s) to a fresh row, cleared {} field(s) elsewhere",
+          row,
+          byParent.size,
+          keepParent,
+          reassigned,
+          cleared)
+    }
+  }
+
+  /** Returns a `rowid` value that is not used by any other field of the form. */
+  private fun freshRowId(used: Set<String>): String {
+    var i = 1
+    while (used.contains("row-$i")) i++
+    return "row-$i"
   }
 
   /**
@@ -7176,6 +7622,9 @@ class AICodBiAssistant : IPluginServletAction {
                   val tasksArray =
                       obj.get("workflow")?.takeIf { it.isJsonArray }?.asJsonArray
                           ?: obj.get("tasks")?.takeIf { it.isJsonArray }?.asJsonArray
+                          // The model often wraps its delta operations in a top-level "operations"
+                          // array (instead of "workflow"/"tasks") — accept that wrapper too.
+                          ?: obj.get("operations")?.takeIf { it.isJsonArray }?.asJsonArray
                   if (tasksArray != null) {
                     gson.fromJson(tasksArray, Array<WorkflowTaskSpec>::class.java).toList()
                   } else {
@@ -7334,6 +7783,11 @@ class AICodBiAssistant : IPluginServletAction {
       status.addProperty("endpointType", spec.endpointType)
       status.add("stateProperties", gson.toJsonTree(spec.stateProperties))
       path.add("status", status)
+
+      // Button-gating state: when this lane is triggered by a decision button that must only be
+      // shown while the record is in a certain state (approve/reject), propagate the AI-declared
+      // state so the backend can set the button's "Available if" (statusdependent + viewstatus).
+      if (spec.buttonStatus.isNotBlank()) path.addProperty("buttonStatus", spec.buttonStatus)
 
       nodeLog.add(path)
     }
@@ -12180,16 +12634,24 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
-   * Returns the name of the submit button that must exist for the workflow(s) the AI just created
-   * to be reachable, or `null` when no lane is triggered by the form's submit button. Uses the
-   * trigger's explicit `buttonName` when the AI specified one (so that exact button is ensured),
-   * otherwise `""` which means "ensure ANY submit button exists" (an FC_FORM_SUBMIT_BUTTON trigger
-   * with an empty buttonName fires on any submit button).
+   * Collects the buttons that must exist on the form for the workflow(s) the AI just created to be
+   * reachable. Returns `null` when NO lane is triggered by a form button (FC_FORM_SUBMIT_BUTTON) —
+   * the form does not need any button. Otherwise returns the list of distinct named buttons the
+   * workflow references (see [WorkflowButtonNeed]).
+   *
+   * Each FC_FORM_SUBMIT_BUTTON lane contributes its trigger's `buttonName`. The submit role is
+   * derived from the lane's nodes/endpoint (see [isInertButtonLane]). The lane's optional top-level
+   * `buttonStatus` (the state in which the button may be shown — set by the AI for approve/reject
+   * decision buttons) becomes the [WorkflowButtonNeed.gateState]. When a lane has NO explicit name
+   * (`triggerParams:{}` — fires on ANY button), it contributes a blank-name entry meaning "a submit
+   * button must exist" (carried over as `btnSenden` downstream); a blank entry is merged into
+   * whichever explicit submit button exists / is created.
    */
-  private fun workflowSubmitButtonName(workflowNodes: JsonArray?): String? {
+  private fun workflowSubmitButtons(workflowNodes: JsonArray?): List<WorkflowButtonNeed>? {
     if (workflowNodes == null) return null
     var hasSubmitTrigger = false
-    var explicitName: String? = null
+    val named = LinkedHashMap<String, WorkflowButtonNeed>()
+    var hasBlank = false
     for (el in workflowNodes) {
       if (!el.isJsonObject) continue
       val trigger = el.asJsonObject.getAsJsonObject("trigger") ?: continue
@@ -12197,9 +12659,104 @@ class AICodBiAssistant : IPluginServletAction {
       hasSubmitTrigger = true
       val params = trigger.get("params")?.takeIf { it.isJsonObject }?.asJsonObject
       val name = params?.get("buttonName")?.takeIf { it.isJsonPrimitive }?.asString
-      if (!name.isNullOrBlank() && explicitName == null) explicitName = name
+      if (name.isNullOrBlank()) {
+        hasBlank = true
+        continue
+      }
+      val submit = !isInertButtonLane(el.asJsonObject)
+      val gate =
+          el.asJsonObject.get("buttonStatus")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+      val existing = named[name]
+      if (existing == null) {
+        named[name] = WorkflowButtonNeed(name, submit, gate?.ifBlank { null })
+      } else {
+        // Merge: a button referenced by several lanes keeps its submit role if ANY lane submits,
+        // and its gate state if ANY lane declares one.
+        named[name] =
+            WorkflowButtonNeed(
+                name, existing.submit || submit, (existing.gateState ?: gate)?.ifBlank { null })
+      }
     }
-    return if (hasSubmitTrigger) (explicitName ?: "") else null
+    if (!hasSubmitTrigger) return null
+    // No named button at all -> ensure ANY submit button exists (the generic "Senden" case).
+    if (named.isEmpty()) return listOf(WorkflowButtonNeed("", true))
+    // A lane fired "on any button" is satisfiable by a real submit button in the set.
+    val entries = named.values.toMutableList()
+    if (hasBlank && entries.none { it.submit }) entries.add(0, WorkflowButtonNeed("", true))
+    return entries
+  }
+
+  /**
+   * Whether the workflow lane [lane] performs no action at all — i.e. clicking its button should do
+   * nothing (an "Ablehnen"/reject lane). True when the lane's main action is a bare `SEQUENCE` (no
+   * real node) and its endpoint is `FC_RETURN` (the process simply ends). Such a button is a
+   * non-submit, inert XButtonList entry (action=""). All other lanes — those that send a mail,
+   * change state, etc. — are SUBMIT buttons (action.page="submit") so their workflow actually
+   * fires.
+   */
+  private fun isInertButtonLane(lane: JsonObject): Boolean {
+    val elements = lane.getAsJsonArray("elements")
+    val inertNode =
+        elements != null &&
+            elements.any {
+              it.isJsonObject &&
+                  (it.asJsonObject.get("nodeType")?.asString ?: "").equals(
+                      "SEQUENCE", ignoreCase = true)
+            }
+    val endpointType =
+        lane.getAsJsonObject("status")?.get("endpointType")?.takeIf { it.isJsonPrimitive }?.asString
+    return inertNode && endpointType.equals("FC_RETURN", ignoreCase = true)
+  }
+
+  /**
+   * Picks the concrete submit button name used to bind triggers whose `triggerParams:{}` came out
+   * empty. Prefers the first named SUBMIT button in [requiredButtons]; falls back to the generic
+   * `btnSenden` submit button otherwise.
+   */
+  private fun primarySubmitButtonName(
+      formJson: String,
+      requiredButtons: List<WorkflowButtonNeed>
+  ): String {
+    return requiredButtons.firstOrNull { it.name.isNotBlank() && it.submit }?.name ?: "btnSenden"
+  }
+
+  /**
+   * Resolves a human-readable German button label from a technical button name. Handles the common
+   * approval/rejection technical names the workflow AI emits (btnApprove / btnReject, and their
+   * German equivalents), plus a humanized fallback for any other name.
+   */
+  private fun germanButtonLabel(technicalName: String): String {
+    if (technicalName.isBlank()) return "Senden"
+    return when (technicalName.lowercase()) {
+      "btnapprove",
+      "approve",
+      "btngenehmigen",
+      "genehmigen",
+      "btnfreigeben",
+      "freigeben" -> "Genehmigen"
+      "btnreject",
+      "reject",
+      "btnablehnen",
+      "ablehnen",
+      "btnabweisen",
+      "abweisen" -> "Ablehnen"
+      "btnsenden",
+      "send",
+      "absenden",
+      "btnsenden",
+      "submit" -> "Senden"
+      "btnzurueck",
+      "back",
+      "zurueck" -> "Zurück"
+      "btnweiter",
+      "next",
+      "weiter" -> "Weiter"
+      else ->
+          technicalName
+              .replaceFirst(Regex("^btn", RegexOption.IGNORE_CASE), "")
+              .replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+              .ifBlank { "Senden" }
+    }
   }
 
   /**
@@ -12345,6 +12902,306 @@ class AICodBiAssistant : IPluginServletAction {
       logger.warn("[AICodBiAssistant] ensureSubmitButtonInForm failed: {}", e.message)
       null
     }
+  }
+
+  /**
+   * Ensures EVERY button referenced by the just-created workflow's FC_FORM_SUBMIT_BUTTON triggers
+   * exists on the form as an XButtonList entry with the correct German label, submit role and (for
+   * decision buttons) state-dependent availability ("Available if").
+   *
+   * [requiredButtons] is the list from [workflowSubmitButtons] ([WorkflowButtonNeed]): [name] is
+   * the technical button id, [submit] is `true` for a real SUBMIT button (`action.page="submit"`)
+   * and `false` for an INERT button (empty `action`, e.g. an "Ablehnen" button), and [gateState] is
+   * the optional workflow state in which the button may be shown.
+   *
+   * Behaviour:
+   * - A button with a [gateState] (an approve/reject DECISION button, e.g. "Genehmigen"/"Ablehnen")
+   *   is hosted in a DEDICATED XButtonList that carries `statusdependent:true` +
+   *   `viewstatus:["<gateState>"]` — i.e. a separate form element whose "Available if" is the
+   *   approval status, so the buttons only appear once the record reached that state. Gating the
+   *   whole dedicated list is safe because it holds ONLY the decision buttons.
+   * - A button WITHOUT a [gateState] (e.g. a plain "Senden"/submit button) is upgraded/relabelled/
+   *   added in the form's normal first XButtonList (or a new one on the last page when none
+   *   exists), exactly like before.
+   * - Newly added buttons are referenced from their container's `properties.elements` array so they
+   *   actually render.
+   *
+   * Returns the modified form JSON, or `null` when nothing changed / the JSON could not be parsed.
+   */
+  private fun ensureWorkflowButtonsInForm(
+      formJson: String,
+      requiredButtons: List<WorkflowButtonNeed>,
+      gateStateIds: Map<String, String> = emptyMap()
+  ): String? {
+    if (requiredButtons.isEmpty()) return null
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return null
+      var firstListProps: JsonObject? = null
+      val existing = mutableSetOf<String>()
+      val gatedListItems = mutableListOf<JsonObject>() // XButtonList elements that are gated
+      // Pass 1: collect existing XButtonList buttons/lists and the first (ungated anchor) list.
+      for (el in items) {
+        if (!el.isJsonObject) continue
+        if (el.asJsonObject.get("className")?.asString != "XButtonList") continue
+        val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+        val isGated = isStatusDependentValue(props.get("statusdependent"))
+        if (isGated) gatedListItems.add(el.asJsonObject)
+        if (firstListProps == null && !isGated) firstListProps = props
+        val buttons = props.getAsJsonArray("buttons") ?: continue
+        for (btn in buttons) {
+          if (btn.isJsonObject) {
+            btn.asJsonObject
+                .get("name")
+                ?.takeIf { it.isJsonPrimitive }
+                ?.asString
+                ?.let { existing.add(it) }
+          }
+        }
+      }
+
+      val gated = requiredButtons.filter { !it.gateState.isNullOrBlank() }
+      val ungated = requiredButtons.filter { it.gateState.isNullOrBlank() }
+      var changed = false
+
+      if (gated.isNotEmpty()) {
+        val gateState = gated.first().gateState
+        // Formcycle stores the state's UUID (new BPMN workflow) in "viewstatus"; fall back to the
+        // state NAME only when no UUID could be resolved (database unavailable / legacy statuses).
+        val gateId = gateStateIds[gateState] ?: gateState
+        // Find/create the dedicated gated XButtonList (holds ONLY decision buttons) and GATE it.
+        val gatedProps =
+            findOrCreateGatedList(items, firstListProps, gatedListItems, gateId!!)
+                ?: return gson.toJson(root)
+        val gatedButtons =
+            gatedProps.getAsJsonArray("buttons")
+                ?: JsonArray().also { gatedProps.add("buttons", it) }
+        for (need in gated) {
+          val name = need.name
+          // Ensure gating props on the dedicated list. "statusdependent" is the STRING "1": the
+          // Formcycle evaluator matches getString() against "1", so a JSON boolean true is ignored.
+          if (!isStatusDependentValue(gatedProps.get("statusdependent"))) {
+            gatedProps.addProperty("statusdependent", "1")
+            val vs = JsonArray().also { it.add(gateId) }
+            gatedProps.add("viewstatus", vs)
+            changed = true
+          } else {
+            val vs = gatedProps.getAsJsonArray("viewstatus")
+            if (vs == null || vs.none { it.isJsonPrimitive && it.asString == gateId }) {
+              (vs ?: JsonArray().also { gatedProps.add("viewstatus", it) }).add(gateId)
+              changed = true
+            }
+          }
+          if (gatedButtons.none {
+            it.isJsonObject && it.asJsonObject.get("name")?.asString == name
+          }) {
+            gatedButtons.add(buildWorkflowButton(name, need.submit))
+            changed = true
+          }
+          // The decision button must live ONLY in the gated list, never twice (e.g. a leftover
+          // auto-created copy in another XButtonList) — remove any duplicate elsewhere.
+          removeButtonFromOtherLists(items, gatedProps, name)
+          val containerId = gatedProps.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+          referenceButtonInContainer(items, containerId, name)
+        }
+      }
+
+      if (ungated.isNotEmpty()) {
+        // Pass 2: upgrade/relabel existing ungated buttons in place.
+        val toAdd = mutableListOf<WorkflowButtonNeed>()
+        for (need in ungated) {
+          val name = if (need.name.isBlank()) "btnSenden" else need.name
+          if (!existing.contains(name)) {
+            toAdd.add(WorkflowButtonNeed(name, need.submit))
+            continue
+          }
+          upgradeButtonInPlace(items, name, need.submit)
+          changed = true
+        }
+        if (toAdd.isNotEmpty()) {
+          val buttonsArray =
+              firstListProps?.getAsJsonArray("buttons")
+                  ?: JsonArray().also { firstListProps?.add("buttons", it) }
+          var containerId: String? =
+              firstListProps?.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+          if (firstListProps == null) {
+            containerId = findLastPageId(items)
+            val props = JsonObject()
+            props.addProperty("name", "btnWorkflow")
+            props.addProperty("id", uniqueFormItemId(items, "xi-btnworkflow"))
+            props.addProperty("title", "")
+            props.addProperty("label", "")
+            if (containerId != null) props.addProperty("parentid", containerId)
+            props.add("buttons", buttonsArray)
+            val newItem = JsonObject()
+            newItem.addProperty("className", "XButtonList")
+            newItem.add("properties", props)
+            items.add(newItem)
+          }
+          for (need in toAdd) {
+            val name = need.name
+            if (buttonsArray.none {
+              it.isJsonObject && it.asJsonObject.get("name")?.asString == name
+            }) {
+              buttonsArray.add(buildWorkflowButton(name, need.submit))
+              changed = true
+            }
+            referenceButtonInContainer(items, containerId, name)
+          }
+        }
+      }
+
+      if (!changed) return null
+      gson.toJson(root)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] ensureWorkflowButtonsInForm failed: {}", e.message)
+      null
+    }
+  }
+
+  /**
+   * Whether a persisted `statusdependent` value enables state-dependent availability. Formcycle's
+   * designer serializes the flag as the STRING `"1"` (see `XItemPropertiesEvaluator.match`, which
+   * compares `getString()` against `"1"`); a JSON boolean `true` (written by older plugin versions)
+   * is also accepted so pre-existing elements keep working.
+   */
+  private fun isStatusDependentValue(value: com.google.gson.JsonElement?): Boolean {
+    if (value == null || !value.isJsonPrimitive) return false
+    val p = value.asJsonPrimitive
+    return (p.isBoolean && p.asBoolean) ||
+        (p.isString && (p.asString == "1" || p.asString.equals("true", ignoreCase = true)))
+  }
+
+  /**
+   * Finds an existing DEDICATED gated XButtonList (`statusdependent:true`) or creates a new one on
+   * the last page. The returned properties object receives `statusdependent`/`viewstatus` and the
+   * decision buttons.
+   */
+  private fun findOrCreateGatedList(
+      items: JsonArray,
+      firstListProps: JsonObject?,
+      gatedListItems: List<JsonObject>,
+      gateState: String
+  ): JsonObject? {
+    for (el in gatedListItems) {
+      val props = el.getAsJsonObject("properties") ?: continue
+      // Reuse a list that is already gated on the same state, or any gated list.
+      val vs = props.getAsJsonArray("viewstatus")
+      if (vs != null && vs.any { it.isJsonPrimitive && it.asString == gateState }) return props
+      if (gatedListItems.size == 1) return props
+    }
+    // No suitable existing gated list -> create a new dedicated XButtonList on the last page.
+    val containerId = findLastPageId(items)
+    val props = JsonObject()
+    props.addProperty("name", "btnWorkflowApproval")
+    props.addProperty("id", uniqueFormItemId(items, "xi-btnworkflowapproval"))
+    props.addProperty("title", "")
+    props.addProperty("label", "")
+    props.addProperty("statusdependent", "1")
+    val vs = JsonArray().also { it.add(gateState) }
+    props.add("viewstatus", vs)
+    props.add("buttons", JsonArray())
+    if (containerId != null) props.addProperty("parentid", containerId)
+    val newItem = JsonObject()
+    newItem.addProperty("className", "XButtonList")
+    newItem.add("properties", props)
+    items.add(newItem)
+    referenceButtonInContainer(items, containerId, "btnWorkflowApproval")
+    return props
+  }
+
+  /**
+   * Removes every button named [name] from ALL XButtonLists EXCEPT the dedicated gated list
+   * [keepProps]. Used so a decision button that pre-existed in another (ungated) list does not end
+   * up rendered twice — it must live only in the gated "available-if" list.
+   */
+  private fun removeButtonFromOtherLists(items: JsonArray, keepProps: JsonObject, name: String) {
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      if (el.asJsonObject.get("className")?.asString != "XButtonList") continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      if (props === keepProps) continue
+      val buttons = props.getAsJsonArray("buttons") ?: continue
+      val toRemove =
+          buttons.filter { it.isJsonObject && it.asJsonObject.get("name")?.asString == name }
+      for (rm in toRemove) buttons.remove(rm)
+    }
+  }
+
+  /**
+   * Fixes an existing button's role and label in place. When [submit] is true the button gets a
+   * SUBMIT action (`action.page="submit"`) and its visible label is corrected when it still shows
+   * the generic default "Senden"; when false the button's submit action is removed (inert).
+   */
+  private fun upgradeButtonInPlace(items: JsonArray, name: String, submit: Boolean) {
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      if (el.asJsonObject.get("className")?.asString != "XButtonList") continue
+      val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
+      val buttons = props.getAsJsonArray("buttons") ?: continue
+      for (btn in buttons) {
+        if (!btn.isJsonObject) continue
+        val btnObj = btn.asJsonObject
+        if (btnObj.get("name")?.takeIf { it.isJsonPrimitive }?.asString != name) continue
+        val action = btnObj.getAsJsonObject("action")
+        val page = action?.get("page")?.takeIf { it.isJsonPrimitive }?.asString
+        val currentValue = btnObj.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: ""
+        val label = germanButtonLabel(name)
+        if (submit) {
+          if (action == null) {
+            btnObj.add("action", buildWorkflowAction(label, true))
+          } else if (!page.equals("submit", ignoreCase = true)) {
+            action.addProperty("page", "submit")
+            if ((action.get("value")?.takeIf { it.isJsonPrimitive }?.asString ?: "").isBlank()) {
+              action.addProperty("value", label)
+            }
+          }
+          if (currentValue == "Senden" && !label.equals("Senden", ignoreCase = true)) {
+            btnObj.addProperty("value", label)
+            action?.addProperty("displayName", label)
+            action?.addProperty("value", label)
+          }
+        } else {
+          if (page.equals("submit", ignoreCase = true)) action?.addProperty("page", "")
+          if (currentValue == "Senden" && !label.equals("Senden", ignoreCase = true)) {
+            btnObj.addProperty("value", label)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Builds an XButtonList button JSON object. For a SUBMIT button (`submit=true`) the action is `{
+   * page: submit }` so the form submits and fires the workflow lane; for an INERT button the action
+   * has no page (clicking it does nothing).
+   */
+  private fun buildWorkflowButton(name: String, submit: Boolean): JsonObject {
+    val label = germanButtonLabel(name)
+    val btn = JsonObject()
+    btn.addProperty("name", name)
+    btn.addProperty("title", "")
+    btn.addProperty("value", label)
+    btn.add("action", buildWorkflowAction(label, submit))
+    return btn
+  }
+
+  /** Builds the `action` object for a workflow-generated button. */
+  private fun buildWorkflowAction(label: String, submit: Boolean): JsonObject {
+    val action = JsonObject()
+    action.addProperty("customAction", "")
+    action.addProperty("customClassNames", "")
+    action.addProperty("displayName", label)
+    action.addProperty("optionId", "")
+    action.addProperty("check", false)
+    if (submit) {
+      action.addProperty("page", "submit")
+      action.addProperty("value", label)
+    } else {
+      action.addProperty("page", "")
+      action.addProperty("value", label)
+    }
+    return action
   }
 
   /** Returns the `id` of the last XPage in the form (the natural place for the submit button). */
@@ -13692,6 +14549,28 @@ class AICodBiAssistant : IPluginServletAction {
     return obj
   }
 
+  /**
+   * Coerces a workflow node parameter to a single string. The AI sometimes emits a scalar parameter
+   * (e.g. an FC_EMAIL recipient "to") as a JSON ARRAY — `["Amt@Ansbach.de"]` — which a plain `as?
+   * String` cast drops to an empty value (the mail then has NO recipient). Accept both a String and
+   * a List, joining multiple non-blank entries with ", ".
+   */
+  private fun workflowParamString(params: Map<String, Any>, key: String): String =
+      when (val v = params[key]) {
+        is String -> v
+        is List<*> ->
+            v.filterIsInstance<String>()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(", ")
+        is Array<*> ->
+            v.filterIsInstance<String>()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(", ")
+        else -> ""
+      }
+
   private fun buildNodeParamsJson(
       spec: WorkflowTaskSpec,
       workflowVersion: Any? = null,
@@ -13701,15 +14580,15 @@ class AICodBiAssistant : IPluginServletAction {
     val nodeDescription = spec.taskDescription ?: ""
     return when (spec.nodeType) {
       "FC_EMAIL" -> {
-        val to = spec.nodeParams["to"] as? String ?: ""
-        val subject = spec.nodeParams["subject"] as? String ?: ""
+        val to = workflowParamString(spec.nodeParams, "to")
+        val subject = workflowParamString(spec.nodeParams, "subject")
         // Some models emit the mail body under "message" instead of "body" — accept both, and as a
         // last resort derive a sensible default body so the email node is never left empty.
         val body =
             (spec.nodeParams["body"] as? String)?.takeIf { it.isNotBlank() }
                 ?: (spec.nodeParams["message"] as? String)?.takeIf { it.isNotBlank() }
                 ?: defaultEmailBody(subject)
-        val from = spec.nodeParams["from"] as? String ?: ""
+        val from = workflowParamString(spec.nodeParams, "from")
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
         val nodeUuid = spec.nodeParams["_resolvedNodeUuid"] as? String ?: ""
         val taskUuid = spec.nodeParams["_resolvedTaskUuid"] as? String ?: ""
@@ -13734,9 +14613,9 @@ class AICodBiAssistant : IPluginServletAction {
         // The AI often emits the recipient/sender under "recipient"/"sender" instead of "to"/"from"
         // — accept both.
         val to =
-            (spec.nodeParams["to"] as? String)?.takeIf { it.isNotBlank() }
-                ?: (spec.nodeParams["recipient"] as? String)
-                ?: ""
+            workflowParamString(spec.nodeParams, "to").ifBlank {
+              workflowParamString(spec.nodeParams, "recipient")
+            }
         val subject = spec.nodeParams["subject"] as? String ?: ""
         // Accept "body"/"message"; as a last resort derive a short default so the invitation text
         // is never empty.
@@ -13745,9 +14624,9 @@ class AICodBiAssistant : IPluginServletAction {
                 ?: (spec.nodeParams["message"] as? String)?.takeIf { it.isNotBlank() }
                 ?: defaultEmailBody(subject)
         val from =
-            (spec.nodeParams["from"] as? String)?.takeIf { it.isNotBlank() }
-                ?: (spec.nodeParams["sender"] as? String)
-                ?: ""
+            workflowParamString(spec.nodeParams, "from").ifBlank {
+              workflowParamString(spec.nodeParams, "sender")
+            }
         val senderName = spec.nodeParams["senderName"] as? String ?: ""
         val successPage = spec.nodeParams["successPage"] as? String ?: ""
         val failurePage = spec.nodeParams["failurePage"] as? String ?: ""
@@ -15073,6 +15952,180 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Resolves the WorkflowState UUID the approve/reject ("Genehmigen"/"Ablehnen") decision buttons
+   * are gated on — the state the record is in while it AWAITS the decision ("Available if").
+   *
+   * It is NOT the AI's `buttonStatus` name (that is only a hint, and often a guess): the
+   * authoritative state is the one the FIRST/initial submit lane leaves the record in. That is
+   * derived from (a) a non-decision FC_FORM_SUBMIT_BUTTON lane in the just-created workflow (its
+   * `endpointState`), or (b) when that lane was only REPLACEd in place (so it kept its existing
+   * path and the change log carries no endpoint), the EXISTING endpoint target state of the
+   * replaced node's workflow task.
+   *
+   * Formcycle's designer lists the new BPMN workflow's states with the state UUID as the option
+   * value and its evaluator compares the record's current WorkflowState UUID — a state NAME never
+   * matches, which is why the designer otherwise shows the "Available if" checkbox checked but NO
+   * state selected. Only when neither (a) nor (b) yields a state do we fall back to resolving the
+   * AI's `buttonStatus` NAME to an EXISTING state (no state is ever invented). Returns an empty map
+   * when nothing can be resolved.
+   */
+  private fun resolveDecisionGateStateIds(
+      workflowNodes: JsonArray?,
+      requiredButtons: List<WorkflowButtonNeed>?,
+      workflowVersionId: Long?,
+      params: IPluginServletActionParams
+  ): Map<String, String> {
+    val names =
+        requiredButtons?.mapNotNull { it.gateState?.trim()?.ifBlank { null } }?.distinct()
+            ?: return emptyMap()
+    if (names.isEmpty() || workflowVersionId == null) return emptyMap()
+    return try {
+      val userContext = getUserContext(params)
+      val workflowVersion =
+          resolveWorkflowVersion(userContext, workflowVersionId) ?: return emptyMap()
+      val decisionButtons =
+          requiredButtons.filter { !it.gateState.isNullOrBlank() }.map { it.name }.toSet()
+      val pendingUuid =
+          pendingStateUuidFromChangeLog(
+              workflowNodes, userContext, workflowVersion, decisionButtons)
+              ?: pendingStateUuidFromReplacedLane(workflowNodes, userContext, workflowVersionId)
+      if (pendingUuid != null) {
+        // ONE shared gate state for every decision button (approve AND reject).
+        return names.associateWith { pendingUuid.toString() }
+      }
+      // Fallback: resolve the AI's buttonStatus names to EXISTING states (never invent a state).
+      names
+          .mapNotNull { name ->
+            resolveStateUuid(userContext, workflowVersion, name)?.let { uuid ->
+              name to uuid.toString()
+            }
+          }
+          .toMap()
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not resolve decision-button gate states: {}", e.message)
+      emptyMap()
+    }
+  }
+
+  /**
+   * The pending/approval state the FIRST non-decision submit lane leaves the record in — read from
+   * that lane's `status.endpointState` in the workflow change log. Decision-button lanes are
+   * skipped (their endpoint is the POST-decision state, e.g. "Genehmigt").
+   */
+  private fun pendingStateUuidFromChangeLog(
+      workflowNodes: JsonArray?,
+      userContext: Any,
+      workflowVersion: Any,
+      decisionButtons: Set<String>
+  ): UUID? {
+    if (workflowNodes == null) return null
+    for (el in workflowNodes) {
+      if (!el.isJsonObject) continue
+      val obj = el.asJsonObject
+      val trigger = obj.getAsJsonObject("trigger") ?: continue
+      if (trigger.get("type")?.asString != "FC_FORM_SUBMIT_BUTTON") continue
+      val name =
+          trigger
+              .getAsJsonObject("params")
+              ?.get("buttonName")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+      if (name != null && name in decisionButtons) continue
+      val status = obj.getAsJsonObject("status") ?: continue
+      val endpointType = status.get("endpointType")?.takeIf { it.isJsonPrimitive }?.asString
+      if (!endpointType.equals("FC_CHANGE_STATE", ignoreCase = true)) continue
+      val stateName = status.get("endpointState")?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+      if (stateName.isNullOrBlank()) continue
+      resolveStateUuid(userContext, workflowVersion, stateName)?.let {
+        return it
+      }
+    }
+    return null
+  }
+
+  /**
+   * The endpoint target-state UUID of the EXISTING workflow task that owns the node a REPLACE
+   * operation targeted in place. A REPLACE keeps the lane's path, so its ending state — the state
+   * the record is in after the first mail was sent — is not in the change log and must be read from
+   * the DB (the endpoint node's `customParameters.targetState.uuid`).
+   */
+  private fun pendingStateUuidFromReplacedLane(
+      workflowNodes: JsonArray?,
+      userContext: Any,
+      workflowVersionId: Long?
+  ): UUID? {
+    if (workflowNodes == null || workflowVersionId == null) return null
+    val nodeId =
+        workflowNodes
+            .asSequence()
+            .filter { it.isJsonObject }
+            .map { it.asJsonObject }
+            .filter { (it.get("nodeType")?.asString ?: "").equals("REPLACE", ignoreCase = true) }
+            .mapNotNull {
+              it.getAsJsonObject("params")
+                  ?.get("targetNodeId")
+                  ?.takeIf { p -> p.isJsonPrimitive }
+                  ?.asString
+            }
+            .firstOrNull { it.isNotBlank() } ?: return null
+    return try {
+      val em = formcycleEntityManager(userContext) ?: return null
+      val taskId = workflowTaskIdOfNode(em, nodeId.toLong()) ?: return null
+      val rows =
+          runJpqlOn(
+              em,
+              "SELECT n.customParameters FROM de.xima.fc.entities.WorkflowNode n " +
+                  "WHERE n.task.id = :tid AND n.type = 'FC_CHANGE_STATE' ORDER BY n.id DESC",
+              "tid",
+              taskId)
+      for (row in rows) {
+        val custom = (row as? Array<*>)?.firstOrNull()?.toString() ?: row?.toString()
+        if (custom.isNullOrBlank()) continue
+        val uuidStr =
+            try {
+              JsonParser.parseString(custom)
+                  .asJsonObject
+                  .getAsJsonObject("targetState")
+                  ?.get("uuid")
+                  ?.takeIf { it.isJsonPrimitive }
+                  ?.asString
+            } catch (_: Exception) {
+              null
+            }
+        if (!uuidStr.isNullOrBlank()) {
+          logger.info(
+              "[AICodBiAssistant] Decision buttons gated on the replaced lane's endpoint state {} (node {})",
+              uuidStr,
+              nodeId)
+          return UUID.fromString(uuidStr)
+        }
+      }
+      null
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not read replaced lane's endpoint state: {}", e.message)
+      null
+    }
+  }
+
+  /** Resolves a [WorkflowVersion] entity by id via the Formcycle API. */
+  private fun resolveWorkflowVersion(userContext: Any, workflowVersionId: Long): Any? {
+    return try {
+      val apiProviderClass = Class.forName("de.xima.fc.api.APIProvider")
+      val workflowVersionApi = apiProviderClass.getField("WORKFLOW_VERSION_API").get(null)
+      workflowVersionApi.javaClass
+          .getMethod(
+              "getById", Class.forName("de.xima.fc.user.UserContext"), Long::class.javaObjectType)
+          .invoke(workflowVersionApi, userContext, workflowVersionId)
+    } catch (e: Exception) {
+      logger.warn(
+          "[AICodBiAssistant] Could not resolve workflow version {}: {}",
+          workflowVersionId,
+          e.message)
+      null
+    }
+  }
+
+  /**
    * Resolves the UUID of a completion page (Abschlussseite) by its name. Uses JPQL with known
    * FORMCYCLE entity class names first, then falls back to native SQL with schema discovery.
    */
@@ -15509,6 +16562,24 @@ class AICodBiAssistant : IPluginServletAction {
 
   // region JSON Utilities
 
+  /**
+   * True when [text] parses as a JSON object or array — i.e. the AI returned structured JSON rather
+   * than loose prose / a clarifying question. Used to keep non-JSON AI replies from being treated
+   * as a form (which would corrupt the response the frontend has to parse).
+   */
+  private fun isJsonObjectOrArray(text: String): Boolean {
+    val t = text.trim()
+    if (t.isEmpty()) return false
+    val c = t.first()
+    if (c != '{' && c != '[') return false
+    return try {
+      JsonParser.parseString(t)
+      true
+    } catch (_: Exception) {
+      false
+    }
+  }
+
   private fun extractJson(text: String): String {
     val start = text.indexOfFirst { it == '{' || it == '[' }
     if (start < 0) return text
@@ -15933,11 +17004,33 @@ class AICodBiAssistant : IPluginServletAction {
       val endpointState: String = "",
       val endpointType: String = "FC_CHANGE_STATE",
       val stateProperties: Map<String, Any> = emptyMap(),
+      // Button-gating state: for a lane triggered by a decision button (approve/reject), the name
+      // of the workflow state in which that button may be SHOWN ("Available if" + statusdependent).
+      // The backend reads it back and sets `statusdependent:true` + `viewstatus:["<state>"]` on the
+      // XButtonList that holds the button. Empty = the button is available in every state
+      // (default).
+      val buttonStatus: String = "",
       // Delta-operation support: the AI returns a small array of operations instead of the whole
       // workflow. Defaults to "create" so existing behaviour is unchanged when the field is absent.
       val operation: String = "create",
       /** For "remove"/"replace": numeric database id of the existing workflow node to act on. */
       val targetNodeId: String? = null
+  )
+
+  /**
+   * Backend descriptor of a form button a just-created workflow needs to be reachable.
+   * - [name] — technical button name from the lane's `triggerParams.buttonName` (blank = "fires on
+   *   any button", resolved to `btnSenden` downstream).
+   * - [submit] — `true` when the button performs a workflow action and must be a real SUBMIT button
+   *   (`action.page="submit"`); `false` for an INERT button (e.g. "Ablehnen" doing nothing).
+   * - [gateState] — OPTIONAL workflow state in which the button may be SHOWN ("Available if"). When
+   *   non-blank (approve/reject decision buttons), the backend sets `statusdependent:true` +
+   *   `viewstatus:["<state>"]` on the XButtonList that holds the button. Blank = available always.
+   */
+  private class WorkflowButtonNeed(
+      val name: String,
+      val submit: Boolean,
+      val gateState: String? = null
   )
 
   // endregion Data Classes

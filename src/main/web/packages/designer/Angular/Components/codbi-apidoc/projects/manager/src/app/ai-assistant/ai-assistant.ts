@@ -687,6 +687,27 @@ export class AiAssistant implements OnInit, OnDestroy {
     setTimeout(() => this.updateFooterLayout(), 0);
   }
 
+  /** The change-log finished a (re)load — including the toolbar's Refresh button. PrimeNG can drop
+   *  the dialog's `p-dialog-maximized` class when the log content re-renders, which shrinks the
+   *  dialog back to its non-fullscreen size. Re-assert the maximized state (a no-op while the dialog
+   *  still carries the class), or re-assert the widened change-log geometry when it is not
+   *  maximized. */
+  onLogRefreshed(): void {
+    let wantsMaximized = false;
+    try {
+      wantsMaximized = localStorage.getItem(AiAssistant.MAXIMIZED_KEY) === "1";
+    } catch {
+      // ignore storage errors
+    }
+    if (wantsMaximized) {
+      this.restoreMaximized();
+    } else if (this.showLog) {
+      this.expandDialogForLog();
+      this.applyWatermarkPosition();
+    }
+    setTimeout(() => this.updateFooterLayout(), 0);
+  }
+
   /** Keeps the dialog footer layout in sync: when the switch group and the button group wrap onto
    *  separate lines (the dialog is too narrow), they are centered; otherwise they stay left/right
    *  aligned on one row. */

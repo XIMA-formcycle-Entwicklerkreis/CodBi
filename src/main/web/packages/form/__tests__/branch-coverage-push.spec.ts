@@ -104,15 +104,15 @@ describe("HTML_Panel branch coverage", () => {
   }
 
   // --- generateheader with fieldset + legend: autoheaderlevel, autoheadertitle, supplements ---
-  it("generates header with autoheaderlevel, autoheadertitle, and autoheadertitlesuplementsspacer", () => {
-    createPanelFieldset({ legendText: "My Legend" });
+  it("generates header with autoheaderlevel, autoheadertitle, and autoheadertitlesupplementsspacer", () => {
+    createPanelFieldset({ legendText: "My Legend", withSupplements: true });
 
     HTML_Panel.functionality(
       {
         generateheader: "true",
         autoheaderlevel: "3",
         autoheadertitle: "Custom Title",
-        autoheadertitlesuplementsspacer: " - ",
+        autoheadertitlesupplementsspacer: " - ",
         autoheadercss: "color: red;",
       },
       document.querySelector("fieldset"),
@@ -122,6 +122,39 @@ describe("HTML_Panel branch coverage", () => {
     expect(header).not.toBeNull();
     expect(header.innerHTML).toContain("<h3>");
     expect(header.innerHTML).toContain("Custom Title");
+    // Regression: the parameter is spelled with a double "p" (autoheadertitlesupplementsspacer).
+    // When a supplement field is present its value must be appended, joined by the configured
+    // separator - a single-"p" read silently fell back to the default " / ".
+    expect(header.innerHTML).toContain("Custom Title - Extra");
+  });
+
+  it("decodes %20 and \\s whitespace escapes in the separator", () => {
+    // FORMCYCLE trims surrounding whitespace from the attribute value, so spaces are requested
+    // encoded as %20 (URL) or \s.
+    createPanelFieldset({ legendText: "Base", withSupplements: true });
+    HTML_Panel.functionality(
+      {
+        generateheader: "true",
+        autoheadertitle: "Title",
+        autoheadertitlesupplementsspacer: "%20-%20",
+        autoheadercss: "",
+      },
+      document.querySelector("fieldset"),
+    );
+    expect(document.querySelector(".CodBi_HTML_Panel_Header")?.innerHTML).toContain("Title - Extra");
+
+    document.body.innerHTML = "";
+    createPanelFieldset({ legendText: "Base", withSupplements: true });
+    HTML_Panel.functionality(
+      {
+        generateheader: "true",
+        autoheadertitle: "Title",
+        autoheadertitlesupplementsspacer: "\\s-\\s",
+        autoheadercss: "",
+      },
+      document.querySelector("fieldset"),
+    );
+    expect(document.querySelector(".CodBi_HTML_Panel_Header")?.innerHTML).toContain("Title - Extra");
   });
 
   it("generates header from legend when no autoheadertitle", () => {

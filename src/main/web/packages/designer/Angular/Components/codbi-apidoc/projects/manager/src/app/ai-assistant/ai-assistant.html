@@ -154,7 +154,11 @@
                     class="cb-ai-log-panel"
                     [class.cb-ai-log-panel--resizing]="logResizing"
                     [style.width.px]="logPanelWidth">
-                    <cb-ai-assistant-log #logPanel (opened)="onLogOpened()" (closed)="onLogClosed()" />
+                    <cb-ai-assistant-log
+                        #logPanel
+                        (opened)="onLogOpened()"
+                        (closed)="onLogClosed()"
+                        (refreshed)="onLogRefreshed()" />
                 </div>
             }
         </div>

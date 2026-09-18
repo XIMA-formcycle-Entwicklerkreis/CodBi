@@ -20,3 +20,17 @@ internal fun compactJsonForLog(json: String): String {
     json.replace(Regex("\\s+"), " ").trim()
   }
 }
+
+/** Default maximum number of characters of an AI response written to the log. */
+internal const val MAX_RAW_RESPONSE_LOG_CHARS = 4000
+
+/**
+ * Truncates a raw AI response before it is logged so a degenerate repetition-loop response
+ * (observed live: 133 KB of the same snippet repeated hundreds of times) cannot flood the server
+ * log. Keeps the first [maxChars] characters and appends a `... [truncated N chars]` suffix when
+ * the input is longer. Pure (no side effects) so it is unit-testable.
+ */
+internal fun truncateForLog(text: String, maxChars: Int = MAX_RAW_RESPONSE_LOG_CHARS): String {
+  if (text.length <= maxChars) return text
+  return text.take(maxChars) + "... [truncated ${text.length - maxChars} chars]"
+}

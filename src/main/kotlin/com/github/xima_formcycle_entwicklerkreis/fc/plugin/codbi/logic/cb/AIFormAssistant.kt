@@ -381,7 +381,7 @@ class AIFormAssistant : IPluginServletAction {
       logger.info(
           "[AIFormAssistant] Pass-2 raw result ({} chars): {}",
           pass2Cleaned.length,
-          compactJsonForLog(pass2Cleaned))
+          truncateForLog(compactJsonForLog(pass2Cleaned)))
       // Splice into the form base (the original form when pass-1 was a details request) so new
       // widgets created in pass-2 are preserved in the returned form.
       return stripWorkflowMailLanguagesMarker(splicePass2IntoPass1(formBase, pass2Cleaned))

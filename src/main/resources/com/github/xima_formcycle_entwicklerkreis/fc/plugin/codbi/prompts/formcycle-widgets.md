@@ -103,6 +103,21 @@ Example for Ja/Nein as RADIO BUTTONS (honor the clarified control type):
 {"className":"XSelect","properties":{"name":"selJaNein","id":"xi-sel-janein","label":"Ja/Nein","required":"0","fullwidth":"0","selectlayout":"radio","options":[{"text":"Ja","value":"Ja"},{"text":"Nein","value":"Nein"}]}}
 ```
 
+XSELECT FED BY A FORMCYCLE DATASOURCE ("Quelle" / "Datenquelle" / "source") — this is the element's OWN "Data source" property, NOT a functionality and NOT an EP:
+A "Quelle" / "Datenquelle" / "source" — typically named together with a column ("Spalte 1 in der Quelle Staatsangehörigkeiten", "column 1 of the source X") — means a FORMCYCLE DATASOURCE that is configured server-side in the Formcycle backend. It is NOT an element placeholder (EP): NEVER wire it with data-cb-func="html.select.injection" and NEVER invent an EP like `{ Staatsangehoerigkeit > column1 }` (a datasource name is not an EP id — such a placeholder cannot resolve). Bind the datasource with the XSelect's own properties:
+- `datasource`: the datasource configured in the Formcycle backend — use the name the request gives AS-IS. Datasources are server-side data (like DataQueries): NEVER ask whether the datasource exists, and never ask for its internal ID.
+- `dstextidx`: the 1-BASED number of the column whose values become the option TEXT.
+- `dsvalueidx`: the 1-BASED number of the column whose values become the option VALUE (the submitted value).
+- `dstitleidx` (optional): the 1-BASED number of the column whose values become the option title/tooltip.
+- `dstype` (optional): the datasource kind — one of `DB`, `CSV`, `JSON`, `XML`, `LDAP`, `USER`, `PLUGIN`. Set it only when the request names the kind.
+- `ds_rendercolattr` (optional): renders a datasource column as an attribute on the option.
+- `options` MUST stay an EMPTY array (`[]`): the entries are resolved FROM the datasource at render time, exactly like an EP-fed select. Never put static option objects here for a datasource select.
+COLUMN NUMBERS ARE 1-BASED — "Spalte 1" is the FIRST column. When the request names ONE column, use it for BOTH text and value (`dstextidx` AND `dsvalueidx`); when it names TWO columns ("Spalte 1 als Text, Spalte 2 als Wert"), map each to its own property. (The designer's defaults are dstextidx "1" and dsvalueidx "2".)
+Example — "Füge eine Auswahl hinzu, die die Spalte 1 in der Quelle Staatsangehörigkeiten als Option anbietet.":
+```json
+{"className":"XSelect","properties":{"name":"selStaatsangehoerigkeit","id":"xi-sel-staatsangehoerigkeit","label":"Staatsangehörigkeit","required":"0","fullwidth":"0","datasource":"Staatsangehörigkeiten","dstextidx":"1","dsvalueidx":"1","options":[]}}
+```
+
 ## XCheckbox
 
 Checkbox (note: lowercase 'b').

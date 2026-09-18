@@ -11,32 +11,39 @@ WIDGET STRUCTURE RULES:
 - APPROVAL / REJECTION BUTTONS ("Genehmigen"/"Ablehnen", approve/reject): create BOTH buttons as entries of one XButtonList (each with name/title/value; action.page="submit" for the approval button, and action="" for a reject button whose click must do nothing at all) — the workflow binds to each button by its 'name' (FC_FORM_SUBMIT_BUTTON + triggerParams.buttonName), so "Genehmigen" and "Ablehnen" run DIFFERENT workflow lanes. NEVER ask for query parameters, an "approval=approve"-style URL scheme, a callback URL or any link mechanism — the decision is the button click; the user only needs to provide the two labels (and if they already named them, create them without asking).
 - STATE-DEPENDENT AVAILABILITY ("Available if" / verfügbar für Status): a form element can be shown / read-only ONLY while the form record is in certain workflow ENDING STATES — a lane's endpoint (ending) state IS the record's current state until another lane changes it. Set these as DIRECT properties (NOT in the attributes array): `statusdependent` (the STRING `"1"`, NOT a JSON boolean) + `viewstatus` (JSON array of the workflow STATE UUIDs - the designer's state-list values, e.g. `["3f2b19c4-..."]` - NOT the state DISPLAY NAME; an entry `"[!]<stateUuid>"` EXCLUDES that state) for availability, and `readonly_statusdependent` + `readonly_viewstatus` for read-only. Group analogues: `usergrouppendent`/`viewusergroup` and `readonly_usergrouppendant`/`readonly_viewusergroup`. Emit the flags as REAL booleans and the arrays as plain state-name strings (any other shape is dropped), and use the EXACT state name the workflow lane ends in.
 - Every created widget MUST have a unique 'id' (e.g. 'xi-...') and a className from the reference list.
-- There is NO 'row' className — never use 'xm-form-row' (or any similar name) as a className. To place fields side by side in one row, give them the same 'rowid' property (see ROW PAIRING RULES).
+- There is NO 'row' className — never use 'xm-form-row' (or any similar name) as a className. To place fields side by side on one line, give them the same 'rowid' property (see ROW GROUPING RULES).
 
-ROW PAIRING RULES (fields that belong on the SAME row):
-Some fields describe one logical value together and must appear SIDE BY SIDE in the SAME row of the form (not stacked one per line, not wrapped in a nested container). Identify these pairs by what they mean, in ANY language:
-- A person's GIVEN/FIRST name + FAMILY/LAST name (e.g. Max + Mustermann).
+ROW GROUPING RULES (RELATED fields that belong on the SAME line):
+Some fields describe ONE logical value together and must appear SIDE BY SIDE on the SAME LINE of the form (not stacked one per line, not wrapped in a nested container). Identify these groups by what they MEAN, in ANY language:
+- A person's GIVEN/FIRST name + FAMILY/LAST name (+ MIDDLE name) — up to three name fields share one line.
 - A STREET/ROAD name + HOUSE/BUILDING number (e.g. Main Street + 12).
-- A POSTAL CODE + LOCALITY/CITY (e.g. 12345 + Berlin).
+- A POSTAL CODE + LOCALITY/CITY (e.g. 12345 + Berlin) — add the COUNTRY/state when the request asks for it (PLZ + Ort + Land = one line).
+- An E-MAIL ADDRESS + PHONE/TELEPHONE number (contact details).
+- Any other fields the request presents as ONE unit (e.g. a FROM + TO date pair, a BEGIN + END pair, a value + its UNIT, a quantity + a size).
+THE GOLDEN RULE — GROUP RELATED FIELDS, AND NEVER MORE THAN FOUR PER LINE:
+- HARD CAP OF FOUR: a line carries at least TWO and AT MOST FOUR fields. NEVER put five or more fields on one line — when MORE than four fields belong together, split them over SEVERAL lines ("row-1" for the first up-to-four, "row-2" for the next ones).
+- Group ONLY fields that are genuinely related (see the list above). NEVER merge UNRELATED fields into one line just to save space — a line of unrelated fields is WORSE than one field per line.
+- A related group of an ODD size keeps its own members together and the remaining related fields go on the NEXT line (e.g. street + house number on one line, PLZ + city on the following line) — NEVER fill the free slot with an unrelated field.
+- Fields that stand alone (a single comment/message field, a checkbox, a submit button) get NO 'rowid' and span their own full-width line.
 HOW Formcycle renders a row (there is NO 'row' widget/className — 'xm-form-row' is only the CSS class the renderer adds automatically, never a className you should write):
-- Keep the two fields as DIRECT SIBLINGS inside the same parent container (e.g. in the XPage/container's 'elements' array) — do NOT wrap them in an extra XContainer/XFieldSet.
-- Give BOTH fields the SAME string value for the 'rowid' property in their 'properties' object (e.g. "rowid": "row-1"). Formcycle renders all sibling fields with an identical 'rowid' next to each other in one row.
-- Use a DIFFERENT 'rowid' value for each separate row ("row-1", "row-2", ...) so every pair stays on its own line; omit 'rowid' (or leave it empty) for fields that should span the full width on their own line.
-- NEVER COPY A 'rowid' FROM ANOTHER FIELD: a 'rowid' is ONLY valid for the documented TWO-field pair of the SAME container. Every OTHER field MUST have NO 'rowid' (or an empty one). When you only add a CSS class or a data-cb-* attribute to a field (e.g. CodBi_HTML_Panel_AutoHeaderTitle_Supplement), do NOT add, copy or change its 'rowid' - a rowid shared with a field of ANOTHER container makes Formcycle merge ALL those fields into ONE row and they visually move into the first field's container.
-- Size the two fields sensibly so they share the line (e.g. roughly half the row width each).
+- Keep the fields of one group as DIRECT SIBLINGS inside the same parent container (e.g. in the XPage/container's 'elements' array) — do NOT wrap them in an extra XContainer/XFieldSet, and do NOT add an extra wrapper per line.
+- Give ALL fields of one group the SAME string value for the 'rowid' property in their 'properties' object (e.g. "rowid": "row-1"). Formcycle renders all sibling fields with an identical 'rowid' next to each other on one line.
+- Use a DIFFERENT 'rowid' value for each separate line ("row-1", "row-2", ...) so every group stays on its own line; omit 'rowid' (or leave it empty) for fields that should span the full width on their own line.
+- NEVER COPY A 'rowid' FROM ANOTHER FIELD: a 'rowid' is ONLY valid for the related-field group of the SAME container. Every OTHER field MUST have NO 'rowid' (or an empty one). When you only add a CSS class or a data-cb-* attribute to a field (e.g. CodBi_HTML_Panel_AutoHeaderTitle_Supplement), do NOT add, copy or change its 'rowid' - a rowid shared with a field of ANOTHER container makes Formcycle merge ALL those fields into ONE row and they visually move into the first field's container.
+- Size the fields sensibly so they share the line (e.g. two fields roughly half the row width each, three fields roughly a third each, four fields roughly a quarter each).
 
 GROUP RELATED FIELDS INTO CONTAINERS (person / address / contact data):
 Group logically-related fields into ONE dedicated XContainer (or XFieldSet when a legend/title fits) per group — do NOT place them flat on the page:
 - NAME / person-data fields (first/given name, last/family name, middle name) → one container (this is also the LDAP/autofill person-data group when one is requested).
 - ADDRESS fields (street, house/building number, postal code/PLZ, locality/city) → one address container (the OpenPLZ autocomplete set lives here).
 - CONTACT fields (e-mail, phone/telephone) → one contact container.
-Inside each container the fields are DIRECT SIBLINGS and the ROW PAIRING RULES still apply (first+last name one row; street+house number one row; PLZ+city one row — same rowid per pair). Do NOT wrap a single row pair in its own extra container — the grouping container is the parent of all fields of that group. Add each group container to its page's/container's 'elements' array and every field inside to the group container's 'elements' array (with the matching parentid); a field that is not referenced by any container's 'elements' array is orphaned and does NOT render.
+Inside each container the fields are DIRECT SIBLINGS and the ROW GROUPING RULES still apply (first+last name one line; street+house number one line; PLZ+city one line; e-mail+phone one line — same rowid within a group, NEVER more than four fields per line). Do NOT wrap a single line in its own extra container — the grouping container is the parent of all fields of that group. Add each group container to its page's/container's 'elements' array and every field inside to the group container's 'elements' array (with the matching parentid); a field that is not referenced by any container's 'elements' array is orphaned and does NOT render.
 
 COMPLETE FORM RULES (build the ENTIRE requested form):
 A request (email, list, description, mail thread, ...) can contain MANY fields. Create EVERY field the user asked for in ONE output — never create only the most recent / most emphasized / clarified subset and never drop fields mentioned earlier.
 - "Make this group repeatable" (e.g. "+ to add more", "the answer fields can be duplicated") applies ONLY to that one group — all OTHER requested fields must still be created.
 - Map each requested input to the matching widget: single-line text → XTextField, multi-line text → XTextArea, yes/no or a choice → XCheckbox / XSelect (see CONTROL TYPES), etc.
-- A given/family name pair ("Name, Vorname") → two XTextFields on the SAME row (same 'rowid', see ROW PAIRING RULES).
+- A given/family name pair ("Name, Vorname") → two XTextFields on the SAME line (same 'rowid', see ROW GROUPING RULES).
 - Add every created field to its page's/container's 'elements' array so it actually appears on the form.
 - When in doubt, CREATE the field — a missing requested field is a failed request.
 
@@ -65,6 +72,15 @@ PRESERVE EXISTING ELEMENTS & FUNCTIONALITIES — ABSOLUTE RULE (never remove wha
 - KEEP every existing element and every property AND every `attributes` entry it has, UNLESS the user EXPLICITLY asks to remove or change it. Never drop an existing data-cb-func / data-cb-* functionality (e.g. HTML.Input.TinyMCE rich-text editor, HTML.Input.Cleave masking, HTML.Input.REGEX, OpenPLZ.Autocomplete) from a field you are not asked to change — a missing functionality is a FAIL.
 - When the request targets ONLY some elements/properties (e.g. numbering the panel titles → the panels' 'legend' property), modify ONLY those; every other element keeps its properties AND its 'attributes' exactly as in the input form.
 - NEVER interpret a change request for one thing (e.g. a title/label/number) as permission to strip other functionality (e.g. a rich-text editor or a formatter) from that or any other element.
+
+RELATIVE PLACEMENT OF A NEW ELEMENT ("unter dem Container", "über dem Container", "below/above X", "neben X"):
+- A POSITION named relative to an EXISTING element is NEVER that element's parent. "unter dem Container X" / "below the container" / "unterhalb" / "darunter" / "anschließend an" means the new element sits BELOW it, i.e. on the SAME LEVEL: add the new element's 'name' directly AFTER the reference's name in the 'elements' array of the REFERENCE's PARENT (page/container) and set the new element's properties.parentid to that PARENT's 'id'. NEVER set parentid to the referenced container's 'id' and NEVER append the new name to the referenced container's OWN 'elements' array.
+- "über dem Container X" / "oberhalb" / "darüber" / "above X" / "before the first element" / "ganz am Anfang" → insert the new element's 'name' directly BEFORE the reference's name in the PARENT's 'elements' array (position 0 when the reference is the first child).
+- "neben X" / "next to X" / "rechts/links von X" → a SIBLING directly BEFORE or AFTER X in the PARENT's 'elements' array.
+- ONLY when the user says the element shall be INSIDE ("in den Container", "im Container", "innerhalb", "into the container", "inside") do you make it a CHILD: set parentid to that container's 'id' and append its 'name' to that container's own 'elements' array.
+- "unter dem Container" is NOT "in den Container": a position phrase says WHERE in the form the element sits, not WHICH element contains it. When a request is ambiguous between BELOW and INSIDE, choose BELOW (a sibling of the referenced container).
+- The reference element comes from the request/context (e.g. "dem Container" = the container being discussed, usually the one from the previous request). Use its PARENT — do NOT invent a new wrapper container, and do NOT ask the user to clarify a relative position.
+- Example — "Füge eine Auswahl unter dem Container hinzu, der alle Ämter ... anbietet.": the new XSelect is a SIBLING of that container — parentid = the container's PARENT (the page), and the select's 'name' is inserted directly AFTER the container's name in the parent's 'elements' array. Putting it INSIDE the container (parentid = the container's 'id') is WRONG.
 
 MOVING ELEMENTS (e.g. "den Senden-Button und die Checkbox nach unten ans Formularende verschieben, nicht in einen Container" / "move X to the bottom of the form, out of the container"):
 - Moving an element ONLY re-parents THAT element: remove JUST its name from the OLD parent's 'elements' array, add it to the NEW parent's (e.g. the page's) 'elements' array, and set its properties.parentid to the new parent's name.

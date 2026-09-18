@@ -122,6 +122,15 @@ internal object InstalledFormcycleElements {
     return cache.computeIfAbsent(mandantCacheKey(mandant)) { detect(mandant, params) }
   }
 
+  /**
+   * Resolves the request's mandant (client), falling back to any available mandant when the request
+   * carries no client/project context. Public entry point for callers that need the client context
+   * outside the installed-element detection — e.g. listing the FORMCYCLE DATASOURCES configured for
+   * the current client. Returns null only when no mandant can be obtained at all.
+   */
+  fun mandantFor(params: IPluginServletActionParams): Any? =
+      resolveMandant(params) ?: loadAnyMandant(params)
+
   /** Best-effort cache key for a mandant (its id, or its toString as fallback). */
   private fun mandantCacheKey(mandant: Any): String {
     return try {

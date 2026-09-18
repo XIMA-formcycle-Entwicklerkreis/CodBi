@@ -869,6 +869,23 @@ class AICodBiAssistant : IPluginServletAction {
     logger.info(
         "[AICodBiAssistant] Clarification workflow mail nodes loaded: {} chars",
         clarificationWorkflowMails?.length ?: 0)
+    // FORMCYCLE DATASOURCES ("Quellen") configured for the request's client. Injected into BOTH the
+    // clarification and the form prompts so the AI uses an EXISTING datasource name for an
+    // XSelect's
+    // `datasource` property and, when the request names one that is MISSING/misspelled, ASKS the
+    // user
+    // to pick from the list instead of inventing a name (or falling back to HTML.Select.Injection
+    // with
+    // an invented EP). Best-effort: an empty list injects nothing, so the assistant is unaffected
+    // when
+    // the lookup fails.
+    val availableDatasourceNames = loadAvailableDatasourceNames(params)
+    val availableDatasources = buildAvailableDatasourcesBlock(availableDatasourceNames)
+    logger.info(
+        "[AICodBiAssistant] Available Formcycle datasources found: {}{}",
+        availableDatasourceNames.size,
+        if (availableDatasourceNames.isEmpty()) ""
+        else " (${availableDatasourceNames.joinToString(", ")})")
     for (round in 0 until 5) {
       val check =
           try {
@@ -890,7 +907,8 @@ class AICodBiAssistant : IPluginServletAction {
                 imageParts,
                 clarificationCompletionPages,
                 clarificationFormVariables,
-                clarificationWorkflowMails)
+                clarificationWorkflowMails,
+                availableDatasources)
           } catch (e: Exception) {
             logger.warn("[AICodBiAssistant] Clarification check failed: {}", e.message)
             null
@@ -1036,7 +1054,8 @@ class AICodBiAssistant : IPluginServletAction {
                   clarificationContext,
                   chatContext,
                   changeHistoryContext,
-                  matomoStatsContext)
+                  matomoStatsContext,
+                  availableDatasourceNames)
             } else if (repeatTranslationNoop) {
               logger.info(
                   "[AICodBiAssistant] Repeat whole-form translation: every requested language is already on the form — leaving the form unchanged (workflow multilingualize still runs).")
@@ -1053,7 +1072,9 @@ class AICodBiAssistant : IPluginServletAction {
                   clarificationContext,
                   chatContext,
                   changeHistoryContext,
-                  matomoStatsContext)
+                  matomoStatsContext,
+                  availableDatasources,
+                  availableDatasourceNames)
             }
           } catch (e: ExternalAiHttpException) {
             logger.warn("[AICodBiAssistant] Form AI HTTP {}: {}", e.httpStatus, e.body)
@@ -1874,7 +1895,8 @@ class AICodBiAssistant : IPluginServletAction {
       clarificationContext: String?,
       chatContext: String?,
       changeHistoryContext: String?,
-      matomoStatsContext: String?
+      matomoStatsContext: String?,
+      availableDatasourceNames: List<String> = emptyList()
   ): Triple<String, String?, TokenUsage> {
     val langs = addLanguages.filter { it.isNotBlank() }.distinct()
     var tokensIn = 0
@@ -1897,7 +1919,8 @@ class AICodBiAssistant : IPluginServletAction {
               clarificationContext,
               chatContext,
               changeHistoryContext,
-              matomoStatsContext)
+              matomoStatsContext,
+              availableDatasourceNames = availableDatasourceNames)
       tokensIn += usage.input
       tokensOut += usage.output
       if (applic != null) applicabilityReport = applic
@@ -1950,7 +1973,9 @@ class AICodBiAssistant : IPluginServletAction {
       clarificationContext: String? = null,
       chatContext: String? = null,
       changeHistoryContext: String? = null,
-      matomoStatsContext: String? = null
+      matomoStatsContext: String? = null,
+      availableDatasources: String? = null,
+      availableDatasourceNames: List<String> = emptyList()
   ): Triple<String, String?, TokenUsage> {
     // Rough token estimate for this run (input = prompts, output = completions), returned to the
     // frontend so the assistant can show the last inference and the current session total.
@@ -2011,6 +2036,12 @@ class AICodBiAssistant : IPluginServletAction {
       effectiveSystemPrompt +=
           "\n\n## MATOMO STATISTICS OF THE CURRENT FORM (use this data for the requested analysis / optimisation)\n\n" +
               matomoStatsContext
+    }
+    // FORMCYCLE DATASOURCES ("Quellen") configured for the current client. Appended AFTER the
+    // rendered system prompt so the AI knows the exact available names and never invents/misspells
+    // one (the .md prompts carry the rule: use a listed name, otherwise ASK instead of inventing).
+    if (!availableDatasources.isNullOrBlank()) {
+      effectiveSystemPrompt += "\n\n" + availableDatasources.trim()
     }
     val imageHint =
         if (imageParts.isNotEmpty()) {
@@ -2353,7 +2384,7 @@ class AICodBiAssistant : IPluginServletAction {
       logger.info(
           "[AICodBiAssistant] Pass-{} raw result: {}",
           rerunCount + 2,
-          compactJsonForLog(pass2Cleaned))
+          truncateForLog(compactJsonForLog(pass2Cleaned)))
       // The AI sometimes answers a form-build pass with a clarifying QUESTION instead of the form —
       // either a structured `need_clarification` meta request or loose prose (e.g. when it believes
       // it cannot derive a select's options). A `need_clarification` request is a valid meta
@@ -2396,6 +2427,13 @@ class AICodBiAssistant : IPluginServletAction {
               "[AICodBiAssistant] Pass-{} returned non-JSON prose ({} chars) — forcing final complete-form pass",
               rerunCount + 2,
               pass2Cleaned.length)
+          if (pass2Cleaned.length > DEGENERATE_RESPONSE_CHARS) {
+            logger.warn(
+                "[AICodBiAssistant] Pass-{} response looks like a repetition loop (non-JSON, {} chars > {}) — degeneration signature",
+                rerunCount + 2,
+                pass2Cleaned.length,
+                DEGENERATE_RESPONSE_CHARS)
+          }
         } else {
           logger.info(
               "[AICodBiAssistant] Rerun budget exhausted but AI still requests details - forcing final complete-form pass")
@@ -2423,7 +2461,8 @@ class AICodBiAssistant : IPluginServletAction {
         tokensOut += estimateTokens(finalRaw)
         val finalCleaned = extractJson(stripThinkTags(finalRaw))
         logger.info(
-            "[AICodBiAssistant] Final forced pass raw result: {}", compactJsonForLog(finalCleaned))
+            "[AICodBiAssistant] Final forced pass raw result: {}",
+            truncateForLog(compactJsonForLog(finalCleaned)))
         // A final clarification request is surfaced as-is (the caller turns it into the popup).
         if (parseClarificationRequest(finalCleaned) != null) return finalCleaned
         // Only use the final result if it actually produced a form; otherwise fall back to the
@@ -2573,7 +2612,8 @@ class AICodBiAssistant : IPluginServletAction {
           TokenUsage(tokensIn, tokensOut))
     }
 
-    logger.debug("[AICodBiAssistant] Form AI response: {}", compactJsonForLog(cleaned))
+    logger.debug(
+        "[AICodBiAssistant] Form AI response: {}", truncateForLog(compactJsonForLog(cleaned)))
 
     val (sanitizedCleaned, applicabilityReport) = extractAndStripCodbiApplicability(cleaned)
     if (!applicabilityReport.isNullOrBlank()) {
@@ -2627,7 +2667,13 @@ class AICodBiAssistant : IPluginServletAction {
                 gson.toJson(obj)
               }
               .getOrDefault(restored)
-      Triple(finalForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
+      // Guard the datasource selects the AI added in THIS run: canonicalise/clear fabricated
+      // `datasource` values on NEW items and drop duplicate NEW datasource selects the rerun/forced
+      // passes re-created, so the form does not grow by one duplicate select per run. Pre-existing
+      // elements are never touched.
+      val guardedForm =
+          applyNewDatasourceSelectGuards(finalForm, persistJson, availableDatasourceNames)
+      Triple(guardedForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
     } catch (_: Exception) {
       logger.warn(
           "[AICodBiAssistant] Form AI returned unparseable response ({} chars): {}",
@@ -3207,16 +3253,17 @@ class AICodBiAssistant : IPluginServletAction {
             }
           }
     }
+    val streetNamePattern = Regex("(?i)street|strasse|straße")
+    val buildingNamePattern = Regex("(?i)hausnummer|hausnr|buildingnumber|building")
     for ((parentId, classes) in openplzByParent) {
       val hasPlz = classes.contains("CodBi_OpenPLZ_AC_SET_PLZ")
       val hasLocality = classes.contains("CodBi_OpenPLZ_AC_SET_Locality")
       if (!hasPlz || !hasLocality) continue
       val children = childrenByParent[parentId] ?: continue
-      val hasStreet = children.any { it.contains(Regex("(?i)street|strasse|straße")) }
-      val hasBuilding =
-          children.any { it.contains(Regex("(?i)hausnummer|hausnr|buildingnumber|building")) }
+      val streetItem = findChildItem(resultItems, parentId, streetNamePattern)
+      val buildingItem = findChildItem(resultItems, parentId, buildingNamePattern)
       val hasAddress = children.any { it.contains(Regex("(?i)adresse|address")) }
-      if (hasStreet && hasBuilding) continue
+      if (streetItem != null && buildingItem != null) continue
       if (hasAddress) continue
       val containerEl =
           resultItems.firstOrNull {
@@ -3230,25 +3277,44 @@ class AICodBiAssistant : IPluginServletAction {
         containerProps.add("elements", newArr)
         elements = newArr
       }
-      if (!hasStreet) {
-        createAddressField(
-            resultItems,
-            elements,
-            baseTextProps,
-            parentId,
-            "tfStrasse",
-            "Straße",
-            "CodBi_OpenPLZ_AC_SET_Street")
-      }
-      if (!hasBuilding) {
-        createAddressField(
-            resultItems,
-            elements,
-            baseTextProps,
-            parentId,
-            "tfHausnummer",
-            "Hausnummer",
-            "CodBi_OpenPLZ_AC_SET_BuildingNumber")
+      // STREET AND HOUSE NUMBER SHARE ONE LINE (see the ROW GROUPING RULES): Formcycle renders
+      // sibling fields next to each other only when they carry the SAME `rowid`, and a field
+      // WITHOUT a rowid spans a full-width line of its own. These two fields are created HERE -
+      // AFTER the AI produced its form - so the AI cannot group them, and each one would otherwise
+      // claim a complete line. Join the row either field already has; otherwise use a fresh,
+      // collision-free one (the group is validated later by [normalizeRowIds]).
+      val existingRowId =
+          listOfNotNull(streetItem, buildingItem).firstNotNullOfOrNull {
+            it.getAsJsonObject("properties")
+                ?.get("rowid")
+                ?.takeIf { rowId -> rowId.isJsonPrimitive }
+                ?.asString
+                ?.trim()
+                ?.takeIf { rowId -> rowId.isNotEmpty() }
+          }
+      val pairRowId = existingRowId ?: freshRowId(collectRowIds(resultItems))
+      val street =
+          streetItem
+              ?: createAddressField(
+                  resultItems,
+                  elements,
+                  baseTextProps,
+                  parentId,
+                  "tfStrasse",
+                  "Straße",
+                  "CodBi_OpenPLZ_AC_SET_Street")
+      val building =
+          buildingItem
+              ?: createAddressField(
+                  resultItems,
+                  elements,
+                  baseTextProps,
+                  parentId,
+                  "tfHausnummer",
+                  "Hausnummer",
+                  "CodBi_OpenPLZ_AC_SET_BuildingNumber")
+      for (item in listOfNotNull(street, building)) {
+        item.getAsJsonObject("properties")?.addProperty("rowid", pairRowId)
       }
     }
   }
@@ -3287,6 +3353,43 @@ class AICodBiAssistant : IPluginServletAction {
         cls,
         parentId)
     return item
+  }
+
+  /**
+   * Returns the direct child item of [parentId] whose `name` matches [pattern] - used to detect the
+   * street / house-number fields of an address group - or `null` when there is none.
+   */
+  private fun findChildItem(
+      resultItems: JsonArray,
+      parentId: String,
+      pattern: Regex,
+  ): JsonObject? {
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val obj = el.asJsonObject
+      val props = obj.getAsJsonObject("properties") ?: continue
+      val parent = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
+      val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+      if (parent == parentId && pattern.containsMatchIn(name)) return obj
+    }
+    return null
+  }
+
+  /** Collects every `rowid` already used by the form items, so a new row never collides. */
+  private fun collectRowIds(resultItems: JsonArray): Set<String> {
+    val rowIds = linkedSetOf<String>()
+    for (el in resultItems) {
+      if (!el.isJsonObject) continue
+      val row =
+          el.asJsonObject
+              .getAsJsonObject("properties")
+              ?.get("rowid")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.trim()
+      if (!row.isNullOrEmpty()) rowIds.add(row)
+    }
+    return rowIds
   }
 
   private fun extractAppliedCodbiIds(cleanedJson: String): List<String> {
@@ -3334,6 +3437,174 @@ class AICodBiAssistant : IPluginServletAction {
       }
     } catch (_: Exception) {}
     return classNames.toList()
+  }
+
+  /**
+   * A non-JSON response LARGER than this is treated as the repetition-loop signature (the model
+   * emits hundreds of copies of the same snippet instead of a form). It is logged distinctly so the
+   * degeneration is diagnosable — the rerun strategy itself is left unchanged.
+   */
+  private val DEGENERATE_RESPONSE_CHARS = 20_000
+
+  /**
+   * Collects the `properties.name` of every root `items` entry of [json] (empty on any failure).
+   */
+  private fun collectItemNames(json: String): Set<String> {
+    val names = mutableSetOf<String>()
+    try {
+      JsonParser.parseString(json).asJsonObject.getAsJsonArray("items")?.forEach { el ->
+        if (el.isJsonObject) {
+          el.asJsonObject
+              .getAsJsonObject("properties")
+              ?.get("name")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { names.add(it) }
+        }
+      }
+    } catch (_: Exception) {}
+    return names
+  }
+
+  /** Reads a primitive property as its string form (or its JSON text), or "" when absent. */
+  private fun propText(props: JsonObject, key: String): String =
+      props.get(key)?.let { if (it.isJsonPrimitive) it.asString else it.toString() } ?: ""
+
+  /**
+   * Guards the FORMCYCLE DATASOURCE (`datasource`) bindings of form items that are NEW in
+   * [formJson] relative to the input [originalJson] — NEVER touching pre-existing elements (the
+   * absolute preserve rule forbids it; the AI must echo every existing element unchanged, so a
+   * rewritten pre-existing binding would be unexpected and is left alone). Two independent,
+   * defensive guards:
+   * 1. VALIDATION: a NEW item's `datasource` must name one of [availableDatasources]. A
+   *    case/whitespace variant is canonicalised to the configured spelling; an unknown/fabricated
+   *    name is CLEARED (logged as WARN) because it can never resolve and would otherwise leave a
+   *    silently broken select. When [availableDatasources] is EMPTY nothing is validated at all
+   *    (the lookup failed — bindings must not be destroyed).
+   * 2. DEDUPE: the rerun/forced passes re-create an `XSelect` an earlier pass of the SAME run
+   *    already added, so one run can emit two NEW selects binding the same `datasource` (with the
+   *    same `dstextidx`/`dsvalueidx` and the same or a blank `label`). Only the FIRST is kept —
+   *    every later duplicate is dropped from the root `items` array AND from its parent's
+   *    `properties.elements` array — so the form stops growing by one duplicate select per run.
+   *
+   * Validation runs BEFORE dedupe so spelling variants of the same datasource dedupe correctly.
+   * Pure (parses/serialises JSON and logs; no DB/IO) so it is unit-testable. On ANY failure
+   * [formJson] is returned unchanged.
+   */
+  private fun applyNewDatasourceSelectGuards(
+      formJson: String,
+      originalJson: String,
+      availableDatasources: List<String>
+  ): String {
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val items = root.getAsJsonArray("items") ?: return formJson
+      val originalNames = collectItemNames(originalJson)
+
+      // --- Guard 1: validate the datasource property of NEW items --------------------------------
+      if (availableDatasources.isNotEmpty()) {
+        for (item in items) {
+          if (!item.isJsonObject) continue
+          val props = item.asJsonObject.getAsJsonObject("properties") ?: continue
+          val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+          if (name in originalNames) continue
+          val value = props.get("datasource")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+          val canonical = findClosestDatasource(value, availableDatasources)
+          if (canonical == null) {
+            props.remove("datasource")
+            logger.warn(
+                "[AICodBiAssistant] Clearing unknown datasource '{}' on new element '{}'",
+                value,
+                name)
+          } else if (canonical != value) {
+            props.addProperty("datasource", canonical)
+            logger.info(
+                "[AICodBiAssistant] Normalized datasource '{}' -> '{}' on new element '{}'",
+                value,
+                canonical,
+                name)
+          }
+        }
+      }
+
+      // --- Guard 2: drop duplicate NEW datasource selects ----------------------------------------
+      fun labelOf(p: JsonObject): String =
+          p.get("label")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: ""
+      val keptSelects = mutableListOf<JsonObject>()
+      val droppedNames = LinkedHashSet<String>()
+      val droppedPairs = mutableListOf<Pair<String, String>>() // dropped name -> surviving name
+      for (item in items) {
+        if (!item.isJsonObject) continue
+        val obj = item.asJsonObject
+        if (obj.get("className")?.takeIf { it.isJsonPrimitive }?.asString != "XSelect") continue
+        val props = obj.getAsJsonObject("properties") ?: continue
+        val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
+        if (name in originalNames) continue // never touch a pre-existing select
+        val datasource =
+            props.get("datasource")?.takeIf { it.isJsonPrimitive }?.asString?.trim() ?: continue
+        if (datasource.isEmpty()) continue
+        val duplicate =
+            keptSelects.firstOrNull { kept ->
+              val kp = kept.getAsJsonObject("properties") ?: return@firstOrNull false
+              normalizeDatasourceName(propText(kp, "datasource")) ==
+                  normalizeDatasourceName(datasource) &&
+                  propText(kp, "dstextidx") == propText(props, "dstextidx") &&
+                  propText(kp, "dsvalueidx") == propText(props, "dsvalueidx") &&
+                  (labelOf(kp) == labelOf(props) ||
+                      labelOf(kp).isEmpty() ||
+                      labelOf(props).isEmpty())
+            }
+        if (duplicate == null) {
+          keptSelects.add(obj)
+        } else {
+          droppedNames.add(name)
+          droppedPairs.add(
+              name to
+                  (duplicate
+                      .getAsJsonObject("properties")
+                      ?.get("name")
+                      ?.takeIf { it.isJsonPrimitive }
+                      ?.asString ?: ""))
+        }
+      }
+      if (droppedNames.isNotEmpty()) {
+        val keep = JsonArray()
+        for (item in items) {
+          val name =
+              if (item.isJsonObject)
+                  item.asJsonObject
+                      .getAsJsonObject("properties")
+                      ?.get("name")
+                      ?.takeIf { it.isJsonPrimitive }
+                      ?.asString
+              else null
+          if (name != null && name in droppedNames) continue
+          keep.add(item)
+        }
+        root.add("items", keep)
+        // Remove references to the dropped elements from every parent's "properties.elements".
+        for (item in keep) {
+          if (!item.isJsonObject) continue
+          val props = item.asJsonObject.getAsJsonObject("properties") ?: continue
+          val elements = props.getAsJsonArray("elements") ?: continue
+          val clean = JsonArray()
+          for (ref in elements) {
+            if (ref.isJsonPrimitive && ref.asString in droppedNames) continue
+            clean.add(ref)
+          }
+          props.add("elements", clean)
+        }
+        logger.warn(
+            "[AICodBiAssistant] Dropped {} duplicate NEW datasource select(s) {} — kept {}",
+            droppedPairs.size,
+            droppedPairs.joinToString(", ") { it.first },
+            droppedPairs.map { it.second }.distinct().joinToString(", "))
+      }
+      gson.toJson(root)
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Datasource select guard failed: {}", e.message)
+      formJson
+    }
   }
 
   private val KNOWN_CLASS_NAMES =
@@ -5501,12 +5772,13 @@ class AICodBiAssistant : IPluginServletAction {
    *
    * Formcycle renders every field carrying the same `rowid` together in ONE row (the row is placed
    * in the container of the first carrier). A `rowid` is therefore only valid for a small set of
-   * DIRECT SIBLINGS in the SAME parent container - the documented PAIRS (first+last name,
-   * street+house number, PLZ+city), i.e. at most TWO fields. When the AI has copied a rowid (very
-   * often the default "0" of the applicant name pair) onto unrelated fields - possibly in other
-   * containers - all those fields collapse into a single row and appear to "move" into the first
-   * carrier's container. This guard keeps a rowid only for ONE container holding exactly two
-   * carriers and removes it from every other carrier, so no unrelated fields are merged.
+   * DIRECT SIBLINGS in the SAME parent container - the documented RELATED-FIELD GROUPS (first+last
+   * name, street+house number, PLZ+city, e-mail+phone), i.e. at most [MAX_FIELDS_PER_ROW] fields.
+   * When the AI has copied a rowid (very often the default "0" of the applicant name pair) onto
+   * unrelated fields - possibly in other containers - all those fields collapse into a single row
+   * and appear to "move" into the first carrier's container. This guard keeps a rowid only for ONE
+   * container holding a valid group of two to [MAX_FIELDS_PER_ROW] carriers and removes it from
+   * every other carrier, so no unrelated fields are merged.
    */
   private fun normalizeRowIds(resultItems: JsonArray) {
     val carriersByRow = LinkedHashMap<String, MutableList<JsonObject>>()
@@ -5525,31 +5797,34 @@ class AICodBiAssistant : IPluginServletAction {
       }
       if (byParent.size == 1) {
         val only = byParent.values.first()
-        // A single container with one rowid: valid for the documented pair (2) or a lone field (1).
-        if (only.size <= 2) continue
+        // A single container with one rowid: valid for a related-field group
+        // (2..MAX_FIELDS_PER_ROW)
+        // or a lone field (1). Beyond the cap the rowid is cleared so the fields span their own
+        // line.
+        if (only.size <= MAX_FIELDS_PER_ROW) continue
         for (props in only) props.remove("rowid")
         logger.info(
-            "[AICodBiAssistant] Cleared rowid '{}' on {} field(s) in ONE container - a rowid may only pair TWO fields",
+            "[AICodBiAssistant] Cleared rowid '{}' on {} field(s) in ONE container - a rowid may group at most {} fields",
             row,
-            only.size)
+            only.size,
+            MAX_FIELDS_PER_ROW)
         continue
       }
       // The same rowid is used across MORE THAN ONE container: it can never render as one
-      // consistent
-      // row. Keep it for the first container that holds exactly the two paired fields; every other
-      // carrier is detached. A detached container that ALSO holds a valid pair keeps its pairing -
-      // it
-      // simply gets a FRESH, collision-free rowid (so a legitimately moved field/row is never
-      // split);
-      // a detached group that is not a pair loses its rowid and spans its own line.
+      // consistent row. Keep it for the FIRST container holding a valid related-field group
+      // (2..MAX_FIELDS_PER_ROW fields); every other carrier is detached. A detached container that
+      // ALSO holds a valid group keeps its grouping - it simply gets a FRESH, collision-free rowid
+      // (so a legitimately moved field/row is never split); a detached group that is NOT a valid
+      // group (a lone field) loses its rowid and spans its own line.
       val keepParent =
-          byParent.entries.firstOrNull { it.value.size == 2 }?.key ?: byParent.keys.first()
+          byParent.entries.firstOrNull { it.value.size in 2..MAX_FIELDS_PER_ROW }?.key
+              ?: byParent.keys.first()
       val usedRowIds = carriersByRow.keys.toMutableSet()
       var reassigned = 0
       var cleared = 0
       for ((parent, group) in byParent) {
         if (parent == keepParent) continue
-        if (group.size == 2) {
+        if (group.size in 2..MAX_FIELDS_PER_ROW) {
           val fresh = freshRowId(usedRowIds)
           usedRowIds.add(fresh)
           for (props in group) props.addProperty("rowid", fresh)
@@ -16715,6 +16990,135 @@ class AICodBiAssistant : IPluginServletAction {
   }
 
   /**
+   * Reads a mandant (client) numeric id reflectively, tolerating Long / Integer / numeric string.
+   */
+  private fun mandantIdOf(mandant: Any?): Long? {
+    if (mandant == null) return null
+    return try {
+      when (val id = mandant.javaClass.getMethod("getId").invoke(mandant)) {
+        is Number -> id.toLong()
+        else -> id?.toString()?.toLongOrNull()
+      }
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  /**
+   * Loads the names of the FORMCYCLE DATASOURCES ("Quellen"/"Datenquellen") configured for the
+   * request's client (mandant). Mirrors [resolveDatabaseConnectionUuid]: (1) a JPQL query against
+   * the `de.xima.fc.entities.Datenquelle` entity, scoped to the client when its id is determinable,
+   * then (2) a native SQL fallback against the DATENQUELLE table with `information_schema` column
+   * discovery. Best-effort and defensive — ANY failure (entity/table unavailable, DB error) yields
+   * an empty list so the AI keeps working when the lookup fails.
+   */
+  private fun loadAvailableDatasourceNames(params: IPluginServletActionParams): List<String> {
+    return try {
+      val emf = CodbiEntities.entityManagerFactory ?: return emptyList()
+      val mandantId = mandantIdOf(InstalledFormcycleElements.mandantFor(params))
+      val em = emf.createEntityManager()
+      try {
+        val names = LinkedHashSet<String>()
+        // NOTE — there is deliberately NO JPQL strategy here: the entity
+        // `de.xima.fc.entities.Datenquelle` is NOT mapped in the persistence unit this plugin gets.
+        // A JPQL lookup therefore always returned nothing AND made Hibernate log
+        // `HHH000183: no persistent classes found for query class: SELECT c FROM
+        // de.xima.fc.entities.Datenquelle c` on every single request (observed in production). The
+        // concrete datasource kinds live in subclasses, so the table is read directly instead.
+        // Strategy: native SQL against DATENQUELLE/DATENQUELLEN + information_schema discovery.
+        for (table in listOf("DATENQUELLE", "DATENQUELLEN")) {
+          val nameCol =
+              discoverDatasourceColumn(em, table, listOf("NAME", "BEZEICHNUNG", "BEZ")) ?: continue
+          val clientCol =
+              discoverDatasourceColumn(
+                  em, table, listOf("CLIENT_ID", "MANDANT_ID", "MANDANTID", "FK_MANDANT"))
+          val sql =
+              if (clientCol != null && mandantId != null)
+                  "SELECT $nameCol FROM $table WHERE $clientCol = :mid"
+              else "SELECT $nameCol FROM $table"
+          val query = em.createNativeQuery(sql)
+          if (clientCol != null && mandantId != null) query.setParameter("mid", mandantId)
+          for (row in query.resultList) {
+            val name = row?.toString()?.trim()
+            if (!name.isNullOrBlank()) names.add(name)
+          }
+          if (names.isNotEmpty()) break
+        }
+        names.toList()
+      } finally {
+        em.close()
+      }
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] Could not load available datasources: {}", e.message)
+      emptyList()
+    }
+  }
+
+  /**
+   * Discovers the first present column name (from [candidates], matched case-insensitively) of
+   * [table] via `information_schema`. Returns the column name in its actual DB casing, or null when
+   * the table/column is unknown.
+   */
+  private fun discoverDatasourceColumn(
+      em: EntityManager,
+      table: String,
+      candidates: List<String>
+  ): String? {
+    return try {
+      val inList = candidates.joinToString(",") { "'${it.uppercase()}'" }
+      val sql =
+          "SELECT column_name FROM information_schema.columns WHERE UPPER(table_name) = UPPER('$table') " +
+              "AND UPPER(column_name) IN ($inList)"
+      val rawCols = em.createNativeQuery(sql).resultList.map { it.toString() }
+      for (candidate in candidates) {
+        rawCols
+            .firstOrNull { it.equals(candidate, ignoreCase = true) }
+            ?.let {
+              return it
+            }
+      }
+      null
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  /**
+   * Normalizes a datasource name for matching: trimmed, internal whitespace runs collapsed to a
+   * single space, lowercased. Used by [findClosestDatasource] so `" 56_Staatsangehörigkeiten "` and
+   * `"56_staatsangehörigkeiten"` are recognized as the same name.
+   */
+  private fun normalizeDatasourceName(name: String): String =
+      name.trim().replace(Regex("\\s+"), " ").lowercase()
+
+  /**
+   * Matches a datasource name named by the request against the AVAILABLE datasource [available]
+   * names. Returns the canonical available name on an exact or case/whitespace-insensitive match,
+   * or null when [requested] is blank or unknown/misspelled. Pure (no DB, no side effects) so it is
+   * unit-testable.
+   */
+  private fun findClosestDatasource(requested: String?, available: List<String>): String? {
+    val wanted = requested?.let { normalizeDatasourceName(it) } ?: return null
+    if (wanted.isEmpty()) return null
+    return available.firstOrNull { it.isNotBlank() && normalizeDatasourceName(it) == wanted }
+  }
+
+  /**
+   * Builds the "AVAILABLE FORMCYCLE DATASOURCES" context block appended to the clarification and
+   * form system prompts. Returns null when no datasource name is available, so nothing is injected
+   * and the AI keeps working unchanged when the lookup is unavailable. Pure (only formats the given
+   * names) so it is unit-testable.
+   */
+  private fun buildAvailableDatasourcesBlock(names: List<String>): String? {
+    val cleaned = names.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+    if (cleaned.isEmpty()) return null
+    return "\nAVAILABLE FORMCYCLE DATASOURCES (Formcycle \"Quellen\"/\"Datenquellen\") configured on " +
+        "this system — the datasource a request names MUST match one of these EXACT names:\n" +
+        cleaned.joinToString("\n") { "- $it" } +
+        "\n"
+  }
+
+  /**
    * Resolves the UUID of a project-level file resource by its filename. Queries the
    * RESOURCE_PROJECT table to find a file matching the given name for the workflow version's
    * project. Returns null if the file is not found.
@@ -17332,31 +17736,78 @@ class AICodBiAssistant : IPluginServletAction {
     }
   }
 
-  /** Parses a `need_clarification` JSON response into a [ClarificationRequest], or null. */
+  /**
+   * Parses a `need_clarification` JSON response into a [ClarificationRequest], or null.
+   *
+   * The CANONICAL shape is `{"status":"need_clarification","questions":[{"id":...,"question":...,
+   * "options":[...]}]}`. Models frequently deviate, and a REJECTED clarification is far worse than
+   * a sloppy one: the meta response is then spliced as if it were the form, so the run ends with a
+   * question the user never sees and a form that does not change. Observed in production:
+   * `{"status":"need_clarification","question":"Bitte geben Sie den genauen Namen der Datenquelle
+   * ... an."}` (singular STRING instead of the array). Therefore a single question OBJECT, a bare
+   * question STRING, and the alternative keys `text`/`title`/`clarification`/`message` are accepted
+   * too.
+   */
   private fun parseClarificationRequest(cleaned: String): ClarificationRequest? {
     return try {
       val obj = JsonParser.parseString(cleaned).asJsonObject
       if (obj.get("status")?.asString != "need_clarification") return null
-      val qs = obj.getAsJsonArray("questions") ?: return null
-      if (qs.size() == 0) return null
       val questions = mutableListOf<ClarificationQuestion>()
-      for (el in qs) {
-        if (!el.isJsonObject) continue
-        val q = el.asJsonObject
-        val question = q.get("question")?.asString?.takeIf { it.isNotBlank() } ?: continue
-        val id = q.get("id")?.asString?.takeIf { it.isNotBlank() } ?: "q${questions.size + 1}"
-        val options =
-            q.getAsJsonArray("options")?.mapNotNull {
-              it.takeIf { x -> x.isJsonPrimitive }?.asString?.takeIf { s -> s.isNotBlank() }
-            } ?: emptyList()
-        val allowFree = q.get("allowFreeText")?.asBoolean ?: true
-        val multiSelect = q.get("multiSelect")?.asBoolean ?: false
-        questions.add(ClarificationQuestion(id, question, options, allowFree, multiSelect))
+      // Canonical shape: "questions": [ { "question": ..., "options": [...] }, ... ] — a plain
+      // STRING entry inside the array is tolerated as well.
+      obj.getAsJsonArray("questions")?.let { qs ->
+        for (el in qs) {
+          val q = questionFromJson(el, questions.size + 1) ?: continue
+          questions.add(q)
+        }
+      }
+      // Tolerated single-question shapes: {"question":"<text>"} / {"question":{...}} and the
+      // common alternative keys.
+      if (questions.isEmpty()) {
+        for (key in listOf("question", "clarification", "message")) {
+          val q = questionFromJson(obj.get(key), 1) ?: continue
+          questions.add(q)
+          break
+        }
       }
       if (questions.isEmpty()) null else ClarificationRequest(questions)
     } catch (_: Exception) {
       null
     }
+  }
+
+  /**
+   * Builds a [ClarificationQuestion] from a question JSON element (an OBJECT with a question text,
+   * or a bare STRING), or null when it carries no usable question text. [fallbackIndex] numbers the
+   * generated `id` because the AI regularly omits it.
+   */
+  private fun questionFromJson(el: JsonElement?, fallbackIndex: Int): ClarificationQuestion? {
+    if (el == null || el.isJsonNull) return null
+    if (el.isJsonPrimitive) {
+      val text = el.asString?.trim().orEmpty()
+      return if (text.isEmpty()) null
+      else ClarificationQuestion("q$fallbackIndex", text, emptyList(), true, false)
+    }
+    if (!el.isJsonObject) return null
+    val q = el.asJsonObject
+    val text = firstNonBlankString(q.get("question"), q.get("text"), q.get("title")) ?: return null
+    val id = firstNonBlankString(q.get("id")) ?: "q$fallbackIndex"
+    val options =
+        q.getAsJsonArray("options")?.mapNotNull {
+          it.takeIf { x -> x.isJsonPrimitive }?.asString?.takeIf { s -> s.isNotBlank() }
+        } ?: emptyList()
+    val allowFree = q.get("allowFreeText")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: true
+    val multiSelect = q.get("multiSelect")?.takeIf { it.isJsonPrimitive }?.asBoolean ?: false
+    return ClarificationQuestion(id, text, options, allowFree, multiSelect)
+  }
+
+  /** Returns the first non-blank string value among [elements], or null. */
+  private fun firstNonBlankString(vararg elements: JsonElement?): String? {
+    for (el in elements) {
+      val value = el?.takeIf { it.isJsonPrimitive }?.asString?.trim()
+      if (!value.isNullOrEmpty()) return value
+    }
+    return null
   }
 
   /**
@@ -17470,7 +17921,8 @@ class AICodBiAssistant : IPluginServletAction {
       askAllQuestions: Boolean,
       completionPages: String? = null,
       formVariables: String? = null,
-      workflowMails: String? = null
+      workflowMails: String? = null,
+      availableDatasources: String? = null
   ): String {
     val action =
         when (intent) {
@@ -17584,6 +18036,12 @@ class AICodBiAssistant : IPluginServletAction {
                 workflowMails +
                 "\n"
           } else ""
+      // FORMCYCLE DATASOURCES of the current client. The .md prompt carries the rule: when the
+      // request names a datasource that is NOT in this list (misspelled/unknown) or clearly implies
+      // one without naming it, do NOT invent a name and do NOT fall back to HTML.Select.Injection
+      // with an invented EP — ASK the user, offering these names as the question's options.
+      val availableDatasourcesBlock =
+          if (!availableDatasources.isNullOrBlank()) availableDatasources.trim() + "\n" else ""
       return template
           .replace("{{ACTION}}", action)
           .replace("{{USER_REQUEST}}", gson.toJson(prompt))
@@ -17598,7 +18056,8 @@ class AICodBiAssistant : IPluginServletAction {
           .replace("{{CHANGE_HISTORY_STATUS}}", changeHistoryStatus) +
           completionPagesBlock +
           formVariablesBlock +
-          workflowMailsBlock
+          workflowMailsBlock +
+          availableDatasourcesBlock
     }
     // No prompt text is embedded in the backend: the clarification prompt is sourced exclusively
     // from
@@ -18059,7 +18518,8 @@ class AICodBiAssistant : IPluginServletAction {
       imageParts: List<String>,
       completionPages: String? = null,
       formVariables: String? = null,
-      workflowMails: String? = null
+      workflowMails: String? = null,
+      availableDatasources: String? = null
   ): ClarificationCheck? {
     val system =
         buildClarificationSystemPrompt(
@@ -18077,7 +18537,8 @@ class AICodBiAssistant : IPluginServletAction {
             askAllQuestions,
             completionPages,
             formVariables,
-            workflowMails)
+            workflowMails,
+            availableDatasources)
     val messagesJson = buildString {
       append("[")
       append("""{"role":"system","content":${gson.toJson(system)}},""")
@@ -18087,7 +18548,9 @@ class AICodBiAssistant : IPluginServletAction {
     val raw = instance.performFormAssist(modelId, messagesJson)
     val cleaned = extractJson(stripThinkTags(raw)).trim()
     logger.info("[AICodBiAssistant] Clarification check response: {}", compactJsonForLog(cleaned))
-    if (cleaned.isBlank() || cleaned.equals("NO_CLARIFICATION", ignoreCase = true)) return null
+    // Tolerate a trailing suffix on the sentinel (observed in production:
+    // "NO_CLARIFICATIONAVAILABLE"), which otherwise fell through and silently skipped the round.
+    if (cleaned.isBlank() || cleaned.uppercase().startsWith("NO_CLARIFICATION")) return null
     if (isNeedFormListRequest(cleaned)) return ClarificationCheck(needsFormList = true)
     val (wantsHistory, historyFormKey) = parseHistoryRequest(cleaned)
     if (wantsHistory) {
@@ -18596,6 +19059,15 @@ class AICodBiAssistant : IPluginServletAction {
      * the newly requested elements/widgets before giving up and splicing the last result.
      */
     private const val MAX_FORM_RERUNS = 2
+
+    /**
+     * Maximum number of fields that may share ONE Formcycle row (all carrying the same `rowid`).
+     * Related fields (first+last name, street+house number, PLZ+city, e-mail+phone) belong on one
+     * line, but a row with more than four fields becomes unreadable - so a group is only honoured
+     * for two to this many DIRECT SIBLINGS of the SAME parent container, and anything beyond it is
+     * split back onto separate lines by [normalizeRowIds].
+     */
+    private const val MAX_FIELDS_PER_ROW = 4
 
     // All prompt texts (structure rules, control-types rules, complete-form rules, change-log
     // schema, chat context, chat system prompt, fallback prompts) live in the bundled .md files

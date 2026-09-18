@@ -11,10 +11,12 @@ import org.junit.jupiter.api.Test
  * Tests for [AICodBiAssistant]'s `normalizeRowIds` guard.
  *
  * Formcycle renders every field that carries the same `rowid` together in ONE row (placed in the
- * container of the first carrier). The AI sometimes copies a field's rowid (very often the default
- * "0" of the applicant name pair) onto unrelated fields, merging them all into one row that appears
- * in the wrong container. The guard must keep a rowid only for a single container holding exactly
- * the two paired fields and clear it from every other carrier.
+ * container of the first carrier). A rowid groups RELATED fields (first+last name, street+house
+ * number, PLZ+city, e-mail+phone) — between two and four of them, never more. The AI sometimes
+ * copies a field's rowid (very often the default "0" of the applicant name pair) onto unrelated
+ * fields, merging them all into one row that appears in the wrong container. The guard must keep a
+ * rowid only for a single container holding a valid group (two to four fields) that shares one line
+ * without pulling fields into another container.
  */
 class FormRowidNormalizationTest {
 
@@ -51,30 +53,61 @@ class FormRowidNormalizationTest {
   }
 
   @Test
-  fun keepsPairOnlyForOneContainerWhenSharedAcrossContainers() {
+  fun keepsTheFirstGroupAndDetachesTheOthersWhenSharedAcrossContainers() {
     // Reproduces the regression: the applicant pair and the business fields all carry rowid "0".
     val arr =
         normalize(
             """[${field("firstName", "coApplicant", "0")},${field("lastName", "coApplicant", "0")},""" +
                 """${field("businessName", "coBusiness", "0")},${field("street", "coBusiness", "0")},""" +
                 """${field("plz", "coBusiness", "0")}]""")
-    // The pair in the FIRST container holding exactly two fields keeps its row ...
+    // The group in the FIRST container keeps the original row ...
     assertEquals("0", rowidOf(arr, "firstName"))
     assertEquals("0", rowidOf(arr, "lastName"))
-    // ... every other carrier is cleared so it spans its own line (no merged mega-row).
-    assertNull(rowidOf(arr, "businessName"))
-    assertNull(rowidOf(arr, "street"))
-    assertNull(rowidOf(arr, "plz"))
+    // ... the other container is detached onto a FRESH row of its own, so its fields keep sharing
+    // one line WITHOUT being pulled into the first container's row (no merged mega-row).
+    val detached = rowidOf(arr, "businessName")
+    assertEquals(detached, rowidOf(arr, "street"))
+    assertEquals(detached, rowidOf(arr, "plz"))
+    assertTrue(detached != null && detached != "0", "the detached group must get a fresh rowid")
   }
 
   @Test
-  fun clearsRowidWhenMoreThanTwoFieldsOfOneContainerShareIt() {
+  fun keepsThreeRelatedFieldsOfOneContainer() {
+    // Three related fields still share ONE line (e.g. first + middle + last name).
     val arr =
         normalize(
             """[${field("x", "coBusiness", "0")},${field("y", "coBusiness", "0")},${field("z", "coBusiness", "0")}]""")
-    assertNull(rowidOf(arr, "x"))
-    assertNull(rowidOf(arr, "y"))
-    assertNull(rowidOf(arr, "z"))
+    assertEquals("0", rowidOf(arr, "x"))
+    assertEquals("0", rowidOf(arr, "y"))
+    assertEquals("0", rowidOf(arr, "z"))
+  }
+
+  @Test
+  fun keepsFourRelatedFieldsOfOneContainer() {
+    // Four fields is the maximum for one line (e.g. street + house number + PLZ + city).
+    val arr =
+        normalize(
+            """[${field("a", "coAddress", "0")},${field("b", "coAddress", "0")},""" +
+                """${field("c", "coAddress", "0")},${field("d", "coAddress", "0")}]""")
+    assertEquals("0", rowidOf(arr, "a"))
+    assertEquals("0", rowidOf(arr, "b"))
+    assertEquals("0", rowidOf(arr, "c"))
+    assertEquals("0", rowidOf(arr, "d"))
+  }
+
+  @Test
+  fun clearsRowidWhenMoreThanFourFieldsOfOneContainerShareIt() {
+    // More than four fields on ONE line is unreadable - the cap splits them onto separate lines.
+    val arr =
+        normalize(
+            """[${field("a", "coAddress", "0")},${field("b", "coAddress", "0")},""" +
+                """${field("c", "coAddress", "0")},${field("d", "coAddress", "0")},""" +
+                """${field("e", "coAddress", "0")}]""")
+    assertNull(rowidOf(arr, "a"))
+    assertNull(rowidOf(arr, "b"))
+    assertNull(rowidOf(arr, "c"))
+    assertNull(rowidOf(arr, "d"))
+    assertNull(rowidOf(arr, "e"))
   }
 
   @Test

@@ -15,6 +15,13 @@ package com.github.xima_formcycle_entwicklerkreis.fc.plugin.codbi.logic.cb
  * - A non-`null` set restricts that category to exactly the listed identifiers (normalized
  *   case-insensitively); an **empty** set disables every element of that category.
  *
+ * In addition, the element names that are FORBIDDEN for the current user
+ * (`AI_FormAssistant_ForbiddenElements_NonSyncUsers` / `…_<username>`, see [CodBiElementAccess])
+ * are honoured here as well: an entry naming a FORMCYCLE widget (`XTextField`), a workflow node
+ * (`FC_EMAIL`) or a trigger hides that element from the AI exactly like the element picker does.
+ * This lets an administrator forbid a potentially dangerous FORMCYCLE element with the very same
+ * property that already hides CodBi elements.
+ *
  * Normalization strips every non-alphanumeric character and lowercases, so `XTextField` matches the
  * compact key `compact.formcycle_widgets.xtextfield`, and `FC_EMAIL` matches `fc_email`.
  */
@@ -69,33 +76,60 @@ internal object FormcycleElementFilter {
 
   /**
    * Returns `true` when the widget with the given identifier may be transmitted to the AI. When no
-   * widget restriction is active (or [id] is blank), this always returns `true`.
+   * widget restriction is active (or [id] is blank), this always returns `true` — unless a
+   * configured FORBIDDEN element matches [id].
    */
   fun isWidgetAllowed(id: String?): Boolean {
     if (id.isNullOrBlank()) return true
+    val n = normalize(id)
+    if (n in forbidden()) return false
     val allowed = allowedForRequest.get()?.widgets ?: return true
-    return normalize(id) in allowed
+    return n in allowed
   }
 
   /**
    * Returns `true` when the workflow node with the given type identifier may be transmitted to the
-   * AI. When no node restriction is active (or [id] is blank), this always returns `true`.
+   * AI. When no node restriction is active (or [id] is blank), this always returns `true` — unless
+   * a configured FORBIDDEN element matches [id].
    */
   fun isNodeAllowed(id: String?): Boolean {
     if (id.isNullOrBlank()) return true
+    val n = normalize(id)
+    if (n in forbidden()) return false
     val allowed = allowedForRequest.get()?.nodes ?: return true
-    return normalize(id) in allowed
+    return n in allowed
   }
 
   /**
    * Returns `true` when the workflow trigger with the given type identifier may be transmitted to
-   * the AI. When no trigger restriction is active (or [id] is blank), this always returns `true`.
+   * the AI. When no trigger restriction is active (or [id] is blank), this always returns `true` —
+   * unless a configured FORBIDDEN element matches [id].
    */
   fun isTriggerAllowed(id: String?): Boolean {
     if (id.isNullOrBlank()) return true
+    val n = normalize(id)
+    if (n in forbidden()) return false
     val allowed = allowedForRequest.get()?.triggers ?: return true
-    return normalize(id) in allowed
+    return n in allowed
   }
+
+  /**
+   * The identifiers FORBIDDEN for the current request's user, taken from
+   * [CodBiElementAccess.hiddenElementIdentifiers] (the `AI_FormAssistant_ForbiddenElements_*`
+   * properties) and re-normalized with this object's [normalize], so a FORMCYCLE widget
+   * (`XTextField` → `xtextfield`), workflow node (`FC_EMAIL` → `fcemail`) or trigger configured
+   * there matches the identifiers used by [isWidgetAllowed] / [isNodeAllowed] / [isTriggerAllowed].
+   * Empty when no user-scoped filter is active.
+   */
+  private fun forbidden(): Set<String> =
+      try {
+        CodBiElementAccess.hiddenElementIdentifiers()
+            .map { normalize(it) }
+            .filter { it.isNotEmpty() }
+            .toSet()
+      } catch (_: Exception) {
+        emptySet()
+      }
 
   /**
    * Removes every `## <name>`-style section from [text] whose heading is NOT an allowed widget (per
@@ -104,9 +138,11 @@ internal object FormcycleElementFilter {
    * blob with `## XTextField` sections) when only some widgets are allowed.
    */
   fun scrubWidgetSections(text: String): String {
-    if (!isWidgetFiltering()) return text
+    val allowed = allowedForRequest.get()?.widgets
+    val forbidden = forbidden()
+    if (allowed == null && forbidden.isEmpty()) return text
     return scrubSections(
-        text, isAllowed = { normalize(it) in (allowedForRequest.get()?.widgets ?: emptySet()) })
+        text, isAllowed = { id -> (allowed == null || id in allowed) && id !in forbidden })
   }
 
   /**
@@ -114,9 +150,11 @@ internal object FormcycleElementFilter {
    * <name>`).
    */
   fun scrubNodeSections(text: String): String {
-    if (!isNodeFiltering()) return text
+    val allowed = allowedForRequest.get()?.nodes
+    val forbidden = forbidden()
+    if (allowed == null && forbidden.isEmpty()) return text
     return scrubSections(
-        text, isAllowed = { normalize(it) in (allowedForRequest.get()?.nodes ?: emptySet()) })
+        text, isAllowed = { id -> (allowed == null || id in allowed) && id !in forbidden })
   }
 
   /**
@@ -124,9 +162,11 @@ internal object FormcycleElementFilter {
    * <name>`).
    */
   fun scrubTriggerSections(text: String): String {
-    if (!isTriggerFiltering()) return text
+    val allowed = allowedForRequest.get()?.triggers
+    val forbidden = forbidden()
+    if (allowed == null && forbidden.isEmpty()) return text
     return scrubSections(
-        text, isAllowed = { normalize(it) in (allowedForRequest.get()?.triggers ?: emptySet()) })
+        text, isAllowed = { id -> (allowed == null || id in allowed) && id !in forbidden })
   }
 
   /**
@@ -142,7 +182,7 @@ internal object FormcycleElementFilter {
    * preserved. No-op when node filtering is inactive.
    */
   fun scrubNodeProse(text: String): String {
-    if (!isNodeFiltering()) return text
+    if (allowedForRequest.get()?.nodes == null && forbidden().isEmpty()) return text
     val lines = text.split("\n").toMutableList()
     val out = ArrayList<String>(lines.size)
     var i = 0
@@ -192,10 +232,14 @@ internal object FormcycleElementFilter {
    * static, node-specific instruction blocks); when such a node IS allowed the block is kept.
    */
   private fun referencesDisallowedHardcodedNode(line: String): Boolean {
-    val allowed = allowedForRequest.get()?.nodes ?: return false
+    val allowed = allowedForRequest.get()?.nodes
+    val forbidden = forbidden()
+    if (allowed == null && forbidden.isEmpty()) return false
     val lower = line.lowercase()
     for ((fqcn, markers) in HARDCODED_NODE_PROSE) {
-      if (isNodeAllowedDeep(fqcn, allowed)) continue
+      val nodeId = normalize(fqcn)
+      val isForbidden = forbidden.any { nodeId == it || nodeId.endsWith(it) }
+      if (!isForbidden && (allowed == null || isNodeAllowedDeep(fqcn, allowed))) continue
       if (lower.contains(fqcn.lowercase())) return true
       if (markers.any { lower.contains(it) }) return true
     }

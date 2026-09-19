@@ -22,6 +22,14 @@ import org.slf4j.LoggerFactory
  * (`codbi.functionalities.ai_llama_chat`) or as the normalized element identifier
  * (`ai_llama_chat`); all forms are matched case-insensitively.
  *
+ * Besides CodBi elements the same CSV may name **FORMCYCLE elements** — a widget class
+ * (`XTextField`, `XTextArea`, …), a workflow node (`FC_EMAIL`, `FC_SQL_STATEMENT`, …) or a trigger.
+ * These are not prompt records, so they are enforced by [FormcycleElementFilter]: the matching
+ * widget / node / trigger reference section (and the node-specific prose of the prompt templates)
+ * is omitted from what is transmitted to the AI, exactly like the element picker's "Nicht
+ * installierte Elemente erstellen" filter. This lets an administrator forbid a potentially
+ * dangerous FORMCYCLE element with the same property that already hides CodBi elements.
+ *
  * The `APIDoc_UsersAllowedToSYNC` semantics (lower-cased CSV, matched against the lower-cased
  * logged-in user) mirror the Local API-Doc store's `StructuredDataStoreAction`.
  */

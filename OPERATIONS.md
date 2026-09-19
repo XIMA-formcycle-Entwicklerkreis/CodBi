@@ -212,8 +212,9 @@ Set the `Active_AI` plugin property to a comma-separated list of modules:
 | `LDAP_URL_BACKEND` | LDAP backend URL |
 | `Matomo_SiteID` / `Matomo_URL` | Matomo analytics tracking |
 | `APIDoc_UsersAllowedToSYNC` | Users allowed to sync the API-Documentation Manager |
-| `AI_FormAssistant_ForbiddenElements_NonSyncUsers` | CSV of CodBi elements whose prompts are never transmitted to the AI for any user NOT listed in `APIDoc_UsersAllowedToSYNC` (as if deactivated in the Prompt Manager) |
-| `AI_FormAssistant_ForbiddenElements_<username>` | CSV of CodBi elements whose prompts are never transmitted to the AI when the user `<username>` (the property-name suffix) runs an inference — e.g. `AI_FormAssistant_ForbiddenElements_john.doe` hides the listed elements for `john.doe` only |
+| `AI_Log_SensitiveElements` | CSV of elements that are considered **sensitive** and must be verified by the editor in the AI change log (always-on red border + a per-node verification checkbox; the log also opens automatically after an inference that used one of them). May name CodBi elements (`HTML.CSS`, `OpenPLZ.Autocomplete`), **FORMCYCLE widgets** (`XTextField`, `XTextArea`) and **workflow nodes / triggers** (`FC_EMAIL`, `FC_SQL_STATEMENT`). Re-read on every log load, so changes take effect the next time the log is opened |
+| `AI_FormAssistant_ForbiddenElements_NonSyncUsers` | CSV of elements whose prompts are never transmitted to the AI for any user NOT listed in `APIDoc_UsersAllowedToSYNC` (as if deactivated in the Prompt Manager). Besides CodBi elements it may name **FORMCYCLE widgets / workflow nodes / triggers** (e.g. `XTextField`, `FC_EMAIL`), which are then hidden from the AI exactly like the element picker's "Nicht installierte Elemente erstellen" filter |
+| `AI_FormAssistant_ForbiddenElements_<username>` | CSV of elements whose prompts are never transmitted to the AI when the user `<username>` (the property-name suffix) runs an inference — e.g. `AI_FormAssistant_ForbiddenElements_john.doe` hides the listed elements for `john.doe` only. Accepts CodBi elements as well as **FORMCYCLE widgets / workflow nodes / triggers** (see the row above) |
 
 ---
 

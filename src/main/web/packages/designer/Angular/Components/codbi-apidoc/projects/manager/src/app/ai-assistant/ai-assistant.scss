@@ -18,6 +18,23 @@ cb-ai-assistant {
     max-width: calc(100vw - 16px);
 }
 
+/* CLOSED state of the kept-mounted dialog (see AiAssistant.close() / onVisibleChange(false)).
+   PrimeNG re-applies its OWN inline `display:flex` to the dialog whenever it re-renders it
+   (inlineStyles.root), so the inline `display:none` written by the component can be overwritten —
+   which left the dialog VISIBLE after a run that does not reload the page (e.g. a form/widgets-only
+   inference), most noticeably while the dialog was maximized. A stylesheet declaration with
+   `!important` beats the normal-priority inline declaration, so this hides it reliably. The mask
+   nests the dialog, so it must be hidden with it. */
+.p-dialog.cb-ai-assistant-dialog.cb-ai-assistant-dialog--hidden {
+    display: none !important;
+    pointer-events: none !important;
+}
+
+.p-dialog-mask:has(.cb-ai-assistant-dialog--hidden) {
+    display: none !important;
+    pointer-events: none !important;
+}
+
 .p-dialog.cb-ai-assistant-dialog .p-dialog-header {
     flex-shrink: 0;
 }

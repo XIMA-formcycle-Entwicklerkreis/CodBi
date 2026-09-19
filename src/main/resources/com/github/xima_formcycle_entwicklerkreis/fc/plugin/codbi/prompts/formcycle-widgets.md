@@ -106,16 +106,28 @@ Example for Ja/Nein as RADIO BUTTONS (honor the clarified control type):
 XSELECT FED BY A FORMCYCLE DATASOURCE ("Quelle" / "Datenquelle" / "source") — this is the element's OWN "Data source" property, NOT a functionality and NOT an EP:
 A "Quelle" / "Datenquelle" / "source" — typically named together with a column ("Spalte 1 in der Quelle Staatsangehörigkeiten", "column 1 of the source X") — means a FORMCYCLE DATASOURCE that is configured server-side in the Formcycle backend. It is NOT an element placeholder (EP): NEVER wire it with data-cb-func="html.select.injection" and NEVER invent an EP like `{ Staatsangehoerigkeit > column1 }` (a datasource name is not an EP id — such a placeholder cannot resolve). Bind the datasource with the XSelect's own properties:
 - `datasource`: the datasource configured in the Formcycle backend — use the name the request gives AS-IS. Datasources are server-side data (like DataQueries): NEVER ask whether the datasource exists, and never ask for its internal ID.
-- `dstextidx`: the 1-BASED number of the column whose values become the option TEXT.
+- `dstextidx`: the 1-BASED number of the column whose values become the option TEXT (what the user SEES in the list).
 - `dsvalueidx`: the 1-BASED number of the column whose values become the option VALUE (the submitted value).
-- `dstitleidx` (optional): the 1-BASED number of the column whose values become the option title/tooltip.
+- `dstitleidx` (optional): the 1-BASED number of the column whose values become the option title/tooltip. A "Titel-Spalte" / "title column" ALWAYS belongs here.
 - `dstype` (optional): the datasource kind — one of `DB`, `CSV`, `JSON`, `XML`, `LDAP`, `USER`, `PLUGIN`. Set it only when the request names the kind.
-- `ds_rendercolattr` (optional): renders a datasource column as an attribute on the option.
+- `ds_rendercolattr` (optional): "Render all attributes" — `"1"` renders EVERY datasource column as an attribute on each option. Set it when the user asks for all columns/attributes to be rendered on the options.
+- `showpleaseselect`: "Show default option" — `"1"` adds a leading DEFAULT option so NOTHING is preselected ("wenn nichts ausgewählt ist, soll … da stehen" / "Bitte wählen" / "show a default option"). The default option's TEXT is Formcycle-localized: there is NO text property, so NEVER use `placeholder` for it (an XSelect renders no placeholder) and never invent a property.
+- `removeduplicatetextvaluepairs`: "Remove duplicate text-pairs" — `"1"` removes options that share the same text+value pair ("doppelte Werte sollen entfernt werden" / "remove duplicate values"). For a DATASOURCE select this is the XSelect's OWN property — NEVER use the `Unique` element placeholder / `html.select.injection` for it.
+- `showpleaseselectreq` (optional): the default option counts as a REQUIRED selection (the user must actively choose). Keep the template default unless the default option itself shall be mandatory.
 - `options` MUST stay an EMPTY array (`[]`): the entries are resolved FROM the datasource at render time, exactly like an EP-fed select. Never put static option objects here for a datasource select.
-COLUMN NUMBERS ARE 1-BASED — "Spalte 1" is the FIRST column. When the request names ONE column, use it for BOTH text and value (`dstextidx` AND `dsvalueidx`); when it names TWO columns ("Spalte 1 als Text, Spalte 2 als Wert"), map each to its own property. (The designer's defaults are dstextidx "1" and dsvalueidx "2".)
+COLUMN NUMBERS ARE 1-BASED — "Spalte 1" is the FIRST column. (The designer's defaults are dstextidx "1" and dsvalueidx "2".)
+MAP THE USER'S WORD TO THE PROPERTY — the WORD the user uses for a column decides which of the THREE properties it fills; a TITLE column is NEVER the text column:
+- TEXT → `dstextidx` ("Text-Spalte", "Spalte N als Text", "Anzeigetext", "Anzeige-Spalte", "Optionstext", "Optionen", "Beschriftung", "display column", "text column", "label column").
+- VALUE → `dsvalueidx` ("Wert-Spalte", "Spalte N als Wert", "Wert", "übermittelter Wert", "value column", "submitted value").
+- TITLE → `dstitleidx` ("Titel-Spalte", "Spalte N als Titel", "Titel", "Tooltip-Spalte", "Tooltip", "title column", "tooltip"). A named TITLE column goes into `dstitleidx` ONLY — NEVER into `dstextidx`/`dsvalueidx`.
+The default "ONE named column → set BOTH `dstextidx` AND `dsvalueidx` to it" applies ONLY to a column WITHOUT a role word ("Spalte 1", "column 1"); a column that carries a role word is assigned ONLY to that role's property. Several role columns may be named together — map each to its own property ("Spalte 1 als Text, Spalte 2 als Wert", plus "Titel-Spalte = Spalte 5" → `dstextidx` 1, `dsvalueidx` 2, `dstitleidx` 5).
 Example — "Füge eine Auswahl hinzu, die die Spalte 1 in der Quelle Staatsangehörigkeiten als Option anbietet.":
 ```json
 {"className":"XSelect","properties":{"name":"selStaatsangehoerigkeit","id":"xi-sel-staatsangehoerigkeit","label":"Staatsangehörigkeit","required":"0","fullwidth":"0","datasource":"Staatsangehörigkeiten","dstextidx":"1","dsvalueidx":"1","options":[]}}
+```
+Example with a SEPARATE title column — "Auswahl aus der Quelle FOR0308-Flurfoerderzeuge, Spalte 2 als Option, Spalte 4 als Wert, Titel-Spalte ist Spalte 5.":
+```json
+{"className":"XSelect","properties":{"name":"selFlurfoerderzeuge","id":"xi-sel-flurfoerderzeuge","label":"Auswahl","required":"0","fullwidth":"0","datasource":"FOR0308-Flurfoerderzeuge","dstextidx":"2","dsvalueidx":"4","dstitleidx":"5","options":[]}}
 ```
 
 ## XCheckbox

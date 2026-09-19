@@ -22,6 +22,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.google.gson.JsonPrimitive
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
@@ -1500,6 +1501,16 @@ class AICodBiAssistant : IPluginServletAction {
         }
       }
     }
+    // The AI cannot know workflow-state UUIDs (and must never ask the user for one — the user does
+    // not know it either), so it writes the state NAME the user used (e.g. "GOGO") into an
+    // element's availability arrays (`viewstatus` / `readonly_viewstatus`). Resolve those names to
+    // the WorkflowState UUIDs of this workflow version — the states the workflow step of THIS run
+    // creates / ends in. Names that do not resolve are kept (the designer accepts the name too).
+    if (resolvedFormJson != null && workflowVersionId != null) {
+      resolveElementStateNames(resolvedFormJson, workflowVersionId, params)?.let {
+        resolvedFormJson = it
+      }
+    }
     // Emit the (possibly adjusted) form JSON here, after the workflow step — see the NOTE above the
     // form-modification block. For "workflow"-only runs formJson is emitted ONLY when the form was
     // actually changed (submit button ensured and/or orphaned elements repaired; resolvedFormJson
@@ -1516,16 +1527,29 @@ class AICodBiAssistant : IPluginServletAction {
     val runCurrency = modelPrice?.currency
 
     // Compute the change description — used both for the change-log record and to detect whether
-    // any configured "sensitive" CodBi element (AI_Log_SensitiveElements) was used by this run.
-    // The guard covers "form"/"both" runs AND workflow-only runs where a missing submit button was
-    // added (both persistJson and resolvedFormJson are then non-null).
+    // any configured "sensitive" element (AI_Log_SensitiveElements) was used by this run. The
+    // configured list may hold CodBi elements AND FORMCYCLE widgets (e.g. "XTextField") as well as
+    // workflow node types (e.g. "FC_EMAIL"). The guard covers "form"/"both" runs AND workflow-only
+    // runs where a missing submit button was added (both persistJson and resolvedFormJson are then
+    // non-null).
     var formChanges: JsonObject? = null
     if (persistJson != null && resolvedFormJson != null) {
       formChanges = AiAssistantLog.computeFormChanges(persistJson, resolvedFormJson)
     }
     val sensitiveUsed =
-        formChanges?.let { AiAssistantLog.usedSensitiveElements(it, AI.logSensitiveElements) }
-            ?: emptyList()
+        LinkedHashSet<String>()
+            .apply {
+              formChanges?.let {
+                addAll(AiAssistantLog.usedSensitiveElements(it, AI.logSensitiveElements))
+              }
+              // FORMCYCLE workflow nodes are sensitive too: a configured node type (FC_EMAIL,
+              // FC_SQL_STATEMENT, ...), a custom trigger type or a node name marks the change log
+              // with the same red border + verification checkbox as a sensitive CodBi element.
+              addAll(
+                  AiAssistantLog.usedSensitiveWorkflowElements(
+                      workflowNodes, AI.logSensitiveElements))
+            }
+            .sorted()
     // Destructive SQL statements the AI generated that were blocked by the backend sanitizer. Like
     // sensitive elements, these make the frontend auto-open the change log (with an error icon) so
     // the user sees that the destructive statement was NOT persisted.
@@ -2644,13 +2668,47 @@ class AICodBiAssistant : IPluginServletAction {
               throw first
             }
           }
+      // gson turns a JSON `null` into JsonNull, whose getAsString()/getAsJsonArray() THROW. Remove
+      // every null from the model's tree before ANY normalization touches it, so one echoed
+      // `"parentid": null` can never abort the whole build (crash: UnsupportedOperationException).
+      stripJsonNulls(parsed)
       warnUnknownClassNames(parsed)
       // Sanitize the AI output before it reaches the designer: fold invented standalone buttons
       // into an XButtonList and drop any item with an unknown className or missing id (such items
-      // would otherwise break the designer's persist patch and never render).
-      if (parsed.isJsonObject) sanitizeAiFormItems(parsed.asJsonObject)
+      // would otherwise break the designer's persist patch and never render). Best-effort: a single
+      // oddly-typed value in the model's JSON must never abort the whole run.
+      if (parsed.isJsonObject) {
+        try {
+          sanitizeAiFormItems(parsed.asJsonObject)
+        } catch (e: Exception) {
+          logger.warn(
+              "[AICodBiAssistant] AI form sanitization failed ({}: {}) — continuing with the unsanitized form",
+              e.javaClass.simpleName,
+              e.message,
+              e)
+        }
+      }
       val sanitizedFormJson = gson.toJson(parsed)
-      val restored = restoreStrippedFields(sanitizedFormJson, persistJson, prompt)
+      // The field-restore/normalization step is best-effort too. It re-merges the original form's
+      // stripped properties (css/script/base/formI18n/formerProps/...) and re-derives parentids,
+      // but
+      // it must NEVER turn a perfectly good AI form into an "AI returned invalid JSON" error: a
+      // model-generated value with an unexpected type/null used to throw inside it, and the outer
+      // catch below mislabeled that as an "unparseable response" — while logging only the JSON and
+      // NOT the exception, which hid the real cause. Fall back to the sanitized AI form (it already
+      // carries the original form's envelope plus the AI's items) and log the real exception so the
+      // cause is diagnosable if it recurs.
+      val restored =
+          try {
+            restoreStrippedFields(sanitizedFormJson, persistJson, prompt)
+          } catch (e: Exception) {
+            logger.warn(
+                "[AICodBiAssistant] Field-restore/normalization failed ({}: {}) — using the sanitized AI form unchanged",
+                e.javaClass.simpleName,
+                e.message,
+                e)
+            sanitizedFormJson
+          }
       // Apply any explicit removals the AI requested (top-level "_removedItems" names) — the AI
       // omits
       // removed elements AND lists them here so the server drops them completely.
@@ -2674,11 +2732,12 @@ class AICodBiAssistant : IPluginServletAction {
       val guardedForm =
           applyNewDatasourceSelectGuards(finalForm, persistJson, availableDatasourceNames)
       Triple(guardedForm, applicabilityReport, TokenUsage(tokensIn, tokensOut))
-    } catch (_: Exception) {
+    } catch (e: Exception) {
       logger.warn(
           "[AICodBiAssistant] Form AI returned unparseable response ({} chars): {}",
           sanitizedCleaned.length,
-          compactJsonForLog(sanitizedCleaned))
+          compactJsonForLog(sanitizedCleaned),
+          e)
       Triple(
           """{"error":"AI returned invalid JSON","raw":${gson.toJson(sanitizedCleaned)}}""",
           null,
@@ -3685,7 +3744,10 @@ class AICodBiAssistant : IPluginServletAction {
 
   /**
    * Visibility/access-control properties that the AI may set on **new** items it creates. Values
-   * are validated by [sanitizeVisibilityProp] before being written into the result.
+   * are validated/normalized by [sanitizeVisibilityProp] before being written into the result: the
+   * `*dependent` FLAGS are normalized to the STRING `"1"`/`"0"` (a JSON boolean is accepted too)
+   * and the `*viewstatus` / `*viewusergroup` arrays keep only their plain-string workflow-state
+   * UUIDs.
    */
   private val SANITIZED_VISIBILITY_PROPS =
       setOf(
@@ -3715,7 +3777,12 @@ class AICodBiAssistant : IPluginServletAction {
 
   /**
    * Sanitizes a single visibility/access-control property value provided by the AI.
-   * - Boolean properties (`statusdependent` etc.) must be a JSON boolean primitive.
+   * - Flag properties (`statusdependent`, `readonly_statusdependent`, `usergrouppendent`,
+   *   `readonly_usergrouppendant`) accept BOTH a JSON boolean and the design-time string
+   *   (`"1"`/`"0"`, `"true"`/`"false"`, `""`) and are normalized by [normalizeDependentFlag] to the
+   *   STRING `"1"`/`"0"` that Formcycle persists — the designer's own default form template stores
+   *   these flags as strings (e.g. `"statusdependent":""`) and Formcycle compares the value against
+   *   `"1"`, so a JSON boolean `true` was NOT recognized.
    * - Array properties (`viewstatus` etc.) must be a JSON array of plain strings only; non-string
    *   entries are silently dropped.
    *
@@ -3726,8 +3793,7 @@ class AICodBiAssistant : IPluginServletAction {
         "statusdependent",
         "readonly_statusdependent",
         "usergrouppendent",
-        "readonly_usergrouppendant" ->
-            value.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
+        "readonly_usergrouppendant" -> normalizeDependentFlag(value)
         "viewstatus",
         "viewusergroup",
         "readonly_viewstatus",
@@ -3745,6 +3811,32 @@ class AICodBiAssistant : IPluginServletAction {
         else -> null
       }
 
+  /**
+   * Normalizes a state/user-group availability FLAG to the design-time STRING form Formcycle
+   * persists (`"1"` = enabled, `"0"` = disabled). Both shapes are accepted because a model emits
+   * either a JSON boolean (`true`/`false`) or the string the designer writes (`"1"`/`"0"`,
+   * `"true"`/`"false"`, or the empty default `""`).
+   *
+   * @return The normalized flag, or `null` for any other shape (an object, number, array, ...),
+   *   which makes [sanitizeVisibilityProp] drop that key.
+   */
+  private fun normalizeDependentFlag(value: JsonElement): JsonElement? {
+    val raw =
+        when {
+          value.isJsonPrimitive && value.asJsonPrimitive.isBoolean -> value.asBoolean.toString()
+          value.isJsonPrimitive && value.asJsonPrimitive.isString -> value.asString.trim()
+          else -> return null
+        }
+    return when (raw.lowercase()) {
+      "1",
+      "true" -> JsonPrimitive("1")
+      "0",
+      "false",
+      "" -> JsonPrimitive("0")
+      else -> null
+    }
+  }
+
   private fun warnUnknownClassNames(element: JsonElement) {
     val items = element.takeIf { it.isJsonObject }?.asJsonObject?.getAsJsonArray("items") ?: return
     items.forEach { el ->
@@ -3754,6 +3846,54 @@ class AICodBiAssistant : IPluginServletAction {
         logger.warn(
             "[AICodBiAssistant] AI used unknown className '{}' â€” item will not render correctly",
             className)
+      }
+    }
+  }
+
+  /**
+   * Null/type-safe read of an array-valued `properties` member. The AI sometimes emits `null` or a
+   * scalar for a property that must be an array (`cssclasses`, `attributes`, `elements`, ...). The
+   * raw `getAsJsonArray(key)` then throws (`ClassCastException` for a non-array value) and aborted
+   * the whole form build with a misleading "unparseable response". Returns `null` instead whenever
+   * the value is absent or not actually a JSON array.
+   */
+  private fun JsonObject.arrayProp(key: String): JsonArray? =
+      get(key)?.takeIf { it.isJsonArray }?.asJsonArray
+
+  /**
+   * Null-safe read of a scalar `properties` member. gson maps a JSON `null` to [JsonNull], whose
+   * `getAsString()` (Kotlin `asString`) THROWS `UnsupportedOperationException` instead of returning
+   * null — so a single model-emitted `"parentid": null` aborted the whole form build. Returns null
+   * for an ABSENT value AND for a JSON null / non-scalar value.
+   */
+  private fun JsonObject.stringProp(key: String): String? =
+      get(key)?.takeIf { it.isJsonPrimitive }?.asString
+
+  /**
+   * Recursively removes EVERY JSON `null` from [element]. A model may echo `null` for an optional
+   * property (`"parentid": null`) or inside an array; gson's [JsonNull] then makes the whole
+   * `getAsString()` / `getAsJsonArray()` family throw, which aborts the entire build (observed:
+   * `UnsupportedOperationException: JsonNull at restoreStrippedFields`). A removed OBJECT member
+   * reads back as ABSENT — the intended "not set" semantics for every property the pipeline touches
+   * — and a removed ARRAY entry has no index-based semantics in the form JSON (`cssclasses`,
+   * `attributes`, `elements`, `viewstatus`, `options`, `buttons`, `questions`, `variables`).
+   */
+  private fun stripJsonNulls(element: JsonElement) {
+    when {
+      element.isJsonObject -> {
+        val obj = element.asJsonObject
+        val nullKeys = obj.entrySet().filter { it.value.isJsonNull }.map { it.key }
+        for (key in nullKeys) obj.remove(key)
+        for (entry in obj.entrySet()) stripJsonNulls(entry.value)
+      }
+      element.isJsonArray -> {
+        val arr = element.asJsonArray
+        val kept = arr.filterNot { it.isJsonNull }
+        if (kept.size != arr.size()) {
+          while (arr.size() > 0) arr.remove(0)
+          for (e in kept) arr.add(e)
+        }
+        for (e in kept) stripJsonNulls(e)
       }
     }
   }
@@ -3841,7 +3981,23 @@ class AICodBiAssistant : IPluginServletAction {
     }
     for (el in toRemove) items.remove(el)
 
-    // 2) Drop any remaining item with an unknown className or a missing/blank id.
+    // 2) Drop items with an unknown className, and REPAIR items whose id is missing/blank.
+    //    A missing id used to DROP the item, which silently deleted a widget the user explicitly
+    // asked
+    //    for (leaving a dangling name in its container's "elements" array). The model regularly
+    // omits
+    //    the technical id on a NEW element (observed: "Dropping item 'selDataSourceColumn' with
+    //    missing id" although the raw response carried "id":"xi-sel-datasourcecolumn"), so
+    // synthesize
+    //    the designer's own convention instead — `xi-` + the lowercased element name, exactly like
+    //    createAddressField does. An item without a name (or a name that is NOT unique, i.e. a
+    //    duplicate) is still dropped, so a broken or doubled widget is never published.
+    val nameCounts = mutableMapOf<String, Int>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val n = el.asJsonObject.getAsJsonObject("properties")?.stringProp("name") ?: continue
+      nameCounts[n] = (nameCounts[n] ?: 0) + 1
+    }
     val invalid = mutableListOf<JsonElement>()
     for (el in items) {
       if (!el.isJsonObject) continue
@@ -3852,15 +4008,59 @@ class AICodBiAssistant : IPluginServletAction {
         logger.warn("[AICodBiAssistant] Dropping item with unknown className '{}'", cls)
         continue
       }
-      val id = o.getAsJsonObject("properties")?.get("id")?.takeIf { it.isJsonPrimitive }?.asString
+      val props = o.getAsJsonObject("properties")
+      val id = props?.stringProp("id")
       if (id.isNullOrBlank()) {
-        invalid.add(o)
-        logger.warn(
-            "[AICodBiAssistant] Dropping item '{}' with missing id",
-            o.getAsJsonObject("properties")?.get("name")?.takeIf { it.isJsonPrimitive }?.asString)
+        val name = props?.stringProp("name")
+        val duplicated = name != null && (nameCounts[name] ?: 0) > 1
+        if (props == null || name.isNullOrBlank() || duplicated) {
+          invalid.add(o)
+          logger.warn(
+              "[AICodBiAssistant] Dropping item '{}' with missing id{}",
+              name ?: "<unnamed>",
+              if (duplicated) " (duplicate name)" else "")
+        } else {
+          val synthesized = "xi-" + (name ?: "").lowercase()
+          props?.addProperty("id", synthesized)
+          logger.warn(
+              "[AICodBiAssistant] Repaired item '{}' with missing id -> '{}' (kept instead of dropped)",
+              name,
+              synthesized)
+        }
       }
     }
     for (el in invalid) items.remove(el)
+
+    // 2b) Enforce UNIQUE element names. Formcycle addresses every element by `properties.name` and
+    //     requires that name to be unique. A "rebuild" pass (the forced CodBi re-evaluation /
+    // widget-
+    //     template pass) regularly re-emits the elements of the container it just created as a
+    // SECOND
+    //     set of items — observed: coPersonData was re-emitted with a truncated child list plus a
+    //     spurious empty coPersonData2, and every field existed twice (the rowid normalizer then
+    //     reported "rowid 'row-N' spanned 2 containers" for all five rows). Two elements sharing
+    // one
+    //     name cannot both be addressed by the designer, so keep the FIRST occurrence (that is the
+    // one
+    //     the containers' "elements" arrays were matched against) and drop every later duplicate;
+    // the
+    //     dangling-reference cleanup in step 3 then re-points the containers at the surviving item,
+    // so
+    //     no container is left with a missing child.
+    val seenItemNames = mutableSetOf<String>()
+    val duplicated = mutableListOf<JsonElement>()
+    for (el in items) {
+      if (!el.isJsonObject) continue
+      val o = el.asJsonObject
+      val name = o.getAsJsonObject("properties")?.stringProp("name") ?: continue
+      if (!seenItemNames.add(name)) {
+        duplicated.add(o)
+        logger.warn(
+            "[AICodBiAssistant] Dropping duplicate item '{}' — an element name must be unique (the model re-emitted it as a second item)",
+            name)
+      }
+    }
+    for (el in duplicated) items.remove(el)
 
     // 3) Remove dangling references to dropped items from container "elements" arrays.
     val names =
@@ -4316,6 +4516,10 @@ class AICodBiAssistant : IPluginServletAction {
 
   private fun restoreStrippedFields(aiResult: String, original: String, prompt: String): String {
     val aiObj = JsonParser.parseString(aiResult).asJsonObject
+    // Belt-and-suspenders (the caller already stripped nulls): gson maps a JSON `null` to JsonNull,
+    // whose getAsString()/getAsJsonArray() THROW — strip any remaining null before reading
+    // properties.
+    stripJsonNulls(aiObj)
     // Some models embed newly created child elements as full JSON objects inside a container's
     // 'properties.elements' array instead of (a) adding them to the flat top-level 'items' array
     // and (b) referencing them by 'name' string. FORMCYCLE expects the flat structure, so promote
@@ -4637,7 +4841,7 @@ class AICodBiAssistant : IPluginServletAction {
           val item = el.asJsonObject
           val props = item.getAsJsonObject("properties") ?: continue
           val cname = props.get("name")?.asString ?: continue
-          val elems = props.getAsJsonArray("elements")
+          val elems = props.arrayProp("elements")
           if (elems != null && elems.size() > 0) originalChildren[cname] = elems
           originalItemBy[cname] = item
         }
@@ -4801,7 +5005,7 @@ class AICodBiAssistant : IPluginServletAction {
         if (!el.isJsonObject) continue
         val containerProps = el.asJsonObject.getAsJsonObject("properties") ?: continue
         val containerId = containerProps.get("id")?.asString ?: continue
-        val elements = containerProps.getAsJsonArray("elements") ?: continue
+        val elements = containerProps.arrayProp("elements") ?: continue
         for (ref in elements) {
           if (ref.isJsonPrimitive) itemToContainerId[ref.asString] = containerId
         }
@@ -4842,10 +5046,10 @@ class AICodBiAssistant : IPluginServletAction {
       for (el in resultItems) {
         if (!el.isJsonObject) continue
         val item = el.asJsonObject
-        val className = item.get("className")?.asString ?: continue
+        val className = item.stringProp("className") ?: continue
         if (className == "XPage") continue // the page is top-level — it has no parent of its own
         val props = item.getAsJsonObject("properties") ?: continue
-        val name = props.get("name")?.asString ?: continue
+        val name = props.stringProp("name") ?: continue
         val isContainer = props.has("elements") // fieldset / container / header / footer
         val aiParent = props.get("parentid")?.takeIf { it.isJsonPrimitive }?.asString
         val referencedId = itemToContainerId[name]
@@ -4881,7 +5085,7 @@ class AICodBiAssistant : IPluginServletAction {
               }
           if (target != null) {
             val targetProps = target.asJsonObject.getAsJsonObject("properties")
-            val targetId = targetProps?.get("id")?.asString
+            val targetId = targetProps?.stringProp("id")
             var elements = targetProps?.get("elements")?.takeIf { it.isJsonArray }?.asJsonArray
             if (elements == null && targetProps != null) {
               val newArr = JsonArray()
@@ -4893,14 +5097,14 @@ class AICodBiAssistant : IPluginServletAction {
               logger.warn(
                   "[AICodBiAssistant] Auto-attached orphaned item '{}' to container '{}'",
                   name,
-                  targetProps?.get("name")?.asString)
+                  targetProps?.stringProp("name"))
             }
             parentId = targetId
           }
         }
         // parentid must be the parent's `id` (xi-…), never its name — override the AI's value so
         // the form renders.
-        if (parentId != null && props.get("parentid")?.asString != parentId) {
+        if (parentId != null && props.stringProp("parentid") != parentId) {
           props.addProperty("parentid", parentId)
         }
       }
@@ -5101,7 +5305,7 @@ class AICodBiAssistant : IPluginServletAction {
       // strip the panel together with its parameters (generateheader/autoheadertitle/folded/CSS
       // params) and leave a container that cannot fold at all. Only on an XFieldSet is a panel
       // class + data-cb-func=html.panel redundant — an element then uses exactly ONE of the two.
-      val cssArr = props.getAsJsonArray("cssclasses") ?: JsonArray()
+      val cssArr = props.arrayProp("cssclasses") ?: JsonArray()
       val isFieldsetForPanel = el.asJsonObject.get("className")?.asString == "XFieldSet"
       val hasPanelClass =
           isFieldsetForPanel &&
@@ -5130,7 +5334,7 @@ class AICodBiAssistant : IPluginServletAction {
           normalizedPanel = true
         }
         // (b) attributes-array form: [{"text":"data-cb-func","value":"html.panel"}, ...]
-        val attrsArr = props.getAsJsonArray("attributes")
+        val attrsArr = props.arrayProp("attributes")
         if (attrsArr != null && attrsArr.size() > 0) {
           val kept = JsonArray()
           var changed = false
@@ -5267,7 +5471,7 @@ class AICodBiAssistant : IPluginServletAction {
     for (el in resultItems) {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
-      val cssArr = props.getAsJsonArray("cssclasses") ?: continue
+      val cssArr = props.arrayProp("cssclasses") ?: continue
       for (i in 0 until cssArr.size()) {
         val c = cssArr.get(i)
         if (!c.isJsonPrimitive) continue
@@ -5366,7 +5570,7 @@ class AICodBiAssistant : IPluginServletAction {
       for (el in resultItems) {
         if (!el.isJsonObject) continue
         val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
-        val cssClasses = props.getAsJsonArray("cssclasses")
+        val cssClasses = props.arrayProp("cssclasses")
         val isMailAddressField =
             cssClasses?.any { it.isJsonPrimitive && it.asString == "AI_LLAMA_CHAT_MailAddress" }
                 ?: false
@@ -5445,7 +5649,7 @@ class AICodBiAssistant : IPluginServletAction {
           continue
         }
         val cProps = container.getAsJsonObject("properties") ?: continue
-        val elements = cProps.getAsJsonArray("elements") ?: continue
+        val elements = cProps.arrayProp("elements") ?: continue
         if (elements.size() != 1) continue // only single-child wrappers
         val childName = elements.get(0).takeIf { it.isJsonPrimitive }?.asString ?: continue
         val child = itemByName[childName] ?: continue
@@ -5570,7 +5774,7 @@ class AICodBiAssistant : IPluginServletAction {
     for (el in resultItems) {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
-      val cssClasses = props.getAsJsonArray("cssclasses") ?: continue
+      val cssClasses = props.arrayProp("cssclasses") ?: continue
       var removed = false
       val kept = JsonArray()
       for (i in 0 until cssClasses.size()) {
@@ -5614,7 +5818,7 @@ class AICodBiAssistant : IPluginServletAction {
       val cls = el.asJsonObject.get("className")?.asString ?: continue
       if (cls != "XContainer" && cls != "XContainerInvisible") continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
-      val cssClasses = props.getAsJsonArray("cssclasses") ?: continue
+      val cssClasses = props.arrayProp("cssclasses") ?: continue
       var removed = false
       val kept = JsonArray()
       for (i in 0 until cssClasses.size()) {
@@ -5678,7 +5882,7 @@ class AICodBiAssistant : IPluginServletAction {
       if (!el.isJsonObject) continue
       val props = el.asJsonObject.getAsJsonObject("properties") ?: continue
       val name = props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: continue
-      props.getAsJsonArray("elements")?.forEach { ref ->
+      props.arrayProp("elements")?.forEach { ref ->
         if (ref.isJsonPrimitive) parentNameByChild[ref.asString] = name
       }
       if (hasHtmlPanelFunctionality(props)) panelPropsByName[name] = props
@@ -5707,7 +5911,7 @@ class AICodBiAssistant : IPluginServletAction {
     fun isPanelFunc(v: String?): Boolean =
         v != null && v.split(",").any { it.trim().equals("html.panel", ignoreCase = true) }
     if (isPanelFunc(props.get("data-cb-func")?.takeIf { it.isJsonPrimitive }?.asString)) return true
-    val attrs = props.getAsJsonArray("attributes") ?: return false
+    val attrs = props.arrayProp("attributes") ?: return false
     for (e in attrs) {
       if (!e.isJsonObject) continue
       val o = e.asJsonObject
@@ -5740,7 +5944,7 @@ class AICodBiAssistant : IPluginServletAction {
       PANEL_ONLY_PARAM_PREFIXES.any { key.lowercase().startsWith(it) }
     }
     // (b) attributes-array form
-    val attrs = props.getAsJsonArray("attributes") ?: return
+    val attrs = props.arrayProp("attributes") ?: return
     val kept = JsonArray()
     for (e in attrs) {
       if (!e.isJsonObject) {
@@ -16225,6 +16429,100 @@ class AICodBiAssistant : IPluginServletAction {
       null
     }
   }
+
+  /**
+   * Replaces workflow-state NAMES that the AI wrote into an element's availability arrays with the
+   * WorkflowState UUIDs of [workflowVersionId].
+   *
+   * The AI cannot know a state's UUID (and must never ask the user for it), so the prompts have it
+   * write the state NAME the user used (e.g. `"GOGO"`), both for "Available only if"
+   * (`statusdependent` + `viewstatus`) and for the state-based "Disabled if"
+   * (`readonly_statusdependent` + `readonly_viewstatus`). Formcycle matches the state's UUID, so
+   * every name that resolves to a state of this workflow version is replaced here; entries that are
+   * already UUIDs, and names that cannot be resolved (e.g. a state no lane of this run created),
+   * are kept unchanged — the designer also accepts a plain name. When at least one entry of an
+   * array was resolved, the matching `*dependent` flag is set to the design-time STRING `"1"`.
+   *
+   * @return The re-serialized form JSON, or `null` when nothing had to be resolved.
+   */
+  private fun resolveElementStateNames(
+      formJson: String,
+      workflowVersionId: Long,
+      params: IPluginServletActionParams
+  ): String? {
+    return try {
+      val root = JsonParser.parseString(formJson).asJsonObject
+      val userContext = getUserContext(params)
+      val workflowVersion = resolveWorkflowVersion(userContext, workflowVersionId) ?: return null
+      var changed = false
+      val pairs =
+          listOf(
+              "viewstatus" to "statusdependent",
+              "readonly_viewstatus" to "readonly_statusdependent")
+      fun handleItem(item: JsonObject) {
+        val props = item.get("properties")?.takeIf { it.isJsonObject }?.asJsonObject ?: return
+        for ((arrayKey, flagKey) in pairs) {
+          val arr = props.get(arrayKey)?.takeIf { it.isJsonArray }?.asJsonArray ?: continue
+          var resolvedHere = false
+          for (i in 0 until arr.size()) {
+            val entry = arr.get(i)
+            if (!entry.isJsonPrimitive || !entry.asJsonPrimitive.isString) continue
+            val raw = entry.asString
+            val exclude = raw.startsWith("[!]")
+            val name = (if (exclude) raw.removePrefix("[!]") else raw).trim()
+            if (name.isEmpty() || isUuidText(name)) continue
+            val uuid = resolveStateUuid(userContext, workflowVersion, name) ?: continue
+            arr.set(i, JsonPrimitive((if (exclude) "[!]" else "") + uuid.toString()))
+            resolvedHere = true
+            changed = true
+            logger.info(
+                "[AICodBiAssistant] Resolved workflow state name '{}' to UUID {} on element '{}' ({})",
+                name,
+                uuid,
+                props.get("name")?.takeIf { it.isJsonPrimitive }?.asString ?: "?",
+                arrayKey)
+          }
+          if (resolvedHere) {
+            val flag = props.get(flagKey)
+            val flagOn =
+                flag != null &&
+                    flag.isJsonPrimitive &&
+                    ((flag.asJsonPrimitive.isBoolean && flag.asBoolean) ||
+                        (flag.asJsonPrimitive.isString &&
+                            flag.asString.trim().lowercase() in setOf("1", "true")))
+            if (!flagOn) {
+              props.addProperty(flagKey, "1")
+              changed = true
+            }
+          }
+        }
+      }
+      fun walk(element: JsonElement) {
+        when {
+          element.isJsonObject -> {
+            val obj = element.asJsonObject
+            handleItem(obj)
+            obj.entrySet().forEach { (_, value) -> walk(value) }
+          }
+          element.isJsonArray -> element.asJsonArray.forEach { walk(it) }
+        }
+      }
+      walk(root)
+      if (changed) gson.toJson(root) else null
+    } catch (e: Exception) {
+      logger.warn("[AICodBiAssistant] resolveElementStateNames failed: {}", e.message)
+      null
+    }
+  }
+
+  /** True when [text] already is a UUID, so a state reference does not need resolving. */
+  private fun isUuidText(text: String): Boolean =
+      try {
+        UUID.fromString(text)
+        true
+      } catch (_: Exception) {
+        false
+      }
 
   /**
    * Resolves the WorkflowState UUID the approve/reject ("Genehmigen"/"Ablehnen") decision buttons

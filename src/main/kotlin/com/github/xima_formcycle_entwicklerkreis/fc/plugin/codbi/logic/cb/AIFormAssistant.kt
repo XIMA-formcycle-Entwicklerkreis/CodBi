@@ -10,6 +10,7 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.google.gson.JsonPrimitive
 import de.xima.fc.interfaces.plugin.lifecycle.IPluginInitializeData
 import de.xima.fc.interfaces.plugin.param.servlet.IPluginServletActionParams
 import de.xima.fc.interfaces.plugin.retval.servlet.IPluginServletActionRetVal
@@ -933,7 +934,10 @@ class AIFormAssistant : IPluginServletAction {
 
   /**
    * Visibility/access-control properties that the AI may set on **new** items it creates. Values
-   * are validated by [sanitizeVisibilityProp] before being written into the result.
+   * are validated/normalized by [sanitizeVisibilityProp] before being written into the result: the
+   * `*dependent` FLAGS are normalized to the STRING `"1"`/`"0"` (a JSON boolean is accepted too)
+   * and the `*viewstatus` / `*viewusergroup` arrays keep only their plain-string workflow-state
+   * UUIDs.
    */
   private val SANITIZED_VISIBILITY_PROPS =
       setOf(
@@ -949,7 +953,12 @@ class AIFormAssistant : IPluginServletAction {
 
   /**
    * Sanitizes a single visibility/access-control property value provided by the AI.
-   * - Boolean properties (`statusdependent` etc.) must be a JSON boolean primitive.
+   * - Flag properties (`statusdependent`, `readonly_statusdependent`, `usergrouppendent`,
+   *   `readonly_usergrouppendant`) accept BOTH a JSON boolean and the design-time string
+   *   (`"1"`/`"0"`, `"true"`/`"false"`, `""`) and are normalized by [normalizeDependentFlag] to the
+   *   STRING `"1"`/`"0"` that Formcycle persists — the designer's own default form template stores
+   *   these flags as strings (e.g. `"statusdependent":""`) and Formcycle compares the value against
+   *   `"1"`, so a JSON boolean `true` was NOT recognized.
    * - Array properties (`viewstatus` etc.) must be a JSON array of plain strings only; non-string
    *   entries are silently dropped.
    *
@@ -960,8 +969,7 @@ class AIFormAssistant : IPluginServletAction {
         "statusdependent",
         "readonly_statusdependent",
         "usergrouppendent",
-        "readonly_usergrouppendant" ->
-            value.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isBoolean }
+        "readonly_usergrouppendant" -> normalizeDependentFlag(value)
         "viewstatus",
         "viewusergroup",
         "readonly_viewstatus",
@@ -978,6 +986,32 @@ class AIFormAssistant : IPluginServletAction {
         }
         else -> null
       }
+
+  /**
+   * Normalizes a state/user-group availability FLAG to the design-time STRING form Formcycle
+   * persists (`"1"` = enabled, `"0"` = disabled). Both shapes are accepted because a model emits
+   * either a JSON boolean (`true`/`false`) or the string the designer writes (`"1"`/`"0"`,
+   * `"true"`/`"false"`, or the empty default `""`).
+   *
+   * @return The normalized flag, or `null` for any other shape (an object, number, array, ...),
+   *   which makes [sanitizeVisibilityProp] drop that key.
+   */
+  private fun normalizeDependentFlag(value: JsonElement): JsonElement? {
+    val raw =
+        when {
+          value.isJsonPrimitive && value.asJsonPrimitive.isBoolean -> value.asBoolean.toString()
+          value.isJsonPrimitive && value.asJsonPrimitive.isString -> value.asString.trim()
+          else -> return null
+        }
+    return when (raw.lowercase()) {
+      "1",
+      "true" -> JsonPrimitive("1")
+      "0",
+      "false",
+      "" -> JsonPrimitive("0")
+      else -> null
+    }
+  }
 
   /**
    * Returns a copy of [json] with [STRIPPED_FIELDS] removed and empty/default values pruned from

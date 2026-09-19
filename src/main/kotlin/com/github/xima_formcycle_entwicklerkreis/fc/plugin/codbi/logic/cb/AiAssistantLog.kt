@@ -253,23 +253,36 @@ object AiAssistantLog {
           e.addProperty("cost", entry.cost ?: 0)
           e.addProperty("currency", entry.currency ?: "")
           e.addProperty("username", entry.username ?: "")
-          // Sensitive elements this entry actually used, recomputed from its stored form changes
-          // against the current AI_Log_SensitiveElements configuration. The frontend uses this to
+          // Sensitive elements this entry actually used, recomputed from its stored FORM and
+          // WORKFLOW changes against the current AI_Log_SensitiveElements configuration. The
+          // configured list may hold CodBi elements, FORMCYCLE widgets (XTextField, ...) and
+          // workflow node types (FC_EMAIL, FC_SQL_STATEMENT, ...). The frontend uses this to
           // auto-open the change log after a workflow-triggered reload (see
           // autoOpenIfRecentSensitive).
-          entry.formChanges
-              ?.takeIf { it.isNotBlank() }
-              ?.let { text ->
-                runCatching {
+          runCatching {
+                val used = LinkedHashSet<String>()
+                entry.formChanges
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { text ->
                       val parsed = JsonParser.parseString(text)
                       if (parsed.isJsonObject) {
-                        usedSensitiveElements(parsed.asJsonObject, AI.logSensitiveElements)
-                      } else {
-                        emptyList()
+                        used.addAll(
+                            usedSensitiveElements(parsed.asJsonObject, AI.logSensitiveElements))
                       }
                     }
-                    .getOrNull()
+                entry.workflowChanges
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { text ->
+                      val parsed = JsonParser.parseString(text)
+                      if (parsed.isJsonArray) {
+                        used.addAll(
+                            usedSensitiveWorkflowElements(
+                                parsed.asJsonArray, AI.logSensitiveElements))
+                      }
+                    }
+                used.sorted()
               }
+              .getOrNull()
               ?.takeIf { it.isNotEmpty() }
               ?.let { used -> e.add("sensitiveUsed", gson.toJsonTree(used)) }
           // Destructive SQL statements blocked by the backend sanitizer in this entry's workflow
@@ -666,10 +679,15 @@ object AiAssistantLog {
   }
 
   /**
-   * Determines which of the configured **sensitive** CodBi element names ([sensitive], already
-   * lowercased) were actually used in the given change description ([formChanges]). Matching is
-   * case-insensitive and covers:
-   * - `widgetsCreated[].name` / `.className`
+   * Determines which of the configured **sensitive** element names ([sensitive], already
+   * lowercased) were actually used in the given change description ([formChanges]). The configured
+   * list may hold CodBi elements (functionalities, EPs, standard configurations/classes/globals)
+   * **and FORMCYCLE widgets** (e.g. `XTextField`, `XTextArea`). Matching is case-insensitive and
+   * covers:
+   * - `widgetsCreated[].name` / `.className` and `widgetsRemoved[].name` / `.className`
+   * - `classesSet[].widget` / `.className` and `attributesSet[].widget` / `.className` (so a
+   *   configured FORMCYCLE widget matches even when the AI only wrote into an EXISTING element —
+   *   e.g. potentially harmful HTML/code placed into an existing `XTextField`)
    * - `classesSet[].classes[]` (standard-configuration CSS classes)
    * - `attributesSet[].attributes[]` whose value contains the element name (e.g. a `data-cb-func`
    *   value, or a `data-cb-*` parameter value holding an EP placeholder like `{ pluto > ... }`)
@@ -682,9 +700,8 @@ object AiAssistantLog {
    */
   fun usedSensitiveElements(formChanges: JsonObject, sensitive: Set<String>): List<String> {
     if (sensitive.isEmpty()) return emptyList()
-    val found = mutableSetOf<String>()
+    val haystack = StringBuilder()
     try {
-      val haystack = StringBuilder()
       formChanges.getAsJsonArray("widgetsCreated")?.forEach { el ->
         if (el.isJsonObject) {
           el.asJsonObject
@@ -701,14 +718,36 @@ object AiAssistantLog {
       }
       formChanges.getAsJsonArray("classesSet")?.forEach { el ->
         if (el.isJsonObject) {
-          el.asJsonObject.getAsJsonArray("classes")?.forEach { c ->
+          val obj = el.asJsonObject
+          // The entry's widget name / className too, so a configured FORMCYCLE widget (e.g.
+          // "XTextField") matches whenever the AI changed that element's classes.
+          obj.get("widget")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { haystack.append(' ').append(it) }
+          obj.get("className")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { haystack.append(' ').append(it) }
+          obj.getAsJsonArray("classes")?.forEach { c ->
             if (c.isJsonPrimitive) haystack.append(' ').append(c.asString)
           }
         }
       }
       formChanges.getAsJsonArray("attributesSet")?.forEach { el ->
         if (el.isJsonObject) {
-          el.asJsonObject.getAsJsonArray("attributes")?.forEach { a ->
+          val obj = el.asJsonObject
+          // Same for attribute changes: this is what makes a configured FORMCYCLE widget such as
+          // "XTextField" sensitive even when the AI only wrote into an EXISTING field.
+          obj.get("widget")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { haystack.append(' ').append(it) }
+          obj.get("className")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { haystack.append(' ').append(it) }
+          obj.getAsJsonArray("attributes")?.forEach { a ->
             if (a.isJsonObject) {
               val attr = a.asJsonObject
               // The attribute's NAME carries the functionality / EP id (e.g. "Sys.Log.Console"),
@@ -747,18 +786,85 @@ object AiAssistantLog {
               ?.let { haystack.append(' ').append(it) }
         }
       }
-      val text = haystack.toString()
-      for (name in sensitive) {
-        // Token-based match (word boundaries), so "HTML" does not match inside "HTML.CSS".
-        if (Regex("(?i)(?<![A-Za-z0-9_.])${Regex.escape(name)}(?![A-Za-z0-9_.])")
-            .containsMatchIn(text)) {
-          found.add(name)
+      // Removed widgets count too (removing a sensitive FORMCYCLE widget is a change as well).
+      formChanges.getAsJsonArray("widgetsRemoved")?.forEach { el ->
+        if (el.isJsonObject) {
+          val obj = el.asJsonObject
+          obj.get("name")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { haystack.append(' ').append(it) }
+          obj.get("className")
+              ?.takeIf { it.isJsonPrimitive }
+              ?.asString
+              ?.let { haystack.append(' ').append(it) }
         }
       }
     } catch (e: Exception) {
       logger.warn("[AiAssistantLog] Failed to compute used sensitive elements: {}", e.message)
     }
+    return sensitiveMatches(haystack.toString(), sensitive)
+  }
+
+  /**
+   * Determines which of the configured **sensitive** element names ([sensitive], already
+   * lowercased) were used by the given WORKFLOW change description ([workflowChanges], the
+   * `nodeLog` array produced by `AICodBiAssistant.runWorkflowCreation`).
+   *
+   * This is what brings **FORMCYCLE workflow nodes** under the sensitive mechanism: a configured
+   * node type (e.g. `FC_EMAIL`, `FC_SQL_STATEMENT`, `FC_HTTP_REQUEST`), a custom trigger type or a
+   * node name is detected by scanning every node's `nodeType` / `name` plus all nested parameter
+   * names and values. The change log then marks the matching node with the same red border +
+   * verification checkbox as a sensitive CodBi element.
+   *
+   * @param workflowChanges The parsed workflow change description, or `null`.
+   * @param sensitive The lowercased set of sensitive element names (from
+   *   `AI.logSensitiveElements`).
+   * @return The matched sensitive element names, sorted for stable output.
+   */
+  fun usedSensitiveWorkflowElements(
+      workflowChanges: JsonArray?,
+      sensitive: Set<String>
+  ): List<String> {
+    if (workflowChanges == null || sensitive.isEmpty()) return emptyList()
+    val haystack = StringBuilder()
+    try {
+      collectStrings(workflowChanges, haystack)
+    } catch (e: Exception) {
+      logger.warn(
+          "[AiAssistantLog] Failed to compute used sensitive workflow elements: {}", e.message)
+    }
+    return sensitiveMatches(haystack.toString(), sensitive)
+  }
+
+  /**
+   * Token-based match of the configured sensitive [names] inside [text], case-insensitive and with
+   * word boundaries — so "HTML" does not match inside "HTML.CSS" and "XTextField" not inside
+   * "XTextFieldAdvanced".
+   */
+  private fun sensitiveMatches(text: String, names: Set<String>): List<String> {
+    if (text.isEmpty() || names.isEmpty()) return emptyList()
+    val found = mutableSetOf<String>()
+    for (name in names) {
+      if (Regex("(?i)(?<![A-Za-z0-9_.])${Regex.escape(name)}(?![A-Za-z0-9_.])")
+          .containsMatchIn(text)) {
+        found.add(name)
+      }
+    }
     return found.sorted()
+  }
+
+  /** Recursively appends every object member NAME and primitive VALUE of [element] to [out]. */
+  private fun collectStrings(element: JsonElement, out: StringBuilder) {
+    when {
+      element.isJsonObject ->
+          element.asJsonObject.entrySet().forEach { (key, value) ->
+            out.append(' ').append(key)
+            collectStrings(value, out)
+          }
+      element.isJsonArray -> element.asJsonArray.forEach { collectStrings(it, out) }
+      element.isJsonPrimitive -> out.append(' ').append(element.asString)
+    }
   }
 
   /**

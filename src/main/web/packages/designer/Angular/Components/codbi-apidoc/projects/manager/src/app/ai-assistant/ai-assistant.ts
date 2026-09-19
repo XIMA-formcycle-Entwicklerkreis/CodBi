@@ -419,6 +419,12 @@ export class AiAssistant implements OnInit, OnDestroy {
    *  closed while maximized reopens maximized). */
   private static readonly MAXIMIZED_KEY = "codbi-ai-assistant-maximized";
   private static readonly DIALOG_STYLE_CLASS = "cb-ai-assistant-dialog";
+  /** CSS class marking the kept-mounted dialog as CLOSED. The dialog is hidden by a stylesheet rule
+   *  carrying `!important` (see ai-assistant.scss) in addition to the inline styles, because
+   *  PrimeNG re-applies its OWN inline `display:flex` on re-render (inlineStyles.root) — an inline
+   *  `display:none` written here can be overwritten, which left the dialog visible after a run that
+   *  does NOT reload the page (e.g. a form/widgets-only inference, notably with a maximized dialog). */
+  private static readonly DIALOG_HIDDEN_CLASS = "cb-ai-assistant-dialog--hidden";
   /** sessionStorage key caching the loaded AI model list so a re-bootstrapped host (the Angular
    *  custom element is re-created on reopen) does not have to re-fetch it with a 2-3s AJAX call. */
   private static readonly MODELS_CACHE_KEY = "codbi-models-cache";
@@ -986,16 +992,7 @@ export class AiAssistant implements OnInit, OnDestroy {
       this.dialogHidden = false;
       //this.visible = true;
       this.dialogDismissed = false;
-      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
-      if (el) {
-        el.style.display = "";
-        el.style.pointerEvents = "";
-        const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
-        if (mask) {
-          mask.style.display = "";
-          mask.style.pointerEvents = "";
-        }
-      }
+      this.applyDialogHidden(false);
     } else {
       // Native close (Escape / close button / mask click). Keep the dialog MOUNTED (user-preferred
       // approach) so a subsequent open is a fast, pure CSS flip — do NOT set visible=false, which
@@ -1005,16 +1002,7 @@ export class AiAssistant implements OnInit, OnDestroy {
       this.dialogDismissed = true;
       // Keep visible=true so PrimeNG never destroys the element.
       //this.visible = true;
-      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
-      if (el) {
-        el.style.display = "none";
-        el.style.pointerEvents = "none";
-        const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
-        if (mask) {
-          mask.style.display = "none";
-          mask.style.pointerEvents = "none";
-        }
-      }
+      this.applyDialogHidden(true);
       // Preserve the change-log panel state across a native close (Escape / close button / mask
       // click) so it reopens exactly as the user left it — the same behavior as the ALT+A close()
       // path. Only reset the dialog width when the log was NOT open (it was already folded then).
@@ -1288,14 +1276,10 @@ export class AiAssistant implements OnInit, OnDestroy {
     // the mounted-but-hidden dialog as "already visible" and return without ever showing it again.
     const openEl = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
     if (openEl) {
-      openEl.style.display = "";
-      openEl.style.pointerEvents = "";
-      const openMask = openEl.closest(".p-dialog-mask") as HTMLElement | null;
-      if (openMask) {
-        openMask.style.display = "";
-        openMask.style.pointerEvents = "";
-      }
+      // Clear the closed state FIRST (dialogHidden=false) so a still-pending re-assert tick from the
+      // previous close cannot re-hide the dialog we are about to show.
       this.dialogHidden = false;
+      this.applyDialogHidden(false);
       this.dialogDismissed = false;
       this.lastOpenedAt = Date.now();
       this.lastShowRequestedAt = performance.now();
@@ -1826,6 +1810,49 @@ export class AiAssistant implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Applies/removes the robust CLOSED state of the kept-mounted assistant dialog.
+   *
+   * Hiding uses a stylesheet class with `!important` (see ai-assistant.scss) in addition to the
+   * inline styles: PrimeNG re-applies its own inline `display:flex` to the dialog on re-render, so
+   * an inline `display:none` alone can be undone and the dialog stays visible — observed after a
+   * form-only inference (no page reload) while the dialog was maximized. A short re-assert loop
+   * keeps it hidden even when PrimeNG re-renders the dialog right after the close (maximize
+   * transition / change-log re-render). Ticks are skipped once the dialog was reopened.
+   */
+  private applyDialogHidden(hidden: boolean): void {
+    const apply = (): void => {
+      const el = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
+      if (!el) return;
+      const mask = el.closest(".p-dialog-mask") as HTMLElement | null;
+      if (hidden) {
+        el.classList.add(AiAssistant.DIALOG_HIDDEN_CLASS);
+        el.style.display = "none";
+        el.style.pointerEvents = "none";
+        if (mask) {
+          mask.style.display = "none";
+          mask.style.pointerEvents = "none";
+        }
+      } else {
+        el.classList.remove(AiAssistant.DIALOG_HIDDEN_CLASS);
+        el.style.display = "";
+        el.style.pointerEvents = "";
+        if (mask) {
+          mask.style.display = "";
+          mask.style.pointerEvents = "";
+        }
+      }
+    };
+    apply();
+    if (hidden) {
+      for (const delay of [0, 120, 400, 900]) {
+        setTimeout(() => {
+          if (this.dialogHidden) apply();
+        }, delay);
+      }
+    }
+  }
+
   close(): void {
     // Keep the dialog MOUNTED: DO NOT set `visible=false` — that is what makes PrimeNG remove the
     // dialog from the DOM, which then triggers the host re-bootstrap/re-mount on the next open
@@ -1833,16 +1860,7 @@ export class AiAssistant implements OnInit, OnDestroy {
     // (display:none / pointer-events:none), so a reopen is a fast, pure CSS flip.
     this.dialogHidden = true;
     this.dialogDismissed = true;
-    const closeEl = document.querySelector(`.${AiAssistant.DIALOG_STYLE_CLASS}`) as HTMLElement | null;
-    if (closeEl) {
-      closeEl.style.display = "none";
-      closeEl.style.pointerEvents = "none";
-      const closeMask = closeEl.closest(".p-dialog-mask") as HTMLElement | null;
-      if (closeMask) {
-        closeMask.style.display = "none";
-        closeMask.style.pointerEvents = "none";
-      }
-    }
+    this.applyDialogHidden(true);
     // Remember the maximized state so a dialog closed while maximized reopens maximized.
     this.persistMaximized();
     this.cdr.markForCheck();
@@ -3575,7 +3593,7 @@ export class AiAssistant implements OnInit, OnDestroy {
       processData: false,
       contentType: false,
       dataType: "json",
-      success: (phase2Response: unknown) => {
+      success: async (phase2Response: unknown) => {
         this.loading = false;
         if (chatOptions?.chatMode) {
           this.chatLoading = false;
@@ -3683,6 +3701,31 @@ export class AiAssistant implements OnInit, OnDestroy {
           this.chatMessages.push({ role: "assistant", text: this.chatAckText() });
           this.persistChatSession();
           this.cdr.markForCheck();
+        }
+
+        // REFRESH THE DESIGNER CONFIG WHEN THIS RUN RAN A WORKFLOW PASS.
+        // A workflow pass may CREATE new workflow states (e.g. the end state of an endpoint node that
+        // a form element references in its "Available only if" / "Disabled if" property). The
+        // designer's state list (config.statusList - see DefaultFD2StatusProvider.createStatusJSON:
+        // entries {id,name} whose `id` IS the WorkflowState UUID) is fetched ONCE when the page
+        // loads, i.e. BEFORE the state existed. The ViewStatusEditor resolves the element's
+        // `viewstatus` / `readonly_viewstatus` UUIDs against that list, so a freshly created state is
+        // not offered and the property shows NO state selected (and the value would be lost on the
+        // next manual edit of that element).
+        // Formcycle normally pushes the "fd2ReloadConfig" event (CmnConst.FormDesigner.PushEvent)
+        // to the client when a state is added in the WORKFLOW designer; a state created by this
+        // plugin through the entity/API layer does not trigger that push, so re-fetch the config
+        // here. reloadConfig() refreshes states, user groups, templates and datasources and does not
+        // touch the form model, so the AI form JSON applied below is unaffected.
+        if (intent !== "form" && designer != null) {
+          const dCfg = designer as unknown as Record<string, unknown>;
+          if (typeof dCfg["reloadConfig"] === "function") {
+            try {
+              await (dCfg["reloadConfig"] as (showLoadingDialog?: boolean) => Promise<void>).call(designer, false);
+            } catch {
+              // Best effort - continue with the (possibly stale) configuration.
+            }
+          }
         }
 
         // Apply form changes if present

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-05T10:12:00.4950046+02:00",
+  "generatedAt": "2026-09-19T11:44:34.4629131+02:00",
   "entries": {
     "AI.LLAMA.CHAT": {
       "id": "AI.LLAMA.CHAT",
@@ -251,8 +251,8 @@
     "HTML.Panel": {
       "id": "HTML.Panel",
       "type": "functionality",
-      "summary": "Applicable on any element to wrap it in a collapsible accordion/panel widget. CRITICAL: \u0027Standard-Panel\u0027 and \u0027aufklappbares/collapsible panel\u0027 on a fieldset = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property (preferred). Use data-cb-func=html.panel only on a container (not a fieldset).",
-      "tsdoc": "Provides the {@link HTML_Panel.functionality }.",
+      "summary": "Applicable on any element to wrap it in a collapsible accordion/panel widget. PREFERRED: \u0027Standard-Panel\u0027 / \u0027aufklappbares/collapsible panel\u0027 on a FIELDSET = XFieldSet + CodBi_HTML_Panel_Standard CSS class + legend property (never data-cb-func=html.panel on a fieldset). On an XCONTAINER (div — no legend) use data-cb-func=html.panel and you MUST also set data-cb-generateheader=\u0027true\u0027 and a NON-EMPTY data-cb-autoheadertitle: the autoheadertitle is the ONLY source of the container panel\u0027s header text — use the title from the prompt, or if the prompt names no title, INVENT a short, meaningful title from the container\u0027s purpose/content in the form\u0027s language. When the prompt does not describe the header\u0027s look, ALSO generate restrained header CSS via the data-cb-* CSS parameters (every value is a RAW CSS declaration list WITHOUT braces, e.g. background:#eef2f7; padding:10px 14px; border-radius:6px;): data-cb-cssheaderfolded (base look while FOLDED — set it to the SAME CSS as data-cb-cssheaderunfolded so a folded panel looks identical), data-cb-cssheaderunfolded (base look while unfolded), data-cb-cssheaderhover, data-cb-cssheaderactive, and a fold indicator via data-cb-cssafterheadercontent (folded) plus data-cb-cssafterheadercontentunfolded (unfolded) — e.g. a downward arrow when folded and an upward arrow when unfolded. Follow the prompt exactly when it does describe the look. MANDATORY — NEVER SKIP A CONTAINER PANEL\u0027S HEADER STYLING (even when the request does not mention styling): creating/converting an XContainer into a collapsible panel (data-cb-func=html.panel) REQUIRES (a) HTML.Panel in the need_codbi_details request, (b) data-cb-generateheader=\u0027true\u0027 + a non-empty data-cb-autoheadertitle, (c) the header CSS set ON THE PANEL ITSELF via the html.panel parameters (data-cb-cssheaderfolded = data-cb-cssheaderunfolded, plus data-cb-cssheaderhover, data-cb-cssheaderactive, data-cb-cssafterheadercontent[unfolded]) unless the prompt specifies a different look, and (d) HTML.Panel listed in the _codbiApplicability applied array. NEVER return codbiVerdict=\u0027none\u0027 with empty considered/applied for such a request. The same applies when the form ALREADY has container panels without header styling — set the header CSS parameters and report HTML.Panel as considered/applied.",
+      "tsdoc": "Decodes whitespace escapes in the HTML.Panel header-title separator\n(`data-cb-autoheadertitlesupplementsspacer`).\nFORMCYCLE trims surrounding whitespace from custom-element attribute values, so a literal \" - \"\nreaches this component as \"-\". To still request spaces around the separator, write them escaped:\n- `%20` (URL encoding), e.g. `%20-%20`\n- `\\s`  (backslash + s), e.g. `\\s-\\s`\nBoth decode to a space, so `%20-%20` renders the header as \"Title - 08:00\".\n@param value The raw separator value taken from the element\u0027s attribute.\n@returns The separator with the whitespace escapes decoded.",
       "parameters": {
         "AutoHeaderLevel": "Which level of enclosing \\\u003ch\u003es the \"AutoHeaderTitle\" shall have,.",
         "AutoHeaderTitle": "The string the automatically generated header shall display.",
@@ -266,6 +266,7 @@
         "CSSBeforeHeaderContent": "The CSS:before content to be applied onto the header when the panel is folded.",
         "CSSBeforeHeaderContentUnfolded": "The CSS:after content to be applied onto the header when the panel is unfolded.",
         "CSSHeaderActive": "The optional header\u0027s CSS:active (defaults to { scale : .9 ;}).",
+        "CSSHeaderFolded": "The optional CSS to be applied onto the header when the panel is FOLDED â€”.",
         "CSSHeaderHover": "The optional header\u0027s CSS:hover (defaults to { scale : 1.1 ;}).",
         "CSSHeaderUnfolded": "The optional CSS to be applied onto the header when the panel is unfolded.",
         "CSSRequiredFields": "The CSS:before to applied onto the header if it contains a validation.",
